@@ -1,4 +1,5 @@
 completion:
+  # Phase 5: keep sentinel tooling aligned with CompletionDetector fallbacks.
   confidence_threshold: 0.6
   natural_finish:
     idle_turn_limit: 1
@@ -12,6 +13,7 @@ completion:
   - '>>>>>> END RESPONSE'
   tool_finish: mark_task_complete
 concurrency:
+  # Phase 5 default: serialize write-heavy tools while allowing read bursts.
   at_most_one_of:
   - run_shell
   groups:
@@ -26,6 +28,7 @@ concurrency:
     match_tools:
     - apply_unified_patch
     - apply_search_replace
+    - write
     - run_shell
     max_parallel: 1
     name: edits_and_bash
@@ -72,6 +75,7 @@ modes:
   - grep
 - name: build
   prompt: '@pack(base).builder'
+  # Ensure mark_task_complete stays enabled in the editing phase for completion handshake.
   tools_enabled:
   - '*'
 - name: compact
@@ -120,14 +124,13 @@ providers:
       disable_native_tools_on_probe_failure: true
       disable_stream_on_probe_failure: true
       fallback_models:
-      - openrouter/openai/gpt-4o-mini
-      - gpt-4o-mini
+      - gpt-5-nano
   - adapter: anthropic
     id: anthropic/claude-3-7-sonnet
     params:
       tool_use: true
   - adapter: openai
-    id: openai/gpt-4o-mini
+    id: gpt-5-nano
     params:
       temperature: 0.2
     routing:
@@ -155,8 +158,11 @@ telemetry:
   - SPA
 tools:
   aliases:
+    bash: run_shell
     edit: apply_search_replace
+    list: list_dir
     patch: apply_unified_patch
+    read: read_file
   dialects:
     create_file_policy:
       aider_search_replace:

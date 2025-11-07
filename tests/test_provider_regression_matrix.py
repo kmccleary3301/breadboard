@@ -6,7 +6,12 @@ import pytest
 from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
 from agentic_coder_prototype.provider_capability_probe import CapabilityProbeResult
-from agentic_coder_prototype.provider_runtime import MockRuntime, ProviderRuntimeError
+from agentic_coder_prototype.provider_runtime import (
+    MockRuntime,
+    ProviderRuntimeError,
+    ProviderResult,
+    ProviderMessage,
+)
 from agentic_coder_prototype.provider_routing import provider_router
 
 
@@ -73,17 +78,35 @@ def _run_scenario(monkeypatch, workspace, scenario):
     monkeypatch.setattr(openrouter_cfg, "base_url", None)
 
     orig_invoke = MockRuntime.invoke
+    sentinel_result = ProviderResult(
+        messages=[ProviderMessage(role="assistant", content="TASK COMPLETE", tool_calls=[], finish_reason="stop", index=0)],
+        raw_response={"mock": True},
+        usage=None,
+        encrypted_reasoning=None,
+        reasoning_summaries=None,
+        model="mock",
+    )
+
+    non_fallback_calls = {"count": 0}
 
     def _patched_invoke(self, *, client, model, messages, tools, stream, context):
         extra = getattr(context, "extra", {}) or {}
         if extra.get("fallback_of"):
-            return orig_invoke(self, client=client, model=model, messages=messages, tools=tools, stream=stream, context=context)
+            return sentinel_result
         if stream:
             raise ProviderRuntimeError("mock streaming failure")
         raise ProviderRuntimeError("mock primary failure")
 
     if scenario["expect_fallback"]:
         monkeypatch.setattr(MockRuntime, "invoke", _patched_invoke)
+    else:
+        def _non_fallback_invoke(self, *, client, model, messages, tools, stream, context):
+            non_fallback_calls["count"] += 1
+            if non_fallback_calls["count"] >= 2:
+                return sentinel_result
+            return orig_invoke(self, client=client, model=model, messages=messages, tools=tools, stream=stream, context=context)
+
+        monkeypatch.setattr(MockRuntime, "invoke", _non_fallback_invoke)
 
     events = []
     stream_policies = []
@@ -110,7 +133,7 @@ def _run_scenario(monkeypatch, workspace, scenario):
 
     conductor.capability_probe_runner.run = types.MethodType(_capability_stub, conductor.capability_probe_runner)  # type: ignore[attr-defined]
 
-    conductor.run_agentic_loop(
+    result = conductor.run_agentic_loop(
         system_prompt="",
         user_prompt="Enumerate workspace",
         model=config["providers"]["default_model"],
@@ -121,12 +144,12 @@ def _run_scenario(monkeypatch, workspace, scenario):
 
     metrics = conductor.provider_metrics.snapshot()
 
-    return events, stream_policies, metrics
+    return events, stream_policies, metrics, result
 
 
 @pytest.mark.parametrize("scenario", REGRESSION_SCENARIOS, ids=lambda s: s["id"])
 def test_provider_regression_matrix(monkeypatch, regression_env, scenario):
-    events, stream_policies, metrics = _run_scenario(monkeypatch, regression_env, scenario)
+    events, stream_policies, metrics, result = _run_scenario(monkeypatch, regression_env, scenario)
 
     stream_tags = [tag for tag, _ in events if tag == "stream_policy"]
     fallback_tags = [tag for tag, _ in events if tag == "fallback_route"]
@@ -152,3 +175,8 @@ def test_provider_regression_matrix(monkeypatch, regression_env, scenario):
         assert stream_override_count > 0, "stream override should be counted"
     else:
         assert stream_override_count == 0, "stream override should not be counted"
+
+    completion_reason = (result or {}).get("completion_reason")
+    assert completion_reason, "completion reason should be populated"
+
+    assert "dialects" in metrics, "dialect metrics key should exist in provider metrics snapshot"

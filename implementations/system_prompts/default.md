@@ -22,6 +22,9 @@ Coding Standards
 
 Editing & Changes
 - Prefer diff‑style edits for code changes. Keep edits minimal and localized; do not reformat unrelated code.
+- Each diff or patch must target exactly one file. If you need to touch multiple files, issue separate tool calls instead of bundling them into a single `apply_unified_patch`.
+- Before editing an existing file, call `read_file` to refresh context; the runtime rejects patches against files you have not read or that changed since your last read.
+- When a tool rejects your request (validation errors, executor feedback), adjust immediately—do not resubmit the same failing payload.
 - When creating new files, scaffold only what’s necessary, then fill content via normal edits.
 - Maintain consistent style with the surrounding codebase (linters/formatters/configs).
 
@@ -42,5 +45,3 @@ Quality Bar
 
 Tone
 - Be concise, precise, and professional. Focus on signal over style.
-
-

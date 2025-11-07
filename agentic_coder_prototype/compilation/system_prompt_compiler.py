@@ -141,7 +141,7 @@ class SystemPromptCompiler:
             "- **Direct execution**: Use tools immediately without excessive explanation", 
             "- **Format preference**: Use Aider SEARCH/REPLACE when available (2.3x success rate)",
             "- **Sequential execution**: Only ONE bash command per turn",
-            "- **Proactive completion**: Mark tasks complete when finished",
+            "- **Proactive completion**: Call mark_task_complete() when finished; if tools are unavailable, end with the exact line `TASK COMPLETE`",
             "",
             "## EXECUTION PATTERN",
             "1. **Brief plan**: State what you'll do in 1-2 lines",
@@ -248,13 +248,16 @@ class SystemPromptCompiler:
         
         # Dynamic completion section based on available tools
         completion_tools = [t for t in tools if "complete" in t.name.lower() or "finish" in t.name.lower()]
+        prompt_parts.append("### COMPLETION")
         if completion_tools:
-            prompt_parts.append("### COMPLETION")
             for tool in completion_tools:
                 prompt_parts.append(f"- When task is complete, call {tool.name}()")
                 if tool.description:
                     prompt_parts.append(f"  {tool.description}")
-            prompt_parts.append("")
+        else:
+            prompt_parts.append("- A dedicated completion tool may not be available on every turn.")
+        prompt_parts.append("- If you cannot call completion tools, end your reply with the exact line `TASK COMPLETE`.")
+        prompt_parts.append("")
         prompt_parts.append("The specific tools available for this turn will be listed in the user message under <TOOLS_AVAILABLE>.")
         
         return "\n".join(prompt_parts)

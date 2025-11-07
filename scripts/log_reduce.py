@@ -479,6 +479,60 @@ def _summarize_patch(content: str) -> List[str]:
     return summary
 
 
+def summarise_guardrails(root: Path) -> None:
+    """Highlight guardrail triggers surfaced during the run."""
+    convo_path = root / "conversation" / "conversation.md"
+    guard_counts = {
+        "validation_errors": 0,
+        "zero_tool_warnings": 0,
+        "zero_tool_abort": 0,
+        "patch_policy_violations": 0,
+        "shell_write_blocked": 0,
+    }
+    if convo_path.exists():
+        try:
+            text = convo_path.read_text(encoding="utf-8", errors="ignore")
+            guard_counts["validation_errors"] = text.count("<VALIDATION_ERROR>")
+            lower_text = text.lower()
+            guard_counts["zero_tool_warnings"] = (
+                lower_text.count("zero-tool warning")
+                + lower_text.count("no tool usage detected. use read/list/diff/bash tools")
+            )
+            guard_counts["zero_tool_abort"] = (
+                lower_text.count("zero tool usage streak")
+                + lower_text.count("no tool usage detected across multiple turns")
+            )
+            guard_counts["patch_policy_violations"] = (
+                lower_text.count("patch_policy_violation")
+                + lower_text.count("multi-file patches are disabled")
+            )
+            guard_counts["shell_write_blocked"] = (
+                lower_text.count("use the write/patch tools instead")
+                + lower_text.count("do not use bash heredocs")
+            )
+        except Exception as exc:
+            print(f"[guardrails] unable to read conversation: {exc}")
+
+    summary_path = root / "meta" / "run_summary.json"
+    artifact_issues: Optional[List[str]] = None
+    payload = _load_json(summary_path)
+    if isinstance(payload, dict):
+        artifact_issues = payload.get("artifact_issues") or payload.get("artifactIssues")
+        guard_metadata = payload.get("guardrails") or {}
+        for key, value in guard_metadata.items():
+            if isinstance(value, int) and key in guard_counts:
+                guard_counts[key] = value
+
+    print("\n== Guardrail Signals ==")
+    for key, value in guard_counts.items():
+        label = key.replace("_", " ")
+        print(f"- {label}: {value}")
+    if artifact_issues:
+        print("- artifact issues:")
+        for issue in artifact_issues:
+            print(f"    • {issue}")
+
+
 def _summarize_conflict(content: str) -> List[str]:
     lines = content.splitlines()
     summary: List[str] = []
@@ -728,6 +782,7 @@ def main() -> None:
             tool_only=tool_only,
             show_diffs=show_diffs,
         )
+    summarise_guardrails(root)
 
 
 if __name__ == "__main__":

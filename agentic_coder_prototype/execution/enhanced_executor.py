@@ -18,6 +18,18 @@ from .sequence_validator import SequenceValidator
 
 logger = logging.getLogger(__name__)
 
+SHELL_WRITE_PATTERNS_DEFAULT = [
+    "cat >",
+    "cat>>",
+    "cat <<",
+    "tee ",
+    "printf ",
+    "python - <<",
+    "python3 - <<",
+    "bash -lc 'cat",
+    "bash -lc \"cat",
+]
+
 class EnhancedToolExecutor:
     """Tool executor with validation, tracking, and LSP integration"""
     
@@ -87,6 +99,17 @@ class EnhancedToolExecutor:
         # Tool execution hooks
         self.pre_execution_hooks: List[Callable] = []
         self.post_execution_hooks: List[Callable] = []
+        self._latest_lsp_summary: Dict[str, Any] = {}
+        self._latest_lsp_summary: Dict[str, Any] = {}
+
+        loop_cfg = (self.config.get("loop", {}) or {})
+        guardrails_cfg = (loop_cfg.get("guardrails", {}) or {})
+        shell_write_cfg = guardrails_cfg.get("shell_write", {}) or {}
+        self.shell_write_guard = {
+            "enabled": bool(shell_write_cfg.get("enabled", False)),
+            "message": shell_write_cfg.get("validation_message"),
+            "patterns": list(shell_write_cfg.get("blocked_patterns") or []),
+        }
         
         logger.info(f"Initialized EnhancedToolExecutor (validation={'enabled' if self.sequence_validator else 'disabled'}, "
                    f"lsp={'enabled' if self.lsp_enabled else 'disabled'})")
@@ -247,6 +270,13 @@ class EnhancedToolExecutor:
                         "validation_failure": True,
                         "hint": "Ensure a Makefile exists defining targets: all, test, clean before running make"
                     }
+                shell_guard_error = self._preflight_check_shell_write(cmd_raw)
+                if shell_guard_error:
+                    return {
+                        "error": shell_guard_error,
+                        "validation_failure": True,
+                        "guardrail": "shell_write_blocked",
+                    }
         except Exception:
             # Preflight should never crash execution path; ignore failures
             pass
@@ -304,6 +334,7 @@ class EnhancedToolExecutor:
                         diagnostics = self.lsp.get_diagnostics()
                     if diagnostics:
                         result["lsp_diagnostics"] = diagnostics
+                        self._capture_lsp_metrics(diagnostics)
                 except Exception:
                     pass
         
@@ -382,6 +413,26 @@ class EnhancedToolExecutor:
             # Be permissive on unexpected errors
             return None
 
+        return None
+
+    def _preflight_check_shell_write(self, command: str) -> Optional[str]:
+        """Block bash heredocs/redirections used for file writes."""
+        guard_cfg = getattr(self, "shell_write_guard", {}) or {}
+        if not guard_cfg.get("enabled") or not command:
+            return None
+
+        patterns = guard_cfg.get("patterns") or []
+        lowered = command.lower()
+        for pattern in list(patterns) + SHELL_WRITE_PATTERNS_DEFAULT:
+            pat = str(pattern).strip().lower()
+            if not pat:
+                continue
+            if pat in lowered:
+                return guard_cfg.get("message") or (
+                    "<VALIDATION_ERROR>\n"
+                    "Do not use bash heredocs or redirection to write files. Use write/patch tools instead.\n"
+                    "</VALIDATION_ERROR>"
+                )
         return None
     
     async def _execute_raw_tool_call(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
@@ -464,6 +515,10 @@ class EnhancedToolExecutor:
         # Format LSP diagnostics if available in result
         if self.lsp_enabled and self.format_lsp_feedback and isinstance(result, dict) and "lsp_diagnostics" in result:
             lsp_diagnostics = result["lsp_diagnostics"]
+            try:
+                self._capture_lsp_metrics(lsp_diagnostics)
+            except Exception:
+                pass
             operation_type = tool_call.get("function", "operation")
             
             # Format diagnostics into user-friendly feedback
@@ -530,6 +585,33 @@ class EnhancedToolExecutor:
                 feedback += f"\n... and {len(error_details) - 5} more issues"
         
         return feedback
+
+    def _capture_lsp_metrics(self, diagnostics: Dict[str, List]) -> None:
+        """Summarize LSP diagnostics for reward metrics."""
+        total_errors = 0
+        files_with_errors: set[str] = set()
+        diagnostics = diagnostics or {}
+        for file_path, file_diagnostics in diagnostics.items():
+            if not file_diagnostics:
+                continue
+            file_error_count = 0
+            for diag in file_diagnostics:
+                severity = str(diag.get("severity", "error")).lower()
+                if "error" in severity:
+                    file_error_count += 1
+            if file_error_count > 0:
+                total_errors += file_error_count
+                files_with_errors.add(file_path or "<unknown>")
+        self._latest_lsp_summary = {
+            "led_errors": total_errors,
+            "sbs_files_with_issues": len(files_with_errors),
+        }
+
+    def consume_lsp_metrics(self) -> Dict[str, Any]:
+        """Return and clear the latest LSP metrics summary."""
+        summary = dict(self._latest_lsp_summary)
+        self._latest_lsp_summary.clear()
+        return summary
     
     
     def _extract_affected_files(self, tool_call: Dict[str, Any]) -> List[str]:

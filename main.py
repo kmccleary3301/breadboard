@@ -5,11 +5,11 @@ KyleCode - Simplified Agentic Coding System
 A streamlined interface to the agentic coding prototype.
 """
 import argparse
+import json
 import sys
 from pathlib import Path
 
 import os
-from pathlib import Path
 from agentic_coder_prototype import create_agent
 
 
@@ -21,6 +21,7 @@ def main():
     parser.add_argument('-i', '--interactive', action='store_true', help='Start interactive session')
     parser.add_argument('-t', '--task', help='Run a specific task')
     parser.add_argument('-m', '--max-iterations', type=int, default=20, help='Maximum iterations')
+    parser.add_argument('--overrides', help='JSON object of configuration overrides', default=None)
     
     args = parser.parse_args()
     
@@ -68,7 +69,15 @@ def main():
         os.environ['AGENT_SCHEMA_V2_ENABLED'] = '1'
 
     # Create agent
-    agent = create_agent(str(config_path), args.workspace)
+    overrides = None
+    if args.overrides:
+        try:
+            overrides = json.loads(args.overrides)
+        except json.JSONDecodeError as exc:
+            print(f"Error: failed to parse overrides JSON: {exc}")
+            sys.exit(1)
+
+    agent = create_agent(str(config_path), args.workspace, overrides=overrides)
     
     try:
         if args.interactive:

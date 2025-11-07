@@ -11,15 +11,12 @@ providers:
       routing:
         disable_stream_on_probe_failure: true
         disable_native_tools_on_probe_failure: true
-        fallback_models:
-          - openrouter/openai/gpt-4o-mini
-          - gpt-4o-mini
+        fallback_models: []  # Force Grok coverage during benchmarking; re-enable explicit fallbacks once provider stability is confirmed.
 
 prompts:
   packs:
     base:
-      # system: implementations/system_prompts/opencode/system.md
-      system: implementations/system_prompts/default.md
+      system: implementations/system_prompts/opencode/anthropic.md
       plan: implementations/system_prompts/opencode/plan_grok4.md
       builder: implementations/system_prompts/opencode/builder_grok4.md
   tool_prompt_mode: system_compiled_and_persistent_per_turn
@@ -52,6 +49,7 @@ tools:
       - read_file
       - list
       - list_dir
+      - write
       - patch
       - bash
       - mark_task_complete
@@ -81,7 +79,7 @@ modes:
     tools_disabled: [patch, edit, bash, mark_task_complete]
   - name: build
     prompt: "@pack(base).builder"
-    tools_enabled: [read, read_file, list, list_dir, patch, bash, mark_task_complete]
+    tools_enabled: [read, read_file, list, list_dir, write, patch, bash, mark_task_complete]
 
 loop:
   sequence:
@@ -94,12 +92,14 @@ loop:
 turn_strategy:
   allow_multiple_per_turn: true
 
-concurrency:
-  groups:
-    - { name: edits_and_bash, match_tools: [patch, bash], max_parallel: 1 }
+  concurrency:
+    # Phase 5 policy: serialize patch/bash work while letting reads fan out.
+    groups:
+    - { name: edits_and_bash, match_tools: [patch, write, bash], max_parallel: 1 }
   nonblocking_tools: [read, read_file, list, list_dir]
 
 completion:
+  # Require sentinel so CompletionDetector can close if tools are blocked.
   primary: hybrid
   text_sentinels: ["TASK COMPLETE", ">>>>>> END RESPONSE"]
   provider_signals: true

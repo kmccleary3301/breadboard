@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 class ToolCallParsed:
     function: str
     arguments: Dict[str, Any]
+    dialect: str | None = None
 
 
 @dataclass
@@ -38,7 +39,6 @@ class BaseToolDialect(ABC):
     @abstractmethod
     def parse_calls(self, text: str, tools: List[ToolDefinition]) -> List[ToolCallParsed]:  # pragma: no cover - interface
         ...
-
 
 
 

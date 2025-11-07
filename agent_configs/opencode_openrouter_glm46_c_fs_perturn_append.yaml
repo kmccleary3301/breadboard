@@ -1,4 +1,5 @@
 completion:
+  # Keep sentinel + tool handshake consistent with Phase 5 completion detector.
   primary: hybrid
   provider_signals: true
   text_sentinels:
@@ -8,11 +9,17 @@ enhanced_tools:
   enabled: true
   validation:
     enabled: true
+    rules: [read_before_edit]
     rule_config:
-      one_bash_per_turn:
-        turn_window_seconds: 120
-    rules:
-    - one_bash_per_turn
+      read_before_edit:
+        mode: strict
+        require_fresh_read: true
+        max_age_seconds: 900
+  diff_policy:
+    patch_splitting:
+      policy: reject_multi_file
+      max_files_per_patch: 1
+      on_violation: warn_and_split
 extends: opencode_grok4fast_c_fs_v2.yaml
 features:
   plan: true
@@ -61,4 +68,16 @@ providers:
       top_p: 0.9
     routing:
       fallback_models:
-      - openai/gpt-4o-mini
+      - gpt-5-nano
+loop:
+  guardrails:
+    zero_tool_watchdog:
+      warn_after_turns: 2
+      abort_after_turns: 4
+      emit_event: true
+    shell_write:
+      enabled: true
+      validation_message: |
+        <VALIDATION_ERROR>
+        Do not use bash heredocs or redirection to write files. Use the write/patch tools instead.
+        </VALIDATION_ERROR>

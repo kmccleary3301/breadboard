@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional, Set
 from pathlib import Path
 import re
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -97,34 +98,59 @@ class ReadBeforeEditRule(ValidationRule):
     def validate(self, tool_call: Dict[str, Any], context: Dict[str, Any]) -> Optional[str]:
         if not self.enabled:
             return None
-            
+
         function = tool_call.get("function", "")
         if function not in ["apply_unified_patch", "apply_search_replace"]:
             return None
-        
-        # Extract target files
+
         target_files = self._extract_target_files(tool_call)
         if not target_files:
             return None
-        
-        # Check if files were read this session
+
         read_files = set(context.get("files_read_this_session", []))
         created_files = set(context.get("files_created_this_session", []))
-        
+        last_read_map = context.get("files_last_read_at", {}) or {}
+        workspace_root = context.get("workspace_root")
+        strictness = str(self.config.get("mode", self.config.get("strictness", "warn"))).lower()
+        require_fresh = bool(self.config.get("require_fresh_read", False))
+        max_age_raw = self.config.get("max_age_seconds")
+        max_age = float(max_age_raw) if isinstance(max_age_raw, (int, float)) else None
+
         for file_path in target_files:
-            # Skip if file was created this session (content is known)
             if file_path in created_files:
                 continue
-                
-            # Check if file was read
-            if file_path not in read_files:
-                # Only warn for certain scenarios to avoid being too strict
-                strictness = self.config.get("strictness", "warn")
+
+            timestamp = self._lookup_last_read(file_path, last_read_map)
+            if timestamp is None and file_path not in read_files:
                 if strictness == "error":
-                    return f"File {file_path} should be read before editing to understand its content"
-                elif strictness == "warn":
-                    logger.warning(f"File {file_path} is being edited without being read first")
-        
+                    return f"File {file_path} must be read with read_file before editing."
+                logger.warning(f"File {file_path} is being edited without being read first")
+                continue
+
+            if timestamp is not None:
+                if max_age is not None:
+                    age = time.time() - timestamp
+                    if age > max_age:
+                        if strictness == "error":
+                            return f"File {file_path} was last read {int(age)}s ago. Read it again before editing."
+                        logger.warning(f"File {file_path} read timestamp is stale ({int(age)}s); consider re-reading before editing.")
+                        continue
+                if require_fresh:
+                    try:
+                        candidate_path = Path(workspace_root) / file_path if workspace_root else Path(file_path)
+                        if candidate_path.exists():
+                            if candidate_path.stat().st_mtime > timestamp:
+                                if strictness == "error":
+                                    return f"File {file_path} has changed since it was last read. Read it again before editing."
+                                logger.warning(f"File {file_path} mtime exceeds last read timestamp.")
+                        else:
+                            if strictness == "error":
+                                return f"File {file_path} is missing; read the latest state before editing."
+                            logger.warning(f"File {file_path} missing when enforcing read-before-edit guard.")
+                    except Exception:
+                        # Best-effort mtime check; swallow errors to avoid crashing validation.
+                        pass
+
         return None
     
     def _extract_target_files(self, tool_call: Dict[str, Any]) -> List[str]:
@@ -155,6 +181,22 @@ class ReadBeforeEditRule(ValidationRule):
                     if file_path != '/dev/null':
                         files.append(file_path)
         return list(set(files))
+
+    def _lookup_last_read(self, file_path: str, last_read_map: Dict[str, Any]) -> Optional[float]:
+        candidates = [file_path]
+        if file_path.startswith("./"):
+            candidates.append(file_path[2:])
+        else:
+            candidates.append(f"./{file_path}")
+        if file_path.startswith(("a/", "b/")):
+            candidates.append(file_path[2:])
+        for candidate in candidates:
+            if candidate in last_read_map:
+                try:
+                    return float(last_read_map[candidate])
+                except Exception:
+                    continue
+        return None
 
 class NoMixedDialectRule(ValidationRule):
     """Prevent mixing conflicting dialects in rapid succession"""

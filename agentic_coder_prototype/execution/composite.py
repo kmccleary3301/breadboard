@@ -33,9 +33,27 @@ class CompositeToolCaller:
                 if key in seen:
                     continue
                 seen.add(key)
+                if getattr(call, "dialect", None) is None:
+                    call.dialect = self._dialect_identifier(d)
                 all_calls.append(call)
         return all_calls
 
+    @staticmethod
+    def _dialect_identifier(dialect: BaseToolDialect) -> str:
+        identifier = getattr(dialect, "dialect_id", None)
+        if identifier:
+            return str(identifier)
+        if hasattr(dialect, "type_id") and isinstance(dialect.type_id, str):
+            base = dialect.type_id
+        else:
+            base = dialect.__class__.__name__
+        # Convert CamelCaseDialect -> camel_case
+        import re
+
+        name = base.replace("Dialect", "")
+        snake = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+        snake = snake.strip("_") or base.lower()
+        return snake
 
 
 

@@ -1,0 +1,35 @@
+extends: claude_code_sonnet45_c_fs_v2.yaml
+
+enhanced_tools:
+  validation:
+    enabled: true
+    rules: [read_before_edit]
+    rule_config:
+      read_before_edit:
+        mode: strict
+        require_fresh_read: true
+        max_age_seconds: 900
+  diff_policy:
+    patch_splitting:
+      policy: reject_multi_file
+      max_files_per_patch: 1
+      on_violation: warn_and_split
+
+loop:
+  guardrails:
+    zero_tool_watchdog:
+      warn_after_turns: 2
+      abort_after_turns: 4
+      emit_event: true
+    shell_write:
+      enabled: true
+      validation_message: |
+        <VALIDATION_ERROR>
+        Do not use bash heredocs or redirection to write files. Use the Write tool instead.
+        </VALIDATION_ERROR>
+
+features:
+  plan: true
+  todos:
+    enabled: true
+    strict: true

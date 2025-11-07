@@ -58,7 +58,10 @@ class CompletionDetector:
         msg_content: str, 
         choice_finish_reason: str, 
         tool_results: List[Dict[str, Any]] = None,
-        agent_config: Dict[str, Any] = None
+        agent_config: Dict[str, Any] = None,
+        recent_tool_activity: Optional[Dict[str, Any]] = None,
+        assistant_history: Optional[List[str]] = None,
+        mark_tool_available: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         State-of-the-art completion detection using multiple methods.
@@ -67,7 +70,11 @@ class CompletionDetector:
         completion_result = {"completed": False, "method": "none", "confidence": 0.0, "reason": ""}
         
         # Check if mark_task_complete tool is available
-        mark_task_complete_available = self.is_mark_task_complete_available(agent_config or {})
+        mark_task_complete_available = (
+            bool(mark_tool_available)
+            if mark_tool_available is not None
+            else self.is_mark_task_complete_available(agent_config or {})
+        )
         
         # 1. TOOL-BASED COMPLETION (Primary - Highest Confidence)
         if tool_results:
@@ -95,6 +102,21 @@ class CompletionDetector:
                         )
                     }
         
+        # 2b. AUTO-CLOSE HEURISTICS (Plan satisfaction / idle loop)
+        plan_signal = self._detect_plan_satisfaction(msg_content, recent_tool_activity)
+        if plan_signal:
+            plan_signal["reason"] += (
+                " (mark_task_complete unavailable)" if not mark_task_complete_available else ""
+            )
+            return plan_signal
+
+        idle_signal = self._detect_idle_loop(msg_content, assistant_history)
+        if idle_signal:
+            idle_signal["reason"] += (
+                " (mark_task_complete unavailable)" if not mark_task_complete_available else ""
+            )
+            return idle_signal
+
         # 3. PROVIDER FINISH REASON ANALYSIS (Medium Confidence)
         if self.config.get("enable_provider_signals", True) and choice_finish_reason:
             if choice_finish_reason in ["stop", "end_turn", "length"]:
@@ -153,3 +175,75 @@ class CompletionDetector:
         confidence_threshold = self.config.get("confidence_threshold", 0.6)
         return (completion_analysis["method"] == "tool_based" or 
                completion_analysis["confidence"] >= confidence_threshold)
+
+    # --- Internal heuristic helpers -------------------------------------
+
+    def _detect_plan_satisfaction(
+        self,
+        msg_content: Optional[str],
+        recent_tool_activity: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if not msg_content or not recent_tool_activity:
+            return None
+        tools = recent_tool_activity.get("tools") or []
+        if not tools:
+            return None
+        # Require that the inspected tools were read-only (workspace enumeration, file reads)
+        if any(not t.get("read_only", False) for t in tools):
+            return None
+
+        content_lower = msg_content.lower()
+        if "summary" not in content_lower:
+            return None
+
+        bullet_lines = 0
+        for line in msg_content.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith(("-", "*", "•")):
+                bullet_lines += 1
+            else:
+                # Also treat numbered bullets "1." etc.
+                if len(stripped) > 2 and stripped[0].isdigit() and stripped[1] in {".", ")"}:
+                    bullet_lines += 1
+
+        if bullet_lines == 0:
+            return None
+
+        return {
+            "completed": True,
+            "method": "plan_satisfied",
+            "confidence": 0.9,
+            "reason": "Summary provided after read-only inspection",
+        }
+
+    def _detect_idle_loop(
+        self,
+        msg_content: Optional[str],
+        assistant_history: Optional[List[str]],
+    ) -> Optional[Dict[str, Any]]:
+        if not msg_content or not assistant_history:
+            return None
+        normalized_current = self._normalize_for_history(msg_content)
+        if not normalized_current:
+            return None
+        previous = self._normalize_for_history(assistant_history[-1]) if assistant_history else ""
+        if not previous:
+            return None
+        if normalized_current != previous:
+            return None
+
+        return {
+            "completed": True,
+            "method": "idle_loop",
+            "confidence": 0.8,
+            "reason": "Repeated assistant response detected",
+        }
+
+    @staticmethod
+    def _normalize_for_history(text: Optional[str]) -> str:
+        if not text:
+            return ""
+        simplified = " ".join(text.strip().split())
+        return simplified.lower()

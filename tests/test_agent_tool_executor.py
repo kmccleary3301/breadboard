@@ -4,11 +4,67 @@ import time
 from collections import defaultdict
 from unittest import mock
 
+import pytest
+
 from agentic_coder_prototype.execution.agent_executor import AgentToolExecutor
+from agentic_coder_prototype.execution.concurrency_validator import (
+    ConcurrencyConfigError,
+    validate_concurrency_config,
+)
 
 
 def _make_call(function: str, **arguments):
     return types.SimpleNamespace(function=function, arguments=arguments)
+
+
+def test_validate_concurrency_config_normalizes_lists():
+    cfg = validate_concurrency_config({
+        "nonblocking_tools": [" read_file ", "read_file"],
+        "at_most_one_of": ["run_shell", "run_shell "],
+        "groups": [
+            {
+                "name": " reads ",
+                "match_tools": [" read_file ", "list_dir"],
+                "max_parallel": 2,
+            }
+        ],
+    })
+
+    assert cfg["nonblocking_tools"] == ["read_file"]
+    assert cfg["at_most_one_of"] == ["run_shell"]
+    assert cfg["groups"][0]["name"] == "reads"
+    assert cfg["groups"][0]["match_tools"] == ["read_file", "list_dir"]
+    assert cfg["groups"][0]["max_parallel"] == 2
+
+
+def test_validate_concurrency_config_rejects_bad_barrier():
+    with pytest.raises(ConcurrencyConfigError):
+        validate_concurrency_config({
+            "groups": [
+                {
+                    "name": "reads",
+                    "match_tools": ["read_file"],
+                    "max_parallel": 1,
+                    "barrier_after": "list_dir",
+                }
+            ]
+        })
+
+
+def test_agent_executor_raises_on_invalid_concurrency():
+    with pytest.raises(ValueError) as exc:
+        AgentToolExecutor(
+            {
+                "concurrency": {
+                    "groups": [
+                        {"match_tools": ["read_file"], "max_parallel": 0},
+                    ]
+                }
+            },
+            workspace="/tmp",
+        )
+
+    assert "max_parallel" in str(exc.value)
 
 
 def test_at_most_one_of_enforced_with_alias():
@@ -23,7 +79,7 @@ def test_at_most_one_of_enforced_with_alias():
         _make_call("run_shell", command="pwd"),
     ]
 
-    executed, failed_at, error = executor.execute_parsed_calls(
+    executed, failed_at, error, plan = executor.execute_parsed_calls(
         parsed_calls,
         lambda call: {"stdout": "", "exit": 0},
     )
@@ -32,6 +88,7 @@ def test_at_most_one_of_enforced_with_alias():
     assert failed_at == -1
     assert error and error.get("constraint_violation")
     assert "Only one" in error["error"]
+    assert plan["strategy"] == "constraint_violation"
 
 
 def test_concurrency_group_max_parallel_applies():
@@ -52,7 +109,7 @@ def test_concurrency_group_max_parallel_applies():
         "execute_calls_concurrent",
         wraps=executor.execute_calls_concurrent,
     ) as mocked:
-        executed, failed_at, error = executor.execute_parsed_calls(
+        executed, failed_at, error, plan = executor.execute_parsed_calls(
             parsed_calls,
             lambda call: {"ok": True},
         )
@@ -63,6 +120,7 @@ def test_concurrency_group_max_parallel_applies():
     mocked.assert_called_once()
     # max_workers passed positionally as the fourth argument
     assert mocked.call_args.args[3] == 2
+    assert plan["strategy"] == "nonblocking_concurrent"
 
 
 def test_barrier_after_forces_sequential():
@@ -129,13 +187,14 @@ def test_group_concurrency_limit_is_enforced_during_execution():
             with lock:
                 active_counts[group_id] -= 1
 
-    executed, failed_at, error = executor.execute_parsed_calls(parsed_calls, exec_stub)
+    executed, failed_at, error, plan = executor.execute_parsed_calls(parsed_calls, exec_stub)
 
     assert error is None
     assert failed_at == -1
     assert len(executed) == len(parsed_calls)
     assert max_seen[read_group] <= 3
     assert max_seen[list_group] <= 2
+    assert plan["strategy"] == "nonblocking_concurrent"
 
 
 def test_alias_canonicalization_applied_before_execution():
@@ -152,9 +211,10 @@ def test_alias_canonicalization_applied_before_execution():
         return {"ok": True}
 
     parsed_calls = [_make_call("patch", patch="diff")]
-    executed, failed_at, error = executor.execute_parsed_calls(parsed_calls, exec_stub)
+    executed, failed_at, error, plan = executor.execute_parsed_calls(parsed_calls, exec_stub)
 
     assert error is None
     assert failed_at == -1
     assert len(executed) == 1
     assert seen == ["apply_unified_patch"]
+    assert plan["strategy"] in {"nonblocking_concurrent", "sequential"}

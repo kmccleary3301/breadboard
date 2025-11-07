@@ -24,6 +24,8 @@ class ProviderMetricsCollector:
     circuit_skips: List[str] = field(default_factory=list)
     stream_overrides: List[Dict[str, Any]] = field(default_factory=list)
     tool_overrides: List[Dict[str, Any]] = field(default_factory=list)
+    dialect_metrics: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    concurrency_samples: List[Dict[str, Any]] = field(default_factory=list)
 
     def reset(self) -> None:
         self.calls.clear()
@@ -31,6 +33,8 @@ class ProviderMetricsCollector:
         self.circuit_skips.clear()
         self.stream_overrides.clear()
         self.tool_overrides.clear()
+        self.dialect_metrics.clear()
+        self.concurrency_samples.clear()
 
     def add_call(
         self,
@@ -83,6 +87,54 @@ class ProviderMetricsCollector:
             }
         )
 
+    def add_dialect_metric(
+        self,
+        *,
+        dialect: str,
+        tool: str,
+        pas: float,
+        hmr: Optional[float] = None,
+    ) -> None:
+        stats = self.dialect_metrics.setdefault(
+            dialect,
+            {
+                "calls": 0,
+                "pas_sum": 0.0,
+                "pas_count": 0,
+                "hmr_sum": 0.0,
+                "hmr_count": 0,
+                "tools": {},
+            },
+        )
+        stats["calls"] += 1
+        stats["pas_sum"] += float(pas)
+        stats["pas_count"] += 1
+        if hmr is not None:
+            stats["hmr_sum"] += float(hmr)
+            stats["hmr_count"] += 1
+        tool_stats = stats.setdefault("tools", {})
+        tool_entry = tool_stats.setdefault(
+            tool,
+            {
+                "calls": 0,
+            },
+        )
+        tool_entry["calls"] += 1
+
+    def add_concurrency_sample(self, *, turn: Optional[int], plan: Dict[str, Any]) -> None:
+        self.concurrency_samples.append(
+            {
+                "turn": turn,
+                "strategy": plan.get("strategy"),
+                "can_run_concurrent": bool(plan.get("can_run_concurrent")),
+                "max_workers": plan.get("max_workers"),
+                "group_counts": dict(plan.get("group_counts") or {}),
+                "group_limits": dict(plan.get("group_limits") or {}),
+                "total_calls": plan.get("total_calls"),
+                "executed_calls": plan.get("executed_calls"),
+            }
+        )
+
     def _aggregate_routes(self) -> Dict[str, Dict[str, Any]]:
         routes: Dict[str, Dict[str, Any]] = {}
         for call in self.calls:
@@ -121,6 +173,18 @@ class ProviderMetricsCollector:
         total_errors = total_calls - total_success
         html_errors = sum(1 for call in self.calls if call.html_detected)
 
+        dialects: Dict[str, Dict[str, Any]] = {}
+        for dialect, stats in self.dialect_metrics.items():
+            pas_count = max(stats.get("pas_count", 0), 1)
+            hmr_count = stats.get("hmr_count", 0)
+            entry = {
+                "calls": stats.get("calls", 0),
+                "pas_avg": stats.get("pas_sum", 0.0) / pas_count,
+                "hmr_avg": (stats.get("hmr_sum", 0.0) / hmr_count) if hmr_count else None,
+                "tools": stats.get("tools", {}),
+            }
+            dialects[dialect] = entry
+
         return {
             "summary": {
                 "calls": total_calls,
@@ -136,4 +200,6 @@ class ProviderMetricsCollector:
             "circuit_skips": list(self.circuit_skips),
             "stream_overrides": list(self.stream_overrides),
             "tool_overrides": list(self.tool_overrides),
+            "dialects": dialects,
+            "concurrency_samples": list(self.concurrency_samples),
         }

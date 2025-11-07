@@ -65,22 +65,53 @@ def post_event(endpoint: str, payload: Dict[str, Any]) -> None:
 
 
 def aggregate(events: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
-    summary: Dict[str, Any] = {"calls": 0, "errors": 0, "html_errors": 0, "routes": {}}
+    summary: Dict[str, Any] = {
+        "calls": 0,
+        "errors": 0,
+        "html_errors": 0,
+        "routes": {},
+        "reward_metrics": {"turns": 0, "metrics": {}},
+    }
     for event in events:
-        if event.get("event") != "provider_metrics":
+        kind = event.get("event")
+        if kind == "provider_metrics":
+            details = event.get("summary") or {}
+            summary["calls"] += int(details.get("calls", 0))
+            summary["errors"] += int(details.get("errors", 0))
+            summary["html_errors"] += int(details.get("html_errors", 0))
+            for route, data in (event.get("routes") or {}).items():
+                route_entry = summary["routes"].setdefault(
+                    route,
+                    {"calls": 0, "errors": 0, "html_errors": 0},
+                )
+                route_entry["calls"] += int(data.get("calls", 0))
+                route_entry["errors"] += int(data.get("errors", 0))
+                route_entry["html_errors"] += int(data.get("html_errors", 0))
+        elif kind == "reward_metrics":
+            turns = event.get("turns") or []
+            reward_summary = summary["reward_metrics"]
+            reward_summary["turns"] += len(turns)
+            metrics_summary = reward_summary["metrics"]
+            for turn_payload in turns:
+                for name, value in (turn_payload.get("metrics") or {}).items():
+                    try:
+                        numeric_value = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    entry = metrics_summary.setdefault(name, {"count": 0, "sum": 0.0})
+                    entry["count"] += 1
+                    entry["sum"] += numeric_value
+        else:
             continue
-        details = event.get("summary") or {}
-        summary["calls"] += int(details.get("calls", 0))
-        summary["errors"] += int(details.get("errors", 0))
-        summary["html_errors"] += int(details.get("html_errors", 0))
-        for route, data in (event.get("routes") or {}).items():
-            route_entry = summary["routes"].setdefault(
-                route,
-                {"calls": 0, "errors": 0, "html_errors": 0},
-            )
-            route_entry["calls"] += int(data.get("calls", 0))
-            route_entry["errors"] += int(data.get("errors", 0))
-            route_entry["html_errors"] += int(data.get("html_errors", 0))
+
+    # Compute averages for reward metrics
+    reward_metrics = summary["reward_metrics"]["metrics"]
+    for name, entry in list(reward_metrics.items()):
+        count = entry.get("count", 0)
+        if count <= 0:
+            reward_metrics.pop(name, None)
+            continue
+        entry["avg"] = entry["sum"] / count
     return summary
 
 
@@ -91,7 +122,7 @@ def main() -> int:
 
     if args.http_endpoint:
         for event in events:
-            if event.get("event") == "provider_metrics":
+            if event.get("event") in {"provider_metrics", "reward_metrics"}:
                 post_event(args.http_endpoint, event)
         return 0
 

@@ -1,0 +1,95 @@
+extends: base_v2.yaml
+
+profile: { name: claude-code-sonnet45-c-fs }
+
+providers:
+  default_model: anthropic/claude-3-7-sonnet
+  models:
+    - id: anthropic/claude-3-7-sonnet
+      adapter: anthropic
+      params:
+        tool_use: true
+        temperature: 0.1
+      routing:
+        fallback_models: []
+
+prompts:
+  packs:
+    base:
+      system: implementations/system_prompts/claude_code/system-identity.prompt.md
+      plan: implementations/system_prompts/claude_code/system-workflow.prompt.md
+      builder: implementations/system_prompts/claude_code/system-workflow.prompt.md
+      compact: implementations/system_prompts/claude_code/system-workflow.prompt.md
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  injection:
+    system_order:
+      - '@pack(base).system'
+  tool_prompt_synthesis:
+    enabled: false
+
+modes:
+  - name: plan
+    prompt: "@pack(base).plan"
+    tools_enabled: [Read, List, TodoWrite]
+    tools_disabled: [apply_unified_patch, apply_search_replace, write, create_file_from_block, patch, Bash, run_shell, mark_task_complete]
+  - name: build
+    prompt: "@pack(base).builder"
+    tools_enabled: [Read, List, Write, create_file_from_block, apply_unified_patch, apply_search_replace, Bash, run_shell, TodoWrite, mark_task_complete]
+  - name: compact
+    prompt: "@pack(base).compact"
+    tools_enabled: []
+
+loop:
+  sequence:
+    - if: "features.plan"
+      then: { mode: plan }
+    - mode: build
+  plan_turn_limit: 1
+  turn_strategy:
+    relay: tool_role
+    flow: assistant_continuation
+    allow_multiple_per_turn: true
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs
+    include:
+      - read_file
+      - list_dir
+      - create_file_from_block
+      - apply_unified_patch
+      - run_shell
+      - mark_task_complete
+      - TodoWrite
+  overlays:
+    - rename:
+        read_file: Read
+        list_dir: List
+        create_file_from_block: Write
+        run_shell: Bash
+  aliases: {}
+  dialects:
+    preference:
+      default: [aider_search_replace, unified_diff, bash_block]
+      by_model:
+        "anthropic/*":
+          order: [aider_search_replace, unified_diff, bash_block]
+    selection:
+      by_model:
+        "anthropic/*": [aider_search_replace, unified_diff]
+
+features:
+  plan: true
+  todos:
+    enabled: true
+    strict: true
+
+workspace:
+  root: ./agent_ws_claude
+  sandbox:
+    driver: process
+  mirror:
+    enabled: false
+    path: ./agent_ws_claude
+    mode: development

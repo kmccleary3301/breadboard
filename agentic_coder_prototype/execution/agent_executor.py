@@ -2,18 +2,22 @@
 Agent-level tool execution coordination and policy enforcement
 """
 
-import json
 import concurrent.futures
 import threading
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Callable, Set
+
+from .concurrency_validator import (
+    ConcurrencyConfigError,
+    validate_concurrency_config,
+)
 
 
 class AgentToolExecutor:
     """Coordinates tool execution with policy enforcement and concurrency management"""
     
     def __init__(self, config: Dict[str, Any], workspace: str):
-        self.config = config
+        self.config = config or {}
         self.workspace = workspace
         self.enhanced_executor = None
         self.config_validator = None
@@ -23,6 +27,13 @@ class AgentToolExecutor:
         self.barrier_tools: Set[str] = set()
         self.tool_to_group: Dict[str, Dict[str, Any]] = {}
         self.concurrency_groups: List[Dict[str, Any]] = []
+
+        raw_concurrency = (self.config.get("concurrency") if isinstance(self.config, dict) else None)
+        try:
+            self._validated_concurrency = validate_concurrency_config(raw_concurrency)
+        except ConcurrencyConfigError as exc:
+            raise ValueError(f"Invalid concurrency configuration: {exc}") from exc
+
         self._load_concurrency_config()
     
     def set_enhanced_executor(self, enhanced_executor):
@@ -52,7 +63,7 @@ class AgentToolExecutor:
         raw_aliases = {str(k): str(v) for k, v in (tools_cfg.get("aliases") or {}).items()}
         self.alias_map = raw_aliases
 
-        conc_cfg = (self.config.get("concurrency", {}) or {})
+        conc_cfg = dict(self._validated_concurrency)
 
         nb_override = conc_cfg.get("nonblocking_tools", []) or []
         default_nb = [
@@ -164,9 +175,19 @@ class AgentToolExecutor:
         barrier_triggered = False
         nonblocking_calls: List[Any] = []
 
+        group_counts_all: Dict[str, int] = defaultdict(int)
+        group_limits_all: Dict[str, int] = {}
+
         for call in parsed_calls:
             tool_name = self._canonical_tool_name(getattr(call, "function", ""))
             group = self.tool_to_group.get(tool_name)
+            if group:
+                gid = group.get("_id") or str(id(group))
+                group_counts_all[gid] += 1
+                limit = int(group.get("max_parallel", 1))
+                if limit < 1:
+                    limit = 1
+                group_limits_all[gid] = limit
 
             if tool_name in self.barrier_tools or (group and group.get("barrier_after") == tool_name):
                 barrier_triggered = True
@@ -177,6 +198,8 @@ class AgentToolExecutor:
                     "strategy": "sequential",
                     "can_run_concurrent": False,
                     "max_workers": 1,
+                    "group_counts": dict(group_counts_all),
+                    "group_limits": dict(group_limits_all),
                 }
 
             is_nonblocking = tool_name in self.nonblocking_names or (group and int(group.get("max_parallel", 1)) > 1)
@@ -196,6 +219,8 @@ class AgentToolExecutor:
                 "strategy": "sequential",
                 "can_run_concurrent": False,
                 "max_workers": 1,
+                "group_counts": dict(group_counts_all),
+                "group_limits": dict(group_limits_all),
             }
 
         # Determine effective max workers respecting group limits
@@ -227,6 +252,8 @@ class AgentToolExecutor:
                 "strategy": "sequential",
                 "can_run_concurrent": False,
                 "max_workers": 1,
+                "group_counts": dict(group_counts_all),
+                "group_limits": dict(group_limits_all),
             }
 
         max_workers = min(len(nonblocking_calls), concurrency_budget, 8)
@@ -237,6 +264,7 @@ class AgentToolExecutor:
             "can_run_concurrent": True,
             "max_workers": max_workers,
             "group_limits": per_group_limits,
+            "group_counts": dict(per_group_counts) or dict(group_counts_all),
         }
 
     def execute_tool_call(self, tool_call: Dict[str, Any], exec_func: Callable) -> Dict[str, Any]:
@@ -394,16 +422,43 @@ class AgentToolExecutor:
         tool_calls_for_validation = [{"name": p.function, "args": p.arguments} for p in normalized_calls]
         validation_error = self.validate_tool_calls(tool_calls_for_validation)
         if validation_error:
-            return [], -1, validation_error
+            meta = {
+                "strategy": "validation_failed",
+                "can_run_concurrent": False,
+                "group_counts": {},
+                "group_limits": {},
+                "max_workers": 1,
+                "total_calls": len(normalized_calls),
+                "executed_calls": 0,
+            }
+            return [], -1, validation_error, meta
 
         # Check completion isolation
         isolation_error = self.check_completion_isolation(normalized_calls)
         if isolation_error:
-            return [], -1, {"error": isolation_error, "constraint_violation": True}
+            meta = {
+                "strategy": "constraint_violation",
+                "can_run_concurrent": False,
+                "group_counts": {},
+                "group_limits": {},
+                "max_workers": 1,
+                "total_calls": len(normalized_calls),
+                "executed_calls": 0,
+            }
+            return [], -1, {"error": isolation_error, "constraint_violation": True}, meta
 
         amo_error = self.check_at_most_one_of(normalized_calls)
         if amo_error:
-            return [], -1, {"error": amo_error, "constraint_violation": True}
+            meta = {
+                "strategy": "constraint_violation",
+                "can_run_concurrent": False,
+                "group_counts": {},
+                "group_limits": {},
+                "max_workers": 1,
+                "total_calls": len(normalized_calls),
+                "executed_calls": 0,
+            }
+            return [], -1, {"error": amo_error, "constraint_violation": True}, meta
 
         # Reorder operations for optimal execution
         reordered_calls = self.reorder_operations(normalized_calls)
@@ -411,6 +466,15 @@ class AgentToolExecutor:
         # Determine execution strategy
         strategy = self.determine_execution_strategy(reordered_calls)
         calls_to_execute = strategy["calls_to_execute"]
+        plan_metadata = {
+            "strategy": strategy.get("strategy", "sequential"),
+            "can_run_concurrent": bool(strategy.get("can_run_concurrent")),
+            "max_workers": strategy.get("max_workers", 1),
+            "group_counts": strategy.get("group_counts", {}),
+            "group_limits": strategy.get("group_limits", {}),
+            "total_calls": len(normalized_calls),
+            "executed_calls": len(calls_to_execute),
+        }
 
         # Execute calls based on strategy
         if strategy["can_run_concurrent"]:
@@ -421,5 +485,5 @@ class AgentToolExecutor:
             executed_results, failed_at_index = self.execute_calls_sequential(
                 calls_to_execute, exec_func, transcript_callback
             )
-        
-        return executed_results, failed_at_index, None
+
+        return executed_results, failed_at_index, None, plan_metadata

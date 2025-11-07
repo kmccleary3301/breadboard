@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
-from typing import Any, Dict, List, Optional
+import logging
+from typing import Any, Dict, List, Optional, Tuple, Callable
 from pathlib import Path
 
 import ray
@@ -21,14 +22,19 @@ from .compilation.tool_yaml_loader import load_yaml_tools
 from .compilation.system_prompt_compiler import get_compiler
 
 
+logger = logging.getLogger(__name__)
+
+
 class AgenticCoder:
     """Simplified agentic coder interface."""
     
-    def __init__(self, config_path: str, workspace_dir: Optional[str] = None):
+    def __init__(self, config_path: str, workspace_dir: Optional[str] = None, overrides: Optional[Dict[str, Any]] = None):
         """Initialize the agentic coder with a config file."""
         self.config_path = config_path
         # Load config first so we can honor V2 workspace.root
         self.config = self._load_config()
+        if overrides:
+            self._apply_overrides(overrides)
         # Prefer v2 workspace.root if provided
         v2_ws_root = None
         try:
@@ -47,6 +53,79 @@ class AgenticCoder:
             # Fallback to legacy loader for resilience
             with open(self.config_path, 'r') as f:
                 return json.load(f) if self.config_path.endswith('.json') else __import__('yaml').safe_load(f)
+
+    def _apply_overrides(self, overrides: Dict[str, Any]) -> None:
+        for dotted_path, value in overrides.items():
+            try:
+                tokens = self._tokenize_path(dotted_path)
+                self._set_nested_value(self.config, tokens, value)
+            except Exception:
+                continue
+
+    @staticmethod
+    def _tokenize_path(path: str) -> List[Any]:
+        tokens: List[Any] = []
+        parts = path.split('.')
+        for part in parts:
+            cursor = part
+            while cursor:
+                if '[' in cursor:
+                    name, rest = cursor.split('[', 1)
+                    if name:
+                        tokens.append(name)
+                    idx_str, _, remainder = rest.partition(']')
+                    if idx_str.isdigit():
+                        tokens.append(int(idx_str))
+                    cursor = remainder.lstrip('.') if remainder.startswith('.') else remainder
+                else:
+                    tokens.append(cursor)
+                    cursor = ''
+        return tokens
+
+    @staticmethod
+    def _set_nested_value(config: Any, tokens: List[Any], value: Any) -> None:
+        current = config
+        parent_stack: List[Tuple[Any, Any]] = []
+        for idx, token in enumerate(tokens):
+            is_last = idx == len(tokens) - 1
+            if isinstance(token, str):
+                if not isinstance(current, dict):
+                    if parent_stack:
+                        parent, parent_token = parent_stack[-1]
+                        replacement = {}
+                        if isinstance(parent, dict):
+                            parent[parent_token] = replacement
+                        elif isinstance(parent, list) and isinstance(parent_token, int):
+                            parent[parent_token] = replacement
+                        current = replacement
+                    else:
+                        raise ValueError
+                if is_last:
+                    current[token] = value
+                    return
+                next_token = tokens[idx + 1]
+                if token not in current or current[token] is None:
+                    current[token] = [] if isinstance(next_token, int) else {}
+                parent_stack.append((current, token))
+                current = current[token]
+            else:  # token is int
+                if not isinstance(current, list):
+                    replacement_list: List[Any] = []
+                    if parent_stack:
+                        parent, parent_token = parent_stack[-1]
+                        if isinstance(parent, dict):
+                            parent[parent_token] = replacement_list
+                        elif isinstance(parent, list) and isinstance(parent_token, int):
+                            parent[parent_token] = replacement_list
+                    current = replacement_list
+                while len(current) <= token:
+                    next_token = tokens[idx + 1] if not is_last else None
+                    current.append([] if isinstance(next_token, int) else {})
+                if is_last:
+                    current[token] = value
+                    return
+                parent_stack.append((current, token))
+                current = current[token]
 
     def _resolve_tool_prompt_mode(self) -> Optional[str]:
         """Resolve desired tool prompt mode from configuration."""
@@ -98,7 +177,15 @@ class AgenticCoder:
                 config=self.config,
             )
     
-    def run_task(self, task: str, max_iterations: Optional[int] = None) -> Dict[str, Any]:
+    def run_task(
+        self,
+        task: str,
+        max_iterations: Optional[int] = None,
+        *,
+        stream: bool = False,
+        event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
+        event_queue: Optional[Any] = None,
+    ) -> Dict[str, Any]:
         """Run a single task and return results."""
         if not self.agent:
             self.initialize()
@@ -115,6 +202,13 @@ class AgenticCoder:
         except Exception:
             pass
         # Run empty system prompt to allow v2 compiler to inject packs; user prompt carries content
+        effective_stream = bool(stream) and self._local_mode
+        effective_emitter = event_emitter if self._local_mode else None
+        if event_emitter and not self._local_mode:
+            logger.warning(
+                "Streaming event emitters are currently only supported in local mode; "
+                "falling back to summary events."
+            )
         if self._local_mode:
             return self.agent.run_agentic_loop(
                 "",
@@ -122,9 +216,11 @@ class AgenticCoder:
                 model,
                 max_steps=steps,
                 output_json_path=None,
-                stream_responses=False,
+                stream_responses=effective_stream,
                 output_md_path=None,
                 tool_prompt_mode=tool_prompt_mode,
+                event_emitter=effective_emitter,
+                event_queue=event_queue,
             )
 
         ref = self.agent.run_agentic_loop.remote(
@@ -133,9 +229,11 @@ class AgenticCoder:
             model,
             max_steps=steps,
             output_json_path=None,
-            stream_responses=False,
+            stream_responses=effective_stream,
             output_md_path=None,
             tool_prompt_mode=tool_prompt_mode,
+            event_emitter=effective_emitter,
+            event_queue=event_queue,
         )
         return ray.get(ref)
     
@@ -203,6 +301,6 @@ class AgenticCoder:
         return str(self.config.get("model", "gpt-4o-mini"))
 
 
-def create_agent(config_path: str, workspace_dir: Optional[str] = None) -> AgenticCoder:
+def create_agent(config_path: str, workspace_dir: Optional[str] = None, overrides: Optional[Dict[str, Any]] = None) -> AgenticCoder:
     """Convenient factory function to create an agentic coder."""
-    return AgenticCoder(config_path, workspace_dir)
+    return AgenticCoder(config_path, workspace_dir, overrides=overrides)

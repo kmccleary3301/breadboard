@@ -1,0 +1,34 @@
+id: todo.write_board
+name: TodoWrite
+description: Write or update the full todo checklist. Provide the entire ordered list with statuses so the user can track progress.
+type_id: python
+syntax_formats_supported:
+  - native_function_calling
+  - json_block
+preferred_formats:
+  - native_function_calling
+parameters:
+  - name: todos
+    type: array
+    description: Ordered todo items. Include the entire list every time you update progress.
+    required: true
+    items:
+      type: object
+      properties:
+        content:
+          type: string
+          description: Short description of the task.
+        status:
+          type: string
+          description: One of pending, in_progress, completed, blocked, or canceled.
+        activeForm:
+          type: string
+          description: Optional gerund-style phrasing that describes what you are actively doing for status messaging.
+      required:
+        - content
+        - status
+execution:
+  blocking: false
+provider_routing:
+  anthropic:
+    native_primary: true

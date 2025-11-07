@@ -41,6 +41,7 @@ class WorkspaceStateTracker:
         self.created_files: Set[str] = set()
         self.modified_files: Set[str] = set()
         self.read_files: Set[str] = set()
+        self.read_timestamps: Dict[str, float] = {}
         self.operation_history: List[Operation] = []
         self.session_start = time.time()
         
@@ -74,19 +75,23 @@ class WorkspaceStateTracker:
         
         # Update file tracking if operation succeeded
         if success:
+            now_ts = time.time()
             for file_path in files_affected:
                 normalized_path = self._normalize_path(file_path)
-                
-                if function in ["create_file", "create_file_from_block"]:
+
+                if function in ["create_file", "create_file_from_block", "write"]:
                     self.created_files.add(normalized_path)
+                    self.read_timestamps[normalized_path] = now_ts
                     logger.debug(f"Tracked file creation: {normalized_path}")
-                    
-                elif function in ["apply_unified_patch", "apply_search_replace", "write_file"]:
+
+                if function in ["apply_unified_patch", "apply_search_replace", "write_file", "write"]:
                     self.modified_files.add(normalized_path)
+                    self.read_timestamps[normalized_path] = now_ts
                     logger.debug(f"Tracked file modification: {normalized_path}")
-                    
+
                 elif function in ["read_file"]:
                     self.read_files.add(normalized_path)
+                    self.read_timestamps[normalized_path] = now_ts
                     logger.debug(f"Tracked file read: {normalized_path}")
         
         self.operation_history.append(operation)
@@ -114,14 +119,14 @@ class WorkspaceStateTracker:
             normalized_path = self._normalize_path(file_path)
             
             # Check for redundant file creation
-            if function in ["create_file", "create_file_from_block"]:
-                if normalized_path in self.created_files:
+            if function in ["create_file", "create_file_from_block", "write"]:
+                if function != "write" and normalized_path in self.created_files:
                     return f"File {file_path} already created this session. Use edit tools instead."
-                    
-                # Check if file exists on filesystem
-                full_path = self.workspace_root / file_path
-                if full_path.exists():
-                    return f"File {file_path} already exists. Use edit tools instead."
+
+                if function != "write":
+                    full_path = self.workspace_root / file_path
+                    if full_path.exists():
+                        return f"File {file_path} already exists. Use edit tools instead."
             
             # Validate edit operations have target files
             elif function in ["apply_unified_patch", "apply_search_replace"]:
@@ -149,7 +154,8 @@ class WorkspaceStateTracker:
             "files_read_this_session": sorted(list(self.read_files)),
             "total_operations": len(self.operation_history),
             "recent_operations": [op.to_dict() for op in recent_ops],
-            "file_operation_summary": self._get_file_operation_summary()
+            "file_operation_summary": self._get_file_operation_summary(),
+            "files_last_read_at": self._serialize_read_timestamps()
         }
         
         return context
@@ -165,6 +171,8 @@ class WorkspaceStateTracker:
             files.append(arguments["path"])
         if "file_path" in arguments:
             files.append(arguments["file_path"])
+        if "filePath" in arguments:
+            files.append(arguments["filePath"])
         if "file_name" in arguments:
             files.append(arguments["file_name"])
         if "target_file" in arguments:
@@ -247,8 +255,9 @@ class WorkspaceStateTracker:
     def clear_session_state(self) -> None:
         """Clear all tracked state (for new sessions)"""
         self.created_files.clear()
-        self.modified_files.clear() 
+        self.modified_files.clear()
         self.read_files.clear()
+        self.read_timestamps.clear()
         self.operation_history.clear()
         self.session_start = time.time()
         logger.info("Cleared workspace tracker state")
@@ -260,6 +269,7 @@ class WorkspaceStateTracker:
             "created_files": list(self.created_files),
             "modified_files": list(self.modified_files),
             "read_files": list(self.read_files),
+            "read_timestamps": dict(self.read_timestamps),
             "operation_history": [op.to_dict() for op in self.operation_history],
             "session_start": self.session_start
         }
@@ -269,6 +279,7 @@ class WorkspaceStateTracker:
         self.created_files = set(state.get("created_files", []))
         self.modified_files = set(state.get("modified_files", []))
         self.read_files = set(state.get("read_files", []))
+        self.read_timestamps = {self._normalize_path(k): float(v) for k, v in state.get("read_timestamps", {}).items()}
         self.session_start = state.get("session_start", time.time())
         
         # Reconstruct operation history
@@ -278,3 +289,33 @@ class WorkspaceStateTracker:
             self.operation_history.append(op)
         
         logger.info(f"Imported workspace state with {len(self.operation_history)} operations")
+
+    def require_recent_read(self, file_path: str, *, max_age_seconds: Optional[float] = None) -> Optional[str]:
+        """Ensure a file was read (or written) recently enough before editing."""
+        normalized = self._normalize_path(file_path)
+        last_read = self.read_timestamps.get(normalized)
+        if last_read is None:
+            return f"File {file_path} must be read with read_file before editing."
+
+        if max_age_seconds is not None:
+            age = time.time() - last_read
+            if age > max_age_seconds:
+                return f"File {file_path} was last read {int(age)}s ago. Re-read it before editing to ensure you have the latest content."
+
+        try:
+            full_path = self.workspace_root / normalized
+            if full_path.exists():
+                mtime = full_path.stat().st_mtime
+                if mtime > last_read:
+                    return f"File {file_path} has changed since it was last read. Read it again before editing."
+            else:
+                return f"File {file_path} no longer exists. Read the latest state before editing."
+        except Exception:
+            # Conservative default: if we cannot compute mtime, allow edit but warn via validator.
+            return None
+
+        return None
+
+    def _serialize_read_timestamps(self) -> Dict[str, float]:
+        """Return read timestamps in export-friendly form."""
+        return {path: float(ts) for path, ts in self.read_timestamps.items()}

@@ -8,7 +8,7 @@ import shutil
 import time
 import uuid
 import traceback
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from pathlib import Path
 from types import SimpleNamespace
 from dataclasses import asdict
@@ -49,6 +49,7 @@ from .messaging.message_formatter import MessageFormatter
 from .messaging.markdown_logger import MarkdownLogger
 from .error_handling.error_handler import ErrorHandler
 from .monitoring.telemetry import TelemetryLogger
+from .monitoring.reward_metrics import RewardMetricsSQLiteWriter, TodoMetricsSQLiteWriter
 from .logging_v2 import LoggerV2Manager
 from .logging_v2.api_recorder import APIRequestRecorder
 from .logging_v2.prompt_logger import PromptArtifactLogger
@@ -60,6 +61,12 @@ from .provider_capability_probe import ProviderCapabilityProbeRunner
 from .provider_health import RouteHealthManager
 from .provider_normalizer import normalize_provider_result
 from .provider_metrics import ProviderMetricsCollector
+from .todo import TodoManager, TodoStore
+from .todo.store import TODO_OPEN_STATUSES
+
+ZERO_TOOL_WARN_TURNS = 2
+ZERO_TOOL_ABORT_TURNS = 4
+COMPLETION_GUARD_ABORT_THRESHOLD = 2
 
 
 def compute_tool_prompt_mode(tool_prompt_mode: str, will_use_native_tools: bool, config: Dict[str, Any]) -> str:
@@ -198,6 +205,7 @@ class OpenAIConductor:
         self.workspace = effective_ws
         self.image = image
         self.config = config or {}
+        self._initialize_guardrail_config()
         
         # Initialize components
         self._initialize_dialect_manager()
@@ -227,12 +235,45 @@ class OpenAIConductor:
         self.route_health = RouteHealthManager()
         self._current_route_id: Optional[str] = None
         self.provider_metrics = ProviderMetricsCollector()
+        self._reward_metrics_sqlite: Optional[RewardMetricsSQLiteWriter] = None
+        self._todo_metrics_sqlite: Optional[TodoMetricsSQLiteWriter] = None
         
         # Initialize extracted modules
         self.message_formatter = MessageFormatter(self.workspace)
         self.agent_executor = AgentToolExecutor(self.config, self.workspace)
         self.agent_executor.set_enhanced_executor(self.enhanced_executor)
         self.agent_executor.set_config_validator(self.config_validator)
+        self._last_runtime_latency: Optional[float] = None
+        self._last_html_detected: bool = False
+
+    def _initialize_guardrail_config(self) -> None:
+        """Initialize guardrail toggles from the configuration."""
+        loop_cfg = (self.config.get("loop", {}) or {})
+        guardrails_cfg = (loop_cfg.get("guardrails", {}) or {})
+        zero_tool_cfg = guardrails_cfg.get("zero_tool_watchdog", {}) or {}
+
+        def _coerce_int(value: Any, default: int) -> int:
+            try:
+                if value is None:
+                    return default
+                return int(value)
+            except Exception:
+                return default
+
+        self.zero_tool_warn_turns = _coerce_int(zero_tool_cfg.get("warn_after_turns"), ZERO_TOOL_WARN_TURNS)
+        self.zero_tool_abort_turns = _coerce_int(zero_tool_cfg.get("abort_after_turns"), ZERO_TOOL_ABORT_TURNS)
+        self.zero_tool_emit_event = bool(zero_tool_cfg.get("emit_event", True))
+
+        enhanced_cfg = (self.config.get("enhanced_tools", {}) or {})
+        diff_policy_cfg = (enhanced_cfg.get("diff_policy", {}) or {})
+        patch_cfg = (diff_policy_cfg.get("patch_splitting", {}) or {})
+        policy = str(patch_cfg.get("policy", "auto_split") or "").strip().lower()
+        max_files = patch_cfg.get("max_files_per_patch")
+        self.patch_splitting_policy = {
+            "mode": policy if policy in {"auto_split", "reject_multi_file"} else "auto_split",
+            "max_files": max_files if isinstance(max_files, int) and max_files > 0 else 1,
+            "message": patch_cfg.get("validation_message"),
+        }
 
     def _prepare_workspace(self, workspace: str) -> Path:
         """Ensure the workspace directory exists and is empty before use."""
@@ -436,6 +477,7 @@ class OpenAIConductor:
                 }
             )
             session_state.set_provider_metadata("tool_policy_history", updated_history)
+            session_state.set_provider_metadata("completion_sentinel_required", True)
         except Exception:
             pass
         return updated_cfg
@@ -682,6 +724,689 @@ class OpenAIConductor:
         except Exception:
             return None
 
+    def _completion_tool_config_enabled(self) -> bool:
+        """Determine whether configuration allows the completion tool."""
+        tools_cfg = (self.config.get("tools", {}) or {})
+        # Direct enabled/disabled flag
+        direct_flag = tools_cfg.get("mark_task_complete")
+        if isinstance(direct_flag, bool):
+            if not direct_flag:
+                return False
+            # fall through to other checks if True to honour excludes
+
+        enabled_cfg = tools_cfg.get("enabled")
+        if isinstance(enabled_cfg, dict):
+            if enabled_cfg.get("mark_task_complete") is False:
+                return False
+
+        registry_cfg = (tools_cfg.get("registry", {}) or {})
+        include_list = registry_cfg.get("include")
+        if include_list:
+            try:
+                include_names = {str(name) for name in include_list}
+            except Exception:
+                include_names = set()
+            if include_names and "mark_task_complete" not in include_names:
+                return False
+
+        exclude_list = registry_cfg.get("exclude")
+        if exclude_list:
+            try:
+                exclude_names = {str(name) for name in exclude_list}
+            except Exception:
+                exclude_names = set()
+            if "mark_task_complete" in exclude_names:
+                return False
+
+        return True
+
+    def _ensure_completion_tool(self, tool_defs: List[ToolDefinition]) -> List[ToolDefinition]:
+        """Ensure mark_task_complete tool is present in the tool definitions."""
+        for tool in tool_defs:
+            if getattr(tool, "name", None) == "mark_task_complete":
+                return tool_defs
+        completion_tool = ToolDefinition(
+            type_id="python",
+            name="mark_task_complete",
+            description="Signal that the task is fully complete. When called, the agent will stop the run.",
+            parameters=[],
+            blocking=True,
+        )
+        return tool_defs + [completion_tool]
+
+    @staticmethod
+    def _is_read_only_tool(tool_name: str) -> bool:
+        """Classify tools that only inspect state (used for completion heuristics)."""
+        if not tool_name:
+            return False
+        read_only_tools = {
+            "list_dir",
+            "read_file",
+            "describe_file",
+            "preview_file",
+            "inspect_workspace",
+        }
+        return tool_name in read_only_tools
+
+    @staticmethod
+    def _normalize_assistant_text(text: Optional[str]) -> str:
+        if not text:
+            return ""
+        return " ".join(text.strip().split()).lower()
+
+    def _record_lsp_reward_metrics(
+        self,
+        session_state: SessionState,
+        turn_index: int,
+    ) -> None:
+        """Record LED/SBS metrics based on latest LSP diagnostics."""
+        try:
+            enhanced_executor = getattr(self.agent_executor, "enhanced_executor", None)
+            if not enhanced_executor or not hasattr(enhanced_executor, "consume_lsp_metrics"):
+                return
+            summary = enhanced_executor.consume_lsp_metrics()
+            if not summary:
+                return
+            led_errors = int(summary.get("led_errors", 0))
+            files_with_issues = int(summary.get("sbs_files_with_issues", 0))
+            session_state.add_reward_metric(turn_index, "LED", 1.0 if led_errors == 0 else 0.0)
+            session_state.add_reward_metric(turn_index, "SBS", float(files_with_issues))
+        except Exception:
+            pass
+
+    def _record_test_reward_metric(
+        self,
+        session_state: SessionState,
+        turn_index: int,
+        success_value: Optional[float],
+    ) -> None:
+        if success_value is None:
+            return
+        try:
+            session_state.add_reward_metric(turn_index, "TPF_DELTA", float(success_value))
+        except Exception:
+            pass
+
+    def _should_require_build_guard(self, user_prompt: str) -> bool:
+        guard_cfg = (self.config.get("completion", {}) or {}).get("build_guard", {})
+        explicit = guard_cfg.get("enabled")
+        if explicit is True:
+            return True
+        if explicit is False:
+            return False
+        keywords = guard_cfg.get("keywords") or [
+            "protofs",
+            "filesystem.fs",
+            "proto file system",
+            "filesystem implementation",
+        ]
+        prompt_text = (user_prompt or "").lower()
+        return any(keyword in prompt_text for keyword in keywords)
+
+    def _todo_config(self) -> Dict[str, Any]:
+        features = (self.config.get("features") or {}).get("todos") or {}
+        enabled = bool(features.get("enabled"))
+        return {
+            "enabled": enabled,
+            "strict": bool(features.get("strict", True)) if enabled else False,
+            "reset_streak_on_todo": bool(features.get("reset_streak_on_todo", False)) if enabled else False,
+            "allow_low_priority_open": bool(features.get("allow_low_priority_open", False)) if enabled else False,
+        }
+
+    def _todo_guard_preflight(self, session_state: SessionState, parsed_call, current_mode: Optional[str]) -> Optional[str]:
+        cfg = self._todo_config()
+        if not (cfg["enabled"] and cfg["strict"]):
+            return None
+        manager = session_state.get_todo_manager()
+        if not manager:
+            return None
+        snapshot = manager.snapshot()
+        todos = snapshot.get("todos", []) if isinstance(snapshot, dict) else []
+        has_todos = bool(todos)
+        fn = getattr(parsed_call, "function", "") or ""
+        if current_mode == "plan":
+            side_effect_tools = {
+                "apply_unified_patch",
+                "apply_search_replace",
+                "write",
+                "create_file",
+                "create_file_from_block",
+                "run_shell",
+                "write_text",
+            }
+            if not has_todos and fn in side_effect_tools:
+                return "Plan mode requires creating at least one todo via `todo.create` before using edit or bash tools."
+        return None
+
+    def _emit_todo_guard_violation(
+        self,
+        session_state: SessionState,
+        markdown_logger: MarkdownLogger,
+        reason: str,
+        *,
+        blocked_call: Optional[Any] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Emit standard validation feedback for plan-mode TODO guard violations."""
+        warning = (
+            "<VALIDATION_ERROR>\n"
+            f"{reason}\n"
+            "</VALIDATION_ERROR>"
+        )
+        try:
+            session_state.add_message({"role": "user", "content": warning}, to_provider=True)
+        except Exception:
+            pass
+        try:
+            markdown_logger.log_user_message(warning)
+        except Exception:
+            pass
+        try:
+            session_state.increment_guardrail_counter("todo_plan_violation")
+        except Exception:
+            pass
+        try:
+            session_state.add_transcript_entry({
+                "todo_guard": {
+                    "function": getattr(blocked_call, "function", "") if blocked_call else "",
+                    "reason": reason,
+                }
+            })
+        except Exception:
+            pass
+        if not blocked_call:
+            return None
+        return {
+            "fn": getattr(blocked_call, "function", ""),
+            "provider_fn": getattr(blocked_call, "provider_name", getattr(blocked_call, "function", "")),
+            "out": {"error": reason, "validation_failed": True},
+            "args": getattr(blocked_call, "arguments", {}),
+            "call_id": getattr(blocked_call, "call_id", None),
+            "failed": True,
+        }
+
+    def _maybe_transition_plan_mode(self, session_state: SessionState, markdown_logger: Optional[MarkdownLogger] = None) -> None:
+        """Advance from plan mode to the next mode once TODO prerequisites are satisfied."""
+        current_mode = session_state.get_provider_metadata("current_mode")
+        if current_mode != "plan":
+            return
+
+        manager = session_state.get_todo_manager()
+        snapshot = manager.snapshot() if manager else None
+        todos = snapshot.get("todos", []) if isinstance(snapshot, dict) else []
+        if not todos:
+            return
+
+        try:
+            plan_turns = int(session_state.get_provider_metadata("plan_turns") or 0)
+        except Exception:
+            plan_turns = 0
+        plan_turns += 1
+        session_state.set_provider_metadata("plan_turns", plan_turns)
+
+        try:
+            plan_limit = int(session_state.get_provider_metadata("plan_turn_limit") or 0)
+        except Exception:
+            plan_limit = 0
+
+        if plan_limit and plan_turns < plan_limit:
+            return
+
+        features_cfg = self.config.setdefault("features", {})
+        if features_cfg.get("plan", True):
+            features_cfg["plan"] = False
+            session_state.set_provider_metadata("plan_mode_disabled", True)
+            try:
+                session_state.add_transcript_entry({
+                    "mode_transition": {
+                        "from": "plan",
+                        "to": "build",
+                        "reason": "plan_turn_limit" if plan_limit else "plan_disabled",
+                        "plan_turns": plan_turns,
+                    }
+                })
+            except Exception:
+                pass
+            if markdown_logger:
+                try:
+                    markdown_logger.log_system_message("[mode] Transitioning from plan mode to build mode.")
+                except Exception:
+                    pass
+
+        next_mode = self._resolve_active_mode()
+        session_state.set_provider_metadata("current_mode", next_mode)
+
+    def _prompts_config_with_todos(self) -> Dict[str, Any]:
+        todos_cfg = self._todo_config()
+        if not todos_cfg["enabled"]:
+            return self.config
+        cfg = copy.deepcopy(self.config)
+        prompts_cfg = cfg.setdefault("prompts", {})
+        packs = prompts_cfg.setdefault("packs", {})
+        base_pack = packs.setdefault("base", {})
+        base_pack.setdefault("todo_plan", "implementations/prompts/todos/plan.md")
+        base_pack.setdefault("todo_build", "implementations/prompts/todos/build.md")
+        injection = prompts_cfg.setdefault("injection", {})
+        system_order = injection.setdefault("system_order", [])
+        if "@pack(base).todo_plan" not in system_order:
+            system_order.append("@pack(base).todo_plan")
+        if "@pack(base).todo_build" not in system_order:
+            system_order.append("@pack(base).todo_build")
+        return cfg
+
+    def _completion_guard_check(self, session_state: SessionState) -> Tuple[bool, Optional[str]]:
+        summary = getattr(session_state, "tool_usage_summary", {})
+        total_calls = int(summary.get("total_calls") or 0)
+        if total_calls <= 0:
+            return False, "No tool usage detected yet. Use the available tools (read/diff/bash) to make concrete progress before declaring completion."
+
+        if session_state.get_provider_metadata("requires_build_guard", False):
+            if int(summary.get("successful_writes") or 0) <= 0:
+                return False, "No successful code edits recorded. Apply at least one diff or file creation before completing."
+            if int(summary.get("run_shell_calls") or 0) <= 0:
+                return False, "No shell commands executed. Compile or run the test suite before completing."
+            test_commands = int(summary.get("test_commands") or 0)
+            successful_tests = int(summary.get("successful_tests") or 0)
+            if test_commands > 0 and successful_tests <= 0:
+                return False, "Tests were attempted but none succeeded. Resolve test failures before completion."
+
+        todos_cfg = self._todo_config()
+        if todos_cfg["enabled"] and todos_cfg["strict"]:
+            manager = session_state.get_todo_manager()
+            if manager and manager.has_open_items():
+                snapshot = manager.snapshot()
+                open_titles = [
+                    todo.get("title", "unnamed todo")
+                    for todo in snapshot.get("todos", [])
+                    if todo.get("status") in TODO_OPEN_STATUSES
+                ][:3]
+                reason = "Outstanding todos must be completed or canceled before finishing."
+                if open_titles:
+                    reason += " Pending items: " + "; ".join(open_titles)
+                return False, reason
+
+        return True, None
+
+    def _emit_completion_guard_feedback(
+        self,
+        session_state: SessionState,
+        markdown_logger: MarkdownLogger,
+        reason: str,
+        stream_responses: bool,
+    ) -> bool:
+        failure_count = session_state.increment_guard_failures()
+        remaining = max(COMPLETION_GUARD_ABORT_THRESHOLD - failure_count, 0)
+        advisory_lines = [
+            "<VALIDATION_ERROR>",
+            reason,
+        ]
+        if remaining > 0:
+            advisory_lines.append(f"Completion guard engaged. Provide concrete file edits and successful tests. Warnings remaining before abort: {remaining}.")
+        else:
+            advisory_lines.append("Completion guard engaged repeatedly. The run will now terminate to avoid wasting budget.")
+        advisory_lines.append("</VALIDATION_ERROR>")
+        advisory = "\n".join(advisory_lines)
+
+        session_state.add_message({"role": "user", "content": advisory}, to_provider=True)
+        try:
+            markdown_logger.log_user_message(advisory)
+        except Exception:
+            pass
+        if stream_responses:
+            print(f"[guard] {reason}")
+
+        abort = failure_count >= COMPLETION_GUARD_ABORT_THRESHOLD
+        if abort:
+            session_state.set_provider_metadata("completion_guard_abort", True)
+        return abort
+
+    @staticmethod
+    def _is_test_command(command: str) -> bool:
+        if not command:
+            return False
+        normalized = command.lower()
+        test_keywords = (
+            "pytest",
+            "npm test",
+            "yarn test",
+            "pnpm test",
+            "go test",
+            "cargo test",
+            "mvn test",
+            "gradle test",
+            "bundle exec rspec",
+            "tox",
+        )
+        return any(keyword in normalized for keyword in test_keywords)
+
+    def _record_usage_reward_metrics(
+        self,
+        session_state: SessionState,
+        turn_index: int,
+        usage_raw: Optional[Dict[str, Any]],
+    ) -> None:
+        if not isinstance(usage_raw, dict):
+            return
+        prompt_tokens = usage_raw.get("prompt_tokens") or usage_raw.get("input_tokens")
+        completion_tokens = usage_raw.get("completion_tokens") or usage_raw.get("output_tokens")
+        try:
+            prompt_value = float(prompt_tokens) if prompt_tokens is not None else 0.0
+        except (TypeError, ValueError):
+            prompt_value = 0.0
+        try:
+            completion_value = float(completion_tokens) if completion_tokens is not None else 0.0
+        except (TypeError, ValueError):
+            completion_value = 0.0
+        total_tokens = prompt_value + completion_value
+        try:
+            session_state.add_reward_metric(turn_index, "TE", total_tokens)
+            if total_tokens > 0:
+                toe_value = completion_value / total_tokens
+                session_state.add_reward_metric(turn_index, "TOE", toe_value)
+        except Exception:
+            pass
+        latency = getattr(self, "_last_runtime_latency", None)
+        if latency is not None:
+            try:
+                session_state.add_reward_metric(turn_index, "LE", float(latency))
+            except Exception:
+                pass
+        try:
+            spa_value = 0.0 if getattr(self, "_last_html_detected", False) else 1.0
+            session_state.add_reward_metric(turn_index, "SPA", spa_value)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _count_diff_hunks(text: Optional[str]) -> int:
+        if not text:
+            return 0
+        import re
+
+        pattern = re.compile(r"^@@", re.MULTILINE)
+        matches = pattern.findall(text)
+        # If diff starts with @@ without newline prefix, ensure counted
+        if text.lstrip().startswith("@@") and (not matches or text[0] != "\n"):
+            # matches count already includes starting @@ thanks to re MULTILINE
+            pass
+        return len(matches)
+
+    @staticmethod
+    def _split_patch_blocks(patch_text: str) -> List[str]:
+        if not patch_text:
+            return []
+        lines = patch_text.splitlines()
+        blocks: List[str] = []
+        current: List[str] = []
+        inside_sentinel = False
+
+        for line in lines:
+            if line.startswith("*** Begin Patch"):
+                if current:
+                    blocks.append("\n".join(current).strip() + "\n")
+                    current = []
+                inside_sentinel = True
+            if inside_sentinel or line.startswith("*** Begin Patch"):
+                current.append(line)
+            if line.startswith("*** End Patch"):
+                inside_sentinel = False
+                blocks.append("\n".join(current).strip() + "\n")
+                current = []
+
+        if current:
+            blocks.append("\n".join(current).strip() + "\n")
+
+        if blocks:
+            return [block for block in blocks if block.strip()]
+
+        # Fallback for git-style diff without sentinel markers
+        segments: List[str] = []
+        current = []
+        for line in lines:
+            if line.startswith("diff --git "):
+                if current:
+                    segments.append("\n".join(current).strip() + "\n")
+                    current = []
+            current.append(line)
+        if current:
+            segments.append("\n".join(current).strip() + "\n")
+        return [seg for seg in segments if seg.strip()]
+
+    def _expand_multi_file_patches(
+        self,
+        parsed_calls: List[Any],
+        session_state: SessionState,
+        markdown_logger: MarkdownLogger,
+    ) -> List[Any]:
+        if not parsed_calls:
+            return parsed_calls
+
+        expanded: List[Any] = []
+        policy = getattr(self, "patch_splitting_policy", {}) or {}
+        policy_mode = policy.get("mode", "auto_split")
+        max_files = policy.get("max_files", 1)
+        validation_message = policy.get("message")
+        violation_strategy = str(policy.get("on_violation", "reject") or "").lower()
+        violation_logged = False
+
+        additional_calls = 0
+
+        for call in parsed_calls:
+            if getattr(call, "function", None) != "apply_unified_patch":
+                expanded.append(call)
+                continue
+
+            args = getattr(call, "arguments", {}) or {}
+            patch_text = str(args.get("patch", ""))
+            chunks = self._split_patch_blocks(patch_text)
+            if len(chunks) <= 1:
+                expanded.append(call)
+                continue
+
+            chunk_limit = max_files if isinstance(max_files, int) and max_files > 0 else 1
+            exceeds_limit = len(chunks) > chunk_limit
+
+            if policy_mode == "reject_multi_file" and exceeds_limit:
+                allow_split = violation_strategy in {"auto_split", "warn_split", "warn_and_split"}
+                self._emit_patch_policy_violation(
+                    session_state,
+                    markdown_logger,
+                    chunk_count=len(chunks),
+                    policy_mode=policy_mode,
+                    validation_message=validation_message,
+                )
+                violation_logged = True
+                if not allow_split:
+                    continue
+
+            additional_calls += len(chunks) - 1
+            for chunk in chunks:
+                new_args = dict(args)
+                new_args["patch"] = chunk if chunk.endswith("\n") else chunk + "\n"
+                call_payload = vars(call).copy()
+                call_payload["arguments"] = new_args
+                expanded.append(SimpleNamespace(**call_payload))
+
+        if violation_logged:
+            try:
+                session_state.set_provider_metadata("patch_policy_violation", True)
+            except Exception:
+                pass
+        if additional_calls > 0:
+            try:
+                session_state.add_transcript_entry({
+                    "patch_auto_split": {
+                        "original_calls": len(parsed_calls),
+                        "expanded_calls": len(expanded),
+                        "additional_calls": additional_calls,
+                    }
+                })
+                session_state.set_provider_metadata("auto_split_patch", True)
+            except Exception:
+                pass
+            note = (
+                f"[tooling] Auto-split multi-file patch into {len(expanded)} apply_unified_patch calls "
+                f"(added {additional_calls} extra operations)."
+            )
+            try:
+                markdown_logger.log_system_message(note)
+            except Exception:
+                pass
+
+        return expanded
+
+    def _emit_patch_policy_violation(
+        self,
+        session_state: SessionState,
+        markdown_logger: MarkdownLogger,
+        *,
+        chunk_count: int,
+        policy_mode: str,
+        validation_message: Optional[str],
+    ) -> None:
+        """Emit a validation error when multi-file patch policy is violated."""
+        message = validation_message or (
+            "<VALIDATION_ERROR>\n"
+            "Multi-file patches are disabled in this configuration. Submit one apply_unified_patch per file.\n"
+            "</VALIDATION_ERROR>"
+        )
+        try:
+            session_state.add_message({"role": "user", "content": message}, to_provider=True)
+        except Exception:
+            pass
+        try:
+            markdown_logger.log_user_message(message)
+        except Exception:
+            pass
+        try:
+            session_state.increment_guardrail_counter("patch_policy_violations")
+        except Exception:
+            pass
+        try:
+            session_state.add_transcript_entry({
+                "patch_policy_violation": {
+                    "chunks": chunk_count,
+                    "policy": policy_mode,
+                }
+            })
+        except Exception:
+            pass
+
+    def _validate_structural_artifacts(self, session_state: SessionState) -> List[str]:
+        """Perform lightweight structural checks on key workspace artifacts."""
+        if not session_state.get_provider_metadata("requires_build_guard", False):
+            return []
+
+        issues: List[str] = []
+        workspace_root = Path(self.workspace)
+
+        def _read_text(path: Path) -> Optional[str]:
+            try:
+                return path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                return None
+
+        filesystem_h = workspace_root / "filesystem.h"
+        filesystem_c = workspace_root / "filesystem.c"
+        test_c = workspace_root / "test_filesystem.c"
+
+        header_text = _read_text(filesystem_h)
+        if header_text is None:
+            issues.append("Missing required header file filesystem.h.")
+        else:
+            normalized = header_text.lower()
+            has_guard = "#ifndef" in normalized or "#pragma once" in normalized
+            if not has_guard:
+                issues.append("filesystem.h missing include guard (#ifndef or #pragma once).")
+            if '#include "filesystem.h"' in header_text:
+                issues.append("filesystem.h includes itself; header appears to embed implementation code.")
+
+        source_text = _read_text(filesystem_c)
+        if source_text is None:
+            issues.append("Missing required implementation file filesystem.c.")
+        else:
+            if '#include "filesystem.h"' not in source_text:
+                issues.append('filesystem.c should include "filesystem.h" to stay in sync with the header.')
+
+        test_text = _read_text(test_c)
+        if test_text is None:
+            issues.append("Missing test harness test_filesystem.c.")
+        else:
+            stripped_lines = [
+                line.strip()
+                for line in test_text.splitlines()
+                if line.strip() and not line.strip().startswith("//")
+            ]
+            if not stripped_lines:
+                issues.append("test_filesystem.c is empty.")
+            else:
+                first_token = stripped_lines[0]
+                if not first_token.startswith("#include"):
+                    issues.append(f"test_filesystem.c should start with #include; found '{first_token}'.")
+
+        return issues
+
+    def _record_diff_metrics(
+        self,
+        tool_call: Any,
+        result: Dict[str, Any],
+        *,
+        session_state: Optional[SessionState] = None,
+        turn_index: Optional[int] = None,
+    ) -> None:
+        function = getattr(tool_call, "function", "")
+        dialect = getattr(tool_call, "dialect", None) or "unknown"
+        pas: Optional[float] = None
+        hmr: Optional[float] = None
+
+        if function == "apply_unified_patch":
+            patch_text = ""
+            try:
+                patch_text = str(tool_call.arguments.get("patch", ""))
+            except Exception:
+                patch_text = ""
+            total_hunks = self._count_diff_hunks(patch_text)
+            rejects = (result.get("data") or {}).get("rejects") if isinstance(result, dict) else None
+            failed_hunks = 0
+            if isinstance(rejects, dict):
+                for rej_text in rejects.values():
+                    failed_hunks += self._count_diff_hunks(rej_text)
+            pas = 1.0 if result.get("ok") else 0.0
+            if total_hunks <= 0:
+                hmr = 1.0 if pas else 0.0
+            else:
+                matched = max(total_hunks - failed_hunks, 0)
+                hmr = matched / total_hunks
+        elif function == "apply_search_replace":
+            replacements = None
+            try:
+                replacements = int(result.get("replacements", 0))
+            except Exception:
+                replacements = 0
+            pas = 1.0 if replacements and replacements > 0 else 0.0
+            # Treat HMR equivalent for lack of finer-grained data
+            hmr = pas
+        elif function == "create_file_from_block":
+            pas = 1.0 if not result.get("error") else 0.0
+            hmr = pas
+
+        if pas is not None:
+            try:
+                self.provider_metrics.add_dialect_metric(
+                    dialect=dialect,
+                    tool=function,
+                    pas=float(pas),
+                    hmr=float(hmr) if hmr is not None else None,
+                )
+            except Exception:
+                pass
+            if session_state is not None and isinstance(turn_index, int):
+                try:
+                    session_state.add_reward_metric(turn_index, "PAS", float(pas))
+                    if hmr is not None:
+                        session_state.add_reward_metric(turn_index, "HMR", float(hmr))
+                except Exception:
+                    pass
+
     def create_file(self, path: str) -> Dict[str, Any]:
         return self._ray_get(self.sandbox.write_text.remote(path, ""))
 
@@ -777,7 +1502,7 @@ class OpenAIConductor:
         """Raw tool execution without enhanced features (for compatibility)"""
         name = tool_call["function"]
         args = tool_call["arguments"]
-        
+
         if name == "create_file":
             target = self._normalize_workspace_path(str(args.get("path", "")))
             return self.create_file(target)
@@ -803,7 +1528,7 @@ class OpenAIConductor:
             return self._ray_get(self.sandbox.edit_replace.remote(target, search_text, replace_text, 1))
         if name == "apply_unified_patch":
             patch_text = str(args.get("patch", ""))
-            return self.vcs({
+            result = self.vcs({
                 "action": "apply_patch",
                 "params": {
                     "patch": patch_text,
@@ -813,13 +1538,57 @@ class OpenAIConductor:
                     "keep_rejects": True,
                 },
             })
-        if name == "create_file_from_block":
+            if not result.get("ok"):
+                rejects = (result.get("data") or {}).get("rejects") or {}
+                has_rejects = any(bool(v) for v in rejects.values())
+                if has_rejects:
+                    retries = self._retry_diff_with_aider(patch_text)
+                    if retries is not None:
+                        return retries
+            return result
+        if name == "TodoWrite":
+            return self._execute_todo_tool("todo.write_board", args)
+        if name in {"create_file_from_block", "Write"}:
             path = self._normalize_workspace_path(str(args.get("file_name", "")))
             content = str(args.get("content", ""))
             return self._ray_get(self.sandbox.write_text.remote(path, content))
         if name == "mark_task_complete":
             return {"action": "complete"}
+        if name.startswith("todo."):
+            try:
+                return self._execute_todo_tool(name, args)
+            except ValueError as exc:
+                return {"error": str(exc)}
+        if name in {"run_shell", "Bash"}:
+            command = args.get("command") or args.get("input")
+            timeout = args.get("timeout")
+            return self._ray_get(self.sandbox.run_shell.remote(command, timeout=timeout))
         return {"error": f"unknown tool {name}"}
+
+    def _execute_todo_tool(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        manager = getattr(self, "todo_manager", None)
+        if manager is None:
+            raise ValueError("Todo tools are disabled for this configuration.")
+        payload = args if isinstance(args, dict) else {}
+        if name == "todo.create":
+            return manager.handle_create(payload)
+        if name == "todo.update":
+            return manager.handle_update(payload)
+        if name == "todo.complete":
+            return manager.handle_complete(payload)
+        if name == "todo.cancel":
+            return manager.handle_cancel(payload)
+        if name == "todo.reorder":
+            return manager.handle_reorder(payload)
+        if name == "todo.attach":
+            return manager.handle_attach(payload)
+        if name == "todo.note":
+            return manager.handle_note(payload)
+        if name == "todo.list":
+            return manager.handle_list(payload)
+        if name == "todo.write_board":
+            return manager.handle_write_board(payload)
+        raise ValueError(f"Unsupported todo tool: {name}")
 
     def run_agentic_loop(
         self,
@@ -833,9 +1602,33 @@ class OpenAIConductor:
         tool_prompt_mode: str = "system_once",  # system_once | per_turn_append | system_and_per_turn | none
         completion_sentinel: Optional[str] = ">>>>>> END RESPONSE",
         completion_config: Optional[Dict[str, Any]] = None,
+        event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
+        event_queue: Optional[Any] = None,
     ) -> Dict[str, Any]:
         # Initialize components
-        session_state = SessionState(self.workspace, self.image, self.config)
+        emitter = event_emitter
+        if emitter is None and event_queue is not None:
+            def queue_emitter(event_type: str, payload: Dict[str, Any], turn: Optional[int] = None) -> None:
+                try:
+                    event_queue.put((event_type, payload, turn))
+                except Exception:
+                    pass
+            emitter = queue_emitter
+        self.todo_manager = None
+        session_state = SessionState(self.workspace, self.image, self.config, event_emitter=emitter)
+        session_state.set_provider_metadata("initial_user_prompt", user_prompt or "")
+        session_state.set_provider_metadata(
+            "requires_build_guard",
+            self._should_require_build_guard(user_prompt or ""),
+        )
+        todos_cfg = self._todo_config()
+        if todos_cfg["enabled"]:
+            todo_store = TodoStore(self.workspace)
+            todo_manager = TodoManager(todo_store, session_state.emit_todo_event)
+            session_state.set_todo_manager(todo_manager)
+            session_state.set_provider_metadata("todos_config", todos_cfg)
+            session_state.set_provider_metadata("todo_snapshot", todo_manager.snapshot())
+            self.todo_manager = todo_manager
         completion_detector = CompletionDetector(
             config=completion_config or self.config.get("completion", {}),
             completion_sentinel=completion_sentinel
@@ -853,6 +1646,18 @@ class OpenAIConductor:
         telemetry = TelemetryLogger(telemetry_path)
         self._active_telemetry_logger = telemetry
         error_handler = ErrorHandler(output_json_path)
+
+        telemetry_cfg = self.config.get("telemetry", {}) or {}
+        db_path = telemetry_cfg.get("database_path") or os.environ.get("KC_TELEMETRY_DB")
+        self._reward_metrics_sqlite = None
+        self._todo_metrics_sqlite = None
+        if db_path:
+            try:
+                self._reward_metrics_sqlite = RewardMetricsSQLiteWriter(str(db_path))
+                self._todo_metrics_sqlite = TodoMetricsSQLiteWriter(str(db_path))
+            except Exception:
+                self._reward_metrics_sqlite = None
+                self._todo_metrics_sqlite = None
 
         self._ensure_capability_probes(session_state, markdown_logger)
         self.provider_metrics.reset()
@@ -913,6 +1718,14 @@ class OpenAIConductor:
         # Setup tool definitions and dialects
         tool_defs_yaml = self._tool_defs_from_yaml()
         tool_defs = tool_defs_yaml or self._get_default_tool_definitions()
+
+        completion_tool_enabled = self._completion_tool_config_enabled()
+        if completion_tool_enabled:
+            tool_defs = self._ensure_completion_tool(tool_defs)
+        mark_tool_present = any(getattr(t, "name", None) == "mark_task_complete" for t in tool_defs)
+        session_state.set_provider_metadata("mark_task_complete_available", bool(completion_tool_enabled and mark_tool_present))
+        if not completion_tool_enabled or not mark_tool_present:
+            session_state.set_provider_metadata("completion_sentinel_required", True)
         
         # Create dialect mapping and filter based on model configuration
         dialect_mapping = self._create_dialect_mapping()
@@ -937,7 +1750,9 @@ class OpenAIConductor:
             if int(self.config.get("version", 0)) == 2 and self.config.get("prompts"):
                 mode_name = self._resolve_active_mode()
                 comp = get_compiler()
-                v2 = comp.compile_v2_prompts(self.config, mode_name, tool_defs, active_dialect_names)
+                prompts_cfg = self._prompts_config_with_todos()
+                v2 = comp.compile_v2_prompts(prompts_cfg, mode_name, tool_defs, active_dialect_names)
+                session_state.set_provider_metadata("current_mode", mode_name)
                 system_prompt = v2.get("system") or system_prompt
                 per_turn_prompt = v2.get("per_turn") or ""
                 # Persist compiled system prompt via logging v2
@@ -1029,6 +1844,8 @@ class OpenAIConductor:
                 self.logger_v2.append_text("conversation/conversation.md", self.md_writer.system(system_prompt))
         except Exception:
             pass
+        if session_state.get_provider_metadata("current_mode") is None:
+            session_state.set_provider_metadata("current_mode", self._resolve_active_mode())
         # Use enhanced user content for markdown log
         initial_user_content = session_state.messages[1].get("content", user_prompt)
         markdown_logger.log_user_message(initial_user_content)
@@ -1470,32 +2287,17 @@ class OpenAIConductor:
             active_mode = self._resolve_active_mode()
             loop_cfg = (self.config.get("loop", {}) or {})
             plan_limit = 0
-            plan_turns: Optional[int] = None
             try:
                 plan_limit = int(loop_cfg.get("plan_turn_limit") or 0)
             except Exception:
                 plan_limit = 0
-            if active_mode == "plan" and plan_limit:
-                existing = session_state.get_provider_metadata("plan_turns", 0)
-                plan_turns = int(existing) + 1
-                session_state.set_provider_metadata("plan_turns", plan_turns)
+            if plan_limit:
                 session_state.set_provider_metadata("plan_turn_limit", plan_limit)
+                if session_state.get_provider_metadata("plan_turns") is None:
+                    session_state.set_provider_metadata("plan_turns", 0)
             mode_cfg = self._get_mode_config(active_mode)
             if mode_cfg:
                 prompt_tool_defs = self._filter_tools_by_mode(prompt_tool_defs, mode_cfg)
-            if active_mode == "plan" and plan_limit and plan_turns is not None and plan_turns >= plan_limit:
-                features_cfg = self.config.setdefault("features", {})
-                if features_cfg.get("plan", True):
-                    features_cfg["plan"] = False
-                    session_state.set_provider_metadata("plan_mode_disabled", True)
-                    session_state.add_transcript_entry({
-                        "mode_transition": {
-                            "from": "plan",
-                            "to": "build",
-                            "reason": "plan_turn_limit",
-                            "plan_turns": plan_turns,
-                        }
-                    })
             self._apply_turn_strategy_from_loop()
 
         if tool_prompt_mode == "system_compiled_and_persistent_per_turn":
@@ -1530,7 +2332,7 @@ class OpenAIConductor:
                 "You may call multiple tools in one reply; non-blocking tools may run concurrently.\n"
                 "Some tools are blocking and must run alone in sequence.\n"
                 "Do NOT include any extra prose beyond tool calls or diff blocks.\n"
-                "When you deem the task fully complete, call mark_task_complete().\n"
+                "When you deem the task fully complete, call mark_task_complete(). If you cannot call tools, end your reply with a single line `TASK COMPLETE`.\n"
                 "NEVER use bash to write large file contents (heredocs, echo >>). For files: call create_file() then apply a diff block for contents.\n"
                 "Do NOT include extra prose.\nEND SYSTEM MESSAGE\n"
             )
@@ -1646,14 +2448,79 @@ class OpenAIConductor:
             session_state.set_provider_metadata("steps_taken", steps_taken)
             session_state.set_provider_metadata("max_steps", max_steps)
 
+            payload: Dict[str, Any] = dict(extra_payload) if extra_payload else {}
+
+            artifact_issues = self._validate_structural_artifacts(session_state)
+            if artifact_issues and summary.get("completed", completed):
+                summary["completed"] = False
+                summary["reason"] = "artifact_validation_failed"
+                summary["method"] = "artifact_validation"
+                summary["artifact_issues"] = artifact_issues
+                payload.setdefault("artifact_issues", artifact_issues)
+
             metrics_snapshot = self.provider_metrics.snapshot()
             try:
                 session_state.set_provider_metadata("provider_metrics", metrics_snapshot)
             except Exception:
                 pass
+            reward_metrics_payload = session_state.reward_metrics_payload()
+            try:
+                session_state.set_provider_metadata("reward_metrics", reward_metrics_payload)
+            except Exception:
+                pass
+            todo_snapshot = session_state.todo_snapshot()
+            todo_metrics = None
+            if isinstance(todo_snapshot, dict) and todo_snapshot.get("todos"):
+                todos = todo_snapshot.get("todos", [])
+                journal = todo_snapshot.get("journal", [])
+                status_counts: Dict[str, int] = {}
+                for todo in todos:
+                    status = str(todo.get("status", "todo"))
+                    status_counts[status] = status_counts.get(status, 0) + 1
+                todo_metrics = {
+                    "total": len(todos),
+                    "open": sum(status_counts.get(s, 0) for s in TODO_OPEN_STATUSES),
+                    "done": status_counts.get("done", 0),
+                    "canceled": status_counts.get("canceled", 0),
+                    "blocked": status_counts.get("blocked", 0),
+                    "journal_events": len(journal),
+                }
+                try:
+                    session_state.set_provider_metadata("todo_snapshot", todo_snapshot)
+                    session_state.set_provider_metadata("todo_metrics", todo_metrics)
+                except Exception:
+                    pass
+            guardrail_counters = session_state.get_guardrail_counters()
+            try:
+                session_state.set_provider_metadata("guardrail_counters", guardrail_counters)
+            except Exception:
+                pass
+            self.todo_manager = None
             if getattr(self.logger_v2, "run_dir", None):
                 try:
                     self.logger_v2.write_json("meta/provider_metrics.json", metrics_snapshot)
+                except Exception:
+                    pass
+                try:
+                    if reward_metrics_payload.get("turns"):
+                        self.logger_v2.write_json("meta/reward_metrics.json", reward_metrics_payload)
+                except Exception:
+                    pass
+                try:
+                    run_summary_payload = {
+                        "exit_kind": exit_kind_value,
+                        "steps_taken": steps_taken,
+                        "max_steps": max_steps,
+                        "completion_summary": summary,
+                        "guardrails": guardrail_counters,
+                        "tool_usage": getattr(session_state, "tool_usage_summary", {}),
+                        "artifact_issues": summary.get("artifact_issues", []),
+                    }
+                    if todo_metrics is not None:
+                        run_summary_payload["todo_metrics"] = todo_metrics
+                    if payload:
+                        run_summary_payload["extra_payload"] = payload
+                    self.logger_v2.write_json("meta/run_summary.json", run_summary_payload)
                 except Exception:
                     pass
             telemetry_logger = getattr(self, "_active_telemetry_logger", None)
@@ -1669,6 +2536,33 @@ class OpenAIConductor:
                             "tool_overrides": metrics_snapshot.get("tool_overrides", []),
                         }
                     )
+                    if reward_metrics_payload.get("turns"):
+                        telemetry_logger.log(
+                            {
+                                "event": "reward_metrics",
+                                **reward_metrics_payload,
+                            }
+                        )
+                    if todo_metrics is not None:
+                        telemetry_logger.log(
+                            {
+                                "event": "todo_metrics",
+                                **todo_metrics,
+                            }
+                        )
+                except Exception:
+                    pass
+            run_identifier = "session"
+            if getattr(self.logger_v2, "run_dir", None):
+                run_identifier = os.path.basename(self.logger_v2.run_dir)
+            if self._reward_metrics_sqlite and reward_metrics_payload.get("turns"):
+                try:
+                    self._reward_metrics_sqlite.write(run_identifier, reward_metrics_payload)
+                except Exception:
+                    pass
+            if self._todo_metrics_sqlite and todo_metrics is not None:
+                try:
+                    self._todo_metrics_sqlite.write(run_identifier, todo_metrics)
                 except Exception:
                     pass
 
@@ -1689,8 +2583,8 @@ class OpenAIConductor:
                 "completion_reason": summary.get("reason", default_reason or "unknown"),
                 "completed": summary.get("completed", False),
             }
-            if extra_payload:
-                result_payload.update(extra_payload)
+            if payload:
+                result_payload.update(payload)
             return result_payload
 
         for step_index in range(max_steps):
@@ -1793,6 +2687,80 @@ class OpenAIConductor:
                         break
                 if completed:
                     break
+
+                if session_state.turn_had_tool_activity():
+                    session_state.reset_tool_free_streak()
+                else:
+                    todos_cfg = self._todo_config()
+                    if todos_cfg["enabled"] and todos_cfg["reset_streak_on_todo"] and session_state.turn_had_todo_activity():
+                        session_state.reset_tool_free_streak()
+                        continue
+                    streak = session_state.increment_tool_free_streak()
+                    abort_threshold = getattr(self, "zero_tool_abort_turns", ZERO_TOOL_ABORT_TURNS)
+                    warn_threshold = getattr(self, "zero_tool_warn_turns", ZERO_TOOL_WARN_TURNS)
+                    if abort_threshold and streak >= abort_threshold:
+                        warning = (
+                            "<VALIDATION_ERROR>\n"
+                            "No tool usage detected across multiple turns. The run is being stopped to avoid idle looping.\n"
+                            "</VALIDATION_ERROR>"
+                        )
+                        session_state.add_message({"role": "user", "content": warning}, to_provider=True)
+                        try:
+                            markdown_logger.log_user_message(warning)
+                        except Exception:
+                            pass
+                        if stream_responses:
+                            print("[guard] aborting due to zero tool usage streak")
+                        session_state.completion_summary = {
+                            "completed": False,
+                            "reason": "no_tool_activity",
+                            "method": "policy_violation",
+                        }
+                        extra_payload = {"zero_tool_streak": streak, "threshold": abort_threshold}
+                        if getattr(self, "zero_tool_emit_event", True):
+                            session_state.add_transcript_entry({
+                                "zero_tool_watchdog": {
+                                    "action": "abort",
+                                    "streak": streak,
+                                    "threshold": abort_threshold,
+                                }
+                            })
+                        session_state.increment_guardrail_counter("zero_tool_abort")
+                        return finalize_run("policy_violation", "no_tool_activity", extra_payload)
+                    elif warn_threshold and streak == warn_threshold:
+                        warning = (
+                            "<VALIDATION_ERROR>\n"
+                            "No tool usage detected. Use read/list/diff/bash tools to make progress before responding again.\n"
+                            "</VALIDATION_ERROR>"
+                        )
+                        session_state.add_message({"role": "user", "content": warning}, to_provider=True)
+                        try:
+                            markdown_logger.log_user_message(warning)
+                        except Exception:
+                            pass
+                        if getattr(self, "zero_tool_emit_event", True):
+                            session_state.add_transcript_entry({
+                                "zero_tool_watchdog": {
+                                    "action": "warn",
+                                    "streak": streak,
+                                    "threshold": warn_threshold,
+                                }
+                            })
+                        session_state.increment_guardrail_counter("zero_tool_warnings")
+                        if stream_responses:
+                            print("[guard] zero-tool warning issued")
+
+                if session_state.get_provider_metadata("completion_guard_abort", False):
+                    session_state.completion_summary = {
+                        "completed": False,
+                        "reason": "completion_guard_failed",
+                        "method": "completion_guard",
+                    }
+                    extra_payload = {
+                        "guard_failures": session_state.guard_failure_count(),
+                        "tool_usage_summary": getattr(session_state, "tool_usage_summary", {}),
+                    }
+                    return finalize_run("policy_violation", "completion_guard_failed", extra_payload)
 
             except Exception as e:
                 # Handle provider errors and surface immediately to logs/stdout
@@ -2328,6 +3296,7 @@ class OpenAIConductor:
         runtime_context: ProviderRuntimeContext,
         session_state: SessionState,
         markdown_logger: MarkdownLogger,
+        turn_index: int,
     ) -> Tuple[ProviderResult, bool]:
         """Invoke provider runtime, falling back to non-streaming on failure."""
 
@@ -2335,6 +3304,8 @@ class OpenAIConductor:
         result: Optional[ProviderResult] = None
         last_error: Optional[ProviderRuntimeError] = None
         success_recorded = False
+        self._last_runtime_latency = None
+        self._last_html_detected = False
 
         if self.route_health.is_circuit_open(model):
             notice = (
@@ -2408,6 +3379,8 @@ class OpenAIConductor:
                     elapsed=elapsed,
                     outcome="success",
                 )
+                self._last_runtime_latency = elapsed
+                self._last_html_detected = False
                 return call_result
             except ProviderRuntimeError as exc:
                 elapsed = time.time() - start_time
@@ -2424,6 +3397,8 @@ class OpenAIConductor:
                     html_detected=html_detected,
                     details=details if isinstance(details, dict) else None,
                 )
+                self._last_runtime_latency = elapsed
+                self._last_html_detected = html_detected
                 raise
 
         def _maybe_disable_stream(reason: str) -> None:
@@ -2630,9 +3605,9 @@ class OpenAIConductor:
         # Add tool prompts based on mode
         turn_index = len(session_state.transcript) + 1
         try:
-            session_state.set_provider_metadata("current_turn_index", turn_index)
+            session_state.begin_turn(turn_index)
         except Exception:
-            pass
+            session_state.set_provider_metadata("current_turn_index", turn_index)
         per_turn_written_text = None
         if tool_prompt_mode in ("per_turn_append", "system_and_per_turn"):
             # Build full tool directive text (restored from original logic)
@@ -2643,7 +3618,7 @@ class OpenAIConductor:
                 "You may call multiple tools in one reply; non-blocking tools may run concurrently.\n"
                 "Some tools are blocking and must run alone in sequence.\n"
                 "Do NOT include any extra prose beyond tool calls or diff blocks.\n"
-                "When you deem the task fully complete, call mark_task_complete().\n"
+                "When you deem the task fully complete, call mark_task_complete(). If you cannot call tools, end your reply with a single line `TASK COMPLETE`.\n"
                 "NEVER use bash to write large file contents (heredocs, echo >>). For files: call create_file() then apply a diff block for contents.\n"
                 "Do NOT include extra prose.\nEND SYSTEM MESSAGE\n"
             )
@@ -2805,6 +3780,7 @@ class OpenAIConductor:
             runtime_context,
             session_state,
             markdown_logger,
+            turn_index,
         )
 
         if (self.config.get("features", {}) or {}).get("response_normalizer"):
@@ -2836,6 +3812,10 @@ class OpenAIConductor:
             normalized_usage["model"] = model
         try:
             session_state.set_provider_metadata("usage_normalized", normalized_usage)
+        except Exception:
+            pass
+        try:
+            self._record_usage_reward_metrics(session_state, turn_index, usage_raw)
         except Exception:
             pass
 
@@ -3017,16 +3997,42 @@ class OpenAIConductor:
             session_state.add_transcript_entry({"assistant": msg.content})
             
             # Check for completion
+            assistant_history = session_state.get_provider_metadata("assistant_text_history", [])
+            if not isinstance(assistant_history, list):
+                assistant_history = []
+            recent_tool_activity = session_state.get_provider_metadata("recent_tool_activity")
+            mark_tool_available = session_state.get_provider_metadata("mark_task_complete_available")
             completion_analysis = completion_detector.detect_completion(
                 msg_content=msg.content or "",
                 choice_finish_reason=provider_message.finish_reason,
                 tool_results=[],
-                agent_config=self.config
+                agent_config=self.config,
+                recent_tool_activity=recent_tool_activity,
+                assistant_history=assistant_history,
+                mark_tool_available=mark_tool_available,
             )
             
             session_state.add_transcript_entry({"completion_analysis": completion_analysis})
             
+            normalized_assistant_text = self._normalize_assistant_text(msg.content)
+            if normalized_assistant_text:
+                updated_history = (assistant_history + [normalized_assistant_text])[-5:]
+                session_state.set_provider_metadata("assistant_text_history", updated_history)
+            session_state.set_provider_metadata("recent_tool_activity", None)
+            
             if completion_analysis["completed"] and completion_detector.meets_threshold(completion_analysis):
+                guard_ok, guard_reason = self._completion_guard_check(session_state)
+                if not guard_ok and guard_reason:
+                    abort = self._emit_completion_guard_feedback(
+                        session_state,
+                        markdown_logger,
+                        guard_reason,
+                        stream_responses,
+                    )
+                    if abort:
+                        session_state.set_provider_metadata("completion_guard_abort", True)
+                    return False
+
                 if stream_responses:
                     print(f"[stop] reason={completion_analysis['method']} confidence={completion_analysis['confidence']:.2f} - {completion_analysis['reason']}")
                 session_state.add_transcript_entry({
@@ -3067,9 +4073,26 @@ class OpenAIConductor:
         stream_responses: bool
     ) -> bool:
         """Handle text-based tool calls (simplified version)"""
+        session_state.set_provider_metadata("recent_tool_activity", None)
         parsed = caller.parse_all(msg.content, tool_defs)
+        current_mode = session_state.get_provider_metadata("current_mode")
         if not parsed:
+            # Record assistant message once and enforce plan guard if required.
+            session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=False)
+            session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=True)
+            if current_mode == "plan":
+                manager = session_state.get_todo_manager()
+                snapshot = manager.snapshot() if manager else None
+                todos = snapshot.get("todos", []) if isinstance(snapshot, dict) else []
+                if not todos:
+                    self._emit_todo_guard_violation(
+                        session_state,
+                        markdown_logger,
+                        "Plan mode requires creating at least one todo via `todo.create` before using edit or bash tools.",
+                    )
+                    msg.content = ""
             return False
+        parsed = self._expand_multi_file_patches(parsed, session_state, markdown_logger)
         
         # Add assistant message with synthetic tool calls to main messages (for debugging) only
         # Do NOT add synthetic tool calls to provider messages - that would confuse the provider
@@ -3091,17 +4114,118 @@ class OpenAIConductor:
                 "parsed_tools": [p.function for p in parsed]
             }
         })
+
+        blocked_calls: List[Tuple[Any, str]] = []
+        filtered_calls: List[Any] = []
+        for call in parsed:
+            block_reason = self._todo_guard_preflight(session_state, call, current_mode)
+            if block_reason:
+                blocked_calls.append((call, block_reason))
+            else:
+                filtered_calls.append(call)
+        parsed = filtered_calls
+        if blocked_calls:
+            for blocked_call, reason in blocked_calls:
+                self._emit_todo_guard_violation(
+                    session_state,
+                    markdown_logger,
+                    reason,
+                    blocked_call=blocked_call,
+                )
+        if not parsed:
+            # All calls were blocked; prevent further text handling.
+            msg.content = ""
+            return False
         
         # Execute tool calls
-        executed_results, failed_at_index, execution_error = self.agent_executor.execute_parsed_calls(
+        executed_results, failed_at_index, execution_error, plan_metadata = self.agent_executor.execute_parsed_calls(
             parsed, 
             self._exec_raw,
             transcript_callback=session_state.add_transcript_entry
+        )
+
+        session_state.add_transcript_entry({"tool_execution_plan": plan_metadata})
+        turn_index = session_state.get_provider_metadata("current_turn_index")
+        turn_index_int = turn_index if isinstance(turn_index, int) else None
+        try:
+            self.provider_metrics.add_concurrency_sample(
+                turn=turn_index_int,
+                plan=plan_metadata,
+            )
+        except Exception:
+            pass
+
+        # Record recent tool activity for completion heuristics
+        recent_tools_summary: List[Dict[str, Any]] = []
+        test_success: Optional[float] = None
+        for tool_parsed, tool_result in executed_results:
+            tool_name = getattr(tool_parsed, "function", None)
+            tool_result_dict = tool_result if isinstance(tool_result, dict) else {}
+            self._record_diff_metrics(
+                tool_parsed,
+                tool_result_dict,
+                session_state=session_state,
+                turn_index=turn_index_int,
+            )
+            metadata: Dict[str, Any] = {}
+            command: str = ""
+            guardrail_code = tool_result_dict.get("guardrail")
+            if guardrail_code:
+                try:
+                    session_state.increment_guardrail_counter(str(guardrail_code))
+                except Exception:
+                    pass
+            if tool_name == "run_shell":
+                try:
+                    command = str((getattr(tool_parsed, "arguments", {}) or {}).get("command", ""))
+                except Exception:
+                    command = ""
+                if command and self._is_test_command(command):
+                    exit_code = tool_result_dict.get("exit")
+                    if isinstance(exit_code, int):
+                        success = 1.0 if exit_code == 0 else 0.0
+                        test_success = success if test_success is None else min(test_success, success)
+            success_flag = not self.agent_executor.is_tool_failure(tool_name, tool_result_dict)
+            if tool_name in ("apply_unified_patch", "apply_search_replace", "create_file_from_block"):
+                metadata["is_write"] = True
+            if tool_name == "run_shell":
+                metadata["is_run_shell"] = True
+                metadata["command"] = command
+                exit_code_val = tool_result_dict.get("exit")
+                if isinstance(exit_code_val, int):
+                    metadata["exit_code"] = exit_code_val
+                if command and self._is_test_command(command):
+                    metadata["is_test_command"] = True
+            if isinstance(turn_index_int, int):
+                try:
+                    session_state.record_tool_event(
+                        turn_index_int,
+                        tool_name or "",
+                        success=success_flag,
+                        metadata=metadata,
+                    )
+                except Exception:
+                    pass
+            recent_tools_summary.append({
+                "name": tool_name,
+                "read_only": self._is_read_only_tool(tool_name),
+                "completion_action": isinstance(tool_result, dict) and tool_result.get("action") == "complete",
+            })
+        if turn_index_int is not None:
+            self._record_lsp_reward_metrics(session_state, turn_index_int)
+            self._record_test_reward_metric(session_state, turn_index_int, test_success)
+        session_state.set_provider_metadata(
+            "recent_tool_activity",
+            {
+                "tools": recent_tools_summary,
+                "turn": session_state.get_provider_metadata("current_turn_index"),
+            },
         )
         
         # Handle execution errors
         if execution_error:
             if execution_error.get("validation_failed"):
+                session_state.increment_guardrail_counter("validation_errors")
                 error_msg = error_handler.handle_validation_error(execution_error)
             elif execution_error.get("constraint_violation"):
                 error_msg = error_handler.handle_constraint_violation(execution_error["error"])
@@ -3113,11 +4237,47 @@ class OpenAIConductor:
             
             if stream_responses:
                 print(f"[error] {execution_error.get('error', 'Unknown error')}")
+            try:
+                if turn_index_int is not None:
+                    if execution_error.get("validation_failed"):
+                        session_state.add_reward_metric(turn_index_int, "SVS", 0.0)
+                    session_state.add_reward_metric(turn_index_int, "CPS", 0.0)
+                    self._record_lsp_reward_metrics(session_state, turn_index_int)
+                    if test_success is not None:
+                        self._record_test_reward_metric(session_state, turn_index_int, 0.0)
+            except Exception:
+                pass
             return False
         
+        try:
+            if turn_index_int is not None:
+                session_state.add_reward_metric(turn_index_int, "SVS", 1.0)
+                if plan_metadata.get("total_calls"):
+                    executed_calls = plan_metadata.get("executed_calls", 0)
+                    total_calls = plan_metadata.get("total_calls", 0)
+                    cps_value = 1.0 if executed_calls == total_calls else 0.0
+                    session_state.add_reward_metric(turn_index_int, "CPS", cps_value)
+                if executed_results:
+                    acs_value = 1.0 if failed_at_index == -1 else 0.0
+                    session_state.add_reward_metric(turn_index_int, "ACS", acs_value)
+        except Exception:
+            pass
+
         # Check for completion via tool results
         for tool_parsed, tool_result in executed_results:
             if isinstance(tool_result, dict) and tool_result.get("action") == "complete":
+                guard_ok, guard_reason = self._completion_guard_check(session_state)
+                if not guard_ok and guard_reason:
+                    abort = self._emit_completion_guard_feedback(
+                        session_state,
+                        markdown_logger,
+                        guard_reason,
+                        stream_responses,
+                    )
+                    if abort:
+                        session_state.set_provider_metadata("completion_guard_abort", True)
+                    continue
+
                 # Format and show all executed results including the completion
                 chunks = self.message_formatter.format_execution_results(executed_results, failed_at_index, len(parsed))
                 provider_tool_msg = "\n\n".join(chunks)
@@ -3199,6 +4359,7 @@ class OpenAIConductor:
             except Exception:
                 pass
         
+        self._maybe_transition_plan_mode(session_state, markdown_logger)
         return False
     
     def _handle_native_tool_calls(
@@ -3278,19 +4439,82 @@ class OpenAIConductor:
                 call_obj = SimpleNamespace(function=canonical_fn, arguments=args, provider_name=fn, call_id=call_id)
                 parsed_calls.append(call_obj)
 
+            blocked_calls: List[Tuple[Any, str]] = []
+            current_mode = session_state.get_provider_metadata("current_mode")
+            filtered_calls: List[Any] = []
+            for call in parsed_calls:
+                block_reason = self._todo_guard_preflight(session_state, call, current_mode)
+                if block_reason:
+                    blocked_calls.append((call, block_reason))
+                else:
+                    filtered_calls.append(call)
+
+            parsed_calls = filtered_calls
+            parsed_calls = self._expand_multi_file_patches(parsed_calls, session_state, markdown_logger)
             executed_results: List[tuple] = []
             failed_at_index = -1
             execution_error: Optional[Dict[str, Any]] = None
 
             if parsed_calls:
-                executed_results, failed_at_index, execution_error = self.agent_executor.execute_parsed_calls(
+                executed_results, failed_at_index, execution_error, plan_metadata = self.agent_executor.execute_parsed_calls(
                     parsed_calls,
                     self._exec_raw,
                     transcript_callback=session_state.add_transcript_entry,
                 )
+            else:
+                plan_metadata = {
+                    "strategy": "no_calls",
+                    "can_run_concurrent": False,
+                    "max_workers": 0,
+                    "group_counts": {},
+                    "group_limits": {},
+                    "total_calls": 0,
+                    "executed_calls": 0,
+                }
+                if current_mode == "plan":
+                    manager = session_state.get_todo_manager()
+                    snapshot = manager.snapshot() if manager else None
+                    todos = []
+                    if isinstance(snapshot, dict):
+                        todos = snapshot.get("todos") or []
+                    if not todos:
+                        warning = (
+                            "<VALIDATION_ERROR>\n"
+                            "Plan mode requires creating at least one todo via `todo.create` before continuing.\n"
+                            "</VALIDATION_ERROR>"
+                        )
+                        session_state.increment_guardrail_counter("todo_plan_violation")
+                        session_state.add_message({"role": "user", "content": warning}, to_provider=True)
+                        try:
+                            markdown_logger.log_user_message(warning)
+                        except Exception:
+                            pass
+                        try:
+                            session_state.add_transcript_entry({
+                                "todo_guard": {
+                                    "function": "todo.create",
+                                    "reason": "no_todos_created_in_plan_mode",
+                                }
+                            })
+                        except Exception:
+                            pass
+                        return False
+
+            turn_index = session_state.get_provider_metadata("current_turn_index")
+            turn_index_int = turn_index if isinstance(turn_index, int) else None
+            test_success: Optional[float] = None
+            session_state.add_transcript_entry({"tool_execution_plan": plan_metadata})
+            try:
+                self.provider_metrics.add_concurrency_sample(
+                    turn=turn_index_int,
+                    plan=plan_metadata,
+                )
+            except Exception:
+                pass
 
             if execution_error:
                 if execution_error.get("validation_failed"):
+                    session_state.increment_guardrail_counter("validation_errors")
                     error_msg = error_handler.handle_validation_error(execution_error)
                 elif execution_error.get("constraint_violation"):
                     error_msg = error_handler.handle_constraint_violation(execution_error["error"])
@@ -3301,12 +4525,69 @@ class OpenAIConductor:
                 markdown_logger.log_user_message(error_msg)
                 if stream_responses:
                     print(f"[error] {execution_error.get('error', 'Unknown error')}")
+                try:
+                    if turn_index_int is not None:
+                        if execution_error.get("validation_failed"):
+                            session_state.add_reward_metric(turn_index_int, "SVS", 0.0)
+                        session_state.add_reward_metric(turn_index_int, "CPS", 0.0)
+                        self._record_lsp_reward_metrics(session_state, turn_index_int)
+                except Exception:
+                    pass
                 return False
 
             results: List[Dict[str, Any]] = []
+            recent_tools_summary: List[Dict[str, Any]] = []
+            turn_index_hint = turn_index_int
             for parsed, tool_result in executed_results:
                 call_id = getattr(parsed, "call_id", None)
                 provider_name = getattr(parsed, "provider_name", parsed.function)
+                tool_result_dict = tool_result if isinstance(tool_result, dict) else {}
+                self._record_diff_metrics(
+                    parsed,
+                    tool_result_dict,
+                    session_state=session_state,
+                    turn_index=turn_index_hint,
+                )
+                metadata: Dict[str, Any] = {}
+                if parsed.function and parsed.function.startswith("todo."):
+                    metadata["is_todo"] = True
+                command = ""
+                if parsed.function == "run_shell":
+                    try:
+                        command = str((parsed.arguments or {}).get("command", ""))
+                    except Exception:
+                        command = ""
+                    if command and self._is_test_command(command):
+                        exit_code = tool_result_dict.get("exit")
+                        if isinstance(exit_code, int):
+                            success = 1.0 if exit_code == 0 else 0.0
+                            test_success = success if test_success is None else min(test_success, success)
+                success_flag = not self.agent_executor.is_tool_failure(parsed.function, tool_result_dict)
+                if parsed.function in ("apply_unified_patch", "apply_search_replace", "create_file_from_block", "write"):
+                    metadata["is_write"] = True
+                if parsed.function == "run_shell":
+                    metadata["is_run_shell"] = True
+                    metadata["command"] = command
+                    exit_code_val = tool_result_dict.get("exit")
+                    if isinstance(exit_code_val, int):
+                        metadata["exit_code"] = exit_code_val
+                    if command and self._is_test_command(command):
+                        metadata["is_test_command"] = True
+                if isinstance(turn_index_hint, int):
+                    try:
+                        session_state.record_tool_event(
+                            turn_index_hint,
+                            parsed.function or "",
+                            success=success_flag,
+                            metadata=metadata,
+                        )
+                    except Exception:
+                        pass
+                recent_tools_summary.append({
+                    "name": parsed.function,
+                    "read_only": self._is_read_only_tool(parsed.function),
+                    "completion_action": isinstance(tool_result, dict) and tool_result.get("action") == "complete",
+                })
                 results.append({
                     "fn": parsed.function,
                     "provider_fn": provider_name,
@@ -3315,6 +4596,84 @@ class OpenAIConductor:
                     "call_id": call_id,
                     "failed": False,
                 })
+
+            # Block premature completion if guard requirements are unmet.
+            guard_blocked = False
+            for idx in range(len(results) - 1, -1, -1):
+                current = results[idx]
+                if (
+                    current.get("fn") == "mark_task_complete"
+                    and isinstance(current.get("out"), dict)
+                    and current["out"].get("action") == "complete"
+                ):
+                    guard_ok, guard_reason = self._completion_guard_check(session_state)
+                    if guard_ok:
+                        continue
+                    guard_blocked = True
+                    session_state.increment_guardrail_counter("completion_guard_blocks")
+                    abort = self._emit_completion_guard_feedback(
+                        session_state,
+                        markdown_logger,
+                        guard_reason or "Completion guard blocked mark_task_complete",
+                        stream_responses,
+                    )
+                    # Remove tool usage accounting for this mark attempt.
+                    summary = session_state.tool_usage_summary
+                    summary["total_calls"] = max(0, int(summary.get("total_calls", 0)) - 1)
+                    if isinstance(turn_index_hint, int):
+                        turn_usage = session_state.turn_tool_usage.get(turn_index_hint)
+                        if turn_usage and isinstance(turn_usage.get("tools"), list):
+                            tools_list = turn_usage["tools"]
+                            for tool_entry_idx in range(len(tools_list) - 1, -1, -1):
+                                if tools_list[tool_entry_idx].get("name") == "mark_task_complete":
+                                    tools_list.pop(tool_entry_idx)
+                                    break
+                    recent_tools_summary = [
+                        entry for entry in recent_tools_summary
+                        if entry.get("name") != "mark_task_complete"
+                    ]
+                    results.pop(idx)
+                    if abort:
+                        return True
+                    break
+
+            try:
+                if turn_index_int is not None:
+                    session_state.add_reward_metric(turn_index_int, "SVS", 1.0)
+                    if plan_metadata.get("total_calls"):
+                        executed_calls = plan_metadata.get("executed_calls", 0)
+                        total_calls = plan_metadata.get("total_calls", 0)
+                        cps_value = 1.0 if executed_calls == total_calls else 0.0
+                        session_state.add_reward_metric(turn_index_int, "CPS", cps_value)
+                    if executed_results:
+                        acs_value = 1.0 if failed_at_index == -1 else 0.0
+                        session_state.add_reward_metric(turn_index_int, "ACS", acs_value)
+            except Exception:
+                pass
+            if turn_index_int is not None:
+                self._record_lsp_reward_metrics(session_state, turn_index_int)
+                self._record_test_reward_metric(session_state, turn_index_int, test_success)
+            try:
+                session_state.set_provider_metadata(
+                    "recent_tool_activity",
+                    {
+                        "tools": recent_tools_summary,
+                        "turn": session_state.get_provider_metadata("current_turn_index"),
+                    },
+                )
+            except Exception:
+                pass
+
+            if blocked_calls:
+                for blocked_call, reason in blocked_calls:
+                    entry = self._emit_todo_guard_violation(
+                        session_state,
+                        markdown_logger,
+                        reason,
+                        blocked_call=blocked_call,
+                    )
+                    if entry:
+                        results.append(entry)
             
             # Get turn strategy flow configuration
             flow_strategy = turn_cfg.get("flow", "assistant_continuation").lower()
@@ -3322,7 +4681,7 @@ class OpenAIConductor:
             # Persist provider-native tool results before relay
             try:
                 if self.logger_v2.run_dir and results:
-                    turn_index = len(session_state.transcript) + 1
+                    persist_turn = len(session_state.transcript) + 1
                     persistable = []
                     for r in results:
                         persistable.append({
@@ -3332,9 +4691,9 @@ class OpenAIConductor:
                             "args": r.get("args"),
                             "out": r.get("out"),
                         })
-                    self.provider_logger.save_tool_results(turn_index, persistable)
+                    self.provider_logger.save_tool_results(persist_turn, persistable)
                     short = "\n".join([f"- {r.get('provider_fn', r['fn'])} (id={r.get('call_id')})" for r in results])
-                    self.logger_v2.append_text("conversation/conversation.md", self.md_writer.provider_tool_results(short, f"provider_native/tool_results/turn_{turn_index}.json"))
+                    self.logger_v2.append_text("conversation/conversation.md", self.md_writer.provider_tool_results(short, f"provider_native/tool_results/turn_{persist_turn}.json"))
             except Exception:
                 pass
 
@@ -3387,6 +4746,7 @@ class OpenAIConductor:
                     session_state.provider_messages.extend(tool_messages_to_relay)
                     # Do not add any synthetic user messages; let the model continue the assistant turn
             
+            self._maybe_transition_plan_mode(session_state, markdown_logger)
             return False  # Continue the loop
             
         except Exception:
@@ -3398,3 +4758,71 @@ class OpenAIConductor:
             except Exception:
                 pass
             return False
+    def _retry_diff_with_aider(self, patch_text: str) -> Optional[Dict[str, Any]]:
+        """Attempt to recover unified diff failures by applying Aider SEARCH/REPLACE blocks."""
+        try:
+            import re
+
+            matcher = re.compile(
+                r"^diff --git a/(?P<path>.+?) b/(?P=path).*?(^@@.*?$.*?)(?=^diff --git|\Z)",
+                re.MULTILINE | re.DOTALL,
+            )
+            file_blocks: Dict[str, Dict[str, List[str]]] = {}
+
+            for match in matcher.finditer(patch_text):
+                path = match.group("path")
+                section = match.group(2) or ""
+                block = file_blocks.setdefault(path, {"search": [], "replace": []})
+
+                hunk_lines = section.splitlines()
+                local_search: List[str] = []
+                local_replace: List[str] = []
+                for line in hunk_lines:
+                    if not line:
+                        continue
+                    if line.startswith("diff --git") or line.startswith("new file mode") or line.startswith("index ") or line.startswith("---") or line.startswith("+++"):
+                        continue
+                    if line.startswith("@@"):
+                        if local_search or local_replace:
+                            block["search"].append("\n".join(local_search))
+                            block["replace"].append("\n".join(local_replace))
+                            local_search = []
+                            local_replace = []
+                        continue
+                    if line.startswith("-"):
+                        local_search.append(line[1:])
+                    elif line.startswith("+"):
+                        local_replace.append(line[1:])
+                    else:
+                        local_search.append(line[1:])
+                        local_replace.append(line[1:])
+                if local_search or local_replace:
+                    block["search"].append("\n".join(local_search))
+                    block["replace"].append("\n".join(local_replace))
+
+            if len(file_blocks) != 1:
+                return None
+
+            file_name, data = next(iter(file_blocks.items()))
+            if not data["search"]:
+                return None
+
+            search_text = "\n".join(filter(None, data["search"]))
+            replace_text = "\n".join(filter(None, data["replace"]))
+            payload = {
+                "function": "apply_search_replace",
+                "arguments": {
+                    "file_name": file_name,
+                    "search": search_text,
+                    "replace": replace_text,
+                },
+            }
+            result = self._exec_raw(payload)
+            result = {"action": "apply_search_replace", **result}
+            self._record_diff_metrics(
+                SimpleNamespace(function="apply_search_replace", arguments=payload["arguments"], dialect="aider_retry"),
+                result,
+            )
+            return result
+        except Exception:
+            return None
