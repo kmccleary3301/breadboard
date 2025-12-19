@@ -1,0 +1,30 @@
+id: bash
+name: bash
+description: Execute a shell command in the project workspace (OpenCode-compatible)
+type_id: python
+manipulations:
+  - shell.exec
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: command
+    type: string
+    description: The command to execute
+    required: true
+  - name: timeout
+    type: integer
+    description: Optional timeout in milliseconds
+    required: false
+  - name: description
+    type: string
+    description: Short human description of the command
+    required: true
+execution:
+  blocking: true
+  max_per_turn: 1
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+
+

@@ -1,0 +1,27 @@
+id: list_dir
+name: list_dir
+description: List files in a directory; supports optional depth for tree view
+type_id: python
+manipulations:
+  - file.list
+syntax_formats_supported: [native_function_calling, json_block]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: path
+    type: string
+    description: Directory path
+    required: true
+  - name: depth
+    type: integer
+    description: Optional tree depth (1-5)
+    required: false
+    default: 1
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    fallback_formats: [json_block]
+  anthropic:
+    native_primary: true
+    fallback_formats: [json_block]

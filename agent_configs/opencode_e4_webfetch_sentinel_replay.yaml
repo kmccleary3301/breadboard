@@ -1,0 +1,29 @@
+extends: opencode_openai_codexmini_c_fs_guardrails.yaml
+
+replay:
+  preserve_tool_names: true
+  guardrail_allowlist: []
+
+guardrails:
+  overrides:
+    shell_write_block:
+      parameters:
+        enabled: false
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs_oc
+    include:
+      - webfetch
+
+modes:
+  - name: build
+    prompt: "@pack(base).builder"
+    tools_enabled: [webfetch]
+    tools_disabled: []
+
+loop:
+  sequence:
+    - mode: build
+

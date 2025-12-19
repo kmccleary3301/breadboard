@@ -1,0 +1,58 @@
+extends: opencode_openai_codexmini_c_fs_guardrails.yaml
+
+profile: { name: codex-cli-gpt5.1-codex-mini-mvi-parity }
+
+# Codex CLI parity profile (MVI-focused):
+# - Expose Codex-style tools (`shell_command`, `apply_patch`)
+# - Disable guardrails/policies Codex CLI doesn't apply (write blocking, plan bootstrap)
+# - Keep tool surface minimal to reduce model-visible differences.
+
+model: gpt-5.1-codex-mini
+
+provider_tools:
+  # Codex CLI relies on provider-native tool calling; do not inject additional
+  # "available tools" prompt scaffolding beyond the Codex system prompt pack.
+  suppress_prompts: true
+
+guardrails:
+  overrides:
+    shell_write_block:
+      parameters:
+        enabled: false
+  plan_bootstrap:
+    strategy: never
+    warmup_turns: 0
+
+features:
+  plan: false
+  todos:
+    enabled: false
+
+prompts:
+  packs:
+    base:
+      system: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+      plan: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+      builder: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+      compact: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+      tools_catalog_full: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+      tools_catalog_short: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+  tool_prompt_mode: none
+  tool_prompt_synthesis:
+    enabled: false
+
+tools:
+  registry:
+    # Ensure we don't accidentally expose the OpenCode toolset (defs_oc) in live runs.
+    paths:
+      - implementations/tools/defs
+    include:
+      - shell_command
+      - apply_patch
+      - update_plan
+  aliases: {}
+
+completion:
+  # Codex CLI can end runs with a content-only final response (no mark_task_complete tool).
+  allow_content_only_completion: true
+

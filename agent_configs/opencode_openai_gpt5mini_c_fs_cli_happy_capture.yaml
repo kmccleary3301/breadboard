@@ -1,0 +1,46 @@
+extends: opencode_openai_gpt5mini_c_fs_cli_shared.yaml
+
+profile: { name: opencode-openai-gpt5mini-happy-capture }
+
+features:
+  plan: true
+  todos:
+    enabled: true
+    strict: true
+    reset_streak_on_todo: true
+
+guardrails:
+  plan_bootstrap:
+    strategy: hard
+    max_turns: 1
+    warmup_turns: 0
+    seed_file: implementations/system_prompts/opencode/plan_bootstrap_protofs_warmup.yaml
+  overrides:
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 18
+        abort_after_turns: 60
+    completion_guard:
+      parameters:
+        warnings_before_abort: 4
+    workspace_context:
+      parameters:
+        require_exploration_before_edit: true
+        require_read_before_edit: true
+        require_progress_before_todo_updates: false
+
+artifact_validation:
+  allow_missing:
+    - filesystem.h
+    - filesystem.c
+    - test_filesystem.c
+
+concurrency:
+  at_most_one_of: []
+
+completion:
+  build_guard:
+    enabled: true
+    require_write: true
+    require_run_shell: true
+    require_successful_tests: true

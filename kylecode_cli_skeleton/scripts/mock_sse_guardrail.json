@@ -1,0 +1,37 @@
+[
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "turn_start",
+      "payload": { "summary": "mock guardrail turn" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 400,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Guardrail triggered: please provide a concrete coding task.",
+        "message": {
+          "role": "assistant",
+          "content": "Guardrail triggered: please provide a concrete coding task."
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 400,
+    "event": {
+      "type": "completion",
+      "payload": { "summary": { "completed": false, "reason": "guardrail" } }
+    }
+  },
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "run_finished",
+      "payload": { "eventCount": 4 }
+    }
+  }
+]

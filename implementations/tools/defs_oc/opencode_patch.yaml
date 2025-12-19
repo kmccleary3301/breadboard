@@ -1,0 +1,21 @@
+id: patch
+name: patch
+description: Apply an OpenCode patch block (*** Begin Patch / *** Update|Add|Delete File / *** End Patch)
+type_id: diff
+manipulations:
+  - diff.apply
+syntax_formats_supported: [native_function_calling, opencode_patch]
+preferred_formats: [opencode_patch]
+parameters:
+  - name: patchText
+    type: string
+    description: The full patch text that describes all changes to be made
+    required: true
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: false
+    fallback_formats: [opencode_patch]
+
+

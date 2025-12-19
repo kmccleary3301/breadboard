@@ -1,0 +1,34 @@
+id: edit
+name: edit
+description: Replace text in a file (OpenCode-compatible)
+type_id: python
+manipulations:
+  - diff.apply
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: filePath
+    type: string
+    description: The absolute path to the file to modify
+    required: true
+  - name: oldString
+    type: string
+    description: The text to replace
+    required: true
+  - name: newString
+    type: string
+    description: The text to replace it with
+    required: true
+  - name: replaceAll
+    type: boolean
+    description: Replace all occurrences of oldString (default false)
+    required: false
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+
+
+

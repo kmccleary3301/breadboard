@@ -1,0 +1,27 @@
+id: todowrite
+name: todowrite
+description: Replace the OpenCode todo list
+type_id: python
+manipulations: []
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: todos
+    type: array
+    description: The updated todo list
+    required: true
+    items:
+      type: object
+      properties:
+        content: { type: string }
+        status: { type: string }
+        priority: { type: string }
+        id: { type: string }
+      required: [content, status, priority, id]
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+

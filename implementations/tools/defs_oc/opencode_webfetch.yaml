@@ -1,0 +1,29 @@
+id: webfetch
+name: webfetch
+description: Fetch a URL over HTTP(S) (OpenCode-compatible)
+type_id: python
+manipulations: []
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: url
+    type: string
+    description: The URL to fetch content from
+    required: true
+  - name: format
+    type: string
+    description: The format to return the content in (text, markdown, or html)
+    required: true
+    enum: ["text", "markdown", "html"]
+  - name: timeout
+    type: number
+    description: Optional timeout in seconds (max 120)
+    required: false
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+
+

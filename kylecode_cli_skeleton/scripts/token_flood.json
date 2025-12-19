@@ -1,0 +1,11 @@
+{
+  "steps": [
+    { "action": "log", "label": "token-flood", "message": "Long streamed response to exercise batching + live slot updates." },
+    { "action": "type", "text": "Walk me through how the controller batches SSE events and maintains live-slot progress indicators." },
+    { "action": "press", "key": "enter" },
+    { "action": "delay", "ms": 1200 },
+    { "action": "snapshot", "label": "token-mid" },
+    { "action": "wait", "for": "completion", "timeoutMs": 60000 },
+    { "action": "snapshot", "label": "token-final", "includeHints": true }
+  ]
+}

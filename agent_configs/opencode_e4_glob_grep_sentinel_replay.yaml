@@ -1,0 +1,37 @@
+extends: opencode_openai_codexmini_c_fs_guardrails.yaml
+
+replay:
+  preserve_tool_names: true
+  compare_tool_outputs:
+    - read
+    - glob
+    - grep
+    - invalid
+  guardrail_allowlist: []
+
+guardrails:
+  overrides:
+    shell_write_block:
+      parameters:
+        enabled: false
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs_oc
+    include:
+      - read
+      - glob
+      - grep
+      - invalid
+
+modes:
+  - name: build
+    prompt: "@pack(base).builder"
+    tools_enabled: [read, glob, grep, invalid]
+    tools_disabled: []
+
+loop:
+  sequence:
+    - mode: build
+

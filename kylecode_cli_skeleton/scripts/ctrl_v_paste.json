@@ -1,0 +1,8 @@
+[
+  { "action": "wait", "ms": 1200 },
+  { "action": "type", "text": "prefix ", "typingDelayMs": 20 },
+  { "action": "snapshot", "label": "before-ctrl-v" },
+  { "action": "press", "key": "ctrl+v" },
+  { "action": "wait", "ms": 300 },
+  { "action": "snapshot", "label": "after-ctrl-v" }
+]

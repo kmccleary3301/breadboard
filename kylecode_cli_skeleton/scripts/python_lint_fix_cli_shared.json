@@ -1,0 +1,9 @@
+[
+  {
+    "action": "type",
+    "text": "You are working in a clean repo. Add Ruff (lint + format) and Pyright (type checking) via pyproject.toml, create pkg/__init__.py exposing a version() function, implement pkg/calc.py with add(a: int, b: int) -> int and div(a: int, b: int) -> float (return float('inf') or raise for division by zero—explain choice), and add pytest tests under tests/test_calc.py that cover happy paths plus error handling for div. Finish by running pytest, ruff, and pyright."
+  },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "completion", "timeoutMs": 180000 },
+  { "action": "snapshot", "label": "python-lint-fix", "includeStatus": true }
+]

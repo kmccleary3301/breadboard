@@ -1,0 +1,26 @@
+id: glob
+name: glob
+description: Find files by glob pattern (OpenCode-compatible)
+type_id: python
+manipulations:
+  - search.glob
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: pattern
+    type: string
+    description: The glob pattern to match files against
+    required: true
+  - name: path
+    type: string
+    description: The directory to search in. If omitted, uses workspace
+    required: false
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+
+
+

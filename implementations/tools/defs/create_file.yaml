@@ -1,0 +1,20 @@
+id: create_file
+name: create_file
+description: Create an empty file (touch). For contents, use diff or create_file_from_block
+type_id: python
+manipulations:
+  - file.write
+syntax_formats_supported: [native_function_calling, json_block]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: path
+    type: string
+    description: Path to create
+    required: true
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    fallback_formats: [json_block]
+

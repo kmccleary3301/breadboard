@@ -1,0 +1,38 @@
+id: cc.Glob
+name: Glob
+description: '- Fast file pattern matching tool that works with any codebase size
+
+  - Supports glob patterns like "**/*.js" or "src/**/*.ts"
+
+  - Returns matching file paths sorted by modification time
+
+  - Use this tool when you need to find files by name patterns
+
+  - When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool
+  instead
+
+  - You can call multiple tools in a single response. It is always better to speculatively perform multiple searches in parallel
+  if they are potentially useful.'
+type_id: python
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters:
+- name: pattern
+  required: true
+  type: string
+  description: The glob pattern to match files against
+- name: path
+  required: false
+  type: string
+  description: 'The directory to search in. If not specified, the current working directory will be used. IMPORTANT: Omit
+    this field to use the default directory. DO NOT enter "undefined" or "null" - simply omit it for the default behavior.
+    Must be a valid directory path if provided.'
+execution:
+  blocking: false
+provider_routing:
+  anthropic:
+    native_primary: true
+    additional_properties: false
+    schema_uri: http://json-schema.org/draft-07/schema#

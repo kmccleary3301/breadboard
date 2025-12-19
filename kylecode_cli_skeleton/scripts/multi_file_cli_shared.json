@@ -1,0 +1,9 @@
+[
+  {
+    "action": "type",
+    "text": "Start by running `/files` to inspect the repo, read README.md if needed, then implement src/utils_sort.py with a documented quicksort helper and add tests/test_sort.py with pytest tests. Skip protofilesystem work and focus on Python files. Finish by explaining `python tests/test_sort.py` expected output."
+  },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "completion", "timeoutMs": 150000 },
+  { "action": "snapshot", "label": "after-completion", "includeStatus": true }
+]

@@ -1,0 +1,6 @@
+[
+  { "action": "type", "text": "Please apply the pending README.md patch from the mock stream." },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "completion", "timeoutMs": 30000 },
+  { "action": "snapshot", "label": "after-mock-diff", "includeStatus": true }
+]

@@ -1,0 +1,28 @@
+extends: opencode_openai_gpt5nano_c_fs_cli_shared.yaml
+
+profile: { name: opencode-openai-gpt5nano-cli-analysis }
+
+guardrails:
+  overrides:
+    # Keep the shared CLI defaults but re‑enable shell write blocking so analysis
+    # runs do not attempt shell-based edits.
+    shell_write_block:
+      parameters:
+        enabled: true
+      templates:
+        validation: implementations/system_prompts/guardrails/shell_write_block_opencode.prompt.md
+    # Be slightly more conservative about runaway conversations in analysis mode.
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 6
+        abort_after_turns: 14
+    completion_guard:
+      parameters:
+        warnings_before_abort: 4
+
+features:
+  plan: false
+  todos:
+    enabled: false
+    strict: false
+

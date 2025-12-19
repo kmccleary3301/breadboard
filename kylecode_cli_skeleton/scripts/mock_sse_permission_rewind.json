@@ -1,0 +1,120 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "turn": 1, "payload": { "summary": "permission + rewind mock" } } },
+  {
+    "delayMs": 250,
+    "event": {
+      "type": "permission_request",
+      "turn": 1,
+      "payload": {
+        "request_id": "perm-1",
+        "tool": "write_files",
+        "kind": "edit",
+        "summary": "Tool requests permission to apply file edits.",
+        "rewindable": true,
+        "default_scope": "project",
+        "rule_suggestion": "write:src/**",
+        "diff": "diff --git a/src/alpha.ts b/src/alpha.ts\nindex 1111111..2222222 100644\n--- a/src/alpha.ts\n+++ b/src/alpha.ts\n@@ -1,2 +1,2 @@\n-export const alpha = 1\n+export const alpha = 2\n\ndiff --git a/src/beta.ts b/src/beta.ts\nindex 3333333..4444444 100644\n--- a/src/beta.ts\n+++ b/src/beta.ts\n@@ -1 +1,2 @@\n export const beta = true\n+export const beta2 = false\n"
+      }
+    }
+  },
+  { "awaitCommand": true, "command": "permission_decision", "timeoutMs": 20000 },
+  {
+    "delayMs": 150,
+    "event": {
+      "type": "assistant_message",
+      "turn": 1,
+      "payload": {
+        "text": "Permission approved. Continuing with the mock run."
+      }
+    }
+  },
+  { "awaitCommand": true, "command": "list_checkpoints", "timeoutMs": 20000 },
+  {
+    "delayMs": 120,
+    "event": {
+      "type": "checkpoint_list",
+      "turn": 1,
+      "payload": {
+        "checkpoints": [
+          {
+            "checkpoint_id": "ckpt-3",
+            "created_at": 1710000300,
+            "preview": "Checkpoint 3: after applying edits",
+            "tracked_files": 2,
+            "additions": 13,
+            "deletions": 2,
+            "has_untracked_changes": false
+          },
+          {
+            "checkpoint_id": "ckpt-2",
+            "created_at": 1710000200,
+            "preview": "Checkpoint 2: before applying edits",
+            "tracked_files": 2,
+            "additions": 0,
+            "deletions": 0,
+            "has_untracked_changes": false
+          },
+          {
+            "checkpoint_id": "ckpt-1",
+            "created_at": 1710000100,
+            "preview": "Checkpoint 1: session start",
+            "tracked_files": 0,
+            "additions": 0,
+            "deletions": 0,
+            "has_untracked_changes": true
+          }
+        ]
+      }
+    }
+  },
+  { "awaitCommand": true, "command": "restore_checkpoint", "timeoutMs": 20000 },
+  {
+    "delayMs": 160,
+    "event": {
+      "type": "checkpoint_restored",
+      "turn": 1,
+      "payload": { "checkpoint_id": "ckpt-2", "mode": "code" }
+    }
+  },
+  { "awaitCommand": true, "command": "list_checkpoints", "timeoutMs": 20000 },
+  {
+    "delayMs": 120,
+    "event": {
+      "type": "checkpoint_list",
+      "turn": 1,
+      "payload": {
+        "checkpoints": [
+          {
+            "checkpoint_id": "ckpt-3",
+            "created_at": 1710000300,
+            "preview": "Checkpoint 3: after applying edits",
+            "tracked_files": 2,
+            "additions": 13,
+            "deletions": 2,
+            "has_untracked_changes": false
+          },
+          {
+            "checkpoint_id": "ckpt-2",
+            "created_at": 1710000200,
+            "preview": "Checkpoint 2: before applying edits",
+            "tracked_files": 2,
+            "additions": 0,
+            "deletions": 0,
+            "has_untracked_changes": false
+          },
+          {
+            "checkpoint_id": "ckpt-1",
+            "created_at": 1710000100,
+            "preview": "Checkpoint 1: session start",
+            "tracked_files": 0,
+            "additions": 0,
+            "deletions": 0,
+            "has_untracked_changes": true
+          }
+        ]
+      }
+    }
+  },
+  { "delayMs": 50, "event": { "type": "run_finished", "turn": 1, "payload": { "completed": true, "reason": "mock" } } }
+]
+

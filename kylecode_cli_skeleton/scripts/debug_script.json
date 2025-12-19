@@ -1,0 +1,8 @@
+[
+  { "action": "log", "message": "Start debug" },
+  { "action": "type", "text": "Implement a python bubble sort" },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "assistant", "timeoutMs": 60000 },
+  { "action": "wait", "for": "completion", "timeoutMs": 60000 },
+  { "action": "snapshot", "label": "after-completion", "includeStatus": true }
+]

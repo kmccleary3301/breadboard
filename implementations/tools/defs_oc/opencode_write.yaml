@@ -1,0 +1,26 @@
+id: write
+name: write
+description: Write a text file (OpenCode-compatible)
+type_id: python
+manipulations:
+  - file.write
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: filePath
+    type: string
+    description: The absolute path to the file to write (must be absolute, not relative)
+    required: true
+  - name: content
+    type: string
+    description: The content to write to the file
+    required: true
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+
+
+

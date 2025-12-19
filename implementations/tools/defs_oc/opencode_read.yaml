@@ -1,0 +1,30 @@
+id: read
+name: read
+description: Read a file from the workspace (OpenCode-compatible)
+type_id: python
+manipulations:
+  - file.read
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: filePath
+    type: string
+    description: The path to the file to read
+    required: true
+  - name: offset
+    type: integer
+    description: The line number to start reading from (0-based)
+    required: false
+  - name: limit
+    type: integer
+    description: The number of lines to read (defaults to 2000)
+    required: false
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+
+
+

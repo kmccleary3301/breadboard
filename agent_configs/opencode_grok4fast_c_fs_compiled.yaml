@@ -1,0 +1,36 @@
+extends: opencode_grok4fast_c_fs_v2.yaml
+
+profile: { name: opencode-grok4fast-c-fs-compiled }
+
+prompts:
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+
+providers:
+  default_model: openrouter/x-ai/grok-4-fast
+
+tools:
+  registry:
+    include:
+      - read
+      - read_file
+      - list
+      - list_dir
+      - todo.create
+      - todo.update
+      - todo.complete
+      - todo.cancel
+      - todo.reorder
+      - todo.attach
+      - todo.note
+      - todo.list
+      - todo.write_board
+      - patch
+      - bash
+      - mark_task_complete
+
+modes:
+  - name: plan
+    tools_enabled: [read, read_file, list, list_dir]
+  - name: build
+    tools_enabled: [read, read_file, list, list_dir, patch, bash, mark_task_complete]
+

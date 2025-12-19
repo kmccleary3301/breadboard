@@ -1,0 +1,124 @@
+extends: base_v2.yaml
+
+profile: { name: claude-code-haiku45-c-fs }
+
+providers:
+  default_model: anthropic/claude-haiku-4-5-20251001
+  routing:
+    disable_native_tools_on_probe_failure: false
+  models:
+    - id: anthropic/claude-haiku-4-5-20251001
+      adapter: anthropic
+      params:
+        tool_use: true
+        temperature: 0.1
+        max_output_tokens: 32000
+      routing:
+        fallback_models: []
+
+provider_tools:
+  use_native: true
+  suppress_prompts: false
+  anthropic:
+    max_output_tokens: 32000
+    temperature: 0.1
+    turn_delay_seconds: 1.0
+    tool_choice: any
+    stream: true
+    system_reminders:
+      enabled: true
+      usd_budget_limit: 0.25
+      todowrite_nudge_after_tool_results: 4
+    prompt_cache:
+      beta_header: null
+      apply_to_system: true
+      cache_control:
+        type: ephemeral
+        ttl: 1h
+    rate_limit:
+      enabled: true
+      token_buffer: 4000
+      fallback_cooldown_seconds: 5
+      min_wait_seconds: 1.0
+      max_retries: 2
+      retry_base_seconds: 2.0
+      retry_max_seconds: 20.0
+      retry_jitter_seconds: 0.5
+
+prompts:
+  packs:
+    base:
+      system: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
+      plan: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
+      builder: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
+      compact: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  injection:
+    system_order:
+      - '@pack(base).system'
+  tool_prompt_synthesis:
+    enabled: false
+
+modes:
+  - name: plan
+    prompt: "@pack(base).plan"
+    tools_enabled: ['*']
+  - name: build
+    prompt: "@pack(base).builder"
+    tools_enabled: ['*']
+  - name: compact
+    prompt: "@pack(base).compact"
+    tools_enabled: []
+
+loop:
+  sequence:
+    - if: "features.plan"
+      then: { mode: plan }
+    - mode: build
+  plan_turn_limit: 1
+  guardrails:
+    # Claude Code does not inject KyleCode's tool-usage watchdog warnings.
+    zero_tool_watchdog:
+      warn_after_turns: 0
+      abort_after_turns: 0
+      emit_event: false
+  turn_strategy:
+    relay: tool_role
+    flow: assistant_continuation
+    allow_multiple_per_turn: true
+
+tools:
+  # Claude Code does not expose a `mark_task_complete` tool; completion is
+  # inferred from natural finish / stop conditions.
+  mark_task_complete: false
+  registry:
+    paths:
+      - implementations/tools/defs_cc
+  aliases: null
+  dialects:
+    preference:
+      default: [unified_diff, bash_block]
+      by_model:
+        "anthropic/*":
+          order: [unified_diff, bash_block]
+    selection:
+      by_model:
+        "anthropic/*": [unified_diff]
+
+features:
+  plan: true
+  todos:
+    enabled: false
+
+replay:
+  compare_tool_outputs: all
+  fail_on_tool_output_mismatch: true
+
+workspace:
+  root: ./agent_ws_claude
+  sandbox:
+    driver: process
+  mirror:
+    enabled: false
+    path: ./agent_ws_claude
+    mode: development

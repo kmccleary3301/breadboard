@@ -1,0 +1,7 @@
+extends: claude_code_haiku45_c_fs_v2.yaml
+
+profile: { name: claude-code-haiku45-c-fs-acceptEdits }
+
+claude:
+  permission_mode: acceptEdits
+

@@ -1,0 +1,15 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "payload": { "summary": "modal overlay mock" }, "turn": 1 } },
+  {
+    "delayMs": 300,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Mock overlay ack: UI stress test noted.",
+        "message": { "role": "assistant", "content": "Mock overlay ack: UI stress test noted." }
+      }
+    }
+  },
+  { "delayMs": 200, "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mock" } } } },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 4 } } }
+]

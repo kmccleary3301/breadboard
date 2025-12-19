@@ -1,0 +1,56 @@
+[
+  {
+    "role": "user",
+    "message_id": "msg_user_1",
+    "parts": [
+      {
+        "id": "prt_user_1",
+        "type": "text",
+        "text": "Create hello world"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "message_id": "msg_assistant_1",
+    "parts": [
+      {
+        "id": "prt_tool_write",
+        "type": "tool",
+        "tool": "write",
+        "meta": {
+          "state": {
+            "status": "completed",
+            "input": {
+              "filePath": "/tmp/opencode_runs/hello.txt",
+              "content": "hello world\n"
+            },
+            "output": "",
+            "metadata": {
+              "filepath": "/tmp/opencode_runs/hello.txt"
+            }
+          }
+        }
+      },
+      {
+        "id": "prt_tool_bash",
+        "type": "tool",
+        "tool": "bash",
+        "meta": {
+          "state": {
+            "status": "completed",
+            "input": {
+              "command": "echo done",
+              "description": "Print done"
+            },
+            "output": "done\n",
+            "metadata": {
+              "exit": 0,
+              "description": "Print done"
+            }
+          }
+        }
+      }
+    ]
+  }
+]

@@ -1,0 +1,46 @@
+extends: opencode_openai_codexmini_c_fs_guardrails.yaml
+
+# OpenCode E4 sentinel replay:
+# - preserves OpenCode tool IDs (bash/patch/todowrite/todoread)
+# - gates tool-result content byte-for-byte via replay tool-output comparison
+replay:
+  preserve_tool_names: true
+  compare_tool_outputs:
+    - todowrite
+    - todoread
+    - bash
+    - patch
+  # Keep the replay "absolute" on tool I/O surfaces while suppressing
+  # unrelated guard events (except mvi_tool_output_mismatch, which is never suppressed).
+  guardrail_allowlist: []
+
+guardrails:
+  overrides:
+    # OpenCode does not enforce a "no shell redirection/heredoc writes" rule at
+    # tool-execution time (it is prompt guidance only).
+    shell_write_block:
+      parameters:
+        enabled: false
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs_oc
+    include:
+      - bash
+      - patch
+      - read
+      - write
+      - todowrite
+      - todoread
+
+modes:
+  - name: build
+    prompt: "@pack(base).builder"
+    tools_enabled: [bash, patch, read, write, todowrite, todoread]
+    tools_disabled: []
+
+loop:
+  sequence:
+    - mode: build
+

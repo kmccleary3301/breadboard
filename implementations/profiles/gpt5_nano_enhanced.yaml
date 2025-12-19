@@ -1,0 +1,88 @@
+# GPT-5-nano Enhanced Profile - Prevents redundant file creation
+# This profile specifically addresses GPT-5-nano's tendency to mix dialects
+# and create duplicate files
+
+workspace: ./agent_ws_c
+output:
+  json: ./session_out.json
+  markdown: ./session_out.md
+
+model:
+  id: gpt-5-nano
+  provider: openai
+
+prompt:
+  system: implementations/system_prompts/default.md
+  mode: per_turn_append
+  completion_sentinel: ">>>>>> END RESPONSE"
+
+task:
+  file: implementations/test_tasks/protofs_c.md
+
+runtime:
+  image: gcc-dev:latest
+
+# ENHANCED TOOLS CONFIGURATION
+enhanced_tools:
+  enabled: true
+  
+  workspace_tracking:
+    enabled: true
+    track_file_operations: true
+    prevent_redundancy: true
+  
+  validation:
+    enabled: true
+    rules:
+      - "no_redundant_creation"
+      - "file_exists"
+    rule_config:
+      no_redundant_creation:
+        enabled: true
+      file_exists:
+        enabled: true
+        strictness: "warn"  # warn|error
+      read_before_edit:
+        enabled: false  # Too strict for file creation workflows
+        strictness: "warn"
+  
+  lsp_integration:
+    enabled: true
+    post_edit_validation: true
+    attach_diagnostics: true
+
+# DIALECT PROFILES - Single dialect preference for GPT-5-nano  
+dialect_profiles:
+  gpt-5-nano:
+    mode: "exclusive"  # Only allow preferred dialects
+    preferred_dialects:
+      file_creation: "pythonic02"      # create_file() calls only
+      file_editing: "unified_diff"     # Unified diffs only
+      shell_ops: "bash_block"          # <BASH> blocks only
+    exclusions:
+      - "aider_diff"        # No *** Begin Patch blocks
+      - "opencode_patch"    # No *** Add File blocks  
+      - "pythonic_inline"   # No inline pythonic calls
+
+# Standard dialect configuration (filtered by profile above)
+dialects:
+  - pythonic02
+  - bash_block
+  - unified_diff
+  # Excluded by profile: aider_diff, opencode_patch, pythonic_inline
+
+tools:
+  registry: implementations/tools/all_tools.yaml
+  enabled:
+    run_shell: true
+    create_file: true              # Allowed via pythonic02
+    read_file: true
+    list_dir: true
+    apply_unified_patch: true      # Allowed for editing
+    apply_search_replace: false    # Disabled to reduce options
+    create_file_from_block: false  # Disabled - conflicts with create_file
+
+limits:
+  max_steps: 20
+  stream_responses: true
+  clean_workspace: true

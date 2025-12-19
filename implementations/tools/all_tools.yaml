@@ -1,0 +1,51 @@
+# Consolidated tool registry (example). Extend per implementation profile.
+
+tools:
+  - id: write_file
+    description: Write a text file to the workspace (overwrites).
+    parameters:
+      path: { type: string }
+      content: { type: string }
+
+  - id: read_file
+    description: Read a text file from the workspace.
+    parameters:
+      path: { type: string }
+
+  - id: list_dir
+    description: List files in a directory in the workspace.
+    parameters:
+      path: { type: string }
+
+  - id: run_shell
+    description: Run a shell command in the workspace and return stdout/stderr/exit.
+    blocking: true
+    parameters:
+      command: { type: string }
+      timeout: { type: integer, default: 30 }
+
+  - id: create_file
+    description: Create an empty file (akin to 'touch'). Use diffs to add content.
+    parameters:
+      path: { type: string }
+
+  - id: apply_search_replace
+    description: Edit code via SEARCH/REPLACE block (Aider-style)
+    parameters:
+      file_name: { type: string }
+      search: { type: string }
+      replace: { type: string }
+
+  - id: apply_unified_patch
+    description: Apply a unified-diff patch (may include new files, edits, deletes)
+    blocking: true
+    parameters:
+      patch: { type: string }
+
+  - id: create_file_from_block
+    description: Create a file from an OpenCode Add File block parsed content.
+    parameters:
+      filePath: { type: string }
+      file_name: { type: string }
+      content: { type: string }
+

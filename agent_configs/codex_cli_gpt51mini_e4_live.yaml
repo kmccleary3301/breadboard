@@ -1,0 +1,46 @@
+extends: base_v2.yaml
+
+profile: { name: codex-cli-gpt5.1-codex-mini-e4-live }
+
+providers:
+  default_model: openai/gpt-5.1-codex-mini
+  models:
+    - id: openai/gpt-5.1-codex-mini
+      adapter: openai
+      params: { temperature: 0.2, top_p: 0.9 }
+
+provider_tools:
+  use_native: true
+  suppress_prompts: false
+  api_variant: responses
+
+features:
+  plan: false
+  todos:
+    enabled: false
+
+prompts:
+  packs:
+    base:
+      system: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+      plan: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+      builder: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+      compact: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+      tools_catalog_full: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+      tools_catalog_short: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+  tool_prompt_synthesis:
+    enabled: false
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs
+    include:
+      - shell_command
+      - apply_patch
+      - update_plan
+  aliases: {}
+
+concurrency:
+  at_most_one_of: [shell_command]
+

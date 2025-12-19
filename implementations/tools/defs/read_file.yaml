@@ -1,0 +1,30 @@
+id: read_file
+name: read_file
+description: Read a file's content with optional offset/limit for large files
+type_id: python
+manipulations:
+  - file.read
+syntax_formats_supported: [native_function_calling, json_block]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: path
+    type: string
+    description: Absolute or workspace-relative file path
+    required: true
+  - name: offset
+    type: integer
+    description: Optional byte or line offset (implementation-specific)
+    required: false
+  - name: limit
+    type: integer
+    description: Optional read length (implementation-specific)
+    required: false
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    fallback_formats: [json_block]
+  anthropic:
+    native_primary: true
+    fallback_formats: [json_block]

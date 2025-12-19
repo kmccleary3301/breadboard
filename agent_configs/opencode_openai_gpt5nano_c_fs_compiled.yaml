@@ -1,0 +1,23 @@
+extends: opencode_grok4fast_c_fs_v2.yaml
+
+profile: { name: opencode-openai-gpt5nano-c-fs }
+
+providers:
+  default_model: openrouter/openai/gpt-5-nano
+  models:
+    - id: openrouter/openai/gpt-5-nano
+      adapter: openai
+      params: { temperature: 0.2, top_p: 0.9 }
+
+provider_tools:
+  use_native: true
+  suppress_prompts: true
+
+enhanced_tools:
+  enabled: true
+  validation:
+    enabled: true
+    rules: [one_bash_per_turn]
+    rule_config:
+      one_bash_per_turn: { turn_window_seconds: 120 }
+

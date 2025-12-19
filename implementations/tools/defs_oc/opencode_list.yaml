@@ -1,0 +1,26 @@
+id: list
+name: list
+description: List files under a directory (OpenCode-compatible)
+type_id: python
+manipulations:
+  - file.list
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: path
+    type: string
+    description: The absolute path to the directory to list (if omitted, uses workspace root)
+    required: false
+  - name: ignore
+    type: array
+    description: List of glob patterns to ignore
+    required: false
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+
+
+

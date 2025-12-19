@@ -1,0 +1,30 @@
+id: grep
+name: grep
+description: Search file contents for a regex pattern (OpenCode-compatible)
+type_id: python
+manipulations:
+  - search.grep
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: pattern
+    type: string
+    description: The regex pattern to search for
+    required: true
+  - name: path
+    type: string
+    description: Directory to search (defaults to workspace)
+    required: false
+  - name: include
+    type: string
+    description: File glob to include (e.g. "*.c")
+    required: false
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+
+
+

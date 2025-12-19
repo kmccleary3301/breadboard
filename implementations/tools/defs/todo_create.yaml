@@ -1,0 +1,52 @@
+id: todo.create
+name: todo.create
+description: Create one or more todo items with optional metadata, matching OpenCode's todo.create contract.
+type_id: python
+syntax_formats_supported:
+  - native_function_calling
+preferred_formats:
+  - native_function_calling
+parameters:
+  - name: items
+    type: array
+    description: Ordered todo drafts. Provide the entire list of new items you want to add.
+    required: true
+    items:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Short description of the task.
+        priority:
+          type: string
+          description: Optional priority label (e.g., P0, P1).
+        blocked_by:
+          type: array
+          description: Optional list of blocking todo ids or notes.
+          items:
+            type: string
+        metadata:
+          type: object
+          description: Optional metadata map stored with the todo.
+        refs:
+          type: array
+          description: Optional references (files, URLs, commits).
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+                description: Reference type (file, url, commit, etc.).
+              value:
+                type: string
+                description: Reference identifier or path.
+              note:
+                type: string
+                description: Optional note describing why the ref matters.
+            required: [kind, value]
+      required: [title]
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true

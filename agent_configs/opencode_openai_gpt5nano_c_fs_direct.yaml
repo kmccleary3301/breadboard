@@ -1,0 +1,20 @@
+extends: opencode_grok4fast_c_fs_v2.yaml
+
+profile: { name: opencode-openai-gpt5nano-c-fs-direct }
+
+providers:
+  default_model: gpt-5-nano
+  models:
+    - id: gpt-5-nano
+      adapter: openai
+      params: { temperature: 0.2, top_p: 0.9 }
+
+prompts:
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+
+provider_tools:
+  use_native: false
+  suppress_prompts: false
+
+features: { plan: true }
+

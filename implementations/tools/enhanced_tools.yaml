@@ -1,0 +1,127 @@
+# Enhanced tool registry implementing design decisions from 08-13-25 report
+# Includes blocking constraints, dependencies, and sequential execution patterns
+
+tools:
+  - id: write_file
+    description: Write a text file to the workspace (overwrites).
+    blocking: false
+    max_per_turn: null
+    dependencies: []
+    parameters:
+      path: { type: string }
+      content: { type: string }
+
+  - id: read_file
+    description: Read a text file from the workspace.
+    blocking: false
+    max_per_turn: null
+    dependencies: []
+    parameters:
+      path: { type: string }
+
+  - id: list_dir
+    description: List files in a directory in the workspace.
+    blocking: false
+    max_per_turn: null
+    dependencies: []
+    parameters:
+      path: { type: string }
+      depth: { type: integer, default: 1, description: "Tree depth (1-5, default 1)" }
+
+  - id: run_shell
+    description: Run a shell command in the workspace and return stdout/stderr/exit.
+    blocking: true          # CRITICAL: Bash commands must block other tools
+    max_per_turn: 1         # CRITICAL: Only one bash command per agent turn
+    dependencies: []
+    execution_order: 1      # Execute first if present
+    timeout_default: 30
+    timeout_max: 600
+    parameters:
+      command: { type: string }
+      timeout: { type: integer, default: 30 }
+
+  - id: create_file
+    description: Create an empty file (akin to 'touch'). Use diffs to add content.
+    blocking: false
+    max_per_turn: null
+    dependencies: []
+    parameters:
+      path: { type: string }
+
+  - id: apply_search_replace
+    description: Edit code via SEARCH/REPLACE block (Aider-style) - PREFERRED format based on research
+    blocking: false
+    max_per_turn: null
+    dependencies: ["read_file"]  # Should read file first to verify content
+    format_priority: 1           # Highest priority based on 2.3x success rate
+    parameters:
+      file_name: { type: string }
+      search: { type: string }
+      replace: { type: string }
+
+  - id: apply_unified_patch
+    description: Apply a unified-diff patch (may include new files, edits, deletes)
+    blocking: true              # Complex operations should be blocking
+    max_per_turn: 1
+    dependencies: ["read_file"]
+    format_priority: 3          # Lower priority than Aider format
+    parameters:
+      patch: { type: string }
+
+  - id: create_file_from_block
+    description: Create a file from an OpenCode Add File block parsed content.
+    blocking: false
+    max_per_turn: null
+    dependencies: []
+    parameters:
+      file_name: { type: string }
+      content: { type: string }
+
+  # New tools for enhanced workflow
+  - id: mark_task_complete
+    description: Mark the current task as completed and provide summary.
+    blocking: false
+    max_per_turn: 1
+    dependencies: []
+    parameters:
+      summary: { type: string }
+      status: { type: string, enum: ["completed", "failed", "partial"] }
+
+# Enhanced configuration schema
+schema:
+  version: "2.0"
+  blocking_strategy: "sequential"  # sequential | parallel | mixed
+  error_handling: "fail_fast"     # fail_fast | continue | retry
+  tool_state_tracking: true       # Enable OpenCode-style state tracking
+  
+# Execution constraints based on research findings
+execution_constraints:
+  # One bash command per turn (critical for reliability)
+  bash_per_turn: 1
+  
+  # Tool execution order (blocking tools first)
+  execution_order:
+    - blocking: true
+    - blocking: false
+  
+  # Dependencies must be resolved before execution
+  dependency_resolution: true
+  
+  # Sequential execution for tools with blocking=true
+  sequential_blocking: true
+
+# Format preferences based on research (Aider > OpenCode > Unified)
+format_preferences:
+  diff_formats:
+    - aider_search_replace    # 2.3x success rate advantage
+    - opencode_patch         # Structured but complex
+    - unified_diff           # Lowest success rate for smaller models
+  
+  # Error recovery strategies per format
+  error_recovery:
+    aider_search_replace:
+      strategy: "exact_match_retry"
+      max_retries: 2
+    unified_diff:
+      strategy: "fuzzy_match"
+      max_retries: 1

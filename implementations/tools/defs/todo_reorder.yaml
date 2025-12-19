@@ -1,0 +1,18 @@
+id: todo.reorder
+name: todo.reorder
+description: Reorder todos by supplying their ids in the desired order.
+type_id: python
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: order
+    type: array
+    description: Ordered list of todo ids (first item becomes top priority).
+    required: true
+    items:
+      type: string
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
