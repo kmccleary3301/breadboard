@@ -1,0 +1,9 @@
+[
+  {
+    "action": "type",
+    "text": "Update the React todo component to highlight overdue items, adjust the snapshot accordingly, and ensure tests (npm test -- --runInBand) pass. Work step-by-step: inspect package.json, edit src/components/Todo.tsx, update snapshots, then run npm test."
+  },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "completion", "timeoutMs": 180000 },
+  { "action": "snapshot", "label": "react-snapshot", "includeStatus": true }
+]

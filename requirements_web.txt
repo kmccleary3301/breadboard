@@ -1,0 +1,16 @@
+# Optional web tooling dependencies (Hermes-derived scrape/crawl/providers)
+#
+# Keep these out of the minimal engine install if desired; install when enabling
+# local web tooling or Ray-based crawl services.
+
+httpx>=0.25
+beautifulsoup4>=4.12
+markdownify>=0.13
+pypdf>=4.0
+Pillow>=10.0
+playwright>=1.40
+redis>=5.0
+slowapi>=0.1.8
+pydantic>=2.0
+pydantic-settings>=2.0
+

@@ -7,10 +7,14 @@ manipulations:
 syntax_formats_supported: [json_block]
 preferred_formats: [json_block]
 parameters:
+  - name: filePath
+    type: string
+    description: Path to the new file (OpenCode-compatible)
+    required: false
   - name: file_name
     type: string
-    description: Path to the new file
-    required: true
+    description: Path to the new file (legacy alias)
+    required: false
   - name: content
     type: string
     description: Full file content to write
@@ -22,6 +26,5 @@ provider_routing:
     native_primary: true
     fallback_formats: [json_block]
   anthropic:
-    native_primary: false
+    native_primary: true
     fallback_formats: [json_block]
-

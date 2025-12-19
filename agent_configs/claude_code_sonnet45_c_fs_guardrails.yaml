@@ -1,5 +1,14 @@
 extends: claude_code_sonnet45_c_fs_v2.yaml
 
+guardrails:
+  include:
+    - implementations/guardrails/base_workspace.yaml
+    - implementations/guardrails/execution_baseline.yaml
+  overrides:
+    todo_rate_limit:
+      parameters:
+        todo_updates_before_progress: 1
+
 enhanced_tools:
   validation:
     enabled: true
@@ -18,8 +27,8 @@ enhanced_tools:
 loop:
   guardrails:
     zero_tool_watchdog:
-      warn_after_turns: 2
-      abort_after_turns: 4
+      warn_after_turns: 8
+      abort_after_turns: 16
       emit_event: true
     shell_write:
       enabled: true

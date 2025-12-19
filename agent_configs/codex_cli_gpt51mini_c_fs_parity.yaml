@@ -1,0 +1,36 @@
+extends: opencode_openai_codexmini_c_fs_guardrails.yaml
+
+# Codex CLI parity profile:
+# - Uses the same model as Codex CLI sampling (`gpt-5.1-codex-mini`)
+# - Removes policy differences that Codex CLI doesn't enforce (shell-write blocking, plan bootstrap)
+#   so live-behavior distributions are comparable.
+
+profile: { name: codex-cli-gpt5.1-codex-mini-c-fs-parity }
+
+guardrails:
+  overrides:
+    shell_write_block:
+      parameters:
+        enabled: false
+  plan_bootstrap:
+    strategy: never
+    warmup_turns: 0
+
+features:
+  plan: false
+  todos:
+    enabled: false
+
+# Reduce tool surface area to better match Codex CLI behavior (no todo tools).
+tools:
+  registry:
+    include:
+      - read
+      - read_file
+      - list
+      - list_dir
+      - write
+      - patch
+      - bash
+      - mark_task_complete
+

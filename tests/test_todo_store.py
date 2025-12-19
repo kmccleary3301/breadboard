@@ -50,6 +50,20 @@ def test_reload_existing_state(tmp_path):
     assert todos[0].priority == "P1"
 
 
+def test_skip_loading_existing_state(tmp_path):
+    workspace = make_workspace(tmp_path)
+    store = TodoStore(str(workspace))
+    store.create([TodoDraft(title="Original todo")])
+
+    fresh = TodoStore(str(workspace), load_existing=False)
+    assert fresh.list_items() == []
+    fresh.create([TodoDraft(title="New todo")])
+
+    persisted = load_persisted(workspace)
+    titles = [todo["title"] for todo in persisted.get("todos", [])]
+    assert titles == ["New todo"]
+
+
 def test_todo_write_board_sync(tmp_path):
     workspace = make_workspace(tmp_path)
     store = TodoStore(str(workspace))

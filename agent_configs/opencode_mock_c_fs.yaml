@@ -6,7 +6,7 @@ providers:
   default_model: mock/dev
   models:
     - id: mock/dev
-      adapter: openai
+      adapter: mock_chat
 
 prompts:
   tool_prompt_mode: system_compiled_and_persistent_per_turn

@@ -1,0 +1,54 @@
+extends: opencode_openai_gpt5mini_c_fs_compiled.yaml
+
+profile: { name: opencode-openai-gpt5mini-c-fs-guardrails }
+
+guardrails:
+  include:
+    - implementations/guardrails/base_workspace.yaml
+    - implementations/guardrails/execution_baseline.yaml
+  overrides:
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 16
+        abort_after_turns: 64
+    shell_write_block:
+      templates:
+        validation: implementations/system_prompts/guardrails/shell_write_block_opencode.prompt.md
+    completion_guard:
+      parameters:
+        warnings_before_abort: 3
+  plan_bootstrap:
+    strategy: soft
+    max_turns: 2
+    warmup_turns: 1
+    seed_file: implementations/system_prompts/opencode/plan_bootstrap_protofs.yaml
+
+enhanced_tools:
+  validation:
+    enabled: true
+    rules: [read_before_edit]
+    rule_config:
+      read_before_edit:
+        mode: strict
+        require_fresh_read: true
+        max_age_seconds: 900
+  diff_policy:
+    patch_splitting:
+      policy: auto_split
+
+loop:
+  turn_strategy:
+    allow_multiple_per_turn: true
+
+features:
+  plan: true
+  todos:
+    enabled: true
+    strict: false
+    reset_streak_on_todo: true
+
+completion:
+  build_guard:
+    require_run_shell: false
+    require_successful_tests: false
+

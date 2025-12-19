@@ -26,6 +26,5 @@ provider_routing:
     native_primary: true
     fallback_formats: [json_block]
   anthropic:
-    native_primary: false
+    native_primary: true
     fallback_formats: [json_block]
-

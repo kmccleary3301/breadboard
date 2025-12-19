@@ -27,6 +27,7 @@ class AgentToolExecutor:
         self.barrier_tools: Set[str] = set()
         self.tool_to_group: Dict[str, Dict[str, Any]] = {}
         self.concurrency_groups: List[Dict[str, Any]] = []
+        self.allow_multiple_bash: bool = False
 
         raw_concurrency = (self.config.get("concurrency") if isinstance(self.config, dict) else None)
         try:
@@ -197,7 +198,6 @@ class AgentToolExecutor:
                     "calls_to_execute": parsed_calls,
                     "strategy": "sequential",
                     "can_run_concurrent": False,
-                    "max_workers": 1,
                     "group_counts": dict(group_counts_all),
                     "group_limits": dict(group_limits_all),
                 }
@@ -257,6 +257,7 @@ class AgentToolExecutor:
             }
 
         max_workers = min(len(nonblocking_calls), concurrency_budget, 8)
+        max_workers = min(len(nonblocking_calls), concurrency_budget, 8)
 
         return {
             "calls_to_execute": nonblocking_calls,
@@ -275,7 +276,10 @@ class AgentToolExecutor:
                 
                 # Create async wrapper for exec function
                 async def async_exec(tc):
-                    return exec_func(tc)
+                    result = exec_func(tc)
+                    if asyncio.iscoroutine(result):
+                        return await result
+                    return result
                 
                 # Try to get existing event loop, create new one if needed
                 try:
@@ -320,7 +324,12 @@ class AgentToolExecutor:
 
         def _run_single_call(p):
             try:
-                tool_call = {"function": p.function, "arguments": p.arguments}
+                tool_call = {
+                    "function": p.function,
+                    "arguments": p.arguments,
+                    "provider_name": getattr(p, "provider_name", None),
+                    "expected_output": getattr(p, "expected_output", None),
+                }
                 tool_name = self._canonical_tool_name(p.function)
                 group = self.tool_to_group.get(tool_name)
                 semaphore = None
@@ -375,8 +384,9 @@ class AgentToolExecutor:
         failed_at_index = -1
         bash_executed = False  # Track bash constraint (critical research finding)
         
+        enforce_bash_limit = not getattr(self, "allow_multiple_bash", False)
         for i, p in enumerate(calls_to_execute):
-            if p.function == "run_shell":
+            if enforce_bash_limit and p.function == "run_shell":
                 if bash_executed:
                     out = {"error": "Only one bash command allowed per turn (policy)", "skipped": True}
                     executed_results.append((p, out))
@@ -384,7 +394,12 @@ class AgentToolExecutor:
                 bash_executed = True
             
             try:
-                tool_call = {"function": p.function, "arguments": p.arguments}
+                tool_call = {
+                    "function": p.function,
+                    "arguments": p.arguments,
+                    "provider_name": getattr(p, "provider_name", None),
+                    "expected_output": getattr(p, "expected_output", None),
+                }
                 out = self.execute_tool_call(tool_call, exec_func)
             except Exception as e:
                 out = {"error": str(e), "function": p.function}
@@ -403,7 +418,9 @@ class AgentToolExecutor:
         self, 
         parsed_calls: List[Any], 
         exec_func: Callable,
-        transcript_callback: Callable = None
+        transcript_callback: Callable = None,
+        *,
+        policy_bypass: bool = False,
     ) -> tuple:
         """Execute parsed tool calls with full policy enforcement"""
         # Normalize tool names via alias map for downstream enforcement/execution
@@ -420,45 +437,46 @@ class AgentToolExecutor:
 
         # Validate tool calls
         tool_calls_for_validation = [{"name": p.function, "args": p.arguments} for p in normalized_calls]
-        validation_error = self.validate_tool_calls(tool_calls_for_validation)
-        if validation_error:
-            meta = {
-                "strategy": "validation_failed",
-                "can_run_concurrent": False,
-                "group_counts": {},
-                "group_limits": {},
-                "max_workers": 1,
-                "total_calls": len(normalized_calls),
-                "executed_calls": 0,
-            }
-            return [], -1, validation_error, meta
+        if not policy_bypass:
+            validation_error = self.validate_tool_calls(tool_calls_for_validation)
+            if validation_error:
+                meta = {
+                    "group_counts": {},
+                    "group_limits": {},
+                    "max_workers": 1,
+                    "total_calls": len(normalized_calls),
+                    "executed_calls": 0,
+                }
+                return [], -1, validation_error, meta
 
         # Check completion isolation
-        isolation_error = self.check_completion_isolation(normalized_calls)
-        if isolation_error:
-            meta = {
-                "strategy": "constraint_violation",
-                "can_run_concurrent": False,
-                "group_counts": {},
-                "group_limits": {},
-                "max_workers": 1,
-                "total_calls": len(normalized_calls),
-                "executed_calls": 0,
-            }
-            return [], -1, {"error": isolation_error, "constraint_violation": True}, meta
+        if not policy_bypass:
+            isolation_error = self.check_completion_isolation(normalized_calls)
+            if isolation_error:
+                meta = {
+                    "strategy": "constraint_violation",
+                    "can_run_concurrent": False,
+                    "group_counts": {},
+                    "group_limits": {},
+                    "max_workers": 1,
+                    "total_calls": len(normalized_calls),
+                    "executed_calls": 0,
+                }
+                return [], -1, {"error": isolation_error, "constraint_violation": True}, meta
 
-        amo_error = self.check_at_most_one_of(normalized_calls)
-        if amo_error:
-            meta = {
-                "strategy": "constraint_violation",
-                "can_run_concurrent": False,
-                "group_counts": {},
-                "group_limits": {},
-                "max_workers": 1,
-                "total_calls": len(normalized_calls),
-                "executed_calls": 0,
-            }
-            return [], -1, {"error": amo_error, "constraint_violation": True}, meta
+        if not policy_bypass:
+            amo_error = self.check_at_most_one_of(normalized_calls)
+            if amo_error:
+                meta = {
+                    "strategy": "constraint_violation",
+                    "can_run_concurrent": False,
+                    "group_counts": {},
+                    "group_limits": {},
+                    "max_workers": 1,
+                    "total_calls": len(normalized_calls),
+                    "executed_calls": 0,
+                }
+                return [], -1, {"error": amo_error, "constraint_violation": True}, meta
 
         # Reorder operations for optimal execution
         reordered_calls = self.reorder_operations(normalized_calls)

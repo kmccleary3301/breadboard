@@ -1,83 +1,44 @@
-completion:
-  primary: hybrid
-  provider_signals: true
-  text_sentinels:
-  - TASK COMPLETE
-  tool_finish: mark_task_complete
+extends: opencode_grok4fast_c_fs_v2.yaml
+
+profile: { name: opencode-openrouter-deepseek-v32exp-c-fs-perturn-append }
+
+providers:
+  default_model: openrouter/deepseek/deepseek-v3.2-exp
+  models:
+    - id: openrouter/deepseek/deepseek-v3.2-exp
+      adapter: openai
+      params: { temperature: 0.2, top_p: 0.9 }
+
+prompts:
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  tool_prompt_synthesis:
+    enabled: true
+    dialects:
+      pythonic_plan:
+        system_full: implementations/tool_prompt_synthesis/pythonic/system_plan_strict.j2.md
+        per_turn_short: implementations/tool_prompt_synthesis/pythonic/per_turn_plan_strict.j2.md
+      opencode_patch:
+        system_full: implementations/tool_prompt_synthesis/opencode_patch/system_full.j2.md
+        per_turn_short: implementations/tool_prompt_synthesis/opencode_patch/per_turn_short.j2.md
+    selection:
+      by_mode:
+        plan: pythonic_plan
+        build: opencode_patch
+    detail:
+      system: full
+      per_turn: short
+
+provider_tools:
+  use_native: false
+  suppress_prompts: false
+
 enhanced_tools:
   enabled: true
   validation:
     enabled: true
-    rules: [read_before_edit]
+    rules: [one_bash_per_turn]
     rule_config:
-      read_before_edit:
-        mode: strict
-        require_fresh_read: true
-        max_age_seconds: 900
-  diff_policy:
-    patch_splitting:
-      policy: reject_multi_file
-      max_files_per_patch: 1
-      on_violation: warn_and_split
-extends: opencode_grok4fast_c_fs_v2.yaml
-features:
-  plan: true
-profile:
-  name: opencode-openrouter-deepseek-v32exp-c-fs-perturn-append
-prompts:
-  task_prompt: 'You are an autonomous agent. Follow this plan:
+      one_bash_per_turn: { turn_window_seconds: 120 }
 
-    1. List the top-level directories and files (depth=2) using a single `find` or
-    `ls` command.
+features: { plan: true }
 
-    2. Highlight important C/C++ headers/sources and any build/test entry points.
-
-    3. Summarise in 2-3 bullet points.
-
-    4. On the final turn call `mark_task_complete()` and stop.
-
-    '
-  tool_prompt_mode: system_compiled_and_persistent_per_turn
-  tool_prompt_synthesis:
-    detail:
-      per_turn: short
-      system: full
-    dialects:
-      opencode_patch:
-        per_turn_short: implementations/tool_prompt_synthesis/opencode_patch/per_turn_short.j2.md
-        system_full: implementations/tool_prompt_synthesis/opencode_patch/system_full.j2.md
-      pythonic_plan:
-        per_turn_short: implementations/tool_prompt_synthesis/pythonic/per_turn_plan_strict.j2.md
-        system_full: implementations/tool_prompt_synthesis/pythonic/system_plan_strict.j2.md
-    enabled: true
-    selection:
-      by_mode:
-        build: opencode_patch
-        plan: pythonic_plan
-provider_tools:
-  suppress_prompts: false
-  use_native: true
-providers:
-  default_model: openrouter/deepseek/deepseek-v3.2-exp
-  models:
-  - adapter: openai
-    id: openrouter/deepseek/deepseek-v3.2-exp
-    params:
-      temperature: 0.2
-      top_p: 0.9
-    routing:
-      disable_stream_on_probe_failure: true
-      disable_native_tools_on_probe_failure: true
-      fallback_models: []  # Force DeepSeek evaluation; add targeted fallbacks only after route health checks pass.
-loop:
-  guardrails:
-    zero_tool_watchdog:
-      warn_after_turns: 2
-      abort_after_turns: 4
-      emit_event: true
-    shell_write:
-      enabled: true
-      validation_message: |
-        <VALIDATION_ERROR>
-        Do not use bash heredocs or redirection to write files. Use the write/patch tools instead.
-        </VALIDATION_ERROR>

@@ -156,3 +156,4 @@ def test_aggregate_handles_reward_events():
     assert pas_entry["count"] == 2
     assert pas_entry["avg"] == pytest.approx(0.75)
     assert reward_summary["metrics"]["TPF_DELTA"]["avg"] == pytest.approx(1.0)
+

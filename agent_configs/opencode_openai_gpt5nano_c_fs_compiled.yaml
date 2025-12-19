@@ -20,3 +20,4 @@ enhanced_tools:
     rules: [one_bash_per_turn]
     rule_config:
       one_bash_per_turn: { turn_window_seconds: 120 }
+

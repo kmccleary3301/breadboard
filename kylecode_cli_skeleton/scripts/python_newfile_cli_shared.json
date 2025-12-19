@@ -1,0 +1,9 @@
+[
+  {
+    "action": "type",
+    "text": "Create a new Python module `pkg/newfile.py` with a function `write_message(path: str, text: str) -> None` that writes the text to the given path, and add tests in `tests/test_newfile.py` using pytest. Ensure pyproject.toml includes Ruff and Pyright configs, and run pytest + ruff + pyright at the end."
+  },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "completion", "timeoutMs": 180000 },
+  { "action": "snapshot", "label": "python-newfile", "includeStatus": true }
+]

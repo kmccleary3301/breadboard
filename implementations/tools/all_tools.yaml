@@ -45,7 +45,7 @@ tools:
   - id: create_file_from_block
     description: Create a file from an OpenCode Add File block parsed content.
     parameters:
+      filePath: { type: string }
       file_name: { type: string }
       content: { type: string }
-
 

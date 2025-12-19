@@ -266,3 +266,4 @@ class TodoMetricsSQLiteWriter:
                 ),
             )
             conn.commit()
+

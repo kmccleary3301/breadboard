@@ -1,0 +1,21 @@
+[
+  { "action": "log", "message": "@ file mention attach PTY harness start" },
+  { "action": "waitFor", "text": "interactive session", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "initial" },
+  { "action": "type", "text": "Summarize ", "typingDelayMs": 18 },
+  { "action": "type", "text": "@" },
+  { "action": "waitFor", "text": "Attach file", "timeoutMs": 10000 },
+  { "action": "waitFor", "text": "FILE big.txt", "timeoutMs": 10000 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Files queued (1)", "timeoutMs": 10000 },
+  { "action": "snapshot", "label": "queued" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "### File: big.txt (5.34 MB)", "timeoutMs": 15000 },
+  {
+    "action": "waitFor",
+    "text": "This file is truncated, as it is too large (5.34 MB) to fully display.",
+    "timeoutMs": 15000
+  },
+  { "action": "snapshot", "label": "submitted" },
+  { "action": "log", "message": "@ file mention attach PTY harness complete" }
+]

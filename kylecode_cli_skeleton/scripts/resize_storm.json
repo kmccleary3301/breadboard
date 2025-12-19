@@ -1,0 +1,18 @@
+[
+  { "action": "log", "message": "Resize storm harness starting" },
+  {
+    "action": "type",
+    "text": "While you stream, summarize how KyleCode handles rapid terminal resizes and keeps the transcript stable."
+  },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 800 },
+  { "action": "snapshot", "label": "pre-storm" },
+  { "action": "wait", "ms": 1400 },
+  { "action": "snapshot", "label": "mid-storm" },
+  { "action": "wait", "ms": 1800 },
+  { "action": "snapshot", "label": "post-storm" },
+  { "action": "wait", "ms": 2000 },
+  { "action": "log", "message": "Allowing stream to settle before shutdown" },
+  { "action": "wait", "ms": 1200 },
+  { "action": "snapshot", "label": "final" }
+]

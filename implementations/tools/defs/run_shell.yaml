@@ -25,6 +25,5 @@ provider_routing:
     function_call: auto
     fallback_formats: [json_block, yaml_command]
   anthropic:
-    native_primary: false
+    native_primary: true
     fallback_formats: [yaml_command]
-

@@ -194,7 +194,29 @@ class ProviderRouter:
                 supports_streaming=False,
                 supports_reasoning_traces=False,
                 supports_cache_control=False,
-            )
+            ),
+            "cli_mock": ProviderConfig(
+                provider_id="cli_mock",
+                supports_native_tools=False,
+                tool_schema_format="openai",
+                api_key_env="MOCK_API_KEY",
+                runtime_id="cli_mock_chat",
+                default_api_variant="mock",
+                supports_streaming=False,
+                supports_reasoning_traces=False,
+                supports_cache_control=False,
+            ),
+            "replay": ProviderConfig(
+                provider_id="replay",
+                supports_native_tools=True,
+                tool_schema_format="openai",
+                api_key_env="MOCK_API_KEY",
+                runtime_id="replay",
+                default_api_variant="replay",
+                supports_streaming=False,
+                supports_reasoning_traces=True,
+                supports_cache_control=False,
+            ),
         }
         
         self.translators = {
@@ -217,6 +239,9 @@ class ProviderRouter:
         parts = model_id.split("/")
         
         if len(parts) == 1:
+            # Check if the single part is a known provider (e.g. 'replay', 'mock')
+            if model_id in self.providers:
+                return model_id, model_id, "direct"
             # Direct model ID - default to OpenAI
             return "openai", model_id, "direct"
         elif len(parts) == 2:
@@ -261,6 +286,14 @@ class ProviderRouter:
 
         config, actual_model, supports_native = self.get_provider_config(model_id)
         descriptor = config.to_descriptor(supports_native_override=supports_native)
+        # OpenRouter's GPT-5 OpenAI models are commonly served via a Responses-style backend.
+        if (
+            descriptor.provider_id == "openrouter"
+            and isinstance(actual_model, str)
+            and actual_model.startswith("openai/gpt-5")
+        ):
+            descriptor.runtime_id = "openai_responses"
+            descriptor.default_api_variant = "responses"
         return descriptor, actual_model
 
     def get_tool_translator(self, model_id: str) -> ToolSchemaTranslator:

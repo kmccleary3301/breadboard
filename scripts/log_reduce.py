@@ -516,21 +516,74 @@ def summarise_guardrails(root: Path) -> None:
     summary_path = root / "meta" / "run_summary.json"
     artifact_issues: Optional[List[str]] = None
     payload = _load_json(summary_path)
+    event_counts: Dict[str, int] = {}
+    recent_events: List[str] = []
     if isinstance(payload, dict):
         artifact_issues = payload.get("artifact_issues") or payload.get("artifactIssues")
         guard_metadata = payload.get("guardrails") or {}
         for key, value in guard_metadata.items():
             if isinstance(value, int) and key in guard_counts:
                 guard_counts[key] = value
+        for event in payload.get("guardrail_events") or []:
+            if not isinstance(event, dict):
+                continue
+            event_type = str(event.get("type") or "unknown")
+            event_counts[event_type] = event_counts.get(event_type, 0) + 1
+            formatted = _format_guardrail_event(event)
+            if formatted:
+                recent_events.append(formatted)
+        if len(recent_events) > 5:
+            recent_events = recent_events[-5:]
 
     print("\n== Guardrail Signals ==")
     for key, value in guard_counts.items():
         label = key.replace("_", " ")
         print(f"- {label}: {value}")
+    if event_counts:
+        print("- guardrail events:")
+        for key in sorted(event_counts):
+            print(f"    • {key}: {event_counts[key]}")
+    if recent_events:
+        print("- recent guardrail events:")
+        for entry in recent_events:
+            print(f"    • {entry}")
     if artifact_issues:
         print("- artifact issues:")
         for issue in artifact_issues:
             print(f"    • {issue}")
+
+
+def _format_guardrail_event(event: Dict[str, Any]) -> Optional[str]:
+    event_type = str(event.get("type") or "unknown")
+    payload = event.get("payload") or {}
+    details: List[str] = []
+    action = payload.get("action")
+    if action:
+        details.append(str(action))
+    tool = payload.get("tool")
+    if tool:
+        details.append(f"tool={tool}")
+    reason = payload.get("reason")
+    if reason:
+        details.append(str(reason))
+    extras: List[str] = []
+    for key in ("streak", "threshold", "remaining", "warnings_seen"):
+        if key in payload:
+            extras.append(f"{key}={payload[key]}")
+    command = payload.get("command")
+    if command:
+        extras.append(f"cmd={command}")
+    turn = event.get("turn")
+    if turn is not None:
+        extras.append(f"turn={turn}")
+    text = " ".join(details).strip()
+    if extras:
+        extra_text = ", ".join(str(x) for x in extras if x is not None)
+        text = f"{text} ({extra_text})" if text else f"({extra_text})"
+    text = text.strip()
+    if not text:
+        text = ""
+    return f"{event_type}: {text}" if text else event_type
 
 
 def _summarize_conflict(content: str) -> List[str]:

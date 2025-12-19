@@ -1,59 +1,25 @@
 from __future__ import annotations
 
-from typing import List, Dict, Optional
-
 
 class MarkdownTranscriptWriter:
-    """Renders structured sections into a readable conversation.md file content.
+    def system(self, text: str) -> str:
+        return f"\n\n**System**\n\n{text}\n"
 
-    This writer only returns formatted text; the manager handles file I/O.
-    """
+    def user(self, text: str) -> str:
+        return f"\n\n**User**\n\n{text}\n"
 
-    def __init__(self) -> None:
-        pass
+    def assistant(self, text: str) -> str:
+        return f"\n\n**Assistant**\n\n{text}\n"
 
-    def section(self, title: str, body: str) -> str:
-        body = body.rstrip("\n")
-        return f"\n\n**{title}**\n\n{body}\n"
+    def provider_tool_calls(self, summary: str, path: str) -> str:
+        return f"\n\n**Provider Tool Calls**\n\n{summary}\n\n(see {path})\n"
 
-    def system(self, content: str) -> str:
-        return self.section("System", content)
+    def provider_tool_results(self, summary: str, path: str) -> str:
+        return f"\n\n**Provider Tool Results**\n\n{summary}\n\n(see {path})\n"
 
-    def user(self, content: str) -> str:
-        return self.section("User", content)
+    def provider_tools_provided(self, tools: list, path: str) -> str:
+        tool_list = "\n".join(str(t) for t in tools)
+        return f"\n\n**Provider Tools Provided**\n\n{tool_list}\n\n(see {path})\n"
 
-    def assistant(self, content: str) -> str:
-        return self.section("Assistant", content)
-
-    def tools_available_temp(self, summary: str, link: Optional[str] = None) -> str:
-        hdr = "Tools Available Prompt (Temporarily Appended to User Message)"
-        if link:
-            summary += f"\n\nSee: {link}"
-        return self.section(hdr, summary)
-
-    def provider_tools_provided(self, ids: List[str], link: Optional[str] = None) -> str:
-        body = "\n".join(ids)
-        if link:
-            body += f"\n\nSee: {link}"
-        return self.section("Tools Provided via Provider API Tool Schema", body)
-
-    def provider_tool_calls(self, calls_summary: str, link: Optional[str] = None) -> str:
-        body = calls_summary
-        if link:
-            body += f"\n\nSee: {link}"
-        return self.section("Model Called Provider Schema-Native Tools", body)
-
-    def provider_tool_results(self, results_summary: str, link: Optional[str] = None) -> str:
-        body = results_summary
-        if link:
-            body += f"\n\nSee: {link}"
-        return self.section("Provider Schema-Native Tool Call Results", body)
-
-    def text_tool_results(self, summary: str, links: Optional[List[str]] = None) -> str:
-        # Render a compact artifact list; the actual assistant content should be logged separately.
-        body = summary
-        if links:
-            body += "\n\n" + "\n".join([f"- {p}" for p in links])
-        return self.section("Tool Results (Text-Based Execution)", body)
-
-
+    def tools_available_temp(self, note: str, path: str) -> str:
+        return f"\n\n**Tools Available**\n\n{note}\n\n(see {path})\n"

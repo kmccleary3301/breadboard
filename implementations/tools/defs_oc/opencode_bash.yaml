@@ -18,7 +18,7 @@ parameters:
   - name: description
     type: string
     description: Short human description of the command
-    required: false
+    required: true
 execution:
   blocking: true
   max_per_turn: 1
@@ -26,6 +26,5 @@ provider_routing:
   openai:
     native_primary: true
     function_call: auto
-
 
 

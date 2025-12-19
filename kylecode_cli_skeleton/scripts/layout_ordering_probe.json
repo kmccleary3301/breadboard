@@ -1,0 +1,8 @@
+[
+  { "action": "log", "message": "Probe start" },
+  { "action": "type", "text": "Give me a quick summary of the current plan." },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 8000 },
+  { "action": "snapshot", "label": "probe" },
+  { "action": "log", "message": "Probe done" }
+]

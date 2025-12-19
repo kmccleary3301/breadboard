@@ -1,0 +1,33 @@
+id: todo.attach
+name: todo.attach
+description: Attach file/URL/commit references to a todo for traceability.
+type_id: python
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: id
+    type: string
+    description: Todo id receiving the attachment(s).
+    required: true
+  - name: refs
+    type: array
+    description: Reference objects to attach (files, URLs, commits, etc.).
+    required: true
+    items:
+      type: object
+      properties:
+        kind:
+          type: string
+          description: Reference type (file, url, commit, pr, etc.).
+        value:
+          type: string
+          description: Identifier/path for the reference.
+        note:
+          type: string
+          description: Optional context for the attachment.
+      required: [kind, value]
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true

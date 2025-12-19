@@ -1,0 +1,112 @@
+extends: opencode_openai_codexmini_c_fs_compiled.yaml
+
+guardrails:
+  include:
+    - implementations/guardrails/base_workspace.yaml
+    - implementations/guardrails/execution_baseline.yaml
+  overrides:
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 16
+        abort_after_turns: 64
+    shell_write_block:
+      templates:
+        validation: implementations/system_prompts/guardrails/shell_write_block_opencode.prompt.md
+    todo_rate_limit:
+      parameters:
+        todo_updates_before_progress: 1
+    completion_guard:
+      parameters:
+        warnings_before_abort: 3
+    workspace_context:
+      parameters:
+        require_exploration_before_edit: false
+        require_read_before_edit: false
+        require_progress_before_todo_updates: false
+  plan_bootstrap:
+    strategy: soft
+    max_turns: 2
+    warmup_turns: 1
+    seed_file: implementations/system_prompts/opencode/plan_bootstrap_protofs.yaml
+
+enhanced_tools:
+  enabled: true
+  validation:
+    enabled: false
+  diff_policy:
+    patch_splitting:
+      policy: auto_split
+
+features:
+  plan: false
+  todos:
+    enabled: true
+    strict: false
+    reset_streak_on_todo: true
+
+completion:
+  build_guard:
+    require_run_shell: true
+    require_successful_tests: true
+
+permissions:
+  shell:
+    default: allow
+    allow:
+      - ls*
+      - pwd
+      - cat*
+      - head
+      - tail
+      - tree
+      - git*
+      - rg*
+      - grep*
+      - sed
+      - awk
+      - find
+      - python*
+      - pytest*
+      - python*
+      - pytest*
+      - make
+      - cmake*
+      - npm run*
+      - yarn run*
+      - pnpm run*
+      - go test*
+      - cargo test*
+      - uv run*
+      - bash
+      - sh
+      - zsh
+    ask:
+      - npm install*
+      - yarn add*
+      - pnpm add*
+      - pip install*
+      - curl*
+      - wget*
+      - apt-get*
+      - brew install*
+      - uv pip install*
+      - go install*
+      - cargo install*
+      - npm update*
+      - yarn upgrade*
+    deny:
+      - rm -rf*
+      - sudo*
+      - chmod 777*
+      - :(){:|:&};:
+      - shutdown*
+      - reboot*
+      - poweroff*
+      - mkfs*
+      - dd if=*
+      - kill -9*
+      - useradd*
+      - groupadd*
+      - chown*
+  edit:
+    default: allow

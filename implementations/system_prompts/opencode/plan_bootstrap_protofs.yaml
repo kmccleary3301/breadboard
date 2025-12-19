@@ -1,0 +1,20 @@
+write_board:
+  todos:
+    - content: "Review protofs requirements"
+      status: completed
+      metadata:
+        context: implementations/test_tasks/protofs_c.md
+    - content: "Implement protofs library"
+      status: in_progress
+      metadata:
+        files: [fs.c, fs.h]
+        goal: protofs API
+    - content: "Add tests and validate"
+      status: pending
+      metadata:
+        files: [test.c]
+        commands: ["gcc", "./test"]
+extra_calls:
+  - function: list
+    arguments:
+      path: "."

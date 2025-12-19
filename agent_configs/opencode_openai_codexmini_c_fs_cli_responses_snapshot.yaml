@@ -1,0 +1,43 @@
+extends: opencode_openai_codexmini_c_fs_guardrails.yaml
+
+profile: { name: opencode-openai-codexmini-cli-responses-snapshot }
+
+providers:
+  default_model: openai/gpt-5.1-codex-mini
+  models:
+    - id: openai/gpt-5.1-codex-mini
+      adapter: openai_responses
+      params:
+        temperature: 0.2
+        top_p: 1.0
+        max_output_tokens: 2048
+  stream_responses: true
+
+provider_tools:
+  use_native: true
+  api_variant: responses
+
+guardrails:
+  include: []
+  overrides:
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 999
+        abort_after_turns: 999
+        emit_event: false
+    completion_guard:
+      parameters:
+        warnings_before_abort: 999
+    plan_bootstrap:
+      strategy: never
+features:
+  plan: false
+  todos:
+    enabled: false
+
+turn_limit: 4
+
+completion:
+  build_guard:
+    require_run_shell: false
+    require_successful_tests: false

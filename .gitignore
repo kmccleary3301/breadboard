@@ -1,204 +1,11 @@
-# Environment files
-*.env
-.env
-.env.local
-.env.production
-.env.test
-ENV_EXAMPLE.txt
-
-# Agent workspace directories
-agent_ws_*/
-test_workspace/
-logging/
-
-# Database files
-*.db
-*.sqlite
-*.sqlite3
-
-# Documentation and miscellaneous
-industry_coder_refs/
-misc/
-# docs/
-docs_2/
-examples/
-terminal_ui_packages/
-tool_calling_work/
-net_inspect/
-opencode_docs/
-kylecode_cli_skeleton/
-
-# Cloned repositories and archives
-# anon-kode-main/
-# anon-kode-main.zip
-# claude-code-reverse/
-# crush/
-# opencode/
-.claude/
-
-# Debug and research files
-debug_*.py
-demonstrate_*.py
-deep_research_*.md
-fibonacci_task.md
-opencode_*.md
-*.tmp
-
-# Isolated outputs
-isolated_test_output/
-
-# Experimental files
-firecracker_sandbox/
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# PyInstaller
-*.manifest
-*.spec
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-.python-version
-
-# pipenv
-Pipfile.lock
-
-# poetry
-poetry.lock
-
-# pdm
-.pdm.toml
-
-# PEP 582
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Node.js (if any JS tools)
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
-
-# Docker
-*.log
-containers/
-
-# Temporary files
-*.tmp
-*.temp
-temp/
-tmp/
-
-# Session outputs
-session_out.json
-session_out.md
-
 # Docs/attachments (kept out of git)
 docs_tmp/
 exports/
+logging/
+agent_ws_*/
 c_sessions_extracted/
 .cursor/
 cursor_*
-cm_edits/
 AGENTS.md
 @AGENTS.md
 .beads/
@@ -206,11 +13,10 @@ $script
 $SCRIPT
 $tmpdir/
 $TMP_DIR/
+misc/
 perf/
 goldens/
-repo_reconstruct_*
-repo_reconstruct_codex_parsed*/
-repo_reconstruct_codex_session_*/
+
 # Local caches and build artifacts
 **/node_modules/
 **/dist/
@@ -223,17 +29,10 @@ repo_reconstruct_codex_session_*/
 **/*.log
 **/*.tmp
 **/*.swp
-.env.*
-!.env.example
-.venv/
-.ruff_cache/
-.pyright/
-.turbo/
-.parcel-cache/
-.pnpm-store/
-pnpm-debug.log*
+
 # Render samples and other doc artifacts
 docs/**/render_samples/
+
 # Recovery artifacts
 photorec.*
 recovered_manifest.json
@@ -241,7 +40,6 @@ recover_from_outputs_summary.json
 replay_apply_summary.json
 *.ses
 *.se2
+
 # Local runtime state
 .kyle/
-repo_reconstruct_*/
-implementations/tooling_sys_prompts_cached/

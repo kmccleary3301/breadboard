@@ -4,17 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
-from typing import AsyncIterator, Optional
+from pathlib import Path
+from typing import Any, AsyncIterator, Optional, Sequence
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 
 from .events import SessionEvent
 from .models import (
+    AttachmentHandle,
+    AttachmentUploadResponse,
     SessionCommandRequest,
     SessionCommandResponse,
     SessionCreateRequest,
     SessionCreateResponse,
+    SessionFileContent,
+    SessionFileInfo,
     SessionInputRequest,
     SessionInputResponse,
     SessionStatus,
@@ -25,15 +31,36 @@ from .session_runner import SessionRunner
 logger = logging.getLogger(__name__)
 
 
+def _load_bridge_chaos_metadata() -> dict[str, float] | None:
+    latency = max(0, int(os.environ.get("KYLECODE_CLI_LATENCY_MS", "0")))
+    jitter = max(0, int(os.environ.get("KYLECODE_CLI_JITTER_MS", "0")))
+    try:
+        drop = float(os.environ.get("KYLECODE_CLI_DROP_RATE", "0"))
+    except ValueError:
+        drop = 0.0
+    drop = max(0.0, min(1.0, drop))
+    if latency == 0 and jitter == 0 and drop == 0:
+        return None
+    return {
+        "latencyMs": float(latency),
+        "jitterMs": float(jitter),
+        "dropRate": drop,
+    }
+
+
 class SessionService:
     """Facade that coordinates the registry, runners, and FastAPI endpoints."""
 
     def __init__(self, registry: SessionRegistry | None = None) -> None:
         self.registry = registry or SessionRegistry()
+        self._bridge_chaos = _load_bridge_chaos_metadata()
 
     async def create_session(self, request: SessionCreateRequest) -> SessionCreateResponse:
         session_id = str(uuid.uuid4())
-        record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=request.metadata or {})
+        metadata = dict(request.metadata or {})
+        if self._bridge_chaos:
+            metadata.setdefault("bridgeChaos", self._bridge_chaos)
+        record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata)
         await self.registry.create(record)
         runner = SessionRunner(session=record, registry=self.registry, request=request)
         record.runner = runner
@@ -78,7 +105,7 @@ class SessionService:
         if not runner:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
         try:
-            await runner.enqueue_input(payload.content)
+            await runner.enqueue_input(payload.content, attachments=list(payload.attachments or []))
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         except RuntimeError as exc:
@@ -99,3 +126,182 @@ class SessionService:
         except RuntimeError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         return SessionCommandResponse(detail=detail)
+
+    async def upload_attachments(
+        self,
+        session_id: str,
+        files: Sequence[UploadFile],
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> AttachmentUploadResponse:
+        if not files:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no files provided")
+        record = await self.ensure_session(session_id)
+        runner: Optional[SessionRunner] = getattr(record, "runner", None)
+        if not runner:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
+        workspace_dir = runner.get_workspace_dir()
+        if not workspace_dir:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="workspace not ready")
+
+        attachment_entries: list[dict[str, Any]] = []
+        handles: list[AttachmentHandle] = []
+        attachment_root = workspace_dir / ".kyle" / "attachments"
+        attachment_root.mkdir(parents=True, exist_ok=True)
+        for index, upload in enumerate(files, start=1):
+            try:
+                data = await upload.read()
+            except Exception as exc:  # pragma: no cover - FastAPI wraps errors
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"failed to read upload: {exc}") from exc
+            if not data:
+                continue
+            attachment_id = f"att-{uuid.uuid4().hex[:10]}"
+            filename = self._sanitize_filename(upload.filename or f"attachment-{index}.bin")
+            target_dir = attachment_root / attachment_id
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_path = target_dir / filename
+            target_path.write_bytes(data)
+            rel_path = target_path.relative_to(workspace_dir)
+            handle = AttachmentHandle(
+                id=attachment_id,
+                filename=filename,
+                mime=upload.content_type,
+                size_bytes=len(data),
+            )
+            handles.append(handle)
+            attachment_entries.append(
+                {
+                    "id": attachment_id,
+                    "filename": filename,
+                    "absolute_path": str(target_path),
+                    "relative_path": str(rel_path),
+                    "metadata": metadata or {},
+                }
+            )
+        if not handles:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no attachment data found")
+        runner.register_attachments(attachment_entries)
+        return AttachmentUploadResponse(attachments=handles)
+
+    @staticmethod
+    def _resolve_workspace_path(workspace_dir: Path, requested_path: str) -> Path:
+        candidate = (requested_path or ".").strip() or "."
+        if os.path.isabs(candidate):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file paths must be workspace-relative")
+        workspace_root = workspace_dir.resolve()
+        resolved = (workspace_root / candidate).resolve()
+        try:
+            resolved.relative_to(workspace_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid path") from exc
+        return resolved
+
+    async def list_files(self, session_id: str, root: str = ".") -> list[SessionFileInfo]:
+        record = await self.ensure_session(session_id)
+        runner: Optional[SessionRunner] = getattr(record, "runner", None)
+        if not runner:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
+        workspace_dir = runner.get_workspace_dir()
+        if not workspace_dir:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="workspace not ready")
+
+        target = self._resolve_workspace_path(workspace_dir, root)
+        if not target.exists():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="path not found")
+
+        def to_info(path: Path) -> SessionFileInfo:
+            rel = path.relative_to(workspace_dir).as_posix()
+            if path.is_dir():
+                return SessionFileInfo(path=rel, type="directory")
+            stat = path.stat()
+            return SessionFileInfo(path=rel, type="file", size=stat.st_size)
+
+        if target.is_file():
+            return [to_info(target)]
+
+        children = sorted(target.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
+        return [to_info(child) for child in children]
+
+    async def read_file(
+        self,
+        session_id: str,
+        file_path: str,
+        *,
+        mode: str = "cat",
+        head_lines: int = 200,
+        tail_lines: int = 80,
+        max_bytes: int = 80_000,
+    ) -> SessionFileContent:
+        record = await self.ensure_session(session_id)
+        runner: Optional[SessionRunner] = getattr(record, "runner", None)
+        if not runner:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
+        workspace_dir = runner.get_workspace_dir()
+        if not workspace_dir:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="workspace not ready")
+
+        if not file_path or not str(file_path).strip() or str(file_path).strip() == ".":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file path required")
+
+        target = self._resolve_workspace_path(workspace_dir, str(file_path))
+        if not target.exists() or not target.is_file():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="file not found")
+
+        stat = target.stat()
+        total_bytes = stat.st_size
+
+        if mode == "snippet":
+            snippet = self._read_snippet(target, head_lines=head_lines, tail_lines=tail_lines, max_bytes=max_bytes)
+            return SessionFileContent(
+                path=target.relative_to(workspace_dir).as_posix(),
+                content=snippet,
+                truncated=True if total_bytes > max_bytes else False,
+                total_bytes=total_bytes,
+            )
+
+        try:
+            content = target.read_text("utf-8", errors="replace")
+        except Exception as exc:  # pragma: no cover - defensive
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+        return SessionFileContent(
+            path=target.relative_to(workspace_dir).as_posix(),
+            content=content,
+            truncated=False,
+            total_bytes=total_bytes,
+        )
+
+    @staticmethod
+    def _read_snippet(target: Path, *, head_lines: int, tail_lines: int, max_bytes: int) -> str:
+        max_bytes = max(1, int(max_bytes))
+        head_bytes = max(1, max_bytes // 2)
+        tail_bytes = max(1, max_bytes - head_bytes)
+        stat = target.stat()
+        size = stat.st_size
+
+        with target.open("rb") as handle:
+            head_raw = handle.read(head_bytes)
+            if size > tail_bytes:
+                handle.seek(max(0, size - tail_bytes))
+            tail_raw = handle.read(tail_bytes)
+
+        head_text = head_raw.decode("utf-8", errors="replace")
+        tail_text = tail_raw.decode("utf-8", errors="replace")
+        head_list = head_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")[: max(0, int(head_lines))]
+        tail_list = tail_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")[-max(0, int(tail_lines)) :]
+
+        if size <= max_bytes:
+            return "\n".join(head_list)
+
+        parts: list[str] = []
+        if head_list:
+            parts.extend(head_list)
+        parts.extend(["", "… (truncated) …", ""])
+        if tail_list:
+            parts.extend(tail_list)
+        return "\n".join(parts)
+
+    @staticmethod
+    def _sanitize_filename(filename: str) -> str:
+        candidate = filename.strip() or "attachment.bin"
+        candidate = candidate.replace("\\", "/")
+        return os.path.basename(candidate)

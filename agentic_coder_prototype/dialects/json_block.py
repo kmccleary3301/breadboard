@@ -257,55 +257,6 @@ You can call multiple tools by adding more objects to the "tool_calls" array."""
                 return False
             
             return True
-        
-        except json.JSONDecodeError:
+        except Exception:
             return False
-    
-    def estimate_token_overhead(self, num_tools: int) -> int:
-        """Estimate token overhead for JSON block format."""
-        base_overhead = 120  # JSON format explanation
-        per_tool_overhead = 40  # JSON structure is moderately verbose
-        return base_overhead + (num_tools * per_tool_overhead)
-    
-    def supports_streaming_partial_calls(self) -> bool:
-        """Check if format supports parsing partial tool calls during streaming."""
-        return False  # JSON requires complete structure
-    
-    def repair_malformed_json(self, json_content: str) -> str:
-        """Attempt to repair malformed JSON content."""
-        repaired = json_content.strip()
         
-        # Fix common JSON issues
-        
-        # Fix trailing commas
-        repaired = re.sub(r',\s*}', '}', repaired)
-        repaired = re.sub(r',\s*]', ']', repaired)
-        
-        # Fix unquoted strings (basic cases)
-        repaired = re.sub(r':\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*([,}])', r': "\1"\2', repaired)
-        
-        # Fix missing quotes around keys
-        repaired = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', repaired)
-        
-        # Add missing closing braces/brackets
-        open_braces = repaired.count('{') - repaired.count('}')
-        open_brackets = repaired.count('[') - repaired.count(']')
-        
-        repaired += '}' * open_braces
-        repaired += ']' * open_brackets
-        
-        return repaired
-    
-    def format_for_provider(self, provider: str, tools: List[EnhancedToolDefinition]) -> Dict[str, Any]:
-        """Format tools for provider API."""
-        # JSON block format is provider-agnostic
-        return {
-            "system_prompt_addition": self.format_tools_for_prompt(tools),
-            "requires_user_injection": True,
-            "supports_parallel_calls": True,
-            "provider_metadata": {
-                "format_type": "json_block",
-                "structured": True,
-                "human_readable": True
-            }
-        }

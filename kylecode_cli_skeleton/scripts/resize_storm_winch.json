@@ -1,0 +1,12 @@
+[
+  { "delayMs": 400, "cols": 200, "rows": 36 },
+  { "delayMs": 250, "cols": 90, "rows": 36 },
+  { "delayMs": 220, "cols": 160, "rows": 30 },
+  { "delayMs": 180, "cols": 100, "rows": 34 },
+  { "delayMs": 260, "cols": 180, "rows": 36 },
+  { "delayMs": 320, "cols": 84, "rows": 28 },
+  { "delayMs": 200, "cols": 140, "rows": 32 },
+  { "delayMs": 240, "cols": 88, "rows": 30 },
+  { "delayMs": 360, "cols": 200, "rows": 36 },
+  { "delayMs": 280, "cols": 96, "rows": 36 }
+]

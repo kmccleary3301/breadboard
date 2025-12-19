@@ -42,6 +42,16 @@ class AgenticCoder:
         except Exception:
             v2_ws_root = None
         self.workspace_dir = workspace_dir or v2_ws_root or f"agent_ws_{os.path.basename(config_path).split('.')[0]}"
+        # Keep config.workspace.root aligned with the effective workspace directory so
+        # enhanced tool executors (which read from config) operate in the same root.
+        try:
+            ws_cfg = self.config.get("workspace")
+            if not isinstance(ws_cfg, dict):
+                ws_cfg = {}
+            ws_cfg["root"] = self.workspace_dir
+            self.config["workspace"] = ws_cfg
+        except Exception:
+            pass
         self.agent = None
         self._local_mode = os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1"
         
@@ -149,7 +159,8 @@ class AgenticCoder:
     def initialize(self) -> None:
         """Initialize the agent with the loaded configuration."""
         workspace_path = Path(self.workspace_dir)
-        if workspace_path.exists():
+        preserve_seeded = os.environ.get("PRESERVE_SEEDED_WORKSPACE") in {"1", "true", "True"}
+        if workspace_path.exists() and not preserve_seeded:
             # Ensure each run starts from a clean clone workspace
             shutil.rmtree(workspace_path)
         workspace_path.mkdir(parents=True, exist_ok=True)
@@ -185,8 +196,33 @@ class AgenticCoder:
         stream: bool = False,
         event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
         event_queue: Optional[Any] = None,
+        permission_queue: Optional[Any] = None,
+        replay_session: Optional[str] = None,
+        parity_guardrails: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run a single task and return results."""
+        if replay_session and self.agent is not None:
+            raise RuntimeError("Replay/parity options must be set before agent initialization.")
+
+        if replay_session:
+            replay_cfg = self.config.setdefault("replay", {})
+            replay_cfg["session_path"] = str(Path(replay_session).resolve())
+            if parity_guardrails:
+                try:
+                    expected = json.loads(Path(parity_guardrails).read_text(encoding="utf-8"))
+                except Exception:
+                    expected = None
+                allowlist: List[str] = []
+                if isinstance(expected, list):
+                    replay_cfg["guardrail_expected"] = expected
+                    for entry in expected:
+                        if isinstance(entry, dict) and entry.get("type"):
+                            allowlist.append(str(entry["type"]))
+                replay_cfg["guardrail_allowlist"] = sorted(set(allowlist))
+        elif "replay" in self.config:
+            self.config.pop("replay", None)
+        is_replay = bool(replay_session)
+
         if not self.agent:
             self.initialize()
 
@@ -195,19 +231,25 @@ class AgenticCoder:
         tool_prompt_mode = self._resolve_tool_prompt_mode() or "system_once"
         # If task is a file path, read it as the user prompt content; else use as-is
         user_prompt = task
+        task_seed: Optional[Tuple[str, str]] = None
         try:
             p = Path(task)
             if p.exists() and p.is_file():
                 user_prompt = p.read_text(encoding="utf-8", errors="replace")
+                if not is_replay:
+                    task_seed = (p.name, user_prompt)
+                    self._materialize_task_spec(p, user_prompt)
         except Exception:
             pass
+        if task_seed and not is_replay:
+            self._seed_agent_workspace_file(task_seed[0], task_seed[1])
         # Run empty system prompt to allow v2 compiler to inject packs; user prompt carries content
-        effective_stream = bool(stream) and self._local_mode
+        effective_stream = bool(stream)
         effective_emitter = event_emitter if self._local_mode else None
         if event_emitter and not self._local_mode:
             logger.warning(
                 "Streaming event emitters are currently only supported in local mode; "
-                "falling back to summary events."
+                "falling back to queue-based streaming."
             )
         if self._local_mode:
             return self.agent.run_agentic_loop(
@@ -221,6 +263,7 @@ class AgenticCoder:
                 tool_prompt_mode=tool_prompt_mode,
                 event_emitter=effective_emitter,
                 event_queue=event_queue,
+                permission_queue=permission_queue,
             )
 
         ref = self.agent.run_agentic_loop.remote(
@@ -234,6 +277,7 @@ class AgenticCoder:
             tool_prompt_mode=tool_prompt_mode,
             event_emitter=effective_emitter,
             event_queue=event_queue,
+            permission_queue=permission_queue,
         )
         return ray.get(ref)
     
@@ -299,6 +343,42 @@ class AgenticCoder:
             pass
         # Legacy fallback
         return str(self.config.get("model", "gpt-4o-mini"))
+
+    def _materialize_task_spec(self, source_path: Path, contents: str) -> None:
+        """
+        Copy the task specification into the workspace so shell/list/read guards have local context.
+        """
+        try:
+            targets: List[Path] = []
+            workspace_path = Path(self.workspace_dir)
+            targets.append(workspace_path)
+            try:
+                cfg_ws = (self.config.get("workspace", {}) or {}).get("root")
+                if cfg_ws:
+                    cfg_path = Path(cfg_ws)
+                    if cfg_path not in targets:
+                        targets.append(cfg_path)
+            except Exception:
+                pass
+            for target in targets:
+                target.mkdir(parents=True, exist_ok=True)
+                dest_path = target / source_path.name
+                dest_path.write_text(contents, encoding="utf-8")
+        except Exception:
+            # Best-effort only
+            pass
+
+    def _seed_agent_workspace_file(self, filename: str, contents: str) -> None:
+        """Ensure the conductor's workspace also receives the task specification."""
+        if not filename or contents is None:
+            return
+        try:
+            if self._local_mode:
+                self.agent.seed_workspace_file.remote(filename, contents)
+            else:
+                self._ray_get(self.agent.seed_workspace_file.remote(filename, contents))
+        except Exception:
+            pass
 
 
 def create_agent(config_path: str, workspace_dir: Optional[str] = None, overrides: Optional[Dict[str, Any]] = None) -> AgenticCoder:

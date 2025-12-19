@@ -4,15 +4,15 @@ from typing import Any, Dict
 
 
 class APIRequestRecorder:
-    """Thin helper that delegates to LoggerV2Manager for request/response dumps."""
+    def __init__(self, logger_v2) -> None:
+        self.logger_v2 = logger_v2
 
-    def __init__(self, lm) -> None:
-        self.lm = lm
+    def save_request(self, turn_index: int, payload: Dict[str, Any]) -> str:
+        if not getattr(self.logger_v2, "run_dir", None):
+            return ""
+        return self.logger_v2.write_json(f"raw/requests/turn_{turn_index}.json", payload)
 
-    def save_request(self, turn: int, payload: Dict[str, Any]) -> str:
-        return self.lm.write_json(f"raw/requests/turn_{turn}.request.json", payload)
-
-    def save_response(self, turn: int, payload: Dict[str, Any]) -> str:
-        return self.lm.write_json(f"raw/responses/turn_{turn}.response.json", payload)
-
-
+    def save_response(self, turn_index: int, payload: Dict[str, Any]) -> str:
+        if not getattr(self.logger_v2, "run_dir", None):
+            return ""
+        return self.logger_v2.write_json(f"raw/responses/turn_{turn_index}.json", payload)

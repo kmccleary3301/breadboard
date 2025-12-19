@@ -73,6 +73,82 @@ def test_openrouter_runtime_uses_openai_client(monkeypatch):
     assert client.chat.completions.create(model=model, messages=[]) is not None
 
 
+def test_openrouter_gpt5_routes_through_responses_runtime_descriptor() -> None:
+    descriptor, _model = provider_router.get_runtime_descriptor("openrouter/openai/gpt-5-nano")
+    assert descriptor.provider_id == "openrouter"
+    assert descriptor.runtime_id == "openai_responses"
+
+
+def test_openrouter_gpt5_responses_injects_provider_routing_preferences(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(
+        provider_router.providers["openrouter"],
+        "default_headers",
+        {},
+        raising=False,
+    )
+
+    descriptor, model = provider_router.get_runtime_descriptor("openrouter/openai/gpt-5-nano")
+    runtime = provider_registry.create_runtime(descriptor)
+
+    captured_kwargs = {}
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            output_item = types.SimpleNamespace(
+                type="message",
+                role="assistant",
+                content=[{"type": "output_text", "text": "ok"}],
+                finish_reason="stop",
+            )
+            return types.SimpleNamespace(
+                id="resp_1",
+                model=model,
+                output=[output_item],
+                usage={},
+            )
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.responses = FakeResponses()
+            self.chat = types.SimpleNamespace(completions=None)
+
+    monkeypatch.setattr(
+        "agentic_coder_prototype.provider_runtime.OpenAI",
+        FakeOpenAI,
+    )
+
+    client_config = provider_router.create_client_config("openrouter/openai/gpt-5-nano")
+    client = runtime.create_client(
+        client_config["api_key"],
+        base_url=client_config.get("base_url"),
+        default_headers=client_config.get("default_headers"),
+    )
+
+    context = ProviderRuntimeContext(
+        session_state=types.SimpleNamespace(
+            get_provider_metadata=lambda *_args, **_kwargs: None,
+            set_provider_metadata=lambda *_args, **_kwargs: None,
+        ),
+        agent_config={},
+        stream=False,
+    )
+
+    runtime.invoke(
+        client=client,
+        model=model,
+        messages=[{"role": "user", "content": "hello"}],
+        tools=None,
+        stream=False,
+        context=context,
+    )
+
+    provider_cfg = (captured_kwargs.get("extra_body") or {}).get("provider") or {}
+    assert provider_cfg.get("order") == ["openai"]
+    assert provider_cfg.get("allow_fallbacks") is False
+
+
 def test_openrouter_runtime_injects_accept_headers_on_request(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setattr(

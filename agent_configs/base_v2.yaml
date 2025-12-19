@@ -1,162 +1,68 @@
-completion:
-  # Phase 5: keep sentinel tooling aligned with CompletionDetector fallbacks.
-  confidence_threshold: 0.6
-  natural_finish:
-    idle_turn_limit: 1
-    no_tool_turns_threshold: 2
-  primary: hybrid
-  provider_signals: true
-  text_sentinels:
-  - TASK COMPLETE
-  - ALL TESTS PASSED
-  - IMPLEMENTATION COMPLETE
-  - '>>>>>> END RESPONSE'
-  tool_finish: mark_task_complete
-concurrency:
-  # Phase 5 default: serialize write-heavy tools while allowing read bursts.
-  at_most_one_of:
-  - run_shell
-  groups:
-  - match_tools:
-    - read_file
-    - glob
-    - grep
-    - list_dir
-    max_parallel: 4
-    name: fs_reads
-  - barrier_after: apply_unified_patch
-    match_tools:
-    - apply_unified_patch
-    - apply_search_replace
-    - write
-    - run_shell
-    max_parallel: 1
-    name: edits_and_bash
-  nonblocking_tools:
-  - read_file
-  - glob
-  - grep
-  - list_dir
-hpo:
-  enabled: false
-  objective: episode_return
-  params: {}
-  search:
-    algorithm: bayes-hyperband
-    max_runs: 200
-  wandb:
-    entity: your_team
-    mode: online
-    project: raycoder
-loop:
-  sequence:
-  - if: features.plan
-    then:
-      mode: plan
-  - mode: build
-  - do:
-      mode: compact
-    while: needs_compact
-  turn_strategy:
-    flow: assistant_continuation
-    relay: tool_role
-    tool_result_injection: summarize
-modes:
-- name: plan
-  prompt: '@pack(base).plan'
-  tools_disabled:
-  - apply_unified_patch
-  - apply_search_replace
-  - run_shell
-  tools_enabled:
-  - read_file
-  - list_dir
-  - glob
-  - grep
-- name: build
-  prompt: '@pack(base).builder'
-  # Ensure mark_task_complete stays enabled in the editing phase for completion handshake.
-  tools_enabled:
-  - '*'
-- name: compact
-  prompt: '@pack(base).compact'
-  tools_enabled: []
-  triggers:
-    tokens_remaining_pct_lt: 20
+version: 2
+
 profile:
-  description: maximally modular agent coder
-  name: default
-  seed: 42
-prompts:
-  cache:
-    enabled: true
-    key: sha256(config+prompts+toolset)
-  evolution:
+  name: base-v2
+
+workspace:
+  root: ./agent_ws
+  sandbox:
+    driver: process
+  mirror:
     enabled: false
-    store_dir: ./implementations/prompt_evolution
-  injection:
-    per_turn_order:
-    - mode_specific
-    - '@pack(base).tools_catalog_short'
-    system_order:
-    - '@pack(base).system'
-    - '[CACHE] @pack(base).tools_catalog_full'
-  packs:
-    base:
-      builder: implementations/system_prompts/default.md
-      compact: implementations/system_prompts/default.md
-      plan: implementations/system_prompts/claude_code/system-workflow.prompt.md
-      system: implementations/system_prompts/default.md
-      tools_catalog_full: implementations/system_prompts/default.md
-      tools_catalog_short: implementations/system_prompts/default.md
+    path: ./agent_ws
+    mode: development
+
 providers:
   default_model: openrouter/openai/gpt-5-nano
+  routing:
+    disable_native_tools_on_probe_failure: true
+    disable_stream_on_probe_failure: true
   models:
-  - adapter: openai
-    id: openrouter/openai/gpt-5-nano
-    params:
-      parallel_tools: true
-      structured_outputs:
-        enabled: true
-        strict: true
-      temperature: 0.2
-    routing:
-      disable_native_tools_on_probe_failure: true
-      disable_stream_on_probe_failure: true
-      fallback_models:
-      - gpt-5-nano
-  - adapter: anthropic
-    id: anthropic/claude-3-7-sonnet
-    params:
-      tool_use: true
-  - adapter: openai
-    id: gpt-5-nano
-    params:
-      temperature: 0.2
-    routing:
-      fallback_models:
-      - openrouter/openai/gpt-5-nano
-rl_and_evolution:
-  policy_rl:
+    - id: openrouter/openai/gpt-5-nano
+      adapter: openai
+      params:
+        temperature: 0.2
+        parallel_tools: true
+        structured_outputs:
+          enabled: true
+          strict: true
+      routing:
+        disable_stream_on_probe_failure: true
+        disable_native_tools_on_probe_failure: true
+        fallback_models:
+          - gpt-5-nano
+    - id: gpt-5-nano
+      adapter: openai
+      params:
+        temperature: 0.2
+      routing:
+        fallback_models:
+          - openrouter/openai/gpt-5-nano
+
+provider_tools:
+  use_native: true
+  suppress_prompts: false
+
+prompts:
+  packs:
+    base:
+      system: implementations/system_prompts/default.md
+      plan: implementations/system_prompts/default.md
+      builder: implementations/system_prompts/default.md
+      compact: implementations/system_prompts/default.md
+      tools_catalog_full: implementations/system_prompts/default.md
+      tools_catalog_short: implementations/system_prompts/default.md
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  tool_prompt_synthesis:
     enabled: false
-  prompt_evolver:
-    enabled: false
-telemetry:
-  database_path: ./perf/enhanced_tool_calling.db
-  per_turn_metrics:
-  - SVS
-  - ACS
-  - CPS
-  - PAS
-  - HMR
-  - LED
-  - SBS
-  - TPF_DELTA
-  - TE
-  - LE
-  - TOE
-  - SPA
+
 tools:
+  mark_task_complete: true
+  registry:
+    paths:
+      - implementations/tools/defs
+    include:
+      - "*"
   aliases:
     bash: run_shell
     edit: apply_search_replace
@@ -164,74 +70,88 @@ tools:
     patch: apply_unified_patch
     read: read_file
   dialects:
-    create_file_policy:
-      aider_search_replace:
-        prefer_write_file_tool: true
-      unified_diff:
-        header_style: git
-        use_dev_null: true
     preference:
+      default: [aider_search_replace, unified_diff, bash_block]
       by_model:
-        anthropic/*:
-          order:
-          - aider_search_replace
-          - unified_diff
-        openrouter/openai/*:
-          native: true
-          order:
-          - yaml_command
-          - unified_diff
-          - opencode_patch
-      by_tool_kind:
-        bash:
-        - bash_block
-        - provider_native
-        diff:
-        - unified_diff
-        - aider_search_replace
-        - opencode_patch
-      default:
-      - unified_diff
-      - aider_search_replace
-      - opencode_patch
-      - bash_block
+        "openrouter/openai/*":
+          order: [aider_search_replace, unified_diff, bash_block]
+        "openai/*":
+          order: [aider_search_replace, unified_diff, bash_block]
     selection:
       by_model:
-        anthropic/*:
-        - aider_search_replace
-        - unified_diff
-        openrouter/openai/*:
-        - unified_diff
-        - opencode_patch
-      by_tool_kind:
-        bash:
-        - bash_block
-        - provider_native
-        diff:
-        - unified_diff
-        - aider_search_replace
-        - opencode_patch
-  overlays: []
-  registry:
-    include:
-    - '*'
-    paths:
-    - implementations/tools/defs
-version: 2
-workspace:
-  lsp:
-    diagnostics_on_write: true
+        "openrouter/openai/*": [aider_search_replace, unified_diff]
+        "openai/*": [aider_search_replace, unified_diff]
+
+modes:
+  - name: plan
+    prompt: "@pack(base).plan"
+    tools_enabled: [read_file, list_dir, glob, grep]
+    tools_disabled: []
+  - name: build
+    prompt: "@pack(base).builder"
+    # Ensure mark_task_complete stays enabled in the editing phase for completion handshake.
+    tools_enabled: ["*"]
+    tools_disabled: []
+  - name: compact
+    prompt: "@pack(base).compact"
+    tools_enabled: []
+
+loop:
+  sequence:
+    - if: "features.plan"
+      then: { mode: plan }
+    - mode: build
+  plan_turn_limit: 1
+  turn_strategy:
+    relay: tool_role
+    flow: assistant_continuation
+    allow_multiple_per_turn: true
+
+features:
+  plan: true
+  todos:
     enabled: true
-    servers:
-    - pyright
-    - clangd
-    - tsserver
-  root: ./agent_ws
-  sandbox:
-    driver: docker
-    image: gcc-dev:latest
-    network: none
-    resources:
-      cpus: 2
-      mem_gb: 8
-    runtime: runsc
+    strict: false
+    reset_streak_on_todo: true
+
+completion:
+  # Phase 5: keep sentinel tooling aligned with CompletionDetector fallbacks.
+  confidence_threshold: 0.6
+  natural_finish:
+    idle_turn_limit: 1
+    no_tool_turns_threshold: 2
+  primary: hybrid
+  tool_finish: mark_task_complete
+  provider_signals: true
+  text_sentinels:
+    - TASK COMPLETE
+    - ALL TESTS PASSED
+    - IMPLEMENTATION COMPLETE
+    - '>>>>>> END RESPONSE'
+
+concurrency:
+  # Phase 5 default: serialize write-heavy tools while allowing read bursts.
+  at_most_one_of:
+    - run_shell
+  groups:
+    - name: fs_reads
+      match_tools:
+        - read_file
+        - list_dir
+        - glob
+        - grep
+      max_parallel: 4
+    - name: edits_and_bash
+      match_tools:
+        - apply_unified_patch
+        - apply_search_replace
+        - write
+        - run_shell
+      max_parallel: 1
+      barrier_after: apply_unified_patch
+  nonblocking_tools:
+    - read_file
+    - list_dir
+    - glob
+    - grep
+    - apply_search_replace

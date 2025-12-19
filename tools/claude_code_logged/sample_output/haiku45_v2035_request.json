@@ -1,0 +1,32 @@
+{
+  "logVersion": 1,
+  "phase": "request",
+  "requestId": "01K9H0D1ZQK6A4Q4TZM58EAV0V",
+  "retryAttempt": 0,
+  "timestamp": "2025-11-08T03:30:46.925Z",
+  "workspacePath": "/shared_folders/querylake_server/ray_testing/ray_SCE/misc/claude_code_runs/logged_protofs",
+  "sessionId": "protofs-haiku45",
+  "cliVersion": "2.0.36-logged",
+  "runtimeId": "a6f6d3a6-8d5e-4921-8d88-4c93bc2124ac",
+  "targetUrl": "https://api.anthropic.com/v1/messages",
+  "provider": "anthropic",
+  "headers": [
+    { "name": "content-type", "value": "application/json" },
+    { "name": "x-api-key", "value": "[redacted]" },
+    { "name": "x-stainless-retry-count", "value": "0" }
+  ],
+  "body": {
+    "encoding": "json",
+    "size": 1432,
+    "json": {
+      "model": "claude-haiku-4-5-20251001",
+      "system": "You are Claude Code...",
+      "messages": [
+        { "role": "user", "content": "Create a proto file system..." }
+      ],
+      "max_tokens": 4096,
+      "tools": [],
+      "temperature": 0
+    }
+  }
+}

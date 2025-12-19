@@ -1,0 +1,9 @@
+[
+  {
+    "action": "type",
+    "text": "Implement bubble sort in Python with docstrings. Start from scratch in bubble_sort.py without reading or listing directories—go straight to writing the file and then run python bubble_sort.py to verify."
+  },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "completion", "timeoutMs": 120000 },
+  { "action": "snapshot", "label": "after-completion", "includeStatus": true }
+]

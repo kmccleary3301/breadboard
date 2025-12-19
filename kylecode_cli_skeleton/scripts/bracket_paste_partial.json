@@ -1,0 +1,13 @@
+[
+  { "action": "wait", "ms": 1000 },
+  { "action": "type", "text": "pref", "typingDelayMs": 10 },
+  { "action": "snapshot", "label": "before-paste" },
+  { "action": "type", "text": "\u001B" },
+  { "action": "type", "text": "[200" },
+  { "action": "type", "text": "~" },
+  { "action": "type", "text": "payload" },
+  { "action": "type", "text": "\u001B" },
+  { "action": "type", "text": "[201" },
+  { "action": "type", "text": "~" },
+  { "action": "snapshot", "label": "after-paste" }
+]

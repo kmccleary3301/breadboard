@@ -1,6 +1,6 @@
 id: task
 name: task
-description: Provide high-level task guidance (OpenCode-compatible)
+description: Run a task via a specialized subagent (OpenCode-compatible)
 type_id: python
 manipulations: []
 syntax_formats_supported: [native_function_calling]
@@ -8,7 +8,15 @@ preferred_formats: [native_function_calling]
 parameters:
   - name: description
     type: string
-    description: The task description
+    description: A short (3-5 words) description of the task
+    required: true
+  - name: prompt
+    type: string
+    description: The task for the agent to perform
+    required: true
+  - name: subagent_type
+    type: string
+    description: The type of specialized agent to use for this task
     required: true
 execution:
   blocking: false
@@ -16,6 +24,5 @@ provider_routing:
   openai:
     native_primary: true
     function_call: auto
-
 
 

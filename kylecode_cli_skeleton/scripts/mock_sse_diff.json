@@ -1,0 +1,65 @@
+[
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "turn_start",
+      "payload": { "summary": "diff turn" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 250,
+    "event": {
+      "type": "tool_call",
+      "payload": {
+        "tool": {
+          "name": "apply_patch",
+          "args": {
+            "path": "README.md",
+            "diff": "@@\n-Old line\n+New line\n"
+          }
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 350,
+    "event": {
+      "type": "tool_result",
+      "payload": {
+        "tool": {
+          "name": "apply_patch",
+          "status": "success",
+          "output": "Patched README.md"
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 350,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Applied patch to README.md.",
+        "message": {
+          "role": "assistant",
+          "content": "Applied patch to README.md."
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 350,
+    "event": {
+      "type": "completion",
+      "payload": { "summary": { "completed": true, "reason": "diff" } }
+    }
+  },
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "run_finished",
+      "payload": { "eventCount": 6 }
+    }
+  }
+]

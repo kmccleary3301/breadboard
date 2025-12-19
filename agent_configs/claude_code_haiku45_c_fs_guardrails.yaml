@@ -9,9 +9,9 @@ guardrails:
   overrides:
     workspace_context:
       parameters:
-        require_exploration_before_edit: false
-        require_read_before_edit: false
-        require_progress_before_todo_updates: false
+        require_exploration_before_edit: true
+        require_read_before_edit: true
+        require_progress_before_todo_updates: true
     todo_rate_limit:
       parameters:
         enabled: true
@@ -25,7 +25,17 @@ guardrails:
         abort_after_turns: 8
         emit_event: true
   plan_bootstrap:
-    strategy: never
+    strategy: soft
+    max_turns: 1
+    warmup_turns: 1
+    seed_file: implementations/system_prompts/opencode/plan_bootstrap_protofs.yaml
+    extra_calls:
+      - function: list
+        arguments:
+          path: "."
+      - function: read_file
+        arguments:
+          path: "protofs_c.md"
 
 enhanced_tools:
   validation:
@@ -49,8 +59,6 @@ loop:
         Do not use bash heredocs or redirection to write files. Use the Write tool instead.
         </VALIDATION_ERROR>
   turn_strategy:
-    relay: tool_role
-    flow: tool_role
     allow_multiple_per_turn: true
   plan_turn_limit: 0
 
@@ -63,10 +71,10 @@ features:
 prompts:
   packs:
     base:
-      system: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
-      plan: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
-      builder: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
-      compact: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
+      system: implementations/system_prompts/claude_code/system-identity.prompt.md
+      plan: implementations/system_prompts/claude_code/system-workflow.prompt.md
+      builder: implementations/system_prompts/claude_code/system-workflow.prompt.md
+      compact: implementations/system_prompts/claude_code/system-workflow.prompt.md
 
 completion:
   build_guard:

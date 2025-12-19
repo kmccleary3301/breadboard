@@ -1,0 +1,6 @@
+[
+  { "action": "type", "text": "Explain how the mock config handles tool responses." },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "completion", "timeoutMs": 30000 },
+  { "action": "snapshot", "label": "after-response", "includeStatus": true }
+]

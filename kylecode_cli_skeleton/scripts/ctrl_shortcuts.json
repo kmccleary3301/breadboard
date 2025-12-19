@@ -1,0 +1,10 @@
+[
+  { "action": "wait", "ms": 1200 },
+  { "action": "type", "text": "alpha beta-gamma", "typingDelayMs": 20 },
+  { "action": "snapshot", "label": "typed" },
+  { "action": "press", "key": "ctrl+left", "repeat": 1, "delayMs": 80 },
+  { "action": "press", "key": "ctrl+left", "repeat": 1, "delayMs": 80 },
+  { "action": "snapshot", "label": "after-ctrl-left" },
+  { "action": "press", "key": "ctrl+backspace", "repeat": 1, "delayMs": 80 },
+  { "action": "snapshot", "label": "after-ctrl-backspace" }
+]

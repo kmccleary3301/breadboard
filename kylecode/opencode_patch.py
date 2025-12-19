@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
-from difflib import unified_diff
-from typing import Callable, Iterable, List, Sequence
+from typing import Iterable, List, Optional, Sequence
 
 
 class PatchParseError(RuntimeError):
@@ -22,6 +22,7 @@ class PatchChange:
 class PatchHunk:
     context: str
     changes: List[PatchChange]
+    is_end_of_file: bool = False
 
 
 @dataclass
@@ -30,6 +31,7 @@ class PatchOperation:
     file_path: str
     hunks: List[PatchHunk] | None = None
     content: str | None = None
+    move_to: str | None = None
 
 
 _PATCH_BLOCK_RE = re.compile(r"\*\*\* Begin Patch[\t ]*\r?\n(?P<body>[\s\S]*?)\*\*\* End Patch", re.M)
@@ -44,201 +46,215 @@ def _iter_patch_blocks(text: str) -> Iterable[str]:
 
 
 def parse_opencode_patch(text: str) -> List[PatchOperation]:
-    """Parse OpenCode patch text into structured operations."""
-
-    operations: list[PatchOperation] = []
-
+    ops: List[PatchOperation] = []
     for block in _iter_patch_blocks(text):
         lines = block.splitlines()
-        idx = 0
-        while idx < len(lines):
-            line = lines[idx].strip()
-            if not line:
-                idx += 1
+        i = 0
+
+        def at(idx: int) -> str:
+            return lines[idx] if 0 <= idx < len(lines) else ""
+
+        while i < len(lines):
+            line = at(i)
+            if not line.strip():
+                i += 1
                 continue
 
-            if line.startswith("*** Add File:"):
-                path = line.split(":", 1)[1].strip()
-                if not path:
-                    raise PatchParseError("Missing path in *** Add File section")
-                idx += 1
-                content_lines: list[str] = []
-                while idx < len(lines) and not lines[idx].startswith("***"):
-                    body_line = lines[idx]
-                    if body_line.startswith("+"):
-                        content_lines.append(body_line[1:])
-                    elif body_line.startswith("@@") or not body_line:
-                        # Ignore hunk markers and blank lines
-                        pass
+            if line.startswith("*** Add File: "):
+                file_path = line[len("*** Add File: ") :].strip()
+                i += 1
+                content_lines: List[str] = []
+                while i < len(lines):
+                    cur = at(i)
+                    if cur.startswith("*** "):
+                        break
+                    if cur.startswith("+"):
+                        content_lines.append(cur[1:])
+                    elif cur == "":
+                        content_lines.append("")
                     else:
-                        content_lines.append(body_line)
-                    idx += 1
-                operations.append(
-                    PatchOperation(kind="add", file_path=path, content="\n".join(content_lines).rstrip("\n"))
+                        raise PatchParseError(f"Unexpected line in Add File {file_path}: {cur!r}")
+                    i += 1
+                content = "\n".join(content_lines)
+                if content_lines:
+                    content += "\n"
+                ops.append(PatchOperation(kind="add", file_path=file_path, content=content, hunks=[]))
+                continue
+
+            if line.startswith("*** Delete File: "):
+                file_path = line[len("*** Delete File: ") :].strip()
+                ops.append(PatchOperation(kind="delete", file_path=file_path, hunks=[]))
+                i += 1
+                continue
+
+            if line.startswith("*** Update File: "):
+                file_path = line[len("*** Update File: ") :].strip()
+                i += 1
+                move_to: Optional[str] = None
+                hunks: List[PatchHunk] = []
+
+                current_header: Optional[str] = None
+                current_changes: List[PatchChange] = []
+                current_eof = False
+
+                def flush_hunk() -> None:
+                    nonlocal current_header, current_changes, current_eof
+                    if current_header is None:
+                        return
+                    if not current_changes:
+                        raise PatchParseError(f"Empty hunk in Update File {file_path}")
+                    hunks.append(
+                        PatchHunk(
+                            context=current_header,
+                            changes=current_changes,
+                            is_end_of_file=current_eof,
+                        )
+                    )
+                    current_header = None
+                    current_changes = []
+                    current_eof = False
+
+                while i < len(lines):
+                    cur = at(i)
+                    if cur.startswith("@@"):
+                        flush_hunk()
+                        current_header = cur
+                        current_changes = []
+                        current_eof = False
+                        i += 1
+                        continue
+                    if cur.startswith("*** Move to: "):
+                        move_to = cur[len("*** Move to: ") :].strip()
+                        i += 1
+                        continue
+                    if cur.strip() == "*** End of File":
+                        current_eof = True
+                        i += 1
+                        continue
+                    if cur.startswith("*** "):
+                        break
+                    if cur == "":
+                        if current_header is None:
+                            current_header = "@@"
+                        current_changes.append(PatchChange("keep", ""))
+                        i += 1
+                        continue
+                    if cur[0] in (" ", "+", "-"):
+                        if current_header is None:
+                            current_header = "@@"
+                        kind = {" ": "keep", "+": "add", "-": "remove"}[cur[0]]
+                        current_changes.append(PatchChange(kind, cur[1:]))
+                        i += 1
+                        continue
+                    raise PatchParseError(f"Unexpected line in Update File {file_path}: {cur!r}")
+
+                flush_hunk()
+                ops.append(
+                    PatchOperation(
+                        kind="update",
+                        file_path=file_path,
+                        hunks=hunks,
+                        move_to=move_to,
+                    )
                 )
                 continue
 
-            if line.startswith("*** Delete File:"):
-                path = line.split(":", 1)[1].strip()
-                if not path:
-                    raise PatchParseError("Missing path in *** Delete File section")
-                operations.append(PatchOperation(kind="delete", file_path=path))
-                idx += 1
-                continue
+            raise PatchParseError(f"Unexpected patch line: {line!r}")
 
-            if line.startswith("*** Update File:"):
-                path = line.split(":", 1)[1].strip()
-                if not path:
-                    raise PatchParseError("Missing path in *** Update File section")
-                idx += 1
-                hunks: list[PatchHunk] = []
-                while idx < len(lines) and not lines[idx].startswith("***"):
-                    if lines[idx].startswith("@@"):
-                        context = lines[idx][2:].strip()
-                        idx += 1
-                        changes: list[PatchChange] = []
-                        while idx < len(lines) and not lines[idx].startswith("@@") and not lines[idx].startswith("***"):
-                            change_line = lines[idx]
-                            if not change_line:
-                                idx += 1
-                                continue
-                            prefix = change_line[0]
-                            payload = change_line[1:]
-                            if prefix == " ":
-                                changes.append(PatchChange("keep", payload))
-                            elif prefix == "+":
-                                changes.append(PatchChange("add", payload))
-                            elif prefix == "-":
-                                changes.append(PatchChange("remove", payload))
-                            else:
-                                # Treat un-prefixed lines as unchanged context for resilience
-                                changes.append(PatchChange("keep", change_line))
-                            idx += 1
-                        if not changes:
-                            raise PatchParseError("Empty @@ hunk in update section")
-                        hunks.append(PatchHunk(context=context, changes=changes))
-                    else:
-                        idx += 1
-                if not hunks:
-                    raise PatchParseError("Update section missing @@ hunks")
-                operations.append(PatchOperation(kind="update", file_path=path, hunks=hunks))
-                continue
-
-            raise PatchParseError(f"Unrecognised directive inside patch block: {line}")
-
-    if not operations:
-        raise PatchParseError("No patch operations were parsed")
-
-    return operations
+    return ops
 
 
-def _find_subsequence(haystack: Sequence[str], needle: Sequence[str]) -> int:
+def _find_subsequence(haystack: List[str], needle: List[str]) -> Optional[int]:
     if not needle:
         return 0
-    for start in range(len(haystack) - len(needle) + 1):
-        if list(haystack[start : start + len(needle)]) == list(needle):
-            return start
-    return -1
+    if len(needle) > len(haystack):
+        return None
+    first = needle[0]
+    for i in range(0, len(haystack) - len(needle) + 1):
+        if haystack[i] != first:
+            continue
+        if haystack[i : i + len(needle)] == needle:
+            return i
+    return None
 
 
-def apply_update_hunks(original: str, hunks: Sequence[PatchHunk]) -> str:
-    lines = original.split("\n")
+def apply_update_hunks(original: str, hunks: Iterable[PatchHunk]) -> str:
+    lines = (original or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
     for hunk in hunks:
-        base_segment = [c.content for c in hunk.changes if c.kind != "add"]
-        replacement_segment = [c.content for c in hunk.changes if c.kind != "remove"]
-        idx = _find_subsequence(lines, base_segment)
-        if idx == -1 and hunk.context:
-            idx = next((i for i, val in enumerate(lines) if hunk.context in val), -1)
-        if idx == -1:
-            raise PatchParseError(f"Context not found for hunk: {hunk.context or '[no context]'}")
-        lines[idx : idx + len(base_segment)] = replacement_segment
+        before: List[str] = []
+        after: List[str] = []
+        for change in hunk.changes:
+            if change.kind == "keep":
+                before.append(change.content)
+                after.append(change.content)
+            elif change.kind == "remove":
+                before.append(change.content)
+            elif change.kind == "add":
+                after.append(change.content)
+            else:
+                raise PatchParseError(f"Unknown change kind {change.kind!r}")
+
+        idx = _find_subsequence(lines, before)
+        if idx is None:
+            raise PatchParseError("Failed to apply update hunk: context not found")
+        lines = lines[:idx] + after + lines[idx + len(before) :]
+
     return "\n".join(lines)
 
 
-def summarise_changes(operations: Iterable[PatchOperation]) -> dict[str, list[str]]:
-    summary = {"added": [], "modified": [], "deleted": []}
-    for op in operations:
-        if op.kind == "add":
-            summary["added"].append(op.file_path)
-        elif op.kind == "delete":
-            summary["deleted"].append(op.file_path)
-        elif op.kind == "update":
-            summary["modified"].append(op.file_path)
-    return summary
+def _normalize_codex_line(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text)
+    normalized = normalized.replace("—", "-").replace("–", "-").replace("−", "-")
+    return normalized.rstrip()
 
 
-def operations_to_unified_diff(
-    operations: Sequence[PatchOperation],
-    fetch_current: Callable[[str], str],
+def seek_sequence_codex(lines: Sequence[str], target: Sequence[str], *, start: int = 0, eof: bool = False) -> Optional[int]:
+    if not target:
+        return len(lines) if eof else start
+    start = max(start, 0)
+    haystack = [_normalize_codex_line(line) for line in lines]
+    needle = [_normalize_codex_line(line) for line in target]
+    indices = range(start, len(haystack) - len(needle) + 1)
+    if eof:
+        indices = range(len(haystack) - len(needle), start - 1, -1)
+    for i in indices:
+        if haystack[i : i + len(needle)] == list(needle):
+            return i
+    return None
+
+
+def apply_update_hunks_codex(
+    original: str,
+    hunks: Iterable[PatchHunk],
+    *,
+    file_label: str = "<file>",
 ) -> str:
-    """Convert parsed OpenCode operations into a unified diff string."""
+    lines = (original or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    for hunk in hunks:
+        before: List[str] = []
+        after: List[str] = []
+        for change in hunk.changes:
+            if change.kind == "keep":
+                before.append(change.content)
+                after.append(change.content)
+            elif change.kind == "remove":
+                before.append(change.content)
+            elif change.kind == "add":
+                after.append(change.content)
+            else:
+                raise PatchParseError(f"Unknown change kind {change.kind!r} in {file_label}")
 
-    chunks: list[str] = []
-    for op in operations:
-        path = op.file_path
-        if op.kind == "add":
-            new_text = (op.content or "").splitlines()
-            diff_lines = list(
-                unified_diff(
-                    [],
-                    new_text,
-                    fromfile="/dev/null",
-                    tofile=f"b/{path}",
-                    lineterm="",
-                )
-            )
-            if not diff_lines:
-                diff_lines = [
-                    "--- /dev/null",
-                    f"+++ b/{path}",
-                    "@@ -0,0 +0,0 @@",
-                ]
-        elif op.kind == "delete":
-            original = fetch_current(path).splitlines()
-            diff_lines = list(
-                unified_diff(
-                    original,
-                    [],
-                    fromfile=f"a/{path}",
-                    tofile="/dev/null",
-                    lineterm="",
-                )
-            )
-            if not diff_lines:
-                diff_lines = [
-                    f"--- a/{path}",
-                    "+++ /dev/null",
-                    "@@ -0,0 +0,0 @@",
-                ]
-        elif op.kind == "update":
-            original_text = fetch_current(path)
-            new_text = apply_update_hunks(original_text, op.hunks or [])
-            diff_lines = list(
-                unified_diff(
-                    original_text.splitlines(),
-                    new_text.splitlines(),
-                    fromfile=f"a/{path}",
-                    tofile=f"b/{path}",
-                    lineterm="",
-                )
-            )
-            if not diff_lines:
-                raise PatchParseError(f"No changes detected for {path}")
-        else:
-            raise PatchParseError(f"Unsupported operation kind: {op.kind}")
+        idx = seek_sequence_codex(lines, before, start=0, eof=hunk.is_end_of_file)
+        if idx is None:
+            raise PatchParseError(f"Failed to apply Codex hunk in {file_label}: context not found")
+        lines = lines[:idx] + after + lines[idx + len(before) :]
 
-        chunk = "\n".join(diff_lines)
-        if chunk:
-            chunks.append(chunk)
-
-    if not chunks:
-        raise PatchParseError("Patch contained no changes")
-
-    return "\n".join(chunks) + "\n"
+    return "\n".join(lines)
 
 
-def to_unified_diff(patch_text: str, fetch_current: Callable[[str], str]) -> str:
-    """Parse OpenCode patch text and convert it to unified diff."""
+def to_unified_diff(patch_text: str, fetch_current) -> str:
+    """Best-effort conversion from OpenCode patch to unified diff.
 
-    operations = parse_opencode_patch(patch_text)
-    return operations_to_unified_diff(operations, fetch_current)
+    Recovery stub: return input verbatim when no conversion is available.
+    """
+    return patch_text or ""

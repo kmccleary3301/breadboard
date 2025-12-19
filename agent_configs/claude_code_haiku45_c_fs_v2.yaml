@@ -52,7 +52,7 @@ prompts:
       plan: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
       builder: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
       compact: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
-  tool_prompt_mode: none
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
   injection:
     system_order:
       - '@pack(base).system'
@@ -77,14 +77,14 @@ loop:
     - mode: build
   plan_turn_limit: 1
   guardrails:
-    # Claude Code does not inject BreadBoard's tool-usage watchdog warnings.
+    # Claude Code does not inject KyleCode's tool-usage watchdog warnings.
     zero_tool_watchdog:
       warn_after_turns: 0
       abort_after_turns: 0
       emit_event: false
   turn_strategy:
     relay: tool_role
-    flow: tool_role
+    flow: assistant_continuation
     allow_multiple_per_turn: true
 
 tools:
