@@ -2,7 +2,7 @@ import ray
 import pytest
 
 from agentic_coder_prototype.execution.enhanced_executor import EnhancedToolExecutor
-from kylecode.sandbox_v2 import DevSandboxV2
+from breadboard.sandbox_v2 import DevSandboxV2
 
 
 @pytest.fixture(scope="module")

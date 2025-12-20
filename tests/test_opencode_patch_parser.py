@@ -1,4 +1,4 @@
-from kylecode.opencode_patch import PatchParseError, parse_opencode_patch, apply_update_hunks
+from breadboard.opencode_patch import PatchParseError, parse_opencode_patch, apply_update_hunks
 
 
 def test_parse_update_hunk_accepts_end_of_file_marker() -> None:

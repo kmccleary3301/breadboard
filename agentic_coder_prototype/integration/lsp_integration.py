@@ -53,7 +53,7 @@ class LSPIntegratedToolExecutor:
             EnhancedToolExecutor with LSPEnhancedSandbox
         """
         try:
-            from kylecode.sandbox_lsp_integration import LSPEnhancedSandbox
+            from breadboard.sandbox_lsp_integration import LSPEnhancedSandbox
             import ray
             
             # Wrap base sandbox with LSP capabilities

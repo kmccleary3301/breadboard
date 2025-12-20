@@ -247,7 +247,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--tui-prefix",
-        default="kylecode_cli_skeleton",
+        default="tui_skeleton",
         help="Only apply operations touching this prefix",
     )
     parser.add_argument(

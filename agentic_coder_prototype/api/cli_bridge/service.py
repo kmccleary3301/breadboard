@@ -32,10 +32,10 @@ logger = logging.getLogger(__name__)
 
 
 def _load_bridge_chaos_metadata() -> dict[str, float] | None:
-    latency = max(0, int(os.environ.get("KYLECODE_CLI_LATENCY_MS", "0")))
-    jitter = max(0, int(os.environ.get("KYLECODE_CLI_JITTER_MS", "0")))
+    latency = max(0, int(os.environ.get("BREADBOARD_CLI_LATENCY_MS", "0")))
+    jitter = max(0, int(os.environ.get("BREADBOARD_CLI_JITTER_MS", "0")))
     try:
-        drop = float(os.environ.get("KYLECODE_CLI_DROP_RATE", "0"))
+        drop = float(os.environ.get("BREADBOARD_CLI_DROP_RATE", "0"))
     except ValueError:
         drop = 0.0
     drop = max(0.0, min(1.0, drop))

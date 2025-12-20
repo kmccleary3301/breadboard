@@ -13,7 +13,7 @@ from .models import DocumentMetadata, ScrapeOptions, WebDocument
 
 @dataclass(frozen=True)
 class WebScraperSettings:
-    user_agent: str = "KyleCodeWeb/1.0"
+    user_agent: str = "BreadBoardWeb/1.0"
     default_timeout_s: float = 30.0
     max_response_bytes: int = 5 * 1024 * 1024
 

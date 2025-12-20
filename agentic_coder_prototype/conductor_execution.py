@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import uuid
 from pathlib import Path
 import random
@@ -10,23 +9,14 @@ from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .core.core import ToolDefinition
+from .conductor_context import ConductorContext
 from .messaging.markdown_logger import MarkdownLogger
 from .provider_adapters import provider_adapter_manager
 from .provider_routing import provider_router
-from .provider_runtime import (
-    ProviderMessage,
-    ProviderRuntimeContext,
-    ProviderRuntimeError,
-    ProviderResult,
-    provider_registry,
-)
+from .provider_runtime import ProviderMessage, ProviderRuntimeError, ProviderResult, provider_registry
 from .replay import resolve_todo_placeholders
 from .state.session_state import SessionState
 from .turn_context import TurnContext
-
-
-class ReplayToolOutputMismatchError(RuntimeError):
-    """Raised when replay-mode tool outputs diverge from the golden trace."""
 
 
 def legacy_message_view(provider_message: ProviderMessage) -> SimpleNamespace:
@@ -41,7 +31,6 @@ def legacy_message_view(provider_message: ProviderMessage) -> SimpleNamespace:
                 id=call.id,
                 type=call.type,
                 function=function_ns,
-                raw=getattr(call, "raw", None),
             )
         )
     return SimpleNamespace(
@@ -54,444 +43,7 @@ def legacy_message_view(provider_message: ProviderMessage) -> SimpleNamespace:
     )
 
 
-def _format_codex_wall_time(duration_seconds: Any) -> str:
-    try:
-        d = float(duration_seconds)
-    except Exception:
-        d = 0.0
-    if d < 0.05:
-        return "0"
-    rounded = round(d, 1)
-    if abs(rounded - round(rounded)) < 1e-9:
-        return str(int(round(rounded)))
-    return f"{rounded:.1f}".rstrip("0").rstrip(".") or "0"
-
-
-def _format_codex_shell_command_output(tool_result: Any) -> Optional[str]:
-    if not isinstance(tool_result, dict):
-        return None
-    exit_code = tool_result.get("exit")
-    if exit_code is None:
-        exit_code = tool_result.get("exit_code", 0)
-    try:
-        exit_code_int = int(exit_code)
-    except Exception:
-        exit_code_int = 0
-    stdout = tool_result.get("stdout", "")
-    stderr = tool_result.get("stderr", "")
-    output = ""
-    if isinstance(stdout, str):
-        output = stdout
-    if isinstance(stderr, str) and stderr:
-        if output:
-            output = f"{output.rstrip()}\n{stderr.lstrip()}".strip("\n")
-        else:
-            output = stderr
-    wall = _format_codex_wall_time(tool_result.get("duration_seconds"))
-    return f"Exit code: {exit_code_int}\nWall time: {wall} seconds\nOutput:\n{output}"
-
-
-def _format_codex_apply_patch_output(tool_result: Any) -> Optional[str]:
-    if not isinstance(tool_result, dict):
-        return None
-    data = tool_result.get("data") or {}
-    status = data.get("status") if isinstance(data, dict) else None
-    if not isinstance(status, dict):
-        status = {}
-    added = status.get("added") if isinstance(status.get("added"), list) else []
-    modified = status.get("modified") if isinstance(status.get("modified"), list) else []
-    deleted = status.get("deleted") if isinstance(status.get("deleted"), list) else []
-    if not (added or modified or deleted):
-        paths = data.get("paths") if isinstance(data.get("paths"), list) else []
-        added = list(paths)
-    lines: List[str] = []
-    for path in added:
-        if isinstance(path, str) and path:
-            lines.append(f"A {path}")
-    for path in modified:
-        if isinstance(path, str) and path:
-            lines.append(f"M {path}")
-    for path in deleted:
-        if isinstance(path, str) and path:
-            lines.append(f"D {path}")
-    output_text = "Success. Updated the following files:\n" + ("\n".join(lines) + "\n" if lines else "\n")
-    try:
-        exit_code = int(tool_result.get("exit") or 0)
-    except Exception:
-        exit_code = 0
-    try:
-        duration = float(tool_result.get("duration_seconds") or 0.0)
-    except Exception:
-        duration = 0.0
-    payload = {
-        "output": output_text,
-        "metadata": {"exit_code": exit_code, "duration_seconds": duration},
-    }
-    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-
-
-_OPENCODE_ISO_TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z")
-
-
-def _normalize_opencode_filetime_timestamps(text: str) -> str:
-    raw = str(text)
-    # OpenCode file-time guard errors include ISO timestamps which are not stable
-    # across replay environments; normalize them so equivalence checks focus on
-    # behavior/formatting rather than wall-clock values.
-    if "Last modification:" in raw or "Last read:" in raw:
-        return _OPENCODE_ISO_TIMESTAMP_RE.sub("<TIMESTAMP>", raw)
-    return raw
-
-
-_CLAUDE_BUDGET_LINE_RE = re.compile(
-    r"USD budget: \$[0-9]+(?:\.[0-9]+)?/\$[0-9]+(?:\.[0-9]+)?; \$[0-9]+(?:\.[0-9]+)? remaining"
-)
-
-
-def _normalize_claude_system_reminders(text: str) -> str:
-    """
-    Claude Code tool results may contain <system-reminder> blocks with dynamic
-    budget numbers that depend on model token usage/caching. Normalize just the
-    numeric portions so replay parity focuses on controllable formatting/presence.
-    """
-    raw = str(text)
-    if "<system-reminder>" not in raw:
-        return raw
-    return _CLAUDE_BUDGET_LINE_RE.sub("USD budget: $<SPENT>/$<BUDGET>; $<REMAINING> remaining", raw)
-
-
-_CLAUDE_MALWARE_REMINDER = (
-    "Whenever you read a file, you should consider whether it would be considered malware. "
-    "You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse "
-    "to improve or augment the code. You can still analyze existing code, write reports, "
-    "or answer questions about the code behavior."
-)
-
-_CLAUDE_TODOWRITE_NUDGE = (
-    "The TodoWrite tool hasn't been used recently. If you're working on tasks that would benefit "
-    "from tracking progress, consider using the TodoWrite tool to track progress. Also consider "
-    "cleaning up the todo list if has become stale and no longer matches what you are working on. "
-    "Only use it if it's relevant to the current work. This is just a gentle reminder - ignore if "
-    "not applicable. Make sure that you NEVER mention this reminder to the user\n"
-)
-
-
-def _claude_system_reminder_block(inner: str) -> str:
-    return f"<system-reminder>\n{inner}\n</system-reminder>"
-
-
-def apply_claude_system_reminders_to_results(
-    conductor: ConductorContext,
-    session_state: SessionState,
-    executed_results: List[Tuple[Any, Any]],
-) -> None:
-    """
-    Claude Code appends <system-reminder> blocks inside tool_result content. Apply a
-    minimal, config-gated version of those reminders to the tool outputs we send to
-    the provider so replay parity can validate controllable formatting surfaces.
-    """
-    try:
-        sr_cfg = (((conductor.config.get("provider_tools") or {}).get("anthropic") or {}).get("system_reminders") or {})
-    except Exception:
-        sr_cfg = {}
-    if not bool(sr_cfg.get("enabled")):
-        return
-
-    try:
-        budget_limit = float(sr_cfg.get("usd_budget_limit") or 0.25)
-    except Exception:
-        budget_limit = 0.25
-    try:
-        nudge_after = int(sr_cfg.get("todowrite_nudge_after_tool_results") or 4)
-    except Exception:
-        nudge_after = 4
-    nudge_after = max(nudge_after, 1)
-
-    state = session_state.get_provider_metadata("claude_system_reminders_state") or {}
-    if not isinstance(state, dict):
-        state = {}
-    tool_results_seen = int(state.get("tool_results_seen") or 0)
-    last_todowrite_seen = state.get("todowrite_last_seen")
-    if not isinstance(last_todowrite_seen, int):
-        last_todowrite_seen = None
-    nudge_emitted = bool(state.get("todowrite_nudge_emitted") or False)
-
-    for parsed, out in executed_results:
-        provider_name = getattr(parsed, "provider_name", None) or getattr(parsed, "function", None) or ""
-        if not provider_name:
-            continue
-        if not isinstance(out, dict):
-            continue
-        base_text = out.get("__mvi_text_output")
-        if not isinstance(base_text, str):
-            continue
-        if "<system-reminder>" in base_text:
-            continue
-
-        tool_results_seen += 1
-
-        if provider_name == "TodoWrite":
-            last_todowrite_seen = tool_results_seen
-            # If TodoWrite is used, reset the nudge so it can appear again later if needed.
-            nudge_emitted = False
-
-        # Claude Code does not append system reminders to TaskOutput responses
-        # while the task is still running (retrieval_status=not_ready).
-        if provider_name == "TaskOutput" and "<retrieval_status>not_ready</retrieval_status>" in base_text:
-            continue
-        # Claude Code does not append system reminders to Task tool results.
-        if provider_name == "Task":
-            continue
-
-        blocks: List[str] = []
-        if provider_name == "Read":
-            blocks.append(_claude_system_reminder_block(_CLAUDE_MALWARE_REMINDER))
-
-        if not nudge_emitted and provider_name != "TodoWrite":
-            since = tool_results_seen if last_todowrite_seen is None else (tool_results_seen - last_todowrite_seen)
-            if since >= nudge_after:
-                blocks.append(_claude_system_reminder_block(_CLAUDE_TODOWRITE_NUDGE))
-                nudge_emitted = True
-
-        # Budget reminder is appended last.
-        try:
-            spent = float(session_state.get_provider_metadata("usd_spent") or 0.0)
-        except Exception:
-            spent = 0.0
-        remaining = max(budget_limit - spent, 0.0)
-        budget_line = f"USD budget: ${spent}/${budget_limit}; ${remaining} remaining"
-        blocks.append(_claude_system_reminder_block(budget_line))
-
-        prefix = base_text.rstrip("\n")
-        if prefix:
-            out["__mvi_text_output"] = prefix + "\n\n" + "\n\n".join(blocks)
-        else:
-            out["__mvi_text_output"] = "\n\n".join(blocks)
-
-        # For Claude parity, error tool results should include the same system-reminder
-        # blocks in the surfaced error text.
-        if out.get("error"):
-            out["error"] = out.get("__mvi_text_output")
-
-    state["tool_results_seen"] = tool_results_seen
-    state["todowrite_last_seen"] = last_todowrite_seen
-    state["todowrite_nudge_emitted"] = nudge_emitted
-    session_state.set_provider_metadata("claude_system_reminders_state", state)
-
-
-def _replay_tool_output_compare_targets(config: Dict[str, Any]) -> tuple[bool, set[str]]:
-    """
-    Decide which tool outputs to compare in replay mode.
-
-    Default: compare only Codex CLI MVI tools (shell_command/apply_patch/update_plan) so
-    we don't accidentally gate unrelated replay suites.
-    """
-    replay_cfg = (config.get("replay", {}) or {}) if isinstance(config, dict) else {}
-    cfg = replay_cfg.get("compare_tool_outputs")
-
-    if cfg is True:
-        return True, set()
-    if isinstance(cfg, str):
-        if cfg.lower() == "all":
-            return True, set()
-        return False, {cfg}
-    if isinstance(cfg, list):
-        return False, {str(item) for item in cfg if item}
-
-    return False, {"shell_command", "apply_patch", "update_plan"}
-
-
-def _extract_tool_result_text(message: Dict[str, Any]) -> Optional[str]:
-    if not isinstance(message, dict):
-        return None
-    content = message.get("content")
-    if isinstance(content, str):
-        return content
-    # Anthropic-style tool_result blocks (or other list-based content payloads).
-    if isinstance(content, list):
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") == "tool_result":
-                inner = block.get("content")
-                if isinstance(inner, str):
-                    return inner
-            if block.get("type") == "text":
-                inner = block.get("text")
-                if isinstance(inner, str):
-                    return inner
-        try:
-            return json.dumps(content, ensure_ascii=False)
-        except Exception:
-            return None
-    return None
-
-
-def record_replay_tool_output_mismatches(
-    conductor: ConductorContext,
-    session_state: SessionState,
-    executed_results: List[Tuple[Any, Any]],
-    *,
-    model: str,
-) -> None:
-    if not session_state.get_provider_metadata("replay_mode"):
-        return
-
-    compare_all, compare_tools = _replay_tool_output_compare_targets(conductor.config)
-    if not compare_all and not compare_tools:
-        return
-
-    route_hint = getattr(conductor, "_current_route_id", None) or model
-    try:
-        provider_id = provider_router.parse_model_id(route_hint)[0]
-    except Exception:
-        provider_id = "openai"
-    adapter = provider_adapter_manager.get_adapter(provider_id)
-
-    mismatches: List[Dict[str, Any]] = []
-    for parsed, out in executed_results:
-        expected = getattr(parsed, "expected_output", None)
-        if expected is None:
-            continue
-        provider_name = getattr(parsed, "provider_name", getattr(parsed, "function", ""))
-        if not provider_name:
-            continue
-        if not compare_all and provider_name not in compare_tools:
-            continue
-        if str(provider_name).lower() in {"todowrite", "write", "bash"}:
-            # Claude Code tool outputs are structurally different from our internal
-            # tool payloads; skip strict replay output comparison for these tools.
-            continue
-        call_id = getattr(parsed, "call_id", None) or "replay_call"
-        try:
-            msg = adapter.create_tool_result_message(call_id, provider_name, out)
-        except Exception:
-            continue
-        actual_formatted = _extract_tool_result_text(msg)
-        if actual_formatted is None:
-            continue
-        expected_text = str(expected)
-        actual_text = str(actual_formatted)
-        if provider_name == "shell_command":
-            expected_text = _normalize_codex_shell_output(expected_text)
-            actual_text = _normalize_codex_shell_output(actual_text)
-        elif provider_name == "apply_patch":
-            expected_text = _normalize_codex_apply_patch_output(expected_text)
-            actual_text = _normalize_codex_apply_patch_output(actual_text)
-        expected_text = _normalize_opencode_filetime_timestamps(expected_text)
-        actual_text = _normalize_opencode_filetime_timestamps(actual_text)
-        if "<system-reminder>" in expected_text or "<system-reminder>" in actual_text:
-            expected_text = _normalize_claude_system_reminders(expected_text)
-            actual_text = _normalize_claude_system_reminders(actual_text)
-        if expected_text != actual_text:
-            mismatches.append(
-                {
-                    "tool": provider_name,
-                    "call_id": getattr(parsed, "call_id", None),
-                    "expected": expected_text,
-                    "actual": actual_text,
-                }
-            )
-
-    if mismatches:
-        session_state.record_guardrail_event(
-            "mvi_tool_output_mismatch",
-            {
-                "count": len(mismatches),
-                "first": {
-                    "tool": mismatches[0].get("tool"),
-                    "call_id": mismatches[0].get("call_id"),
-                    "expected_excerpt": (mismatches[0].get("expected") or "")[:240],
-                    "actual_excerpt": (mismatches[0].get("actual") or "")[:240],
-                },
-            },
-        )
-        replay_cfg = (conductor.config.get("replay", {}) or {}) if isinstance(conductor.config, dict) else {}
-        if bool(replay_cfg.get("fail_on_tool_output_mismatch")):
-            first = mismatches[0]
-            expected_excerpt = (first.get("expected") or "")[:400]
-            actual_excerpt = (first.get("actual") or "")[:400]
-            raise ReplayToolOutputMismatchError(
-                "Replay tool output mismatch "
-                f"(tool={first.get('tool')} call_id={first.get('call_id')})\n"
-                f"EXPECTED:\n{expected_excerpt}\n"
-                f"ACTUAL:\n{actual_excerpt}"
-            )
-
-
-def _format_codex_update_plan_output(tool_result: Any) -> Optional[str]:
-    if isinstance(tool_result, dict) and isinstance(tool_result.get("__mvi_text_output"), str):
-        return str(tool_result.get("__mvi_text_output"))
-    if isinstance(tool_result, dict) and tool_result.get("ok") is False:
-        err = tool_result.get("error")
-        if isinstance(err, str) and err:
-            return err
-    return "Plan updated"
-
-
-def _normalize_codex_shell_output(text: str) -> str:
-    lines = str(text).splitlines()
-    normalized: List[str] = []
-    in_output = False
-    for line in lines:
-        if line.startswith("Wall time:"):
-            normalized.append("Wall time: <redacted> seconds")
-            continue
-        if line.strip() == "Output:":
-            normalized.append("Output:")
-            in_output = True
-            continue
-        if in_output:
-            stripped = line.strip()
-            if stripped.startswith("total "):
-                normalized.append("total <redacted>")
-                continue
-            if re.match(r"^[bcdlps-][rwxstST-]{9}\s+", line):
-                parts = line.split()
-                perm = parts[0] if parts else ""
-                if "->" in parts:
-                    idx = parts.index("->")
-                    if idx > 0 and idx + 1 < len(parts):
-                        name = parts[idx - 1]
-                        target = parts[idx + 1]
-                        if name in {".", ".."}:
-                            normalized.append(name)
-                        elif perm:
-                            normalized.append(f"{perm} {name} -> {target}")
-                        else:
-                            normalized.append(f"{name} -> {target}")
-                        continue
-                if parts:
-                    name = parts[-1]
-                    if name in {".", ".."}:
-                        normalized.append(name)
-                    elif perm:
-                        normalized.append(f"{perm} {name}")
-                    else:
-                        normalized.append(name)
-                    continue
-        normalized.append(line)
-    return "\n".join(normalized)
-
-
-def _normalize_codex_apply_patch_output(text: str) -> str:
-    raw = str(text)
-    try:
-        payload = json.loads(raw)
-    except Exception:
-        return raw
-    if not isinstance(payload, dict):
-        return raw
-    meta = payload.get("metadata")
-    if isinstance(meta, dict):
-        meta = dict(meta)
-        meta["duration_seconds"] = 0.0
-        payload = dict(payload)
-        payload["metadata"] = meta
-    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-
-
-def build_exec_func(conductor: Any, session_state: SessionState) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+def build_exec_func(conductor: ConductorContext, session_state: SessionState) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     """Create execution function with replay-aware TODO resolution."""
     if not session_state.get_provider_metadata("replay_mode"):
         return conductor._exec_raw
@@ -510,22 +62,12 @@ def build_exec_func(conductor: Any, session_state: SessionState) -> Callable[[Di
                 call["arguments"] = resolved
             except Exception:
                 pass
-        result = conductor._exec_raw(call)
-        expected_output = call.get("expected_output")
-        provider_name = call.get("provider_name") or call.get("function") or ""
-        if expected_output is not None and provider_name in {"TodoWrite", "Write", "Bash"}:
-            expected_text = str(expected_output)
-            if isinstance(result, dict):
-                result = dict(result)
-                result["__mvi_text_output"] = expected_text
-                return result
-            return {"__mvi_text_output": expected_text}
-        return result
+        return conductor._exec_raw(call)
 
     return _exec_with_replay
 
 
-def build_turn_context(conductor: Any, session_state: SessionState, parsed_calls: List[Any]) -> TurnContext:
+def build_turn_context(conductor: ConductorContext, session_state: SessionState, parsed_calls: List[Any]) -> TurnContext:
     current_mode = session_state.get_provider_metadata("current_mode")
     ctx = TurnContext.from_session(session_state, current_mode, list(parsed_calls))
     if ctx.replay_mode:
@@ -535,7 +77,7 @@ def build_turn_context(conductor: Any, session_state: SessionState, parsed_calls
 
 
 def summarize_execution_results(
-    conductor: Any,
+    conductor: ConductorContext,
     turn_ctx: TurnContext,
     executed_results: List[Any],
     session_state: SessionState,
@@ -618,8 +160,6 @@ def summarize_execution_results(
                 pass
         if tool_name in ("apply_unified_patch", "patch", "apply_search_replace", "create_file_from_block", "write", "write_file"):
             metadata["is_write"] = True
-        if tool_name.startswith("todo.") or tool_name in {"TodoWrite", "todo"}:
-            metadata["is_todo"] = True
         if tool_name == "run_shell":
             metadata["is_run_shell"] = True
             metadata["command"] = command
@@ -649,7 +189,7 @@ def summarize_execution_results(
     return recent_tools_summary, test_success
 
 
-def emit_turn_snapshot(conductor: Any, session_state: SessionState, turn_ctx: TurnContext) -> None:
+def emit_turn_snapshot(conductor: ConductorContext, session_state: SessionState, turn_ctx: TurnContext) -> None:
     try:
         snapshot = turn_ctx.snapshot()
         session_state.set_provider_metadata("turn_context_snapshot", snapshot)
@@ -675,7 +215,7 @@ def hydrate_turn_context_signals(session_state: SessionState, turn_ctx: TurnCont
         pass
 
 
-def finalize_turn_context_snapshot(conductor: Any, session_state: SessionState, turn_ctx: TurnContext, turn_index: Optional[int]) -> None:
+def finalize_turn_context_snapshot(conductor: ConductorContext, session_state: SessionState, turn_ctx: TurnContext, turn_index: Optional[int]) -> None:
     hydrate_turn_context_signals(session_state, turn_ctx)
     rewards: Dict[str, float] = {}
     if isinstance(turn_index, int):
@@ -695,7 +235,7 @@ def finalize_turn_context_snapshot(conductor: Any, session_state: SessionState, 
     emit_turn_snapshot(conductor, session_state, turn_ctx)
 
 
-def apply_turn_guards(conductor: Any, turn_ctx: TurnContext, session_state: SessionState) -> List[Any]:
+def apply_turn_guards(conductor: ConductorContext, turn_ctx: TurnContext, session_state: SessionState) -> List[Any]:
     return conductor.guardrail_orchestrator.apply_turn_guards(
         turn_ctx,
         session_state,
@@ -704,11 +244,11 @@ def apply_turn_guards(conductor: Any, turn_ctx: TurnContext, session_state: Sess
     )
 
 
-def handle_blocked_calls(conductor: Any, turn_ctx: TurnContext, session_state: SessionState, markdown_logger: MarkdownLogger) -> None:
+def handle_blocked_calls(conductor: ConductorContext, turn_ctx: TurnContext, session_state: SessionState, markdown_logger: MarkdownLogger) -> None:
     conductor.guardrail_orchestrator.handle_blocked_calls(turn_ctx, session_state, markdown_logger)
 
 
-def resolve_replay_todo_placeholders(conductor: Any, session_state: SessionState, parsed_call: Any) -> None:
+def resolve_replay_todo_placeholders(conductor: ConductorContext, session_state: SessionState, parsed_call: Any) -> None:
     if not session_state.get_provider_metadata("replay_mode"):
         return
     args = getattr(parsed_call, "arguments", None)
@@ -725,7 +265,7 @@ def resolve_replay_todo_placeholders(conductor: Any, session_state: SessionState
         parsed_call.arguments = resolved
 
 
-def maybe_transition_plan_mode(conductor: Any, session_state: SessionState, markdown_logger: Optional[MarkdownLogger] = None) -> None:
+def maybe_transition_plan_mode(conductor: ConductorContext, session_state: SessionState, markdown_logger: Optional[MarkdownLogger] = None) -> None:
     conductor.guardrail_orchestrator.maybe_transition_plan_mode(
         session_state,
         markdown_logger,
@@ -735,7 +275,7 @@ def maybe_transition_plan_mode(conductor: Any, session_state: SessionState, mark
 
 
 def execute_agent_calls(
-    conductor: Any,
+    conductor: ConductorContext,
     parsed_calls: List[Any],
     exec_func: Callable[[Dict[str, Any]], Dict[str, Any]],
     session_state: SessionState,
@@ -764,7 +304,7 @@ def execute_agent_calls(
         conductor.agent_executor.allow_multiple_bash = previous_value
 
 
-def log_provider_message(conductor: Any, provider_message: ProviderMessage, session_state: SessionState, markdown_logger: MarkdownLogger, stream_responses: bool) -> None:
+def log_provider_message(conductor: ConductorContext, provider_message: ProviderMessage, session_state: SessionState, markdown_logger: MarkdownLogger, stream_responses: bool) -> None:
     legacy_msg = legacy_message_view(provider_message)
 
     try:
@@ -810,7 +350,7 @@ def log_provider_message(conductor: Any, provider_message: ProviderMessage, sess
 
 
 def process_model_output(
-    conductor: Any,
+    conductor: ConductorContext,
     provider_message: ProviderMessage,
     caller: Any,
     tool_defs: List[ToolDefinition],
@@ -823,7 +363,6 @@ def process_model_output(
 ) -> bool:
     msg = legacy_message_view(provider_message)
     completion_cfg = (conductor.config.get("completion", {}) or {})
-    allow_content_only_completion = bool(completion_cfg.get("allow_content_only_completion", False))
     summary = getattr(session_state, "tool_usage_summary", {})
     if (
         completion_cfg.get("allow_zero_tool_completion")
@@ -836,30 +375,16 @@ def process_model_output(
                 msg.content = f"{content.rstrip()}\n\n>>>>>> END RESPONSE"
 
     if not getattr(msg, "tool_calls", None) and (msg.content or ""):
-        try:
-            parsed_preview = caller.parse_all(msg.content, tool_defs)
-        except Exception:
-            parsed_preview = []
-        synthesized_blocks: List[str] = []
-        if not parsed_preview:
-            try:
-                synthesized_blocks = conductor._synthesize_patch_blocks(msg.content)
-            except Exception:
-                synthesized_blocks = []
-        # Only treat assistant text as tool calls if we can actually parse a call
-        # or extract an explicit patch/diff block. Otherwise allow completion
-        # detection to operate on content-only replies (Codex CLI-style).
-        if parsed_preview or synthesized_blocks or not allow_content_only_completion:
-            return handle_text_tool_calls(
-                conductor,
-                msg,
-                caller,
-                tool_defs,
-                session_state,
-                markdown_logger,
-                error_handler,
-                stream_responses,
-            )
+        return handle_text_tool_calls(
+            conductor,
+            msg,
+            caller,
+            tool_defs,
+            session_state,
+            markdown_logger,
+            error_handler,
+            stream_responses,
+        )
 
     if msg.tool_calls:
         return handle_native_tool_calls(
@@ -958,7 +483,7 @@ def process_model_output(
 
 
 def handle_text_tool_calls(
-    conductor: Any,
+    conductor: ConductorContext,
     msg,
     caller,
     tool_defs: List[ToolDefinition],
@@ -1001,25 +526,20 @@ def handle_text_tool_calls(
         session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=False)
         session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=True)
         if current_mode == "plan":
-            try:
-                todos_cfg = conductor.guardrail_coordinator.todo_config()  # type: ignore[attr-defined]
-            except Exception:
-                todos_cfg = {}
-            if bool(todos_cfg.get("enabled")) and bool(todos_cfg.get("strict")) and bool(todos_cfg.get("plan_mode_requires_todo", True)):
-                manager = session_state.get_todo_manager()
-                snapshot = manager.snapshot() if manager else None
-                todos = snapshot.get("todos", []) if isinstance(snapshot, dict) else []
-                if not todos:
-                    try:
-                        conductor.guardrail_orchestrator._emit_todo_guard_violation(  # type: ignore[attr-defined]
-                            session_state,
-                            markdown_logger,
-                            "Plan mode requires creating at least one todo via `todo.create` before using edit or bash tools.",
-                            blocked_call=None,
-                        )
-                    except Exception:
-                        pass
-                    msg.content = ""
+            manager = session_state.get_todo_manager()
+            snapshot = manager.snapshot() if manager else None
+            todos = snapshot.get("todos", []) if isinstance(snapshot, dict) else []
+            if not todos:
+                try:
+                    conductor.guardrail_orchestrator._emit_todo_guard_violation(  # type: ignore[attr-defined]
+                        session_state,
+                        markdown_logger,
+                        "Plan mode requires creating at least one todo via `todo.create` before using edit or bash tools.",
+                        blocked_call=None,
+                    )
+                except Exception:
+                    pass
+                msg.content = ""
         return False
     parsed = conductor._expand_multi_file_patches(parsed, session_state, markdown_logger)
     session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=False)
@@ -1031,9 +551,9 @@ def handle_text_tool_calls(
 
     caller.track_tool_usage(parsed, session_state=session_state)
 
-    turn_ctx = conductor._build_turn_context(session_state, parsed)
-    parsed = conductor._apply_turn_guards(turn_ctx, session_state)
-    conductor._handle_blocked_calls(turn_ctx, session_state, markdown_logger)
+    turn_ctx = build_turn_context(conductor, session_state, parsed)
+    parsed = apply_turn_guards(conductor, turn_ctx, session_state)
+    handle_blocked_calls(conductor, turn_ctx, session_state, markdown_logger)
     if not parsed:
         msg.content = ""
         return False
@@ -1047,7 +567,6 @@ def handle_text_tool_calls(
         transcript_callback=session_state.add_transcript_entry,
         policy_bypass=session_state.get_provider_metadata("replay_mode"),
     )
-    apply_claude_system_reminders_to_results(conductor, session_state, executed_results)
     turn_ctx.plan_metadata = plan_metadata
 
     session_state.add_transcript_entry({"tool_execution_plan": plan_metadata})
@@ -1061,7 +580,8 @@ def handle_text_tool_calls(
     except Exception:
         pass
 
-    recent_tools_summary, test_success = conductor._summarize_execution_results(
+    recent_tools_summary, test_success = summarize_execution_results(
+        conductor,
         turn_ctx,
         executed_results,
         session_state,
@@ -1151,34 +671,6 @@ def handle_text_tool_calls(
                     session_state.set_provider_metadata("completion_guard_abort", True)
                 continue
 
-            artifact_issues: List[str] = []
-            try:
-                if not session_state.get_provider_metadata("replay_mode"):
-                    artifact_issues = conductor._validate_structural_artifacts(session_state)  # type: ignore[attr-defined]
-            except Exception:
-                artifact_issues = []
-            if artifact_issues:
-                message = (
-                    "<VALIDATION_ERROR>\n"
-                    "Cannot mark task complete yet. Fix the following issues:\n"
-                    + "\n".join([f"- {issue}" for issue in artifact_issues])
-                    + "\n</VALIDATION_ERROR>"
-                )
-                try:
-                    session_state.add_message({"role": "user", "content": message}, to_provider=True)
-                except Exception:
-                    pass
-                try:
-                    markdown_logger.log_user_message(message)
-                except Exception:
-                    pass
-                try:
-                    session_state.increment_guardrail_counter("artifact_validation_blocks")
-                    session_state.record_guardrail_event("artifact_validation_block", {"issues": artifact_issues})
-                except Exception:
-                    pass
-                continue
-
             chunks = conductor.message_formatter.format_execution_results(executed_results, failed_at_index, len(parsed))
             provider_tool_msg = "\n\n".join(chunks)
             session_state.add_message({"role": "user", "content": provider_tool_msg}, to_provider=True)
@@ -1241,7 +733,7 @@ def handle_text_tool_calls(
 
 
 def handle_native_tool_calls(
-    conductor: Any,
+    conductor: ConductorContext,
     msg,
     session_state: SessionState,
     markdown_logger: MarkdownLogger,
@@ -1255,107 +747,15 @@ def handle_native_tool_calls(
     tool_messages_to_relay: List[Dict[str, Any]] = []
 
     try:
-        # OpenCode-style tool-call repair:
-        # - If toolName casing differs and lowercase exists, rewrite toolName -> lowercase
-        # - Otherwise rewrite tool call -> `invalid` with `{tool, error}`
-        # This mirrors OpenCode's `experimental_repairToolCall` flow, and keeps
-        # the provider-visible tool-call list consistent with the tool outputs we send.
-        available_tools: Dict[str, Any] = {}
-        for tool in (getattr(conductor, "yaml_tools", None) or []):
-            name = getattr(tool, "name", None)
-            if isinstance(name, str) and name:
-                available_tools[name] = tool
-        available_names = set(available_tools)
-        available_names.add("invalid")
-
-        def _missing_required(tool_def: Any, args: Any) -> Optional[str]:
-            if not isinstance(args, dict):
-                return "input"
-            params = getattr(tool_def, "parameters", None) or []
-            for param in params:
-                try:
-                    name = getattr(param, "name", None)
-                    required = bool(getattr(param, "required", False))
-                except Exception:
-                    continue
-                if required and name and name not in args:
-                    return str(name)
-            return None
-
-        def _invalid_payload(raw_tool: str, message: str) -> tuple[Dict[str, Any], str]:
-            payload = {"tool": raw_tool, "error": message}
-            text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-            return payload, text
-
-        repaired_calls: List[Dict[str, Any]] = []
-        tool_calls_payload: List[Dict[str, Any]] = []
+        tool_calls_payload = []
         for tc in msg.tool_calls:
-            raw_name = getattr(getattr(tc, "function", None), "name", None)
-            call_id = getattr(tc, "id", None)
-            raw_args = getattr(getattr(tc, "function", None), "arguments", "{}")
-            raw_args_str = raw_args if isinstance(raw_args, str) else json.dumps(raw_args or {}, ensure_ascii=False, separators=(",", ":"))
-
-            expected_output = None
-            try:
-                raw = getattr(tc, "raw", None)
-                if isinstance(raw, dict):
-                    expected_output = raw.get("expected_output")
-            except Exception:
-                expected_output = None
-
-            if not isinstance(raw_name, str) or not raw_name:
-                continue
-
-            provider_name = raw_name
-            args_dict: Any = {}
-            args_str = raw_args_str
-
-            parse_error = None
-            try:
-                args_dict = json.loads(raw_args_str) if raw_args_str.strip() else {}
-            except Exception as exc:
-                parse_error = str(exc)
-
-            if parse_error is not None:
-                payload, payload_str = _invalid_payload(raw_name, parse_error)
-                provider_name = "invalid"
-                args_dict = payload
-                args_str = payload_str
-            else:
-                lower = raw_name.lower()
-                if lower != raw_name and lower in available_names:
-                    provider_name = lower
-                if provider_name not in available_names:
-                    payload, payload_str = _invalid_payload(raw_name, f"unknown tool: {raw_name}")
-                    provider_name = "invalid"
-                    args_dict = payload
-                    args_str = payload_str
-                else:
-                    tool_def = available_tools.get(provider_name)
-                    if tool_def is not None:
-                        missing = _missing_required(tool_def, args_dict)
-                        if missing:
-                            payload, payload_str = _invalid_payload(raw_name, f"missing required field: {missing}")
-                            provider_name = "invalid"
-                            args_dict = payload
-                            args_str = payload_str
-
-            repaired_calls.append(
-                {
-                    "call_id": call_id,
-                    "provider_name": provider_name,
-                    "args": args_dict,
-                    "args_str": args_str,
-                    "expected_output": expected_output,
-                }
-            )
-            tool_calls_payload.append(
-                {
-                    "id": call_id,
-                    "type": "function",
-                    "function": {"name": provider_name, "arguments": args_str},
-                }
-            )
+            fn_name = getattr(getattr(tc, "function", None), "name", None)
+            arg_str = getattr(getattr(tc, "function", None), "arguments", "{}")
+            tool_calls_payload.append({
+                "id": getattr(tc, "id", None),
+                "type": "function",
+                "function": {"name": fn_name, "arguments": arg_str if isinstance(arg_str, str) else json.dumps(arg_str or {})},
+            })
         try:
             if conductor.logger_v2.run_dir and tool_calls_payload:
                 turn_index = len(session_state.transcript) + 1
@@ -1379,72 +779,30 @@ def handle_native_tool_calls(
             "tool_calls": enhanced_tool_calls,
         }
         session_state.add_message(assistant_entry, to_provider=False)
-        route_hint = getattr(conductor, "_current_route_id", None) or model
-        provider_id_for_messages: Optional[str]
-        try:
-            provider_id_for_messages = provider_router.parse_model_id(route_hint)[0]
-        except Exception:
-            provider_id_for_messages = None
-        if provider_id_for_messages == "anthropic":
-            # Anthropic Messages API represents tool calls as `tool_use` content blocks.
-            content_blocks: List[Dict[str, Any]] = []
-            if msg.content:
-                content_blocks.append({"type": "text", "text": str(msg.content)})
-            for call in repaired_calls:
-                fn_name = call.get("provider_name")
-                call_id = call.get("call_id")
-                args = call.get("args")
-                if not fn_name or not call_id:
-                    continue
-                content_blocks.append(
-                    {
-                        "type": "tool_use",
-                        "id": call_id,
-                        "name": fn_name,
-                        "input": args if isinstance(args, dict) else {},
-                    }
-                )
-            session_state.add_message({"role": "assistant", "content": content_blocks}, to_provider=True)
-        else:
-            session_state.add_message({"role": "assistant", "content": msg.content, "tool_calls": tool_calls_payload}, to_provider=True)
+        session_state.add_message({"role": "assistant", "content": msg.content, "tool_calls": tool_calls_payload}, to_provider=True)
 
         session_state.add_transcript_entry({
             "assistant_with_tool_calls": {
                 "content": msg.content,
-                "tool_calls_count": len(repaired_calls),
+                "tool_calls_count": len(msg.tool_calls),
                 "tool_calls": [tc["function"]["name"] for tc in tool_calls_payload]
             }
         })
 
         parsed_calls: List[Any] = []
-        for call in repaired_calls:
-            fn = call.get("provider_name")
-            call_id = call.get("call_id")
-            args = call.get("args")
-            expected_output = call.get("expected_output")
+        for tc in msg.tool_calls:
+            fn = getattr(getattr(tc, "function", None), "name", None)
+            call_id = getattr(tc, "id", None)
+            arg_str = getattr(getattr(tc, "function", None), "arguments", "{}")
+            try:
+                args = json.loads(arg_str) if isinstance(arg_str, str) else (arg_str or {})
+            except Exception:
+                args = {}
             if not fn:
                 continue
-            canonical_fn = conductor.agent_executor.canonical_tool_name(str(fn))
-            call_obj = SimpleNamespace(
-                function=canonical_fn,
-                arguments=args,
-                provider_name=str(fn),
-                call_id=call_id,
-                expected_output=expected_output,
-            )
+            canonical_fn = conductor.agent_executor.canonical_tool_name(fn)
+            call_obj = SimpleNamespace(function=canonical_fn, arguments=args, provider_name=fn, call_id=call_id)
             parsed_calls.append(call_obj)
-
-        if session_state.get_provider_metadata("replay_mode"):
-            if any(getattr(call, "function", "") == "mark_task_complete" for call in parsed_calls):
-                if not session_state.get_provider_metadata("completion_guard_emitted"):
-                    guard_ok, guard_reason = conductor._completion_guard_check(session_state)
-                    if not guard_ok and guard_reason:
-                        conductor._emit_completion_guard_feedback(
-                            session_state,
-                            markdown_logger,
-                            guard_reason,
-                            stream_responses,
-                        )
 
         current_mode = session_state.get_provider_metadata("current_mode")
         turn_ctx = build_turn_context(conductor, session_state, parsed_calls)
@@ -1465,7 +823,6 @@ def handle_native_tool_calls(
                 transcript_callback=session_state.add_transcript_entry,
                 policy_bypass=session_state.get_provider_metadata("replay_mode"),
             )
-            apply_claude_system_reminders_to_results(conductor, session_state, executed_results)
         else:
             plan_metadata = {
                 "strategy": "no_calls",
@@ -1477,38 +834,33 @@ def handle_native_tool_calls(
                 "executed_calls": 0,
             }
             if current_mode == "plan":
-                try:
-                    todos_cfg = conductor.guardrail_coordinator.todo_config()  # type: ignore[attr-defined]
-                except Exception:
-                    todos_cfg = {}
-                if bool(todos_cfg.get("enabled")) and bool(todos_cfg.get("strict")) and bool(todos_cfg.get("plan_mode_requires_todo", True)):
-                    manager = session_state.get_todo_manager()
-                    snapshot = manager.snapshot() if manager else None
-                    todos = []
-                    if isinstance(snapshot, dict):
-                        todos = snapshot.get("todos") or []
-                    if not todos:
-                        warning = (
-                            "<VALIDATION_ERROR>\n"
-                            "Plan mode requires creating at least one todo via `todo.create` before continuing.\n"
-                            "</VALIDATION_ERROR>"
-                        )
-                        session_state.increment_guardrail_counter("todo_plan_violation")
-                        session_state.add_message({"role": "user", "content": warning}, to_provider=True)
-                        try:
-                            markdown_logger.log_user_message(warning)
-                        except Exception:
-                            pass
-                        try:
-                            session_state.add_transcript_entry({
-                                "todo_guard": {
-                                    "function": "todo.create",
-                                    "reason": "no_todos_created_in_plan_mode",
-                                }
-                            })
-                        except Exception:
-                            pass
-                        return False
+                manager = session_state.get_todo_manager()
+                snapshot = manager.snapshot() if manager else None
+                todos = []
+                if isinstance(snapshot, dict):
+                    todos = snapshot.get("todos") or []
+                if not todos:
+                    warning = (
+                        "<VALIDATION_ERROR>\n"
+                        "Plan mode requires creating at least one todo via `todo.create` before continuing.\n"
+                        "</VALIDATION_ERROR>"
+                    )
+                    session_state.increment_guardrail_counter("todo_plan_violation")
+                    session_state.add_message({"role": "user", "content": warning}, to_provider=True)
+                    try:
+                        markdown_logger.log_user_message(warning)
+                    except Exception:
+                        pass
+                    try:
+                        session_state.add_transcript_entry({
+                            "todo_guard": {
+                                "function": "todo.create",
+                                "reason": "no_todos_created_in_plan_mode",
+                            }
+                        })
+                    except Exception:
+                        pass
+                    return False
 
         turn_ctx.plan_metadata = plan_metadata
         turn_index = session_state.get_provider_metadata("current_turn_index")
@@ -1521,13 +873,6 @@ def handle_native_tool_calls(
             )
         except Exception:
             pass
-
-        record_replay_tool_output_mismatches(
-            conductor,
-            session_state,
-            executed_results,
-            model=model,
-        )
 
         recent_tools_summary, test_success = summarize_execution_results(
             conductor,
@@ -1605,14 +950,6 @@ def handle_native_tool_calls(
                     guard_reason or "Completion guard blocked mark_task_complete",
                     stream_responses,
                 )
-                # Even when blocked, the provider must receive a tool result for the tool call id.
-                # Otherwise OpenAI/Anthropic will reject the next request due to a missing tool output.
-                current["out"] = {
-                    "action": "blocked",
-                    "blocked": True,
-                    "reason": guard_reason or "Completion guard blocked mark_task_complete",
-                }
-                current["failed"] = True
                 summary = session_state.tool_usage_summary
                 summary["total_calls"] = max(0, int(summary.get("total_calls", 0)) - 1)
                 if isinstance(turn_index_hint, int):
@@ -1627,6 +964,7 @@ def handle_native_tool_calls(
                     entry for entry in recent_tools_summary
                     if entry.get("name") != "mark_task_complete"
                 ]
+                results.pop(idx)
                 if abort:
                     finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
                     return True
@@ -1648,7 +986,7 @@ def handle_native_tool_calls(
         if turn_index_int is not None:
             conductor._record_lsp_reward_metrics(session_state, turn_index_int)
             conductor._record_test_reward_metric(session_state, turn_index_int, test_success)
-        conductor._finalize_turn_context_snapshot(session_state, turn_ctx, turn_index_int)
+        finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
         if turn_ctx.blocked_calls:
             for blocked in turn_ctx.blocked_calls:
                 if blocked.get("source") != "todo":
@@ -1722,10 +1060,8 @@ def handle_native_tool_calls(
             if tool_messages_to_relay:
                 session_state.provider_messages.extend(tool_messages_to_relay)
 
-        conductor._maybe_transition_plan_mode(session_state, markdown_logger)
+        maybe_transition_plan_mode(conductor, session_state, markdown_logger)
         return False
-    except ReplayToolOutputMismatchError:
-        raise
     except Exception:
         try:
             if tool_messages_to_relay:
@@ -1737,7 +1073,7 @@ def handle_native_tool_calls(
 
 
 def retry_with_fallback(
-    conductor: Any,
+    conductor: ConductorContext,
     runtime,
     client,
     model: str,

@@ -34,7 +34,7 @@ class TrialResult:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run HPO sweeps over KyleCode configs")
+    parser = argparse.ArgumentParser(description="Run HPO sweeps over BreadBoard configs")
     parser.add_argument("config", help="Path to base agent config")
     parser.add_argument("task", help="Path to task prompt")
     parser.add_argument("--trials", type=int, default=3, help="Number of random trials")

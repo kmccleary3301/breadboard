@@ -38,15 +38,6 @@ interface VisualPart {
 
 const isWordCharacter = (char: string): boolean => /\w/.test(char)
 
-const decodeCtrlInput = (value: string | undefined): string => {
-  if (!value || value.length !== 1) return ""
-  const code = value.charCodeAt(0)
-  if (code >= 1 && code <= 26) {
-    return String.fromCharCode(code + 96)
-  }
-  return ""
-}
-
 const findPreviousWordBoundary = (value: string, cursor: number): number => {
   if (cursor <= 0) return 0
   let index = cursor - 1
@@ -373,13 +364,7 @@ export const LineEditor: React.FC<LineEditorProps> = ({
         console.error(JSON.stringify({ input, key }))
       }
 
-      const keyName = (key as { name?: string }).name
-      const sequence = (key as { sequence?: string }).sequence ?? input
-      const ctrlLetter = key.ctrl ? decodeCtrlInput(sequence) : ""
-      const normalizedInput =
-        keyName && keyName.length === 1
-          ? keyName.toLowerCase()
-          : ctrlLetter || (input.length === 1 ? input.toLowerCase() : "")
+      const normalizedInput = input.length === 1 ? input.toLowerCase() : ""
       const keyModifiers = { ctrl: key.ctrl, meta: key.meta }
 
       if (key.escape && input.length === 0) {
@@ -435,14 +420,7 @@ export const LineEditor: React.FC<LineEditorProps> = ({
 
       if (key.return) {
         if (submitOnEnter) {
-          const currentValue = valueRef.current
-          const cursorNow = getSafeCursor()
-          if (cursorNow === currentValue.length && currentValue.endsWith("\\")) {
-            const nextValue = `${currentValue.slice(0, -1)}\n`
-            applyChange(nextValue, nextValue.length)
-            return
-          }
-          void onSubmit(currentValue)
+          void onSubmit(valueRef.current)
         }
         return
       }

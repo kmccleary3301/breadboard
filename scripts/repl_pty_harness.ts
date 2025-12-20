@@ -97,7 +97,7 @@ const parseArgs = (): HarnessOptions => {
   let configPath: string | undefined
   let command = "node dist/main.js repl"
   let snapshotPath: string | undefined
-  let baseUrl = process.env.KYLECODE_API_URL
+  let baseUrl = process.env.BREADBOARD_API_URL
   let cols = 120
   let rows = 36
   let echo = false
@@ -183,7 +183,7 @@ const run = async () => {
 
   const env = { ...process.env }
   if (options.baseUrl) {
-    env.KYLECODE_API_URL = options.baseUrl
+    env.BREADBOARD_API_URL = options.baseUrl
   }
 
   let buffer = ""

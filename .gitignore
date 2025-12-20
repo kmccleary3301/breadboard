@@ -6,6 +6,7 @@ agent_ws_*/
 c_sessions_extracted/
 .cursor/
 cursor_*
+cm_edits/
 AGENTS.md
 @AGENTS.md
 .beads/
@@ -16,6 +17,9 @@ $TMP_DIR/
 misc/
 perf/
 goldens/
+repo_reconstruct_*
+repo_reconstruct_codex_parsed*/
+repo_reconstruct_codex_session_*/
 
 # Local caches and build artifacts
 **/node_modules/
@@ -29,6 +33,22 @@ goldens/
 **/*.log
 **/*.tmp
 **/*.swp
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.idea/
+.vscode/
+.turbo/
+.parcel-cache/
+.pnpm-store/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Render samples and other doc artifacts
 docs/**/render_samples/
@@ -43,3 +63,4 @@ replay_apply_summary.json
 
 # Local runtime state
 .kyle/
+tmp/

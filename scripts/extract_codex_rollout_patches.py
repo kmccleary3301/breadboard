@@ -686,7 +686,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--tui-prefix",
-        default="kylecode_cli_skeleton",
+        default="tui_skeleton",
         help="Path prefix for the TUI project",
     )
     parser.add_argument(

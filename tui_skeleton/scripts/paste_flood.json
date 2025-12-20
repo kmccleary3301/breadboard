@@ -1,0 +1,16 @@
+{
+  "steps": [
+    { "action": "log", "label": "paste-intro", "message": "Bracketed paste flood (multi-hundred char payload)." },
+    { "action": "type", "text": "Explain how bracketed paste mode works in BreadBoard CLI." },
+    { "action": "press", "key": "enter" },
+    { "action": "delay", "ms": 800 },
+    {
+      "action": "send",
+      "text": "Here is a huge block of instructions pasted at once. Please break it down into steps, summarize risks, and be explicit about any guardrail considerations. The text should demonstrate that the CLI handles bracketed paste without flicker or partial updates.",
+      "delayMs": 0
+    },
+    { "action": "snapshot", "label": "paste-after" },
+    { "action": "wait", "for": "completion", "timeoutMs": 25000 },
+    { "action": "snapshot", "label": "paste-final", "includeHints": true }
+  ]
+}

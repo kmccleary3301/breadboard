@@ -1,11 +1,11 @@
-## LLM Provider Details and Integration Guide for KyleCode
+## LLM Provider Details and Integration Guide for BreadBoard
 
-This document consolidates provider behaviors and SDK patterns for OpenRouter, OpenAI, and Anthropic as they relate to KyleCode’s modular agentic coder. It focuses on native tool calling, input/KV caching, chain-of-thought handling, and streaming. It also maps these capabilities to KyleCode’s architecture (`provider_routing`, `provider_adapters`, `dialects`, and execution policies).
+This document consolidates provider behaviors and SDK patterns for OpenRouter, OpenAI, and Anthropic as they relate to BreadBoard’s modular agentic coder. It focuses on native tool calling, input/KV caching, chain-of-thought handling, and streaming. It also maps these capabilities to BreadBoard’s architecture (`provider_routing`, `provider_adapters`, `dialects`, and execution policies).
 
 ### Table of Contents
 
 - [1. Overview](#1-overview)
-- [2. KyleCode Architecture Hooks](#2-kylecode-architecture-hooks)
+- [2. BreadBoard Architecture Hooks](#2-breadboard-architecture-hooks)
   - [2.1 Where provider behavior plugs in](#21-where-provider-behavior-plugs-in)
   - [2.2 Text vs provider-native tools](#22-text-vs-provider-native-tools)
 - [3. OpenRouter](#3-openrouter)
@@ -39,12 +39,12 @@ This document consolidates provider behaviors and SDK patterns for OpenRouter, O
   - [7.1 OpenRouter (OpenAI SDK compatible)](#71-openrouter-openai-sdk-compatible)
   - [7.2 OpenAI Responses vs Chat Completions](#72-openai-responses-vs-chat-completions)
   - [7.3 Anthropic Messages + Tools](#73-anthropic-messages--tools)
-- [8. KyleCode Integration Guidance](#8-kylecode-integration-guidance)
+- [8. BreadBoard Integration Guidance](#8-breadboard-integration-guidance)
   - [8.1 Provider router and model IDs](#81-provider-router-and-model-ids)
   - [8.2 Provider adapters (native tools, shapes, streaming)](#82-provider-adapters-native-tools-shapes-streaming)
   - [8.3 Dialect selection, text-based tools, and fallback](#83-dialect-selection-text-based-tools-and-fallback)
   - [8.4 Caching policy integration](#84-caching-policy-integration)
-  - [8.5 Chain-of-thought handling in KyleCode](#85-chain-of-thought-handling-in-kylecode)
+  - [8.5 Chain-of-thought handling in BreadBoard](#85-chain-of-thought-handling-in-breadboard)
   - [8.6 Streaming plumbing and cancellation](#86-streaming-plumbing-and-cancellation)
 - [9. Edge Cases and Gotchas](#9-edge-cases-and-gotchas)
 - [10. Test Plans and Checklists](#10-test-plans-and-checklists)
@@ -53,7 +53,7 @@ This document consolidates provider behaviors and SDK patterns for OpenRouter, O
 
 ## 1. Overview
 
-KyleCode needs to support heterogeneous provider APIs while keeping a unified developer experience. We target:
+BreadBoard needs to support heterogeneous provider APIs while keeping a unified developer experience. We target:
 
 - OpenRouter: OpenAI-compatible SDK interface with chat completions. Adds routing, caching abstraction, SSE streaming details, and provider-specific capabilities.
 - OpenAI: Moving from Chat Completions to the Responses API for stateful, agentic primitives; function/tool calling differences; encrypted reasoning items; Conversations for state.
@@ -66,7 +66,7 @@ We standardize around four themes:
 3) Chain-of-thought: encrypted reasoning pass-through (OpenAI Responses), thinking blocks (Anthropic), and safe passback.
 4) Streaming: SSE chunking, event types, cancellation, and error semantics.
 
-## 2. KyleCode Architecture Hooks
+## 2. BreadBoard Architecture Hooks
 
 ### 2.1 Where provider behavior plugs in
 
@@ -142,7 +142,7 @@ print(r.json())
 ### 3.3 Tool calling
 
 - OpenRouter supports tool calling to the extent supported by the underlying provider. For OpenAI-family models, pass standard OpenAI tool/function specs. For others, behavior varies by provider.
-- Recommendation for KyleCode: Gate native tools to known-good models/providers via `provider_routing` and per-tool YAML preferences; otherwise use text-based tool dialects.
+- Recommendation for BreadBoard: Gate native tools to known-good models/providers via `provider_routing` and per-tool YAML preferences; otherwise use text-based tool dialects.
 
 ### 3.4 Prompt/input caching
 
@@ -298,7 +298,7 @@ Responses function definition (internally tagged, strict by default):
 }
 ```
 
-Recommendations for KyleCode:
+Recommendations for BreadBoard:
 
 - Provider adapter should generate both shapes depending on API selection.
 - Treat Responses tool calls and tool outputs as separate events; map to `EnhancedToolExecutor` with `call_id` correlation.
@@ -312,7 +312,7 @@ Recommendations for KyleCode:
 ### 4.4 Chain-of-thought and encrypted reasoning items
 
 - Responses API can include a `reasoning` item. For ZDR or stateless workflows, set `store: false` and add `include: ["reasoning.encrypted_content"]`. The API will return encrypted reasoning that you can pass back in subsequent requests to preserve context without revealing chain-of-thought.
-- KyleCode should store and forward encrypted reasoning items when present, but never display or log decrypted content.
+- BreadBoard should store and forward encrypted reasoning items when present, but never display or log decrypted content.
 
 References: see the OpenAI Reasoning guide [Reasoning](https://platform.openai.com/docs/guides/reasoning) for authoritative details on reasoning items, summaries, and encrypted content in the Responses API.
 
@@ -388,7 +388,7 @@ reasoning_summary = "".join(summary_text_parts)
 # UI: display reasoning_summary in a non-persistent progress view; avoid feeding it back into prompts
 ```
 
-KyleCode guidance:
+BreadBoard guidance:
 
 - Treat `reasoning.summary` as a UI affordance for progress/status. Show in transcripts or live stream panes with a clear label (e.g., “Model’s high-level plan”).
 - Do not pass summaries back as input. For continuity across turns, rely on Conversations or `previous_response_id`, and on encrypted reasoning items when using stateless mode.
@@ -499,7 +499,7 @@ Examples:
 
 - Thinking blocks (extended reasoning) can appear in assistant content. They cannot be directly marked with `cache_control` but can be cached implicitly when included in previous assistant turns returned back to the API with tool results.
 - When non-tool-result user content is added later, earlier thinking blocks may be stripped from context per Anthropic rules.
-- For KyleCode: Treat thinking blocks as sensitive; store minimally, do not expose in user-facing logs; follow Anthropic caching behavior when constructing subsequent requests.
+- For BreadBoard: Treat thinking blocks as sensitive; store minimally, do not expose in user-facing logs; follow Anthropic caching behavior when constructing subsequent requests.
 
 ### 5.5 Streaming and usage reporting
 
@@ -614,7 +614,7 @@ Client returns:
 }
 ```
 
-## 8. KyleCode Integration Guidance
+## 8. BreadBoard Integration Guidance
 
 ### 8.1 Provider router and model IDs
 
@@ -643,7 +643,7 @@ Client returns:
 - OpenAI/OpenRouter: rely on automatic caching; keep stable, large system/tool content consistent across turns to maximize hits. Consider Conversations for long threads.
 - Anthropic: emit `cache_control` on stable `tools`/`system` and final user blocks for incremental caching. Support 5m by default; optionally allow 1h for longer gaps. Track usage fields to monitor savings.
 
-### 8.5 Chain-of-thought handling in KyleCode
+### 8.5 Chain-of-thought handling in BreadBoard
 
 - OpenAI: if `include: ["reasoning.encrypted_content"]` is present, persist and pass back verbatim on next turn; do not attempt to decrypt; redact from logs.
 - Anthropic: treat thinking blocks as sensitive; do not surface in user-facing logs; follow cache-invalidation rules when non-tool user content is added.
@@ -683,6 +683,6 @@ Client returns:
 
 ---
 
-This guide should be used alongside KyleCode’s `FULL_EXPLANATION_SPEC.md` to implement and validate robust provider support with minimal surprises across tool calling, caching, chain-of-thought handling, and streaming.
+This guide should be used alongside BreadBoard’s `FULL_EXPLANATION_SPEC.md` to implement and validate robust provider support with minimal surprises across tool calling, caching, chain-of-thought handling, and streaming.
 
 

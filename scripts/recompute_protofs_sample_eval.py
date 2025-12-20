@@ -33,7 +33,7 @@ def main() -> int:
     from scripts.sample_protofs_live_distribution import _eval_workspace, _summarize  # type: ignore
 
     samples_opencode: List[Dict[str, Any]] = []
-    samples_kylecode: List[Dict[str, Any]] = []
+    samples_breadboard: List[Dict[str, Any]] = []
 
     for sample_path in sorted(out_dir.glob("*/sample_summary.json")):
         sample_dir = sample_path.parent
@@ -52,13 +52,13 @@ def main() -> int:
 
         if payload.get("system") == "opencode":
             samples_opencode.append(payload_v2)
-        elif payload.get("system") == "kylecode":
-            samples_kylecode.append(payload_v2)
+        elif payload.get("system") == "breadboard":
+            samples_breadboard.append(payload_v2)
 
     report_v2 = {
         "meta": _load_json(out_dir / "experiment_meta.json") if (out_dir / "experiment_meta.json").exists() else {},
         "opencode": {"samples": samples_opencode, "summary": _summarize(samples_opencode)},
-        "kylecode": {"samples": samples_kylecode, "summary": _summarize(samples_kylecode)},
+        "breadboard": {"samples": samples_breadboard, "summary": _summarize(samples_breadboard)},
     }
     _write_json(out_dir / "distribution_report_v2.json", report_v2)
 
@@ -67,9 +67,9 @@ def main() -> int:
     if samples_opencode:
         s = report_v2["opencode"]["summary"]
         lines.append(f"OpenCode: {s['tests_passed']}/{s['total_runs']} tests passed (exit0={s['exit_code_zero']})")
-    if samples_kylecode:
-        s = report_v2["kylecode"]["summary"]
-        lines.append(f"KyleCode: {s['tests_passed']}/{s['total_runs']} tests passed (exit0={s['exit_code_zero']})")
+    if samples_breadboard:
+        s = report_v2["breadboard"]["summary"]
+        lines.append(f"BreadBoard: {s['tests_passed']}/{s['total_runs']} tests passed (exit0={s['exit_code_zero']})")
     (out_dir / "SUMMARY_v2.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
     return 0

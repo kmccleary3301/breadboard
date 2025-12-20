@@ -1,7 +1,7 @@
 PROVIDER LAYER & IR COMPLETION SPEC
 ==================================
 
-> **Audience:** Engineers onboarding to KyleCode provider routing, normalized IR, and regression tooling  
+> **Audience:** Engineers onboarding to BreadBoard provider routing, normalized IR, and regression tooling  
 > **Scope:** Final Phase 4 + P2 implementation details, invariants, and validation results  
 > **Last Updated:** 2025‑10‑15 (Phase 4 P2 handoff)
 
@@ -35,7 +35,7 @@ TABLE OF CONTENTS
 1. Architecture Overview
 ------------------------
 
-The provider layer mediates all model communication inside KyleCode. Its responsibilities are:
+The provider layer mediates all model communication inside BreadBoard. Its responsibilities are:
 
 - **Model-Agnostic Invocation:** Translate unified tool schemas into provider-specific payloads and handle native tool capabilities when available.
 - **Resilience & Health:** Probe provider features, record failures, and route calls through fallback chains with circuit breaking.
@@ -294,7 +294,7 @@ The Phase 2 AUTO_OPTIM spec outlines dense reward shaping for tool correctness
 
 ### 6.3 QueryLake & CLI Integration
 
-The TypeScript `kylecode_cli_skeleton` will become the interactive front-end. Integration steps:
+The TypeScript `tui_skeleton` will become the interactive front-end. Integration steps:
 
 - Wire CLI commands to invoke the Python agent conductor (local mode first).  
 - Stream normalized IR events back to the CLI for real-time diff views.  
@@ -312,7 +312,7 @@ Appendix: Quick Reference
 | Normalizer & IR | `agentic_coder_prototype/provider_normalizer.py` | Converts provider results into canonical events |
 | Metrics collector | `agentic_coder_prototype/provider_metrics.py` | Aggregates call stats, overrides, fallbacks |
 | Regression harness | `tests/test_provider_regression_matrix.py` | Mocked scenarios for guardrails |
-| CLI skeleton | `kylecode_cli_skeleton/` | Node-based prototype for Claude-style terminal UX |
+| CLI skeleton | `tui_skeleton/` | Node-based prototype for Claude-style terminal UX |
 | Runbook | `docs/phase_4/runbook.md` | Daily operations, incident handling |
 
 This document should serve as the zero-context primer for engineers joining the Phase 4 codebase. For deeper historical context, cross-reference `docs/phase_4/HANDOFF_V2.md` and previous phase handoffs.

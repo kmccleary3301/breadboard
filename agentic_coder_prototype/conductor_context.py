@@ -123,4 +123,3 @@ class ConductorContext(Protocol):
     def _update_health_metadata(self, session_state: SessionState) -> None:
         """Update health metadata."""
         ...
-

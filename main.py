@@ -13,7 +13,7 @@ from agentic_coder_prototype.parity_runner import run_parity_checks
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="KyleCode CLI entrypoint")
+    parser = argparse.ArgumentParser(description="BreadBoard CLI entrypoint")
     parser.add_argument("config", help="Path to agent config YAML")
     parser.add_argument("-t", "--task", help="Task text or file path")
     parser.add_argument("-w", "--workspace", help="Workspace directory")

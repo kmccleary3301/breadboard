@@ -172,7 +172,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--tui-prefix",
-        default="kylecode_cli_skeleton",
+        default="tui_skeleton",
         help="TUI path prefix to scope seed extraction",
     )
     parser.add_argument(

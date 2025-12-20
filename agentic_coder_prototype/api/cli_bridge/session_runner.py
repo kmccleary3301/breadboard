@@ -333,7 +333,7 @@ class SessionRunner:
                 emitted_flags["assistant"] = True
             self.publish_event(evt_type, evt_payload, turn=evt_turn)
 
-        remote_stream_enabled = bool(os.environ.get("KYLECODE_ENABLE_REMOTE_STREAM", ""))
+        remote_stream_enabled = bool(os.environ.get("BREADBOARD_ENABLE_REMOTE_STREAM", ""))
         if isinstance(self.request.metadata, dict) and "enable_remote_stream" in self.request.metadata:
             remote_stream_enabled = bool(self.request.metadata.get("enable_remote_stream"))
 

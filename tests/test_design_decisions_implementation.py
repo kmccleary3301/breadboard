@@ -20,7 +20,7 @@ from pathlib import Path
 from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
 from tool_calling.composite import CompositeToolCaller
 from tool_calling.system_prompt_compiler import SystemPromptCompiler
-from kylecode.sandbox_v2 import DevSandboxV2
+from breadboard.sandbox_v2 import DevSandboxV2
 
 
 class TestSequentialBashExecution:

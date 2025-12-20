@@ -77,7 +77,7 @@ loop:
     - mode: build
   plan_turn_limit: 1
   guardrails:
-    # Claude Code does not inject KyleCode's tool-usage watchdog warnings.
+    # Claude Code does not inject BreadBoard's tool-usage watchdog warnings.
     zero_tool_watchdog:
       warn_after_turns: 0
       abort_after_turns: 0

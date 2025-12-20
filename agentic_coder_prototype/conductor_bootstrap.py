@@ -14,8 +14,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import ray
 
-from kylecode.sandbox_v2 import DevSandboxV2
-from kylecode.sandbox_virtualized import SandboxFactory, DeploymentMode
+from breadboard.sandbox_v2 import DevSandboxV2
+from breadboard.sandbox_virtualized import SandboxFactory, DeploymentMode
 from .execution.dialect_manager import DialectManager
 from .execution.agent_executor import AgentToolExecutor
 from .messaging.message_formatter import MessageFormatter
@@ -82,15 +82,13 @@ def prepare_workspace(workspace: str) -> Path:
 
 def resolve_workspace(workspace: str, config: Optional[Dict[str, Any]]) -> str:
     """Resolve workspace path from config or use provided workspace."""
-    # Prefer an explicit workspace argument when provided; fall back to config.
-    explicit_ws = workspace if workspace else None
     cfg_ws = None
-    if not explicit_ws and config:
+    if config:
         try:
             cfg_ws = (config.get("workspace", {}) or {}).get("root")
         except Exception:
             cfg_ws = None
-    effective_ws = explicit_ws or cfg_ws or workspace
+    effective_ws = cfg_ws or workspace
     effective_ws = str(prepare_workspace(effective_ws))
     return effective_ws
 

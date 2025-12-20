@@ -104,16 +104,61 @@ class LoggerV2Manager:
             pass
         return str(run_dir)
 
+    def _log_serialization_error(self, rel_path: str, error: Exception) -> None:
+        if not self.run_dir:
+            return
+        try:
+            log_path = self.run_dir / "errors" / "logging_v2_write_errors.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            timestamp = _dt.datetime.now(_dt.timezone.utc).isoformat()
+            with log_path.open("a", encoding="utf-8") as fh:
+                fh.write(f"[{timestamp}] {rel_path}: {error}\n")
+        except Exception:
+            pass
+
+    def _sanitize_for_json(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {k: self._sanitize_for_json(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [self._sanitize_for_json(v) for v in value]
+        if isinstance(value, tuple):
+            return [self._sanitize_for_json(v) for v in value]
+        if isinstance(value, set):
+            return [self._sanitize_for_json(v) for v in value]
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        attrs = getattr(value, "__dict__", None)
+        if isinstance(attrs, dict):
+            return self._sanitize_for_json(attrs)
+        return str(value)
+
     def write_json(self, rel_path: str, data: Any) -> str:
         if not self.run_dir:
             return ""
         path = (self.run_dir / rel_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         redacted = self._redact(data)
+        serialized: Optional[str] = None
         try:
-            path.write_text(json.dumps(redacted, indent=2), encoding="utf-8")
+            serialized = json.dumps(redacted, indent=2)
+        except TypeError as exc:
+            self._log_serialization_error(rel_path, exc)
+            safe_payload = self._sanitize_for_json(redacted)
+            try:
+                serialized = json.dumps(safe_payload, indent=2, default=str)
+            except Exception as fallback_exc:
+                self._log_serialization_error(rel_path, fallback_exc)
+                return ""
+        except Exception as exc:
+            self._log_serialization_error(rel_path, exc)
+            return ""
+        try:
+            path.write_text(serialized, encoding="utf-8")
             return str(path)
-        except Exception:
+        except Exception as exc:
+            self._log_serialization_error(rel_path, exc)
             return ""
 
     def write_text(self, rel_path: str, content: str) -> str:

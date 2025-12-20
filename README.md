@@ -1,4 +1,4 @@
-# KyleCode - Agentic Coding System
+# BreadBoard - Agentic Coding System
 
 A streamlined, modular implementation of an agentic coding system that can generate, modify, and debug code autonomously. Works with gVisor template containers that are autoscaled by Ray. 
 

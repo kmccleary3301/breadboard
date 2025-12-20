@@ -108,32 +108,6 @@ const stripFence = (raw: string): { code: string; langHint?: string } => {
   return { code: lines.slice(1, end + 1).join("\n"), langHint }
 }
 
-const resolveCtrlKey = (key: { ctrl: boolean; shift?: boolean }, input: string | undefined): string | null => {
-  const keyName = (key as { name?: string }).name
-  if (keyName && keyName.length > 0) return keyName.toLowerCase()
-  const sequence = (key as { sequence?: string }).sequence ?? input
-  if (!sequence || sequence.length !== 1) return null
-  const code = sequence.charCodeAt(0)
-  if (code >= 1 && code <= 26) {
-    return String.fromCharCode(code + 96)
-  }
-  return null
-}
-
-const isCtrlShortcut = (key: { ctrl: boolean }, input: string | undefined, target: string): boolean => {
-  if (!key.ctrl) return false
-  return resolveCtrlKey(key, input) === target
-}
-
-const isCtrlShiftShortcut = (
-  key: { ctrl: boolean; shift?: boolean },
-  input: string | undefined,
-  target: string,
-): boolean => {
-  if (!key.ctrl || !key.shift) return false
-  return resolveCtrlKey(key, input) === target
-}
-
 const formatInlineNodes = (nodes?: ReadonlyArray<InlineNode>): string => {
   if (!nodes || nodes.length === 0) return ""
   const render = (node: InlineNode): string => {
@@ -1379,12 +1353,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
 
   const fuzzyNeedle = filePickerQueryParts.needle.trim()
   const lastFuzzyNeedleRef = useRef<string>("")
-  const fuzzyNeedleTimerRef = useRef<NodeJS.Timeout | null>(null)
   useEffect(() => {
-    if (fuzzyNeedleTimerRef.current) {
-      clearTimeout(fuzzyNeedleTimerRef.current)
-      fuzzyNeedleTimerRef.current = null
-    }
     if (!filePickerActive) {
       lastFuzzyNeedleRef.current = ""
       return
@@ -1393,16 +1362,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
       lastFuzzyNeedleRef.current = ""
       return
     }
-    if (fileIndexMeta.status === "scanning" || fileIndexMeta.status === "ready") {
-      return
-    }
-    const nextNeedle = fuzzyNeedle
-    fuzzyNeedleTimerRef.current = setTimeout(() => {
-      if (!filePickerActive) return
-      lastFuzzyNeedleRef.current = nextNeedle
-      ensureFileIndexScan()
-    }, 120)
-  }, [ensureFileIndexScan, fileIndexMeta.status, filePickerActive, filePickerConfig.mode, fuzzyNeedle])
+    if (!fuzzyNeedle) return
+    if (lastFuzzyNeedleRef.current === fuzzyNeedle) return
+    lastFuzzyNeedleRef.current = fuzzyNeedle
+    ensureFileIndexScan()
+  }, [ensureFileIndexScan, filePickerActive, filePickerConfig.mode, fuzzyNeedle])
 
   const loadFilePickerDirectory = useCallback(
     async (cwd: string) => {
@@ -1476,8 +1440,9 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const fileMenuMode = useMemo<"tree" | "fuzzy">(() => {
     if (!filePickerActive) return "tree"
     if (filePickerConfig.mode === "tree") return "tree"
+    if (filePickerQueryParts.needle.trim().length === 0) return "tree"
     return "fuzzy"
-  }, [filePickerActive, filePickerConfig.mode])
+  }, [filePickerActive, filePickerConfig.mode, filePickerQueryParts.needle])
 
   const fileMenuItems = useMemo(() => {
     if (!filePickerActive) return []
@@ -1610,7 +1575,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const handleOverlayKeys = useCallback<KeyHandler>(
     (char, key) => {
       const lowerChar = char?.toLowerCase()
-      if (isCtrlShortcut(key, char, "t")) {
+      if (key.ctrl && lowerChar === "t") {
         if (transcriptViewerOpen) {
           exitTranscriptViewer()
         } else {
@@ -1618,7 +1583,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return true
       }
-      if (isCtrlShortcut(key, char, "c")) {
+      if (key.ctrl && lowerChar === "c") {
         const now = Date.now()
         if (ctrlCPrimedAt && now - ctrlCPrimedAt < DOUBLE_CTRL_C_WINDOW_MS) {
           setCtrlCPrimedAt(null)
@@ -1685,7 +1650,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
             setTranscriptSearchQuery((prev) => prev.slice(0, -1))
             return true
           }
-          if (isCtrlShortcut(key, char, "u")) {
+          if (key.ctrl && lowerChar === "u") {
             setTranscriptSearchQuery("")
             setTranscriptSearchIndex(0)
             return true
@@ -1706,11 +1671,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
             return Math.max(0, Math.min(transcriptViewerMaxScroll, base + delta))
           })
         }
-        if (key.pageUp || isCtrlShortcut(key, char, "b")) {
+        if (key.pageUp || (key.ctrl && lowerChar === "b")) {
           scrollBy(-transcriptViewerBodyRows)
           return true
         }
-        if (key.pageDown || isCtrlShortcut(key, char, "f")) {
+        if (key.pageDown || (key.ctrl && lowerChar === "f")) {
           scrollBy(transcriptViewerBodyRows)
           return true
         }
@@ -2097,11 +2062,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return false
       }
-      if (key.upArrow || isCtrlShortcut(key, _char, "p")) {
+      if (key.upArrow || (key.ctrl && _char?.toLowerCase() === "p")) {
         recallHistory(-1)
         return true
       }
-      if (key.downArrow || isCtrlShortcut(key, _char, "n")) {
+      if (key.downArrow || (key.ctrl && _char?.toLowerCase() === "n")) {
         recallHistory(1)
         return true
       }
@@ -2136,7 +2101,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
     (char, key) => {
       if (paletteState.status !== "open") return false
       const lowerChar = char?.toLowerCase()
-      if (isCtrlShortcut(key, char, "t")) {
+      if (key.ctrl && lowerChar === "t") {
         if (transcriptViewerOpen) {
           exitTranscriptViewer()
         } else {
@@ -2144,7 +2109,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return true
       }
-      if (isCtrlShortcut(key, char, "c")) {
+      if (key.ctrl && lowerChar === "c") {
         const now = Date.now()
         if (ctrlCPrimedAt && now - ctrlCPrimedAt < DOUBLE_CTRL_C_WINDOW_MS) {
           setCtrlCPrimedAt(null)
@@ -2850,7 +2815,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const handleGlobalKeys = useCallback<KeyHandler>(
     (char, key) => {
       const lowerChar = char?.toLowerCase()
-      if (isCtrlShortcut(key, char, "t")) {
+      if (key.ctrl && lowerChar === "t") {
         if (transcriptViewerOpen) {
           exitTranscriptViewer()
         } else {
@@ -2858,7 +2823,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return true
       }
-      if (isCtrlShortcut(key, char, "c")) {
+      if (key.ctrl && lowerChar === "c") {
         const now = Date.now()
         if (ctrlCPrimedAt && now - ctrlCPrimedAt < DOUBLE_CTRL_C_WINDOW_MS) {
           setCtrlCPrimedAt(null)
@@ -2917,7 +2882,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
           return true
         }
       }
-      if (isCtrlShortcut(key, char, "k")) {
+      if (key.ctrl && lowerChar === "k") {
         if (modelMenu.status === "hidden") {
           void onModelMenuOpen()
         } else {
@@ -2925,13 +2890,13 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return true
       }
-      if (isCtrlShiftShortcut(key, char, "c")) {
+      if (key.ctrl && key.shift && lowerChar === "c") {
         openConfirm("Clear conversation and tool logs?", async () => {
           await onSubmit("/clear")
         })
         return true
       }
-      if (isCtrlShortcut(key, char, "p")) {
+      if (key.ctrl && lowerChar === "p") {
         if (paletteState.status === "open") closePalette()
         else openPalette()
         return true

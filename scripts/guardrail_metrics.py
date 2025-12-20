@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Extract guardrail counters/events from KyleCode Logging v2 runs.
+Extract guardrail counters/events from BreadBoard Logging v2 runs.
 
 Example:
     python scripts/guardrail_metrics.py logging/20251111-222024_tmp_guard_inspect
