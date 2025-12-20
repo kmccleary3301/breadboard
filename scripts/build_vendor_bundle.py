@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bundle KyleCode logging artifacts for vendor escalation.
+"""Bundle BreadBoard logging artifacts for vendor escalation.
 
 Collects the key diagnostic files from a logging run (capability probes,
 structured requests, provider metrics, raw excerpts, and error payloads)
@@ -27,7 +27,7 @@ DEFAULT_ARTIFACTS = [
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build a vendor escalation bundle from a KyleCode logging directory."
+        description="Build a vendor escalation bundle from a BreadBoard logging directory."
     )
     parser.add_argument(
         "log_dir",

@@ -504,7 +504,7 @@ def initialize_enhanced_executor(conductor: Any) -> None:
     enhanced_config = conductor.config.get("enhanced_tools", {})
     if enhanced_config.get("lsp_integration", {}).get("enabled", False):
         try:
-            from kylecode.sandbox_lsp_integration import LSPEnhancedSandbox
+            from breadboard.sandbox_lsp_integration import LSPEnhancedSandbox
             conductor.sandbox = LSPEnhancedSandbox.remote(conductor.sandbox, conductor.workspace)
         except ImportError:
             pass
@@ -512,7 +512,7 @@ def initialize_enhanced_executor(conductor: Any) -> None:
         sandbox_for_executor = conductor.sandbox
         if enhanced_config.get("lsp_integration", {}).get("enabled", False):
             try:
-                from kylecode.sandbox_lsp_integration import LSPEnhancedSandbox
+                from breadboard.sandbox_lsp_integration import LSPEnhancedSandbox
                 sandbox_for_executor = LSPEnhancedSandbox.remote(conductor.sandbox, conductor.workspace)
             except ImportError:
                 pass

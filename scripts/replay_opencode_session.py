@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Replay an OpenCode session using the native KyleCode harness.
+Replay an OpenCode session using the native BreadBoard harness.
 
 This is now a thin wrapper around `main.py` that wires the replay session
 and parity expectation files into the engine so the full conductor logic
@@ -199,7 +199,7 @@ async def replay_tool_call(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Replay OpenCode session via native harness.")
-    parser.add_argument("--config", required=True, help="Path to KyleCode agent config (YAML).")
+    parser.add_argument("--config", required=True, help="Path to BreadBoard agent config (YAML).")
     parser.add_argument("--session", required=True, help="Path to recorded OpenCode session JSON.")
     parser.add_argument("--workspace", default=str(ROOT_DIR / "opencode_replay_ws"), help="Workspace directory.")
     parser.add_argument("--limit", type=int, default=40, help="Maximum iterations (default: 40).")

@@ -1,6 +1,6 @@
 """
 CLI bridge package exposing the FastAPI façade previously hosted in
-``kylecode_cli_backend``. This allows the main engine runtime to serve the
+``tui_backend``. This allows the main engine runtime to serve the
 Node CLI without a separate backend process.
 """
 

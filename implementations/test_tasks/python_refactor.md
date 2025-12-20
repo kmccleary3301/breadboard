@@ -1,0 +1,1 @@
+Refactor a small Python package where the public function `slugify` has been renamed to `normalize_slug`. Update all call sites, docs, and tests to use the new name, keep behavior identical (lowercase, hyphenated slugs without duplicating separators), and run `pytest` to verify. Avoid broad rewrites or dependency changes.

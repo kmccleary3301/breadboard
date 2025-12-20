@@ -1,0 +1,1 @@
+Create or modify `fs.c` to stub out a `protofs` implementation, but **do not** spend time inspecting the workspace first—start by editing `fs.c` immediately (no `list_dir`/`read_file` calls). Ignore tests or context gathering; just begin patching the file straight away so we can observe the guard behavior.

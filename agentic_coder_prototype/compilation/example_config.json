@@ -1,0 +1,168 @@
+{
+  "tool_calling": {
+    "strategy": "adaptive",
+    "default_format": "xml_python_hybrid",
+    "fallback_chain": [
+      "xml_python_hybrid",
+      "json_block", 
+      "yaml_command"
+    ],
+    "debug_mode": false,
+    "log_level": "INFO",
+    "detailed_metrics": false,
+    
+    "formats": {
+      "native_function_calling": {
+        "enabled": true,
+        "priority": 10,
+        "providers": ["openai", "azure_openai"],
+        "use_cases": ["api_operations", "data_processing"],
+        "min_success_rate": 0.8,
+        "fallback": false,
+        "test_weight": 1.0,
+        "max_execution_time": 5.0,
+        "provider_settings": {
+          "openai": {
+            "function_call": "auto",
+            "supports_parallel": true
+          }
+        }
+      },
+      
+      "unified_diff": {
+        "enabled": true,
+        "priority": 9,
+        "use_cases": ["code_editing", "file_modification"],
+        "min_success_rate": 0.6,
+        "fallback": false,
+        "test_weight": 1.0
+      },
+      
+      "anthropic_xml": {
+        "enabled": true,
+        "priority": 8,
+        "providers": ["anthropic", "claude"],
+        "use_cases": ["general", "file_modification", "shell_commands"],
+        "min_success_rate": 0.7,
+        "fallback": false,
+        "test_weight": 1.0
+      },
+      
+      "json_block": {
+        "enabled": true,
+        "priority": 7,
+        "use_cases": ["api_operations", "data_processing", "configuration"],
+        "min_success_rate": 0.6,
+        "fallback": true,
+        "test_weight": 1.0
+      },
+      
+      "yaml_command": {
+        "enabled": true,
+        "priority": 6,
+        "use_cases": ["configuration", "shell_commands"],
+        "min_success_rate": 0.5,
+        "fallback": true,
+        "test_weight": 1.0
+      },
+      
+      "xml_python_hybrid": {
+        "enabled": true,
+        "priority": 1,
+        "fallback": true,
+        "min_success_rate": 0.3,
+        "test_weight": 1.0
+      }
+    },
+    
+    "ab_testing": {
+      "enabled": false,
+      "test_groups": [
+        {
+          "name": "format_comparison_test",
+          "enabled": false,
+          "formats": ["unified_diff", "anthropic_xml"],
+          "traffic_split": [0.5, 0.5],
+          "success_metrics": ["completion_rate", "error_rate"],
+          "min_sample_size": 100,
+          "confidence_level": 0.95,
+          "duration_days": 7
+        }
+      ]
+    },
+    
+    "performance_monitoring": {
+      "enabled": true,
+      "database_path": "tool_calling_performance.db",
+      "collection_interval": 300,
+      "cleanup_interval_days": 30,
+      "alert_enabled": true,
+      "low_success_rate_threshold": 0.5,
+      "high_error_rate_threshold": 0.3,
+      "slow_execution_threshold": 10.0,
+      "metrics_retention_days": 90,
+      "snapshots_retention_days": 365
+    },
+    
+    "adaptive_selection": {
+      "enabled": true,
+      "performance_weight": 0.7,
+      "compatibility_weight": 0.3,
+      "cache_ttl_seconds": 300,
+      "min_sample_size": 10,
+      "exploration_rate": 0.1,
+      "decay_factor": 0.95
+    },
+    
+    "providers": {
+      "openai": {
+        "enabled": true,
+        "preferred_formats": ["native_function_calling", "json_block"],
+        "fallback_formats": ["json_block", "yaml_command"],
+        "max_tools_per_call": 128,
+        "supports_streaming": true,
+        "supports_parallel_calls": true,
+        "api_settings": {
+          "temperature": 0.1,
+          "max_tokens": 4096
+        },
+        "format_overrides": {
+          "native_function_calling": {
+            "function_call": "auto"
+          }
+        }
+      },
+      
+      "anthropic": {
+        "enabled": true,
+        "preferred_formats": ["anthropic_xml", "unified_diff"],
+        "fallback_formats": ["json_block", "yaml_command"],
+        "max_tools_per_call": 64,
+        "supports_streaming": true,
+        "supports_parallel_calls": true,
+        "api_settings": {
+          "temperature": 0.1,
+          "max_tokens": 4096
+        }
+      },
+      
+      "google": {
+        "enabled": true,
+        "preferred_formats": ["json_block", "yaml_command"],
+        "fallback_formats": ["xml_python_hybrid"],
+        "max_tools_per_call": 32,
+        "supports_streaming": false,
+        "supports_parallel_calls": true
+      },
+      
+      "default": {
+        "enabled": true,
+        "preferred_formats": ["json_block", "yaml_command", "xml_python_hybrid"],
+        "fallback_formats": ["xml_python_hybrid"],
+        "max_tools_per_call": 32,
+        "supports_streaming": false,
+        "supports_parallel_calls": true
+      }
+    }
+  }
+}

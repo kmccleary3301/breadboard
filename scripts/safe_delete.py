@@ -85,10 +85,10 @@ def safe_rmtree(
             return False
 
     if not (_is_within(resolved, repo_root_resolved) or _is_within(resolved, tmp_root)):
-        if os.environ.get("KYLECODE_ALLOW_UNSAFE_RMTREE") != "1":
+        if os.environ.get("BREADBOARD_ALLOW_UNSAFE_RMTREE") != "1":
             raise RuntimeError(
                 f"[safety] Refusing to delete {label}: '{resolved}' (outside repo/tmp). "
-                "Set KYLECODE_ALLOW_UNSAFE_RMTREE=1 to override."
+                "Set BREADBOARD_ALLOW_UNSAFE_RMTREE=1 to override."
             )
 
     if not resolved.is_dir():

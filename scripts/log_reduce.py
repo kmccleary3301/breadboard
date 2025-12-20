@@ -1,4 +1,4 @@
-"""CLI utility for summarising KyleCode logging directories.
+"""CLI utility for summarising BreadBoard logging directories.
 
 Provides a tree-style directory overview and a truncated view of raw
 request/response payloads so that long LLM transcripts remain readable.
@@ -23,7 +23,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Reduce and inspect KyleCode logs")
+    parser = argparse.ArgumentParser(description="Reduce and inspect BreadBoard logs")
     parser.add_argument(
         "log_dir",
         help="Path to a logging run directory (e.g. logging/20250925-233436_agent_ws_opencode)",

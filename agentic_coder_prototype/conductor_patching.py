@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
-from kylecode.opencode_patch import (
+from breadboard.opencode_patch import (
     PatchParseError,
     apply_update_hunks_codex,
     parse_opencode_patch,

@@ -1,5 +1,5 @@
 """
-Todo tooling primitives for KyleCode.
+Todo tooling primitives for BreadBoard.
 
 Provides data models, persistence helpers, and manager utilities that back the
 provider-agnostic todo tool contract introduced for OpenCode/Claude parity.

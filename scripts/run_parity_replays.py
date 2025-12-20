@@ -32,7 +32,7 @@ from agentic_coder_prototype.parity_manifest import load_parity_scenarios
 
 REPLAY_SCRIPT = ROOT_DIR / "scripts" / "replay_opencode_session.py"
 MAIN_ENTRY = ROOT_DIR / "main.py"
-CLI_DIR = ROOT_DIR / "kylecode_cli_skeleton"
+CLI_DIR = ROOT_DIR / "tui_skeleton"
 CLI_ENTRY = CLI_DIR / "dist" / "main.js"
 _CLI_BUNDLE_BUILT = False
 
@@ -222,8 +222,8 @@ def _run_cli_guard_scenario(scenario, *, workspace: Path, result_dir: Path) -> D
     base_url = f"http://{host}:{port}"
     server_log_path = result_dir / f"{scenario.name}_cli_bridge.log"
     server_env = os.environ.copy()
-    server_env["KYLECODE_CLI_HOST"] = host
-    server_env["KYLECODE_CLI_PORT"] = str(port)
+    server_env["BREADBOARD_CLI_HOST"] = host
+    server_env["BREADBOARD_CLI_PORT"] = str(port)
     server_env.setdefault("RAY_SCE_SKIP_LSP", "1")
     server_env.setdefault("MOCK_API_KEY", "kc_parity_mock_key")
     server_env.setdefault("PRESERVE_SEEDED_WORKSPACE", "1")
@@ -260,8 +260,8 @@ def _run_cli_guard_scenario(scenario, *, workspace: Path, result_dir: Path) -> D
         if scenario.script_output:
             cmd += ["--script-output", str(scenario.script_output)]
         env = os.environ.copy()
-        env["KYLECODE_API_URL"] = base_url
-        env.setdefault("KYLECODE_API_TIMEOUT_MS", "180000")
+        env["BREADBOARD_API_URL"] = base_url
+        env.setdefault("BREADBOARD_API_TIMEOUT_MS", "180000")
         env.setdefault("MOCK_API_KEY", "kc_parity_mock_key")
         subprocess.run(cmd, cwd=CLI_DIR, env=env, check=True)
     finally:

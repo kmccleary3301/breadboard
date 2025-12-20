@@ -5,13 +5,13 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="${ROOT_DIR}/logging"
-CLI_DIR="${ROOT_DIR}/kylecode_cli_skeleton"
+CLI_DIR="${ROOT_DIR}/tui_skeleton"
 CONFIG_PATH="${CONFIG_PATH:-${ROOT_DIR}/agent_configs/opencode_cli_mock_guardrails.yaml}"
 MODE="verify"
 METRICS_OUTPUT="${GUARDRAIL_METRICS_OUTPUT:-${ROOT_DIR}/artifacts/cli_guardrail_metrics.jsonl}"
 ALLOWED_FAIL_SCENARIOS=("modal_overlay_stress" "resize_storm")
-BRIDGE_HOST="${KYLECODE_CLI_HOST:-127.0.0.1}"
-BRIDGE_PORT="${KYLECODE_CLI_PORT:-9099}"
+BRIDGE_HOST="${BREADBOARD_CLI_HOST:-127.0.0.1}"
+BRIDGE_PORT="${BREADBOARD_CLI_PORT:-9099}"
 WORKSPACE_DIR="${ROOT_DIR}/agent_ws_opencode"
 SCENARIO_ORDER=("coding_task" "multi_file" "modal_overlay_stress" "resize_storm")
 SELECTED_SCENARIOS=()
@@ -29,7 +29,7 @@ Options:
   -h, --help              Show this help.
 
 Environment:
-  CONFIG_PATH, GUARDRAIL_METRICS_OUTPUT, KYLECODE_CLI_HOST, KYLECODE_CLI_PORT, KYLECODE_API_URL.
+  CONFIG_PATH, GUARDRAIL_METRICS_OUTPUT, BREADBOARD_CLI_HOST, BREADBOARD_CLI_PORT, BREADBOARD_API_URL.
 EOF
 }
 
@@ -175,7 +175,7 @@ run_cli_script() {
   set +e
   (
     cd "${CLI_DIR}"
-    KYLECODE_API_URL="http://${BRIDGE_HOST}:${BRIDGE_PORT}" \
+    BREADBOARD_API_URL="http://${BRIDGE_HOST}:${BRIDGE_PORT}" \
       node dist/main.js repl \
         --config "${CONFIG_PATH}" \
         --script "${script_rel}" \

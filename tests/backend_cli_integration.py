@@ -18,11 +18,11 @@ from agentic_coder_prototype.api.cli_bridge.app import create_app
 from agentic_coder_prototype.api.cli_bridge.events import EventType, SessionEvent
 
 try:
-    from kylecode_cli_skeleton.src.commands.askLogic import runAsk
-    from kylecode_cli_skeleton.src.commands.resumeLogic import runResume
-    from kylecode_cli_skeleton.src.commands.sessions import mergeSessions
-    from kylecode_cli_skeleton.src.commands.files import formatFileList
-    from kylecode_cli_skeleton.src.api.types import SessionSummary
+    from tui_skeleton.src.commands.askLogic import runAsk
+    from tui_skeleton.src.commands.resumeLogic import runResume
+    from tui_skeleton.src.commands.sessions import mergeSessions
+    from tui_skeleton.src.commands.files import formatFileList
+    from tui_skeleton.src.api.types import SessionSummary
     CLI_IMPORTS_AVAILABLE = True
 except ModuleNotFoundError:  # pragma: no cover - TypeScript sources not compiled
     CLI_IMPORTS_AVAILABLE = False
@@ -70,7 +70,7 @@ def run_backend_cli_integration():
     assert "assistant_message" in stream_response.text
 
     # CLI logic tests
-    os.environ["KYLECODE_API_URL"] = "http://127.0.0.1:9099"  # not used directly but ensures config path
+    os.environ["BREADBOARD_API_URL"] = "http://127.0.0.1:9099"  # not used directly but ensures config path
 
     ask_result = asyncio.run(runAsk({
         "prompt": "Say hello",

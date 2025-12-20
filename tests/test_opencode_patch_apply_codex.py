@@ -1,4 +1,4 @@
-from kylecode.opencode_patch import (
+from breadboard.opencode_patch import (
     PatchChange,
     PatchHunk,
     apply_update_hunks_codex,

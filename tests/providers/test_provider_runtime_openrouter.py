@@ -30,7 +30,7 @@ def test_openrouter_runtime_uses_openai_client(monkeypatch):
         "default_headers",
         {
             "HTTP-Referer": "https://example.com",
-            "X-Title": "KyleCode",
+            "X-Title": "BreadBoard",
             "Accept": "application/json; charset=utf-8",
             "Accept-Encoding": "identity",
         },

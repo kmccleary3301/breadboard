@@ -37,10 +37,10 @@ from .service import SessionService
 
 
 def _load_chaos_config() -> Dict[str, float] | None:
-    latency = max(0, int(os.environ.get("KYLECODE_CLI_LATENCY_MS", "0")))
-    jitter = max(0, int(os.environ.get("KYLECODE_CLI_JITTER_MS", "0")))
+    latency = max(0, int(os.environ.get("BREADBOARD_CLI_LATENCY_MS", "0")))
+    jitter = max(0, int(os.environ.get("BREADBOARD_CLI_JITTER_MS", "0")))
     try:
-        drop = float(os.environ.get("KYLECODE_CLI_DROP_RATE", "0"))
+        drop = float(os.environ.get("BREADBOARD_CLI_DROP_RATE", "0"))
     except ValueError:
         drop = 0.0
     drop = max(0.0, min(1.0, drop))
@@ -54,7 +54,7 @@ def _load_chaos_config() -> Dict[str, float] | None:
 
 
 def create_app(service: SessionService | None = None) -> FastAPI:
-    app = FastAPI(title="KyleCode CLI Bridge", version="0.1.0")
+    app = FastAPI(title="BreadBoard CLI Bridge", version="0.1.0")
     _service = service or SessionService()
     chaos_config = _load_chaos_config()
 

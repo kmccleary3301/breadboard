@@ -1,0 +1,286 @@
+{
+  "tool_calling": {
+    "strategy": "adaptive",
+    "default_format": "native_function_calling",
+    "fallback_chain": [
+      "native_function_calling",
+      "unified_diff",
+      "anthropic_xml",
+      "json_block"
+    ],
+    "debug_mode": false,
+    "log_level": "INFO",
+    "detailed_metrics": true,
+    
+    "formats": {
+      "native_function_calling": {
+        "enabled": true,
+        "priority": 100,
+        "providers": ["openai", "azure_openai"],
+        "models": ["gpt-4", "gpt-4-turbo", "gpt-4o"],
+        "use_cases": ["api_operations", "data_processing", "general"],
+        "min_success_rate": 0.80,
+        "fallback": false,
+        "test_weight": 2.0,
+        "max_execution_time": 3.0,
+        "provider_settings": {
+          "openai": {
+            "function_call": "auto",
+            "supports_parallel": true,
+            "temperature": 0.1
+          },
+          "azure_openai": {
+            "function_call": "auto", 
+            "supports_parallel": true,
+            "temperature": 0.1
+          }
+        }
+      },
+      
+      "unified_diff": {
+        "enabled": true,
+        "priority": 90,
+        "use_cases": ["code_editing", "file_modification"],
+        "min_success_rate": 0.60,
+        "fallback": false,
+        "test_weight": 2.0,
+        "max_execution_time": 5.0,
+        "provider_settings": {
+          "anthropic": {
+            "temperature": 0.05
+          },
+          "openai": {
+            "temperature": 0.05
+          }
+        }
+      },
+      
+      "anthropic_xml": {
+        "enabled": true,
+        "priority": 85,
+        "providers": ["anthropic", "claude"],
+        "models": ["claude-3", "claude-3.5", "claude-3-opus", "claude-3-sonnet"],
+        "use_cases": ["general", "file_modification", "shell_commands", "configuration"],
+        "min_success_rate": 0.75,
+        "fallback": false,
+        "test_weight": 2.0,
+        "max_execution_time": 4.0,
+        "provider_settings": {
+          "anthropic": {
+            "temperature": 0.1,
+            "supports_prefill": true
+          }
+        }
+      },
+      
+      "json_block": {
+        "enabled": true,
+        "priority": 70,
+        "use_cases": ["api_operations", "data_processing", "configuration"],
+        "min_success_rate": 0.65,
+        "fallback": true,
+        "test_weight": 1.5,
+        "max_execution_time": 3.0
+      },
+      
+      "yaml_command": {
+        "enabled": true,
+        "priority": 60,
+        "use_cases": ["configuration", "shell_commands"],
+        "min_success_rate": 0.60,
+        "fallback": true,
+        "test_weight": 1.0,
+        "max_execution_time": 3.0
+      },
+      
+      "xml_python_hybrid": {
+        "enabled": true,
+        "priority": 10,
+        "fallback": true,
+        "min_success_rate": 0.30,
+        "test_weight": 0.1
+      }
+    },
+    
+    "ab_testing": {
+      "enabled": true,
+      "test_groups": [
+        {
+          "name": "high_performance_formats",
+          "enabled": true,
+          "formats": ["native_function_calling", "unified_diff"],
+          "traffic_split": [0.7, 0.3],
+          "success_metrics": ["completion_rate", "error_rate", "execution_time"],
+          "min_sample_size": 50,
+          "confidence_level": 0.95,
+          "duration_days": 7
+        },
+        {
+          "name": "provider_optimization",
+          "enabled": true,
+          "formats": ["native_function_calling", "anthropic_xml"],
+          "traffic_split": [0.6, 0.4],
+          "success_metrics": ["completion_rate", "error_rate"],
+          "min_sample_size": 100,
+          "confidence_level": 0.99,
+          "duration_days": 14
+        }
+      ]
+    },
+    
+    "performance_monitoring": {
+      "enabled": true,
+      "database_path": "enhanced_tool_calling_performance.db",
+      "collection_interval": 60,
+      "cleanup_interval_days": 45,
+      "alert_enabled": true,
+      "low_success_rate_threshold": 0.70,
+      "high_error_rate_threshold": 0.15,
+      "slow_execution_threshold": 8.0,
+      "metrics_retention_days": 180,
+      "snapshots_retention_days": 730
+    },
+    
+    "adaptive_selection": {
+      "enabled": true,
+      "performance_weight": 0.8,
+      "compatibility_weight": 0.2,
+      "cache_ttl_seconds": 180,
+      "min_sample_size": 20,
+      "exploration_rate": 0.05,
+      "decay_factor": 0.98
+    },
+    
+    "providers": {
+      "openai": {
+        "enabled": true,
+        "preferred_formats": ["native_function_calling", "unified_diff", "json_block"],
+        "fallback_formats": ["json_block", "yaml_command"],
+        "max_tools_per_call": 128,
+        "supports_streaming": true,
+        "supports_parallel_calls": true,
+        "api_settings": {
+          "temperature": 0.1,
+          "max_tokens": 8192,
+          "top_p": 0.95,
+          "frequency_penalty": 0.1,
+          "presence_penalty": 0.1
+        },
+        "format_overrides": {
+          "native_function_calling": {
+            "function_call": "auto",
+            "parallel_tool_calls": true
+          },
+          "unified_diff": {
+            "temperature": 0.05
+          }
+        }
+      },
+      
+      "anthropic": {
+        "enabled": true,
+        "preferred_formats": ["anthropic_xml", "unified_diff", "json_block"],
+        "fallback_formats": ["json_block", "yaml_command"],
+        "max_tools_per_call": 64,
+        "supports_streaming": true,
+        "supports_parallel_calls": true,
+        "api_settings": {
+          "temperature": 0.1,
+          "max_tokens": 8192,
+          "top_p": 0.95
+        },
+        "format_overrides": {
+          "anthropic_xml": {
+            "supports_prefill": true
+          },
+          "unified_diff": {
+            "temperature": 0.05
+          }
+        }
+      },
+      
+      "azure_openai": {
+        "enabled": true,
+        "preferred_formats": ["native_function_calling", "unified_diff", "json_block"],
+        "fallback_formats": ["json_block", "yaml_command"],
+        "max_tools_per_call": 128,
+        "supports_streaming": true,
+        "supports_parallel_calls": true,
+        "api_settings": {
+          "temperature": 0.1,
+          "max_tokens": 8192
+        }
+      },
+      
+      "default": {
+        "enabled": true,
+        "preferred_formats": ["json_block", "yaml_command", "xml_python_hybrid"],
+        "fallback_formats": ["xml_python_hybrid"],
+        "max_tools_per_call": 32,
+        "supports_streaming": false,
+        "supports_parallel_calls": true,
+        "api_settings": {
+          "temperature": 0.2,
+          "max_tokens": 4096
+        }
+      }
+    }
+  },
+  
+  "enhanced_tools": {
+    "enabled": true,
+    "lsp_integration": {
+      "enabled": true,
+      "real_time_feedback": true,
+      "error_prevention": true
+    },
+    "validation": {
+      "enabled": true,
+      "strict_mode": false,
+      "type_checking": true
+    },
+    "performance_optimization": {
+      "enabled": true,
+      "parallel_execution": true,
+      "caching": true,
+      "timeout_handling": true
+    }
+  },
+  
+  "agent_settings": {
+    "max_iterations": 20,
+    "tool_timeout": 30,
+    "parallel_tool_limit": 5,
+    "error_recovery": {
+      "enabled": true,
+      "max_retries": 2,
+      "backoff_strategy": "exponential"
+    },
+    "performance_targets": {
+      "min_success_rate": 0.85,
+      "max_avg_execution_time": 5.0,
+      "max_error_rate": 0.10
+    }
+  },
+  
+  "research_optimizations": {
+    "bash_constraint": {
+      "enabled": true,
+      "description": "Only one bash command per turn (critical research finding)"
+    },
+    "format_preferences": {
+      "openai_models": ["native_function_calling", "unified_diff"],
+      "claude_models": ["anthropic_xml", "unified_diff"],
+      "code_editing_tasks": ["unified_diff", "anthropic_xml"],
+      "api_tasks": ["native_function_calling", "json_block"]
+    },
+    "performance_thresholds": {
+      "native_function_calling": 0.85,
+      "unified_diff": 0.61,
+      "anthropic_xml": 0.83,
+      "json_block": 0.70,
+      "yaml_command": 0.65,
+      "aider_search_replace": 0.23
+    }
+  }
+}

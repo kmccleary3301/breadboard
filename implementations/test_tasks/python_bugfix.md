@@ -1,0 +1,1 @@
+You are in a small Python utility library with failing unit tests in `tests/test_math_utils.py`. Fix the bug(s) in `math_utils.py`, keep public API stable, and make the tests pass. Keep changes minimal, avoid new dependencies, and run `pytest` to validate.

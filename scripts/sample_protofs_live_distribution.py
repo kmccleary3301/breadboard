@@ -303,7 +303,7 @@ def _run_opencode_sample(
     return payload
 
 
-def _run_kylecode_sample(
+def _run_breadboard_sample(
     *,
     index: int,
     out_root: Path,
@@ -314,13 +314,13 @@ def _run_kylecode_sample(
     env: Dict[str, str],
     timeout_s: int,
 ) -> Dict[str, Any]:
-    sample_dir = out_root / f"kylecode_{index:02d}"
+    sample_dir = out_root / f"breadboard_{index:02d}"
     _ensure_dir(sample_dir)
     _ensure_dir(workspace)
 
-    stdout_path = sample_dir / "kylecode.stdout.txt"
-    stderr_path = sample_dir / "kylecode.stderr.txt"
-    result_json_path = sample_dir / "kylecode.result.json"
+    stdout_path = sample_dir / "breadboard.stdout.txt"
+    stderr_path = sample_dir / "breadboard.stderr.txt"
+    result_json_path = sample_dir / "breadboard.result.json"
 
     cmd = [
         sys.executable,
@@ -374,7 +374,7 @@ def _run_kylecode_sample(
     _write_json(sample_dir / "workspace.manifest.json", manifest)
 
     payload = {
-        "system": "kylecode",
+        "system": "breadboard",
         "index": index,
         "workspace": str(workspace),
         "config": str(config_path),
@@ -421,20 +421,20 @@ def _summarize(samples: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Sample protofs live runs for OpenCode vs KyleCode.")
+    parser = argparse.ArgumentParser(description="Sample protofs live runs for OpenCode vs BreadBoard.")
     parser.add_argument("--runs", type=int, default=5, help="Number of samples per system (default: 5)")
     parser.add_argument("--model", default="openai/gpt-5.1-codex-mini", help="OpenCode model id (provider/model)")
     parser.add_argument("--task", default="implementations/test_tasks/protofs_c.md", help="Task markdown path")
     parser.add_argument(
         "--kc-config",
         default="agent_configs/opencode_openai_codexmini_c_fs_cli_shared.yaml",
-        help="KyleCode config path",
+        help="BreadBoard config path",
     )
-    parser.add_argument("--kc-max-iterations", type=int, default=40, help="KyleCode max iterations")
+    parser.add_argument("--kc-max-iterations", type=int, default=40, help="BreadBoard max iterations")
     parser.add_argument("--timeout-s", type=int, default=1800, help="Per-run timeout in seconds (default: 1800)")
     parser.add_argument("--out-dir", default=None, help="Output directory (default: artifacts/protofs_samples/<ts>)")
     parser.add_argument("--skip-opencode", action="store_true", help="Skip OpenCode sampling")
-    parser.add_argument("--skip-kylecode", action="store_true", help="Skip KyleCode sampling")
+    parser.add_argument("--skip-breadboard", action="store_true", help="Skip BreadBoard sampling")
     args = parser.parse_args()
 
     task_path = (REPO_ROOT / args.task).resolve() if not Path(args.task).is_absolute() else Path(args.task).resolve()
@@ -442,7 +442,7 @@ def main() -> int:
         raise SystemExit(f"Task not found: {task_path}")
     kc_config_path = (REPO_ROOT / args.kc_config).resolve() if not Path(args.kc_config).is_absolute() else Path(args.kc_config).resolve()
     if not kc_config_path.exists():
-        raise SystemExit(f"KyleCode config not found: {kc_config_path}")
+        raise SystemExit(f"BreadBoard config not found: {kc_config_path}")
 
     out_root = Path(args.out_dir) if args.out_dir else (REPO_ROOT / "artifacts" / "protofs_samples" / _now_stamp())
     _ensure_dir(out_root)
@@ -480,7 +480,7 @@ def main() -> int:
     _write_json(out_root / "experiment_meta.json", meta)
 
     samples_opencode: List[Dict[str, Any]] = []
-    samples_kylecode: List[Dict[str, Any]] = []
+    samples_breadboard: List[Dict[str, Any]] = []
 
     tmp_root = Path("/tmp") / f"protofs_samples_{_now_stamp()}"
     _ensure_dir(tmp_root)
@@ -509,14 +509,14 @@ def main() -> int:
                 flush=True,
             )
 
-    if not args.skip_kylecode:
+    if not args.skip_breadboard:
         for idx in range(1, args.runs + 1):
-            ws = tmp_root / f"kylecode_run_{idx:02d}"
+            ws = tmp_root / f"breadboard_run_{idx:02d}"
             if ws.exists():
                 shutil.rmtree(ws, ignore_errors=True)
             _ensure_dir(ws)
             sample = (
-                _run_kylecode_sample(
+                _run_breadboard_sample(
                     index=idx,
                     out_root=out_root,
                     workspace=ws,
@@ -527,9 +527,9 @@ def main() -> int:
                     timeout_s=args.timeout_s,
                 )
             )
-            samples_kylecode.append(sample)
+            samples_breadboard.append(sample)
             print(
-                f"[kylecode {idx:02d}/{args.runs}] exit={sample.get('exit_code')} "
+                f"[breadboard {idx:02d}/{args.runs}] exit={sample.get('exit_code')} "
                 f"timeout={bool(sample.get('timed_out'))} tests_passed={bool(sample.get('eval', {}).get('passed'))}",
                 flush=True,
             )
@@ -540,9 +540,9 @@ def main() -> int:
             "samples": samples_opencode,
             "summary": _summarize(samples_opencode),
         },
-        "kylecode": {
-            "samples": samples_kylecode,
-            "summary": _summarize(samples_kylecode),
+        "breadboard": {
+            "samples": samples_breadboard,
+            "summary": _summarize(samples_breadboard),
         },
     }
     _write_json(out_root / "distribution_report.json", report)
@@ -553,9 +553,9 @@ def main() -> int:
     if samples_opencode:
         s = report["opencode"]["summary"]
         lines.append(f"OpenCode: {s['tests_passed']}/{s['total_runs']} tests passed (exit0={s['exit_code_zero']})")
-    if samples_kylecode:
-        s = report["kylecode"]["summary"]
-        lines.append(f"KyleCode: {s['tests_passed']}/{s['total_runs']} tests passed (exit0={s['exit_code_zero']})")
+    if samples_breadboard:
+        s = report["breadboard"]["summary"]
+        lines.append(f"BreadBoard: {s['tests_passed']}/{s['total_runs']} tests passed (exit0={s['exit_code_zero']})")
     (out_root / "SUMMARY.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     print("\n".join(lines))
