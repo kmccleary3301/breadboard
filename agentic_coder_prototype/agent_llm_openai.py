@@ -150,6 +150,7 @@ from .provider_invoker import ProviderInvoker
 from .tool_prompt_planner import ToolPromptPlanner
 from .turn_relayer import TurnRelayer
 from .turn_context import TurnContext
+from .orchestration import TeamConfig, MultiAgentOrchestrator
 
 ZERO_TOOL_WARN_TURNS = 2
 ZERO_TOOL_ABORT_TURNS = 4
@@ -324,6 +325,218 @@ class OpenAIConductor:
     def _prepare_workspace(self, workspace: str) -> Path:
         """Ensure the workspace directory exists and is empty before use."""
         return prepare_workspace(workspace)
+
+    def _get_multi_agent_orchestrator(self) -> Optional[MultiAgentOrchestrator]:
+        cfg = (self.config.get("multi_agent") or {}) if isinstance(getattr(self, "config", None), dict) else {}
+        if not cfg or not bool(cfg.get("enabled")):
+            return None
+        if getattr(self, "_multi_agent_orchestrator", None) is not None:
+            return self._multi_agent_orchestrator
+
+        team_payload: Dict[str, Any] = {"team": {"id": "team", "version": 1}}
+        raw_team = cfg.get("team_config")
+        if isinstance(raw_team, dict):
+            team_payload = raw_team
+        elif isinstance(raw_team, str):
+            try:
+                from pathlib import Path as _Path
+                import yaml  # type: ignore
+
+                raw_text = _Path(raw_team).read_text(encoding="utf-8")
+                loaded = yaml.safe_load(raw_text)
+                if isinstance(loaded, dict):
+                    team_payload = loaded
+            except Exception:
+                pass
+
+        team_config = TeamConfig.from_dict(team_payload)
+        orchestrator = MultiAgentOrchestrator(team_config)
+
+        event_log_path = cfg.get("event_log_path")
+        if event_log_path:
+            orchestrator.set_event_log_path(str(event_log_path))
+            self._multi_agent_event_log_path = str(event_log_path)
+
+        self._multi_agent_orchestrator = orchestrator
+        return orchestrator
+
+    def _persist_multi_agent_log(self) -> None:
+        orchestrator = getattr(self, "_multi_agent_orchestrator", None)
+        if orchestrator is None:
+            return
+        try:
+            orchestrator.persist_event_log()
+        except Exception:
+            pass
+
+    def _load_agent_config_from_path(self, path: str) -> Optional[Dict[str, Any]]:
+        try:
+            target = Path(str(path))
+            if not target.exists():
+                return None
+            raw_text = target.read_text(encoding="utf-8")
+            try:
+                import yaml  # type: ignore
+
+                loaded = yaml.safe_load(raw_text)
+                if isinstance(loaded, dict):
+                    return loaded
+            except Exception:
+                return None
+        except Exception:
+            return None
+        return None
+
+    @staticmethod
+    def _extract_last_assistant_text(messages: Any) -> str:
+        if not isinstance(messages, list):
+            return ""
+        for msg in reversed(messages):
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("role") != "assistant":
+                continue
+            content = msg.get("content")
+            if isinstance(content, str) and content.strip():
+                return content
+        return ""
+
+    def _run_sync_subagent(
+        self,
+        *,
+        prompt: str,
+        config: Dict[str, Any],
+        model_route: str,
+        max_steps: int,
+    ) -> Dict[str, Any]:
+        previous_preserve = os.environ.get("PRESERVE_SEEDED_WORKSPACE")
+        os.environ["PRESERVE_SEEDED_WORKSPACE"] = "1"
+        try:
+            cls = OpenAIConductor.__ray_metadata__.modified_class
+            child = cls(
+                workspace=str(getattr(self, "workspace", "")),
+                image=str(getattr(self, "image", "python-dev:latest")),
+                config=config,
+                local_mode=True,
+            )
+            return child.run_agentic_loop(
+                "",
+                prompt,
+                model_route,
+                max_steps=max_steps,
+                output_json_path=None,
+                stream_responses=False,
+                output_md_path=None,
+                tool_prompt_mode="system_once",
+                completion_sentinel=">>>>>> END RESPONSE",
+                completion_config=(config.get("completion") if isinstance(config, dict) else None),
+            )
+        finally:
+            if previous_preserve is None:
+                os.environ.pop("PRESERVE_SEEDED_WORKSPACE", None)
+            else:
+                os.environ["PRESERVE_SEEDED_WORKSPACE"] = previous_preserve
+
+    def _handle_task_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            msg = "task missing required arguments"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        description = str(args.get("description") or "").strip()
+        prompt = str(args.get("prompt") or "").strip()
+        subagent_type = str(args.get("subagent_type") or "").strip()
+        if not description or not prompt or not subagent_type:
+            missing = []
+            if not description:
+                missing.append("description")
+            if not prompt:
+                missing.append("prompt")
+            if not subagent_type:
+                missing.append("subagent_type")
+            msg = f"missing required field: {', '.join(missing)}"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        orchestrator = self._get_multi_agent_orchestrator()
+        if orchestrator is None:
+            msg = "task tool is disabled (enable config.multi_agent.enabled)"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        agent_key = None
+        if subagent_type in orchestrator.team_config.agents:
+            agent_key = subagent_type
+        else:
+            for key, ref in orchestrator.team_config.agents.items():
+                if ref.role == subagent_type:
+                    agent_key = key
+                    break
+        if agent_key is None:
+            msg = f"Unknown agent type: {subagent_type}"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        ref = orchestrator.team_config.agents[agent_key]
+        sub_config = self.config
+        if ref.config_ref:
+            loaded = self._load_agent_config_from_path(ref.config_ref)
+            if loaded:
+                sub_config = loaded
+
+        spawn_payload = {
+            "description": description,
+            "prompt": prompt,
+            "subagent_type": subagent_type,
+        }
+        spawn = orchestrator.spawn_subagent(
+            owner_agent="main",
+            agent_id=agent_key,
+            kind="agent",
+            async_mode=False,
+            payload=spawn_payload,
+        )
+
+        model_route = str(
+            args.get("model")
+            or (sub_config.get("providers", {}) or {}).get("default_model")
+            or getattr(self, "_current_route_id", "")
+            or "openai"
+        )
+        try:
+            max_steps = int(args.get("max_steps") or (sub_config.get("loop", {}) or {}).get("max_steps") or 24)
+        except Exception:
+            max_steps = 24
+
+        child_output = self._run_sync_subagent(
+            prompt=prompt,
+            config=sub_config,
+            model_route=model_route,
+            max_steps=max_steps,
+        )
+
+        output_text = ""
+        if isinstance(child_output, dict):
+            output_text = self._extract_last_assistant_text(child_output.get("messages"))
+            if not output_text:
+                output_text = str(
+                    child_output.get("final_response")
+                    or child_output.get("output")
+                    or child_output.get("response")
+                    or ""
+                )
+
+        orchestrator.mark_job_completed(
+            spawn.job.job_id,
+            result_payload={
+                "output": output_text,
+                "subagent_type": subagent_type,
+            },
+        )
+        self._persist_multi_agent_log()
+
+        return {
+            "output": output_text,
+            "__mvi_text_output": output_text,
+            "metadata": {"agent_id": agent_key, "job_id": spawn.job.job_id},
+        }
 
     def _apply_streaming_policy_for_turn(
         self,
@@ -880,6 +1093,17 @@ class OpenAIConductor:
             normalized = "read_file"
         elif normalized == "write":
             normalized = "create_file_from_block"
+
+        if normalized == "task":
+            allow_task = self._get_multi_agent_orchestrator() is not None
+            if not allow_task:
+                try:
+                    allow_task = bool(self.config.get("task_tool")) if isinstance(getattr(self, "config", None), dict) else False
+                except Exception:
+                    allow_task = False
+            if not allow_task:
+                return {"error": f"unknown tool {name}"}
+            return self._handle_task_tool(tool_call)
 
         if normalized == "create_file":
             target = self._normalize_workspace_path(str(args.get("path", "")))

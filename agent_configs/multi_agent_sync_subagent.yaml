@@ -1,0 +1,19 @@
+extends: opencode_gpt5_nano_c_fs_v2.yaml
+
+profile: { name: multi-agent-sync-subagent }
+
+features:
+  plan: false
+
+tools:
+  registry:
+    paths: [implementations/tools/defs_oc]
+    include: [read, list, glob, grep]
+  overlays: []
+  aliases: {}
+
+loop:
+  sequence:
+    - mode: build
+  turn_strategy: { relay: tool_role, flow: assistant_continuation }
+

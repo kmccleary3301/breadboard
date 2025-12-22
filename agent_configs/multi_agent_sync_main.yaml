@@ -1,0 +1,47 @@
+extends: opencode_gpt5_nano_c_fs_v2.yaml
+
+profile: { name: multi-agent-sync-main }
+
+multi_agent:
+  enabled: true
+  event_log_path: misc/multi_agent_runs/opencode_sync_event_log.jsonl
+  team_config:
+    team:
+      id: opencode_sync
+      version: 1
+      agents:
+        main:
+          role: main
+          config_ref: agent_configs/multi_agent_sync_main.yaml
+          entrypoint: true
+        reviewer:
+          role: reviewer
+          config_ref: agent_configs/multi_agent_sync_subagent.yaml
+          entrypoint: false
+          capabilities:
+            read_only: true
+            allow_spawn: false
+      topology:
+        edges:
+          - { from: main, to: reviewer, mode: [sync] }
+      orchestration:
+        scheduler:
+          kind: deterministic_event_loop
+          max_concurrent_agents: 1
+          ordering:
+            primary: turn_boundary
+            secondary: job_completion_time_then_agent_id
+        spawn_protocol:
+          tool_name: task
+          async:
+            enabled: false
+        join_policy:
+          default: block_until_complete
+      bus:
+        model_visible_topics: [tool_result]
+        retention: { max_events: 2000, max_age_seconds: 86400 }
+      workspace:
+        sharing:
+          default: shared_readonly_subagents
+          write_lock: main_only
+

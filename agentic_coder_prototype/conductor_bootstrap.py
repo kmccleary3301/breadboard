@@ -242,6 +242,9 @@ def initialize_orchestration_components(conductor: Any) -> None:
     conductor.guardrail_coordinator = GuardrailCoordinator(conductor.config)
     conductor.tool_prompt_planner = ToolPromptPlanner()
     conductor.turn_relayer = TurnRelayer(conductor.logger_v2, conductor.md_writer)
+    # Phase 8 multi-agent orchestration (lazy init)
+    conductor._multi_agent_orchestrator = None
+    conductor._multi_agent_event_log_path = None
     conductor.guardrail_orchestrator = GuardrailOrchestrator(
         conductor.config,
         conductor.guardrail_coordinator,

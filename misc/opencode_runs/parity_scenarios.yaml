@@ -1,0 +1,807 @@
+scenarios:
+  # --------------------------------------------------------------------------
+  # MVGS – Protofs trio (happy path, zero-tool, completion guard)
+  # --------------------------------------------------------------------------
+  - name: opencode_codexmini_protofs
+    description: >
+      OpenCode CodexMini protofs replay (todo bootstrap) captured from the legacy
+      OpenCode harness. Serves as the reference trace for protofs semantic/trace
+      parity at the E₂ tier.
+    tags: [protofs, replay, opencode, mvgs]
+    enabled: true
+    mode: replay
+    config: agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+    session: misc/opencode_tests/protofs_todo_session.json
+    todo_expected: misc/opencode_tests/protofs_todo_journal.jsonl
+    guardrails_expected: misc/opencode_tests/protofs_todo_session.guardrails.json
+    golden_workspace: misc/opencode_runs/golden_live/codexmini_protofs_todo
+    summary: misc/opencode_runs/golden_live/codexmini_protofs_todo/summary.json
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+    max_steps: 3
+
+  - name: opencode_grok_protofs
+    description: >
+      OpenCode Grok4 Fast protofs replay to keep our guard sequencing honest for
+      the Claude/Codex style providers. Matches the strict plan/todo persona.
+    tags: [protofs, replay, opencode, mvgs, grok]
+    enabled: true
+    mode: replay
+    config: agent_configs/opencode_grok4fast_c_fs_guardrails.yaml
+    session: misc/opencode_tests/protofs_todo_session.json
+    todo_expected: misc/opencode_tests/protofs_todo_journal.jsonl
+    guardrails_expected: misc/opencode_tests/protofs_todo_session.grok_guardrails.json
+    golden_workspace: misc/opencode_runs/golden_live/grok_protofs_todo
+    summary: misc/opencode_runs/golden_live/grok_protofs_todo/summary.json
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+    max_steps: 3
+
+  - name: opencode_mvi_bash_write_replay
+    description: >
+      Replay of a raw OpenCode session dump that exercises OpenCode-native tool
+      result surfaces for `bash` and `write` (content-only tool outputs).
+    tags: [opencode, replay, mvi, mvgs]
+    enabled: true
+    mode: replay
+    config: agent_configs/opencode_e4_mvi_replay.yaml
+    session: misc/opencode_tests/protofs_test_run/opencode_session_dump.json
+    guardrails_expected: misc/opencode_tests/protofs_test_run/opencode_session_dump.guardrails.json
+    golden_workspace: misc/opencode_runs/golden_live/opencode_mvi_bash_write
+    workspace_seed: misc/opencode_tests/protofs_test_run/seed_workspace_empty
+    equivalence: bitwise_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+
+  - name: opencode_protofs_gpt5nano_toolio_replay
+    description: >
+      Replay of a raw OpenCode protofs session dump that exercises OpenCode-native
+      tool result surfaces for `read`, `list`, `edit`, and `write` (tool-output E4 gating).
+    tags: [opencode, replay, protofs, toolio, mvgs]
+    enabled: true
+    mode: replay
+    config: agent_configs/opencode_e4_oc_protofs_gpt5nano_replay.yaml
+    session: misc/opencode_tests/oc_protofs_gpt5nano/opencode_session_dump.json
+    guardrails_expected: misc/opencode_tests/oc_protofs_gpt5nano/opencode_session_dump.guardrails.json
+    golden_workspace: misc/opencode_runs/golden_live/opencode_protofs_gpt5nano_toolio
+    workspace_seed: misc/opencode_tests/oc_protofs_gpt5nano/seed_workspace
+    equivalence: bitwise_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 120
+
+  - name: opencode_patch_todo_sentinel_replay
+    description: >
+      Synthetic OpenCode MVI replay sentinel that exercises OpenCode-native
+      todo board tools (`todowrite`/`todoread`) plus `bash` + `patch` including
+      the FileTime read-before-overwrite error surface and `*** Move to:` rename.
+    tags: [opencode, replay, mvi, patch, todo, mvgs]
+    enabled: true
+    mode: replay
+    config: agent_configs/opencode_e4_patch_todo_sentinel_replay.yaml
+    session: misc/opencode_tests/opencode_patch_todo_sentinel/opencode_session_dump.json
+    golden_workspace: misc/opencode_runs/golden_live/opencode_patch_todo_sentinel
+    workspace_seed: misc/opencode_tests/opencode_patch_todo_sentinel/seed_workspace
+    equivalence: bitwise_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+
+  - name: opencode_glob_grep_sentinel_replay
+    description: >
+      Synthetic OpenCode MVI replay sentinel that exercises OpenCode-native
+      `glob` + `grep` result formatting (and the `invalid` tool error shape).
+    tags: [opencode, replay, mvi, glob, grep, mvgs]
+    enabled: true
+    mode: replay
+    config: agent_configs/opencode_e4_glob_grep_sentinel_replay.yaml
+    session: misc/opencode_tests/opencode_glob_grep_sentinel/opencode_session_dump.json
+    golden_workspace: misc/opencode_runs/golden_live/opencode_glob_grep_sentinel
+    workspace_seed: misc/opencode_tests/opencode_glob_grep_sentinel/seed_workspace
+    equivalence: bitwise_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+
+  - name: opencode_toolcall_repair_sentinel_replay
+    description: >
+      Synthetic OpenCode MVI replay sentinel that exercises OpenCode-style tool-call repair:
+      casing repair (`Grep` -> `grep`) and invalid rewrite (`grep` missing args -> `invalid`).
+    tags: [opencode, replay, mvi, toolcall_repair, mvgs]
+    enabled: true
+    mode: replay
+    config: agent_configs/opencode_e4_toolcall_repair_sentinel_replay.yaml
+    session: misc/opencode_tests/opencode_toolcall_repair_sentinel/opencode_session_dump.json
+    golden_workspace: misc/opencode_runs/golden_live/opencode_toolcall_repair_sentinel
+    workspace_seed: misc/opencode_tests/opencode_toolcall_repair_sentinel/seed_workspace
+    equivalence: bitwise_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+
+  - name: opencode_webfetch_sentinel_replay
+    description: >
+      Synthetic OpenCode MVI replay sentinel that exercises OpenCode-native
+      `webfetch` result formatting against a local deterministic fixture server.
+    tags: [opencode, replay, mvi, webfetch, mvgs]
+    enabled: false
+    mode: replay
+    config: agent_configs/opencode_e4_webfetch_sentinel_replay.yaml
+    session: misc/opencode_tests/opencode_webfetch_sentinel/opencode_session_dump.json
+    golden_workspace: misc/opencode_runs/golden_live/opencode_webfetch_sentinel
+    workspace_seed: misc/opencode_tests/opencode_webfetch_sentinel/seed_workspace
+    equivalence: bitwise_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+
+  - name: protofs_cli_mock_guardrail
+    description: >
+      Deterministic CLI-mock scenario that exercises guard scaffolding without
+      hitting external providers. Provides a fast semantic parity gate while we
+      regenerate the CLI guard fixtures.
+    tags: [protofs, cli, mock, mvgs]
+    enabled: true
+    mode: task
+    config: agent_configs/opencode_cli_mock_guardrails.yaml
+    task: implementations/test_tasks/protofs_c.md
+    golden_workspace: goldens/protofs_cli_mock/opencode_cli_mock/current/workspace
+    golden_meta: goldens/protofs_cli_mock/opencode_cli_mock/current/meta/run_summary.json
+    equivalence: semantic
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+    max_steps: 40
+
+  - name: protofs_happy_path_codexmini
+    description: >
+      Live protofs capture on CodexMini. Requires external API access and is
+      currently treated as a non-gating diagnostic canary while providers and
+      Responses-based stacks stabilize; CodexMini may fail to complete protofs
+      even when replay parity with OpenCode is green.
+    tags: [protofs, task, codexmini, live_canary]
+    enabled: true
+    mode: task
+    config: agent_configs/opencode_openai_codexmini_c_fs_cli_shared.yaml
+    task: implementations/test_tasks/protofs_c.md
+    golden_workspace: goldens/protofs_happy_path/opencode_codexmini/current/workspace
+    golden_meta: goldens/protofs_happy_path/opencode_codexmini/current/meta/run_summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+    max_steps: 40
+
+  - name: protofs_zero_tool_abort_gpt5nano
+    description: >
+      Legacy live OpenRouter GPT-5-nano canary for the zero-tool watchdog.
+      Disabled in MVGS to avoid nondeterminism + spend; see protofs_zero_tool_abort_mock.
+    tags: [protofs, negative, zero-tool, mvgs]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_openai_gpt5nano_c_fs_guardrails.yaml
+    task: implementations/test_tasks/protofs_c.md
+    golden_workspace: goldens/protofs_zero_tool_abort/opencode_gpt5nano/current/workspace
+    golden_meta: goldens/protofs_zero_tool_abort/opencode_gpt5nano/current/meta/run_summary.json
+    equivalence: semantic
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+    max_steps: 40
+
+  - name: protofs_zero_tool_abort_mock
+    description: >
+      Deterministic zero-tool watchdog sentinel using the offline mock runtime
+      (no external provider calls). Validates we abort with reason no_tool_activity.
+    tags: [protofs, negative, zero-tool, mvgs, mock]
+    enabled: true
+    mode: task
+    config: agent_configs/opencode_mock_zero_tool_sentinel.yaml
+    task: implementations/test_tasks/protofs_c.md
+    golden_workspace: goldens/protofs_zero_tool_abort/opencode_mock_zero_tool/current/workspace
+    golden_meta: goldens/protofs_zero_tool_abort/opencode_mock_zero_tool/current/meta/run_summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+    max_steps: 6
+
+  - name: protofs_zero_tool_abort_codexmini
+    description: >
+      Known-bad protofs run on CodexMini that idles until the zero-tool watchdog
+      aborts. Used as a regression sentinel for plan-free mimic configs.
+    tags: [protofs, negative, codexmini]
+    enabled: true
+    mode: task
+    config: agent_configs/opencode_openai_codexmini_c_fs_cli_shared.yaml
+    task: implementations/test_tasks/protofs_c.md
+    golden_workspace: goldens/protofs_zero_tool_abort/opencode_codexmini/current/workspace
+    golden_meta: goldens/protofs_zero_tool_abort/opencode_codexmini/current/meta/run_summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+
+  - name: protofs_completion_guard_codexmini
+    description: >
+      Completion-guard stress case—ensures we warn (not abort) before a write and
+      that strict guardrails still allow a deterministic finish.
+    tags: [protofs, completion, guardrails, mvgs]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+    task: implementations/test_tasks/protofs_c.md
+    golden_workspace: goldens/protofs_completion_guard/opencode_codexmini/current/workspace
+    golden_meta: goldens/protofs_completion_guard/opencode_codexmini/current/meta/run_summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+    max_steps: 40
+
+  - name: protofs_plan_persona_strict
+    description: >
+      Plan/todo persona enforcement scenario (seeded todos must progress before
+      any edits). Uses the protofs-with-todos task to keep parity focused on plan
+      bootstrap semantics.
+    tags: [protofs, plan, persona, mvgs]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+    task: implementations/test_tasks/protofs_c_with_todos.md
+    golden_workspace: goldens/protofs_plan_persona/opencode_codexmini/current/workspace
+    golden_meta: goldens/protofs_plan_persona/opencode_codexmini/current/meta/run_summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E3
+    fail_mode: warn
+
+  - name: claude45_protofs
+    description: >
+      Haiku 4.5 protofs task using guardrail-focused config. Targets Anthropic
+      Claude Code parity at E1/E2 while enforcing read-before-edit, strict TODO
+      cadence, and completion build guards.
+    tags: [protofs, anthropic, haiku]
+    enabled: true
+    mode: task
+    config: agent_configs/claude_code_haiku45_c_fs_guardrails.yaml
+    task: implementations/test_tasks/protofs_c.md
+    golden_workspace: misc/claude_code_runs/golden_live/claude_protofs_todo
+    golden_meta: misc/claude_code_runs/golden_live/claude_protofs_todo/summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+    max_steps: 40
+
+  - name: claude45_protofs_replay
+    description: >
+      Replay of the logged Claude Code protofs session (Haiku 4.5) against our
+      engine to measure bitwise-trace parity without live provider calls.
+    tags: [protofs, anthropic, replay, haiku]
+    enabled: true
+    mode: replay
+    config: agent_configs/claude_code_haiku45_c_fs_guardrails.yaml
+    session: misc/claude_code_tests/protofs_claude_session.json
+    guardrails_expected: misc/claude_code_tests/protofs_claude_session.guardrails.json
+    golden_workspace: misc/claude_code_runs/golden_live/claude_protofs_todo
+    summary: misc/claude_code_runs/golden_live/claude_protofs_todo/summary.json
+    workspace_seed: misc/claude_code_runs/golden_live/claude_protofs_todo
+    equivalence: bitwise_trace
+    tiers:
+      gate: E1
+      trophy: E3
+    fail_mode: warn
+
+  - name: codex_cli_protofs_replay
+    description: >
+      Replay of a Codex CLI `codex exec` protofs session (Codex 5.2) against our
+      engine to measure bitwise-trace parity without live provider calls.
+    tags: [protofs, replay, codex, codex_cli, mvgs]
+    enabled: true
+    mode: replay
+    config: agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+    session: misc/codex_cli_tests/protofs_codex_cli_session.json
+    guardrails_expected: misc/codex_cli_tests/protofs_codex_cli_session.guardrails.json
+    golden_workspace: misc/codex_cli_runs/golden_live/codex_cli_protofs/workspace
+    equivalence: bitwise_trace
+    tiers:
+      gate: E1
+      trophy: E3
+    fail_mode: warn
+
+  - name: codex_cli_mvi_sentinel_replay
+    description: >
+      Replay of a focused Codex CLI session that exercises model-visible tool I/O
+      surfaces (shell_command + apply_patch), including output formatting parity.
+    tags: [codex, codex_cli, replay, mvi, mvgs]
+    enabled: true
+    mode: replay
+    config: agent_configs/codex_cli_gpt51mini_mvi_parity.yaml
+    session: misc/codex_cli_tests/codex_cli_mvi_sentinel_session.json
+    guardrails_expected: misc/codex_cli_tests/codex_cli_mvi_sentinel_session.guardrails.json
+    golden_workspace: misc/codex_cli_runs/golden_live/codex_cli_mvi_sentinel/workspace
+    equivalence: bitwise_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+
+  - name: codex_cli_move_to_sentinel_replay
+    description: >
+      Replay sentinel that exercises Codex CLI apply_patch rename semantics via
+      `*** Move to:` to gate rename-on-update behavior at E4.
+    tags: [codex, codex_cli, replay, mvi, mvgs, move_to]
+    enabled: true
+    mode: replay
+    config: agent_configs/codex_cli_gpt51mini_mvi_parity.yaml
+    session: misc/codex_cli_tests/codex_cli_move_to_sentinel_session.json
+    guardrails_expected: misc/codex_cli_tests/codex_cli_move_to_sentinel_session.guardrails.json
+    golden_workspace: misc/codex_cli_runs/golden_live/codex_cli_move_to_sentinel/workspace
+    workspace_seed: misc/codex_cli_runs/golden_live/codex_cli_move_to_sentinel/seed_workspace
+    equivalence: bitwise_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+
+  - name: codex_cli_protofs_mvi_replay
+    description: >
+      Replay of a Codex CLI protofs session that includes plan-surface calls
+      (`update_plan`) plus `shell_command` + `apply_patch` tool I/O formatting.
+    tags: [protofs, replay, codex, codex_cli, mvi, mvgs]
+    enabled: true
+    mode: replay
+    config: agent_configs/codex_cli_gpt51mini_mvi_parity.yaml
+    session: misc/codex_cli_tests/codex_cli_protofs_session.json
+    guardrails_expected: misc/codex_cli_tests/codex_cli_protofs_session.guardrails.json
+    golden_workspace: misc/codex_cli_runs/golden_live/codex_cli_protofs/workspace
+    workspace_seed: misc/codex_cli_runs/golden_live/codex_cli_protofs/seed_workspace
+    equivalence: bitwise_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+
+  # --------------------------------------------------------------------------
+  # MVGS – CLI mock trio (coding, multi-file, modal/resize)
+  # These use the CLI guardrail suite scripts and fixtures.
+  # --------------------------------------------------------------------------
+  - name: cli_guard_coding_task
+    description: >
+      CLI scripted coding task replay; verifies guard banners/logging produced by
+      the conductor align with the TUI worker expectations.
+    tags: [cli, guardrails, coding-task, mvgs]
+    enabled: false
+    mode: cli_guard
+    config: agent_configs/opencode_openai_codexmini_c_fs_cli_shared.yaml
+    script: kylecode_cli_skeleton/scripts/coding_task_cli_shared.json
+    script_output: kylecode_cli_skeleton/scripts/coding_task_output_cli_shared_latest.txt
+    guard_fixture: misc/cli_guardrail_tests/coding_task_cli_shared.guardrails.json
+    golden_workspace: goldens/cli_guard_coding_task/opencode_cli_mock/current/workspace
+    golden_meta: goldens/cli_guard_coding_task/opencode_cli_mock/current/meta/run_summary.json
+    tiers:
+      gate: E1
+      trophy: E2
+
+  - name: cli_guard_multi_file
+    description: >
+      CLI multi-file edit stress test—ensures diff chunking + guard metrics stay
+      deterministic under scripted playback.
+    tags: [cli, guardrails, multi-file, mvgs]
+    enabled: false
+    mode: cli_guard
+    config: agent_configs/opencode_openai_codexmini_c_fs_cli_shared.yaml
+    script: kylecode_cli_skeleton/scripts/multi_file_cli_shared.json
+    script_output: kylecode_cli_skeleton/scripts/multi_file_output_cli_shared_latest.txt
+    guard_fixture: misc/cli_guardrail_tests/multi_file_cli_shared.guardrails.json
+    golden_workspace: goldens/cli_guard_multi_file/opencode_cli_mock/current/workspace
+    golden_meta: goldens/cli_guard_multi_file/opencode_cli_mock/current/meta/run_summary.json
+    tiers:
+      gate: E1
+      trophy: E2
+
+  - name: cli_guard_modal_overlay
+    description: >
+      CLI modal overlay + resize storm capture; forms the backbone of the guard
+      fixture regeneration loop for UI stress tests.
+    tags: [cli, guardrails, modal, resize, mvgs]
+    enabled: false
+    mode: cli_guard
+    config: agent_configs/opencode_openai_codexmini_c_fs_cli_shared.yaml
+    script: kylecode_cli_skeleton/scripts/modal_overlay_stress.json
+    script_output: kylecode_cli_skeleton/scripts/modal_overlay_stress_cli_shared_latest.txt
+    guard_fixture: misc/cli_guardrail_tests/modal_overlay_cli_shared.guardrails.json
+    golden_workspace: goldens/cli_guard_modal_overlay/opencode_cli_mock/current/workspace
+    golden_meta: goldens/cli_guard_modal_overlay/opencode_cli_mock/current/meta/run_summary.json
+    tiers:
+      gate: E1
+      trophy: E2
+
+  - name: cli_guard_resize_storm
+    description: >
+      Pure resize storm playback to ensure SSE streaming policy + guard banners
+      stay healthy when the UI hammers the viewport.
+    tags: [cli, guardrails, resize, mvgs]
+    enabled: false
+    mode: cli_guard
+    config: agent_configs/opencode_openai_codexmini_c_fs_cli_shared.yaml
+    script: kylecode_cli_skeleton/scripts/resize_storm.json
+    script_output: kylecode_cli_skeleton/scripts/resize_storm_cli_shared_latest.txt
+    guard_fixture: misc/cli_guardrail_tests/resize_storm_cli_shared.guardrails.json
+    golden_workspace: goldens/cli_guard_resize_storm/opencode_cli_mock/current/workspace
+    golden_meta: goldens/cli_guard_resize_storm/opencode_cli_mock/current/meta/run_summary.json
+    tiers:
+      gate: E1
+      trophy: E2
+
+  # --------------------------------------------------------------------------
+  # MVGS – Negative/guard-focused scenarios
+  # --------------------------------------------------------------------------
+  - name: workspace_guard_violation_cli_mock
+    description: >
+      Intentional workspace guard violation (edit before listing). Uses a mock
+      provider config that re-enables workspace guards and a task instructing the
+      agent to patch immediately, ensuring the guard fires deterministically.
+    tags: [negative, guardrails, workspace, cli]
+    enabled: true
+    mode: task
+    config: agent_configs/opencode_cli_mock_workspace_guard.yaml
+    task: implementations/test_tasks/workspace_guard_violation.md
+    golden_workspace: goldens/workspace_guard_violation/opencode_cli_mock/current/workspace
+    golden_meta: goldens/workspace_guard_violation/opencode_cli_mock/current/meta/run_summary.json
+    equivalence: semantic
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+
+  - name: completion_guard_fail_protofs
+    description: >
+      Scenario that deliberately tries to complete before making real edits to
+      confirm we warn/abort in the same pattern as OpenCode.
+    tags: [negative, completion, guardrails]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+    task: implementations/test_tasks/protofs_c.md
+    golden_workspace: goldens/protofs_completion_fail/opencode_codexmini/current/workspace
+    golden_meta: goldens/protofs_completion_fail/opencode_codexmini/current/meta/run_summary.json
+    equivalence: semantic
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+
+  # --------------------------------------------------------------------------
+  # Extended scenario families (Phase 6 priorities)
+  # --------------------------------------------------------------------------
+  - name: python_bugfix_cli_mock
+    description: >
+      Python lint fix task – deterministic CLI mock run covering pytest + lint
+      flows for the Python seed pack (PY-BUG-1).
+    tags: [python, lint, extended]
+    enabled: false
+    mode: cli_guard
+    config: agent_configs/opencode_cli_mock_guardrails.yaml
+    script: kylecode_cli_skeleton/scripts/python_lint_fix_cli_shared.json
+    script_output: kylecode_cli_skeleton/scripts/python_lint_fix_output_cli_shared_latest.txt
+    guard_fixture: misc/cli_guardrail_tests/python_lint_fix_cli_shared.guardrails.json
+    golden_workspace: goldens/python_bugfix/opencode_cli_mock/current/workspace
+    golden_meta: goldens/python_bugfix/opencode_cli_mock/current/meta/run_summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+
+  - name: python_newfile_cli_mock
+    description: >
+      Python create-file semantics (PY-NEWFILE-3) to ensure we match OpenCode’s
+      guard behavior when touching new modules/tests.
+    tags: [python, newfile, extended, mvgs]
+    enabled: true
+    mode: cli_guard
+    config: agent_configs/opencode_cli_mock_guardrails.yaml
+    script: kylecode_cli_skeleton/scripts/python_newfile_cli_shared.json
+    script_output: kylecode_cli_skeleton/scripts/python_newfile_output_cli_shared_latest.txt
+    guard_fixture: misc/cli_guardrail_tests/python_newfile_cli_shared.guardrails.json
+    golden_workspace: goldens/python_newfile/opencode_cli_mock/current/workspace
+    golden_meta: goldens/python_newfile/opencode_cli_mock/current/meta/run_summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+
+  - name: react_snapshot_cli_mock
+    description: >
+      React snapshot update (TS-SNAP-1) to verify CLI/guard parity across a
+      component+test workload.
+    tags: [react, typescript, snapshot, extended]
+    enabled: true
+    mode: cli_guard
+    config: agent_configs/opencode_cli_mock_guardrails.yaml
+    script: kylecode_cli_skeleton/scripts/react_snapshot_cli_shared.json
+    script_output: kylecode_cli_skeleton/scripts/react_snapshot_output_cli_shared_latest.txt
+    guard_fixture: misc/cli_guardrail_tests/react_snapshot_cli_shared.guardrails.json
+    golden_workspace: goldens/react_snapshot/opencode_cli_mock/current/workspace
+    golden_meta: goldens/react_snapshot/opencode_cli_mock/current/meta/run_summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+
+  - name: git_merge_conflict_cli_mock
+    description: >
+      Merge-conflict stress (GIT-MERGE-1). Validates diff application + guard
+      behavior when patching multi-hunk conflicts.
+    tags: [git, diff, conflict, extended]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_cli_mock_guardrails.yaml
+    task: implementations/test_tasks/universal_agentic_debugging_task.md
+    golden_workspace: goldens/git_merge_conflict/opencode_cli_mock/current/workspace
+    golden_meta: goldens/git_merge_conflict/opencode_cli_mock/current/meta/run_summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+
+  - name: shell_guard_negative_cli_mock
+    description: >
+      Shell guard negative canary (SH-HEREDOC-1). Ensures heredoc protection and
+      bash guard emissions align with OpenCode.
+    tags: [shell, guardrails, extended]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_cli_mock_guardrails.yaml
+    task: implementations/test_tasks/universal_agentic_debugging_task.md
+    golden_workspace: goldens/shell_guard_negative/opencode_cli_mock/current/workspace
+    golden_meta: goldens/shell_guard_negative/opencode_cli_mock/current/meta/run_summary.json
+    equivalence: semantic
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+
+  - name: systems_c_math_lib_codexmini
+    description: >
+      Systems-language parity seed (C trees + completion). Uses the math lib task
+      until Go/Rust seeds are ready.
+    tags: [systems, c, extended]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+    task: implementations/test_tasks/c_math_lib.md
+    golden_workspace: goldens/c_math_lib/opencode_codexmini/current/workspace
+    golden_meta: goldens/c_math_lib/opencode_codexmini/current/meta/run_summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+
+  - name: completion_variant_compact_cli_mock
+    description: >
+      Completion variant that ensures we honor END-SENTINEL/compact responses for
+      mimic configs inspired by Codex CLI.
+    tags: [completion, sentinel, extended]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_cli_mock_guardrails.yaml
+    task: implementations/test_tasks/protofs_c.md
+    golden_workspace: goldens/completion_variant/opencode_cli_mock/current/workspace
+    golden_meta: goldens/completion_variant/opencode_cli_mock/current/meta/run_summary.json
+    equivalence: semantic
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+
+  # --------------------------------------------------------------------------
+  # Phase 6 – Gate set expansions (Python/TS/Go/Rust) and guard canaries
+  # --------------------------------------------------------------------------
+  - name: opencode_codexmini_py_bugfix
+    description: >
+      Python bugfix seed (PY-BUGFIX) validating edit→pytest parity on CodexMini
+      guardrails config.
+    tags: [python, bugfix, opencode, phase6]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+    task: implementations/test_tasks/python_bugfix.md
+    golden_workspace: goldens/python_bugfix/opencode_codexmini/current/workspace
+    golden_meta: goldens/python_bugfix/opencode_codexmini/current/meta/run_summary.json
+    equivalence: semantic
+    tiers:
+      gate: E0
+      trophy: E1
+    fail_mode: fail
+    max_steps: 80
+
+  - name: opencode_codexmini_py_refactor
+    description: >
+      Python refactor seed (rename slugify→normalize_slug) to exercise multi-file
+      edits and test updates under CodexMini guardrails.
+    tags: [python, refactor, opencode, phase6]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+    task: implementations/test_tasks/python_refactor.md
+    golden_workspace: goldens/python_refactor/opencode_codexmini/current/workspace
+    golden_meta: goldens/python_refactor/opencode_codexmini/current/meta/run_summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: fail
+    max_steps: 100
+
+  - name: opencode_codexmini_py_newfile
+    description: >
+      Python new module seed (JSON parser) focusing on create-file semantics and
+      pytest parity on CodexMini guardrails.
+    tags: [python, newfile, opencode, phase6]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+    task: implementations/test_tasks/python_newfile.md
+    golden_workspace: goldens/python_newfile/opencode_codexmini/current/workspace
+    golden_meta: goldens/python_newfile/opencode_codexmini/current/meta/run_summary.json
+    equivalence: semantic
+    tiers:
+      gate: E0
+      trophy: E1
+    fail_mode: fail
+    max_steps: 80
+
+  - name: opencode_codexmini_ts_snapshot
+    description: >
+      TS/React snapshot update seed (title→heading prop change). Ensures Jest
+      snapshot parity under CodexMini guardrails.
+    tags: [typescript, react, snapshot, opencode, phase6]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+    task: implementations/test_tasks/typescript_snapshot.md
+    golden_workspace: goldens/typescript_snapshot/opencode_codexmini/current/workspace
+    golden_meta: goldens/typescript_snapshot/opencode_codexmini/current/meta/run_summary.json
+    equivalence: semantic
+    tiers:
+      gate: E0
+      trophy: E1
+    fail_mode: fail
+    max_steps: 100
+
+  - name: opencode_codexmini_ts_multi
+    description: >
+      TS/React multi-file refactor seed to align shared todo item shape across
+      components/hooks/store and refresh tests.
+    tags: [typescript, react, refactor, opencode, phase6]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+    task: implementations/test_tasks/typescript_multi.md
+    golden_workspace: goldens/typescript_multi/opencode_codexmini/current/workspace
+    golden_meta: goldens/typescript_multi/opencode_codexmini/current/meta/run_summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: fail
+    max_steps: 120
+
+  - name: opencode_grok_go_race
+    description: >
+      Go data race fix seed exercising `go test -race` under Grok mimic config.
+    tags: [go, race, opencode, grok, phase6]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_grok4fast_c_fs_guardrails.yaml
+    task: implementations/test_tasks/go_race.md
+    golden_workspace: goldens/go_race/opencode_grok4fast/current/workspace
+    golden_meta: goldens/go_race/opencode_grok4fast/current/meta/run_summary.json
+    equivalence: semantic
+    tiers:
+      gate: E0
+      trophy: E1
+    fail_mode: fail
+    max_steps: 140
+
+  - name: opencode_codexmini_rs_borrow
+    description: >
+      Rust borrow checker fix seed to validate edit→cargo test loop on CodexMini.
+    tags: [rust, borrow, opencode, phase6]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+    task: implementations/test_tasks/rust_borrow.md
+    golden_workspace: goldens/rust_borrow/opencode_codexmini/current/workspace
+    golden_meta: goldens/rust_borrow/opencode_codexmini/current/meta/run_summary.json
+    equivalence: semantic
+    tiers:
+      gate: E0
+      trophy: E1
+    fail_mode: fail
+    max_steps: 120
+
+  - name: claude45_plan_todo_stress
+    description: >
+      Claude Code Haiku TODO/plan stress: enforce TODO cadence on a small Python
+      bugfix while running pytest.
+    tags: [claude, haiku, plan, todos, phase6]
+    enabled: false
+    mode: task
+    config: agent_configs/claude_code_haiku45_c_fs_guardrails.yaml
+    task: implementations/test_tasks/plan_todo_stress_py.md
+    golden_workspace: goldens/plan_todo_stress/claude_haiku45/current/workspace
+    golden_meta: goldens/plan_todo_stress/claude_haiku45/current/meta/run_summary.json
+    equivalence: structural
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+    max_steps: 80
+
+  - name: shell_heredoc_block
+    description: >
+      Shell heredoc negative canary; guardrail should block heredoc writes and
+      emit the expected validation event.
+    tags: [shell, guardrails, negative, phase6]
+    enabled: false
+    mode: task
+    config: agent_configs/opencode_cli_mock_guardrails.yaml
+    task: implementations/test_tasks/shell_heredoc.md
+    golden_workspace: goldens/shell_heredoc/opencode_cli_mock/current/workspace
+    golden_meta: goldens/shell_heredoc/opencode_cli_mock/current/meta/run_summary.json
+    equivalence: semantic
+    tiers:
+      gate: E1
+      trophy: E2
+    fail_mode: warn
+    max_steps: 40
+
+  # --------------------------------------------------------------------------
+  # Phase 8 – Multi-agent sync subagent smoke (placeholder)
+  # --------------------------------------------------------------------------
+  - name: multi_agent_sync_subagent_smoke
+    description: >
+      Placeholder multi-agent sync subagent scenario. Uses Task tool to spawn a
+      read-only subagent and return its output. Golden + replay data TBD.
+    tags: [multi-agent, task, sync, phase8]
+    enabled: false
+    mode: task
+    config: agent_configs/multi_agent_sync_main.yaml
+    task: implementations/test_tasks/multi_agent_sync_subagent.md
+    golden_workspace: misc/multi_agent_runs/golden_sync_subagent
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 40

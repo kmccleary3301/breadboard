@@ -421,6 +421,21 @@ def initialize_yaml_tools(conductor: Any) -> None:
             tool_name = getattr(tool, "name", None)
             if tool_name and _is_included(str(tool_name)):
                 filtered_tools.append(tool)
+        # Gate Task tool unless multi-agent or task_tool config explicitly enabled.
+        allow_task_tool = False
+        try:
+            multi_cfg = (conductor.config.get("multi_agent") or {}) if isinstance(getattr(conductor, "config", None), dict) else {}
+            allow_task_tool = bool(multi_cfg.get("enabled"))
+            if not allow_task_tool:
+                allow_task_tool = bool((conductor.config.get("task_tool") or {})) if isinstance(getattr(conductor, "config", None), dict) else False
+        except Exception:
+            allow_task_tool = False
+
+        if not allow_task_tool:
+            filtered_tools = [
+                tool for tool in filtered_tools
+                if str(getattr(tool, "name", "")).strip().lower() != "task"
+            ]
         conductor.yaml_tools = filtered_tools
     except Exception:
         conductor.yaml_tools = []
