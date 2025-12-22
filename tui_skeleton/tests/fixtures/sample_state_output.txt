@@ -1,0 +1,5 @@
+Slash commands: /help, /quit, /clear, /status, /remote on|off, /retry, /plan, /mode <plan|build|auto>, /model <id>, /test [suite], /files [path], /models
+! for bash • / for commands • @ for files • Tab to complete • Esc closes menus
+USER      Run integration tests
+● [call]       [call] run_tests {"suite":"integration"}
+… Tool running — run_tests {"suite":"integration"}

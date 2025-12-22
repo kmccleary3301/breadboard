@@ -1,0 +1,23 @@
+schema_version: 1
+description: |
+  Baseline workspace/todo discipline guardrails shared by OpenCode, Claude Code,
+  and CLI profiles. Guards remain configurable through parameters or per-config
+  overrides.
+guards:
+  - id: workspace_context
+    type: workspace_context
+    templates:
+      require_exploration: implementations/system_prompts/guardrails/workspace_require_exploration.prompt.md
+      plan_only_todo: implementations/system_prompts/guardrails/workspace_plan_todo.prompt.md
+      require_read_before_edit: implementations/system_prompts/guardrails/workspace_read_before_edit.prompt.md
+    parameters:
+      require_exploration_before_edit: true
+      require_read_before_edit: true
+      require_progress_before_todo_updates: true
+  - id: todo_rate_limit
+    type: todo_rate_limit
+    templates:
+      warning: implementations/system_prompts/guardrails/todo_rate_limit.prompt.md
+    parameters:
+      enabled: true
+      todo_updates_before_progress: 1

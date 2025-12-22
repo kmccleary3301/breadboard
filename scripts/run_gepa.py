@@ -2,7 +2,7 @@
 """GEPA-style prompt evolver skeleton.
 
 Implements a simplified reflective loop that proposes prompt edits, evaluates
-them via the KyleCode runner, and maintains a Pareto front over reward vs cost.
+them via the BreadBoard runner, and maintains a Pareto front over reward vs cost.
 
 The script is intentionally lightweight: edit proposals append commentary to the
 system prompt, and evaluation relies on the reward metrics emitted by the agent

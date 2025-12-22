@@ -1,0 +1,41 @@
+id: update_plan
+name: update_plan
+description: Update the current plan as structured JSON (Codex CLI-compatible schema)
+type_id: python
+manipulations:
+  - plan.update
+syntax_formats_supported: [native_function_calling, json_block]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: explanation
+    type: string
+    description: Optional explanation for the plan update
+    required: false
+  - name: plan
+    type: array
+    description: List of plan items
+    required: true
+    schema:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          step:
+            type: string
+            description: Short plan step
+          status:
+            type: string
+            description: One of pending, in_progress, completed
+        required: [step, status]
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    additional_properties: false
+    strict: false
+    fallback_formats: [json_block]
+  anthropic:
+    native_primary: false
+    fallback_formats: [json_block]

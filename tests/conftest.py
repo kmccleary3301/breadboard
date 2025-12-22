@@ -16,16 +16,10 @@ PROJ = os.path.abspath(os.path.join(ROOT, os.pardir))
 if PROJ not in sys.path:
     sys.path.insert(0, PROJ)
 
-# Also add agentic_coder_prototype and kylecode for direct imports
-ACP = os.path.join(PROJ, 'agentic_coder_prototype')
-if ACP not in sys.path:
-    sys.path.insert(0, ACP)
-KYLE = os.path.join(PROJ, 'kylecode')
+# Add breadboard for direct imports (some legacy tests import `sandbox_v2`, etc.)
+KYLE = os.path.join(PROJ, 'breadboard')
 if KYLE not in sys.path:
     sys.path.insert(0, KYLE)
-TC = os.path.join(PROJ, 'tool_calling')
-if TC not in sys.path:
-    sys.path.insert(0, TC)
 
 # Ensure default docker runtime is standard runc during tests unless overridden
 os.environ.setdefault("RAY_DOCKER_RUNTIME", "runc")

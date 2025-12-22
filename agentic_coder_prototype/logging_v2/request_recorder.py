@@ -119,3 +119,4 @@ class StructuredRequestRecorder:
         if attempt:
             suffix += f"_attempt_{attempt}"
         return self.lm.write_json(f"meta/requests/{suffix}.json", record)
+

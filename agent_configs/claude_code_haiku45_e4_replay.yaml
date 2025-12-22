@@ -1,0 +1,9 @@
+extends: claude_code_haiku45_c_fs_v2.yaml
+
+# Replay configuration for Claude Code E4 suite:
+# - preserve tool names as recorded from Claude Code (Read/Grep/Edit/Write/Bash/etc.)
+# - compare all tool outputs against recorded tool_result payloads
+replay:
+  preserve_tool_names: true
+  compare_tool_outputs: true
+

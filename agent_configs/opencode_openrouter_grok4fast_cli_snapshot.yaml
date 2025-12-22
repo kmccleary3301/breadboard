@@ -1,0 +1,47 @@
+extends: opencode_grok4fast_c_fs_v2.yaml
+
+profile: { name: opencode-openrouter-grok4fast-cli-snapshot }
+
+providers:
+  default_model: openrouter/x-ai/grok-4-fast
+  models:
+    - id: openrouter/x-ai/grok-4-fast
+      adapter: openai
+      params:
+        temperature: 0.2
+        top_p: 0.9
+        max_output_tokens: 2048
+  stream_responses: true
+
+guardrails:
+  include: []
+  overrides:
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 999
+        abort_after_turns: 999
+        emit_event: false
+    completion_guard:
+      parameters:
+        warnings_before_abort: 999
+    plan_bootstrap:
+      strategy: never
+    shell_write_block:
+      parameters:
+        enabled: false
+    provider_policy:
+      parameters:
+        allow_free_text: true
+        ignore_policy_violations: true
+
+features:
+  plan: false
+  todos:
+    enabled: false
+
+turn_limit: 4
+
+completion:
+  build_guard:
+    require_run_shell: false
+    require_successful_tests: false

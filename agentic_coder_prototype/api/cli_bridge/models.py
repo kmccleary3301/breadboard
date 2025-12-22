@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, validator
 
@@ -61,13 +61,33 @@ class ErrorResponse(BaseModel):
     detail: Dict[str, Any] | None = None
 
 
+class AttachmentHandle(BaseModel):
+    """Response payload describing a stored attachment."""
+
+    id: str
+    filename: str
+    mime: Optional[str] = None
+    size_bytes: int
+
+
+class AttachmentUploadResponse(BaseModel):
+    attachments: List[AttachmentHandle]
+
+
 class SessionInputRequest(BaseModel):
     content: str = Field(..., description="User supplied input text.")
+    attachments: Optional[List[str]] = Field(default=None, description="Attachment IDs returned by /attachments.")
 
     @validator("content")
     def _validate_content(cls, value: str) -> str:
         if not value or not value.strip():
             raise ValueError("content must not be empty")
+        return value
+
+    @validator("attachments", each_item=True)
+    def _validate_attachment_id(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("attachment IDs must not be empty")
         return value
 
 
@@ -89,3 +109,17 @@ class SessionCommandRequest(BaseModel):
 class SessionCommandResponse(BaseModel):
     status: str = Field(default="accepted")
     detail: Dict[str, Any] | None = None
+
+
+class SessionFileInfo(BaseModel):
+    path: str
+    type: str = Field(..., description="file or directory")
+    size: Optional[int] = None
+    updated_at: Optional[str] = None
+
+
+class SessionFileContent(BaseModel):
+    path: str
+    content: str
+    truncated: bool = Field(default=False)
+    total_bytes: Optional[int] = None

@@ -1,6 +1,6 @@
 # Log Reduction CLI Manual
 
-The `scripts/log_reduce.py` CLI summarizes KyleCode logging runs without flooding
+The `scripts/log_reduce.py` CLI summarizes BreadBoard logging runs without flooding
 context. It prints a compact directory tree, per-turn summaries, tool activity,
 and optionally the original diffs.
 

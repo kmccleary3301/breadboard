@@ -1,0 +1,35 @@
+extends: opencode_grok4fast_c_fs_v2.yaml
+
+profile: { name: opencode-openai-codexmini-c-fs }
+
+providers:
+  default_model: openai/gpt-5.1-codex-mini
+  models:
+    - id: openai/gpt-5.1-codex-mini
+      adapter: openai
+      params: { temperature: 0.2, top_p: 0.9 }
+
+provider_tools:
+  use_native: true
+  suppress_prompts: false
+  api_variant: responses
+
+prompts:
+  packs:
+    base:
+      system: implementations/system_prompts/opencode/anthropic.md
+      plan: implementations/system_prompts/opencode/plan_grok4.md
+      builder: implementations/system_prompts/opencode/builder_grok4.md
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  tool_prompt_synthesis:
+    enabled: true
+    selection:
+      default: opencode_patch
+
+enhanced_tools:
+  enabled: true
+  validation:
+    enabled: true
+    rules: [one_bash_per_turn]
+    rule_config:
+      one_bash_per_turn: { turn_window_seconds: 120 }

@@ -1,0 +1,10 @@
+[
+  { "action": "wait", "ms": 1200 },
+  { "action": "type", "text": "upload check ", "typingDelayMs": 18 },
+  { "action": "press", "key": "ctrl+v" },
+  { "action": "wait", "ms": 400 },
+  { "action": "snapshot", "label": "before-submit" },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 4000 },
+  { "action": "snapshot", "label": "after-submit" }
+]

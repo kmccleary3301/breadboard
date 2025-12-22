@@ -15,6 +15,15 @@ tools:
       - read_file
       - list
       - list_dir
+      - todo.create
+      - todo.update
+      - todo.complete
+      - todo.cancel
+      - todo.reorder
+      - todo.attach
+      - todo.note
+      - todo.list
+      - todo.write_board
       - patch
       - bash
       - mark_task_complete

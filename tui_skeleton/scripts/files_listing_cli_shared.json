@@ -1,0 +1,13 @@
+[
+  { "action": "type", "text": "/files" },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 3000 },
+  { "action": "snapshot", "label": "files-pane" },
+  {
+    "action": "type",
+    "text": "Based on the workspace listing, describe the most important directories without running additional /files or read commands."
+  },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "completion", "timeoutMs": 90000 },
+  { "action": "snapshot", "label": "after-summary", "includeStatus": true }
+]

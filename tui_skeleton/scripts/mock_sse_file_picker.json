@@ -1,0 +1,23 @@
+{
+  "steps": [],
+  "files": {
+    ".": [
+      { "path": "README.md", "type": "file", "size": 1200 },
+      { "path": "docs", "type": "directory" },
+      { "path": "src", "type": "directory" }
+    ],
+    "docs": [],
+    "src": [
+      { "path": "src/repl", "type": "directory" },
+      { "path": "src/main.ts", "type": "file", "size": 420 }
+    ],
+    "src/repl": [
+      { "path": "src/repl/components", "type": "directory" },
+      { "path": "src/repl/types.ts", "type": "file", "size": 900 }
+    ],
+    "src/repl/components": [
+      { "path": "src/repl/components/LineEditor.tsx", "type": "file", "size": 6200 },
+      { "path": "src/repl/components/ReplView.tsx", "type": "file", "size": 19000 }
+    ]
+  }
+}

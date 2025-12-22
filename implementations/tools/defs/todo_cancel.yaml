@@ -1,0 +1,19 @@
+id: todo.cancel
+name: todo.cancel
+description: Cancel or abandon a todo, optionally providing a reason.
+type_id: python
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: id
+    type: string
+    description: The todo id to cancel.
+    required: true
+  - name: reason
+    type: string
+    description: Optional reason for canceling (e.g., out of scope, duplicate).
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true

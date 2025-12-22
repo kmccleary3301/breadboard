@@ -36,7 +36,7 @@ def delete_session(base_url: str, session_id: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Inspect and clean KyleCode CLI sessions.")
+    parser = argparse.ArgumentParser(description="Inspect and clean BreadBoard CLI sessions.")
     parser.add_argument("--base-url", default="http://127.0.0.1:9099", help="FastAPI bridge base URL.")
     parser.add_argument(
         "--fail-on-policy",

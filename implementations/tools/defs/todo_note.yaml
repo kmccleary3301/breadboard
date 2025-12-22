@@ -1,0 +1,23 @@
+id: todo.note
+name: todo.note
+description: Append a note/comment to a todo (mirrors OpenCode todo.note).
+type_id: python
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: id
+    type: string
+    description: Todo id receiving the note.
+    required: true
+  - name: text
+    type: string
+    description: Note body (what changed, blockers, etc.).
+    required: true
+  - name: author
+    type: string
+    description: Optional author label (defaults to assistant).
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true

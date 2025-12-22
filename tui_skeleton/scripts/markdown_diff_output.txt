@@ -1,0 +1,26 @@
+# final
+████ Kyle Code ████
+breadboard — interactive session
+7e3c21ec-51c ● Halted ● model openrouter/x-ai/grok-4-fast ○ local ● events 4 ○ tools 0 ● turn 1
+
+Slash commands: /help, /quit, /clear, /status, /remote on|off, /retry, /plan, /mode <plan|build|auto>, /model <id>, /test [suite], /files [path], /models
+! for bash • / for commands • @ for files • Tab to complete • Esc closes menus
+USER      Produce a fenced diff (```diff) showing +console.log('hello') and -console.log('old'); respond directly, do not call tools, no file access.
+ASSISTANT Here is a diff:
+          ```diff
+          --- a/app.js
+          +++ b/app.js
+          @@ line 1 @@
+          -console.log("hello");
+          +console.log("hello world");
+          ```
+          … 0 lines hidden — Δ +1/-1 in app.js
+          -console.log("hello");
+          +console.log("hello world");
+          ```
+          
+SYSTEM    Run completed (mock).
+● [completion] [completion] status completed · reason mock
+- Session 7e3c21ec-51c5-4097-956b-d87d8e26d5f8 started (remote disabled, model openrouter/x-ai/grok-4-fast).
+- Assistant finished the run.
+- Run finished.

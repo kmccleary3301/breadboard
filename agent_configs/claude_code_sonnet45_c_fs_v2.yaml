@@ -3,15 +3,41 @@ extends: base_v2.yaml
 profile: { name: claude-code-sonnet45-c-fs }
 
 providers:
-  default_model: anthropic/claude-3-7-sonnet
+  default_model: anthropic/claude-3-5-haiku-20241022
+  routing:
+    disable_native_tools_on_probe_failure: false
   models:
-    - id: anthropic/claude-3-7-sonnet
+    - id: anthropic/claude-3-5-haiku-20241022
       adapter: anthropic
       params:
         tool_use: true
         temperature: 0.1
       routing:
         fallback_models: []
+
+provider_tools:
+  use_native: true
+  suppress_prompts: false
+  anthropic:
+    max_output_tokens: 256
+    temperature: 0.1
+    turn_delay_seconds: 1.0
+    tool_choice: any
+    prompt_cache:
+      beta_header: null
+      apply_to_system: true
+      cache_control:
+        type: ephemeral
+        ttl: 1h
+    rate_limit:
+      enabled: true
+      token_buffer: 4000
+      fallback_cooldown_seconds: 5
+      min_wait_seconds: 1.0
+      max_retries: 2
+      retry_base_seconds: 2.0
+      retry_max_seconds: 20.0
+      retry_jitter_seconds: 0.5
 
 prompts:
   packs:
@@ -31,10 +57,10 @@ modes:
   - name: plan
     prompt: "@pack(base).plan"
     tools_enabled: [Read, List, TodoWrite]
-    tools_disabled: [apply_unified_patch, apply_search_replace, write, create_file_from_block, patch, Bash, run_shell, mark_task_complete]
+    tools_disabled: [apply_unified_patch, apply_search_replace, Write, create_file, Bash, mark_task_complete]
   - name: build
     prompt: "@pack(base).builder"
-    tools_enabled: [Read, List, Write, create_file_from_block, apply_unified_patch, apply_search_replace, Bash, run_shell, TodoWrite, mark_task_complete]
+    tools_enabled: [Read, List, Write, apply_unified_patch, apply_search_replace, Bash, TodoWrite, mark_task_complete]
   - name: compact
     prompt: "@pack(base).compact"
     tools_enabled: []
@@ -54,21 +80,13 @@ tools:
   registry:
     paths:
       - implementations/tools/defs
-    include:
-      - read_file
-      - list_dir
-      - create_file_from_block
-      - apply_unified_patch
-      - run_shell
-      - mark_task_complete
-      - TodoWrite
   overlays:
     - rename:
         read_file: Read
         list_dir: List
         create_file_from_block: Write
         run_shell: Bash
-  aliases: {}
+  aliases: null
   dialects:
     preference:
       default: [aider_search_replace, unified_diff, bash_block]

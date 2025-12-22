@@ -1,0 +1,19 @@
+id: todo.complete
+name: todo.complete
+description: Mark a todo as complete/done and optionally summarize the result.
+type_id: python
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: id
+    type: string
+    description: The todo id to complete.
+    required: true
+  - name: summary
+    type: string
+    description: Optional short summary of what was accomplished.
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true

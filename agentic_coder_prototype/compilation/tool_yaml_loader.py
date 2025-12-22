@@ -67,6 +67,28 @@ def _validate_tool_dict(tool_data: Dict[str, Any], file_path: str) -> None:
 def _to_enhanced_params(params: List[Dict[str, Any]]) -> List[EnhancedToolParameter]:
     result: List[EnhancedToolParameter] = []
     for p in params or []:
+        schema: Dict[str, Any] = {}
+        try:
+            if isinstance(p.get("schema"), dict):
+                schema = dict(p.get("schema") or {})
+            else:
+                # Treat remaining keys as schema (preserve nested items/properties).
+                schema = {
+                    key: value
+                    for key, value in (p or {}).items()
+                    if key
+                    and key
+                    not in {
+                        "name",
+                        "description",
+                        "required",
+                        "default",
+                        "examples",
+                        "validation",
+                    }
+                }
+        except Exception:
+            schema = {}
         result.append(
             EnhancedToolParameter(
                 name=p.get("name"),
@@ -76,6 +98,7 @@ def _to_enhanced_params(params: List[Dict[str, Any]]) -> List[EnhancedToolParame
                 required=bool(p.get("required", False)),
                 validation_rules=p.get("validation", {}),
                 examples=p.get("examples", []),
+                schema=schema,
             )
         )
     return result
@@ -196,5 +219,4 @@ def load_yaml_tools(
         manipulations_by_id[tool_id] = list(data.get("manipulations", []))
 
     return LoadedTools(tools=tools, manipulations_by_id=manipulations_by_id, aliases=aliases)
-
 

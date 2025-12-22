@@ -1,0 +1,9 @@
+[
+  { "action": "log", "message": "Layout ordering harness start" },
+  { "action": "wait", "ms": 500 },
+  { "action": "type", "text": "Give me a quick summary of the current plan." },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 2000 },
+  { "action": "snapshot", "label": "after-user" },
+  { "action": "log", "message": "Layout ordering harness complete" }
+]

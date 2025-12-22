@@ -1,0 +1,18 @@
+# final
+████ Kyle Code ████
+breadboard — interactive session
+558ec0d9-3a8 ● Halted ● model openrouter/x-ai/grok-4-fast ○ local ● events 4 ○ tools 0 ● turn 1
+
+Slash commands: /help, /quit, /clear, /status, /remote on|off, /retry, /plan, /mode <plan|build|auto>, /model <id>, /test [suite], /files [path], /models
+! for bash • / for commands • @ for files • Tab to complete • Esc closes menus
+USER      Answer directly in markdown with a level-2 heading, a bullet list, and inline code. Do not call tools. No files.
+ASSISTANT Mock assistant: hello world
+SYSTEM    Run completed (mock).
+● [completion] [completion] status completed · reason mock
+- Session 558ec0d9-3a88-4f4e-93e3-d8b6b254c98e started (remote disabled, model openrouter/x-ai/grok-4-fast).
+- Assistant finished the run.
+- Run finished.
+● [completion] [completion] status completed · reason mock
+- Session f2a6a308-2c62-4cc8-9d59-86baf6fa1139 started (remote disabled, model openrouter/x-ai/grok-4-fast).
+- Assistant finished the run.
+- Run finished.

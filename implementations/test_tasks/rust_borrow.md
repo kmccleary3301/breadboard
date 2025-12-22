@@ -1,0 +1,1 @@
+Fix borrow checker errors in a small Rust library (likely in `src/lib.rs` and one helper module). The code currently holds references across mutations; rework ownership/lifetimes so it compiles cleanly without cloning large structures unnecessarily. Preserve public API, keep tests intact, and run `cargo test` to confirm success.

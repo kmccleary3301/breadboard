@@ -43,3 +43,4 @@ prompts:
     detail:
       system: full
       per_turn: short
+

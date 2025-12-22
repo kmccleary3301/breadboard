@@ -1,0 +1,5 @@
+[
+  { "action": "type", "text": "ping" },
+  { "action": "press", "key": "enter" },
+  { "action": "delay", "ms": 1000 }
+]

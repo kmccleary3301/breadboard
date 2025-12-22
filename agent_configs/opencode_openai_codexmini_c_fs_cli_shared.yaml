@@ -1,0 +1,51 @@
+extends: opencode_openai_codexmini_c_fs_guardrails.yaml
+
+profile: { name: opencode-openai-codexmini-cli-shared }
+
+guardrails:
+  overrides:
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 8
+        abort_after_turns: 20
+    completion_guard:
+      parameters:
+        warnings_before_abort: 6
+    plan_bootstrap:
+      strategy: never
+    shell_write_block:
+      parameters:
+        enabled: false
+      templates:
+        validation: implementations/system_prompts/guardrails/shell_write_block_opencode.prompt.md
+
+enhanced_tools:
+  enabled: true
+  validation:
+    enabled: false
+    rules: []
+    rule_config:
+      read_before_edit:
+        mode: relaxed
+        require_fresh_read: false
+        max_age_seconds: 1800
+  diff_policy:
+    patch_splitting:
+      policy: auto_split
+      max_files_per_patch: 1
+      validation_message: |
+        <VALIDATION_ERROR>
+        Multi-file patches are disabled in this configuration. Submit exactly one apply_unified_patch per file.
+        </VALIDATION_ERROR>
+      on_violation: warn_and_split
+
+features:
+  plan: false
+  todos:
+    enabled: false
+    strict: false
+
+completion:
+  build_guard:
+    require_run_shell: false
+    require_successful_tests: false

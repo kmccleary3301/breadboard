@@ -37,14 +37,17 @@ class BashBlockDialect(BaseToolDialect):
         )
 
     def parse_calls(self, text: str, tools: List[ToolDefinition]) -> List[ToolCallParsed]:
-        shell_ok = any(t.name == "run_shell" for t in tools)
-        if not shell_ok:
+        tool_name = None
+        if any(t.name == "run_shell" for t in tools):
+            tool_name = "run_shell"
+        elif any(t.name == "bash" for t in tools):
+            tool_name = "bash"
+        if not tool_name:
             return []
         calls: list[ToolCallParsed] = []
         for m in self._BLOCK_RE.finditer(text):
             cmd = m.group("cmd").strip()
             if cmd:
-                calls.append(ToolCallParsed(function="run_shell", arguments={"command": cmd}))
+                calls.append(ToolCallParsed(function=tool_name, arguments={"command": cmd}))
         return calls
-
 

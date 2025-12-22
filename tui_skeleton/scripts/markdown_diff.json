@@ -1,0 +1,6 @@
+[
+  { "action": "type", "text": "Show a unified diff fenced in markdown with additions and deletions for app.js." },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "completion", "timeoutMs": 30000 },
+  { "action": "snapshot", "label": "markdown-diff", "includeStatus": true }
+]

@@ -5,6 +5,7 @@ Session state management for agentic coding loops
 from typing import Any, Callable, Dict, List, Optional
 from pathlib import Path
 import json
+import time
 
 from dataclasses import asdict
 
@@ -57,6 +58,7 @@ class SessionState:
         self.consecutive_tool_free_turns = 0
         self.completion_guard_failures = 0
         self.guardrail_counters: Dict[str, int] = {}
+        self.guardrail_events: List[Dict[str, Any]] = []
         self._event_emitter = event_emitter
         self._active_turn_index: Optional[int] = None
         self._turn_assistant_emitted = False
@@ -141,6 +143,24 @@ class SessionState:
     def add_transcript_entry(self, entry: Dict[str, Any]):
         """Add an entry to the transcript"""
         self.transcript.append(entry)
+
+    # --- Guardrail telemetry -------------------------------------------------
+    def record_guardrail_event(self, event_type: str, payload: Optional[Dict[str, Any]] = None) -> None:
+        """Record a structured guardrail event and emit it to observers."""
+        entry: Dict[str, Any] = {
+            "type": str(event_type),
+            "payload": dict(payload or {}),
+            "turn": self._active_turn_index,
+        }
+        try:
+            entry["timestamp"] = time.time()
+        except Exception:
+            pass
+        self.guardrail_events.append(entry)
+        self._emit_event("guardrail_event", entry, turn=self._active_turn_index)
+
+    def get_guardrail_events(self) -> List[Dict[str, Any]]:
+        return list(self.guardrail_events)
 
     # --- Provider metadata ----------------------------------------------------
     def set_provider_metadata(self, key: str, value: Any) -> None:

@@ -1,0 +1,15 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "payload": { "summary": "layout probe mock" }, "turn": 1 } },
+  {
+    "delayMs": 300,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Mock layout summary: transcript ordering healthy.",
+        "message": { "role": "assistant", "content": "Mock layout summary: transcript ordering healthy." }
+      }
+    }
+  },
+  { "delayMs": 200, "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mock" } } } },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 4 } } }
+]

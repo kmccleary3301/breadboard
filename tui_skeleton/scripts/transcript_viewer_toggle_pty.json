@@ -1,0 +1,15 @@
+[
+  { "action": "log", "message": "Transcript viewer toggle PTY harness start" },
+  { "action": "waitFor", "text": "interactive session", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "main" },
+  { "action": "type", "text": "Hello viewer", "typingDelayMs": 12 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Mock assistant: hello world", "timeoutMs": 15000 },
+  { "action": "press", "key": "ctrl+t" },
+  { "action": "waitFor", "text": "transcript viewer", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "viewer" },
+  { "action": "wait", "ms": 120 },
+  { "action": "press", "key": "escape" },
+  { "action": "snapshot", "label": "back" },
+  { "action": "log", "message": "Transcript viewer toggle PTY harness complete" }
+]

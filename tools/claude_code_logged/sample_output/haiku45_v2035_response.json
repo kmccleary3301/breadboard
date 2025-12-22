@@ -1,0 +1,43 @@
+{
+  "logVersion": 1,
+  "phase": "response",
+  "requestId": "01K9H0D1ZQK6A4Q4TZM58EAV0V",
+  "retryAttempt": 0,
+  "timestamp": "2025-11-08T03:30:48.102Z",
+  "workspacePath": "/shared_folders/querylake_server/ray_testing/ray_SCE/misc/claude_code_runs/logged_protofs",
+  "sessionId": "protofs-haiku45",
+  "cliVersion": "2.0.36-logged",
+  "runtimeId": "a6f6d3a6-8d5e-4921-8d88-4c93bc2124ac",
+  "targetUrl": "https://api.anthropic.com/v1/messages",
+  "provider": "anthropic",
+  "status": {
+    "code": 200,
+    "ok": true,
+    "statusText": "OK"
+  },
+  "headers": [
+    { "name": "content-type", "value": "application/json" },
+    { "name": "x-request-id", "value": "req_01hv..." }
+  ],
+  "body": {
+    "encoding": "json",
+    "size": 5120,
+    "json": {
+      "id": "msg_01K9H0DTSD2KNH4M6PESX86WR2",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-haiku-4-5-20251001",
+      "stop_reason": "end_turn",
+      "content": [
+        {
+          "type": "text",
+          "text": "Proto filesystem scaffolding ready. Starting header generation..."
+        }
+      ],
+      "usage": {
+        "input_tokens": 812,
+        "output_tokens": 384
+      }
+    }
+  }
+}

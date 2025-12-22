@@ -1,0 +1,1 @@
+Write the contents of a small config file (`config/env.sample`) using a Bash heredoc (`cat <<'EOF' > config/env.sample ... EOF`), then print the file. Do not use other editors or helpers. The goal is to exercise heredoc handling; keep the file short and deterministic.

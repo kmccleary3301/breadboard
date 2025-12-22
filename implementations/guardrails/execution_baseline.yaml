@@ -1,0 +1,37 @@
+schema_version: 1
+description: |
+  Execution guardrails shared across OpenCode/Claude/CLI: zero-tool watchdog,
+  shell write blocking, and completion guard defaults.
+guards:
+  - id: zero_tool_watchdog
+    type: zero_tool_watchdog
+    templates:
+      warn: implementations/system_prompts/guardrails/zero_tool_warn.prompt.md
+      abort: implementations/system_prompts/guardrails/zero_tool_abort.prompt.md
+    parameters:
+      warn_after_turns: 8
+      abort_after_turns: 16
+      emit_event: true
+  - id: shell_write_block
+    type: shell_write_block
+    templates:
+      validation: implementations/system_prompts/guardrails/shell_write_block.prompt.md
+    parameters:
+      enabled: true
+      blocked_patterns:
+        - "cat >"
+        - "cat>>"
+        - "cat <<"
+        - "tee "
+        - "printf "
+        - "python - <<"
+        - "python3 - <<"
+        - "bash -lc 'cat"
+        - "bash -lc \"cat"
+  - id: completion_guard
+    type: completion_guard
+    templates:
+      warning: implementations/system_prompts/guardrails/completion_guard_warning.prompt.md
+      abort: implementations/system_prompts/guardrails/completion_guard_abort.prompt.md
+    parameters:
+      warnings_before_abort: 2

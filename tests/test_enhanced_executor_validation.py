@@ -76,3 +76,32 @@ async def test_reads_before_bash_warns():
         assert res.get("validation_failure"), res
 
 
+@pytest.mark.asyncio
+async def test_shell_write_block_blocks_bash_tool() -> None:
+    class SB:
+        def __init__(self) -> None:
+            self.run_calls = 0
+
+        def run(self, command: str, timeout: int = 30, stream: bool = False):
+            self.run_calls += 1
+            return {"stdout": "ok", "exit": 0}
+
+    cfg = {
+        "loop": {
+            "guardrails": {
+                "shell_write": {
+                    "enabled": True,
+                    "validation_message": "<VALIDATION_ERROR>\nblocked\n</VALIDATION_ERROR>",
+                    "blocked_patterns": ["cat >", "cat<<", "cat <<"],
+                }
+            }
+        }
+    }
+    sb = SB()
+    ex = EnhancedToolExecutor(sandbox=sb, config=cfg)
+    res = await ex.execute_tool_call({"function": "bash", "arguments": {"command": "cat > foo.txt <<'EOF'\nhi\nEOF\n"}})
+    assert res.get("validation_failure"), res
+    assert "blocked" in res.get("error", "")
+    assert sb.run_calls == 0
+
+

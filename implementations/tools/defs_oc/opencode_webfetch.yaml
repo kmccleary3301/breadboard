@@ -8,13 +8,22 @@ preferred_formats: [native_function_calling]
 parameters:
   - name: url
     type: string
-    description: URL to fetch
+    description: The URL to fetch content from
     required: true
+  - name: format
+    type: string
+    description: The format to return the content in (text, markdown, or html)
+    required: true
+    enum: ["text", "markdown", "html"]
+  - name: timeout
+    type: number
+    description: Optional timeout in seconds (max 120)
+    required: false
 execution:
   blocking: false
 provider_routing:
   openai:
-    native_primary: false
-
+    native_primary: true
+    function_call: auto
 
 

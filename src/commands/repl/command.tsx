@@ -12,7 +12,7 @@ import { ReplView } from "./components/ReplView.js"
 import type { ConversationEntry, StreamStats, ModelMenuState, ModelMenuItem } from "./types.js"
 import { buildSuggestions, SLASH_COMMANDS } from "./slashCommands.js"
 
-const DEFAULT_CONFIG = process.env.KYLECODE_DEFAULT_CONFIG ?? "agent_configs/opencode_grok4fast_c_fs_v2.yaml"
+const DEFAULT_CONFIG = process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/opencode_grok4fast_c_fs_v2.yaml"
 const configOption = Options.text("config").pipe(Options.withDefault(DEFAULT_CONFIG))
 const workspaceOption = Options.text("workspace").pipe(Options.optional)
 const modelOption = Options.text("model").pipe(Options.optional)
@@ -578,3 +578,4 @@ export const replCommand = Command.make(
       }
     }),
 )
+

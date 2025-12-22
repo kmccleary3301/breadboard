@@ -1,0 +1,6 @@
+[
+  { "action": "type", "text": "Implement bubble sort in Python with docstrings." },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "completion", "timeoutMs": 60000 },
+  { "action": "snapshot", "label": "after-completion", "includeStatus": true }
+]

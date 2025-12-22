@@ -154,12 +154,13 @@ class TodoStore:
 
     FILENAME = ".kyle/todos.json"
 
-    def __init__(self, workspace: str):
+    def __init__(self, workspace: str, *, load_existing: bool = True):
         self.workspace = Path(workspace)
         self._todos: Dict[str, Todo] = {}
         self._order: List[str] = []
         self._journal: List[TodoEvent] = []
-        self._load_from_disk()
+        if load_existing:
+            self._load_from_disk()
 
     # ------------------------------------------------------------------ public API
     def snapshot(self) -> Dict[str, Any]:

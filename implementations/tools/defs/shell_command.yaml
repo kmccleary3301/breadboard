@@ -1,0 +1,42 @@
+id: shell_command
+name: shell_command
+description: Execute a shell command in the workspace (Codex CLI-compatible schema)
+type_id: python
+manipulations:
+  - shell.exec
+syntax_formats_supported: [native_function_calling, json_block, yaml_command]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: command
+    type: string
+    description: The shell command to run
+    required: true
+  - name: workdir
+    type: string
+    description: Optional working directory (within the workspace)
+    required: false
+  - name: timeout_ms
+    type: integer
+    description: Optional timeout in milliseconds
+    required: false
+  - name: with_escalated_permissions
+    type: boolean
+    description: Whether to request escalated permissions. Set to true if command needs to be run without sandbox restrictions.
+    required: false
+  - name: justification
+    type: string
+    description: Optional escalation justification (ignored by this harness)
+    required: false
+execution:
+  blocking: true
+  max_per_turn: 1
+provider_routing:
+  openai:
+    native_primary: true
+    additional_properties: false
+    strict: false
+    fallback_formats: [json_block, yaml_command]
+  anthropic:
+    native_primary: false
+    fallback_formats: [json_block, yaml_command]
+

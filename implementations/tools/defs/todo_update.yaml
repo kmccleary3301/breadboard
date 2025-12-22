@@ -1,0 +1,39 @@
+id: todo.update
+name: todo.update
+description: Update a todo's title, status, priority, metadata, or blockers (OpenCode-compatible).
+type_id: python
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: id
+    type: string
+    description: The todo id to update.
+    required: true
+  - name: title
+    type: string
+    description: Optional new title/description.
+  - name: status
+    type: string
+    description: Optional new status (todo, in_progress, blocked, done, canceled).
+  - name: priority
+    type: string
+    description: Optional priority label (P0/P1/etc.).
+  - name: blocked_by
+    type: array
+    description: Optional list of todo ids or reasons blocking this task.
+    items:
+      type: string
+  - name: due_at
+    type: string
+    description: Optional ISO 8601 timestamp for the due date.
+  - name: metadata
+    type: object
+    description: Optional metadata map applied to the todo.
+  - name: version
+    type: integer
+    description: Optional optimistic concurrency check (matches todo.version).
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true

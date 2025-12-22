@@ -1,0 +1,24 @@
+[
+  {
+    "delayMs": 0,
+    "event": { "type": "turn_start", "payload": { "summary": "mock diff start" }, "turn": 1 }
+  },
+  {
+    "delayMs": 300,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Here is a diff:\n```diff\n--- a/app.js\n+++ b/app.js\n@@ line 1 @@\n-console.log(\"hello\");\n+console.log(\"hello world\");\n```\n",
+        "message": {
+          "role": "assistant",
+          "content": "Here is a diff:\n```diff\n--- a/app.js\n+++ b/app.js\n@@ line 1 @@\n-console.log(\"hello\");\n+console.log(\"hello world\");\n```\n"
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mock" } } }
+  },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 4 } } }
+]

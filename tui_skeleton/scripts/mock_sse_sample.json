@@ -1,0 +1,34 @@
+[
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "turn_start",
+      "payload": { "summary": "mock run starting" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 500,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Mock assistant: hello world",
+        "message": { "role": "assistant", "content": "Mock assistant: hello world" }
+      }
+    }
+  },
+  {
+    "delayMs": 500,
+    "event": {
+      "type": "completion",
+      "payload": { "summary": { "completed": true, "reason": "mock" } }
+    }
+  },
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "run_finished",
+      "payload": { "eventCount": 4 }
+    }
+  }
+]

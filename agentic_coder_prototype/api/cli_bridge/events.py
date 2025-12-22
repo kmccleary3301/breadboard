@@ -17,10 +17,14 @@ class EventType(str, enum.Enum):
     USER_MESSAGE = "user_message"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
+    PERMISSION_REQUEST = "permission_request"
+    PERMISSION_RESPONSE = "permission_response"
+    TASK_EVENT = "task_event"
     REWARD_UPDATE = "reward_update"
     COMPLETION = "completion"
     LOG_LINK = "log_link"
     ERROR = "error"
+    RUN_FINISHED = "run_finished"
 
 
 def _now_ts() -> float:

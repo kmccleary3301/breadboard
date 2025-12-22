@@ -21,10 +21,10 @@ def _load_env() -> None:
 
 
 def build_uvicorn_config() -> Dict[str, Any]:
-    host = os.environ.get("KYLECODE_CLI_HOST", "127.0.0.1")
-    port = int(os.environ.get("KYLECODE_CLI_PORT", "9099"))
-    reload_enabled = bool(os.environ.get("KYLECODE_CLI_RELOAD", ""))
-    log_level = os.environ.get("KYLECODE_CLI_LOG_LEVEL", "info")
+    host = os.environ.get("BREADBOARD_CLI_HOST", "127.0.0.1")
+    port = int(os.environ.get("BREADBOARD_CLI_PORT", "9099"))
+    reload_enabled = bool(os.environ.get("BREADBOARD_CLI_RELOAD", ""))
+    log_level = os.environ.get("BREADBOARD_CLI_LOG_LEVEL", "info")
     return {"host": host, "port": port, "reload": reload_enabled, "log_level": log_level}
 
 

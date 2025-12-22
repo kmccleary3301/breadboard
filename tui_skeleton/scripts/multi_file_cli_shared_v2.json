@@ -1,0 +1,9 @@
+[
+  {
+    "action": "type",
+    "text": "Immediately write src/utils_sort.py that defines quicksort(values: list[int]) with docstrings and an __main__ smoke test. Do NOT create todos, protofilesystem files, or other scaffolding. After writing that file, write tests/test_sort.py with pytest-style assertions exercising quicksort. Finish by explaining how to run `python tests/test_sort.py` and what output to expect. No /files, no read commands."
+  },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "completion", "timeoutMs": 150000 },
+  { "action": "snapshot", "label": "after-completion", "includeStatus": true }
+]

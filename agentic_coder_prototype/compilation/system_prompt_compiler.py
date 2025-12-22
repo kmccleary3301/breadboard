@@ -23,6 +23,7 @@ from ..dialects.bash_block import BashBlockDialect
 from ..dialects.aider_diff import AiderDiffDialect
 from ..dialects.unified_diff import UnifiedDiffDialect
 from ..dialects.opencode_patch import OpenCodePatchDialect
+from ..dialects.yaml_command import YAMLCommandDialect
 from .tool_prompt_synth import ToolPromptSynthesisEngine
 
 
@@ -33,15 +34,20 @@ class SystemPromptCompiler:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
-        # All available dialects
-        self.all_dialects = [
-            Pythonic02Dialect(),
-            PythonicInlineDialect(),
-            BashBlockDialect(),
-            AiderDiffDialect(),
-            UnifiedDiffDialect(),
-            OpenCodePatchDialect(),
-        ]
+        # All available dialects keyed by config name
+        self.dialect_lookup = {
+            "pythonic02": Pythonic02Dialect(),
+            "pythonic_inline": PythonicInlineDialect(),
+            "bash_block": BashBlockDialect(),
+            "aider_diff": AiderDiffDialect(),
+            "unified_diff": UnifiedDiffDialect(),
+            "opencode_patch": OpenCodePatchDialect(),
+            "yaml_command": YAMLCommandDialect(),
+        }
+        self.all_dialects = list(self.dialect_lookup.values())
+        self._dialect_aliases = {
+            "pythonic": "pythonic02",
+        }
         
         # Tool format categories for the per-turn availability list
         # Ordered by research-based preference (Aider > OpenCode > Unified)
@@ -161,8 +167,18 @@ class SystemPromptCompiler:
     def _generate_comprehensive_prompt(self, tools: List[ToolDefinition], dialects: List[str], primary_prompt: str = "", tool_prompt_mode: str = "system_once") -> str:
         """Generate comprehensive system prompt with all tool formats"""
         
-        # Filter dialects to only those requested
-        active_dialects = [d for d in self.all_dialects if d.type_id in dialects]
+        # Filter dialects to only those requested (supports aliases)
+        active_dialects: List[Any] = []
+        if not dialects:
+            active_dialects = list(self.all_dialects)
+        else:
+            for name in dialects:
+                if not name:
+                    continue
+                resolved = self._dialect_aliases.get(name, name)
+                dialect = self.dialect_lookup.get(resolved)
+                if dialect and dialect not in active_dialects:
+                    active_dialects.append(dialect)
         
         prompt_parts = []
         
@@ -313,6 +329,11 @@ class SystemPromptCompiler:
         
         lines.append("</TOOLS_AVAILABLE>")
         return "\n".join(lines)
+
+    def format_per_turn_availability(self, enabled_tools: List[str], active_dialects: List[str]) -> str:
+        """Compatibility wrapper that applies preference ordering."""
+        preferred_formats = self.get_preferred_formats(active_dialects or [])
+        return self.format_per_turn_availability_enhanced(enabled_tools, preferred_formats)
     
     def _create_metadata_header(self, tools: List[ToolDefinition], dialects: List[str], 
                                tools_hash: str, prompt_id: int) -> str:
@@ -356,316 +377,42 @@ class SystemPromptCompiler:
         # Check for existing cached prompt
         cached_file = self._find_cached_prompt(tools_hash)
         if cached_file and cached_file.exists():
-            content = cached_file.read_text(encoding='utf-8')
-            # Extract content after metadata header
-            if content.startswith("<!--"):
-                # Find end of metadata header
-                end_marker = "-->"
-                end_pos = content.find(end_marker)
-                if end_pos != -1:
-                    content = content[end_pos + len(end_marker):].strip()
-            return content, tools_hash
-        
-        # Generate new prompt
-        prompt_content = self._generate_comprehensive_prompt(tools, dialects, primary_prompt, tool_prompt_mode)
-        
-        # Save to cache with metadata
-        prompt_id = self._get_next_id()
-        filename = f"sys_prompt_{prompt_id:03d}_{tools_hash}.md"
-        cache_file = self.cache_dir / filename
-        
-        # Create file with metadata header
-        metadata_header = self._create_metadata_header(tools, dialects, tools_hash, prompt_id)
-        full_content = metadata_header + "\n" + prompt_content
-        
-        cache_file.write_text(full_content, encoding='utf-8')
-        
-        return prompt_content, tools_hash
+            try:
+                content = cached_file.read_text(encoding="utf-8")
+                if "<!--" in content and "-->" in content:
+                    end_idx = content.find("-->")
+                    if end_idx != -1:
+                        content = content[end_idx + 3 :]
+                        content = content.lstrip("\n")
+                return content, tools_hash
+            except Exception:
+                pass
 
-    # ===== Agent Schema v2 support =====
-    def _read_text_if_exists(self, path: Optional[str]) -> str:
-        if not path:
-            return ""
+        # Generate a new comprehensive prompt
+        comprehensive_prompt = self._generate_comprehensive_prompt(
+            tools=tools,
+            dialects=dialects,
+            primary_prompt=primary_prompt,
+            tool_prompt_mode=tool_prompt_mode,
+        )
+
+        prompt_id = self._get_next_id()
+        header = self._create_metadata_header(tools, dialects, tools_hash, prompt_id)
+        file_name = f"sys_prompt_{prompt_id:03d}_{tools_hash}.md"
+        file_path = self.cache_dir / file_name
         try:
-            p = Path(path)
-            if p.exists():
-                return p.read_text(encoding="utf-8", errors="replace")
+            file_path.write_text(header + comprehensive_prompt, encoding="utf-8")
         except Exception:
             pass
-        return ""
 
-    def _resolve_pack_ref(self, packs: Dict[str, Dict[str, str]], ref: str, mode_name: Optional[str]) -> str:
-        """
-        Resolve a reference like "@pack(base).system" or mode-specific key.
-        """
-        if not ref:
-            return ""
-        if ref.startswith("@pack(") and ")" in ref and "." in ref:
-            try:
-                pack_name = ref.split("@pack(", 1)[1].split(")", 1)[0].strip()
-                key = ref.split(")", 1)[1].lstrip(".")
-                pack = packs.get(pack_name) or {}
-                return self._read_text_if_exists(pack.get(key))
-            except Exception:
-                return ""
-        if ref == "mode_specific" and mode_name:
-            # Try keys matching mode_name or conventional alias mapping (build -> builder)
-            alias_key = mode_name
-            if mode_name == "build":
-                alias_key = "builder"
-            for pack in packs.values():
-                if alias_key in pack:
-                    return self._read_text_if_exists(pack.get(alias_key))
-        return ""
-
-    def _compute_v2_cache_key(self, config: Dict[str, Any], packs_text: List[str], tools: List[ToolDefinition]) -> str:
-        """
-        sha256(config+prompts+toolset) short key.
-        """
-        import hashlib, json
-        cfg_min = {k: config.get(k) for k in ("version","providers","tools","prompts","modes","loop")}
-        tools_min = [
-            {
-                "name": t.name,
-                "desc": t.description,
-                "params": [{"n": p.name, "t": p.type, "d": p.description, "def": p.default} for p in (t.parameters or [])]
-            }
-            for t in sorted(tools, key=lambda x: x.name)
-        ]
-        blob = json.dumps({"config": cfg_min, "packs": packs_text, "tools": tools_min}, sort_keys=True)
-        return hashlib.sha256(blob.encode()).hexdigest()[:12]
-
-    def compile_v2_prompts(self, config: Dict[str, Any], mode_name: Optional[str], tools: List[ToolDefinition], dialects: List[str]) -> Dict[str, str]:
-        """
-        Compile system + per-turn prompts for Agent Schema v2 using packs and injection orders.
-        Returns {"system": str, "per_turn": str, "cache_key": str}.
-        """
-        prompts_cfg = (config.get("prompts") or {})
-        packs = prompts_cfg.get("packs") or {}
-        injection = prompts_cfg.get("injection") or {}
-        system_order = injection.get("system_order") or []
-        per_turn_order = injection.get("per_turn_order") or []
-
-        # Normalize packs to dict[str, dict[str,str]] of file paths
-        packs_norm: Dict[str, Dict[str, str]] = {}
-        for pack_name, pack_val in packs.items():
-            if isinstance(pack_val, dict):
-                packs_norm[pack_name] = {k: str(v) for k, v in pack_val.items()}
-
-        # Build system prompt by concatenating referenced pack contents
-        system_chunks: List[str] = []
-        pack_texts_for_key: List[str] = []
-        # Track seen content to avoid duplicates across system and per-turn
-        import hashlib as _hashlib
-        def _h(txt: str) -> str:
-            return _hashlib.sha1((txt or "").strip().encode()).hexdigest()
-        seen_text_hashes: Set[str] = set()
-        for item in system_order:
-            is_cached = False
-            ref = item
-            if isinstance(item, str) and item.startswith("[CACHE]"):
-                is_cached = True
-                ref = item.split("]", 1)[1].strip()
-            text = self._resolve_pack_ref(packs_norm, ref, mode_name)
-            if text:
-                h = _h(text)
-                if h not in seen_text_hashes:
-                    system_chunks.append(text.rstrip())
-                    pack_texts_for_key.append(text)
-                    seen_text_hashes.add(h)
-
-        # Sensible default: if no injection order provided and a pack has a 'system' key,
-        # include the first available one (prefer pack named 'base' when present).
-        if not system_chunks and packs_norm:
-            # Prefer 'base.system' if available
-            preferred_keys = []
-            if "base" in packs_norm and packs_norm["base"].get("system"):
-                preferred_keys.append(("base", packs_norm["base"]["system"]))
-            # Fallback: any pack with 'system'
-            for pname, pval in packs_norm.items():
-                if pval.get("system"):
-                    preferred_keys.append((pname, pval["system"]))
-            for _, path in preferred_keys:
-                text = self._read_text_if_exists(path)
-                if text.strip():
-                    h = _h(text)
-                    if h not in seen_text_hashes:
-                        system_chunks.append(text.rstrip())
-                        pack_texts_for_key.append(text)
-                        seen_text_hashes.add(h)
-                        break
-
-        # TPSL system catalog
-        tpsl_meta: Dict[str, Any] = {}
-        tpsl_cfg = prompts_cfg.get("tool_prompt_synthesis") or {}
-        tpsl_enabled = bool(tpsl_cfg.get("enabled", False))
-        if tpsl_enabled and tools:
-            # Optional: set an alternate templates root from config
-            tpsl_root = tpsl_cfg.get("root")
-            if tpsl_root:
-                try:
-                    self.tpsl.set_root(tpsl_root)
-                except Exception:
-                    pass
-            selection = tpsl_cfg.get("selection", {})
-            by_mode = selection.get("by_mode", {})
-            tpsl_dialect = by_mode.get(mode_name or "") or (dialects[0] if dialects else "pythonic")
-            # Map tools to simple dicts
-            tools_payload: List[Dict[str, Any]] = []
-            for t in tools:
-                params = [{"name": p.name, "type": p.type, "default": p.default, "description": p.description} for p in (t.parameters or [])]
-                tools_payload.append({
-                    "name": t.name,
-                    "display_name": t.name,
-                    "description": t.description,
-                    "blocking": getattr(t, "blocking", False),
-                    "parameters": params,
-                })
-            templates = (tpsl_cfg.get("dialects", {}) or {}).get(tpsl_dialect, {})
-            detail = (tpsl_cfg.get("detail", {}) or {}).get("system", "full")
-            catalog_text, template_id = self.tpsl.render(tpsl_dialect, detail, tools_payload, templates)
-            if catalog_text.strip():
-                system_chunks.append(catalog_text.rstrip())
-                pack_texts_for_key.append(catalog_text)
-                tpsl_meta["system"] = {
-                    "dialect": tpsl_dialect,
-                    "detail": detail,
-                    "template_id": template_id,
-                    "text": catalog_text,
-                }
-                # Ensure per-turn stage does not re-include the same chunk
-                try:
-                    seen_text_hashes.add(_h(catalog_text))
-                except Exception:
-                    pass
-        elif dialects and not system_chunks:
-            comp, _ = self.get_or_create_system_prompt(tools, dialects, "", "system_once")
-            system_chunks.append(comp)
-
-        system_prompt = ("\n\n".join([c for c in system_chunks if c])).strip()
-
-        # Build per-turn prompt
-        per_turn_chunks: List[str] = []
-        for item in per_turn_order:
-            text = self._resolve_pack_ref(packs_norm, item, mode_name)
-            if text:
-                h = _h(text)
-                if h not in seen_text_hashes:
-                    per_turn_chunks.append(text.rstrip())
-                    seen_text_hashes.add(h)
-
-        # Sensible default: if no per_turn_order provided but the active mode has a 'prompt'
-        # reference, include it here (supports @pack(...).key style).
-        if not per_turn_chunks and mode_name:
-            try:
-                modes = (config.get("modes") or [])
-                for m in modes:
-                    if m.get("name") == mode_name and m.get("prompt"):
-                        ref = str(m.get("prompt"))
-                        text = self._resolve_pack_ref(packs_norm, ref, mode_name)
-                        if text:
-                            per_turn_chunks.append(text.rstrip())
-                        break
-            except Exception:
-                pass
-        # TPSL per-turn short catalog
-        if tpsl_enabled and tools:
-            tpsl_dialect = (tpsl_cfg.get("selection", {}).get("by_mode", {}).get(mode_name or "")) or (dialects[0] if dialects else "pythonic")
-            tools_payload: List[Dict[str, Any]] = []
-            for t in tools:
-                params = [{"name": p.name, "type": p.type, "default": p.default, "description": p.description} for p in (t.parameters or [])]
-                tools_payload.append({
-                    "name": t.name,
-                    "display_name": t.name,
-                    "description": t.description,
-                    "blocking": getattr(t, "blocking", False),
-                    "parameters": params,
-                })
-            templates = (tpsl_cfg.get("dialects", {}) or {}).get(tpsl_dialect, {})
-            detail = (tpsl_cfg.get("detail", {}) or {}).get("per_turn", "short")
-            short_text, template_id_pt = self.tpsl.render(tpsl_dialect, detail, tools_payload, templates)
-            if short_text.strip():
-                hpt = _h(short_text)
-                if hpt not in seen_text_hashes:
-                    per_turn_chunks.append(short_text.rstrip())
-                    seen_text_hashes.add(hpt)
-                tpsl_meta["per_turn"] = {
-                    "dialect": tpsl_dialect,
-                    "detail": detail,
-                    "template_id": template_id_pt,
-                    "text": short_text,
-                }
-        elif tools or dialects:
-            try:
-                per_turn_chunks.append(self.format_per_turn_availability([t.name for t in tools], dialects))
-            except Exception:
-                pass
-        per_turn_prompt = ("\n\n".join([c for c in per_turn_chunks if c])).strip()
-
-        cache_key = self._compute_v2_cache_key(config, pack_texts_for_key, tools)
-        out = {"system": system_prompt, "per_turn": per_turn_prompt, "cache_key": cache_key}
-        if tpsl_meta:
-            out["tpsl"] = tpsl_meta
-        return out
-    
-    def format_per_turn_availability(self, enabled_tools: List[str], enabled_dialects: List[str]) -> str:
-        """Format small per-turn tool availability list"""
-        
-        lines = ["<TOOLS_AVAILABLE>"]
-        
-        # Group tools by format type
-        tool_formats = {
-            "python_tools": [],
-            "bash_available": False,
-            "formats_available": []
-        }
-        
-        # Standard python tools
-        python_tools = [
-            "run_shell", "create_file", "read_file", "list_dir", 
-            "mark_task_complete", "apply_unified_patch", "create_file_from_block"
-        ]
-        
-        for tool in enabled_tools:
-            if tool in python_tools:
-                tool_formats["python_tools"].append(tool)
-        
-        # Check for bash block support
-        if "bash_block" in enabled_dialects:
-            tool_formats["bash_available"] = True
-        
-        # Check for diff formats
-        diff_formats = []
-        if "aider_diff" in enabled_dialects:
-            diff_formats.append("Aider SEARCH/REPLACE")
-        if "unified_diff" in enabled_dialects:
-            diff_formats.append("Unified Diff Git-like")
-        if "opencode_patch" in enabled_dialects:
-            diff_formats.append("OpenCode Add File")
-        
-        tool_formats["formats_available"] = diff_formats
-        
-        # Format output
-        for tool in tool_formats["python_tools"]:
-            lines.append(f"{tool} - [TYPE: python inside <TOOL_CALL> XML]")
-        
-        if tool_formats["bash_available"]:
-            lines.append("*General Bash Commands* - [TYPE: bash command inside of <BASH> XML]")
-        
-        for fmt in tool_formats["formats_available"]:
-            lines.append(f"*{fmt}* - [TYPE: {fmt} format]")
-        
-        lines.append("</TOOLS_AVAILABLE>")
-        
-        return "\n".join(lines)
+        return comprehensive_prompt, tools_hash
 
 
-# Global compiler instance
-_compiler = None
+_COMPILER_SINGLETON: SystemPromptCompiler | None = None
+
 
 def get_compiler() -> SystemPromptCompiler:
-    """Get global system prompt compiler instance"""
-    global _compiler
-    if _compiler is None:
-        _compiler = SystemPromptCompiler()
-    return _compiler
+    global _COMPILER_SINGLETON
+    if _COMPILER_SINGLETON is None:
+        _COMPILER_SINGLETON = SystemPromptCompiler()
+    return _COMPILER_SINGLETON

@@ -1,0 +1,1 @@
+Fix a Go data race in a small worker/service package. The race shows up when running `go test -race ./...` around shared state (channel/slice/map) updated from multiple goroutines. Identify the shared resource, make access safe (mutex, channel, or copy-on-write), keep API behavior stable, and ensure `go test -race ./...` passes.

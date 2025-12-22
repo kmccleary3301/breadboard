@@ -1,41 +1,42 @@
+extends: opencode_grok4fast_c_fs_v2.yaml
+
+profile: { name: opencode-openai-gpt4o-mini-c-fs-perturn-append }
+
+providers:
+  default_model: openai/gpt-4o-mini
+  models:
+    - id: openai/gpt-4o-mini
+      adapter: openai
+      params: { temperature: 0.2, top_p: 0.9 }
+
+prompts:
+  tool_prompt_mode: per_turn_append
+  tool_prompt_synthesis:
+    enabled: true
+    dialects:
+      pythonic_plan:
+        system_full: implementations/tool_prompt_synthesis/pythonic/system_plan_strict.j2.md
+        per_turn_short: implementations/tool_prompt_synthesis/pythonic/per_turn_plan_strict.j2.md
+      opencode_patch:
+        system_full: implementations/tool_prompt_synthesis/opencode_patch/system_full.j2.md
+        per_turn_short: implementations/tool_prompt_synthesis/opencode_patch/per_turn_short.j2.md
+    selection:
+      by_mode:
+        plan: pythonic_plan
+        build: opencode_patch
+    detail:
+      system: full
+      per_turn: short
+
+provider_tools:
+  use_native: false
+  suppress_prompts: false
+
 enhanced_tools:
   enabled: true
   validation:
     enabled: true
+    rules: [one_bash_per_turn]
     rule_config:
-      one_bash_per_turn:
-        turn_window_seconds: 120
-    rules:
-    - one_bash_per_turn
-extends: opencode_grok4fast_c_fs_v2.yaml
-profile:
-  name: opencode-openai-gpt4o-mini-c-fs-perturn-append
-prompts:
-  tool_prompt_mode: per_turn_append
-  tool_prompt_synthesis:
-    detail:
-      per_turn: short
-      system: full
-    dialects:
-      opencode_patch:
-        per_turn_short: implementations/tool_prompt_synthesis/opencode_patch/per_turn_short.j2.md
-        system_full: implementations/tool_prompt_synthesis/opencode_patch/system_full.j2.md
-      pythonic_plan:
-        per_turn_short: implementations/tool_prompt_synthesis/pythonic/per_turn_plan_strict.j2.md
-        system_full: implementations/tool_prompt_synthesis/pythonic/system_plan_strict.j2.md
-    enabled: true
-    selection:
-      by_mode:
-        build: opencode_patch
-        plan: pythonic_plan
-provider_tools:
-  suppress_prompts: false
-  use_native: false
-providers:
-  default_model: openai/gpt-4o-mini
-  models:
-  - adapter: openai
-    id: openai/gpt-4o-mini
-    params:
-      temperature: 0.2
-      top_p: 0.9
+      one_bash_per_turn: { turn_window_seconds: 120 }
+
