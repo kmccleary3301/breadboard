@@ -445,8 +445,8 @@ def initialize_yaml_tools(conductor: Any) -> None:
     try:
         task_cfg = (conductor.config.get("task_tool") or {}) if isinstance(getattr(conductor, "config", None), dict) else {}
         subagents_cfg = task_cfg.get("subagents") if isinstance(task_cfg, dict) else None
+        agents_lines: List[str] = []
         if isinstance(subagents_cfg, dict) and subagents_cfg:
-            agents_lines: List[str] = []
             for name, sub_cfg in subagents_cfg.items():
                 if not name:
                     continue
@@ -458,6 +458,37 @@ def initialize_yaml_tools(conductor: Any) -> None:
                 if not desc:
                     desc = "This subagent should only be called manually by the user."
                 agents_lines.append(f"- {name}: {desc}")
+        else:
+            # Multi-agent TeamConfig-based list (Phase 8)
+            try:
+                multi_cfg = (conductor.config.get("multi_agent") or {}) if isinstance(getattr(conductor, "config", None), dict) else {}
+                if multi_cfg.get("enabled"):
+                    team_payload = multi_cfg.get("team_config")
+                    if isinstance(team_payload, str):
+                        try:
+                            import yaml  # type: ignore
+                            team_payload = yaml.safe_load(Path(team_payload).read_text(encoding="utf-8"))
+                        except Exception:
+                            team_payload = None
+                    if isinstance(team_payload, dict):
+                        from .orchestration import TeamConfig
+
+                        team_config = TeamConfig.from_dict(team_payload)
+                        for agent_id, agent_ref in team_config.agents.items():
+                            if agent_ref.entrypoint or agent_ref.role == "main" or agent_id == "main":
+                                continue
+                            desc = None
+                            if isinstance(agent_ref.capabilities, dict):
+                                raw = agent_ref.capabilities.get("description")
+                                if isinstance(raw, str) and raw.strip():
+                                    desc = raw.strip()
+                            if not desc:
+                                desc = "This subagent should only be called manually by the user."
+                            agents_lines.append(f"- {agent_id}: {desc}")
+            except Exception:
+                pass
+
+        if agents_lines:
             agents_blob = "\n".join(agents_lines)
 
             template_text: Optional[str] = None

@@ -196,6 +196,21 @@ def _run_task_scenario(scenario, *, workspace: Path, result_dir: Path) -> Dict[s
         "equivalence": scenario.equivalence.value,
         "mismatches": mismatches,
     }
+    # Record multi-agent event logs if configured
+    try:
+        cfg = yaml.safe_load(Path(scenario.config).read_text(encoding="utf-8"))
+        multi_cfg = (cfg.get("multi_agent") or {}) if isinstance(cfg, dict) else {}
+        event_log_path = multi_cfg.get("event_log_path")
+        if isinstance(event_log_path, str) and event_log_path:
+            event_path = Path(event_log_path)
+            if not event_path.is_absolute():
+                event_path = (ROOT_DIR / event_path).resolve()
+            if event_path.exists():
+                dest = result_dir / f"{scenario.name}_event_log.jsonl"
+                shutil.copyfile(event_path, dest)
+                payload["event_log"] = str(dest)
+    except Exception:
+        pass
     output_path = result_dir / f"{scenario.name}_result.json"
     payload["result_path"] = str(output_path)
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

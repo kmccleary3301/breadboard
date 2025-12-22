@@ -1295,6 +1295,17 @@ class OpenAIConductor:
             session_state.set_provider_metadata("todos_config", todos_cfg)
             session_state.set_provider_metadata("todo_snapshot", todo_manager.snapshot())
             self.todo_manager = todo_manager
+        orchestrator = self._get_multi_agent_orchestrator()
+        if orchestrator is not None:
+            try:
+                orchestrator.event_log.add(
+                    "run.started",
+                    agent_id="main",
+                    payload={"model": str(model), "user_prompt": user_prompt or ""},
+                )
+                orchestrator.persist_event_log()
+            except Exception:
+                pass
         completion_detector = CompletionDetector(
             config=completion_config or self.config.get("completion", {}),
             completion_sentinel=completion_sentinel
@@ -1623,6 +1634,19 @@ class OpenAIConductor:
                 self.logger_v2.write_json("meta/conversation_ir.json", asdict(conversation_ir))
         except Exception:
             pass
+        if orchestrator is not None:
+            try:
+                orchestrator.event_log.add(
+                    "run.finished",
+                    agent_id="main",
+                    payload={
+                        "completed": bool(run_result.get("completed", False)),
+                        "completion_reason": run_result.get("completion_reason"),
+                    },
+                )
+                orchestrator.persist_event_log()
+            except Exception:
+                pass
 
         return run_result
     
