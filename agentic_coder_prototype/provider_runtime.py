@@ -712,7 +712,7 @@ class OpenAIBaseRuntime(ProviderRuntime):
         try:
             for block in content:
                 block_type = self._get_attr(block, "type")
-                if block_type in {"output_text", "text"}:
+                if block_type in {"input_text", "output_text", "text"}:
                     text_val = self._get_attr(block, "text", "")
                     if text_val:
                         parts.append(str(text_val))
@@ -1118,6 +1118,23 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 blocks = content
             else:
                 blocks = [{"type": "text", "text": content or ""}]
+
+            tool_calls = message.get("tool_calls") or []
+            for tc in tool_calls:
+                fn = tc.get("function", {}) if isinstance(tc, dict) else {}
+                name = fn.get("name") if isinstance(fn, dict) else None
+                args_raw = fn.get("arguments") if isinstance(fn, dict) else None
+                try:
+                    args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
+                except Exception:
+                    args = {}
+                if name:
+                    blocks.append({
+                        "type": "tool_use",
+                        "id": tc.get("id"),
+                        "name": name,
+                        "input": args,
+                    })
 
             converted.append({
                 "role": role,

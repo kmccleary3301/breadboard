@@ -1,0 +1,50 @@
+{
+  "name": "breadboard-tui-skeleton",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "breadboard": "dist/main.js"
+  },
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "build": "tsc -p tsconfig.json && cp -f src/ascii_header.txt dist/ascii_header.txt",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@effect/cli": "^0.69.0",
+    "@effect/cluster": "^0.47.0",
+    "@effect/platform": "^0.90.2",
+    "@effect/platform-node": "^0.95.0",
+    "@effect/printer": "^0.45.0",
+    "@effect/printer-ansi": "^0.45.0",
+    "@stream-mdx/core": "^0.0.2",
+    "@stream-mdx/worker": "^0.0.2",
+    "@types/node": "^24.2.1",
+    "chalk": "^5.3.0",
+    "chroma-js": "^2.4.2",
+    "clipboardy": "^4.0.0",
+    "dotenv": "^16.4.5",
+    "effect": "^3.17.7",
+    "eventsource-parser": "^1.1.2",
+    "graphemer": "^1.4.0",
+    "ink": "^5.2.1",
+    "ink-select-input": "^6.2.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/chroma-js": "^3.1.1",
+    "@types/react": "^18.2.66",
+    "ink-testing-library": "^4.0.0",
+    "jpeg-js": "^0.4.4",
+    "node-pty": "^1.0.0",
+    "pngjs": "^7.0.0",
+    "strip-ansi": "^7.1.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.3"
+  }
+}
