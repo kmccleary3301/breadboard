@@ -52,7 +52,7 @@ prompts:
       plan: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
       builder: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
       compact: implementations/system_prompts/claude_code/system-vendor-logged.prompt.md
-  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  tool_prompt_mode: none
   injection:
     system_order:
       - '@pack(base).system'
@@ -84,7 +84,7 @@ loop:
       emit_event: false
   turn_strategy:
     relay: tool_role
-    flow: assistant_continuation
+    flow: tool_role
     allow_multiple_per_turn: true
 
 tools:

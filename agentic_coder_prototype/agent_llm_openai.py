@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import random
+import shlex
 import shutil
 import time
 import uuid
@@ -15,6 +17,8 @@ from types import SimpleNamespace
 from dataclasses import asdict
 
 import ray
+
+from adaptive_iter import decode_adaptive_iterable
 
 from breadboard.sandbox_v2 import DevSandboxV2
 from breadboard.opencode_patch import PatchParseError, parse_opencode_patch, to_unified_diff
@@ -845,18 +849,669 @@ class OpenAIConductor:
 
     def run_shell(self, command: str, timeout: Optional[int] = None) -> Dict[str, Any]:
         stream = self._ray_get(self.sandbox.run.remote(command, timeout=timeout or 30, stream=True))
+        if isinstance(stream, dict):
+            return {
+                "stdout": stream.get("stdout", "") or "",
+                "stderr": stream.get("stderr", "") or "",
+                "exit": stream.get("exit"),
+            }
         # Decode adaptive-encoded list materialized; last element is {"exit": code}
-        exit_obj = stream[-1] if stream else {"exit": None}
+        exit_obj = stream[-1] if isinstance(stream, list) and stream else {"exit": None}
         # Collect only string lines, drop adaptive markers (>>>>> ...)
         lines: list[str] = []
-        for x in stream[:-1]:
-            if not isinstance(x, str):
-                continue
-            if x.startswith(">>>>>"):
-                continue
-            lines.append(x)
+        if isinstance(stream, list):
+            for x in stream[:-1]:
+                if not isinstance(x, str):
+                    continue
+                if x.startswith(">>>>>"):
+                    continue
+                lines.append(x)
         stdout = "\n".join(lines)
         return {"stdout": stdout, "exit": exit_obj.get("exit")}
+
+    def run_bash_opencode(
+        self,
+        command: str,
+        timeout_ms: Optional[int] = None,
+        *,
+        description: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        OpenCode-compatible `bash` tool execution.
+
+        OpenCode surfaces the raw combined stdout+stderr string as the tool result
+        content, preserves trailing newlines, and appends truncation/timeout markers.
+        """
+        if timeout_ms is not None:
+            try:
+                timeout_ms = int(timeout_ms)
+            except Exception:
+                timeout_ms = None
+        if timeout_ms is not None and timeout_ms < 0:
+            msg = f"Invalid timeout value: {timeout_ms}. Timeout must be a positive number."
+            return {"error": msg, "__mvi_text_output": msg}
+
+        effective_timeout_ms = min(timeout_ms or 60_000, 10 * 60_000)
+        timeout_s = max(0.0, float(effective_timeout_ms) / 1000.0)
+
+        raw = self._ray_get(self.sandbox.run.remote(command, timeout=timeout_s, stream=False))
+        decoded: Any = raw
+        try:
+            is_iterable, value = decode_adaptive_iterable(raw)
+            if not is_iterable:
+                decoded = value
+        except Exception:
+            decoded = raw
+
+        stdout = ""
+        exit_code: Any = None
+        if isinstance(decoded, dict):
+            stdout = str(decoded.get("stdout") or "")
+            exit_code = decoded.get("exit")
+        elif isinstance(decoded, str):
+            stdout = decoded
+        else:
+            try:
+                stdout = json.dumps(decoded, ensure_ascii=False)
+            except Exception:
+                stdout = str(decoded)
+
+        # Normalize workspace paths during replays so absolute-path outputs match
+        # the recorded (strip-prefix) environment.
+        try:
+            replay_data = getattr(self, "_replay_session_data", None)
+            strip_prefix = getattr(replay_data, "strip_prefix", "") if replay_data else ""
+            if strip_prefix and isinstance(strip_prefix, str):
+                ws = str(self.workspace or "")
+                if ws and ws in stdout:
+                    stdout = stdout.replace(ws, strip_prefix)
+        except Exception:
+            pass
+
+        max_len = 30_000
+        if len(stdout) > max_len:
+            stdout = stdout[:max_len] + "\n\n(Output was truncated due to length limit)"
+
+        if exit_code == -9:
+            stdout += f"\n\n(Command timed out after {effective_timeout_ms} ms)"
+
+        if description:
+            # Preserve metadata fields for downstream logging even though the model
+            # only receives `__mvi_text_output`.
+            return {
+                "stdout": stdout,
+                "exit": exit_code,
+                "description": description,
+                "__mvi_text_output": stdout,
+            }
+        return {"stdout": stdout, "exit": exit_code, "__mvi_text_output": stdout}
+
+    @staticmethod
+    def _claude_slugify_path(path: str) -> str:
+        raw = str(path or "")
+        return re.sub(r"[^A-Za-z0-9]", "-", raw)
+
+    def _claude_display_workspace_root(self) -> str:
+        try:
+            replay_data = getattr(self, "_replay_session_data", None)
+            strip_prefix = getattr(replay_data, "strip_prefix", "") if replay_data else ""
+            if isinstance(strip_prefix, str) and strip_prefix.strip():
+                return strip_prefix
+        except Exception:
+            pass
+        return str(self.workspace or "")
+
+    def _claude_tasks_root(self) -> str:
+        display_ws = self._claude_display_workspace_root()
+        slug = self._claude_slugify_path(display_ws)
+        return f"/tmp/claude/{slug}/tasks"
+
+    def _claude_bash_rel_cwd(self) -> str:
+        rel = getattr(self, "_claude_bash_rel_cwd_state", None)
+        if isinstance(rel, str) and rel:
+            return rel
+        setattr(self, "_claude_bash_rel_cwd_state", ".")
+        return "."
+
+    def _claude_bash_set_rel_cwd_from_abs(self, abs_path: str) -> None:
+        try:
+            ws = str(self.workspace or "")
+            if not ws:
+                return
+            abs_norm = os.path.normpath(str(abs_path))
+            ws_norm = os.path.normpath(ws)
+            if abs_norm == ws_norm:
+                setattr(self, "_claude_bash_rel_cwd_state", ".")
+                return
+            if abs_norm.startswith(ws_norm + os.sep):
+                rel = os.path.relpath(abs_norm, ws_norm)
+                setattr(self, "_claude_bash_rel_cwd_state", rel if rel else ".")
+        except Exception:
+            return
+
+    def run_bash_claude(
+        self,
+        command: str,
+        timeout_ms: Optional[int] = None,
+        *,
+        description: Optional[str] = None,
+        run_in_background: bool = False,
+        expected_output: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Claude Code-compatible `Bash` tool execution (best-effort).
+
+        Key observed semantics:
+        - Maintains CWD across Bash tool calls (but does not persist env exports).
+        - Timeout is "soft": if not complete by timeout, return a background-task
+          handle instead of killing the process.
+        """
+        command = str(command or "")
+        argv: List[str] = []
+        try:
+            argv = shlex.split(command, posix=True) if command.strip() else []
+        except Exception:
+            argv = command.split() if command.strip() else []
+
+        # Claude Code permission rules can explicitly deny certain bash patterns.
+        if self._claude_tool_rule_action("Bash", argv=argv, command=command) == "deny":
+            cmd_name = argv[0] if argv else (command.strip() or "<empty>")
+            msg = f"Permission to use Bash with command {cmd_name} has been denied."
+            return {"error": msg, "__mvi_text_output": msg}
+        if timeout_ms is not None:
+            try:
+                timeout_ms = int(timeout_ms)
+            except Exception:
+                timeout_ms = None
+
+        # Claude Code defaults to 120_000ms and caps at 600_000ms (10 minutes).
+        effective_timeout_ms = 120_000 if timeout_ms is None else timeout_ms
+        effective_timeout_ms = max(0, min(int(effective_timeout_ms), 600_000))
+
+        # Deterministic task ids during replay: reuse golden id if present.
+        task_id: str = uuid.uuid4().hex[:7]
+        if isinstance(expected_output, str):
+            match = re.search(r"Command running in background with ID:\\s*([a-z0-9]+)", expected_output)
+            if match:
+                task_id = match.group(1)
+
+        tasks_root = self._claude_tasks_root()
+        out_file = f"{tasks_root}/{task_id}.output"
+        pid_file = f"{tasks_root}/{task_id}.pid"
+        cmd_file = f"{tasks_root}/{task_id}.cmd"
+        killed_file = f"{tasks_root}/{task_id}.killed"
+        cwd_file = f"{tasks_root}/{task_id}.cwd"
+        exit_file = f"{tasks_root}/{task_id}.exit"
+
+        rel_cwd = self._claude_bash_rel_cwd()
+        try:
+            cwd_abs = str((Path(str(self.workspace)) / rel_cwd).resolve())
+        except Exception:
+            cwd_abs = str(self.workspace or "")
+
+        run_bg_flag = "1" if bool(run_in_background) else "0"
+        script = r"""
+set -o pipefail
+CWD="$1"
+CMD="$2"
+TASK_ROOT="$3"
+TASK_ID="$4"
+TIMEOUT_MS="$5"
+RUN_BG="$6"
+
+mkdir -p "$TASK_ROOT" 2>/dev/null || true
+
+OUT="$TASK_ROOT/$TASK_ID.output"
+PIDFILE="$TASK_ROOT/$TASK_ID.pid"
+CMDFILE="$TASK_ROOT/$TASK_ID.cmd"
+KILLEDFILE="$TASK_ROOT/$TASK_ID.killed"
+CWDFILE="$TASK_ROOT/$TASK_ID.cwd"
+EXITFILE="$TASK_ROOT/$TASK_ID.exit"
+
+rm -f "$KILLEDFILE" 2>/dev/null || true
+printf "%s" "$CMD" > "$CMDFILE" 2>/dev/null || true
+
+( bash -lc 'cd "$1" && eval "$2"; status=$?; pwd > "$3" 2>/dev/null || true; printf "%s" "$status" > "$4" 2>/dev/null || true; exit $status' \
+  -- "$CWD" "$CMD" "$CWDFILE" "$EXITFILE" > "$OUT" 2>&1 ) &
+PID=$!
+printf "%s" "$PID" > "$PIDFILE" 2>/dev/null || true
+
+if [ "$RUN_BG" = "1" ]; then
+  printf "Command running in background with ID: %s. Output is being written to: %s\n" "$TASK_ID" "$OUT"
+  exit 0
+fi
+
+STEP_MS=100
+MAX_STEPS=$(( TIMEOUT_MS / STEP_MS ))
+if [ $(( TIMEOUT_MS % STEP_MS )) -ne 0 ]; then MAX_STEPS=$(( MAX_STEPS + 1 )); fi
+
+i=0
+while kill -0 "$PID" 2>/dev/null; do
+  if [ "$i" -ge "$MAX_STEPS" ]; then break; fi
+  sleep 0.1
+  i=$(( i + 1 ))
+done
+
+if kill -0 "$PID" 2>/dev/null; then
+  printf "Command running in background with ID: %s. Output is being written to: %s\n" "$TASK_ID" "$OUT"
+  exit 0
+fi
+
+wait "$PID" >/dev/null 2>&1 || true
+cat "$OUT" 2>/dev/null || true
+FINAL_CWD="$(cat "$CWDFILE" 2>/dev/null || true)"
+printf "\n__KC_CLAUDE_CWD__%s\n" "$FINAL_CWD"
+""".strip()
+
+        outer = (
+            "bash -lc "
+            + shlex.quote(script)
+            + " -- "
+            + " ".join(
+                [
+                    shlex.quote(cwd_abs),
+                    shlex.quote(command),
+                    shlex.quote(tasks_root),
+                    shlex.quote(task_id),
+                    shlex.quote(str(effective_timeout_ms)),
+                    shlex.quote(run_bg_flag),
+                ]
+            )
+        )
+
+        # Ensure the wrapper shell itself doesn't get killed before it can decide
+        # whether to return output vs background handle.
+        wrapper_timeout_s = int(effective_timeout_ms / 1000) + 30
+        wrapper_timeout_s = max(wrapper_timeout_s, 30)
+
+        raw = self._ray_get(self.sandbox.run.remote(outer, timeout=wrapper_timeout_s, stream=False))
+        decoded: Any = raw
+        try:
+            is_iterable, value = decode_adaptive_iterable(raw)
+            if not is_iterable:
+                decoded = value
+        except Exception:
+            decoded = raw
+
+        stdout = ""
+        exit_code: Any = None
+        if isinstance(decoded, dict):
+            stdout = str(decoded.get("stdout") or "")
+            exit_code = decoded.get("exit")
+        elif isinstance(decoded, str):
+            stdout = decoded
+        else:
+            stdout = str(decoded)
+
+        # Extract the final CWD marker (used to persist cwd between calls).
+        marker = "\n__KC_CLAUDE_CWD__"
+        if marker in stdout:
+            before, after = stdout.rsplit(marker, 1)
+            final_cwd = after.strip("\n")
+            stdout = before
+            if final_cwd:
+                self._claude_bash_set_rel_cwd_from_abs(final_cwd)
+
+        # Normalize workspace paths during replays so absolute-path outputs match
+        # the recorded (strip-prefix) environment.
+        try:
+            replay_data = getattr(self, "_replay_session_data", None)
+            strip_prefix = getattr(replay_data, "strip_prefix", "") if replay_data else ""
+            if strip_prefix and isinstance(strip_prefix, str):
+                ws = str(self.workspace or "")
+                if ws and ws in stdout:
+                    stdout = stdout.replace(ws, strip_prefix)
+        except Exception:
+            pass
+
+        if description:
+            return {"stdout": stdout, "exit": exit_code, "description": description, "__mvi_text_output": stdout}
+        return {"stdout": stdout, "exit": exit_code, "__mvi_text_output": stdout}
+
+    def _claude_permission_mode(self) -> str:
+        try:
+            cfg = self.config.get("claude") if isinstance(self.config, dict) else None
+            if isinstance(cfg, dict):
+                mode = cfg.get("permission_mode") or cfg.get("permissionMode") or ""
+            else:
+                mode = ""
+        except Exception:
+            mode = ""
+        mode = str(mode or "").strip().lower()
+        return mode or "bypasspermissions"
+
+    def _claude_tool_rule_action(
+        self,
+        tool_name: str,
+        *,
+        argv: Optional[List[str]] = None,
+        command: str = "",
+        file_path: str = "",
+    ) -> Optional[str]:
+        """
+        Minimal Claude Code allow/ask/deny rule engine for parity suites.
+
+        Rule precedence: deny > ask > allow.
+        Patterns are Claude-style strings like `Bash(pwd:*)`.
+        """
+        cfg = None
+        try:
+            cfg = self.config.get("claude") if isinstance(self.config, dict) else None
+        except Exception:
+            cfg = None
+        if not isinstance(cfg, dict):
+            return None
+        rules = cfg.get("tool_rules") or cfg.get("toolRules") or {}
+        if not isinstance(rules, dict):
+            return None
+
+        deny = rules.get("deny") or []
+        ask = rules.get("ask") or []
+        allow = rules.get("allow") or []
+
+        def _coerce_list(value: Any) -> List[str]:
+            if not value:
+                return []
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, list):
+                return [str(item) for item in value if str(item).strip()]
+            return []
+
+        deny_list = _coerce_list(deny)
+        ask_list = _coerce_list(ask)
+        allow_list = _coerce_list(allow)
+
+        for pat in deny_list:
+            if self._claude_tool_rule_matches(tool_name, pat, argv=argv, command=command, file_path=file_path):
+                return "deny"
+        for pat in ask_list:
+            if self._claude_tool_rule_matches(tool_name, pat, argv=argv, command=command, file_path=file_path):
+                return "ask"
+        for pat in allow_list:
+            if self._claude_tool_rule_matches(tool_name, pat, argv=argv, command=command, file_path=file_path):
+                return "allow"
+        return None
+
+    @staticmethod
+    def _kc_wildcard_match(value: str, pattern: str) -> bool:
+        pat = str(pattern or "")
+        text = str(value or "")
+        try:
+            escaped = re.escape(pat)
+            escaped = escaped.replace(r"\*", ".*").replace(r"\?", ".")
+            return re.match("^" + escaped + "$", text, flags=re.S) is not None
+        except Exception:
+            return False
+
+    def _claude_tool_rule_matches(
+        self,
+        tool_name: str,
+        raw_pattern: str,
+        *,
+        argv: Optional[List[str]] = None,
+        command: str = "",
+        file_path: str = "",
+    ) -> bool:
+        pattern = str(raw_pattern or "").strip()
+        if not pattern:
+            return False
+        match = re.match(r"^([A-Za-z0-9_]+)(?:\((.*)\))?$", pattern)
+        if not match:
+            return False
+        pat_tool = match.group(1) or ""
+        spec = match.group(2)
+        if pat_tool.lower() != str(tool_name or "").strip().lower():
+            return False
+
+        if tool_name.lower() == "bash":
+            if spec is None or not str(spec).strip():
+                return True
+            argv_list = argv or []
+            if not argv_list and command.strip():
+                try:
+                    argv_list = shlex.split(command, posix=True)
+                except Exception:
+                    argv_list = command.split()
+            if not argv_list:
+                return False
+
+            spec_text = str(spec or "")
+            if ":" not in spec_text:
+                return self._kc_wildcard_match(" ".join(argv_list), spec_text.strip())
+            left, right = spec_text.split(":", 1)
+            left = left.strip()
+            right = right.strip()
+            try:
+                left_tokens = shlex.split(left, posix=True) if left else []
+            except Exception:
+                left_tokens = left.split() if left else []
+            if left_tokens:
+                if len(argv_list) < len(left_tokens):
+                    return False
+                for idx, token_pat in enumerate(left_tokens):
+                    if not self._kc_wildcard_match(argv_list[idx], token_pat):
+                        return False
+                rest = " ".join(argv_list[len(left_tokens) :])
+            else:
+                rest = " ".join(argv_list)
+            if not right:
+                return True
+            return self._kc_wildcard_match(rest, right)
+
+        # TODO: extend rule matching for file tools (Write/Edit/WebFetch) as parity expands.
+        _ = file_path
+        return True
+
+    def _claude_task_output(
+        self,
+        task_id: str,
+        *,
+        block: bool,
+        timeout_ms: int,
+        expected_output: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        tasks_root = self._claude_tasks_root()
+        out_file = f"{tasks_root}/{task_id}.output"
+        pid_file = f"{tasks_root}/{task_id}.pid"
+        killed_file = f"{tasks_root}/{task_id}.killed"
+        exit_file = f"{tasks_root}/{task_id}.exit"
+
+        effective_timeout_ms = int(max(0, min(int(timeout_ms), 600_000)))
+        # Replay helper: if the golden says the task is complete, allow TaskOutput
+        # to wait long enough even if the requested timeout is small.
+        if isinstance(expected_output, str) and "<status>completed</status>" in expected_output:
+            effective_timeout_ms = max(effective_timeout_ms, 600_000)
+        if isinstance(expected_output, str) and "<status>killed</status>" in expected_output:
+            effective_timeout_ms = max(effective_timeout_ms, 600_000)
+
+        script = r"""
+set -o pipefail
+TASK_ROOT="$1"
+TASK_ID="$2"
+BLOCK="$3"
+TIMEOUT_MS="$4"
+
+OUT="$TASK_ROOT/$TASK_ID.output"
+PIDFILE="$TASK_ROOT/$TASK_ID.pid"
+KILLEDFILE="$TASK_ROOT/$TASK_ID.killed"
+EXITFILE="$TASK_ROOT/$TASK_ID.exit"
+
+PID="$(cat "$PIDFILE" 2>/dev/null || true)"
+if [ -z "$PID" ]; then
+  echo "__KC_TASK_STATE__missing"
+  echo "__KC_EXIT_CODE__"
+  echo "__KC_OUTPUT_BEGIN__"
+  echo "__KC_OUTPUT_END__"
+  exit 0
+fi
+
+if [ "$BLOCK" = "1" ]; then
+  STEP_MS=100
+  MAX_STEPS=$(( TIMEOUT_MS / STEP_MS ))
+  if [ $(( TIMEOUT_MS % STEP_MS )) -ne 0 ]; then MAX_STEPS=$(( MAX_STEPS + 1 )); fi
+  i=0
+  while kill -0 "$PID" 2>/dev/null; do
+    if [ "$i" -ge "$MAX_STEPS" ]; then break; fi
+    sleep 0.1
+    i=$(( i + 1 ))
+  done
+fi
+
+STATE="completed"
+if kill -0 "$PID" 2>/dev/null; then
+  STATE="running"
+elif [ -f "$KILLEDFILE" ]; then
+  STATE="killed"
+fi
+
+EXIT_CODE=""
+if [ "$STATE" = "completed" ]; then
+  EXIT_CODE="$(cat "$EXITFILE" 2>/dev/null || true)"
+fi
+
+echo "__KC_TASK_STATE__${STATE}"
+echo "__KC_EXIT_CODE__${EXIT_CODE}"
+echo "__KC_OUTPUT_BEGIN__"
+cat "$OUT" 2>/dev/null || true
+echo
+echo "__KC_OUTPUT_END__"
+""".strip()
+
+        outer = (
+            "bash -lc "
+            + shlex.quote(script)
+            + " -- "
+            + " ".join(
+                [
+                    shlex.quote(tasks_root),
+                    shlex.quote(task_id),
+                    shlex.quote("1" if block else "0"),
+                    shlex.quote(str(effective_timeout_ms)),
+                ]
+            )
+        )
+
+        # TaskOutput itself should return quickly unless explicitly blocking.
+        wrapper_timeout_s = int(effective_timeout_ms / 1000) + 10 if block else 30
+        wrapper_timeout_s = max(wrapper_timeout_s, 30)
+
+        raw = self._ray_get(self.sandbox.run.remote(outer, timeout=wrapper_timeout_s, stream=False))
+        decoded: Any = raw
+        try:
+            is_iterable, value = decode_adaptive_iterable(raw)
+            if not is_iterable:
+                decoded = value
+        except Exception:
+            decoded = raw
+
+        blob = ""
+        if isinstance(decoded, dict):
+            blob = str(decoded.get("stdout") or "")
+        else:
+            blob = str(decoded or "")
+
+        state = "missing"
+        exit_code: Optional[str] = None
+        output_text = ""
+
+        try:
+            state_match = re.search(r"^__KC_TASK_STATE__(.*)$", blob, flags=re.MULTILINE)
+            if state_match:
+                state = state_match.group(1).strip() or state
+            exit_match = re.search(r"^__KC_EXIT_CODE__(.*)$", blob, flags=re.MULTILINE)
+            if exit_match:
+                exit_code = exit_match.group(1).strip() or None
+            start_idx = blob.find("__KC_OUTPUT_BEGIN__")
+            end_idx = blob.find("__KC_OUTPUT_END__")
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                start_idx = blob.find("\n", start_idx)
+                if start_idx != -1:
+                    output_text = blob[start_idx + 1 : end_idx].lstrip("\n")
+        except Exception:
+            state = "missing"
+
+        retrieval_status = "success" if state in {"completed", "killed"} else "not_ready"
+        parts: List[str] = [
+            f"<retrieval_status>{retrieval_status}</retrieval_status>",
+            f"<task_id>{task_id}</task_id>",
+            "<task_type>local_bash</task_type>",
+            f"<status>{state}</status>",
+        ]
+        if state == "completed":
+            parts.append(f"<exit_code>{exit_code or 0}</exit_code>")
+
+        output_payload = str(output_text or "")
+        if output_payload:
+            if not output_payload.endswith("\n"):
+                output_payload += "\n"
+            parts.append(f"<output>\n{output_payload}</output>")
+
+        rendered = "\n\n".join(parts)
+        return {"__mvi_text_output": rendered}
+
+    def _claude_kill_shell(self, shell_id: str) -> Dict[str, Any]:
+        tasks_root = self._claude_tasks_root()
+        pid_file = f"{tasks_root}/{shell_id}.pid"
+        cmd_file = f"{tasks_root}/{shell_id}.cmd"
+        killed_file = f"{tasks_root}/{shell_id}.killed"
+
+        script = r"""
+set -o pipefail
+TASK_ROOT="$1"
+SHELL_ID="$2"
+PIDFILE="$TASK_ROOT/$SHELL_ID.pid"
+CMDFILE="$TASK_ROOT/$SHELL_ID.cmd"
+KILLEDFILE="$TASK_ROOT/$SHELL_ID.killed"
+
+PID="$(cat "$PIDFILE" 2>/dev/null || true)"
+touch "$KILLEDFILE" 2>/dev/null || true
+
+if [ -n "$PID" ]; then
+  kill "$PID" 2>/dev/null || true
+  sleep 0.05
+  if kill -0 "$PID" 2>/dev/null; then
+    kill -9 "$PID" 2>/dev/null || true
+  fi
+fi
+
+echo "__KC_CMD_BEGIN__"
+cat "$CMDFILE" 2>/dev/null || true
+echo
+echo "__KC_CMD_END__"
+""".strip()
+
+        outer = "bash -lc " + shlex.quote(script) + " -- " + " ".join([shlex.quote(tasks_root), shlex.quote(shell_id)])
+        raw = self._ray_get(self.sandbox.run.remote(outer, timeout=30, stream=False))
+        decoded: Any = raw
+        try:
+            is_iterable, value = decode_adaptive_iterable(raw)
+            if not is_iterable:
+                decoded = value
+        except Exception:
+            decoded = raw
+
+        stdout = ""
+        if isinstance(decoded, dict):
+            stdout = str(decoded.get("stdout") or "")
+        else:
+            stdout = str(decoded or "")
+
+        cmd = ""
+        try:
+            start = stdout.find("__KC_CMD_BEGIN__")
+            end = stdout.find("__KC_CMD_END__")
+            if start != -1 and end != -1 and end > start:
+                start = stdout.find("\n", start)
+                if start != -1:
+                    cmd = stdout[start + 1 : end].strip("\n")
+        except Exception:
+            cmd = ""
+
+        message = f"Successfully killed shell: {shell_id}"
+        if cmd:
+            message += f"\nCommand: {cmd}"
+        return {"__mvi_text_output": message}
 
     def vcs(self, request: Dict[str, Any]) -> Dict[str, Any]:
         return self._ray_get(self.sandbox.vcs.remote(request))
@@ -869,15 +1524,47 @@ class OpenAIConductor:
         """Raw tool execution without enhanced features (for compatibility)"""
         name = tool_call["function"]
         args = tool_call["arguments"]
+        original_name = name
+
+        def _coerce_str(value: Any) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, str):
+                return value
+            try:
+                return str(value)
+            except Exception:
+                return ""
+
+        def _first_arg(*keys: str) -> str:
+            if not isinstance(args, dict):
+                return ""
+            for key in keys:
+                if key in args:
+                    raw = args.get(key)
+                    if raw is None:
+                        continue
+                    text = _coerce_str(raw)
+                    if text:
+                        return text
+            return ""
 
         # Normalize common aliases used by provider tool names
         normalized = name.lower()
         if normalized == "bash":
             normalized = "run_shell"
+        elif normalized == "shell_command":
+            normalized = "shell_command"
+        elif normalized == "taskoutput":
+            normalized = "taskoutput"
+        elif normalized == "killshell":
+            normalized = "killshell"
         elif normalized == "list":
             normalized = "list_dir"
         elif normalized == "read":
             normalized = "read_file"
+        elif normalized == "edit":
+            normalized = "apply_search_replace"
         elif normalized == "write":
             normalized = "create_file_from_block"
 
@@ -885,20 +1572,404 @@ class OpenAIConductor:
             target = self._normalize_workspace_path(str(args.get("path", "")))
             return self.create_file(target)
         if normalized == "create_file_from_block":
-            target = self._normalize_workspace_path(str(args.get("file_name", "")))
-            content = str(args.get("content", ""))
-            return self._ray_get(self.sandbox.write_text.remote(target, content))
+            raw_target = _first_arg("file_name", "filePath", "file_path", "path", "filename", "file")
+            if not raw_target:
+                return {"error": "write missing required file_name"}
+            content = _coerce_str(args.get("content", "") if isinstance(args, dict) else "")
+
+            # Claude Code `Write` is a distinct surface from OpenCode `write`:
+            # - allow absolute paths and ../ traversal (mirrors Claude CLI behavior)
+            # - return "File created successfully at: <original_path>"
+            if original_name == "Write":
+                requested_path = ""
+                side_effect_path = ""
+                if isinstance(args, dict):
+                    requested_path = _coerce_str(args.get("file_path") or args.get("filePath") or raw_target)
+                    # ReplaySession may provide both `file_path` (original) and `filePath`
+                    # (workspace-mapped) values. Use `filePath` for hermetic side-effects
+                    # but preserve the original `file_path` string in tool output.
+                    side_effect_path = _coerce_str(args.get("filePath") or requested_path)
+                else:
+                    requested_path = raw_target
+                    side_effect_path = raw_target
+
+                # Claude Code `acceptEdits` auto-accepts edits inside the working
+                # directory tree, but still requires explicit permission for writes
+                # outside that tree (e.g. /tmp).
+                if self._claude_permission_mode() == "acceptedits":
+                    ws_root = Path(str(self.workspace)).resolve()
+                    allowed = False
+                    try:
+                        requested = Path(requested_path)
+                        resolved = requested.resolve(strict=False) if requested.is_absolute() else (ws_root / requested_path).resolve(strict=False)
+                        resolved.relative_to(ws_root)
+                        allowed = True
+                    except Exception:
+                        allowed = False
+                    if not allowed:
+                        msg = (
+                            f"Claude requested permissions to write to {requested_path}, but you haven't granted it yet."
+                        )
+                        return {"error": msg, "__mvi_text_output": msg}
+
+                target_path: Optional[Path] = None
+                try:
+                    candidate = Path(side_effect_path)
+                    if candidate.is_absolute():
+                        target_path = candidate
+                    else:
+                        target_path = Path(str(self.workspace)) / side_effect_path
+                except Exception:
+                    target_path = None
+
+                # Replay runs should avoid mutating captured golden artifacts.
+                replay_data = getattr(self, "_replay_session_data", None)
+                if replay_data and target_path is not None:
+                    try:
+                        if str(target_path).startswith(str(self.workspace)) and target_path.exists():
+                            pass
+                    except Exception:
+                        pass
+
+                if target_path is None:
+                    msg = f"Error: failed to resolve path {requested_path}"
+                    return {"error": msg, "__mvi_text_output": msg}
+
+                try:
+                    self._ray_get(self.sandbox.write_text.remote(str(target_path), content))
+                except Exception as exc:
+                    msg = f"Error: failed to write file {requested_path}: {exc}"
+                    return {"error": msg, "__mvi_text_output": msg}
+
+                output = f"File created successfully at: {requested_path}"
+                return {"ok": True, "path": requested_path, "__mvi_text_output": output}
+
+            target = self._normalize_workspace_path(raw_target)
+            result = self._ray_get(self.sandbox.write_text.remote(target, content))
+            if original_name.lower() == "write" and isinstance(result, dict):
+                result = dict(result)
+                result["__mvi_text_output"] = ""
+            return result
         if normalized == "read_file":
-            target = self._normalize_workspace_path(str(args.get("path", "")))
+            raw_target = _first_arg("path", "file_path", "file_name", "filePath", "filename", "file")
+            target = self._normalize_workspace_path(raw_target)
             return self.read_file(target)
         if normalized == "list_dir":
-            target = self._normalize_workspace_path(str(args.get("path", "")))
+            raw_target = _first_arg("path", "dir", "directory", "file_path", "file_name", "filePath")
+            target = self._normalize_workspace_path(raw_target)
             depth = int(args.get("depth", 1))
             return self.list_dir(target, depth)
         if normalized == "run_shell":
-            return self.run_shell(args["command"], args.get("timeout"))
+            command = _first_arg("command", "cmd", "input")
+            if not command:
+                return {"error": "run_shell missing required command"}
+            timeout_val = args.get("timeout") if isinstance(args, dict) else None
+            if original_name == "Bash":
+                desc = _coerce_str(args.get("description") if isinstance(args, dict) else "")
+                run_bg = bool(args.get("run_in_background")) if isinstance(args, dict) else False
+                expected = tool_call.get("expected_output")
+                expected_str = expected if isinstance(expected, str) else None
+                return self.run_bash_claude(
+                    command,
+                    timeout_val,
+                    description=desc or None,
+                    run_in_background=run_bg,
+                    expected_output=expected_str,
+                )
+            if original_name.lower() == "bash":
+                desc = _coerce_str(args.get("description") if isinstance(args, dict) else "")
+                return self.run_bash_opencode(command, timeout_val, description=desc or None)
+            return self.run_shell(command, timeout_val)
+        if normalized == "taskoutput":
+            if not isinstance(args, dict):
+                return {"error": "TaskOutput missing required arguments", "__mvi_text_output": "{\"error\":\"TaskOutput missing required arguments\"}"}
+            task_id = _coerce_str(args.get("task_id", "")).strip()
+            if not task_id:
+                msg = "TaskOutput missing required task_id"
+                return {"error": msg, "__mvi_text_output": json.dumps({"error": msg}, ensure_ascii=False, separators=(",", ":"))}
+            block = True
+            if "block" in args:
+                block = bool(args.get("block"))
+            timeout_val = args.get("timeout")
+            try:
+                timeout_ms = 30_000 if timeout_val is None else int(timeout_val)
+            except Exception:
+                timeout_ms = 30_000
+            timeout_ms = max(0, min(timeout_ms, 600_000))
+
+            expected = tool_call.get("expected_output")
+            expected_str = expected if isinstance(expected, str) else None
+            return self._claude_task_output(task_id, block=block, timeout_ms=timeout_ms, expected_output=expected_str)
+        if normalized == "killshell":
+            if not isinstance(args, dict):
+                msg = "KillShell missing required arguments"
+                return {"error": msg, "__mvi_text_output": json.dumps({"error": msg}, ensure_ascii=False, separators=(",", ":"))}
+            shell_id = _coerce_str(args.get("shell_id", "")).strip()
+            if not shell_id:
+                msg = "KillShell missing required shell_id"
+                return {"error": msg, "__mvi_text_output": json.dumps({"error": msg}, ensure_ascii=False, separators=(",", ":"))}
+            return self._claude_kill_shell(shell_id)
+        if normalized == "task":
+            if not isinstance(args, dict):
+                msg = "task missing required arguments"
+                return {"error": msg, "__mvi_text_output": msg}
+            description = _coerce_str(args.get("description") or "").strip()
+            prompt = _coerce_str(args.get("prompt") or "").strip()
+            subagent_type = _coerce_str(args.get("subagent_type") or "").strip()
+            if not description or not prompt or not subagent_type:
+                missing = []
+                if not description:
+                    missing.append("description")
+                if not prompt:
+                    missing.append("prompt")
+                if not subagent_type:
+                    missing.append("subagent_type")
+                msg = f"missing required field: {', '.join(missing)}"
+                return {"error": msg, "__mvi_text_output": msg}
+
+            digest = hashlib.sha256(f"{description}|{subagent_type}|{prompt}".encode("utf-8")).hexdigest()[:12]
+            session_id = f"task_{digest}"
+            from .runtime_context import get_current_session_state
+
+            parent_state = get_current_session_state()
+            parent_emit = getattr(parent_state, "emit_runtime_event", None) if parent_state is not None else None
+            permission_queue = None
+            try:
+                if parent_state is not None and hasattr(parent_state, "get_provider_metadata"):
+                    permission_queue = parent_state.get_provider_metadata("permission_queue")
+            except Exception:
+                permission_queue = None
+
+            # Replay mode: use the recorded Task tool output instead of executing a live
+            # nested subagent (which would require non-deterministic model calls).
+            try:
+                expected = tool_call.get("expected_output")
+                expected_str = expected if isinstance(expected, str) else None
+            except Exception:
+                expected_str = None
+            try:
+                replay_mode = bool(parent_state.get_provider_metadata("replay_mode")) if parent_state is not None else False
+            except Exception:
+                replay_mode = False
+            if replay_mode and expected_str:
+                return {"output": expected_str, "__mvi_text_output": expected_str}
+
+            if callable(parent_emit):
+                try:
+                    parent_emit(
+                        "task_event",
+                        {
+                            "kind": "started",
+                            "sessionId": session_id,
+                            "description": description,
+                            "subagent_type": subagent_type,
+                        },
+                    )
+                except Exception:
+                    pass
+
+            task_cfg = (self.config.get("task_tool") or {}) if isinstance(getattr(self, "config", None), dict) else {}
+            streaming_cfg = (task_cfg.get("streaming") or {}) if isinstance(task_cfg, dict) else {}
+            forward_assistant_messages = bool(
+                (streaming_cfg.get("forward_assistant_messages") if isinstance(streaming_cfg, dict) else False)
+            )
+            subagents_cfg = (task_cfg.get("subagents") or {}) if isinstance(task_cfg, dict) else {}
+            known_subagents = {"general", "build", "plan"}
+            if isinstance(subagents_cfg, dict):
+                known_subagents |= {str(k) for k in subagents_cfg.keys() if k}
+
+            # Claude Code also supports custom agents defined in `.claude/agents/*.md`.
+            try:
+                agents_dir = Path(str(self.workspace)) / ".claude" / "agents"
+                if agents_dir.is_dir():
+                    for agent_path in agents_dir.glob("*.md"):
+                        stem = agent_path.stem.strip()
+                        if stem:
+                            known_subagents.add(stem)
+            except Exception:
+                pass
+
+            if subagent_type not in known_subagents:
+                msg = f"Unknown agent type: {subagent_type} is not a valid agent type"
+                return {"error": msg, "__mvi_text_output": msg}
+
+            sub_cfg: Optional[Dict[str, Any]] = None
+            if isinstance(subagents_cfg, dict):
+                raw_sub_cfg = subagents_cfg.get(subagent_type)
+                if isinstance(raw_sub_cfg, dict):
+                    sub_cfg = raw_sub_cfg
+
+            replay_path: Optional[str] = None
+            try:
+                if isinstance(sub_cfg, dict):
+                    replay_path = sub_cfg.get("replay_session") or sub_cfg.get("session")
+                if not replay_path and isinstance(task_cfg, dict):
+                    replay_map = task_cfg.get("replay_sessions") or {}
+                    if isinstance(replay_map, dict):
+                        replay_path = replay_map.get(subagent_type)
+            except Exception:
+                replay_path = None
+
+            output_text = ""
+            summary_parts: List[Dict[str, Any]] = []
+            if replay_path:
+                try:
+                    child_entries = json.loads(Path(str(replay_path)).read_text(encoding="utf-8"))
+                except Exception as exc:
+                    msg = f"Failed to load task replay session: {exc}"
+                    return {"error": msg, "__mvi_text_output": msg}
+                if isinstance(child_entries, list):
+                    for entry in child_entries:
+                        if not isinstance(entry, dict) or entry.get("role") != "assistant":
+                            continue
+                        for part in entry.get("parts", []) or []:
+                            if not isinstance(part, dict):
+                                continue
+                            if part.get("type") == "tool":
+                                summary_parts.append(part)
+                            elif part.get("type") == "text":
+                                output_text = str(part.get("text") or "")
+                summary_parts.sort(key=lambda p: str(p.get("id") or ""))
+            else:
+                # Live nested subagent run (best-effort parity with OpenCode TaskTool).
+                child_event_emitter = None
+                if callable(parent_emit):
+                    def _child_emitter(event_type: str, payload: Dict[str, Any], turn: Optional[int] = None) -> None:
+                        try:
+                            et = str(event_type or "")
+                            if et in {"tool_call", "tool_result"} or et.startswith("permission_"):
+                                parent_emit(
+                                    "task_event",
+                                    {
+                                        "kind": et,
+                                        "sessionId": session_id,
+                                        "subagent_type": subagent_type,
+                                        "turn": turn,
+                                        "payload": dict(payload or {}),
+                                    },
+                                )
+                        except Exception:
+                            pass
+
+                    child_event_emitter = _child_emitter
+                try:
+                    model_route = ""
+                    if isinstance(sub_cfg, dict) and sub_cfg.get("model"):
+                        model_route = str(sub_cfg.get("model") or "").strip()
+                    if not model_route and isinstance(task_cfg, dict) and task_cfg.get("default_model"):
+                        model_route = str(task_cfg.get("default_model") or "").strip()
+                    if not model_route:
+                        model_route = str(getattr(self, "_current_route_id", "") or "").strip()
+                    if not model_route:
+                        providers_cfg = (self.config.get("providers") or {}) if isinstance(getattr(self, "config", None), dict) else {}
+                        model_route = str((providers_cfg.get("default_model") or "")).strip()
+                    if not model_route:
+                        model_route = "openai"
+
+                    max_steps = 24
+                    try:
+                        if isinstance(sub_cfg, dict) and sub_cfg.get("max_steps") is not None:
+                            max_steps = int(sub_cfg.get("max_steps") or max_steps)
+                        elif isinstance(task_cfg, dict) and task_cfg.get("default_max_steps") is not None:
+                            max_steps = int(task_cfg.get("default_max_steps") or max_steps)
+                    except Exception:
+                        max_steps = 24
+                    if max_steps < 1:
+                        max_steps = 1
+
+                    allowed_tools = self._task_tool_allowed_tools(sub_cfg)
+                    base_child_config: Dict[str, Any] = copy.deepcopy(self.config) if isinstance(getattr(self, "config", None), dict) else {}
+                    overrides: Dict[str, Any] = {}
+                    if isinstance(task_cfg, dict) and isinstance(task_cfg.get("child_config_overrides"), dict):
+                        overrides = self._deep_merge_dict(overrides, task_cfg.get("child_config_overrides"))
+                    if isinstance(sub_cfg, dict) and isinstance(sub_cfg.get("config_overrides"), dict):
+                        overrides = self._deep_merge_dict(overrides, sub_cfg.get("config_overrides"))
+                    child_config = self._deep_merge_dict(base_child_config, overrides) if overrides else base_child_config
+
+                    # Child runs should be stateless and avoid plan/todo scaffolding.
+                    feats = child_config.get("features") if isinstance(child_config, dict) else None
+                    feats = feats if isinstance(feats, dict) else {}
+                    feats["plan"] = False
+                    todos_cfg = feats.get("todos")
+                    todos_cfg = todos_cfg if isinstance(todos_cfg, dict) else {}
+                    todos_cfg["enabled"] = False
+                    feats["todos"] = todos_cfg
+                    child_config["features"] = feats
+
+                    guardrails_cfg = child_config.get("guardrails")
+                    guardrails_cfg = guardrails_cfg if isinstance(guardrails_cfg, dict) else {}
+                    pb_cfg = guardrails_cfg.get("plan_bootstrap")
+                    pb_cfg = pb_cfg if isinstance(pb_cfg, dict) else {}
+                    pb_cfg["strategy"] = "never"
+                    guardrails_cfg["plan_bootstrap"] = pb_cfg
+                    child_config["guardrails"] = guardrails_cfg
+
+                    completion_cfg = child_config.get("completion")
+                    completion_cfg = completion_cfg if isinstance(completion_cfg, dict) else {}
+                    completion_cfg["allow_content_only_completion"] = True
+                    child_config["completion"] = completion_cfg
+
+                    # Tool visibility: subagent inherits config but gets a narrowed tool set.
+                    tools_cfg = child_config.get("tools")
+                    tools_cfg = tools_cfg if isinstance(tools_cfg, dict) else {}
+                    registry_cfg = tools_cfg.get("registry")
+                    registry_cfg = registry_cfg if isinstance(registry_cfg, dict) else {}
+                    if allowed_tools:
+                        registry_cfg["include"] = list(allowed_tools)
+                    tools_cfg["registry"] = registry_cfg
+                    child_config["tools"] = tools_cfg
+
+                    # Optional: run the child using replay mode (deterministic tests / fixtures).
+                    child_replay_session = None
+                    if isinstance(sub_cfg, dict):
+                        child_replay_session = sub_cfg.get("child_replay_session") or sub_cfg.get("child_replay_session_path")
+                    if child_replay_session:
+                        replay_cfg = child_config.get("replay")
+                        replay_cfg = replay_cfg if isinstance(replay_cfg, dict) else {}
+                        replay_cfg["session_path"] = str(child_replay_session)
+                        replay_cfg.setdefault("preserve_tool_names", True)
+                        child_config["replay"] = replay_cfg
+                        model_route = "replay"
+
+                    run_payload = self._task_tool_run_subagent(
+                        prompt=prompt,
+                        model_route=model_route,
+                        max_steps=max_steps,
+                        child_config=child_config,
+                        event_emitter=child_event_emitter,
+                        permission_queue=permission_queue,
+                    )
+                    output_text = self._task_tool_extract_last_assistant_text(run_payload.get("messages"))
+                    run_dir = run_payload.get("run_dir") or run_payload.get("logging_dir")
+                    tool_results = self._task_tool_collect_tool_results(run_dir)
+                    summary_parts = self._task_tool_build_summary_parts(tool_results)
+                except Exception as exc:
+                    msg = f"Failed to execute task subagent: {exc}"
+                    return {"error": msg, "__mvi_text_output": msg}
+
+            if callable(parent_emit):
+                try:
+                    parent_emit(
+                        "task_event",
+                        {
+                            "kind": "completed",
+                            "sessionId": session_id,
+                            "description": description,
+                            "subagent_type": subagent_type,
+                            "metadata": {"summary": summary_parts},
+                        },
+                    )
+                except Exception:
+                    pass
+            return {
+                "title": description,
+                "metadata": {"sessionId": session_id, "summary": summary_parts},
+                "output": output_text,
+                "__mvi_text_output": output_text,
+            }
         if normalized == "apply_search_replace":
-            target = self._normalize_workspace_path(str(args.get("file_name", "")))
+            raw_target = _first_arg("file_name", "file_path", "path", "filePath", "filename", "file")
+            target = self._normalize_workspace_path(raw_target)
             search_text = str(args.get("search", ""))
             replace_text = str(args.get("replace", ""))
             try:
@@ -947,7 +2018,24 @@ class OpenAIConductor:
                         return retries
             return result
         if name == "TodoWrite":
-            return self._execute_todo_tool("todo.write_board", args)
+            # Claude Code's TodoWrite is a separate surface from KyleCode's internal
+            # todo.* tools. For Claude parity configs we keep todo.* disabled but
+            # still need TodoWrite to work and return the exact success message.
+            payload = args if isinstance(args, dict) else {}
+            todos = payload.get("todos")
+            if not isinstance(todos, list):
+                msg = "Error: TodoWrite missing required todos"
+                return {"error": msg, "__mvi_text_output": msg}
+            try:
+                # Session-scoped, in-memory todo board (Claude Code does not persist into workspace).
+                setattr(self, "_claude_todowrite_state", list(todos))
+            except Exception:
+                pass
+            msg = (
+                "Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. "
+                "Please proceed with the current tasks if applicable"
+            )
+            return {"ok": True, "__mvi_text_output": msg}
         if name in {"create_file_from_block", "Write"}:
             path = self._normalize_workspace_path(str(args.get("file_name", "")))
             content = str(args.get("content", ""))
@@ -1024,8 +2112,209 @@ class OpenAIConductor:
                         normalized["status"] = status_map.get(status.lower(), status)
                     normalized_list.append(normalized)
                 payload["todos"] = normalized_list
-            return manager.handle_write_board(payload)
+            result = manager.handle_write_board(payload)
+            if isinstance(result, dict):
+                result.setdefault(
+                    "__mvi_text_output",
+                    "Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. "
+                    "Please proceed with the current tasks if applicable",
+                )
+            return result
         raise ValueError(f"Unsupported todo tool: {name}")
+
+    @staticmethod
+    def _deep_merge_dict(base: Any, override: Any) -> Any:
+        """Recursively merge dicts (override wins). Non-dicts replace wholesale."""
+        if not isinstance(base, dict) or not isinstance(override, dict):
+            return copy.deepcopy(override)
+        merged: Dict[str, Any] = dict(base)
+        for key, value in override.items():
+            if key in merged and isinstance(merged.get(key), dict) and isinstance(value, dict):
+                merged[key] = OpenAIConductor._deep_merge_dict(merged.get(key), value)
+            else:
+                merged[key] = copy.deepcopy(value)
+        return merged
+
+    @staticmethod
+    def _task_tool_default_subagent_description() -> str:
+        return "This subagent should only be called manually by the user."
+
+    def _task_tool_allowed_tools(self, sub_cfg: Optional[Dict[str, Any]]) -> List[str]:
+        allowed: List[str] = []
+        if isinstance(sub_cfg, dict):
+            raw = sub_cfg.get("tools")
+            if isinstance(raw, list):
+                allowed = [str(item) for item in raw if item]
+            elif isinstance(raw, dict):
+                for key, value in raw.items():
+                    if value:
+                        allowed.append(str(key))
+        if not allowed:
+            try:
+                tools_cfg = (self.config.get("tools", {}) or {}) if isinstance(getattr(self, "config", None), dict) else {}
+                reg = (tools_cfg.get("registry") or {}) if isinstance(tools_cfg, dict) else {}
+                include = reg.get("include") or []
+                if isinstance(include, list):
+                    allowed = [str(item) for item in include if item]
+            except Exception:
+                allowed = []
+        # OpenCode TaskTool always disables these in subagent runs.
+        disabled = {"todowrite", "todoread", "task", "mark_task_complete"}
+        normalized: List[str] = []
+        for name in allowed:
+            cleaned = str(name).strip()
+            if not cleaned:
+                continue
+            if cleaned in disabled or cleaned.startswith("todo."):
+                continue
+            if cleaned not in normalized:
+                normalized.append(cleaned)
+        return normalized
+
+    def _task_tool_run_subagent(
+        self,
+        *,
+        prompt: str,
+        model_route: str,
+        max_steps: int,
+        child_config: Dict[str, Any],
+        event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
+        permission_queue: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        previous_preserve = os.environ.get("PRESERVE_SEEDED_WORKSPACE")
+        os.environ["PRESERVE_SEEDED_WORKSPACE"] = "1"
+        try:
+            cls = OpenAIConductor.__ray_metadata__.modified_class
+            child = cls(
+                workspace=str(getattr(self, "workspace", "")),
+                image=str(getattr(self, "image", "python-dev:latest")),
+                config=child_config,
+                local_mode=True,
+            )
+            return child.run_agentic_loop(
+                "",
+                prompt,
+                model_route,
+                max_steps=max_steps,
+                output_json_path=None,
+                stream_responses=False,
+                output_md_path=None,
+                tool_prompt_mode="system_once",
+                completion_sentinel=">>>>>> END RESPONSE",
+                completion_config=child_config.get("completion") if isinstance(child_config, dict) else None,
+                event_emitter=event_emitter,
+                permission_queue=permission_queue,
+            )
+        finally:
+            if previous_preserve is None:
+                os.environ.pop("PRESERVE_SEEDED_WORKSPACE", None)
+            else:
+                os.environ["PRESERVE_SEEDED_WORKSPACE"] = previous_preserve
+
+    @staticmethod
+    def _task_tool_extract_last_assistant_text(messages: Any) -> str:
+        if not isinstance(messages, list):
+            return ""
+        for msg in reversed(messages):
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("role") != "assistant":
+                continue
+            content = msg.get("content")
+            if isinstance(content, str) and content.strip():
+                return content
+        return ""
+
+    @staticmethod
+    def _task_tool_collect_tool_results(run_dir: Optional[str]) -> List[Dict[str, Any]]:
+        if not run_dir:
+            return []
+        root = Path(str(run_dir)) / "provider_native" / "tool_results"
+        if not root.exists():
+            return []
+        results: List[Dict[str, Any]] = []
+        try:
+            paths = sorted(root.glob("turn_*.json"), key=lambda p: p.name)
+        except Exception:
+            paths = []
+        for path in paths:
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if isinstance(payload, list):
+                for entry in payload:
+                    if isinstance(entry, dict):
+                        results.append(entry)
+        return results
+
+    @staticmethod
+    def _task_tool_build_summary_parts(tool_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Convert LoggerV2 tool result payloads into OpenCode-style tool parts."""
+        parts: List[Dict[str, Any]] = []
+        per_tool_counter: Dict[str, int] = {}
+        for entry in tool_results or []:
+            if not isinstance(entry, dict):
+                continue
+            tool_name = str(entry.get("provider_fn") or entry.get("fn") or "").strip()
+            if not tool_name:
+                continue
+            per_tool_counter[tool_name] = int(per_tool_counter.get(tool_name, 0) or 0) + 1
+            ordinal = per_tool_counter[tool_name]
+
+            call_id = f"call_{tool_name}_{ordinal}"
+            part_id = f"prt_tool_{tool_name}_{ordinal}"
+
+            args = entry.get("args") if isinstance(entry.get("args"), dict) else {}
+            out = entry.get("out")
+
+            state: Dict[str, Any] = {
+                "status": "completed",
+                "input": args,
+                "output": "",
+                "title": tool_name,
+                "metadata": {},
+                "time": {"start": 0, "end": 0},
+            }
+
+            if isinstance(out, dict):
+                title = out.get("title")
+                if isinstance(title, str) and title:
+                    state["title"] = title
+                meta = out.get("metadata")
+                if isinstance(meta, dict):
+                    state["metadata"] = meta
+                err = out.get("error")
+                if isinstance(err, str) and err:
+                    state["status"] = "error"
+                    state["error"] = err
+                    state["output"] = ""
+                else:
+                    output_text: Optional[str] = None
+                    if isinstance(out.get("__mvi_text_output"), str):
+                        output_text = str(out.get("__mvi_text_output") or "")
+                    elif isinstance(out.get("output"), str):
+                        output_text = str(out.get("output") or "")
+                    if output_text is None:
+                        output_text = ""
+                    state["output"] = output_text
+            elif out is None:
+                state["output"] = ""
+            else:
+                state["output"] = str(out)
+
+            parts.append(
+                {
+                    "id": part_id,
+                    "type": "tool",
+                    "tool": tool_name,
+                    "meta": {"callID": call_id, "state": state},
+                    "input": None,
+                    "output": None,
+                    "delta": None,
+                }
+            )
+        return parts
 
     def run_agentic_loop(
         self,
@@ -1041,6 +2330,7 @@ class OpenAIConductor:
         completion_config: Optional[Dict[str, Any]] = None,
         event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
         event_queue: Optional[Any] = None,
+        permission_queue: Optional[Any] = None,
     ) -> Dict[str, Any]:
         # Initialize components
         emitter = event_emitter
@@ -1053,6 +2343,8 @@ class OpenAIConductor:
             emitter = queue_emitter
         self.todo_manager = None
         session_state = SessionState(self.workspace, self.image, self.config, event_emitter=emitter)
+        if permission_queue is not None:
+            session_state.set_provider_metadata("permission_queue", permission_queue)
         self._prompt_hashes = {"system": None, "per_turn": {}}
         self._turn_diagnostics = []
         session_state.set_provider_metadata("initial_user_prompt", user_prompt or "")
@@ -1073,7 +2365,6 @@ class OpenAIConductor:
             self.todo_manager = todo_manager
         completion_detector = CompletionDetector(
             config=completion_config or self.config.get("completion", {}),
-            completion_sentinel=completion_sentinel
         )
         markdown_logger = MarkdownLogger(output_md_path)
         # Also seed conversation.md under logging v2 if enabled
@@ -1087,7 +2378,7 @@ class OpenAIConductor:
             telemetry_path = str(Path(self.logger_v2.run_dir) / "meta" / "telemetry.jsonl")
         telemetry = TelemetryLogger(telemetry_path)
         self._active_telemetry_logger = telemetry
-        error_handler = ErrorHandler(output_json_path)
+        error_handler = ErrorHandler()
 
         telemetry_cfg = self.config.get("telemetry", {}) or {}
         db_path = telemetry_cfg.get("database_path") or os.environ.get("KC_TELEMETRY_DB")

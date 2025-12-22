@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "breadboard": "dist/cli.js"
+    "breadboard": "dist/main.js"
   },
   "scripts": {
     "dev": "tsx src/main.ts",

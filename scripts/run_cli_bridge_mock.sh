@@ -41,7 +41,7 @@ if [[ -n "${MOCK_SSE_SCRIPT}" ]]; then
   echo "[cli-bridge] Script: ${RESOLVED_SCRIPT}"
   MOCK_SSE_ARGS=(
     "tsx"
-    "tools/mock/mockSseServer.ts"
+    "tui_skeleton/tools/mock/mockSseServer.ts"
     "--script"
     "${RESOLVED_SCRIPT}"
     "--host"

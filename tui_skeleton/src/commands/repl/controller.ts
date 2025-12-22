@@ -41,6 +41,15 @@ const DEFAULT_RICH_MARKDOWN = process.env.BREADBOARD_RICH_MARKDOWN !== "0"
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+const normalizeWorkspacePath = (value?: string | null): string => {
+  if (!value) return "."
+  const withSlashes = value.replace(/\\/g, "/")
+  const trimmedLeading = withSlashes.replace(/^\.\/+/, "")
+  const collapsed = trimmedLeading.replace(/\/+/g, "/")
+  const strippedTrailing = collapsed.replace(/\/$/, "")
+  return strippedTrailing === "" ? "." : strippedTrailing
+}
+
 export interface ReplControllerOptions {
   readonly configPath: string
   readonly workspace?: string | null
@@ -440,14 +449,83 @@ export class ReplSessionController extends EventEmitter {
     await handler(args)
   }
 
+  private resolveWorkspaceRoot(): string {
+    return path.resolve(this.config.workspace ?? process.cwd())
+  }
+
+  private resolveWorkspacePath(target?: string | null): { root: string; absolute: string; relative: string } {
+    const root = this.resolveWorkspaceRoot()
+    const normalized = normalizeWorkspacePath(target)
+    const absolute = path.resolve(root, normalized === "." ? "" : normalized)
+    const relativeRaw = path.relative(root, absolute)
+    if (relativeRaw.startsWith("..") || path.isAbsolute(relativeRaw)) {
+      throw new Error("Path escapes workspace root.")
+    }
+    const relative = relativeRaw === "" ? "." : relativeRaw.split(path.sep).join("/")
+    return { root, absolute, relative }
+  }
+
+  private async listFilesLocal(target?: string): Promise<SessionFileInfo[]> {
+    const { root, absolute } = this.resolveWorkspacePath(target)
+    const stat = await fs.stat(absolute)
+    if (!stat.isDirectory()) {
+      throw new Error("Path is not a directory.")
+    }
+    const entries = await fs.readdir(absolute, { withFileTypes: true })
+    const results: SessionFileInfo[] = []
+    for (const entry of entries) {
+      const entryPath = path.join(absolute, entry.name)
+      const relative = path.relative(root, entryPath).split(path.sep).join("/")
+      if (entry.isDirectory()) {
+        results.push({ path: relative, type: "directory" })
+        continue
+      }
+      if (entry.isFile()) {
+        const entryStat = await fs.stat(entryPath)
+        results.push({ path: relative, type: "file", size: entryStat.size, updated_at: entryStat.mtime.toISOString() })
+      }
+    }
+    return results
+  }
+
+  private async readFileLocal(target: string, options?: ReadSessionFileOptions): Promise<SessionFileContent> {
+    const { absolute, relative } = this.resolveWorkspacePath(target)
+    const stat = await fs.stat(absolute)
+    if (!stat.isFile()) {
+      throw new Error("Path is not a file.")
+    }
+    const buffer = await fs.readFile(absolute)
+    const totalBytes = buffer.length
+    let content = buffer.toString("utf8")
+    let truncated = false
+    if (options?.mode === "snippet") {
+      const headLines = options.headLines ?? 40
+      const tailLines = options.tailLines ?? 40
+      const lines = content.split(/\r?\n/)
+      if (lines.length > headLines + tailLines) {
+        truncated = true
+        const head = lines.slice(0, headLines)
+        const tail = tailLines > 0 ? lines.slice(-tailLines) : []
+        content = [...head, "…", ...tail].join("\n")
+      }
+    } else if (options?.maxBytes && totalBytes > options.maxBytes) {
+      truncated = true
+      content = buffer.subarray(0, options.maxBytes).toString("utf8")
+    }
+    return { path: normalizeWorkspacePath(relative), content, truncated, total_bytes: totalBytes }
+  }
+
   async listFiles(path?: string): Promise<SessionFileInfo[]> {
     if (!this.sessionId) {
-      throw new Error("Session not ready yet.")
+      return await this.listFilesLocal(path)
     }
     try {
       return await this.api().listSessionFiles(this.sessionId, path)
     } catch (error) {
       if (error instanceof ApiError) {
+        if (error.status === 404) {
+          return await this.listFilesLocal(path)
+        }
         throw new Error(`File listing failed (${error.status}).`)
       }
       throw error
@@ -456,7 +534,7 @@ export class ReplSessionController extends EventEmitter {
 
   async readFile(path: string, options?: ReadSessionFileOptions): Promise<SessionFileContent> {
     if (!this.sessionId) {
-      throw new Error("Session not ready yet.")
+      return await this.readFileLocal(path, options)
     }
     if (!path || !path.trim()) {
       throw new Error("File path is empty.")
@@ -465,6 +543,9 @@ export class ReplSessionController extends EventEmitter {
       return await this.api().readSessionFile(this.sessionId, path, options)
     } catch (error) {
       if (error instanceof ApiError) {
+        if (error.status === 404) {
+          return await this.readFileLocal(path, options)
+        }
         throw new Error(`File read failed (${error.status}).`)
       }
       throw error

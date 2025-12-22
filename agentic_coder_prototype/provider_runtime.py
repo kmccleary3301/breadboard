@@ -128,6 +128,25 @@ class ProviderRuntime:
     ) -> ProviderResult:
         raise NotImplementedError
 
+    def _message_content_to_text(self, content: Any) -> Optional[str]:
+        """Best-effort conversion of message content blocks into text."""
+        if content is None:
+            return None
+        if isinstance(content, str):
+            return content
+        parts: List[str] = []
+        try:
+            for block in content:
+                if isinstance(block, dict):
+                    block_type = block.get("type")
+                    if block_type in {"input_text", "output_text", "text"}:
+                        text_val = block.get("text")
+                        if text_val:
+                            parts.append(str(text_val))
+        except Exception:
+            return None
+        return "".join(parts) if parts else None
+
 
 class ProviderRuntimeRegistry:
     """Registry that maps runtime identifiers to implementation classes."""
@@ -1564,6 +1583,23 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             else:
                 text_value = content if isinstance(content, str) else ""
                 blocks = [{"type": "text", "text": text_value}] if text_value else []
+
+            tool_calls = message.get("tool_calls") or []
+            for tc in tool_calls:
+                fn = tc.get("function", {}) if isinstance(tc, dict) else {}
+                name = fn.get("name") if isinstance(fn, dict) else None
+                args_raw = fn.get("arguments") if isinstance(fn, dict) else None
+                try:
+                    args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
+                except Exception:
+                    args = {}
+                if name:
+                    blocks.append({
+                        "type": "tool_use",
+                        "id": tc.get("id"),
+                        "name": name,
+                        "input": args,
+                    })
 
             if not blocks:
                 continue

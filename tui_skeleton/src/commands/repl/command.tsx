@@ -249,15 +249,9 @@ const runInteractive = async (controller: ReplSessionController) => {
     { exitOnCtrlC: false },
   )
 
-  const sigintHandler = async () => {
-    await controller.stop()
-  }
-  process.once("SIGINT", sigintHandler)
-
   try {
     await controller.untilStopped()
   } finally {
-    process.off("SIGINT", sigintHandler)
     unsubscribe()
     ink?.unmount()
   }

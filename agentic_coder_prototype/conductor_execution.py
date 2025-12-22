@@ -15,6 +15,7 @@ from .provider_adapters import provider_adapter_manager
 from .provider_routing import provider_router
 from .provider_runtime import ProviderMessage, ProviderRuntimeError, ProviderResult, provider_registry
 from .replay import resolve_todo_placeholders
+from . import runtime_context
 from .state.session_state import SessionState
 from .turn_context import TurnContext
 
@@ -46,7 +47,11 @@ def legacy_message_view(provider_message: ProviderMessage) -> SimpleNamespace:
 def build_exec_func(conductor: ConductorContext, session_state: SessionState) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     """Create execution function with replay-aware TODO resolution."""
     if not session_state.get_provider_metadata("replay_mode"):
-        return conductor._exec_raw
+        def _exec_raw_bound(call: Dict[str, Any]) -> Dict[str, Any]:
+            with runtime_context.bind_session_state(session_state):
+                return conductor._exec_raw(call)
+
+        return _exec_raw_bound
 
     try:
         workspace_path = Path(conductor.workspace)
@@ -62,7 +67,8 @@ def build_exec_func(conductor: ConductorContext, session_state: SessionState) ->
                 call["arguments"] = resolved
             except Exception:
                 pass
-        return conductor._exec_raw(call)
+        with runtime_context.bind_session_state(session_state):
+            return conductor._exec_raw(call)
 
     return _exec_with_replay
 
@@ -931,6 +937,30 @@ def handle_native_tool_calls(
                 "failed": conductor.agent_executor.is_tool_failure(getattr(parsed, "function", ""), tool_result_dict),
             })
 
+        # Ensure blocked tool calls still produce tool_result entries (Anthropic requires 1:1).
+        if turn_ctx.blocked_calls:
+            existing_ids = {r.get("call_id") for r in results if r.get("call_id")}
+            for blocked in turn_ctx.blocked_calls:
+                call = blocked.get("call")
+                call_id = getattr(call, "call_id", None)
+                if call_id and call_id in existing_ids:
+                    continue
+                reason = blocked.get("reason") or "Blocked by guardrail"
+                source = blocked.get("source") or "guardrail"
+                results.append({
+                    "fn": getattr(call, "function", "") if call else "",
+                    "provider_fn": getattr(call, "provider_name", getattr(call, "function", "")) if call else "",
+                    "out": {
+                        "error": reason,
+                        "guardrail": source,
+                        "validation_failed": True,
+                        "__mvi_text_output": f"<VALIDATION_ERROR>\n{reason}\n</VALIDATION_ERROR>",
+                    },
+                    "args": getattr(call, "arguments", {}) if call else {},
+                    "call_id": call_id,
+                    "failed": True,
+                })
+
         guard_blocked = False
         for idx in range(len(results) - 1, -1, -1):
             current = results[idx]
@@ -1027,7 +1057,7 @@ def handle_native_tool_calls(
                 call_id = r.get("call_id")
 
                 tool_result_entry = conductor.message_formatter.create_tool_result_entry(
-                    r["fn"], r["out"], call_id or f"native_call_{r['fn']}", "openai"
+                    r["fn"], r["out"], syntax_type="openai"
                 )
                 session_state.add_message(tool_result_entry, to_provider=False)
                 all_results_text.append(formatted_output)
@@ -1040,25 +1070,41 @@ def handle_native_tool_calls(
             session_state.add_message(assistant_continuation)
             markdown_logger.log_assistant_message(continuation_content)
         else:
+            provider_id = provider_router.parse_model_id(model)[0] if relay_strategy == "tool_role" else None
+            adapter = provider_adapter_manager.get_adapter(provider_id) if provider_id else None
+            anthropic_blocks: List[Dict[str, Any]] = []
+
             for r in results:
                 formatted_output = conductor.message_formatter.format_tool_output(r["fn"], r["out"], r["args"])
                 call_id = r.get("call_id")
 
                 tool_result_entry = conductor.message_formatter.create_tool_result_entry(
-                    r["fn"], r["out"], call_id or f"native_call_{r['fn']}", "openai"
+                    r["fn"], r["out"], syntax_type="openai"
                 )
                 session_state.add_message(tool_result_entry, to_provider=False)
 
-                if relay_strategy == "tool_role" and call_id:
-                    provider_id = provider_router.parse_model_id(model)[0]
-                    adapter = provider_adapter_manager.get_adapter(provider_id)
+                if relay_strategy == "tool_role" and call_id and adapter:
                     tool_result_msg = adapter.create_tool_result_message(call_id, r.get("provider_fn", r["fn"]), r["out"])
-                    tool_messages_to_relay.append(tool_result_msg)
+                    if provider_id == "anthropic" and isinstance(tool_result_msg, dict):
+                        blocks = tool_result_msg.get("content")
+                        if isinstance(blocks, list):
+                            anthropic_blocks.extend(blocks)
+                    else:
+                        tool_messages_to_relay.append(tool_result_msg)
                 else:
                     session_state.add_message({"role": "user", "content": formatted_output}, to_provider=True)
 
+            if provider_id == "anthropic" and anthropic_blocks:
+                tool_messages_to_relay.append({"role": "user", "content": anthropic_blocks})
+
             if tool_messages_to_relay:
-                session_state.provider_messages.extend(tool_messages_to_relay)
+                insert_at = len(session_state.provider_messages)
+                for idx in range(len(session_state.provider_messages) - 1, -1, -1):
+                    msg = session_state.provider_messages[idx]
+                    if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                        insert_at = idx + 1
+                        break
+                session_state.provider_messages[insert_at:insert_at] = tool_messages_to_relay
 
         maybe_transition_plan_mode(conductor, session_state, markdown_logger)
         return False

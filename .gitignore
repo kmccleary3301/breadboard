@@ -64,3 +64,5 @@ replay_apply_summary.json
 # Local runtime state
 .kyle/
 tmp/
+repo_reconstruct_*/
+implementations/tooling_sys_prompts_cached/
