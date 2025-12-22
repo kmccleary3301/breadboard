@@ -7,16 +7,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import queue
 import shutil
 import subprocess
-import threading
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 import fnmatch
-from urllib.parse import unquote
 
 import ray
 
@@ -27,6 +24,9 @@ class LSPJSONRPCClient:
     def __init__(self, process: subprocess.Popen):
         self.process = process
         self.request_id = 0
+        self.diagnostics: Dict[str, List[Dict[str, Any]]] = {}
+        
+    def _send_request(self, method: str, params: Any = None) -> Dict[str, Any]:
         """Send JSON-RPC request and get response"""
         self.request_id += 1
         request = {
@@ -358,165 +358,47 @@ class LSPServer:
                 "tabSize": 4,
                 "insertSpaces": True,
                 "trimTrailingWhitespace": True,
-# [RECOVERY MISSING LINE 361]
-# [RECOVERY MISSING LINE 362]
-# [RECOVERY MISSING LINE 363]
-# [RECOVERY MISSING LINE 364]
-# [RECOVERY MISSING LINE 365]
-# [RECOVERY MISSING LINE 366]
-# [RECOVERY MISSING LINE 367]
-# [RECOVERY MISSING LINE 368]
-# [RECOVERY MISSING LINE 369]
-# [RECOVERY MISSING LINE 370]
-# [RECOVERY MISSING LINE 371]
-# [RECOVERY MISSING LINE 372]
-# [RECOVERY MISSING LINE 373]
-# [RECOVERY MISSING LINE 374]
-# [RECOVERY MISSING LINE 375]
-# [RECOVERY MISSING LINE 376]
-# [RECOVERY MISSING LINE 377]
-# [RECOVERY MISSING LINE 378]
-# [RECOVERY MISSING LINE 379]
-# [RECOVERY MISSING LINE 380]
-# [RECOVERY MISSING LINE 381]
-# [RECOVERY MISSING LINE 382]
-# [RECOVERY MISSING LINE 383]
-# [RECOVERY MISSING LINE 384]
-# [RECOVERY MISSING LINE 385]
-# [RECOVERY MISSING LINE 386]
-# [RECOVERY MISSING LINE 387]
-# [RECOVERY MISSING LINE 388]
-# [RECOVERY MISSING LINE 389]
-# [RECOVERY MISSING LINE 390]
-# [RECOVERY MISSING LINE 391]
-# [RECOVERY MISSING LINE 392]
-# [RECOVERY MISSING LINE 393]
-# [RECOVERY MISSING LINE 394]
-# [RECOVERY MISSING LINE 395]
-# [RECOVERY MISSING LINE 396]
-# [RECOVERY MISSING LINE 397]
-# [RECOVERY MISSING LINE 398]
-# [RECOVERY MISSING LINE 399]
-# [RECOVERY MISSING LINE 400]
-# [RECOVERY MISSING LINE 401]
-# [RECOVERY MISSING LINE 402]
-# [RECOVERY MISSING LINE 403]
-# [RECOVERY MISSING LINE 404]
-# [RECOVERY MISSING LINE 405]
-# [RECOVERY MISSING LINE 406]
-# [RECOVERY MISSING LINE 407]
-# [RECOVERY MISSING LINE 408]
-# [RECOVERY MISSING LINE 409]
-# [RECOVERY MISSING LINE 410]
-# [RECOVERY MISSING LINE 411]
-# [RECOVERY MISSING LINE 412]
-# [RECOVERY MISSING LINE 413]
-# [RECOVERY MISSING LINE 414]
-# [RECOVERY MISSING LINE 415]
-# [RECOVERY MISSING LINE 416]
-# [RECOVERY MISSING LINE 417]
-# [RECOVERY MISSING LINE 418]
-# [RECOVERY MISSING LINE 419]
-# [RECOVERY MISSING LINE 420]
-# [RECOVERY MISSING LINE 421]
-# [RECOVERY MISSING LINE 422]
-# [RECOVERY MISSING LINE 423]
-# [RECOVERY MISSING LINE 424]
-# [RECOVERY MISSING LINE 425]
-# [RECOVERY MISSING LINE 426]
-# [RECOVERY MISSING LINE 427]
-# [RECOVERY MISSING LINE 428]
-# [RECOVERY MISSING LINE 429]
-# [RECOVERY MISSING LINE 430]
-# [RECOVERY MISSING LINE 431]
-# [RECOVERY MISSING LINE 432]
-# [RECOVERY MISSING LINE 433]
-# [RECOVERY MISSING LINE 434]
-# [RECOVERY MISSING LINE 435]
-# [RECOVERY MISSING LINE 436]
-# [RECOVERY MISSING LINE 437]
-# [RECOVERY MISSING LINE 438]
-# [RECOVERY MISSING LINE 439]
-# [RECOVERY MISSING LINE 440]
-# [RECOVERY MISSING LINE 441]
-# [RECOVERY MISSING LINE 442]
-# [RECOVERY MISSING LINE 443]
-# [RECOVERY MISSING LINE 444]
-# [RECOVERY MISSING LINE 445]
-# [RECOVERY MISSING LINE 446]
-# [RECOVERY MISSING LINE 447]
-# [RECOVERY MISSING LINE 448]
-# [RECOVERY MISSING LINE 449]
-# [RECOVERY MISSING LINE 450]
-# [RECOVERY MISSING LINE 451]
-# [RECOVERY MISSING LINE 452]
-# [RECOVERY MISSING LINE 453]
-# [RECOVERY MISSING LINE 454]
-# [RECOVERY MISSING LINE 455]
-# [RECOVERY MISSING LINE 456]
-# [RECOVERY MISSING LINE 457]
-# [RECOVERY MISSING LINE 458]
-# [RECOVERY MISSING LINE 459]
-# [RECOVERY MISSING LINE 460]
-# [RECOVERY MISSING LINE 461]
-# [RECOVERY MISSING LINE 462]
-# [RECOVERY MISSING LINE 463]
-# [RECOVERY MISSING LINE 464]
-# [RECOVERY MISSING LINE 465]
-# [RECOVERY MISSING LINE 466]
-# [RECOVERY MISSING LINE 467]
-# [RECOVERY MISSING LINE 468]
-# [RECOVERY MISSING LINE 469]
-# [RECOVERY MISSING LINE 470]
-# [RECOVERY MISSING LINE 471]
-# [RECOVERY MISSING LINE 472]
-# [RECOVERY MISSING LINE 473]
-# [RECOVERY MISSING LINE 474]
-# [RECOVERY MISSING LINE 475]
-# [RECOVERY MISSING LINE 476]
-# [RECOVERY MISSING LINE 477]
-# [RECOVERY MISSING LINE 478]
-# [RECOVERY MISSING LINE 479]
-# [RECOVERY MISSING LINE 480]
-# [RECOVERY MISSING LINE 481]
-# [RECOVERY MISSING LINE 482]
-# [RECOVERY MISSING LINE 483]
-# [RECOVERY MISSING LINE 484]
-# [RECOVERY MISSING LINE 485]
-# [RECOVERY MISSING LINE 486]
-# [RECOVERY MISSING LINE 487]
-# [RECOVERY MISSING LINE 488]
-# [RECOVERY MISSING LINE 489]
-# [RECOVERY MISSING LINE 490]
-# [RECOVERY MISSING LINE 491]
-# [RECOVERY MISSING LINE 492]
-# [RECOVERY MISSING LINE 493]
-# [RECOVERY MISSING LINE 494]
-# [RECOVERY MISSING LINE 495]
-# [RECOVERY MISSING LINE 496]
-# [RECOVERY MISSING LINE 497]
-# [RECOVERY MISSING LINE 498]
-# [RECOVERY MISSING LINE 499]
-# [RECOVERY MISSING LINE 500]
-# [RECOVERY MISSING LINE 501]
-# [RECOVERY MISSING LINE 502]
-# [RECOVERY MISSING LINE 503]
-# [RECOVERY MISSING LINE 504]
-# [RECOVERY MISSING LINE 505]
-# [RECOVERY MISSING LINE 506]
-# [RECOVERY MISSING LINE 507]
-# [RECOVERY MISSING LINE 508]
-# [RECOVERY MISSING LINE 509]
-# [RECOVERY MISSING LINE 510]
-# [RECOVERY MISSING LINE 511]
-# [RECOVERY MISSING LINE 512]
-# [RECOVERY MISSING LINE 513]
-# [RECOVERY MISSING LINE 514]
-# [RECOVERY MISSING LINE 515]
-# [RECOVERY MISSING LINE 516]
-# [RECOVERY MISSING LINE 517]
-# [RECOVERY MISSING LINE 518]
-# [RECOVERY MISSING LINE 519]
+                "insertFinalNewline": True
+            }
+        })
+    
+    def code_actions(self, file_path: str, start_line: int, start_char: int, end_line: int, end_char: int, diagnostics: List[Dict] = None) -> Dict[str, Any]:
+        """Get available code actions"""
+        if not self.initialized or not self.client:
+            return {"error": "Server not initialized"}
+            
+        return self.client._send_request("textDocument/codeAction", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "range": {
+                "start": {"line": start_line, "character": start_char},
+                "end": {"line": end_line, "character": end_char}
+            },
+            "context": {"diagnostics": diagnostics or []}
+        })
+    
+    def completion(self, file_path: str, line: int, character: int) -> Dict[str, Any]:
+        """Get code completion"""
+        if not self.initialized or not self.client:
+            return {"error": "Server not initialized"}
+            
+        return self.client._send_request("textDocument/completion", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "position": {"line": line, "character": character}
+        })
+    
+    def _get_language_id(self, file_path: str) -> str:
+        """Get language ID from file extension"""
+        ext = Path(file_path).suffix
+        language_map = {
+            '.py': 'python', '.pyi': 'python',
+            '.ts': 'typescript', '.tsx': 'typescriptreact',
+            '.js': 'javascript', '.jsx': 'javascriptreact',
+            '.go': 'go',
+            '.rs': 'rust',
+            '.cpp': 'cpp', '.cxx': 'cpp', '.cc': 'cpp', '.c': 'c',
+            '.h': 'c', '.hpp': 'cpp', '.hxx': 'cpp',
+            '.java': 'java',
+            '.rb': 'ruby',
             '.cs': 'csharp'
         }
         return language_map.get(ext, 'plaintext')
@@ -557,6 +439,124 @@ class LSPOrchestrator:
         extension = Path(file_path).suffix
         matching_servers = []
         
+        for server_id, config in LSP_SERVER_CONFIGS.items():
+            if extension not in config["extensions"]:
+                continue
+                
+            # Find project root
+            root = self._find_project_root(file_path, config["root_patterns"])
+            if not root:
+                root = str(Path(file_path).parent)
+                
+            server_key = f"{server_id}:{root}"
+            
+            # Skip broken servers
+            if server_key in self.broken_servers:
+                continue
+                
+            # Get or create server
+            if server_key not in self.servers:
+                try:
+                    server = LSPServer.remote(server_id, root)
+                    started = await server.start.remote()
+                    if started:
+                        self.servers[server_key] = server
+                        matching_servers.append(server)
+                    else:
+                        self.broken_servers.add(server_key)
+                except Exception:
+                    self.broken_servers.add(server_key)
+            else:
+                matching_servers.append(self.servers[server_key])
+                
+        return matching_servers
+    
+    async def cleanup_servers(self):
+        """Clean up all servers"""
+        for server in self.servers.values():
+            try:
+                await server.shutdown.remote()
+            except Exception:
+                pass
+        self.servers.clear()
+
+
+@ray.remote
+class CLILinterRunner:
+    """Runs CLI-based linters in isolated sandboxes"""
+    
+    def __init__(self, sandbox_image: str = "lsp-universal:latest"):
+        self.sandbox_image = sandbox_image
+    
+    async def run_ruff(self, file_path: str) -> List[Dict[str, Any]]:
+        """Run ruff linter on Python file"""
+        try:
+            result = subprocess.run([
+                "ruff", "check", "--output-format=json", file_path
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.stdout:
+                ruff_output = json.loads(result.stdout)
+                return self._convert_ruff_to_lsp_diagnostics(ruff_output)
+        except Exception:
+            pass
+        return []
+    
+    async def run_eslint(self, file_path: str) -> List[Dict[str, Any]]:
+        """Run ESLint on TypeScript/JavaScript file"""
+        try:
+            result = subprocess.run([
+                "npx", "eslint", "--format=json", file_path
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.stdout:
+                eslint_output = json.loads(result.stdout)
+                return self._convert_eslint_to_lsp_diagnostics(eslint_output)
+        except Exception:
+            pass
+        return []
+    
+    async def run_clippy(self, workspace_root: str) -> List[Dict[str, Any]]:
+        """Run clippy on Rust project"""
+        try:
+            result = subprocess.run([
+                "cargo", "clippy", "--message-format=json", "--", "-D", "warnings"
+            ], cwd=workspace_root, capture_output=True, text=True, timeout=120)
+            
+            if result.stdout:
+                return self._convert_clippy_to_lsp_diagnostics(result.stdout)
+        except Exception:
+            pass
+        return []
+    
+    def _convert_ruff_to_lsp_diagnostics(self, ruff_output: List[Dict]) -> List[Dict[str, Any]]:
+        """Convert ruff output to LSP diagnostic format"""
+        diagnostics = []
+        for item in ruff_output:
+            diagnostics.append({
+                "range": {
+                    "start": {"line": item.get("location", {}).get("row", 1) - 1, "character": item.get("location", {}).get("column", 1) - 1},
+                    "end": {"line": item.get("end_location", {}).get("row", 1) - 1, "character": item.get("end_location", {}).get("column", 1) - 1}
+                },
+                "message": item.get("message", ""),
+                "severity": 1 if item.get("type") == "E" else 2,  # Error or Warning
+                "source": "ruff",
+                "code": item.get("code")
+            })
+        return diagnostics
+    
+    def _convert_eslint_to_lsp_diagnostics(self, eslint_output: List[Dict]) -> List[Dict[str, Any]]:
+        """Convert ESLint output to LSP diagnostic format"""
+        diagnostics = []
+        for file_result in eslint_output:
+            for message in file_result.get("messages", []):
+                diagnostics.append({
+                    "range": {
+                        "start": {"line": message.get("line", 1) - 1, "character": message.get("column", 1) - 1},
+                        "end": {"line": message.get("endLine", message.get("line", 1)) - 1, "character": message.get("endColumn", message.get("column", 1)) - 1}
+                    },
+                    "message": message.get("message", ""),
+                    "severity": 1 if message.get("severity") == 2 else 2,  # Error or Warning
                     "source": "eslint",
                     "code": message.get("ruleId")
                 })
@@ -758,118 +758,6 @@ class LSPManagerV2:
     
     async def workspace_symbol(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
         """Search workspace symbols across all language servers"""
-                    if file_path not in all_diagnostics:
-                        all_diagnostics[file_path] = []
-                    all_diagnostics[file_path].extend(diagnostics)
-            
-            # Deduplicate diagnostics
-            for path in all_diagnostics:
-                all_diagnostics[path] = self._deduplicate_diagnostics(all_diagnostics[path])
-                
-        except Exception as e:
-            print(f"Error collecting diagnostics: {e}")
-            
-        return all_diagnostics
-    
-    def _deduplicate_diagnostics(self, diagnostics: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Remove duplicate diagnostics"""
-        seen = set()
-        unique_diagnostics = []
-        
-        for diag in diagnostics:
-            # Create key for deduplication
-            key = (
-                diag.get("range", {}).get("start", {}).get("line"),
-                diag.get("range", {}).get("start", {}).get("character"),
-                diag.get("message", ""),
-                diag.get("code")
-            )
-            
-            if key not in seen:
-                seen.add(key)
-                unique_diagnostics.append(diag)
-
-        return unique_diagnostics
-
-
-@ray.remote
-class LSPManagerV2:
-    """
-    Enhanced LSP Manager with full multi-language support.
-    Drop-in replacement for the original lsp_manager.py with OpenCode feature parity.
-    """
-    
-    def __init__(self):
-        self.roots: Set[str] = set()
-        self.touched_files: Set[str] = set()
-        self.orchestrator = LSPOrchestrator.remote()
-        self.unified_diagnostics = UnifiedDiagnostics.remote()
-        
-    def register_root(self, root: str) -> None:
-        """Register a workspace root"""
-        self.roots.add(os.path.abspath(root))
-    
-    def touch_file(self, path: str, wait: bool = True) -> None:
-        """Mark file as touched for diagnostics refresh"""
-        self.touched_files.add(os.path.abspath(path))
-    
-    async def diagnostics(self) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        Get comprehensive diagnostics from all LSP servers and CLI linters.
-        Returns mapping of file_path -> list of diagnostics.
-        """
-        all_diagnostics = {}
-        
-        # Process touched files
-        files_to_process = list(self.touched_files) if self.touched_files else []
-        
-        # If no touched files, scan workspace roots
-        if not files_to_process:
-            for root in self.roots:
-                for ext in ['.py', '.ts', '.tsx', '.js', '.jsx', '.go', '.rs', '.cpp', '.c', '.java', '.rb', '.cs']:
-                    for file_path in Path(root).rglob(f'*{ext}'):
-                        files_to_process.append(str(file_path))
-                        if len(files_to_process) > 100:  # Limit for performance
-                            break
-                    if len(files_to_process) > 100:
-                        break
-        
-        # Collect diagnostics for all files
-        diagnostic_futures = []
-        for file_path in files_to_process[:50]:  # Process max 50 files at once
-            if os.path.isfile(file_path):
-                diagnostic_futures.append(
-                    self.unified_diagnostics.collect_all_diagnostics.remote(file_path)
-                )
-        
-        if diagnostic_futures:
-            results = ray.get(diagnostic_futures)
-            for result in results:
-                all_diagnostics.update(result)
-        
-        # Clear touched files after processing
-        self.touched_files.clear()
-        
-        return all_diagnostics
-    
-    async def hover(self, file_path: str, line: int, character: int) -> Dict[str, Any]:
-        """Get hover information from appropriate LSP server"""
-        try:
-            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
-            for server in servers:
-                try:
-                    await server.open_document.remote(file_path)
-                    result = await server.hover.remote(file_path, line, character)
-                    if result and "error" not in result:
-                        return result
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        return {}
-    
-    async def workspace_symbol(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Search workspace symbols across all language servers"""
         all_symbols = []
         
         try:
@@ -878,3 +766,137 @@ class LSPManagerV2:
                 for server_id in LSP_SERVER_CONFIGS:
                     server_key = f"{server_id}:{root}"
                     if hasattr(self.orchestrator, 'servers') and server_key in self.orchestrator.servers:
+                        server = self.orchestrator.servers[server_key]
+                        try:
+                            result = await server.workspace_symbols.remote(query)
+                            if result and "result" in result:
+                                symbols = result["result"][:10]  # Limit per server
+                                all_symbols.extend(symbols)
+                        except Exception:
+                            continue
+        except Exception:
+            pass
+        
+        # Sort and limit results
+        all_symbols.sort(key=lambda x: x.get("name", ""))
+        return all_symbols[:limit]
+    
+    async def document_symbol(self, file_path: str) -> List[Dict[str, Any]]:
+        """Get document symbols from appropriate LSP server"""
+        try:
+            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            for server in servers:
+                try:
+                    await server.open_document.remote(file_path)
+                    result = await server.document_symbols.remote(file_path)
+                    if result and "result" in result:
+                        return result["result"]
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return []
+    
+    async def go_to_definition(self, file_path: str, line: int, character: int) -> Dict[str, Any]:
+        """Go to definition via LSP server"""
+        try:
+            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            for server in servers:
+                try:
+                    await server.open_document.remote(file_path)
+                    result = await server.go_to_definition.remote(file_path, line, character)
+                    if result and "result" in result and result["result"]:
+                        return result
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return {}
+    
+    async def find_references(self, file_path: str, line: int, character: int) -> Dict[str, Any]:
+        """Find references via LSP server"""
+        try:
+            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            for server in servers:
+                try:
+                    await server.open_document.remote(file_path)
+                    result = await server.find_references.remote(file_path, line, character, True)
+                    if result and "result" in result:
+                        return result
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return {}
+    
+    async def format_document(self, file_path: str) -> Dict[str, Any]:
+        """Format document via LSP server"""
+        try:
+            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            for server in servers:
+                try:
+                    await server.open_document.remote(file_path)
+                    result = await server.format_document.remote(file_path)
+                    if result and "result" in result:
+                        return result
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return {}
+    
+    async def code_actions(self, file_path: str, start_line: int, start_char: int, 
+                          end_line: int, end_char: int, diagnostics: List[Dict] = None) -> Dict[str, Any]:
+        """Get code actions via LSP server"""
+        try:
+            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            for server in servers:
+                try:
+                    await server.open_document.remote(file_path)
+                    result = await server.code_actions.remote(
+                        file_path, start_line, start_char, end_line, end_char, diagnostics
+                    )
+                    if result and "result" in result:
+                        return result
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return {}
+    
+    async def completion(self, file_path: str, line: int, character: int) -> Dict[str, Any]:
+        """Get code completion via LSP server"""
+        try:
+            servers = await self.orchestrator.get_servers_for_file.remote(file_path)
+            for server in servers:
+                try:
+                    await server.open_document.remote(file_path)
+                    result = await server.completion.remote(file_path, line, character)
+                    if result and "result" in result:
+                        return result
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return {}
+    
+    async def shutdown(self):
+        """Shutdown all LSP servers"""
+        try:
+            await self.orchestrator.cleanup_servers.remote()
+        except Exception:
+            pass
+
+
+# Compatibility wrapper for existing code
+def _mk_diagnostic(path: str, message: str, line: int, col: int, severity: int = 1) -> Dict[str, Any]:
+    """Maintain compatibility with existing diagnostic format"""
+    return {
+        "file": path,
+        "severity": severity,
+        "message": message,
+        "range": {
+            "start": {"line": max(line - 1, 0), "character": max(col - 1, 0)},
+            "end": {"line": max(line - 1, 0), "character": max(col, 0)},
+        },
+    }
