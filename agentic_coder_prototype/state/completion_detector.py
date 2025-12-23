@@ -10,7 +10,12 @@ class CompletionDetector:
     expanded once recovery stabilizes.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        *,
+        completion_sentinel: Optional[str] = None,
+    ) -> None:
         cfg = config or {}
         completion_cfg = (cfg.get("completion", {}) or {}) if isinstance(cfg, dict) else {}
         try:
@@ -18,6 +23,7 @@ class CompletionDetector:
         except Exception:
             threshold = 0.6
         self.threshold = max(0.0, min(1.0, threshold))
+        self.completion_sentinel = completion_sentinel or ">>>>>> END RESPONSE"
 
     def detect_completion(
         self,
@@ -32,7 +38,15 @@ class CompletionDetector:
     ) -> Dict[str, Any]:
         text = str(msg_content or "")
         normalized = text.lower()
-        if "task complete" in normalized or ">>>>>> end response" in normalized:
+        if "task complete" in normalized:
+            return {
+                "completed": True,
+                "method": "assistant_content",
+                "reason": "explicit_completion_marker",
+                "confidence": 0.9,
+            }
+        sentinel = str(self.completion_sentinel or "").strip()
+        if sentinel and sentinel.lower() in normalized:
             return {
                 "completed": True,
                 "method": "assistant_content",

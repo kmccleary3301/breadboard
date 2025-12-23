@@ -445,7 +445,7 @@ class OpenAIConductor:
 
         description = str(args.get("description") or "").strip()
         prompt = str(args.get("prompt") or "").strip()
-        subagent_type = str(args.get("subagent_type") or "").strip()
+        subagent_type = str(args.get("subagent_type") or args.get("subagentType") or "").strip()
         if not description or not prompt or not subagent_type:
             missing = []
             if not description:
@@ -457,85 +457,159 @@ class OpenAIConductor:
             msg = f"missing required field: {', '.join(missing)}"
             return {"error": msg, "__mvi_text_output": msg}
 
+        # Replay-mode deterministic stub: when the replay driver supplies an expected
+        # tool output, return it verbatim to avoid nested live provider calls.
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        expected_metadata = tool_call.get("expected_metadata")
+        if isinstance(expected_output, str):
+            if str(expected_status or "").lower() == "error":
+                return {"error": expected_output, "__mvi_text_output": expected_output}
+            meta_payload = expected_metadata if isinstance(expected_metadata, dict) else {}
+            return {
+                "title": description,
+                "output": expected_output,
+                "__mvi_text_output": expected_output,
+                "metadata": meta_payload,
+            }
+
+        def _unknown_agent_error(agent: str) -> Dict[str, Any]:
+            msg = f"Error: Unknown agent type: {agent} is not a valid agent type"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        # Phase 8: multi-agent orchestrator-backed execution (live).
         orchestrator = self._get_multi_agent_orchestrator()
-        if orchestrator is None:
-            msg = "task tool is disabled (enable config.multi_agent.enabled)"
-            return {"error": msg, "__mvi_text_output": msg}
+        if orchestrator is not None:
+            agent_key = None
+            if subagent_type in orchestrator.team_config.agents:
+                agent_key = subagent_type
+            else:
+                for key, ref in orchestrator.team_config.agents.items():
+                    if ref.role == subagent_type:
+                        agent_key = key
+                        break
+            if agent_key is None:
+                return _unknown_agent_error(subagent_type)
 
-        agent_key = None
-        if subagent_type in orchestrator.team_config.agents:
-            agent_key = subagent_type
-        else:
-            for key, ref in orchestrator.team_config.agents.items():
-                if ref.role == subagent_type:
-                    agent_key = key
-                    break
-        if agent_key is None:
-            msg = f"Unknown agent type: {subagent_type}"
-            return {"error": msg, "__mvi_text_output": msg}
+            ref = orchestrator.team_config.agents[agent_key]
+            sub_config = self.config
+            if ref.config_ref:
+                loaded = self._load_agent_config_from_path(ref.config_ref)
+                if loaded:
+                    sub_config = loaded
 
-        ref = orchestrator.team_config.agents[agent_key]
-        sub_config = self.config
-        if ref.config_ref:
-            loaded = self._load_agent_config_from_path(ref.config_ref)
-            if loaded:
-                sub_config = loaded
-
-        spawn_payload = {
-            "description": description,
-            "prompt": prompt,
-            "subagent_type": subagent_type,
-        }
-        spawn = orchestrator.spawn_subagent(
-            owner_agent="main",
-            agent_id=agent_key,
-            kind="agent",
-            async_mode=False,
-            payload=spawn_payload,
-        )
-
-        model_route = str(
-            args.get("model")
-            or (sub_config.get("providers", {}) or {}).get("default_model")
-            or getattr(self, "_current_route_id", "")
-            or "openai"
-        )
-        try:
-            max_steps = int(args.get("max_steps") or (sub_config.get("loop", {}) or {}).get("max_steps") or 24)
-        except Exception:
-            max_steps = 24
-
-        child_output = self._run_sync_subagent(
-            prompt=prompt,
-            config=sub_config,
-            model_route=model_route,
-            max_steps=max_steps,
-        )
-
-        output_text = ""
-        if isinstance(child_output, dict):
-            output_text = self._extract_last_assistant_text(child_output.get("messages"))
-            if not output_text:
-                output_text = str(
-                    child_output.get("final_response")
-                    or child_output.get("output")
-                    or child_output.get("response")
-                    or ""
-                )
-
-        orchestrator.mark_job_completed(
-            spawn.job.job_id,
-            result_payload={
-                "output": output_text,
+            spawn_payload = {
+                "description": description,
+                "prompt": prompt,
                 "subagent_type": subagent_type,
-            },
-        )
-        self._persist_multi_agent_log()
+            }
+            spawn = orchestrator.spawn_subagent(
+                owner_agent="main",
+                agent_id=agent_key,
+                kind="agent",
+                async_mode=False,
+                payload=spawn_payload,
+            )
 
+            model_route = str(
+                args.get("model")
+                or (sub_config.get("providers", {}) or {}).get("default_model")
+                or getattr(self, "_current_route_id", "")
+                or "openai"
+            )
+            try:
+                max_steps = int(args.get("max_steps") or (sub_config.get("loop", {}) or {}).get("max_steps") or 24)
+            except Exception:
+                max_steps = 24
+
+            child_output = self._run_sync_subagent(
+                prompt=prompt,
+                config=sub_config,
+                model_route=model_route,
+                max_steps=max_steps,
+            )
+
+            output_text = ""
+            if isinstance(child_output, dict):
+                output_text = self._extract_last_assistant_text(child_output.get("messages"))
+                if not output_text:
+                    output_text = str(
+                        child_output.get("final_response")
+                        or child_output.get("output")
+                        or child_output.get("response")
+                        or ""
+                    )
+
+            orchestrator.mark_job_completed(
+                spawn.job.job_id,
+                result_payload={
+                    "output": output_text,
+                    "subagent_type": subagent_type,
+                },
+            )
+            self._persist_multi_agent_log()
+
+            return {
+                "title": description,
+                "output": output_text,
+                "__mvi_text_output": output_text,
+                "metadata": {"sessionId": spawn.job.job_id, "summary": []},
+            }
+
+        # Phase 7/OpenCode parity: replay-backed extraction via `task_tool.subagents`.
+        task_cfg = (self.config.get("task_tool", {}) or {}) if isinstance(getattr(self, "config", None), dict) else {}
+        subagents = task_cfg.get("subagents") or {}
+        if not isinstance(subagents, dict):
+            subagents = {}
+        sub_cfg = subagents.get(subagent_type)
+        if not isinstance(sub_cfg, dict):
+            return _unknown_agent_error(subagent_type)
+
+        replay_path = sub_cfg.get("replay_session") or sub_cfg.get("child_replay_session")
+        if not replay_path:
+            msg = "Failed to load task replay session"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        try:
+            entries = json.loads(Path(replay_path).read_text(encoding="utf-8"))
+        except Exception:
+            msg = "Failed to load task replay session"
+            return {"error": msg, "__mvi_text_output": msg}
+
+        summary: List[Dict[str, Any]] = []
+        output_parts: List[str] = []
+        for entry in entries or []:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("role") != "assistant":
+                continue
+            for part in entry.get("parts") or []:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "tool":
+                    meta = part.get("meta") or {}
+                    state = (meta.get("state") or {}) if isinstance(meta, dict) else {}
+                    summary.append(
+                        {
+                            "id": part.get("id"),
+                            "tool": part.get("tool"),
+                            "input": state.get("input"),
+                            "status": state.get("status"),
+                            "output": state.get("output"),
+                        }
+                    )
+                if part.get("type") == "text":
+                    text = part.get("text")
+                    if text:
+                        output_parts.append(str(text))
+        output_text = "\\n".join(output_parts).strip()
+
+        session_id = str(uuid.uuid4())
         return {
+            "title": description,
             "output": output_text,
             "__mvi_text_output": output_text,
-            "metadata": {"agent_id": agent_key, "job_id": spawn.job.job_id},
+            "metadata": {"sessionId": session_id, "summary": summary},
         }
 
     def _apply_streaming_policy_for_turn(
@@ -1265,6 +1339,7 @@ class OpenAIConductor:
         completion_config: Optional[Dict[str, Any]] = None,
         event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
         event_queue: Optional[Any] = None,
+        permission_queue: Optional[Any] = None,
     ) -> Dict[str, Any]:
         # Initialize components
         emitter = event_emitter
@@ -1279,6 +1354,7 @@ class OpenAIConductor:
         session_state = SessionState(self.workspace, self.image, self.config, event_emitter=emitter)
         self._prompt_hashes = {"system": None, "per_turn": {}}
         self._turn_diagnostics = []
+        session_state.set_provider_metadata("permission_queue", permission_queue)
         session_state.set_provider_metadata("initial_user_prompt", user_prompt or "")
         session_state.set_provider_metadata(
             "requires_build_guard",

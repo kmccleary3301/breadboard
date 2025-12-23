@@ -132,6 +132,24 @@ scenarios:
       trophy: E4
     fail_mode: warn
 
+  - name: opencode_multi_agent_sync_task_replay
+    description: >
+      Replay of an OpenCode multi-agent sync session that exercises synchronous
+      subagents via the `task` tool. Uses replay-time tool-output gating to
+      enforce E4 parity on the model-visible `task` result surface.
+    tags: [opencode, replay, multi_agent, task, mvgs]
+    enabled: true
+    mode: replay
+    config: agent_configs/multi_agent_sync_opencode_replay.yaml
+    session: misc/opencode_tests/opencode_multi_agent_sync/opencode_session_dump.json
+    golden_workspace: misc/opencode_runs/golden_live/opencode_multi_agent_sync
+    equivalence: bitwise_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 40
+
   - name: opencode_webfetch_sentinel_replay
     description: >
       Synthetic OpenCode MVI replay sentinel that exercises OpenCode-native
