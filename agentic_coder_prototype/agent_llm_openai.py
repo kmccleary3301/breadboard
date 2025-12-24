@@ -285,6 +285,12 @@ class OpenAIConductor:
             zero_tool_abort_message=ZERO_TOOL_ABORT_MESSAGE,
             completion_guard_abort_threshold=COMPLETION_GUARD_ABORT_THRESHOLD,
         )
+        # Stop requests are session-scoped and should only affect the current run.
+        self._stop_requested = False
+
+    def request_stop(self) -> None:
+        """Best-effort interrupt: stop the current run at the next safe boundary."""
+        self._stop_requested = True
 
     def _prepare_replay_session(
         self,
@@ -1340,7 +1346,11 @@ class OpenAIConductor:
         event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
         event_queue: Optional[Any] = None,
         permission_queue: Optional[Any] = None,
+        control_queue: Optional[Any] = None,
     ) -> Dict[str, Any]:
+        # Clear any prior stop request from earlier runs (Esc in the TUI should only
+        # interrupt the current in-flight run, not permanently disable the session).
+        self._stop_requested = False
         # Initialize components
         emitter = event_emitter
         if emitter is None and event_queue is not None:
@@ -1355,6 +1365,7 @@ class OpenAIConductor:
         self._prompt_hashes = {"system": None, "per_turn": {}}
         self._turn_diagnostics = []
         session_state.set_provider_metadata("permission_queue", permission_queue)
+        session_state.set_provider_metadata("control_queue", control_queue)
         session_state.set_provider_metadata("initial_user_prompt", user_prompt or "")
         session_state.set_provider_metadata(
             "requires_build_guard",

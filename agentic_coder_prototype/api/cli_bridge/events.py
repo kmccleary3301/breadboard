@@ -19,6 +19,8 @@ class EventType(str, enum.Enum):
     TOOL_RESULT = "tool_result"
     PERMISSION_REQUEST = "permission_request"
     PERMISSION_RESPONSE = "permission_response"
+    CHECKPOINT_LIST = "checkpoint_list"
+    CHECKPOINT_RESTORED = "checkpoint_restored"
     TASK_EVENT = "task_event"
     REWARD_UPDATE = "reward_update"
     COMPLETION = "completion"

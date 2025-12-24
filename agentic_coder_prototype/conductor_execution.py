@@ -18,6 +18,7 @@ from .provider_runtime import ProviderMessage, ProviderRuntimeError, ProviderRes
 from .replay import resolve_todo_placeholders
 from .state.session_state import SessionState
 from .turn_context import TurnContext
+from .checkpointing.checkpoint_manager import CheckpointManager
 
 
 class ReplayToolOutputMismatchError(RuntimeError):
@@ -300,12 +301,64 @@ def execute_agent_calls(
             if exc.__class__.__name__ == "PermissionDeniedError":
                 return [], 0, {"error": str(exc), "validation_failed": True, "permission_denied": True}, {}
             raise
-        return conductor.agent_executor.execute_parsed_calls(
+
+        write_tools = {
+            "write",
+            "write_file",
+            "write_files",
+            "create_file",
+            "create_file_from_block",
+            "apply_unified_patch",
+            "apply_unified_diff",
+            "apply_search_replace",
+            "patch",
+        }
+        checkpoint_manager: Optional[CheckpointManager] = None
+        before_tool: Optional[str] = None
+        for call in parsed_calls:
+            tool_name = str(getattr(call, "function", "") or "").strip()
+            if not tool_name:
+                continue
+            try:
+                tool_name = conductor.agent_executor.canonical_tool_name(tool_name) or tool_name
+            except Exception:
+                pass
+            if tool_name.lower() in write_tools:
+                before_tool = tool_name
+                break
+        if before_tool:
+            try:
+                checkpoint_manager = CheckpointManager(Path(conductor.workspace))
+                checkpoint_manager.create_checkpoint(f"Before {before_tool}")
+            except Exception:
+                checkpoint_manager = None
+
+        executed_results, failed_at_index, validation_error, meta = conductor.agent_executor.execute_parsed_calls(
             parsed_calls,
             exec_func,
             transcript_callback=transcript_callback,
             policy_bypass=policy_bypass,
         )
+        if checkpoint_manager and before_tool and executed_results and not validation_error:
+            after_tool: Optional[str] = None
+            for parsed_call, tool_out in executed_results:
+                tool_name = str(getattr(parsed_call, "function", "") or "").strip()
+                if not tool_name:
+                    continue
+                try:
+                    tool_name = conductor.agent_executor.canonical_tool_name(tool_name) or tool_name
+                except Exception:
+                    pass
+                if tool_name.lower() not in write_tools:
+                    continue
+                if not conductor.agent_executor.is_tool_failure(tool_name, tool_out):
+                    after_tool = tool_name
+            if after_tool:
+                try:
+                    checkpoint_manager.create_checkpoint(f"After {after_tool}")
+                except Exception:
+                    pass
+        return executed_results, failed_at_index, validation_error, meta
     finally:
         conductor.agent_executor.allow_multiple_bash = previous_value
 

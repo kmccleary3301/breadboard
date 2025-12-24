@@ -197,6 +197,7 @@ class AgenticCoder:
         event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
         event_queue: Optional[Any] = None,
         permission_queue: Optional[Any] = None,
+        control_queue: Optional[Any] = None,
         replay_session: Optional[str] = None,
         parity_guardrails: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -264,6 +265,7 @@ class AgenticCoder:
                 event_emitter=effective_emitter,
                 event_queue=event_queue,
                 permission_queue=permission_queue,
+                control_queue=control_queue,
             )
 
         ref = self.agent.run_agentic_loop.remote(
@@ -278,6 +280,7 @@ class AgenticCoder:
             event_emitter=effective_emitter,
             event_queue=event_queue,
             permission_queue=permission_queue,
+            control_queue=control_queue,
         )
         return ray.get(ref)
     

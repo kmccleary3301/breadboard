@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Sequence
 
 from agentic_coder_prototype.agent import AgenticCoder, create_agent
+from agentic_coder_prototype.checkpointing.checkpoint_manager import CheckpointManager
 
 from .events import EventType, SessionEvent
 from .models import SessionCreateRequest, SessionStatus
@@ -48,6 +49,8 @@ class SessionRunner:
         self._workspace_path: Optional[Path] = None
         self._attachment_store: Dict[str, Dict[str, Any]] = {}
         self._permission_queue: Any = None
+        self._control_queue: Any = None
+        self._checkpoint_manager: Optional[CheckpointManager] = None
 
         # Live overrides updated via commands
         initial_metadata = dict(request.metadata or {})
@@ -97,6 +100,106 @@ class SessionRunner:
 
         payload = payload or {}
         match command:
+            case "list_checkpoints":
+                manager = self._checkpoint_manager
+                if manager is None:
+                    workspace_dir = self.get_workspace_dir()
+                    if not workspace_dir:
+                        raise RuntimeError("workspace not ready")
+                    manager = CheckpointManager(workspace_dir)
+                    self._checkpoint_manager = manager
+                checkpoints = [cp.as_payload() for cp in manager.list_checkpoints()]
+                self.publish_event(EventType.CHECKPOINT_LIST, {"checkpoints": checkpoints})
+                return {"status": "ok", "count": len(checkpoints)}
+            case "restore_checkpoint":
+                checkpoint_id = payload.get("checkpoint_id") or payload.get("checkpointId") or payload.get("id")
+                if not isinstance(checkpoint_id, str) or not checkpoint_id.strip():
+                    raise ValueError("restore_checkpoint requires non-empty 'checkpoint_id'")
+                mode = str(payload.get("mode") or "code").strip().lower()
+                if mode not in {"code", "conversation", "both"}:
+                    raise ValueError("restore_checkpoint 'mode' must be one of: code, conversation, both")
+                manager = self._checkpoint_manager
+                if manager is None:
+                    workspace_dir = self.get_workspace_dir()
+                    if not workspace_dir:
+                        raise RuntimeError("workspace not ready")
+                    manager = CheckpointManager(workspace_dir)
+                    self._checkpoint_manager = manager
+                prune = True
+                if mode == "conversation":
+                    # Best-effort only for now; code restore is the P0 deterministic requirement.
+                    prune = True
+                if mode in {"code", "both"}:
+                    manager.restore_checkpoint(checkpoint_id.strip(), prune=prune)
+                self.publish_event(
+                    EventType.CHECKPOINT_RESTORED,
+                    {"checkpoint_id": checkpoint_id.strip(), "mode": mode, "prune": prune},
+                )
+                checkpoints = [cp.as_payload() for cp in manager.list_checkpoints()]
+                self.publish_event(EventType.CHECKPOINT_LIST, {"checkpoints": checkpoints})
+                return {"status": "ok", "checkpoint_id": checkpoint_id.strip(), "mode": mode, "prune": prune}
+            case "permission_decision":
+                request_id = (
+                    payload.get("request_id")
+                    or payload.get("requestId")
+                    or payload.get("permission_id")
+                    or payload.get("permissionId")
+                    or payload.get("id")
+                )
+                decision = payload.get("decision") or payload.get("response")
+                if not isinstance(request_id, str) or not request_id.strip():
+                    raise ValueError("permission_decision requires non-empty 'request_id'")
+                if not isinstance(decision, str) or not decision.strip():
+                    raise ValueError("permission_decision requires non-empty 'decision'")
+                normalized = decision.strip().lower()
+                if normalized in {"allow-once", "allow_once"}:
+                    response_value = "once"
+                elif normalized in {"allow-always", "allow_always"}:
+                    response_value = "always"
+                elif normalized in {"deny-once", "deny_once"}:
+                    response_value = "reject"
+                elif normalized in {"deny-always", "deny_always"}:
+                    response_value = "reject"
+                elif normalized in {"deny-stop", "deny_stop"}:
+                    response_value = "reject"
+                else:
+                    response_value = normalized
+                # Permission broker accepts a dict item with request_id + response/decision.
+                # We use the simplest uniform response (applies to all items in a batch).
+                permission_payload = {
+                    "request_id": request_id.strip(),
+                    "response": response_value,
+                }
+                detail = await self.handle_command("respond_permission", permission_payload)
+                if normalized in {"deny-stop", "deny_stop"} or bool(payload.get("stop")):
+                    await self.handle_command("stop", {})
+                return {"status": "ok", "delivered": detail}
+            case "stop":
+                queue = getattr(self, "_control_queue", None)
+                if queue is not None:
+                    try:
+                        put_nowait = getattr(queue, "put_nowait", None)
+                        if callable(put_nowait):
+                            put_nowait({"kind": "stop"})
+                        else:
+                            queue.put({"kind": "stop"})
+                    except Exception:
+                        pass
+                else:
+                    # Fallback: request the active conductor loop stop if it is local/in-process.
+                    agent = getattr(self._agent, "agent", None)
+                    if agent is not None:
+                        try:
+                            req = getattr(agent, "request_stop", None)
+                            remote = getattr(req, "remote", None) if req is not None else None
+                            if callable(remote):
+                                remote()
+                            elif callable(req):
+                                req()
+                        except Exception:
+                            pass
+                self.publish_event(EventType.TASK_EVENT, {"kind": "stop_requested"})
+                return {"status": "ok", "stopping": True}
             case "set_model":
                 model_value = payload.get("model")
                 if not isinstance(model_value, str) or not model_value.strip():
@@ -159,6 +262,11 @@ class SessionRunner:
     async def _run(self) -> None:
         await self.registry.update_status(self.session.session_id, SessionStatus.RUNNING)
         try:
+            # Safety: never auto-wipe an existing workspace when running interactive sessions
+            # via the CLI bridge. The engine historically treated workspaces as disposable
+            # sandboxes; for a Claude Code-style experience we must preserve the user's
+            # working directory unless explicitly overridden by the caller.
+            os.environ.setdefault("PRESERVE_SEEDED_WORKSPACE", "1")
             self._agent = self.agent_factory(
                 self.request.config_path,
                 self.request.workspace,
@@ -168,6 +276,12 @@ class SessionRunner:
             workspace_dir = Path(self._agent.workspace_dir).resolve()
             workspace_dir.mkdir(parents=True, exist_ok=True)
             self._workspace_path = workspace_dir
+            try:
+                self._checkpoint_manager = CheckpointManager(workspace_dir)
+                self._checkpoint_manager.create_checkpoint("Session start")
+            except Exception:
+                # Best-effort: checkpointing should not block starting a session.
+                self._checkpoint_manager = None
 
             initial_task = (self.request.task or "").strip()
             if initial_task:
@@ -317,6 +431,7 @@ class SessionRunner:
         is_local_agent = bool(getattr(self._agent, "_local_mode", False))
         event_queue = None
         permission_queue = None
+        control_queue = None
         queue_stop = None
         queue_thread = None
 
@@ -392,6 +507,19 @@ class SessionRunner:
         else:
             self._permission_queue = None
 
+        if is_local_agent:
+            import queue as pyqueue
+
+            control_queue = pyqueue.Queue()
+        else:
+            try:
+                from ray.util.queue import Queue as RayQueue
+            except ImportError:  # pragma: no cover
+                control_queue = None
+            else:
+                control_queue = RayQueue()
+        self._control_queue = control_queue
+
         try:
             result = self._agent.run_task(  # type: ignore[call-arg]
                 task_text,
@@ -400,9 +528,11 @@ class SessionRunner:
                 event_emitter=handle_runtime_event if is_local_agent else None,
                 event_queue=event_queue,
                 permission_queue=permission_queue,
+                control_queue=control_queue,
             )
         finally:
             self._permission_queue = None
+            self._control_queue = None
             if queue_stop:
                 queue_stop.set()
                 if event_queue is not None:

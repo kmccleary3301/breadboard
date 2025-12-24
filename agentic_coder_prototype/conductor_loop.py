@@ -37,6 +37,36 @@ def run_main_loop(
     completed = False
     step_index = -1
 
+    def poll_control_stop() -> bool:
+        """Non-blocking check for a stop/interrupt signal from the CLI bridge."""
+        queue = session_state.get_provider_metadata("control_queue")
+        if queue is None:
+            return False
+        get_nowait = getattr(queue, "get_nowait", None)
+        if callable(get_nowait):
+            try:
+                item = get_nowait()
+            except Exception:
+                return False
+        else:
+            getter = getattr(queue, "get", None)
+            if not callable(getter):
+                return False
+            try:
+                item = getter(timeout=0)
+            except Exception:
+                return False
+        if item is None:
+            return True
+        if isinstance(item, str):
+            return item.strip().lower() in {"stop", "cancel", "interrupt"}
+        if isinstance(item, dict):
+            if bool(item.get("stop")):
+                return True
+            kind = str(item.get("kind") or item.get("type") or "").strip().lower()
+            return kind in {"stop", "cancel", "interrupt"}
+        return False
+
     def finalize_run(
         exit_kind_value: str,
         default_reason: str,
@@ -245,6 +275,14 @@ def run_main_loop(
     base_tool_defs = tool_defs
     base_tool_defs = tool_defs
     for step_index in range(max_steps):
+        if getattr(self, "_stop_requested", False) or poll_control_stop():
+            session_state.add_transcript_entry({"stop_requested": True})
+            session_state.completion_summary = {
+                "completed": False,
+                "reason": "stopped_by_user",
+                "method": "interrupt",
+            }
+            return finalize_run("stopped", "stopped_by_user", {"stopped": True})
         turn_index = len(session_state.transcript) + 1
         try:
             current_mode = session_state.get_provider_metadata("current_mode") or self._resolve_active_mode()
@@ -344,6 +382,14 @@ def run_main_loop(
                 break
 
             for provider_message in provider_result.messages:
+                if getattr(self, "_stop_requested", False) or poll_control_stop():
+                    session_state.add_transcript_entry({"stop_requested": True})
+                    session_state.completion_summary = {
+                        "completed": False,
+                        "reason": "stopped_by_user",
+                        "method": "interrupt",
+                    }
+                    return finalize_run("stopped", "stopped_by_user", {"stopped": True})
                 # Log model response
                 self._log_provider_message(
                     provider_message, session_state, markdown_logger, stream_responses

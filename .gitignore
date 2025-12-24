@@ -64,3 +64,6 @@ replay_apply_summary.json
 # Local runtime state
 .kyle/
 tmp/
+.breadboard/
+**/.breadboard/
+industry_refs/
