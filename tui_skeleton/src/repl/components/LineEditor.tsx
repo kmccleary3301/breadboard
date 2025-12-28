@@ -123,6 +123,8 @@ export interface LineEditorProps {
   readonly cursor: number
   readonly focus: boolean
   readonly placeholder?: string
+  readonly placeholderPad?: boolean
+  readonly hideCaretWhenPlaceholder?: boolean
   readonly onChange: (value: string, cursor: number) => void
   readonly onSubmit: (value: string) => Promise<void> | void
   readonly submitOnEnter?: boolean
@@ -137,6 +139,8 @@ export const LineEditor: React.FC<LineEditorProps> = ({
   cursor,
   focus,
   placeholder,
+  placeholderPad = true,
+  hideCaretWhenPlaceholder = false,
   onChange,
   onSubmit,
   submitOnEnter = true,
@@ -311,6 +315,18 @@ export const LineEditor: React.FC<LineEditorProps> = ({
     replaceRange(cursorNow, boundary, "")
   }
 
+  const moveWordBackward = () => {
+    const cursorNow = getSafeCursor()
+    const boundary = findPreviousWordBoundary(valueRef.current, cursorNow)
+    applyChange(valueRef.current, boundary)
+  }
+
+  const moveWordForward = () => {
+    const cursorNow = getSafeCursor()
+    const boundary = findNextWordBoundary(valueRef.current, cursorNow)
+    applyChange(valueRef.current, boundary)
+  }
+
   const handlePastePayload = (payload: string) => {
     if (!payload) return
     if (payload.length >= PASTE_COLLAPSE_THRESHOLD) {
@@ -366,6 +382,23 @@ export const LineEditor: React.FC<LineEditorProps> = ({
 
       const normalizedInput = input.length === 1 ? input.toLowerCase() : ""
       const keyModifiers = { ctrl: key.ctrl, meta: key.meta }
+      const isCsiEnter = input.startsWith("\u001b[13;") && input.endsWith("u")
+
+      if (key.ctrl && input === "\u001f") {
+        const snapshot = undoManager.current.undo()
+        if (snapshot) restoreSnapshot(snapshot)
+        return
+      }
+
+      if (isCsiEnter) {
+        insertText("\n")
+        return
+      }
+
+      if (key.return && (key.shift || (key.meta && !key.ctrl))) {
+        insertText("\n")
+        return
+      }
 
       if (key.escape && input.length === 0) {
         // Ink may surface a raw ESC byte as an escape key event (with empty input). Feed it to the
@@ -425,8 +458,7 @@ export const LineEditor: React.FC<LineEditorProps> = ({
         return
       }
       if (key.ctrl && key.leftArrow) {
-        const cursorNow = getSafeCursor()
-        applyChange(valueRef.current, moveCursorLeft(cursorNow, chipsRef.current))
+        moveWordBackward()
         return
       }
       if (key.leftArrow) {
@@ -435,8 +467,7 @@ export const LineEditor: React.FC<LineEditorProps> = ({
         return
       }
       if (key.ctrl && key.rightArrow) {
-        const cursorNow = getSafeCursor()
-        applyChange(valueRef.current, moveCursorRight(cursorNow, valueRef.current.length, chipsRef.current))
+        moveWordForward()
         return
       }
       if (key.rightArrow) {
@@ -445,7 +476,7 @@ export const LineEditor: React.FC<LineEditorProps> = ({
         return
       }
       if (key.backspace) {
-        if (key.ctrl) {
+        if (key.ctrl || key.meta) {
           deleteWordBackward()
         } else {
           deleteBackward()
@@ -454,7 +485,7 @@ export const LineEditor: React.FC<LineEditorProps> = ({
       }
       if (key.delete) {
         const treatAsBackspace = input.length === 0 && !key.ctrl
-        if (key.ctrl && !treatAsBackspace) {
+        if ((key.ctrl || key.meta) && !treatAsBackspace) {
           deleteWordForward()
         } else if (treatAsBackspace) {
           deleteBackward()
@@ -480,13 +511,19 @@ export const LineEditor: React.FC<LineEditorProps> = ({
         return
       }
       if (key.meta && normalizedInput === "b") {
-        const cursorNow = getSafeCursor()
-        applyChange(valueRef.current, moveCursorLeft(cursorNow, chipsRef.current))
+        moveWordBackward()
         return
       }
       if (key.meta && normalizedInput === "f") {
-        const cursorNow = getSafeCursor()
-        applyChange(valueRef.current, moveCursorRight(cursorNow, valueRef.current.length, chipsRef.current))
+        moveWordForward()
+        return
+      }
+      if (key.meta && key.leftArrow) {
+        moveWordBackward()
+        return
+      }
+      if (key.meta && key.rightArrow) {
+        moveWordForward()
         return
       }
     },
@@ -497,12 +534,19 @@ export const LineEditor: React.FC<LineEditorProps> = ({
   const caretPosition = safeCursor
 
   if (value.length === 0 && chips.length === 0) {
+    if (placeholder && hideCaretWhenPlaceholder) {
+      return (
+        <Box>
+          <Text color="gray">{placeholder}</Text>
+        </Box>
+      )
+    }
     return (
       <Box>
         <Text inverse>{" "}</Text>
         {placeholder && (
           <Text color="gray">
-            {" "}
+            {placeholderPad ? " " : ""}
             {placeholder}
           </Text>
         )}
@@ -528,10 +572,16 @@ export const LineEditor: React.FC<LineEditorProps> = ({
         const relative = caretPosition - part.start
         const before = part.text.slice(0, relative)
         const caretChar = part.text[relative] ?? " "
-        const after = part.text.slice(relative + 1)
         if (before.length > 0) renderedSegments.push(<Text key={`text-${part.start}`}>{before}</Text>)
-        renderCaret(caretChar)
-        if (after.length > 0) renderedSegments.push(<Text key={`text-${part.start}-tail`}>{after}</Text>)
+        if (caretChar === "\n") {
+          renderCaret(" ")
+          const remainder = part.text.slice(relative)
+          if (remainder.length > 0) renderedSegments.push(<Text key={`text-${part.start}-tail`}>{remainder}</Text>)
+        } else {
+          const after = part.text.slice(relative + 1)
+          renderCaret(caretChar)
+          if (after.length > 0) renderedSegments.push(<Text key={`text-${part.start}-tail`}>{after}</Text>)
+        }
       } else {
         renderedSegments.push(<Text key={`text-${part.start}`}>{part.text}</Text>)
       }

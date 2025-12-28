@@ -198,6 +198,7 @@ const runInteractive = async (controller: ReplSessionController) => {
         modelMenu={state.modelMenu}
         guardrailNotice={state.guardrailNotice}
         viewPrefs={state.viewPrefs}
+        todos={state.todos}
         permissionRequest={state.permissionRequest}
         permissionQueueDepth={state.permissionQueueDepth}
         rewindMenu={state.rewindMenu}
@@ -231,6 +232,7 @@ const runInteractive = async (controller: ReplSessionController) => {
       modelMenu={state.modelMenu}
       guardrailNotice={state.guardrailNotice}
       viewPrefs={state.viewPrefs}
+      todos={state.todos}
       permissionRequest={state.permissionRequest}
       permissionQueueDepth={state.permissionQueueDepth}
       rewindMenu={state.rewindMenu}

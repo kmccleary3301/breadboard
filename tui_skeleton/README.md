@@ -10,10 +10,10 @@ Agentic terminal client for the BreadBoard engine. The CLI streams live sessions
 
 ## Core Features
 
-- `kyle ask`, `kyle resume`, `kyle sessions` — non-interactive workflows built on the shared streaming helper.
-- `kyle repl` — Ink TUI with conversation/tool panes, status bar, and slash commands (`/mode`, `/plan`, `/model`, `/test`, `/files`, `/remote`, `/status`, `/retry`, ...).
-- File utilities: `kyle files ls|cat|apply`. `cat` supports `--out` for local export; `apply` accepts `--diff`, `--diff-file <path>`, or `--diff-file -` (stdin) and summarizes affected files before applying.
-- Artifact access plus enhanced transcript rendering via `kyle render <session>` (text or `--output json`), including tool events and reward summaries.
+- `breadboard ask`, `breadboard resume`, `breadboard sessions` — non-interactive workflows built on the shared streaming helper.
+- `breadboard repl` — Ink TUI with conversation/tool panes, status bar, and slash commands (`/mode`, `/plan`, `/model`, `/test`, `/files`, `/remote`, `/status`, `/retry`, ...).
+- File utilities: `breadboard files ls|cat|apply`. `cat` supports `--out` for local export; `apply` accepts `--diff`, `--diff-file <path>`, or `--diff-file -` (stdin) and summarizes affected files before applying.
+- Artifact access plus enhanced transcript rendering via `breadboard render <session>` (text or `--output json`), including tool events and reward summaries.
 
 ## Development Workflow
 
@@ -31,7 +31,7 @@ npm run build
 
 # Link binary locally (optional)
 npm link
-kyle --help
+breadboard --help
 ```
 
 ## Testing
@@ -42,3 +42,10 @@ npm test
 ```
 
 Vitest coverage includes streaming logic, render section helpers, diff summarisation, and session cache persistence. Ink snapshot tests still emit a benign `TextInput` warning while rendering headless layouts.
+
+## TUI Configuration (env)
+
+- `BREADBOARD_TUI_KEYMAP=claude|codex` — key binding set.
+- `BREADBOARD_TUI_CHROME=claude|codex` — chrome style (prompt separators, `/` list density). Defaults to the keymap.
+- `BREADBOARD_TUI_FILE_PICKER_RESOURCES_PATH=/path/to/resources.json` — optional @‑picker resources list.
+- `BREADBOARD_TUI_FILE_PICKER_RESOURCES_JSON='[{\"label\":\"...\",\"detail\":\"...\"}]'` — inline resources list.

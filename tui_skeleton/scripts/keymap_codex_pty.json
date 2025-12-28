@@ -1,0 +1,11 @@
+[
+  { "action": "log", "message": "Keymap codex PTY harness start" },
+  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "press", "key": "ctrl+t" },
+  { "action": "waitFor", "text": "transcript viewer", "timeoutMs": 5000 },
+  { "action": "snapshot", "label": "codex-transcript-open" },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 200 },
+  { "action": "snapshot", "label": "codex-transcript-closed" },
+  { "action": "log", "message": "Keymap codex PTY harness complete" }
+]

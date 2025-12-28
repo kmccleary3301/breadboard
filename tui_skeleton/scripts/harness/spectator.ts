@@ -23,7 +23,9 @@ export type KeyName =
   | "ctrl+backspace"
   | "ctrl+c"
   | "ctrl+d"
+  | "ctrl+k"
   | "ctrl+l"
+  | "ctrl+o"
   | "ctrl+t"
   | "ctrl+v"
   | "ctrl+left"
@@ -101,6 +103,7 @@ export interface SpectatorHarnessOptions {
   readonly stateDumpPath?: string
   readonly stateDumpMode?: "summary" | "full"
   readonly stateDumpRateMs?: number
+  readonly envOverrides?: Record<string, string>
 }
 
 export interface SpectatorHarnessResult {
@@ -306,8 +309,12 @@ const resolveKey = (key: KeyName): string => {
       return "\u0003"
     case "ctrl+d":
       return "\u0004"
+    case "ctrl+k":
+      return "\u000b"
     case "ctrl+l":
       return "\f"
+    case "ctrl+o":
+      return "\u000f"
     case "ctrl+t":
       return "\u0014"
     case "ctrl+v":
@@ -371,7 +378,7 @@ export const runSpectatorHarness = async (
     args.push("--config", options.configPath)
   }
 
-  const env = { ...process.env }
+  const env = { ...process.env, ...(options.envOverrides ?? {}) }
   if (options.baseUrl) {
     env.BREADBOARD_API_URL = options.baseUrl
   }

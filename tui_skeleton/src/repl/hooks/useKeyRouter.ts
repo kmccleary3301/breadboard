@@ -1,5 +1,5 @@
 import { useInput, type Key } from "ink"
-import { useEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 
 export type KeyHandler = (input: string, key: Key) => boolean
 
@@ -25,11 +25,11 @@ export const useKeyRouter = (
   const handlerRef = useRef(handlers)
   const layerRef = useRef(getTopLayer)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     handlerRef.current = handlers
   }, [handlers])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     layerRef.current = getTopLayer
   }, [getTopLayer])
 

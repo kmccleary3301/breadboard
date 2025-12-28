@@ -24,6 +24,7 @@ const baseState = (): ReplState => ({
   disconnected: false,
   viewPrefs: { collapseMode: "auto", virtualization: "auto", richMarkdown: false },
   rewindMenu: { status: "hidden" },
+  todos: [],
 })
 
 describe("renderStateToText", () => {

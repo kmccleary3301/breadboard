@@ -42,7 +42,8 @@ export const resetPasteTracker = (tracker: PasteTracker): void => {
 }
 
 export const shouldTriggerClipboardPaste = (key: KeyModifiers, normalizedInput: string): boolean =>
-  normalizedInput === "v" && (key.ctrl || key.meta)
+  (normalizedInput === "v" && (key.ctrl || key.meta)) ||
+  normalizedInput === "\u0016"
 
 const isPrintable = (char: string) => char >= " "
 const BURST_INTERVAL_MS = 12

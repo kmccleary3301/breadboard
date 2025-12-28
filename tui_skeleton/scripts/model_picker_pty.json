@@ -1,0 +1,14 @@
+[
+  { "action": "log", "message": "Model picker PTY harness start" },
+  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "press", "key": "ctrl+k" },
+  { "action": "waitFor", "text": "Select a model", "timeoutMs": 5000 },
+  { "action": "snapshot", "label": "model-picker-open" },
+  { "action": "type", "text": "claude" },
+  { "action": "wait", "ms": 200 },
+  { "action": "press", "key": "down" },
+  { "action": "press", "key": "enter", "repeat": 2, "delayMs": 120 },
+  { "action": "waitFor", "text": "Model switch requested", "timeoutMs": 8000 },
+  { "action": "snapshot", "label": "model-picker-selected" },
+  { "action": "log", "message": "Model picker PTY harness complete" }
+]

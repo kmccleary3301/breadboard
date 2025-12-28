@@ -76,45 +76,5 @@
       "payload": { "checkpoint_id": "ckpt-2", "mode": "code" }
     }
   },
-  { "awaitCommand": true, "command": "list_checkpoints", "timeoutMs": 20000 },
-  {
-    "delayMs": 120,
-    "event": {
-      "type": "checkpoint_list",
-      "turn": 1,
-      "payload": {
-        "checkpoints": [
-          {
-            "checkpoint_id": "ckpt-3",
-            "created_at": 1710000300,
-            "preview": "Checkpoint 3: after applying edits",
-            "tracked_files": 2,
-            "additions": 13,
-            "deletions": 2,
-            "has_untracked_changes": false
-          },
-          {
-            "checkpoint_id": "ckpt-2",
-            "created_at": 1710000200,
-            "preview": "Checkpoint 2: before applying edits",
-            "tracked_files": 2,
-            "additions": 0,
-            "deletions": 0,
-            "has_untracked_changes": false
-          },
-          {
-            "checkpoint_id": "ckpt-1",
-            "created_at": 1710000100,
-            "preview": "Checkpoint 1: session start",
-            "tracked_files": 0,
-            "additions": 0,
-            "deletions": 0,
-            "has_untracked_changes": true
-          }
-        ]
-      }
-    }
-  },
   { "delayMs": 50, "event": { "type": "run_finished", "turn": 1, "payload": { "completed": true, "reason": "mock" } } }
 ]
-

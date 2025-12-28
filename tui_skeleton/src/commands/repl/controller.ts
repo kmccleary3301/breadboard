@@ -15,6 +15,7 @@ import type {
   TranscriptPreferences,
   ToolLogEntry,
   ToolLogKind,
+  TodoItem,
   PermissionRequest,
   PermissionDecision,
   PermissionRuleScope,
@@ -77,6 +78,7 @@ export interface ReplState {
   readonly permissionRequest?: PermissionRequest | null
   readonly permissionQueueDepth?: number
   readonly rewindMenu: RewindMenuState
+  readonly todos: TodoItem[]
 }
 
 type StateListener = (state: ReplState) => void
@@ -112,6 +114,90 @@ const extractProgress = (payload: Record<string, unknown>): number | undefined =
     if (Number.isFinite(parsed)) return parsed
   }
   return undefined
+}
+
+const normalizeTodoStatus = (value: unknown): string => {
+  const raw = String(value ?? "").trim().toLowerCase()
+  switch (raw) {
+    case "in_progress":
+    case "progress":
+    case "active":
+      return "in_progress"
+    case "done":
+    case "complete":
+    case "completed":
+      return "done"
+    case "blocked":
+      return "blocked"
+    case "cancelled":
+    case "canceled":
+      return "canceled"
+    case "todo":
+    case "pending":
+    default:
+      return "todo"
+  }
+}
+
+const parseTodoEntry = (entry: unknown, fallbackId: string): TodoItem | null => {
+  if (!isRecord(entry)) return null
+  const id =
+    typeof entry.id === "string"
+      ? entry.id
+      : typeof entry.todo_id === "string"
+        ? entry.todo_id
+        : typeof entry.todoId === "string"
+          ? entry.todoId
+          : fallbackId
+  const title =
+    typeof entry.title === "string"
+      ? entry.title
+      : typeof entry.content === "string"
+        ? entry.content
+        : typeof entry.text === "string"
+          ? entry.text
+          : ""
+  if (!title.trim()) return null
+  const status = normalizeTodoStatus(entry.status ?? entry.state)
+  const metadata = isRecord(entry.metadata) ? entry.metadata : null
+  const priority = entry.priority ?? null
+  return {
+    id,
+    title: title.trim(),
+    status,
+    priority: typeof priority === "string" || typeof priority === "number" ? priority : null,
+    metadata,
+  }
+}
+
+const parseTodoList = (value: unknown): TodoItem[] | null => {
+  if (!Array.isArray(value)) return null
+  const parsed: TodoItem[] = []
+  value.forEach((entry, index) => {
+    const item = parseTodoEntry(entry, `todo-${index + 1}`)
+    if (item) parsed.push(item)
+  })
+  return parsed.length > 0 ? parsed : null
+}
+
+const tryParseJsonTodos = (value: unknown): TodoItem[] | null => {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (Array.isArray(parsed)) return parseTodoList(parsed)
+    if (isRecord(parsed)) {
+      if (Array.isArray(parsed.todos)) return parseTodoList(parsed.todos)
+      if (parsed.todo) {
+        const single = parseTodoEntry(parsed.todo, "todo-1")
+        return single ? [single] : null
+      }
+    }
+  } catch {
+    return null
+  }
+  return null
 }
 
 export const formatCompletion = (payload: unknown): CompletionView => {
@@ -215,6 +301,7 @@ export class ReplSessionController extends EventEmitter {
   private permissionActive: PermissionRequest | null = null
   private permissionQueue: PermissionRequest[] = []
   private rewindMenu: RewindMenuState = { status: "hidden" }
+  private todos: TodoItem[] = []
 
   constructor(options: ReplControllerOptions) {
     super()
@@ -246,6 +333,7 @@ export class ReplSessionController extends EventEmitter {
       permissionRequest: this.permissionActive,
       permissionQueueDepth: this.permissionQueue.length,
       rewindMenu: this.rewindMenu,
+      todos: [...this.todos],
     }
   }
 
@@ -262,10 +350,20 @@ export class ReplSessionController extends EventEmitter {
     this.stats.model = modelLabel
     const remotePreference = this.config.remotePreference ?? appConfig.remoteStreamDefault
     this.stats.remote = remotePreference
+    const permissionValue = this.config.permissionMode?.trim()
+    const permissionMode = permissionValue ? permissionValue.toLowerCase() : ""
+    const interactivePermissions = permissionMode === "prompt" || permissionMode === "ask" || permissionMode === "interactive"
     const metadata: Record<string, unknown> = {}
     const overrides: Record<string, unknown> = {}
-    if (this.config.permissionMode) {
-      metadata.permission_mode = this.config.permissionMode
+    if (permissionValue) {
+      metadata.permission_mode = permissionValue
+      if (interactivePermissions) {
+        overrides["permissions.options.mode"] ??= "prompt"
+        overrides["permissions.options.default_response"] ??= "reject"
+        overrides["permissions.edit.default"] ??= "ask"
+        overrides["permissions.shell.default"] ??= "ask"
+        overrides["permissions.webfetch.default"] ??= "ask"
+      }
     }
     if (requestedModel) {
       metadata.model = requestedModel
@@ -278,6 +376,7 @@ export class ReplSessionController extends EventEmitter {
       config_path: this.config.configPath,
       task: "",
       workspace: this.config.workspace ?? undefined,
+      permission_mode: permissionValue ?? undefined,
       metadata,
       overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
       stream: true,
@@ -539,10 +638,23 @@ export class ReplSessionController extends EventEmitter {
   }
 
   async loadModelMenuItems(): Promise<ModelMenuItem[]> {
-    const models = await getModelCatalog()
+    const catalog = await getModelCatalog({ configPath: this.config.configPath })
+    const models = catalog.models
+    const defaultModel = catalog.defaultModel ?? DEFAULT_MODEL_ID
     return models
       .map<ModelMenuItem>((model) => {
-        const providerLabel = model.provider === "openrouter" ? "OpenRouter" : "OpenAI"
+        const providerLabel = (() => {
+          const raw = model.provider ?? "unknown"
+          const lowered = raw.toLowerCase()
+          if (lowered === "openrouter") return "OpenRouter"
+          if (lowered === "openai") return "OpenAI"
+          if (!raw.trim()) return "Unknown"
+          return raw
+            .split(/[^a-z0-9]+/i)
+            .filter((part) => part.length > 0)
+            .map((part) => part[0].toUpperCase() + part.slice(1))
+            .join(" ")
+        })()
         const contextTokens = typeof model.contextLength === "number" ? model.contextLength : null
         const contextK = contextTokens != null ? Math.max(1, Math.round(contextTokens / 1000)) : null
         const priceInPerM = model.priceInPerM ?? null
@@ -560,16 +672,9 @@ export class ReplSessionController extends EventEmitter {
           contextTokens,
           priceInPerM,
           priceOutPerM,
-          isDefault: model.id === DEFAULT_MODEL_ID,
+          isDefault: model.id === defaultModel,
           isCurrent: model.id === this.stats.model,
         }
-      })
-      .sort((a, b) => {
-        if (a.isCurrent && !b.isCurrent) return -1
-        if (!a.isCurrent && b.isCurrent) return 1
-        if (a.isDefault && !b.isDefault) return -1
-        if (!a.isDefault && b.isDefault) return 1
-        return a.label.localeCompare(b.label)
       })
   }
 
@@ -683,6 +788,7 @@ export class ReplSessionController extends EventEmitter {
       stop: async () => {
         const ok = await this.runSessionCommand("stop", undefined, "Interrupt requested.")
         if (ok) {
+          this.pendingResponse = false
           this.status = "Interrupt requested"
         }
       },
@@ -896,6 +1002,56 @@ export class ReplSessionController extends EventEmitter {
     }
   }
 
+  private extractTodosFromPayload(payload: unknown): TodoItem[] | null {
+    const candidates: unknown[] = []
+    if (isRecord(payload)) {
+      candidates.push(payload)
+      if (payload.tool) candidates.push(payload.tool)
+      if (payload.call) candidates.push(payload.call)
+      if (payload.message) candidates.push(payload.message)
+      if (payload.content) candidates.push(payload.content)
+      if (payload.output) candidates.push(payload.output)
+      if (payload.result) candidates.push(payload.result)
+    } else {
+      candidates.push(payload)
+    }
+    for (const candidate of candidates) {
+      if (candidate == null) continue
+      if (Array.isArray(candidate)) {
+        const list = parseTodoList(candidate)
+        if (list) return list
+        continue
+      }
+      if (isRecord(candidate)) {
+        const name =
+          extractString(candidate, ["name", "tool", "tool_name", "function", "provider_name", "fn"]) ?? ""
+        const normalized = name.toLowerCase()
+        const likelyTodoTool = normalized.includes("todo") || normalized.includes("todowrite")
+        const directTodos = parseTodoList(candidate.todos)
+        if (directTodos && (likelyTodoTool || directTodos.length > 0)) {
+          return directTodos
+        }
+        if (candidate.todo) {
+          const single = parseTodoEntry(candidate.todo, "todo-1")
+          if (single && (likelyTodoTool || single.title.length > 0)) {
+            return [single]
+          }
+        }
+        const nested =
+          parseTodoList(candidate.output) ??
+          parseTodoList(candidate.result) ??
+          parseTodoList(candidate.content) ??
+          tryParseJsonTodos(candidate.output) ??
+          tryParseJsonTodos(candidate.result) ??
+          tryParseJsonTodos(candidate.content)
+        if (nested) return nested
+      }
+      const parsed = tryParseJsonTodos(candidate)
+      if (parsed) return parsed
+    }
+    return null
+  }
+
   async openRewindMenu(): Promise<void> {
     if (!this.sessionId) {
       this.pushHint("Session not ready yet.")
@@ -962,6 +1118,8 @@ export class ReplSessionController extends EventEmitter {
       payload.scope = decision.scope
       if (decision.rule != null) payload.rule = decision.rule
     }
+    const note = typeof decision.note === "string" ? decision.note.trim() : ""
+    if (note) payload.note = note
     if (decision.kind === "deny-stop") {
       payload.stop = true
     }
@@ -1386,13 +1544,19 @@ export class ReplSessionController extends EventEmitter {
 
   private applyEvent(event: SessionEvent): void {
     switch (event.type) {
+      case "turn_start": {
+        this.pendingResponse = true
+        this.status = "Assistant thinking…"
+        const turnLabel = typeof event.turn === "number" ? `Turn ${event.turn} started` : "Turn started"
+        this.addTool("status", `[turn] ${turnLabel}`)
+        break
+      }
       case "assistant_message": {
         if (this.pendingResponse) this.status = "Assistant responding…"
         const text = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
         const normalizedText = this.normalizeAssistantText(text)
         this.addConversation("assistant", normalizedText, "streaming")
         this.appendMarkdownChunk(normalizedText)
-        this.pendingResponse = false
         break
       }
       case "user_message": {
@@ -1450,6 +1614,19 @@ export class ReplSessionController extends EventEmitter {
         this.addTool("status", `[permission] ${tool} (${kind})`, "pending")
         break
       }
+      case "permission_response": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const response =
+          extractString(payload, ["response", "decision"]) ??
+          (isRecord(payload.responses) && typeof payload.responses.default === "string" ? payload.responses.default : undefined)
+        const responseLabel = response ? response.replace(/[_-]+/g, " ") : "response received"
+        this.addTool("status", `[permission] ${responseLabel}`, "success")
+        this.pushHint(`Permission ${responseLabel}.`)
+        this.setPermissionActive(null)
+        this.pendingResponse = false
+        this.status = "Permission response received"
+        break
+      }
       case "checkpoint_list": {
         const payload = isRecord(event.payload) ? event.payload : {}
         const rawList = Array.isArray(payload.checkpoints)
@@ -1468,6 +1645,18 @@ export class ReplSessionController extends EventEmitter {
         this.rewindMenu = { status: "ready", checkpoints: parsed }
         this.status = "Checkpoints ready"
         this.pushHint(`Loaded ${parsed.length} checkpoint${parsed.length === 1 ? "" : "s"}.`)
+        break
+      }
+      case "task_event": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const taskId = extractString(payload, ["task_id", "id"])
+        const status = extractString(payload, ["status", "state"]) ?? "update"
+        const description = extractString(payload, ["description", "title", "prompt"])
+        const lineParts = [status, description, taskId].filter(Boolean)
+        const line = lineParts.length > 0 ? lineParts.join(" · ") : JSON.stringify(payload)
+        const isError = typeof payload.error === "string" && payload.error.trim().length > 0
+        const isComplete = status.toLowerCase().includes("complete") || status.toLowerCase().includes("done")
+        this.addTool("status", `[task] ${line}`, isError ? "error" : isComplete ? "success" : "pending")
         break
       }
       case "checkpoint_restored": {
@@ -1505,6 +1694,11 @@ export class ReplSessionController extends EventEmitter {
           this.toolSlotFallback.push(slotId)
         }
         this.upsertLiveSlot(slotId, slot.text, slot.color, "pending")
+        const todos = this.extractTodosFromPayload(event.payload)
+        if (todos) {
+          this.todos = todos
+          this.pushHint(`Todos updated (${todos.length}).`)
+        }
         break
       }
       case "tool_result": {
@@ -1523,6 +1717,11 @@ export class ReplSessionController extends EventEmitter {
           const slotId = this.toolSlotFallback.pop()
           if (slotId) this.finalizeLiveSlot(slotId, resultWasError ? "error" : "success")
         }
+        const todos = this.extractTodosFromPayload(event.payload)
+        if (todos) {
+          this.todos = todos
+          this.pushHint(`Todos updated (${todos.length}).`)
+        }
         break
       }
       case "reward_update": {
@@ -1530,6 +1729,13 @@ export class ReplSessionController extends EventEmitter {
         const summary = JSON.stringify(event.payload.summary ?? event.payload)
         this.addTool("reward", `[reward] ${summary}`, "success")
         this.upsertLiveSlot("reward", `Reward update: ${summary}`, "#38bdf8", "success", 2000)
+        break
+      }
+      case "log_link": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const link = extractString(payload, ["url", "href", "path"]) ?? JSON.stringify(payload)
+        this.addTool("status", `[log] ${link}`)
+        this.pushHint("Log link available.")
         break
       }
       case "error": {

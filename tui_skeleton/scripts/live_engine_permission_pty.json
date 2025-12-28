@@ -1,0 +1,12 @@
+[
+  { "action": "log", "message": "Live engine permission prompt start" },
+  { "action": "waitFor", "text": "breadboard", "timeoutMs": 20000 },
+  { "action": "type", "text": "Please create bubble_sort.py and run it" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Permission required", "timeoutMs": 30000 },
+  { "action": "snapshot", "label": "permission-modal" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Permission decision sent.", "timeoutMs": 30000 },
+  { "action": "snapshot", "label": "after-permission-allow" },
+  { "action": "log", "message": "Live engine permission prompt end" }
+]

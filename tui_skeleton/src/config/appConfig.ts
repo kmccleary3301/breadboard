@@ -27,7 +27,7 @@ const resolveCachePath = (): string => {
   if (explicit && explicit.trim().length > 0) {
     return path.resolve(explicit)
   }
-  return path.join(homedir(), ".kyle", "sessions.json")
+  return path.join(homedir(), ".breadboard", "sessions.json")
 }
 
 const computeConfig = (): AppConfig => {

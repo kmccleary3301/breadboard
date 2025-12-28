@@ -1,0 +1,18 @@
+[
+  { "action": "log", "message": "@ file picker fuzzy stress start" },
+  { "action": "waitFor", "text": "breadboard", "timeoutMs": 20000 },
+  { "action": "snapshot", "label": "initial" },
+  { "action": "type", "text": "@src/repl/components/Tran", "typingDelayMs": 8 },
+  { "action": "wait", "ms": 350 },
+  { "action": "type", "text": "scriptViewer.tsx", "typingDelayMs": 8 },
+  { "action": "wait", "ms": 350 },
+  { "action": "snapshot", "label": "query-long" },
+  { "action": "press", "key": "backspace", "repeat": 8, "delayMs": 20 },
+  { "action": "type", "text": "View.tsx", "typingDelayMs": 8 },
+  { "action": "wait", "ms": 350 },
+  { "action": "snapshot", "label": "query-adjusted" },
+  { "action": "press", "key": "tab" },
+  { "action": "waitFor", "text": "@src/repl/components/TranscriptViewer.tsx", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "completed" },
+  { "action": "log", "message": "@ file picker fuzzy stress end" }
+]

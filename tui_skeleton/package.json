@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "breadboard": "dist/cli.js"
+    "breadboard": "dist/main.js"
   },
   "scripts": {
     "dev": "tsx src/main.ts",
@@ -38,6 +38,7 @@
   "devDependencies": {
     "@types/chroma-js": "^3.1.1",
     "@types/react": "^18.2.66",
+    "ansi-to-svg": "^1.4.3",
     "ink-testing-library": "^4.0.0",
     "jpeg-js": "^0.4.4",
     "node-pty": "^1.0.0",

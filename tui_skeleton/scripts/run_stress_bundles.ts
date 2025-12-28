@@ -28,6 +28,7 @@ const __dirname = path.dirname(__filename)
 const ROOT_DIR = path.resolve(__dirname, "..")
 const REPRO_CWD = path.basename(ROOT_DIR)
 const SSE_WAIT_TIMEOUT_MS = 45_000
+const DEFAULT_KEEP_RUNS = 3
 
 const DEFAULT_CONFIG = process.env.CONFIG_PATH ?? process.env.STRESS_CONFIG ?? "../agent_configs/opencode_cli_mock_guardrails.yaml"
 const DEFAULT_BASE_URL = process.env.BASE_URL ?? process.env.BREADBOARD_API_URL ?? "http://127.0.0.1:9099"
@@ -60,11 +61,38 @@ const mergeChaosInfo = (
   return base ?? extra ?? null
 }
 
+const isBatchDirName = (value: string): boolean => /^\d{8}-\d{6}$/.test(value)
+
+const pruneOldBatches = async (outDir: string, keepCount: number) => {
+  if (!Number.isFinite(keepCount) || keepCount <= 0) return
+  const entries = await fs.readdir(outDir, { withFileTypes: true })
+  const batchNames = entries
+    .filter((entry) => entry.isDirectory() && isBatchDirName(entry.name))
+    .map((entry) => entry.name)
+    .sort()
+  if (batchNames.length <= keepCount) return
+  const toRemove = batchNames.slice(0, Math.max(0, batchNames.length - keepCount))
+  await Promise.all(
+    toRemove.map(async (name) => {
+      const dirPath = path.join(outDir, name)
+      const zipPath = path.join(outDir, `${name}.zip`)
+      await fs.rm(dirPath, { recursive: true, force: true }).catch(() => undefined)
+      await fs.rm(zipPath, { force: true }).catch(() => undefined)
+    }),
+  )
+  console.log(`[stress] pruned ${toRemove.length} old bundle(s); kept ${keepCount}.`)
+}
+
 interface BaseCase {
   readonly id: string
   readonly script: string
   readonly description: string
   readonly mockSseScript?: string
+  readonly env?: Record<string, string>
+  readonly configPath?: string
+  readonly command?: string
+  readonly baseUrl?: string
+  readonly requiresLive?: boolean
 }
 
 interface ReplCase extends BaseCase {
@@ -112,6 +140,7 @@ const STRESS_CASES: StressCase[] = [
     script: "scripts/resize_storm.json",
     description: "Repeated terminal resize events (PTY harness)",
     winchScript: "scripts/resize_storm_winch.json",
+    mockSseScript: "scripts/mock_sse_sample.json",
     submitTimeoutMs: 0,
   },
   {
@@ -128,6 +157,15 @@ const STRESS_CASES: StressCase[] = [
     script: "scripts/permission_rewind_pty.json",
     description: "Permission approval modal + rewind checkpoints flow",
     mockSseScript: "scripts/mock_sse_permission_rewind.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "todos_panel",
+    kind: "pty",
+    script: "scripts/todos_pty.json",
+    description: "Todos overlay + transcript command",
+    mockSseScript: "scripts/mock_sse_todos.json",
+    submitTimeoutMs: 0,
   },
   {
     id: "file_picker",
@@ -151,6 +189,21 @@ const STRESS_CASES: StressCase[] = [
     script: "scripts/file_mentions_pty.json",
     description: "`@` file mention submission attaches file contents (with truncation gating)",
     mockSseScript: "scripts/mock_sse_file_mentions.json",
+    env: {
+      BREADBOARD_TUI_FILE_MENTION_MAX_INLINE_BYTES_PER_FILE: "1",
+      BREADBOARD_TUI_FILE_MENTION_MAX_INLINE_BYTES_TOTAL: "1",
+    },
+  },
+  {
+    id: "slash_menu",
+    kind: "pty",
+    script: "scripts/slash_menu_pty.json",
+    description: "Slash command list + filter + tab completion",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    env: {
+      BREADBOARD_TUI_CHROME: "claude",
+    },
   },
   {
     id: "transcript_viewer_toggle",
@@ -159,6 +212,80 @@ const STRESS_CASES: StressCase[] = [
     description: "Ctrl+T transcript viewer toggle (alt-screen)",
     mockSseScript: "scripts/mock_sse_sample.json",
     expectedAltText: "Esc back",
+  },
+  {
+    id: "detailed_transcript",
+    kind: "pty",
+    script: "scripts/detailed_transcript_pty.json",
+    description: "Transcript viewer detailed toggle (Ctrl+O)",
+    mockSseScript: "scripts/mock_sse_tool_verbose.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "permission_note",
+    kind: "pty",
+    script: "scripts/permission_note_pty.json",
+    description: "Permission modal note input + submission",
+    mockSseScript: "scripts/mock_sse_permission_note.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "model_picker",
+    kind: "pty",
+    script: "scripts/model_picker_pty.json",
+    description: "Model picker open, filter, select",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    env: {
+      BREADBOARD_MODEL_CATALOG_PATH: "scripts/mock_model_catalog.json",
+    },
+  },
+  {
+    id: "live_engine_smoke",
+    kind: "pty",
+    script: "scripts/live_engine_smoke_pty.json",
+    description: "Live engine smoke (requires running CLI bridge)",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "live_engine_permission",
+    kind: "pty",
+    script: "scripts/live_engine_permission_pty.json",
+    description: "Live engine permission modal flow (requires CLI bridge)",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+    command: "node dist/main.js repl --permission-mode prompt",
+  },
+  {
+    id: "live_engine_model_picker",
+    kind: "pty",
+    script: "scripts/live_engine_model_picker_pty.json",
+    description: "Live engine model picker (requires CLI bridge)",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "live_engine_stop_retry",
+    kind: "pty",
+    script: "scripts/live_engine_stop_retry_pty.json",
+    description: "Live engine stop + /retry semantics (requires CLI bridge)",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "keymap_codex",
+    kind: "pty",
+    script: "scripts/keymap_codex_pty.json",
+    description: "Codex keymap (Ctrl+T transcript)",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    env: {
+      BREADBOARD_TUI_KEYMAP: "codex",
+    },
   },
   {
     id: "paste_flood",
@@ -180,6 +307,7 @@ const STRESS_CASES: StressCase[] = [
     script: "scripts/ctrl_v_paste.json",
     clipboardText: "Stress runner clipboard payload",
     description: "Ctrl+V text paste w/ chips",
+    mockSseScript: "scripts/mock_sse_sample.json",
   },
   {
     id: "ctrl_v_paste_large",
@@ -188,6 +316,7 @@ const STRESS_CASES: StressCase[] = [
     clipboardText: LARGE_CLIPBOARD_PAYLOAD,
     description: "Ctrl+V large text paste, expect placeholder chip",
     clipboardAssertions: { expectTextChip: true },
+    mockSseScript: "scripts/mock_sse_sample.json",
   },
   {
     id: "attachment_submit",
@@ -196,6 +325,7 @@ const STRESS_CASES: StressCase[] = [
     clipboardText:
       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YpDkdIAAAAASUVORK5CYII=",
     description: "Attachment capture + submission",
+    mockSseScript: "scripts/mock_sse_sample.json",
     clipboardAssertions: {
       expectAttachmentChip: true,
       expectImageAttachment: true,
@@ -216,6 +346,7 @@ interface CliOptions {
   mockSseConfig: MockSseOptions | null
   mockSseDefaults: Omit<MockSseOptions, "script">
   useCaseMockSse: boolean
+  includeLive: boolean
   keyFuzzIterations: number
   keyFuzzSteps: number
   keyFuzzSeed: number | null
@@ -251,6 +382,7 @@ const parseCliArgs = (): CliOptions => {
   let mockSseJitterMs = 0
   let mockSseDropRate = 0
   let useCaseMockSse = true
+  let includeLive = process.env.STRESS_INCLUDE_LIVE === "1" || process.env.BREADBOARD_STRESS_INCLUDE_LIVE === "1"
   let keyFuzzIterations = 0
   let keyFuzzSteps = 60
   let keyFuzzSeed: number | null = null
@@ -310,6 +442,9 @@ const parseCliArgs = (): CliOptions => {
       case "--no-case-mock-sse":
         useCaseMockSse = false
         break
+      case "--include-live":
+        includeLive = true
+        break
       case "--key-fuzz-iterations":
         keyFuzzIterations = Number(args[++i])
         break
@@ -352,6 +487,7 @@ const parseCliArgs = (): CliOptions => {
     mockSseConfig,
     mockSseDefaults: mockDefaults,
     useCaseMockSse,
+    includeLive,
     keyFuzzIterations,
     keyFuzzSteps,
     keyFuzzSeed,
@@ -545,8 +681,10 @@ const tapSessionEvents = (baseUrl: string, sessionId: string, targetPath: string
   }
 }
 
-const resolveCaseList = (cases: ReadonlyArray<string> | null): StressCase[] => {
-  if (!cases) return STRESS_CASES
+const resolveCaseList = (cases: ReadonlyArray<string> | null, includeLive: boolean): StressCase[] => {
+  if (!cases) {
+    return includeLive ? STRESS_CASES : STRESS_CASES.filter((entry) => !entry.requiresLive)
+  }
   const map = new Map(STRESS_CASES.map((entry) => [entry.id, entry]))
   const resolved: StressCase[] = []
   for (const key of cases) {
@@ -732,27 +870,32 @@ const runReplCase = async (
   caseDir: string,
   chaosInfo: Record<string, unknown> | null,
 ): Promise<Record<string, unknown>> => {
+  const configPath = testCase.configPath ?? options.configPath
+  const baseUrl = testCase.baseUrl ?? options.baseUrl
   const copiedScript = await copyScriptFile(testCase.script, caseDir)
   const scriptHash = await computeScriptHash(copiedScript.source)
   const reproScriptPath = toRepoRootPath(copiedScript.destination)
   const stateDumpPath = path.join(caseDir, "repl_state.ndjson")
   const stateDumpRel = toRepoRootPath(stateDumpPath)
   const caseInfoPath = path.join(caseDir, "case_info.json")
+  const envOverrides = testCase.env ?? {}
+  const reproEnv = {
+    BREADBOARD_API_URL: baseUrl,
+    BREADBOARD_STATE_DUMP_PATH: stateDumpRel,
+    BREADBOARD_STATE_DUMP_MODE: "summary",
+    BREADBOARD_STATE_DUMP_RATE_MS: "100",
+    ...envOverrides,
+  }
   const baseRepro = buildReproInfo(
     {
       cwd: REPRO_CWD,
-      env: {
-        BREADBOARD_API_URL: options.baseUrl,
-        BREADBOARD_STATE_DUMP_PATH: stateDumpRel,
-        BREADBOARD_STATE_DUMP_MODE: "summary",
-        BREADBOARD_STATE_DUMP_RATE_MS: "100",
-      },
+      env: reproEnv,
       argv: [
         "node",
         "dist/main.js",
         "repl",
         "--config",
-        options.configPath,
+        configPath,
         "--script",
         reproScriptPath,
         "--script-output",
@@ -767,7 +910,7 @@ const runReplCase = async (
       if (mode !== "mock-sse") return undefined
       const script = typeof chaosInfo?.script === "string" ? chaosInfo.script : null
       const port = typeof chaosInfo?.port === "number" ? chaosInfo.port : null
-      const host = port ? options.baseUrl.replace(/^https?:\/\//, "").split(":")[0] : null
+      const host = port ? baseUrl.replace(/^https?:\/\//, "").split(":")[0] : null
       if (!script || !port || !host) return undefined
       const delayMultiplier = typeof chaosInfo?.delayMultiplier === "number" ? chaosInfo.delayMultiplier : 1
       const jitterMs = typeof chaosInfo?.jitterMs === "number" ? chaosInfo.jitterMs : 0
@@ -815,6 +958,7 @@ const runReplCase = async (
         repro: baseRepro,
         config: options.configPath,
         chaos: chaosInfo,
+        env: envOverrides,
       },
       null,
       2,
@@ -847,6 +991,7 @@ const runReplCase = async (
     BREADBOARD_STATE_DUMP_PATH: stateDumpEnvPath,
     BREADBOARD_STATE_DUMP_MODE: "summary",
     BREADBOARD_STATE_DUMP_RATE_MS: "100",
+    ...envOverrides,
   }
   let sseHandle: { promise: Promise<void>; stop: () => void } | null = null
   const onStdoutChunk = (chunk: string) => {
@@ -898,7 +1043,7 @@ const runReplCase = async (
     caseDir,
     caseId: testCase.id,
     scriptPath: testCase.script,
-    configPath: options.configPath,
+    configPath: configPath,
   })
   await validateReplArtifacts(caseDir, testCase.id)
   const stats = {
@@ -934,14 +1079,19 @@ const runPtyCase = async (
   const inputLogPath = path.join(caseDir, "input_log.ndjson")
   const stateDumpPath = path.join(caseDir, "repl_state.ndjson")
   const stateDumpRel = toRepoRootPath(stateDumpPath)
+  const envOverrides = testCase.env ?? {}
+  const command = testCase.command ?? options.command
+  const configPath = testCase.configPath ?? options.configPath
+  const baseUrl = testCase.baseUrl ?? options.baseUrl
   const repro = buildReproInfo(
     {
       cwd: REPRO_CWD,
       env: {
-        BREADBOARD_API_URL: options.baseUrl,
+        BREADBOARD_API_URL: baseUrl,
         BREADBOARD_STATE_DUMP_PATH: stateDumpRel,
         BREADBOARD_STATE_DUMP_MODE: "summary",
         BREADBOARD_STATE_DUMP_RATE_MS: "100",
+        ...envOverrides,
       },
       argv: [
         "npx",
@@ -950,9 +1100,9 @@ const runPtyCase = async (
         "--script",
         reproScriptPath,
         "--config",
-        options.configPath,
+        configPath,
         "--base-url",
-        options.baseUrl,
+        baseUrl,
         "--snapshots",
         toRepoRootPath(path.join(caseDir, "pty_snapshots.txt")),
         "--raw-log",
@@ -971,6 +1121,8 @@ const runPtyCase = async (
         "120",
         "--rows",
         "36",
+        "--cmd",
+        command,
         ...(typeof testCase.submitTimeoutMs === "number" ? ["--submit-timeout-ms", String(testCase.submitTimeoutMs)] : []),
         ...(testCase.winchScript ? ["--winch-script", testCase.winchScript] : []),
         ...(testCase.clipboardText ? ["--clipboard-text", testCase.clipboardText] : []),
@@ -982,7 +1134,7 @@ const runPtyCase = async (
       if (mode !== "mock-sse") return undefined
       const script = typeof chaosInfo?.script === "string" ? chaosInfo.script : null
       const port = typeof chaosInfo?.port === "number" ? chaosInfo.port : null
-      const host = port ? options.baseUrl.replace(/^https?:\/\//, "").split(":")[0] : null
+      const host = port ? baseUrl.replace(/^https?:\/\//, "").split(":")[0] : null
       if (!script || !port || !host) return undefined
       const delayMultiplier = typeof chaosInfo?.delayMultiplier === "number" ? chaosInfo.delayMultiplier : 1
       const jitterMs = typeof chaosInfo?.jitterMs === "number" ? chaosInfo.jitterMs : 0
@@ -1030,6 +1182,7 @@ const runPtyCase = async (
         repro,
         config: options.configPath,
         chaos: chaosInfo,
+        env: envOverrides,
       },
       null,
       2,
@@ -1080,9 +1233,10 @@ const runPtyCase = async (
   try {
     harnessResult = await runSpectatorHarness({
       steps,
-      command: options.command,
-      configPath: options.configPath,
-      baseUrl: options.baseUrl,
+      command,
+      configPath,
+      baseUrl,
+      envOverrides,
       cols: 120,
       rows: 36,
       echo: false,
@@ -1433,49 +1587,57 @@ const main = async () => {
       mockProcess = await startMockSseServer(options.mockSseConfig)
       options.baseUrl = `http://${options.mockSseConfig.host}:${options.mockSseConfig.port}`
     }
-  const timestamp = formatTimestamp()
-  const batchDir = path.join(options.outDir, timestamp)
-  await fs.mkdir(batchDir, { recursive: true })
+    const timestamp = formatTimestamp()
+    const batchDir = path.join(options.outDir, timestamp)
+    await fs.mkdir(batchDir, { recursive: true })
 
-  const selectedCases = resolveCaseList(options.cases)
-  const aggregateManifest: Record<string, unknown> = {
-    startedAt: Date.now(),
-    config: options.configPath,
-    baseUrl: options.baseUrl,
-    command: options.command,
-    cases: [] as Array<Record<string, unknown>>,
-  }
+    const selectedCases = resolveCaseList(options.cases, options.includeLive)
+    if (!options.includeLive && !options.cases) {
+      const skipped = STRESS_CASES.filter((entry) => entry.requiresLive)
+      if (skipped.length > 0) {
+        console.log(
+          `[stress] skipping ${skipped.length} live engine case(s). Re-run with --include-live to enable.`,
+        )
+      }
+    }
+    const aggregateManifest: Record<string, unknown> = {
+      startedAt: Date.now(),
+      config: options.configPath,
+      baseUrl: options.baseUrl,
+      command: options.command,
+      cases: [] as Array<Record<string, unknown>>,
+    }
 
-  for (const testCase of selectedCases) {
-    const caseDir = path.join(batchDir, testCase.id)
-    await fs.mkdir(caseDir, { recursive: true })
-    const summary = {
-      id: testCase.id,
-      kind: testCase.kind,
-      description: testCase.description,
-      script: testCase.script,
-    }
-    try {
-      const stats = await runCaseWithOptionalMockSse(testCase, options, caseDir)
-      Object.assign(summary, stats)
-      if ((stats as Record<string, unknown>).chaosInfo !== undefined) {
-        summary.chaos = (stats as Record<string, unknown>).chaosInfo
+    for (const testCase of selectedCases) {
+      const caseDir = path.join(batchDir, testCase.id)
+      await fs.mkdir(caseDir, { recursive: true })
+      const summary = {
+        id: testCase.id,
+        kind: testCase.kind,
+        description: testCase.description,
+        script: testCase.script,
       }
-      const clipboardCopy = await copyClipboardManifest(
-        (stats as Record<string, unknown>).manifestPath as string | undefined,
-        testCase.id,
-        batchDir,
-      )
-      if (clipboardCopy) {
-        summary.clipboardManifestPath = path.relative(batchDir, clipboardCopy)
+      try {
+        const stats = await runCaseWithOptionalMockSse(testCase, options, caseDir)
+        Object.assign(summary, stats)
+        if ((stats as Record<string, unknown>).chaosInfo !== undefined) {
+          summary.chaos = (stats as Record<string, unknown>).chaosInfo
+        }
+        const clipboardCopy = await copyClipboardManifest(
+          (stats as Record<string, unknown>).manifestPath as string | undefined,
+          testCase.id,
+          batchDir,
+        )
+        if (clipboardCopy) {
+          summary.clipboardManifestPath = path.relative(batchDir, clipboardCopy)
+        }
+        ;(aggregateManifest.cases as Array<Record<string, unknown>>).push(summary)
+        console.log(`[stress] ${testCase.id} captured.`)
+      } catch (error) {
+        console.error(`[stress] ${testCase.id} failed: ${(error as Error).message}`)
+        throw error
       }
-      ;(aggregateManifest.cases as Array<Record<string, unknown>>).push(summary)
-      console.log(`[stress] ${testCase.id} captured.`)
-    } catch (error) {
-      console.error(`[stress] ${testCase.id} failed: ${(error as Error).message}`)
-      throw error
     }
-  }
 
   aggregateManifest.finishedAt = Date.now()
   aggregateManifest.artifactDir = batchDir
@@ -1557,6 +1719,10 @@ const main = async () => {
   } else {
     console.log(`[stress] Bundle available at ${batchDir}`)
   }
+  const keepRuns = Number(process.env.STRESS_KEEP_RUNS ?? DEFAULT_KEEP_RUNS)
+  await pruneOldBatches(options.outDir, keepRuns).catch((error) =>
+    console.warn(`[stress] prune failed: ${(error as Error).message}`),
+  )
   } finally {
     if (mockProcess) {
       await mockProcess.stop().catch((error) => console.warn("[stress] mock SSE shutdown failed:", error))

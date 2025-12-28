@@ -57,6 +57,14 @@ export interface ToolLogEntry {
   readonly createdAt: number
 }
 
+export interface TodoItem {
+  readonly id: string
+  readonly title: string
+  readonly status: string
+  readonly priority?: string | number | null
+  readonly metadata?: Record<string, unknown> | null
+}
+
 export interface ModelMenuItem {
   readonly label: string
   readonly value: string
@@ -85,12 +93,14 @@ export interface GuardrailNotice {
 
 export type PermissionRuleScope = "session" | "project" | "global"
 
+type PermissionDecisionNote = { readonly note?: string | null }
+
 export type PermissionDecision =
-  | { readonly kind: "allow-once" }
-  | { readonly kind: "allow-always"; readonly scope: PermissionRuleScope; readonly rule?: string | null }
-  | { readonly kind: "deny-once" }
-  | { readonly kind: "deny-always"; readonly scope: PermissionRuleScope; readonly rule?: string | null }
-  | { readonly kind: "deny-stop" }
+  | ({ readonly kind: "allow-once" } & PermissionDecisionNote)
+  | ({ readonly kind: "allow-always"; readonly scope: PermissionRuleScope; readonly rule?: string | null } & PermissionDecisionNote)
+  | ({ readonly kind: "deny-once" } & PermissionDecisionNote)
+  | ({ readonly kind: "deny-always"; readonly scope: PermissionRuleScope; readonly rule?: string | null } & PermissionDecisionNote)
+  | ({ readonly kind: "deny-stop" } & PermissionDecisionNote)
 
 export interface PermissionRequest {
   readonly requestId: string

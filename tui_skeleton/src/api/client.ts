@@ -7,6 +7,7 @@ import type {
   SessionSummary,
   SessionFileInfo,
   SessionFileContent,
+  ModelCatalogResponse,
 } from "./types.js"
 
 export class ApiError extends Error {
@@ -120,6 +121,8 @@ export const ApiClient = {
         max_bytes: options?.maxBytes,
       },
     }),
+  getModelCatalog: (configPath: string) =>
+    request<ModelCatalogResponse>("/models", "GET", { query: { config_path: configPath } }),
   downloadArtifact: (sessionId: string, artifact: string) =>
     request<string>(`/sessions/${sessionId}/download`, "GET", { query: { artifact }, responseType: "text" }),
   uploadAttachments: async (sessionId: string, attachments: ReadonlyArray<AttachmentUploadPayload>) => {
@@ -172,4 +175,5 @@ export type {
   ErrorResponse,
   SessionFileInfo,
   SessionFileContent,
+  ModelCatalogResponse,
 }

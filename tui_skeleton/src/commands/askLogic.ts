@@ -8,6 +8,7 @@ export interface AskOptions {
   readonly overrides?: Record<string, unknown>
   readonly metadata?: Record<string, unknown>
   readonly remoteStream?: boolean
+  readonly permissionMode?: string | null
 }
 
 export interface AskResult {
@@ -33,6 +34,7 @@ export const runAsk = async (
     config_path: options.configPath,
     task: options.prompt,
     workspace: options.workspace ?? undefined,
+    permission_mode: options.permissionMode ?? undefined,
     overrides: Object.keys(overrides).length ? overrides : undefined,
     metadata: Object.keys(metadata).length ? metadata : undefined,
     stream: true,

@@ -1,0 +1,8 @@
+[
+  { "action": "log", "message": "Model picker smoke start" },
+  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "press", "key": "ctrl+k" },
+  { "action": "wait", "ms": 500 },
+  { "action": "snapshot", "label": "model-picker-after-ctrl-k" },
+  { "action": "log", "message": "Model picker smoke end" }
+]

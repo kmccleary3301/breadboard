@@ -1,8 +1,12 @@
+import { promises as fs } from "node:fs"
+import path from "node:path"
+import { ApiClient, ApiError } from "../api/client.js"
+import type { ModelCatalogEntry } from "../api/types.js"
 import { DEFAULT_MODEL_ID } from "../config/appConfig.js"
 
 export interface ProviderModel {
   readonly id: string
-  readonly provider: "openrouter" | "openai"
+  readonly provider: string
   readonly name: string
   readonly contextLength?: number
   readonly pricing?: string
@@ -31,8 +35,14 @@ interface OpenAIResponse {
 const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/models"
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/models"
 const CACHE_TTL_MS = 5 * 60 * 1000
+const MODEL_CATALOG_PATH = process.env.BREADBOARD_MODEL_CATALOG_PATH?.trim()
 
-let cache: { timestamp: number; models: ProviderModel[] } | null = null
+let cache: { timestamp: number; payload: ModelCatalogPayload } | null = null
+
+export interface ModelCatalogPayload {
+  readonly models: ProviderModel[]
+  readonly defaultModel?: string | null
+}
 
 interface PricingSummary {
   readonly detail?: string
@@ -51,6 +61,100 @@ const parsePricePerThousand = (value: unknown): number | null => {
     return Number.isFinite(numeric) ? numeric : null
   }
   return null
+}
+
+const resolveCatalogPath = (input: string): string => (path.isAbsolute(input) ? input : path.join(process.cwd(), input))
+
+const normalizeFixtureEntry = (value: unknown): ProviderModel | null => {
+  if (!value || typeof value !== "object") return null
+  const record = value as Record<string, unknown>
+  const id = typeof record.id === "string" ? record.id : typeof record.value === "string" ? record.value : null
+  if (!id) return null
+  const provider = typeof record.provider === "string" ? record.provider : "custom"
+  const name = typeof record.name === "string" ? record.name : typeof record.label === "string" ? record.label : id
+  const contextLength =
+    typeof record.contextLength === "number"
+      ? record.contextLength
+      : typeof record.context_length === "number"
+        ? record.context_length
+        : undefined
+  const pricing = typeof record.pricing === "string" ? record.pricing : undefined
+  const priceInPerM = typeof record.priceInPerM === "number" ? record.priceInPerM : null
+  const priceOutPerM = typeof record.priceOutPerM === "number" ? record.priceOutPerM : null
+  const tags = Array.isArray(record.tags) ? (record.tags.filter((tag) => typeof tag === "string") as string[]) : undefined
+  return {
+    id,
+    provider,
+    name,
+    contextLength,
+    pricing,
+    priceInPerM,
+    priceOutPerM,
+    tags,
+  }
+}
+
+const loadFixtureCatalog = async (): Promise<ProviderModel[] | null> => {
+  if (!MODEL_CATALOG_PATH) return null
+  const resolved = resolveCatalogPath(MODEL_CATALOG_PATH)
+  try {
+    const raw = await fs.readFile(resolved, "utf8")
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.map(normalizeFixtureEntry).filter((entry): entry is ProviderModel => entry !== null)
+  } catch (error) {
+    if (process.env.DEBUG_CLI_MODELS === "1") {
+      console.error("[models] fixture load failed", error)
+    }
+    return []
+  }
+}
+
+const inferProvider = (modelId: string, provider?: string | null, adapter?: string | null): string => {
+  if (provider && provider.trim()) return provider.trim()
+  if (modelId.includes("/")) return modelId.split("/", 1)[0]
+  if (adapter && adapter.trim()) return adapter.trim()
+  return "custom"
+}
+
+const normalizeEngineEntry = (entry: ModelCatalogEntry): ProviderModel | null => {
+  const id = typeof entry.id === "string" ? entry.id : ""
+  if (!id) return null
+  const provider = inferProvider(id, entry.provider ?? undefined, entry.adapter ?? undefined)
+  const name = entry.name && entry.name.trim().length > 0 ? entry.name : id
+  const contextLength = typeof entry.context_length === "number" ? entry.context_length : undefined
+  return {
+    id,
+    provider,
+    name,
+    contextLength,
+    pricing: undefined,
+    priceInPerM: null,
+    priceOutPerM: null,
+    tags: undefined,
+  }
+}
+
+const fetchEngineCatalog = async (configPath: string): Promise<ModelCatalogPayload | null> => {
+  if (!configPath || !configPath.trim()) return null
+  try {
+    const response = await ApiClient.getModelCatalog(configPath)
+    const models = response.models
+      .map(normalizeEngineEntry)
+      .filter((entry): entry is ProviderModel => entry !== null)
+    return {
+      models,
+      defaultModel: response.default_model ?? null,
+    }
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 404 || error.status === 501)) {
+      return null
+    }
+    if (process.env.DEBUG_CLI_MODELS === "1") {
+      console.error("[models] engine catalog failed", error)
+    }
+    return null
+  }
 }
 
 const toPerMillion = (perThousand: number | null): number | null => {
@@ -152,19 +256,30 @@ const fetchOpenAIModels = async (): Promise<ProviderModel[]> => {
   }
 }
 
-export const getModelCatalog = async (): Promise<ProviderModel[]> => {
+export const getModelCatalog = async (options: { configPath?: string } = {}): Promise<ModelCatalogPayload> => {
+  const fixture = await loadFixtureCatalog()
+  if (fixture) {
+    const payload = { models: fixture, defaultModel: DEFAULT_MODEL_ID }
+    cache = { timestamp: Date.now(), payload }
+    return payload
+  }
   if (cache && Date.now() - cache.timestamp < CACHE_TTL_MS) {
-    return cache.models
+    return cache.payload
+  }
+  const engine = await fetchEngineCatalog(options.configPath ?? "")
+  if (engine && engine.models.length > 0) {
+    cache = { timestamp: Date.now(), payload: engine }
+    return engine
   }
   const [openRouter, openAI] = await Promise.all([fetchOpenRouterModels(), fetchOpenAIModels()])
   const combined = [...openRouter, ...openAI]
-  // Ensure default model is up front if available.
   combined.sort((a, b) => {
     if (a.id === DEFAULT_MODEL_ID && b.id !== DEFAULT_MODEL_ID) return -1
     if (a.id !== DEFAULT_MODEL_ID && b.id === DEFAULT_MODEL_ID) return 1
     if (a.provider !== b.provider) return a.provider.localeCompare(b.provider)
     return a.name.localeCompare(b.name)
   })
-  cache = { timestamp: Date.now(), models: combined }
-  return combined
+  const payload = { models: combined, defaultModel: DEFAULT_MODEL_ID }
+  cache = { timestamp: Date.now(), payload }
+  return payload
 }

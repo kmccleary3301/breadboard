@@ -5,8 +5,10 @@ export type EventType =
   | "tool_call"
   | "tool_result"
   | "permission_request"
+  | "permission_response"
   | "checkpoint_list"
   | "checkpoint_restored"
+  | "task_event"
   | "reward_update"
   | "completion"
   | "log_link"
@@ -34,6 +36,23 @@ export interface SessionFileContent {
   readonly content: string
   readonly truncated?: boolean
   readonly total_bytes?: number
+}
+
+export interface ModelCatalogEntry {
+  readonly id: string
+  readonly adapter?: string | null
+  readonly provider?: string | null
+  readonly name?: string | null
+  readonly context_length?: number | null
+  readonly params?: Record<string, unknown> | null
+  readonly routing?: Record<string, unknown> | null
+  readonly metadata?: Record<string, unknown> | null
+}
+
+export interface ModelCatalogResponse {
+  readonly models: ModelCatalogEntry[]
+  readonly default_model?: string | null
+  readonly config_path?: string | null
 }
 
 export interface SessionArtifactInfo {

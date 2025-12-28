@@ -10,7 +10,7 @@ import { filesCommand } from "./commands/files.js"
 import { artifactsCommand } from "./commands/artifacts.js"
 import { renderCommand } from "./commands/render.js"
 
-const root = Command.make("kyle", {}, () => Effect.succeed(undefined)).pipe(
+const root = Command.make("breadboard", {}, () => Effect.succeed(undefined)).pipe(
   Command.withSubcommands([
     askCommand,
     replCommand,
@@ -23,7 +23,7 @@ const root = Command.make("kyle", {}, () => Effect.succeed(undefined)).pipe(
   ]),
 )
 
-const cli = Command.run(root, { name: "breadboard CLI", version: "0.2.0" })
+const cli = Command.run(root, { name: "breadboard", version: "0.2.0" })
 
 const defaultedToRepl = process.argv.length <= 2
 const argv = defaultedToRepl ? [...process.argv.slice(0, 2), "repl"] : process.argv

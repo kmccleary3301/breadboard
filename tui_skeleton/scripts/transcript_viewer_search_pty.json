@@ -1,0 +1,17 @@
+[
+  { "action": "log", "message": "Transcript viewer search PTY start" },
+  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "type", "text": "Hello transcript", "typingDelayMs": 10 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 400 },
+  { "action": "type", "text": "/transcript" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "transcript viewer", "timeoutMs": 15000 },
+  { "action": "type", "text": "/Hello", "typingDelayMs": 5 },
+  { "action": "wait", "ms": 200 },
+  { "action": "press", "key": "enter" },
+  { "action": "snapshot", "label": "search-active" },
+  { "action": "press", "key": "escape" },
+  { "action": "snapshot", "label": "back" },
+  { "action": "log", "message": "Transcript viewer search PTY end" }
+]

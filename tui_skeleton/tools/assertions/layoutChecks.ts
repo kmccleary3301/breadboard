@@ -38,11 +38,14 @@ export const runLayoutAssertionsOnLines = (lines: string[]): LayoutAnomaly[] => 
     anomalies.push({ id: "header-duplicate", message: "BreadBoard banner appears multiple times" })
   }
 
+  const transcriptViewerActive = lines.some((line) => containsCaseInsensitive(line, "transcript viewer")) ||
+    lines.some((line) => /Lines\s+\d+-\d+\s+of\s+\d+/i.test(line))
+
   const composerCandidate = lines.findIndex((line) => {
     const trimmed = line.trim()
-    return trimmed.startsWith("›") || containsCaseInsensitive(trimmed, "type your request")
+    return trimmed.startsWith("›") || trimmed.startsWith(">") || containsCaseInsensitive(trimmed, "type your request")
   })
-  if (composerCandidate === -1) {
+  if (!transcriptViewerActive && composerCandidate === -1) {
     anomalies.push({ id: "composer-missing", message: "Could not find composer prompt" })
   }
 
