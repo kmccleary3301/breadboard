@@ -141,7 +141,7 @@ class CheckpointManager:
                 deletions += int(del_raw)
         return tracked, additions, deletions
 
-    def create_checkpoint(self, preview: str) -> CheckpointSummary:
+    def create_checkpoint(self, preview: str, *, snapshot: Optional[Dict[str, Any]] = None) -> CheckpointSummary:
         preview_text = str(preview or "").strip() or "Checkpoint"
         with self._lock:
             self._ensure_repo()
@@ -173,6 +173,10 @@ class CheckpointManager:
                 "deletions": deletions,
                 "has_untracked_changes": False,
             }
+            if isinstance(snapshot, dict):
+                snapshot_path = self._write_snapshot(checkpoint_id, snapshot)
+                if snapshot_path:
+                    entry["snapshot_path"] = snapshot_path
             entries.append(entry)
             self._write_meta(entries)
 
@@ -231,3 +235,36 @@ class CheckpointManager:
                 entries = entries[: index + 1]
                 self._write_meta(entries)
 
+    def _write_snapshot(self, checkpoint_id: str, snapshot: Dict[str, Any]) -> Optional[str]:
+        try:
+            target = self._root / "snapshots" / f"{checkpoint_id}.json"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+            rel = str(target.relative_to(self._workspace_dir))
+            return rel
+        except Exception:
+            return None
+
+    def load_snapshot(self, checkpoint_id: str) -> Optional[Dict[str, Any]]:
+        cid = str(checkpoint_id or "").strip()
+        if not cid:
+            return None
+        with self._lock:
+            entries = self._load_meta()
+            snapshot_path = None
+            for entry in entries:
+                entry_id = str(entry.get("checkpoint_id") or entry.get("id") or "")
+                if entry_id == cid:
+                    snapshot_path = entry.get("snapshot_path") or entry.get("snapshot")
+                    break
+        if not snapshot_path:
+            return None
+        try:
+            target = Path(snapshot_path)
+            if not target.is_absolute():
+                target = (self._workspace_dir / snapshot_path).resolve()
+            if not target.exists():
+                return None
+            return json.loads(target.read_text(encoding="utf-8"))
+        except Exception:
+            return None

@@ -369,6 +369,37 @@ class OpenAIConductor:
         """Ensure the workspace directory exists and is empty before use."""
         return prepare_workspace(workspace)
 
+    def _load_resume_snapshot(self) -> Optional[Dict[str, Any]]:
+        resume_cfg = {}
+        try:
+            resume_cfg = (self.config.get("resume") or {}) if isinstance(self.config, dict) else {}
+        except Exception:
+            resume_cfg = {}
+        explicit_path = None
+        if isinstance(resume_cfg, dict):
+            explicit_path = resume_cfg.get("snapshot_path") or resume_cfg.get("snapshot")
+        env_path = os.environ.get("BREADBOARD_RESUME_SNAPSHOT")
+        workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
+        default_path = workspace_root / ".breadboard" / "checkpoints" / "active_snapshot.json"
+        candidate = explicit_path or env_path or (str(default_path) if default_path.exists() else None)
+        if not candidate:
+            return None
+        target = Path(str(candidate))
+        if not target.is_absolute():
+            target = (workspace_root / target).resolve()
+        if not target.exists():
+            return None
+        try:
+            payload = json.loads(target.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if explicit_path is None and env_path is None:
+            try:
+                target.unlink()
+            except Exception:
+                pass
+        return payload if isinstance(payload, dict) else None
+
     def _get_multi_agent_orchestrator(self) -> Optional[MultiAgentOrchestrator]:
         cfg = (self.config.get("multi_agent") or {}) if isinstance(getattr(self, "config", None), dict) else {}
         if not cfg or not bool(cfg.get("enabled")):
@@ -461,6 +492,10 @@ class OpenAIConductor:
 
         for ev in new_events:
             payload = getattr(ev, "payload", {}) or {}
+            try:
+                payload = orchestrator.bus_adapter.format_wakeup(dict(payload))
+            except Exception:
+                payload = dict(payload)
             try:
                 msg = orchestrator.bus_adapter.build_mvi_message("wakeup", dict(payload))
             except Exception:
@@ -678,6 +713,7 @@ class OpenAIConductor:
         output_text: Optional[str],
         error_text: Optional[str],
         orchestrator_job_id: Optional[str],
+        transcript_path: Optional[str] = None,
         seq: Optional[int] = None,
         created_at: Optional[float] = None,
         completed_at: Optional[float] = None,
@@ -694,6 +730,8 @@ class OpenAIConductor:
             "error": error_text,
             "orchestrator_job_id": orchestrator_job_id,
         }
+        if transcript_path:
+            payload["transcript_path"] = transcript_path
         if seq is not None:
             payload["seq"] = seq
         if created_at is not None:
@@ -715,6 +753,41 @@ class OpenAIConductor:
         except Exception:
             pass
 
+    def _persist_subagent_transcript(
+        self,
+        *,
+        task_id: str,
+        transcript: Optional[List[Dict[str, Any]]],
+    ) -> Optional[str]:
+        if not task_id or not transcript:
+            return None
+        rows = [row for row in transcript if isinstance(row, dict)]
+        if not rows:
+            return None
+        payload = "\n".join([json.dumps(row, ensure_ascii=False) for row in rows]) + "\n"
+        rel_path = f".kyle/subagents/agent-{task_id}.jsonl"
+        recorded_path: Optional[str] = None
+        try:
+            workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
+            if workspace_root.exists():
+                dest = workspace_root / ".kyle" / "subagents" / f"agent-{task_id}.jsonl"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(payload, encoding="utf-8")
+                recorded_path = rel_path
+        except Exception:
+            pass
+        try:
+            run_dir = getattr(getattr(self, "logger_v2", None), "run_dir", None)
+            if run_dir:
+                dest = Path(str(run_dir)) / "meta" / "subagents" / f"agent-{task_id}.jsonl"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(payload, encoding="utf-8")
+                if recorded_path is None:
+                    recorded_path = str(dest)
+        except Exception:
+            pass
+        return recorded_path
+
     def _emit_task_event(self, payload: Dict[str, Any]) -> None:
         session_state = getattr(self, "_active_session_state", None)
         if session_state is None:
@@ -734,6 +807,7 @@ class OpenAIConductor:
         prompt = str(args.get("prompt") or "").strip()
         subagent_type = str(args.get("subagent_type") or args.get("subagentType") or "").strip()
         run_in_background = bool(args.get("run_in_background") or args.get("runInBackground") or False)
+        resume_id = str(args.get("resume") or "").strip()
         if not description or not prompt or not subagent_type:
             missing = []
             if not description:
@@ -804,6 +878,20 @@ class OpenAIConductor:
         expected_status = tool_call.get("expected_status")
         expected_metadata = tool_call.get("expected_metadata")
 
+        if resume_id:
+            if isinstance(expected_output, str):
+                if str(expected_status or "").lower() == "error":
+                    return {"error": expected_output, "__mvi_text_output": expected_output}
+                meta_payload = expected_metadata if isinstance(expected_metadata, dict) else {}
+                return {
+                    "title": description,
+                    "output": expected_output,
+                    "__mvi_text_output": expected_output,
+                    "metadata": meta_payload,
+                }
+            msg = f"No transcript found for agent ID: {resume_id}"
+            return {"error": msg, "__mvi_text_output": msg}
+
         # Phase 8: multi-agent orchestrator-backed execution (live).
         orchestrator = self._get_multi_agent_orchestrator()
         if orchestrator is not None:
@@ -864,6 +952,7 @@ class OpenAIConductor:
                 def _runner() -> None:
                     try:
                         output_text = ""
+                        transcript_path: Optional[str] = None
                         if subagent_type == "repo-scanner":
                             try:
                                 root = Path(self.workspace).resolve()
@@ -911,6 +1000,10 @@ class OpenAIConductor:
                                 max_steps=max_steps,
                             )
                             if isinstance(child_output, dict):
+                                transcript_path = self._persist_subagent_transcript(
+                                    task_id=task_id,
+                                    transcript=child_output.get("transcript"),
+                                )
                                 output_text = self._extract_last_assistant_text(child_output.get("messages"))
                                 if not output_text:
                                     output_text = str(
@@ -932,6 +1025,7 @@ class OpenAIConductor:
                             output_text=output_text,
                             error_text=None,
                             orchestrator_job_id=spawn.job.job_id,
+                            transcript_path=transcript_path,
                             seq=getattr(spawn.job, "seq", None),
                             created_at=job.created_at,
                             completed_at=job.completed_at,
@@ -1063,7 +1157,12 @@ class OpenAIConductor:
             )
 
             output_text = ""
+            transcript_path: Optional[str] = None
             if isinstance(child_output, dict):
+                transcript_path = self._persist_subagent_transcript(
+                    task_id=spawn.job.job_id,
+                    transcript=child_output.get("transcript"),
+                )
                 output_text = self._extract_last_assistant_text(child_output.get("messages"))
                 if not output_text:
                     output_text = str(
@@ -1082,6 +1181,7 @@ class OpenAIConductor:
                 output_text=output_text,
                 error_text=None,
                 orchestrator_job_id=spawn.job.job_id,
+                transcript_path=transcript_path,
                 seq=getattr(spawn.job, "seq", None),
                 created_at=time.time(),
                 completed_at=time.time(),
@@ -2767,7 +2867,25 @@ class OpenAIConductor:
         enhanced_system_msg = {"role": "system", "content": system_prompt}
         initial_user_content = user_prompt if not per_turn_prompt else (user_prompt + "\n\n" + per_turn_prompt)
         enhanced_user_msg = {"role": "user", "content": initial_user_content}
-        session_state.add_message(enhanced_system_msg)
+        resume_snapshot = self._load_resume_snapshot()
+        resume_has_system = False
+        if isinstance(resume_snapshot, dict):
+            seed_messages = resume_snapshot.get("messages")
+            if isinstance(seed_messages, list):
+                cleaned = [msg for msg in seed_messages if isinstance(msg, dict)]
+                if cleaned:
+                    session_state.messages = list(cleaned)
+                    session_state.provider_messages = list(cleaned)
+                    resume_has_system = any(m.get("role") == "system" for m in cleaned if isinstance(m, dict))
+            seed_transcript = resume_snapshot.get("transcript")
+            if isinstance(seed_transcript, list):
+                session_state.transcript = [entry for entry in seed_transcript if isinstance(entry, dict)]
+            meta = resume_snapshot.get("provider_metadata")
+            if isinstance(meta, dict):
+                session_state.provider_metadata.update(meta)
+            session_state.set_provider_metadata("resume_snapshot_applied", True)
+        if not resume_has_system:
+            session_state.add_message(enhanced_system_msg)
         session_state.add_message(enhanced_user_msg)
         
         # Configure native tools and tool prompt mode

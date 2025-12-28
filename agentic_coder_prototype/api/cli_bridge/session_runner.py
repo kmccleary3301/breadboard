@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import shutil
@@ -131,6 +132,25 @@ class SessionRunner:
                     prune = True
                 if mode in {"code", "both"}:
                     manager.restore_checkpoint(checkpoint_id.strip(), prune=prune)
+                if mode in {"conversation", "both"}:
+                    try:
+                        snapshot = manager.load_snapshot(checkpoint_id.strip())
+                    except Exception:
+                        snapshot = None
+                    if snapshot:
+                        workspace_dir = self.get_workspace_dir()
+                        if workspace_dir:
+                            active_path = workspace_dir / ".breadboard" / "checkpoints" / "active_snapshot.json"
+                            try:
+                                active_path.parent.mkdir(parents=True, exist_ok=True)
+                                active_path.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+                                self.session.metadata["conversation_snapshot"] = {
+                                    "checkpoint_id": checkpoint_id.strip(),
+                                    "path": str(active_path),
+                                }
+                                self._persist_metadata_snapshot_threadsafe()
+                            except Exception:
+                                pass
                 self.publish_event(
                     EventType.CHECKPOINT_RESTORED,
                     {"checkpoint_id": checkpoint_id.strip(), "mode": mode, "prune": prune},
@@ -762,4 +782,9 @@ class SessionRunner:
                 "message": message,
                 "content": (message or {}).get("content") if isinstance(message, dict) else None,
             }
+        elif evt is EventType.TASK_EVENT:
+            if "sessionId" in normalized_payload and "session_id" not in normalized_payload:
+                normalized_payload["session_id"] = normalized_payload.get("sessionId")
+            if "taskId" in normalized_payload and "task_id" not in normalized_payload:
+                normalized_payload["task_id"] = normalized_payload.get("taskId")
         return evt, normalized_payload, turn

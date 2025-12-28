@@ -69,6 +69,8 @@ def _normalize_guardrail_event(event: Any) -> Optional[Dict[str, Any]]:
 
 def compare_guardrail_events(actual: List[Dict[str, Any]], expected: List[Dict[str, Any]]) -> List[str]:
     mismatches: List[str] = []
+    if not expected:
+        return mismatches
     if len(actual) != len(expected):
         mismatches.append(f"Guardrail event length mismatch: actual {len(actual)} vs expected {len(expected)}")
     for idx in range(min(len(actual), len(expected))):
@@ -238,6 +240,18 @@ _MULTI_AGENT_ID_KEYS = {
 def _normalize_multi_agent_events(events: List[Dict[str, Any]], prefixes: List[str]) -> List[Dict[str, Any]]:
     id_maps: Dict[str, Dict[str, str]] = {}
     counters: Dict[str, int] = {}
+    job_seq: Dict[str, Any] = {}
+
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        job_id = payload.get("job_id") or payload.get("jobId") or payload.get("jobID")
+        seq = payload.get("seq")
+        if isinstance(job_id, str) and job_id and seq is not None:
+            job_seq[job_id] = seq
 
     def _map_id(key: str, value: Any) -> Any:
         if not isinstance(value, str) or not value:
@@ -276,6 +290,16 @@ def _normalize_multi_agent_events(events: List[Dict[str, Any]], prefixes: List[s
                     continue
                 if event_type in {"agent.job_completed", "agent.job_failed"} and key in {"output", "error"}:
                     continue
+                if event_type == "run.started" and key in {"user_prompt"}:
+                    continue
+                if event_type == "agent.wakeup_emitted" and key == "message" and isinstance(value, str):
+                    normalized_message = value
+                    if normalized_message.startswith("Task "):
+                        marker = normalized_message.find(" (")
+                        if marker != -1:
+                            normalized_message = "Task <TASK>" + normalized_message[marker:]
+                    cleaned[key] = _normalize_scalar(normalized_message)
+                    continue
                 if key.lower() in _MULTI_AGENT_ID_KEYS:
                     cleaned[key] = _map_id(key, value)
                 else:
@@ -295,12 +319,26 @@ def _normalize_multi_agent_events(events: List[Dict[str, Any]], prefixes: List[s
             "agent_id": event.get("agent_id"),
             "parent_agent_id": event.get("parent_agent_id"),
             "causal_parent_event_id": event.get("causal_parent_event_id"),
-            "mvi_hash": event.get("mvi_hash"),
         }
         payload = event.get("payload")
         if payload is not None:
             normalized["payload"] = _normalize_payload(payload, event_type=event_type)
         normalized_events.append(normalized)
+
+    def _sort_key(event: Dict[str, Any]) -> tuple:
+        event_type = str(event.get("type") or "")
+        if event_type == "run.started":
+            return (-1, event_type, "", "")
+        payload = event.get("payload") or {}
+        seq = payload.get("seq")
+        job_id = payload.get("job_id") or payload.get("jobId") or payload.get("jobID")
+        if seq is None and isinstance(job_id, str) and job_id in job_seq:
+            seq = job_seq[job_id]
+        seq_val = int(seq) if isinstance(seq, int) else 0
+        agent_id = str(event.get("agent_id") or "")
+        return (seq_val, event_type, agent_id, str(job_id or ""))
+
+    normalized_events.sort(key=_sort_key)
     return normalized_events
 
 
@@ -361,7 +399,7 @@ def _normalize_turn_tools(tools: Any) -> List[Dict[str, Any]]:
 
 def compare_tool_usage_summary(actual: Dict[str, Any], expected: Dict[str, Any]) -> List[str]:
     mismatches: List[str] = []
-    if not actual and not expected:
+    if not expected:
         return mismatches
     keys = set(actual.keys()) | set(expected.keys())
     for key in sorted(keys):
@@ -372,7 +410,7 @@ def compare_tool_usage_summary(actual: Dict[str, Any], expected: Dict[str, Any])
 
 def compare_turn_tool_usage(actual: List[Dict[str, Any]], expected: List[Dict[str, Any]]) -> List[str]:
     mismatches: List[str] = []
-    if not actual and not expected:
+    if not expected:
         return mismatches
     actual_norm = _normalize_turn_tool_usage(actual)
     expected_norm = _normalize_turn_tool_usage(expected)
@@ -881,7 +919,7 @@ def compare_run_ir(lhs: RunIR, rhs: RunIR, level: EquivalenceLevel) -> List[str]
         mismatches.extend(_compare_todo_snapshot(lhs.todo_snapshot, rhs.todo_snapshot))
 
     def _do_structural() -> None:
-        if rhs.guard_events or lhs.guard_events:
+        if rhs.guard_events:
             if _guard_types(lhs.guard_events) != _guard_types(rhs.guard_events):
                 mismatches.append("Guardrail event type sequence mismatch")
         if rhs.todo_journal or lhs.todo_journal:

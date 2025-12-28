@@ -160,3 +160,19 @@ def test_task_tool_replay_index_selects_session(tmp_path: Path) -> None:
     assert out.get("output") == "bravo"
     meta = out.get("metadata") or {}
     assert meta.get("sessionId") == "ses_b"
+
+
+def test_task_tool_resume_returns_error() -> None:
+    conductor = _make_conductor({})
+    out = conductor._exec_raw(
+        {
+            "function": "task",
+            "arguments": {
+                "description": "Resume test",
+                "prompt": "No-op",
+                "subagent_type": "repo-scanner",
+                "resume": "abc123",
+            },
+        }
+    )
+    assert "No transcript found for agent ID: abc123" in str(out.get("error") or out.get("__mvi_text_output") or "")

@@ -313,6 +313,20 @@ def execute_agent_calls(
             "apply_search_replace",
             "patch",
         }
+        def _checkpoint_snapshot() -> Optional[Dict[str, Any]]:
+            try:
+                model = session_state.get_provider_metadata("resolved_model") or session_state.get_provider_metadata("model")
+            except Exception:
+                model = None
+            if not model:
+                try:
+                    model = (session_state.config.get("providers", {}) or {}).get("default_model")
+                except Exception:
+                    model = None
+            try:
+                return session_state.create_snapshot(str(model or "unknown"))
+            except Exception:
+                return None
         checkpoint_manager: Optional[CheckpointManager] = None
         before_tool: Optional[str] = None
         for call in parsed_calls:
@@ -329,7 +343,7 @@ def execute_agent_calls(
         if before_tool:
             try:
                 checkpoint_manager = CheckpointManager(Path(conductor.workspace))
-                checkpoint_manager.create_checkpoint(f"Before {before_tool}")
+                checkpoint_manager.create_checkpoint(f"Before {before_tool}", snapshot=_checkpoint_snapshot())
             except Exception:
                 checkpoint_manager = None
 
@@ -355,7 +369,7 @@ def execute_agent_calls(
                     after_tool = tool_name
             if after_tool:
                 try:
-                    checkpoint_manager.create_checkpoint(f"After {after_tool}")
+                    checkpoint_manager.create_checkpoint(f"After {after_tool}", snapshot=_checkpoint_snapshot())
                 except Exception:
                     pass
         return executed_results, failed_at_index, validation_error, meta
