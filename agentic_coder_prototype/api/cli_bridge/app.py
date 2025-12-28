@@ -23,6 +23,7 @@ from .events import SessionEvent
 from .models import (
     AttachmentUploadResponse,
     ErrorResponse,
+    ModelCatalogResponse,
     SessionCommandRequest,
     SessionCommandResponse,
     SessionCreateRequest,
@@ -78,6 +79,17 @@ def create_app(service: SessionService | None = None) -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get(
+        "/models",
+        response_model=ModelCatalogResponse,
+        responses={400: {"model": ErrorResponse}},
+    )
+    async def list_models(
+        config_path: str,
+        svc: SessionService = Depends(get_service),
+    ):
+        return await svc.list_models(config_path)
 
     @app.post(
         "/sessions",

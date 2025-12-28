@@ -39,9 +39,13 @@ if [[ -n "${MOCK_SSE_SCRIPT}" ]]; then
   fi
   echo "[cli-bridge] Launching deterministic mock SSE server on ${MOCK_SSE_HOST}:${MOCK_SSE_PORT}"
   echo "[cli-bridge] Script: ${RESOLVED_SCRIPT}"
+  MOCK_SSE_SERVER="${ROOT_DIR}/tools/mock/mockSseServer.ts"
+  if [[ ! -f "${MOCK_SSE_SERVER}" ]]; then
+    MOCK_SSE_SERVER="${ROOT_DIR}/tui_skeleton/tools/mock/mockSseServer.ts"
+  fi
   MOCK_SSE_ARGS=(
     "tsx"
-    "tools/mock/mockSseServer.ts"
+    "${MOCK_SSE_SERVER}"
     "--script"
     "${RESOLVED_SCRIPT}"
     "--host"

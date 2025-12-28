@@ -1,0 +1,18 @@
+id: lsp_servers
+name: lsp_servers
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: List available LSP servers and installation status.
+parameters: []

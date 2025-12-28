@@ -1,26 +1,41 @@
 id: list
 name: list
-description: List files under a directory (OpenCode-compatible)
+description: 'Lists files and directories in a given path. The path parameter must
+  be absolute; omit it to use the current workspace directory. You can optionally
+  provide an array of glob patterns to ignore with the ignore parameter. You should
+  generally prefer the Glob and Grep tools, if you know which directories to search.
+
+  '
 type_id: python
 manipulations:
-  - file.list
-syntax_formats_supported: [native_function_calling]
-preferred_formats: [native_function_calling]
+- file.list
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
 parameters:
-  - name: path
+- name: path
+  type: string
+  description: The absolute path to the directory to list (must be absolute, not relative)
+  required: false
+  schema:
+    description: The absolute path to the directory to list (must be absolute, not
+      relative)
     type: string
-    description: The absolute path to the directory to list (if omitted, uses workspace root)
-    required: false
-  - name: ignore
-    type: array
+- name: ignore
+  type: array
+  description: List of glob patterns to ignore
+  required: false
+  schema:
     description: List of glob patterns to ignore
-    required: false
+    type: array
+    items:
+      type: string
 execution:
   blocking: false
 provider_routing:
   openai:
     native_primary: true
     function_call: auto
-
-
-
+    additional_properties: false
+    strict: false

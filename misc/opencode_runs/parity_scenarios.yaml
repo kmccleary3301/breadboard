@@ -150,6 +150,25 @@ scenarios:
     fail_mode: warn
     max_steps: 40
 
+  - name: opencode_phase8_nested_subagent_replay
+    description: >
+      Replay of the Phase 8 nested-spawn subagent session. Validates that the
+      task tool consumes per-subagent replay sessions (repo-scanner) when
+      expected session IDs are present in the golden output.
+    tags: [opencode, replay, phase8, subagent, nested]
+    enabled: true
+    mode: replay
+    config: agent_configs/opencode_phase8_nested_subagent_replay.yaml
+    session: misc/opencode_runs/replay_sessions/1.0.193/phase8_subagent_nested_spawn_v1/subagents/session_ses_49e19263effe5ho1Y56JWoRzNl.json
+    golden_workspace: misc/opencode_runs/goldens/1.0.193/phase8_subagent_nested_spawn_v1/runs/20251227_222114/workspace
+    workspace_seed: misc/opencode_runs/goldens/1.0.193/phase8_subagent_nested_spawn_v1/runs/20251227_222114/workspace
+    equivalence: bitwise_trace
+    tiers:
+      gate: E3
+      trophy: E4
+    fail_mode: warn
+    max_steps: 20
+
   - name: opencode_webfetch_sentinel_replay
     description: >
       Synthetic OpenCode MVI replay sentinel that exercises OpenCode-native
@@ -805,7 +824,300 @@ scenarios:
     max_steps: 40
 
   # --------------------------------------------------------------------------
-  # Phase 8 – Multi-agent sync subagent smoke (placeholder)
+  # Phase 8 – Multi-agent async subagents (captured)
+  # --------------------------------------------------------------------------
+  - name: opencode_phase8_async_subagents_v1_replay
+    description: >
+      OpenCode multi-agent async surface: one assistant step emits 2x `task`
+      plus 1x `list` tool calls. Replay session captured from OpenCode v1.0.193.
+    tags: [phase8, multi-agent, replay, opencode]
+    enabled: true
+    mode: replay
+    config: agent_configs/opencode_phase8_async_subagents_v1_replay.yaml
+    session: misc/opencode_runs/goldens/1.0.193/phase8_async_subagents_v1/runs/20251224_074535/exports/replay_session.json
+    golden_workspace: misc/opencode_runs/goldens/1.0.193/phase8_async_subagents_v1/runs/20251224_074535/workspace
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 40
+
+  - name: opencode_phase8_subagent_nested_spawn_v1_replay
+    description: >
+      OpenCode subagent nested spawn surface: subagent attempts to call task to spawn
+      another subagent. Captured from instrumented OpenCode v1.0.193.
+    tags: [phase8, multi-agent, replay, opencode, subagent, nested]
+    enabled: true
+    mode: replay
+    config: agent_configs/opencode_phase8_async_subagents_v1_replay.yaml
+    session: misc/opencode_runs/goldens/1.0.193/phase8_subagent_nested_spawn_v1/runs/20251227_222114/exports/replay_session.json
+    golden_workspace: misc/phase_8_fixtures/phase8_subagent_nested_spawn_v1
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 80
+
+  - name: oh_my_opencode_phase8_async_subagents_v1_replay
+    description: >
+      OpenCode + oh-my-opencode multi-agent async surface: uses `background_task`
+      + `background_output` (async subagents) plus `list`. Replay session captured
+      from OpenCode v1.0.193 + oh-my-opencode v2.5.1.
+    tags: [phase8, multi-agent, replay, opencode, oh-my-opencode]
+    enabled: true
+    mode: replay
+    config: agent_configs/oh_my_opencode_phase8_async_subagents_v1_replay.yaml
+    session: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1/runs/20251224_080121/exports/replay_session.json
+    golden_workspace: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1/runs/20251224_080121/workspace
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 60
+
+  - name: oh_my_opencode_phase8_subagent_nested_spawn_v1_replay
+    description: >
+      oh-my-opencode subagent nested spawn surface: subagent attempts to call task to spawn
+      another subagent. Captured from instrumented OpenCode + OMO plugin.
+    tags: [phase8, multi-agent, replay, opencode, oh-my-opencode, subagent, nested]
+    enabled: true
+    mode: replay
+    config: agent_configs/oh_my_opencode_phase8_async_subagents_v1_replay.yaml
+    session: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_subagent_nested_spawn_v1/runs/20251227_222147/exports/replay_session.json
+    golden_workspace: misc/phase_8_fixtures/phase8_subagent_nested_spawn_v1
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 80
+
+  - name: oh_my_opencode_phase8_async_subagents_v1_call_omo_agent_replay
+    description: >
+      Variant oh-my-opencode async run that exercises `call_omo_agent` (invalid-agent
+      error surface) in addition to the OpenCode/oh-my-opencode tool mix.
+    tags: [phase8, multi-agent, replay, opencode, oh-my-opencode, call_omo_agent]
+    enabled: true
+    mode: replay
+    config: agent_configs/oh_my_opencode_phase8_async_subagents_v1_replay.yaml
+    session: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1/runs/20251224_075507/exports/replay_session.json
+    golden_workspace: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1/runs/20251224_075507/workspace
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 80
+
+  - name: oh_my_opencode_phase8_async_subagents_v1_background_cancel_replay
+    description: >
+      oh-my-opencode async run that exercises `background_cancel` (cancel-all path)
+      in addition to `background_task`/`background_output` plus `list`.
+    tags: [phase8, multi-agent, replay, opencode, oh-my-opencode, background_cancel]
+    enabled: true
+    mode: replay
+    config: agent_configs/oh_my_opencode_phase8_async_subagents_v1_replay.yaml
+    session: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1_background_cancel/runs/20251225_034238/exports/replay_session.json
+    golden_workspace: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1_background_cancel/runs/20251225_034238/workspace
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 80
+
+  - name: oh_my_opencode_phase8_async_subagents_v1_background_cancel_taskid_replay
+    description: >
+      oh-my-opencode async run that exercises `background_cancel(taskId=...)` success
+      and the follow-on non-running error surface (cancelled -> cannot cancel).
+    tags: [phase8, multi-agent, replay, opencode, oh-my-opencode, background_cancel]
+    enabled: true
+    mode: replay
+    config: agent_configs/oh_my_opencode_phase8_async_subagents_v1_replay.yaml
+    session: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1_background_cancel_taskid/runs/20251225_065743/exports/replay_session.json
+    golden_workspace: misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1_background_cancel_taskid/runs/20251225_065743/workspace
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 120
+
+  - name: claude_code_phase8_async_subagents_v1_replay
+    description: >
+      Claude Code async Task/TaskOutput surface: 2x Task (background), 1x Bash, then
+      2x TaskOutput. Replay session captured from claude-code-logged v2.0.76.
+    tags: [phase8, multi-agent, replay, claude]
+    enabled: true
+    mode: replay
+    config: agent_configs/claude_code_haiku45_e4_replay.yaml
+    session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_async_subagents_v1/replay_session.json
+    golden_workspace: misc/phase_8_fixtures/phase8_async_subagents_v1
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 80
+
+  - name: claude_code_phase8_subagent_nested_spawn_v1_replay
+    description: >
+      Claude Code subagent nested spawn surface: subagent attempts Task→Task nesting.
+      Captured from claude-code-logged v2.0.76.
+    tags: [phase8, multi-agent, replay, claude, subagent, nested]
+    enabled: true
+    mode: replay
+    config: agent_configs/claude_code_haiku45_e4_replay.yaml
+    session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_nested_spawn_v1/replay_session.json
+    golden_workspace: misc/phase_8_fixtures/phase8_subagent_nested_spawn_v1
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 80
+
+  - name: claude_code_task_subagent_sync_replay
+    description: >
+      Claude Code sync Task subagent smoke (single Task call returning file contents).
+      Replay session captured from claude-code-logged v2.0.72 fixtures.
+    tags: [phase8, multi-agent, replay, claude, sync]
+    enabled: true
+    mode: replay
+    config: agent_configs/claude_code_haiku45_e4_replay.yaml
+    session: misc/claude_code_runs/replay_sessions/2.0.72/claude_core_task_subagent_sync/replay_session.json
+    golden_workspace: misc/claude_code_fixtures/claude_core_task_subagent_sync
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 40
+
+  - name: claude_code_phase8_async_subagent_wakeup_ordering_v1_replay
+    description: >
+      Claude Code async Task/TaskOutput surface (print mode) attempting to observe wakeup notifications.
+      Captured from claude-code-logged v2.0.76; observed no explicit wakeup message in-model (polling via TaskOutput).
+    tags: [phase8, multi-agent, replay, claude, async, wakeup]
+    enabled: true
+    mode: replay
+    config: agent_configs/claude_code_haiku45_e4_replay.yaml
+    session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_async_subagent_wakeup_ordering_v1/replay_session.json
+    golden_workspace: misc/phase_8_fixtures/phase8_async_subagents_v1
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 80
+
+  - name: claude_code_phase8_async_wakeup_eventlog_replay
+    description: >
+      Replay-only wakeup injection sentinel: async Task calls run live (no stubbed Task output),
+      enabling deterministic multi-agent wakeup/event-log comparisons.
+    tags: [phase8, multi-agent, replay, claude, async, wakeup, eventlog]
+    enabled: true
+    mode: replay
+    config: agent_configs/claude_code_haiku45_phase8_wakeup_replay.yaml
+    session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_async_subagent_wakeup_ordering_v1/replay_session_live.json
+    golden_workspace: misc/phase_8_fixtures/phase8_async_wakeup_v1
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 80
+
+  - name: claude_code_phase8_subagent_write_denial_v1_replay
+    description: >
+      Claude Code subagent write denial surface: subagent attempts Write and receives
+      the SubagentWrite-disabled error. Captured from claude-code-logged v2.0.76.
+    tags: [phase8, multi-agent, replay, claude, subagent, permissions]
+    enabled: true
+    mode: replay
+    config: agent_configs/claude_code_haiku45_e4_replay.yaml
+    session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_write_denial_v1/replay_session.json
+    golden_workspace: misc/phase_8_fixtures/phase8_subagent_write_denial_v1
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 40
+
+  - name: claude_code_phase8_subagent_permission_propagation_v1_replay
+    description: >
+      Claude Code per-subagent tool allowlist/permission surface: subagent executes Bash successfully
+      while main-session Bash may be denied in headless flows. Captured from claude-code-logged v2.0.76.
+    tags: [phase8, multi-agent, replay, claude, subagent, bash]
+    enabled: true
+    mode: replay
+    config: agent_configs/claude_code_haiku45_e4_replay.yaml
+    session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_permission_propagation_v1/replay_session.json
+    golden_workspace: misc/phase_8_fixtures/phase8_subagent_permission_propagation_v1
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 40
+
+  - name: claude_code_phase8_subagent_allowlist_denial_v1_replay
+    description: >
+      Claude Code subagent allowlist surface: subagent lacks Bash in its tool mask and must
+      fall back to read-only tools. Captured from claude-code-logged v2.0.76.
+    tags: [phase8, multi-agent, replay, claude, subagent, allowlist]
+    enabled: true
+    mode: replay
+    config: agent_configs/claude_code_haiku45_e4_replay.yaml
+    session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_allowlist_denial_v1/replay_session.json
+    golden_workspace: misc/phase_8_fixtures/phase8_subagent_allowlist_denial_v1
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 40
+
+  - name: claude_code_phase8_async_subagent_resume_taskoutput_v1_replay
+    description: >
+      Claude Code resume/continue surface for async TaskOutput: in a continued session,
+      TaskOutput for prior task ids returns "No task found with ID". Captured from claude-code-logged v2.0.76.
+    tags: [phase8, multi-agent, replay, claude, resume]
+    enabled: true
+    mode: replay
+    config: agent_configs/claude_code_haiku45_e4_replay.yaml
+    session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_async_subagent_resume_taskoutput_v1/replay_session.json
+    golden_workspace: misc/phase_8_fixtures/phase8_async_subagents_v1
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 60
+
+  - name: claude_code_phase8_subagent_resume_success_v1_replay
+    description: >
+      Claude Code subagent resume success: Task resume using agentId continues prior context.
+      Captured from claude-code-logged v2.0.76.
+    tags: [phase8, multi-agent, replay, claude, resume]
+    enabled: true
+    mode: replay
+    config: agent_configs/claude_code_haiku45_e4_replay.yaml
+    session: misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_resume_success_v1/replay_session.json
+    golden_workspace: misc/phase_8_fixtures/phase8_subagent_resume_success_v1
+    equivalence: normalized_trace
+    tiers:
+      gate: E1
+      trophy: E4
+    fail_mode: warn
+    max_steps: 80
+
+  # --------------------------------------------------------------------------
+  # Phase 8 – Multi-agent sync subagent smoke (TBD)
   # --------------------------------------------------------------------------
   - name: multi_agent_sync_subagent_smoke
     description: >

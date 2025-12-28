@@ -25,4 +25,10 @@ class BusAdapter:
 
     def build_mvi_message(self, topic: str, payload: Dict[str, Any]) -> Optional[Any]:
         """Return a model-visible message for injection, or None."""
+        topic_l = str(topic or "").strip().lower()
+        if topic_l == "wakeup":
+            message = str((payload or {}).get("message") or "").strip()
+            if not message:
+                return None
+            return {"role": "system", "content": message}
         return None

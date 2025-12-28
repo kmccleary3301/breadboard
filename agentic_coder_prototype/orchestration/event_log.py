@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import json
 import time
 import hashlib
+import threading
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -28,10 +29,12 @@ class EventLog:
     def __init__(self) -> None:
         self._events: List[Event] = []
         self._next_id = 1
+        self._lock = threading.Lock()
 
     @property
     def events(self) -> List[Event]:
-        return list(self._events)
+        with self._lock:
+            return list(self._events)
 
     def add(
         self,
@@ -49,30 +52,34 @@ class EventLog:
         mvi_hash = None
         if mvi_payload is not None:
             mvi_hash = _hash_payload(mvi_payload)
-        event = Event(
-            event_id=self._next_id,
-            type=str(event_type),
-            agent_id=str(agent_id),
-            parent_agent_id=parent_agent_id,
-            causal_parent_event_id=causal_parent_event_id,
-            timestamp=ts,
-            payload=payload_dict,
-            mvi_hash=mvi_hash,
-        )
-        self._events.append(event)
-        self._next_id += 1
-        return event
+        with self._lock:
+            event = Event(
+                event_id=self._next_id,
+                type=str(event_type),
+                agent_id=str(agent_id),
+                parent_agent_id=parent_agent_id,
+                causal_parent_event_id=causal_parent_event_id,
+                timestamp=ts,
+                payload=payload_dict,
+                mvi_hash=mvi_hash,
+            )
+            self._events.append(event)
+            self._next_id += 1
+            return event
 
     def extend(self, events: Iterable[Event]) -> None:
-        for event in events:
-            self._events.append(event)
-            self._next_id = max(self._next_id, event.event_id + 1)
+        with self._lock:
+            for event in events:
+                self._events.append(event)
+                self._next_id = max(self._next_id, event.event_id + 1)
 
     def to_jsonl(self, path: str) -> None:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("w", encoding="utf-8") as handle:
-            for event in self._events:
+            with self._lock:
+                events = list(self._events)
+            for event in events:
                 handle.write(json.dumps(event.__dict__, ensure_ascii=False))
                 handle.write("\n")
 

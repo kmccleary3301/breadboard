@@ -1,0 +1,42 @@
+id: call_omo_agent
+name: call_omo_agent
+description: |
+  Spawn explore/librarian agent. run_in_background REQUIRED (true=async with task_id, false=sync).
+
+  Available:
+  - explore: Specialized agent for explore tasks
+  - librarian: Specialized agent for librarian tasks
+
+  Prompts MUST be in English. Use `background_output` for async results.
+type_id: python
+manipulations: []
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: description
+    type: string
+    description: A short (3-5 words) description of the task
+    required: true
+  - name: prompt
+    type: string
+    description: The task for the agent to perform
+    required: true
+  - name: subagent_type
+    type: string
+    description: The type of specialized agent to use for this task (explore or librarian only)
+    enum: [explore, librarian]
+    required: true
+  - name: run_in_background
+    type: boolean
+    description: "REQUIRED. true: run asynchronously (use background_output to get results), false: run synchronously and wait for completion"
+    required: true
+  - name: session_id
+    type: string
+    description: Existing Task session to continue
+    required: false
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto

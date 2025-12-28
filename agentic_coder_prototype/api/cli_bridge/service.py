@@ -15,6 +15,8 @@ from .events import SessionEvent
 from .models import (
     AttachmentHandle,
     AttachmentUploadResponse,
+    ModelCatalogEntry,
+    ModelCatalogResponse,
     SessionCommandRequest,
     SessionCommandResponse,
     SessionCreateRequest,
@@ -27,6 +29,7 @@ from .models import (
 )
 from .registry import SessionRecord, SessionRegistry
 from .session_runner import SessionRunner
+from ...compilation.v2_loader import load_agent_config
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +271,72 @@ class SessionService:
             content=content,
             truncated=False,
             total_bytes=total_bytes,
+        )
+
+    async def list_models(self, config_path: str) -> ModelCatalogResponse:
+        if not config_path or not str(config_path).strip():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="config_path required")
+        try:
+            config = load_agent_config(config_path)
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"failed to load config: {exc}") from exc
+
+        providers = config.get("providers") or {}
+        default_model = providers.get("default_model") or config.get("model")
+        models_cfg = providers.get("models") or []
+        if not models_cfg and default_model:
+            models_cfg = [{"id": default_model}]
+
+        def infer_provider(model_id: str, provider: Optional[str], adapter: Optional[str]) -> Optional[str]:
+            if provider and isinstance(provider, str) and provider.strip():
+                return provider.strip()
+            if isinstance(model_id, str) and "/" in model_id:
+                return model_id.split("/", 1)[0]
+            if adapter and isinstance(adapter, str) and adapter.strip():
+                return adapter.strip()
+            return None
+
+        def normalize_entry(entry: Any) -> Optional[ModelCatalogEntry]:
+            if isinstance(entry, str):
+                model_id = entry
+                adapter = None
+                provider = infer_provider(model_id, None, None)
+                return ModelCatalogEntry(id=model_id, provider=provider, name=model_id)
+            if not isinstance(entry, dict):
+                return None
+            model_id = entry.get("id") or entry.get("model_id") or entry.get("model")
+            if not model_id:
+                return None
+            model_id = str(model_id)
+            adapter = entry.get("adapter") or entry.get("adapter_id")
+            provider = infer_provider(model_id, entry.get("provider"), adapter)
+            name = entry.get("name") or model_id
+            context_length = entry.get("context_length") or entry.get("contextLength") or entry.get("context_tokens")
+            context_length = int(context_length) if isinstance(context_length, (int, float)) else None
+            params = entry.get("params") or entry.get("parameters") or None
+            routing = entry.get("routing") or None
+            metadata = entry.get("metadata") or None
+            return ModelCatalogEntry(
+                id=model_id,
+                adapter=str(adapter) if adapter else None,
+                provider=str(provider) if provider else None,
+                name=str(name) if name else None,
+                context_length=context_length,
+                params=params if isinstance(params, dict) else None,
+                routing=routing if isinstance(routing, dict) else None,
+                metadata=metadata if isinstance(metadata, dict) else None,
+            )
+
+        entries: list[ModelCatalogEntry] = []
+        for entry in models_cfg:
+            normalized = normalize_entry(entry)
+            if normalized:
+                entries.append(normalized)
+
+        return ModelCatalogResponse(
+            models=entries,
+            default_model=str(default_model) if default_model else None,
+            config_path=str(config_path),
         )
 
     @staticmethod

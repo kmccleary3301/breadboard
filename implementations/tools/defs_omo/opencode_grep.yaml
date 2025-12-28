@@ -1,0 +1,40 @@
+id: grep
+name: grep
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: Fast content search tool with safety limits (60s timeout, 10MB output).
+  Searches file contents using regular expressions. Supports full regex syntax (eg.
+  "log.*Error", "function\s+\w+", etc.). Filter files by pattern with the include
+  parameter (eg. "*.js", "*.{ts,tsx}"). Returns file paths with matches sorted by
+  modification time.
+parameters:
+- name: pattern
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: include
+  type: string
+  description: ''
+  required: false
+  schema:
+    type: string
+- name: path
+  type: string
+  description: ''
+  required: false
+  schema:
+    type: string

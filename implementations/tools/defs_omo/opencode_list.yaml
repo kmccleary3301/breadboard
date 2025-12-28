@@ -1,0 +1,40 @@
+id: list
+name: list
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: 'Lists files and directories in a given path. The path parameter must
+  be absolute; omit it to use the current workspace directory. You can optionally
+  provide an array of glob patterns to ignore with the ignore parameter. You should
+  generally prefer the Glob and Grep tools, if you know which directories to search.
+
+  '
+parameters:
+- name: path
+  type: string
+  description: The absolute path to the directory to list (must be absolute, not relative)
+  required: false
+  schema:
+    description: The absolute path to the directory to list (must be absolute, not
+      relative)
+    type: string
+- name: ignore
+  type: array
+  description: List of glob patterns to ignore
+  required: false
+  schema:
+    description: List of glob patterns to ignore
+    type: array
+    items:
+      type: string

@@ -8,6 +8,7 @@ from .app import create_app
 from .events import EventType, SessionEvent
 from .models import (
     ErrorResponse,
+    ModelCatalogResponse,
     SessionCommandRequest,
     SessionCommandResponse,
     SessionCreateRequest,
@@ -26,6 +27,7 @@ __all__ = [
     "EventType",
     "SessionEvent",
     "ErrorResponse",
+    "ModelCatalogResponse",
     "SessionCommandRequest",
     "SessionCommandResponse",
     "SessionCreateRequest",

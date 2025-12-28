@@ -1,0 +1,37 @@
+id: background_output
+name: background_output
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: Get output from background task. System notifies on completion, so block=true
+  rarely needed.
+parameters:
+- name: task_id
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: block
+  type: boolean
+  description: ''
+  required: false
+  schema:
+    type: boolean
+- name: timeout
+  type: number
+  description: ''
+  required: false
+  schema:
+    type: number

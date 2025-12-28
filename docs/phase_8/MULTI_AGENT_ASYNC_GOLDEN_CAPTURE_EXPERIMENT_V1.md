@@ -1,8 +1,92 @@
 # Multi-Agent Async Golden Capture Experiment (Raw Request Bodies) — v1
 
-Date: 2025-12-24  
+Date: 2025-12-25  
 Owner: BreadBoard / Phase 8  
-Status: In progress (OpenCode + oh-my-opencode captured; Claude blocked by credits)
+Status: In progress (Claude + OpenCode + oh-my-opencode goldens captured; `phase8` replay parity green)
+
+## 0.1) Latest outcomes (2025-12-25)
+
+- Captured additional Claude Code logged goldens (v2.0.76) for async/subagent permission surfaces and TaskOutput resume behavior.
+- Converted all Claude goldens to `replay_session.json` and added replay scenarios to `misc/opencode_runs/parity_scenarios.yaml`.
+- Fixed replay-mode `Bash`/`run_shell` to return recorded `expected_output` (do not execute live) to prevent `ReplayToolOutputMismatchError`.
+- Phase 8 replay parity (all scenarios tagged `phase8`) now passes; latest run: `artifacts/parity_runs/20251227-222326/`.
+- Ran a quick live sanity check to confirm Breadboard behavior is in-distribution with Claude Code for the Phase 8 async-subagent prompt:
+  - Claude Code live run (Haiku 4.5): `misc/claude_code_runs/goldens/2.0.76/phase8_async_subagents_live_check_v1/runs/20251225_182254/` (6 turns, no permission denials).
+  - Breadboard live runs: `misc/phase_8_live_checks/breadboard/claude_code_phase8_async_subagents_v1/20251225_181941/` (6 assistant turns) and `misc/phase_8_live_checks/breadboard/claude_code_phase8_async_subagents_v1_text/20251225_182036/` (8 assistant turns); both produced the expected 5-tool-call shape (2×Task + 1×Bash + 2×TaskOutput).
+- Subagent artifacts now persist at spawn + completion with `seq` and timestamps to support resume/debug (`.kyle/subagents/*.json` + logging `meta/subagents/`).
+
+## 0.2) Latest outcomes (2025-12-26)
+
+- Ran **live E4 sanity checks** for Claude Code / OpenCode / oh-my-opencode and Breadboard:
+  - Claude Code live (Haiku 4.5): `misc/claude_code_runs/goldens/2.0.76/phase8_async_subagents_live_check_v2/runs/20251226_210155/`
+  - Breadboard live (Claude config): `misc/phase_8_live_checks/breadboard/claude_code_phase8_async_subagents_v2/"20251226_210328"/`
+  - OpenCode live (gpt-5.1-codex-mini): `misc/opencode_runs/goldens/1.0.193/phase8_async_subagents_live_check_v2/runs/20251226_210501/`
+  - Breadboard live (OpenCode config, corrected tool defs): `misc/phase_8_live_checks/breadboard/opencode_phase8_async_subagents_v2c/20251226_211830/`
+  - oh-my-opencode live (gpt-5.1-codex-mini): `misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_live_check_v2/runs/20251226_210616/`
+  - Breadboard live (OMO config, corrected tool defs): `misc/phase_8_live_checks/breadboard/oh_my_opencode_phase8_async_subagents_v2c/20251226_211852/`
+- OpenCode live capture needed `OPENCODE_BUN_CONDITIONS=node` due to Bun CJS interop in `@babel/traverse` (script now supports override).
+- Fixed YAML parse errors in `implementations/tools/defs_oc/*` (unquoted `:` in descriptions) so defs_oc can load under PyYAML.
+
+## 0.3) Latest outcomes (2025-12-27)
+
+- **OpenCode parity prompt alignment (gpt-5.1-codex-mini)**:
+  - Switched OpenCode system prompt to `codex` (upstream `prompt/codex.txt`) and added OpenCode-style `<env>/<files>` block injection.
+  - Added dynamic bash tool description rewrite so the default workspace path matches the live run workspace.
+  - Removed OpenCode model params (`temperature`, `top_p`) to match upstream request bodies.
+  - Fixture updated to include `tsconfig.json` so `<files>` tree matches OpenCode goldens.
+  - Live run shape matches golden: 2×`task` + 1×`list`, finish_reason stop.
+    - Breadboard OpenCode live (post-fix): `misc/phase_8_live_checks/breadboard/opencode_phase8_async_subagents_v8/20251227_023511/`
+
+- **oh-my-opencode prompt source correction**:
+  - Golden provider dump includes a **keyword-detector injected** `[search-mode]` block *plus* a strict instruction block (no bash/task/call_omo_agent).
+  - Original replay_session was missing the strict instruction block; created a full prompt wrapper:
+    - `misc/oh_my_opencode_runs/replay_sessions/2.5.1/phase8_async_subagents_v1/replay_session_full_prompt.json`
+  - With the full prompt, Breadboard can produce clean runs matching golden tool usage:
+    - Clean OMO live run: `logging/20251227-024930_workspace`
+    - Shape: 2×`background_task` + 1×`list` + 2×`background_output`, no bash/task/call_omo_agent.
+
+- **Tool ordering parity**:
+  - Preserve tool ordering from the `tools.registry.include` list (matches OpenCode/OMO request-body tool order).
+
+- **New Claude goldens (subagent allowlist + resume success)**:
+  - Allowlist denial: `misc/claude_code_runs/goldens/2.0.76/phase8_subagent_allowlist_denial_v1/runs/20251227_215954/`
+  - Resume success: `misc/claude_code_runs/goldens/2.0.76/phase8_subagent_resume_success_v1/runs/20251227_220055/`
+  - Replay sessions:
+    - `misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_allowlist_denial_v1/replay_session.json`
+    - `misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_resume_success_v1/replay_session.json`
+
+- **New cross‑subagent spawn goldens (nested Task)**:
+  - Claude: `misc/claude_code_runs/goldens/2.0.76/phase8_subagent_nested_spawn_v1/runs/20251227_221845/`
+  - OpenCode: `misc/opencode_runs/goldens/1.0.193/phase8_subagent_nested_spawn_v1/runs/20251227_222114/`
+  - oh‑my‑opencode: `misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_subagent_nested_spawn_v1/runs/20251227_222147/`
+  - Replay sessions:
+    - `misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_nested_spawn_v1/replay_session.json`
+    - `misc/opencode_runs/goldens/1.0.193/phase8_subagent_nested_spawn_v1/runs/20251227_222114/exports/replay_session.json`
+    - `misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_subagent_nested_spawn_v1/runs/20251227_222147/exports/replay_session.json`
+
+- **Additional live E4 checks (v3)**:
+  - Claude: `misc/phase_8_live_checks/breadboard/claude_code_phase8_async_subagents_v3/20251227_220259/`
+  - OpenCode: `misc/phase_8_live_checks/breadboard/opencode_phase8_async_subagents_v3/20251227_220326/`
+  - oh-my-opencode: `misc/phase_8_live_checks/breadboard/oh_my_opencode_phase8_async_subagents_v3/20251227_220352/`
+
+- **Additional live E4 checks (v4–v5)**:
+  - Claude: `misc/phase_8_live_checks/breadboard/claude_code_phase8_async_subagents_v4/20251227_222500/`,
+           `misc/phase_8_live_checks/breadboard/claude_code_phase8_async_subagents_v5/20251227_222525/`
+  - OpenCode: `misc/phase_8_live_checks/breadboard/opencode_phase8_async_subagents_v4/20251227_222550/`,
+             `misc/phase_8_live_checks/breadboard/opencode_phase8_async_subagents_v5/20251227_222619/`
+  - oh‑my‑opencode: `misc/phase_8_live_checks/breadboard/oh_my_opencode_phase8_async_subagents_v4/20251227_222649/`,
+                    `misc/phase_8_live_checks/breadboard/oh_my_opencode_phase8_async_subagents_v5/20251227_222754/`
+
+- **Additional live E4 checks (v6–v8)**:
+  - Claude: `misc/phase_8_live_checks/breadboard/claude_code_phase8_async_subagents_v6/20251227_224105/`,
+           `misc/phase_8_live_checks/breadboard/claude_code_phase8_async_subagents_v7/20251227_224130/`,
+           `misc/phase_8_live_checks/breadboard/claude_code_phase8_async_subagents_v8/20251227_224156/`
+  - OpenCode: `misc/phase_8_live_checks/breadboard/opencode_phase8_async_subagents_v6/20251227_224220/`,
+             `misc/phase_8_live_checks/breadboard/opencode_phase8_async_subagents_v7/20251227_224249/`,
+             `misc/phase_8_live_checks/breadboard/opencode_phase8_async_subagents_v8/20251227_224323/`
+  - oh‑my‑opencode: `misc/phase_8_live_checks/breadboard/oh_my_opencode_phase8_async_subagents_v6/20251227_224350/`,
+                    `misc/phase_8_live_checks/breadboard/oh_my_opencode_phase8_async_subagents_v7/20251227_224430/`,
+                    `misc/phase_8_live_checks/breadboard/oh_my_opencode_phase8_async_subagents_v8/20251227_224513/`
 
 ## 0) Objective
 
@@ -64,6 +148,8 @@ Notes:
 - Always isolate `HOME` per run (avoid leaking cached auth/config).
 - Always seed a **fixture workspace** (so agent types, config, etc are deterministic).
 - Logs must be **secret-safe** (see §7).
+- **Golden isolation policy:** every run lives in its own `runs/<run-id>/` folder with a dedicated `provider_dumps/` directory.
+- **Raw request bodies:** Claude Code goldens must come from the **logged build** (v2.0.76) so `provider_dumps/` includes the full request JSONs.
 
 ---
 
@@ -145,6 +231,31 @@ scripts/capture_claude_golden.sh \
   --fixture-dir <fixture_dir_path> \
   --prompt "<the prompt in §3.2 with Claude-specific Task/TaskOutput instructions>"
 ```
+
+**Captured goldens (v2.0.76 label)**
+
+All captured runs are isolated under:
+`misc/claude_code_runs/goldens/2.0.76/<scenario>/runs/<run_id>/`
+
+- Wakeup ordering probe:
+  - `phase8_async_subagent_wakeup_ordering_v1`
+  - `misc/claude_code_runs/goldens/2.0.76/phase8_async_subagent_wakeup_ordering_v1/runs/20251225_084029/`
+- Subagent write denial surface:
+  - `phase8_subagent_write_denial_v1`
+  - `misc/claude_code_runs/goldens/2.0.76/phase8_subagent_write_denial_v1/runs/20251225_084310/`
+- Subagent tool allowlist/permission propagation (Bash allowed in subagent):
+  - `phase8_subagent_permission_propagation_v1`
+  - `misc/claude_code_runs/goldens/2.0.76/phase8_subagent_permission_propagation_v1/runs/20251225_084410/`
+- Resume/continue TaskOutput behavior across `--continue`:
+  - `phase8_async_subagent_resume_taskoutput_v1`
+  - `misc/claude_code_runs/goldens/2.0.76/phase8_async_subagent_resume_taskoutput_v1/runs/20251225_084741/`
+
+**Notable Claude behavioral findings (from these goldens)**
+
+- Main-session `Bash` can be denied in headless/print-mode with: “This command requires approval … <system-reminder> …”.
+- Subagent Write attempts return: “SubagentWrite tool is disabled for this subagent instance”.
+- Subagent `Bash` can be allowed even when main-session `Bash` is denied (per-agent allowlist surface).
+- TaskOutput registry does **not** persist across `--continue` (TaskOutput returns “No task found with ID …”).
 
 **What “raw request body” means here**
 - Logged build must dump `targetUrl`, `headers`, and `body.json` for each call to `https://api.anthropic.com/v1/messages`.
@@ -300,7 +411,7 @@ Prefer:
 ### Claude Code
 - [x] Create a fixture workspace containing `.claude/agents/repo-scanner.md` + `.claude/agents/grep-summarizer.md` (`misc/phase_8_fixtures/phase8_async_subagents_v1/`)
 - [x] Add scenario command invocation via `scripts/capture_claude_golden.sh`
-- [ ] Ensure provider dumps include the async Task/TaskOutput turns (verify in `normalized/`) (blocked: Anthropic credits too low)
+- [x] Ensure provider dumps include the async Task/TaskOutput turns (verify in `normalized/`)
 
 ### OpenCode
 - [x] Acquire OpenCode source via `industry_refs/opencode/`
@@ -319,27 +430,164 @@ Prefer:
 
 ### 9.1 OpenCode (no plugins)
 
-- Run: `misc/opencode_runs/goldens/1.0.193/phase8_async_subagents_v1/runs/20251224_074535/`
-- Tools observed (main session): `list`, `task` (x2)
-- Observed multi-agent surface:
-  - multiple tool calls in a single assistant step (`list` + two `task` calls)
-  - each `task` output includes `<task_metadata>` with a child `session_id`
+- Run (latest, list‑forced): `misc/opencode_runs/goldens/1.0.193/phase8_async_subagents_v1/runs/20251227_211558/`
+  - Tools observed (main session, replay session): `list` (x1), `task` (x2)
+  - Prompt included a hard requirement to call `list` before `task` (to lock down the `list` surface).
+- Prior run (variance): `misc/opencode_runs/goldens/1.0.193/phase8_async_subagents_v1/runs/20251227_041536/`
+  - Tools observed (main session, replay session): `task` (x9)
+  - Capture did not emit `list`; treated as drift.
+- Original reference run: `misc/opencode_runs/goldens/1.0.193/phase8_async_subagents_v1/runs/20251224_074535/`
+  - Tools observed (main session): `list`, `task` (x2)
+  - Observed multi-agent surface:
+    - multiple tool calls in a single assistant step (`list` + two `task` calls)
+    - each `task` output includes `<task_metadata>` with a child `session_id`
 
 ### 9.2 OpenCode + oh-my-opencode plugin
 
 Primary (clean async background surface, minimal polling):
-- Run: `misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1/runs/20251224_080121/`
-- Tools observed (main session): `background_task` (x2), `list` (x1), `background_output` (x2)
+- Run (latest): `misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1/runs/20251227_041709/`
+  - Tools observed (main session): `background_task` (x2), `list` (x1), `background_output` (x2)
+- Prior run: `misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1/runs/20251224_080121/`
+  - Tools observed (main session): `background_task` (x2), `list` (x1), `background_output` (x2)
 
 Additional (variance / other tool surfaces observed under nondeterminism):
 - Run: `misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1/runs/20251224_075507/`
 - Tools observed: `call_omo_agent`, `background_output`, plus OpenCode tools (`read`, `task`, `list`) and occasional `bash`
+  - `call_omo_agent` is an additional oh-my-opencode surface (explore/librarian agent spawner) that can appear depending on prompt/model variance.
+
+Cancellation surface (`background_cancel`):
+- Run: `misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1_background_cancel/runs/20251225_034238/`
+- Tools observed (main session): `background_task` (x2), `background_cancel` (x1), `list` (x1), `background_output` (x2)
+
+Cancellation surface (`background_cancel(taskId=...)`):
+- Run: `misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1_background_cancel_taskid/runs/20251225_065743/`
+- Tools observed (main session): `background_task` (x2), `background_cancel` (x2), `list` (x1), `background_output` (x3)
+  - The second `background_cancel` call is intentionally repeated to lock down the non-running error surface (cancelled -> cannot cancel).
 
 ### 9.3 Claude Code (logged build)
 
-Blocked until credits restored:
-- Anthropic API responds: “Your credit balance is too low to access the Anthropic API.”
-- Verified via: `python scripts/smoke_anthropic_sonnet4.py --model anthropic/claude-haiku-4-5-20251001 --max-tokens 8 --temperature 0 --prompt 'Reply with OK.'`
+- Latest golden run: `misc/claude_code_runs/goldens/2.0.76/phase8_async_subagents_v1/runs/20251227_041407/`
+- Golden replay session: `misc/claude_code_runs/replay_sessions/2.0.76/phase8_async_subagents_v1/replay_session.json`
+- Tools observed (main session): `Task` (x2), `Bash` (x1), `TaskOutput` (x3)
+  - **Note:** extra `TaskOutput` turn vs prior capture; likely a polling variance. Keep for coverage.
+
+### 9.4 Parity harness updates (multi-agent)
+
+- Added multi‑agent event‑log comparisons (normalized) in replay parity checks.
+- Added per‑turn tool sequence comparisons to tighten E4 parity over tool ordering.
+- Multi‑agent MVI surface catalog + coverage matrix updated in `docs_tmp/phase_8/MULTI_AGENT_MVI_SURFACES.md`.
+  - **Known gaps (spec coverage):** none in the current Phase 8 scope (nested spawn + resume covered).
+  - These are tracked as Phase 8 follow‑ups only if new harness capabilities appear.
+
+### 9.4.2 Wakeup injection sentinel (replay-only)
+
+- New replay session: `misc/claude_code_runs/replay_sessions/2.0.76/phase8_async_subagent_wakeup_ordering_v1/replay_session_live.json`
+  - Task outputs removed so async subagents run live (deterministic repo‑scanner/grep‑summarizer stubs).
+- New replay config: `agent_configs/claude_code_haiku45_phase8_wakeup_replay.yaml`
+  - Enables `multi_agent` async + `bus.model_visible_topics: [tool_result, wakeup]`.
+- New fixture: `misc/phase_8_fixtures/phase8_async_wakeup_v1/`
+  - Includes `.kyle/multi_agent_events.jsonl` from a known wakeup run for E4 event‑log comparison.
+- New parity scenario: `claude_code_phase8_async_wakeup_eventlog_replay`.
+  - Parity run passed: `artifacts/parity_runs/20251227-222326/` (full phase8 suite).
+
+### 9.4.1 Replay conversion gap (per‑subagent sessions)
+
+- The current replay converters focus on the **main** session (tool calls + tool results).
+- We still need to split/emit **per‑subagent replay sessions** when provider dumps expose distinct session IDs.
+  - This is tracked as Phase 8 follow‑up; no behavior changes yet.
+
+### 9.4.3 Subagent replay stubs (Claude logged)
+
+- Added optional per‑subagent stub output generation in `scripts/convert_claude_logged_run_to_replay_session.py`.
+- Latest stubs: `misc/claude_code_runs/replay_sessions/2.0.76/phase8_async_subagents_v1/subagents/`
+  - `index.json` maps `task_id -> subagent_<task_id>.json`
+  - **Note:** These are *output‑only* stubs, not full provider request/response logs.
+
+### 9.4.4 Parity measurement coverage (auto‑checked)
+
+Replay parity currently asserts:
+- Tool outputs (strict compare, full text).
+- Per‑turn tool usage order and aggregate tool usage summary.
+- Multi‑agent event‑log payloads (normalized) including spawn/ack/wakeup/completion ordering.
+
+Known surfaces **not yet auto‑measured** (no dedicated scenarios):
+- None in the current Phase 8 scope (deeper live‑distribution sampling remains).
+
+### 9.5 Live E4 sanity checks (single runs)
+
+- Claude live run: `misc/phase_8_live_checks/breadboard/claude_code_phase8_async_subagents_v1/20251227_041819/`
+  - Logging: `logging/20251227-041823_workspace`
+  - Tools observed: `Task` (x2), `run_shell` (x1), `TaskOutput` (x2)
+  - **Delta vs golden:** fewer `TaskOutput` polls (2 vs 3). Treat as model variance; no hard divergence seen yet.
+
+- OpenCode live run: `misc/phase_8_live_checks/breadboard/opencode_phase8_async_subagents_v1/20251227_041846/`
+  - Logging: `logging/20251227-041849_workspace`
+  - Tools observed: `task` (x2), `list_dir` (x1), `run_shell` (x2)
+  - **Delta vs golden:** new `run_shell` usage; likely prompt variance or plan mode behavior. Track before E4 claim.
+
+- oh‑my‑opencode live run: `misc/phase_8_live_checks/breadboard/oh_my_opencode_phase8_async_subagents_v1/20251227_041935/`
+  - Logging: `logging/20251227-041938_workspace`
+  - Tools observed: `background_task` (x2), `list_dir` (x1), `background_output` (x2)
+  - **Delta vs golden:** matches tool set/ordering (good).
+
+- v3 live runs (additional distribution checks):
+  - Claude: `misc/phase_8_live_checks/breadboard/claude_code_phase8_async_subagents_v3/20251227_220259/`
+  - OpenCode: `misc/phase_8_live_checks/breadboard/opencode_phase8_async_subagents_v3/20251227_220326/`
+  - oh‑my‑opencode: `misc/phase_8_live_checks/breadboard/oh_my_opencode_phase8_async_subagents_v3/20251227_220352/`
+
+### 9.6 Capture failures (notes)
+
+- `20251227_211518` (OpenCode): Bun runtime error (`_debug is not a function`) caused capture failure; no provider dumps/export produced.
+- Occasional early stop / low‑turn runs observed in live checks; mitigation is to compare request‑body prompts + tool ordering against goldens and rerun with a higher turn cap if the run truncates before tool completion.
+- Breadboard replay parity: green (MVI tool surfaces + ordering) against the logged golden
+- Latest confirmed Breadboard live run (same scenario): `artifacts/live_runs/claude_code/phase8_async_subagents_v1/runs/20251224_155423/`
+- Notes:
+  - Live run completed in fewer turns than the golden (likely nondeterminism + prompt/model variance); request-body prompt alignment confirmed by comparing logged request dumps against the golden.
+  - Completion detection had to respect Anthropic `end_turn`/`max_tokens` so plain assistant summaries can terminate runs.
+
+Additional Phase 8 Claude Code goldens (2.0.76):
+- Wakeup-ordering probe (no explicit wakeup observed; TaskOutput polling required):
+  - Run: `misc/claude_code_runs/goldens/2.0.76/phase8_async_subagent_wakeup_ordering_v1/runs/20251225_084029/`
+  - Replay session: `misc/claude_code_runs/replay_sessions/2.0.76/phase8_async_subagent_wakeup_ordering_v1/replay_session.json`
+- Subagent write denial surface (SubagentWrite disabled):
+  - Run: `misc/claude_code_runs/goldens/2.0.76/phase8_subagent_write_denial_v1/runs/20251225_084310/`
+  - Replay session: `misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_write_denial_v1/replay_session.json`
+- Subagent tool allowlist/permission surface (Bash allowed inside subagent):
+  - Run: `misc/claude_code_runs/goldens/2.0.76/phase8_subagent_permission_propagation_v1/runs/20251225_084410/`
+  - Replay session: `misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_permission_propagation_v1/replay_session.json`
+- Nested subagent spawn surface:
+  - Run: `misc/claude_code_runs/goldens/2.0.76/phase8_subagent_nested_spawn_v1/runs/20251227_221845/`
+  - Replay session: `misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_nested_spawn_v1/replay_session.json`
+- Resume/continue surface for TaskOutput (continued session returns “No task found with ID”):
+  - Run: `misc/claude_code_runs/goldens/2.0.76/phase8_async_subagent_resume_taskoutput_v1/runs/20251225_084741/`
+  - Replay session: `misc/claude_code_runs/replay_sessions/2.0.76/phase8_async_subagent_resume_taskoutput_v1/replay_session.json`
+- Subagent allowlist denial (no Bash in tool mask):
+  - Run: `misc/claude_code_runs/goldens/2.0.76/phase8_subagent_allowlist_denial_v1/runs/20251227_215954/`
+  - Replay session: `misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_allowlist_denial_v1/replay_session.json`
+- Subagent resume success (Task resume with agentId):
+  - Run: `misc/claude_code_runs/goldens/2.0.76/phase8_subagent_resume_success_v1/runs/20251227_220055/`
+  - Replay session: `misc/claude_code_runs/replay_sessions/2.0.76/phase8_subagent_resume_success_v1/replay_session.json`
+
+### 9.7 Claude subagent identifiers (log locations)
+
+Where subagent IDs show up in the logged artifacts:
+
+- Provider dumps (`provider_dumps/*_request.json`): the `body.text` field contains a JSON payload with `events[]`; for subagents, `events[].metadata` includes:
+  - `agentType: "subagent"`
+  - `agentId` (short id)
+  - `queryChainId`, `requestId`, `sessionId` (from Claude/Statsig telemetry)
+- Tool results: `Task` tool results often include a text line like `agentId: <id> (for resuming...)` embedded in the tool output.
+- `/v1/messages` request `metadata.user_id` remains constant for the main session (no distinct subagent sessionId).
+- `.claude/debug/<session>.txt` did not include `agentId` entries for subagents in the nested spawn run.
+
+### 9.8 OpenCode / oh‑my‑opencode child session IDs (export format)
+
+OpenCode and oh‑my‑opencode exports already include child session IDs:
+
+- `exports/opencode_export.json` → `messages[].parts[].type == "tool"` with `tool == "task"`:
+  - `state.metadata.sessionId` is populated with the spawned subagent session id.
+  - Tool `state.output` contains a `<task_metadata>` block with `session_id: <id>` in the body.
+- The parent session id is on `messages[].info.sessionID`.
 
 ### 9.4 Provider dump completeness note (OpenCode instrumentation)
 
@@ -348,3 +596,63 @@ We observed that OpenCode can fire-and-forget certain LLM calls (notably title g
 Mitigation used for goldens:
 - Patch OpenCode provider dump logger to track in-flight provider fetch promises so `ProviderDump.flush()` waits for them at process exit.
 - This patch is applied locally to `industry_refs/opencode/packages/opencode/src/util/provider-dump.ts` (the `industry_refs/` tree is gitignored).
+
+### 9.5 Breadboard parity status (Phase 8 async)
+
+- OpenCode replay parity: green
+  - Config: `agent_configs/opencode_phase8_async_subagents_v1_replay.yaml`
+  - Session: `misc/opencode_runs/goldens/1.0.193/phase8_async_subagents_v1/runs/20251224_074535/exports/replay_session.json`
+- oh-my-opencode replay parity: green
+  - Config: `agent_configs/oh_my_opencode_phase8_async_subagents_v1_replay.yaml`
+  - Session: `misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1/runs/20251224_080121/exports/replay_session.json`
+- oh-my-opencode replay parity (variant run exercising `call_omo_agent`): green
+  - Config: `agent_configs/oh_my_opencode_phase8_async_subagents_v1_replay.yaml` (now compares `call_omo_agent` outputs too)
+  - Session: `misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1/runs/20251224_075507/exports/replay_session.json`
+- oh-my-opencode replay parity (cancellation surface via `background_cancel`): green
+  - Config: `agent_configs/oh_my_opencode_phase8_async_subagents_v1_replay.yaml` (now compares `background_cancel` outputs too)
+  - Session: `misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1_background_cancel/runs/20251225_034238/exports/replay_session.json`
+- oh-my-opencode replay parity (taskId cancellation surface via `background_cancel(taskId=...)`): green
+  - Config: `agent_configs/oh_my_opencode_phase8_async_subagents_v1_replay.yaml`
+  - Session: `misc/oh_my_opencode_runs/goldens/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_async_subagents_v1_background_cancel_taskid/runs/20251225_065743/exports/replay_session.json`
+  - Parity manifest wired:
+  - `misc/opencode_runs/parity_scenarios.yaml` now includes:
+    - `opencode_phase8_async_subagents_v1_replay`
+    - `oh_my_opencode_phase8_async_subagents_v1_replay`
+    - `oh_my_opencode_phase8_subagent_nested_spawn_v1_replay`
+    - `oh_my_opencode_phase8_async_subagents_v1_call_omo_agent_replay`
+    - `oh_my_opencode_phase8_async_subagents_v1_background_cancel_replay`
+    - `oh_my_opencode_phase8_async_subagents_v1_background_cancel_taskid_replay`
+    - `claude_code_phase8_async_subagents_v1_replay`
+    - `claude_code_phase8_subagent_nested_spawn_v1_replay`
+    - `claude_code_task_subagent_sync_replay`
+    - `claude_code_phase8_async_subagent_wakeup_ordering_v1_replay`
+    - `claude_code_phase8_subagent_write_denial_v1_replay`
+    - `claude_code_phase8_subagent_permission_propagation_v1_replay`
+    - `claude_code_phase8_subagent_allowlist_denial_v1_replay`
+    - `claude_code_phase8_async_subagent_resume_taskoutput_v1_replay`
+    - `claude_code_phase8_subagent_resume_success_v1_replay`
+- Nested-spawn subagent replay index (OpenCode / OMO):
+  - OpenCode subagent replays: `misc/opencode_runs/replay_sessions/1.0.193/phase8_subagent_nested_spawn_v1/subagents/`
+  - OMO subagent replays: `misc/oh_my_opencode_runs/replay_sessions/opencode_1.0.193__oh-my-opencode_2.5.1/phase8_subagent_nested_spawn_v1/subagents/`
+  - Index files: `index.json` (session_id → replay session path)
+  - Converter: `scripts/convert_openai_normalized_to_replay_session.py`
+  - Parity scenario: `opencode_phase8_nested_subagent_replay` with config `agent_configs/opencode_phase8_nested_subagent_replay.yaml`
+  - Fixture note: `golden_workspace` is used as the seed; `workspace_seed` is explicitly set for the nested-spawn replay scenario.
+- Notable engine fix needed for OpenCode replay parity:
+  - Restored `_handle_task_tool` implementation (it had been accidentally embedded under `_handle_background_output_tool`, causing an OpenCode replay mismatch and `msg`-scope errors).
+ - Additional engine fix to expand oh-my-opencode coverage:
+   - Added `call_omo_agent` tool definition + minimal executor (replay-first) so we can assert parity for the plugin’s extra agent-spawn surface.
+
+## 10) Micro-suite coverage (Phase 8)
+
+The planned “micro-suite” surfaces are already covered by existing goldens/replay scenarios:
+
+- **TaskOutput unknown/expired IDs** → `phase8_async_subagent_resume_taskoutput_v1` (Claude Code).
+- **Subagent write denial** → `phase8_subagent_write_denial_v1` (Claude Code).
+- **Subagent permission propagation** → `phase8_subagent_permission_propagation_v1` (Claude Code).
+- **Subagent allowlist denial** → `phase8_subagent_allowlist_denial_v1` (Claude Code).
+- **Subagent resume success** → `phase8_subagent_resume_success_v1` (Claude Code).
+- **Nested subagent spawn** → `phase8_subagent_nested_spawn_v1` (Claude / OpenCode / oh‑my‑opencode).
+- **Background cancel error surfaces** → `phase8_async_subagents_v1_background_cancel` + `phase8_async_subagents_v1_background_cancel_taskid` (oh-my-opencode).
+
+No new capture required unless we discover a missing surface during later expansion.

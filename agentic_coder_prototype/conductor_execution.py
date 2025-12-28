@@ -440,6 +440,8 @@ def process_model_output(
             caller,
             tool_defs,
             session_state,
+            completion_detector,
+            provider_message.finish_reason,
             markdown_logger,
             error_handler,
             stream_responses,
@@ -601,7 +603,7 @@ def _normalize_opencode_filetime_timestamps(text: str) -> str:
 
 
 _CLAUDE_BUDGET_LINE_RE = re.compile(
-    r"USD budget: \\$[0-9]+(?:\\.[0-9]+)?/\\$[0-9]+(?:\\.[0-9]+)?; \\$[0-9]+(?:\\.[0-9]+)? remaining"
+    r"USD budget: \$[0-9]+(?:\.[0-9]+)?/\$[0-9]+(?:\.[0-9]+)?; \$[0-9]+(?:\.[0-9]+)? remaining"
 )
 
 
@@ -808,6 +810,8 @@ def handle_text_tool_calls(
     caller,
     tool_defs: List[ToolDefinition],
     session_state: SessionState,
+    completion_detector: Any,
+    choice_finish_reason: Optional[str],
     markdown_logger: MarkdownLogger,
     error_handler: Any,
     stream_responses: bool,
@@ -845,6 +849,39 @@ def handle_text_tool_calls(
     if not parsed:
         session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=False)
         session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=True)
+        completion_analysis = None
+        try:
+            completion_analysis = completion_detector.detect_completion(
+                msg_content=msg.content or "",
+                choice_finish_reason=choice_finish_reason,
+                tool_results=[],
+                agent_config=conductor.config,
+                recent_tool_activity=session_state.get_provider_metadata("recent_tool_activity"),
+                assistant_history=session_state.get_provider_metadata("assistant_text_history"),
+                mark_tool_available=session_state.get_provider_metadata("mark_task_complete_available"),
+            )
+        except Exception:
+            completion_analysis = None
+        if isinstance(completion_analysis, dict):
+            try:
+                session_state.add_transcript_entry({"completion_analysis": completion_analysis})
+            except Exception:
+                pass
+            if completion_analysis.get("completed") and completion_detector.meets_threshold(completion_analysis):
+                if not getattr(session_state, "completion_summary", None):
+                    session_state.completion_summary = {
+                        "completed": True,
+                        "method": completion_analysis.get("method"),
+                        "reason": completion_analysis.get("reason"),
+                        "confidence": completion_analysis.get("confidence"),
+                        "source": "assistant_content",
+                        "analysis": completion_analysis,
+                    }
+                else:
+                    session_state.completion_summary.setdefault("completed", True)
+                    session_state.completion_summary.setdefault("reason", completion_analysis.get("reason"))
+                    session_state.completion_summary.setdefault("method", completion_analysis.get("method"))
+                return True
         if current_mode == "plan":
             manager = session_state.get_todo_manager()
             snapshot = manager.snapshot() if manager else None
@@ -1034,8 +1071,9 @@ def handle_text_tool_calls(
     chunks = conductor.message_formatter.format_execution_results(executed_results, failed_at_index, len(parsed))
 
     for tool_parsed, tool_result in executed_results:
+        call_id = getattr(tool_parsed, "call_id", None)
         tool_result_entry = conductor.message_formatter.create_tool_result_entry(
-            tool_parsed.function, tool_result, syntax_type="custom-pythonic"
+            tool_parsed.function, tool_result, syntax_type="custom-pythonic", call_id=call_id
         )
         session_state.add_message(tool_result_entry, to_provider=False)
 
@@ -1370,7 +1408,7 @@ def handle_native_tool_calls(
                 call_id = r.get("call_id")
 
                 tool_result_entry = conductor.message_formatter.create_tool_result_entry(
-                    r["fn"], r["out"], call_id or f"native_call_{r['fn']}", "openai"
+                    r["fn"], r["out"], syntax_type="openai", call_id=call_id
                 )
                 session_state.add_message(tool_result_entry, to_provider=False)
                 all_results_text.append(formatted_output)
@@ -1388,7 +1426,7 @@ def handle_native_tool_calls(
                 call_id = r.get("call_id")
 
                 tool_result_entry = conductor.message_formatter.create_tool_result_entry(
-                    r["fn"], r["out"], call_id or f"native_call_{r['fn']}", "openai"
+                    r["fn"], r["out"], syntax_type="openai", call_id=call_id
                 )
                 session_state.add_message(tool_result_entry, to_provider=False)
 

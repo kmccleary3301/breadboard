@@ -1077,6 +1077,23 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             else:
                 non_system.append(msg)
 
+        provider_tools_cfg = context.agent_config.get("provider_tools") or {}
+        provider_cfg: Dict[str, Any] = {}
+        if isinstance(provider_tools_cfg, dict):
+            provider_specific = provider_tools_cfg.get(self.descriptor.provider_id)
+            if isinstance(provider_specific, dict):
+                provider_cfg = provider_specific
+            else:
+                openai_specific = provider_tools_cfg.get("openai")
+                if isinstance(openai_specific, dict) and self.descriptor.provider_id in ("openai", "openrouter"):
+                    provider_cfg = openai_specific
+                else:
+                    provider_cfg = provider_tools_cfg
+        use_developer = bool(provider_cfg.get("responses_use_developer_role"))
+        responses_stateful = True
+        if isinstance(provider_cfg, dict) and "responses_stateful" in provider_cfg:
+            responses_stateful = bool(provider_cfg.get("responses_stateful"))
+
         # Build instructions from system messages (if any)
         instructions_parts: List[str] = []
         for msg in system_messages:
@@ -1085,18 +1102,28 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             if text_val:
                 instructions_parts.append(text_val)
         instructions = "\n\n".join(instructions_parts) if instructions_parts else None
+        developer_messages: List[Dict[str, Any]] = []
+        if use_developer and system_messages:
+            # Preserve system content as developer role inside input to mirror OpenCode.
+            for msg in system_messages:
+                cloned = dict(msg)
+                cloned["role"] = "developer"
+                developer_messages.append(cloned)
+            instructions = None
 
-        has_conversation = bool(
-            context.session_state.get_provider_metadata("conversation_id")
-            or context.session_state.get_provider_metadata("previous_response_id")
-        )
+        has_conversation = False
+        if responses_stateful:
+            has_conversation = bool(
+                context.session_state.get_provider_metadata("conversation_id")
+                or context.session_state.get_provider_metadata("previous_response_id")
+            )
 
         if not non_system:
-            return instructions, []
+            return instructions, developer_messages
 
         if not has_conversation:
             # First call: send full non-system history
-            return instructions, non_system
+            return instructions, developer_messages + non_system
 
         # Subsequent calls: keep only messages after the last assistant message.
         # This preserves tool outputs (role=tool) that must accompany function calls
@@ -1118,12 +1145,17 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                     include_last_assistant = True
             trimmed = non_system[last_assistant_index:] if include_last_assistant else non_system[last_assistant_index + 1:]
 
-        return instructions, trimmed
+        return instructions, developer_messages + trimmed
 
-    def _convert_messages_to_input(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _convert_messages_to_input(
+        self,
+        messages: List[Dict[str, Any]],
+        *,
+        include_tool_calls: bool = False,
+    ) -> List[Dict[str, Any]]:
         converted: List[Dict[str, Any]] = []
         tool_output_call_ids: set[str] = set()
-        if self.descriptor.provider_id == "openrouter":
+        if include_tool_calls:
             for message in messages:
                 role = message.get("role", "user")
                 if str(role or "").lower() != "tool":
@@ -1138,7 +1170,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
 
             # OpenRouter's Responses proxy may require tool calls to be echoed in `input`
             # so function_call_output items can be associated without stateful linking.
-            if self.descriptor.provider_id == "openrouter" and role_lower == "assistant":
+            if include_tool_calls and role_lower == "assistant":
                 tool_calls = message.get("tool_calls")
                 emitted_call = False
                 if isinstance(tool_calls, list) and tool_calls:
@@ -1146,7 +1178,9 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                         if not isinstance(call, dict):
                             continue
                         call_id = call.get("id") or call.get("call_id") or call.get("tool_call_id")
-                        if not call_id or str(call_id) not in tool_output_call_ids:
+                        if not call_id:
+                            continue
+                        if tool_output_call_ids and str(call_id) not in tool_output_call_ids:
                             continue
                         fn = call.get("function") if isinstance(call.get("function"), dict) else {}
                         name = (fn or {}).get("name") or call.get("name")
@@ -1262,6 +1296,9 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         for tool in tools:
             if tool.get("type") == "function" and "function" in tool:
                 fn = tool.get("function", {}) or {}
+                strict_flag = fn.get("strict")
+                if strict_flag is None:
+                    strict_flag = tool.get("strict")
                 converted.append(
                     {
                         "type": "function",
@@ -1270,6 +1307,8 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                         "parameters": fn.get("parameters"),
                     }
                 )
+                if strict_flag is not None:
+                    converted[-1]["strict"] = strict_flag
             else:
                 converted.append(tool)
         return converted
@@ -1329,9 +1368,23 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         context: ProviderRuntimeContext,
     ) -> ProviderResult:
         instructions, input_messages = self._split_messages_for_responses(messages, context)
+        provider_tools_cfg = context.agent_config.get("provider_tools") or {}
+        provider_cfg: Dict[str, Any] = {}
+        if isinstance(provider_tools_cfg, dict):
+            provider_specific = provider_tools_cfg.get(self.descriptor.provider_id)
+            if isinstance(provider_specific, dict):
+                provider_cfg = provider_specific
+            else:
+                openai_specific = provider_tools_cfg.get("openai")
+                if isinstance(openai_specific, dict) and self.descriptor.provider_id in ("openai", "openrouter"):
+                    provider_cfg = openai_specific
+                else:
+                    provider_cfg = provider_tools_cfg
+        responses_stateful = bool(provider_cfg.get("responses_stateful", True))
+        include_tool_calls = (self.descriptor.provider_id == "openrouter") or (not responses_stateful)
         payload: Dict[str, Any] = {
             "model": model,
-            "input": self._convert_messages_to_input(input_messages),
+            "input": self._convert_messages_to_input(input_messages, include_tool_calls=include_tool_calls),
         }
         if instructions:
             payload["instructions"] = instructions
@@ -1344,19 +1397,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             extra_body.setdefault("provider", {"order": ["openai"], "allow_fallbacks": False})
             payload["extra_body"] = extra_body
 
-        provider_tools_cfg = context.agent_config.get("provider_tools") or {}
-        provider_cfg: Dict[str, Any] = {}
-        if isinstance(provider_tools_cfg, dict):
-            provider_specific = provider_tools_cfg.get(self.descriptor.provider_id)
-            if isinstance(provider_specific, dict):
-                provider_cfg = provider_specific
-            else:
-                openai_specific = provider_tools_cfg.get("openai")
-                if isinstance(openai_specific, dict) and self.descriptor.provider_id in ("openai", "openrouter"):
-                    provider_cfg = openai_specific
-                else:
-                    # Back-compat: treat the top-level provider_tools map as the provider cfg.
-                    provider_cfg = provider_tools_cfg
+        # provider_cfg already resolved above
 
         include_items: List[str] = list(provider_cfg.get("include", []))
         if provider_cfg.get("include_reasoning", True) and "reasoning.encrypted_content" not in include_items:
@@ -1367,13 +1408,29 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         if "store" in provider_cfg:
             payload["store"] = bool(provider_cfg.get("store"))
 
-        conversation_id = context.session_state.get_provider_metadata("conversation_id")
-        if conversation_id:
-            payload["conversation"] = conversation_id
+        tool_choice_cfg = provider_cfg.get("tool_choice")
+        if tool_choice_cfg is not None and responses_tools:
+            resolved_choice: Any = tool_choice_cfg
+            if isinstance(tool_choice_cfg, str):
+                lowered = tool_choice_cfg.strip().lower()
+                if lowered in {"auto"}:
+                    resolved_choice = "auto"
+                elif lowered in {"required", "force", "any"}:
+                    resolved_choice = "required"
+                elif lowered in {"none", "off"}:
+                    resolved_choice = "none"
+            if resolved_choice is not None:
+                payload["tool_choice"] = resolved_choice
 
-        previous_response_id = context.session_state.get_provider_metadata("previous_response_id")
-        if previous_response_id:
-            payload["previous_response_id"] = previous_response_id
+        responses_stateful = bool(provider_cfg.get("responses_stateful", True))
+        if responses_stateful:
+            conversation_id = context.session_state.get_provider_metadata("conversation_id")
+            if conversation_id:
+                payload["conversation"] = conversation_id
+
+            previous_response_id = context.session_state.get_provider_metadata("previous_response_id")
+            if previous_response_id:
+                payload["previous_response_id"] = previous_response_id
 
         extra_payload = context.extra.get("responses_extra") if context.extra else None
         if isinstance(extra_payload, dict):
@@ -1400,17 +1457,25 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         encrypted_reasoning: List[Any] = []
         reasoning_summaries: List[str] = []
 
+        response_status = self._get_attr(response, "status", None)
+        default_finish_reason = None
+        if isinstance(response_status, str) and response_status.lower() in {"completed", "succeeded", "complete"}:
+            default_finish_reason = "stop"
+
         for idx, item in enumerate(getattr(response, "output", []) or []):
             item_type = self._get_attr(item, "type")
 
             if item_type == "message":
                 role = self._get_attr(item, "role", "assistant")
                 content = self._message_content_to_text(self._get_attr(item, "content", []))
+                finish_reason = self._get_attr(item, "finish_reason", None)
+                if finish_reason is None and content and default_finish_reason:
+                    finish_reason = default_finish_reason
                 normalized_messages.append(
                     ProviderMessage(
                         role=role,
                         content=content,
-                        finish_reason=self._get_attr(item, "finish_reason", None),
+                        finish_reason=finish_reason,
                         index=idx,
                         raw_message=item,
                         annotations={"responses_type": item_type},
@@ -1510,6 +1575,25 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             kwargs["default_headers"] = default_headers
         return Anthropic(**kwargs)
 
+    def _message_content_to_text(self, content: Any) -> Optional[str]:
+        if content is None:
+            return None
+        if isinstance(content, str):
+            return content
+        parts: List[str] = []
+        try:
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                block_type = block.get("type")
+                if block_type in {"input_text", "output_text", "text"}:
+                    text_val = block.get("text", "")
+                    if text_val:
+                        parts.append(str(text_val))
+        except Exception:
+            return None
+        return "".join(parts) if parts else None
+
     def _convert_messages(self, messages: List[Dict[str, Any]]) -> Tuple[Optional[str], List[Dict[str, Any]]]:
         system_prompt: Optional[str] = None
         converted: List[Dict[str, Any]] = []
@@ -1520,6 +1604,50 @@ class AnthropicMessagesRuntime(ProviderRuntime):
 
             if role == "system" and system_prompt is None:
                 system_prompt = content if isinstance(content, str) else json.dumps(content)
+                continue
+
+            # Translate OpenAI-style tool calls into Anthropic `tool_use` blocks so
+            # the model receives its own tool invocation history.
+            tool_calls = message.get("tool_calls")
+            if role == "assistant" and isinstance(tool_calls, list) and tool_calls:
+                blocks: List[Dict[str, Any]] = []
+                if isinstance(content, list):
+                    for block in content:
+                        if not isinstance(block, dict):
+                            continue
+                        block_type = block.get("type")
+                        if block_type == "text" and not block.get("text"):
+                            continue
+                        if block_type:
+                            blocks.append(block)
+                else:
+                    text_value = content if isinstance(content, str) else ""
+                    if text_value:
+                        blocks.append({"type": "text", "text": text_value})
+
+                for idx, tc in enumerate(tool_calls):
+                    if not isinstance(tc, dict):
+                        continue
+                    call_id = tc.get("id") or tc.get("tool_use_id") or tc.get("tool_call_id") or f"toolu_{idx}"
+                    fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
+                    name = fn.get("name") or tc.get("name")
+                    args_raw = fn.get("arguments") or tc.get("arguments") or "{}"
+                    try:
+                        input_payload = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
+                    except Exception:
+                        input_payload = {}
+                    if not name:
+                        continue
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": str(call_id),
+                            "name": str(name),
+                            "input": input_payload if isinstance(input_payload, dict) else {},
+                        }
+                    )
+
+                converted.append({"role": "assistant", "content": blocks})
                 continue
 
             # Tool results must be provided as `tool_result` blocks in a user message

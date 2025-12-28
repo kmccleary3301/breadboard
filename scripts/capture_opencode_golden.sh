@@ -198,13 +198,17 @@ export OPENCODE_PROVIDER_DUMP_MAX_BYTES="8388608"
 # Reduce variance / avoid interactive prompts.
 export OPENCODE_DISABLE_DEFAULT_PLUGINS="1"
 export OPENCODE_DISABLE_LSP_DOWNLOAD="1"
+
+# Allow overriding Bun conditions for environments where `--conditions=browser`
+# breaks CJS interop (e.g., debug shim). Default remains "browser".
+BUN_CONDITIONS="${OPENCODE_BUN_CONDITIONS:-browser}"
 export OPENCODE_DISABLE_AUTOUPDATE="1"
 export OPENCODE_PERMISSION='{"edit":"allow","bash":"allow","skill":"allow","webfetch":"allow","doom_loop":"allow","external_directory":"allow"}'
 
 pushd "${RUN_DIR}/workspace" >/dev/null
 set +e
 if [[ -n "${AGENT}" ]]; then
-  printf "%s" "${PROMPT}" | bun run --config="${OPENCODE_BUNFIG}" --conditions=browser "${OPENCODE_ENTRYPOINT}" run \
+  printf "%s" "${PROMPT}" | bun run --config="${OPENCODE_BUNFIG}" --conditions="${BUN_CONDITIONS}" "${OPENCODE_ENTRYPOINT}" run \
     --format json \
     --model "${MODEL}" \
     --agent "${AGENT}" \
@@ -213,7 +217,7 @@ if [[ -n "${AGENT}" ]]; then
     >"${RUN_DIR}/stdout.jsonl" \
     2>"${RUN_DIR}/stderr.txt"
 else
-  printf "%s" "${PROMPT}" | bun run --config="${OPENCODE_BUNFIG}" --conditions=browser "${OPENCODE_ENTRYPOINT}" run \
+  printf "%s" "${PROMPT}" | bun run --config="${OPENCODE_BUNFIG}" --conditions="${BUN_CONDITIONS}" "${OPENCODE_ENTRYPOINT}" run \
     --format json \
     --model "${MODEL}" \
     --title "${SCENARIO}_${RUN_ID}" \
@@ -261,7 +265,7 @@ echo "${SESSION_ID}" >"${RUN_DIR}/session_id.txt"
 if [[ -n "${SESSION_ID}" ]]; then
   pushd "${RUN_DIR}/workspace" >/dev/null
   set +e
-  bun run --config="${OPENCODE_BUNFIG}" --conditions=browser "${OPENCODE_ENTRYPOINT}" export "${SESSION_ID}" \
+  bun run --config="${OPENCODE_BUNFIG}" --conditions="${BUN_CONDITIONS}" "${OPENCODE_ENTRYPOINT}" export "${SESSION_ID}" \
     >"${RUN_DIR}/exports/opencode_export.json" \
     2>>"${RUN_DIR}/stderr.txt"
   EXPORT_EXIT_CODE="$?"

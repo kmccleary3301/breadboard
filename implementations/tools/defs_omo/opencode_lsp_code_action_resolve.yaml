@@ -1,0 +1,30 @@
+id: lsp_code_action_resolve
+name: lsp_code_action_resolve
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: Resolve and APPLY a code action from lsp_code_actions.
+parameters:
+- name: filePath
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: codeAction
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string

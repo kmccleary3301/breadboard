@@ -59,6 +59,7 @@ class MultiAgentOrchestrator:
         ack_payload.setdefault("job_id", job.job_id)
         ack_payload.setdefault("agent_id", job.agent_id)
         ack_payload.setdefault("owner_agent", job.owner_agent)
+        ack_payload.setdefault("seq", job.seq)
 
         self.event_log.add(
             "agent.spawned",
@@ -86,6 +87,7 @@ class MultiAgentOrchestrator:
         payload.setdefault("job_id", job.job_id)
         payload.setdefault("agent_id", job.agent_id)
         payload.setdefault("state", job.state)
+        payload.setdefault("seq", job.seq)
         self.event_log.add(
             "agent.job_completed",
             agent_id=job.agent_id,
@@ -99,6 +101,7 @@ class MultiAgentOrchestrator:
             "job_id": job.job_id,
             "agent_id": job.agent_id,
             "owner_agent": job.owner_agent,
+            "seq": job.seq,
             "reason": reason,
             "message": message,
         }

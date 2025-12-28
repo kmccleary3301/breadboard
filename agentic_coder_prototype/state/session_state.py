@@ -102,6 +102,14 @@ class SessionState:
             pass
         self._emit_event("todo_event", payload, turn=self._active_turn_index)
 
+    def emit_task_event(self, payload: Dict[str, Any]) -> None:
+        """Emit a multi-agent/task lifecycle event to observers."""
+        self._emit_event("task_event", dict(payload or {}), turn=self._active_turn_index)
+
+    def emit_permission_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        """Emit permission request/response events to observers."""
+        self._emit_event(str(event_type), dict(payload or {}), turn=self._active_turn_index)
+
     def todo_snapshot(self) -> Optional[Dict[str, Any]]:
         if not self.todo_manager:
             return None

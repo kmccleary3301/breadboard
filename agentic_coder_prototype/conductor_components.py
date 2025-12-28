@@ -5,6 +5,7 @@ import hashlib
 import locale
 import os
 import platform
+import re
 import shutil
 import time
 from pathlib import Path
@@ -436,6 +437,13 @@ def initialize_yaml_tools(conductor: Any) -> None:
                 tool for tool in filtered_tools
                 if str(getattr(tool, "name", "")).strip().lower() != "task"
             ]
+        # Preserve include-list ordering when provided (OpenCode/OmO parity).
+        if include_list and not include_has_wildcard:
+            include_set = {name for name in include_list if name}
+            tools_by_name = {str(getattr(t, "name", "")): t for t in filtered_tools}
+            ordered = [tools_by_name[name] for name in include_list if name in tools_by_name]
+            remaining = [t for t in filtered_tools if str(getattr(t, "name", "")) not in include_set]
+            filtered_tools = ordered + remaining
         conductor.yaml_tools = filtered_tools
     except Exception:
         conductor.yaml_tools = []
@@ -443,6 +451,21 @@ def initialize_yaml_tools(conductor: Any) -> None:
 
     # Dynamic tool descriptions (OpenCode parity surfaces).
     try:
+        # Update bash tool to reflect the active workspace path.
+        try:
+            workspace = str(Path(getattr(conductor, "workspace", "")).resolve())
+            for tool in conductor.yaml_tools or []:
+                if getattr(tool, "name", None) != "bash":
+                    continue
+                desc = getattr(tool, "description", "")
+                if not isinstance(desc, str) or not desc:
+                    continue
+                replacement = f"All commands run in {workspace} by default."
+                desc = re.sub(r"All commands run in\s+.*?\s+by default\.", replacement, desc, flags=re.S)
+                tool.description = desc
+        except Exception:
+            pass
+
         task_cfg = (conductor.config.get("task_tool") or {}) if isinstance(getattr(conductor, "config", None), dict) else {}
         subagents_cfg = task_cfg.get("subagents") if isinstance(task_cfg, dict) else None
         agents_lines: List[str] = []

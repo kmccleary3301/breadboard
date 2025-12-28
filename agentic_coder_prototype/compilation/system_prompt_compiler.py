@@ -10,9 +10,11 @@ Key features:
 """
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Set, Optional
 
@@ -406,6 +408,227 @@ class SystemPromptCompiler:
             pass
 
         return comprehensive_prompt, tools_hash
+
+    def compile_v2_prompts(
+        self,
+        config: Dict[str, Any],
+        mode_name: str,
+        tools: List[ToolDefinition],
+        dialects: List[str],
+    ) -> Dict[str, Any]:
+        """Compile v2 prompts (packs + injection + TPSL catalogs)."""
+        cfg = config or {}
+        prompts_cfg = cfg.get("prompts") if isinstance(cfg, dict) and "prompts" in cfg else cfg
+        prompts_cfg = prompts_cfg if isinstance(prompts_cfg, dict) else {}
+        packs_cfg = prompts_cfg.get("packs") or {}
+        injection_cfg = prompts_cfg.get("injection") or {}
+
+        def _load_text(value: Any) -> str:
+            if not value:
+                return ""
+            if isinstance(value, str):
+                # Treat multiline or very long strings as literal text, not paths.
+                if "\n" in value or len(value) > 256:
+                    return value
+                try:
+                    path = Path(value)
+                    if path.exists():
+                        try:
+                            return path.read_text(encoding="utf-8", errors="replace")
+                        except Exception:
+                            return ""
+                except OSError:
+                    return value
+                return value
+            return ""
+
+        def _resolve_pack_ref(token: str, pack_texts: Dict[str, Dict[str, str]]) -> str:
+            match = re.match(r"@pack\(([^)]+)\)\.(.+)$", token.strip())
+            if not match:
+                return ""
+            pack_name, key = match.group(1), match.group(2)
+            return _load_text((pack_texts.get(pack_name) or {}).get(key))
+
+        pack_texts: Dict[str, Dict[str, str]] = {}
+        if isinstance(packs_cfg, dict):
+            for pack_name, pack_map in packs_cfg.items():
+                if not isinstance(pack_map, dict):
+                    continue
+                resolved: Dict[str, str] = {}
+                for key, raw in pack_map.items():
+                    resolved[str(key)] = _load_text(raw)
+                pack_texts[str(pack_name)] = resolved
+
+        # Resolve mode-specific prompt
+        mode_prompt = ""
+        try:
+            for mode in (cfg.get("modes") or []):
+                if not isinstance(mode, dict):
+                    continue
+                if mode.get("name") == mode_name:
+                    mode_prompt = _load_text(mode.get("prompt"))
+                    if mode_prompt.startswith("@pack("):
+                        mode_prompt = _resolve_pack_ref(mode_prompt, pack_texts)
+                    break
+        except Exception:
+            mode_prompt = ""
+
+        # TPSL catalogs
+        tpsl_meta: Dict[str, Any] = {}
+        tpsl_cfg = prompts_cfg.get("tool_prompt_synthesis") if isinstance(prompts_cfg, dict) else None
+        tpsl_enabled = isinstance(tpsl_cfg, dict) and bool(tpsl_cfg.get("enabled"))
+        if tpsl_enabled:
+            selection = tpsl_cfg.get("selection") or {}
+            selected_dialect = None
+            by_mode = selection.get("by_mode") or {}
+            if isinstance(by_mode, dict):
+                selected_dialect = by_mode.get(mode_name)
+            if not selected_dialect:
+                by_model = selection.get("by_model") or {}
+                if isinstance(by_model, dict):
+                    model_id = None
+                    try:
+                        providers = cfg.get("providers") or {}
+                        model_id = providers.get("default_model")
+                    except Exception:
+                        model_id = None
+                    if model_id:
+                        for pattern, dialect in by_model.items():
+                            if pattern and fnmatch.fnmatch(str(model_id), str(pattern)):
+                                selected_dialect = dialect
+                                break
+            if not selected_dialect:
+                selected_dialect = selection.get("default")
+            if not selected_dialect:
+                selected_dialect = dialects[0] if dialects else "pythonic"
+
+            detail_cfg = tpsl_cfg.get("detail") or {}
+            system_detail = detail_cfg.get("system") or "full"
+            per_turn_detail = detail_cfg.get("per_turn") or "short"
+            system_detail_id = f"system_{system_detail}" if not str(system_detail).startswith("system_") else str(system_detail)
+            per_turn_detail_id = f"per_turn_{per_turn_detail}" if not str(per_turn_detail).startswith("per_turn_") else str(per_turn_detail)
+
+            dialect_templates = {}
+            if isinstance(tpsl_cfg.get("dialects"), dict):
+                dialect_templates = tpsl_cfg["dialects"].get(selected_dialect, {}) or {}
+
+            tools_payload = []
+            for t in tools or []:
+                params_payload = []
+                for p in (getattr(t, "parameters", None) or []):
+                    params_payload.append(
+                        {
+                            "name": getattr(p, "name", None),
+                            "type": getattr(p, "type", None),
+                            "description": getattr(p, "description", None),
+                            "default": getattr(p, "default", None),
+                        }
+                    )
+                tools_payload.append(
+                    {
+                        "name": getattr(t, "name", None),
+                        "description": getattr(t, "description", None),
+                        "parameters": params_payload,
+                    }
+                )
+
+            system_catalog, system_meta = self.tpsl.render(
+                str(selected_dialect),
+                str(system_detail_id),
+                tools_payload,
+                dict(dialect_templates) if isinstance(dialect_templates, dict) else {},
+            )
+            per_turn_catalog, per_turn_meta = self.tpsl.render(
+                str(selected_dialect),
+                str(per_turn_detail_id),
+                tools_payload,
+                dict(dialect_templates) if isinstance(dialect_templates, dict) else {},
+            )
+            tpsl_meta["system"] = system_meta
+            tpsl_meta["per_turn"] = per_turn_meta
+
+            # Inject TPSL catalogs into the base pack if not explicitly provided.
+            base_pack = pack_texts.setdefault("base", {})
+            base_pack["tools_catalog_full"] = system_catalog or base_pack.get("tools_catalog_full", "")
+            base_pack["tools_catalog_short"] = per_turn_catalog or base_pack.get("tools_catalog_short", "")
+
+        def _normalize_token(raw: Any) -> str:
+            if not raw:
+                return ""
+            if not isinstance(raw, str):
+                return ""
+            token = raw.strip()
+            if token.upper().startswith("[CACHE]"):
+                token = token[len("[CACHE]") :].strip()
+            return token
+
+        system_defined = "system_order" in injection_cfg
+        per_turn_defined = "per_turn_order" in injection_cfg
+
+        system_order = [
+            _normalize_token(item)
+            for item in (injection_cfg.get("system_order") or [])
+            if _normalize_token(item)
+        ]
+        per_turn_order = [
+            _normalize_token(item)
+            for item in (injection_cfg.get("per_turn_order") or [])
+            if _normalize_token(item)
+        ]
+
+        if not system_order and not system_defined:
+            system_order = ["@pack(base).system"]
+        if not per_turn_order and not per_turn_defined:
+            per_turn_order = ["mode_specific"]
+
+        if tpsl_enabled:
+            if "@pack(base).tools_catalog_full" not in system_order and (system_order or not system_defined):
+                system_order.append("@pack(base).tools_catalog_full")
+            if "@pack(base).tools_catalog_short" not in per_turn_order and (per_turn_order or not per_turn_defined):
+                per_turn_order.append("@pack(base).tools_catalog_short")
+
+        def _assemble(order: List[str]) -> str:
+            segments: List[str] = []
+            seen_hashes: set[str] = set()
+            for token in order:
+                if token == "mode_specific":
+                    text = _load_text(mode_prompt)
+                elif token.startswith("@pack("):
+                    text = _resolve_pack_ref(token, pack_texts)
+                else:
+                    text = _load_text(token)
+                text = (text or "").strip()
+                if not text:
+                    continue
+                digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+                if digest in seen_hashes:
+                    continue
+                seen_hashes.add(digest)
+                segments.append(text)
+            return "\n\n".join(segments).strip()
+
+        system_prompt = _assemble(system_order)
+        per_turn_prompt = _assemble(per_turn_order)
+
+        cache_payload = {
+            "system_order": system_order,
+            "per_turn_order": per_turn_order,
+            "system_prompt": system_prompt,
+            "per_turn_prompt": per_turn_prompt,
+            "mode": mode_name,
+            "dialects": list(dialects or []),
+            "tpsl": tpsl_meta or None,
+        }
+        cache_key = hashlib.sha256(json.dumps(cache_payload, sort_keys=True).encode("utf-8")).hexdigest()[:12]
+
+        result = {
+            "system": system_prompt or "",
+            "per_turn": per_turn_prompt or "",
+            "cache_key": cache_key,
+        }
+        if tpsl_meta:
+            result["tpsl"] = tpsl_meta
+        return result
 
 
 _COMPILER_SINGLETON: SystemPromptCompiler | None = None

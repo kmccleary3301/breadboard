@@ -1,0 +1,9 @@
+extends: opencode_gpt5_nano_c_fs_v2.yaml
+
+profile: { name: opencode-phase8-async-subagents-v1-replay }
+
+# Replay profile for the OpenCode-captured phase8_async_subagents_v1 goldens.
+replay:
+  compare_tool_outputs: [task]
+  fail_on_tool_output_mismatch: true
+

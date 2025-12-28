@@ -23,7 +23,7 @@ provider_tools:
     max_output_tokens: 32000
     temperature: 0.1
     turn_delay_seconds: 1.0
-    tool_choice: any
+    tool_choice: auto
     stream: true
     system_reminders:
       enabled: true
@@ -84,7 +84,7 @@ loop:
       emit_event: false
   turn_strategy:
     relay: tool_role
-    flow: assistant_continuation
+    flow: tool_role
     allow_multiple_per_turn: true
 
 tools:

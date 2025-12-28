@@ -26,6 +26,7 @@ repo_reconstruct_codex_session_*/
 **/dist/
 **/artifacts/
 **/.cache/
+implementations/tooling_sys_prompts_cached/
 **/.pytest_cache/
 **/__pycache__/
 **/coverage/

@@ -54,11 +54,13 @@ class CompletionDetector:
                 "confidence": 0.9,
             }
 
-        if choice_finish_reason in {"stop", "length"} and text.strip():
+        finish_reason = str(choice_finish_reason or "").lower().strip()
+        # Provider finish reasons differ (OpenAI: stop/length, Anthropic: end_turn/max_tokens).
+        if finish_reason in {"stop", "end_turn", "length", "max_tokens"} and text.strip():
             return {
                 "completed": True,
                 "method": "finish_reason",
-                "reason": f"finish_reason:{choice_finish_reason}",
+                "reason": f"finish_reason:{finish_reason}",
                 "confidence": 0.65,
             }
 

@@ -1,0 +1,5 @@
+extends: opencode_cli_mock_guardrails.yaml
+
+permissions:
+  edit:
+    default: ask

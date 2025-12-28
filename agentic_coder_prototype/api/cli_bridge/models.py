@@ -123,3 +123,20 @@ class SessionFileContent(BaseModel):
     content: str
     truncated: bool = Field(default=False)
     total_bytes: Optional[int] = None
+
+
+class ModelCatalogEntry(BaseModel):
+    id: str
+    adapter: Optional[str] = None
+    provider: Optional[str] = None
+    name: Optional[str] = None
+    context_length: Optional[int] = None
+    params: Dict[str, Any] | None = None
+    routing: Dict[str, Any] | None = None
+    metadata: Dict[str, Any] | None = None
+
+
+class ModelCatalogResponse(BaseModel):
+    models: List[ModelCatalogEntry]
+    default_model: Optional[str] = None
+    config_path: Optional[str] = None

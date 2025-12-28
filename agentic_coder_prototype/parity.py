@@ -201,6 +201,212 @@ def compare_todo_journal(actual: List[Dict[str, Any]], expected: List[Dict[str, 
     return mismatches
 
 
+def _load_multi_agent_events(path: Optional[Path]) -> List[Dict[str, Any]]:
+    if not path or not path.exists():
+        return []
+    events: List[Dict[str, Any]] = []
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(payload, dict):
+                    events.append(payload)
+    except Exception:
+        return []
+    return events
+
+
+_MULTI_AGENT_ID_KEYS = {
+    "job_id",
+    "jobid",
+    "task_id",
+    "taskid",
+    "session_id",
+    "sessionid",
+    "task_session_id",
+    "task_sessionid",
+    "taskid",
+}
+
+
+def _normalize_multi_agent_events(events: List[Dict[str, Any]], prefixes: List[str]) -> List[Dict[str, Any]]:
+    id_maps: Dict[str, Dict[str, str]] = {}
+    counters: Dict[str, int] = {}
+
+    def _map_id(key: str, value: Any) -> Any:
+        if not isinstance(value, str) or not value:
+            return value
+        canon = key.lower()
+        if canon not in _MULTI_AGENT_ID_KEYS:
+            return value
+        mapping = id_maps.setdefault(canon, {})
+        if value in mapping:
+            return mapping[value]
+        counters[canon] = counters.get(canon, 0) + 1
+        mapped = f"{canon}_{counters[canon]}"
+        mapping[value] = mapped
+        return mapped
+
+    def _normalize_scalar(value: Any) -> Any:
+        if isinstance(value, str):
+            normalized = value
+            for prefix in prefixes:
+                if not prefix:
+                    continue
+                variants = {prefix, prefix.replace("\\", "/")}
+                if not prefix.endswith("/"):
+                    variants.add(prefix + "/")
+                    variants.add(prefix.replace("\\", "/") + "/")
+                for variant in variants:
+                    normalized = normalized.replace(variant, "<PATH>")
+            return normalized
+        return value
+
+    def _normalize_payload(payload: Any, *, event_type: str) -> Any:
+        if isinstance(payload, dict):
+            cleaned: Dict[str, Any] = {}
+            for key, value in payload.items():
+                if key in {"timestamp", "created_at", "updated_at"}:
+                    continue
+                if event_type in {"agent.job_completed", "agent.job_failed"} and key in {"output", "error"}:
+                    continue
+                if key.lower() in _MULTI_AGENT_ID_KEYS:
+                    cleaned[key] = _map_id(key, value)
+                else:
+                    cleaned[key] = _normalize_payload(value, event_type=event_type)
+            return cleaned
+        if isinstance(payload, list):
+            return [_normalize_payload(item, event_type=event_type) for item in payload]
+        return _normalize_scalar(payload)
+
+    normalized_events: List[Dict[str, Any]] = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        event_type = str(event.get("type") or "")
+        normalized: Dict[str, Any] = {
+            "type": event_type,
+            "agent_id": event.get("agent_id"),
+            "parent_agent_id": event.get("parent_agent_id"),
+            "causal_parent_event_id": event.get("causal_parent_event_id"),
+            "mvi_hash": event.get("mvi_hash"),
+        }
+        payload = event.get("payload")
+        if payload is not None:
+            normalized["payload"] = _normalize_payload(payload, event_type=event_type)
+        normalized_events.append(normalized)
+    return normalized_events
+
+
+def compare_multi_agent_events(actual: List[Dict[str, Any]], expected: List[Dict[str, Any]]) -> List[str]:
+    mismatches: List[str] = []
+    if not actual and not expected:
+        return mismatches
+    if len(actual) != len(expected):
+        mismatches.append(f"Multi-agent event count mismatch: actual={len(actual)} expected={len(expected)}")
+    for idx in range(min(len(actual), len(expected))):
+        if actual[idx] != expected[idx]:
+            mismatches.append(f"Multi-agent event #{idx + 1} differs: actual={actual[idx]} expected={expected[idx]}")
+    return mismatches
+
+
+def _normalize_turn_tool_usage(raw: Any) -> List[Dict[str, Any]]:
+    if isinstance(raw, dict):
+        entries: List[Dict[str, Any]] = []
+        for key, value in raw.items():
+            turn = None
+            try:
+                turn = int(key)
+            except Exception:
+                turn = key
+            tools = []
+            if isinstance(value, dict):
+                tools = value.get("tools") or []
+            entries.append({"turn": turn, "tools": tools})
+        entries.sort(key=lambda item: item["turn"] if isinstance(item.get("turn"), int) else str(item.get("turn")))
+        return entries
+    if isinstance(raw, list):
+        normalized: List[Dict[str, Any]] = []
+        for idx, entry in enumerate(raw):
+            if not isinstance(entry, dict):
+                continue
+            turn = entry.get("turn")
+            if turn is None:
+                turn = idx + 1
+            tools = entry.get("tools") or []
+            normalized.append({"turn": turn, "tools": tools})
+        return normalized
+    return []
+
+
+def _normalize_turn_tools(tools: Any) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    if not isinstance(tools, list):
+        return normalized
+    for entry in tools:
+        if not isinstance(entry, dict):
+            continue
+        payload = {"name": entry.get("name")}
+        if "success" in entry:
+            payload["success"] = bool(entry.get("success"))
+        normalized.append(payload)
+    return normalized
+
+
+def compare_tool_usage_summary(actual: Dict[str, Any], expected: Dict[str, Any]) -> List[str]:
+    mismatches: List[str] = []
+    if not actual and not expected:
+        return mismatches
+    keys = set(actual.keys()) | set(expected.keys())
+    for key in sorted(keys):
+        if actual.get(key) != expected.get(key):
+            mismatches.append(f"Tool usage summary mismatch for {key}: actual={actual.get(key)} expected={expected.get(key)}")
+    return mismatches
+
+
+def compare_turn_tool_usage(actual: List[Dict[str, Any]], expected: List[Dict[str, Any]]) -> List[str]:
+    mismatches: List[str] = []
+    if not actual and not expected:
+        return mismatches
+    actual_norm = _normalize_turn_tool_usage(actual)
+    expected_norm = _normalize_turn_tool_usage(expected)
+    actual_map = {entry.get("turn"): entry for entry in actual_norm}
+    expected_map = {entry.get("turn"): entry for entry in expected_norm}
+
+    if len(actual_map) != len(expected_map):
+        mismatches.append(
+            f"Turn tool usage count mismatch: actual={len(actual_map)} expected={len(expected_map)}"
+        )
+    for turn, expected_entry in expected_map.items():
+        actual_entry = actual_map.get(turn)
+        if not actual_entry:
+            mismatches.append(f"Missing turn tool usage for turn {turn}")
+            continue
+        actual_tools = _normalize_turn_tools(actual_entry.get("tools"))
+        expected_tools = _normalize_turn_tools(expected_entry.get("tools"))
+        if actual_tools != expected_tools:
+            actual_names = [tool.get("name") for tool in actual_tools]
+            expected_names = [tool.get("name") for tool in expected_tools]
+            if actual_names != expected_names:
+                mismatches.append(
+                    f"Turn tool order mismatch at turn {turn}: actual={actual_names} expected={expected_names}"
+                )
+            else:
+                mismatches.append(
+                    f"Turn tool usage mismatch at turn {turn}: actual={actual_tools} expected={expected_tools}"
+                )
+    for turn in actual_map:
+        if turn not in expected_map:
+            mismatches.append(f"Extra turn tool usage entry for turn {turn}")
+    return mismatches
+
+
 def compare_workspace_files(actual: Path, golden: Path, ignore: Optional[Iterable[str]] = None) -> List[str]:
     ignore_set = {Path(item) for item in (ignore or [])}
     mismatches: List[str] = []
@@ -270,11 +476,13 @@ class RunIR:
     todo_journal: List[Dict[str, Any]] = field(default_factory=list)
     todo_snapshot: Dict[str, Any] = field(default_factory=dict)
     prompt_hashes: Dict[str, Any] = field(default_factory=dict)
+    surface_snapshot: Dict[str, Any] = field(default_factory=dict)
     tool_usage_summary: Dict[str, Any] = field(default_factory=dict)
     turn_tool_usage: List[Dict[str, Any]] = field(default_factory=list)
     env_fingerprint: Dict[str, Any] = field(default_factory=dict)
     turn_diagnostics: List[Dict[str, Any]] = field(default_factory=list)
     workspace_manifest: Optional[Dict[str, Any]] = None
+    multi_agent_events: List[Dict[str, Any]] = field(default_factory=list)
     ignore_workspace: List[str] = field(
         default_factory=lambda: [".kyle", ".git", "summary.json", ".claude", "session_result.json"]
     )
@@ -310,25 +518,35 @@ def build_run_ir_from_run_dir(run_dir: Path, workspace_override: Optional[Path] 
     summary_path = run_dir / "meta" / "run_summary.json"
     summary = _load_optional_json(summary_path) or {}
     workspace_path = workspace_override or (run_dir / "final_container_dir")
-    if not workspace_override and not workspace_path.exists():
+    if not workspace_override:
         hint = summary.get("workspace_path")
         if isinstance(hint, str) and hint:
             candidate = Path(hint)
             if candidate.exists():
-                workspace_path = candidate
+                try:
+                    empty_final_dir = not workspace_path.exists() or not any(workspace_path.iterdir())
+                except Exception:
+                    empty_final_dir = not workspace_path.exists()
+                if empty_final_dir:
+                    workspace_path = candidate
 
     guard_events = summary.get("guardrail_events") or []
     guard_counters = summary.get("guardrails") or {}
     completion_summary = summary.get("completion_summary") or {}
-    prompt_hashes = summary.get("prompt_hashes") or {}
+    prompt_hashes = summary.get("prompt_hashes") or summary.get("prompts") or {}
     tool_usage_summary = summary.get("tool_usage_summary") or summary.get("tool_usage") or {}
-    turn_tool_usage = summary.get("turn_tool_usage") or []
+    turn_tool_usage = _normalize_turn_tool_usage(summary.get("turn_tool_usage"))
     env_fingerprint = summary.get("env_fingerprint") or {}
     turn_diagnostics = summary.get("turn_diagnostics") or []
+    surface_snapshot = summary.get("surface_snapshot") or {}
 
     todo_snapshot = _load_todo_snapshot(workspace_path)
     todo_journal = _extract_todo_journal(todo_snapshot)
     workspace_manifest = _load_workspace_manifest(run_dir)
+    multi_agent_path = run_dir / "meta" / "multi_agent_events.jsonl"
+    if not multi_agent_path.exists():
+        multi_agent_path = workspace_path / ".kyle" / "multi_agent_events.jsonl"
+    multi_agent_events = _load_multi_agent_events(multi_agent_path)
 
     return RunIR(
         workspace_path=workspace_path,
@@ -338,11 +556,13 @@ def build_run_ir_from_run_dir(run_dir: Path, workspace_override: Optional[Path] 
         todo_journal=todo_journal,
         todo_snapshot=todo_snapshot,
         prompt_hashes=prompt_hashes if isinstance(prompt_hashes, dict) else {},
+        surface_snapshot=surface_snapshot if isinstance(surface_snapshot, dict) else {},
         tool_usage_summary=tool_usage_summary if isinstance(tool_usage_summary, dict) else {},
-        turn_tool_usage=turn_tool_usage if isinstance(turn_tool_usage, list) else [],
+        turn_tool_usage=turn_tool_usage,
         env_fingerprint=env_fingerprint if isinstance(env_fingerprint, dict) else {},
         turn_diagnostics=turn_diagnostics if isinstance(turn_diagnostics, list) else [],
         workspace_manifest=workspace_manifest if isinstance(workspace_manifest, dict) else None,
+        multi_agent_events=multi_agent_events,
     )
 
 
@@ -364,11 +584,12 @@ def build_expected_run_ir(
 
     completion_summary = summary.get("completion_summary") or {}
     guard_counters = summary.get("guardrails") or {}
-    prompt_hashes = summary.get("prompt_hashes") or {}
+    prompt_hashes = summary.get("prompt_hashes") or summary.get("prompts") or {}
     tool_usage_summary = summary.get("tool_usage_summary") or summary.get("tool_usage") or {}
-    turn_tool_usage = summary.get("turn_tool_usage") or []
+    turn_tool_usage = _normalize_turn_tool_usage(summary.get("turn_tool_usage"))
     env_fingerprint = summary.get("env_fingerprint") or {}
     turn_diagnostics = summary.get("turn_diagnostics") or []
+    surface_snapshot = summary.get("surface_snapshot") or {}
 
     todo_snapshot = _load_todo_snapshot(workspace_path)
     todo_journal: List[Dict[str, Any]] = []
@@ -376,6 +597,21 @@ def build_expected_run_ir(
         todo_journal = load_todo_expectations(todo_journal_path)
     else:
         todo_journal = _extract_todo_journal(todo_snapshot)
+
+    multi_agent_path = None
+    if summary_path:
+        try:
+            summary_dir = Path(summary_path).parent
+            candidate = summary_dir / "multi_agent_events.jsonl"
+            if candidate.exists():
+                multi_agent_path = candidate
+        except Exception:
+            multi_agent_path = None
+    if multi_agent_path is None:
+        candidate = workspace_path / ".kyle" / "multi_agent_events.jsonl"
+        if candidate.exists():
+            multi_agent_path = candidate
+    multi_agent_events = _load_multi_agent_events(multi_agent_path)
 
     return RunIR(
         workspace_path=workspace_path,
@@ -385,11 +621,13 @@ def build_expected_run_ir(
         todo_journal=todo_journal,
         todo_snapshot=todo_snapshot,
         prompt_hashes=prompt_hashes if isinstance(prompt_hashes, dict) else {},
+        surface_snapshot=surface_snapshot if isinstance(surface_snapshot, dict) else {},
         tool_usage_summary=tool_usage_summary if isinstance(tool_usage_summary, dict) else {},
-        turn_tool_usage=turn_tool_usage if isinstance(turn_tool_usage, list) else [],
+        turn_tool_usage=turn_tool_usage,
         env_fingerprint=env_fingerprint if isinstance(env_fingerprint, dict) else {},
         turn_diagnostics=turn_diagnostics if isinstance(turn_diagnostics, list) else [],
         workspace_manifest=None,
+        multi_agent_events=multi_agent_events,
     )
 
 
@@ -498,6 +736,127 @@ def _todo_event_types(events: List[Dict[str, Any]]) -> List[str]:
     return types
 
 
+def compare_prompt_hashes(actual: Dict[str, Any], expected: Dict[str, Any]) -> List[str]:
+    mismatches: List[str] = []
+    if not expected:
+        return mismatches
+
+    expected_system = expected.get("system_hash")
+    if expected_system:
+        if actual.get("system_hash") != expected_system:
+            mismatches.append(
+                f"System prompt hash mismatch: actual={actual.get('system_hash')} expected={expected_system}"
+            )
+
+    expected_turns = expected.get("per_turn_hashes") or []
+    if not expected_turns:
+        return mismatches
+
+    actual_turns = actual.get("per_turn_hashes") or []
+
+    def _to_map(entries: List[Dict[str, Any]]) -> Dict[int, str]:
+        mapping: Dict[int, str] = {}
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            turn = entry.get("turn")
+            digest = entry.get("hash")
+            if isinstance(turn, int) and isinstance(digest, str):
+                mapping[turn] = digest
+        return mapping
+
+    expected_map = _to_map(expected_turns if isinstance(expected_turns, list) else [])
+    actual_map = _to_map(actual_turns if isinstance(actual_turns, list) else [])
+
+    if expected_map and len(actual_map) != len(expected_map):
+        mismatches.append(
+            f"Per-turn prompt hash count mismatch: actual={len(actual_map)} expected={len(expected_map)}"
+        )
+
+    for turn, expected_hash in expected_map.items():
+        actual_hash = actual_map.get(turn)
+        if actual_hash != expected_hash:
+            mismatches.append(
+                f"Per-turn prompt hash mismatch (turn {turn}): actual={actual_hash} expected={expected_hash}"
+            )
+
+    return mismatches
+
+
+def compare_surface_snapshots(actual: Dict[str, Any], expected: Dict[str, Any]) -> List[str]:
+    mismatches: List[str] = []
+    if not expected:
+        return mismatches
+
+    exp_provider = expected.get("provider_tools")
+    if isinstance(exp_provider, dict):
+        act_provider = actual.get("provider_tools") if isinstance(actual.get("provider_tools"), dict) else {}
+        for key, value in exp_provider.items():
+            if act_provider.get(key) != value:
+                mismatches.append(
+                    f"Provider tools config mismatch for {key}: actual={act_provider.get(key)} expected={value}"
+                )
+
+    exp_mode = expected.get("tool_prompt_mode")
+    if exp_mode and actual.get("tool_prompt_mode") != exp_mode:
+        mismatches.append(
+            f"Tool prompt mode mismatch: actual={actual.get('tool_prompt_mode')} expected={exp_mode}"
+        )
+
+    exp_roles = expected.get("system_roles")
+    if exp_roles and actual.get("system_roles") != exp_roles:
+        mismatches.append(
+            f"System roles mismatch: actual={actual.get('system_roles')} expected={exp_roles}"
+        )
+
+    def _entry_map(entries: Any) -> Dict[int, Dict[str, Any]]:
+        mapping: Dict[int, Dict[str, Any]] = {}
+        if not isinstance(entries, list):
+            return mapping
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            turn = entry.get("turn")
+            if isinstance(turn, int):
+                mapping[turn] = entry
+        return mapping
+
+    def _compare_snapshot_entries(label: str, expected_entries: Any, actual_entries: Any, fields: List[str]) -> None:
+        exp_map = _entry_map(expected_entries)
+        if not exp_map:
+            return
+        act_map = _entry_map(actual_entries)
+        for turn, exp_entry in exp_map.items():
+            act_entry = act_map.get(turn)
+            if not act_entry:
+                mismatches.append(f"Missing {label} snapshot for turn {turn}")
+                continue
+            for field in fields:
+                exp_val = exp_entry.get(field)
+                if exp_val is None:
+                    continue
+                act_val = act_entry.get(field)
+                if act_val != exp_val:
+                    mismatches.append(
+                        f"{label} snapshot mismatch (turn {turn}) for {field}: actual={act_val} expected={exp_val}"
+                    )
+
+    _compare_snapshot_entries(
+        "tool_schema",
+        expected.get("tool_schema_snapshots"),
+        actual.get("tool_schema_snapshots"),
+        ["schema_hash", "schema_hash_ordered", "tool_names_sorted", "tool_names"],
+    )
+    _compare_snapshot_entries(
+        "tool_allowlist",
+        expected.get("tool_allowlist_snapshots"),
+        actual.get("tool_allowlist_snapshots"),
+        ["allowlist_hash", "allowlist_hash_ordered", "tool_names_sorted", "tool_names"],
+    )
+
+    return mismatches
+
+
 def compare_run_ir(lhs: RunIR, rhs: RunIR, level: EquivalenceLevel) -> List[str]:
     mismatches: List[str] = []
 
@@ -522,24 +881,46 @@ def compare_run_ir(lhs: RunIR, rhs: RunIR, level: EquivalenceLevel) -> List[str]
         mismatches.extend(_compare_todo_snapshot(lhs.todo_snapshot, rhs.todo_snapshot))
 
     def _do_structural() -> None:
-        if rhs.guard_events:
+        if rhs.guard_events or lhs.guard_events:
             if _guard_types(lhs.guard_events) != _guard_types(rhs.guard_events):
                 mismatches.append("Guardrail event type sequence mismatch")
-        if rhs.todo_journal:
+        if rhs.todo_journal or lhs.todo_journal:
             if _todo_event_types(lhs.todo_journal) != _todo_event_types(rhs.todo_journal):
                 mismatches.append("Todo journal event type sequence mismatch")
+        if rhs.prompt_hashes:
+            mismatches.extend(compare_prompt_hashes(lhs.prompt_hashes, rhs.prompt_hashes))
+        if rhs.surface_snapshot:
+            mismatches.extend(compare_surface_snapshots(lhs.surface_snapshot, rhs.surface_snapshot))
+        if rhs.tool_usage_summary or lhs.tool_usage_summary:
+            mismatches.extend(compare_tool_usage_summary(lhs.tool_usage_summary, rhs.tool_usage_summary))
+        if rhs.turn_tool_usage or lhs.turn_tool_usage:
+            mismatches.extend(compare_turn_tool_usage(lhs.turn_tool_usage, rhs.turn_tool_usage))
+        if rhs.multi_agent_events:
+            actual_norm = _normalize_multi_agent_events(lhs.multi_agent_events, [str(lhs.workspace_path)])
+            expected_norm = _normalize_multi_agent_events(rhs.multi_agent_events, [str(rhs.workspace_path)])
+            if [e.get("type") for e in actual_norm] != [e.get("type") for e in expected_norm]:
+                mismatches.append("Multi-agent event type sequence mismatch")
 
     def _do_normalized() -> None:
-        if rhs.guard_events:
+        if rhs.guard_events or lhs.guard_events:
             mismatches.extend(compare_guardrail_events(sanitize_guardrail_events(lhs.guard_events), sanitize_guardrail_events(rhs.guard_events)))
-        if rhs.todo_journal:
+        if rhs.todo_journal or lhs.todo_journal:
             mismatches.extend(compare_todo_journal(lhs.todo_journal, rhs.todo_journal))
+        if rhs.multi_agent_events:
+            actual_norm = _normalize_multi_agent_events(lhs.multi_agent_events, [str(lhs.workspace_path)])
+            expected_norm = _normalize_multi_agent_events(rhs.multi_agent_events, [str(rhs.workspace_path)])
+            mismatches.extend(compare_multi_agent_events(actual_norm, expected_norm))
 
     def _do_bitwise() -> None:
-        if rhs.guard_events and lhs.guard_events != rhs.guard_events:
+        if (rhs.guard_events or lhs.guard_events) and lhs.guard_events != rhs.guard_events:
             mismatches.append("Guardrail event trace mismatch (bitwise)")
-        if rhs.todo_journal and lhs.todo_journal != rhs.todo_journal:
+        if (rhs.todo_journal or lhs.todo_journal) and lhs.todo_journal != rhs.todo_journal:
             mismatches.append("Todo journal trace mismatch (bitwise)")
+        if rhs.multi_agent_events:
+            actual_norm = _normalize_multi_agent_events(lhs.multi_agent_events, [str(lhs.workspace_path)])
+            expected_norm = _normalize_multi_agent_events(rhs.multi_agent_events, [str(rhs.workspace_path)])
+            if actual_norm != expected_norm:
+                mismatches.append("Multi-agent event trace mismatch (bitwise)")
 
     steps = [_do_semantic, _do_structural, _do_normalized, _do_bitwise]
     for idx, step in enumerate(steps):

@@ -11,6 +11,7 @@ from .provider_runtime import ProviderResult, ProviderRuntimeError
 from .state.completion_detector import CompletionDetector
 from .state.session_state import SessionState
 from .todo.store import TODO_OPEN_STATUSES
+from .surface_snapshot import build_surface_snapshot, record_tool_allowlist_snapshot
 
 
 def run_main_loop(
@@ -186,6 +187,9 @@ def run_main_loop(
                 prompt_summary = self._build_prompt_summary()
                 if prompt_summary:
                     run_summary_payload["prompts"] = prompt_summary
+                surface_snapshot = build_surface_snapshot(self, session_state, prompt_summary=None)
+                if surface_snapshot:
+                    run_summary_payload["surface_snapshot"] = surface_snapshot
                 if self._turn_diagnostics:
                     run_summary_payload["turn_diagnostics"] = self._turn_diagnostics[-200:]
                 self.logger_v2.write_json("meta/run_summary.json", run_summary_payload)
@@ -328,6 +332,14 @@ def run_main_loop(
             except Exception:
                 self._active_tool_names = [t.name for t in (effective_tool_defs or []) if getattr(t, "name", None)]
                 turn_allowed_tool_names = list(self._active_tool_names)
+            try:
+                record_tool_allowlist_snapshot(session_state, turn_allowed_tool_names, turn_index=turn_index)
+            except Exception:
+                pass
+            try:
+                self._inject_multi_agent_wakeups(session_state, markdown_logger)
+            except Exception:
+                pass
             # Build request and get response
             try:
                 provider_result = self._get_model_response(

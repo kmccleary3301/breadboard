@@ -1,34 +1,64 @@
 id: edit
 name: edit
-description: Replace text in a file (OpenCode-compatible)
+description: "Performs exact string replacements in files. \n\nUsage:\n- You must\
+  \ use your `Read` tool at least once in the conversation before editing. This tool\
+  \ will error if you attempt an edit without reading the file. \n- When editing text\
+  \ from Read tool output, ensure you preserve the exact indentation (tabs/spaces)\
+  \ as it appears AFTER the line number prefix. The line number prefix format is:\
+  \ spaces + line number + tab. Everything after that tab is the actual file content\
+  \ to match. Never include any part of the line number prefix in the oldString or\
+  \ newString.\n- ALWAYS prefer editing existing files in the codebase. NEVER write\
+  \ new files unless explicitly required.\n- Only use emojis if the user explicitly\
+  \ requests it. Avoid adding emojis to files unless asked.\n- The edit will FAIL\
+  \ if `oldString` is not found in the file with an error \"oldString not found in\
+  \ content\".\n- The edit will FAIL if `oldString` is found multiple times in the\
+  \ file with an error \"oldString found multiple times and requires more code context\
+  \ to uniquely identify the intended match\". Either provide a larger string with\
+  \ more surrounding context to make it unique or use `replaceAll` to change every\
+  \ instance of `oldString`. \n- Use `replaceAll` for replacing and renaming strings\
+  \ across the file. This parameter is useful if you want to rename a variable for\
+  \ instance.\n"
 type_id: python
 manipulations:
-  - diff.apply
-syntax_formats_supported: [native_function_calling]
-preferred_formats: [native_function_calling]
+- diff.apply
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
 parameters:
-  - name: filePath
-    type: string
+- name: filePath
+  type: string
+  description: The absolute path to the file to modify
+  required: true
+  schema:
     description: The absolute path to the file to modify
-    required: true
-  - name: oldString
     type: string
+- name: oldString
+  type: string
+  description: The text to replace
+  required: true
+  schema:
     description: The text to replace
-    required: true
-  - name: newString
     type: string
-    description: The text to replace it with
-    required: true
-  - name: replaceAll
-    type: boolean
+- name: newString
+  type: string
+  description: The text to replace it with (must be different from oldString)
+  required: true
+  schema:
+    description: The text to replace it with (must be different from oldString)
+    type: string
+- name: replaceAll
+  type: boolean
+  description: Replace all occurrences of oldString (default false)
+  required: false
+  schema:
     description: Replace all occurrences of oldString (default false)
-    required: false
+    type: boolean
 execution:
   blocking: true
 provider_routing:
   openai:
     native_primary: true
     function_call: auto
-
-
-
+    additional_properties: false
+    strict: false

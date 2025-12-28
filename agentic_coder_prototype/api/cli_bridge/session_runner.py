@@ -267,6 +267,18 @@ class SessionRunner:
             # sandboxes; for a Claude Code-style experience we must preserve the user's
             # working directory unless explicitly overridden by the caller.
             os.environ.setdefault("PRESERVE_SEEDED_WORKSPACE", "1")
+            permission_mode = (self.request.permission_mode or self.session.metadata.get("permission_mode") or "").strip().lower()
+            if permission_mode in {"prompt", "ask", "interactive"}:
+                overrides = dict(self.request.overrides or {})
+                overrides.setdefault("permissions.options.mode", "prompt")
+                overrides.setdefault("permissions.options.default_response", "reject")
+                overrides.setdefault("permissions.edit.default", "ask")
+                overrides.setdefault("permissions.shell.default", "ask")
+                overrides.setdefault("permissions.webfetch.default", "ask")
+                self.request.overrides = overrides
+                if not self.request.permission_mode:
+                    self.request.permission_mode = permission_mode
+                self.session.metadata["permission_mode"] = permission_mode
             self._agent = self.agent_factory(
                 self.request.config_path,
                 self.request.workspace,

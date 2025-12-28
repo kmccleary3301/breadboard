@@ -25,6 +25,7 @@ from .conductor_components import (
     get_prompt_cache_control,
     log_routing_event,
 )
+from .surface_snapshot import record_tool_schema_snapshot
 
 
 def get_model_response(
@@ -42,6 +43,24 @@ def get_model_response(
     client_config: Dict[str, Any],
 ) -> Any:
     """Get response from the model with proper tool configuration."""
+    turn_index = len(session_state.transcript) + 1
+    try:
+        session_state.begin_turn(turn_index)
+    except Exception:
+        session_state.set_provider_metadata("current_turn_index", turn_index)
+    session_state.set_provider_metadata("loop_detection_payload", None)
+    session_state.set_provider_metadata("context_window_warning", None)
+    try:
+        conductor.loop_detector.turn_started()
+    except Exception:
+        pass
+    try:
+        injector = getattr(conductor, "_inject_multi_agent_wakeups", None)
+        if callable(injector):
+            injector(session_state, markdown_logger)
+    except Exception:
+        pass
+
     send_messages = copy.deepcopy(session_state.provider_messages)
     cache_control = get_prompt_cache_control({"provider_tools": getattr(conductor, "_provider_tools_effective", None) or (conductor.config.get("provider_tools") or {})})
     if cache_control:
@@ -73,17 +92,6 @@ def get_model_response(
         if isinstance(last_content, str) and not last_content.strip() and stub_text:
             send_messages[-1]["content"] = stub_text
 
-    turn_index = len(session_state.transcript) + 1
-    try:
-        session_state.begin_turn(turn_index)
-    except Exception:
-        session_state.set_provider_metadata("current_turn_index", turn_index)
-    session_state.set_provider_metadata("loop_detection_payload", None)
-    session_state.set_provider_metadata("context_window_warning", None)
-    try:
-        conductor.loop_detector.turn_started()
-    except Exception:
-        pass
     per_turn_written_text = conductor.tool_prompt_planner.plan(
         tool_prompt_mode=tool_prompt_mode,
         send_messages=send_messages,
@@ -206,6 +214,11 @@ def get_model_response(
                 conductor.current_text_based_tools = text_based_tools
         except Exception:
             tools_schema = None
+    if tools_schema:
+        try:
+            record_tool_schema_snapshot(session_state, tools_schema, turn_index=turn_index)
+        except Exception:
+            pass
     if provider_id == "anthropic":
         try:
             anth_cfg = (conductor.config.get("provider_tools") or {}).get("anthropic", {}) or {}
