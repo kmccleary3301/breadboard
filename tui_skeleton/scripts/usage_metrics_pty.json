@@ -1,0 +1,10 @@
+[
+  { "action": "log", "message": "Usage metrics PTY harness start" },
+  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "wait", "ms": 400 },
+  { "action": "type", "text": "trigger usage" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "tok", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "usage-summary" },
+  { "action": "log", "message": "Usage metrics PTY harness complete" }
+]

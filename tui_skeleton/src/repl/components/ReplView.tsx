@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { Box, Static, Text, useStdout } from "ink"
 import chalk from "chalk"
 import path from "node:path"
+import { promises as fs } from "node:fs"
 import type { Block, InlineNode } from "@stream-mdx/core/types"
 import type {
   ConversationEntry,
@@ -14,6 +15,7 @@ import type {
   TranscriptPreferences,
   ToolLogEntry,
   TodoItem,
+  TaskEntry,
   PermissionRequest,
   PermissionDecision,
   PermissionRuleScope,
@@ -39,6 +41,8 @@ import { computeModelColumns, CONTEXT_COLUMN_WIDTH, PRICE_COLUMN_WIDTH } from ".
 import { GuardrailBanner } from "./GuardrailBanner.js"
 import { loadKeymapConfig } from "../keymap.js"
 import { loadChromeMode } from "../chrome.js"
+import { ensureShikiLoaded, maybeHighlightCode, subscribeShiki } from "../shikiHighlighter.js"
+import { getSessionDraft, updateSessionDraft } from "../../cache/sessionCache.js"
 import {
   buildConversationWindow,
   computeDiffPreview,
@@ -78,6 +82,34 @@ const formatBytes = (bytes: number): string => {
   if (bytes < 1_000_000) return `${(bytes / 1_000).toFixed(1)} KB`
   if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(2)} MB`
   return `${(bytes / 1_000_000_000).toFixed(2)} GB`
+}
+const formatCostUsd = (value: number): string => {
+  if (value >= 1) return `$${value.toFixed(2)}`
+  if (value >= 0.1) return `$${value.toFixed(3)}`
+  return `$${value.toFixed(4)}`
+}
+const formatLatency = (ms: number): string => {
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  if (ms < 10_000) return `${(ms / 1000).toFixed(2)}s`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+const normalizeModeLabel = (value?: string | null): { label: string; color: string } => {
+  const normalized = (value ?? "").trim().toLowerCase()
+  if (normalized === "plan") return { label: "PLAN", color: "#f97316" }
+  if (normalized === "auto") return { label: "AUTO", color: "#a855f7" }
+  if (normalized && normalized !== "build") return { label: normalized.toUpperCase(), color: "#60a5fa" }
+  return { label: "NORMAL", color: "#60a5fa" }
+}
+
+const normalizePermissionLabel = (value?: string | null): { label: string; color: string } => {
+  const normalized = (value ?? "").trim().toLowerCase()
+  if (!normalized || ["auto", "allow", "auto-accept", "auto_accept"].includes(normalized)) {
+    return { label: "AUTO-ACCEPT", color: "#22c55e" }
+  }
+  if (["prompt", "ask", "interactive"].includes(normalized)) {
+    return { label: "PROMPT", color: "#f59e0b" }
+  }
+  return { label: normalized.toUpperCase(), color: "#f59e0b" }
 }
 const COLUMN_SEPARATOR = "  ·  "
 
@@ -124,10 +156,65 @@ const highlightFuzzyLabel = (label: string, command: string, query: string): str
   return out
 }
 
-const formatProviderCell = (item: ModelMenuItem, width: number): string => {
+const normalizeProviderKey = (value: string | null | undefined): string => {
+  const normalized = value?.trim().toLowerCase() ?? ""
+  if (!normalized) return "other"
+  if (normalized === "x-ai") return "xai"
+  return normalized
+}
+
+const formatProviderLabel = (value: string | null | undefined): string => {
+  const normalized = normalizeProviderKey(value)
+  switch (normalized) {
+    case "openai":
+      return "OpenAI"
+    case "openrouter":
+      return "OpenRouter"
+    case "anthropic":
+      return "Anthropic"
+    case "google":
+      return "Google"
+    case "xai":
+      return "xAI"
+    case "mistral":
+      return "Mistral"
+    case "meta":
+      return "Meta"
+    case "cohere":
+      return "Cohere"
+    case "deepseek":
+      return "DeepSeek"
+    case "local":
+      return "Local"
+    case "other":
+      return "Other"
+    default: {
+      const raw = value?.trim()
+      if (!raw) return "Other"
+      return raw
+        .split(/[^a-z0-9]+/i)
+        .filter((part) => part.length > 0)
+        .map((part) => part[0].toUpperCase() + part.slice(1))
+        .join(" ")
+    }
+  }
+}
+
+const stripProviderPrefix = (label: string, providerLabel: string): string => {
+  const trimmed = label.trim()
+  if (!providerLabel) return trimmed
+  const escaped = providerLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const pattern = new RegExp(`^${escaped}\\s*[·:-]\\s+`, "i")
+  return trimmed.replace(pattern, "")
+}
+
+const formatProviderCell = (item: ModelMenuItem, width: number, query: string): string => {
   const currentGlyph = item.isCurrent ? "● " : "  "
   const defaultGlyph = item.isDefault ? " ★" : ""
-  return formatCell(`${currentGlyph}${item.label}${defaultGlyph}`, width, "left")
+  const providerLabel = formatProviderLabel(item.provider)
+  const displayLabel = stripProviderPrefix(item.label, providerLabel)
+  const formatted = formatCell(`${currentGlyph}${displayLabel}${defaultGlyph}`, width, "left")
+  return query.trim().length > 0 ? highlightFuzzyLabel(formatted, formatted, query) : formatted
 }
 
 const formatContextCell = (contextTokens: number | null | undefined, width: number): string => {
@@ -205,8 +292,13 @@ const colorDiffLine = (line: string): string => {
 const renderCodeLines = (raw: string, lang?: string): string[] => {
   const { code, langHint } = stripFence(raw)
   const finalLang = lang ?? langHint
-  const lines = (code || raw).replace(/\r\n?/g, "\n").split("\n")
+  const content = (code || raw).replace(/\r\n?/g, "\n")
   const isDiff = finalLang ? finalLang.toLowerCase().includes("diff") : false
+  if (!isDiff) {
+    const shikiLines = maybeHighlightCode(content, finalLang)
+    if (shikiLines) return shikiLines
+  }
+  const lines = content.split("\n")
   return lines.map((line) => {
     if (isDiff) return colorDiffLine(line)
     if (line.startsWith("+")) return chalk.hex("#34d399")(line)
@@ -542,7 +634,10 @@ const rankFuzzyFileItems = (
     const label = display(item)
     const score = scoreFuzzyMatch(label, needle)
     if (score == null) continue
-    scored.push({ item, score })
+    const base = label.split("/").pop() ?? label
+    const baseScore = scoreFuzzyMatch(base, needle)
+    const boosted = score + (baseScore != null ? baseScore * 1.2 + 20 : 0)
+    scored.push({ item, score: boosted })
   }
   scored.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score
@@ -576,6 +671,23 @@ interface WindowSlice<T> {
   readonly hiddenCount: number
   readonly usedLines: number
   readonly truncated: boolean
+}
+
+const trimTailByLineCount = <T,>(
+  entries: ReadonlyArray<T>,
+  linesToTrim: number,
+  measure: (entry: T) => number,
+): ReadonlyArray<T> => {
+  const trim = Math.max(0, Math.floor(linesToTrim))
+  if (trim === 0 || entries.length === 0) return entries
+  let remaining = trim
+  let end = entries.length
+  while (end > 0 && remaining > 0) {
+    const cost = Math.max(1, measure(entries[end - 1]))
+    remaining -= cost
+    end -= 1
+  }
+  return entries.slice(0, Math.max(0, end))
 }
 
 const sliceTailByLineBudget = <T,>(
@@ -676,12 +788,16 @@ interface ReplViewProps {
   readonly liveSlots: LiveSlotEntry[]
   readonly status: string
   readonly pendingResponse: boolean
+  readonly mode?: string | null
+  readonly permissionMode?: string | null
   readonly hints: string[]
   readonly stats: StreamStats
   readonly modelMenu: ModelMenuState
   readonly guardrailNotice?: GuardrailNotice | null
+  readonly viewClearAt?: number | null
   readonly viewPrefs: TranscriptPreferences
   readonly todos: TodoItem[]
+  readonly tasks: TaskEntry[]
   readonly permissionRequest?: PermissionRequest | null
   readonly permissionQueueDepth?: number
   readonly rewindMenu: RewindMenuState
@@ -700,17 +816,21 @@ interface ReplViewProps {
 
 export const ReplView: React.FC<ReplViewProps> = ({
   sessionId,
-  conversation,
-  toolEvents,
+  conversation: conversationProp,
+  toolEvents: toolEventsProp,
   liveSlots,
   status,
   pendingResponse,
+  mode,
+  permissionMode,
   hints,
   stats,
   modelMenu,
   guardrailNotice,
+  viewClearAt,
   viewPrefs,
   todos,
+  tasks,
   permissionRequest,
   permissionQueueDepth,
   rewindMenu,
@@ -732,6 +852,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const [historyEntries, setHistoryEntries] = useState<string[]>([])
   const [historyPos, setHistoryPos] = useState(0)
   const historyDraftRef = useRef("")
+  const [suppressSuggestions, setSuppressSuggestions] = useState(false)
   const [attachments, setAttachments] = useState<QueuedAttachment[]>([])
   const [fileMentions, setFileMentions] = useState<QueuedFileMention[]>([])
   const collapsedEntriesRef = useRef(new Map<string, boolean>())
@@ -748,6 +869,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
     action?: (() => Promise<void> | void) | null
   }>({ status: "hidden" })
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [usageOpen, setUsageOpen] = useState(false)
   const [modelSearch, setModelSearch] = useState("")
   const [modelIndex, setModelIndex] = useState(0)
   const [modelOffset, setModelOffset] = useState(0)
@@ -764,6 +886,14 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const permissionDecisionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [todosOpen, setTodosOpen] = useState(false)
   const [todoScroll, setTodoScroll] = useState(0)
+  const [tasksOpen, setTasksOpen] = useState(false)
+  const [taskScroll, setTaskScroll] = useState(0)
+  const [taskIndex, setTaskIndex] = useState(0)
+  const [taskNotice, setTaskNotice] = useState<string | null>(null)
+  const [taskSearchQuery, setTaskSearchQuery] = useState("")
+  const [taskStatusFilter, setTaskStatusFilter] = useState<"all" | "running" | "completed" | "failed">("all")
+  const [taskTailLines, setTaskTailLines] = useState<string[]>([])
+  const [taskTailPath, setTaskTailPath] = useState<string | null>(null)
   const [rewindIndex, setRewindIndex] = useState(0)
   const [filePicker, setFilePicker] = useState<FilePickerState>({
     status: "hidden",
@@ -774,6 +904,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const filePickerIndexRef = useRef(0)
   const [fileMenuItems, setFileMenuItems] = useState<SessionFileInfo[]>([])
   const fileMenuCacheRef = useRef<{ key: string; status: FileIndexMeta["status"]; mode: "tree" | "fuzzy" } | null>(null)
+  const fileMenuRowsRef = useRef<FileMenuRow[]>([])
   const filePickerLoadSeq = useRef(0)
   const [filePickerDismissed, setFilePickerDismissed] = useState<{ tokenStart: number; textVersion: number } | null>(null)
   const [inputTextVersion, setInputTextVersion] = useState(0)
@@ -787,8 +918,24 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const [transcriptSearchQuery, setTranscriptSearchQuery] = useState("")
   const [transcriptSearchOpen, setTranscriptSearchOpen] = useState(false)
   const [transcriptSearchIndex, setTranscriptSearchIndex] = useState(0)
+  const [transcriptExportNotice, setTranscriptExportNotice] = useState<string | null>(null)
+  const [transcriptToolIndex, setTranscriptToolIndex] = useState(0)
+  const [transcriptNudge, setTranscriptNudge] = useState(0)
+  const draftAppliedRef = useRef(false)
+  const draftLoadSeq = useRef(0)
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastSavedDraftRef = useRef<{ text: string; cursor: number } | null>(null)
   const { stdout } = useStdout()
+  const [, forceShikiRefresh] = useState(0)
   const [staticFeed, setStaticFeed] = useState<StaticFeedItem[]>([])
+  const conversation = useMemo(() => {
+    if (!viewClearAt) return conversationProp
+    return conversationProp.filter((entry) => entry.createdAt >= viewClearAt)
+  }, [conversationProp, viewClearAt])
+  const toolEvents = useMemo(() => {
+    if (!viewClearAt) return toolEventsProp
+    return toolEventsProp.filter((entry) => entry.createdAt >= viewClearAt)
+  }, [toolEventsProp, viewClearAt])
   const pushCommandResult = useCallback((title: string, lines: string[]) => {
     const entryId = `atcmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
     const node = (
@@ -816,6 +963,15 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const chromeMode = useMemo(() => loadChromeMode(keymap), [keymap])
   const claudeChrome = chromeMode === "claude"
   const filePickerResources = useMemo(() => loadFilePickerResources(), [])
+  const [, forceRedraw] = useState(0)
+  useEffect(() => {
+    if (!viewPrefs.richMarkdown) return
+    const unsubscribe = subscribeShiki(() => {
+      forceShikiRefresh((value) => value + 1)
+    })
+    ensureShikiLoaded()
+    return unsubscribe
+  }, [forceShikiRefresh, viewPrefs.richMarkdown])
   const [filePickerNeedle, setFilePickerNeedle] = useState("")
   const filePickerNeedleSeq = useRef(0)
   const fileIndexRef = useRef<FileIndexStore>({
@@ -842,6 +998,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const rowCount = stdout?.rows && Number.isFinite(stdout.rows) ? stdout.rows : 40
   const PANEL_WIDTH = useMemo(() => Math.min(96, Math.max(60, Math.floor(columnWidth * 0.8))), [columnWidth])
   const modelColumnLayout = useMemo(() => computeModelColumns(columnWidth), [columnWidth])
+  const modelMenuCompact = useMemo(() => rowCount <= 20 || columnWidth <= 70, [columnWidth, rowCount])
   const modelMenuHeaderText = useMemo(() => {
     const headerCells = [
       formatCell("Provider · Model", modelColumnLayout.providerWidth),
@@ -853,20 +1010,28 @@ export const ReplView: React.FC<ReplViewProps> = ({
   }, [modelColumnLayout])
   const formatModelRowText = useCallback(
     (item: ModelMenuItem) => {
-      const cells = [formatProviderCell(item, modelColumnLayout.providerWidth)]
+      const cells = [formatProviderCell(item, modelColumnLayout.providerWidth, modelSearch)]
       if (modelColumnLayout.showContext) cells.push(formatContextCell(item.contextTokens ?? null, CONTEXT_COLUMN_WIDTH))
       if (modelColumnLayout.showPriceIn) cells.push(formatPriceCell(item.priceInPerM ?? null, PRICE_COLUMN_WIDTH))
       if (modelColumnLayout.showPriceOut) cells.push(formatPriceCell(item.priceOutPerM ?? null, PRICE_COLUMN_WIDTH))
       return buildModelRowText(cells)
     },
-    [modelColumnLayout],
+    [modelColumnLayout, modelSearch],
   )
   const CONTENT_PADDING = 6
   const MAX_VISIBLE_MODELS = 8
+  const MODEL_VISIBLE_ROWS = useMemo(() => {
+    const base = Math.floor(rowCount * 0.45)
+    const capped = Math.max(6, Math.min(14, base))
+    return Math.max(4, Math.min(capped, rowCount - 10))
+  }, [rowCount])
   const animationActive = pendingResponse || liveSlots.length > 0
   const animationTick = useAnimationClock(animationActive, 120)
   const spinner = useSpinner(pendingResponse, animationActive ? animationTick : undefined)
-  const suggestions = useMemo(() => buildSuggestions(input, MAX_SUGGESTIONS), [input])
+  const suggestions = useMemo(
+    () => (suppressSuggestions ? [] : buildSuggestions(input, MAX_SUGGESTIONS)),
+    [input, suppressSuggestions],
+  )
   const activeSlashQuery = useMemo(() => {
     if (!input.startsWith("/")) return ""
     const [lookup] = input.slice(1).split(/\s+/)
@@ -874,10 +1039,14 @@ export const ReplView: React.FC<ReplViewProps> = ({
   }, [input])
   const maxVisibleSuggestions = useMemo(() => {
     if (claudeChrome) {
-      return Math.max(10, Math.min(18, Math.floor(rowCount * 0.55)))
+      return Math.max(12, Math.min(20, Math.floor(rowCount * 0.6)))
     }
     return Math.max(8, Math.min(14, Math.floor(rowCount * 0.4)))
   }, [claudeChrome, rowCount])
+  const inputMaxVisibleLines = useMemo(
+    () => Math.max(3, Math.min(8, Math.floor(rowCount * 0.25))),
+    [rowCount],
+  )
   const fileMenuMaxRows = useMemo(() => {
     if (claudeChrome) {
       return Math.max(8, Math.min(16, Math.floor(rowCount * 0.5)))
@@ -938,11 +1107,12 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const buildSuggestionLines = useCallback(
     (row: SlashSuggestion, multiline: boolean): Array<{ label: string; summary: string }> => {
       const label = `${row.command}${row.usage ? ` ${row.usage}` : ""}`
+      const summaryText = row.shortcut ? `${row.summary} · ${row.shortcut}` : row.summary
       if (!multiline) {
-        return [{ label, summary: row.summary }]
+        return [{ label, summary: summaryText }]
       }
       const summaryMaxLines = 2
-      const summaryLines = wrapSuggestionText(row.summary, suggestionLayout.summaryWidth, summaryMaxLines)
+      const summaryLines = wrapSuggestionText(summaryText, suggestionLayout.summaryWidth, summaryMaxLines)
       if (summaryLines.length === 0) summaryLines.push("")
       return summaryLines.map((line, index) => ({
         label: index === 0 ? label : "",
@@ -986,9 +1156,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
     paletteState.status === "open" ||
     confirmState.status === "prompt" ||
     shortcutsOpen ||
+    usageOpen ||
     Boolean(permissionRequest) ||
     rewindMenu.status !== "hidden" ||
     todosOpen ||
+    tasksOpen ||
     transcriptViewerOpen
 
   const overlayActive =
@@ -996,9 +1168,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
     paletteState.status === "open" ||
     confirmState.status === "prompt" ||
     shortcutsOpen ||
+    usageOpen ||
     Boolean(permissionRequest) ||
     rewindMenu.status !== "hidden" ||
     todosOpen ||
+    tasksOpen ||
     transcriptViewerOpen
 
   const activeAtMention = useMemo(
@@ -1010,6 +1184,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
     () => (activeAtMention ? parseAtMentionQuery(activeAtMentionQuery) : { cwd: ".", needle: "" }),
     [activeAtMention, activeAtMentionQuery],
   )
+  const rawFilePickerNeedle = filePickerQueryParts.needle.trim()
   const activeAtCommand = useMemo(() => {
     if (inputLocked) return false
     const command = parseAtCommand(input)
@@ -1039,13 +1214,14 @@ export const ReplView: React.FC<ReplViewProps> = ({
       setFilePickerNeedle("")
       return
     }
+    if (trimmed === filePickerNeedle) return
     const seq = (filePickerNeedleSeq.current += 1)
     const timer = setTimeout(() => {
       if (filePickerNeedleSeq.current !== seq) return
       setFilePickerNeedle(trimmed)
     }, 80)
     return () => clearTimeout(timer)
-  }, [filePickerActive, filePickerConfig.mode, filePickerQueryParts.needle])
+  }, [filePickerActive, filePickerConfig.mode, filePickerNeedle, filePickerQueryParts.needle])
 
   const transcriptViewerLines = useMemo(() => {
     const lines: string[] = []
@@ -1105,8 +1281,25 @@ export const ReplView: React.FC<ReplViewProps> = ({
     }
     return lines
   }, [conversation, toolEvents, verboseOutput])
+  const transcriptToolLines = useMemo(() => {
+    const indices: number[] = []
+    for (let line = 0; line < transcriptViewerLines.length; line += 1) {
+      const value = transcriptViewerLines[line] ?? ""
+      if (value.startsWith("  [")) {
+        indices.push(line)
+      }
+    }
+    return indices
+  }, [transcriptViewerLines])
+  useEffect(() => {
+    if (!transcriptViewerOpen) return
+    setTranscriptToolIndex(0)
+  }, [transcriptToolLines.length, transcriptViewerOpen])
 
-  const transcriptViewerBodyRows = useMemo(() => Math.max(1, rowCount - 4), [rowCount])
+  const transcriptViewerBodyRows = useMemo(
+    () => Math.max(1, rowCount - (verboseOutput ? 5 : 4)),
+    [rowCount, verboseOutput],
+  )
   const transcriptViewerMaxScroll = useMemo(
     () => Math.max(0, transcriptViewerLines.length - transcriptViewerBodyRows),
     [transcriptViewerBodyRows, transcriptViewerLines.length],
@@ -1117,19 +1310,14 @@ export const ReplView: React.FC<ReplViewProps> = ({
   }, [transcriptViewerFollowTail, transcriptViewerMaxScroll, transcriptViewerScroll])
 
   const transcriptSearchMatches = useMemo<ReadonlyArray<TranscriptMatch>>(() => {
-    const query = transcriptSearchQuery.trim().toLowerCase()
+    const query = transcriptSearchQuery.trim()
     if (!query) return []
     const matches: TranscriptMatch[] = []
     for (let line = 0; line < transcriptViewerLines.length; line += 1) {
       const candidate = stripAnsiCodes(transcriptViewerLines[line] ?? "")
-      const haystack = candidate.toLowerCase()
-      let start = 0
-      while (start <= haystack.length) {
-        const index = haystack.indexOf(query, start)
-        if (index === -1) break
-        matches.push({ line, start: index, end: index + query.length })
-        start = index + query.length
-      }
+      const score = scoreFuzzyMatch(candidate, query)
+      if (score == null) continue
+      matches.push({ line, start: 0, end: candidate.length })
     }
     return matches
   }, [transcriptSearchQuery, transcriptViewerLines])
@@ -1263,19 +1451,99 @@ export const ReplView: React.FC<ReplViewProps> = ({
   }, [todoGroups])
   const todoViewportRows = useMemo(() => Math.max(8, Math.min(18, Math.floor(rowCount * 0.45))), [rowCount])
   const todoMaxScroll = Math.max(0, todoRows.length - todoViewportRows)
+  const sortedTasks = useMemo(
+    () => [...tasks].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)),
+    [tasks],
+  )
+  const filteredTasks = useMemo(() => {
+    const query = taskSearchQuery.trim().toLowerCase()
+    const statusFilter = taskStatusFilter
+    return sortedTasks.filter((task) => {
+      if (statusFilter !== "all") {
+        const normalized = (task.status ?? "").toLowerCase()
+        if (!normalized || !normalized.includes(statusFilter)) {
+          return false
+        }
+      }
+      if (!query) return true
+      const haystack = [
+        task.id,
+        task.description ?? "",
+        task.subagentType ?? "",
+        task.status ?? "",
+        task.kind ?? "",
+        task.sessionId ?? "",
+      ]
+        .join(" ")
+        .toLowerCase()
+      return haystack.includes(query)
+    })
+  }, [sortedTasks, taskSearchQuery, taskStatusFilter])
+  const taskRows = useMemo(() => {
+    return filteredTasks.map((task) => {
+      const status = (task.status ?? "").toLowerCase()
+      const statusLabel = status ? status.replace(/[_-]+/g, " ") : "update"
+      const labelParts = []
+      if (statusLabel) {
+        labelParts.push(statusLabel)
+      }
+      const description = task.description || task.kind || "task"
+      labelParts.push(description)
+      if (task.subagentType) {
+        labelParts.push(`(${task.subagentType})`)
+      }
+      return {
+        id: task.id,
+        status,
+        label: labelParts.join(" "),
+        task,
+      }
+    })
+  }, [filteredTasks])
+  const taskViewportRows = useMemo(() => Math.max(8, Math.min(16, Math.floor(rowCount * 0.45))), [rowCount])
+  const taskMaxScroll = Math.max(0, taskRows.length - taskViewportRows)
+  const selectedTaskIndex = useMemo(() => {
+    if (taskRows.length === 0) return 0
+    return Math.max(0, Math.min(taskIndex, taskRows.length - 1))
+  }, [taskIndex, taskRows.length])
+  const selectedTask = useMemo(() => taskRows[selectedTaskIndex]?.task ?? null, [selectedTaskIndex, taskRows])
+
+  const requestTaskTail = useCallback(async () => {
+    if (!selectedTask) {
+      setTaskNotice("No task selected.")
+      return
+    }
+    const candidates: string[] = []
+    if (selectedTask.artifactPath) candidates.push(selectedTask.artifactPath)
+    const taskId = selectedTask.id
+    candidates.push(`.kyle/subagents/agent-${taskId}.jsonl`)
+    candidates.push(`.kyle/subagents/${taskId}.jsonl`)
+    candidates.push(`.kyle/subagents/${taskId}.json`)
+    let lastError: string | null = null
+    for (const pathCandidate of candidates) {
+      try {
+        const content = await onReadFile(pathCandidate, { mode: "snippet", headLines: 4, tailLines: 24, maxBytes: 40_000 })
+        const lines = content.content.replace(/\r\n?/g, "\n").split("\n")
+        setTaskTailLines(lines)
+        setTaskTailPath(content.path)
+        const truncated = content.truncated ? " (truncated)" : ""
+        setTaskNotice(`Loaded ${content.path}${truncated}`)
+        return
+      } catch (error) {
+        lastError = (error as Error).message
+      }
+    }
+    setTaskNotice(lastError ?? "Unable to load task output.")
+  }, [onReadFile, selectedTask])
   const filteredModels = useMemo(() => {
     if (modelMenu.status !== "ready") return []
     const query = modelSearch.trim().toLowerCase()
     const base = modelMenu.items
     const groups = new Map<string, ModelMenuItem[]>()
     const order: string[] = []
-    const normalizeProvider = (value: string | null | undefined): string => {
-      if (!value) return "other"
-      return value.toLowerCase()
-    }
     if (query.length === 0) {
       for (const item of base) {
-        const key = normalizeProvider(item.provider)
+        const key = normalizeProviderKey(item.provider)
         if (!groups.has(key)) {
           groups.set(key, [])
         }
@@ -1293,12 +1561,12 @@ export const ReplView: React.FC<ReplViewProps> = ({
         const candidate = `${item.provider} ${item.label} ${item.value}`
         const score = scoreFuzzyMatch(candidate, query)
         if (score == null) continue
-        const key = normalizeProvider(item.provider)
+        const key = normalizeProviderKey(item.provider)
         if (!scored.has(key)) scored.set(key, [])
         scored.get(key)?.push({ item, score })
       }
       for (const item of base) {
-        const key = normalizeProvider(item.provider)
+        const key = normalizeProviderKey(item.provider)
         if (!scored.has(key)) continue
         if (!order.includes(key)) order.push(key)
       }
@@ -1330,6 +1598,15 @@ export const ReplView: React.FC<ReplViewProps> = ({
     return grouped
   }, [modelMenu, modelSearch])
 
+  const modelProviderCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const item of filteredModels) {
+      const key = normalizeProviderKey(item.provider)
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    return counts
+  }, [filteredModels])
+
   useEffect(() => {
     if (modelMenu.status === "hidden") {
       setModelSearch("")
@@ -1339,8 +1616,23 @@ export const ReplView: React.FC<ReplViewProps> = ({
   }, [modelMenu.status])
 
   useEffect(() => {
+    if (modelMenu.status !== "ready") return
+    if (modelSearch.trim().length > 0) return
+    const currentIndex = filteredModels.findIndex((item) => item.isCurrent)
+    if (currentIndex < 0) return
+    setModelIndex((prev) => (prev === currentIndex ? prev : currentIndex))
+    setModelOffset((prev) => {
+      if (currentIndex < prev) return currentIndex
+    if (currentIndex >= prev + MODEL_VISIBLE_ROWS) {
+        return Math.max(0, currentIndex - MODEL_VISIBLE_ROWS + 1)
+      }
+      return prev
+    })
+  }, [filteredModels, modelMenu.status, modelSearch, MODEL_VISIBLE_ROWS])
+
+  useEffect(() => {
     if (!permissionRequest) return
-    setPermissionScope("project")
+    setPermissionScope(permissionRequest.defaultScope ?? "project")
     setPermissionScroll(0)
     setPermissionFileIndex(0)
     setPermissionNote("")
@@ -1357,6 +1649,23 @@ export const ReplView: React.FC<ReplViewProps> = ({
   useEffect(() => {
     permissionNoteRef.current = permissionNote
   }, [permissionNote])
+
+  useEffect(() => {
+    if (!tasksOpen) return
+    setTaskIndex(0)
+    setTaskScroll(0)
+    setTaskNotice(null)
+    setTaskSearchQuery("")
+    setTaskStatusFilter("all")
+    setTaskTailLines([])
+    setTaskTailPath(null)
+  }, [tasksOpen])
+
+  useEffect(() => {
+    if (!tasksOpen) return
+    setTaskIndex((prev) => Math.max(0, Math.min(prev, Math.max(0, taskRows.length - 1))))
+    setTaskScroll((prev) => Math.max(0, Math.min(prev, taskMaxScroll)))
+  }, [taskMaxScroll, taskRows.length, tasksOpen])
 
   useEffect(() => {
     return () => {
@@ -1418,9 +1727,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
         confirmState.status === "prompt" ||
         modelMenu.status !== "hidden" ||
         shortcutsOpen ||
+        usageOpen ||
         permissionRequest ||
         rewindMenu.status !== "hidden" ||
         todosOpen ||
+        tasksOpen ||
         transcriptViewerOpen
       )
         return "modal"
@@ -1431,10 +1742,12 @@ export const ReplView: React.FC<ReplViewProps> = ({
       confirmState.status,
       modelMenu.status,
       shortcutsOpen,
+      usageOpen,
       paletteState.status,
       permissionRequest,
       rewindMenu.status,
       todosOpen,
+      tasksOpen,
       transcriptViewerOpen,
     ],
   )
@@ -1459,6 +1772,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
       }
     }
     setTranscriptViewerOpen(true)
+    setTranscriptExportNotice(null)
   }, [stdout, transcriptViewerOpen])
 
   const exitTranscriptViewer = useCallback(() => {
@@ -1478,8 +1792,24 @@ export const ReplView: React.FC<ReplViewProps> = ({
     setTranscriptSearchOpen(false)
     setTranscriptSearchQuery("")
     setTranscriptSearchIndex(0)
+    setTranscriptExportNotice(null)
     setEscPrimedAt(null)
   }, [stdout, transcriptViewerOpen])
+
+  const saveTranscriptExport = useCallback(async () => {
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+      const dirPath = path.join(process.cwd(), "artifacts", "transcripts")
+      await fs.mkdir(dirPath, { recursive: true })
+      const filePath = path.join(dirPath, `transcript-${timestamp}.txt`)
+      await fs.writeFile(filePath, transcriptViewerLines.join("\n"), "utf8")
+      setTranscriptExportNotice(`Saved to ${filePath}`)
+      pushCommandResult("Transcript saved", [filePath])
+    } catch (error) {
+      const message = (error as Error).message || String(error)
+      pushCommandResult("Transcript export failed", [message])
+    }
+  }, [pushCommandResult, transcriptViewerLines])
 
   const handleLineEdit = useCallback(
     (nextValue: string, nextCursor: number) => {
@@ -1487,6 +1817,9 @@ export const ReplView: React.FC<ReplViewProps> = ({
       inputValueRef.current = nextValue
       if (nextValue !== prevValue) {
         setInputTextVersion((prev) => prev + 1)
+        if (suppressSuggestions) {
+          setSuppressSuggestions(false)
+        }
       }
       setInput(nextValue)
       setCursor(Math.max(0, Math.min(nextCursor, nextValue.length)))
@@ -1494,7 +1827,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         historyDraftRef.current = nextValue
       }
     },
-    [historyEntries.length, historyPos],
+    [historyEntries.length, historyPos, suppressSuggestions],
   )
 
   const handleLineEditGuarded = useCallback(
@@ -1509,6 +1842,64 @@ export const ReplView: React.FC<ReplViewProps> = ({
     },
     [handleLineEdit, inputLocked, shortcutsOpen],
   )
+
+  useEffect(() => {
+    if (!sessionId) return
+    let cancelled = false
+    const seq = ++draftLoadSeq.current
+    draftAppliedRef.current = false
+    void (async () => {
+      try {
+        const draft = await getSessionDraft(sessionId)
+        if (cancelled || seq !== draftLoadSeq.current) return
+        if (!draft || draftAppliedRef.current) return
+        if (inputValueRef.current.trim().length > 0) return
+        const nextCursor = Math.max(0, Math.min(draft.cursor, draft.text.length))
+        handleLineEdit(draft.text, nextCursor)
+        draftAppliedRef.current = true
+      } catch {
+        // ignore draft load errors
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [handleLineEdit, sessionId])
+
+  useEffect(() => {
+    if (!sessionId) return
+    if (draftSaveTimerRef.current) {
+      clearTimeout(draftSaveTimerRef.current)
+      draftSaveTimerRef.current = null
+    }
+    const text = inputValueRef.current
+    const cursorNow = Math.max(0, Math.min(cursor, text.length))
+    draftSaveTimerRef.current = setTimeout(() => {
+      if (!sessionId) return
+      const trimmed = text.trim()
+      if (!trimmed) {
+        if (lastSavedDraftRef.current) {
+          lastSavedDraftRef.current = null
+          void updateSessionDraft(sessionId, null)
+        }
+        return
+      }
+      const prev = lastSavedDraftRef.current
+      if (prev && prev.text === text && prev.cursor === cursorNow) return
+      lastSavedDraftRef.current = { text, cursor: cursorNow }
+      void updateSessionDraft(sessionId, {
+        text,
+        cursor: cursorNow,
+        updatedAt: new Date().toISOString(),
+      })
+    }, 450)
+    return () => {
+      if (draftSaveTimerRef.current) {
+        clearTimeout(draftSaveTimerRef.current)
+        draftSaveTimerRef.current = null
+      }
+    }
+  }, [cursor, sessionId, input])
 
   useEffect(() => {
     const active = Boolean(permissionRequest)
@@ -1870,11 +2261,13 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const fileMenuMode = useMemo<"tree" | "fuzzy">(() => {
     if (!filePickerActive) return "tree"
     if (filePickerConfig.mode === "tree") return "tree"
-    if (filePickerNeedle.trim().length === 0) return "tree"
+    if (rawFilePickerNeedle.length === 0) return "tree"
     return "fuzzy"
-  }, [filePickerActive, filePickerConfig.mode, filePickerNeedle])
+  }, [filePickerActive, filePickerConfig.mode, rawFilePickerNeedle])
 
   const fileMenuNeedle = fileMenuMode === "fuzzy" ? filePickerNeedle : filePickerQueryParts.needle
+  const fileMenuNeedlePending =
+    fileMenuMode === "fuzzy" && rawFilePickerNeedle.length > 0 && rawFilePickerNeedle !== filePickerNeedle
 
   useEffect(() => {
     if (!filePickerActive) {
@@ -1891,6 +2284,9 @@ export const ReplView: React.FC<ReplViewProps> = ({
         status: fileIndexMeta.status,
         mode: "tree",
       }
+      return
+    }
+    if (fileMenuNeedlePending) {
       return
     }
     const key = `${filePickerQueryParts.cwd}|${fileMenuNeedle}`
@@ -1924,6 +2320,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
     filePickerFilteredItems,
     filePickerQueryParts.cwd,
     fileMenuNeedle,
+    fileMenuNeedlePending,
   ])
 
   const fileMenuRows = useMemo<FileMenuRow[]>(() => {
@@ -1938,11 +2335,38 @@ export const ReplView: React.FC<ReplViewProps> = ({
     return rows
   }, [filePickerActive, fileMenuItems, filePickerResourcesVisible])
 
+  useEffect(() => {
+    fileMenuRowsRef.current = fileMenuRows
+  }, [fileMenuRows])
+
+  const fileMenuHasLarge = useMemo(
+    () =>
+      fileMenuRows.some(
+        (row) =>
+          row.kind === "file" &&
+          row.item.size != null &&
+          row.item.size > fileMentionConfig.maxInlineBytesPerFile,
+      ),
+    [fileMenuRows, fileMentionConfig.maxInlineBytesPerFile],
+  )
+
   const fileMenuIndex = useMemo(() => {
     if (!filePickerActive) return 0
     if (fileMenuRows.length === 0) return 0
     return Math.max(0, Math.min(filePicker.index, fileMenuRows.length - 1))
   }, [fileMenuRows.length, filePicker.index, filePickerActive])
+
+  const selectedFileRow = useMemo(() => {
+    if (!filePickerActive) return null
+    if (fileMenuRows.length === 0) return null
+    return fileMenuRows[fileMenuIndex] ?? null
+  }, [fileMenuIndex, fileMenuRows, filePickerActive])
+
+  const selectedFileIsLarge = useMemo(() => {
+    if (!selectedFileRow || selectedFileRow.kind !== "file") return false
+    const size = selectedFileRow.item.size
+    return size != null && size > fileMentionConfig.maxInlineBytesPerFile
+  }, [fileMentionConfig.maxInlineBytesPerFile, selectedFileRow])
 
   const fileMenuWindow = useMemo(() => {
     if (fileMenuRows.length === 0) {
@@ -2068,6 +2492,17 @@ export const ReplView: React.FC<ReplViewProps> = ({
     setConfirmState({ status: "hidden", message: undefined, action: null })
   }, [])
 
+  const clearScreen = useCallback(() => {
+    if (!stdout?.isTTY) return
+    try {
+      stdout.write("\u001b[2J")
+      stdout.write("\u001b[H")
+    } catch {
+      // ignore
+    }
+    forceRedraw((value) => value + 1)
+  }, [forceRedraw, stdout])
+
   const pushHistoryEntry = useCallback((entry: string) => {
     if (!entry.trim()) return
     setHistoryEntries((prev) => {
@@ -2123,8 +2558,17 @@ export const ReplView: React.FC<ReplViewProps> = ({
       const isShiftTab = (key.shift && isTabKey) || hasShiftTabChar
       const isCtrlT = key.ctrl && lowerChar === "t"
       const isCtrlShiftT = key.ctrl && key.shift && lowerChar === "t"
+      const isCtrlB = key.ctrl && lowerChar === "b"
+      if (key.ctrl && lowerChar === "l") {
+        clearScreen()
+        return true
+      }
       if (shortcutsOpen && (char === "?" || key.escape)) {
         setShortcutsOpen(false)
+        return true
+      }
+      if (usageOpen && (key.escape || char === "\u001b")) {
+        setUsageOpen(false)
         return true
       }
       if (isCtrlShiftT) {
@@ -2143,6 +2587,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
         } else {
           enterTranscriptViewer()
         }
+        return true
+      }
+      if (isCtrlB) {
+        setTasksOpen((prev) => !prev)
         return true
       }
       if (key.ctrl && (lowerChar === "c" || char === "\u0003")) {
@@ -2190,6 +2638,18 @@ export const ReplView: React.FC<ReplViewProps> = ({
         if (key.escape || char === "\u001b") {
           exitTranscriptViewer()
           return true
+        }
+        const cycleTranscriptMatch = (direction: -1 | 1) => {
+          if (transcriptSearchMatches.length === 0) return
+          setTranscriptSearchIndex((prev) => {
+            const count = transcriptSearchMatches.length
+            const next = count === 0 ? 0 : (prev + direction + count) % count
+            const line = transcriptSearchMatches[next]?.line
+            if (typeof line === "number") {
+              jumpTranscriptToLine(line)
+            }
+            return next
+          })
         }
         if (stdout?.isTTY && char && char.startsWith("[<")) {
           const match = char.match(/^\[<(\d+);(\d+);(\d+)([mM])$/)
@@ -2252,6 +2712,33 @@ export const ReplView: React.FC<ReplViewProps> = ({
             return true
           }
         }
+        if (!transcriptSearchOpen && lowerChar === "s" && !key.ctrl && !key.meta) {
+          void saveTranscriptExport()
+          return true
+        }
+        if (lowerChar === "n") {
+          cycleTranscriptMatch(1)
+          return true
+        }
+        if (lowerChar === "p") {
+          cycleTranscriptMatch(-1)
+          return true
+        }
+        if (lowerChar === "t" && !key.ctrl && !key.meta) {
+          if (transcriptToolLines.length > 0) {
+            const direction = key.shift ? -1 : 1
+            setTranscriptToolIndex((prev) => {
+              const count = transcriptToolLines.length
+              const next = (prev + direction + count) % count
+              const line = transcriptToolLines[next]
+              if (typeof line === "number") {
+                jumpTranscriptToLine(line)
+              }
+              return next
+            })
+          }
+          return true
+        }
         if (lowerChar === "/") {
           setTranscriptSearchOpen((prev) => !prev)
           return true
@@ -2299,7 +2786,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         return true
       }
       if (permissionRequest) {
-        const tabOrder: Array<"summary" | "diff" | "rules"> = ["summary", "diff", "rules"]
+        const tabOrder: Array<"summary" | "diff" | "rules" | "note"> = ["summary", "diff", "rules", "note"]
         let activeTab = permissionTabRef.current ?? permissionTab
         const currentIndex = tabOrder.indexOf(activeTab as "summary" | "diff" | "rules")
         const nextTab = () => tabOrder[currentIndex >= 0 ? (currentIndex + 1) % tabOrder.length : 0] ?? "summary"
@@ -2310,11 +2797,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
           const snapshot = permissionInputSnapshotRef.current
           permissionDecisionTimerRef.current = setTimeout(() => {
             const latestNote = permissionNoteRef.current.trim()
-            const snapshotValue = snapshot?.value.trim() ?? ""
-            const currentInput = inputValueRef.current.trim()
-            const fallbackNote =
-              !latestNote && activeTab === "note" && currentInput && currentInput !== snapshotValue ? currentInput : ""
-            const notePayload = latestNote || fallbackNote ? { note: latestNote || fallbackNote } : {}
+            const notePayload = latestNote ? { note: latestNote } : {}
             void onPermissionDecision({ ...decision, ...notePayload })
             if (snapshot) {
               handleLineEdit(snapshot.value, snapshot.cursor)
@@ -2527,11 +3010,106 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return true
       }
+      if (tasksOpen) {
+        const lastIndex = Math.max(0, taskRows.length - 1)
+        if (key.escape || char === "\u001b") {
+          setTasksOpen(false)
+          return true
+        }
+        if (isCtrlB) {
+          setTasksOpen(false)
+          return true
+        }
+        const clampScroll = (value: number) => Math.max(0, Math.min(taskMaxScroll, value))
+        if (key.pageUp) {
+          setTaskScroll((prev) => clampScroll(prev - taskViewportRows))
+          setTaskIndex((prev) => Math.max(0, prev - taskViewportRows))
+          return true
+        }
+        if (key.pageDown) {
+          setTaskScroll((prev) => clampScroll(prev + taskViewportRows))
+          setTaskIndex((prev) => Math.min(lastIndex, prev + taskViewportRows))
+          return true
+        }
+        if (key.ctrl && lowerChar === "u") {
+          setTaskSearchQuery("")
+          setTaskIndex(0)
+          setTaskScroll(0)
+          return true
+        }
+        if (key.backspace || key.delete) {
+          setTaskSearchQuery((prev) => prev.slice(0, -1))
+          setTaskIndex(0)
+          setTaskScroll(0)
+          return true
+        }
+        if (!key.ctrl && !key.meta) {
+          if (lowerChar === "0") {
+            setTaskStatusFilter("all")
+            setTaskIndex(0)
+            setTaskScroll(0)
+            return true
+          }
+          if (lowerChar === "1") {
+            setTaskStatusFilter("running")
+            setTaskIndex(0)
+            setTaskScroll(0)
+            return true
+          }
+          if (lowerChar === "2") {
+            setTaskStatusFilter("completed")
+            setTaskIndex(0)
+            setTaskScroll(0)
+            return true
+          }
+          if (lowerChar === "3") {
+            setTaskStatusFilter("failed")
+            setTaskIndex(0)
+            setTaskScroll(0)
+            return true
+          }
+        }
+        if (key.upArrow) {
+          setTaskIndex((prev) => Math.max(0, prev - 1))
+          if (selectedTaskIndex <= taskScroll) {
+            setTaskScroll((prev) => clampScroll(prev - 1))
+          }
+          return true
+        }
+        if (key.downArrow) {
+          setTaskIndex((prev) => Math.min(lastIndex, prev + 1))
+          if (selectedTaskIndex >= taskScroll + taskViewportRows - 1) {
+            setTaskScroll((prev) => clampScroll(prev + 1))
+          }
+          return true
+        }
+        if (key.return) {
+          void requestTaskTail()
+          return true
+        }
+        if (char && char.length > 0 && !key.ctrl && !key.meta && !key.return && !key.escape) {
+          setTaskSearchQuery((prev) => prev + char)
+          setTaskIndex(0)
+          setTaskScroll(0)
+          return true
+        }
+        return true
+      }
       if (rewindMenu.status !== "hidden") {
         const checkpoints = rewindMenu.checkpoints
         const lowerChar = char?.toLowerCase()
         if (key.escape) {
           onRewindClose()
+          return true
+        }
+        if (key.pageUp || key.pageDown) {
+          const jump = Math.max(1, rewindVisibleLimit)
+          const delta = key.pageUp ? -jump : jump
+          setRewindIndex((prev) => {
+            if (checkpoints.length === 0) return 0
+            const next = Math.max(0, Math.min(checkpoints.length - 1, prev + delta))
+            return next
+          })
           return true
         }
         if (key.upArrow) {
@@ -2605,7 +3183,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
             const next = (index + 1) % count
             setModelOffset((offset) => {
               if (next < offset) return next
-              if (next >= offset + MAX_VISIBLE_MODELS) return Math.max(0, next - MAX_VISIBLE_MODELS + 1)
+              if (next >= offset + MODEL_VISIBLE_ROWS) return Math.max(0, next - MODEL_VISIBLE_ROWS + 1)
               return offset
             })
             return next
@@ -2617,7 +3195,20 @@ export const ReplView: React.FC<ReplViewProps> = ({
             const next = (index - 1 + count) % count
             setModelOffset((offset) => {
               if (next < offset) return next
-              if (next >= offset + MAX_VISIBLE_MODELS) return Math.max(0, next - MAX_VISIBLE_MODELS + 1)
+              if (next >= offset + MODEL_VISIBLE_ROWS) return Math.max(0, next - MODEL_VISIBLE_ROWS + 1)
+              return offset
+            })
+            return next
+          })
+          return true
+        }
+        if (key.pageUp || key.pageDown) {
+          const delta = key.pageUp ? -MODEL_VISIBLE_ROWS : MODEL_VISIBLE_ROWS
+          setModelIndex((index) => {
+            const next = Math.max(0, Math.min(count - 1, index + delta))
+            setModelOffset((offset) => {
+              if (next < offset) return next
+              if (next >= offset + MODEL_VISIBLE_ROWS) return Math.max(0, next - MODEL_VISIBLE_ROWS + 1)
               return offset
             })
             return next
@@ -2644,6 +3235,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
       modelIndex,
       modelMenu.status,
       modelSearch.length,
+      MODEL_VISIBLE_ROWS,
       keymap,
       onModelMenuCancel,
       onPermissionDecision,
@@ -2657,14 +3249,26 @@ export const ReplView: React.FC<ReplViewProps> = ({
       permissionRequest,
       permissionScope,
       permissionTab,
+      taskMaxScroll,
+      taskRows.length,
+      taskScroll,
+      taskSearchQuery,
+      taskStatusFilter,
+      taskViewportRows,
+      tasksOpen,
+      requestTaskTail,
       todoMaxScroll,
       todoViewportRows,
       todosOpen,
       rewindIndex,
       rewindMenu,
+      selectedTask,
+      selectedTaskIndex,
       runConfirmAction,
       shortcutsOpen,
       onSubmit,
+      saveTranscriptExport,
+      transcriptToolLines,
       transcriptSearchMatches,
       transcriptSearchOpen,
       transcriptSearchQuery,
@@ -2730,6 +3334,35 @@ export const ReplView: React.FC<ReplViewProps> = ({
     [handleLineEdit, historyEntries, input],
   )
 
+  const moveCursorVertical = useCallback(
+    (direction: -1 | 1) => {
+      const text = inputValueRef.current
+      if (!text.includes("\n")) return false
+      const currentCursor = cursor
+      const prevNewline = text.lastIndexOf("\n", Math.max(0, currentCursor - 1))
+      const lineStart = prevNewline === -1 ? 0 : prevNewline + 1
+      const column = currentCursor - lineStart
+      if (direction === -1) {
+        if (lineStart === 0) return false
+        const prevLineEnd = lineStart - 1
+        const prevLineStart = text.lastIndexOf("\n", Math.max(0, prevLineEnd - 1)) + 1
+        const prevLineLength = prevLineEnd - prevLineStart
+        const target = prevLineStart + Math.min(column, prevLineLength)
+        handleLineEdit(text, target)
+        return true
+      }
+      const nextNewline = text.indexOf("\n", currentCursor)
+      if (nextNewline === -1) return false
+      const nextLineStart = nextNewline + 1
+      const nextLineEnd = text.indexOf("\n", nextLineStart)
+      const nextLineLength = (nextLineEnd === -1 ? text.length : nextLineEnd) - nextLineStart
+      const target = nextLineStart + Math.min(column, nextLineLength)
+      handleLineEdit(text, target)
+      return true
+    },
+    [cursor, handleLineEdit],
+  )
+
   const handleEditorKeys = useCallback<KeyHandler>(
     (char, key) => {
       const isTabKey = key.tab || (typeof char === "string" && (char.includes("\t") || char.includes("\u001b[Z")))
@@ -2752,6 +3385,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         return false
       }
       if (filePickerActive) {
+        const menuRows = fileMenuRowsRef.current.length > 0 ? fileMenuRowsRef.current : fileMenuRows
         if (key.escape) {
           if (pendingResponse) return false
           if (key.meta) {
@@ -2773,8 +3407,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
             : fileIndexMeta.status === "idle"
               ? "scanning"
               : fileIndexMeta.status
+        const allowSelectionFallback =
+          (isTabKey || (isReturnKey && !key.shift)) && menuRows.length === 0 && filePickerFilteredItems.length > 0
         if (menuStatus === "loading" || menuStatus === "scanning") {
-          if (fileMenuRows.length === 0) return true
+          if (menuRows.length === 0 && !allowSelectionFallback) return true
         }
         if (menuStatus === "error") {
           if (isTabKey) {
@@ -2788,7 +3424,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
           return true
         }
         if (key.upArrow) {
-          const count = fileMenuRows.length
+          const count = menuRows.length
           if (count > 0) {
             const baseIndex = Math.max(0, Math.min(filePickerIndexRef.current, count - 1))
             const nextIndex = (baseIndex - 1 + count) % count
@@ -2798,7 +3434,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
           return true
         }
         if (key.downArrow) {
-          const count = fileMenuRows.length
+          const count = menuRows.length
           if (count > 0) {
             const baseIndex = Math.max(0, Math.min(filePickerIndexRef.current, count - 1))
             const nextIndex = (baseIndex + 1) % count
@@ -2807,13 +3443,45 @@ export const ReplView: React.FC<ReplViewProps> = ({
           }
           return true
         }
-        if (isTabKey) {
+        if (key.pageUp || key.pageDown) {
+          const count = menuRows.length
+          if (count > 0) {
+            const baseIndex = Math.max(0, Math.min(filePickerIndexRef.current, count - 1))
+            const jump = Math.max(1, Math.min(fileMenuMaxRows, count - 1))
+            const delta = key.pageUp ? -jump : jump
+            const nextIndex = Math.max(0, Math.min(count - 1, baseIndex + delta))
+            filePickerIndexRef.current = nextIndex
+            setFilePicker((prev) => (prev.status === "hidden" ? prev : { ...prev, index: nextIndex }))
+          }
+          return true
+        }
+        if (isTabKey || (isReturnKey && !key.shift)) {
           if (!activeAtMention) return true
-          const count = fileMenuRows.length
+          let rows = menuRows
+          if (rows.length === 0) {
+            const treeRows: FileMenuRow[] = filePickerFilteredItems.map((item) => ({ kind: "file" as const, item }))
+            if (treeRows.length > 0) {
+              rows = treeRows
+            } else if (fileMenuMode !== "tree") {
+              const cwd = filePickerQueryParts.cwd
+              const prefix = cwd === "." ? "" : `${cwd}/`
+              const candidates = prefix
+                ? fileIndexItems.filter((item) => item.path === cwd || item.path.startsWith(prefix))
+                : fileIndexItems
+              const ranked = rankFuzzyFileItems(
+                candidates,
+                rawFilePickerNeedle,
+                filePickerConfig.maxResults,
+                (item) => displayPathForCwd(item.path, cwd),
+              )
+              rows = ranked.map((item) => ({ kind: "file" as const, item }))
+            }
+          }
+          const count = rows.length
           if (count === 0) return true
 
           const resolvedIndex = Math.max(0, Math.min(filePickerIndexRef.current, count - 1))
-          const current = fileMenuRows[resolvedIndex]
+          const current = rows[resolvedIndex]
           if (!current) return true
           if (current.kind === "resource") {
             insertResourceMention(current.resource, activeAtMention)
@@ -2821,7 +3489,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
             return true
           }
 
-          const completionCandidates = fileMenuRows
+          const completionCandidates = rows
             .filter((row) => row.kind === "file")
             .map((row) => {
               const item = row.item
@@ -2858,6 +3526,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
         return false
       }
       if (suggestions.length > 0) {
+        if (key.escape) {
+          setSuggestIndex(0)
+          setSuppressSuggestions(true)
+          return true
+        }
         if (key.downArrow) {
           setSuggestIndex((index) => (index + 1) % suggestions.length)
           return true
@@ -2892,11 +3565,21 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return false
       }
-      if (key.upArrow || (key.ctrl && lowerChar === "p" && keymap !== "claude")) {
+      if (key.upArrow) {
+        if (moveCursorVertical(-1)) return true
         recallHistory(-1)
         return true
       }
-      if (key.downArrow || (key.ctrl && lowerChar === "n")) {
+      if (key.downArrow) {
+        if (moveCursorVertical(1)) return true
+        recallHistory(1)
+        return true
+      }
+      if (key.ctrl && lowerChar === "p" && keymap !== "claude") {
+        recallHistory(-1)
+        return true
+      }
+      if (key.ctrl && lowerChar === "n") {
         recallHistory(1)
         return true
       }
@@ -2909,11 +3592,15 @@ export const ReplView: React.FC<ReplViewProps> = ({
       ensureFileIndexScan,
       fileIndexMeta.status,
       fileMenuIndex,
+      fileMenuMaxRows,
       fileMenuRows,
       fileMenuMode,
       filePicker.status,
       filePickerActive,
+      filePickerConfig.maxResults,
+      filePickerFilteredItems,
       filePickerQueryParts.cwd,
+      fileIndexItems,
       insertDirectoryMention,
       insertFileMention,
       insertResourceMention,
@@ -2922,9 +3609,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
       keymap,
       loadFilePickerDirectory,
       modelMenu.status,
+      moveCursorVertical,
       pendingResponse,
       pushHistoryEntry,
       queueFileMention,
+      rawFilePickerNeedle,
       recallHistory,
       setShortcutsOpen,
       suggestIndex,
@@ -2939,6 +3628,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
       const lowerChar = char?.toLowerCase()
       const isCtrlT = key.ctrl && lowerChar === "t"
       const isCtrlShiftT = key.ctrl && key.shift && lowerChar === "t"
+      const isCtrlB = key.ctrl && lowerChar === "b"
       if (isCtrlShiftT) {
         if (transcriptViewerOpen) {
           exitTranscriptViewer()
@@ -2955,6 +3645,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
         } else {
           enterTranscriptViewer()
         }
+        return true
+      }
+      if (isCtrlB) {
+        setTasksOpen((prev) => !prev)
         return true
       }
       if (key.ctrl && (lowerChar === "c" || char === "\u0003")) {
@@ -3035,23 +3729,33 @@ export const ReplView: React.FC<ReplViewProps> = ({
     ])
   }, [])
 
-  const handleLineSubmit = useCallback(
+      const handleLineSubmit = useCallback(
     async (value: string) => {
       const trimmed = value.trim()
       if (!trimmed || inputLocked) return
       const normalized = value.trimEnd()
       if (trimmed.startsWith("/")) {
         const [command] = trimmed.slice(1).split(/\s+/)
-        if (command === "todos") {
-          setTodosOpen(true)
-          handleLineEdit("", 0)
-          return
-        }
-        if (command === "transcript") {
-          enterTranscriptViewer()
-          handleLineEdit("", 0)
-          return
-        }
+      if (command === "todos") {
+        setTodosOpen(true)
+        handleLineEdit("", 0)
+        return
+      }
+      if (command === "usage") {
+        setUsageOpen(true)
+        handleLineEdit("", 0)
+        return
+      }
+      if (command === "tasks") {
+        setTasksOpen(true)
+        handleLineEdit("", 0)
+        return
+      }
+      if (command === "transcript") {
+        enterTranscriptViewer()
+        handleLineEdit("", 0)
+        return
+      }
       }
       const command = parseAtCommand(value)
       if (command) {
@@ -3133,7 +3837,12 @@ export const ReplView: React.FC<ReplViewProps> = ({
           segments.push(blocks.join("\n\n"))
         }
       }
-      await onSubmit(segments.join("\n\n"), attachments)
+      try {
+        await onSubmit(segments.join("\n\n"), attachments)
+      } catch (error) {
+        const message = (error as Error).message || String(error)
+        pushCommandResult("Submit failed", [message])
+      }
       if (attachments.length > 0) {
         setAttachments([])
       }
@@ -3142,6 +3851,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
       }
       pushHistoryEntry(normalized)
       handleLineEdit("", 0)
+      void updateSessionDraft(sessionId, null)
       setSuggestIndex(0)
     },
     [
@@ -3154,7 +3864,9 @@ export const ReplView: React.FC<ReplViewProps> = ({
       inputLocked,
       onReadFile,
       onSubmit,
+      pushCommandResult,
       pushHistoryEntry,
+      sessionId,
       setTodosOpen,
     ],
   )
@@ -3172,34 +3884,72 @@ export const ReplView: React.FC<ReplViewProps> = ({
     }
     if (modelIndex < modelOffset) {
       setModelOffset(modelIndex)
-    } else if (modelIndex >= modelOffset + MAX_VISIBLE_MODELS) {
-      setModelOffset(modelIndex - MAX_VISIBLE_MODELS + 1)
+    } else if (modelIndex >= modelOffset + MODEL_VISIBLE_ROWS) {
+      setModelOffset(modelIndex - MODEL_VISIBLE_ROWS + 1)
     }
-  }, [filteredModels.length, modelIndex, modelOffset])
+  }, [filteredModels.length, modelIndex, modelOffset, MODEL_VISIBLE_ROWS])
 
   const visibleModels = useMemo(() => {
     if (modelMenu.status !== "ready") return []
-    return filteredModels.slice(modelOffset, modelOffset + MAX_VISIBLE_MODELS)
-  }, [filteredModels, modelMenu.status, modelOffset])
+    return filteredModels.slice(modelOffset, modelOffset + MODEL_VISIBLE_ROWS)
+  }, [filteredModels, modelMenu.status, modelOffset, MODEL_VISIBLE_ROWS])
   const visibleModelRows = useMemo(() => {
     if (modelMenu.status !== "ready") return []
-    const rows: Array<{ kind: "header"; label: string } | { kind: "item"; item: ModelMenuItem; index: number }> = []
+    const rows: Array<
+      { kind: "header"; label: string; count: number | null } | { kind: "item"; item: ModelMenuItem; index: number }
+    > = []
     for (let idx = 0; idx < visibleModels.length; idx += 1) {
       const item = visibleModels[idx]
       const globalIndex = modelOffset + idx
       const prev = filteredModels[globalIndex - 1]
-      if (idx === 0 || !prev || prev.provider !== item.provider) {
-        rows.push({ kind: "header", label: item.provider || "other" })
+      const providerKey = normalizeProviderKey(item.provider)
+      const prevKey = normalizeProviderKey(prev?.provider)
+      if (idx === 0 || !prev || prevKey !== providerKey) {
+        const label = formatProviderLabel(item.provider)
+        const count = modelProviderCounts.get(providerKey) ?? null
+        rows.push({ kind: "header", label, count })
       }
       rows.push({ kind: "item", item, index: globalIndex })
     }
     return rows
-  }, [filteredModels, modelMenu.status, modelOffset, visibleModels])
+  }, [filteredModels, modelMenu.status, modelOffset, modelProviderCounts, visibleModels])
 
   const headerLines = useMemo(
     () => ["", ...ASCII_HEADER.map((line) => applyForegroundGradient(line, Gradients.crush, true))],
     [],
   )
+  const usageSummary = useMemo(() => {
+    const usage = stats.usage
+    if (!usage) return null
+    const parts: string[] = []
+    const hasTokenInputs =
+      usage.totalTokens != null || usage.promptTokens != null || usage.completionTokens != null
+    if (hasTokenInputs) {
+      const total =
+        usage.totalTokens ??
+        (usage.promptTokens != null || usage.completionTokens != null
+          ? (usage.promptTokens ?? 0) + (usage.completionTokens ?? 0)
+          : undefined)
+      if (total != null && Number.isFinite(total)) {
+        parts.push(`tok ${Math.round(total)}`)
+      }
+    }
+    if (usage.costUsd != null && Number.isFinite(usage.costUsd)) {
+      parts.push(`cost ${formatCostUsd(usage.costUsd)}`)
+    }
+    if (usage.latencyMs != null && Number.isFinite(usage.latencyMs)) {
+      parts.push(`lat ${formatLatency(usage.latencyMs)}`)
+    }
+    return parts.length > 0 ? parts.join(" · ") : null
+  }, [stats.usage])
+  const modeBadge = useMemo(() => {
+    const { label, color } = normalizeModeLabel(mode)
+    return chalk.hex(color)(`[${label}]`)
+  }, [mode])
+  const permissionBadge = useMemo(() => {
+    const { label, color } = normalizePermissionLabel(permissionMode)
+    return chalk.hex(color)(`[${label}]`)
+  }, [permissionMode])
   const headerSubtitleLines = useMemo(() => {
     if (!claudeChrome) {
       return [chalk.cyan("breadboard — interactive session")]
@@ -3209,9 +3959,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
     return [
       chalk.cyan(`breadboard v${CLI_VERSION}`),
       chalk.dim(modelLine),
+      chalk.dim(`mode ${modeBadge}  perms ${permissionBadge}`),
       chalk.dim(cwdLine),
     ]
-  }, [claudeChrome, stats.model])
+  }, [claudeChrome, modeBadge, permissionBadge, stats.model])
   const promptRule = useMemo(
     () => "─".repeat(contentWidth),
     [contentWidth],
@@ -3249,9 +4000,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
         const fuzzyStatusRows =
           fileMenuMode === "fuzzy"
             ? (fileIndexMeta.status === "idle" || fileIndexMeta.status === "scanning" ? 1 : 0) +
-              (fileIndexMeta.truncated ? 1 : 0)
+              (fileIndexMeta.truncated ? 1 : 0) +
+              (fileMenuNeedlePending ? 1 : 0)
             : 0
-        return base + fileMenuWindow.lineCount + hiddenRows + fuzzyStatusRows
+        const largeHintRows = selectedFileIsLarge ? 1 : 0
+        return base + fileMenuWindow.lineCount + hiddenRows + fuzzyStatusRows + largeHintRows
       }
       if (suggestions.length === 0) return 1
       const hiddenRows =
@@ -3275,6 +4028,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
     fileMenuWindow.hiddenBelow,
     fileMenuWindow.lineCount,
     fileMenuMode,
+    fileMenuNeedlePending,
     filePicker.status,
     filePickerActive,
     hints.length,
@@ -3283,6 +4037,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
     suggestionWindow.hiddenAbove,
     suggestionWindow.hiddenBelow,
     suggestionWindow.lineCount,
+    selectedFileIsLarge,
   ])
 
   const overlayReserveRows = useMemo(() => {
@@ -3363,16 +4118,21 @@ export const ReplView: React.FC<ReplViewProps> = ({
     return Math.max(0, Math.min(14, Math.floor(bodyBudgetRows * 0.33)))
   }, [bodyBudgetRows, overlayActive, toolEvents.length])
 
-  const unprintedToolEvents = useMemo(() => {
-    if (!SCROLLBACK_MODE) return toolEvents
+  const toolEventsForWindow = useMemo(() => {
+    if (!SCROLLBACK_MODE) {
+      if (transcriptNudge > 0) {
+        return trimTailByLineCount(toolEvents, transcriptNudge, measureToolEntryLines)
+      }
+      return toolEvents
+    }
     const printed = printedToolIdsRef.current
     return toolEvents.filter((entry) => !printed.has(entry.id))
-  }, [toolEvents])
+  }, [measureToolEntryLines, toolEvents, transcriptNudge])
 
   const toolWindow = useMemo(() => {
-    if (toolLineBudget === 0) return { items: [], hiddenCount: unprintedToolEvents.length, usedLines: 0, truncated: false }
-    return sliceTailByLineBudget(unprintedToolEvents, toolLineBudget, measureToolEntryLines)
-  }, [measureToolEntryLines, toolLineBudget, unprintedToolEvents])
+    if (toolLineBudget === 0) return { items: [], hiddenCount: toolEventsForWindow.length, usedLines: 0, truncated: false }
+    return sliceTailByLineBudget(toolEventsForWindow, toolLineBudget, measureToolEntryLines)
+  }, [measureToolEntryLines, toolEventsForWindow, toolLineBudget])
 
   const toolSectionMargin = !overlayActive && toolWindow.items.length > 0 ? 1 : 0
   const remainingBodyBudgetForTranscript = Math.max(0, bodyBudgetRows - toolWindow.usedLines - toolSectionMargin)
@@ -3385,12 +4145,23 @@ export const ReplView: React.FC<ReplViewProps> = ({
 
   const conversationEntriesForWindow = useMemo(() => {
     if (!SCROLLBACK_MODE) {
-      if (!streamingConversationEntry) return finalConversationEntries
-      return [...finalConversationEntries, streamingConversationEntry]
+      const base = streamingConversationEntry
+        ? [...finalConversationEntries, streamingConversationEntry]
+        : finalConversationEntries
+      if (transcriptNudge > 0) {
+        return trimTailByLineCount(base, transcriptNudge, measureConversationEntryLines)
+      }
+      return base
     }
     if (!streamingConversationEntry) return unprintedFinalConversationEntries
     return [...unprintedFinalConversationEntries, streamingConversationEntry]
-  }, [finalConversationEntries, streamingConversationEntry, unprintedFinalConversationEntries])
+  }, [
+    finalConversationEntries,
+    measureConversationEntryLines,
+    streamingConversationEntry,
+    transcriptNudge,
+    unprintedFinalConversationEntries,
+  ])
 
   const transcriptLineBudget = overlayActive ? Math.min(10, remainingBodyBudgetForTranscript) : remainingBodyBudgetForTranscript
   const conversationWindow = useMemo(
@@ -3566,6 +4337,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
     const label = `[${entry.kind}]`.padEnd(TOOL_LABEL_WIDTH, " ")
     const labelPad = " ".repeat(TOOL_LABEL_WIDTH)
     const kindToken = `[${entry.kind}]`
+    const isError = entry.status === "error" || entry.kind === "error"
     const glyph =
       entry.status === "success"
         ? chalk.hex("#34D399")("●")
@@ -3581,6 +4353,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
     const colorizeToolLine = (line: string) => {
       if (!line) return line
       if (line.includes("\u001b")) return line
+      if (isError) return chalk.hex("#F87171")(line)
       if (line.startsWith("diff --git") || line.startsWith("index ")) return chalk.hex("#7CF2FF")(line)
       if (line.startsWith("@@")) return chalk.hex("#FBBF24")(line)
       if (line.startsWith("---") || line.startsWith("+++")) return chalk.hex("#C4B5FD")(line)
@@ -3671,8 +4444,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
       "Tab to complete",
       "Esc interrupt",
       "Esc Esc clear input",
+      "Ctrl+L clear screen",
       "Ctrl+K model",
       "Ctrl+O detailed",
+      "Ctrl+B tasks",
+      "/usage",
     ]
     if (keymap === "claude") {
       hintParts.push("Ctrl+T todos")
@@ -3738,6 +4514,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
       ["Ctrl+C ×2", "Exit the REPL"],
       ["Ctrl+D", "Exit immediately"],
       ["Ctrl+Z", "Suspend (empty input)"],
+      ["Ctrl+L", "Clear screen (keep transcript)"],
+      ["Ctrl+A", "Start of line"],
+      ["Ctrl+E", "End of line"],
+      ["Home/End", "Start/end of line"],
+      ["Ctrl+U", "Delete to start"],
       ["Ctrl+S", "Stash input to history"],
       ["Esc", "Stop streaming"],
       ["Esc Esc", "Clear input / rewind when empty"],
@@ -3747,9 +4528,13 @@ export const ReplView: React.FC<ReplViewProps> = ({
       ["Ctrl+P", "Command palette"],
       ["Ctrl+K", "Model picker"],
       ["Alt+P", "Model picker"],
+      ["Ctrl+B", "Background tasks"],
+      ["/usage", "Usage summary"],
       ["Tab", "Complete @ or / list"],
       ["/", "Slash commands"],
       ["@", "File picker"],
+      ["n/p", "Transcript match nav"],
+      ["s", "Save transcript (viewer)"],
       ["?", "Toggle shortcuts"],
     ]
     if (keymap === "claude") {
@@ -3819,6 +4604,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
       const isEscapeKey = key.escape || char === "\u001b"
       const isCtrlT = key.ctrl && lowerChar === "t"
       const isCtrlShiftT = key.ctrl && key.shift && lowerChar === "t"
+      const isCtrlB = key.ctrl && lowerChar === "b"
       if (isCtrlShiftT) {
         if (transcriptViewerOpen) {
           exitTranscriptViewer()
@@ -3837,6 +4623,14 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return true
       }
+      if (isCtrlB) {
+        setTasksOpen((prev) => !prev)
+        return true
+      }
+      if (key.ctrl && lowerChar === "l") {
+        clearScreen()
+        return true
+      }
       if (key.ctrl && (lowerChar === "o" || char === "\u000f")) {
         setVerboseOutput((prev) => {
           const next = !prev
@@ -3844,6 +4638,16 @@ export const ReplView: React.FC<ReplViewProps> = ({
           return next
         })
         return true
+      }
+      if (!SCROLLBACK_MODE && !overlayActive && !transcriptViewerOpen) {
+        if (key.pageUp) {
+          setTranscriptNudge((prev) => prev + transcriptViewerBodyRows)
+          return true
+        }
+        if (key.pageDown) {
+          setTranscriptNudge((prev) => Math.max(0, prev - transcriptViewerBodyRows))
+          return true
+        }
       }
       if (key.meta && !key.ctrl && lowerChar === "p") {
         if (modelMenu.status === "hidden") {
@@ -3965,12 +4769,15 @@ export const ReplView: React.FC<ReplViewProps> = ({
       onSubmit,
       onGuardrailDismiss,
       onGuardrailToggle,
+      overlayActive,
       paletteState.status,
       pendingResponse,
       permissionRequest,
       pushCommandResult,
       rewindMenu.status,
+      transcriptViewerBodyRows,
       transcriptViewerOpen,
+      usageOpen,
       toggleSelectedCollapsibleEntry,
     ],
   )
@@ -4005,17 +4812,34 @@ export const ReplView: React.FC<ReplViewProps> = ({
         changed = true
       }
 
+      const pending: Array<{ id: string; node: React.ReactNode; order: number; seq: number }> = []
+      let seq = 0
+
       for (const entry of finalConversationEntries) {
         if (printedConversationIdsRef.current.has(entry.id)) continue
         printedConversationIdsRef.current.add(entry.id)
-        next = [...next, { id: `conv-${entry.id}`, node: renderConversationText(entry, `static-${entry.id}`) }]
-        changed = true
+        pending.push({
+          id: `conv-${entry.id}`,
+          node: renderConversationText(entry, `static-${entry.id}`),
+          order: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now(),
+          seq: seq++,
+        })
       }
 
       for (const entry of toolEvents) {
         if (printedToolIdsRef.current.has(entry.id)) continue
         printedToolIdsRef.current.add(entry.id)
-        next = [...next, { id: `tool-${entry.id}`, node: renderToolEntry(entry, `static-${entry.id}`) }]
+        pending.push({
+          id: `tool-${entry.id}`,
+          node: renderToolEntry(entry, `static-${entry.id}`),
+          order: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now(),
+          seq: seq++,
+        })
+      }
+
+      if (pending.length > 0) {
+        pending.sort((a, b) => (a.order - b.order) || (a.seq - b.seq))
+        next = [...next, ...pending.map((item) => ({ id: item.id, node: item.node }))]
         changed = true
       }
 
@@ -4038,8 +4862,9 @@ export const ReplView: React.FC<ReplViewProps> = ({
           <Text>
             {chalk.dim(sessionId.slice(0, 12))} {statusGlyph} {status} {modelGlyph} model {chalk.bold(stats.model)}{" "}
             {remoteGlyph} {stats.remote ? "remote" : "local"} {eventsGlyph} events {stats.eventCount} {toolsGlyph} tools{" "}
-            {stats.toolCount}
+            {stats.toolCount} {modeBadge} {permissionBadge}
             {stats.lastTurn != null ? ` ${turnGlyph} turn ${stats.lastTurn}` : ""}
+            {usageSummary ? ` ${chalk.dim(usageSummary)}` : ""}
           </Text>
         )}
         {metaNodes.length > 0 && (
@@ -4077,6 +4902,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
 
       <Box marginTop={1} flexDirection="column">
         {claudeChrome && <Text color="dim">{promptRule}</Text>}
+        {claudeChrome && usageSummary && <Text color="dim">{usageSummary}</Text>}
         <Box>
           <Text color={claudeChrome ? undefined : "cyan"}>{claudeChrome ? "> " : "› "}</Text>
           <LineEditor
@@ -4086,6 +4912,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
             placeholder={claudeChrome ? 'Try "edit <file> to..."' : "Type your request…"}
             placeholderPad={!claudeChrome}
             hideCaretWhenPlaceholder={claudeChrome}
+            maxVisibleLines={inputMaxVisibleLines}
             onChange={handleLineEditGuarded}
             onSubmit={handleLineSubmit}
             submitOnEnter
@@ -4103,7 +4930,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
             {!claudeChrome && (
               <Text color="gray">
                 {fileMenuMode === "fuzzy" ? "Fuzzy search • " : ""}
-                Type to filter • ↑/↓ navigate • Tab complete • Esc clear
+                Type to filter • ↑/↓ navigate • PgUp/PgDn page • Tab/Enter complete • Esc clear{fileMenuHasLarge ? " • * large file" : ""}
               </Text>
             )}
             <Box flexDirection="column" marginTop={claudeChrome ? 0 : 1}>
@@ -4133,8 +4960,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
                   const hiddenBelow = fileMenuWindow.hiddenBelow
                    return (
                      <>
-                       {fileMenuMode === "fuzzy" && (fileIndexMeta.status === "idle" || fileIndexMeta.status === "scanning") && (
-                         <Text color="dim">{`Indexing… (${fileIndexMeta.fileCount} files)`}</Text>
+                      {fileMenuMode === "fuzzy" && (fileIndexMeta.status === "idle" || fileIndexMeta.status === "scanning") && (
+                        <Text color="dim">{`Indexing… (${fileIndexMeta.fileCount} files)`}</Text>
+                      )}
+                      {fileMenuMode === "fuzzy" && fileMenuNeedlePending && (
+                        <Text color="dim">Searching…</Text>
                       )}
                       {fileMenuMode === "fuzzy" && fileIndexMeta.truncated && (
                         <Text color="dim">{`Index truncated at ${fileIndexMeta.fileCount} files.`}</Text>
@@ -4150,14 +4980,24 @@ export const ReplView: React.FC<ReplViewProps> = ({
                                 {formatCell(row.resource.label, contentWidth, "left")}
                               </Text>
                               {row.resource.detail && (
-                                <Text color="dim">{`    ${row.resource.detail}`}</Text>
+                                <Text inverse={selected} color={selected ? undefined : "dim"}>
+                                  {`  ${row.resource.detail}`}
+                                </Text>
                               )}
                             </Box>
                           )
                         }
                         const display = row.item.path
                         const suffix = row.item.type === "directory" ? "/" : ""
-                        const label = formatCell(`${display}${suffix}`, contentWidth, "left")
+                        const sizeBytes = row.item.size
+                        const isLarge = sizeBytes != null && sizeBytes > fileMentionConfig.maxInlineBytesPerFile
+                        const sizeLabel = sizeBytes != null ? formatBytes(sizeBytes) : ""
+                        const sizeToken = sizeLabel ? `${sizeLabel}${isLarge ? "*" : ""}` : ""
+                        const leftWidth = sizeToken ? Math.max(0, contentWidth - sizeToken.length - 1) : contentWidth
+                        const rightWidth = Math.max(0, contentWidth - leftWidth)
+                        const leftLabel = formatCell(`${display}${suffix}`, leftWidth, "left")
+                        const rightLabel = sizeToken ? formatCell(sizeToken, rightWidth, "right") : ""
+                        const label = sizeToken ? `${leftLabel}${rightLabel}` : leftLabel
                         return (
                           <Text
                             key={`${row.item.type}:${row.item.path}`}
@@ -4172,6 +5012,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
                     </>
                   )
                 })()
+              )}
+              {selectedFileIsLarge && (
+                <Text color="dim">
+                  Large file selected — will attach a snippet unless explicitly forced to inline.
+                </Text>
               )}
             </Box>
           </Box>
@@ -4244,6 +5089,16 @@ export const ReplView: React.FC<ReplViewProps> = ({
   )
 
   const modalStack: ModalDescriptor[] = []
+  const transcriptDetailLabel = useMemo(() => {
+    const parts: string[] = []
+    if (verboseOutput) {
+      parts.push("Showing detailed transcript · Ctrl+O to toggle")
+    }
+    if (transcriptExportNotice) {
+      parts.push(transcriptExportNotice)
+    }
+    return parts.join(" · ")
+  }, [transcriptExportNotice, verboseOutput])
 
   if (confirmState.status === "prompt") {
     modalStack.push({
@@ -4348,10 +5203,17 @@ export const ReplView: React.FC<ReplViewProps> = ({
           {modelMenu.status === "error" && <Text color="red">{modelMenu.message}</Text>}
           {modelMenu.status === "ready" && (
             <>
-              <Text color="green">Select a model (Enter to confirm, Esc to cancel)</Text>
+              <Text color="green">
+                {modelMenuCompact ? "Select a model" : "Select a model (Enter to confirm, Esc to cancel)"}
+              </Text>
               <Text color="dim">Search: {modelSearch.length > 0 ? modelSearch : chalk.dim("<type to filter>")}</Text>
-              <Text color="dim">Current: {chalk.cyan(stats.model)}</Text>
-              <Text color="dim">Navigate: ↑/↓ or Tab • Shift+Tab up • Legend: ● current · ★ default</Text>
+              {!modelMenuCompact && <Text color="dim">Current: {chalk.cyan(stats.model)}</Text>}
+              <Text color="dim">
+                {modelMenuCompact
+                  ? "Nav: ↑/↓ PgUp/PgDn • Enter confirm • Esc cancel"
+                  : "Navigate: ↑/↓ or Tab • Shift+Tab up • PgUp/PgDn page • Legend: ● current · ★ default"}
+              </Text>
+              {modelMenuCompact && <Text color="dim">Legend: ● current · ★ default</Text>}
               <Box flexDirection="column" marginTop={1}>
                 {filteredModels.length === 0 ? (
                   <Text color="dim">No models match.</Text>
@@ -4362,9 +5224,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
                     </Text>
                     {visibleModelRows.map((row, idx) => {
                       if (row.kind === "header") {
+                        const countSuffix = row.count != null ? ` (${row.count})` : ""
                         return (
                           <Text key={`model-header-${row.label}-${idx}`} color="dim">
-                            {row.label.toUpperCase()}
+                            {`${row.label}${countSuffix}`}
                           </Text>
                         )
                       }
@@ -4385,9 +5248,9 @@ export const ReplView: React.FC<ReplViewProps> = ({
                   </>
                 )}
               </Box>
-              {filteredModels.length > MAX_VISIBLE_MODELS && (
+              {filteredModels.length > MODEL_VISIBLE_ROWS && (
                 <Text color="dim">
-                  {modelOffset + 1}-{Math.min(modelOffset + MAX_VISIBLE_MODELS, filteredModels.length)} of {filteredModels.length}
+                  {modelOffset + 1}-{Math.min(modelOffset + MODEL_VISIBLE_ROWS, filteredModels.length)} of {filteredModels.length}
                 </Text>
               )}
             </>
@@ -4417,7 +5280,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
             <Text color="#93C5FD">{chalk.bold("Rewind checkpoints")}</Text>
             {isLoading && <Text color="cyan">Loading checkpoints…</Text>}
             {isError && <Text color="red">{rewindMenu.message}</Text>}
-            <Text color="gray">↑/↓ select • 1 convo • 2 code • 3 both • Esc close</Text>
+            <Text color="gray">↑/↓ select • PgUp/PgDn page • 1 convo • 2 code • 3 both • Esc close</Text>
             <Box flexDirection="column" marginTop={1}>
               {rewindCheckpoints.length === 0 ? (
                 <Text color="dim">No checkpoints yet. (/rewind again after the next tool run.)</Text>
@@ -4531,6 +5394,168 @@ export const ReplView: React.FC<ReplViewProps> = ({
     })
   }
 
+  if (usageOpen) {
+    modalStack.push({
+      id: "usage",
+      render: () => {
+        const usage = stats.usage
+        const rows: Array<{ label: string; value: string }> = []
+        if (usage?.promptTokens != null) rows.push({ label: "Prompt tokens", value: `${Math.round(usage.promptTokens)}` })
+        if (usage?.completionTokens != null)
+          rows.push({ label: "Completion tokens", value: `${Math.round(usage.completionTokens)}` })
+        if (usage?.totalTokens != null) rows.push({ label: "Total tokens", value: `${Math.round(usage.totalTokens)}` })
+        if (usage?.cacheReadTokens != null)
+          rows.push({ label: "Cache read tokens", value: `${Math.round(usage.cacheReadTokens)}` })
+        if (usage?.cacheWriteTokens != null)
+          rows.push({ label: "Cache write tokens", value: `${Math.round(usage.cacheWriteTokens)}` })
+        if (usage?.costUsd != null) rows.push({ label: "Cost", value: formatCostUsd(usage.costUsd) })
+        if (usage?.latencyMs != null) rows.push({ label: "Latency", value: formatLatency(usage.latencyMs) })
+        return (
+          <Box
+            flexDirection="column"
+            borderStyle="round"
+            borderColor="#22c55e"
+            paddingX={2}
+            paddingY={1}
+            width={Math.min(PANEL_WIDTH, contentWidth + 2)}
+            alignSelf="center"
+            marginTop={2}
+          >
+            <Text color="#22c55e">{chalk.bold("Usage")}</Text>
+            <Text color="dim">Esc close</Text>
+            <Box flexDirection="column" marginTop={1}>
+              {rows.length === 0 ? (
+                <Text color="dim">No usage metrics reported yet.</Text>
+              ) : (
+                rows.map((row) => (
+                  <Text key={row.label} wrap="truncate-end">
+                    {chalk.cyan(row.label.padEnd(18, " "))} {row.value}
+                  </Text>
+                ))
+              )}
+            </Box>
+          </Box>
+        )
+      },
+    })
+  }
+
+  if (tasksOpen) {
+    modalStack.push({
+      id: "tasks",
+      render: () => {
+        const scroll = Math.max(0, Math.min(taskScroll, taskMaxScroll))
+        const visible = taskRows.slice(scroll, scroll + taskViewportRows)
+        const colorForStatus = (status?: string) => {
+          switch (status) {
+            case "running":
+              return "#38BDF8"
+            case "completed":
+              return "#34D399"
+            case "failed":
+              return "#F87171"
+            default:
+              return "#FACC15"
+          }
+        }
+        const panelWidth = Math.min(PANEL_WIDTH, contentWidth + 2)
+        const lineWidth = Math.max(12, panelWidth - 6)
+        return (
+          <Box
+            flexDirection="column"
+            borderStyle="round"
+            borderColor="#60A5FA"
+            paddingX={2}
+            paddingY={1}
+            width={panelWidth}
+            alignSelf="center"
+            marginTop={2}
+          >
+            <Text color="#93C5FD">{chalk.bold("Background tasks")}</Text>
+            <Text color="gray">
+              {tasks.length === 0
+                ? "No background tasks yet."
+                : `${tasks.length} task${tasks.length === 1 ? "" : "s"} • ↑/↓ select • PgUp/PgDn page • Enter tail • Esc close`}
+            </Text>
+            <Text color="dim">
+              Search: {taskSearchQuery.length > 0 ? taskSearchQuery : chalk.dim("<type to filter>")} • Filter: {taskStatusFilter} (0 all · 1 run · 2 done · 3 fail)
+            </Text>
+            <Box flexDirection="column" marginTop={1}>
+              {taskRows.length === 0 ? (
+                <Text color="dim">No tasks match the current filter.</Text>
+              ) : (
+                visible.map((row, idx) => {
+                  const globalIndex = scroll + idx
+                  const isActive = globalIndex === selectedTaskIndex
+                  const statusLabel = (row.status || "update").replace(/[_-]+/g, " ")
+                  const idLabel = row.id.slice(0, 8)
+                  const suffix = chalk.dim(`#${idLabel}`)
+                  const leftWidth = Math.max(0, lineWidth - stripAnsiCodes(suffix).length - 1)
+                  const left = formatCell(`${statusLabel} · ${row.label}`, leftWidth)
+                  const line = `${left} ${suffix}`
+                  return (
+                    <Text
+                      key={`task-${row.id}`}
+                      color={isActive ? "#0F172A" : colorForStatus(row.status)}
+                      backgroundColor={isActive ? "#93C5FD" : undefined}
+                      wrap="truncate-end"
+                    >
+                      {isActive ? "› " : "  "}
+                      {line}
+                    </Text>
+                  )
+                })
+              )}
+              {taskRows.length > taskViewportRows && (
+                <Text color="dim">
+                  {scroll + 1}-{Math.min(scroll + taskViewportRows, taskRows.length)} of {taskRows.length}
+                </Text>
+              )}
+            </Box>
+            {selectedTask && (
+              <Box flexDirection="column" marginTop={1}>
+                <Text color="dim">ID: {selectedTask.id}</Text>
+                {selectedTask.outputExcerpt && (
+                  <Text color="dim" wrap="truncate-end">
+                    Output: {selectedTask.outputExcerpt}
+                  </Text>
+                )}
+                {selectedTask.artifactPath && (
+                  <Text color="dim" wrap="truncate-end">
+                    Artifact: {selectedTask.artifactPath}
+                  </Text>
+                )}
+                {selectedTask.error && (
+                  <Text color="#F87171" wrap="truncate-end">
+                    Error: {selectedTask.error}
+                  </Text>
+                )}
+                <Text color="dim">Enter: load output tail.</Text>
+              </Box>
+            )}
+            {taskNotice && (
+              <Text color="dim" wrap="truncate-end">
+                {taskNotice}
+              </Text>
+            )}
+            {taskTailLines.length > 0 && (
+              <Box flexDirection="column" marginTop={1}>
+                <Text color="dim">
+                  {taskTailPath ? `Tail: ${taskTailPath}` : "Tail output"}
+                </Text>
+                {taskTailLines.map((line, idx) => (
+                  <Text key={`task-tail-${idx}`} color="dim" wrap="truncate-end">
+                    {line}
+                  </Text>
+                ))}
+              </Box>
+            )}
+          </Box>
+        )
+      },
+    })
+  }
+
   if (permissionRequest) {
     modalStack.push({
       id: "permission",
@@ -4545,7 +5570,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
           activeTabLabel("summary", "Summary"),
           activeTabLabel("diff", diffAvailable ? "Diff" : "Diff (none)"),
           activeTabLabel("rules", "Rules"),
-          activeTabLabel("note", "Note"),
+          activeTabLabel("note", "Feedback"),
         ].join(chalk.gray("  |  "))
 
         const diffScrollMax = Math.max(0, permissionDiffLines.length - permissionViewportRows)
@@ -4601,7 +5626,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
                         : "Diff"}
                     </Text>
                     <Text color="dim">
-                      Use ↑/↓ or PgUp/PgDn to scroll{permissionDiffSections.length > 1 ? " • ←/→ to switch files" : ""}.
+                      {permissionDiffSections.length > 1 ? "←/→ files • " : ""}↑/↓ scroll • PgUp/PgDn page.
                       {permissionDiffLines.length > 0
                         ? ` Lines ${diffScroll + 1}-${Math.min(diffScroll + permissionViewportRows, permissionDiffLines.length)} of ${permissionDiffLines.length}.`
                         : ""}
@@ -4624,7 +5649,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
 
             {permissionTab === "rules" && (
               <Box flexDirection="column" marginTop={1}>
-                <Text color="gray">Default scope for always-allow: project</Text>
+                <Text color="gray">Default scope: {permissionRequest.defaultScope}</Text>
                 <Text>
                   Scope: {scopeLabel("session", "Session")} {scopeLabel("project", "Project")} {scopeLabel("global", "Global")} {chalk.dim("(←/→)")}
                 </Text>
@@ -4639,7 +5664,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
               <Box flexDirection="column" marginTop={1}>
                 <Text color="gray">Tell me what to do differently:</Text>
                 <Text wrap="truncate-end">{renderPermissionNoteLine(permissionNote, permissionNoteCursor)}</Text>
-                <Text color="dim">Type to edit • Enter deny once with note • Tab switch panels</Text>
+                <Text color="dim">Type feedback • Enter deny once • Tab switch tabs</Text>
               </Box>
             )}
 
@@ -4647,7 +5672,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
               <Text color="gray">
                 Tab switch panel • Enter allow once • Shift+Tab allow always • 1 allow once • 2 allow always • 3 feedback • d deny once • D deny always
               </Text>
-              <Text color="#FB7185">Esc deny and stop run</Text>
+              <Text color="#FB7185">Esc stop (deny)</Text>
             </Box>
           </Box>
         )
@@ -4674,7 +5699,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
           activeMatchIndex={transcriptSearchOpen && transcriptSearchMatches.length > 0 ? transcriptSearchSafeIndex : undefined}
           activeMatchLine={transcriptSearchOpen ? transcriptSearchActiveLine : null}
           toggleHint={keymap === "claude" ? "Ctrl+Shift+T transcript" : "Ctrl+T transcript"}
-          detailLabel={verboseOutput ? "Showing detailed transcript · Ctrl+O to toggle" : undefined}
+          detailLabel={transcriptDetailLabel || undefined}
         />
       ) : (
         <ModalHost stack={modalStack}>{baseContent}</ModalHost>

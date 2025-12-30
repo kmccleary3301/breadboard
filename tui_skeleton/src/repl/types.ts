@@ -5,6 +5,7 @@ export interface ConversationEntry {
   readonly speaker: "assistant" | "user" | "system"
   readonly text: string
   readonly phase: "final" | "streaming"
+  readonly createdAt: number
   readonly richBlocks?: ReadonlyArray<Block>
   readonly markdownStreaming?: boolean
   readonly markdownError?: string | null
@@ -27,6 +28,17 @@ export interface StreamStats {
   lastTurn: number | null
   remote: boolean
   model: string
+  usage?: UsageMetrics
+}
+
+export interface UsageMetrics {
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  costUsd?: number
+  latencyMs?: number
 }
 
 export interface QueuedAttachment {
@@ -54,6 +66,7 @@ export interface ToolLogEntry {
   readonly kind: ToolLogKind
   readonly text: string
   readonly status?: LiveSlotStatus
+  readonly callId?: string | null
   readonly createdAt: number
 }
 
@@ -63,6 +76,19 @@ export interface TodoItem {
   readonly status: string
   readonly priority?: string | number | null
   readonly metadata?: Record<string, unknown> | null
+}
+
+export interface TaskEntry {
+  readonly id: string
+  readonly sessionId?: string | null
+  readonly description?: string | null
+  readonly subagentType?: string | null
+  readonly status?: string | null
+  readonly kind?: string | null
+  readonly outputExcerpt?: string | null
+  readonly artifactPath?: string | null
+  readonly error?: string | null
+  readonly updatedAt: number
 }
 
 export interface ModelMenuItem {

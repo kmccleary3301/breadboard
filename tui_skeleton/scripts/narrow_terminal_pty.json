@@ -1,0 +1,7 @@
+[
+  { "action": "log", "message": "Narrow terminal PTY harness start" },
+  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "wait", "ms": 600 },
+  { "action": "snapshot", "label": "narrow-terminal" },
+  { "action": "log", "message": "Narrow terminal PTY harness complete" }
+]

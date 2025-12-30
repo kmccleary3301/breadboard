@@ -2,19 +2,21 @@ export interface SlashCommandInfo {
   readonly name: string
   readonly summary: string
   readonly usage?: string
+  readonly shortcut?: string
 }
 
 export interface SlashSuggestion {
   readonly command: string
   readonly usage?: string
   readonly summary: string
+  readonly shortcut?: string
 }
 
 export const SLASH_COMMANDS: ReadonlyArray<SlashCommandInfo> = [
   { name: "help", summary: "Show available slash commands." },
-  { name: "quit", summary: "Exit the session." },
-  { name: "stop", summary: "Interrupt the current run (if any)." },
-  { name: "clear", summary: "Clear conversation and tool panes." },
+  { name: "quit", summary: "Exit the session.", shortcut: "Ctrl+C ×2" },
+  { name: "stop", summary: "Interrupt the current run (if any).", shortcut: "Esc" },
+  { name: "clear", summary: "Clear view (history preserved).", shortcut: "Ctrl+Shift+C" },
   { name: "status", summary: "Refresh session status." },
   { name: "remote", usage: "on|off", summary: "Toggle remote streaming preference." },
   { name: "retry", summary: "Restart the current stream." },
@@ -23,10 +25,12 @@ export const SLASH_COMMANDS: ReadonlyArray<SlashCommandInfo> = [
   { name: "model", usage: "<id>", summary: "Switch to a specific model." },
   { name: "test", usage: "[suite]", summary: "Trigger run_tests command." },
   { name: "files", usage: "[path]", summary: "List files for the current session." },
-  { name: "models", summary: "Open interactive model picker." },
+  { name: "models", summary: "Open interactive model picker.", shortcut: "Ctrl+K" },
   { name: "rewind", summary: "Open checkpoint rewind picker." },
-  { name: "todos", summary: "Open the todos panel." },
-  { name: "transcript", summary: "Open the transcript viewer." },
+  { name: "todos", summary: "Open the todos panel.", shortcut: "Ctrl+T (Claude keymap)" },
+  { name: "usage", summary: "Open the usage summary panel." },
+  { name: "tasks", summary: "Open the background tasks panel.", shortcut: "Ctrl+B" },
+  { name: "transcript", summary: "Open the transcript viewer.", shortcut: "Ctrl+T / Ctrl+Shift+T" },
   { name: "view", usage: "<collapse|scroll|markdown> …", summary: "Adjust transcript collapse, scroll, or markdown modes." },
 ]
 
@@ -63,11 +67,12 @@ export const buildSuggestions = (input: string, limit = 5): SlashSuggestion[] =>
   const [lookup] = input.slice(1).split(/\s+/)
   const needle = lookup.toLowerCase()
   if (!needle) {
-    return SLASH_COMMANDS.slice(0, limit).map((entry) => ({
-      command: `/${entry.name}`,
-      usage: entry.usage,
-      summary: entry.summary,
-    }))
+  return SLASH_COMMANDS.slice(0, limit).map((entry) => ({
+    command: `/${entry.name}`,
+    usage: entry.usage,
+    summary: entry.summary,
+    shortcut: entry.shortcut,
+  }))
   }
   const scored = SLASH_COMMANDS.map((entry) => {
     const score = scoreFuzzy(entry.name, needle)
@@ -79,8 +84,9 @@ export const buildSuggestions = (input: string, limit = 5): SlashSuggestion[] =>
     return a.entry.name.localeCompare(b.entry.name)
   })
   return scored.slice(0, limit).map(({ entry }) => ({
-      command: `/${entry.name}`,
-      usage: entry.usage,
-      summary: entry.summary,
-    }))
+    command: `/${entry.name}`,
+    usage: entry.usage,
+    summary: entry.summary,
+    shortcut: entry.shortcut,
+  }))
 }

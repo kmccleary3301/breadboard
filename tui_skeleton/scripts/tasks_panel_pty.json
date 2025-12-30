@@ -1,0 +1,12 @@
+[
+  { "action": "log", "message": "Tasks panel PTY harness start" },
+  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "wait", "ms": 600 },
+  { "action": "press", "key": "ctrl+b" },
+  { "action": "waitFor", "text": "Background tasks", "timeoutMs": 5000 },
+  { "action": "snapshot", "label": "tasks-open" },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 200 },
+  { "action": "snapshot", "label": "tasks-closed" },
+  { "action": "log", "message": "Tasks panel PTY harness complete" }
+]

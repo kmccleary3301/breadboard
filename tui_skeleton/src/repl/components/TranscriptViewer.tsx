@@ -82,7 +82,11 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
             }`
           : "Press / to search"}
         {"  "}
-        {chalk.dim(`Esc back • ↑/↓ scroll • PgUp/PgDn page • ${toggleHint ?? "Ctrl+T toggle"}`)}
+        {chalk.dim(
+          `Esc back • ↑/↓ scroll • PgUp/PgDn page${searchQuery && searchQuery.trim().length > 0 ? " • n/p match" : ""} • t tools • s save • ${
+            toggleHint ?? "Ctrl+T toggle"
+          }`,
+        )}
       </Text>
       <Text color="dim" wrap="truncate">
         {horizontalRule(width)}

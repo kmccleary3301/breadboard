@@ -30,6 +30,18 @@ const formatHeader = (useColors: boolean): string[] => {
   return ASCII_HEADER.map((line: string) => applyForegroundGradient(line, Gradients.crush, true))
 }
 
+const formatCostUsd = (value: number): string => {
+  if (value >= 1) return `$${value.toFixed(2)}`
+  if (value >= 0.1) return `$${value.toFixed(3)}`
+  return `$${value.toFixed(4)}`
+}
+
+const formatLatency = (ms: number): string => {
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  if (ms < 10_000) return `${(ms / 1000).toFixed(2)}s`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
 const formatStatusLine = (state: ReplState, useColors: boolean): string => {
   const { sessionId, status, pendingResponse, stats } = state
   const glyph = pendingResponse ? (useColors ? chalk.cyan("●") : "*") : useColors ? chalk.hex("#7CF2FF")("●") : "●"
@@ -55,6 +67,32 @@ const formatStatusLine = (state: ReplState, useColors: boolean): string => {
   ]
   if (stats.lastTurn != null) {
     parts.push(turnGlyph, `turn ${stats.lastTurn}`)
+  }
+  const usage = stats.usage
+  if (usage) {
+    const usageParts: string[] = []
+    const hasTokenInputs =
+      usage.totalTokens != null || usage.promptTokens != null || usage.completionTokens != null
+    if (hasTokenInputs) {
+      const total =
+        usage.totalTokens ??
+        (usage.promptTokens != null || usage.completionTokens != null
+          ? (usage.promptTokens ?? 0) + (usage.completionTokens ?? 0)
+          : undefined)
+      if (total != null && Number.isFinite(total)) {
+        usageParts.push(`tok ${Math.round(total)}`)
+      }
+    }
+    if (usage.costUsd != null && Number.isFinite(usage.costUsd)) {
+      usageParts.push(`cost ${formatCostUsd(usage.costUsd)}`)
+    }
+    if (usage.latencyMs != null && Number.isFinite(usage.latencyMs)) {
+      usageParts.push(`lat ${formatLatency(usage.latencyMs)}`)
+    }
+    if (usageParts.length > 0) {
+      const usageText = usageParts.join(" · ")
+      parts.push(useColors ? chalk.dim(usageText) : usageText)
+    }
   }
   return parts.join(" ")
 }

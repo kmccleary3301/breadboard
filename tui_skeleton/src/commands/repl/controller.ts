@@ -7,6 +7,7 @@ import type {
   ModelMenuState,
   ConversationEntry,
   StreamStats,
+  UsageMetrics,
   CompletionState,
   LiveSlotEntry,
   LiveSlotStatus,
@@ -16,6 +17,7 @@ import type {
   ToolLogEntry,
   ToolLogKind,
   TodoItem,
+  TaskEntry,
   PermissionRequest,
   PermissionDecision,
   PermissionRuleScope,
@@ -63,6 +65,8 @@ export interface ReplState {
   readonly sessionId: string
   readonly status: string
   readonly pendingResponse: boolean
+  readonly mode?: string | null
+  readonly permissionMode?: string | null
   readonly conversation: ConversationEntry[]
   readonly toolEvents: ToolLogEntry[]
   readonly liveSlots: LiveSlotEntry[]
@@ -74,11 +78,13 @@ export interface ReplState {
   readonly lastCompletion?: CompletionState | null
   readonly disconnected: boolean
   readonly guardrailNotice?: GuardrailNotice | null
+  readonly viewClearAt?: number | null
   readonly viewPrefs: TranscriptPreferences
   readonly permissionRequest?: PermissionRequest | null
   readonly permissionQueueDepth?: number
   readonly rewindMenu: RewindMenuState
   readonly todos: TodoItem[]
+  readonly tasks: TaskEntry[]
 }
 
 type StateListener = (state: ReplState) => void
@@ -96,6 +102,16 @@ const stringifyReason = (value: string | undefined): string | undefined =>
   value?.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim() || undefined
 
 const numberOrUndefined = (value: unknown): number | undefined => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
+const parseNumberish = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string") {
+    const cleaned = value.trim().replace(/ms$/i, "")
+    if (!cleaned) return undefined
+    const parsed = Number(cleaned)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
 const createSlotId = (): string => `slot-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
 
 const extractString = (payload: Record<string, unknown>, keys: string[]): string | undefined => {
@@ -200,6 +216,86 @@ const tryParseJsonTodos = (value: unknown): TodoItem[] | null => {
   return null
 }
 
+const normalizeModeValue = (value: string | null | undefined): string | null => {
+  const normalized = (value ?? "").trim().toLowerCase()
+  if (!normalized) return null
+  if (normalized === "plan" || normalized === "auto" || normalized === "build") return normalized
+  return normalized
+}
+
+const normalizePermissionMode = (value: string | null | undefined): string | null => {
+  const normalized = (value ?? "").trim().toLowerCase()
+  if (!normalized) return null
+  if (["prompt", "ask", "interactive"].includes(normalized)) return "prompt"
+  if (["allow", "auto", "auto-accept", "auto_accept"].includes(normalized)) return "auto"
+  return normalized
+}
+
+const normalizeTaskStatus = (status: string | null | undefined, kind?: string | null): string | null => {
+  const raw = (status ?? "").trim().toLowerCase()
+  if (raw) {
+    if (raw.includes("complete") || raw === "done") return "completed"
+    if (raw.includes("fail") || raw.includes("error")) return "failed"
+    if (raw.includes("run") || raw.includes("start") || raw.includes("pending")) return "running"
+    return raw
+  }
+  const kindRaw = (kind ?? "").trim().toLowerCase()
+  if (!kindRaw) return null
+  if (kindRaw.includes("complete")) return "completed"
+  if (kindRaw.includes("fail") || kindRaw.includes("error")) return "failed"
+  if (kindRaw.includes("spawn") || kindRaw.includes("start") || kindRaw.includes("tool")) return "running"
+  return kindRaw
+}
+
+const extractUsageMetrics = (payload: Record<string, unknown>): UsageMetrics | null => {
+  const sources: Record<string, unknown>[] = [payload]
+  const pushIfRecord = (value: unknown) => {
+    if (isRecord(value)) sources.push(value)
+  }
+  pushIfRecord(payload.summary)
+  pushIfRecord(payload.usage)
+  pushIfRecord(payload.usage_normalized)
+  pushIfRecord(payload.usageNormalized)
+  pushIfRecord(payload.usage_summary)
+  pushIfRecord(payload.usageSummary)
+
+  const merged: UsageMetrics = {}
+  const assignNumber = (key: keyof UsageMetrics, value: unknown) => {
+    const parsed = parseNumberish(value)
+    if (parsed == null) return
+    merged[key] = parsed
+  }
+  const assignFromKeys = (key: keyof UsageMetrics, source: Record<string, unknown>, keys: string[]) => {
+    for (const lookup of keys) {
+      if (lookup in source) {
+        assignNumber(key, source[lookup])
+        return
+      }
+    }
+  }
+
+  for (const source of sources) {
+    assignFromKeys( "promptTokens", source, ["prompt_tokens", "input_tokens", "promptTokens", "inputTokens"])
+    assignFromKeys( "completionTokens", source, ["completion_tokens", "output_tokens", "completionTokens", "outputTokens"])
+    assignFromKeys( "totalTokens", source, ["total_tokens", "totalTokens", "tokens_total"])
+    assignFromKeys( "cacheReadTokens", source, ["cache_read_tokens", "cacheReadTokens", "cache_read_input_tokens"])
+    assignFromKeys( "cacheWriteTokens", source, ["cache_write_tokens", "cacheWriteTokens", "cache_creation_input_tokens"])
+    assignFromKeys( "costUsd", source, ["cost_usd", "costUsd", "cost", "total_cost", "totalCost", "usd_cost"])
+    if (merged.latencyMs == null) {
+      if ("latency_ms" in source || "latencyMs" in source || "latency" in source) {
+        assignFromKeys("latencyMs", source, ["latency_ms", "latencyMs", "latency"])
+      } else if ("latency_seconds" in source || "latencySeconds" in source) {
+        const seconds = parseNumberish(source["latency_seconds"] ?? source["latencySeconds"])
+        if (seconds != null) {
+          merged.latencyMs = seconds * 1000
+        }
+      }
+    }
+  }
+
+  return Object.keys(merged).length > 0 ? merged : null
+}
+
 export const formatCompletion = (payload: unknown): CompletionView => {
   const container = isRecord(payload) ? payload : {}
   const summarySource = isRecord(container.summary) ? container.summary : container
@@ -267,6 +363,7 @@ export class ReplSessionController extends EventEmitter {
   private guardrailNotice: GuardrailNotice | null = null
   private readonly toolSlotsByCallId = new Map<string, string>()
   private readonly toolSlotFallback: string[] = []
+  private readonly toolLogEntryByCallId = new Map<string, string>()
   private readonly hints: string[] = []
   private conversationSequence = 0
   private streamingEntryId: string | null = null
@@ -298,10 +395,15 @@ export class ReplSessionController extends EventEmitter {
   private readonly providers = CliProviders
   private readonly markdownStreams = new Map<string, { streamer: MarkdownStreamer; lastText: string }>()
   private markdownGloballyDisabled = false
+  private viewClearAt: number | null = null
   private permissionActive: PermissionRequest | null = null
   private permissionQueue: PermissionRequest[] = []
   private rewindMenu: RewindMenuState = { status: "hidden" }
   private todos: TodoItem[] = []
+  private tasks: TaskEntry[] = []
+  private readonly taskMap = new Map<string, TaskEntry>()
+  private mode: string | null = null
+  private permissionMode: string | null = null
 
   constructor(options: ReplControllerOptions) {
     super()
@@ -318,6 +420,8 @@ export class ReplSessionController extends EventEmitter {
       sessionId: this.sessionId,
       status: this.status,
       pendingResponse: this.pendingResponse,
+      mode: this.mode,
+      permissionMode: this.permissionMode,
       conversation: [...this.conversation],
       toolEvents: [...this.toolEvents],
       liveSlots: liveSlotList,
@@ -329,11 +433,13 @@ export class ReplSessionController extends EventEmitter {
       lastCompletion: this.lastCompletion,
       disconnected: this.disconnected,
       guardrailNotice: this.guardrailNotice,
+      viewClearAt: this.viewClearAt,
       viewPrefs: this.viewPrefs,
       permissionRequest: this.permissionActive,
       permissionQueueDepth: this.permissionQueue.length,
       rewindMenu: this.rewindMenu,
       todos: [...this.todos],
+      tasks: [...this.tasks],
     }
   }
 
@@ -353,6 +459,8 @@ export class ReplSessionController extends EventEmitter {
     const permissionValue = this.config.permissionMode?.trim()
     const permissionMode = permissionValue ? permissionValue.toLowerCase() : ""
     const interactivePermissions = permissionMode === "prompt" || permissionMode === "ask" || permissionMode === "interactive"
+    this.permissionMode = normalizePermissionMode(permissionValue) ?? (interactivePermissions ? "prompt" : "auto")
+    this.mode = normalizeModeValue(process.env.BREADBOARD_DEFAULT_MODE) ?? "build"
     const metadata: Record<string, unknown> = {}
     const overrides: Record<string, unknown> = {}
     if (permissionValue) {
@@ -387,6 +495,7 @@ export class ReplSessionController extends EventEmitter {
     this.status = "Ready"
     this.completionSeen = false
     this.lastCompletion = null
+    this.stats.usage = undefined
     this.guardrailNotice = null
     this.submissionHistory = []
     this.emitChange()
@@ -797,13 +906,8 @@ export class ReplSessionController extends EventEmitter {
         this.pushHint(summary)
       },
       clear: async () => {
-        this.conversation.length = 0
-        this.toolEvents.length = 0
-        this.submissionHistory = []
-        this.streamingEntryId = null
-        this.disposeAllMarkdown()
-        this.markdownGloballyDisabled = false
-        this.pushHint("Cleared conversation and tool logs.")
+        this.viewClearAt = Date.now()
+        this.pushHint("Cleared view (history preserved).")
       },
       status: async () => {
         try {
@@ -857,7 +961,10 @@ export class ReplSessionController extends EventEmitter {
       },
       plan: async () => {
         const ok = await this.runSessionCommand("set_mode", { mode: "plan" }, "Requested plan-focused mode.")
-        if (ok) this.status = "Mode request: plan"
+        if (ok) {
+          this.status = "Mode request: plan"
+          this.mode = "plan"
+        }
       },
       mode: async (args) => {
         const target = args[0]?.toLowerCase()
@@ -871,7 +978,10 @@ export class ReplSessionController extends EventEmitter {
         }
         const normalized = target === "default" ? "auto" : target
         const ok = await this.runSessionCommand("set_mode", { mode: normalized }, `Mode set request sent (${normalized}).`)
-        if (ok) this.status = `Mode request: ${normalized}`
+        if (ok) {
+          this.status = `Mode request: ${normalized}`
+          this.mode = normalized
+        }
       },
       model: async (args) => {
         const newModel = args[0]
@@ -1153,6 +1263,7 @@ export class ReplSessionController extends EventEmitter {
       speaker,
       text,
       phase: "final",
+      createdAt: Date.now(),
     }
     this.conversation.push(entry)
   }
@@ -1171,6 +1282,7 @@ export class ReplSessionController extends EventEmitter {
       speaker,
       text,
       phase: "streaming",
+      createdAt: Date.now(),
     }
     this.conversation.push(entry)
     this.streamingEntryId = entry.id
@@ -1194,18 +1306,95 @@ export class ReplSessionController extends EventEmitter {
     return `conv-${this.conversationSequence}`
   }
 
-  private addTool(kind: ToolLogKind, text: string, status?: LiveSlotStatus): void {
+  private upsertTask(entry: TaskEntry): void {
+    const existing = this.taskMap.get(entry.id)
+    const merged: TaskEntry = {
+      ...(existing ?? {}),
+      ...entry,
+      updatedAt: entry.updatedAt || existing?.updatedAt || Date.now(),
+    }
+    this.taskMap.set(merged.id, merged)
+    this.tasks = Array.from(this.taskMap.values()).sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
+  private handleTaskEvent(payload: Record<string, unknown>): void {
+    const taskId =
+      extractString(payload, ["task_id", "taskId", "id"]) ??
+      extractString(payload, ["session_id", "sessionId"])
+    if (!taskId) return
+    const kind = extractString(payload, ["kind", "event", "type"])
+    const status = normalizeTaskStatus(extractString(payload, ["status", "state"]), kind ?? undefined)
+    const description = extractString(payload, ["description", "title", "prompt"])
+    const subagentType = extractString(payload, ["subagent_type", "subagentType"])
+    const outputExcerpt = extractString(payload, ["output_excerpt", "output", "result", "message"])
+    const error = extractString(payload, ["error"])
+    const artifact = isRecord(payload.artifact) ? payload.artifact : null
+    const artifactPath =
+      extractString(payload, ["artifact_path", "artifactPath", "artifact"]) ??
+      (artifact ? extractString(artifact, ["path", "file"]) : undefined)
+    const updatedAt = numberOrUndefined(payload.timestamp) ?? Date.now()
+    const sessionId = extractString(payload, ["session_id", "sessionId"])
+    this.upsertTask({
+      id: taskId,
+      sessionId: sessionId ?? null,
+      description: description ?? null,
+      subagentType: subagentType ?? null,
+      status: status ?? null,
+      kind: kind ?? null,
+      outputExcerpt: outputExcerpt ? outputExcerpt.slice(0, 400) : null,
+      artifactPath: artifactPath ?? null,
+      error: error ?? null,
+      updatedAt,
+    })
+  }
+
+  private updateUsageFromPayload(payload: Record<string, unknown>): void {
+    const usage = extractUsageMetrics(payload)
+    if (!usage) return
+    this.stats.usage = { ...(this.stats.usage ?? {}), ...usage }
+  }
+
+  private trimToolHistory(): void {
+    if (this.toolEvents.length <= MAX_TOOL_HISTORY) return
+    const excess = this.toolEvents.length - MAX_TOOL_HISTORY
+    const removed = this.toolEvents.splice(0, excess)
+    for (const entry of removed) {
+      if (entry.kind === "call" && entry.callId) {
+        const mapped = this.toolLogEntryByCallId.get(entry.callId)
+        if (mapped === entry.id) {
+          this.toolLogEntryByCallId.delete(entry.callId)
+        }
+      }
+    }
+  }
+
+  private addTool(
+    kind: ToolLogKind,
+    text: string,
+    status?: LiveSlotStatus,
+    options?: { callId?: string | null; insertAfterId?: string | null },
+  ): ToolLogEntry {
     const entry: ToolLogEntry = {
       id: createSlotId(),
       kind,
       text,
       status,
+      callId: options?.callId ?? null,
       createdAt: Date.now(),
     }
-    this.toolEvents.push(entry)
-    if (this.toolEvents.length > MAX_TOOL_HISTORY) {
-      this.toolEvents.splice(0, this.toolEvents.length - MAX_TOOL_HISTORY)
+    const insertAfterId = options?.insertAfterId ?? null
+    if (insertAfterId) {
+      const index = this.toolEvents.findIndex((item) => item.id === insertAfterId)
+      if (index >= 0) {
+        this.toolEvents.splice(index + 1, 0, entry)
+      } else {
+        this.toolEvents.push(entry)
+      }
+    } else {
+      this.toolEvents.push(entry)
     }
+    this.trimToolHistory()
+    return entry
   }
 
   private formatToolSlot(payload: unknown): { text: string; color?: string; summary?: string } {
@@ -1543,12 +1732,20 @@ export class ReplSessionController extends EventEmitter {
   }
 
   private applyEvent(event: SessionEvent): void {
+    if (isRecord(event.payload)) {
+      this.updateUsageFromPayload(event.payload)
+    }
     switch (event.type) {
       case "turn_start": {
         this.pendingResponse = true
         this.status = "Assistant thinking…"
         const turnLabel = typeof event.turn === "number" ? `Turn ${event.turn} started` : "Turn started"
         this.addTool("status", `[turn] ${turnLabel}`)
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const mode = normalizeModeValue(extractString(payload, ["mode", "agent_mode", "phase"]))
+        if (mode) {
+          this.mode = mode
+        }
         break
       }
       case "assistant_message": {
@@ -1657,6 +1854,7 @@ export class ReplSessionController extends EventEmitter {
         const isError = typeof payload.error === "string" && payload.error.trim().length > 0
         const isComplete = status.toLowerCase().includes("complete") || status.toLowerCase().includes("done")
         this.addTool("status", `[task] ${line}`, isError ? "error" : isComplete ? "success" : "pending")
+        this.handleTaskEvent(payload)
         break
       }
       case "checkpoint_restored": {
@@ -1684,12 +1882,14 @@ export class ReplSessionController extends EventEmitter {
         if (this.pendingResponse) this.status = "Tool call in progress…"
         this.stats.toolCount += 1
         const payloadText = JSON.stringify(event.payload)
-        this.addTool("call", `[call] ${payloadText}`, "pending")
+        const callId = typeof event.payload?.call_id === "string" ? event.payload.call_id : null
+        const callEntry = this.addTool("call", `[call] ${payloadText}`, "pending", { callId })
         const slotId = createSlotId()
-        const callKey = typeof event.payload?.call_id === "string" ? event.payload.call_id : slotId
+        const callKey = callId ?? slotId
         const slot = this.formatToolSlot(event.payload)
-        if (typeof event.payload?.call_id === "string") {
-          this.toolSlotsByCallId.set(callKey, slotId)
+        if (callId) {
+          this.toolSlotsByCallId.set(callId, slotId)
+          this.toolLogEntryByCallId.set(callId, callEntry.id)
         } else {
           this.toolSlotFallback.push(slotId)
         }
@@ -1705,13 +1905,20 @@ export class ReplSessionController extends EventEmitter {
         if (this.pendingResponse) this.status = "Tool result received"
         this.stats.toolCount += 1
         const resultWasError = this.isToolResultError(event.payload)
-        this.addTool("result", `[result] ${JSON.stringify(event.payload)}`, resultWasError ? "error" : "success")
-        const callKey = typeof event.payload?.call_id === "string" ? event.payload.call_id : undefined
-        if (callKey) {
-          const slotId = this.toolSlotsByCallId.get(callKey)
+        const callId = typeof event.payload?.call_id === "string" ? event.payload.call_id : null
+        const callEntryId = callId ? this.toolLogEntryByCallId.get(callId) : null
+        this.addTool("result", `[result] ${JSON.stringify(event.payload)}`, resultWasError ? "error" : "success", {
+          callId,
+          insertAfterId: callEntryId,
+        })
+        if (callId) {
+          const slotId = this.toolSlotsByCallId.get(callId)
           if (slotId) {
-            this.toolSlotsByCallId.delete(callKey)
+            this.toolSlotsByCallId.delete(callId)
             this.finalizeLiveSlot(slotId, resultWasError ? "error" : "success")
+          }
+          if (callEntryId) {
+            this.toolLogEntryByCallId.delete(callId)
           }
         } else {
           const slotId = this.toolSlotFallback.pop()

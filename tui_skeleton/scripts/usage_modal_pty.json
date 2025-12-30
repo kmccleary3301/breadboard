@@ -1,0 +1,13 @@
+[
+  { "action": "log", "message": "Usage modal PTY harness start" },
+  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "wait", "ms": 600 },
+  { "action": "type", "text": "/usage" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Usage", "timeoutMs": 5000 },
+  { "action": "snapshot", "label": "usage-open" },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 200 },
+  { "action": "snapshot", "label": "usage-closed" },
+  { "action": "log", "message": "Usage modal PTY harness complete" }
+]

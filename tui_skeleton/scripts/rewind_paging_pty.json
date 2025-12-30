@@ -1,0 +1,18 @@
+[
+  { "action": "log", "message": "Rewind paging PTY harness start" },
+  { "action": "wait", "ms": 900 },
+  { "action": "type", "text": "Trigger permission request (mock)." },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Permission required", "timeoutMs": 10000 },
+  { "action": "type", "text": "a" },
+  { "action": "wait", "ms": 400 },
+  { "action": "type", "text": "/rewind" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Rewind checkpoints", "timeoutMs": 10000 },
+  { "action": "waitFor", "text": "Checkpoint 3", "timeoutMs": 10000 },
+  { "action": "press", "key": "pagedown" },
+  { "action": "press", "key": "pageup" },
+  { "action": "snapshot", "label": "rewind-paging" },
+  { "action": "press", "key": "escape" },
+  { "action": "log", "message": "Rewind paging PTY harness complete" }
+]

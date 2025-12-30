@@ -1,0 +1,10 @@
+[
+  { "action": "log", "message": "Model picker small PTY harness start" },
+  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "press", "key": "ctrl+k" },
+  { "action": "waitFor", "text": "Search:", "timeoutMs": 5000 },
+  { "action": "wait", "ms": 400 },
+  { "action": "snapshot", "label": "model-picker-small" },
+  { "action": "press", "key": "escape" },
+  { "action": "log", "message": "Model picker small PTY harness complete" }
+]

@@ -38,8 +38,13 @@ export const runLayoutAssertionsOnLines = (lines: string[]): LayoutAnomaly[] => 
     anomalies.push({ id: "header-duplicate", message: "BreadBoard banner appears multiple times" })
   }
 
-  const transcriptViewerActive = lines.some((line) => containsCaseInsensitive(line, "transcript viewer")) ||
-    lines.some((line) => /Lines\s+\d+-\d+\s+of\s+\d+/i.test(line))
+  const transcriptViewerActive =
+    lines.some((line) => containsCaseInsensitive(line, "transcript viewer")) ||
+    lines.some((line) => /Lines\s+\d+-\d+\s+of\s+\d+/i.test(line)) ||
+    lines.some((line) => {
+      const trimmed = line.trim()
+      return trimmed.startsWith("Search:") && containsCaseInsensitive(trimmed, "esc back")
+    })
 
   const composerCandidate = lines.findIndex((line) => {
     const trimmed = line.trim()

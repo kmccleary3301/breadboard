@@ -1,0 +1,13 @@
+[
+  { "action": "log", "message": "Multiline Enter PTY harness start" },
+  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "type", "text": "line1" },
+  { "action": "type", "text": "\u001b[13;2u" },
+  { "action": "type", "text": "line2" },
+  { "action": "snapshot", "label": "multiline-input" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "line1", "timeoutMs": 10000 },
+  { "action": "waitFor", "text": "line2", "timeoutMs": 10000 },
+  { "action": "snapshot", "label": "multiline-submitted" },
+  { "action": "log", "message": "Multiline Enter PTY harness complete" }
+]

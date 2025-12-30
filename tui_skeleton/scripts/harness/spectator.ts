@@ -23,6 +23,7 @@ export type KeyName =
   | "ctrl+backspace"
   | "ctrl+c"
   | "ctrl+d"
+  | "ctrl+b"
   | "ctrl+k"
   | "ctrl+l"
   | "ctrl+o"
@@ -309,6 +310,8 @@ const resolveKey = (key: KeyName): string => {
       return "\u0003"
     case "ctrl+d":
       return "\u0004"
+    case "ctrl+b":
+      return "\u0002"
     case "ctrl+k":
       return "\u000b"
     case "ctrl+l":

@@ -6,9 +6,11 @@ const baseState = (): ReplState => ({
   sessionId: "session-123",
   status: "Ready",
   pendingResponse: false,
+  mode: "build",
+  permissionMode: "prompt",
   conversation: [
-    { id: "conv-1", speaker: "user", text: "Hello world", phase: "final" },
-    { id: "conv-2", speaker: "assistant", text: "Hi there!", phase: "final" },
+    { id: "conv-1", speaker: "user", text: "Hello world", phase: "final", createdAt: 0 },
+    { id: "conv-2", speaker: "assistant", text: "Hi there!", phase: "final", createdAt: 1 },
   ],
   toolEvents: [
     { id: "tool-1", kind: "call", text: "[call] example-tool", status: "pending", createdAt: 0 },
@@ -25,6 +27,7 @@ const baseState = (): ReplState => ({
   viewPrefs: { collapseMode: "auto", virtualization: "auto", richMarkdown: false },
   rewindMenu: { status: "hidden" },
   todos: [],
+  tasks: [],
 })
 
 describe("renderStateToText", () => {
@@ -64,8 +67,8 @@ describe("renderStateToText", () => {
     const state: ReplState = {
       ...baseState(),
       conversation: [
-        { id: "conv-1", speaker: "user", text: "Hello world", phase: "final" },
-        { id: "conv-2", speaker: "assistant", text: "Typing...", phase: "streaming" },
+        { id: "conv-1", speaker: "user", text: "Hello world", phase: "final", createdAt: 0 },
+        { id: "conv-2", speaker: "assistant", text: "Typing...", phase: "streaming", createdAt: 1 },
       ],
     }
     const snapshot = renderStateToText(state)
@@ -75,7 +78,7 @@ describe("renderStateToText", () => {
   it("can suppress streaming entry when includeStreamingTail is false", () => {
     const state: ReplState = {
       ...baseState(),
-      conversation: [{ id: "conv-1", speaker: "assistant", text: "Typing...", phase: "streaming" }],
+      conversation: [{ id: "conv-1", speaker: "assistant", text: "Typing...", phase: "streaming", createdAt: 0 }],
     }
     const snapshot = renderStateToText(state, { includeStreamingTail: false })
     expect(snapshot).toContain("No conversation yet")
@@ -90,6 +93,7 @@ describe("renderStateToText", () => {
         speaker: "assistant",
         text: `Line ${idx}`,
         phase: "final" as const,
+        createdAt: idx,
       })),
     }
     const snapshot = renderStateToText(state, { includeHeader: false, includeStatus: false })
@@ -106,6 +110,7 @@ describe("renderStateToText", () => {
           speaker: "assistant",
           text: "fallback",
           phase: "final",
+          createdAt: 0,
           richBlocks: [
             { id: "b1", type: "heading", isFinalized: true, payload: { raw: "Sample Title", meta: { level: 2 } } },
             { id: "b2", type: "paragraph", isFinalized: true, payload: { raw: "Paragraph **text**" } },
@@ -131,6 +136,7 @@ describe("renderStateToText", () => {
           speaker: "assistant",
           text: "fallback",
           phase: "final",
+          createdAt: 0,
           markdownError: "worker failed",
         },
       ],
