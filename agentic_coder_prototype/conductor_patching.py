@@ -566,6 +566,17 @@ def record_diff_metrics(
         else:
             matched = max(total_hunks - failed_hunks, 0)
             hmr = matched / total_hunks
+        if session_state is not None and isinstance(turn_index, int):
+            meta: Dict[str, Any] = {}
+            if not result.get("ok"):
+                meta["invalid_diff_block"] = True
+            if patch_text and ("new file mode" in patch_text or "--- /dev/null" in patch_text):
+                meta["add_file_via_diff"] = True
+            if meta:
+                try:
+                    session_state.add_reward_metrics(turn_index, metadata=meta)
+                except Exception:
+                    pass
     elif function == "apply_search_replace":
         replacements = None
         try:

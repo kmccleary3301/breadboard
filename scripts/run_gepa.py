@@ -23,6 +23,12 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from agentic_coder_prototype.optimize.gepa_guardrails import (
+    DEFAULT_OPT_START,
+    DEFAULT_OPT_END,
+    validate_prompt_mutation,
+)
+
 
 @dataclass
 class PromptCandidate:
@@ -49,6 +55,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--population", type=int, default=2, help="Number of candidates to evaluate per iteration")
     parser.add_argument("--telemetry-db", default=None, help="Optional SQLite DB path for reward metrics")
     parser.add_argument("--output", default="gepa_results.json", help="Output JSON with Pareto front")
+    parser.add_argument("--allow-unmarked", action="store_true", help="Allow prompts without OPT_BLOCK markers")
+    parser.add_argument("--dry-run", action="store_true", help="Generate candidates without running evaluations")
+    parser.add_argument("--opt-start", default=DEFAULT_OPT_START, help="OPT block start marker")
+    parser.add_argument("--opt-end", default=DEFAULT_OPT_END, help="OPT block end marker")
     return parser.parse_args()
 
 
@@ -56,8 +66,16 @@ def load_prompt(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def write_prompt(base_text: str, edit: str, dest: Path) -> None:
-    dest.write_text(base_text + "\n" + edit, encoding="utf-8")
+def apply_edit(base_text: str, edit: str, opt_start: str, opt_end: str) -> str:
+    if opt_start in base_text and opt_end in base_text:
+        idx = base_text.find(opt_end)
+        if idx != -1:
+            return base_text[:idx] + "\n" + edit + "\n" + base_text[idx:]
+    return base_text + "\n" + edit
+
+
+def write_prompt(text: str, dest: Path) -> None:
+    dest.write_text(text, encoding="utf-8")
 
 
 def propose_edits(base_prompt: str, iteration: int, population: int) -> List[str]:
@@ -171,19 +189,48 @@ def main() -> int:
     base_prompt_text = load_prompt(base_prompt_path)
 
     pareto: List[CandidateResult] = []
+    skipped: List[Dict[str, Any]] = []
     for iteration in range(args.iterations):
         edits = propose_edits(base_prompt_text, iteration, args.population)
         candidates: List[PromptCandidate] = []
         for idx, edit in enumerate(edits):
             candidate_prompt = base_prompt_path.parent / f"gepa_prompt_{iteration}_{idx}.md"
-            write_prompt(base_prompt_text, edit, candidate_prompt)
-            candidates.append(PromptCandidate(name=f"iter{iteration}_cand{idx}", prompt_path=candidate_prompt, metadata={"edit": edit}))
+            candidate_text = apply_edit(base_prompt_text, edit, args.opt_start, args.opt_end)
+            validation = validate_prompt_mutation(
+                base_prompt_text,
+                candidate_text,
+                opt_start=args.opt_start,
+                opt_end=args.opt_end,
+                allow_unmarked=args.allow_unmarked,
+            )
+            if not validation.ok:
+                skipped.append(
+                    {
+                        "name": f"iter{iteration}_cand{idx}",
+                        "issues": validation.issues,
+                        "edit": edit,
+                    }
+                )
+                continue
+            write_prompt(candidate_text, candidate_prompt)
+            candidates.append(
+                PromptCandidate(
+                    name=f"iter{iteration}_cand{idx}",
+                    prompt_path=candidate_prompt,
+                    metadata={"edit": edit, "opt_blocks": validation.opt_block_count},
+                )
+            )
+        if args.dry_run:
+            continue
         for candidate in candidates:
             result = evaluate_candidate(candidate, config_path, task_path, args.telemetry_db)
             pareto.append(result)
         pareto = pareto_front(pareto)
 
     aggregate(pareto, Path(args.output))
+    if skipped:
+        skipped_path = Path(args.output).with_suffix(".skipped.json")
+        skipped_path.write_text(json.dumps(skipped, indent=2))
     return 0
 
 
