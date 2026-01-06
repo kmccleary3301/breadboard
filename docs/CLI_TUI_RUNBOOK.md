@@ -168,3 +168,25 @@ python scripts/tmux_capture_to_png.py --target breadboard-live:0 --scale 0.75
 # Copy captures into the untracked baseline folder if you want to diff by hand
 cp tui_skeleton/artifacts/stress/<timestamp>/tmux_capture_*.png tui_skeleton/artifacts/visual_baselines/
 ```
+
+## 6) C-Trees UI toggles (optional)
+
+The C-Tree UI is disabled by default unless using `breadboard_v1`. Enable explicitly:
+
+```bash
+export BREADBOARD_CTREES_ENABLED=1
+export BREADBOARD_CTREES_SUMMARY=1
+export BREADBOARD_CTREES_TASK_NODE=1
+```
+
+User config override (`~/.breadboard/config.json`):
+
+```json
+{
+  "ctrees": {
+    "enabled": true,
+    "showSummary": true,
+    "showTaskNode": true
+  }
+}
+```

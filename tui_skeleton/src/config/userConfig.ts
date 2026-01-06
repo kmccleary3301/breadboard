@@ -8,6 +8,11 @@ export interface UserConfigFile {
   readonly authToken?: string
   readonly engineVersion?: string
   readonly enginePath?: string
+  readonly ctrees?: {
+    readonly enabled?: boolean
+    readonly showSummary?: boolean
+    readonly showTaskNode?: boolean
+  }
 }
 
 const resolveConfigPath = (): string => {
@@ -34,7 +39,16 @@ export const loadUserConfigSync = (): UserConfigFile => {
     const authToken = typeof parsed.authToken === "string" ? parsed.authToken : undefined
     const engineVersion = typeof parsed.engineVersion === "string" ? parsed.engineVersion : undefined
     const enginePath = typeof parsed.enginePath === "string" ? parsed.enginePath : undefined
-    return { baseUrl, authToken, engineVersion, enginePath }
+    const ctreesRaw = isRecord(parsed.ctrees) ? parsed.ctrees : undefined
+    const ctrees =
+      ctreesRaw
+        ? {
+            ...(typeof ctreesRaw.enabled === "boolean" ? { enabled: ctreesRaw.enabled } : {}),
+            ...(typeof ctreesRaw.showSummary === "boolean" ? { showSummary: ctreesRaw.showSummary } : {}),
+            ...(typeof ctreesRaw.showTaskNode === "boolean" ? { showTaskNode: ctreesRaw.showTaskNode } : {}),
+          }
+        : undefined
+    return { baseUrl, authToken, engineVersion, enginePath, ctrees }
   } catch {
     return {}
   }
@@ -48,6 +62,15 @@ export const writeUserConfig = async (next: UserConfigFile): Promise<void> => {
     ...(next.authToken ? { authToken: next.authToken } : {}),
     ...(next.engineVersion ? { engineVersion: next.engineVersion } : {}),
     ...(next.enginePath ? { enginePath: next.enginePath } : {}),
+    ...(next.ctrees
+      ? {
+          ctrees: {
+            ...(typeof next.ctrees.enabled === "boolean" ? { enabled: next.ctrees.enabled } : {}),
+            ...(typeof next.ctrees.showSummary === "boolean" ? { showSummary: next.ctrees.showSummary } : {}),
+            ...(typeof next.ctrees.showTaskNode === "boolean" ? { showTaskNode: next.ctrees.showTaskNode } : {}),
+          },
+        }
+      : {}),
   }
   await fsp.writeFile(configPath, JSON.stringify(payload, null, 2), "utf8")
 }

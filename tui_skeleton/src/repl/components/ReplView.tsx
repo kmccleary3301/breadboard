@@ -48,6 +48,7 @@ import { GuardrailBanner } from "./GuardrailBanner.js"
 import { loadKeymapConfig } from "../keymap.js"
 import { loadProfileConfig } from "../profile.js"
 import { loadChromeMode } from "../chrome.js"
+import { loadCtreeConfig } from "../ctreeConfig.js"
 import { ensureShikiLoaded, maybeHighlightCode, subscribeShiki } from "../shikiHighlighter.js"
 import { getSessionDraft, updateSessionDraft } from "../../cache/sessionCache.js"
 import {
@@ -1106,6 +1107,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const keymap = useMemo(() => loadKeymapConfig(), [])
   const chromeMode = useMemo(() => loadChromeMode(keymap), [keymap])
   const isBreadboardProfile = useMemo(() => loadProfileConfig().name === "breadboard_v1", [])
+  const ctreeConfig = useMemo(() => loadCtreeConfig(), [])
   const claudeChrome = chromeMode === "claude"
   const filePickerResources = useMemo(() => loadFilePickerResources(), [])
   const [, forceRedraw] = useState(0)
@@ -6400,12 +6402,15 @@ export const ReplView: React.FC<ReplViewProps> = ({
           if (selectedTask.error) {
             footerLines.push({ text: `Error: ${selectedTask.error}`, color: "#F87171" })
           }
-          if (selectedTask.ctreeNodeId) {
+          if (ctreeConfig.enabled && ctreeConfig.showTaskNode && selectedTask.ctreeNodeId) {
             footerLines.push({ text: `CTree node: ${selectedTask.ctreeNodeId}`, color: "dim" })
           }
           footerLines.push({ text: "Enter: load output tail.", color: "dim" })
         }
-        const ctreeSummary = formatCtreeSummary(selectedTask?.ctreeSnapshot ?? ctreeSnapshot ?? null)
+        const ctreeSummary =
+          ctreeConfig.enabled && ctreeConfig.showSummary
+            ? formatCtreeSummary(selectedTask?.ctreeSnapshot ?? ctreeSnapshot ?? null)
+            : null
         if (ctreeSummary) {
           footerLines.push({ text: ctreeSummary, color: "dim" })
         }
