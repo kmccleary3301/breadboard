@@ -67,6 +67,8 @@ interface SessionState {
   }>
 }
 
+const DEFAULT_PROTOCOL_VERSION = process.env.BREADBOARD_PROTOCOL_VERSION ?? "1.0"
+
 const sleep = (ms: number) => (ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve())
 
 export const resolveScriptPath = (scriptPath: string) =>
@@ -177,6 +179,7 @@ const finalizeEvent = (state: SessionState, rawEvent: Record<string, any>) => {
     seq,
     timestamp: timestampMs,
     timestamp_ms: timestampMs,
+    protocol_version: rawEvent.protocol_version ?? DEFAULT_PROTOCOL_VERSION,
     data: rawEvent.data ?? rawEvent.payload ?? {},
     payload: rawEvent.payload,
   }

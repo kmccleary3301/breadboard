@@ -48,6 +48,13 @@ export interface SessionFileContent {
   readonly total_bytes?: number
 }
 
+export interface HealthResponse {
+  readonly status: string
+  readonly protocol_version?: string | null
+  readonly version?: string | null
+  readonly engine_version?: string | null
+}
+
 export interface ModelCatalogEntry {
   readonly id: string
   readonly adapter?: string | null

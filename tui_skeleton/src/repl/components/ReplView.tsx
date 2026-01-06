@@ -46,6 +46,7 @@ import { rankFuzzyFileItems, scoreFuzzyMatch } from "../fileRanking.js"
 import { computeModelColumns, CONTEXT_COLUMN_WIDTH, PRICE_COLUMN_WIDTH } from "../modelMenu/layout.js"
 import { GuardrailBanner } from "./GuardrailBanner.js"
 import { loadKeymapConfig } from "../keymap.js"
+import { loadProfileConfig } from "../profile.js"
 import { loadChromeMode } from "../chrome.js"
 import { ensureShikiLoaded, maybeHighlightCode, subscribeShiki } from "../shikiHighlighter.js"
 import { getSessionDraft, updateSessionDraft } from "../../cache/sessionCache.js"
@@ -404,10 +405,8 @@ const renderCodeLines = (raw: string, lang?: string): string[] => {
   const finalLang = lang ?? langHint
   const content = (code || raw).replace(/\r\n?/g, "\n")
   const isDiff = finalLang ? finalLang.toLowerCase().includes("diff") : false
-  if (!isDiff) {
-    const shikiLines = maybeHighlightCode(content, finalLang)
-    if (shikiLines) return shikiLines
-  }
+  const shikiLines = maybeHighlightCode(content, finalLang)
+  if (shikiLines) return shikiLines
   const lines = content.split("\n")
   return lines.map((line) => {
     if (isDiff) return colorDiffLine(line)
@@ -1106,6 +1105,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const filePickerConfig = useMemo(() => loadFilePickerConfig(), [])
   const keymap = useMemo(() => loadKeymapConfig(), [])
   const chromeMode = useMemo(() => loadChromeMode(keymap), [keymap])
+  const isBreadboardProfile = useMemo(() => loadProfileConfig().name === "breadboard_v1", [])
   const claudeChrome = chromeMode === "claude"
   const filePickerResources = useMemo(() => loadFilePickerResources(), [])
   const [, forceRedraw] = useState(0)
@@ -1142,7 +1142,6 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const contentWidth = useMemo(() => Math.max(10, columnWidth - 2), [columnWidth])
   const rowCount = stdout?.rows && Number.isFinite(stdout.rows) ? stdout.rows : 40
   const PANEL_WIDTH = useMemo(() => Math.min(96, Math.max(60, Math.floor(columnWidth * 0.8))), [columnWidth])
-  const modelPanelInnerWidth = useMemo(() => Math.max(0, PANEL_WIDTH - 4), [PANEL_WIDTH])
   const modelColumnLayout = useMemo(() => computeModelColumns(columnWidth), [columnWidth])
   const modelMenuCompact = useMemo(() => rowCount <= 20 || columnWidth <= 70, [columnWidth, rowCount])
   const modelMenuHeaderText = useMemo(() => {
@@ -5022,6 +5021,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
 
   const metaNodes = useMemo(() => {
     if (claudeChrome) return []
+    const codexPreface = keymap === "codex" ? "Try edit <file> to..." : null
     const hintParts = [
       "! for bash",
       "/ for commands",
@@ -5041,14 +5041,25 @@ export const ReplView: React.FC<ReplViewProps> = ({
       hintParts.push("Ctrl+T transcript")
     }
     hintParts.push("Ctrl+G skills")
-    return [
+    const nodes: Array<JSX.Element> = []
+    if (codexPreface) {
+      nodes.push(
+        <Text key="meta-preface" color="dim">
+          {codexPreface}
+        </Text>,
+      )
+    }
+    nodes.push(
       <Text key="meta-slash" color="dim">
         Slash commands: {SLASH_COMMAND_HINT}
       </Text>,
+    )
+    nodes.push(
       <Text key="meta-hints" color="dim">
         {hintParts.join(" • ")}
       </Text>,
-    ]
+    )
+    return nodes
   }, [claudeChrome, keymap])
 
   const shortcutLines = useMemo(() => {
@@ -5241,7 +5252,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         clearScreen()
         return true
       }
-      if (key.ctrl && (lowerChar === "o" || char === "\u000f")) {
+      if ((key.ctrl && lowerChar === "o") || char === "\u000f") {
         if (keymap === "claude") {
           if (transcriptViewerOpen) {
             exitTranscriptViewer()
@@ -5569,6 +5580,16 @@ export const ReplView: React.FC<ReplViewProps> = ({
             const hintLines: SelectPanelLine[] = []
             const rows: SelectPanelRow[] = []
             const footerLines: SelectPanelLine[] = []
+            const indexingParts: string[] = []
+            indexingParts.push(`${fileIndexMeta.fileCount} files`)
+            if (fileIndexMeta.dirCount > 0) {
+              indexingParts.push(`${fileIndexMeta.dirCount} dirs`)
+            }
+            const totalDirs = fileIndexMeta.scannedDirs + fileIndexMeta.queuedDirs
+            if (totalDirs > 0) {
+              indexingParts.push(`${fileIndexMeta.scannedDirs}/${totalDirs} dirs scanned`)
+            }
+            const indexingStatus = `Indexing… (${indexingParts.join(" · ")})`
 
             if (!claudeChrome) {
               titleLines.push({
@@ -5599,7 +5620,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
               rows.push({ kind: "empty", text: "Tab to retry • Esc to clear", color: "gray" })
             } else if (fileMenuRows.length === 0) {
               if (fileMenuMode === "fuzzy" && (fileIndexMeta.status === "idle" || fileIndexMeta.status === "scanning")) {
-                rows.push({ kind: "empty", text: `Indexing… (${fileIndexMeta.fileCount} files)`, color: "dim" })
+                rows.push({ kind: "empty", text: indexingStatus, color: "dim" })
               } else {
                 rows.push({ kind: "empty", text: "(no matches)", color: "dim" })
               }
@@ -5609,7 +5630,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
               const hiddenAbove = fileMenuWindow.hiddenAbove
               const hiddenBelow = fileMenuWindow.hiddenBelow
               if (fileMenuMode === "fuzzy" && (fileIndexMeta.status === "idle" || fileIndexMeta.status === "scanning")) {
-                rows.push({ kind: "header", text: `Indexing… (${fileIndexMeta.fileCount} files)`, color: "dim" })
+                rows.push({ kind: "header", text: indexingStatus, color: "dim" })
               }
               if (fileMenuMode === "fuzzy" && fileMenuNeedlePending) {
                 rows.push({ kind: "header", text: "Searching…", color: "dim" })
@@ -5804,7 +5825,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
   if (shortcutsOpen && !claudeChrome) {
     modalStack.push({
       id: "shortcuts",
+      layout: isBreadboardProfile ? "sheet" : undefined,
       render: () => {
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
         const titleLines: SelectPanelLine[] = [{ text: chalk.bold("Shortcuts"), color: "#7CF2FF" }]
         const hintLines: SelectPanelLine[] = [{ text: "Press ? or Esc to close", color: "dim" }]
         const rows: SelectPanelRow[] = shortcutLines.map((line) => ({
@@ -5813,10 +5837,12 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }))
         return (
           <SelectPanel
-            width={PANEL_WIDTH}
+            width={panelWidth}
             borderColor="#7CF2FF"
             paddingX={2}
             paddingY={claudeChrome ? 0 : 1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={rows}
@@ -5829,7 +5855,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
   if (paletteState.status === "open") {
     modalStack.push({
       id: "palette",
+      layout: isBreadboardProfile ? "sheet" : undefined,
       render: () => {
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
         const titleLines: SelectPanelLine[] = [{ text: "Command palette", color: "#C084FC" }]
         const hintLines: SelectPanelLine[] = [
           {
@@ -5855,10 +5884,12 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return (
           <SelectPanel
-            width={PANEL_WIDTH}
+            width={panelWidth}
             borderColor="#C084FC"
             paddingX={2}
             paddingY={1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={rows}
@@ -5871,7 +5902,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
   if (modelMenu.status !== "hidden") {
     modalStack.push({
       id: "model-picker",
+      layout: isBreadboardProfile ? "sheet" : undefined,
       render: () => {
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
+        const panelInnerWidth = Math.max(0, panelWidth - 4)
         const titleLines: SelectPanelLine[] = []
         const hintLines: SelectPanelLine[] = []
         const rows: SelectPanelRow[] = []
@@ -5885,25 +5920,25 @@ export const ReplView: React.FC<ReplViewProps> = ({
           if (claudeChrome) {
             titleLines.push({ text: clearToEnd(" ") })
             titleLines.push({
-              text: clearToEnd(formatCell("Select model — Switch between models.", modelPanelInnerWidth, "left")),
+              text: clearToEnd(formatCell("Select model — Switch between models.", panelInnerWidth, "left")),
               color: "dim",
             })
             titleLines.push({
-              text: clearToEnd(formatCell("Use --model for other/previous names.", modelPanelInnerWidth, "left")),
+              text: clearToEnd(formatCell("Use --model for other/previous names.", panelInnerWidth, "left")),
               color: "dim",
             })
             titleLines.push({
               text: clearToEnd(
                 formatCell(
                   `Provider: ${modelProviderLabel} (←/→ filter${modelProviderFilter ? " · Backspace clear" : ""})${modelSearch.trim().length > 0 ? ` • Filter: ${modelSearch.trim()}` : ""}`,
-                  modelPanelInnerWidth,
+                  panelInnerWidth,
                   "left",
                 ),
               ),
               color: "dim",
             })
             titleLines.push({
-              text: clearToEnd(formatCell("Enter to confirm · Esc to exit", modelPanelInnerWidth, "left")),
+              text: clearToEnd(formatCell("Enter to confirm · Esc to exit", panelInnerWidth, "left")),
               color: "dim",
             })
           } else {
@@ -5965,10 +6000,12 @@ export const ReplView: React.FC<ReplViewProps> = ({
 
         return (
           <SelectPanel
-            width={PANEL_WIDTH}
+            width={panelWidth}
             borderColor="#7CF2FF"
             paddingX={2}
             paddingY={1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={rows}
@@ -5982,11 +6019,14 @@ export const ReplView: React.FC<ReplViewProps> = ({
   if (skillsMenu.status !== "hidden") {
     modalStack.push({
       id: "skills-picker",
+      layout: isBreadboardProfile ? "sheet" : undefined,
       render: () => {
         const titleLines: SelectPanelLine[] = [{ text: chalk.bold("Skills"), color: "#C084FC" }]
         const hintLines: SelectPanelLine[] = []
         const rows: SelectPanelRow[] = []
         const footerLines: SelectPanelLine[] = []
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
 
         if (skillsMenu.status === "loading") {
           rows.push({ kind: "empty", text: "Loading skills catalog…", color: "cyan" })
@@ -6058,10 +6098,12 @@ export const ReplView: React.FC<ReplViewProps> = ({
 
         return (
           <SelectPanel
-            width={PANEL_WIDTH}
+            width={panelWidth}
             borderColor="#C084FC"
             paddingX={2}
             paddingY={1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={rows}
@@ -6075,7 +6117,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
   if (rewindMenu.status !== "hidden") {
     modalStack.push({
       id: "rewind",
+      layout: isBreadboardProfile ? "sheet" : undefined,
       render: () => {
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
         const isLoading = rewindMenu.status === "loading"
         const isError = rewindMenu.status === "error"
         const titleLines: SelectPanelLine[] = [{ text: chalk.bold("Rewind checkpoints"), color: "#93C5FD" }]
@@ -6139,10 +6184,12 @@ export const ReplView: React.FC<ReplViewProps> = ({
 
         return (
           <SelectPanel
-            width={PANEL_WIDTH}
+            width={panelWidth}
             borderColor="#60A5FA"
             paddingX={2}
             paddingY={1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={rows}
@@ -6156,7 +6203,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
   if (todosOpen) {
     modalStack.push({
       id: "todos",
+      layout: isBreadboardProfile ? "sheet" : undefined,
       render: () => {
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
         const scroll = Math.max(0, Math.min(todoScroll, todoMaxScroll))
         const visible = todoRows.slice(scroll, scroll + todoViewportRows)
         const colorForStatus = (status?: string) => {
@@ -6204,10 +6254,12 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return (
           <SelectPanel
-            width={PANEL_WIDTH}
+            width={panelWidth}
             borderColor="#7CF2FF"
             paddingX={2}
             paddingY={1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={panelRows}
@@ -6220,7 +6272,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
   if (usageOpen) {
     modalStack.push({
       id: "usage",
+      layout: isBreadboardProfile ? "sheet" : undefined,
       render: () => {
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
         const usage = stats.usage
         const rows: Array<{ label: string; value: string }> = []
         if (usage?.promptTokens != null) rows.push({ label: "Prompt tokens", value: `${Math.round(usage.promptTokens)}` })
@@ -6248,10 +6303,12 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return (
           <SelectPanel
-            width={Math.min(PANEL_WIDTH, contentWidth + 2)}
+            width={panelWidth}
             borderColor="#22c55e"
             paddingX={2}
             paddingY={1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={panelRows}
@@ -6264,7 +6321,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
   if (tasksOpen) {
     modalStack.push({
       id: "tasks",
+      layout: isBreadboardProfile ? "sheet" : undefined,
       render: () => {
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
         const scroll = Math.max(0, Math.min(taskScroll, taskMaxScroll))
         const visible = taskRows.slice(scroll, scroll + taskViewportRows)
         const colorForStatus = (status?: string) => {
@@ -6279,7 +6339,6 @@ export const ReplView: React.FC<ReplViewProps> = ({
               return "#FACC15"
           }
         }
-        const panelWidth = Math.min(PANEL_WIDTH, contentWidth + 2)
         const lineWidth = Math.max(12, panelWidth - 6)
         const titleLines: SelectPanelLine[] = [{ text: chalk.bold("Background tasks"), color: "#93C5FD" }]
         const hintLines: SelectPanelLine[] = [
@@ -6363,6 +6422,8 @@ export const ReplView: React.FC<ReplViewProps> = ({
             borderColor="#60A5FA"
             paddingX={2}
             paddingY={1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={panelRows}

@@ -33,6 +33,7 @@ export interface ContractOptions {
   readonly requireSeq?: boolean
   readonly requireData?: boolean
   readonly requireTimestampMs?: boolean
+  readonly requireProtocolVersion?: boolean
 }
 
 const requireSeq = () =>
@@ -42,6 +43,9 @@ const requireData = () =>
 const requireTimestampMs = () =>
   process.env.BREADBOARD_CONTRACT_REQUIRE_TIMESTAMP_MS === "1" ||
   process.env.CONTRACT_REQUIRE_TIMESTAMP_MS === "1"
+const requireProtocolVersion = () =>
+  process.env.BREADBOARD_CONTRACT_REQUIRE_PROTOCOL_VERSION === "1" ||
+  process.env.CONTRACT_REQUIRE_PROTOCOL_VERSION === "1"
 
 const parseSseEvents = (raw: string): AnyEvent[] => {
   const events: AnyEvent[] = []
@@ -94,6 +98,7 @@ export const runContractChecks = async (ssePath: string, options?: ContractOptio
   const strictSeq = options?.requireSeq ?? requireSeq()
   const strictData = options?.requireData ?? requireData()
   const strictTimestampMs = options?.requireTimestampMs ?? requireTimestampMs()
+  const strictProtocol = options?.requireProtocolVersion ?? requireProtocolVersion()
 
   if (events.length === 0) {
     warnings.push({
@@ -133,6 +138,17 @@ export const runContractChecks = async (ssePath: string, options?: ContractOptio
       warnings.push({
         code: "data-missing",
         message: "Missing data payload; legacy payload only.",
+        eventIndex: index,
+        eventId,
+        eventType: type,
+      })
+    }
+
+    const protocolVersion = typeof event?.protocol_version === "string" ? event.protocol_version : null
+    if (!protocolVersion && strictProtocol) {
+      errors.push({
+        code: "protocol-version-missing",
+        message: "Missing protocol_version; contract requires protocol_version field.",
         eventIndex: index,
         eventId,
         eventType: type,

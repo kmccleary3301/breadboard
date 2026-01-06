@@ -39,7 +39,6 @@ const main = async () => {
   await ensureDistMainExists()
   const binDir = resolveBinDir()
   await writeWrapper(path.join(binDir, "breadboard"))
-  await writeWrapper(path.join(binDir, "kyle"))
   if (process.env.BREADBOARD_INSTALL_QUIET !== "1") {
     console.log(`[breadboard] Installed wrappers into ${binDir}`)
   }
@@ -49,4 +48,3 @@ void main().catch((error) => {
   console.error(`[breadboard] local bin install failed: ${(error as Error).message}`)
   process.exitCode = 1
 })
-

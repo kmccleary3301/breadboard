@@ -2,7 +2,7 @@
   { "action": "log", "message": "Model picker small PTY harness start" },
   { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
   { "action": "press", "key": "ctrl+k" },
-  { "action": "waitFor", "text": "Select model", "timeoutMs": 5000 },
+  { "action": "waitFor", "text": "Loading model catalog", "timeoutMs": 5000 },
   { "action": "wait", "ms": 400 },
   { "action": "snapshot", "label": "model-picker-small" },
   { "action": "press", "key": "escape" },

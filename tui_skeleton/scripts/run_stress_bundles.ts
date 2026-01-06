@@ -1531,7 +1531,10 @@ const runReplCase = async (
   const stateDumpPath = path.join(caseDir, "repl_state.ndjson")
   const stateDumpRel = toRepoRootPath(stateDumpPath)
   const caseInfoPath = path.join(caseDir, "case_info.json")
-  const envOverrides = testCase.env ?? {}
+  const envOverrides = { ...(testCase.env ?? {}) }
+  if (chaosInfo?.mode === "mock-sse" && !envOverrides.BREADBOARD_ENGINE_MODE) {
+    envOverrides.BREADBOARD_ENGINE_MODE = "off"
+  }
   const reproEnv = {
     BREADBOARD_API_URL: baseUrl,
     BREADBOARD_STATE_DUMP_PATH: stateDumpRel,
@@ -1778,7 +1781,10 @@ const runPtyCase = async (
   const inputLogPath = path.join(caseDir, "input_log.ndjson")
   const stateDumpPath = path.join(caseDir, "repl_state.ndjson")
   const stateDumpRel = toRepoRootPath(stateDumpPath)
-  const envOverrides = testCase.env ?? {}
+  const envOverrides = { ...(testCase.env ?? {}) }
+  if (chaosInfo?.mode === "mock-sse" && !envOverrides.BREADBOARD_ENGINE_MODE) {
+    envOverrides.BREADBOARD_ENGINE_MODE = "off"
+  }
   const command = testCase.command ?? options.command
   const configPath = resolveConfigPath(testCase, options)
   const baseUrl = testCase.baseUrl ?? options.baseUrl
@@ -2227,9 +2233,19 @@ const runCaseWithOptionalMockSse = async (
   options: CliOptions,
   caseDir: string,
 ): Promise<Record<string, unknown>> => {
+  const applyMockEnv = (caseInput: StressCase): StressCase => {
+    if (caseInput.env?.BREADBOARD_ENGINE_MODE) return caseInput
+    return {
+      ...caseInput,
+      env: {
+        ...(caseInput.env ?? {}),
+        BREADBOARD_ENGINE_MODE: "off",
+      },
+    }
+  }
   const baseChaos = mergeChaosInfo(options.bridgeChaos, options.chaosInfo)
   if (options.mockSseConfig) {
-    return runCaseForOptions(testCase, options, caseDir, baseChaos)
+    return runCaseForOptions(applyMockEnv(testCase), options, caseDir, baseChaos)
   }
   if (!options.useCaseMockSse || !testCase.mockSseScript) {
     return runCaseForOptions(testCase, options, caseDir, baseChaos)
@@ -2246,6 +2262,7 @@ const runCaseWithOptionalMockSse = async (
     ...options,
     baseUrl: `http://${config.host}:${config.port}`,
   }
+  const patchedCase = applyMockEnv(testCase)
   const chaosInfo: Record<string, unknown> = {
     mode: "mock-sse",
     origin: "case",
@@ -2259,7 +2276,7 @@ const runCaseWithOptionalMockSse = async (
   }
   try {
     const mergedChaos = mergeChaosInfo(options.bridgeChaos, chaosInfo)
-    return await runCaseForOptions(testCase, patchedOptions, caseDir, mergedChaos)
+    return await runCaseForOptions(patchedCase, patchedOptions, caseDir, mergedChaos)
   } finally {
     await mockProcess.stop().catch((error) => console.warn("[stress] mock SSE shutdown failed:", error))
   }

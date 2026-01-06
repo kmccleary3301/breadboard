@@ -47,11 +47,10 @@ export const runLayoutAssertionsOnLines = (lines: string[]): LayoutAnomaly[] => 
     }) ||
     lines.some((line) => /^\s*(USER|ASSISTANT|SYSTEM|TOOLS):/i.test(line))
 
-  const hasModalBorder = lines.some((line) => line.includes("╭") || line.includes("╮"))
-  const modalKeywords = ["Select model", "Provider · Model", "Skills", "Permission required"]
-  const modalActive =
-    hasModalBorder &&
-    lines.some((line) => modalKeywords.some((keyword) => containsCaseInsensitive(line, keyword)))
+  const hasModalBorder = lines.some(
+    (line) => line.includes("╭") || line.includes("╮") || line.includes("╰") || line.includes("╯"),
+  )
+  const modalActive = hasModalBorder
 
   const composerCandidate = lines.findIndex((line) => {
     const trimmed = line.trim()

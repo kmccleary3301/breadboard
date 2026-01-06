@@ -133,7 +133,6 @@ const tokensToAnsiLines = (tokenLines: ShikiToken[][]): string[] =>
 export const maybeHighlightCode = (code: string, lang?: string): string[] | null => {
   const normalized = normalizeLang(lang)
   if (!normalized) return null
-  if (normalized.includes("diff")) return null
   if (code.length > MAX_SHIKI_CHARS) return null
   const lines = code.split(/\r?\n/)
   if (lines.length > MAX_SHIKI_LINES) return null

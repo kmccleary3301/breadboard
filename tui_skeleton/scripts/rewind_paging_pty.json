@@ -13,6 +13,7 @@
   { "action": "press", "key": "pagedown" },
   { "action": "press", "key": "pageup" },
   { "action": "snapshot", "label": "rewind-paging" },
+  { "action": "wait", "ms": 150 },
   { "action": "type", "text": "2" },
   { "action": "waitFor", "text": "Rewind restored", "timeoutMs": 10000 },
   { "action": "press", "key": "escape" },

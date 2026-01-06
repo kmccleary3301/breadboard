@@ -7,6 +7,7 @@ import type {
   SessionSummary,
   SessionFileInfo,
   SessionFileContent,
+  HealthResponse,
   ModelCatalogResponse,
   SkillCatalogResponse,
   CTreeSnapshotResponse,
@@ -104,6 +105,7 @@ const request = async <T>(path: string, method: JsonMethod, options: RequestOpti
 }
 
 export const ApiClient = {
+  health: () => request<HealthResponse>("/health", "GET"),
   createSession: (payload: SessionCreateRequest) => request<SessionCreateResponse>("/sessions", "POST", { body: payload }),
   listSessions: () => request<SessionSummary[]>("/sessions", "GET"),
   getSession: (sessionId: string) => request<SessionSummary>(`/sessions/${sessionId}`, "GET"),
@@ -181,6 +183,7 @@ export type {
   ErrorResponse,
   SessionFileInfo,
   SessionFileContent,
+  HealthResponse,
   ModelCatalogResponse,
   SkillCatalogResponse,
   CTreeSnapshotResponse,

@@ -3,6 +3,7 @@ import { homedir } from "node:os"
 import path from "node:path"
 import { promises as fs } from "node:fs"
 import { Effect, Layer, Context } from "effect"
+import { loadUserConfigSync } from "./userConfig.js"
 
 dotenv.config()
 
@@ -31,8 +32,9 @@ const resolveCachePath = (): string => {
 }
 
 const computeConfig = (): AppConfig => {
-  const baseUrl = process.env.BREADBOARD_API_URL?.trim() || DEFAULT_BASE_URL
-  const authToken = process.env.BREADBOARD_API_TOKEN?.trim()
+  const userConfig = loadUserConfigSync()
+  const baseUrl = process.env.BREADBOARD_API_URL?.trim() || userConfig.baseUrl || DEFAULT_BASE_URL
+  const authToken = process.env.BREADBOARD_API_TOKEN?.trim() || userConfig.authToken
   const remoteEnv = process.env.BREADBOARD_ENABLE_REMOTE_STREAM
   const remoteStreamDefault = remoteEnv === undefined ? true : remoteEnv === "1"
   const timeout = Number(process.env.BREADBOARD_API_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS)

@@ -389,78 +389,83 @@ const runScriptMode = async (controller: ReplSessionController, scriptPath: stri
   }
 }
 
-export const replCommand = Command.make(
-  "repl",
-  {
-    config: configOption,
-    workspace: workspaceOption,
-    model: modelOption,
-    remoteStream: remoteStreamOption,
-    permissionMode: permissionOption,
-    script: scriptOption,
-    scriptOutput: scriptOutputOption,
-    scriptSnapshots: scriptSnapshotsOption,
-    scriptColor: scriptColorsOption,
-    scriptFinalOnly: scriptFinalOnlyOption,
-    scriptMaxDurationMs: scriptMaxDurationOption,
-  },
-  ({
-    config,
-    workspace,
-    model,
-    remoteStream,
-    permissionMode,
-    script,
-    scriptOutput,
-    scriptSnapshots,
-    scriptColor,
-    scriptFinalOnly,
-    scriptMaxDurationMs,
-  }) =>
-    Effect.tryPromise(async () => {
-      const workspaceValue = getOptionValue(workspace)
-      const modelValue = getOptionValue(model)
-      const permissionValue = getOptionValue(permissionMode)
-      const remotePreference = Option.match(remoteStream, {
-        onNone: () => undefined,
-        onSome: (value) => value,
-      })
-      const resolvedConfigPath = resolveBreadboardPath(config)
-      const resolvedWorkspace = resolveBreadboardWorkspace(workspaceValue)
+const buildReplCommand = (name: string) =>
+  Command.make(
+    name,
+    {
+      config: configOption,
+      workspace: workspaceOption,
+      model: modelOption,
+      remoteStream: remoteStreamOption,
+      permissionMode: permissionOption,
+      script: scriptOption,
+      scriptOutput: scriptOutputOption,
+      scriptSnapshots: scriptSnapshotsOption,
+      scriptColor: scriptColorsOption,
+      scriptFinalOnly: scriptFinalOnlyOption,
+      scriptMaxDurationMs: scriptMaxDurationOption,
+    },
+    ({
+      config,
+      workspace,
+      model,
+      remoteStream,
+      permissionMode,
+      script,
+      scriptOutput,
+      scriptSnapshots,
+      scriptColor,
+      scriptFinalOnly,
+      scriptMaxDurationMs,
+    }) =>
+      Effect.tryPromise(async () => {
+        const workspaceValue = getOptionValue(workspace)
+        const modelValue = getOptionValue(model)
+        const permissionValue = getOptionValue(permissionMode)
+        const remotePreference = Option.match(remoteStream, {
+          onNone: () => undefined,
+          onSome: (value) => value,
+        })
+        const resolvedConfigPath = resolveBreadboardPath(config)
+        const resolvedWorkspace = resolveBreadboardWorkspace(workspaceValue)
 
-      const controller = new ReplSessionController({
-        configPath: resolvedConfigPath,
-        workspace: resolvedWorkspace,
-        model: modelValue ?? undefined,
-        remotePreference,
-        permissionMode: permissionValue ?? undefined,
-      })
+        const controller = new ReplSessionController({
+          configPath: resolvedConfigPath,
+          workspace: resolvedWorkspace,
+          model: modelValue ?? undefined,
+          remotePreference,
+          permissionMode: permissionValue ?? undefined,
+        })
 
-      await controller.start()
-      const stateDump = await startStateDump(controller)
+        await controller.start()
+        const stateDump = await startStateDump(controller)
 
-      try {
-        const scriptPath = getOptionValue(script)
-        if (scriptPath) {
-          await runScriptMode(controller, scriptPath, {
-            outputPath: getOptionValue(scriptOutput),
-            snapshotEveryStep: getOptionValue(scriptSnapshots) ?? false,
-            useColors: getOptionValue(scriptColor) ?? false,
-            finalOnly: getOptionValue(scriptFinalOnly) ?? false,
-            maxDurationMs: getOptionValue(scriptMaxDurationMs) ?? undefined,
-          })
-          return
+        try {
+          const scriptPath = getOptionValue(script)
+          if (scriptPath) {
+            await runScriptMode(controller, scriptPath, {
+              outputPath: getOptionValue(scriptOutput),
+              snapshotEveryStep: getOptionValue(scriptSnapshots) ?? false,
+              useColors: getOptionValue(scriptColor) ?? false,
+              finalOnly: getOptionValue(scriptFinalOnly) ?? false,
+              maxDurationMs: getOptionValue(scriptMaxDurationMs) ?? undefined,
+            })
+            return
+          }
+
+          await runInteractive(controller)
+          if (process.env.BREADBOARD_PRINT_FINAL_STATE === "1") {
+            const finalState = controller.getState()
+            console.log(renderStateToText(finalState, { colors: false }))
+          }
+          await controller.stop()
+        } finally {
+          stateDump.writeFinal()
+          await stateDump.stop().catch(() => undefined)
         }
+      }),
+  )
 
-        await runInteractive(controller)
-        if (process.env.BREADBOARD_PRINT_FINAL_STATE === "1") {
-          const finalState = controller.getState()
-          console.log(renderStateToText(finalState, { colors: false }))
-        }
-        await controller.stop()
-      } finally {
-        stateDump.writeFinal()
-        await stateDump.stop().catch(() => undefined)
-      }
-    }),
-)
+export const createReplCommand = (name: string) => buildReplCommand(name)
+
+export const replCommand = createReplCommand("repl")
