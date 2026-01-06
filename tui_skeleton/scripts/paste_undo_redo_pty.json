@@ -1,0 +1,15 @@
+[
+  { "action": "log", "message": "Paste undo/redo PTY harness start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "initial" },
+  { "action": "press", "key": "ctrl+v" },
+  { "action": "waitFor", "text": "[Pasted Content", "timeoutMs": 10000 },
+  { "action": "snapshot", "label": "pasted" },
+  { "action": "press", "key": "ctrl+z" },
+  { "action": "wait", "ms": 150 },
+  { "action": "snapshot", "label": "undone" },
+  { "action": "press", "key": "ctrl+y" },
+  { "action": "waitFor", "text": "[Pasted Content", "timeoutMs": 10000 },
+  { "action": "snapshot", "label": "redone" },
+  { "action": "log", "message": "Paste undo/redo PTY harness complete" }
+]

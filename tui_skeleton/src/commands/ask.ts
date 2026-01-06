@@ -92,10 +92,19 @@ export const askCommand = Command.make(
       const requestMetadata = metadataValue ? parseJsonObject(metadataValue, "--metadata") : {}
       const overrideModelValue = typeof requestOverrides["providers.default_model"] === "string" ? (requestOverrides["providers.default_model"] as string) : undefined
       const resolvedModel = modelValue ?? overrideModelValue ?? DEFAULT_MODEL_ID
+      const permissionModeValue = permissionValue ? permissionValue.toLowerCase() : ""
+      const interactivePermissions = permissionModeValue === "prompt" || permissionModeValue === "ask" || permissionModeValue === "interactive"
       requestMetadata.model = resolvedModel
       requestOverrides["providers.default_model"] = resolvedModel
       if (permissionValue) {
         requestMetadata.permission_mode = permissionValue
+        if (interactivePermissions) {
+          requestOverrides["permissions.options.mode"] ??= "prompt"
+          requestOverrides["permissions.options.default_response"] ??= "reject"
+          requestOverrides["permissions.edit.default"] ??= "ask"
+          requestOverrides["permissions.shell.default"] ??= "ask"
+          requestOverrides["permissions.webfetch.default"] ??= "ask"
+        }
       }
       let configPath = config
       if (analysisFlag) {
@@ -122,6 +131,7 @@ export const askCommand = Command.make(
               overrides: Object.keys(requestOverrides).length ? requestOverrides : undefined,
               metadata: Object.keys(requestMetadata).length ? requestMetadata : undefined,
               remoteStream: remoteStreamValue,
+              permissionMode: permissionValue ?? undefined,
             },
             async (event) => {
               if (event.type !== "completion") {

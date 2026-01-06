@@ -1,0 +1,27 @@
+id: skill
+name: skill
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: Load a skill to get detailed instructions for a specific task. Skills
+  provide specialized knowledge and step-by-step guidance. Use this when a task matches
+  an available skill's description. <available_skills> </available_skills>
+parameters:
+- name: name
+  type: string
+  description: The skill identifier from available_skills (e.g., 'code-review')
+  required: true
+  schema:
+    description: The skill identifier from available_skills (e.g., 'code-review')
+    type: string

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -248,9 +249,11 @@ def _extract_tool_results_from_request(request_payload: Dict[str, Any]) -> Dict[
                 rendered = content_value
             else:
                 rendered = json.dumps(content_value, ensure_ascii=False)
+            agent_ids = _extract_agent_ids_from_tool_output(content_value)
             results[tool_use_id] = {
                 "content": rendered,
                 "is_error": bool(block.get("is_error", False)),
+                "agent_ids": agent_ids,
             }
     return results
 
@@ -304,10 +307,17 @@ def convert_run(run_dir: Path) -> Dict[str, Any]:
             "parts": [{"id": "user_0", "type": "text", "text": prompt}],
         }
     ]
+    subagent_agent_ids: set[str] = set()
+    subagent_task_map: Dict[str, List[str]] = {}
 
     for idx, call in enumerate(scoped):
         next_req = scoped[idx + 1].request if idx + 1 < len(scoped) else None
         tool_results = _extract_tool_results_from_request(next_req) if next_req else {}
+        for tool_id, result in tool_results.items():
+            agent_ids = result.get("agent_ids") or []
+            if agent_ids:
+                subagent_agent_ids.update(agent_ids)
+                subagent_task_map[tool_id] = list(agent_ids)
 
         message_id, blocks = _parse_anthropic_sse_message(call.response)
         parts: List[Dict[str, Any]] = []
@@ -342,6 +352,7 @@ def convert_run(run_dir: Path) -> Dict[str, Any]:
                                 "input": tool_input,
                                 "status": status,
                                 "output": output,
+                                "subagent_ids": result.get("agent_ids") or [],
                             }
                         },
                     }
@@ -357,7 +368,205 @@ def convert_run(run_dir: Path) -> Dict[str, Any]:
             }
         )
 
-    return {"prompt": prompt, "entries": entries}
+    provider_meta = _extract_subagent_meta_from_provider_dumps(run_dir)
+    provider_ids = set(provider_meta.get("agent_ids") or [])
+    subagent_summary = {
+        "agent_ids_from_tool_outputs": sorted(subagent_agent_ids),
+        "agent_ids_from_provider_dumps": sorted(provider_ids),
+        "tool_use_to_agent_ids": subagent_task_map,
+        "provider_events": provider_meta.get("events") or [],
+    }
+    return {"prompt": prompt, "entries": entries, "subagent_meta": subagent_summary}
+
+
+_TASK_ID_RE = re.compile(r"<task_id>(.*?)</task_id>", re.S)
+_TASK_OUTPUT_RE = re.compile(r"<output>\\s*(.*?)\\s*</output>", re.S)
+_AGENT_ID_RE = re.compile(r"agentId:\s*([a-zA-Z0-9_-]+)")
+
+
+def _collect_text_blobs(value: Any) -> Iterable[str]:
+    if isinstance(value, str):
+        yield value
+        return
+    if isinstance(value, list):
+        for item in value:
+            yield from _collect_text_blobs(item)
+        return
+    if isinstance(value, dict):
+        text = value.get("text")
+        if isinstance(text, str):
+            yield text
+        for child in value.values():
+            yield from _collect_text_blobs(child)
+
+
+def _extract_agent_ids_from_tool_output(content_value: Any) -> List[str]:
+    if content_value is None:
+        return []
+    parsed = content_value
+    if isinstance(content_value, str):
+        try:
+            parsed = json.loads(content_value)
+        except Exception:
+            parsed = content_value
+    ids: set[str] = set()
+    for blob in _collect_text_blobs(parsed):
+        for match in _AGENT_ID_RE.findall(blob):
+            if match:
+                ids.add(match)
+    return sorted(ids)
+
+
+def _extract_subagent_meta_from_provider_dumps(run_dir: Path) -> Dict[str, Any]:
+    provider_dir = run_dir / "provider_dumps"
+    if not provider_dir.exists():
+        return {"agent_ids": [], "events": []}
+    events: List[Dict[str, Any]] = []
+    agent_ids: set[str] = set()
+    for path in sorted(provider_dir.glob("*_request.json")):
+        payload = _load_json(path)
+        body = payload.get("body") or {}
+        if not isinstance(body, dict):
+            continue
+        text = body.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            continue
+        for event in parsed.get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            meta = event.get("metadata") or {}
+            if not isinstance(meta, dict):
+                continue
+            if meta.get("agentType") != "subagent":
+                continue
+            agent_id = meta.get("agentId")
+            if isinstance(agent_id, str) and agent_id:
+                agent_ids.add(agent_id)
+            events.append(
+                {
+                    "agent_id": agent_id,
+                    "session_id": meta.get("sessionId"),
+                    "request_id": meta.get("requestId"),
+                    "query_chain_id": meta.get("queryChainId"),
+                    "event_name": event.get("eventName"),
+                    "source": path.name,
+                }
+            )
+    agent_sessions: Dict[str, str] = {}
+    for event in events:
+        agent_id = event.get("agent_id")
+        session_id = event.get("session_id")
+        if isinstance(agent_id, str) and agent_id and isinstance(session_id, str) and session_id:
+            agent_sessions.setdefault(agent_id, session_id)
+    return {"agent_ids": sorted(agent_ids), "events": events, "agent_sessions": agent_sessions}
+
+
+def _extract_subagent_outputs(entries: List[Dict[str, Any]]) -> Tuple[Dict[str, str], Dict[str, str]]:
+    outputs: Dict[str, str] = {}
+    sources: Dict[str, str] = {}
+    for entry in entries:
+        if entry.get("role") != "assistant":
+            continue
+        for part in entry.get("parts", []) or []:
+            if part.get("type") != "tool":
+                continue
+            tool_name = part.get("tool")
+            state = (part.get("meta") or {}).get("state") or {}
+            raw_output = state.get("output")
+            if raw_output is None:
+                continue
+            if not isinstance(raw_output, str):
+                try:
+                    raw_output = json.dumps(raw_output, ensure_ascii=False)
+                except Exception:
+                    raw_output = str(raw_output)
+            if tool_name == "TaskOutput":
+                task_match = _TASK_ID_RE.search(raw_output)
+                if not task_match:
+                    continue
+                task_id = task_match.group(1).strip()
+                if not task_id:
+                    continue
+                out_match = _TASK_OUTPUT_RE.search(raw_output)
+                text = out_match.group(1).strip() if out_match else raw_output.strip()
+                outputs[task_id] = text
+                sources[task_id] = "TaskOutput"
+            elif tool_name == "Task":
+                agent_ids = _extract_agent_ids_from_tool_output(raw_output)
+                if not agent_ids:
+                    continue
+                text = raw_output.strip()
+                for agent_id in agent_ids:
+                    if not agent_id:
+                        continue
+                    if sources.get(agent_id) == "TaskOutput":
+                        continue
+                    outputs[agent_id] = text
+                    sources[agent_id] = "Task"
+    return outputs, sources
+
+
+def _extract_task_inputs(entries: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    inputs: Dict[str, Dict[str, Any]] = {}
+    for entry in entries:
+        if entry.get("role") != "assistant":
+            continue
+        for part in entry.get("parts", []) or []:
+            if part.get("type") != "tool" or part.get("tool") != "Task":
+                continue
+            state = (part.get("meta") or {}).get("state") or {}
+            input_payload = state.get("input") or {}
+            if not isinstance(input_payload, dict):
+                continue
+            agent_ids = state.get("subagent_ids") or []
+            if not isinstance(agent_ids, list):
+                agent_ids = []
+            for agent_id in agent_ids:
+                if not isinstance(agent_id, str) or not agent_id:
+                    continue
+                inputs[agent_id] = {
+                    "prompt": input_payload.get("prompt"),
+                    "description": input_payload.get("description"),
+                    "subagent_type": input_payload.get("subagent_type") or input_payload.get("subagentType"),
+                }
+    return inputs
+
+
+def _write_subagent_replays(
+    outputs: Dict[str, str],
+    out_dir: Path,
+    task_inputs: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    index: Dict[str, str] = {}
+    for task_id, text in outputs.items():
+        payload: List[Dict[str, Any]] = []
+        input_payload = (task_inputs or {}).get(task_id) or {}
+        prompt = input_payload.get("prompt")
+        if isinstance(prompt, str) and prompt.strip():
+            payload.append(
+                {
+                    "role": "user",
+                    "message_id": f"user_{task_id}",
+                    "parts": [{"id": f"user_{task_id}", "type": "text", "text": prompt}],
+                }
+            )
+        payload.append(
+            {
+                "role": "assistant",
+                "message_id": f"subagent_{task_id}",
+                "parts": [{"id": "text_0", "type": "text", "text": text}],
+            }
+        )
+        out_path = out_dir / f"subagent_{task_id}.json"
+        out_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        index[task_id] = str(out_path)
+    if index:
+        (out_dir / "index.json").write_text(json.dumps(index, indent=2), encoding="utf-8")
 
 
 def main() -> int:
@@ -368,6 +577,7 @@ def main() -> int:
         help="Run directory (contains normalized/ provider dumps).",
     )
     parser.add_argument("--output", required=True, help="Output path for replay session JSON.")
+    parser.add_argument("--subagent-output-dir", help="Optional directory to write per-subagent replay stubs.")
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir).resolve()
@@ -377,9 +587,23 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload["entries"], indent=2) + "\n", encoding="utf-8")
     print(f"[claude->replay] wrote {len(payload['entries'])} entries -> {out_path}")
+    if args.subagent_output_dir:
+        task_inputs = _extract_task_inputs(payload["entries"])
+        outputs, sources = _extract_subagent_outputs(payload["entries"])
+        if outputs:
+            _write_subagent_replays(outputs, Path(args.subagent_output_dir), task_inputs)
+            print(
+                f"[claude->replay] wrote {len(outputs)} subagent replays -> {args.subagent_output_dir}"
+            )
+        meta_path = Path(args.subagent_output_dir) / "subagent_meta.json"
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        meta_payload = payload.get("subagent_meta") or {}
+        meta_payload["task_inputs"] = task_inputs
+        meta_payload["output_sources"] = sources
+        meta_path.write_text(json.dumps(meta_payload, indent=2), encoding="utf-8")
+        print(f"[claude->replay] wrote subagent meta -> {meta_path}")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

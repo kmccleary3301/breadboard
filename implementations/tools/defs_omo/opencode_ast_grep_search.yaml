@@ -1,0 +1,83 @@
+id: ast_grep_search
+name: ast_grep_search
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: 'Search code patterns across filesystem using AST-aware matching. Supports
+  25 languages. Use meta-variables: $VAR (single node), $$$ (multiple nodes). IMPORTANT:
+  Patterns must be complete AST nodes (valid code). For functions, include params
+  and body: ''export async function $NAME($$$) { $$$ }'' not ''export async function
+  $NAME''. Examples: ''console.log($MSG)'', ''def $FUNC($$$):'', ''async function
+  $NAME($$$)'''
+parameters:
+- name: pattern
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: lang
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+    enum:
+    - bash
+    - c
+    - cpp
+    - csharp
+    - css
+    - elixir
+    - go
+    - haskell
+    - html
+    - java
+    - javascript
+    - json
+    - kotlin
+    - lua
+    - nix
+    - php
+    - python
+    - ruby
+    - rust
+    - scala
+    - solidity
+    - swift
+    - typescript
+    - tsx
+    - yaml
+- name: paths
+  type: array
+  description: ''
+  required: false
+  schema:
+    type: array
+    items:
+      type: string
+- name: globs
+  type: array
+  description: ''
+  required: false
+  schema:
+    type: array
+    items:
+      type: string
+- name: context
+  type: number
+  description: ''
+  required: false
+  schema:
+    type: number

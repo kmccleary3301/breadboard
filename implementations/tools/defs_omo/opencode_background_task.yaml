@@ -1,0 +1,64 @@
+id: background_task
+name: background_task
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: 'Run agent task in background. Returns task_id immediately; notifies
+  on completion.
+
+
+  Use `background_output` to get results. Prompts MUST be in English.'
+parameters:
+- name: description
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: prompt
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: agent
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: parent_task_id
+  type: string
+  description: Optional parent task id for C-Tree lineage tracking.
+  required: false
+  schema:
+    type: string
+- name: tree_path
+  type: string
+  description: Optional C-Tree path (e.g. root/branch/leaf) for hierarchical task visualization.
+  required: false
+  schema:
+    type: string
+- name: depth
+  type: integer
+  description: Optional C-Tree depth indicator.
+  required: false
+  schema:
+    type: integer
+- name: priority
+  type: string
+  description: Optional C-Tree priority marker (string or numeric encoded).
+  required: false
+  schema:
+    type: string

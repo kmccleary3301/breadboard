@@ -74,6 +74,20 @@ python -m pytest tests/test_agent_session.py -v
 python -m pytest tests/ -v
 ```
 
+### Phase 9 Utilities
+
+- Surface manifest smoke check:
+  ```bash
+  python scripts/phase9_surface_smoke_check.py --run-dir <logging_run_dir>
+  ```
+- TreeRunner scaffold config snippet:
+  ```yaml
+  ctrees:
+    runner:
+      enabled: true
+      branches: 2
+  ```
+
 ### Configuration
 
 Agent behavior is controlled through YAML configuration files. Key parameters:

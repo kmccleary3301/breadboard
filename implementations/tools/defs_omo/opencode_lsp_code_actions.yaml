@@ -1,0 +1,68 @@
+id: lsp_code_actions
+name: lsp_code_actions
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: Get available quick fixes, refactorings, and source actions (organize
+  imports, fix all).
+parameters:
+- name: filePath
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: startLine
+  type: number
+  description: ''
+  required: true
+  schema:
+    type: number
+    minimum: 1
+- name: startCharacter
+  type: number
+  description: ''
+  required: true
+  schema:
+    type: number
+    minimum: 0
+- name: endLine
+  type: number
+  description: ''
+  required: true
+  schema:
+    type: number
+    minimum: 1
+- name: endCharacter
+  type: number
+  description: ''
+  required: true
+  schema:
+    type: number
+    minimum: 0
+- name: kind
+  type: string
+  description: ''
+  required: false
+  schema:
+    type: string
+    enum:
+    - quickfix
+    - refactor
+    - refactor.extract
+    - refactor.inline
+    - refactor.rewrite
+    - source
+    - source.organizeImports
+    - source.fixAll

@@ -1,99 +1,118 @@
 from __future__ import annotations
 
-import hashlib
-from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
-from jinja2 import Environment, StrictUndefined
+
+def _safe_str(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        return str(value)
+    except Exception:
+        return ""
 
 
 class ToolPromptSynthesisEngine:
-    """Render tool prompt synthesis templates with a safe, minimal context."""
+    """Minimal prompt synthesis engine stub for recovery."""
 
-    def __init__(self, root: str = "implementations/tool_prompt_synthesis") -> None:
-        self.root = Path(root)
-        self._env = Environment(
-            undefined=StrictUndefined,
-            autoescape=False,
-            trim_blocks=False,
-            lstrip_blocks=False,
-        )
-
-    def _normalize_tools(self, tools: Iterable[Any]) -> List[Dict[str, Any]]:
+    def _normalize_tools(self, tools: List[Any]) -> List[Dict[str, Any]]:
         normalized: List[Dict[str, Any]] = []
         for tool in tools or []:
             if isinstance(tool, dict):
-                tdict = dict(tool)
-                params_in = tdict.get("parameters") or []
-                params_out: List[Dict[str, Any]] = []
-                for p in params_in:
-                    if isinstance(p, dict):
-                        params_out.append(dict(p))
-                    else:
-                        params_out.append({
-                            "name": getattr(p, "name", None),
-                            "type": getattr(p, "type", None),
-                            "default": getattr(p, "default", None),
-                            "required": bool(getattr(p, "required", False)),
-                            "description": getattr(p, "description", None),
-                        })
-                tdict["parameters"] = params_out
-                normalized.append(tdict)
+                params = tool.get("parameters") or []
+                normalized.append(
+                    {
+                        "name": _safe_str(tool.get("name")),
+                        "description": _safe_str(tool.get("description")),
+                        "parameters": params if isinstance(params, list) else [],
+                    }
+                )
                 continue
-
+            name = _safe_str(getattr(tool, "name", None))
+            description = _safe_str(getattr(tool, "description", None))
             params = []
-            for p in (getattr(tool, "parameters", None) or []):
-                params.append({
-                    "name": getattr(p, "name", None),
-                    "type": getattr(p, "type", None),
-                    "default": getattr(p, "default", None),
-                    "required": bool(getattr(p, "required", False)),
-                    "description": getattr(p, "description", None),
-                })
-            normalized.append({
-                "name": getattr(tool, "name", None),
-                "display_name": getattr(tool, "display_name", None),
-                "description": getattr(tool, "description", "") or "",
-                "blocking": bool(getattr(tool, "blocking", False)),
-                "max_per_turn": getattr(tool, "max_per_turn", None),
-                "parameters": params,
-                "return_type": getattr(tool, "return_type", None),
-                "syntax_style": getattr(tool, "syntax_style", None),
-            })
+            for param in getattr(tool, "parameters", []) or []:
+                if isinstance(param, dict):
+                    params.append(param)
+                else:
+                    params.append(
+                        {
+                            "name": _safe_str(getattr(param, "name", None)),
+                            "type": _safe_str(getattr(param, "type", None)),
+                            "description": _safe_str(getattr(param, "description", None)),
+                            "default": getattr(param, "default", None),
+                        }
+                    )
+            normalized.append({"name": name, "description": description, "parameters": params})
         return normalized
 
-    def _resolve_template_path(self, path: str) -> Optional[Path]:
-        if not path:
-            return None
-        candidate = Path(path)
-        if candidate.exists():
-            return candidate
-        if not candidate.is_absolute():
-            root_candidate = self.root / candidate
-            if root_candidate.exists():
-                return root_candidate
-        return None
+    def _render_catalog(self, dialect: str, detail: str, tools: List[Any]) -> str:
+        normalized = self._normalize_tools(tools)
+        lines: List[str] = ["# TOOL CATALOG"]
+        if dialect:
+            lines.append(f"Dialect: {dialect}")
+        if detail:
+            lines.append(f"Detail: {detail}")
+        lines.append("")
+        if not normalized:
+            lines.append("No tools available.")
+            return "\n".join(lines).strip()
+
+        is_short = "per_turn" in detail or "short" in detail
+        if is_short:
+            lines.append("Available tools:")
+            for tool in normalized:
+                if tool.get("name"):
+                    lines.append(f"- {tool['name']}")
+            return "\n".join(lines).strip()
+
+        for tool in normalized:
+            name = tool.get("name") or ""
+            if not name:
+                continue
+            lines.append(f"## {name}")
+            desc = tool.get("description") or ""
+            if desc:
+                lines.append(desc)
+            params = tool.get("parameters") or []
+            if params:
+                lines.append("")
+                lines.append("Parameters:")
+                for param in params:
+                    pname = _safe_str(param.get("name"))
+                    ptype = _safe_str(param.get("type"))
+                    pdesc = _safe_str(param.get("description"))
+                    if pname:
+                        chunk = f"- {pname}"
+                        if ptype:
+                            chunk += f" ({ptype})"
+                        if pdesc:
+                            chunk += f": {pdesc}"
+                        lines.append(chunk)
+            lines.append("")
+        return "\n".join(lines).strip()
 
     def render(
         self,
-        dialect_id: str,
+        dialect: str,
         detail: str,
-        tools: Iterable[Any],
-        template_map: Optional[Dict[str, str]] = None,
-        extra_context: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[str, str]:
-        template_map = template_map or {}
-        template_key = detail if detail in template_map else detail.strip()
-        template_path = self._resolve_template_path(template_map.get(template_key, ""))
-        if template_path is None:
-            return "", f"{dialect_id}:{detail}:missing"
+        tools: List[Any],
+        templates: Dict[str, Any] | None = None,
+    ) -> Tuple[str, Dict[str, Any]]:
+        template_id = None
+        if isinstance(templates, dict):
+            template_id = templates.get(detail)
+        if not template_id:
+            template_id = f"{dialect}::{detail}"
+        text = self._render_catalog(dialect, detail, tools)
+        meta = {
+            "template_id": template_id,
+            "dialect": dialect,
+            "detail": detail,
+            "text": text,
+        }
+        return text, meta
 
-        template_text = template_path.read_text(encoding="utf-8")
-        template = self._env.from_string(template_text)
-        context = {"tools": self._normalize_tools(tools)}
-        if extra_context:
-            context.update(extra_context)
-        rendered = template.render(**context)
-        template_hash = hashlib.sha256(template_text.encode("utf-8")).hexdigest()[:10]
-        template_id = f"{dialect_id}:{detail}:{template_hash}"
-        return rendered, template_id
+    def compile(self, *args, **kwargs) -> Dict[str, Any]:
+        # Backwards-compatible stub interface; prefer render().
+        return {}

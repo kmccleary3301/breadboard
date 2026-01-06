@@ -184,5 +184,32 @@ class LoggerV2Manager:
         except Exception:
             return ""
 
+    def append_jsonl(self, rel_path: str, data: Any) -> str:
+        if not self.run_dir:
+            return ""
+        path = (self.run_dir / rel_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        redacted = self._redact(data)
+        try:
+            line = json.dumps(redacted, separators=(",", ":"), default=str)
+        except TypeError as exc:
+            self._log_serialization_error(rel_path, exc)
+            try:
+                safe_payload = self._sanitize_for_json(redacted)
+                line = json.dumps(safe_payload, separators=(",", ":"), default=str)
+            except Exception as fallback_exc:
+                self._log_serialization_error(rel_path, fallback_exc)
+                return ""
+        except Exception as exc:
+            self._log_serialization_error(rel_path, exc)
+            return ""
+        try:
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+            return str(path)
+        except Exception as exc:
+            self._log_serialization_error(rel_path, exc)
+            return ""
+
     def write_meta(self, meta: Dict[str, Any]) -> str:
         return self.write_json("meta/run_meta.json", meta)

@@ -1,0 +1,37 @@
+# Simple test config for native tool calling
+workspace: ./agent_ws_native_test
+output:
+  json: ./session_native_test.json
+  markdown: ./session_native_test.md
+
+model:
+  id: gpt-4o-mini
+  provider: openai
+
+prompt:
+  system: "You are a helpful assistant. Use tools to complete tasks."
+  mode: per_turn_append
+
+task:
+  description: "List the files in the current directory"
+
+tools:
+  defs_dir: implementations/tools/defs_oc
+  enabled:
+    list: true
+
+dialects:
+  - opencode_patch
+
+limits:
+  max_steps: 3
+  stream_responses: false
+  clean_workspace: true
+
+provider_tools:
+  use_native: true
+  suppress_prompts: true
+
+deployment:
+  mode: development
+  isolation: true

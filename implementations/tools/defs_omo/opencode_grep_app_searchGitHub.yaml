@@ -1,0 +1,103 @@
+id: grep_app_searchGitHub
+name: grep_app_searchGitHub
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: "Find real-world code examples from over a million public GitHub repositories\
+  \ to help answer programming questions.\n\n**IMPORTANT: This tool searches for literal\
+  \ code patterns (like grep), not keywords. Search for actual code that would appear\
+  \ in files:**\n- \u2705 Good: 'useState(', 'import React from', 'async function',\
+  \ '(?s)try {.*await'\n- \u274C Bad: 'react tutorial', 'best practices', 'how to\
+  \ use'\n\n**When to use this tool:**\n- When implementing unfamiliar APIs or libraries\
+  \ and need to see real usage patterns\n- When unsure about correct syntax, parameters,\
+  \ or configuration for a specific library\n- When looking for production-ready examples\
+  \ and best practices for implementation\n- When needing to understand how different\
+  \ libraries or frameworks work together\n\n**Perfect for questions like:**\n- \"\
+  How do developers handle authentication in Next.js apps?\" \u2192 Search: 'getServerSession'\
+  \ with language=['TypeScript', 'TSX']\n- \"What are common React error boundary\
+  \ patterns?\" \u2192 Search: 'ErrorBoundary' with language=['TSX']\n- \"Show me\
+  \ real useEffect cleanup examples\" \u2192 Search: '(?s)useEffect\\(\\(\\) => {.*removeEventListener'\
+  \ with useRegexp=true\n- \"How do developers handle CORS in Flask applications?\"\
+  \ \u2192 Search: 'CORS(' with matchCase=true and language=['Python']\n\nUse regular\
+  \ expressions with useRegexp=true for flexible patterns like '(?s)useState\\(.*loading'\
+  \ to find useState hooks with loading-related variables. Prefix the pattern with\
+  \ '(?s)' to match across multiple lines.\n\nFilter by language, repository, or file\
+  \ path to narrow results."
+parameters:
+- name: query
+  type: string
+  description: The literal code pattern to search for (e.g., 'useState(', 'export
+    function'). Use actual code that would appear in files, not keywords or questions.
+  required: true
+  schema:
+    type: string
+    description: The literal code pattern to search for (e.g., 'useState(', 'export
+      function'). Use actual code that would appear in files, not keywords or questions.
+- name: matchCase
+  type: boolean
+  description: Whether the search should be case sensitive
+  required: false
+  schema:
+    type: boolean
+    description: Whether the search should be case sensitive
+    default: false
+- name: matchWholeWords
+  type: boolean
+  description: Whether to match whole words only
+  required: false
+  schema:
+    type: boolean
+    description: Whether to match whole words only
+    default: false
+- name: useRegexp
+  type: boolean
+  description: Whether to interpret the query as a regular expression
+  required: false
+  schema:
+    type: boolean
+    description: Whether to interpret the query as a regular expression
+    default: false
+- name: repo
+  type: string
+  description: "Filter by repository.\n            Examples: 'facebook/react', 'microsoft/vscode',\
+    \ 'vercel/ai'.\n            Can match partial names, for example 'vercel/' will\
+    \ find repositories in the vercel org."
+  required: false
+  schema:
+    type: string
+    description: "Filter by repository.\n            Examples: 'facebook/react', 'microsoft/vscode',\
+      \ 'vercel/ai'.\n            Can match partial names, for example 'vercel/' will\
+      \ find repositories in the vercel org."
+- name: path
+  type: string
+  description: "Filter by file path.\n            Examples: 'src/components/Button.tsx',\
+    \ 'README.md'.\n            Can match partial paths, for example '/route.ts' will\
+    \ find route.ts files at any level."
+  required: false
+  schema:
+    type: string
+    description: "Filter by file path.\n            Examples: 'src/components/Button.tsx',\
+      \ 'README.md'.\n            Can match partial paths, for example '/route.ts'\
+      \ will find route.ts files at any level."
+- name: language
+  type: array
+  description: "Filter by programming language.\n            Examples: ['TypeScript',\
+    \ 'TSX'], ['JavaScript'], ['Python'], ['Java'], ['C#'], ['Markdown'], ['YAML']"
+  required: false
+  schema:
+    type: array
+    items:
+      type: string
+    description: "Filter by programming language.\n            Examples: ['TypeScript',\
+      \ 'TSX'], ['JavaScript'], ['Python'], ['Java'], ['C#'], ['Markdown'], ['YAML']"

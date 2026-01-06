@@ -1,0 +1,15 @@
+[
+  { "action": "log", "message": "Slash menu PTY harness start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "initial" },
+  { "action": "type", "text": "/", "typingDelayMs": 20 },
+  { "action": "waitFor", "text": "/help", "timeoutMs": 4000 },
+  { "action": "snapshot", "label": "slash-list" },
+  { "action": "type", "text": "mo", "typingDelayMs": 20 },
+  { "action": "waitFor", "text": "/model <id>", "timeoutMs": 4000 },
+  { "action": "snapshot", "label": "slash-filter" },
+  { "action": "press", "key": "tab" },
+  { "action": "waitFor", "text": "> /mode <plan|build|auto>", "timeoutMs": 4000 },
+  { "action": "snapshot", "label": "slash-complete" },
+  { "action": "log", "message": "Slash menu PTY harness complete" }
+]

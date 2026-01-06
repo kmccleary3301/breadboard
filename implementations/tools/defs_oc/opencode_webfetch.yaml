@@ -1,29 +1,52 @@
 id: webfetch
 name: webfetch
-description: Fetch a URL over HTTP(S) (OpenCode-compatible)
+description: "- Fetches content from a specified URL\n- Takes a URL and a prompt as\
+  \ input\n- Fetches the URL content, converts HTML to markdown\n- Returns the model's\
+  \ response about the content\n- Use this tool when you need to retrieve and analyze\
+  \ web content\n\nUsage notes:\n  - IMPORTANT: if another tool is present that offers\
+  \ better web fetching capabilities, is more targeted to the task, or has fewer restrictions,\
+  \ prefer using that tool instead of this one.\n  - The URL must be a fully-formed\
+  \ valid URL\n  - HTTP URLs will be automatically upgraded to HTTPS\n  - The prompt\
+  \ should describe what information you want to extract from the page\n  - This tool\
+  \ is read-only and does not modify any files\n  - Results may be summarized if the\
+  \ content is very large\n"
 type_id: python
 manipulations: []
-syntax_formats_supported: [native_function_calling]
-preferred_formats: [native_function_calling]
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
 parameters:
-  - name: url
-    type: string
+- name: url
+  type: string
+  description: The URL to fetch content from
+  required: true
+  schema:
     description: The URL to fetch content from
-    required: true
-  - name: format
     type: string
+- name: format
+  type: string
+  description: The format to return the content in (text, markdown, or html)
+  required: true
+  schema:
     description: The format to return the content in (text, markdown, or html)
-    required: true
-    enum: ["text", "markdown", "html"]
-  - name: timeout
-    type: number
+    type: string
+    enum:
+    - text
+    - markdown
+    - html
+- name: timeout
+  type: number
+  description: Optional timeout in seconds (max 120)
+  required: false
+  schema:
     description: Optional timeout in seconds (max 120)
-    required: false
+    type: number
 execution:
   blocking: false
 provider_routing:
   openai:
     native_primary: true
     function_call: auto
-
-
+    additional_properties: false
+    strict: false

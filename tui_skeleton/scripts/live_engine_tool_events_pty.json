@@ -1,0 +1,9 @@
+[
+  { "action": "log", "message": "Live engine tool events start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 20000 },
+  { "action": "type", "text": "/files" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "[files]", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "after-files-tool" },
+  { "action": "log", "message": "Live engine tool events end" }
+]

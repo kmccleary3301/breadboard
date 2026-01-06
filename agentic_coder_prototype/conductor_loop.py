@@ -11,6 +11,12 @@ from .provider_runtime import ProviderResult, ProviderRuntimeError
 from .state.completion_detector import CompletionDetector
 from .state.session_state import SessionState
 from .todo.store import TODO_OPEN_STATUSES
+from .surface_snapshot import build_surface_snapshot, record_tool_allowlist_snapshot
+from .surface_manifest import build_surface_manifest
+from .ctrees.compiler import compile_ctree
+from .ctrees.collapse import collapse_ctree
+from .ctrees.runner import TreeRunner
+from .reward import aggregate_reward_v1, validate_reward_v1
 
 
 def run_main_loop(
@@ -36,6 +42,36 @@ def run_main_loop(
 
     completed = False
     step_index = -1
+
+    def poll_control_stop() -> bool:
+        """Non-blocking check for a stop/interrupt signal from the CLI bridge."""
+        queue = session_state.get_provider_metadata("control_queue")
+        if queue is None:
+            return False
+        get_nowait = getattr(queue, "get_nowait", None)
+        if callable(get_nowait):
+            try:
+                item = get_nowait()
+            except Exception:
+                return False
+        else:
+            getter = getattr(queue, "get", None)
+            if not callable(getter):
+                return False
+            try:
+                item = getter(timeout=0)
+            except Exception:
+                return False
+        if item is None:
+            return True
+        if isinstance(item, str):
+            return item.strip().lower() in {"stop", "cancel", "interrupt"}
+        if isinstance(item, dict):
+            if bool(item.get("stop")):
+                return True
+            kind = str(item.get("kind") or item.get("type") or "").strip().lower()
+            return kind in {"stop", "cancel", "interrupt"}
+        return False
 
     def finalize_run(
         exit_kind_value: str,
@@ -83,6 +119,24 @@ def run_main_loop(
             session_state.set_provider_metadata("reward_metrics", reward_metrics_payload)
         except Exception:
             pass
+        reward_v1_payload = None
+        try:
+            reward_cfg = (self.config or {}).get("reward_v1") if isinstance(getattr(self, "config", None), dict) else None
+            reward_v1_payload = aggregate_reward_v1(
+                reward_metrics_payload,
+                completion_summary=summary,
+                config=reward_cfg,
+                context={
+                    "task_type": session_state.get_provider_metadata("task_type") or "general",
+                    "latency_budget_ms": session_state.get_provider_metadata("latency_budget_ms"),
+                    "initial_tpf": session_state.get_provider_metadata("initial_tpf"),
+                    "winrate_vs_baseline": session_state.get_provider_metadata("winrate_vs_baseline"),
+                },
+            )
+            reward_v1_payload["validation"] = validate_reward_v1(reward_v1_payload)
+            session_state.set_provider_metadata("reward_v1", reward_v1_payload)
+        except Exception:
+            reward_v1_payload = None
         todo_snapshot = session_state.todo_snapshot()
         todo_metrics = None
         if isinstance(todo_snapshot, dict) and todo_snapshot.get("todos"):
@@ -129,12 +183,24 @@ def run_main_loop(
                 self.logger_v2.write_json("meta/provider_metrics.json", metrics_snapshot)
             except Exception:
                 pass
+                try:
+                    if reward_metrics_payload.get("turns"):
+                        self.logger_v2.write_json("meta/reward_metrics.json", reward_metrics_payload)
+                except Exception:
+                    pass
+                try:
+                    if reward_v1_payload:
+                        self.logger_v2.write_json("meta/reward_v1.json", reward_v1_payload)
+                except Exception:
+                    pass
             try:
-                if reward_metrics_payload.get("turns"):
-                    self.logger_v2.write_json("meta/reward_metrics.json", reward_metrics_payload)
-            except Exception:
-                pass
-            try:
+                try:
+                    session_state.record_lifecycle_event(
+                        "session_finished",
+                        {"exit_kind": exit_kind_value, "steps_taken": steps_taken},
+                    )
+                except Exception:
+                    pass
                 run_summary_payload = {
                     "exit_kind": exit_kind_value,
                     "steps_taken": steps_taken,
@@ -147,6 +213,8 @@ def run_main_loop(
                     "artifact_issues": summary.get("artifact_issues", []),
                     "workspace_path": getattr(self, "workspace", None),
                 }
+                if reward_v1_payload:
+                    run_summary_payload["reward_v1"] = reward_v1_payload
                 if guardrail_events:
                     run_summary_payload["guardrail_events"] = guardrail_events[-200:]
                 if todo_metrics is not None:
@@ -156,6 +224,63 @@ def run_main_loop(
                 prompt_summary = self._build_prompt_summary()
                 if prompt_summary:
                     run_summary_payload["prompts"] = prompt_summary
+                try:
+                    ctree_store = getattr(session_state, "ctree_store", None)
+                    if ctree_store is not None:
+                        session_state.set_provider_metadata("ctrees_snapshot", ctree_store.snapshot())
+                        session_state.set_provider_metadata(
+                            "ctrees_compiler",
+                            compile_ctree(ctree_store, prompt_summary=prompt_summary),
+                        )
+                        session_state.set_provider_metadata(
+                            "ctrees_collapse",
+                            collapse_ctree(ctree_store),
+                        )
+                        try:
+                            ctree_cfg = (self.config.get("ctrees") or {}) if isinstance(getattr(self, "config", None), dict) else {}
+                            runner_cfg = (ctree_cfg.get("runner") or {}) if isinstance(ctree_cfg, dict) else {}
+                            if runner_cfg.get("enabled"):
+                                branches = runner_cfg.get("branches") or 2
+                                runner = TreeRunner(ctree_store, branches=branches)
+                                session_state.set_provider_metadata("ctrees_runner", runner.build_manifest())
+                        except Exception:
+                            pass
+                        try:
+                            session_state.emit_ctree_snapshot(
+                                {
+                                    "snapshot": session_state.get_provider_metadata("ctrees_snapshot"),
+                                    "compiler": session_state.get_provider_metadata("ctrees_compiler"),
+                                    "collapse": session_state.get_provider_metadata("ctrees_collapse"),
+                                    "runner": session_state.get_provider_metadata("ctrees_runner"),
+                                }
+                            )
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                surface_snapshot = build_surface_snapshot(self, session_state, prompt_summary=None)
+                if surface_snapshot:
+                    run_summary_payload["surface_snapshot"] = surface_snapshot
+                try:
+                    multi_agent_ordering = session_state.get_provider_metadata("multi_agent_ordering")
+                    if isinstance(multi_agent_ordering, str) and multi_agent_ordering:
+                        run_summary_payload["multi_agent_ordering"] = multi_agent_ordering
+                except Exception:
+                    pass
+                required_surfaces = None
+                try:
+                    required_surfaces = (self.config or {}).get("surface_manifest_required")
+                except Exception:
+                    required_surfaces = None
+                surface_manifest = build_surface_manifest(
+                    prompt_summary=prompt_summary,
+                    surface_snapshot=surface_snapshot,
+                    required_surfaces=required_surfaces if isinstance(required_surfaces, list) else None,
+                )
+                if surface_manifest:
+                    run_summary_payload["surface_manifest"] = surface_manifest
+                if getattr(session_state, "lifecycle_events", None):
+                    run_summary_payload["lifecycle_events"] = list(session_state.lifecycle_events)[-500:]
                 if self._turn_diagnostics:
                     run_summary_payload["turn_diagnostics"] = self._turn_diagnostics[-200:]
                 self.logger_v2.write_json("meta/run_summary.json", run_summary_payload)
@@ -222,6 +347,18 @@ def run_main_loop(
         except Exception:
             diff = {"ok": False, "data": {"diff": ""}}
 
+        try:
+            hook_manager = getattr(self, "hook_manager", None)
+            if hook_manager is not None:
+                hook_manager.run(
+                    "completion",
+                    {"summary": dict(summary), "exit_kind": exit_kind_value},
+                    session_state=session_state,
+                    turn=None,
+                )
+        except Exception:
+            pass
+
         session_state.write_snapshot(output_json_path, model, diff)
         if stream_responses:
             reason_label = summary.get("reason", default_reason or "unknown")
@@ -245,6 +382,14 @@ def run_main_loop(
     base_tool_defs = tool_defs
     base_tool_defs = tool_defs
     for step_index in range(max_steps):
+        if getattr(self, "_stop_requested", False) or poll_control_stop():
+            session_state.add_transcript_entry({"stop_requested": True})
+            session_state.completion_summary = {
+                "completed": False,
+                "reason": "stopped_by_user",
+                "method": "interrupt",
+            }
+            return finalize_run("stopped", "stopped_by_user", {"stopped": True})
         turn_index = len(session_state.transcript) + 1
         try:
             current_mode = session_state.get_provider_metadata("current_mode") or self._resolve_active_mode()
@@ -290,8 +435,51 @@ def run_main_loop(
             except Exception:
                 self._active_tool_names = [t.name for t in (effective_tool_defs or []) if getattr(t, "name", None)]
                 turn_allowed_tool_names = list(self._active_tool_names)
+            try:
+                record_tool_allowlist_snapshot(session_state, turn_allowed_tool_names, turn_index=turn_index)
+            except Exception:
+                pass
+            try:
+                hook_manager = getattr(self, "hook_manager", None)
+                if hook_manager is not None:
+                    hook_payload = {
+                        "turn": turn_index,
+                        "tool_allowlist": list(turn_allowed_tool_names),
+                    }
+                    hook_result = hook_manager.run(
+                        "pre_turn",
+                        hook_payload,
+                        session_state=session_state,
+                        turn=turn_index,
+                    )
+                    if getattr(hook_result, "action", "") == "deny":
+                        session_state.completion_summary = {
+                            "completed": False,
+                            "reason": "hook_denied",
+                            "method": "hook",
+                            "hook_reason": getattr(hook_result, "reason", None),
+                        }
+                        return finalize_run(
+                            "policy_violation",
+                            "hook_denied",
+                            {"hook_reason": getattr(hook_result, "reason", None)},
+                        )
+            except Exception:
+                pass
+            try:
+                self._inject_multi_agent_wakeups(session_state, markdown_logger)
+            except Exception:
+                pass
             # Build request and get response
             try:
+                try:
+                    session_state.record_lifecycle_event(
+                        "model_call_started",
+                        {"turn": turn_index, "model": str(model)},
+                        turn=turn_index,
+                    )
+                except Exception:
+                    pass
                 provider_result = self._get_model_response(
                     runtime,
                     client,
@@ -305,7 +493,23 @@ def run_main_loop(
                     local_tools_prompt,
                     client_config,
                 )
+                try:
+                    session_state.record_lifecycle_event(
+                        "model_call_finished",
+                        {"turn": turn_index},
+                        turn=turn_index,
+                    )
+                except Exception:
+                    pass
             except RuntimeError as exc:
+                try:
+                    session_state.record_lifecycle_event(
+                        "model_call_finished",
+                        {"turn": turn_index, "error": str(exc)},
+                        turn=turn_index,
+                    )
+                except Exception:
+                    pass
                 if "Replay session exhausted" in str(exc):
                     completed = True
                     return finalize_run("loop_exit", "replay_complete")
@@ -344,6 +548,14 @@ def run_main_loop(
                 break
 
             for provider_message in provider_result.messages:
+                if getattr(self, "_stop_requested", False) or poll_control_stop():
+                    session_state.add_transcript_entry({"stop_requested": True})
+                    session_state.completion_summary = {
+                        "completed": False,
+                        "reason": "stopped_by_user",
+                        "method": "interrupt",
+                    }
+                    return finalize_run("stopped", "stopped_by_user", {"stopped": True})
                 # Log model response
                 self._log_provider_message(
                     provider_message, session_state, markdown_logger, stream_responses
@@ -410,6 +622,25 @@ def run_main_loop(
                     self.loop_detector,
                     turn_index,
                 )
+            except Exception:
+                pass
+            try:
+                session_state.record_lifecycle_event(
+                    "turn_finished",
+                    {"turn": turn_index, "completed": bool(completed)},
+                    turn=turn_index,
+                )
+            except Exception:
+                pass
+            try:
+                hook_manager = getattr(self, "hook_manager", None)
+                if hook_manager is not None:
+                    hook_manager.run(
+                        "post_turn",
+                        {"turn": turn_index, "completed": bool(completed)},
+                        session_state=session_state,
+                        turn=turn_index,
+                    )
             except Exception:
                 pass
             if completed:

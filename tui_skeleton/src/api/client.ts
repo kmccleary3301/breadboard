@@ -7,6 +7,10 @@ import type {
   SessionSummary,
   SessionFileInfo,
   SessionFileContent,
+  HealthResponse,
+  ModelCatalogResponse,
+  SkillCatalogResponse,
+  CTreeSnapshotResponse,
 } from "./types.js"
 
 export class ApiError extends Error {
@@ -101,6 +105,7 @@ const request = async <T>(path: string, method: JsonMethod, options: RequestOpti
 }
 
 export const ApiClient = {
+  health: () => request<HealthResponse>("/health", "GET"),
   createSession: (payload: SessionCreateRequest) => request<SessionCreateResponse>("/sessions", "POST", { body: payload }),
   listSessions: () => request<SessionSummary[]>("/sessions", "GET"),
   getSession: (sessionId: string) => request<SessionSummary>(`/sessions/${sessionId}`, "GET"),
@@ -120,6 +125,12 @@ export const ApiClient = {
         max_bytes: options?.maxBytes,
       },
     }),
+  getModelCatalog: (configPath: string) =>
+    request<ModelCatalogResponse>("/models", "GET", { query: { config_path: configPath } }),
+  getSkillsCatalog: (sessionId: string) =>
+    request<SkillCatalogResponse>(`/sessions/${sessionId}/skills`, "GET"),
+  getCtreeSnapshot: (sessionId: string) =>
+    request<CTreeSnapshotResponse>(`/sessions/${sessionId}/ctrees`, "GET"),
   downloadArtifact: (sessionId: string, artifact: string) =>
     request<string>(`/sessions/${sessionId}/download`, "GET", { query: { artifact }, responseType: "text" }),
   uploadAttachments: async (sessionId: string, attachments: ReadonlyArray<AttachmentUploadPayload>) => {
@@ -172,4 +183,8 @@ export type {
   ErrorResponse,
   SessionFileInfo,
   SessionFileContent,
+  HealthResponse,
+  ModelCatalogResponse,
+  SkillCatalogResponse,
+  CTreeSnapshotResponse,
 }

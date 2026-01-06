@@ -11,7 +11,7 @@ import { loadScript, runScript } from "./scriptRunner.js"
 import type { ScriptRunResult } from "./scriptRunner.js"
 import { renderStateToText } from "./renderText.js"
 import { forgetSession } from "../../cache/sessionCache.js"
-import type { ModelMenuItem, QueuedAttachment } from "../../repl/types.js"
+import type { ModelMenuItem, QueuedAttachment, SkillSelection } from "../../repl/types.js"
 import { CliProviders } from "../../providers/cliProviders.js"
 import type { PermissionDecision } from "../../repl/types.js"
 import { resolveBreadboardPath, resolveBreadboardWorkspace } from "../../utils/paths.js"
@@ -151,6 +151,18 @@ const runInteractive = async (controller: ReplSessionController) => {
     controller.closeModelMenu()
   }
 
+  const handleSkillsMenuOpen = async () => {
+    await controller.openSkillsMenu()
+  }
+
+  const handleSkillsMenuCancel = () => {
+    controller.closeSkillsMenu()
+  }
+
+  const handleSkillsApply = async (selection: SkillSelection) => {
+    await controller.applySkillsSelection(selection)
+  }
+
   const handleGuardrailToggle = () => {
     controller.toggleGuardrailNotice()
   }
@@ -193,18 +205,30 @@ const runInteractive = async (controller: ReplSessionController) => {
         liveSlots={state.liveSlots}
         status={state.status}
         pendingResponse={state.pendingResponse}
+        disconnected={state.disconnected}
+        mode={state.mode}
+        permissionMode={state.permissionMode}
         hints={state.hints}
         stats={state.stats}
         modelMenu={state.modelMenu}
+        skillsMenu={state.skillsMenu}
         guardrailNotice={state.guardrailNotice}
+        viewClearAt={state.viewClearAt ?? null}
         viewPrefs={state.viewPrefs}
+        todos={state.todos}
+        tasks={state.tasks}
+        ctreeSnapshot={state.ctreeSnapshot ?? null}
         permissionRequest={state.permissionRequest}
+        permissionError={state.permissionError}
         permissionQueueDepth={state.permissionQueueDepth}
         rewindMenu={state.rewindMenu}
         onSubmit={handleSubmit}
         onModelMenuOpen={handleModelMenuOpen}
         onModelSelect={handleModelSelect}
         onModelMenuCancel={handleModelMenuCancel}
+        onSkillsMenuOpen={handleSkillsMenuOpen}
+        onSkillsMenuCancel={handleSkillsMenuCancel}
+        onSkillsApply={handleSkillsApply}
         onGuardrailToggle={handleGuardrailToggle}
         onGuardrailDismiss={handleGuardrailDismiss}
         onPermissionDecision={handlePermissionDecision}
@@ -225,33 +249,51 @@ const runInteractive = async (controller: ReplSessionController) => {
         toolEvents={state.toolEvents}
         liveSlots={state.liveSlots}
         status={state.status}
-      pendingResponse={state.pendingResponse}
-      hints={state.hints}
-      stats={state.stats}
-      modelMenu={state.modelMenu}
-      guardrailNotice={state.guardrailNotice}
-      viewPrefs={state.viewPrefs}
-      permissionRequest={state.permissionRequest}
-      permissionQueueDepth={state.permissionQueueDepth}
-      rewindMenu={state.rewindMenu}
-      onSubmit={handleSubmit}
-      onModelMenuOpen={handleModelMenuOpen}
-      onModelSelect={handleModelSelect}
-      onModelMenuCancel={handleModelMenuCancel}
-      onGuardrailToggle={handleGuardrailToggle}
-      onGuardrailDismiss={handleGuardrailDismiss}
-      onPermissionDecision={handlePermissionDecision}
-      onRewindClose={handleRewindClose}
-      onRewindRestore={handleRewindRestore}
-      onListFiles={handleListFiles}
-      onReadFile={handleReadFile}
+        pendingResponse={state.pendingResponse}
+        disconnected={state.disconnected}
+        mode={state.mode}
+        permissionMode={state.permissionMode}
+        hints={state.hints}
+        stats={state.stats}
+        modelMenu={state.modelMenu}
+        skillsMenu={state.skillsMenu}
+        guardrailNotice={state.guardrailNotice}
+        viewClearAt={state.viewClearAt ?? null}
+        viewPrefs={state.viewPrefs}
+        todos={state.todos}
+        tasks={state.tasks}
+        ctreeSnapshot={state.ctreeSnapshot ?? null}
+        permissionRequest={state.permissionRequest}
+        permissionError={state.permissionError}
+        permissionQueueDepth={state.permissionQueueDepth}
+        rewindMenu={state.rewindMenu}
+        onSubmit={handleSubmit}
+        onModelMenuOpen={handleModelMenuOpen}
+        onModelSelect={handleModelSelect}
+        onModelMenuCancel={handleModelMenuCancel}
+        onSkillsMenuOpen={handleSkillsMenuOpen}
+        onSkillsMenuCancel={handleSkillsMenuCancel}
+        onSkillsApply={handleSkillsApply}
+        onGuardrailToggle={handleGuardrailToggle}
+        onGuardrailDismiss={handleGuardrailDismiss}
+        onPermissionDecision={handlePermissionDecision}
+        onRewindClose={handleRewindClose}
+        onRewindRestore={handleRewindRestore}
+        onListFiles={handleListFiles}
+        onReadFile={handleReadFile}
     />,
     { exitOnCtrlC: false },
   )
 
+  const sigintHandler = async () => {
+    await controller.stop()
+  }
+  process.once("SIGINT", sigintHandler)
+
   try {
     await controller.untilStopped()
   } finally {
+    process.off("SIGINT", sigintHandler)
     unsubscribe()
     ink?.unmount()
   }
@@ -347,78 +389,83 @@ const runScriptMode = async (controller: ReplSessionController, scriptPath: stri
   }
 }
 
-export const replCommand = Command.make(
-  "repl",
-  {
-    config: configOption,
-    workspace: workspaceOption,
-    model: modelOption,
-    remoteStream: remoteStreamOption,
-    permissionMode: permissionOption,
-    script: scriptOption,
-    scriptOutput: scriptOutputOption,
-    scriptSnapshots: scriptSnapshotsOption,
-    scriptColor: scriptColorsOption,
-    scriptFinalOnly: scriptFinalOnlyOption,
-    scriptMaxDurationMs: scriptMaxDurationOption,
-  },
-  ({
-    config,
-    workspace,
-    model,
-    remoteStream,
-    permissionMode,
-    script,
-    scriptOutput,
-    scriptSnapshots,
-    scriptColor,
-    scriptFinalOnly,
-    scriptMaxDurationMs,
-  }) =>
-    Effect.tryPromise(async () => {
-      const workspaceValue = getOptionValue(workspace)
-      const modelValue = getOptionValue(model)
-      const permissionValue = getOptionValue(permissionMode)
-      const remotePreference = Option.match(remoteStream, {
-        onNone: () => undefined,
-        onSome: (value) => value,
-      })
-      const resolvedConfigPath = resolveBreadboardPath(config)
-      const resolvedWorkspace = resolveBreadboardWorkspace(workspaceValue)
+const buildReplCommand = (name: string) =>
+  Command.make(
+    name,
+    {
+      config: configOption,
+      workspace: workspaceOption,
+      model: modelOption,
+      remoteStream: remoteStreamOption,
+      permissionMode: permissionOption,
+      script: scriptOption,
+      scriptOutput: scriptOutputOption,
+      scriptSnapshots: scriptSnapshotsOption,
+      scriptColor: scriptColorsOption,
+      scriptFinalOnly: scriptFinalOnlyOption,
+      scriptMaxDurationMs: scriptMaxDurationOption,
+    },
+    ({
+      config,
+      workspace,
+      model,
+      remoteStream,
+      permissionMode,
+      script,
+      scriptOutput,
+      scriptSnapshots,
+      scriptColor,
+      scriptFinalOnly,
+      scriptMaxDurationMs,
+    }) =>
+      Effect.tryPromise(async () => {
+        const workspaceValue = getOptionValue(workspace)
+        const modelValue = getOptionValue(model)
+        const permissionValue = getOptionValue(permissionMode)
+        const remotePreference = Option.match(remoteStream, {
+          onNone: () => undefined,
+          onSome: (value) => value,
+        })
+        const resolvedConfigPath = resolveBreadboardPath(config)
+        const resolvedWorkspace = resolveBreadboardWorkspace(workspaceValue)
 
-      const controller = new ReplSessionController({
-        configPath: resolvedConfigPath,
-        workspace: resolvedWorkspace,
-        model: modelValue ?? undefined,
-        remotePreference,
-        permissionMode: permissionValue ?? undefined,
-      })
+        const controller = new ReplSessionController({
+          configPath: resolvedConfigPath,
+          workspace: resolvedWorkspace,
+          model: modelValue ?? undefined,
+          remotePreference,
+          permissionMode: permissionValue ?? undefined,
+        })
 
-      await controller.start()
-      const stateDump = await startStateDump(controller)
+        await controller.start()
+        const stateDump = await startStateDump(controller)
 
-      try {
-        const scriptPath = getOptionValue(script)
-        if (scriptPath) {
-          await runScriptMode(controller, scriptPath, {
-            outputPath: getOptionValue(scriptOutput),
-            snapshotEveryStep: getOptionValue(scriptSnapshots) ?? false,
-            useColors: getOptionValue(scriptColor) ?? false,
-            finalOnly: getOptionValue(scriptFinalOnly) ?? false,
-            maxDurationMs: getOptionValue(scriptMaxDurationMs) ?? undefined,
-          })
-          return
+        try {
+          const scriptPath = getOptionValue(script)
+          if (scriptPath) {
+            await runScriptMode(controller, scriptPath, {
+              outputPath: getOptionValue(scriptOutput),
+              snapshotEveryStep: getOptionValue(scriptSnapshots) ?? false,
+              useColors: getOptionValue(scriptColor) ?? false,
+              finalOnly: getOptionValue(scriptFinalOnly) ?? false,
+              maxDurationMs: getOptionValue(scriptMaxDurationMs) ?? undefined,
+            })
+            return
+          }
+
+          await runInteractive(controller)
+          if (process.env.BREADBOARD_PRINT_FINAL_STATE === "1") {
+            const finalState = controller.getState()
+            console.log(renderStateToText(finalState, { colors: false }))
+          }
+          await controller.stop()
+        } finally {
+          stateDump.writeFinal()
+          await stateDump.stop().catch(() => undefined)
         }
+      }),
+  )
 
-        await runInteractive(controller)
-        if (process.env.BREADBOARD_PRINT_FINAL_STATE === "1") {
-          const finalState = controller.getState()
-          console.log(renderStateToText(finalState, { colors: false }))
-        }
-        await controller.stop()
-      } finally {
-        stateDump.writeFinal()
-        await stateDump.stop().catch(() => undefined)
-      }
-    }),
-)
+export const createReplCommand = (name: string) => buildReplCommand(name)
+
+export const replCommand = createReplCommand("repl")

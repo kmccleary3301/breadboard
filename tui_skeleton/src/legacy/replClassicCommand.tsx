@@ -82,7 +82,7 @@ const createSessionId = (): string => randomUUID()
 const createEntryId = (): string => randomUUID()
 
 const addConversationLine = (conversation: ConversationEntry[], speaker: ConversationEntry["speaker"], text: string) => {
-  conversation.push({ id: createEntryId(), speaker, text, phase: "final" })
+  conversation.push({ id: createEntryId(), speaker, text, phase: "final", createdAt: Date.now() })
 }
 
 const addToolLine = (toolEvents: string[], text: string) => {

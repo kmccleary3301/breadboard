@@ -42,7 +42,8 @@ export const resetPasteTracker = (tracker: PasteTracker): void => {
 }
 
 export const shouldTriggerClipboardPaste = (key: KeyModifiers, normalizedInput: string): boolean =>
-  normalizedInput === "v" && (key.ctrl || key.meta)
+  (normalizedInput === "v" && (key.ctrl || key.meta)) ||
+  normalizedInput === "\u0016"
 
 const isPrintable = (char: string) => char >= " "
 const BURST_INTERVAL_MS = 12
@@ -93,11 +94,20 @@ export const processInputChunk = (
   const handleChars = (text: string): boolean => {
     if (!text) return true
     let handledAll = true
-    for (const char of text) {
+    const trimmed = text.length > 0 ? text.slice(0, -1) : ""
+    const hasEmbeddedNewline = trimmed.includes("\n") || trimmed.includes("\r")
+    const trailingNewlineSubmit =
+      !hasEmbeddedNewline && (text.endsWith("\n") || text.endsWith("\r"))
+    for (let index = 0; index < text.length; index += 1) {
+      const char = text[index] ?? ""
       const lowerChar = char.toLowerCase()
       if (char === "\r" || char === "\n") {
         flushBurst(tracker, callbacks)
-        callbacks.submit()
+        if (trailingNewlineSubmit && index === text.length - 1) {
+          callbacks.submit()
+        } else {
+          callbacks.insertText("\n")
+        }
         continue
       }
       if (char === "\u0017" || (key.ctrl && lowerChar === "w" && char.length === 1)) {

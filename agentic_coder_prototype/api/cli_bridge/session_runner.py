@@ -3,14 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import shutil
+import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Sequence
+from typing import Any, Callable, Dict, Optional, Sequence, List
 
 from agentic_coder_prototype.agent import AgenticCoder, create_agent
+from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from agentic_coder_prototype.checkpointing.checkpoint_manager import CheckpointManager
+from agentic_coder_prototype.skills.registry import (
+    load_skills,
+    build_skill_catalog,
+    normalize_skill_selection,
+    apply_skill_selection,
+)
+from agentic_coder_prototype.plugins.loader import discover_plugin_manifests
 
 from .events import EventType, SessionEvent
 from .models import SessionCreateRequest, SessionStatus
@@ -48,6 +60,11 @@ class SessionRunner:
         self._workspace_path: Optional[Path] = None
         self._attachment_store: Dict[str, Dict[str, Any]] = {}
         self._permission_queue: Any = None
+        self._control_queue: Any = None
+        self._checkpoint_manager: Optional[CheckpointManager] = None
+        self._skills_catalog_cache: Optional[Dict[str, Any]] = None
+        self._ctree_snapshot_cache: Optional[Dict[str, Any]] = None
+        self._ctree_last_node: Optional[Dict[str, Any]] = None
 
         # Live overrides updated via commands
         initial_metadata = dict(request.metadata or {})
@@ -97,6 +114,168 @@ class SessionRunner:
 
         payload = payload or {}
         match command:
+            case "list_checkpoints":
+                manager = self._checkpoint_manager
+                if manager is None:
+                    workspace_dir = self.get_workspace_dir()
+                    if not workspace_dir:
+                        raise RuntimeError("workspace not ready")
+                    manager = CheckpointManager(workspace_dir)
+                    self._checkpoint_manager = manager
+                checkpoints = [cp.as_payload() for cp in manager.list_checkpoints()]
+                await self.publish_event_async(EventType.CHECKPOINT_LIST, {"checkpoints": checkpoints})
+                return {"status": "ok", "count": len(checkpoints)}
+            case "restore_checkpoint":
+                checkpoint_id = payload.get("checkpoint_id") or payload.get("checkpointId") or payload.get("id")
+                if not isinstance(checkpoint_id, str) or not checkpoint_id.strip():
+                    raise ValueError("restore_checkpoint requires non-empty 'checkpoint_id'")
+                mode = str(payload.get("mode") or "code").strip().lower()
+                if mode not in {"code", "conversation", "both"}:
+                    raise ValueError("restore_checkpoint 'mode' must be one of: code, conversation, both")
+                manager = self._checkpoint_manager
+                if manager is None:
+                    workspace_dir = self.get_workspace_dir()
+                    if not workspace_dir:
+                        raise RuntimeError("workspace not ready")
+                    manager = CheckpointManager(workspace_dir)
+                    self._checkpoint_manager = manager
+                prune = True
+                if mode == "conversation":
+                    # Best-effort only for now; code restore is the P0 deterministic requirement.
+                    prune = True
+                if mode in {"code", "both"}:
+                    manager.restore_checkpoint(checkpoint_id.strip(), prune=prune)
+                if mode in {"conversation", "both"}:
+                    try:
+                        snapshot = manager.load_snapshot(checkpoint_id.strip())
+                    except Exception:
+                        snapshot = None
+                    if snapshot:
+                        workspace_dir = self.get_workspace_dir()
+                        if workspace_dir:
+                            active_path = workspace_dir / ".breadboard" / "checkpoints" / "active_snapshot.json"
+                            try:
+                                active_path.parent.mkdir(parents=True, exist_ok=True)
+                                active_path.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+                                self.session.metadata["conversation_snapshot"] = {
+                                    "checkpoint_id": checkpoint_id.strip(),
+                                    "path": str(active_path),
+                                }
+                                self._persist_metadata_snapshot_threadsafe()
+                            except Exception:
+                                pass
+                await self.publish_event_async(
+                    EventType.CHECKPOINT_RESTORED,
+                    {"checkpoint_id": checkpoint_id.strip(), "mode": mode, "prune": prune},
+                )
+                checkpoints = [cp.as_payload() for cp in manager.list_checkpoints()]
+                await self.publish_event_async(EventType.CHECKPOINT_LIST, {"checkpoints": checkpoints})
+                return {"status": "ok", "checkpoint_id": checkpoint_id.strip(), "mode": mode, "prune": prune}
+            case "permission_decision":
+                request_id = (
+                    payload.get("request_id")
+                    or payload.get("requestId")
+                    or payload.get("permission_id")
+                    or payload.get("permissionId")
+                    or payload.get("id")
+                )
+                decision = payload.get("decision") or payload.get("response")
+                rule = payload.get("rule")
+                scope = payload.get("scope")
+                note = payload.get("note")
+                if not isinstance(request_id, str) or not request_id.strip():
+                    raise ValueError("permission_decision requires non-empty 'request_id'")
+                if not isinstance(decision, str) or not decision.strip():
+                    raise ValueError("permission_decision requires non-empty 'decision'")
+                normalized = decision.strip().lower()
+                if normalized in {"allow-once", "allow_once"}:
+                    response_value = "once"
+                elif normalized in {"allow-always", "allow_always"}:
+                    response_value = "always"
+                elif normalized in {"deny-once", "deny_once"}:
+                    response_value = "reject"
+                elif normalized in {"deny-always", "deny_always"}:
+                    response_value = "reject"
+                elif normalized in {"deny-stop", "deny_stop"}:
+                    response_value = "reject"
+                else:
+                    response_value = normalized
+                # Permission broker accepts a dict item with request_id + response/decision.
+                # We use the simplest uniform response (applies to all items in a batch).
+                permission_payload = {
+                    "request_id": request_id.strip(),
+                    "response": response_value,
+                }
+                if rule:
+                    try:
+                        rules = self.session.metadata.get("permission_rules")
+                        if not isinstance(rules, list):
+                            rules = []
+                        rules.append(
+                            {
+                                "request_id": request_id.strip(),
+                                "decision": normalized,
+                                "rule": rule,
+                                "scope": scope,
+                                "note": note,
+                            }
+                        )
+                        self.session.metadata["permission_rules"] = rules
+                        self._persist_metadata_snapshot_threadsafe()
+                    except Exception:
+                        pass
+                detail = await self.handle_command("respond_permission", permission_payload)
+                if normalized in {"deny-stop", "deny_stop"} or bool(payload.get("stop")):
+                    await self.handle_command("stop", {})
+                return {"status": "ok", "delivered": detail}
+            case "set_skills":
+                selection_payload = dict(payload or {})
+                if "selected" in selection_payload and "allowlist" not in selection_payload:
+                    selection_payload["allowlist"] = selection_payload.get("selected")
+                config = dict(getattr(self._agent, "config", {}) or {}) if self._agent else {}
+                selection = normalize_skill_selection(config, selection_payload)
+                self.session.metadata["skills_selection"] = selection
+                if self._agent:
+                    try:
+                        overrides = {
+                            "skills.allowlist": selection.get("allowlist") or [],
+                            "skills.blocklist": selection.get("blocklist") or [],
+                        }
+                        self._agent.apply_runtime_overrides(overrides)
+                    except Exception:
+                        pass
+                self._persist_metadata_snapshot_threadsafe()
+                self._skills_catalog_cache = None
+                catalog_payload = self.get_skill_catalog()
+                await self.publish_event_async(EventType.SKILLS_SELECTION, {"selection": selection})
+                await self.publish_event_async(EventType.SKILLS_CATALOG, catalog_payload)
+                return {"status": "ok", "selection": selection, "catalog": catalog_payload.get("catalog")}
+            case "stop":
+                queue = getattr(self, "_control_queue", None)
+                if queue is not None:
+                    try:
+                        put_nowait = getattr(queue, "put_nowait", None)
+                        if callable(put_nowait):
+                            put_nowait({"kind": "stop"})
+                        else:
+                            queue.put({"kind": "stop"})
+                    except Exception:
+                        pass
+                else:
+                    # Fallback: request the active conductor loop stop if it is local/in-process.
+                    agent = getattr(self._agent, "agent", None)
+                    if agent is not None:
+                        try:
+                            req = getattr(agent, "request_stop", None)
+                            remote = getattr(req, "remote", None) if req is not None else None
+                            if callable(remote):
+                                remote()
+                            elif callable(req):
+                                req()
+                        except Exception:
+                            pass
+                await self.publish_event_async(EventType.TASK_EVENT, {"kind": "stop_requested"})
+                return {"status": "ok", "stopping": True}
             case "set_model":
                 model_value = payload.get("model")
                 if not isinstance(model_value, str) or not model_value.strip():
@@ -113,6 +292,9 @@ class SessionRunner:
                 self.session.metadata["mode"] = self._mode
                 return {"status": "ok", "mode": self._mode}
             case "run_tests":
+                if self._debug_permissions_enabled():
+                    event_payload = await self._emit_debug_permission_request(payload)
+                    return {"status": "ok", "debug": True, "request_id": event_payload.get("request_id")}
                 raise NotImplementedError("run_tests not yet implemented")
             case "apply_diff":
                 raise NotImplementedError("apply_diff not yet implemented")
@@ -133,6 +315,16 @@ class SessionRunner:
 
                 queue = getattr(self, "_permission_queue", None)
                 if queue is None:
+                    if self._debug_permissions_enabled():
+                        response_payload: Dict[str, Any] = {"request_id": request_id.strip()}
+                        if isinstance(responses, dict):
+                            response_payload["responses"] = dict(responses)
+                        elif isinstance(response, str) and response.strip():
+                            response_payload["response"] = response.strip()
+                            response_payload["decision"] = response.strip()
+                        self._update_pending_permissions("permission_response", response_payload, source="session")
+                        await self.publish_event_async(EventType.PERMISSION_RESPONSE, response_payload)
+                        return {"status": "ok", "request_id": request_id.strip(), "delivered": response_payload, "debug": True}
                     raise RuntimeError("no permission request is active")
 
                 if isinstance(items, dict) and not isinstance(responses, dict):
@@ -159,6 +351,23 @@ class SessionRunner:
     async def _run(self) -> None:
         await self.registry.update_status(self.session.session_id, SessionStatus.RUNNING)
         try:
+            # Safety: never auto-wipe an existing workspace when running interactive sessions
+            # via the CLI bridge. The engine historically treated workspaces as disposable
+            # sandboxes; for a Claude Code-style experience we must preserve the user's
+            # working directory unless explicitly overridden by the caller.
+            os.environ.setdefault("PRESERVE_SEEDED_WORKSPACE", "1")
+            permission_mode = (self.request.permission_mode or self.session.metadata.get("permission_mode") or "").strip().lower()
+            if permission_mode in {"prompt", "ask", "interactive"}:
+                overrides = dict(self.request.overrides or {})
+                overrides.setdefault("permissions.options.mode", "prompt")
+                overrides.setdefault("permissions.options.default_response", "reject")
+                overrides.setdefault("permissions.edit.default", "ask")
+                overrides.setdefault("permissions.shell.default", "ask")
+                overrides.setdefault("permissions.webfetch.default", "ask")
+                self.request.overrides = overrides
+                if not self.request.permission_mode:
+                    self.request.permission_mode = permission_mode
+                self.session.metadata["permission_mode"] = permission_mode
             self._agent = self.agent_factory(
                 self.request.config_path,
                 self.request.workspace,
@@ -168,6 +377,20 @@ class SessionRunner:
             workspace_dir = Path(self._agent.workspace_dir).resolve()
             workspace_dir.mkdir(parents=True, exist_ok=True)
             self._workspace_path = workspace_dir
+            try:
+                self._checkpoint_manager = CheckpointManager(workspace_dir)
+                self._checkpoint_manager.create_checkpoint("Session start")
+            except Exception:
+                # Best-effort: checkpointing should not block starting a session.
+                self._checkpoint_manager = None
+            try:
+                catalog_payload = self.get_skill_catalog()
+                await self.publish_event_async(EventType.SKILLS_CATALOG, catalog_payload)
+                selection = (catalog_payload.get("selection") or {}) if isinstance(catalog_payload, dict) else {}
+                if selection:
+                    await self.publish_event_async(EventType.SKILLS_SELECTION, {"selection": selection})
+            except Exception:
+                pass
 
             initial_task = (self.request.task or "").strip()
             if initial_task:
@@ -203,15 +426,15 @@ class SessionRunner:
         except Exception as exc:  # noqa: BLE001
             logger.exception("Session %s failed", self.session.session_id)
             await self.registry.update_status(self.session.session_id, SessionStatus.FAILED)
-            self.publish_event(EventType.ERROR, {"message": str(exc)})
+            await self.publish_event_async(EventType.ERROR, {"message": str(exc)})
         finally:
             self._closed = True
-            self._enqueue_termination()
+            await self._enqueue_termination()
 
-    def _enqueue_termination(self) -> None:
+    async def _enqueue_termination(self) -> None:
         queue = self.session.event_queue
         try:
-            queue.put_nowait(None)
+            await queue.put(None)
         except asyncio.QueueFull:  # pragma: no cover - defensive
             logger.warning("Event queue full while terminating session %s", self.session.session_id)
 
@@ -235,6 +458,37 @@ class SessionRunner:
             )
         except Exception:
             pass
+
+    def _debug_permissions_enabled(self) -> bool:
+        try:
+            meta = self.session.metadata or {}
+            if isinstance(meta, dict) and meta.get("debug_permissions"):
+                return True
+        except Exception:
+            pass
+        return bool(os.environ.get("BREADBOARD_DEBUG_PERMISSIONS"))
+
+    async def _emit_debug_permission_request(self, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        data = dict(payload or {})
+        request_id = data.get("request_id") or f"debug-perm-{uuid.uuid4().hex[:8]}"
+        suite = data.get("suite") if isinstance(data.get("suite"), str) else None
+        summary = f"Tool requests permission to run bash{f' ({suite})' if suite else ''}."
+        event_payload = {
+            "request_id": str(request_id),
+            "tool": "bash",
+            "kind": "run",
+            "rewindable": True,
+            "summary": summary,
+            "default_scope": "project",
+            "metadata": {
+                "function": "run_shell",
+                "command": "pwd",
+                "kind": "run",
+            },
+        }
+        self._update_pending_permissions("permission_request", event_payload, source="session")
+        await self.publish_event_async(EventType.PERMISSION_REQUEST, event_payload)
+        return event_payload
 
     def _pending_permission_key(self, entry: Dict[str, Any]) -> tuple[str, str, str]:
         source = str(entry.get("source") or "session")
@@ -317,10 +571,27 @@ class SessionRunner:
         is_local_agent = bool(getattr(self._agent, "_local_mode", False))
         event_queue = None
         permission_queue = None
+        control_queue = None
         queue_stop = None
         queue_thread = None
 
         def handle_runtime_event(event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> None:
+            if event_type == "ctree_node":
+                try:
+                    node = (payload or {}).get("node")
+                    if isinstance(node, dict):
+                        self._ctree_last_node = dict(node)
+                    snapshot = (payload or {}).get("snapshot")
+                    if isinstance(snapshot, dict):
+                        self._ctree_snapshot_cache = dict(snapshot)
+                except Exception:
+                    pass
+            elif event_type == "ctree_snapshot":
+                try:
+                    if isinstance(payload, dict):
+                        self._ctree_snapshot_cache = dict(payload)
+                except Exception:
+                    pass
             try:
                 self._rehydrate_pending_permissions(event_type, dict(payload or {}))
             except Exception:
@@ -392,7 +663,29 @@ class SessionRunner:
         else:
             self._permission_queue = None
 
+        if is_local_agent:
+            import queue as pyqueue
+
+            control_queue = pyqueue.Queue()
+        else:
+            try:
+                from ray.util.queue import Queue as RayQueue
+            except ImportError:  # pragma: no cover
+                control_queue = None
+            else:
+                control_queue = RayQueue()
+        self._control_queue = control_queue
+
+        start_time = time.time()
         try:
+            task_context = {}
+            try:
+                if isinstance(self.session.metadata, dict):
+                    task_context = dict(self.session.metadata.get("task_context") or {})
+                    if "task_type" in self.session.metadata and "task_type" not in task_context:
+                        task_context["task_type"] = self.session.metadata.get("task_type")
+            except Exception:
+                task_context = {}
             result = self._agent.run_task(  # type: ignore[call-arg]
                 task_text,
                 max_iterations=self.request.max_steps,
@@ -400,9 +693,12 @@ class SessionRunner:
                 event_emitter=handle_runtime_event if is_local_agent else None,
                 event_queue=event_queue,
                 permission_queue=permission_queue,
+                control_queue=control_queue,
+                context=task_context if task_context else None,
             )
         finally:
             self._permission_queue = None
+            self._control_queue = None
             if queue_stop:
                 queue_stop.set()
                 if event_queue is not None:
@@ -415,6 +711,7 @@ class SessionRunner:
             if event_queue is not None:
                 self._drain_event_queue(event_queue, handle_runtime_event)
 
+        elapsed_ms = int((time.time() - start_time) * 1000)
         completion = result.get("completion_summary") or {}
         reward = result.get("reward_metrics_payload") or {}
         messages = result.get("messages")
@@ -427,10 +724,16 @@ class SessionRunner:
                         {"text": text, "message": entry, "source": "fallback"},
                     )
                     break
-        self.publish_event(EventType.COMPLETION, {"summary": completion, "mode": self._mode})
+        logging_dir = result.get("logging_dir") or result.get("run_dir")
+        usage_payload = self._extract_usage_metrics(result, logging_dir, elapsed_ms=elapsed_ms)
+        completion_payload: Dict[str, Any] = {"summary": completion, "mode": self._mode}
+        if usage_payload:
+            completion_payload["usage"] = usage_payload
+        self.publish_event(EventType.COMPLETION, completion_payload)
         if reward:
             self.publish_event(EventType.REWARD_UPDATE, {"summary": reward})
-        logging_dir = result.get("logging_dir") or result.get("run_dir")
+        if logging_dir:
+            self.publish_event(EventType.LOG_LINK, {"url": f"file://{logging_dir}"})
         logger.info(
             "session(%s) task complete events=%s logging_dir=%s",
             self.session.session_id,
@@ -444,6 +747,8 @@ class SessionRunner:
             "reason": completion.get("reason") or completion.get("exit_kind"),
             "logging_dir": logging_dir,
         }
+        if usage_payload:
+            finish_payload["usage"] = usage_payload
         self.publish_event(EventType.RUN_FINISHED, finish_payload)
         return {
             "completion_summary": completion,
@@ -451,7 +756,24 @@ class SessionRunner:
             "logging_dir": logging_dir,
         }
 
+    async def publish_event_async(
+        self,
+        event_type: EventType,
+        payload: Dict[str, Any],
+        *,
+        turn: Optional[int] = None,
+    ) -> None:
+        self._touch_last_activity()
+        event = SessionEvent(
+            type=event_type,
+            session_id=self.session.session_id,
+            payload=payload,
+            turn=turn,
+        )
+        await self._enqueue_event_async(event)
+
     def publish_event(self, event_type: EventType, payload: Dict[str, Any], *, turn: Optional[int] = None) -> None:
+        self._touch_last_activity()
         event = SessionEvent(
             type=event_type,
             session_id=self.session.session_id,
@@ -464,22 +786,29 @@ class SessionRunner:
         except RuntimeError:
             running_loop = None
 
-        if running_loop and loop and running_loop is loop:
-            self._enqueue_event(event)
-            return
-
         if loop and loop.is_running():
-            loop.call_soon_threadsafe(self._enqueue_event, event)
+            if running_loop and running_loop is loop:
+                loop.create_task(self._enqueue_event_async(event))
+                return
+            future = asyncio.run_coroutine_threadsafe(self._enqueue_event_async(event), loop)
+            future.result()
             return
 
-        self._enqueue_event(event)
-        self._published_events += 1
-
-    def _enqueue_event(self, event: SessionEvent) -> None:
         try:
             self.session.event_queue.put_nowait(event)
+            self._published_events += 1
         except asyncio.QueueFull:  # pragma: no cover - defensive
             logger.warning("Event queue full for session %s, dropping event", self.session.session_id)
+
+    async def _enqueue_event_async(self, event: SessionEvent) -> None:
+        await self.session.event_queue.put(event)
+        self._published_events += 1
+
+    def _touch_last_activity(self) -> None:
+        try:
+            self.session.last_activity_at = datetime.now(timezone.utc)
+        except Exception:
+            pass
 
     def _start_queue_pump(
         self,
@@ -574,6 +903,285 @@ class SessionRunner:
             helper_lines.append(f"[Attachment {index}: {info.get('filename')} -> {rel_path or 'unknown'}]")
         return "\n".join(helper_lines)
 
+    def _load_run_summary(self, logging_dir: Optional[str]) -> Optional[Dict[str, Any]]:
+        if not logging_dir:
+            return None
+        try:
+            run_path = Path(logging_dir) / "meta" / "run_summary.json"
+            if not run_path.exists():
+                return None
+            return json.loads(run_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+    def _normalize_usage_payload(self, usage: Dict[str, Any], *, latency_ms: Optional[int] = None) -> Dict[str, Any]:
+        if not isinstance(usage, dict):
+            return {}
+
+        def _to_int(value: Any) -> int:
+            try:
+                return int(value)
+            except Exception:
+                return 0
+
+        def _to_float(value: Any) -> Optional[float]:
+            try:
+                return float(value)
+            except Exception:
+                return None
+
+        prompt_tokens = _to_int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+        completion_tokens = _to_int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+        total_tokens = _to_int(usage.get("total_tokens") or (prompt_tokens + completion_tokens))
+        cache_read = _to_int(usage.get("cache_read_tokens") or usage.get("cache_read") or 0)
+        cache_write = _to_int(usage.get("cache_write_tokens") or usage.get("cache_write") or 0)
+        cost_usd = _to_float(usage.get("cost_usd") or usage.get("cost") or usage.get("total_cost"))
+        latency_ms_val = _to_int(usage.get("latency_ms") or 0)
+        if not latency_ms_val:
+            latency_s = _to_float(usage.get("latency_s") or usage.get("latency_seconds"))
+            if latency_s is not None:
+                latency_ms_val = int(latency_s * 1000)
+        if not latency_ms_val and latency_ms is not None:
+            latency_ms_val = int(latency_ms)
+
+        normalized: Dict[str, Any] = {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+        }
+        if cache_read:
+            normalized["cache_read_tokens"] = cache_read
+        if cache_write:
+            normalized["cache_write_tokens"] = cache_write
+        if cost_usd is not None:
+            normalized["cost_usd"] = cost_usd
+        if latency_ms_val:
+            normalized["latency_ms"] = latency_ms_val
+        return normalized
+
+    def _usage_from_run_summary(self, summary: Dict[str, Any]) -> Dict[str, Any]:
+        diagnostics = summary.get("turn_diagnostics")
+        if not isinstance(diagnostics, list):
+            return {}
+
+        totals: Dict[str, Any] = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+        }
+        latency_total = 0.0
+        cost_total = 0.0
+        saw_usage = False
+
+        for entry in diagnostics:
+            if not isinstance(entry, dict):
+                continue
+            usage = entry.get("usage")
+            if isinstance(usage, dict):
+                saw_usage = True
+                totals["prompt_tokens"] += int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+                totals["completion_tokens"] += int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+                total_tokens = usage.get("total_tokens")
+                if total_tokens is None:
+                    total_tokens = (usage.get("prompt_tokens") or usage.get("input_tokens") or 0) + (
+                        usage.get("completion_tokens") or usage.get("output_tokens") or 0
+                    )
+                totals["total_tokens"] += int(total_tokens or 0)
+                totals["cache_read_tokens"] += int(usage.get("cache_read_tokens") or usage.get("cache_read") or 0)
+                totals["cache_write_tokens"] += int(usage.get("cache_write_tokens") or usage.get("cache_write") or 0)
+                cost_value = usage.get("cost_usd") or usage.get("cost")
+                if isinstance(cost_value, (int, float)):
+                    cost_total += float(cost_value)
+            latency_value = entry.get("latency_seconds") or entry.get("latency_s")
+            if isinstance(latency_value, (int, float)):
+                latency_total += float(latency_value)
+
+        if not saw_usage:
+            return {}
+        totals["total_tokens"] = totals["total_tokens"] or (totals["prompt_tokens"] + totals["completion_tokens"])
+        normalized = self._normalize_usage_payload(totals)
+        if latency_total:
+            normalized["latency_ms"] = int(latency_total * 1000)
+        if cost_total:
+            normalized["cost_usd"] = cost_total
+        return normalized
+
+    def _extract_usage_metrics(
+        self,
+        result: Dict[str, Any],
+        logging_dir: Optional[str],
+        *,
+        elapsed_ms: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        for key in ("usage", "usage_summary", "usage_metrics"):
+            usage = result.get(key)
+            if isinstance(usage, dict):
+                normalized = self._normalize_usage_payload(usage, latency_ms=elapsed_ms)
+                if normalized:
+                    return normalized
+        summary = self._load_run_summary(logging_dir)
+        if summary:
+            normalized = self._usage_from_run_summary(summary)
+            if normalized:
+                if elapsed_ms and not normalized.get("latency_ms"):
+                    normalized["latency_ms"] = int(elapsed_ms)
+                return normalized
+        if elapsed_ms:
+            return {"latency_ms": int(elapsed_ms)}
+        return {}
+
+    def _normalize_tool_call_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        call = payload.get("call") or payload.get("tool_call") or payload.get("tool")
+        if not isinstance(call, dict):
+            return payload
+        call_id = call.get("id") or call.get("call_id") or call.get("tool_call_id")
+        function = call.get("function") if isinstance(call.get("function"), dict) else None
+        tool_name = call.get("name") or (function or {}).get("name")
+        arguments = call.get("arguments")
+        if arguments is None and isinstance(function, dict):
+            arguments = function.get("arguments")
+        action = None
+        if isinstance(arguments, dict):
+            action = arguments.get("action") or arguments.get("command") or arguments.get("operation")
+        diff_preview = call.get("diff_preview") if isinstance(call, dict) else None
+        progress = call.get("progress") if isinstance(call, dict) else None
+        normalized = dict(payload)
+        normalized.update(
+            {
+                "call": call,
+                "call_id": call_id,
+                "tool": tool_name,
+                "action": action,
+            }
+        )
+        if diff_preview is not None and "diff_preview" not in normalized:
+            normalized["diff_preview"] = diff_preview
+        if progress is not None and "progress" not in normalized:
+            normalized["progress"] = progress
+        return normalized
+
+    def _normalize_tool_result_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = dict(payload)
+        message = normalized.get("message")
+        if isinstance(message, dict):
+            call_id = (
+                normalized.get("call_id")
+                or message.get("tool_call_id")
+                or message.get("tool_call_id")
+                or message.get("call_id")
+            )
+            content = message.get("content")
+            normalized.setdefault("call_id", call_id)
+            normalized.setdefault("result", content)
+            normalized.setdefault("status", message.get("status") or ("error" if message.get("error") else "ok"))
+            normalized.setdefault("error", bool(message.get("error")))
+        if "result" not in normalized and "content" in normalized:
+            normalized["result"] = normalized.get("content")
+        return normalized
+
+    def _normalize_permission_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = dict(payload or {})
+        request_id = normalized.get("request_id") or normalized.get("id")
+        items = normalized.get("items")
+        first_item = items[0] if isinstance(items, list) and items else {}
+        category = normalized.get("category") or first_item.get("category")
+        pattern = normalized.get("pattern") or first_item.get("pattern")
+        metadata = normalized.get("metadata") or first_item.get("metadata") or {}
+        tool = metadata.get("function") or category
+        summary = metadata.get("summary") or metadata.get("command") or metadata.get("path") or pattern or category
+        kind = metadata.get("kind") or (str(category).title() if category else "Permission")
+        normalized.setdefault("request_id", request_id)
+        normalized.setdefault("tool", tool)
+        normalized.setdefault("kind", kind)
+        normalized.setdefault("summary", summary)
+        if "diff" in metadata and "diff" not in normalized:
+            normalized["diff"] = metadata.get("diff")
+        if "rule_suggestion" in metadata and "rule_suggestion" not in normalized:
+            normalized["rule_suggestion"] = metadata.get("rule_suggestion")
+        if "approval_pattern" in metadata and "rule_suggestion" not in normalized:
+            normalized["rule_suggestion"] = metadata.get("approval_pattern")
+        if "default_scope" not in normalized:
+            normalized["default_scope"] = metadata.get("default_scope") or "project"
+        if "rewindable" not in normalized:
+            normalized["rewindable"] = bool(metadata.get("rewindable")) if isinstance(metadata, dict) else False
+        return normalized
+
+    def _normalize_permission_response(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = dict(payload or {})
+        request_id = normalized.get("request_id") or normalized.get("id")
+        decision = normalized.get("decision") or normalized.get("response")
+        responses = normalized.get("responses")
+        if decision is None and isinstance(responses, dict):
+            if "default" in responses:
+                decision = responses.get("default")
+            elif "items" in responses and isinstance(responses.get("items"), dict):
+                items = responses.get("items") or {}
+                if items:
+                    unique = {str(v) for v in items.values() if v is not None}
+                    if len(unique) == 1:
+                        decision = next(iter(unique))
+        normalized.setdefault("request_id", request_id)
+        if decision is not None:
+            normalized.setdefault("decision", decision)
+        return normalized
+
+    def _normalize_task_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = dict(payload or {})
+        if "taskId" in normalized and "task_id" not in normalized:
+            normalized["task_id"] = normalized.get("taskId")
+        if "subagentType" in normalized and "subagent_type" not in normalized:
+            normalized["subagent_type"] = normalized.get("subagentType")
+        if "artifactPath" in normalized and "artifact_path" not in normalized:
+            normalized["artifact_path"] = normalized.get("artifactPath")
+        artifact = normalized.get("artifact")
+        if "artifact_path" not in normalized and isinstance(artifact, dict):
+            path = artifact.get("path") or artifact.get("artifact_path")
+            if path:
+                normalized["artifact_path"] = path
+        if "description" not in normalized:
+            for key in ("description", "title", "summary"):
+                value = normalized.get(key)
+                if value:
+                    normalized["description"] = str(value)
+                    break
+        if "status" not in normalized:
+            kind = str(normalized.get("kind") or "").lower()
+            status_map = {
+                "subagent_spawned": "running",
+                "subagent_started": "running",
+                "subagent_completed": "completed",
+                "subagent_failed": "failed",
+            }
+            status = status_map.get(kind)
+            if status:
+                normalized["status"] = status
+        if "timestamp" not in normalized:
+            for key in ("timestamp", "created_at", "completed_at", "ts"):
+                value = normalized.get(key)
+                if isinstance(value, (int, float)):
+                    normalized["timestamp"] = value
+                    break
+            else:
+                normalized["timestamp"] = time.time()
+        if "parentTaskId" in normalized and "parent_task_id" not in normalized:
+            normalized["parent_task_id"] = normalized.get("parentTaskId")
+        if "treePath" in normalized and "tree_path" not in normalized:
+            normalized["tree_path"] = normalized.get("treePath")
+        if "taskDepth" in normalized and "depth" not in normalized:
+            normalized["depth"] = normalized.get("taskDepth")
+        if "taskPriority" in normalized and "priority" not in normalized:
+            normalized["priority"] = normalized.get("taskPriority")
+        if "sessionId" in normalized and "task_session_id" not in normalized:
+            normalized["task_session_id"] = normalized.get("sessionId")
+        task_id = normalized.get("task_id") or normalized.get("id")
+        if task_id and "tree_path" not in normalized:
+            normalized["tree_path"] = f"task/{task_id}"
+        if "depth" not in normalized:
+            normalized["depth"] = 0
+        return normalized
+
     def _translate_runtime_event(
         self,
         event_type: str,
@@ -588,36 +1196,107 @@ class SessionRunner:
             "tool_result": EventType.TOOL_RESULT,
             "permission_request": EventType.PERMISSION_REQUEST,
             "permission_response": EventType.PERMISSION_RESPONSE,
+            "checkpoint_list": EventType.CHECKPOINT_LIST,
+            "checkpoint_restored": EventType.CHECKPOINT_RESTORED,
+            "skills_catalog": EventType.SKILLS_CATALOG,
+            "skills_selection": EventType.SKILLS_SELECTION,
+            "ctree_node": EventType.CTREE_NODE,
+            "ctree_snapshot": EventType.CTREE_SNAPSHOT,
             "task_event": EventType.TASK_EVENT,
             "reward_update": EventType.REWARD_UPDATE,
             "completion": EventType.COMPLETION,
             "log_link": EventType.LOG_LINK,
             "error": EventType.ERROR,
+            "run_finished": EventType.RUN_FINISHED,
         }
         evt = mapping.get(event_type)
         if not evt:
             return None
 
         normalized_payload: Dict[str, Any] = dict(payload or {})
-        if evt is EventType.ASSISTANT_MESSAGE:
+        if evt is EventType.TURN_START:
+            if "mode" not in normalized_payload and self._mode:
+                normalized_payload["mode"] = self._mode
+        elif evt is EventType.ASSISTANT_MESSAGE:
             message = normalized_payload.get("message")
-            text = ""
-            if isinstance(message, dict):
+            text = normalized_payload.get("text")
+            if not isinstance(text, str):
+                text = ""
+            if not text and isinstance(message, dict):
                 text = str(message.get("content", ""))
             normalized_payload = {"text": text, "message": message}
         elif evt is EventType.USER_MESSAGE:
             message = normalized_payload.get("message")
-            text = ""
-            if isinstance(message, dict):
+            text = normalized_payload.get("text")
+            if not isinstance(text, str):
+                text = ""
+            if not text and isinstance(message, dict):
                 text = str(message.get("content", ""))
             normalized_payload = {"text": text, "message": message}
         elif evt is EventType.TOOL_CALL:
-            call = normalized_payload.get("call")
-            normalized_payload = {"call": call}
-        elif evt is EventType.TOOL_RESULT and "message" in normalized_payload:
-            message = normalized_payload.get("message")
-            normalized_payload = {
-                "message": message,
-                "content": (message or {}).get("content") if isinstance(message, dict) else None,
-            }
+            normalized_payload = self._normalize_tool_call_payload(normalized_payload)
+        elif evt is EventType.TOOL_RESULT:
+            normalized_payload = self._normalize_tool_result_payload(normalized_payload)
+        elif evt is EventType.PERMISSION_REQUEST:
+            normalized_payload = self._normalize_permission_request(normalized_payload)
+        elif evt is EventType.PERMISSION_RESPONSE:
+            normalized_payload = self._normalize_permission_response(normalized_payload)
+        elif evt is EventType.TASK_EVENT:
+            normalized_payload = self._normalize_task_event(normalized_payload)
         return evt, normalized_payload, turn
+
+    def _resolve_skill_catalog(self) -> Dict[str, Any]:
+        config: Dict[str, Any]
+        if self._agent is not None:
+            config = dict(getattr(self._agent, "config", {}) or {})
+        else:
+            try:
+                config = load_agent_config(self.request.config_path)
+            except Exception:
+                config = {}
+        workspace = self.get_workspace_dir()
+        if not workspace:
+            ws_cfg = (config.get("workspace") or {}) if isinstance(config, dict) else {}
+            workspace = Path(str(ws_cfg.get("root") or self.request.workspace or ".")).resolve()
+        plugin_manifests = discover_plugin_manifests(config, str(workspace))
+        plugin_skill_paths: List[Path] = []
+        for manifest in plugin_manifests:
+            for rel in getattr(manifest, "skills_paths", []) or []:
+                try:
+                    plugin_skill_paths.append(Path(str(workspace)) / rel)
+                except Exception:
+                    continue
+        prompt_skills, graph_skills = load_skills(
+            config,
+            str(workspace),
+            plugin_skill_paths=plugin_skill_paths,
+        )
+        selection = normalize_skill_selection(config, self.session.metadata.get("skills_selection"))
+        _, _, enabled_map = apply_skill_selection(prompt_skills, graph_skills, selection)
+        catalog = build_skill_catalog(prompt_skills, graph_skills, selection=selection, enabled_map=enabled_map)
+        return {
+            "catalog": catalog,
+            "selection": selection,
+            "sources": {
+                "config_path": self.request.config_path,
+                "workspace": str(workspace),
+                "plugin_count": len(plugin_manifests),
+                "skill_paths": [str(p) for p in plugin_skill_paths],
+            },
+        }
+
+    def get_skill_catalog(self) -> Dict[str, Any]:
+        try:
+            self._skills_catalog_cache = self._resolve_skill_catalog()
+        except Exception:
+            if self._skills_catalog_cache is None:
+                self._skills_catalog_cache = {"catalog": {"skills": []}, "selection": {}, "sources": {}}
+        return dict(self._skills_catalog_cache or {})
+
+    def get_ctree_snapshot(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {}
+        if isinstance(self._ctree_snapshot_cache, dict):
+            payload.update(self._ctree_snapshot_cache)
+        if self._ctree_last_node:
+            payload.setdefault("last_node", dict(self._ctree_last_node))
+        return payload

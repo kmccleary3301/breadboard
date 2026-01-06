@@ -1,0 +1,45 @@
+{
+  "streams": [
+    true,
+    false
+  ],
+  "tool_turn": [
+    true,
+    false
+  ],
+  "scenarios": [
+    {
+      "name": "openrouter_glm46_stream_tool",
+      "config": "agent_configs/opencode_openrouter_glm46_c_fs_perturn_append.yaml",
+      "max_steps": 2,
+      "stream": true,
+      "tool_turn": true,
+      "expected": {
+        "fallback_allowed": true,
+        "stream_policy": "auto-disable when probes fail"
+      }
+    },
+    {
+      "name": "openrouter_deepseek_text",
+      "config": "agent_configs/opencode_openrouter_deepseek_v32exp_c_fs_perturn_append.yaml",
+      "max_steps": 2,
+      "stream": false,
+      "tool_turn": false,
+      "expected": {
+        "fallback_allowed": true,
+        "json_mode": "stay non-stream"
+      }
+    },
+    {
+      "name": "fallback_to_openai",
+      "config": "agent_configs/opencode_compat_v2.yaml",
+      "model_override": "openrouter/openai/gpt-4o-mini",
+      "max_steps": 2,
+      "stream": true,
+      "tool_turn": true,
+      "expected": {
+        "fallback_target": "gpt-4o-mini"
+      }
+    }
+  ]
+}

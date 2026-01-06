@@ -1,4 +1,12 @@
+import { existsSync, readFileSync } from "node:fs"
+import { resolveBreadboardPath } from "../utils/paths.js"
+
 export type FilePickerMode = "tree" | "fuzzy" | "hybrid"
+
+export interface FilePickerResource {
+  readonly label: string
+  readonly detail?: string
+}
 
 export interface FilePickerConfig {
   readonly mode: FilePickerMode
@@ -40,3 +48,38 @@ export const loadFilePickerConfig = (): FilePickerConfig => ({
   indexConcurrency: parseNumberEnv(process.env.BREADBOARD_TUI_FILE_PICKER_INDEX_CONCURRENCY, 4),
 })
 
+const parseResourcesJson = (raw: string): FilePickerResource[] => {
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    const resources: FilePickerResource[] = []
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== "object") continue
+      const record = entry as Record<string, unknown>
+      const label = typeof record.label === "string" ? record.label.trim() : ""
+      if (!label) continue
+      const detail = typeof record.detail === "string" ? record.detail.trim() : undefined
+      resources.push({ label, detail })
+    }
+    return resources
+  } catch {
+    return []
+  }
+}
+
+export const loadFilePickerResources = (): FilePickerResource[] => {
+  const inline = process.env.BREADBOARD_TUI_FILE_PICKER_RESOURCES_JSON
+  if (inline && inline.trim().length > 0) {
+    return parseResourcesJson(inline)
+  }
+  const pathValue = process.env.BREADBOARD_TUI_FILE_PICKER_RESOURCES_PATH
+  if (!pathValue || !pathValue.trim()) return []
+  const resolved = resolveBreadboardPath(pathValue.trim())
+  if (!existsSync(resolved)) return []
+  try {
+    const contents = readFileSync(resolved, "utf8")
+    return parseResourcesJson(contents)
+  } catch {
+    return []
+  }
+}

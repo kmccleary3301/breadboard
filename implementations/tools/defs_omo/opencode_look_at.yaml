@@ -1,0 +1,31 @@
+id: look_at
+name: look_at
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: Analyze media files (PDFs, images, diagrams) via Gemini 2.5 Flash in
+  separate context. Saves main context tokens.
+parameters:
+- name: file_path
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: goal
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string

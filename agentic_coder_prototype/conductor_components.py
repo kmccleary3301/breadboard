@@ -5,6 +5,7 @@ import hashlib
 import locale
 import os
 import platform
+import re
 import shutil
 import time
 from pathlib import Path
@@ -421,6 +422,28 @@ def initialize_yaml_tools(conductor: Any) -> None:
             tool_name = getattr(tool, "name", None)
             if tool_name and _is_included(str(tool_name)):
                 filtered_tools.append(tool)
+        # Gate Task tool unless multi-agent or task_tool config explicitly enabled.
+        allow_task_tool = False
+        try:
+            multi_cfg = (conductor.config.get("multi_agent") or {}) if isinstance(getattr(conductor, "config", None), dict) else {}
+            allow_task_tool = bool(multi_cfg.get("enabled"))
+            if not allow_task_tool:
+                allow_task_tool = bool((conductor.config.get("task_tool") or {})) if isinstance(getattr(conductor, "config", None), dict) else False
+        except Exception:
+            allow_task_tool = False
+
+        if not allow_task_tool:
+            filtered_tools = [
+                tool for tool in filtered_tools
+                if str(getattr(tool, "name", "")).strip().lower() != "task"
+            ]
+        # Preserve include-list ordering when provided (OpenCode/OmO parity).
+        if include_list and not include_has_wildcard:
+            include_set = {name for name in include_list if name}
+            tools_by_name = {str(getattr(t, "name", "")): t for t in filtered_tools}
+            ordered = [tools_by_name[name] for name in include_list if name in tools_by_name]
+            remaining = [t for t in filtered_tools if str(getattr(t, "name", "")) not in include_set]
+            filtered_tools = ordered + remaining
         conductor.yaml_tools = filtered_tools
     except Exception:
         conductor.yaml_tools = []
@@ -428,10 +451,25 @@ def initialize_yaml_tools(conductor: Any) -> None:
 
     # Dynamic tool descriptions (OpenCode parity surfaces).
     try:
+        # Update bash tool to reflect the active workspace path.
+        try:
+            workspace = str(Path(getattr(conductor, "workspace", "")).resolve())
+            for tool in conductor.yaml_tools or []:
+                if getattr(tool, "name", None) != "bash":
+                    continue
+                desc = getattr(tool, "description", "")
+                if not isinstance(desc, str) or not desc:
+                    continue
+                replacement = f"All commands run in {workspace} by default."
+                desc = re.sub(r"All commands run in\s+.*?\s+by default\.", replacement, desc, flags=re.S)
+                tool.description = desc
+        except Exception:
+            pass
+
         task_cfg = (conductor.config.get("task_tool") or {}) if isinstance(getattr(conductor, "config", None), dict) else {}
         subagents_cfg = task_cfg.get("subagents") if isinstance(task_cfg, dict) else None
+        agents_lines: List[str] = []
         if isinstance(subagents_cfg, dict) and subagents_cfg:
-            agents_lines: List[str] = []
             for name, sub_cfg in subagents_cfg.items():
                 if not name:
                     continue
@@ -443,6 +481,37 @@ def initialize_yaml_tools(conductor: Any) -> None:
                 if not desc:
                     desc = "This subagent should only be called manually by the user."
                 agents_lines.append(f"- {name}: {desc}")
+        else:
+            # Multi-agent TeamConfig-based list (Phase 8)
+            try:
+                multi_cfg = (conductor.config.get("multi_agent") or {}) if isinstance(getattr(conductor, "config", None), dict) else {}
+                if multi_cfg.get("enabled"):
+                    team_payload = multi_cfg.get("team_config")
+                    if isinstance(team_payload, str):
+                        try:
+                            import yaml  # type: ignore
+                            team_payload = yaml.safe_load(Path(team_payload).read_text(encoding="utf-8"))
+                        except Exception:
+                            team_payload = None
+                    if isinstance(team_payload, dict):
+                        from .orchestration import TeamConfig
+
+                        team_config = TeamConfig.from_dict(team_payload)
+                        for agent_id, agent_ref in team_config.agents.items():
+                            if agent_ref.entrypoint or agent_ref.role == "main" or agent_id == "main":
+                                continue
+                            desc = None
+                            if isinstance(agent_ref.capabilities, dict):
+                                raw = agent_ref.capabilities.get("description")
+                                if isinstance(raw, str) and raw.strip():
+                                    desc = raw.strip()
+                            if not desc:
+                                desc = "This subagent should only be called manually by the user."
+                            agents_lines.append(f"- {agent_id}: {desc}")
+            except Exception:
+                pass
+
+        if agents_lines:
             agents_blob = "\n".join(agents_lines)
 
             template_text: Optional[str] = None
@@ -748,6 +817,9 @@ def build_prompt_summary(conductor: Any) -> Optional[Dict[str, Any]]:
     prompt_section: Dict[str, Any] = {}
     system_hash = conductor._prompt_hashes.get("system")
     per_turn_hashes = conductor._prompt_hashes.get("per_turn") or {}
+    compile_key = getattr(conductor, "_prompt_compile_key", None)
+    compiler_version = getattr(conductor, "_prompt_compiler_version", None)
+    blocks_hash = getattr(conductor, "_prompt_blocks_hash", None)
     if system_hash:
         prompt_section["system_hash"] = system_hash
     if per_turn_hashes:
@@ -755,6 +827,12 @@ def build_prompt_summary(conductor: Any) -> Optional[Dict[str, Any]]:
             {"turn": turn, "hash": digest}
             for turn, digest in sorted(per_turn_hashes.items(), key=lambda item: item[0])
         ]
+    if compile_key:
+        prompt_section["compile_key"] = compile_key
+    if compiler_version:
+        prompt_section["compiler_version"] = compiler_version
+    if blocks_hash:
+        prompt_section["blocks_hash"] = blocks_hash
     return prompt_section or None
 
 

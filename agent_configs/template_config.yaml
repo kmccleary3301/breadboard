@@ -1,0 +1,73 @@
+# OpenCode-identical tool config for C filesystem task using gpt-5-nano
+
+workspace: ./agent_ws_c
+output:
+  json: ./session_out.json
+  markdown: ./session_out.md
+
+model:
+  id: openai/gpt-5-nano
+  provider: openrouter
+
+prompt:
+  system: opencode/packages/opencode/src/session/prompt/initialize.txt
+  mode: per_turn_append
+  completion_sentinel: ">>>>>> END RESPONSE"
+
+task:
+  file: implementations/test_tasks/protofs_c.md
+
+runtime:
+  image: gcc-dev:latest
+
+tools:
+  # Override to use OpenCode-identical tool ids and parameter shapes
+  defs_dir: implementations/tools/defs_oc
+  registry: implementations/tools/enhanced_tools.yaml  # Not used when defs_dir present, kept for compatibility
+  enabled:
+    # OpenCode tool names
+    bash: true
+    read: true
+    write: true
+    list: true
+    glob: true
+    grep: true
+    edit: true
+    patch: true
+
+dialects:
+  - opencode_patch
+  - bash_block
+  - unified_diff
+
+limits:
+  max_steps: 24
+  stream_responses: true
+  clean_workspace: true
+
+provider_tools:
+  use_native: false  # OpenRouter doesn't support native tools like OpenAI
+  suppress_prompts: false
+
+turn_strategy:
+  allow_multiple_per_turn: false
+  relay: tool_role  # tool_role | user_message
+
+concurrency:
+  # Nonblocking tool ids (may run multiple in the same turn concurrently)
+  nonblocking_tools:
+    - apply_unified_patch
+    - apply_search_replace
+    - create_file_from_block
+    - read
+    - read_file
+    - glob
+    - grep
+    - list
+    - list_dir
+    - patch
+
+deployment:
+  mode: development
+  isolation: true
+  mirror_results: true

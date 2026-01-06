@@ -1,0 +1,12 @@
+[
+  { "action": "log", "message": "Live engine rewind start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 20000 },
+  { "action": "type", "text": "/rewind" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Rewind checkpoints", "timeoutMs": 20000 },
+  { "action": "waitFor", "text": "Session start", "timeoutMs": 20000 },
+  { "action": "type", "text": "1" },
+  { "action": "waitFor", "text": "Rewind restored", "timeoutMs": 20000 },
+  { "action": "snapshot", "label": "rewind-restored" },
+  { "action": "log", "message": "Live engine rewind end" }
+]

@@ -1,0 +1,15 @@
+[
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "type", "text": "first history", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 400 },
+  { "action": "type", "text": "second history", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 400 },
+  { "action": "press", "key": "up" },
+  { "action": "snapshot", "label": "history-last" },
+  { "action": "press", "key": "up" },
+  { "action": "snapshot", "label": "history-first" },
+  { "action": "press", "key": "up" },
+  { "action": "snapshot", "label": "history-wrap" }
+]

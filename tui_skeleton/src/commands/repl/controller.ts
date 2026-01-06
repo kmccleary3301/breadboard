@@ -7,6 +7,7 @@ import type {
   ModelMenuState,
   ConversationEntry,
   StreamStats,
+  UsageMetrics,
   CompletionState,
   LiveSlotEntry,
   LiveSlotStatus,
@@ -15,6 +16,13 @@ import type {
   TranscriptPreferences,
   ToolLogEntry,
   ToolLogKind,
+  TodoItem,
+  TaskEntry,
+  SkillCatalog,
+  SkillSelection,
+  SkillCatalogSources,
+  SkillsMenuState,
+  CTreeSnapshot,
   PermissionRequest,
   PermissionDecision,
   PermissionRuleScope,
@@ -34,21 +42,13 @@ import { MarkdownStreamer } from "../../markdown/streamer.js"
 const MAX_HINTS = 6
 const MAX_TOOL_HISTORY = 400
 const MAX_RETRIES = 5
+const STOP_SOFT_TIMEOUT_MS = 30_000
 const DEBUG_EVENTS = process.env.BREADBOARD_DEBUG_EVENTS === "1"
 const DEBUG_WAIT = process.env.BREADBOARD_DEBUG_WAIT === "1"
 const DEBUG_MARKDOWN = process.env.BREADBOARD_DEBUG_MARKDOWN === "1"
 const DEFAULT_RICH_MARKDOWN = process.env.BREADBOARD_RICH_MARKDOWN !== "0"
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-
-const normalizeWorkspacePath = (value?: string | null): string => {
-  if (!value) return "."
-  const withSlashes = value.replace(/\\/g, "/")
-  const trimmedLeading = withSlashes.replace(/^\.\/+/, "")
-  const collapsed = trimmedLeading.replace(/\/+/g, "/")
-  const strippedTrailing = collapsed.replace(/\/$/, "")
-  return strippedTrailing === "" ? "." : strippedTrailing
-}
 
 export interface ReplControllerOptions {
   readonly configPath: string
@@ -71,21 +71,29 @@ export interface ReplState {
   readonly sessionId: string
   readonly status: string
   readonly pendingResponse: boolean
+  readonly mode?: string | null
+  readonly permissionMode?: string | null
   readonly conversation: ConversationEntry[]
   readonly toolEvents: ToolLogEntry[]
   readonly liveSlots: LiveSlotEntry[]
   readonly hints: string[]
   readonly stats: StreamStats
   readonly modelMenu: ModelMenuState
+  readonly skillsMenu: SkillsMenuState
   readonly completionReached: boolean
   readonly completionSeen: boolean
   readonly lastCompletion?: CompletionState | null
   readonly disconnected: boolean
   readonly guardrailNotice?: GuardrailNotice | null
+  readonly viewClearAt?: number | null
   readonly viewPrefs: TranscriptPreferences
   readonly permissionRequest?: PermissionRequest | null
+  readonly permissionError?: string | null
   readonly permissionQueueDepth?: number
   readonly rewindMenu: RewindMenuState
+  readonly todos: TodoItem[]
+  readonly tasks: TaskEntry[]
+  readonly ctreeSnapshot?: CTreeSnapshot | null
 }
 
 type StateListener = (state: ReplState) => void
@@ -99,10 +107,37 @@ interface SubmissionPayload {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null
 
+const formatErrorPayload = (payload: unknown): string => {
+  if (!isRecord(payload)) return JSON.stringify(payload)
+  if (typeof payload.message === "string" && payload.message.trim()) return payload.message.trim()
+  if (typeof payload.detail === "string" && payload.detail.trim()) return payload.detail.trim()
+  const detail = payload.detail
+  if (isRecord(detail)) {
+    const detailMessage =
+      typeof detail.message === "string"
+        ? detail.message
+        : typeof detail.error === "string"
+          ? detail.error
+          : undefined
+    if (detailMessage && detailMessage.trim()) return detailMessage.trim()
+  }
+  return JSON.stringify(payload)
+}
+
 const stringifyReason = (value: string | undefined): string | undefined =>
   value?.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim() || undefined
 
 const numberOrUndefined = (value: unknown): number | undefined => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
+const parseNumberish = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string") {
+    const cleaned = value.trim().replace(/ms$/i, "")
+    if (!cleaned) return undefined
+    const parsed = Number(cleaned)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
 const createSlotId = (): string => `slot-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
 
 const extractString = (payload: Record<string, unknown>, keys: string[]): string | undefined => {
@@ -121,6 +156,170 @@ const extractProgress = (payload: Record<string, unknown>): number | undefined =
     if (Number.isFinite(parsed)) return parsed
   }
   return undefined
+}
+
+const normalizeTodoStatus = (value: unknown): string => {
+  const raw = String(value ?? "").trim().toLowerCase()
+  switch (raw) {
+    case "in_progress":
+    case "progress":
+    case "active":
+      return "in_progress"
+    case "done":
+    case "complete":
+    case "completed":
+      return "done"
+    case "blocked":
+      return "blocked"
+    case "cancelled":
+    case "canceled":
+      return "canceled"
+    case "todo":
+    case "pending":
+    default:
+      return "todo"
+  }
+}
+
+const parseTodoEntry = (entry: unknown, fallbackId: string): TodoItem | null => {
+  if (!isRecord(entry)) return null
+  const id =
+    typeof entry.id === "string"
+      ? entry.id
+      : typeof entry.todo_id === "string"
+        ? entry.todo_id
+        : typeof entry.todoId === "string"
+          ? entry.todoId
+          : fallbackId
+  const title =
+    typeof entry.title === "string"
+      ? entry.title
+      : typeof entry.content === "string"
+        ? entry.content
+        : typeof entry.text === "string"
+          ? entry.text
+          : ""
+  if (!title.trim()) return null
+  const status = normalizeTodoStatus(entry.status ?? entry.state)
+  const metadata = isRecord(entry.metadata) ? entry.metadata : null
+  const priority = entry.priority ?? null
+  return {
+    id,
+    title: title.trim(),
+    status,
+    priority: typeof priority === "string" || typeof priority === "number" ? priority : null,
+    metadata,
+  }
+}
+
+const parseTodoList = (value: unknown): TodoItem[] | null => {
+  if (!Array.isArray(value)) return null
+  const parsed: TodoItem[] = []
+  value.forEach((entry, index) => {
+    const item = parseTodoEntry(entry, `todo-${index + 1}`)
+    if (item) parsed.push(item)
+  })
+  return parsed.length > 0 ? parsed : null
+}
+
+const tryParseJsonTodos = (value: unknown): TodoItem[] | null => {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (Array.isArray(parsed)) return parseTodoList(parsed)
+    if (isRecord(parsed)) {
+      if (Array.isArray(parsed.todos)) return parseTodoList(parsed.todos)
+      if (parsed.todo) {
+        const single = parseTodoEntry(parsed.todo, "todo-1")
+        return single ? [single] : null
+      }
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+const normalizeModeValue = (value: string | null | undefined): string | null => {
+  const normalized = (value ?? "").trim().toLowerCase()
+  if (!normalized) return null
+  if (normalized === "plan" || normalized === "auto" || normalized === "build") return normalized
+  return normalized
+}
+
+const normalizePermissionMode = (value: string | null | undefined): string | null => {
+  const normalized = (value ?? "").trim().toLowerCase()
+  if (!normalized) return null
+  if (["prompt", "ask", "interactive"].includes(normalized)) return "prompt"
+  if (["allow", "auto", "auto-accept", "auto_accept"].includes(normalized)) return "auto"
+  return normalized
+}
+
+const normalizeTaskStatus = (status: string | null | undefined, kind?: string | null): string | null => {
+  const raw = (status ?? "").trim().toLowerCase()
+  if (raw) {
+    if (raw.includes("complete") || raw === "done") return "completed"
+    if (raw.includes("fail") || raw.includes("error")) return "failed"
+    if (raw.includes("run") || raw.includes("start") || raw.includes("pending")) return "running"
+    return raw
+  }
+  const kindRaw = (kind ?? "").trim().toLowerCase()
+  if (!kindRaw) return null
+  if (kindRaw.includes("complete")) return "completed"
+  if (kindRaw.includes("fail") || kindRaw.includes("error")) return "failed"
+  if (kindRaw.includes("spawn") || kindRaw.includes("start") || kindRaw.includes("tool")) return "running"
+  return kindRaw
+}
+
+const extractUsageMetrics = (payload: Record<string, unknown>): UsageMetrics | null => {
+  const sources: Record<string, unknown>[] = [payload]
+  const pushIfRecord = (value: unknown) => {
+    if (isRecord(value)) sources.push(value)
+  }
+  pushIfRecord(payload.summary)
+  pushIfRecord(payload.usage)
+  pushIfRecord(payload.usage_normalized)
+  pushIfRecord(payload.usageNormalized)
+  pushIfRecord(payload.usage_summary)
+  pushIfRecord(payload.usageSummary)
+
+  const merged: UsageMetrics = {}
+  const assignNumber = (key: keyof UsageMetrics, value: unknown) => {
+    const parsed = parseNumberish(value)
+    if (parsed == null) return
+    merged[key] = parsed
+  }
+  const assignFromKeys = (key: keyof UsageMetrics, source: Record<string, unknown>, keys: string[]) => {
+    for (const lookup of keys) {
+      if (lookup in source) {
+        assignNumber(key, source[lookup])
+        return
+      }
+    }
+  }
+
+  for (const source of sources) {
+    assignFromKeys( "promptTokens", source, ["prompt_tokens", "input_tokens", "promptTokens", "inputTokens"])
+    assignFromKeys( "completionTokens", source, ["completion_tokens", "output_tokens", "completionTokens", "outputTokens"])
+    assignFromKeys( "totalTokens", source, ["total_tokens", "totalTokens", "tokens_total"])
+    assignFromKeys( "cacheReadTokens", source, ["cache_read_tokens", "cacheReadTokens", "cache_read_input_tokens"])
+    assignFromKeys( "cacheWriteTokens", source, ["cache_write_tokens", "cacheWriteTokens", "cache_creation_input_tokens"])
+    assignFromKeys( "costUsd", source, ["cost_usd", "costUsd", "cost", "total_cost", "totalCost", "usd_cost"])
+    if (merged.latencyMs == null) {
+      if ("latency_ms" in source || "latencyMs" in source || "latency" in source) {
+        assignFromKeys("latencyMs", source, ["latency_ms", "latencyMs", "latency"])
+      } else if ("latency_seconds" in source || "latencySeconds" in source) {
+        const seconds = parseNumberish(source["latency_seconds"] ?? source["latencySeconds"])
+        if (seconds != null) {
+          merged.latencyMs = seconds * 1000
+        }
+      }
+    }
+  }
+
+  return Object.keys(merged).length > 0 ? merged : null
 }
 
 export const formatCompletion = (payload: unknown): CompletionView => {
@@ -190,6 +389,7 @@ export class ReplSessionController extends EventEmitter {
   private guardrailNotice: GuardrailNotice | null = null
   private readonly toolSlotsByCallId = new Map<string, string>()
   private readonly toolSlotFallback: string[] = []
+  private readonly toolLogEntryByCallId = new Map<string, string>()
   private readonly hints: string[] = []
   private conversationSequence = 0
   private streamingEntryId: string | null = null
@@ -206,6 +406,11 @@ export class ReplSessionController extends EventEmitter {
   private status = "Starting session…"
   private pendingResponse = false
   private modelMenu: ModelMenuState = { status: "hidden" }
+  private skillsMenu: SkillsMenuState = { status: "hidden" }
+  private skillsCatalog: SkillCatalog | null = null
+  private skillsSelection: SkillSelection | null = null
+  private skillsSources: SkillCatalogSources | null = null
+  private ctreeSnapshot: CTreeSnapshot | null = null
   private completionReached = false
   private completionSeen = false
   private lastCompletion: CompletionState | null = null
@@ -221,9 +426,20 @@ export class ReplSessionController extends EventEmitter {
   private readonly providers = CliProviders
   private readonly markdownStreams = new Map<string, { streamer: MarkdownStreamer; lastText: string }>()
   private markdownGloballyDisabled = false
+  private viewClearAt: number | null = null
   private permissionActive: PermissionRequest | null = null
+  private permissionError: string | null = null
   private permissionQueue: PermissionRequest[] = []
   private rewindMenu: RewindMenuState = { status: "hidden" }
+  private todos: TodoItem[] = []
+  private tasks: TaskEntry[] = []
+  private lastEventId: string | null = null
+  private hasStreamedOnce = false
+  private stopRequestedAt: number | null = null
+  private stopTimer: NodeJS.Timeout | null = null
+  private readonly taskMap = new Map<string, TaskEntry>()
+  private mode: string | null = null
+  private permissionMode: string | null = null
 
   constructor(options: ReplControllerOptions) {
     super()
@@ -240,21 +456,29 @@ export class ReplSessionController extends EventEmitter {
       sessionId: this.sessionId,
       status: this.status,
       pendingResponse: this.pendingResponse,
+      mode: this.mode,
+      permissionMode: this.permissionMode,
       conversation: [...this.conversation],
       toolEvents: [...this.toolEvents],
       liveSlots: liveSlotList,
       hints: [...this.hints],
       stats: { ...this.stats },
       modelMenu: this.modelMenu,
+      skillsMenu: this.skillsMenu,
       completionReached: this.completionReached,
       completionSeen: this.completionSeen,
       lastCompletion: this.lastCompletion,
       disconnected: this.disconnected,
       guardrailNotice: this.guardrailNotice,
+      viewClearAt: this.viewClearAt,
       viewPrefs: this.viewPrefs,
       permissionRequest: this.permissionActive,
+      permissionError: this.permissionError,
       permissionQueueDepth: this.permissionQueue.length,
       rewindMenu: this.rewindMenu,
+      todos: [...this.todos],
+      tasks: [...this.tasks],
+      ctreeSnapshot: this.ctreeSnapshot,
     }
   }
 
@@ -271,10 +495,26 @@ export class ReplSessionController extends EventEmitter {
     this.stats.model = modelLabel
     const remotePreference = this.config.remotePreference ?? appConfig.remoteStreamDefault
     this.stats.remote = remotePreference
+    const permissionValue = this.config.permissionMode?.trim()
+    const permissionMode = permissionValue ? permissionValue.toLowerCase() : ""
+    const interactivePermissions = permissionMode === "prompt" || permissionMode === "ask" || permissionMode === "interactive"
+    this.permissionMode = normalizePermissionMode(permissionValue) ?? (interactivePermissions ? "prompt" : "auto")
+    this.mode = normalizeModeValue(process.env.BREADBOARD_DEFAULT_MODE) ?? "build"
     const metadata: Record<string, unknown> = {}
     const overrides: Record<string, unknown> = {}
-    if (this.config.permissionMode) {
-      metadata.permission_mode = this.config.permissionMode
+    const debugPermissions = process.env.BREADBOARD_DEBUG_PERMISSIONS
+    if (debugPermissions && debugPermissions !== "0") {
+      metadata.debug_permissions = true
+    }
+    if (permissionValue) {
+      metadata.permission_mode = permissionValue
+      if (interactivePermissions) {
+        overrides["permissions.options.mode"] ??= "prompt"
+        overrides["permissions.options.default_response"] ??= "reject"
+        overrides["permissions.edit.default"] ??= "ask"
+        overrides["permissions.shell.default"] ??= "ask"
+        overrides["permissions.webfetch.default"] ??= "ask"
+      }
     }
     if (requestedModel) {
       metadata.model = requestedModel
@@ -287,16 +527,35 @@ export class ReplSessionController extends EventEmitter {
       config_path: this.config.configPath,
       task: "",
       workspace: this.config.workspace ?? undefined,
+      permission_mode: permissionValue ?? undefined,
       metadata,
       overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
       stream: true,
     }
     const session = await this.api().createSession(payload)
     this.sessionId = session.session_id
+    try {
+      const summary = await this.api().getSession(this.sessionId)
+      if (summary?.model && typeof summary.model === "string") {
+        this.stats.model = summary.model
+      }
+      if (summary?.mode && typeof summary.mode === "string") {
+        this.mode = normalizeModeValue(summary.mode) ?? this.mode
+      }
+      if (!summary?.model && !requestedModel) {
+        const catalog = await getModelCatalog({ configPath: this.config.configPath })
+        if (catalog?.defaultModel) {
+          this.stats.model = catalog.defaultModel
+        }
+      }
+    } catch {
+      // ignore summary fetch errors; keep optimistic defaults
+    }
     this.pushHint(`Session ${this.sessionId} started (remote ${this.stats.remote ? "enabled" : "disabled"}, model ${this.stats.model}).`)
     this.status = "Ready"
     this.completionSeen = false
     this.lastCompletion = null
+    this.stats.usage = undefined
     this.guardrailNotice = null
     this.submissionHistory = []
     this.emitChange()
@@ -449,83 +708,14 @@ export class ReplSessionController extends EventEmitter {
     await handler(args)
   }
 
-  private resolveWorkspaceRoot(): string {
-    return path.resolve(this.config.workspace ?? process.cwd())
-  }
-
-  private resolveWorkspacePath(target?: string | null): { root: string; absolute: string; relative: string } {
-    const root = this.resolveWorkspaceRoot()
-    const normalized = normalizeWorkspacePath(target)
-    const absolute = path.resolve(root, normalized === "." ? "" : normalized)
-    const relativeRaw = path.relative(root, absolute)
-    if (relativeRaw.startsWith("..") || path.isAbsolute(relativeRaw)) {
-      throw new Error("Path escapes workspace root.")
-    }
-    const relative = relativeRaw === "" ? "." : relativeRaw.split(path.sep).join("/")
-    return { root, absolute, relative }
-  }
-
-  private async listFilesLocal(target?: string): Promise<SessionFileInfo[]> {
-    const { root, absolute } = this.resolveWorkspacePath(target)
-    const stat = await fs.stat(absolute)
-    if (!stat.isDirectory()) {
-      throw new Error("Path is not a directory.")
-    }
-    const entries = await fs.readdir(absolute, { withFileTypes: true })
-    const results: SessionFileInfo[] = []
-    for (const entry of entries) {
-      const entryPath = path.join(absolute, entry.name)
-      const relative = path.relative(root, entryPath).split(path.sep).join("/")
-      if (entry.isDirectory()) {
-        results.push({ path: relative, type: "directory" })
-        continue
-      }
-      if (entry.isFile()) {
-        const entryStat = await fs.stat(entryPath)
-        results.push({ path: relative, type: "file", size: entryStat.size, updated_at: entryStat.mtime.toISOString() })
-      }
-    }
-    return results
-  }
-
-  private async readFileLocal(target: string, options?: ReadSessionFileOptions): Promise<SessionFileContent> {
-    const { absolute, relative } = this.resolveWorkspacePath(target)
-    const stat = await fs.stat(absolute)
-    if (!stat.isFile()) {
-      throw new Error("Path is not a file.")
-    }
-    const buffer = await fs.readFile(absolute)
-    const totalBytes = buffer.length
-    let content = buffer.toString("utf8")
-    let truncated = false
-    if (options?.mode === "snippet") {
-      const headLines = options.headLines ?? 40
-      const tailLines = options.tailLines ?? 40
-      const lines = content.split(/\r?\n/)
-      if (lines.length > headLines + tailLines) {
-        truncated = true
-        const head = lines.slice(0, headLines)
-        const tail = tailLines > 0 ? lines.slice(-tailLines) : []
-        content = [...head, "…", ...tail].join("\n")
-      }
-    } else if (options?.maxBytes && totalBytes > options.maxBytes) {
-      truncated = true
-      content = buffer.subarray(0, options.maxBytes).toString("utf8")
-    }
-    return { path: normalizeWorkspacePath(relative), content, truncated, total_bytes: totalBytes }
-  }
-
   async listFiles(path?: string): Promise<SessionFileInfo[]> {
     if (!this.sessionId) {
-      return await this.listFilesLocal(path)
+      throw new Error("Session not ready yet.")
     }
     try {
       return await this.api().listSessionFiles(this.sessionId, path)
     } catch (error) {
       if (error instanceof ApiError) {
-        if (error.status === 404) {
-          return await this.listFilesLocal(path)
-        }
         throw new Error(`File listing failed (${error.status}).`)
       }
       throw error
@@ -534,7 +724,7 @@ export class ReplSessionController extends EventEmitter {
 
   async readFile(path: string, options?: ReadSessionFileOptions): Promise<SessionFileContent> {
     if (!this.sessionId) {
-      return await this.readFileLocal(path, options)
+      throw new Error("Session not ready yet.")
     }
     if (!path || !path.trim()) {
       throw new Error("File path is empty.")
@@ -543,9 +733,6 @@ export class ReplSessionController extends EventEmitter {
       return await this.api().readSessionFile(this.sessionId, path, options)
     } catch (error) {
       if (error instanceof ApiError) {
-        if (error.status === 404) {
-          return await this.readFileLocal(path, options)
-        }
         throw new Error(`File read failed (${error.status}).`)
       }
       throw error
@@ -575,6 +762,81 @@ export class ReplSessionController extends EventEmitter {
       this.status = "Model catalog unavailable"
     }
     this.emitChange()
+  }
+
+  async openSkillsMenu(): Promise<void> {
+    if (this.skillsMenu.status !== "hidden") {
+      this.pushHint("Skills picker already open. Use Esc to cancel or apply selection.")
+      return
+    }
+    if (!this.sessionId) {
+      this.pushHint("Session not ready yet.")
+      return
+    }
+    this.status = "Loading skills…"
+    this.skillsMenu = { status: "loading" }
+    this.emitChange()
+    try {
+      const payload = await this.api().getSkillsCatalog(this.sessionId)
+      const catalog = (payload?.catalog ?? {}) as SkillCatalog
+      const selection = (payload?.selection ?? null) as SkillSelection | null
+      const sources = (payload?.sources ?? null) as SkillCatalogSources | null
+      this.skillsCatalog = catalog
+      this.skillsSelection = selection
+      this.skillsSources = sources
+      this.skillsMenu = { status: "ready", catalog, selection, sources }
+      this.status = "Skills ready"
+    } catch (error) {
+      if (this.skillsCatalog) {
+        this.skillsMenu = {
+          status: "ready",
+          catalog: this.skillsCatalog,
+          selection: this.skillsSelection,
+          sources: this.skillsSources,
+        }
+        this.status = "Skills ready"
+      } else {
+        this.skillsMenu = { status: "error", message: `Failed to load skills: ${(error as Error).message}` }
+        this.status = "Skills catalog unavailable"
+      }
+    }
+    this.emitChange()
+  }
+
+  closeSkillsMenu(): void {
+    if (this.skillsMenu.status !== "hidden") {
+      this.skillsMenu = { status: "hidden" }
+      this.emitChange()
+    }
+  }
+
+  async applySkillsSelection(selection: SkillSelection): Promise<void> {
+    const payload: Record<string, unknown> = {
+      mode: selection.mode ?? "blocklist",
+    }
+    if (selection.allowlist && selection.allowlist.length > 0) {
+      payload.allowlist = selection.allowlist
+    }
+    if (selection.blocklist && selection.blocklist.length > 0) {
+      payload.blocklist = selection.blocklist
+    }
+    if (selection.profile) {
+      payload.profile = selection.profile
+    }
+    const ok = await this.runSessionCommand("set_skills", payload, "Skills selection updated.")
+    if (ok) {
+      this.skillsSelection = selection
+      if (this.skillsMenu.status === "ready") {
+        this.skillsMenu = {
+          status: "ready",
+          catalog: this.skillsMenu.catalog,
+          selection: selection,
+          sources: this.skillsMenu.sources,
+        }
+      }
+      this.status = "Skills updated"
+      this.emitChange()
+    }
   }
 
   closeModelMenu(): void {
@@ -620,10 +882,23 @@ export class ReplSessionController extends EventEmitter {
   }
 
   async loadModelMenuItems(): Promise<ModelMenuItem[]> {
-    const models = await getModelCatalog()
+    const catalog = await getModelCatalog({ configPath: this.config.configPath })
+    const models = catalog.models
+    const defaultModel = catalog.defaultModel ?? DEFAULT_MODEL_ID
     return models
       .map<ModelMenuItem>((model) => {
-        const providerLabel = model.provider === "openrouter" ? "OpenRouter" : "OpenAI"
+        const providerLabel = (() => {
+          const raw = model.provider ?? "unknown"
+          const lowered = raw.toLowerCase()
+          if (lowered === "openrouter") return "OpenRouter"
+          if (lowered === "openai") return "OpenAI"
+          if (!raw.trim()) return "Unknown"
+          return raw
+            .split(/[^a-z0-9]+/i)
+            .filter((part) => part.length > 0)
+            .map((part) => part[0].toUpperCase() + part.slice(1))
+            .join(" ")
+        })()
         const contextTokens = typeof model.contextLength === "number" ? model.contextLength : null
         const contextK = contextTokens != null ? Math.max(1, Math.round(contextTokens / 1000)) : null
         const priceInPerM = model.priceInPerM ?? null
@@ -641,16 +916,9 @@ export class ReplSessionController extends EventEmitter {
           contextTokens,
           priceInPerM,
           priceOutPerM,
-          isDefault: model.id === DEFAULT_MODEL_ID,
+          isDefault: model.id === defaultModel,
           isCurrent: model.id === this.stats.model,
         }
-      })
-      .sort((a, b) => {
-        if (a.isCurrent && !b.isCurrent) return -1
-        if (!a.isCurrent && b.isCurrent) return 1
-        if (a.isDefault && !b.isDefault) return -1
-        if (!a.isDefault && b.isDefault) return 1
-        return a.label.localeCompare(b.label)
       })
   }
 
@@ -764,7 +1032,9 @@ export class ReplSessionController extends EventEmitter {
       stop: async () => {
         const ok = await this.runSessionCommand("stop", undefined, "Interrupt requested.")
         if (ok) {
-          this.status = "Interrupt requested"
+          this.pendingResponse = false
+          this.status = "Stopping…"
+          this.noteStopRequested()
         }
       },
       help: async () => {
@@ -772,13 +1042,8 @@ export class ReplSessionController extends EventEmitter {
         this.pushHint(summary)
       },
       clear: async () => {
-        this.conversation.length = 0
-        this.toolEvents.length = 0
-        this.submissionHistory = []
-        this.streamingEntryId = null
-        this.disposeAllMarkdown()
-        this.markdownGloballyDisabled = false
-        this.pushHint("Cleared conversation and tool logs.")
+        this.viewClearAt = Date.now()
+        this.pushHint("Cleared view (history preserved).")
       },
       status: async () => {
         try {
@@ -832,7 +1097,10 @@ export class ReplSessionController extends EventEmitter {
       },
       plan: async () => {
         const ok = await this.runSessionCommand("set_mode", { mode: "plan" }, "Requested plan-focused mode.")
-        if (ok) this.status = "Mode request: plan"
+        if (ok) {
+          this.status = "Mode request: plan"
+          this.mode = "plan"
+        }
       },
       mode: async (args) => {
         const target = args[0]?.toLowerCase()
@@ -846,7 +1114,10 @@ export class ReplSessionController extends EventEmitter {
         }
         const normalized = target === "default" ? "auto" : target
         const ok = await this.runSessionCommand("set_mode", { mode: normalized }, `Mode set request sent (${normalized}).`)
-        if (ok) this.status = `Mode request: ${normalized}`
+        if (ok) {
+          this.status = `Mode request: ${normalized}`
+          this.mode = normalized
+        }
       },
       model: async (args) => {
         const newModel = args[0]
@@ -928,6 +1199,9 @@ export class ReplSessionController extends EventEmitter {
       models: async () => {
         await this.openModelMenu()
       },
+      skills: async () => {
+        await this.openSkillsMenu()
+      },
       rewind: async () => {
         await this.openRewindMenu()
       },
@@ -977,6 +1251,56 @@ export class ReplSessionController extends EventEmitter {
     }
   }
 
+  private extractTodosFromPayload(payload: unknown): TodoItem[] | null {
+    const candidates: unknown[] = []
+    if (isRecord(payload)) {
+      candidates.push(payload)
+      if (payload.tool) candidates.push(payload.tool)
+      if (payload.call) candidates.push(payload.call)
+      if (payload.message) candidates.push(payload.message)
+      if (payload.content) candidates.push(payload.content)
+      if (payload.output) candidates.push(payload.output)
+      if (payload.result) candidates.push(payload.result)
+    } else {
+      candidates.push(payload)
+    }
+    for (const candidate of candidates) {
+      if (candidate == null) continue
+      if (Array.isArray(candidate)) {
+        const list = parseTodoList(candidate)
+        if (list) return list
+        continue
+      }
+      if (isRecord(candidate)) {
+        const name =
+          extractString(candidate, ["name", "tool", "tool_name", "function", "provider_name", "fn"]) ?? ""
+        const normalized = name.toLowerCase()
+        const likelyTodoTool = normalized.includes("todo") || normalized.includes("todowrite")
+        const directTodos = parseTodoList(candidate.todos)
+        if (directTodos && (likelyTodoTool || directTodos.length > 0)) {
+          return directTodos
+        }
+        if (candidate.todo) {
+          const single = parseTodoEntry(candidate.todo, "todo-1")
+          if (single && (likelyTodoTool || single.title.length > 0)) {
+            return [single]
+          }
+        }
+        const nested =
+          parseTodoList(candidate.output) ??
+          parseTodoList(candidate.result) ??
+          parseTodoList(candidate.content) ??
+          tryParseJsonTodos(candidate.output) ??
+          tryParseJsonTodos(candidate.result) ??
+          tryParseJsonTodos(candidate.content)
+        if (nested) return nested
+      }
+      const parsed = tryParseJsonTodos(candidate)
+      if (parsed) return parsed
+    }
+    return null
+  }
+
   async openRewindMenu(): Promise<void> {
     if (!this.sessionId) {
       this.pushHint("Session not ready yet.")
@@ -1021,6 +1345,7 @@ export class ReplSessionController extends EventEmitter {
 
   private setPermissionActive(next: PermissionRequest | null): void {
     this.permissionActive = next
+    this.permissionError = null
     if (!next) {
       if (this.permissionQueue.length > 0) {
         this.permissionActive = this.permissionQueue.shift() ?? null
@@ -1043,6 +1368,8 @@ export class ReplSessionController extends EventEmitter {
       payload.scope = decision.scope
       if (decision.rule != null) payload.rule = decision.rule
     }
+    const note = typeof decision.note === "string" ? decision.note.trim() : ""
+    if (note) payload.note = note
     if (decision.kind === "deny-stop") {
       payload.stop = true
     }
@@ -1051,11 +1378,15 @@ export class ReplSessionController extends EventEmitter {
       if (decision.kind === "deny-stop") {
         this.pendingResponse = false
         this.status = "Stopped (permission denied)"
+        this.clearStopRequest()
         this.permissionQueue.length = 0
         this.permissionActive = null
       } else {
         this.setPermissionActive(null)
       }
+      this.emitChange()
+    } else {
+      this.permissionError = "Permission decision failed. Check connection or engine status."
       this.emitChange()
     }
     return ok
@@ -1076,6 +1407,7 @@ export class ReplSessionController extends EventEmitter {
       speaker,
       text,
       phase: "final",
+      createdAt: Date.now(),
     }
     this.conversation.push(entry)
   }
@@ -1094,6 +1426,7 @@ export class ReplSessionController extends EventEmitter {
       speaker,
       text,
       phase: "streaming",
+      createdAt: Date.now(),
     }
     this.conversation.push(entry)
     this.streamingEntryId = entry.id
@@ -1117,18 +1450,99 @@ export class ReplSessionController extends EventEmitter {
     return `conv-${this.conversationSequence}`
   }
 
-  private addTool(kind: ToolLogKind, text: string, status?: LiveSlotStatus): void {
+  private upsertTask(entry: TaskEntry): void {
+    const existing = this.taskMap.get(entry.id)
+    const merged: TaskEntry = {
+      ...(existing ?? {}),
+      ...entry,
+      updatedAt: entry.updatedAt || existing?.updatedAt || Date.now(),
+    }
+    this.taskMap.set(merged.id, merged)
+    this.tasks = Array.from(this.taskMap.values()).sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
+  private handleTaskEvent(payload: Record<string, unknown>): void {
+    const taskId =
+      extractString(payload, ["task_id", "taskId", "id"]) ??
+      extractString(payload, ["session_id", "sessionId"])
+    if (!taskId) return
+    const kind = extractString(payload, ["kind", "event", "type"])
+    const status = normalizeTaskStatus(extractString(payload, ["status", "state"]), kind ?? undefined)
+    const description = extractString(payload, ["description", "title", "prompt"])
+    const subagentType = extractString(payload, ["subagent_type", "subagentType"])
+    const outputExcerpt = extractString(payload, ["output_excerpt", "output", "result", "message"])
+    const error = extractString(payload, ["error"])
+    const ctreeNodeId = extractString(payload, ["ctree_node_id", "ctreeNodeId"])
+    const ctreeSnapshot = isRecord(payload.ctree_snapshot) ? (payload.ctree_snapshot as CTreeSnapshot) : null
+    const artifact = isRecord(payload.artifact) ? payload.artifact : null
+    const artifactPath =
+      extractString(payload, ["artifact_path", "artifactPath", "artifact"]) ??
+      (artifact ? extractString(artifact, ["path", "file"]) : undefined)
+    const updatedAt = numberOrUndefined(payload.timestamp) ?? Date.now()
+    const sessionId = extractString(payload, ["session_id", "sessionId"])
+    this.upsertTask({
+      id: taskId,
+      sessionId: sessionId ?? null,
+      description: description ?? null,
+      subagentType: subagentType ?? null,
+      status: status ?? null,
+      kind: kind ?? null,
+      outputExcerpt: outputExcerpt ? outputExcerpt.slice(0, 400) : null,
+      artifactPath: artifactPath ?? null,
+      error: error ?? null,
+      ctreeNodeId: ctreeNodeId ?? null,
+      ctreeSnapshot,
+      updatedAt,
+    })
+  }
+
+  private updateUsageFromPayload(payload: Record<string, unknown>): void {
+    const usage = extractUsageMetrics(payload)
+    if (!usage) return
+    this.stats.usage = { ...(this.stats.usage ?? {}), ...usage }
+  }
+
+  private trimToolHistory(): void {
+    if (this.toolEvents.length <= MAX_TOOL_HISTORY) return
+    const excess = this.toolEvents.length - MAX_TOOL_HISTORY
+    const removed = this.toolEvents.splice(0, excess)
+    for (const entry of removed) {
+      if (entry.kind === "call" && entry.callId) {
+        const mapped = this.toolLogEntryByCallId.get(entry.callId)
+        if (mapped === entry.id) {
+          this.toolLogEntryByCallId.delete(entry.callId)
+        }
+      }
+    }
+  }
+
+  private addTool(
+    kind: ToolLogKind,
+    text: string,
+    status?: LiveSlotStatus,
+    options?: { callId?: string | null; insertAfterId?: string | null },
+  ): ToolLogEntry {
     const entry: ToolLogEntry = {
       id: createSlotId(),
       kind,
       text,
       status,
+      callId: options?.callId ?? null,
       createdAt: Date.now(),
     }
-    this.toolEvents.push(entry)
-    if (this.toolEvents.length > MAX_TOOL_HISTORY) {
-      this.toolEvents.splice(0, this.toolEvents.length - MAX_TOOL_HISTORY)
+    const insertAfterId = options?.insertAfterId ?? null
+    if (insertAfterId) {
+      const index = this.toolEvents.findIndex((item) => item.id === insertAfterId)
+      if (index >= 0) {
+        this.toolEvents.splice(index + 1, 0, entry)
+      } else {
+        this.toolEvents.push(entry)
+      }
+    } else {
+      this.toolEvents.push(entry)
     }
+    this.trimToolHistory()
+    return entry
   }
 
   private formatToolSlot(payload: unknown): { text: string; color?: string; summary?: string } {
@@ -1197,6 +1611,17 @@ export class ReplSessionController extends EventEmitter {
     const previous = state.lastText
     const delta = text.startsWith(previous) ? text.slice(previous.length) : text
     state.lastText = previous + delta
+    state.streamer.append(delta)
+    this.markEntryMarkdownStreaming(entryId, true)
+  }
+
+  private appendMarkdownDelta(delta: string): void {
+    if (!this.streamingEntryId || !this.shouldStreamMarkdown()) return
+    if (!delta) return
+    const entryId = this.streamingEntryId
+    const state = this.ensureMarkdownStreamer(entryId)
+    if (!state) return
+    state.lastText += delta
     state.streamer.append(delta)
     this.markEntryMarkdownStreaming(entryId, true)
   }
@@ -1382,10 +1807,25 @@ export class ReplSessionController extends EventEmitter {
     while (!this.abortRequested) {
       this.abortController = new AbortController()
       try {
-        for await (const event of this.providers.sdk.stream(this.sessionId, { signal: this.abortController.signal })) {
+        const resumeFrom = this.lastEventId ?? undefined
+        const warnOnReconnect = this.hasStreamedOnce
+        let warned = false
+        for await (const event of this.providers.sdk.stream(this.sessionId, {
+          signal: this.abortController.signal,
+          lastEventId: resumeFrom,
+        })) {
+          if (warnOnReconnect && !warned) {
+            this.pushHint("Reconnected to stream; some history may be missing.")
+            warned = true
+          }
+          this.hasStreamedOnce = true
+          this.disconnected = false
           this.consecutiveFailures = 0
           this.stats.eventCount += 1
           this.stats.lastTurn = event.turn ?? this.stats.lastTurn
+          if (typeof event.id === "string" && event.id.trim()) {
+            this.lastEventId = event.id
+          }
           this.enqueueEvent(event)
         }
         if (!this.awaitingRestart) {
@@ -1466,14 +1906,35 @@ export class ReplSessionController extends EventEmitter {
   }
 
   private applyEvent(event: SessionEvent): void {
+    if (isRecord(event.payload)) {
+      this.updateUsageFromPayload(event.payload)
+    }
     switch (event.type) {
+      case "turn_start": {
+        this.clearStopRequest()
+        this.pendingResponse = true
+        this.status = "Assistant thinking…"
+        const turnLabel = typeof event.turn === "number" ? `Turn ${event.turn} started` : "Turn started"
+        this.addTool("status", `[turn] ${turnLabel}`)
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const mode = normalizeModeValue(extractString(payload, ["mode", "agent_mode", "phase"]))
+        if (mode) {
+          this.mode = mode
+        }
+        break
+      }
       case "assistant_message": {
         if (this.pendingResponse) this.status = "Assistant responding…"
         const text = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
         const normalizedText = this.normalizeAssistantText(text)
         this.addConversation("assistant", normalizedText, "streaming")
         this.appendMarkdownChunk(normalizedText)
-        this.pendingResponse = false
+        break
+      }
+      case "assistant_delta": {
+        if (this.pendingResponse) this.status = "Assistant responding…"
+        const delta = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+        this.appendAssistantDelta(delta)
         break
       }
       case "user_message": {
@@ -1531,6 +1992,19 @@ export class ReplSessionController extends EventEmitter {
         this.addTool("status", `[permission] ${tool} (${kind})`, "pending")
         break
       }
+      case "permission_response": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const response =
+          extractString(payload, ["response", "decision"]) ??
+          (isRecord(payload.responses) && typeof payload.responses.default === "string" ? payload.responses.default : undefined)
+        const responseLabel = response ? response.replace(/[_-]+/g, " ") : "response received"
+        this.addTool("status", `[permission] ${responseLabel}`, "success")
+        this.pushHint(`Permission ${responseLabel}.`)
+        this.setPermissionActive(null)
+        this.pendingResponse = false
+        this.status = "Permission response received"
+        break
+      }
       case "checkpoint_list": {
         const payload = isRecord(event.payload) ? event.payload : {}
         const rawList = Array.isArray(payload.checkpoints)
@@ -1549,6 +2023,76 @@ export class ReplSessionController extends EventEmitter {
         this.rewindMenu = { status: "ready", checkpoints: parsed }
         this.status = "Checkpoints ready"
         this.pushHint(`Loaded ${parsed.length} checkpoint${parsed.length === 1 ? "" : "s"}.`)
+        break
+      }
+      case "skills_catalog": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const catalog = (payload.catalog ?? payload) as SkillCatalog
+        const selection = (payload.selection ?? null) as SkillSelection | null
+        const sources = (payload.sources ?? null) as SkillCatalogSources | null
+        this.skillsCatalog = catalog
+        this.skillsSelection = selection
+        this.skillsSources = sources
+        if (this.skillsMenu.status !== "hidden") {
+          this.skillsMenu = { status: "ready", catalog, selection, sources }
+        }
+        this.pushHint("Skills catalog updated.")
+        break
+      }
+      case "skills_selection": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const selection = (payload.selection ?? payload) as SkillSelection
+        this.skillsSelection = selection
+        if (this.skillsMenu.status === "ready") {
+          this.skillsMenu = {
+            status: "ready",
+            catalog: this.skillsMenu.catalog,
+            selection,
+            sources: this.skillsMenu.sources,
+          }
+        }
+        this.pushHint("Skills selection updated.")
+        break
+      }
+      case "task_event": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const taskId = extractString(payload, ["task_id", "id"])
+        const status = extractString(payload, ["status", "state"]) ?? "update"
+        const statusLower = status.toLowerCase()
+        if (statusLower.includes("stop")) {
+          this.noteStopRequested()
+          this.status = "Stopping…"
+        }
+        const description = extractString(payload, ["description", "title", "prompt"])
+        const lineParts = [status, description, taskId].filter(Boolean)
+        const line = lineParts.length > 0 ? lineParts.join(" · ") : JSON.stringify(payload)
+        const isError = typeof payload.error === "string" && payload.error.trim().length > 0
+        const isComplete = status.toLowerCase().includes("complete") || status.toLowerCase().includes("done")
+        this.addTool("status", `[task] ${line}`, isError ? "error" : isComplete ? "success" : "pending")
+        this.handleTaskEvent(payload)
+        break
+      }
+      case "ctree_node": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const next: CTreeSnapshot = {
+          ...(this.ctreeSnapshot ?? {}),
+          ...(isRecord(payload.snapshot) ? { snapshot: payload.snapshot } : {}),
+          ...(isRecord(payload.node) ? { last_node: payload.node } : {}),
+        }
+        this.ctreeSnapshot = next
+        break
+      }
+      case "ctree_snapshot": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const next: CTreeSnapshot = {
+          ...(this.ctreeSnapshot ?? {}),
+          ...(payload.snapshot !== undefined ? { snapshot: payload.snapshot as Record<string, unknown> | null } : {}),
+          ...(payload.compiler !== undefined ? { compiler: payload.compiler as Record<string, unknown> | null } : {}),
+          ...(payload.collapse !== undefined ? { collapse: payload.collapse as Record<string, unknown> | null } : {}),
+          ...(payload.runner !== undefined ? { runner: payload.runner as Record<string, unknown> | null } : {}),
+          ...(payload.last_node !== undefined ? { last_node: payload.last_node as Record<string, unknown> | null } : {}),
+        }
+        this.ctreeSnapshot = next
         break
       }
       case "checkpoint_restored": {
@@ -1576,33 +2120,52 @@ export class ReplSessionController extends EventEmitter {
         if (this.pendingResponse) this.status = "Tool call in progress…"
         this.stats.toolCount += 1
         const payloadText = JSON.stringify(event.payload)
-        this.addTool("call", `[call] ${payloadText}`, "pending")
+        const callId = typeof event.payload?.call_id === "string" ? event.payload.call_id : null
+        const callEntry = this.addTool("call", `[call] ${payloadText}`, "pending", { callId })
         const slotId = createSlotId()
-        const callKey = typeof event.payload?.call_id === "string" ? event.payload.call_id : slotId
+        const callKey = callId ?? slotId
         const slot = this.formatToolSlot(event.payload)
-        if (typeof event.payload?.call_id === "string") {
-          this.toolSlotsByCallId.set(callKey, slotId)
+        if (callId) {
+          this.toolSlotsByCallId.set(callId, slotId)
+          this.toolLogEntryByCallId.set(callId, callEntry.id)
         } else {
           this.toolSlotFallback.push(slotId)
         }
         this.upsertLiveSlot(slotId, slot.text, slot.color, "pending")
+        const todos = this.extractTodosFromPayload(event.payload)
+        if (todos) {
+          this.todos = todos
+          this.pushHint(`Todos updated (${todos.length}).`)
+        }
         break
       }
       case "tool_result": {
         if (this.pendingResponse) this.status = "Tool result received"
         this.stats.toolCount += 1
         const resultWasError = this.isToolResultError(event.payload)
-        this.addTool("result", `[result] ${JSON.stringify(event.payload)}`, resultWasError ? "error" : "success")
-        const callKey = typeof event.payload?.call_id === "string" ? event.payload.call_id : undefined
-        if (callKey) {
-          const slotId = this.toolSlotsByCallId.get(callKey)
+        const callId = typeof event.payload?.call_id === "string" ? event.payload.call_id : null
+        const callEntryId = callId ? this.toolLogEntryByCallId.get(callId) : null
+        this.addTool("result", `[result] ${JSON.stringify(event.payload)}`, resultWasError ? "error" : "success", {
+          callId,
+          insertAfterId: callEntryId,
+        })
+        if (callId) {
+          const slotId = this.toolSlotsByCallId.get(callId)
           if (slotId) {
-            this.toolSlotsByCallId.delete(callKey)
+            this.toolSlotsByCallId.delete(callId)
             this.finalizeLiveSlot(slotId, resultWasError ? "error" : "success")
+          }
+          if (callEntryId) {
+            this.toolLogEntryByCallId.delete(callId)
           }
         } else {
           const slotId = this.toolSlotFallback.pop()
           if (slotId) this.finalizeLiveSlot(slotId, resultWasError ? "error" : "success")
+        }
+        const todos = this.extractTodosFromPayload(event.payload)
+        if (todos) {
+          this.todos = todos
+          this.pushHint(`Todos updated (${todos.length}).`)
         }
         break
       }
@@ -1613,8 +2176,19 @@ export class ReplSessionController extends EventEmitter {
         this.upsertLiveSlot("reward", `Reward update: ${summary}`, "#38bdf8", "success", 2000)
         break
       }
+      case "log_link": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const link = extractString(payload, ["url", "href", "path"]) ?? JSON.stringify(payload)
+        this.addTool("status", `[log] ${link}`)
+        this.pushHint("Log link available.")
+        break
+      }
       case "error": {
-        const message = JSON.stringify(event.payload)
+        const raw = JSON.stringify(event.payload)
+        const message = formatErrorPayload(event.payload)
+        if (DEBUG_EVENTS && message !== raw) {
+          console.error(`[repl error payload] ${raw}`)
+        }
         this.pushHint(`[error] ${message}`)
         this.addTool("error", `[error] ${message}`, "error")
         this.pendingResponse = false
@@ -1623,6 +2197,7 @@ export class ReplSessionController extends EventEmitter {
       }
       case "completion": {
         this.finalizeStreamingEntry()
+        this.clearStopRequest()
         const view = formatCompletion(event.payload)
         if (DEBUG_EVENTS) {
           console.log(
@@ -1665,6 +2240,7 @@ export class ReplSessionController extends EventEmitter {
       }
       case "run_finished": {
         this.finalizeStreamingEntry()
+        this.clearStopRequest()
         if (typeof event.payload?.eventCount === "number" && Number.isFinite(event.payload.eventCount)) {
           this.stats.eventCount = event.payload.eventCount
         }
@@ -1691,5 +2267,42 @@ export class ReplSessionController extends EventEmitter {
       return "No coding task detected. Describe a concrete change (e.g., \"Implement bubble sort in sorter.py\") or switch models with /model."
     }
     return text
+  }
+
+  private appendAssistantDelta(delta: string): void {
+    if (!delta) return
+    if (this.streamingEntryId) {
+      const index = this.conversation.findIndex((entry) => entry.id === this.streamingEntryId)
+      if (index >= 0) {
+        const existing = this.conversation[index]
+        const nextText = `${existing.text ?? ""}${delta}`
+        this.conversation[index] = { ...existing, text: nextText, phase: "streaming" }
+      } else {
+        this.setStreamingConversation("assistant", delta)
+      }
+    } else {
+      this.setStreamingConversation("assistant", delta)
+    }
+    this.appendMarkdownDelta(delta)
+  }
+
+  private noteStopRequested(): void {
+    this.stopRequestedAt = Date.now()
+    if (this.stopTimer) clearTimeout(this.stopTimer)
+    this.stopTimer = setTimeout(() => {
+      if (this.stopRequestedAt && !this.completionSeen && !this.disconnected) {
+        this.pushHint("Still stopping…")
+        this.status = "Still stopping…"
+        this.emitChange()
+      }
+    }, STOP_SOFT_TIMEOUT_MS)
+  }
+
+  private clearStopRequest(): void {
+    if (this.stopTimer) {
+      clearTimeout(this.stopTimer)
+      this.stopTimer = null
+    }
+    this.stopRequestedAt = null
   }
 }

@@ -12,7 +12,7 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     load_dotenv = None
 
-from .app import create_app
+from agentic_coder_prototype.api.cli_bridge.app import create_app
 
 
 def _load_env() -> None:

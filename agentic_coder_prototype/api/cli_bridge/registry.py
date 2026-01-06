@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Deque, Dict, Iterable, Optional, Set
 
 from .events import SessionEvent
 from .models import SessionStatus, SessionSummary
@@ -25,15 +26,29 @@ class SessionRecord:
     metadata: Dict[str, Any] = field(default_factory=dict)
     completion_summary: Optional[Dict[str, Any]] = None
     reward_summary: Optional[Dict[str, Any]] = None
-    event_queue: "asyncio.Queue[SessionEvent]" = field(default_factory=asyncio.Queue)
+    event_queue: "asyncio.Queue[Optional[SessionEvent]]" = field(
+        default_factory=lambda: asyncio.Queue(maxsize=1000)
+    )
+    event_log: Deque[SessionEvent] = field(default_factory=lambda: deque(maxlen=1000))
+    event_seq: int = 0
+    subscribers: Set["asyncio.Queue[Optional[SessionEvent]]"] = field(default_factory=set, repr=False)
+    dispatch_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
+    dispatcher_task: Optional[asyncio.Task] = None
     runner: Any = None  # Populated with SessionRunner once started
 
     def to_summary(self) -> SessionSummary:
+        model = None
+        mode = None
+        if isinstance(self.metadata, dict):
+            model = self.metadata.get("model")
+            mode = self.metadata.get("mode")
         return SessionSummary(
             session_id=self.session_id,
             status=self.status,
             created_at=self.created_at,
             last_activity_at=self.last_activity_at,
+            model=model,
+            mode=mode,
             completion_summary=self.completion_summary,
             reward_summary=self.reward_summary,
             logging_dir=self.logging_dir,

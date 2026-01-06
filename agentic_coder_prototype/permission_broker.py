@@ -181,6 +181,15 @@ class PermissionBroker:
             disabled.add("webfetch")
         return disabled
 
+    def auto_allow(self) -> bool:
+        return bool(self._auto_allow)
+
+    def decide(self, call: Any) -> Optional[str]:
+        request = self._build_request(call)
+        if not request:
+            return None
+        return self._resolve_action(request)
+
     def ensure_allowed(self, session_state, parsed_calls: Iterable[Any]) -> None:
         if not parsed_calls:
             return
@@ -537,6 +546,12 @@ class PermissionBroker:
             metadata = {"path": path, "function": function}
             pattern = path or function
             return PermissionRequest(category="edit", pattern=pattern, metadata=metadata)
+        if function.startswith("mcp.") or function.startswith("mcp__"):
+            metadata = {"function": function}
+            return PermissionRequest(category="mcp", pattern=function, metadata=metadata)
+        if function.startswith("plugin.") or function.startswith("plugin__"):
+            metadata = {"function": function}
+            return PermissionRequest(category="plugin", pattern=function, metadata=metadata)
         return None
 
     def _extract_function_name(self, call: Any) -> str:

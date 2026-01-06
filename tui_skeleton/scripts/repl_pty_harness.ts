@@ -19,6 +19,8 @@ type KeyName =
   | "ctrl+c"
   | "ctrl+d"
   | "ctrl+l"
+  | "ctrl+t"
+  | "ctrl+o"
   | "ctrl+v"
   | "ctrl+left"
   | "ctrl+right"
@@ -90,6 +92,12 @@ const resolveKey = (key: KeyName): string => {
       return "\u0004"
     case "ctrl+l":
       return "\f"
+    case "ctrl+k":
+      return "\u000b"
+    case "ctrl+t":
+      return "\u0014"
+    case "ctrl+o":
+      return "\u000f"
     case "ctrl+v":
       return "\u0016"
     case "ctrl+left":
@@ -226,6 +234,7 @@ const run = async () => {
   let observedUserLines = 0
   let hasPendingInput = false
   let pendingSubmit: { readonly deadline: number; readonly userLines: number } | null = null
+  let currentInput = ""
 
   const child = pty.spawn(executable, args, {
     name: "xterm-256color",
@@ -237,6 +246,11 @@ const run = async () => {
 
   const appendPlain = (chunk: string) => {
     plainBuffer = (plainBuffer + chunk).slice(-MAX_PLAIN_BUFFER_SIZE)
+  }
+
+  const isInputLocked = (): boolean => {
+    const tail = plainBuffer.slice(-4000)
+    return tail.includes("Input locked — use the active modal controls.")
   }
 
   const updateUserLineStats = () => {
@@ -365,6 +379,7 @@ const run = async () => {
         case "type":
           if (step.text.length > 0) {
             hasPendingInput = true
+            currentInput += step.text
           }
           for (const char of step.text) {
             child.write(char)
@@ -379,11 +394,24 @@ const run = async () => {
           const repeat = step.repeat ?? 1
           for (let i = 0; i < repeat; i += 1) {
             child.write(sequence)
-            if (step.key === "enter" && hasPendingInput && !pendingSubmit) {
-              pendingSubmit = {
-                deadline: Date.now() + options.submitTimeoutMs,
-                userLines: observedUserLines,
+            if (step.key === "backspace") {
+              currentInput = currentInput.slice(0, -1)
+            }
+            if (step.key === "ctrl+backspace") {
+              currentInput = ""
+            }
+            if (step.key === "enter") {
+              const trimmed = currentInput.trim()
+              const isSlashCommand = trimmed.startsWith("/")
+              const inputLocked = isInputLocked()
+              if (options.submitTimeoutMs > 0 && hasPendingInput && !pendingSubmit && !isSlashCommand && !inputLocked) {
+                pendingSubmit = {
+                  deadline: Date.now() + options.submitTimeoutMs,
+                  userLines: observedUserLines,
+                }
               }
+              currentInput = ""
+              hasPendingInput = false
             }
             if (step.delayMs && step.delayMs > 0) {
               await sleep(step.delayMs)

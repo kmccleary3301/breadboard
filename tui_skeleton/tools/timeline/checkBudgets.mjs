@@ -18,6 +18,10 @@ const options = {
   maxWarnings: toNumber(process.env.MAX_TIMELINE_WARNINGS),
   resizeEvents: toNumber(process.env.RESIZE_EVENT_BUDGET),
   resizeBurstMs: toNumber(process.env.RESIZE_BURST_BUDGET_MS),
+  maxLinesPct: toNumber(process.env.MAX_LINES_CHANGED_PCT),
+  p95LinesPct: toNumber(process.env.P95_LINES_CHANGED_PCT),
+  maxGhostLines: toNumber(process.env.MAX_GHOST_LINES),
+  maxFlickerEvents: toNumber(process.env.MAX_FLICKER_EVENTS),
   warningsFile: null,
 }
 
@@ -48,6 +52,18 @@ for (let i = 0; i < args.length; i += 1) {
     case "--resize-burst-ms":
       options.resizeBurstMs = toNumber(args[++i])
       break
+    case "--max-lines-pct":
+      options.maxLinesPct = toNumber(args[++i])
+      break
+    case "--p95-lines-pct":
+      options.p95LinesPct = toNumber(args[++i])
+      break
+    case "--max-ghost-lines":
+      options.maxGhostLines = toNumber(args[++i])
+      break
+    case "--max-flicker-events":
+      options.maxFlickerEvents = toNumber(args[++i])
+      break
     case "--warnings-file":
       options.warningsFile = args[++i]
       break
@@ -57,7 +73,9 @@ for (let i = 0; i < args.length; i += 1) {
 }
 
 const usage = () => {
-  console.error("Usage: checkBudgets --summary <path> [--case <name>] [--ttft-ms <ms>] [--spinner-hz <hz>] [--min-sse <count>] [--max-warnings <count>]")
+  console.error(
+    "Usage: checkBudgets --summary <path> [--case <name>] [--ttft-ms <ms>] [--spinner-hz <hz>] [--min-sse <count>] [--max-warnings <count>] [--max-lines-pct <ratio>] [--p95-lines-pct <ratio>] [--max-ghost-lines <count>] [--max-flicker-events <count>]",
+  )
   process.exit(2)
 }
 
@@ -85,6 +103,10 @@ const writeWarningsEntry = async (summaryPath, violations, metrics) => {
       maxWarnings: options.maxWarnings,
       resizeEvents: options.resizeEvents,
       resizeBurstMs: options.resizeBurstMs,
+      maxLinesPct: options.maxLinesPct,
+      p95LinesPct: options.p95LinesPct,
+      maxGhostLines: options.maxGhostLines,
+      maxFlickerEvents: options.maxFlickerEvents,
     },
     timestamp: Date.now(),
   }
@@ -167,12 +189,53 @@ const main = async () => {
     }
   }
 
+  const lineDiff = payload.lineDiff || {}
+  const maxLinesChangedPct = typeof lineDiff.maxLinesChangedPct === "number" ? lineDiff.maxLinesChangedPct : null
+  if (options.maxLinesPct != null && maxLinesChangedPct != null && maxLinesChangedPct > options.maxLinesPct) {
+    violations.push({
+      metric: "maxLinesChangedPct",
+      actual: maxLinesChangedPct,
+      budget: options.maxLinesPct,
+      message: `${options.caseName}: max line diff ${maxLinesChangedPct.toFixed(3)} exceeds budget ${options.maxLinesPct.toFixed(3)}`,
+    })
+  }
+  const p95LinesChangedPct = typeof lineDiff.p95LinesChangedPct === "number" ? lineDiff.p95LinesChangedPct : null
+  if (options.p95LinesPct != null && p95LinesChangedPct != null && p95LinesChangedPct > options.p95LinesPct) {
+    violations.push({
+      metric: "p95LinesChangedPct",
+      actual: p95LinesChangedPct,
+      budget: options.p95LinesPct,
+      message: `${options.caseName}: p95 line diff ${p95LinesChangedPct.toFixed(3)} exceeds budget ${options.p95LinesPct.toFixed(3)}`,
+    })
+  }
+  const ghostLines = typeof payload.ghostLines === "number" ? payload.ghostLines : null
+  if (options.maxGhostLines != null && ghostLines != null && ghostLines > options.maxGhostLines) {
+    violations.push({
+      metric: "ghostLines",
+      actual: ghostLines,
+      budget: options.maxGhostLines,
+      message: `${options.caseName}: ghost lines ${ghostLines} exceeds budget ${options.maxGhostLines}`,
+    })
+  }
+  const flickerEvents =
+    typeof lineDiff.flickerLineEvents === "number" ? lineDiff.flickerLineEvents : null
+  if (options.maxFlickerEvents != null && flickerEvents != null && flickerEvents > options.maxFlickerEvents) {
+    violations.push({
+      metric: "flickerEvents",
+      actual: flickerEvents,
+      budget: options.maxFlickerEvents,
+      message: `${options.caseName}: flicker events ${flickerEvents} exceeds budget ${options.maxFlickerEvents}`,
+    })
+  }
+
   const metricsSnapshot = {
     ttftMs: ttftSeconds != null ? ttftSeconds * 1000 : null,
     spinnerHz,
     sseEvents,
     warnings,
     resizeStats,
+    lineDiff,
+    ghostLines,
   }
 
   await writeWarningsEntry(summaryPath, violations, metricsSnapshot)

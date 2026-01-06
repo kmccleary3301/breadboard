@@ -1,0 +1,31 @@
+extends: base_v2.yaml
+
+profile: { name: cline-deep-plan }
+
+features: { deep_plan: true, plan: true }
+
+prompts:
+  packs:
+    base:
+      deep_plan: implementations/system_prompts/claude_code/system-workflow.prompt.md
+
+modes:
+  - name: deep_plan
+    prompt: "@pack(base).deep_plan"
+    tools_enabled: [read_file, list_dir, glob, grep]
+    tools_disabled: [apply_unified_patch, apply_search_replace, run_shell]
+    outputs: { plan_file: PLAN.md, tasks_file: TASKS.md }
+    exit: { when: [plan_is_ready, user_approved] }
+  - name: plan
+  - name: build
+
+tools:
+  overlays:
+    - id: cline_overrides
+      rename: { run_shell: terminal }
+      syntax_style: { run_shell: bash_block }
+      provider_preference:
+        run_shell:
+          anthropic: { native_primary: true, fallbacks: [bash_block] }
+
+

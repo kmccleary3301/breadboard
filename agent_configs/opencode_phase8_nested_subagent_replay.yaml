@@ -1,0 +1,8 @@
+extends: opencode_phase8_async_subagents_v1_replay.yaml
+
+profile: { name: opencode-phase8-nested-subagent-replay }
+
+task_tool:
+  subagents:
+    repo-scanner:
+      replay_index: misc/opencode_runs/replay_sessions/1.0.193/phase8_subagent_nested_spawn_v1/subagents/index.json

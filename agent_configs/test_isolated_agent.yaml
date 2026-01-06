@@ -1,0 +1,56 @@
+# Test Configuration for Isolated Agent
+# Demonstrates path virtualization with test-time mirroring
+
+workspace: ./isolated_test_output  # For test-time mirroring only
+
+model:
+  id: gpt-5-nano
+  provider: openai
+
+runtime:
+  image: python-dev:latest
+
+enhanced_tools:
+  # Dialect management
+  dialect_filtering:
+    enabled: true
+    mode: "exclusive"
+    operation_dialects:
+      file_creation:
+        - "bash_block"
+        - "unified_diff" 
+      file_editing:
+        - "unified_diff"
+        - "aider_diff"
+      shell_execution:
+        - "bash_block"
+        - "pythonic02"
+        
+  # Validation framework  
+  validation:
+    enabled: true
+    rules:
+      - "no_redundant_creation"
+      - "read_before_edit"
+      - "file_exists"
+    rule_config:
+      no_redundant_creation:
+        strictness: "error"
+      read_before_edit:
+        strictness: "warn"
+        
+  # LSP Integration
+  lsp_integration:
+    enabled: true
+    format_feedback: true
+    max_errors_shown: 3
+
+# Deployment configuration  
+deployment:
+  mode: "development"     # development, testing, production
+  isolation: true
+  mirror_results: true
+
+limits:
+  max_steps: 10
+  clean_workspace: true

@@ -7,24 +7,32 @@ providers:
   models:
     - id: openai/gpt-5.1-codex-mini
       adapter: openai
-      params: { temperature: 0.2, top_p: 0.9 }
+      params: {}
 
 provider_tools:
   use_native: true
-  suppress_prompts: false
+  suppress_prompts: true
   api_variant: responses
+  responses_use_developer_role: true
+  tool_choice: auto
 
 prompts:
   packs:
     base:
-      system: implementations/system_prompts/opencode/anthropic.md
+      system: implementations/system_prompts/opencode/codex.md
       plan: implementations/system_prompts/opencode/plan_grok4.md
       builder: implementations/system_prompts/opencode/builder_grok4.md
+  environment:
+    enabled: true
+    format: opencode
+    file_limit: 200
   tool_prompt_mode: system_compiled_and_persistent_per_turn
   tool_prompt_synthesis:
-    enabled: true
-    selection:
-      default: opencode_patch
+    enabled: false
+  injection:
+    system_order:
+      - '@pack(base).system'
+    per_turn_order: []
 
 enhanced_tools:
   enabled: true

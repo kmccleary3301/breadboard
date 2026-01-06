@@ -10,11 +10,12 @@ Key features:
 """
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
-from fnmatch import fnmatch
 from typing import List, Dict, Any, Set, Optional
 
 from ..core.core import ToolDefinition
@@ -121,6 +122,9 @@ class SystemPromptCompiler:
     
     def _find_cached_prompt(self, tools_hash: str) -> Optional[Path]:
         """Find existing cached prompt with matching hash"""
+        direct = self.cache_dir / f"sys_prompt_{tools_hash}.md"
+        if direct.exists():
+            return direct
         pattern = f"sys_prompt_*_{tools_hash}.md"
         matches = list(self.cache_dir.glob(pattern))
         return matches[0] if matches else None
@@ -337,7 +341,7 @@ class SystemPromptCompiler:
         return self.format_per_turn_availability_enhanced(enabled_tools, preferred_formats)
     
     def _create_metadata_header(self, tools: List[ToolDefinition], dialects: List[str], 
-                               tools_hash: str, prompt_id: int) -> str:
+                               tools_hash: str, prompt_id: Any) -> str:
         """Create metadata header for cached prompt file"""
         tool_names = [t.name for t in tools]
         
@@ -397,9 +401,9 @@ class SystemPromptCompiler:
             tool_prompt_mode=tool_prompt_mode,
         )
 
-        prompt_id = self._get_next_id()
+        prompt_id = tools_hash
         header = self._create_metadata_header(tools, dialects, tools_hash, prompt_id)
-        file_name = f"sys_prompt_{prompt_id:03d}_{tools_hash}.md"
+        file_name = f"sys_prompt_{tools_hash}.md"
         file_path = self.cache_dir / file_name
         try:
             file_path.write_text(header + comprehensive_prompt, encoding="utf-8")
@@ -414,258 +418,240 @@ class SystemPromptCompiler:
         mode_name: str,
         tools: List[ToolDefinition],
         dialects: List[str],
+        extra_blocks: Optional[Dict[str, List[str]]] = None,
     ) -> Dict[str, Any]:
-        """Compile V2 prompt packs + TPSL catalogs into system/per-turn prompts."""
-        prompts_cfg = config.get("prompts", {}) or {}
-        packs = prompts_cfg.get("packs", {}) or {}
-        injection = prompts_cfg.get("injection", {}) or {}
-        system_order = list(injection.get("system_order") or [])
-        per_turn_order = list(injection.get("per_turn_order") or [])
+        """Compile v2 prompts (packs + injection + TPSL catalogs)."""
+        cfg = config or {}
+        prompts_cfg = cfg.get("prompts") if isinstance(cfg, dict) and "prompts" in cfg else cfg
+        prompts_cfg = prompts_cfg if isinstance(prompts_cfg, dict) else {}
+        packs_cfg = prompts_cfg.get("packs") or {}
+        injection_cfg = prompts_cfg.get("injection") or {}
+        dedupe_enabled = bool(prompts_cfg.get("dedupe", False))
 
-        if not system_order:
-            system_order = ["@pack(base).system"]
-
-        mode_prompt_spec = ""
-        for mode in config.get("modes", []) or []:
-            if mode.get("name") == mode_name:
-                mode_prompt_spec = mode.get("prompt") or ""
-                break
-
-        def _read_path(path: str) -> str:
-            if not path:
+        def _load_text(value: Any) -> str:
+            if not value:
                 return ""
-            p = Path(path)
-            if p.exists():
+            if isinstance(value, str):
+                # Treat multiline or very long strings as literal text, not paths.
+                if "\n" in value or len(value) > 256:
+                    return value
                 try:
-                    return p.read_text(encoding="utf-8")
-                except Exception:
-                    return ""
+                    path = Path(value)
+                    if path.exists():
+                        try:
+                            return path.read_text(encoding="utf-8", errors="replace")
+                        except Exception:
+                            return ""
+                except OSError:
+                    return value
+                return value
             return ""
 
-        def _resolve_pack(spec: str) -> str:
-            if not spec.startswith("@pack("):
+        def _resolve_pack_ref(token: str, pack_texts: Dict[str, Dict[str, str]]) -> str:
+            match = re.match(r"@pack\(([^)]+)\)\.(.+)$", token.strip())
+            if not match:
                 return ""
-            close = spec.find(")")
-            if close == -1 or close + 2 > len(spec) or spec[close + 1] != ".":
-                return ""
-            pack_name = spec[len("@pack("):close]
-            key = spec[close + 2:]
-            pack = packs.get(pack_name) or {}
-            value = pack.get(key, "")
-            return _resolve_spec(value)
+            pack_name, key = match.group(1), match.group(2)
+            return _load_text((pack_texts.get(pack_name) or {}).get(key))
 
-        def _resolve_spec(spec: Any) -> str:
-            if not spec:
-                return ""
-            if isinstance(spec, (list, tuple)):
-                return "\n\n".join(filter(None, (_resolve_spec(s) for s in spec)))
-            if not isinstance(spec, str):
-                return str(spec)
-            if spec == "mode_specific":
-                return _resolve_spec(mode_prompt_spec)
-            if spec.startswith("@pack("):
-                return _resolve_pack(spec)
-            # Prefer file content if it is a path on disk.
-            if "\n" in spec:
-                return spec
-            path_text = _read_path(spec)
-            return path_text if path_text else spec
+        pack_texts: Dict[str, Dict[str, str]] = {}
+        if isinstance(packs_cfg, dict):
+            for pack_name, pack_map in packs_cfg.items():
+                if not isinstance(pack_map, dict):
+                    continue
+                resolved: Dict[str, str] = {}
+                for key, raw in pack_map.items():
+                    resolved[str(key)] = _load_text(raw)
+                pack_texts[str(pack_name)] = resolved
 
-        # TPSL catalog rendering (optional)
-        tpsl_cfg = prompts_cfg.get("tool_prompt_synthesis", {}) or {}
-        tpsl_enabled = bool(tpsl_cfg.get("enabled"))
+        # Resolve mode-specific prompt
+        mode_prompt = ""
+        try:
+            for mode in (cfg.get("modes") or []):
+                if not isinstance(mode, dict):
+                    continue
+                if mode.get("name") == mode_name:
+                    mode_prompt = _load_text(mode.get("prompt"))
+                    if mode_prompt.startswith("@pack("):
+                        mode_prompt = _resolve_pack_ref(mode_prompt, pack_texts)
+                    break
+        except Exception:
+            mode_prompt = ""
+
+        # TPSL catalogs
         tpsl_meta: Dict[str, Any] = {}
-        tools_catalog_full = ""
-        tools_catalog_short = ""
-
+        tpsl_cfg = prompts_cfg.get("tool_prompt_synthesis") if isinstance(prompts_cfg, dict) else None
+        tpsl_enabled = isinstance(tpsl_cfg, dict) and bool(tpsl_cfg.get("enabled"))
         if tpsl_enabled:
-            selection = tpsl_cfg.get("selection", {}) or {}
-            by_mode = selection.get("by_mode", {}) or {}
-            by_model = selection.get("by_model", {}) or {}
-
-            selected_dialect = by_mode.get(mode_name)
+            selection = tpsl_cfg.get("selection") or {}
+            selected_dialect = None
+            by_mode = selection.get("by_mode") or {}
+            if isinstance(by_mode, dict):
+                selected_dialect = by_mode.get(mode_name)
             if not selected_dialect:
-                default_model = (config.get("providers") or {}).get("default_model", "")
-                for pattern, dialect_id in by_model.items():
-                    if default_model and fnmatch(default_model, pattern):
-                        selected_dialect = dialect_id
-                        break
-
+                by_model = selection.get("by_model") or {}
+                if isinstance(by_model, dict):
+                    model_id = None
+                    try:
+                        providers = cfg.get("providers") or {}
+                        model_id = providers.get("default_model")
+                    except Exception:
+                        model_id = None
+                    if model_id:
+                        for pattern, dialect in by_model.items():
+                            if pattern and fnmatch.fnmatch(str(model_id), str(pattern)):
+                                selected_dialect = dialect
+                                break
             if not selected_dialect:
-                if "unified_diff" in (dialects or []):
-                    selected_dialect = "unified_diff"
-                elif "opencode_patch" in (dialects or []):
-                    selected_dialect = "opencode_patch"
-                elif "pythonic02" in (dialects or []) or "pythonic" in (dialects or []):
-                    selected_dialect = "pythonic"
-                elif dialects:
-                    selected_dialect = str(dialects[0])
-                else:
-                    selected_dialect = "pythonic"
+                selected_dialect = selection.get("default")
+            if not selected_dialect:
+                selected_dialect = dialects[0] if dialects else "pythonic"
 
-            detail_cfg = tpsl_cfg.get("detail", {}) or {}
-            system_detail = detail_cfg.get("system", "full")
-            per_turn_detail = detail_cfg.get("per_turn", "short")
-            system_key = system_detail if system_detail.startswith("system_") else f"system_{system_detail}"
-            per_turn_key = per_turn_detail if per_turn_detail.startswith("per_turn_") else f"per_turn_{per_turn_detail}"
+            detail_cfg = tpsl_cfg.get("detail") or {}
+            system_detail = detail_cfg.get("system") or "full"
+            per_turn_detail = detail_cfg.get("per_turn") or "short"
+            system_detail_id = f"system_{system_detail}" if not str(system_detail).startswith("system_") else str(system_detail)
+            per_turn_detail_id = f"per_turn_{per_turn_detail}" if not str(per_turn_detail).startswith("per_turn_") else str(per_turn_detail)
 
-            templates = (tpsl_cfg.get("dialects") or {}).get(selected_dialect, {}) or {}
+            dialect_templates = {}
+            if isinstance(tpsl_cfg.get("dialects"), dict):
+                dialect_templates = tpsl_cfg["dialects"].get(selected_dialect, {}) or {}
 
             tools_payload = []
             for t in tools or []:
-                params = []
-                for p in (t.parameters or []):
-                    params.append({
-                        "name": getattr(p, "name", None),
-                        "type": getattr(p, "type", None),
-                        "default": getattr(p, "default", None),
-                        "required": bool(getattr(p, "required", False)),
-                        "description": getattr(p, "description", None),
-                    })
-                tools_payload.append({
-                    "name": getattr(t, "name", None),
-                    "display_name": getattr(t, "display_name", None),
-                    "description": getattr(t, "description", "") or "",
-                    "blocking": bool(getattr(t, "blocking", False)),
-                    "max_per_turn": getattr(t, "max_per_turn", None),
-                    "parameters": params,
-                    "return_type": getattr(t, "return_type", None),
-                    "syntax_style": getattr(t, "syntax_style", None),
-                })
+                params_payload = []
+                for p in (getattr(t, "parameters", None) or []):
+                    params_payload.append(
+                        {
+                            "name": getattr(p, "name", None),
+                            "type": getattr(p, "type", None),
+                            "description": getattr(p, "description", None),
+                            "default": getattr(p, "default", None),
+                        }
+                    )
+                tools_payload.append(
+                    {
+                        "name": getattr(t, "name", None),
+                        "description": getattr(t, "description", None),
+                        "parameters": params_payload,
+                    }
+                )
 
-            tools_catalog_full, full_id = self.tpsl.render(
-                selected_dialect,
-                system_key,
+            system_catalog, system_meta = self.tpsl.render(
+                str(selected_dialect),
+                str(system_detail_id),
                 tools_payload,
-                template_map=templates,
+                dict(dialect_templates) if isinstance(dialect_templates, dict) else {},
             )
-            tools_catalog_short, short_id = self.tpsl.render(
-                selected_dialect,
-                per_turn_key,
+            per_turn_catalog, per_turn_meta = self.tpsl.render(
+                str(selected_dialect),
+                str(per_turn_detail_id),
                 tools_payload,
-                template_map=templates,
+                dict(dialect_templates) if isinstance(dialect_templates, dict) else {},
             )
-            tpsl_meta = {
-                "system": {
-                    "dialect": selected_dialect,
-                    "detail": system_key,
-                    "template_id": full_id,
-                    "text": tools_catalog_full,
-                },
-                "per_turn": {
-                    "dialect": selected_dialect,
-                    "detail": per_turn_key,
-                    "template_id": short_id,
-                    "text": tools_catalog_short,
-                },
-            }
+            tpsl_meta["system"] = system_meta
+            tpsl_meta["per_turn"] = per_turn_meta
 
-        def _resolve_injection_token(token: str) -> str:
-            if not isinstance(token, str):
-                return _resolve_spec(token)
-            cleaned = token.replace("[CACHE]", "").strip()
-            if cleaned == "tools_catalog_full":
-                return tools_catalog_full
-            if cleaned == "tools_catalog_short":
-                return tools_catalog_short
-            return _resolve_spec(cleaned)
+            # Inject TPSL catalogs into the base pack if not explicitly provided.
+            base_pack = pack_texts.setdefault("base", {})
+            base_pack["tools_catalog_full"] = system_catalog or base_pack.get("tools_catalog_full", "")
+            base_pack["tools_catalog_short"] = per_turn_catalog or base_pack.get("tools_catalog_short", "")
 
-        def _append_unique(chunks: List[str], text: str, seen: Set[str]) -> None:
-            text = (text or "").strip()
-            if not text:
-                return
-            key = hashlib.sha256(text.encode("utf-8")).hexdigest()
-            if key in seen:
-                return
-            seen.add(key)
-            chunks.append(text)
+        def _normalize_token(raw: Any) -> str:
+            if not raw:
+                return ""
+            if not isinstance(raw, str):
+                return ""
+            token = raw.strip()
+            if token.upper().startswith("[CACHE]"):
+                token = token[len("[CACHE]") :].strip()
+            return token
 
-        seen_hashes: Set[str] = set()
-        system_chunks: List[str] = []
-        per_turn_chunks: List[str] = []
-        inserted_catalog_full = False
-        inserted_catalog_short = False
+        system_defined = "system_order" in injection_cfg
+        per_turn_defined = "per_turn_order" in injection_cfg
 
-        for token in system_order:
-            resolved = _resolve_injection_token(token)
-            if resolved == tools_catalog_full and resolved:
-                inserted_catalog_full = True
-            _append_unique(system_chunks, resolved, seen_hashes)
+        system_order = [
+            _normalize_token(item)
+            for item in (injection_cfg.get("system_order") or [])
+            if _normalize_token(item)
+        ]
+        per_turn_order = [
+            _normalize_token(item)
+            for item in (injection_cfg.get("per_turn_order") or [])
+            if _normalize_token(item)
+        ]
 
-        for token in per_turn_order:
-            resolved = _resolve_injection_token(token)
-            if resolved == tools_catalog_short and resolved:
-                inserted_catalog_short = True
-            _append_unique(per_turn_chunks, resolved, seen_hashes)
+        if not system_order and not system_defined:
+            system_order = ["@pack(base).system"]
+        if not per_turn_order and not per_turn_defined:
+            per_turn_order = ["mode_specific"]
 
-        # If TPSL is enabled but not explicitly injected, append catalogs at end.
-        if tpsl_enabled and tools_catalog_full.strip() and not inserted_catalog_full:
-            _append_unique(system_chunks, tools_catalog_full, seen_hashes)
-        if tpsl_enabled and tools_catalog_short.strip() and not inserted_catalog_short:
-            _append_unique(per_turn_chunks, tools_catalog_short, seen_hashes)
+        if tpsl_enabled:
+            if "@pack(base).tools_catalog_full" not in system_order and (system_order or not system_defined):
+                system_order.append("@pack(base).tools_catalog_full")
+            if "@pack(base).tools_catalog_short" not in per_turn_order and (per_turn_order or not per_turn_defined):
+                per_turn_order.append("@pack(base).tools_catalog_short")
 
-        # Fallback to default system prompt if still empty
-        if not system_chunks:
-            default_path = "implementations/system_prompts/default.md"
-            default_text = _read_path(default_path)
-            if default_text:
-                system_chunks.append(default_text.strip())
-
-        system_prompt = "\n\n".join(system_chunks)
-        per_turn_prompt = "\n\n".join(per_turn_chunks)
-
-        # Rewrite environment markers if present to reflect the active workspace root.
-        workspace_root = (config.get("workspace") or {}).get("root")
-        if isinstance(workspace_root, str) and workspace_root:
-            try:
-                resolved_root = str(Path(workspace_root).resolve())
-            except Exception:
-                resolved_root = workspace_root
-            if "<env>" in system_prompt and "Working directory:" in system_prompt:
-                lines = system_prompt.splitlines()
-                in_env = False
-                for idx, line in enumerate(lines):
-                    stripped = line.strip()
-                    if stripped == "<env>":
-                        in_env = True
+        def _assemble(order: List[str]) -> str:
+            segments: List[str] = []
+            seen_hashes: set[str] = set()
+            for token in order:
+                if token == "mode_specific":
+                    text = _load_text(mode_prompt)
+                elif token.startswith("@pack("):
+                    text = _resolve_pack_ref(token, pack_texts)
+                else:
+                    text = _load_text(token)
+                text = (text or "").strip()
+                if not text:
+                    continue
+                if dedupe_enabled:
+                    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+                    if digest in seen_hashes:
                         continue
-                    if stripped == "</env>":
-                        in_env = False
-                        continue
-                    if in_env and stripped.startswith("Working directory:"):
-                        lines[idx] = f"Working directory: {resolved_root}"
-                    if in_env and stripped.startswith("Is directory a git repo:"):
-                        git_flag = "No"
-                        try:
-                            root_path = Path(resolved_root).resolve()
-                            for candidate in (root_path, *root_path.parents):
-                                if (candidate / ".git").exists():
-                                    git_flag = "Yes"
-                                    break
-                        except Exception:
-                            git_flag = "Yes"
-                        lines[idx] = f"Is directory a git repo: {git_flag}"
-                system_prompt = "\n".join(lines)
+                    seen_hashes.add(digest)
+                segments.append(text)
+            return "\n\n".join(segments).strip()
 
-        cache_input = {
-            "mode": mode_name,
+        system_prompt = _assemble(system_order)
+        per_turn_prompt = _assemble(per_turn_order)
+
+        def _append_extra(base: str, blocks: List[str]) -> str:
+            pieces: List[str] = []
+            if base:
+                pieces.append(base)
+            for block in blocks or []:
+                text = str(block or "").strip()
+                if text:
+                    pieces.append(text)
+            return "\n\n".join(pieces).strip()
+
+        extra_blocks = extra_blocks or {}
+        if extra_blocks.get("system"):
+            system_prompt = _append_extra(system_prompt, extra_blocks["system"])
+        if extra_blocks.get("per_turn"):
+            per_turn_prompt = _append_extra(per_turn_prompt, extra_blocks["per_turn"])
+
+        cache_payload = {
             "system_order": system_order,
             "per_turn_order": per_turn_order,
-            "packs": packs,
-            "dialects": dialects,
-            "tools": [getattr(t, "name", None) for t in tools or []],
-            "tpsl": tpsl_meta,
+            "system_prompt": system_prompt,
+            "per_turn_prompt": per_turn_prompt,
+            "mode": mode_name,
+            "dialects": list(dialects or []),
+            "tpsl": tpsl_meta or None,
         }
-        cache_key = hashlib.sha256(json.dumps(cache_input, sort_keys=True).encode("utf-8")).hexdigest()[:12]
+        cache_key = hashlib.sha256(json.dumps(cache_payload, sort_keys=True).encode("utf-8")).hexdigest()[:12]
 
-        out: Dict[str, Any] = {
-            "system": system_prompt,
-            "per_turn": per_turn_prompt,
+        result = {
+            "system": system_prompt or "",
+            "per_turn": per_turn_prompt or "",
             "cache_key": cache_key,
         }
         if tpsl_meta:
-            out["tpsl"] = tpsl_meta
-        return out
+            tpsl_meta["renderer"] = "builtin_v0"
+            result["tpsl"] = tpsl_meta
+        return result
 
 
 _COMPILER_SINGLETON: SystemPromptCompiler | None = None

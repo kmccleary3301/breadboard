@@ -74,6 +74,22 @@ parameters:
   required: false
   type: boolean
   description: Set to true to run this agent in the background. Use TaskOutput to read the output later.
+- name: parent_task_id
+  required: false
+  type: string
+  description: Optional parent task id for C-Tree lineage tracking.
+- name: tree_path
+  required: false
+  type: string
+  description: Optional C-Tree path (e.g. root/branch/leaf) for hierarchical task visualization.
+- name: depth
+  required: false
+  type: integer
+  description: Optional C-Tree depth indicator.
+- name: priority
+  required: false
+  type: string
+  description: Optional C-Tree priority marker (string or numeric encoded).
 execution:
   blocking: false
 provider_routing:

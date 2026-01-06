@@ -1,0 +1,121 @@
+# Multi-Level Prompt Compilation Configuration
+# Demonstrates all new granular modes for different use cases
+
+# Configuration for different models and scenarios
+
+# GPT-5 Nano: Small model needs concise system prompt but detailed per-turn guidance  
+gpt_5_nano_optimal:
+  model_id: "gpt-5-nano"
+  provider: "openai"
+  tool_calling:
+    prompt_mode: "sys_compiled_per_turn_persistent--short-medium"
+    # Short system prompt (minimal overhead) + medium per-turn (structured guidance)
+    # Persistent mode keeps tool formats in context across turns
+  rationale: "Small model benefits from minimal system prompt but needs structured per-turn tool guidance"
+
+# Claude Sonnet: Large model can handle comprehensive system prompt  
+claude_sonnet_comprehensive:
+  model_id: "claude-3-sonnet"
+  provider: "anthropic" 
+  tool_calling:
+    prompt_mode: "sys_compiled_per_turn_persistent--long-medium"
+    # Long system prompt (comprehensive instructions) + medium per-turn (balanced)
+    # Persistent mode leverages Claude's context caching
+  rationale: "Large model can handle detailed instructions with efficient per-turn updates"
+
+# GPT-4 Turbo: Balanced approach with detailed per-turn for complex tasks
+gpt_4_turbo_balanced:
+  model_id: "gpt-4-turbo"
+  provider: "openai"
+  tool_calling:
+    prompt_mode: "sys_compiled_per_turn_persistent--medium-long"
+    # Medium system prompt + long per-turn (detailed tool docs per turn)
+    # Good for complex coding tasks requiring detailed format examples
+  rationale: "Medium system overhead with comprehensive per-turn guidance for complex tasks"
+
+# Experimental: Temporary mode for high-frequency interactions
+high_frequency_temporary:
+  model_id: "gpt-4"
+  provider: "openai"
+  tool_calling:
+    prompt_mode: "sys_compiled_per_turn_temporary--short-short"
+    # Minimal system + minimal per-turn, temporary (doesn't persist)
+    # For scenarios where tool context shouldn't accumulate
+  rationale: "Minimal context for scenarios where tool info shouldn't persist between turns"
+
+# Memory-efficient mode: Temporary with selective detail
+memory_efficient:
+  model_id: "gpt-4"
+  provider: "openai"
+  tool_calling:
+    prompt_mode: "sys_compiled_per_turn_temporary--medium-short"
+    # Medium system (enough guidance) + short per-turn (minimal overhead)
+    # Temporary mode prevents context bloat
+  rationale: "Balanced guidance without accumulating per-turn context"
+
+# Maximum detail mode: For complex debugging/development tasks
+maximum_detail:
+  model_id: "claude-3-opus"
+  provider: "anthropic"
+  tool_calling:
+    prompt_mode: "sys_compiled_per_turn_persistent--long-long"
+    # Long system + long per-turn (maximum detail everywhere)
+    # Persistent mode maintains rich context
+  rationale: "Maximum detail for complex development tasks where comprehensive guidance is needed"
+
+# All 18 available modes for reference:
+available_modes:
+  persistent_modes:
+    - "sys_compiled_per_turn_persistent--short-short"
+    - "sys_compiled_per_turn_persistent--short-medium" 
+    - "sys_compiled_per_turn_persistent--short-long"
+    - "sys_compiled_per_turn_persistent--medium-short"
+    - "sys_compiled_per_turn_persistent--medium-medium"
+    - "sys_compiled_per_turn_persistent--medium-long"
+    - "sys_compiled_per_turn_persistent--long-short"
+    - "sys_compiled_per_turn_persistent--long-medium"
+    - "sys_compiled_per_turn_persistent--long-long"
+    
+  temporary_modes:
+    - "sys_compiled_per_turn_temporary--short-short"
+    - "sys_compiled_per_turn_temporary--short-medium"
+    - "sys_compiled_per_turn_temporary--short-long"
+    - "sys_compiled_per_turn_temporary--medium-short"
+    - "sys_compiled_per_turn_temporary--medium-medium"
+    - "sys_compiled_per_turn_temporary--medium-long"
+    - "sys_compiled_per_turn_temporary--long-short"
+    - "sys_compiled_per_turn_temporary--long-medium"
+    - "sys_compiled_per_turn_temporary--long-long"
+
+# Mode Selection Guidelines:
+
+# System Prompt Length:
+# - SHORT: Minimal instructions, focus on behavior principles (~300-500 chars)
+# - MEDIUM: Balanced guidance with key principles and constraints (~800-1200 chars)  
+# - LONG: Comprehensive instructions with examples and detailed guidelines (~1500+ chars)
+
+# Per-Turn Length:
+# - SHORT: Just tool names ("Available: tool1, tool2, tool3")
+# - MEDIUM: Structured list with types ("<TOOLS_AVAILABLE>tool1 - [TYPE: ...]</TOOLS_AVAILABLE>")
+# - LONG: Full documentation with examples and format specifications
+
+# Persistence:
+# - PERSISTENT: Tool format info included in system prompt, persists across turns
+# - TEMPORARY: Tool info only in per-turn messages, doesn't accumulate
+
+# Use Case Recommendations:
+
+# For small models (gpt-5-nano, etc.):
+# → short-medium or short-long (minimal system overhead)
+
+# For large models (claude-3-opus, gpt-4):  
+# → medium-long or long-medium (leverage their capacity)
+
+# For high-frequency interactions:
+# → temporary modes to prevent context bloat
+
+# For complex development tasks:
+# → persistent modes with long per-turn for detailed guidance
+
+# For simple automation:
+# → short-short modes for minimal overhead

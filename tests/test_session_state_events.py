@@ -76,6 +76,22 @@ def test_session_state_tool_events_cover_calls_and_results() -> None:
     assert "run_shell" in names
 
 
+def test_session_state_emits_ctree_node_events() -> None:
+    collector = EventCollector()
+    state = SessionState("ws", "image", {}, event_emitter=collector)
+
+    state.add_message({"role": "assistant", "content": "hello"}, to_provider=False)
+
+    ctree_events = collector.of_type("ctree_node")
+    assert ctree_events, "Expected ctree_node event emission"
+    payload = ctree_events[-1][1]
+    node = payload.get("node") or {}
+    snapshot = payload.get("snapshot") or {}
+    assert node.get("id")
+    assert node.get("digest")
+    assert snapshot.get("node_hash")
+
+
 def test_session_runner_translates_runtime_events() -> None:
     registry = SessionRegistry()
     record = SessionRecord(session_id="sess-1", status=SessionStatus.STARTING)
@@ -151,11 +167,16 @@ async def test_session_service_event_stream_yields_ordered_events() -> None:
     first = await stream.__anext__()
     second = await stream.__anext__()
     await stream.aclose()
+    if record.dispatcher_task:
+        await record.event_queue.put(None)
+        await record.dispatcher_task
     await task
 
     assert first.type is EventType.TURN_START
     assert second.type is EventType.ASSISTANT_MESSAGE
     assert second.payload["text"] == "hi"
+    assert first.seq == 1
+    assert second.seq == 2
 
 
 @pytest.mark.asyncio
@@ -173,6 +194,9 @@ async def test_session_service_event_stream_handles_completion() -> None:
     stream = service.event_stream("sess-complete")
     completion = await stream.__anext__()
     await stream.aclose()
+    if record.dispatcher_task:
+        await record.event_queue.put(None)
+        await record.dispatcher_task
     await task
 
     assert completion.type is EventType.COMPLETION

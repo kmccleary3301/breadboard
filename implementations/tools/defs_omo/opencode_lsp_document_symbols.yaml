@@ -1,0 +1,24 @@
+id: lsp_document_symbols
+name: lsp_document_symbols
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: Get hierarchical outline of all symbols in a file.
+parameters:
+- name: filePath
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string

@@ -1,0 +1,63 @@
+{
+  "steps": [
+    {
+      "delayMs": 0,
+      "event": {
+        "type": "turn_start",
+        "payload": { "summary": "ctree probe" },
+        "turn": 1
+      }
+    },
+    {
+      "delayMs": 150,
+      "event": {
+        "type": "assistant_message",
+        "payload": {
+          "text": "Mock assistant: ctree update",
+          "message": { "role": "assistant", "content": "Mock assistant: ctree update" }
+        }
+      }
+    },
+    {
+      "delayMs": 100,
+      "event": {
+        "type": "task_event",
+        "payload": {
+          "task_id": "task-ctree-1",
+          "status": "running",
+          "description": "Compile C-Tree plan",
+          "ctree_node_id": "node-7f2c9a1e",
+          "ctree_snapshot": {
+            "snapshot": { "node_count": 42, "node_hash": "b1c2d3e4f5a6" },
+            "compiler": { "z2": "deadbeefcafefeed" },
+            "collapse": { "policy": "merge", "dropped": 3 },
+            "runner": { "enabled": true, "branches": ["alpha", "beta", "gamma"] },
+            "last_node": { "id": "node-7f2c9a1e", "depth": 3 }
+          },
+          "timestamp": 1735689600000
+        }
+      }
+    },
+    {
+      "delayMs": 200,
+      "event": {
+        "type": "completion",
+        "payload": { "summary": { "completed": true, "reason": "mock" } }
+      }
+    },
+    {
+      "delayMs": 0,
+      "event": {
+        "type": "run_finished",
+        "payload": { "eventCount": 5 }
+      }
+    }
+  ],
+  "ctreeSnapshot": {
+    "snapshot": { "node_count": 42, "node_hash": "b1c2d3e4f5a6" },
+    "compiler": { "z2": "deadbeefcafefeed" },
+    "collapse": { "policy": "merge", "dropped": 3 },
+    "runner": { "enabled": true, "branches": ["alpha", "beta", "gamma"] },
+    "last_node": { "id": "node-7f2c9a1e", "depth": 3 }
+  }
+}

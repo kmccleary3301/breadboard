@@ -1,0 +1,88 @@
+[
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "turn_start",
+      "payload": { "summary": "tool ordering edge" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "tool_call",
+      "payload": {
+        "call_id": "call-a",
+        "tool": {
+          "name": "read_file",
+          "args": { "path": "src/a.ts" }
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 150,
+    "event": {
+      "type": "tool_call",
+      "payload": {
+        "call_id": "call-b",
+        "tool": {
+          "name": "read_file",
+          "args": { "path": "src/b.ts" }
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 180,
+    "event": {
+      "type": "tool_result",
+      "payload": {
+        "call_id": "call-b",
+        "tool": {
+          "name": "read_file",
+          "status": "success",
+          "output": "// b.ts contents"
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 180,
+    "event": {
+      "type": "tool_result",
+      "payload": {
+        "call_id": "call-a",
+        "tool": {
+          "name": "read_file",
+          "status": "success",
+          "output": "// a.ts contents"
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 150,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Tool ordering edge case complete.",
+        "message": { "role": "assistant", "content": "Tool ordering edge case complete." }
+      }
+    }
+  },
+  {
+    "delayMs": 100,
+    "event": {
+      "type": "completion",
+      "payload": { "summary": { "completed": true, "reason": "tool_ordering_edge" } }
+    }
+  },
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "run_finished",
+      "payload": { "eventCount": 8 }
+    }
+  }
+]

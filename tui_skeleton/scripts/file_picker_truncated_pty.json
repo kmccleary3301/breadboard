@@ -1,0 +1,11 @@
+[
+  { "action": "log", "message": "@ file picker truncation PTY start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "initial" },
+  { "action": "type", "text": "@re", "typingDelayMs": 10 },
+  { "action": "waitFor", "text": "Index truncated", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "truncated" },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 200 },
+  { "action": "log", "message": "@ file picker truncation PTY end" }
+]

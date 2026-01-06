@@ -20,12 +20,16 @@ goldens/
 repo_reconstruct_*
 repo_reconstruct_codex_parsed*/
 repo_reconstruct_codex_session_*/
+local_captures/
+local_engine_bundles/
 
 # Local caches and build artifacts
 **/node_modules/
 **/dist/
 **/artifacts/
+**/artifacts/visual_baselines/
 **/.cache/
+implementations/tooling_sys_prompts_cached/
 **/.pytest_cache/
 **/__pycache__/
 **/coverage/
@@ -64,5 +68,6 @@ replay_apply_summary.json
 # Local runtime state
 .kyle/
 tmp/
-repo_reconstruct_*/
-implementations/tooling_sys_prompts_cached/
+.breadboard/
+**/.breadboard/
+industry_refs/

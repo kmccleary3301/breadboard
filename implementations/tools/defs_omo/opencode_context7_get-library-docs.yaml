@@ -1,0 +1,67 @@
+id: context7_get-library-docs
+name: context7_get-library-docs
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: Fetches up-to-date documentation for a library. You must call 'resolve-library-id'
+  first to obtain the exact Context7-compatible library ID required to use this tool,
+  UNLESS the user explicitly provides a library ID in the format '/org/project' or
+  '/org/project/version' in their query. Use mode='code' (default) for API references
+  and code examples, or mode='info' for conceptual guides, narrative information,
+  and architectural questions.
+parameters:
+- name: context7CompatibleLibraryID
+  type: string
+  description: Exact Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js',
+    '/supabase/supabase', '/vercel/next.js/v14.3.0-canary.87') retrieved from 'resolve-library-id'
+    or directly from user query in the format '/org/project' or '/org/project/version'.
+  required: true
+  schema:
+    type: string
+    description: Exact Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js',
+      '/supabase/supabase', '/vercel/next.js/v14.3.0-canary.87') retrieved from 'resolve-library-id'
+      or directly from user query in the format '/org/project' or '/org/project/version'.
+- name: mode
+  type: string
+  description: 'Documentation mode: ''code'' for API references and code examples
+    (default), ''info'' for conceptual guides, narrative information, and architectural
+    questions.'
+  required: false
+  schema:
+    type: string
+    enum:
+    - code
+    - info
+    default: code
+    description: 'Documentation mode: ''code'' for API references and code examples
+      (default), ''info'' for conceptual guides, narrative information, and architectural
+      questions.'
+- name: topic
+  type: string
+  description: Topic to focus documentation on (e.g., 'hooks', 'routing').
+  required: false
+  schema:
+    type: string
+    description: Topic to focus documentation on (e.g., 'hooks', 'routing').
+- name: page
+  type: integer
+  description: 'Page number for pagination (start: 1, default: 1). If the context
+    is not sufficient, try page=2, page=3, page=4, etc. with the same topic.'
+  required: false
+  schema:
+    type: integer
+    minimum: 1
+    maximum: 10
+    description: 'Page number for pagination (start: 1, default: 1). If the context
+      is not sufficient, try page=2, page=3, page=4, etc. with the same topic.'

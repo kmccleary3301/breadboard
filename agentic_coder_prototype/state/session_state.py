@@ -10,6 +10,7 @@ import time
 from dataclasses import asdict
 
 from ..reasoning_trace_store import ReasoningTraceStore
+from ..ctrees.store import CTreeStore
 from ..monitoring.reward_metrics import RewardMetricsRecorder, RewardMetricsRecord
 from ..provider_ir import (
     IRConversation,
@@ -59,12 +60,17 @@ class SessionState:
         self.completion_guard_failures = 0
         self.guardrail_counters: Dict[str, int] = {}
         self.guardrail_events: List[Dict[str, Any]] = []
+        self.lifecycle_events: List[Dict[str, Any]] = []
+        self._event_seq = 0
         self._event_emitter = event_emitter
         self._active_turn_index: Optional[int] = None
         self._turn_assistant_emitted = False
         self._turn_user_emitted = False
+        self._last_ctree_node_id: Optional[str] = None
+        self._last_ctree_snapshot: Optional[Dict[str, Any]] = None
         self.todo_manager = None
         self.tool_usage_summary.setdefault("todo_calls", 0)
+        self.ctree_store = CTreeStore()
 
     def set_event_emitter(
         self,
@@ -72,13 +78,49 @@ class SessionState:
     ) -> None:
         self._event_emitter = emitter
 
-    def _emit_event(self, event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> None:
+    def _next_event_seq(self) -> int:
+        self._event_seq += 1
+        return self._event_seq
+
+    def _emit_event(self, event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> Optional[int]:
+        seq = self._next_event_seq()
         if not self._event_emitter:
-            return
+            if isinstance(payload, dict) and "seq" not in payload:
+                payload["seq"] = seq
+            return seq
         try:
+            if isinstance(payload, dict) and "seq" not in payload:
+                payload["seq"] = seq
             self._event_emitter(event_type, payload, turn=turn)
         except Exception:
             # Event handlers should never break the session loop.
+            return seq
+        return seq
+
+    def record_lifecycle_event(
+        self,
+        event_type: str,
+        payload: Optional[Dict[str, Any]] = None,
+        *,
+        turn: Optional[int] = None,
+    ) -> None:
+        entry: Dict[str, Any] = {
+            "type": str(event_type),
+            "payload": dict(payload or {}),
+        }
+        if turn is not None:
+            entry["turn"] = turn
+        try:
+            entry["timestamp"] = time.time()
+        except Exception:
+            pass
+        self.lifecycle_events.append(entry)
+        seq = self._emit_event("lifecycle_event", entry, turn=turn)
+        if isinstance(seq, int):
+            entry["seq"] = seq
+        try:
+            self._record_ctree("lifecycle", entry, turn=turn)
+        except Exception:
             pass
 
     # --- Todo integration ---------------------------------------------------
@@ -102,6 +144,19 @@ class SessionState:
             pass
         self._emit_event("todo_event", payload, turn=self._active_turn_index)
 
+    def emit_task_event(self, payload: Dict[str, Any]) -> None:
+        """Emit a multi-agent/task lifecycle event to observers."""
+        enriched = dict(payload or {})
+        if self._last_ctree_node_id and "ctree_node_id" not in enriched:
+            enriched["ctree_node_id"] = self._last_ctree_node_id
+        if self._last_ctree_snapshot and "ctree_snapshot" not in enriched:
+            enriched["ctree_snapshot"] = dict(self._last_ctree_snapshot)
+        self._emit_event("task_event", enriched, turn=self._active_turn_index)
+
+    def emit_permission_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        """Emit permission request/response events to observers."""
+        self._emit_event(str(event_type), dict(payload or {}), turn=self._active_turn_index)
+
     def todo_snapshot(self) -> Optional[Dict[str, Any]]:
         if not self.todo_manager:
             return None
@@ -121,6 +176,17 @@ class SessionState:
         role = message.get("role")
         turn_hint = self._active_turn_index if isinstance(self._active_turn_index, int) else None
         payload = {"message": message}
+
+        try:
+            message_payload = {
+                "role": role,
+                "content": message.get("content"),
+                "tool_calls": message.get("tool_calls"),
+                "name": message.get("name"),
+            }
+            self._record_ctree("message", message_payload, turn=turn_hint)
+        except Exception:
+            pass
 
         if role == "assistant":
             emit_now = (not to_provider) or (not self._turn_assistant_emitted)
@@ -143,6 +209,10 @@ class SessionState:
     def add_transcript_entry(self, entry: Dict[str, Any]):
         """Add an entry to the transcript"""
         self.transcript.append(entry)
+        try:
+            self._record_ctree("transcript", entry, turn=self._active_turn_index)
+        except Exception:
+            pass
 
     # --- Guardrail telemetry -------------------------------------------------
     def record_guardrail_event(self, event_type: str, payload: Optional[Dict[str, Any]] = None) -> None:
@@ -157,7 +227,43 @@ class SessionState:
         except Exception:
             pass
         self.guardrail_events.append(entry)
-        self._emit_event("guardrail_event", entry, turn=self._active_turn_index)
+        seq = self._emit_event("guardrail_event", entry, turn=self._active_turn_index)
+        if isinstance(seq, int):
+            entry["seq"] = seq
+        try:
+            self._record_ctree("guardrail", entry, turn=self._active_turn_index)
+        except Exception:
+            pass
+
+    def _record_ctree(
+        self,
+        kind: str,
+        payload: Any,
+        *,
+        turn: Optional[int] = None,
+    ) -> Optional[str]:
+        node_id = self.ctree_store.record(kind, payload, turn=turn)
+        try:
+            node = self.ctree_store.nodes[-1] if self.ctree_store.nodes else None
+            if isinstance(node, dict):
+                self._last_ctree_node_id = node.get("id")
+                snapshot = self.ctree_store.snapshot()
+                self._last_ctree_snapshot = snapshot
+                self._emit_event(
+                    "ctree_node",
+                    {
+                        "node": dict(node),
+                        "snapshot": snapshot,
+                    },
+                    turn=turn,
+                )
+        except Exception:
+            pass
+        return node_id
+
+    def emit_ctree_snapshot(self, payload: Dict[str, Any]) -> None:
+        """Emit a summary snapshot for C-Tree metadata."""
+        self._emit_event("ctree_snapshot", dict(payload or {}), turn=self._active_turn_index)
 
     def get_guardrail_events(self) -> List[Dict[str, Any]]:
         return list(self.guardrail_events)
@@ -281,6 +387,7 @@ class SessionState:
         self._turn_assistant_emitted = False
         self._turn_user_emitted = False
         self._emit_event("turn_start", {"turn": turn_index}, turn=self._active_turn_index)
+        self.record_lifecycle_event("turn_started", {"turn": turn_index}, turn=self._active_turn_index)
 
     def record_tool_event(
         self,

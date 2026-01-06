@@ -1,0 +1,48 @@
+extends: opencode_openai_codexmini_c_fs_cli_shared.yaml
+
+profile: { name: opencode-phase8-subagent-readonly }
+
+features:
+  plan: false
+  todos:
+    enabled: false
+    strict: false
+
+permissions:
+  options:
+    mode: auto_allow
+  edit:
+    default: deny
+  shell:
+    default: deny
+
+# Keep a tight read-only tool surface for subagents.
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs_oc
+    include:
+      - list
+      - read
+      - glob
+      - grep
+  aliases: {}
+
+provider_tools:
+  suppress_prompts: true
+  responses_use_developer_role: true
+  responses_stateful: false
+  tool_choice: auto
+
+prompts:
+  tool_prompt_synthesis:
+    enabled: false
+  injection:
+    system_order:
+      - '@pack(base).system'
+    per_turn_order: []
+
+loop:
+  sequence:
+    - mode: build
+  plan_turn_limit: 0

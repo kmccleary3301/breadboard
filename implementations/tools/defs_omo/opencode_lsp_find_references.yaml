@@ -1,0 +1,44 @@
+id: lsp_find_references
+name: lsp_find_references
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: Find ALL usages/references of a symbol across the entire workspace.
+parameters:
+- name: filePath
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: line
+  type: number
+  description: ''
+  required: true
+  schema:
+    type: number
+    minimum: 1
+- name: character
+  type: number
+  description: ''
+  required: true
+  schema:
+    type: number
+    minimum: 0
+- name: includeDeclaration
+  type: boolean
+  description: ''
+  required: false
+  schema:
+    type: boolean

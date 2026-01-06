@@ -1,26 +1,52 @@
 id: write
 name: write
-description: Write a text file (OpenCode-compatible)
+description: 'Writes a file to the local filesystem.
+
+
+  Usage:
+
+  - This tool will overwrite the existing file if there is one at the provided path.
+
+  - If this is an existing file, you MUST use the Read tool first to read the file''s
+  contents. This tool will fail if you did not read the file first.
+
+  - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless
+  explicitly required.
+
+  - NEVER proactively create documentation files (*.md) or README files. Only create
+  documentation files if explicitly requested by the User.
+
+  - Only use emojis if the user explicitly requests it. Avoid writing emojis to files
+  unless asked.
+
+  '
 type_id: python
 manipulations:
-  - file.write
-syntax_formats_supported: [native_function_calling]
-preferred_formats: [native_function_calling]
+- file.write
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
 parameters:
-  - name: filePath
-    type: string
-    description: The absolute path to the file to write (must be absolute, not relative)
-    required: true
-  - name: content
-    type: string
+- name: content
+  type: string
+  description: The content to write to the file
+  required: true
+  schema:
     description: The content to write to the file
-    required: true
+    type: string
+- name: filePath
+  type: string
+  description: The absolute path to the file to write (must be absolute, not relative)
+  required: true
+  schema:
+    description: The absolute path to the file to write (must be absolute, not relative)
+    type: string
 execution:
   blocking: true
 provider_routing:
   openai:
     native_primary: true
     function_call: auto
-
-
-
+    additional_properties: false
+    strict: false

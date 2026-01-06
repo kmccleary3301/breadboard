@@ -50,6 +50,8 @@ class SessionSummary(BaseModel):
     status: SessionStatus
     created_at: datetime
     last_activity_at: datetime
+    model: Optional[str] = None
+    mode: Optional[str] = None
     completion_summary: Dict[str, Any] | None = None
     reward_summary: Dict[str, Any] | None = None
     logging_dir: Optional[str] = None
@@ -123,3 +125,34 @@ class SessionFileContent(BaseModel):
     content: str
     truncated: bool = Field(default=False)
     total_bytes: Optional[int] = None
+
+
+class ModelCatalogEntry(BaseModel):
+    id: str
+    adapter: Optional[str] = None
+    provider: Optional[str] = None
+    name: Optional[str] = None
+    context_length: Optional[int] = None
+    params: Dict[str, Any] | None = None
+    routing: Dict[str, Any] | None = None
+    metadata: Dict[str, Any] | None = None
+
+
+class ModelCatalogResponse(BaseModel):
+    models: List[ModelCatalogEntry]
+    default_model: Optional[str] = None
+    config_path: Optional[str] = None
+
+
+class SkillCatalogResponse(BaseModel):
+    catalog: Dict[str, Any] = Field(default_factory=dict)
+    selection: Dict[str, Any] | None = None
+    sources: Dict[str, Any] | None = None
+
+
+class CTreeSnapshotResponse(BaseModel):
+    snapshot: Dict[str, Any] | None = None
+    compiler: Dict[str, Any] | None = None
+    collapse: Dict[str, Any] | None = None
+    runner: Dict[str, Any] | None = None
+    last_node: Dict[str, Any] | None = None

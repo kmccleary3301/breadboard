@@ -1,0 +1,20 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "turn": 1, "payload": { "summary": "permission error mock" } } },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "permission_request",
+      "payload": {
+        "request_id": "perm-error-1",
+        "tool": "bash",
+        "kind": "run",
+        "rewindable": true,
+        "summary": "Tool requests permission to run bash.",
+        "diff_text": null,
+        "rule_suggestion": null,
+        "default_scope": "project"
+      }
+    }
+  },
+  { "awaitCommand": true, "command": "permission_decision", "timeoutMs": 20000 }
+]

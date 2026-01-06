@@ -1,0 +1,19 @@
+[
+  { "action": "log", "message": "Skills picker PTY harness start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "type", "text": "/skills", "typingDelayMs": 20 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Skills", "timeoutMs": 8000 },
+  { "action": "waitFor", "text": "Mode:", "timeoutMs": 8000 },
+  { "action": "snapshot", "label": "skills-open" },
+  { "action": "type", "text": "repo", "typingDelayMs": 20 },
+  { "action": "wait", "ms": 150 },
+  { "action": "press", "key": "down" },
+  { "action": "wait", "ms": 60 },
+  { "action": "press", "key": "space" },
+  { "action": "snapshot", "label": "skills-toggled" },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 250 },
+  { "action": "snapshot", "label": "skills-closed" },
+  { "action": "log", "message": "Skills picker PTY harness complete" }
+]

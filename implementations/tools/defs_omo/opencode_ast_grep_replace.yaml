@@ -1,0 +1,86 @@
+id: ast_grep_replace
+name: ast_grep_replace
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: 'Replace code patterns across filesystem with AST-aware rewriting. Dry-run
+  by default. Use meta-variables in rewrite to preserve matched content. Example:
+  pattern=''console.log($MSG)'' rewrite=''logger.info($MSG)'''
+parameters:
+- name: pattern
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: rewrite
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: lang
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+    enum:
+    - bash
+    - c
+    - cpp
+    - csharp
+    - css
+    - elixir
+    - go
+    - haskell
+    - html
+    - java
+    - javascript
+    - json
+    - kotlin
+    - lua
+    - nix
+    - php
+    - python
+    - ruby
+    - rust
+    - scala
+    - solidity
+    - swift
+    - typescript
+    - tsx
+    - yaml
+- name: paths
+  type: array
+  description: ''
+  required: false
+  schema:
+    type: array
+    items:
+      type: string
+- name: globs
+  type: array
+  description: ''
+  required: false
+  schema:
+    type: array
+    items:
+      type: string
+- name: dryRun
+  type: boolean
+  description: ''
+  required: false
+  schema:
+    type: boolean

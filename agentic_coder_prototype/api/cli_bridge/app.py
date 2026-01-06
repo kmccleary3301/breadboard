@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import random
 from typing import AsyncIterator, Dict
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse, StreamingResponse
 
 try:
     from dotenv import load_dotenv
@@ -19,14 +20,17 @@ except ImportError:  # pragma: no cover - optional dependency
 if load_dotenv is not None:
     load_dotenv()
 
-from .events import SessionEvent
+from .events import SessionEvent, PROTOCOL_VERSION
 from .models import (
     AttachmentUploadResponse,
     ErrorResponse,
+    ModelCatalogResponse,
     SessionCommandRequest,
     SessionCommandResponse,
     SessionCreateRequest,
     SessionCreateResponse,
+    SkillCatalogResponse,
+    CTreeSnapshotResponse,
     SessionFileContent,
     SessionFileInfo,
     SessionInputRequest,
@@ -34,6 +38,8 @@ from .models import (
     SessionSummary,
 )
 from .service import SessionService
+
+logger = logging.getLogger(__name__)
 
 
 def _load_chaos_config() -> Dict[str, float] | None:
@@ -54,9 +60,25 @@ def _load_chaos_config() -> Dict[str, float] | None:
 
 
 def create_app(service: SessionService | None = None) -> FastAPI:
-    app = FastAPI(title="BreadBoard CLI Bridge", version="0.1.0")
+    app = FastAPI(title="BreadBoard CLI Bridge", version=os.environ.get("BREADBOARD_ENGINE_VERSION", "0.1.0"))
     _service = service or SessionService()
     chaos_config = _load_chaos_config()
+
+    @app.on_event("startup")
+    async def _ensure_ray_initialized() -> None:
+        if os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1":
+            return
+        try:
+            import ray  # type: ignore
+        except Exception:  # pragma: no cover - optional runtime
+            return
+        try:
+            if not ray.is_initialized():
+                ray.init(address="local", include_dashboard=False)
+                logger.info("Ray initialized during engine startup")
+        except Exception as exc:  # noqa: BLE001
+            # Do not crash the engine; sessions may fall back to local execution if Ray is unavailable.
+            logger.warning("Ray init failed during engine startup: %s", exc)
 
     def get_service() -> SessionService:
         return _service
@@ -73,11 +95,29 @@ def create_app(service: SessionService | None = None) -> FastAPI:
                 if extra_delay > 0:
                     await asyncio.sleep(extra_delay / 1000.0)
             payload = json.dumps(event.asdict(), separators=(",", ":"))
+            event_id = event.seq if event.seq is not None else event.event_id
+            yield f"id: {event_id}\n".encode("utf-8")
             yield f"data: {payload}\n\n".encode("utf-8")
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        return {"status": "ok"}
+        return {
+            "status": "ok",
+            "protocol_version": PROTOCOL_VERSION,
+            "version": app.version,
+            "engine_version": app.version,
+        }
+
+    @app.get(
+        "/models",
+        response_model=ModelCatalogResponse,
+        responses={400: {"model": ErrorResponse}},
+    )
+    async def list_models(
+        config_path: str,
+        svc: SessionService = Depends(get_service),
+    ):
+        return await svc.list_models(config_path)
 
     @app.post(
         "/sessions",
@@ -185,6 +225,22 @@ def create_app(service: SessionService | None = None) -> FastAPI:
             )
         return await svc.list_files(session_id, root=path or ".")
 
+    @app.get(
+        "/sessions/{session_id}/skills",
+        response_model=SkillCatalogResponse,
+        responses={404: {"model": ErrorResponse}},
+    )
+    async def session_skills(session_id: str, svc: SessionService = Depends(get_service)):
+        return await svc.list_skills(session_id)
+
+    @app.get(
+        "/sessions/{session_id}/ctrees",
+        response_model=CTreeSnapshotResponse,
+        responses={404: {"model": ErrorResponse}},
+    )
+    async def session_ctrees(session_id: str, svc: SessionService = Depends(get_service)):
+        return await svc.get_ctree_snapshot(session_id)
+
     @app.delete(
         "/sessions/{session_id}",
         status_code=status.HTTP_204_NO_CONTENT,
@@ -198,9 +254,26 @@ def create_app(service: SessionService | None = None) -> FastAPI:
         "/sessions/{session_id}/events",
         responses={404: {"model": ErrorResponse}},
     )
-    async def stream_events(session_id: str, svc: SessionService = Depends(get_service)):
+    async def stream_events(
+        session_id: str,
+        request: Request,
+        replay: bool = False,
+        limit: int | None = None,
+        from_id: str | None = None,
+        svc: SessionService = Depends(get_service),
+    ):
         try:
-            generator = svc.event_stream(session_id)
+            if not from_id:
+                from_id = request.headers.get("last-event-id") or request.headers.get("Last-Event-ID")
+            if from_id:
+                await svc.validate_event_stream(session_id, from_id=from_id, replay=replay)
+            generator = svc.event_stream(
+                session_id,
+                replay=replay,
+                limit=limit,
+                from_id=from_id,
+                validated=True,
+            )
         except HTTPException as exc:
             raise exc
 
@@ -208,6 +281,17 @@ def create_app(service: SessionService | None = None) -> FastAPI:
             event_payloads(generator),
             media_type="text/event-stream",
         )
+
+    @app.get(
+        "/sessions/{session_id}/download",
+        responses={
+            400: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+        },
+    )
+    async def download_artifact(session_id: str, artifact: str, svc: SessionService = Depends(get_service)):
+        path = await svc.resolve_artifact_path(session_id, artifact)
+        return FileResponse(path)
 
     return app
 

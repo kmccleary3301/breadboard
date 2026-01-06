@@ -329,6 +329,8 @@ class AgentToolExecutor:
                     "arguments": p.arguments,
                     "provider_name": getattr(p, "provider_name", None),
                     "expected_output": getattr(p, "expected_output", None),
+                    "expected_status": getattr(p, "expected_status", None),
+                    "expected_metadata": getattr(p, "expected_metadata", None),
                 }
                 tool_name = self._canonical_tool_name(p.function)
                 group = self.tool_to_group.get(tool_name)
@@ -399,6 +401,8 @@ class AgentToolExecutor:
                     "arguments": p.arguments,
                     "provider_name": getattr(p, "provider_name", None),
                     "expected_output": getattr(p, "expected_output", None),
+                    "expected_status": getattr(p, "expected_status", None),
+                    "expected_metadata": getattr(p, "expected_metadata", None),
                 }
                 out = self.execute_tool_call(tool_call, exec_func)
             except Exception as e:

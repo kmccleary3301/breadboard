@@ -1,0 +1,15 @@
+[
+  { "action": "log", "message": "Live engine permission prompt start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 20000 },
+  { "action": "type", "text": "/mode build" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Mode set request sent", "timeoutMs": 5000 },
+  { "action": "type", "text": "/test" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Permission required", "timeoutMs": 30000 },
+  { "action": "snapshot", "label": "permission-modal" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Permission decision sent.", "timeoutMs": 30000 },
+  { "action": "snapshot", "label": "after-permission-allow" },
+  { "action": "log", "message": "Live engine permission prompt end" }
+]

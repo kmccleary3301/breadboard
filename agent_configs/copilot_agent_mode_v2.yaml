@@ -1,0 +1,36 @@
+extends: base_v2.yaml
+
+profile: { name: copilot-agent-mode }
+
+prompts:
+  packs:
+    base:
+      system: implementations/system_prompts/default.md
+      plan: implementations/system_prompts/default.md
+      builder: implementations/system_prompts/default.md
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs
+  overlays:
+    - id: copilot_overrides
+      rename: { run_shell: bash }
+      syntax_style: { run_shell: bash_block }
+
+modes:
+  - name: plan
+  - name: build
+    subagents:
+      enabled: true
+      supervisor: sequential
+      agents:
+        - name: test-runner
+          tools: [run_shell]
+        - name: pr-prep
+          tools: [apply_unified_patch, read_file]
+
+completion:
+  text_sentinels: ["OPEN PR", "TASK COMPLETE"]
+
+

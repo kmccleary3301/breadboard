@@ -1,0 +1,15 @@
+[
+  { "action": "log", "message": "Live engine stop/retry start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 20000 },
+  { "action": "type", "text": "Generate a bubble sort" },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 500 },
+  { "action": "press", "key": "escape" },
+  { "action": "waitFor", "text": "Interrupt requested", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "after-stop" },
+  { "action": "type", "text": "/retry" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Resubmitting prompt", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "after-retry" },
+  { "action": "log", "message": "Live engine stop/retry end" }
+]

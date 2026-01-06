@@ -37,7 +37,14 @@ class MessageFormatter:
         except Exception:
             return ""
 
-    def create_tool_result_entry(self, tool_name: str, tool_result: Any, *, syntax_type: str = "") -> Dict[str, Any]:
+    def create_tool_result_entry(
+        self,
+        tool_name: str,
+        tool_result: Any,
+        *,
+        syntax_type: str = "",
+        call_id: str | None = None,
+    ) -> Dict[str, Any]:
         content = tool_result
         if isinstance(tool_result, dict):
             content = tool_result.get("output") or tool_result.get("__mvi_text_output") or tool_result
@@ -46,11 +53,14 @@ class MessageFormatter:
                 content = json.dumps(content, ensure_ascii=False)
             except Exception:
                 content = str(content)
-        return {
+        entry: Dict[str, Any] = {
             "role": "tool",
             "name": tool_name,
             "content": content,
         }
+        if call_id:
+            entry["tool_call_id"] = call_id
+        return entry
 
     def create_enhanced_tool_calls(self, tool_calls_payload: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return list(tool_calls_payload or [])

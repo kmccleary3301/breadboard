@@ -1,0 +1,50 @@
+[
+  {
+    "id": "openai/gpt-4o-mini",
+    "provider": "openai",
+    "name": "gpt-4o-mini",
+    "contextLength": 128000,
+    "priceInPerM": 0.15,
+    "priceOutPerM": 0.6
+  },
+  {
+    "id": "openai/o1",
+    "provider": "openai",
+    "name": "o1",
+    "contextLength": 200000,
+    "priceInPerM": 15,
+    "priceOutPerM": 60
+  },
+  {
+    "id": "openrouter/anthropic/claude-3.5-haiku",
+    "provider": "openrouter",
+    "name": "claude-3.5-haiku",
+    "contextLength": 200000,
+    "priceInPerM": 0.8,
+    "priceOutPerM": 4
+  },
+  {
+    "id": "openrouter/anthropic/claude-3.5-sonnet",
+    "provider": "openrouter",
+    "name": "claude-3.5-sonnet",
+    "contextLength": 200000,
+    "priceInPerM": 3,
+    "priceOutPerM": 15
+  },
+  {
+    "id": "anthropic/claude-3.5-haiku",
+    "provider": "anthropic",
+    "name": "claude-3.5-haiku",
+    "contextLength": 200000,
+    "priceInPerM": 0.8,
+    "priceOutPerM": 4
+  },
+  {
+    "id": "google/gemini-1.5-pro",
+    "provider": "google",
+    "name": "gemini-1.5-pro",
+    "contextLength": 2000000,
+    "priceInPerM": 3.5,
+    "priceOutPerM": 10
+  }
+]

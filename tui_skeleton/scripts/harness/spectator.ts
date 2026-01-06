@@ -19,11 +19,18 @@ export type KeyName =
   | "enter"
   | "escape"
   | "tab"
+  | "space"
   | "backspace"
   | "ctrl+backspace"
   | "ctrl+c"
   | "ctrl+d"
+  | "ctrl+b"
+  | "ctrl+g"
+  | "ctrl+z"
+  | "ctrl+y"
+  | "ctrl+k"
   | "ctrl+l"
+  | "ctrl+o"
   | "ctrl+t"
   | "ctrl+v"
   | "ctrl+left"
@@ -101,6 +108,7 @@ export interface SpectatorHarnessOptions {
   readonly stateDumpPath?: string
   readonly stateDumpMode?: "summary" | "full"
   readonly stateDumpRateMs?: number
+  readonly envOverrides?: Record<string, string>
 }
 
 export interface SpectatorHarnessResult {
@@ -298,6 +306,8 @@ const resolveKey = (key: KeyName): string => {
       return "\u001b"
     case "tab":
       return "\t"
+    case "space":
+      return " "
     case "backspace":
       return "\u007f"
     case "ctrl+backspace":
@@ -306,8 +316,20 @@ const resolveKey = (key: KeyName): string => {
       return "\u0003"
     case "ctrl+d":
       return "\u0004"
+    case "ctrl+b":
+      return "\u0002"
+    case "ctrl+g":
+      return "\u0007"
+    case "ctrl+z":
+      return "\u001a"
+    case "ctrl+y":
+      return "\u0019"
+    case "ctrl+k":
+      return "\u000b"
     case "ctrl+l":
       return "\f"
+    case "ctrl+o":
+      return "\u000f"
     case "ctrl+t":
       return "\u0014"
     case "ctrl+v":
@@ -371,7 +393,7 @@ export const runSpectatorHarness = async (
     args.push("--config", options.configPath)
   }
 
-  const env = { ...process.env }
+  const env = { ...process.env, ...(options.envOverrides ?? {}) }
   if (options.baseUrl) {
     env.BREADBOARD_API_URL = options.baseUrl
   }

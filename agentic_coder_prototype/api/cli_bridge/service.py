@@ -15,6 +15,10 @@ from .events import SessionEvent
 from .models import (
     AttachmentHandle,
     AttachmentUploadResponse,
+    ModelCatalogEntry,
+    ModelCatalogResponse,
+    SkillCatalogResponse,
+    CTreeSnapshotResponse,
     SessionCommandRequest,
     SessionCommandResponse,
     SessionCreateRequest,
@@ -27,6 +31,7 @@ from .models import (
 )
 from .registry import SessionRecord, SessionRegistry
 from .session_runner import SessionRunner
+from ...compilation.v2_loader import load_agent_config
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +65,10 @@ class SessionService:
         metadata = dict(request.metadata or {})
         if self._bridge_chaos:
             metadata.setdefault("bridgeChaos", self._bridge_chaos)
+        metadata.setdefault("config_path", request.config_path)
         record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata)
         await self.registry.create(record)
+        await self._ensure_dispatcher(record)
         runner = SessionRunner(session=record, registry=self.registry, request=request)
         record.runner = runner
         await runner.start()
@@ -79,17 +86,204 @@ class SessionService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
         return record
 
-    async def event_stream(self, session_id: str) -> AsyncIterator[SessionEvent]:
+    async def event_stream(
+        self,
+        session_id: str,
+        *,
+        replay: bool = False,
+        limit: Optional[int] = None,
+        from_id: Optional[str] = None,
+        validated: bool = False,
+    ) -> AsyncIterator[SessionEvent]:
         record = await self.ensure_session(session_id)
-        queue = record.event_queue
+        await self._ensure_dispatcher(record)
+        subscriber: asyncio.Queue[Optional[SessionEvent]] = asyncio.Queue()
+        await self._register_subscriber(
+            record,
+            subscriber,
+            replay=replay,
+            limit=limit,
+            from_id=from_id,
+            validated=validated,
+        )
+        try:
+            while True:
+                event = await subscriber.get()
+                if event is None:
+                    break
+                yield event
+        finally:
+            await self._unregister_subscriber(record, subscriber)
+
+    async def _ensure_dispatcher(self, record: SessionRecord) -> None:
+        task = record.dispatcher_task
+        if task and not task.done():
+            return
+        loop = asyncio.get_running_loop()
+        record.dispatcher_task = loop.create_task(self._dispatch_events(record))
+
+    async def _register_subscriber(
+        self,
+        record: SessionRecord,
+        queue: "asyncio.Queue[Optional[SessionEvent]]",
+        *,
+        replay: bool = False,
+        limit: Optional[int] = None,
+        from_id: Optional[str] = None,
+        validated: bool = False,
+    ) -> None:
+        replay_enabled = replay or bool(from_id)
+        async with record.dispatch_lock:
+            if replay_enabled:
+                self._ensure_event_sequence(record)
+                events = list(record.event_log)
+                if from_id:
+                    start_index = self._resolve_start_index(events, from_id)
+                    if start_index is None:
+                        if not validated:
+                            raise HTTPException(
+                                status_code=status.HTTP_409_CONFLICT,
+                                detail={
+                                    "message": "resume window exceeded or event id not found",
+                                    "code": "resume_window_exceeded",
+                                    "last_event_id": from_id,
+                                    "event_log_size": len(events),
+                                    "first_seq": events[0].seq if events else None,
+                                    "last_seq": events[-1].seq if events else None,
+                                },
+                            )
+                        events = []
+                    else:
+                        events = events[start_index:]
+                if isinstance(limit, int) and limit > 0:
+                    events = events[-limit:]
+                for event in events:
+                    queue.put_nowait(event)
+            record.subscribers.add(queue)
+
+    async def _unregister_subscriber(
+        self,
+        record: SessionRecord,
+        queue: "asyncio.Queue[Optional[SessionEvent]]",
+    ) -> None:
+        async with record.dispatch_lock:
+            try:
+                record.subscribers.discard(queue)
+            except Exception:
+                pass
+
+    async def _dispatch_events(self, record: SessionRecord) -> None:
+        """Fan-out events from the producer queue to all subscribers."""
         while True:
-            event = await queue.get()
+            event = await record.event_queue.get()
             if event is None:
                 break
-            yield event
+            async with record.dispatch_lock:
+                record.event_seq += 1
+                if event.seq is None:
+                    event.seq = record.event_seq
+                else:
+                    record.event_seq = max(record.event_seq, int(event.seq))
+                record.event_log.append(event)
+                if record.subscribers:
+                    for subscriber in list(record.subscribers):
+                        try:
+                            subscriber.put_nowait(event)
+                        except asyncio.QueueFull:
+                            # Drop on overflow; subscribers are best-effort observers.
+                            continue
+        async with record.dispatch_lock:
+            if record.subscribers:
+                for subscriber in list(record.subscribers):
+                    try:
+                        subscriber.put_nowait(None)
+                    except asyncio.QueueFull:
+                        continue
 
     async def list_sessions(self):
         return await self.registry.list()
+
+    async def list_skills(self, session_id: str) -> SkillCatalogResponse:
+        record = await self.ensure_session(session_id)
+        runner = record.runner
+        if not runner:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session runner not found")
+        payload = runner.get_skill_catalog()
+        return SkillCatalogResponse(
+            catalog=payload.get("catalog") or {},
+            selection=payload.get("selection"),
+            sources=payload.get("sources"),
+        )
+
+    async def get_ctree_snapshot(self, session_id: str) -> CTreeSnapshotResponse:
+        record = await self.ensure_session(session_id)
+        runner = record.runner
+        if not runner:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session runner not found")
+        payload = runner.get_ctree_snapshot()
+        return CTreeSnapshotResponse(
+            snapshot=payload.get("snapshot"),
+            compiler=payload.get("compiler"),
+            collapse=payload.get("collapse"),
+            runner=payload.get("runner"),
+            last_node=payload.get("last_node"),
+        )
+
+    async def validate_event_stream(
+        self,
+        session_id: str,
+        *,
+        from_id: Optional[str] = None,
+        replay: bool = False,
+    ) -> None:
+        if not from_id:
+            return
+        record = await self.ensure_session(session_id)
+        await self._ensure_dispatcher(record)
+        async with record.dispatch_lock:
+            if not (replay or from_id):
+                return
+            self._ensure_event_sequence(record)
+            events = list(record.event_log)
+            start_index = self._resolve_start_index(events, from_id)
+            if start_index is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "message": "resume window exceeded or event id not found",
+                        "code": "resume_window_exceeded",
+                        "last_event_id": from_id,
+                        "event_log_size": len(events),
+                        "first_seq": events[0].seq if events else None,
+                        "last_seq": events[-1].seq if events else None,
+                    },
+                )
+
+    def _ensure_event_sequence(self, record: SessionRecord) -> None:
+        seq = record.event_seq
+        for event in record.event_log:
+            if event.seq is None:
+                seq += 1
+                event.seq = seq
+            else:
+                seq = max(seq, int(event.seq))
+        record.event_seq = seq
+
+    def _resolve_start_index(self, events: list[SessionEvent], from_id: str) -> Optional[int]:
+        seq_value: Optional[int] = None
+        try:
+            if from_id is not None:
+                seq_value = int(from_id)
+        except ValueError:
+            seq_value = None
+        if seq_value is not None:
+            for idx, event in enumerate(events):
+                if event.seq == seq_value:
+                    return idx + 1
+        for idx, event in enumerate(events):
+            if event.event_id == from_id:
+                return idx + 1
+        return None
 
     async def stop_session(self, session_id: str) -> None:
         record = await self.ensure_session(session_id)
@@ -269,6 +463,125 @@ class SessionService:
             truncated=False,
             total_bytes=total_bytes,
         )
+
+    async def list_models(self, config_path: str) -> ModelCatalogResponse:
+        if not config_path or not str(config_path).strip():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="config_path required")
+        try:
+            config = load_agent_config(config_path)
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"failed to load config: {exc}") from exc
+
+        providers = config.get("providers") or {}
+        default_model = providers.get("default_model") or config.get("model")
+        models_cfg = providers.get("models") or []
+        if not models_cfg and default_model:
+            models_cfg = [{"id": default_model}]
+
+        def infer_provider(model_id: str, provider: Optional[str], adapter: Optional[str]) -> Optional[str]:
+            if provider and isinstance(provider, str) and provider.strip():
+                return provider.strip()
+            if isinstance(model_id, str) and "/" in model_id:
+                return model_id.split("/", 1)[0]
+            if adapter and isinstance(adapter, str) and adapter.strip():
+                return adapter.strip()
+            return None
+
+        def normalize_entry(entry: Any) -> Optional[ModelCatalogEntry]:
+            if isinstance(entry, str):
+                model_id = entry
+                adapter = None
+                provider = infer_provider(model_id, None, None)
+                return ModelCatalogEntry(id=model_id, provider=provider, name=model_id)
+            if not isinstance(entry, dict):
+                return None
+            model_id = entry.get("id") or entry.get("model_id") or entry.get("model")
+            if not model_id:
+                return None
+            model_id = str(model_id)
+            adapter = entry.get("adapter") or entry.get("adapter_id")
+            provider = infer_provider(model_id, entry.get("provider"), adapter)
+            name = entry.get("name") or model_id
+            context_length = entry.get("context_length") or entry.get("contextLength") or entry.get("context_tokens")
+            context_length = int(context_length) if isinstance(context_length, (int, float)) else None
+            params = entry.get("params") or entry.get("parameters") or None
+            routing = entry.get("routing") or None
+            metadata = entry.get("metadata") or None
+            return ModelCatalogEntry(
+                id=model_id,
+                adapter=str(adapter) if adapter else None,
+                provider=str(provider) if provider else None,
+                name=str(name) if name else None,
+                context_length=context_length,
+                params=params if isinstance(params, dict) else None,
+                routing=routing if isinstance(routing, dict) else None,
+                metadata=metadata if isinstance(metadata, dict) else None,
+            )
+
+        entries: list[ModelCatalogEntry] = []
+        for entry in models_cfg:
+            normalized = normalize_entry(entry)
+            if normalized:
+                entries.append(normalized)
+
+        return ModelCatalogResponse(
+            models=entries,
+            default_model=str(default_model) if default_model else None,
+            config_path=str(config_path),
+        )
+
+    async def resolve_artifact_path(self, session_id: str, artifact: str) -> Path:
+        if not artifact or not str(artifact).strip():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="artifact path required")
+        record = await self.ensure_session(session_id)
+        runner: Optional[SessionRunner] = getattr(record, "runner", None)
+        workspace_dir = runner.get_workspace_dir() if runner else None
+
+        candidate_raw = str(artifact).strip()
+        candidate_path = Path(candidate_raw)
+        allowed_roots: list[Path] = []
+        if workspace_dir:
+            allowed_roots.append(workspace_dir.resolve())
+        if record.logging_dir:
+            try:
+                allowed_roots.append(Path(record.logging_dir).resolve())
+            except Exception:
+                pass
+
+        if candidate_path.is_absolute():
+            resolved = candidate_path.resolve()
+        else:
+            resolved = None
+            for root in allowed_roots:
+                possible = (root / candidate_raw).resolve()
+                try:
+                    possible.relative_to(root)
+                except ValueError:
+                    continue
+                if possible.exists():
+                    resolved = possible
+                    break
+            if resolved is None and allowed_roots:
+                resolved = (allowed_roots[0] / candidate_raw).resolve()
+
+        if resolved is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="artifact not found")
+
+        if allowed_roots:
+            permitted = False
+            for root in allowed_roots:
+                try:
+                    resolved.relative_to(root)
+                    permitted = True
+                    break
+                except ValueError:
+                    continue
+            if not permitted:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="artifact path outside workspace")
+
+        if not resolved.exists() or not resolved.is_file():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="artifact not found")
+        return resolved
 
     @staticmethod
     def _read_snippet(target: Path, *, head_lines: int, tail_lines: int, max_bytes: int) -> str:

@@ -1,0 +1,93 @@
+extends: base_v2.yaml
+
+profile: { name: opencode-gpt5-nano-c-fs }
+
+providers:
+  default_model: openrouter/openai/gpt-5-nano
+  models:
+    - id: openrouter/openai/gpt-5-nano
+      adapter: openai
+      params: { temperature: 0.1, top_p: 0.9 }
+
+prompts:
+  packs:
+    base:
+      # system: implementations/system_prompts/opencode/system.md
+      system: implementations/system_prompts/default.md
+      # builder: implementations/system_prompts/default.md
+      builder: null
+  tool_prompt_synthesis:
+    enabled: true
+    dialects:
+      pythonic:
+        system_full: implementations/tool_prompt_synthesis/pythonic/system_full.j2.md
+        per_turn_short: implementations/tool_prompt_synthesis/pythonic/per_turn_short.j2.md
+      unified_diff:
+        system_full: implementations/tool_prompt_synthesis/unified_diff/system_full.j2.md
+    selection:
+      by_model:
+        "openrouter/openai/*": pythonic
+      by_mode:
+        build: unified_diff
+    detail:
+      system: full
+      per_turn: short
+
+tools:
+  registry:
+    paths: [implementations/tools/defs_oc]
+    include: ["*"]
+  overlays: []
+  aliases: {}
+  dialects:
+    preference:
+      default: [opencode_patch, unified_diff, bash_block]
+      by_model:
+        "openrouter/openai/*":
+          native: true
+          order: [yaml_command, opencode_patch, unified_diff, bash_block]
+      by_tool_kind:
+        diff: [opencode_patch, unified_diff]
+        bash: [provider_native, bash_block]
+    selection:
+      by_model:
+        "openrouter/openai/*": [opencode_patch, unified_diff, yaml_command]
+      by_tool_kind:
+        diff: [opencode_patch, unified_diff]
+        bash: [bash_block]
+
+modes:
+  - name: build
+    prompt: "@pack(base).builder"
+    tools_enabled: ["*"]
+
+loop:
+  sequence:
+    - mode: build
+  turn_strategy: { relay: tool_role, flow: assistant_continuation }
+
+concurrency:
+  groups:
+    - { name: edits_and_bash, match_tools: [patch, edit, bash], max_parallel: 1 }
+  nonblocking_tools: [read, read_file, glob, grep, list, list_dir]
+
+completion:
+  primary: hybrid
+  text_sentinels: ["TASK COMPLETE", ">>>>>> END RESPONSE"]
+  provider_signals: true
+  tool_finish: mark_task_complete
+
+workspace:
+  root: ./agent_ws_opencode
+  sandbox:
+    driver: process
+  mirror:
+    enabled: false
+    path: ./agent_ws_opencode
+    mode: development
+
+features: { plan: false }
+
+
+
+

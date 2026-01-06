@@ -4,6 +4,7 @@ import { Box, Text, useStdout } from "ink"
 export interface ModalDescriptor {
   readonly id: string
   readonly render: () => React.ReactNode
+  readonly layout?: "center" | "sheet"
 }
 
 interface ModalHostProps {
@@ -16,6 +17,9 @@ export const ModalHost: React.FC<ModalHostProps> = ({ stack, children }) => {
   const topModal = stack.length > 0 ? stack[stack.length - 1] : null
   const width = stdout?.columns && Number.isFinite(stdout.columns) ? stdout.columns : 80
   const height = stdout?.rows && Number.isFinite(stdout.rows) ? stdout.rows : 40
+  const layout = topModal?.layout ?? "center"
+  const modalAlign = layout === "sheet" ? "stretch" : "center"
+  const modalPaddingBottom = layout === "sheet" ? 0 : 1
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -29,8 +33,8 @@ export const ModalHost: React.FC<ModalHostProps> = ({ stack, children }) => {
           height="100%"
           flexDirection="column"
           justifyContent="flex-end"
-          alignItems="center"
-          paddingBottom={1}
+          alignItems={modalAlign}
+          paddingBottom={modalPaddingBottom}
         >
           {topModal.render()}
         </Box>

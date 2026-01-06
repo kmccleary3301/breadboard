@@ -1,0 +1,68 @@
+# Config for test agentic coder
+
+workspace: ./agent_ws_c
+output:
+  json: ./session_out.json
+  markdown: ./session_out.md
+
+model:
+  id: gpt-5-nano
+  provider: openai
+
+prompt:
+  system: implementations/system_prompts/default.md
+  # mode: system_once | per_turn_append | system_and_per_turn | system_compiled_and_persistent_per_turn | none
+  mode: per_turn_append  # Revert to legacy mode for gpt-5-nano reliability
+  completion_sentinel: ">>>>>> END RESPONSE"
+
+task:
+  file: implementations/test_tasks/protofs_c.md
+  # choose one per run; examples:
+  # file: implementations/test_tasks/python_lint_fix.md
+  # file: implementations/test_tasks/react_todo_app.md
+
+runtime:
+  image: python-dev:latest  # options: python-dev:latest, react-dev:latest, gcc-dev:latest
+
+tools:
+  registry: implementations/tools/enhanced_tools.yaml  # Use enhanced configuration
+  # Optionally mask tools per run
+  enabled:
+    run_shell: true
+    create_file: true
+    read_file: true
+    list_dir: true
+    apply_search_replace: true
+    apply_unified_patch: true
+    create_file_from_block: true
+    mark_task_complete: true  # New completion tool
+
+dialects:
+  - pythonic02
+  - pythonic_inline
+  - bash_block
+  - aider_diff
+  - unified_diff
+  - opencode_patch
+
+limits:
+  max_steps: 20
+  stream_responses: true
+  clean_workspace: true
+
+# NEW: Enhanced tools configuration for LSP integration
+enhanced_tools:
+  enabled: true
+  lsp_integration:
+    enabled: false  # Temporarily disabled to avoid asyncio issues
+    format_feedback: true
+  validation:
+    enabled: false  # Optional validation rules
+
+# NEW: Deployment configuration for workspace isolation  
+deployment:
+  mode: "development"     # development, testing, production
+  isolation: true         # Enable path virtualization and isolation
+  mirror_results: true    # Mirror results to visible workspace for testing
+
+

@@ -1,0 +1,8 @@
+extends: multi_agent_sync_main.yaml
+
+# Replay profile for the OpenCode-captured sync `task` goldens.
+replay:
+  preserve_tool_names: true
+  compare_tool_outputs: [task]
+  fail_on_tool_output_mismatch: true
+

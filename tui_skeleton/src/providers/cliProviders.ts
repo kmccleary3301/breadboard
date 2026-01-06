@@ -5,26 +5,25 @@ import type { AttachmentUploadPayload } from "../api/client.js"
 import type { SessionEvent } from "../api/types.js"
 
 export class CliArgsProvider {
-  readonly config: AppConfig
-
-  constructor(config?: AppConfig) {
-    this.config = config ?? loadAppConfig()
+  get config(): AppConfig {
+    return loadAppConfig()
   }
 }
 
 export class CliSdkProvider {
-  private readonly config: AppConfig
-
-  constructor(config: AppConfig) {
-    this.config = config
-  }
+  constructor() {}
 
   api() {
     return ApiClient
   }
 
-  stream(sessionId: string, options: { signal?: AbortSignal }) {
-    return streamSessionEvents(sessionId, { signal: options.signal, config: this.config })
+  stream(sessionId: string, options: { signal?: AbortSignal; lastEventId?: string }) {
+    const config = loadAppConfig()
+    return streamSessionEvents(sessionId, {
+      signal: options.signal,
+      lastEventId: options.lastEventId,
+      config,
+    })
   }
 
   uploadAttachments(sessionId: string, attachments: ReadonlyArray<AttachmentUploadPayload>) {
@@ -48,7 +47,7 @@ export class CliSyncProvider {
 }
 
 const globalArgs = new CliArgsProvider()
-const globalSdk = new CliSdkProvider(globalArgs.config)
+const globalSdk = new CliSdkProvider()
 const globalSync = new CliSyncProvider()
 
 export const CliProviders = {

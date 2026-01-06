@@ -8,6 +8,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
+PROTOCOL_VERSION = "1.0"
 
 class EventType(str, enum.Enum):
     """Canonical event types exposed over the streaming endpoint."""
@@ -19,6 +20,12 @@ class EventType(str, enum.Enum):
     TOOL_RESULT = "tool_result"
     PERMISSION_REQUEST = "permission_request"
     PERMISSION_RESPONSE = "permission_response"
+    CHECKPOINT_LIST = "checkpoint_list"
+    CHECKPOINT_RESTORED = "checkpoint_restored"
+    SKILLS_CATALOG = "skills_catalog"
+    SKILLS_SELECTION = "skills_selection"
+    CTREE_NODE = "ctree_node"
+    CTREE_SNAPSHOT = "ctree_snapshot"
     TASK_EVENT = "task_event"
     REWARD_UPDATE = "reward_update"
     COMPLETION = "completion"
@@ -27,8 +34,8 @@ class EventType(str, enum.Enum):
     RUN_FINISHED = "run_finished"
 
 
-def _now_ts() -> float:
-    return time.time()
+def _now_ms() -> int:
+    return int(time.time() * 1000)
 
 
 @dataclass
@@ -39,15 +46,20 @@ class SessionEvent:
     session_id: str
     payload: Dict[str, Any]
     turn: Optional[int] = None
-    created_at: float = field(default_factory=_now_ts)
+    created_at: int = field(default_factory=_now_ms)
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    seq: Optional[int] = None
 
     def asdict(self) -> Dict[str, Any]:
+        timestamp_ms = int(self.created_at)
         return {
             "id": self.event_id,
+            "seq": self.seq,
             "type": self.type.value,
             "session_id": self.session_id,
             "turn": self.turn,
-            "timestamp": self.created_at,
+            "timestamp": timestamp_ms,
+            "timestamp_ms": timestamp_ms,
+            "protocol_version": PROTOCOL_VERSION,
             "payload": self.payload,
         }

@@ -1,6 +1,6 @@
 # final
 ████ Kyle Code ████
-breadboard — interactive session
+breadboard — breadboard
 558ec0d9-3a8 ● Halted ● model openrouter/x-ai/grok-4-fast ○ local ● events 4 ○ tools 0 ● turn 1
 
 Slash commands: /help, /quit, /clear, /status, /remote on|off, /retry, /plan, /mode <plan|build|auto>, /model <id>, /test [suite], /files [path], /models

@@ -1,0 +1,36 @@
+id: lsp_diagnostics
+name: lsp_diagnostics
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: Get errors, warnings, hints from language server BEFORE running build.
+parameters:
+- name: filePath
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: severity
+  type: string
+  description: ''
+  required: false
+  schema:
+    type: string
+    enum:
+    - error
+    - warning
+    - information
+    - hint
+    - all

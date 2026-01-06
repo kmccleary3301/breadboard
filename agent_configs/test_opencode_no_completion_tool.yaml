@@ -1,0 +1,94 @@
+# OpenCode Configuration - SoTA Exit Conditions WITHOUT mark_task_complete Tool
+# Demonstrates text-based, provider-based, and natural language completion detection
+
+workspace: agent_ws_c
+image: gcc-dev:latest
+user_prompt: "Create a simple C program that prints 'Hello World' and compiles successfully. Test it and confirm it works. When everything is working, explicitly state 'TASK COMPLETE - Hello World program successfully implemented and tested.'"
+system_prompt: "Please analyze this codebase and create an AGENTS.md file containing:\n1. Build/lint/test commands - especially for running a single test\n2. Code style guidelines including imports, formatting, types, naming conventions, error handling, etc.\n\nThe file you create will be given to agentic coding agents (such as yourself) that operate in this repository. Make it about 20 lines long.\nIf there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (in .github/copilot-instructions.md), make sure to include them.\n\nIf there's already an AGENTS.md, improve it if it's located in ${path}\n"
+
+model:
+  id: openrouter/openai/gpt-5-nano
+
+# Tool Configuration - EXCLUDE mark_task_complete to force alternative completion methods
+tools:
+  # File operations
+  write: true
+  read: true
+  list: true
+  edit: true
+  glob: true
+  grep: true
+  
+  # Shell operations  
+  bash: true
+  
+  # Diff operations (OpenCode-style)
+  create_file_from_block: true
+  apply_search_replace: true
+  apply_unified_patch: true
+  
+  # DELIBERATELY EXCLUDE mark_task_complete
+  mark_task_complete: false
+
+# Dialect Selection - OpenCode compatible
+dialects:
+  - pythonic02
+  - opencode_patch
+  - inline_bash
+
+provider_tools:
+  use_native: false  # OpenRouter doesn't support native tools like OpenAI
+  suppress_prompts: false
+
+turn_strategy:
+  allow_multiple_per_turn: false
+  relay: tool_role  # tool_role | user_message
+  flow: assistant_continuation  # assistant_continuation | user_interleaved
+
+# SoTA Exit Conditions Configuration - Pure Non-Tool Completion
+completion:
+  primary_method: text_based  # Force non-tool completion methods
+  enable_text_sentinels: true
+  enable_provider_signals: true
+  enable_natural_finish: true
+  confidence_threshold: 0.5  # Lower threshold since no tool completion available
+  text_sentinels:
+    - "TASK COMPLETE"
+    - "ALL TESTS PASSED"
+    - "IMPLEMENTATION COMPLETE" 
+    - "HELLO WORLD PROGRAM SUCCESSFULLY IMPLEMENTED"
+    - "EVERYTHING IS WORKING"
+    - "PROGRAM COMPILES AND RUNS"
+  success_keywords:
+    - "success"
+    - "complete"
+    - "finished"
+    - "done"
+    - "passed"
+    - "working"
+    - "ready"
+    - "compiled"
+    - "executed"
+    - "tested"
+    - "verified"
+    - "implemented"
+  failure_keywords:
+    - "failed"
+    - "error"
+    - "broken"
+    - "timeout"
+    - "cancelled"
+    - "compilation error"
+    - "runtime error"
+    - "test failed"
+
+concurrency:
+  # Nonblocking tool ids (may run multiple in the same turn concurrently)
+  nonblocking_tools:
+    - apply_unified_patch
+    - apply_search_replace
+    - create_file_from_block
+    - read
+    - list
+    - glob
+    - grep

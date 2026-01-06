@@ -6,6 +6,9 @@ from typing import Any, Dict, Optional
 class ErrorHandler:
     """Minimal error handler for provider/loop failures."""
 
+    def __init__(self, output_json_path: Optional[str] = None) -> None:
+        self.output_json_path = output_json_path
+
     def handle_empty_response(self, choice: Any) -> Dict[str, Any]:
         return {
             "error": "Empty response from provider",

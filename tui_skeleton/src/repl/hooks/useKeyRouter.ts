@@ -1,5 +1,5 @@
 import { useInput, type Key } from "ink"
-import { useEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 
 export type KeyHandler = (input: string, key: Key) => boolean
 
@@ -24,9 +24,16 @@ export const useKeyRouter = (
 ): void => {
   const handlerRef = useRef(handlers)
   const layerRef = useRef(getTopLayer)
-  const lastCtrlCRef = useRef<number>(0)
 
-  const dispatch = (input: string, key: Key) => {
+  useLayoutEffect(() => {
+    handlerRef.current = handlers
+  }, [handlers])
+
+  useLayoutEffect(() => {
+    layerRef.current = getTopLayer
+  }, [getTopLayer])
+
+  useInput((input, key) => {
     const topLayer = layerRef.current()
     const order = layerOrder(topLayer)
     for (const layer of order) {
@@ -35,42 +42,5 @@ export const useKeyRouter = (
         return
       }
     }
-  }
-
-  useEffect(() => {
-    handlerRef.current = handlers
-  }, [handlers])
-
-  useEffect(() => {
-    layerRef.current = getTopLayer
-  }, [getTopLayer])
-
-  useInput((input, key) => {
-    if (key.ctrl && ((key as { name?: string }).name ?? "").toLowerCase() === "c") {
-      lastCtrlCRef.current = Date.now()
-    }
-    dispatch(input, key)
   })
-
-  useEffect(() => {
-    const sigintHandler = () => {
-      const now = Date.now()
-      if (now - lastCtrlCRef.current < 80) {
-        return
-      }
-      lastCtrlCRef.current = now
-      const key = {
-        ctrl: true,
-        meta: false,
-        shift: false,
-        name: "c",
-        sequence: "\u0003",
-      } as Key
-      dispatch("\u0003", key)
-    }
-    process.on("SIGINT", sigintHandler)
-    return () => {
-      process.off("SIGINT", sigintHandler)
-    }
-  }, [])
 }

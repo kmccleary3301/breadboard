@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import logging
+import threading
 from typing import Any, Dict, List, Optional, Tuple, Callable
 from pathlib import Path
 
@@ -71,6 +72,33 @@ class AgenticCoder:
                 self._set_nested_value(self.config, tokens, value)
             except Exception:
                 continue
+
+    def apply_runtime_overrides(self, overrides: Dict[str, Any]) -> bool:
+        """Best-effort update to the active config (local or remote)."""
+        if not isinstance(overrides, dict) or not overrides:
+            return False
+        try:
+            self._apply_overrides(overrides)
+        except Exception:
+            pass
+        if not self.agent:
+            return True
+        if self._local_mode:
+            try:
+                setattr(self.agent, "config", self.config)
+                if hasattr(self.agent, "apply_config_overrides"):
+                    self.agent.apply_config_overrides(overrides)
+                return True
+            except Exception:
+                return False
+        # Ray actor: attempt remote method if present
+        try:
+            if hasattr(self.agent, "apply_config_overrides"):
+                self.agent.apply_config_overrides.remote(overrides)
+                return True
+        except Exception:
+            return False
+        return False
 
     @staticmethod
     def _tokenize_path(path: str) -> List[Any]:
@@ -169,6 +197,11 @@ class AgenticCoder:
         if not self._local_mode:
             try:
                 if not ray.is_initialized():
+                    if threading.current_thread() is not threading.main_thread():
+                        logger.warning(
+                            "Ray init requested from non-main thread; falling back to local mode."
+                        )
+                        raise RuntimeError("Ray init requested from non-main thread")
                     # Start an isolated local cluster with a nonstandard dashboard port
                     ray.init(address="local", include_dashboard=False)
             except Exception:
@@ -197,8 +230,10 @@ class AgenticCoder:
         event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
         event_queue: Optional[Any] = None,
         permission_queue: Optional[Any] = None,
+        control_queue: Optional[Any] = None,
         replay_session: Optional[str] = None,
         parity_guardrails: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Run a single task and return results."""
         if replay_session and self.agent is not None:
@@ -264,6 +299,8 @@ class AgenticCoder:
                 event_emitter=effective_emitter,
                 event_queue=event_queue,
                 permission_queue=permission_queue,
+                control_queue=control_queue,
+                context=context,
             )
 
         ref = self.agent.run_agentic_loop.remote(
@@ -278,6 +315,8 @@ class AgenticCoder:
             event_emitter=effective_emitter,
             event_queue=event_queue,
             permission_queue=permission_queue,
+            control_queue=control_queue,
+            context=context,
         )
         return ray.get(ref)
     

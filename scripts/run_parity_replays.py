@@ -6,6 +6,7 @@ Run parity checks across replayed OpenCode sessions and live-task goldens.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import shutil
@@ -140,6 +141,83 @@ def _latest_logging_dir(root: Path, before: Set[str]) -> Path:
     return candidates[0]
 
 
+def _load_optional_json(path: Path) -> Dict[str, Any]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _extract_latest_snapshot(summary: Dict[str, Any], key: str) -> Dict[str, Any]:
+    surface = summary.get("surface_snapshot") or {}
+    entries = surface.get(key) or []
+    if isinstance(entries, list) and entries:
+        for entry in reversed(entries):
+            if isinstance(entry, dict):
+                return entry
+    return {}
+
+
+def _compute_surface_hash_deltas(actual_summary: Path, expected_summary: Path) -> Dict[str, Any]:
+    actual = _load_optional_json(actual_summary)
+    expected = _load_optional_json(expected_summary)
+    actual_schema = _extract_latest_snapshot(actual, "tool_schema_snapshots")
+    expected_schema = _extract_latest_snapshot(expected, "tool_schema_snapshots")
+    actual_allow = _extract_latest_snapshot(actual, "tool_allowlist_snapshots")
+    expected_allow = _extract_latest_snapshot(expected, "tool_allowlist_snapshots")
+
+    def _delta(actual_entry: Dict[str, Any], expected_entry: Dict[str, Any], field: str) -> Dict[str, Any]:
+        return {
+            "actual": actual_entry.get(field),
+            "expected": expected_entry.get(field),
+            "match": actual_entry.get(field) == expected_entry.get(field),
+        }
+
+    return {
+        "tool_schema": _delta(actual_schema, expected_schema, "schema_hash"),
+        "tool_schema_ordered": _delta(actual_schema, expected_schema, "schema_hash_ordered"),
+        "tool_allowlist": _delta(actual_allow, expected_allow, "allowlist_hash"),
+        "tool_allowlist_ordered": _delta(actual_allow, expected_allow, "allowlist_hash_ordered"),
+    }
+
+
+def _extract_tool_order_diffs(mismatches: Any) -> List[Dict[str, Any]]:
+    diffs: List[Dict[str, Any]] = []
+    if not isinstance(mismatches, list):
+        return diffs
+    for entry in mismatches:
+        if not isinstance(entry, str):
+            continue
+        prefix = "Turn tool order mismatch at turn "
+        if not entry.startswith(prefix):
+            continue
+        try:
+            rest = entry[len(prefix) :]
+            turn_part, rest = rest.split(": actual=", 1)
+            actual_part, expected_part = rest.split(" expected=", 1)
+        except ValueError:
+            continue
+        turn = turn_part.strip()
+        actual = actual_part.strip()
+        expected = expected_part.strip()
+        try:
+            actual_parsed = ast.literal_eval(actual)
+        except Exception:
+            actual_parsed = actual
+        try:
+            expected_parsed = ast.literal_eval(expected)
+        except Exception:
+            expected_parsed = expected
+        diffs.append(
+            {
+                "turn": turn,
+                "actual": actual_parsed,
+                "expected": expected_parsed,
+            }
+        )
+    return diffs
+
+
 def _run_task_scenario(scenario, *, workspace: Path, result_dir: Path) -> Dict[str, Any]:
     logging_root = scenario.logging_root or (ROOT_DIR / "logging")
     before = _collect_logging_dirs(logging_root)
@@ -196,6 +274,21 @@ def _run_task_scenario(scenario, *, workspace: Path, result_dir: Path) -> Dict[s
         "equivalence": scenario.equivalence.value,
         "mismatches": mismatches,
     }
+    # Record multi-agent event logs if configured
+    try:
+        cfg = yaml.safe_load(Path(scenario.config).read_text(encoding="utf-8"))
+        multi_cfg = (cfg.get("multi_agent") or {}) if isinstance(cfg, dict) else {}
+        event_log_path = multi_cfg.get("event_log_path")
+        if isinstance(event_log_path, str) and event_log_path:
+            event_path = Path(event_log_path)
+            if not event_path.is_absolute():
+                event_path = (ROOT_DIR / event_path).resolve()
+            if event_path.exists():
+                dest = result_dir / f"{scenario.name}_event_log.jsonl"
+                shutil.copyfile(event_path, dest)
+                payload["event_log"] = str(dest)
+    except Exception:
+        pass
     output_path = result_dir / f"{scenario.name}_result.json"
     payload["result_path"] = str(output_path)
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -379,6 +472,21 @@ def _run_replay_scenario(scenario, *, workspace: Path, result_dir: Path) -> Dict
             payload["status"] = status
             if parity_payload.get("mismatches"):
                 payload["mismatches"] = parity_payload["mismatches"]
+                tool_order_diffs = _extract_tool_order_diffs(parity_payload.get("mismatches"))
+                if tool_order_diffs:
+                    payload["tool_order_diffs"] = tool_order_diffs
+            # Surface hash deltas (tool schema + allowlist) for summary reporting.
+            try:
+                actual_run_dir = data.get("result", {}).get("run_dir")
+                if isinstance(actual_run_dir, str) and scenario.golden_meta:
+                    actual_summary = Path(actual_run_dir) / "meta" / "run_summary.json"
+                    expected_summary = Path(scenario.golden_meta)
+                    if actual_summary.exists() and expected_summary.exists():
+                        payload["surface_hash_deltas"] = _compute_surface_hash_deltas(
+                            actual_summary, expected_summary
+                        )
+            except Exception:
+                pass
         except Exception as exc:  # pragma: no cover - defensive read
             payload["status"] = "unknown"
             payload["error"] = f"unable to parse result json: {exc}"
@@ -454,6 +562,34 @@ def _write_summary(result_dir: Path, records: List[Dict[str, Any]]) -> None:
         "warned": warned_names,
         "results_file": str(jsonl_path),
     }
+    # Surface hash deltas (short summary for tool-schema + allowlist hashes).
+    deltas = []
+    for record in records:
+        delta = record.get("surface_hash_deltas")
+        if delta:
+            deltas.append(
+                {
+                    "scenario": record.get("scenario"),
+                    "tool_schema": delta.get("tool_schema"),
+                    "tool_schema_ordered": delta.get("tool_schema_ordered"),
+                    "tool_allowlist": delta.get("tool_allowlist"),
+                    "tool_allowlist_ordered": delta.get("tool_allowlist_ordered"),
+                }
+            )
+    if deltas:
+        summary_payload["surface_hash_deltas"] = deltas
+    tool_order_diffs = []
+    for record in records:
+        diffs = record.get("tool_order_diffs")
+        if diffs:
+            tool_order_diffs.append(
+                {
+                    "scenario": record.get("scenario"),
+                    "diffs": diffs,
+                }
+            )
+    if tool_order_diffs:
+        summary_payload["tool_order_diffs"] = tool_order_diffs
     summary_path.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
     print(f"[parity] Wrote summary to {summary_path}")
 

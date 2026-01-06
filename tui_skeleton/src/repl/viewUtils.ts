@@ -19,7 +19,7 @@ const resolveAsciiHeader = (): string[] => {
   } catch {
     // ignore — fall back to default header
   }
-  return ["Kyle's Secret Coder"]
+  return ["BreadBoard"]
 }
 
 export const ASCII_HEADER = resolveAsciiHeader()

@@ -15,12 +15,19 @@ export interface CachedSessionEntry {
   readonly model?: string
   readonly loggingDir?: string | null
   readonly metadata?: Record<string, unknown> | null
+  readonly draft?: DraftState | null
 }
 
 export interface SessionCache {
   version: number
   sessions: Record<string, CachedSessionEntry>
   recent: string[]
+}
+
+export interface DraftState {
+  readonly text: string
+  readonly cursor: number
+  readonly updatedAt: string
 }
 
 const emptyCache = (): SessionCache => ({ version: CACHE_VERSION, sessions: {}, recent: [] })
@@ -60,6 +67,21 @@ const normalizeMetadata = (value: unknown): Record<string, unknown> | null => {
   return null
 }
 
+const ensureSessionEntry = (cache: SessionCache, sessionId: string): CachedSessionEntry => {
+  const existing = cache.sessions[sessionId]
+  if (existing) return existing
+  const now = new Date().toISOString()
+  const entry: CachedSessionEntry = {
+    sessionId,
+    createdAt: now,
+    lastActivityAt: now,
+    status: "unknown",
+  }
+  cache.sessions[sessionId] = entry
+  cache.recent = [sessionId, ...cache.recent.filter((id) => id !== sessionId)].slice(0, MAX_RECENT)
+  return entry
+}
+
 export const rememberSession = async (
   summary: SessionSummary,
   options: { name?: string; model?: string } = {},
@@ -74,6 +96,7 @@ export const rememberSession = async (
     model: options.model ?? (summary.metadata?.model as string | undefined),
     loggingDir: summary.logging_dir ?? null,
     metadata: normalizeMetadata(summary.metadata ?? null),
+    draft: cache.sessions[summary.session_id]?.draft ?? null,
   }
   cache.sessions[entry.sessionId] = entry
   cache.recent = [entry.sessionId, ...cache.recent.filter((id) => id !== entry.sessionId)].slice(0, MAX_RECENT)
@@ -98,4 +121,27 @@ export const forgetSession = async (sessionId: string): Promise<void> => {
 export const getMostRecentSessionId = async (): Promise<string | null> => {
   const cache = await loadSessionCache()
   return cache.recent.length > 0 ? cache.recent[0] : null
+}
+
+export const getSessionDraft = async (sessionId: string): Promise<DraftState | null> => {
+  const cache = await loadSessionCache()
+  return cache.sessions[sessionId]?.draft ?? null
+}
+
+export const updateSessionDraft = async (sessionId: string, draft: DraftState | null): Promise<void> => {
+  const cache = await loadSessionCache()
+  const entry = ensureSessionEntry(cache, sessionId)
+  const current = entry.draft ?? null
+  const nextDraft = draft ?? null
+  if (
+    current &&
+    nextDraft &&
+    current.text === nextDraft.text &&
+    current.cursor === nextDraft.cursor &&
+    current.updatedAt === nextDraft.updatedAt
+  ) {
+    return
+  }
+  cache.sessions[sessionId] = { ...entry, draft: nextDraft }
+  await writeSessionCache(cache)
 }
