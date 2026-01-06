@@ -1,0 +1,156 @@
+{
+  "steps": [
+    {
+      "delayMs": 0,
+      "event": {
+        "type": "turn_start",
+        "payload": { "summary": "skills catalog preview" },
+        "turn": 1
+      }
+    },
+    {
+      "delayMs": 200,
+      "event": {
+        "type": "assistant_message",
+        "payload": {
+          "text": "Mock assistant: skills catalog ready",
+          "message": { "role": "assistant", "content": "Mock assistant: skills catalog ready" }
+        }
+      }
+    },
+    {
+      "delayMs": 0,
+      "event": {
+        "type": "skills_catalog",
+        "payload": {
+          "catalog": {
+            "catalog_version": "mock-v1",
+            "skills": [
+              {
+                "id": "repo.search",
+                "type": "prompt",
+                "version": "1.0.0",
+                "label": "Repo Search",
+                "group": "repo",
+                "description": "Search the repository quickly.",
+                "tags": ["repo", "search"],
+                "enabled": true
+              },
+              {
+                "id": "lint.fix",
+                "type": "prompt",
+                "version": "2.1.0",
+                "label": "Lint Fix",
+                "group": "lint",
+                "description": "Apply lint fixes.",
+                "tags": ["lint", "format"],
+                "enabled": true
+              },
+              {
+                "id": "docs.summarize",
+                "type": "prompt",
+                "version": "1.2.0",
+                "label": "Docs Summarize",
+                "group": "docs",
+                "description": "Summarize documentation.",
+                "tags": ["docs"],
+                "enabled": true
+              },
+              {
+                "id": "graph.ctree",
+                "type": "graph",
+                "version": "0.4.0",
+                "label": "CTree Graph",
+                "group": "misc",
+                "description": "Plan exploration graph builder.",
+                "tags": ["ctree", "graph"],
+                "enabled": false
+              }
+            ]
+          },
+          "selection": {
+            "mode": "blocklist",
+            "blocklist": ["lint.fix"]
+          },
+          "sources": {
+            "config_path": "agent_configs/opencode_cli_mock_guardrails.yaml",
+            "workspace": ".",
+            "plugin_count": 2,
+            "skill_paths": ["skills/repo.json", "skills/core.json"]
+          }
+        }
+      }
+    },
+    {
+      "delayMs": 350,
+      "event": {
+        "type": "completion",
+        "payload": { "summary": { "completed": true, "reason": "mock" } }
+      }
+    },
+    {
+      "delayMs": 0,
+      "event": {
+        "type": "run_finished",
+        "payload": { "eventCount": 5 }
+      }
+    }
+  ],
+  "skills": {
+    "catalog": {
+      "catalog_version": "mock-v1",
+      "skills": [
+        {
+          "id": "repo.search",
+          "type": "prompt",
+          "version": "1.0.0",
+          "label": "Repo Search",
+          "group": "repo",
+          "description": "Search the repository quickly.",
+          "tags": ["repo", "search"],
+          "enabled": true
+        },
+        {
+          "id": "lint.fix",
+          "type": "prompt",
+          "version": "2.1.0",
+          "label": "Lint Fix",
+          "group": "lint",
+          "description": "Apply lint fixes.",
+          "tags": ["lint", "format"],
+          "enabled": true
+        },
+        {
+          "id": "docs.summarize",
+          "type": "prompt",
+          "version": "1.2.0",
+          "label": "Docs Summarize",
+          "group": "docs",
+          "description": "Summarize documentation.",
+          "tags": ["docs"],
+          "enabled": true
+        },
+        {
+          "id": "graph.ctree",
+          "type": "graph",
+          "version": "0.4.0",
+          "label": "CTree Graph",
+          "group": "misc",
+          "description": "Plan exploration graph builder.",
+          "tags": ["ctree", "graph"],
+          "enabled": false
+        }
+      ]
+    },
+    "selection": {
+      "mode": "blocklist",
+      "blocklist": ["lint.fix"]
+    },
+    "sources": {
+      "config_path": "agent_configs/opencode_cli_mock_guardrails.yaml",
+      "workspace": ".",
+      "plugin_count": 2,
+      "skill_paths": ["skills/repo.json", "skills/core.json"]
+    }
+  }
+}

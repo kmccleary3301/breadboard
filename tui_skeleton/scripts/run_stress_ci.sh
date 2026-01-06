@@ -6,8 +6,10 @@ REPO_ROOT="$(cd "${ROOT_DIR}/.." && pwd)"
 BRIDGE_SCRIPT="${REPO_ROOT}/scripts/run_cli_bridge_mock.sh"
 ARTIFACT_ROOT="${ROOT_DIR}/artifacts/stress"
 MOCK_API_KEY="${MOCK_API_KEY:-dummy}"
-CASES=(modal_overlay layout_ordering ctrl_v_paste ctrl_v_paste_large mock_hello)
-PTY_CASES=(ctrl_v_paste layout_ordering ctrl_v_paste_large)
+CASES=(modal_overlay resize_storm_modal permission_rewind model_picker_small layout_ordering tool_ordering_edge ime_placeholder ctrl_v_paste ctrl_v_paste_large paste_undo mock_hello skills_picker skills_picker_ctrl_g ctree_summary)
+PTY_CASES=(resize_storm_modal permission_rewind model_picker_small model_picker_provider_filter ctrl_v_paste layout_ordering tool_ordering_edge ime_placeholder ctrl_v_paste_large paste_undo paste_undo_redo file_picker_large file_picker_truncated transcript_viewer_search slash_menu_resize skills_picker skills_picker_ctrl_g ctree_summary)
+OVERLAY_CASES=(modal_overlay resize_storm_modal permission_rewind model_picker_small model_picker_provider_filter shortcuts_overlay file_picker_large skills_picker)
+RESIZE_CASES=(resize_storm resize_storm_modal)
 if [[ -n "${STRESS_CI_CASES:-}" ]]; then
   # shellcheck disable=SC2206
   CASES=(${STRESS_CI_CASES})
@@ -26,11 +28,27 @@ MIN_SSE_EVENTS="${MIN_SSE_EVENTS:-0}"
 MAX_TIMELINE_WARNINGS="${MAX_TIMELINE_WARNINGS:-1}"
 RESIZE_EVENT_BUDGET="${RESIZE_EVENT_BUDGET:-50}"
 RESIZE_BURST_BUDGET_MS="${RESIZE_BURST_BUDGET_MS:-8000}"
+MAX_LINES_CHANGED_PCT="${MAX_LINES_CHANGED_PCT:-}"
+P95_LINES_CHANGED_PCT="${P95_LINES_CHANGED_PCT:-}"
+MAX_GHOST_LINES="${MAX_GHOST_LINES:-0}"
+MAX_FLICKER_EVENTS="${MAX_FLICKER_EVENTS:-0}"
 MAX_ANOMALIES="${MAX_ANOMALIES:-0}"
+OVERLAY_MAX_LINES_CHANGED_PCT="${OVERLAY_MAX_LINES_CHANGED_PCT:-}"
+OVERLAY_P95_LINES_CHANGED_PCT="${OVERLAY_P95_LINES_CHANGED_PCT:-}"
+OVERLAY_MAX_FLICKER_EVENTS="${OVERLAY_MAX_FLICKER_EVENTS:-}"
+RESIZE_MAX_LINES_CHANGED_PCT="${RESIZE_MAX_LINES_CHANGED_PCT:-}"
+RESIZE_P95_LINES_CHANGED_PCT="${RESIZE_P95_LINES_CHANGED_PCT:-}"
+RESIZE_MAX_FLICKER_EVENTS="${RESIZE_MAX_FLICKER_EVENTS:-}"
+BREADBOARD_CONTRACT_REQUIRE_SEQ="${BREADBOARD_CONTRACT_REQUIRE_SEQ:-1}"
+BREADBOARD_CONTRACT_REQUIRE_DATA="${BREADBOARD_CONTRACT_REQUIRE_DATA:-1}"
+BREADBOARD_CONTRACT_REQUIRE_TIMESTAMP_MS="${BREADBOARD_CONTRACT_REQUIRE_TIMESTAMP_MS:-1}"
 TIMELINE_ANALYZER="${ROOT_DIR}/tools/timeline/checkBudgets.mjs"
 KEY_FUZZ_ITERATIONS="${STRESS_CI_KEY_FUZZ_ITERATIONS:-1}"
 KEY_FUZZ_STEPS="${STRESS_CI_KEY_FUZZ_STEPS:-60}"
 KEY_FUZZ_SEED="${STRESS_CI_KEY_FUZZ_SEED:-0}"
+AUTO_START_LIVE="${STRESS_CI_AUTO_START_LIVE:-0}"
+TMUX_CAPTURE_TARGET="${BREADBOARD_TMUX_CAPTURE_TARGET:-}"
+TMUX_CAPTURE_SCALE="${BREADBOARD_TMUX_CAPTURE_SCALE:-1}"
 
 if [[ ! -f "${TIMELINE_ANALYZER}" ]]; then
   echo "[stress:ci] Missing timeline analyzer at ${TIMELINE_ANALYZER}" >&2
@@ -46,6 +64,8 @@ declare -a REQUIRED_PTY_FILES=(
   "pty_manifest.json"
   "input_log.ndjson"
   "repl_state.ndjson"
+  "events.ndjson"
+  "config.json"
   "grid_snapshots/active.txt"
   "grid_snapshots/final.txt"
   "grid_snapshots/final_vs_active.diff"
@@ -56,18 +76,24 @@ declare -a REQUIRED_PTY_FILES=(
   "timeline_flamegraph.txt"
   "ttydoc.txt"
   "case_info.json"
+  "contract_report.json"
+  "metrics.json"
 )
 
 declare -a REQUIRED_REPL_FILES=(
   "transcript.txt"
   "cli.log"
   "sse_events.txt"
+  "events.ndjson"
+  "config.json"
   "repl_state.ndjson"
   "timeline.ndjson"
   "timeline_summary.json"
   "timeline_flamegraph.txt"
   "ttydoc.txt"
   "case_info.json"
+  "contract_report.json"
+  "metrics.json"
 )
 
 BRIDGE_PID=""
@@ -111,16 +137,23 @@ if [[ ! -x "${BRIDGE_SCRIPT}" ]]; then
   exit 1
 fi
 
-echo "[stress:ci] Starting FastAPI bridge on ${HOST}:${PORT}"
-BREADBOARD_CLI_HOST="${HOST}" \
-BREADBOARD_CLI_PORT="${PORT}" \
-"${BRIDGE_SCRIPT}" >"${REPO_ROOT}/logging/cli_bridge_ci.log" 2>&1 &
-BRIDGE_PID=$!
+if [[ "${AUTO_START_LIVE}" != "1" ]]; then
+  echo "[stress:ci] Starting FastAPI bridge on ${HOST}:${PORT}"
+  BREADBOARD_CLI_HOST="${HOST}" \
+  BREADBOARD_CLI_PORT="${PORT}" \
+  "${BRIDGE_SCRIPT}" >"${REPO_ROOT}/logging/cli_bridge_ci.log" 2>&1 &
+  BRIDGE_PID=$!
 
-export BREADBOARD_WAIT_HOST="${HOST}"
-export BREADBOARD_WAIT_PORT="${PORT}"
-wait_for_port
-unset BREADBOARD_WAIT_HOST BREADBOARD_WAIT_PORT
+  export BREADBOARD_WAIT_HOST="${HOST}"
+  export BREADBOARD_WAIT_PORT="${PORT}"
+  export BREADBOARD_CONTRACT_REQUIRE_SEQ
+  export BREADBOARD_CONTRACT_REQUIRE_DATA
+  export BREADBOARD_CONTRACT_REQUIRE_TIMESTAMP_MS
+  wait_for_port
+  unset BREADBOARD_WAIT_HOST BREADBOARD_WAIT_PORT
+else
+  echo "[stress:ci] Auto-start live bridge enabled; skipping manual bridge launch."
+fi
 
 echo "[stress:ci] Running bundle subset: ${CASES[*]}"
 CASES_ARGS=()
@@ -132,6 +165,19 @@ if [[ "${STRESS_CI_CASE_MOCK_SSE:-1}" != "0" ]]; then
   CASE_MOCK_SSE_FLAG+=("--case-mock-sse")
 else
   CASE_MOCK_SSE_FLAG+=("--no-case-mock-sse")
+fi
+INCLUDE_LIVE_FLAG=()
+if [[ "${STRESS_CI_INCLUDE_LIVE:-0}" == "1" ]]; then
+  INCLUDE_LIVE_FLAG+=("--include-live")
+fi
+AUTO_START_FLAG=()
+if [[ "${AUTO_START_LIVE}" == "1" ]]; then
+  AUTO_START_FLAG+=("--auto-start-live")
+fi
+TMUX_CAPTURE_FLAGS=()
+if [[ -n "${TMUX_CAPTURE_TARGET}" ]]; then
+  TMUX_CAPTURE_FLAGS+=("--tmux-capture-target" "${TMUX_CAPTURE_TARGET}")
+  TMUX_CAPTURE_FLAGS+=("--tmux-capture-scale" "${TMUX_CAPTURE_SCALE}")
 fi
 GUARD_ARGS=()
 for dir in "${GUARD_LOGS[@]}"; do
@@ -145,6 +191,9 @@ npm run stress:bundle -- \
   "${CASES_ARGS[@]}" \
   "${GUARD_ARGS[@]}" \
   "${CASE_MOCK_SSE_FLAG[@]}" \
+  "${INCLUDE_LIVE_FLAG[@]}" \
+  "${AUTO_START_FLAG[@]}" \
+  "${TMUX_CAPTURE_FLAGS[@]}" \
   --key-fuzz-iterations "${KEY_FUZZ_ITERATIONS}" \
   --key-fuzz-steps "${KEY_FUZZ_STEPS}" \
   --key-fuzz-seed "${KEY_FUZZ_SEED}"
@@ -209,6 +258,43 @@ check_timeline_budget() {
   local summary_file="$1"
   local case_name="$2"
   local warnings_file="${NEW_BATCH}/timeline_budget_warnings.jsonl"
+  local max_lines_pct="${MAX_LINES_CHANGED_PCT}"
+  local p95_lines_pct="${P95_LINES_CHANGED_PCT}"
+  local max_flicker="${MAX_FLICKER_EVENTS}"
+  if is_resize_case "${case_name}"; then
+    if [[ -n "${RESIZE_MAX_LINES_CHANGED_PCT}" ]]; then
+      max_lines_pct="${RESIZE_MAX_LINES_CHANGED_PCT}"
+    fi
+    if [[ -n "${RESIZE_P95_LINES_CHANGED_PCT}" ]]; then
+      p95_lines_pct="${RESIZE_P95_LINES_CHANGED_PCT}"
+    fi
+    if [[ -n "${RESIZE_MAX_FLICKER_EVENTS}" ]]; then
+      max_flicker="${RESIZE_MAX_FLICKER_EVENTS}"
+    fi
+  elif is_overlay_case "${case_name}"; then
+    if [[ -n "${OVERLAY_MAX_LINES_CHANGED_PCT}" ]]; then
+      max_lines_pct="${OVERLAY_MAX_LINES_CHANGED_PCT}"
+    fi
+    if [[ -n "${OVERLAY_P95_LINES_CHANGED_PCT}" ]]; then
+      p95_lines_pct="${OVERLAY_P95_LINES_CHANGED_PCT}"
+    fi
+    if [[ -n "${OVERLAY_MAX_FLICKER_EVENTS}" ]]; then
+      max_flicker="${OVERLAY_MAX_FLICKER_EVENTS}"
+    fi
+  fi
+  local extra_flags=()
+  if [[ -n "${max_lines_pct}" ]]; then
+    extra_flags+=("--max-lines-pct" "${max_lines_pct}")
+  fi
+  if [[ -n "${p95_lines_pct}" ]]; then
+    extra_flags+=("--p95-lines-pct" "${p95_lines_pct}")
+  fi
+  if [[ -n "${MAX_GHOST_LINES}" ]]; then
+    extra_flags+=("--max-ghost-lines" "${MAX_GHOST_LINES}")
+  fi
+  if [[ -n "${max_flicker}" ]]; then
+    extra_flags+=("--max-flicker-events" "${max_flicker}")
+  fi
   node "${TIMELINE_ANALYZER}" \
     --summary "${summary_file}" \
     --case "${case_name}" \
@@ -218,7 +304,8 @@ check_timeline_budget() {
     --max-warnings "${MAX_TIMELINE_WARNINGS}" \
     --resize-events "${RESIZE_EVENT_BUDGET}" \
     --resize-burst-ms "${RESIZE_BURST_BUDGET_MS}" \
-    --warnings-file "${warnings_file}"
+    --warnings-file "${warnings_file}" \
+    "${extra_flags[@]}"
 }
 
 print_chaos_metadata() {
@@ -248,6 +335,26 @@ PY
 is_pty_case() {
   local candidate="$1"
   for entry in "${PTY_CASES[@]}"; do
+    if [[ "${candidate}" == "${entry}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+is_overlay_case() {
+  local candidate="$1"
+  for entry in "${OVERLAY_CASES[@]}"; do
+    if [[ "${candidate}" == "${entry}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+is_resize_case() {
+  local candidate="$1"
+  for entry in "${RESIZE_CASES[@]}"; do
     if [[ "${candidate}" == "${entry}" ]]; then
       return 0
     fi

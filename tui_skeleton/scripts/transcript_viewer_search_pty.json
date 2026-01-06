@@ -1,6 +1,6 @@
 [
   { "action": "log", "message": "Transcript viewer search PTY start" },
-  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
   { "action": "type", "text": "Hello transcript", "typingDelayMs": 10 },
   { "action": "press", "key": "enter" },
   { "action": "wait", "ms": 400 },

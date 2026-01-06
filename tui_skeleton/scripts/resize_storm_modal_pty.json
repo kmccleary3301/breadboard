@@ -1,0 +1,10 @@
+[
+  { "action": "log", "message": "Resize storm modal overlay PTY harness start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "press", "key": "ctrl+k" },
+  { "action": "waitFor", "text": "Select model", "timeoutMs": 5000 },
+  { "action": "wait", "ms": 2500 },
+  { "action": "snapshot", "label": "resize-storm-modal" },
+  { "action": "press", "key": "escape" },
+  { "action": "log", "message": "Resize storm modal overlay PTY harness complete" }
+]

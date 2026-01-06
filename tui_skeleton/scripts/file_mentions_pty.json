@@ -1,6 +1,6 @@
 [
   { "action": "log", "message": "@ file mention attach PTY harness start" },
-  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
   { "action": "snapshot", "label": "initial" },
   { "action": "type", "text": "Summarize ", "typingDelayMs": 18 },
   { "action": "type", "text": "@" },

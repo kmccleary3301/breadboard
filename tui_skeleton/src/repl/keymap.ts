@@ -1,4 +1,5 @@
-export type KeymapMode = "claude" | "codex"
+import type { KeymapMode } from "./modes.js"
+import { loadProfileConfig } from "./profile.js"
 
 const normalizeKeymap = (value: string | undefined): KeymapMode | null => {
   const normalized = (value ?? "").trim().toLowerCase()
@@ -11,6 +12,6 @@ export const loadKeymapConfig = (): KeymapMode => {
   const explicit =
     normalizeKeymap(process.env.BREADBOARD_TUI_KEYMAP) ??
     normalizeKeymap(process.env.BREADBOARD_KEYMAP)
-  return explicit ?? "claude"
+  if (explicit) return explicit
+  return loadProfileConfig().keymap
 }
-

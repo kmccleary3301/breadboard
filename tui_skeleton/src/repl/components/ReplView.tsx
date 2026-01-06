@@ -10,6 +10,10 @@ import type {
   StreamStats,
   ModelMenuState,
   ModelMenuItem,
+  SkillsMenuState,
+  SkillEntry,
+  SkillSelection,
+  CTreeSnapshot,
   GuardrailNotice,
   QueuedAttachment,
   TranscriptPreferences,
@@ -32,11 +36,13 @@ import { useKeyRouter, type KeyHandler, type LayerName } from "../hooks/useKeyRo
 import { LineEditor } from "./LineEditor.js"
 import { LiveSlot } from "./LiveSlot.js"
 import { TranscriptViewer } from "./TranscriptViewer.js"
+import { SelectPanel, type SelectPanelRow, type SelectPanelLine } from "./SelectPanel.js"
 import { useAnimationClock } from "../hooks/useAnimationClock.js"
 import type { ClipboardImage } from "../../util/clipboard.js"
 import type { SessionFileInfo, SessionFileContent } from "../../api/types.js"
 import { loadFileMentionConfig, type FileMentionMode } from "../fileMentions.js"
 import { loadFilePickerConfig, loadFilePickerResources, type FilePickerMode, type FilePickerResource } from "../filePicker.js"
+import { rankFuzzyFileItems, scoreFuzzyMatch } from "../fileRanking.js"
 import { computeModelColumns, CONTEXT_COLUMN_WIDTH, PRICE_COLUMN_WIDTH } from "../modelMenu/layout.js"
 import { GuardrailBanner } from "./GuardrailBanner.js"
 import { loadKeymapConfig } from "../keymap.js"
@@ -75,6 +81,8 @@ const MODEL_PROVIDER_ORDER = [
   "local",
   "other",
 ]
+const SKILL_GROUP_ORDER = ["language", "repo", "lint", "search", "docs", "misc"]
+const ALWAYS_ALLOW_SCOPE: PermissionRuleScope = "project"
 const DOUBLE_CTRL_C_WINDOW_MS = 1500
 const CLI_VERSION = (process.env.BREADBOARD_TUI_VERSION ?? "0.2.0").trim()
 const formatBytes = (bytes: number): string => {
@@ -92,6 +100,38 @@ const formatLatency = (ms: number): string => {
   if (ms < 1000) return `${Math.round(ms)}ms`
   if (ms < 10_000) return `${(ms / 1000).toFixed(2)}s`
   return `${(ms / 1000).toFixed(1)}s`
+}
+const formatCtreeSummary = (snapshot?: CTreeSnapshot | null): string | null => {
+  if (!snapshot) return null
+  const snap = snapshot.snapshot as Record<string, unknown> | null | undefined
+  const compiler = snapshot.compiler as Record<string, unknown> | null | undefined
+  const collapse = snapshot.collapse as Record<string, unknown> | null | undefined
+  const runner = snapshot.runner as Record<string, unknown> | null | undefined
+  const nodeCount = typeof snap?.node_count === "number" ? snap.node_count : null
+  const nodeHash = typeof snap?.node_hash === "string" ? snap.node_hash : null
+  const policy = typeof collapse?.policy === "string" ? collapse.policy : null
+  const dropped = typeof collapse?.dropped === "number" ? collapse.dropped : null
+  const compilerHash =
+    typeof compiler?.z3 === "string"
+      ? compiler.z3
+      : typeof compiler?.z2 === "string"
+        ? compiler.z2
+        : typeof compiler?.z1 === "string"
+          ? compiler.z1
+          : null
+  const runnerEnabled = typeof runner?.enabled === "boolean" ? runner.enabled : null
+  const branches = Array.isArray(runner?.branches) ? runner?.branches.length : null
+  const parts: string[] = []
+  if (policy) parts.push(`policy ${policy}`)
+  if (nodeCount != null) parts.push(`${nodeCount} nodes`)
+  if (nodeHash) parts.push(`hash ${nodeHash.slice(0, 8)}`)
+  if (compilerHash) parts.push(`compiler ${compilerHash.slice(0, 8)}`)
+  if (dropped != null && dropped > 0) parts.push(`dropped ${dropped}`)
+  if (runnerEnabled != null) {
+    parts.push(runnerEnabled ? `branches ${branches ?? 0}` : "runner off")
+  }
+  if (parts.length === 0) return null
+  return `CTree: ${parts.join(" · ")}`
 }
 const normalizeModeLabel = (value?: string | null): { label: string; color: string } => {
   const normalized = (value ?? "").trim().toLowerCase()
@@ -112,6 +152,7 @@ const normalizePermissionLabel = (value?: string | null): { label: string; color
   return { label: normalized.toUpperCase(), color: "#f59e0b" }
 }
 const COLUMN_SEPARATOR = "  ·  "
+const clearToEnd = (value: string): string => `${value}\u001b[K`
 
 const formatCell = (value: string, width: number, align: "left" | "right" = "left"): string => {
   if (width <= 0) return ""
@@ -148,7 +189,7 @@ const highlightFuzzyLabel = (label: string, command: string, query: string): str
   for (let i = 0; i < label.length; i += 1) {
     const ch = label[i]
     if (i < command.length && matchSet.has(i)) {
-      out += chalk.hex("#7CF2FF")(ch)
+      out += chalk.bold.hex("#7CF2FF")(ch)
     } else {
       out += ch
     }
@@ -200,6 +241,10 @@ const formatProviderLabel = (value: string | null | undefined): string => {
   }
 }
 
+const buildSkillKey = (skill: SkillEntry): string => `${skill.id}@${skill.version}`
+const isSkillSelected = (selected: Set<string>, skill: SkillEntry): boolean =>
+  selected.has(skill.id) || selected.has(buildSkillKey(skill))
+
 const stripProviderPrefix = (label: string, providerLabel: string): string => {
   const trimmed = label.trim()
   if (!providerLabel) return trimmed
@@ -243,6 +288,71 @@ const stripFence = (raw: string): { code: string; langHint?: string } => {
   while (end > 0 && lines[end].trim().length === 0) end -= 1
   if (end > 0 && lines[end].trim().startsWith("```")) end -= 1
   return { code: lines.slice(1, end + 1).join("\n"), langHint }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null
+
+const extractToolPayload = (
+  entry: ToolLogEntry,
+): { name: string; args?: Record<string, unknown>; output?: string; status?: string } | null => {
+  const trimmed = entry.text.trim()
+  const bracket = trimmed.indexOf("]")
+  if (bracket === -1) return null
+  const jsonText = trimmed.slice(bracket + 1).trim()
+  if (!jsonText.startsWith("{")) return null
+  try {
+    const payload = JSON.parse(jsonText) as unknown
+    const tool = isRecord(payload) && isRecord(payload.tool) ? payload.tool : (payload as Record<string, unknown>)
+    const getString = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined)
+    const name =
+      getString(tool.name) ||
+      getString(tool.tool) ||
+      getString(tool.command) ||
+      "Tool"
+    const args = isRecord(tool.args) ? (tool.args as Record<string, unknown>) : undefined
+    const output =
+      getString(tool.output) ||
+      getString(tool.stdout) ||
+      getString(tool.content) ||
+      getString(isRecord(payload) ? payload.output : undefined) ||
+      getString(isRecord(payload) ? payload.stdout : undefined) ||
+      getString(isRecord(payload) ? payload.content : undefined)
+    const status =
+      getString(tool.status) || getString(isRecord(payload) ? payload.status : undefined)
+    return { name, args, output, status }
+  } catch {
+    return null
+  }
+}
+
+const normalizeToolName = (raw: string): string => {
+  const lower = raw.toLowerCase()
+  const map: Record<string, string> = {
+    bash: "Bash",
+    shell: "Bash",
+    apply_patch: "ApplyPatch",
+    write_file: "Write",
+    read_file: "Read",
+    edit: "Edit",
+    search: "Search",
+  }
+  if (map[lower]) return map[lower]
+  return raw.replace(/[_-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+const formatToolArgsSummary = (args?: Record<string, unknown>): string | null => {
+  if (!args) return null
+  const preferredKeys = ["command", "cmd", "path", "file", "query", "pattern", "url", "target", "input"]
+  for (const key of preferredKeys) {
+    const value = args[key]
+    if (typeof value === "string" && value.trim().length > 0) {
+      const trimmed = value.replace(/\s+/g, " ").trim()
+      const clipped = trimmed.length > 80 ? `${trimmed.slice(0, 77)}…` : trimmed
+      return clipped
+    }
+  }
+  if (typeof args.diff === "string" || typeof args.patch === "string") return "diff"
+  return null
 }
 
 const formatInlineNodes = (nodes?: ReadonlyArray<InlineNode>): string => {
@@ -306,6 +416,49 @@ const renderCodeLines = (raw: string, lang?: string): string[] => {
     if (line.startsWith("@@")) return chalk.hex("#22d3ee")(line)
     return chalk.hex("#cbd5e1")(line)
   })
+}
+
+const renderTableLines = (raw: string): string[] => {
+  const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0)
+  if (lines.length === 0) return []
+  const rows = lines.map((line) => {
+    const parts = line.split("|").map((part) => part.trim())
+    if (parts.length > 1 && parts[0] === "") parts.shift()
+    if (parts.length > 1 && parts[parts.length - 1] === "") parts.pop()
+    return parts
+  })
+  const isSeparator = (cells: string[]) => cells.every((cell) => /^:?-{2,}:?$/.test(cell))
+  const bodyRows = rows.filter((cells) => !isSeparator(cells))
+  if (bodyRows.length === 0) return lines
+  const colCount = Math.max(...bodyRows.map((cells) => cells.length))
+  const widths = new Array<number>(colCount).fill(0)
+  for (const cells of bodyRows) {
+    for (let i = 0; i < colCount; i += 1) {
+      widths[i] = Math.max(widths[i], stripAnsiCodes(cells[i] ?? "").length)
+    }
+  }
+  const formatRow = (cells: string[], style?: (value: string) => string): string => {
+    const padded = cells.map((cell, idx) => {
+      const rawCell = cell ?? ""
+      const pad = Math.max(0, widths[idx] - stripAnsiCodes(rawCell).length)
+      const text = `${rawCell}${" ".repeat(pad)}`
+      return style ? style(text) : text
+    })
+    return `| ${padded.join(" | ")} |`
+  }
+  const output: string[] = []
+  let headerRendered = false
+  for (const cells of rows) {
+    if (isSeparator(cells)) {
+      const divider = widths.map((width) => "-".repeat(Math.max(3, width))).join("-|-")
+      output.push(chalk.dim(`|- ${divider} -|`.replace(/\s+/g, " ")))
+      headerRendered = true
+      continue
+    }
+    const styled = !headerRendered ? (value: string) => chalk.bold.hex("#e2e8f0")(value) : undefined
+    output.push(formatRow(cells, styled))
+  }
+  return output.length > 0 ? output : lines
 }
 
 interface DiffSection {
@@ -591,64 +744,6 @@ const parseAtMentionQuery = (query: string): { cwd: string; needle: string } => 
   return { cwd, needle }
 }
 
-const scoreFuzzyMatch = (candidate: string, query: string): number | null => {
-  const needle = query.trim().toLowerCase()
-  if (!needle) return 0
-  const haystack = candidate.toLowerCase()
-  let score = 0
-  let lastIndex = -1
-  let consecutive = 0
-  for (let i = 0; i < needle.length; i += 1) {
-    const ch = needle[i]
-    if (!ch) continue
-    const index = haystack.indexOf(ch, lastIndex + 1)
-    if (index === -1) return null
-    score += 10
-    const prevChar = index > 0 ? haystack[index - 1] : ""
-    if (index === 0 || "/_-.".includes(prevChar)) {
-      score += 8
-    }
-    if (index === lastIndex + 1) {
-      consecutive += 1
-      score += 12 + consecutive
-    } else {
-      consecutive = 0
-      score -= Math.max(0, index - lastIndex - 1)
-    }
-    lastIndex = index
-  }
-  score += Math.max(0, 30 - haystack.length)
-  return score
-}
-
-const rankFuzzyFileItems = (
-  items: ReadonlyArray<SessionFileInfo>,
-  query: string,
-  limit: number,
-  display: (item: SessionFileInfo) => string,
-): ReadonlyArray<SessionFileInfo> => {
-  const needle = query.trim()
-  if (!needle) return items.slice(0, Math.max(0, limit))
-  const scored: Array<{ item: SessionFileInfo; score: number }> = []
-  for (const item of items) {
-    const label = display(item)
-    const score = scoreFuzzyMatch(label, needle)
-    if (score == null) continue
-    const base = label.split("/").pop() ?? label
-    const baseScore = scoreFuzzyMatch(base, needle)
-    const boosted = score + (baseScore != null ? baseScore * 1.2 + 20 : 0)
-    scored.push({ item, score: boosted })
-  }
-  scored.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score
-    if (a.item.type !== b.item.type) return a.item.type === "file" ? -1 : 1
-    const aLen = a.item.path.length
-    const bLen = b.item.path.length
-    if (aLen !== bLen) return aLen - bLen
-    return a.item.path.localeCompare(b.item.path)
-  })
-  return scored.slice(0, Math.max(0, limit)).map((entry) => entry.item)
-}
 
 const longestCommonPrefix = (values: ReadonlyArray<string>): string => {
   if (values.length === 0) return ""
@@ -761,10 +856,17 @@ const blockToLines = (block: Block): string[] => {
     }
     case "footnotes":
     case "footnote-def":
-    case "table":
-    case "mdx":
-    case "html":
       return (block.payload.raw ?? "").split(/\r?\n/)
+    case "table": {
+      const raw = block.payload.raw ?? ""
+      return renderTableLines(raw)
+    }
+    case "mdx":
+    case "html": {
+      const raw = block.payload.raw ?? ""
+      const lines = raw.split(/\r?\n/)
+      return lines.map((line) => chalk.dim(line))
+    }
     default:
       return (block.payload.raw ?? "").split(/\r?\n/)
   }
@@ -788,23 +890,30 @@ interface ReplViewProps {
   readonly liveSlots: LiveSlotEntry[]
   readonly status: string
   readonly pendingResponse: boolean
+  readonly disconnected: boolean
   readonly mode?: string | null
   readonly permissionMode?: string | null
   readonly hints: string[]
   readonly stats: StreamStats
   readonly modelMenu: ModelMenuState
+  readonly skillsMenu: SkillsMenuState
   readonly guardrailNotice?: GuardrailNotice | null
   readonly viewClearAt?: number | null
   readonly viewPrefs: TranscriptPreferences
   readonly todos: TodoItem[]
   readonly tasks: TaskEntry[]
+  readonly ctreeSnapshot?: CTreeSnapshot | null
   readonly permissionRequest?: PermissionRequest | null
+  readonly permissionError?: string | null
   readonly permissionQueueDepth?: number
   readonly rewindMenu: RewindMenuState
   readonly onSubmit: (value: string, attachments?: ReadonlyArray<QueuedAttachment>) => Promise<void>
   readonly onModelMenuOpen: () => Promise<void>
   readonly onModelSelect: (item: ModelMenuItem) => Promise<void>
   readonly onModelMenuCancel: () => void
+  readonly onSkillsMenuOpen: () => Promise<void>
+  readonly onSkillsMenuCancel: () => void
+  readonly onSkillsApply: (selection: SkillSelection) => Promise<void>
   readonly onGuardrailToggle: () => void
   readonly onGuardrailDismiss: () => void
   readonly onPermissionDecision: (decision: PermissionDecision) => Promise<void>
@@ -821,23 +930,30 @@ export const ReplView: React.FC<ReplViewProps> = ({
   liveSlots,
   status,
   pendingResponse,
+  disconnected,
   mode,
   permissionMode,
   hints,
   stats,
   modelMenu,
+  skillsMenu,
   guardrailNotice,
   viewClearAt,
   viewPrefs,
   todos,
   tasks,
+  ctreeSnapshot,
   permissionRequest,
+  permissionError,
   permissionQueueDepth,
   rewindMenu,
   onSubmit,
   onModelMenuOpen,
   onModelSelect,
   onModelMenuCancel,
+  onSkillsMenuOpen,
+  onSkillsMenuCancel,
+  onSkillsApply,
   onGuardrailToggle,
   onGuardrailDismiss,
   onPermissionDecision,
@@ -855,6 +971,20 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const [suppressSuggestions, setSuppressSuggestions] = useState(false)
   const [attachments, setAttachments] = useState<QueuedAttachment[]>([])
   const [fileMentions, setFileMentions] = useState<QueuedFileMention[]>([])
+  const handleAttachment = useCallback((attachment: ClipboardImage) => {
+    setAttachments((prev) => [
+      ...prev,
+      {
+        id: `attachment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        mime: attachment.mime,
+        base64: attachment.base64,
+        size: attachment.size,
+      },
+    ])
+  }, [])
+  const removeLastAttachment = useCallback(() => {
+    setAttachments((prev) => prev.slice(0, -1))
+  }, [])
   const collapsedEntriesRef = useRef(new Map<string, boolean>())
   const [collapsedVersion, setCollapsedVersion] = useState(0)
   const [selectedCollapsibleEntryId, setSelectedCollapsibleEntryId] = useState<string | null>(null)
@@ -869,10 +999,18 @@ export const ReplView: React.FC<ReplViewProps> = ({
     action?: (() => Promise<void> | void) | null
   }>({ status: "hidden" })
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const shortcutsOpenedAtRef = useRef<number | null>(null)
   const [usageOpen, setUsageOpen] = useState(false)
   const [modelSearch, setModelSearch] = useState("")
   const [modelIndex, setModelIndex] = useState(0)
   const [modelOffset, setModelOffset] = useState(0)
+  const [modelProviderFilter, setModelProviderFilter] = useState<string | null>(null)
+  const [skillsSearch, setSkillsSearch] = useState("")
+  const [skillsIndex, setSkillsIndex] = useState(0)
+  const [skillsOffset, setSkillsOffset] = useState(0)
+  const [skillsMode, setSkillsMode] = useState<"allowlist" | "blocklist">("blocklist")
+  const [skillsSelected, setSkillsSelected] = useState<Set<string>>(new Set())
+  const [skillsDirty, setSkillsDirty] = useState(false)
   const [permissionTab, setPermissionTab] = useState<"summary" | "diff" | "rules" | "note">("summary")
   const [permissionScope, setPermissionScope] = useState<PermissionRuleScope>("project")
   const [permissionFileIndex, setPermissionFileIndex] = useState(0)
@@ -957,6 +1095,13 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const headerPrintedRef = useRef(false)
   const printedConversationIdsRef = useRef(new Set<string>())
   const printedToolIdsRef = useRef(new Set<string>())
+  useEffect(() => {
+    if (!SCROLLBACK_MODE) return
+    headerPrintedRef.current = false
+    printedConversationIdsRef.current.clear()
+    printedToolIdsRef.current.clear()
+    setStaticFeed([])
+  }, [sessionId, viewClearAt])
   const fileMentionConfig = useMemo(() => loadFileMentionConfig(), [])
   const filePickerConfig = useMemo(() => loadFilePickerConfig(), [])
   const keymap = useMemo(() => loadKeymapConfig(), [])
@@ -997,6 +1142,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const contentWidth = useMemo(() => Math.max(10, columnWidth - 2), [columnWidth])
   const rowCount = stdout?.rows && Number.isFinite(stdout.rows) ? stdout.rows : 40
   const PANEL_WIDTH = useMemo(() => Math.min(96, Math.max(60, Math.floor(columnWidth * 0.8))), [columnWidth])
+  const modelPanelInnerWidth = useMemo(() => Math.max(0, PANEL_WIDTH - 4), [PANEL_WIDTH])
   const modelColumnLayout = useMemo(() => computeModelColumns(columnWidth), [columnWidth])
   const modelMenuCompact = useMemo(() => rowCount <= 20 || columnWidth <= 70, [columnWidth, rowCount])
   const modelMenuHeaderText = useMemo(() => {
@@ -1024,6 +1170,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
     const base = Math.floor(rowCount * 0.45)
     const capped = Math.max(6, Math.min(14, base))
     return Math.max(4, Math.min(capped, rowCount - 10))
+  }, [rowCount])
+  const SKILLS_VISIBLE_ROWS = useMemo(() => {
+    const base = Math.floor(rowCount * 0.5)
+    const capped = Math.max(8, Math.min(18, base))
+    return Math.max(6, Math.min(capped, rowCount - 8))
   }, [rowCount])
   const animationActive = pendingResponse || liveSlots.length > 0
   const animationTick = useAnimationClock(animationActive, 120)
@@ -1097,13 +1248,25 @@ export const ReplView: React.FC<ReplViewProps> = ({
     }
     return lines
   }, [])
+  const suggestionPrefix = useMemo(() => (claudeChrome ? "  " : ""), [claudeChrome])
+  const suggestionCommandWidth = useMemo(() => {
+    if (!claudeChrome) return null
+    const maxLabel = suggestions.reduce((max, row) => {
+      const label = `${row.command}${row.usage ? ` ${row.usage}` : ""}`
+      return Math.max(max, stripAnsiCodes(label).length)
+    }, 0)
+    const padded = maxLabel > 0 ? maxLabel + 2 : 18
+    const maxAllowed = Math.max(18, Math.min(32, Math.floor((columnWidth - 6) * 0.45)))
+    return Math.min(Math.max(16, padded), maxAllowed)
+  }, [claudeChrome, columnWidth, suggestions])
   const suggestionLayout = useMemo(() => {
-    const maxWidth = claudeChrome ? columnWidth - 4 : Math.min(columnWidth - 4, 72)
+    const maxWidth = claudeChrome ? columnWidth - suggestionPrefix.length - 2 : Math.min(columnWidth - 4, 72)
     const totalWidth = Math.max(24, maxWidth)
-    const commandWidth = Math.max(14, Math.min(28, Math.floor(totalWidth * 0.35)))
+    const baseCommandWidth = Math.max(14, Math.min(28, Math.floor(totalWidth * 0.35)))
+    const commandWidth = claudeChrome && suggestionCommandWidth ? suggestionCommandWidth : baseCommandWidth
     const summaryWidth = Math.max(8, totalWidth - commandWidth - 2)
     return { totalWidth, commandWidth, summaryWidth }
-  }, [claudeChrome, columnWidth])
+  }, [claudeChrome, columnWidth, suggestionCommandWidth, suggestionPrefix.length])
   const buildSuggestionLines = useCallback(
     (row: SlashSuggestion, multiline: boolean): Array<{ label: string; summary: string }> => {
       const label = `${row.command}${row.usage ? ` ${row.usage}` : ""}`
@@ -1153,6 +1316,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   }, [paletteState])
   const inputLocked =
     modelMenu.status !== "hidden" ||
+    skillsMenu.status !== "hidden" ||
     paletteState.status === "open" ||
     confirmState.status === "prompt" ||
     shortcutsOpen ||
@@ -1165,9 +1329,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
 
   const overlayActive =
     modelMenu.status !== "hidden" ||
+    skillsMenu.status !== "hidden" ||
     paletteState.status === "open" ||
     confirmState.status === "prompt" ||
-    shortcutsOpen ||
+    (shortcutsOpen && !claudeChrome) ||
     usageOpen ||
     Boolean(permissionRequest) ||
     rewindMenu.status !== "hidden" ||
@@ -1226,6 +1391,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const transcriptViewerLines = useMemo(() => {
     const lines: string[] = []
     const normalizeNewlines = (text: string) => text.replace(/\r\n?/g, "\n")
+    const detailedTranscriptActive = verboseOutput || (keymap === "claude" && transcriptViewerOpen)
     for (const entry of conversation) {
       const speaker = entry.speaker.toUpperCase()
       lines.push(`${speaker}:`)
@@ -1248,7 +1414,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
           : entry.text
         lines.push(`  [${entry.kind}]${status}`)
         const toolLines = normalizeNewlines(entryText).split("\n")
-        if (verboseOutput || toolLines.length <= TOOL_COLLAPSE_THRESHOLD) {
+        if (detailedTranscriptActive || toolLines.length <= TOOL_COLLAPSE_THRESHOLD) {
           for (const line of toolLines) {
             lines.push(`    ${line}`)
           }
@@ -1280,7 +1446,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
       lines.pop()
     }
     return lines
-  }, [conversation, toolEvents, verboseOutput])
+  }, [conversation, keymap, toolEvents, transcriptViewerOpen, verboseOutput])
   const transcriptToolLines = useMemo(() => {
     const indices: number[] = []
     for (let line = 0; line < transcriptViewerLines.length; line += 1) {
@@ -1482,11 +1648,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const taskRows = useMemo(() => {
     return filteredTasks.map((task) => {
       const status = (task.status ?? "").toLowerCase()
-      const statusLabel = status ? status.replace(/[_-]+/g, " ") : "update"
       const labelParts = []
-      if (statusLabel) {
-        labelParts.push(statusLabel)
-      }
       const description = task.description || task.kind || "task"
       labelParts.push(description)
       if (task.subagentType) {
@@ -1535,10 +1697,195 @@ export const ReplView: React.FC<ReplViewProps> = ({
     }
     setTaskNotice(lastError ?? "Unable to load task output.")
   }, [onReadFile, selectedTask])
+
+  const skillsCatalog = useMemo(() => (skillsMenu.status === "ready" ? skillsMenu.catalog : null), [skillsMenu])
+  const skillsSelection = useMemo(
+    () => (skillsMenu.status === "ready" ? skillsMenu.selection : null),
+    [skillsMenu],
+  )
+  const skillsSources = useMemo(
+    () => (skillsMenu.status === "ready" ? skillsMenu.sources ?? null : null),
+    [skillsMenu],
+  )
+
+  const skillsData = useMemo(() => {
+    const entries = skillsCatalog?.skills ?? []
+    const query = skillsSearch.trim().toLowerCase()
+    const normalizeGroup = (value?: string | null) => {
+      const normalized = value?.trim().toLowerCase() ?? ""
+      return normalized || "misc"
+    }
+    const formatGroupLabel = (group: string) =>
+      group
+        .split(/[^a-z0-9]+/i)
+        .filter(Boolean)
+        .map((part) => part[0]?.toUpperCase() + part.slice(1))
+        .join(" ")
+    type SkillRow =
+      | { kind: "header"; label: string }
+      | { kind: "item"; entry: SkillEntry; index: number }
+    if (!query) {
+      const grouped = new Map<string, SkillEntry[]>()
+      for (const entry of entries) {
+        const key = normalizeGroup(entry.group)
+        if (!grouped.has(key)) grouped.set(key, [])
+        grouped.get(key)!.push(entry)
+      }
+      const order: string[] = []
+      for (const group of SKILL_GROUP_ORDER) {
+        if (grouped.has(group)) order.push(group)
+      }
+      for (const group of grouped.keys()) {
+        if (!order.includes(group)) order.push(group)
+      }
+      const items: SkillEntry[] = []
+      const rows: SkillRow[] = []
+      for (const group of order) {
+        const groupEntries = grouped.get(group) ?? []
+        groupEntries.sort((a, b) => {
+          const al = (a.label ?? a.id).toLowerCase()
+          const bl = (b.label ?? b.id).toLowerCase()
+          if (al !== bl) return al.localeCompare(bl)
+          return a.version.localeCompare(b.version)
+        })
+        if (groupEntries.length === 0) continue
+        rows.push({ kind: "header", label: formatGroupLabel(group) })
+        for (const entry of groupEntries) {
+          const index = items.length
+          items.push(entry)
+          rows.push({ kind: "item", entry, index })
+        }
+      }
+      return { items, rows }
+    }
+    const scored = entries
+      .map((entry) => {
+        const candidate = [
+          entry.id,
+          entry.label ?? "",
+          entry.group ?? "",
+          entry.description ?? "",
+          ...(entry.tags ?? []),
+        ].join(" ")
+        const score = scoreFuzzyMatch(candidate, query)
+        return score == null ? null : { entry, score }
+      })
+      .filter((item): item is { entry: SkillEntry; score: number } => item != null)
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score
+      const al = (a.entry.label ?? a.entry.id).toLowerCase()
+      const bl = (b.entry.label ?? b.entry.id).toLowerCase()
+      if (al !== bl) return al.localeCompare(bl)
+      return a.entry.version.localeCompare(b.entry.version)
+    })
+    const items = scored.map((item) => item.entry)
+    const rows: SkillRow[] = items.map((entry, index) => ({ kind: "item", entry, index }))
+    return { items, rows }
+  }, [skillsCatalog, skillsSearch])
+
+  const skillsSelectedEntry = useMemo(() => {
+    if (skillsData.items.length === 0) return null
+    const safeIndex = Math.max(0, Math.min(skillsIndex, skillsData.items.length - 1))
+    return skillsData.items[safeIndex] ?? null
+  }, [skillsData.items, skillsIndex])
+
+  const skillsDisplayRows = useMemo(() => skillsData.rows, [skillsData.rows])
+
+  const skillsDisplayIndex = useMemo(() => {
+    if (!skillsSelectedEntry) return 0
+    const target = skillsData.items.indexOf(skillsSelectedEntry)
+    if (target < 0) return 0
+    const rowIndex = skillsDisplayRows.findIndex((row) => row.kind === "item" && row.index === target)
+    return rowIndex >= 0 ? rowIndex : 0
+  }, [skillsData.items, skillsDisplayRows, skillsSelectedEntry])
+
+  useEffect(() => {
+    if (skillsMenu.status === "hidden") return
+    if (skillsData.items.length === 0) {
+      setSkillsIndex(0)
+      setSkillsOffset(0)
+      return
+    }
+    if (skillsIndex >= skillsData.items.length) {
+      setSkillsIndex(0)
+    }
+    if (skillsDisplayIndex < skillsOffset) {
+      setSkillsOffset(skillsDisplayIndex)
+    } else if (skillsDisplayIndex >= skillsOffset + SKILLS_VISIBLE_ROWS) {
+      setSkillsOffset(Math.max(0, skillsDisplayIndex - SKILLS_VISIBLE_ROWS + 1))
+    }
+  }, [skillsData.items.length, skillsDisplayIndex, skillsIndex, skillsMenu.status, skillsOffset, SKILLS_VISIBLE_ROWS])
+
+  const resetSkillsSelection = useCallback(
+    (modeOverride?: "allowlist" | "blocklist") => {
+      const mode = modeOverride ?? skillsMode
+      const base = skillsSelection ?? {}
+      const source = mode === "allowlist" ? base.allowlist ?? [] : base.blocklist ?? []
+      const normalized = source.filter((item): item is string => typeof item === "string" && item.length > 0)
+      setSkillsMode(mode)
+      setSkillsSelected(new Set(normalized))
+      setSkillsDirty(false)
+    },
+    [skillsMode, skillsSelection],
+  )
+
+  const deriveSelectionFromCatalog = useCallback(
+    (mode: "allowlist" | "blocklist") => {
+      const entries = skillsCatalog?.skills ?? []
+      const next = new Set<string>()
+      for (const entry of entries) {
+        const enabled = entry.enabled !== false
+        if (mode === "allowlist") {
+          if (enabled) next.add(buildSkillKey(entry))
+        } else {
+          if (!enabled) next.add(buildSkillKey(entry))
+        }
+      }
+      return next
+    },
+    [skillsCatalog],
+  )
+
+  const toggleSkillsMode = useCallback(() => {
+    const nextMode = skillsMode === "allowlist" ? "blocklist" : "allowlist"
+    const derived = deriveSelectionFromCatalog(nextMode)
+    setSkillsMode(nextMode)
+    setSkillsSelected(derived)
+    setSkillsDirty(true)
+  }, [deriveSelectionFromCatalog, skillsMode])
+
+  const toggleSkillSelection = useCallback(
+    (entry: SkillEntry) => {
+      setSkillsSelected((prev) => {
+        const next = new Set(prev)
+        const key = buildSkillKey(entry)
+        if (next.has(entry.id) || next.has(key)) {
+          next.delete(entry.id)
+          next.delete(key)
+        } else {
+          next.add(key)
+        }
+        return next
+      })
+      setSkillsDirty(true)
+    },
+    [],
+  )
+
+  const applySkillsSelection = useCallback(async () => {
+    if (skillsMenu.status !== "ready") return
+    const list = Array.from(skillsSelected)
+    const selection: SkillSelection =
+      skillsMode === "allowlist" ? { mode: skillsMode, allowlist: list } : { mode: skillsMode, blocklist: list }
+    await onSkillsApply(selection)
+    onSkillsMenuCancel()
+  }, [onSkillsApply, onSkillsMenuCancel, skillsMenu.status, skillsMode, skillsSelected])
   const filteredModels = useMemo(() => {
     if (modelMenu.status !== "ready") return []
     const query = modelSearch.trim().toLowerCase()
-    const base = modelMenu.items
+    const base = modelProviderFilter
+      ? modelMenu.items.filter((item) => normalizeProviderKey(item.provider) === modelProviderFilter)
+      : modelMenu.items
     const groups = new Map<string, ModelMenuItem[]>()
     const order: string[] = []
     if (query.length === 0) {
@@ -1596,7 +1943,28 @@ export const ReplView: React.FC<ReplViewProps> = ({
       if (items) grouped.push(...items)
     }
     return grouped
-  }, [modelMenu, modelSearch])
+  }, [modelMenu, modelSearch, modelProviderFilter])
+
+  const modelProviderOrder = useMemo(() => {
+    const items = modelMenu.status === "ready" ? modelMenu.items : []
+    const present = new Set<string>()
+    for (const item of items) {
+      present.add(normalizeProviderKey(item.provider))
+    }
+    const ordered: string[] = []
+    for (const provider of MODEL_PROVIDER_ORDER) {
+      if (present.has(provider)) ordered.push(provider)
+    }
+    for (const provider of present) {
+      if (!ordered.includes(provider)) ordered.push(provider)
+    }
+    return ordered
+  }, [modelMenu])
+
+  const modelProviderLabel = useMemo(() => {
+    if (!modelProviderFilter) return "All"
+    return formatProviderLabel(modelProviderFilter)
+  }, [modelProviderFilter])
 
   const modelProviderCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -1612,8 +1980,33 @@ export const ReplView: React.FC<ReplViewProps> = ({
       setModelSearch("")
       setModelIndex(0)
       setModelOffset(0)
+      setModelProviderFilter(null)
     }
   }, [modelMenu.status])
+
+  useEffect(() => {
+    if (skillsMenu.status === "hidden") {
+      setSkillsSearch("")
+      setSkillsIndex(0)
+      setSkillsOffset(0)
+      setSkillsDirty(false)
+      return
+    }
+    if (skillsMenu.status !== "ready") return
+    const selection = skillsSelection ?? {}
+    const mode = selection.mode === "allowlist" ? "allowlist" : "blocklist"
+    setSkillsMode(mode)
+    const baseItems =
+      mode === "allowlist"
+        ? selection.allowlist ?? []
+        : selection.blocklist ?? []
+    const normalized = baseItems.filter((item) => typeof item === "string") as string[]
+    setSkillsSelected(new Set(normalized))
+    setSkillsSearch("")
+    setSkillsIndex(0)
+    setSkillsOffset(0)
+    setSkillsDirty(false)
+  }, [skillsMenu.status, skillsSelection])
 
   useEffect(() => {
     if (modelMenu.status !== "ready") return
@@ -1632,7 +2025,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
 
   useEffect(() => {
     if (!permissionRequest) return
-    setPermissionScope(permissionRequest.defaultScope ?? "project")
+    setPermissionScope(ALWAYS_ALLOW_SCOPE)
     setPermissionScroll(0)
     setPermissionFileIndex(0)
     setPermissionNote("")
@@ -1726,6 +2119,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
       if (
         confirmState.status === "prompt" ||
         modelMenu.status !== "hidden" ||
+        skillsMenu.status !== "hidden" ||
         shortcutsOpen ||
         usageOpen ||
         permissionRequest ||
@@ -1741,6 +2135,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
     [
       confirmState.status,
       modelMenu.status,
+      skillsMenu.status,
       shortcutsOpen,
       usageOpen,
       paletteState.status,
@@ -2559,11 +2954,20 @@ export const ReplView: React.FC<ReplViewProps> = ({
       const isCtrlT = key.ctrl && lowerChar === "t"
       const isCtrlShiftT = key.ctrl && key.shift && lowerChar === "t"
       const isCtrlB = key.ctrl && lowerChar === "b"
+      const isCtrlG = (key.ctrl && lowerChar === "g") || char === "\u0007"
       if (key.ctrl && lowerChar === "l") {
         clearScreen()
         return true
       }
       if (shortcutsOpen && (char === "?" || key.escape)) {
+        if (char === "?" && process.env.BREADBOARD_SHORTCUTS_STICKY === "1") {
+          return true
+        }
+        const openedAt = shortcutsOpenedAtRef.current
+        if (char === "?" && openedAt && Date.now() - openedAt < 200) {
+          return true
+        }
+        shortcutsOpenedAtRef.current = null
         setShortcutsOpen(false)
         return true
       }
@@ -2571,7 +2975,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         setUsageOpen(false)
         return true
       }
-      if (isCtrlShiftT) {
+      if (isCtrlShiftT && keymap !== "claude") {
         if (transcriptViewerOpen) {
           exitTranscriptViewer()
         } else {
@@ -2591,6 +2995,14 @@ export const ReplView: React.FC<ReplViewProps> = ({
       }
       if (isCtrlB) {
         setTasksOpen((prev) => !prev)
+        return true
+      }
+      if (isCtrlG) {
+        if (skillsMenu.status === "hidden") {
+          void onSkillsMenuOpen()
+        } else {
+          onSkillsMenuCancel()
+        }
         return true
       }
       if (key.ctrl && (lowerChar === "c" || char === "\u0003")) {
@@ -2815,7 +3227,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
           if (isShiftTab) {
             finalizePermissionDecision({
               kind: "allow-always",
-              scope: permissionScope,
+              scope: ALWAYS_ALLOW_SCOPE,
               rule: permissionRequest.ruleSuggestion ?? null,
             })
             return true
@@ -2901,7 +3313,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         if (lowerChar === "2") {
           finalizePermissionDecision({
             kind: "allow-always",
-            scope: permissionScope,
+            scope: ALWAYS_ALLOW_SCOPE,
             rule: permissionRequest.ruleSuggestion ?? null,
           })
           return true
@@ -2918,7 +3330,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         if (lowerChar === "a") {
           finalizePermissionDecision({
             kind: "allow-always",
-            scope: permissionScope,
+            scope: ALWAYS_ALLOW_SCOPE,
             rule: permissionRequest.ruleSuggestion ?? null,
           })
           return true
@@ -2942,10 +3354,6 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         if (activeTab === "rules") {
           if (key.leftArrow || key.rightArrow) {
-            const order: PermissionRuleScope[] = ["session", "project", "global"]
-            const index = Math.max(0, order.indexOf(permissionScope))
-            const nextIndex = key.leftArrow ? (index - 1 + order.length) % order.length : (index + 1) % order.length
-            setPermissionScope(order[nextIndex] ?? "project")
             return true
           }
           return true
@@ -3150,6 +3558,77 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return true
       }
+      if (skillsMenu.status !== "hidden") {
+        if (key.escape || char === "\u001b") {
+          onSkillsMenuCancel()
+          return true
+        }
+        if (skillsMenu.status === "loading") {
+          return true
+        }
+        if (skillsMenu.status === "error") {
+          if (isReturnKey) onSkillsMenuCancel()
+          return true
+        }
+        if (skillsMenu.status !== "ready") {
+          return true
+        }
+        const count = skillsData.items.length
+        if (isReturnKey) {
+          void applySkillsSelection()
+          return true
+        }
+        if (key.ctrl && lowerChar === "u") {
+          setSkillsSearch("")
+          setSkillsIndex(0)
+          setSkillsOffset(0)
+          return true
+        }
+        if (key.backspace || key.delete) {
+          if (skillsSearch.length > 0) {
+            setSkillsSearch((prev) => prev.slice(0, -1))
+            setSkillsIndex(0)
+            setSkillsOffset(0)
+            return true
+          }
+        }
+        if (!key.ctrl && !key.meta) {
+          if (lowerChar === "m") {
+            toggleSkillsMode()
+            return true
+          }
+          if (lowerChar === "r") {
+            resetSkillsSelection()
+            return true
+          }
+          if (char === " " && skillsSelectedEntry) {
+            toggleSkillSelection(skillsSelectedEntry)
+            return true
+          }
+        }
+        if (count > 0) {
+          if (key.pageUp || key.pageDown) {
+            const delta = key.pageUp ? -SKILLS_VISIBLE_ROWS : SKILLS_VISIBLE_ROWS
+            setSkillsIndex((prev) => Math.max(0, Math.min(count - 1, prev + delta)))
+            return true
+          }
+          if (key.downArrow || isTabKey) {
+            setSkillsIndex((prev) => (prev + 1) % count)
+            return true
+          }
+          if (key.upArrow || isShiftTab) {
+            setSkillsIndex((prev) => (prev - 1 + count) % count)
+            return true
+          }
+        }
+        if (char && char.length > 0 && !key.ctrl && !key.meta && !key.return && !key.escape) {
+          setSkillsSearch((prev) => prev + char)
+          setSkillsIndex(0)
+          setSkillsOffset(0)
+          return true
+        }
+        return true
+      }
       if (modelMenu.status === "hidden") return false
       if (key.escape) {
         onModelMenuCancel()
@@ -3176,8 +3655,32 @@ export const ReplView: React.FC<ReplViewProps> = ({
         setModelOffset(0)
         return true
       }
+      if ((key.backspace || key.delete) && modelSearch.length === 0 && modelProviderFilter) {
+        setModelProviderFilter(null)
+        setModelIndex(0)
+        setModelOffset(0)
+        return true
+      }
       const count = filteredModels.length
       if (count > 0) {
+        if (key.leftArrow || key.rightArrow) {
+          const providers = modelProviderOrder
+          if (providers.length > 0) {
+            if (!modelProviderFilter) {
+              const currentKey =
+                normalizeProviderKey(filteredModels[modelIndex]?.provider) ?? providers[0]
+              setModelProviderFilter(currentKey)
+            } else {
+              const index = Math.max(0, providers.indexOf(modelProviderFilter))
+              const nextIndex =
+                (index + (key.rightArrow ? 1 : -1) + providers.length) % providers.length
+              setModelProviderFilter(providers[nextIndex])
+            }
+            setModelIndex(0)
+            setModelOffset(0)
+          }
+          return true
+        }
         if (key.downArrow || isTabKey) {
           setModelIndex((index) => {
             const next = (index + 1) % count
@@ -3234,8 +3737,20 @@ export const ReplView: React.FC<ReplViewProps> = ({
       jumpTranscriptToLine,
       modelIndex,
       modelMenu.status,
+      modelProviderFilter,
+      modelProviderOrder,
       modelSearch.length,
       MODEL_VISIBLE_ROWS,
+      applySkillsSelection,
+      onSkillsMenuCancel,
+      resetSkillsSelection,
+      toggleSkillsMode,
+      toggleSkillSelection,
+      skillsMenu.status,
+      skillsData.items,
+      skillsSearch.length,
+      skillsSelectedEntry,
+      SKILLS_VISIBLE_ROWS,
       keymap,
       onModelMenuCancel,
       onPermissionDecision,
@@ -3368,7 +3883,9 @@ export const ReplView: React.FC<ReplViewProps> = ({
       const isTabKey = key.tab || (typeof char === "string" && (char.includes("\t") || char.includes("\u001b[Z")))
       const isReturnKey = key.return || char === "\r" || char === "\n"
       const lowerChar = char?.toLowerCase()
-      if (!key.ctrl && !key.meta && lowerChar === "?" && inputValueRef.current.trim() === "") {
+      const isQuestionMark = lowerChar === "?" || (char === "/" && key.shift)
+      if (!key.ctrl && !key.meta && isQuestionMark && inputValueRef.current.trim() === "") {
+        shortcutsOpenedAtRef.current = Date.now()
         setShortcutsOpen(true)
         handleLineEdit("", 0)
         return true
@@ -3379,6 +3896,16 @@ export const ReplView: React.FC<ReplViewProps> = ({
           pushHistoryEntry(stashValue)
           handleLineEdit("", 0)
         }
+        return true
+      }
+      if (
+        attachments.length > 0 &&
+        key.backspace &&
+        inputValueRef.current.length === 0 &&
+        cursor === 0 &&
+        !overlayActive
+      ) {
+        removeLastAttachment()
         return true
       }
       if (modelMenu.status !== "hidden") {
@@ -3587,8 +4114,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
     },
     [
       activeAtMention,
+      attachments.length,
       applySuggestion,
       closeFilePicker,
+      cursor,
       ensureFileIndexScan,
       fileIndexMeta.status,
       fileMenuIndex,
@@ -3610,11 +4139,13 @@ export const ReplView: React.FC<ReplViewProps> = ({
       loadFilePickerDirectory,
       modelMenu.status,
       moveCursorVertical,
+      overlayActive,
       pendingResponse,
       pushHistoryEntry,
       queueFileMention,
       rawFilePickerNeedle,
       recallHistory,
+      removeLastAttachment,
       setShortcutsOpen,
       suggestIndex,
       suggestions,
@@ -3717,45 +4248,33 @@ export const ReplView: React.FC<ReplViewProps> = ({
     ],
   )
 
-  const handleAttachment = useCallback((attachment: ClipboardImage) => {
-    setAttachments((prev) => [
-      ...prev,
-      {
-        id: `attachment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-        mime: attachment.mime,
-        base64: attachment.base64,
-        size: attachment.size,
-      },
-    ])
-  }, [])
-
-      const handleLineSubmit = useCallback(
+  const handleLineSubmit = useCallback(
     async (value: string) => {
       const trimmed = value.trim()
       if (!trimmed || inputLocked) return
       const normalized = value.trimEnd()
       if (trimmed.startsWith("/")) {
         const [command] = trimmed.slice(1).split(/\s+/)
-      if (command === "todos") {
-        setTodosOpen(true)
-        handleLineEdit("", 0)
-        return
-      }
-      if (command === "usage") {
-        setUsageOpen(true)
-        handleLineEdit("", 0)
-        return
-      }
-      if (command === "tasks") {
-        setTasksOpen(true)
-        handleLineEdit("", 0)
-        return
-      }
-      if (command === "transcript") {
-        enterTranscriptViewer()
-        handleLineEdit("", 0)
-        return
-      }
+        if (command === "todos") {
+          setTodosOpen(true)
+          handleLineEdit("", 0)
+          return
+        }
+        if (command === "usage") {
+          setUsageOpen(true)
+          handleLineEdit("", 0)
+          return
+        }
+        if (command === "tasks") {
+          setTasksOpen(true)
+          handleLineEdit("", 0)
+          return
+        }
+        if (command === "transcript") {
+          enterTranscriptViewer()
+          handleLineEdit("", 0)
+          return
+        }
       }
       const command = parseAtCommand(value)
       if (command) {
@@ -3963,10 +4482,28 @@ export const ReplView: React.FC<ReplViewProps> = ({
       chalk.dim(cwdLine),
     ]
   }, [claudeChrome, modeBadge, permissionBadge, stats.model])
-  const promptRule = useMemo(
-    () => "─".repeat(contentWidth),
-    [contentWidth],
+  const promptRule = useMemo(() => "─".repeat(contentWidth), [contentWidth])
+  const pendingClaudeStatus = useMemo(
+    () => (claudeChrome && pendingResponse ? "· Deciphering… (esc to interrupt · thinking)" : null),
+    [claudeChrome, pendingResponse],
   )
+  const networkBanner = useMemo(() => {
+    if (disconnected) {
+      return {
+        tone: "error" as const,
+        label: "Disconnected",
+        message: "Lost connection to the engine. Check network or restart the session.",
+      }
+    }
+    if (status.toLowerCase().startsWith("reconnecting")) {
+      return {
+        tone: "warning" as const,
+        label: "Reconnecting",
+        message: status,
+      }
+    }
+    return null
+  }, [disconnected, status])
   const compactMode = viewPrefs.virtualization === "compact" || (viewPrefs.virtualization === "auto" && rowCount <= 32)
 
   const headerReserveRows = useMemo(() => (SCROLLBACK_MODE ? 0 : headerLines.length + 5), [headerLines.length])
@@ -3979,6 +4516,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
     const outerMargin = 1
     const promptLine = 1
     const promptRuleRows = claudeChrome ? 2 : 0
+    const pendingStatusRows = claudeChrome && pendingClaudeStatus ? 1 : 0
     const suggestionRows = (() => {
       if (overlayActive) return 1
       if (filePickerActive) {
@@ -4012,10 +4550,19 @@ export const ReplView: React.FC<ReplViewProps> = ({
       return 1 + suggestionWindow.lineCount + hiddenRows
     })()
     const hintCount = overlayActive ? 0 : Math.min(4, hints.length)
-    const hintRows = hintCount > 0 ? 1 + hintCount : 0
+    const hintRows = overlayActive ? 0 : claudeChrome ? 1 : hintCount > 0 ? 1 + hintCount : 0
     const attachmentRows = overlayActive ? 0 : attachments.length > 0 ? attachments.length + 3 : 0
     const fileMentionRows = overlayActive ? 0 : fileMentions.length > 0 ? fileMentions.length + 3 : 0
-    return outerMargin + promptRuleRows + promptLine + suggestionRows + hintRows + attachmentRows + fileMentionRows
+    return (
+      outerMargin +
+      pendingStatusRows +
+      promptRuleRows +
+      promptLine +
+      suggestionRows +
+      hintRows +
+      attachmentRows +
+      fileMentionRows
+    )
   }, [
     attachments.length,
     claudeChrome,
@@ -4033,6 +4580,8 @@ export const ReplView: React.FC<ReplViewProps> = ({
     filePickerActive,
     hints.length,
     overlayActive,
+    pendingClaudeStatus,
+    pendingResponse,
     suggestions.length,
     suggestionWindow.hiddenAbove,
     suggestionWindow.hiddenBelow,
@@ -4368,6 +4917,42 @@ export const ReplView: React.FC<ReplViewProps> = ({
           : `${" ".repeat(2)}${chalk.dim(labelPad)} ${colorizeToolLine(line)}`}
       </Text>
     )
+    if (claudeChrome && (entry.kind === "call" || entry.kind === "result")) {
+      const parsed = extractToolPayload(entry)
+      if (parsed) {
+        const toolName = normalizeToolName(parsed.name)
+        const argsSummary = formatToolArgsSummary(parsed.args)
+        const header = argsSummary ? `${toolName}(${argsSummary})` : toolName
+        if (entry.kind === "call") {
+          return (
+            <Text key={key ?? entry.id} wrap="truncate-end">
+              {glyph} {header}
+            </Text>
+          )
+        }
+        const outputText = parsed.output ?? parsed.status ?? "Done"
+        const outputLines = outputText.split(/\r?\n/)
+        const colorizeClaudeLine = (line: string) => {
+          if (!line) return line
+          if (line.includes("\u001b")) return line
+          if (line.startsWith("diff --git") || line.startsWith("index ")) return chalk.hex("#7CF2FF")(line)
+          if (line.startsWith("@@")) return chalk.hex("#FBBF24")(line)
+          if (line.startsWith("---") || line.startsWith("+++")) return chalk.hex("#C4B5FD")(line)
+          if (line.startsWith("+") && !line.startsWith("+++")) return chalk.hex("#34D399")(line)
+          if (line.startsWith("-") && !line.startsWith("---")) return chalk.hex("#FB7185")(line)
+          return line
+        }
+        return (
+          <Box key={key ?? entry.id} flexDirection="column">
+            {outputLines.map((line, index) => (
+              <Text key={`${entry.id}-out-${index}`} wrap="truncate-end">
+                {index === 0 ? `  ⎿ ${colorizeClaudeLine(line)}` : `    ${colorizeClaudeLine(line)}`}
+              </Text>
+            ))}
+          </Box>
+        )
+      }
+    }
     if (verboseOutput || lines.length <= TOOL_COLLAPSE_THRESHOLD) {
       return (
         <Box key={key ?? entry.id} flexDirection="column">
@@ -4393,7 +4978,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         {tail.map((line, idx) => renderLine(line, head.length + idx + 1))}
       </Box>
     )
-  }, [verboseOutput])
+  }, [claudeChrome, verboseOutput])
 
   const toolNodes = useMemo(() => {
     if (toolWindow.items.length === 0) return []
@@ -4446,16 +5031,16 @@ export const ReplView: React.FC<ReplViewProps> = ({
       "Esc Esc clear input",
       "Ctrl+L clear screen",
       "Ctrl+K model",
-      "Ctrl+O detailed",
+      `Ctrl+O ${keymap === "claude" ? "transcript" : "detailed"}`,
       "Ctrl+B tasks",
       "/usage",
     ]
     if (keymap === "claude") {
       hintParts.push("Ctrl+T todos")
-      hintParts.push("Ctrl+Shift+T transcript")
     } else {
       hintParts.push("Ctrl+T transcript")
     }
+    hintParts.push("Ctrl+G skills")
     return [
       <Text key="meta-slash" color="dim">
         Slash commands: {SLASH_COMMAND_HINT}
@@ -4466,9 +5051,71 @@ export const ReplView: React.FC<ReplViewProps> = ({
     ]
   }, [claudeChrome, keymap])
 
+  const shortcutLines = useMemo(() => {
+    if (claudeChrome) {
+      const rows: Array<[string, string, string?]> = [
+        ["! for bash mode", "double tap esc to clear input", "ctrl + _ to undo"],
+        ["/ for commands", "shift + tab to auto-accept edits", "ctrl + z to suspend"],
+        ["@ for file paths", "ctrl + o for transcript", "ctrl + v to paste images"],
+        ["& for background", "ctrl + t to show todos", "alt + p to switch model"],
+        ["", "shift + ⏎ for newline", "ctrl + s to stash prompt"],
+        ["", "ctrl + g for skills", ""],
+      ]
+      const colWidth = Math.max(22, Math.floor((contentWidth - 4) / 3))
+      return rows.map(([a, b, c]) => {
+        const left = formatCell(a, colWidth, "left")
+        const mid = formatCell(b, colWidth, "left")
+        const right = formatCell(c ?? "", colWidth, "left")
+        return `${left}  ${mid}  ${right}`.trimEnd()
+      })
+    }
+    const rows: Array<[string, string]> = [
+      ["Ctrl+C ×2", "Exit the REPL"],
+      ["Ctrl+D", "Exit immediately"],
+      ["Ctrl+Z", "Suspend (empty input)"],
+      ["Ctrl+L", "Clear screen (keep transcript)"],
+      ["Ctrl+A", "Start of line"],
+      ["Ctrl+E", "End of line"],
+      ["Home/End", "Start/end of line"],
+      ["Ctrl+U", "Delete to start"],
+      ["Ctrl+S", "Stash input to history"],
+      ["Esc", "Stop streaming"],
+      ["Esc Esc", "Clear input"],
+      ["Shift+Enter", "Insert newline"],
+      ["Alt+Enter", "Insert newline"],
+      ["Ctrl+O", keymap === "claude" ? "Transcript viewer" : "Toggle detailed transcript"],
+      ["Ctrl+P", "Command palette"],
+      ["Ctrl+K", "Model picker"],
+      ["Alt+P", "Model picker"],
+      ["Ctrl+G", "Skills picker"],
+      ["Ctrl+B", "Background tasks"],
+      ["/usage", "Usage summary"],
+      ["Tab", "Complete @ or / list"],
+      ["/", "Slash commands"],
+      ["@", "File picker"],
+      ["n/p", "Transcript match nav"],
+      ["s", "Save transcript (viewer)"],
+      ["?", "Toggle shortcuts"],
+    ]
+    if (keymap === "claude") {
+      rows.push(["Ctrl+T", "Todos panel"])
+    } else {
+      rows.push(["Ctrl+T", "Transcript viewer"])
+    }
+    const pad = 14
+    return rows.map(([key, desc]) => `${chalk.cyan(key.padEnd(pad))} ${desc}`)
+  }, [claudeChrome, contentWidth, keymap])
+
   const hintNodes = useMemo(() => {
     const filtered = claudeChrome ? hints.filter((hint) => !hint.startsWith("Session ")) : hints
     if (claudeChrome) {
+      if (shortcutsOpen) {
+        return shortcutLines.map((line, index) => (
+          <Text key={`hint-shortcut-${index}`} wrap="truncate-end">
+            {line}
+          </Text>
+        ))
+      }
       let statusText = filtered.slice(-1)[0] ?? ""
       if (escPrimedAt && !pendingResponse) {
         statusText = "Press Esc again to clear input."
@@ -4507,45 +5154,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
       )
     }
     return nodes
-  }, [claudeChrome, contentWidth, ctrlCPrimedAt, escPrimedAt, hints, pendingResponse])
-
-  const shortcutLines = useMemo(() => {
-    const rows: Array<[string, string]> = [
-      ["Ctrl+C ×2", "Exit the REPL"],
-      ["Ctrl+D", "Exit immediately"],
-      ["Ctrl+Z", "Suspend (empty input)"],
-      ["Ctrl+L", "Clear screen (keep transcript)"],
-      ["Ctrl+A", "Start of line"],
-      ["Ctrl+E", "End of line"],
-      ["Home/End", "Start/end of line"],
-      ["Ctrl+U", "Delete to start"],
-      ["Ctrl+S", "Stash input to history"],
-      ["Esc", "Stop streaming"],
-      ["Esc Esc", "Clear input / rewind when empty"],
-      ["Shift+Enter", "Insert newline"],
-      ["Alt+Enter", "Insert newline"],
-      ["Ctrl+O", "Toggle detailed transcript"],
-      ["Ctrl+P", "Command palette"],
-      ["Ctrl+K", "Model picker"],
-      ["Alt+P", "Model picker"],
-      ["Ctrl+B", "Background tasks"],
-      ["/usage", "Usage summary"],
-      ["Tab", "Complete @ or / list"],
-      ["/", "Slash commands"],
-      ["@", "File picker"],
-      ["n/p", "Transcript match nav"],
-      ["s", "Save transcript (viewer)"],
-      ["?", "Toggle shortcuts"],
-    ]
-    if (keymap === "claude") {
-      rows.push(["Ctrl+T", "Todos panel"])
-      rows.push(["Ctrl+Shift+T", "Transcript viewer"])
-    } else {
-      rows.push(["Ctrl+T", "Transcript viewer"])
-    }
-    const pad = 14
-    return rows.map(([key, desc]) => `${chalk.cyan(key.padEnd(pad))} ${desc}`)
-  }, [keymap])
+  }, [claudeChrome, contentWidth, ctrlCPrimedAt, escPrimedAt, hints, pendingResponse, shortcutLines, shortcutsOpen])
 
   const collapsedHintNode = useMemo(() => {
     if (collapsibleEntries.length === 0) return null
@@ -4605,6 +5214,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
       const isCtrlT = key.ctrl && lowerChar === "t"
       const isCtrlShiftT = key.ctrl && key.shift && lowerChar === "t"
       const isCtrlB = key.ctrl && lowerChar === "b"
+      const isCtrlG = (key.ctrl && lowerChar === "g") || char === "\u0007"
       if (isCtrlShiftT) {
         if (transcriptViewerOpen) {
           exitTranscriptViewer()
@@ -4632,11 +5242,19 @@ export const ReplView: React.FC<ReplViewProps> = ({
         return true
       }
       if (key.ctrl && (lowerChar === "o" || char === "\u000f")) {
-        setVerboseOutput((prev) => {
-          const next = !prev
-          pushCommandResult("Detailed transcript", [next ? "ON" : "OFF"])
-          return next
-        })
+        if (keymap === "claude") {
+          if (transcriptViewerOpen) {
+            exitTranscriptViewer()
+          } else {
+            enterTranscriptViewer()
+          }
+        } else {
+          setVerboseOutput((prev) => {
+            const next = !prev
+            pushCommandResult("Detailed transcript", [next ? "ON" : "OFF"])
+            return next
+          })
+        }
         return true
       }
       if (!SCROLLBACK_MODE && !overlayActive && !transcriptViewerOpen) {
@@ -4693,11 +5311,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         const now = Date.now()
         if (escPrimedAt && now - escPrimedAt < 650) {
           setEscPrimedAt(null)
-          if (inputValueRef.current.trim().length === 0) {
-            void onSubmit("/rewind")
-          } else {
-            handleLineEdit("", 0)
-          }
+          handleLineEdit("", 0)
           return true
         }
         setEscPrimedAt(now)
@@ -4733,6 +5347,14 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return true
       }
+      if (isCtrlG) {
+        if (skillsMenu.status === "hidden") {
+          void onSkillsMenuOpen()
+        } else {
+          onSkillsMenuCancel()
+        }
+        return true
+      }
       if (key.ctrl && key.shift && lowerChar === "c") {
         openConfirm("Clear conversation and tool logs?", async () => {
           await onSubmit("/clear")
@@ -4762,8 +5384,11 @@ export const ReplView: React.FC<ReplViewProps> = ({
       keymap,
       closePalette,
       modelMenu.status,
+      skillsMenu.status,
       onModelMenuCancel,
       onModelMenuOpen,
+      onSkillsMenuCancel,
+      onSkillsMenuOpen,
       openConfirm,
       openPalette,
       onSubmit,
@@ -4873,6 +5498,21 @@ export const ReplView: React.FC<ReplViewProps> = ({
           </Box>
         )}
       {guardrailNotice && <GuardrailBanner notice={guardrailNotice} />}
+      {networkBanner && (
+        <Box
+          flexDirection="column"
+          borderStyle="round"
+          borderColor={networkBanner.tone === "error" ? "#fb7185" : "#facc15"}
+          paddingX={2}
+          paddingY={1}
+          marginTop={1}
+        >
+          <Text color={networkBanner.tone === "error" ? "#fb7185" : "#facc15"}>
+            {chalk.bold(`${networkBanner.label}:`)} {networkBanner.message}
+          </Text>
+          <Text color="gray">If this persists, retry the command or restart the session.</Text>
+        </Box>
+      )}
 
       <Box flexDirection="column" marginTop={claudeChrome ? 0 : 1}>
         <Box flexDirection="column">
@@ -4900,130 +5540,154 @@ export const ReplView: React.FC<ReplViewProps> = ({
         )}
       </Box>
 
-      <Box marginTop={1} flexDirection="column">
-        {claudeChrome && <Text color="dim">{promptRule}</Text>}
-        {claudeChrome && usageSummary && <Text color="dim">{usageSummary}</Text>}
-        <Box>
-          <Text color={claudeChrome ? undefined : "cyan"}>{claudeChrome ? "> " : "› "}</Text>
-          <LineEditor
-            value={input}
-            cursor={cursor}
-            focus={!inputLocked}
-            placeholder={claudeChrome ? 'Try "edit <file> to..."' : "Type your request…"}
-            placeholderPad={!claudeChrome}
-            hideCaretWhenPlaceholder={claudeChrome}
-            maxVisibleLines={inputMaxVisibleLines}
-            onChange={handleLineEditGuarded}
-            onSubmit={handleLineSubmit}
-            submitOnEnter
-            onPasteAttachment={handleAttachment}
-          />
-        </Box>
-        {claudeChrome && <Text color="dim">{promptRule}</Text>}
-        {overlayActive ? (
-          claudeChrome ? null : <Text color="dim">Input locked — use the active modal controls.</Text>
-        ) : filePickerActive ? (
-          <Box marginTop={claudeChrome ? 0 : 1} flexDirection="column">
-            {!claudeChrome && (
-              <Text color="#7CF2FF">{`Attach file ${chalk.dim(filePickerQueryParts.cwd === "." ? "(root)" : filePickerQueryParts.cwd)}`}</Text>
-            )}
-            {!claudeChrome && (
-              <Text color="gray">
-                {fileMenuMode === "fuzzy" ? "Fuzzy search • " : ""}
-                Type to filter • ↑/↓ navigate • PgUp/PgDn page • Tab/Enter complete • Esc clear{fileMenuHasLarge ? " • * large file" : ""}
-              </Text>
-            )}
-            <Box flexDirection="column" marginTop={claudeChrome ? 0 : 1}>
-              {fileMenuMode === "tree" && (filePicker.status === "loading" || filePicker.status === "hidden") ? (
-                <Text color="gray">Loading…</Text>
-              ) : fileMenuMode === "tree" && filePicker.status === "error" ? (
-                <>
-                  <Text color="#fb7185">{filePicker.message ? `Error: ${filePicker.message}` : "Error loading files."}</Text>
-                  <Text color="gray">Tab to retry • Esc to clear</Text>
-                </>
-              ) : fileMenuMode === "fuzzy" && fileIndexMeta.status === "error" && fileMenuRows.length === 0 ? (
-                <>
-                  <Text color="#fb7185">{fileIndexMeta.message ? `Error: ${fileIndexMeta.message}` : "Error indexing files."}</Text>
-                  <Text color="gray">Tab to retry • Esc to clear</Text>
-                </>
-              ) : fileMenuRows.length === 0 ? (
-                fileMenuMode === "fuzzy" && (fileIndexMeta.status === "idle" || fileIndexMeta.status === "scanning") ? (
-                  <Text color="dim">{`Indexing… (${fileIndexMeta.fileCount} files)`}</Text>
-                ) : (
-                  <Text color="dim">(no matches)</Text>
-                )
-              ) : (
-                (() => {
-                  const contentWidth = Math.max(10, columnWidth - 4)
-                  const windowItems = fileMenuWindow.items
-                  const hiddenAbove = fileMenuWindow.hiddenAbove
-                  const hiddenBelow = fileMenuWindow.hiddenBelow
-                   return (
-                     <>
-                      {fileMenuMode === "fuzzy" && (fileIndexMeta.status === "idle" || fileIndexMeta.status === "scanning") && (
-                        <Text color="dim">{`Indexing… (${fileIndexMeta.fileCount} files)`}</Text>
-                      )}
-                      {fileMenuMode === "fuzzy" && fileMenuNeedlePending && (
-                        <Text color="dim">Searching…</Text>
-                      )}
-                      {fileMenuMode === "fuzzy" && fileIndexMeta.truncated && (
-                        <Text color="dim">{`Index truncated at ${fileIndexMeta.fileCount} files.`}</Text>
-                      )}
-                      {hiddenAbove > 0 && <Text color="dim">{`↑ ${hiddenAbove} more…`}</Text>}
-                      {windowItems.map((row, index) => {
-                        const absoluteIndex = fileMenuWindow.start + index
-                        const selected = absoluteIndex === fileMenuIndex
-                        if (row.kind === "resource") {
-                          return (
-                            <Box key={`resource:${row.resource.label}`} flexDirection="column">
-                              <Text inverse={selected} color={selected ? undefined : "white"}>
-                                {formatCell(row.resource.label, contentWidth, "left")}
-                              </Text>
-                              {row.resource.detail && (
-                                <Text inverse={selected} color={selected ? undefined : "dim"}>
-                                  {`  ${row.resource.detail}`}
-                                </Text>
-                              )}
-                            </Box>
-                          )
-                        }
-                        const display = row.item.path
-                        const suffix = row.item.type === "directory" ? "/" : ""
-                        const sizeBytes = row.item.size
-                        const isLarge = sizeBytes != null && sizeBytes > fileMentionConfig.maxInlineBytesPerFile
-                        const sizeLabel = sizeBytes != null ? formatBytes(sizeBytes) : ""
-                        const sizeToken = sizeLabel ? `${sizeLabel}${isLarge ? "*" : ""}` : ""
-                        const leftWidth = sizeToken ? Math.max(0, contentWidth - sizeToken.length - 1) : contentWidth
-                        const rightWidth = Math.max(0, contentWidth - leftWidth)
-                        const leftLabel = formatCell(`${display}${suffix}`, leftWidth, "left")
-                        const rightLabel = sizeToken ? formatCell(sizeToken, rightWidth, "right") : ""
-                        const label = sizeToken ? `${leftLabel}${rightLabel}` : leftLabel
-                        return (
-                          <Text
-                            key={`${row.item.type}:${row.item.path}`}
-                            inverse={selected}
-                            color={selected ? undefined : row.item.type === "directory" ? "cyan" : "white"}
-                          >
-                            {label}
-                          </Text>
-                        )
-                      })}
-                      {hiddenBelow > 0 && <Text color="dim">{`↓ ${hiddenBelow} more…`}</Text>}
-                    </>
-                  )
-                })()
-              )}
-              {selectedFileIsLarge && (
-                <Text color="dim">
-                  Large file selected — will attach a snippet unless explicitly forced to inline.
-                </Text>
-              )}
-            </Box>
+      {!(claudeChrome && modelMenu.status !== "hidden") && (
+        <Box marginTop={1} flexDirection="column">
+          {claudeChrome && pendingClaudeStatus && <Text color="dim">{pendingClaudeStatus}</Text>}
+          {claudeChrome && <Text color="dim">{promptRule}</Text>}
+          <Box>
+            <Text color={claudeChrome ? undefined : "cyan"}>{claudeChrome ? "> " : "› "}</Text>
+            <LineEditor
+              value={input}
+              cursor={cursor}
+              focus={!inputLocked}
+              placeholder={claudeChrome ? "Try edit <file> to..." : "Type your request…"}
+              placeholderPad={!claudeChrome}
+              hideCaretWhenPlaceholder={claudeChrome}
+              maxVisibleLines={inputMaxVisibleLines}
+              onChange={handleLineEditGuarded}
+              onSubmit={handleLineSubmit}
+              submitOnEnter
+              onPasteAttachment={handleAttachment}
+            />
           </Box>
+          {claudeChrome && <Text color="dim">{promptRule}</Text>}
+          {overlayActive ? (
+            claudeChrome ? null : <Text color="dim">Input locked — use the active modal controls.</Text>
+          ) : filePickerActive ? (
+          (() => {
+            const titleLines: SelectPanelLine[] = []
+            const hintLines: SelectPanelLine[] = []
+            const rows: SelectPanelRow[] = []
+            const footerLines: SelectPanelLine[] = []
+
+            if (!claudeChrome) {
+              titleLines.push({
+                text: `Attach file ${chalk.dim(filePickerQueryParts.cwd === "." ? "(root)" : filePickerQueryParts.cwd)}`,
+                color: "#7CF2FF",
+              })
+              hintLines.push({
+                text: `${fileMenuMode === "fuzzy" ? "Fuzzy search • " : ""}Type to filter • ↑/↓ navigate • PgUp/PgDn page • Tab/Enter complete • Esc clear${fileMenuHasLarge ? " • * large file" : ""}`,
+                color: "gray",
+              })
+            }
+
+            if (fileMenuMode === "tree" && (filePicker.status === "loading" || filePicker.status === "hidden")) {
+              rows.push({ kind: "empty", text: "Loading…", color: "gray" })
+            } else if (fileMenuMode === "tree" && filePicker.status === "error") {
+              rows.push({
+                kind: "empty",
+                text: filePicker.message ? `Error: ${filePicker.message}` : "Error loading files.",
+                color: "#fb7185",
+              })
+              rows.push({ kind: "empty", text: "Tab to retry • Esc to clear", color: "gray" })
+            } else if (fileMenuMode === "fuzzy" && fileIndexMeta.status === "error" && fileMenuRows.length === 0) {
+              rows.push({
+                kind: "empty",
+                text: fileIndexMeta.message ? `Error: ${fileIndexMeta.message}` : "Error indexing files.",
+                color: "#fb7185",
+              })
+              rows.push({ kind: "empty", text: "Tab to retry • Esc to clear", color: "gray" })
+            } else if (fileMenuRows.length === 0) {
+              if (fileMenuMode === "fuzzy" && (fileIndexMeta.status === "idle" || fileIndexMeta.status === "scanning")) {
+                rows.push({ kind: "empty", text: `Indexing… (${fileIndexMeta.fileCount} files)`, color: "dim" })
+              } else {
+                rows.push({ kind: "empty", text: "(no matches)", color: "dim" })
+              }
+            } else {
+              const contentWidth = Math.max(10, columnWidth - 4)
+              const windowItems = fileMenuWindow.items
+              const hiddenAbove = fileMenuWindow.hiddenAbove
+              const hiddenBelow = fileMenuWindow.hiddenBelow
+              if (fileMenuMode === "fuzzy" && (fileIndexMeta.status === "idle" || fileIndexMeta.status === "scanning")) {
+                rows.push({ kind: "header", text: `Indexing… (${fileIndexMeta.fileCount} files)`, color: "dim" })
+              }
+              if (fileMenuMode === "fuzzy" && fileMenuNeedlePending) {
+                rows.push({ kind: "header", text: "Searching…", color: "dim" })
+              }
+              if (fileMenuMode === "fuzzy" && fileIndexMeta.truncated) {
+                rows.push({ kind: "header", text: `Index truncated at ${fileIndexMeta.fileCount} files.`, color: "dim" })
+              }
+              if (hiddenAbove > 0) {
+                rows.push({ kind: "header", text: `↑ ${hiddenAbove} more…`, color: "dim" })
+              }
+              windowItems.forEach((row, index) => {
+                const absoluteIndex = fileMenuWindow.start + index
+                const selected = absoluteIndex === fileMenuIndex
+                if (row.kind === "resource") {
+                  rows.push({
+                    kind: "item",
+                    text: formatCell(row.resource.label, contentWidth, "left"),
+                    secondaryText: row.resource.detail ? `  ${row.resource.detail}` : undefined,
+                    isActive: selected,
+                    color: "white",
+                    secondaryColor: "dim",
+                    activeColor: "#0F172A",
+                    secondaryActiveColor: "#0F172A",
+                    activeBackground: "#7CF2FF",
+                  })
+                  return
+                }
+                const display = row.item.path
+                const suffix = row.item.type === "directory" ? "/" : ""
+                const sizeBytes = row.item.size
+                const isLarge = sizeBytes != null && sizeBytes > fileMentionConfig.maxInlineBytesPerFile
+                const sizeLabel = sizeBytes != null ? formatBytes(sizeBytes) : ""
+                const sizeToken = sizeLabel ? `${sizeLabel}${isLarge ? "*" : ""}` : ""
+                const leftWidth = sizeToken ? Math.max(0, contentWidth - sizeToken.length - 1) : contentWidth
+                const rightWidth = Math.max(0, contentWidth - leftWidth)
+                const leftLabel = formatCell(`${display}${suffix}`, leftWidth, "left")
+                const rightLabel = sizeToken ? formatCell(sizeToken, rightWidth, "right") : ""
+                const label = sizeToken ? `${leftLabel}${rightLabel}` : leftLabel
+                rows.push({
+                  kind: "item",
+                  text: label,
+                  isActive: selected,
+                  color: row.item.type === "directory" ? "cyan" : "white",
+                  activeColor: "#0F172A",
+                  activeBackground: "#7CF2FF",
+                })
+              })
+              if (hiddenBelow > 0) {
+                rows.push({ kind: "header", text: `↓ ${hiddenBelow} more…`, color: "dim" })
+              }
+            }
+
+            if (selectedFileIsLarge) {
+              footerLines.push({
+                text: "Large file selected — will attach a snippet unless explicitly forced to inline.",
+                color: "dim",
+              })
+            }
+
+            return (
+              <SelectPanel
+                width={columnWidth}
+                showBorder={false}
+                paddingX={0}
+                paddingY={0}
+                marginTop={claudeChrome ? 0 : 1}
+                alignSelf="flex-start"
+                titleLines={titleLines}
+                hintLines={hintLines}
+                rows={rows}
+                footerLines={footerLines}
+              />
+            )
+          })()
         ) : suggestions.length > 0 ? (
           <Box marginTop={claudeChrome ? 0 : 1} flexDirection="column">
             {suggestionWindow.hiddenAbove > 0 && (
-              <Text color="dim">{`↑ ${suggestionWindow.hiddenAbove} more…`}</Text>
+              <Text color="dim">{`${suggestionPrefix}↑ ${suggestionWindow.hiddenAbove} more…`}</Text>
             )}
             {suggestionWindow.items.map((row, index) => {
               const globalIndex = suggestionWindow.start + index
@@ -5032,6 +5696,18 @@ export const ReplView: React.FC<ReplViewProps> = ({
               return lines.map((line, lineIndex) => {
                 const left = formatCell(line.label, suggestionLayout.commandWidth)
                 const right = formatCell(line.summary, suggestionLayout.summaryWidth)
+                if (claudeChrome) {
+                  const rendered = `${suggestionPrefix}${left}  ${right}`
+                  return (
+                    <Text
+                      key={`suggestion-${globalIndex}-${lineIndex}`}
+                      color={selected ? "#B1B9F9" : "gray"}
+                      wrap="wrap"
+                    >
+                      {rendered}
+                    </Text>
+                  )
+                }
                 const styledLeft = selected
                   ? left
                   : highlightFuzzyLabel(left, row.command, activeSlashQuery)
@@ -5041,7 +5717,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
                   <Text
                     key={`suggestion-${globalIndex}-${lineIndex}`}
                     inverse={selected}
-                    wrap={claudeChrome ? "wrap" : "truncate-end"}
+                    wrap="truncate-end"
                   >
                     {rendered}
                   </Text>
@@ -5049,42 +5725,44 @@ export const ReplView: React.FC<ReplViewProps> = ({
               })
             })}
             {suggestionWindow.hiddenBelow > 0 && (
-              <Text color="dim">{`↓ ${suggestionWindow.hiddenBelow} more…`}</Text>
+              <Text color="dim">{`${suggestionPrefix}↓ ${suggestionWindow.hiddenBelow} more…`}</Text>
             )}
           </Box>
         ) : (
           <Text color="dim">{" "}</Text>
-        )}
-        {!overlayActive && hintNodes.length > 0 && (
-      <Box marginTop={claudeChrome ? 0 : 1} flexDirection="column">
-            {hintNodes}
-          </Box>
-        )}
-        {!overlayActive && attachments.length > 0 && (
-          <Box marginTop={1} flexDirection="column">
-            <Text color="#F97316">Attachments queued ({attachments.length})</Text>
-            {attachments.map((attachment) => (
-              <Text key={attachment.id} color="gray">
-                • {attachment.mime} — {formatBytes(attachment.size)}
-              </Text>
-            ))}
-            <Text color="#FACC15">Attachments upload automatically when you submit; they remain queued here until then.</Text>
-          </Box>
-        )}
-        {!overlayActive && fileMentions.length > 0 && (
-          <Box marginTop={1} flexDirection="column">
-            <Text color="#7CF2FF">Files queued ({fileMentions.length})</Text>
-            {fileMentions.map((entry) => (
-              <Text key={entry.id} color="gray" wrap="truncate-end">
-                • {entry.path}
-                {entry.size != null ? ` — ${formatBytes(entry.size)}` : ""}
-                {entry.requestedMode !== "auto" ? ` — ${entry.requestedMode}` : ""}
-              </Text>
-            ))}
-            <Text color="#FACC15">Files are attached as context on submit; oversized files are truncated.</Text>
-          </Box>
-        )}
-      </Box>
+          )}
+          {!overlayActive && hintNodes.length > 0 && (
+            <Box marginTop={claudeChrome ? 0 : 1} flexDirection="column">
+              {hintNodes}
+            </Box>
+          )}
+          {!overlayActive && attachments.length > 0 && (
+            <Box marginTop={1} flexDirection="column">
+              <Text color="#F97316">Attachments queued ({attachments.length})</Text>
+              {attachments.map((attachment) => (
+                <Text key={attachment.id} color="gray">
+                  • {attachment.mime} — {formatBytes(attachment.size)}
+                </Text>
+              ))}
+              <Text color="#FACC15">Attachments upload automatically when you submit; they remain queued here until then.</Text>
+              <Text color="dim">Backspace removes the most recent attachment when the input is empty.</Text>
+            </Box>
+          )}
+          {!overlayActive && fileMentions.length > 0 && (
+            <Box marginTop={1} flexDirection="column">
+              <Text color="#7CF2FF">Files queued ({fileMentions.length})</Text>
+              {fileMentions.map((entry) => (
+                <Text key={entry.id} color="gray" wrap="truncate-end">
+                  • {entry.path}
+                  {entry.size != null ? ` — ${formatBytes(entry.size)}` : ""}
+                  {entry.requestedMode !== "auto" ? ` — ${entry.requestedMode}` : ""}
+                </Text>
+              ))}
+              <Text color="#FACC15">Files are attached as context on submit; oversized files are truncated.</Text>
+            </Box>
+          )}
+        </Box>
+      )}
     </Box>
   )
 
@@ -5103,160 +5781,294 @@ export const ReplView: React.FC<ReplViewProps> = ({
   if (confirmState.status === "prompt") {
     modalStack.push({
       id: "confirm",
-      render: () => (
-        <Box
-          flexDirection="column"
-          borderStyle="round"
-          borderColor="#F97316"
-          paddingX={2}
-          paddingY={1}
-          width={Math.min(80, PANEL_WIDTH)}
-          alignSelf="center"
-          marginTop={2}
-        >
-          <Text color="#FACC15">{confirmState.message ?? "Confirm action?"}</Text>
-          <Text color="gray">Enter to confirm • Esc to cancel</Text>
-        </Box>
-      ),
+      render: () => {
+        const titleLines: SelectPanelLine[] = [
+          { text: confirmState.message ?? "Confirm action?", color: "#FACC15" },
+        ]
+        const hintLines: SelectPanelLine[] = [{ text: "Enter to confirm • Esc to cancel", color: "gray" }]
+        return (
+          <SelectPanel
+            width={Math.min(80, PANEL_WIDTH)}
+            borderColor="#F97316"
+            paddingX={2}
+            paddingY={1}
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={[]}
+          />
+        )
+      },
     })
   }
 
-  if (shortcutsOpen) {
+  if (shortcutsOpen && !claudeChrome) {
     modalStack.push({
       id: "shortcuts",
-      render: () => (
-        <Box
-          flexDirection="column"
-          borderStyle="round"
-          borderColor="#7CF2FF"
-          paddingX={2}
-          paddingY={1}
-          width={PANEL_WIDTH}
-          alignSelf="center"
-          marginTop={2}
-        >
-          <Text color="#7CF2FF">{chalk.bold("Shortcuts")}</Text>
-          <Text color="dim">Press ? or Esc to close</Text>
-          <Box flexDirection="column" marginTop={1}>
-            {shortcutLines.map((line, idx) => (
-              <Text key={`shortcut-${idx}`} wrap="truncate-end">
-                {line}
-              </Text>
-            ))}
-          </Box>
-        </Box>
-      ),
+      render: () => {
+        const titleLines: SelectPanelLine[] = [{ text: chalk.bold("Shortcuts"), color: "#7CF2FF" }]
+        const hintLines: SelectPanelLine[] = [{ text: "Press ? or Esc to close", color: "dim" }]
+        const rows: SelectPanelRow[] = shortcutLines.map((line) => ({
+          kind: "item",
+          text: line,
+        }))
+        return (
+          <SelectPanel
+            width={PANEL_WIDTH}
+            borderColor="#7CF2FF"
+            paddingX={2}
+            paddingY={claudeChrome ? 0 : 1}
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={rows}
+          />
+        )
+      },
     })
   }
 
   if (paletteState.status === "open") {
     modalStack.push({
       id: "palette",
-      render: () => (
-        <Box
-          flexDirection="column"
-          borderStyle="round"
-          borderColor="#C084FC"
-          paddingX={2}
-          paddingY={1}
-          width={PANEL_WIDTH}
-          alignSelf="center"
-          marginTop={2}
-        >
-          <Text color="#C084FC">Command palette</Text>
-          <Text color="dim">Search: {paletteState.query.length > 0 ? paletteState.query : chalk.dim("<type to filter>")}</Text>
-          <Box flexDirection="column" marginTop={1}>
-            {paletteItems.length === 0 ? (
-              <Text color="dim">No commands match.</Text>
-            ) : (
-              paletteItems.slice(0, MAX_VISIBLE_MODELS).map((item: SlashCommandInfo, idx: number) => {
-                const isActive = idx === Math.min(paletteState.index, paletteItems.length - 1)
-                const label = `/${item.name}${item.usage ? ` ${item.usage}` : ""} — ${item.summary}`
-                return (
-                  <Text key={item.name} backgroundColor={isActive ? "#C084FC" : undefined} color={isActive ? "#0F172A" : undefined}>
-                    {isActive ? "›" : " "} {label}
-                  </Text>
-                )
-              })
-            )}
-          </Box>
-        </Box>
-      ),
+      render: () => {
+        const titleLines: SelectPanelLine[] = [{ text: "Command palette", color: "#C084FC" }]
+        const hintLines: SelectPanelLine[] = [
+          {
+            text: `Search: ${paletteState.query.length > 0 ? paletteState.query : chalk.dim("<type to filter>")}`,
+            color: "dim",
+          },
+        ]
+        const rows: SelectPanelRow[] = []
+        if (paletteItems.length === 0) {
+          rows.push({ kind: "empty", text: "No commands match.", color: "dim" })
+        } else {
+          paletteItems.slice(0, MAX_VISIBLE_MODELS).forEach((item: SlashCommandInfo, idx: number) => {
+            const isActive = idx === Math.min(paletteState.index, paletteItems.length - 1)
+            const label = `/${item.name}${item.usage ? ` ${item.usage}` : ""} — ${item.summary}`
+            rows.push({
+              kind: "item",
+              text: `${isActive ? "›" : " "} ${label}`,
+              isActive,
+              activeColor: "#0F172A",
+              activeBackground: "#C084FC",
+            })
+          })
+        }
+        return (
+          <SelectPanel
+            width={PANEL_WIDTH}
+            borderColor="#C084FC"
+            paddingX={2}
+            paddingY={1}
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={rows}
+          />
+        )
+      },
     })
   }
 
   if (modelMenu.status !== "hidden") {
     modalStack.push({
       id: "model-picker",
-      render: () => (
-        <Box
-          flexDirection="column"
-          borderStyle="round"
-          borderColor="#7CF2FF"
-          paddingX={2}
-          paddingY={1}
-          width={PANEL_WIDTH}
-          alignSelf="center"
-          marginTop={2}
-        >
-          {modelMenu.status === "loading" && <Text color="cyan">Loading model catalog…</Text>}
-          {modelMenu.status === "error" && <Text color="red">{modelMenu.message}</Text>}
-          {modelMenu.status === "ready" && (
-            <>
-              <Text color="green">
-                {modelMenuCompact ? "Select a model" : "Select a model (Enter to confirm, Esc to cancel)"}
-              </Text>
-              <Text color="dim">Search: {modelSearch.length > 0 ? modelSearch : chalk.dim("<type to filter>")}</Text>
-              {!modelMenuCompact && <Text color="dim">Current: {chalk.cyan(stats.model)}</Text>}
-              <Text color="dim">
-                {modelMenuCompact
-                  ? "Nav: ↑/↓ PgUp/PgDn • Enter confirm • Esc cancel"
-                  : "Navigate: ↑/↓ or Tab • Shift+Tab up • PgUp/PgDn page • Legend: ● current · ★ default"}
-              </Text>
-              {modelMenuCompact && <Text color="dim">Legend: ● current · ★ default</Text>}
-              <Box flexDirection="column" marginTop={1}>
-                {filteredModels.length === 0 ? (
-                  <Text color="dim">No models match.</Text>
-                ) : (
-                  <>
-                    <Text color="gray" wrap="truncate-end">
-                      {modelMenuHeaderText}
-                    </Text>
-                    {visibleModelRows.map((row, idx) => {
-                      if (row.kind === "header") {
-                        const countSuffix = row.count != null ? ` (${row.count})` : ""
-                        return (
-                          <Text key={`model-header-${row.label}-${idx}`} color="dim">
-                            {`${row.label}${countSuffix}`}
-                          </Text>
-                        )
-                      }
-                      const isActive = row.index === modelIndex
-                      const rowText = formatModelRowText(row.item)
-                      return (
-                        <Text
-                          key={row.item.value}
-                          color={isActive ? "#0F172A" : undefined}
-                          backgroundColor={isActive ? "#7CF2FF" : undefined}
-                          wrap="truncate-end"
-                        >
-                          {isActive ? "› " : "  "}
-                          {rowText}
-                        </Text>
-                      )
-                    })}
-                  </>
-                )}
-              </Box>
-              {filteredModels.length > MODEL_VISIBLE_ROWS && (
-                <Text color="dim">
-                  {modelOffset + 1}-{Math.min(modelOffset + MODEL_VISIBLE_ROWS, filteredModels.length)} of {filteredModels.length}
-                </Text>
-              )}
-            </>
-          )}
-        </Box>
-      ),
+      render: () => {
+        const titleLines: SelectPanelLine[] = []
+        const hintLines: SelectPanelLine[] = []
+        const rows: SelectPanelRow[] = []
+        const footerLines: SelectPanelLine[] = []
+
+        if (modelMenu.status === "loading") {
+          rows.push({ kind: "empty", text: "Loading model catalog…", color: "cyan" })
+        } else if (modelMenu.status === "error") {
+          rows.push({ kind: "empty", text: modelMenu.message, color: "red" })
+        } else if (modelMenu.status === "ready") {
+          if (claudeChrome) {
+            titleLines.push({ text: clearToEnd(" ") })
+            titleLines.push({
+              text: clearToEnd(formatCell("Select model — Switch between models.", modelPanelInnerWidth, "left")),
+              color: "dim",
+            })
+            titleLines.push({
+              text: clearToEnd(formatCell("Use --model for other/previous names.", modelPanelInnerWidth, "left")),
+              color: "dim",
+            })
+            titleLines.push({
+              text: clearToEnd(
+                formatCell(
+                  `Provider: ${modelProviderLabel} (←/→ filter${modelProviderFilter ? " · Backspace clear" : ""})${modelSearch.trim().length > 0 ? ` • Filter: ${modelSearch.trim()}` : ""}`,
+                  modelPanelInnerWidth,
+                  "left",
+                ),
+              ),
+              color: "dim",
+            })
+            titleLines.push({
+              text: clearToEnd(formatCell("Enter to confirm · Esc to exit", modelPanelInnerWidth, "left")),
+              color: "dim",
+            })
+          } else {
+            titleLines.push({
+              text: modelMenuCompact ? "Select a model" : "Select a model (Enter to confirm, Esc to cancel)",
+              color: "green",
+            })
+            hintLines.push({
+              text: `Search: ${modelSearch.length > 0 ? modelSearch : chalk.dim("<type to filter>")}`,
+              color: "dim",
+            })
+            hintLines.push({
+              text: `Provider: ${modelProviderLabel}${modelProviderFilter ? " (←/→ change · Backspace clear)" : " (←/→ filter)"}`,
+              color: "dim",
+            })
+            if (!modelMenuCompact) {
+              hintLines.push({ text: `Current: ${chalk.cyan(stats.model)}`, color: "dim" })
+            }
+            hintLines.push({
+              text: modelMenuCompact
+                ? "Nav: ↑/↓ PgUp/PgDn • Enter confirm • Esc cancel"
+                : "Navigate: ↑/↓ or Tab • Shift+Tab up • PgUp/PgDn page • Legend: ● current · ★ default",
+              color: "dim",
+            })
+            if (modelMenuCompact) {
+              hintLines.push({ text: "Legend: ● current · ★ default", color: "dim" })
+            }
+          }
+
+          if (filteredModels.length === 0) {
+            rows.push({ kind: "empty", text: "No models match.", color: "dim" })
+          } else {
+            rows.push({ kind: "header", text: modelMenuHeaderText, color: "gray" })
+            visibleModelRows.forEach((row, idx) => {
+              if (row.kind === "header") {
+                const countSuffix = row.count != null ? ` (${row.count})` : ""
+                rows.push({ kind: "header", text: `${row.label}${countSuffix}`, color: "dim" })
+                return
+              }
+              const isActive = row.index === modelIndex
+              const rowText = formatModelRowText(row.item)
+              rows.push({
+                kind: "item",
+                text: `${isActive ? "› " : "  "}${rowText}`,
+                isActive,
+                activeColor: "#0F172A",
+                activeBackground: "#7CF2FF",
+              })
+            })
+          }
+
+          if (filteredModels.length > MODEL_VISIBLE_ROWS) {
+            footerLines.push({
+              text: `${modelOffset + 1}-${Math.min(modelOffset + MODEL_VISIBLE_ROWS, filteredModels.length)} of ${filteredModels.length}`,
+              color: "dim",
+            })
+          }
+        }
+
+        return (
+          <SelectPanel
+            width={PANEL_WIDTH}
+            borderColor="#7CF2FF"
+            paddingX={2}
+            paddingY={1}
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={rows}
+            footerLines={footerLines}
+          />
+        )
+      },
+    })
+  }
+
+  if (skillsMenu.status !== "hidden") {
+    modalStack.push({
+      id: "skills-picker",
+      render: () => {
+        const titleLines: SelectPanelLine[] = [{ text: chalk.bold("Skills"), color: "#C084FC" }]
+        const hintLines: SelectPanelLine[] = []
+        const rows: SelectPanelRow[] = []
+        const footerLines: SelectPanelLine[] = []
+
+        if (skillsMenu.status === "loading") {
+          rows.push({ kind: "empty", text: "Loading skills catalog…", color: "cyan" })
+        } else if (skillsMenu.status === "error") {
+          rows.push({ kind: "empty", text: skillsMenu.message, color: "red" })
+        } else if (skillsMenu.status === "ready") {
+          const selectionCount = skillsSelected.size
+          const modeLabel = skillsMode === "allowlist" ? "allowlist" : "blocklist"
+          hintLines.push({
+            text: `Mode: ${modeLabel} (${skillsMode === "allowlist" ? "selected = enabled" : "selected = disabled"})`,
+            color: "dim",
+          })
+          hintLines.push({
+            text: `Search: ${skillsSearch.length > 0 ? skillsSearch : chalk.dim("<type to filter>")} • Selected: ${selectionCount}`,
+            color: "dim",
+          })
+          if (skillsSources?.config_path) {
+            hintLines.push({ text: `Config: ${skillsSources.config_path}`, color: "dim" })
+          }
+          if (skillsDisplayRows.length === 0) {
+            rows.push({ kind: "empty", text: "No skills match.", color: "dim" })
+          } else {
+            const start = Math.max(0, Math.min(skillsOffset, Math.max(0, skillsDisplayRows.length - SKILLS_VISIBLE_ROWS)))
+            const windowRows = skillsDisplayRows.slice(start, start + SKILLS_VISIBLE_ROWS)
+            windowRows.forEach((row) => {
+              if (row.kind === "header") {
+                rows.push({ kind: "header", text: row.label, color: "dim" })
+                return
+              }
+              const entry = row.entry
+              const selected = isSkillSelected(skillsSelected, entry)
+              const blocked = skillsMode === "blocklist" && selected
+              const disabled = skillsMode === "allowlist" && !selected
+              const marker = selected
+                ? chalk.hex(blocked ? "#F87171" : "#34D399")("[x]")
+                : chalk.dim("[ ]")
+              const label = entry.label ?? entry.id
+              const versionLabel = entry.version ? `@${entry.version}` : ""
+              const line = `${marker} ${label}${versionLabel ? chalk.dim(` ${versionLabel}`) : ""}`
+              const metaParts: string[] = []
+              if (entry.type) metaParts.push(entry.type)
+              if (entry.group) metaParts.push(entry.group)
+              if (entry.slot) metaParts.push(entry.slot)
+              if (entry.steps != null) metaParts.push(`${entry.steps} steps`)
+              if (entry.determinism) metaParts.push(entry.determinism)
+              const detail = metaParts.length > 0 ? metaParts.join(" · ") : entry.description ?? ""
+              const isActive = row.index === skillsIndex
+              rows.push({
+                kind: "item",
+                text: `${isActive ? "› " : "  "}${line}`,
+                secondaryText: detail ? chalk.dim(detail) : undefined,
+                isActive,
+                color: disabled || blocked ? "gray" : "white",
+                activeColor: "#0F172A",
+                secondaryColor: "dim",
+                secondaryActiveColor: "#0F172A",
+                activeBackground: "#C084FC",
+              })
+            })
+          }
+          footerLines.push({
+            text: "Space toggle • M mode • R reset • Enter apply • Esc cancel",
+            color: "gray",
+          })
+          if (skillsDirty) {
+            footerLines.push({ text: "Unsaved changes", color: "#F59E0B" })
+          }
+        }
+
+        return (
+          <SelectPanel
+            width={PANEL_WIDTH}
+            borderColor="#C084FC"
+            paddingX={2}
+            paddingY={1}
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={rows}
+            footerLines={footerLines}
+          />
+        )
+      },
     })
   }
 
@@ -5266,64 +6078,76 @@ export const ReplView: React.FC<ReplViewProps> = ({
       render: () => {
         const isLoading = rewindMenu.status === "loading"
         const isError = rewindMenu.status === "error"
+        const titleLines: SelectPanelLine[] = [{ text: chalk.bold("Rewind checkpoints"), color: "#93C5FD" }]
+        const hintLines: SelectPanelLine[] = [
+          { text: "↑/↓ select • PgUp/PgDn page • 1 convo • 2 code • 3 both • Esc close", color: "gray" },
+        ]
+        const rows: SelectPanelRow[] = []
+        const footerLines: SelectPanelLine[] = [
+          {
+            text: "Restores conversation and tracked files; external shell changes aren't tracked. Code-only restores do not prune history.",
+            color: "dim",
+          },
+        ]
+
+        if (isLoading) {
+          rows.push({ kind: "empty", text: "Loading checkpoints…", color: "cyan" })
+        }
+        if (isError) {
+          rows.push({ kind: "empty", text: rewindMenu.message, color: "red" })
+        }
+        if (!isLoading && !isError) {
+          if (rewindCheckpoints.length === 0) {
+            rows.push({
+              kind: "empty",
+              text: "No checkpoints yet. (/rewind again after the next tool run.)",
+              color: "dim",
+            })
+          } else {
+            rewindVisible.forEach((entry, idx) => {
+              const listIndex = rewindOffset + idx
+              const isActive = listIndex === rewindSelectedIndex
+              const statsParts: string[] = []
+              if (entry.trackedFiles != null) statsParts.push(`${entry.trackedFiles} files`)
+              if (entry.additions != null || entry.deletions != null) {
+                statsParts.push(`+${entry.additions ?? 0} -${entry.deletions ?? 0}`)
+              }
+              if (entry.hasUntrackedChanges) statsParts.push("untracked")
+              const meta = [formatIsoTimestamp(entry.createdAt), ...statsParts].filter(Boolean).join(" · ")
+              const label = `${entry.preview}`
+              rows.push({
+                kind: "item",
+                text: `${isActive ? "› " : "  "}${label}`,
+                secondaryText: `${isActive ? "  " : "  "}${chalk.dim(meta || entry.checkpointId)}`,
+                isActive,
+                color: undefined,
+                secondaryColor: "dim",
+                activeColor: "#0F172A",
+                secondaryActiveColor: "#0F172A",
+                activeBackground: "#93C5FD",
+              })
+            })
+          }
+        }
+        if (rewindCheckpoints.length > rewindVisibleLimit) {
+          rows.push({
+            kind: "header",
+            text: `${rewindOffset + 1}-${Math.min(rewindOffset + rewindVisibleLimit, rewindCheckpoints.length)} of ${rewindCheckpoints.length}`,
+            color: "dim",
+          })
+        }
+
         return (
-          <Box
-            flexDirection="column"
-            borderStyle="round"
+          <SelectPanel
+            width={PANEL_WIDTH}
             borderColor="#60A5FA"
             paddingX={2}
             paddingY={1}
-            width={PANEL_WIDTH}
-            alignSelf="center"
-            marginTop={2}
-          >
-            <Text color="#93C5FD">{chalk.bold("Rewind checkpoints")}</Text>
-            {isLoading && <Text color="cyan">Loading checkpoints…</Text>}
-            {isError && <Text color="red">{rewindMenu.message}</Text>}
-            <Text color="gray">↑/↓ select • PgUp/PgDn page • 1 convo • 2 code • 3 both • Esc close</Text>
-            <Box flexDirection="column" marginTop={1}>
-              {rewindCheckpoints.length === 0 ? (
-                <Text color="dim">No checkpoints yet. (/rewind again after the next tool run.)</Text>
-              ) : (
-                rewindVisible.map((entry, idx) => {
-                  const listIndex = rewindOffset + idx
-                  const isActive = listIndex === rewindSelectedIndex
-                  const statsParts: string[] = []
-                  if (entry.trackedFiles != null) statsParts.push(`${entry.trackedFiles} files`)
-                  if (entry.additions != null || entry.deletions != null) {
-                    statsParts.push(`+${entry.additions ?? 0} -${entry.deletions ?? 0}`)
-                  }
-                  if (entry.hasUntrackedChanges) statsParts.push("untracked")
-                  const meta = [formatIsoTimestamp(entry.createdAt), ...statsParts].filter(Boolean).join(" · ")
-                  const label = `${entry.preview}`
-                  return (
-                    <Box key={entry.checkpointId} flexDirection="column" marginBottom={0}>
-                      <Text
-                        color={isActive ? "#0F172A" : undefined}
-                        backgroundColor={isActive ? "#93C5FD" : undefined}
-                        wrap="truncate-end"
-                      >
-                        {isActive ? "› " : "  "}
-                        {label}
-                      </Text>
-                      <Text color={isActive ? "#0F172A" : "dim"} backgroundColor={isActive ? "#93C5FD" : undefined} wrap="truncate-end">
-                        {isActive ? "  " : "  "}
-                        {chalk.dim(meta || entry.checkpointId)}
-                      </Text>
-                    </Box>
-                  )
-                })
-              )}
-              {rewindCheckpoints.length > rewindVisibleLimit && (
-                <Text color="dim">
-                  {rewindOffset + 1}-{Math.min(rewindOffset + rewindVisibleLimit, rewindCheckpoints.length)} of {rewindCheckpoints.length}
-                </Text>
-              )}
-            </Box>
-            <Text color="dim">
-              Restores conversation and tracked files; external shell changes aren't tracked. Code-only restores do not prune history.
-            </Text>
-          </Box>
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={rows}
+            footerLines={footerLines}
+          />
         )
       },
     })
@@ -5349,46 +6173,45 @@ export const ReplView: React.FC<ReplViewProps> = ({
               return "#FACC15"
           }
         }
+        const titleLines: SelectPanelLine[] = [{ text: chalk.bold("Todos"), color: "#7CF2FF" }]
+        const hintLines: SelectPanelLine[] = [
+          {
+            text:
+              todos.length === 0
+                ? "No todos yet."
+                : `${todos.length} item${todos.length === 1 ? "" : "s"} • ↑/↓ scroll • PgUp/PgDn page • Esc close`,
+            color: "gray",
+          },
+        ]
+        const panelRows: SelectPanelRow[] = []
+        if (todoRows.length === 0) {
+          panelRows.push({ kind: "empty", text: "TodoWrite output will appear here once the agent updates the board.", color: "dim" })
+        } else {
+          visible.forEach((row, idx) => {
+            if (row.kind === "header") {
+              panelRows.push({ kind: "header", text: row.label, color: colorForStatus(row.status) })
+            } else {
+              panelRows.push({ kind: "item", text: `  • ${row.label}`, wrap: "truncate-end" })
+            }
+          })
+          if (todoRows.length > todoViewportRows) {
+            panelRows.push({
+              kind: "header",
+              text: `${scroll + 1}-${Math.min(scroll + todoViewportRows, todoRows.length)} of ${todoRows.length}`,
+              color: "dim",
+            })
+          }
+        }
         return (
-          <Box
-            flexDirection="column"
-            borderStyle="round"
+          <SelectPanel
+            width={PANEL_WIDTH}
             borderColor="#7CF2FF"
             paddingX={2}
             paddingY={1}
-            width={PANEL_WIDTH}
-            alignSelf="center"
-            marginTop={2}
-          >
-            <Text color="#7CF2FF">{chalk.bold("Todos")}</Text>
-            <Text color="gray">
-              {todos.length === 0
-                ? "No todos yet."
-                : `${todos.length} item${todos.length === 1 ? "" : "s"} • ↑/↓ scroll • PgUp/PgDn page • Esc close`}
-            </Text>
-            <Box flexDirection="column" marginTop={1}>
-              {todoRows.length === 0 ? (
-                <Text color="dim">TodoWrite output will appear here once the agent updates the board.</Text>
-              ) : (
-                visible.map((row, idx) =>
-                  row.kind === "header" ? (
-                    <Text key={`todo-h-${scroll}-${idx}`} color={colorForStatus(row.status)}>
-                      {row.label}
-                    </Text>
-                  ) : (
-                    <Text key={`todo-i-${scroll}-${idx}`} wrap="truncate-end">
-                      {"  "}• {row.label}
-                    </Text>
-                  ),
-                )
-              )}
-            </Box>
-            {todoRows.length > todoViewportRows && (
-              <Text color="dim">
-                {scroll + 1}-{Math.min(scroll + todoViewportRows, todoRows.length)} of {todoRows.length}
-              </Text>
-            )}
-          </Box>
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={panelRows}
+          />
         )
       },
     })
@@ -5410,31 +6233,29 @@ export const ReplView: React.FC<ReplViewProps> = ({
           rows.push({ label: "Cache write tokens", value: `${Math.round(usage.cacheWriteTokens)}` })
         if (usage?.costUsd != null) rows.push({ label: "Cost", value: formatCostUsd(usage.costUsd) })
         if (usage?.latencyMs != null) rows.push({ label: "Latency", value: formatLatency(usage.latencyMs) })
+        const titleLines: SelectPanelLine[] = [{ text: chalk.bold("Usage"), color: "#22c55e" }]
+        const hintLines: SelectPanelLine[] = [{ text: "Esc close", color: "dim" }]
+        const panelRows: SelectPanelRow[] = []
+        if (rows.length === 0) {
+          panelRows.push({ kind: "empty", text: "No usage metrics reported yet.", color: "dim" })
+        } else {
+          rows.forEach((row) => {
+            panelRows.push({
+              kind: "item",
+              text: `${chalk.cyan(row.label.padEnd(18, " "))} ${row.value}`,
+            })
+          })
+        }
         return (
-          <Box
-            flexDirection="column"
-            borderStyle="round"
+          <SelectPanel
+            width={Math.min(PANEL_WIDTH, contentWidth + 2)}
             borderColor="#22c55e"
             paddingX={2}
             paddingY={1}
-            width={Math.min(PANEL_WIDTH, contentWidth + 2)}
-            alignSelf="center"
-            marginTop={2}
-          >
-            <Text color="#22c55e">{chalk.bold("Usage")}</Text>
-            <Text color="dim">Esc close</Text>
-            <Box flexDirection="column" marginTop={1}>
-              {rows.length === 0 ? (
-                <Text color="dim">No usage metrics reported yet.</Text>
-              ) : (
-                rows.map((row) => (
-                  <Text key={row.label} wrap="truncate-end">
-                    {chalk.cyan(row.label.padEnd(18, " "))} {row.value}
-                  </Text>
-                ))
-              )}
-            </Box>
-          </Box>
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={panelRows}
+          />
         )
       },
     })
@@ -5460,97 +6281,93 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         const panelWidth = Math.min(PANEL_WIDTH, contentWidth + 2)
         const lineWidth = Math.max(12, panelWidth - 6)
+        const titleLines: SelectPanelLine[] = [{ text: chalk.bold("Background tasks"), color: "#93C5FD" }]
+        const hintLines: SelectPanelLine[] = [
+          {
+            text:
+              tasks.length === 0
+                ? "No background tasks yet."
+                : `${tasks.length} task${tasks.length === 1 ? "" : "s"} • ↑/↓ select • PgUp/PgDn page • Enter tail • Esc close`,
+            color: "gray",
+          },
+          {
+            text: `Search: ${taskSearchQuery.length > 0 ? taskSearchQuery : chalk.dim("<type to filter>")} • Filter: ${taskStatusFilter} (0 all · 1 run · 2 done · 3 fail)`,
+            color: "dim",
+          },
+        ]
+        const panelRows: SelectPanelRow[] = []
+        if (taskRows.length === 0) {
+          panelRows.push({ kind: "empty", text: "No tasks match the current filter.", color: "dim" })
+        } else {
+          visible.forEach((row, idx) => {
+            const globalIndex = scroll + idx
+            const isActive = globalIndex === selectedTaskIndex
+            const statusLabel = (row.status || "update").replace(/[_-]+/g, " ")
+            const laneLabel = row.task.subagentType || "primary"
+            const idLabel = row.id.slice(0, 8)
+            const suffix = chalk.dim(`#${idLabel}`)
+            const laneWidth = Math.min(16, Math.max(8, Math.floor(lineWidth * 0.25)))
+            const laneCell = formatCell(`[${laneLabel}]`, laneWidth)
+            const leftWidth = Math.max(0, lineWidth - stripAnsiCodes(suffix).length - laneWidth - 2)
+            const left = formatCell(`${statusLabel} · ${row.label}`, leftWidth)
+            const line = `${laneCell} ${left} ${suffix}`
+            panelRows.push({
+              kind: "item",
+              text: `${isActive ? "› " : "  "}${line}`,
+              isActive,
+              color: colorForStatus(row.status),
+              activeColor: "#0F172A",
+              activeBackground: "#93C5FD",
+            })
+          })
+          if (taskRows.length > taskViewportRows) {
+            panelRows.push({
+              kind: "header",
+              text: `${scroll + 1}-${Math.min(scroll + taskViewportRows, taskRows.length)} of ${taskRows.length}`,
+              color: "dim",
+            })
+          }
+        }
+
+        const footerLines: SelectPanelLine[] = []
+        if (selectedTask) {
+          footerLines.push({ text: `ID: ${selectedTask.id}`, color: "dim" })
+          if (selectedTask.outputExcerpt) {
+            footerLines.push({ text: `Output: ${selectedTask.outputExcerpt}`, color: "dim" })
+          }
+          if (selectedTask.artifactPath) {
+            footerLines.push({ text: `Artifact: ${selectedTask.artifactPath}`, color: "dim" })
+          }
+          if (selectedTask.error) {
+            footerLines.push({ text: `Error: ${selectedTask.error}`, color: "#F87171" })
+          }
+          if (selectedTask.ctreeNodeId) {
+            footerLines.push({ text: `CTree node: ${selectedTask.ctreeNodeId}`, color: "dim" })
+          }
+          footerLines.push({ text: "Enter: load output tail.", color: "dim" })
+        }
+        const ctreeSummary = formatCtreeSummary(selectedTask?.ctreeSnapshot ?? ctreeSnapshot ?? null)
+        if (ctreeSummary) {
+          footerLines.push({ text: ctreeSummary, color: "dim" })
+        }
+        if (taskNotice) {
+          footerLines.push({ text: taskNotice, color: "dim" })
+        }
+        if (taskTailLines.length > 0) {
+          footerLines.push({ text: taskTailPath ? `Tail: ${taskTailPath}` : "Tail output", color: "dim" })
+          taskTailLines.forEach((line) => footerLines.push({ text: line, color: "dim" }))
+        }
         return (
-          <Box
-            flexDirection="column"
-            borderStyle="round"
+          <SelectPanel
+            width={panelWidth}
             borderColor="#60A5FA"
             paddingX={2}
             paddingY={1}
-            width={panelWidth}
-            alignSelf="center"
-            marginTop={2}
-          >
-            <Text color="#93C5FD">{chalk.bold("Background tasks")}</Text>
-            <Text color="gray">
-              {tasks.length === 0
-                ? "No background tasks yet."
-                : `${tasks.length} task${tasks.length === 1 ? "" : "s"} • ↑/↓ select • PgUp/PgDn page • Enter tail • Esc close`}
-            </Text>
-            <Text color="dim">
-              Search: {taskSearchQuery.length > 0 ? taskSearchQuery : chalk.dim("<type to filter>")} • Filter: {taskStatusFilter} (0 all · 1 run · 2 done · 3 fail)
-            </Text>
-            <Box flexDirection="column" marginTop={1}>
-              {taskRows.length === 0 ? (
-                <Text color="dim">No tasks match the current filter.</Text>
-              ) : (
-                visible.map((row, idx) => {
-                  const globalIndex = scroll + idx
-                  const isActive = globalIndex === selectedTaskIndex
-                  const statusLabel = (row.status || "update").replace(/[_-]+/g, " ")
-                  const idLabel = row.id.slice(0, 8)
-                  const suffix = chalk.dim(`#${idLabel}`)
-                  const leftWidth = Math.max(0, lineWidth - stripAnsiCodes(suffix).length - 1)
-                  const left = formatCell(`${statusLabel} · ${row.label}`, leftWidth)
-                  const line = `${left} ${suffix}`
-                  return (
-                    <Text
-                      key={`task-${row.id}`}
-                      color={isActive ? "#0F172A" : colorForStatus(row.status)}
-                      backgroundColor={isActive ? "#93C5FD" : undefined}
-                      wrap="truncate-end"
-                    >
-                      {isActive ? "› " : "  "}
-                      {line}
-                    </Text>
-                  )
-                })
-              )}
-              {taskRows.length > taskViewportRows && (
-                <Text color="dim">
-                  {scroll + 1}-{Math.min(scroll + taskViewportRows, taskRows.length)} of {taskRows.length}
-                </Text>
-              )}
-            </Box>
-            {selectedTask && (
-              <Box flexDirection="column" marginTop={1}>
-                <Text color="dim">ID: {selectedTask.id}</Text>
-                {selectedTask.outputExcerpt && (
-                  <Text color="dim" wrap="truncate-end">
-                    Output: {selectedTask.outputExcerpt}
-                  </Text>
-                )}
-                {selectedTask.artifactPath && (
-                  <Text color="dim" wrap="truncate-end">
-                    Artifact: {selectedTask.artifactPath}
-                  </Text>
-                )}
-                {selectedTask.error && (
-                  <Text color="#F87171" wrap="truncate-end">
-                    Error: {selectedTask.error}
-                  </Text>
-                )}
-                <Text color="dim">Enter: load output tail.</Text>
-              </Box>
-            )}
-            {taskNotice && (
-              <Text color="dim" wrap="truncate-end">
-                {taskNotice}
-              </Text>
-            )}
-            {taskTailLines.length > 0 && (
-              <Box flexDirection="column" marginTop={1}>
-                <Text color="dim">
-                  {taskTailPath ? `Tail: ${taskTailPath}` : "Tail output"}
-                </Text>
-                {taskTailLines.map((line, idx) => (
-                  <Text key={`task-tail-${idx}`} color="dim" wrap="truncate-end">
-                    {line}
-                  </Text>
-                ))}
-              </Box>
-            )}
-          </Box>
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={panelRows}
+            footerLines={footerLines}
+          />
         )
       },
     })
@@ -5580,101 +6397,100 @@ export const ReplView: React.FC<ReplViewProps> = ({
         const scopeLabel = (scope: PermissionRuleScope, label: string) =>
           permissionScope === scope ? chalk.bold.cyan(label) : chalk.gray(label)
 
+        const titleLines: SelectPanelLine[] = [
+          { text: `${chalk.bold("Permission required")} ${chalk.dim(`(${permissionRequest.tool})`)}`, color: "#FACC15" },
+        ]
+        const hintLines: SelectPanelLine[] = [
+          { text: `${permissionRequest.kind} • ${rewindableText}${queueText}`, color: "dim" },
+          { text: tabLine },
+        ]
+        const rows: SelectPanelRow[] = []
+        const footerLines: SelectPanelLine[] = []
+
+        if (permissionTab === "summary") {
+          rows.push({ kind: "item", text: permissionRequest.summary, wrap: "wrap" })
+          if (permissionDiffPreview) {
+            rows.push({
+              kind: "header",
+              text: `Diff: +${permissionDiffPreview.additions} -${permissionDiffPreview.deletions}${permissionDiffPreview.files.length > 0 ? ` • ${permissionDiffPreview.files.join(", ")}` : ""}`,
+              color: "dim",
+            })
+          }
+          if (!permissionDiffPreview && diffAvailable) {
+            rows.push({ kind: "header", text: "Diff attached.", color: "dim" })
+          }
+          if (!diffAvailable) {
+            rows.push({ kind: "header", text: "No diff attached.", color: "dim" })
+          }
+        }
+
+        if (permissionTab === "diff") {
+          if (!diffAvailable) {
+            rows.push({ kind: "empty", text: "No diff attached.", color: "dim" })
+          } else {
+            rows.push({
+              kind: "header",
+              text: permissionSelectedSection
+                ? `File ${permissionSelectedFileIndex + 1}/${permissionDiffSections.length}: ${permissionSelectedSection.file}`
+                : "Diff",
+              color: "gray",
+            })
+            rows.push({
+              kind: "header",
+              text: `${permissionDiffSections.length > 1 ? "←/→ files • " : ""}↑/↓ scroll • PgUp/PgDn page.${permissionDiffLines.length > 0 ? ` Lines ${diffScroll + 1}-${Math.min(diffScroll + permissionViewportRows, permissionDiffLines.length)} of ${permissionDiffLines.length}.` : ""}`,
+              color: "dim",
+            })
+            if (visibleDiff.length === 0) {
+              rows.push({ kind: "empty", text: "Diff is empty.", color: "dim" })
+            } else {
+              visibleDiff.forEach((line, index) => {
+                rows.push({ kind: "item", text: line, wrap: "truncate-end" })
+              })
+            }
+          }
+        }
+
+        if (permissionTab === "rules") {
+          rows.push({ kind: "header", text: `Default scope: ${permissionRequest.defaultScope}`, color: "gray" })
+          rows.push({
+            kind: "item",
+            text: `Scope: ${scopeLabel("project", "Project")} ${chalk.dim("(fixed)")}`,
+          })
+          rows.push({
+            kind: "header",
+            text: `Suggested rule: ${permissionRequest.ruleSuggestion ? chalk.italic(permissionRequest.ruleSuggestion) : chalk.dim("<none>")}`,
+            color: "dim",
+          })
+          rows.push({ kind: "header", text: "Press 2 or Shift+Tab to allow always (project scope).", color: "dim" })
+        }
+
+        if (permissionTab === "note") {
+          rows.push({ kind: "header", text: "Tell me what to do differently:", color: "gray" })
+          rows.push({ kind: "item", text: renderPermissionNoteLine(permissionNote, permissionNoteCursor), wrap: "truncate-end" })
+          rows.push({ kind: "header", text: "Type feedback • Enter deny once • Tab switch tabs", color: "dim" })
+        }
+
+        if (permissionError) {
+          rows.push({ kind: "header", text: `Error: ${permissionError}`, color: "#FB7185" })
+        }
+
+        footerLines.push({
+          text: "Tab switch panel • Enter allow once • Shift+Tab allow always (project) • 1 allow once • 2 allow always (project) • 3 feedback • d deny once • D deny always",
+          color: "gray",
+        })
+        footerLines.push({ text: "Esc stop (deny)", color: "#FB7185" })
+
         return (
-          <Box
-            flexDirection="column"
-            borderStyle="round"
+          <SelectPanel
+            width={PANEL_WIDTH}
             borderColor="#F97316"
             paddingX={2}
             paddingY={1}
-            width={PANEL_WIDTH}
-            alignSelf="center"
-            marginTop={2}
-          >
-            <Text color="#FACC15">
-              {chalk.bold("Permission required")} {chalk.dim(`(${permissionRequest.tool})`)}
-            </Text>
-            <Text color="dim">
-              {permissionRequest.kind} • {rewindableText}
-              {queueText}
-            </Text>
-            <Text>{tabLine}</Text>
-
-            {permissionTab === "summary" && (
-              <Box flexDirection="column" marginTop={1}>
-                <Text wrap="wrap">{permissionRequest.summary}</Text>
-                {permissionDiffPreview && (
-                  <Text color="dim">
-                    Diff: +{permissionDiffPreview.additions} -{permissionDiffPreview.deletions}
-                    {permissionDiffPreview.files.length > 0 ? ` • ${permissionDiffPreview.files.join(", ")}` : ""}
-                  </Text>
-                )}
-                {!permissionDiffPreview && diffAvailable && <Text color="dim">Diff attached.</Text>}
-                {!diffAvailable && <Text color="dim">No diff attached.</Text>}
-              </Box>
-            )}
-
-            {permissionTab === "diff" && (
-              <Box flexDirection="column" marginTop={1}>
-                {!diffAvailable ? (
-                  <Text color="dim">No diff attached.</Text>
-                ) : (
-                  <>
-                    <Text color="gray" wrap="truncate-end">
-                      {permissionSelectedSection
-                        ? `File ${permissionSelectedFileIndex + 1}/${permissionDiffSections.length}: ${permissionSelectedSection.file}`
-                        : "Diff"}
-                    </Text>
-                    <Text color="dim">
-                      {permissionDiffSections.length > 1 ? "←/→ files • " : ""}↑/↓ scroll • PgUp/PgDn page.
-                      {permissionDiffLines.length > 0
-                        ? ` Lines ${diffScroll + 1}-${Math.min(diffScroll + permissionViewportRows, permissionDiffLines.length)} of ${permissionDiffLines.length}.`
-                        : ""}
-                    </Text>
-                    <Box flexDirection="column" marginTop={1}>
-                      {visibleDiff.length === 0 ? (
-                        <Text color="dim">Diff is empty.</Text>
-                      ) : (
-                        visibleDiff.map((line, index) => (
-                          <Text key={`perm-diff-${diffScroll}-${index}`} wrap="truncate-end">
-                            {line}
-                          </Text>
-                        ))
-                      )}
-                    </Box>
-                  </>
-                )}
-              </Box>
-            )}
-
-            {permissionTab === "rules" && (
-              <Box flexDirection="column" marginTop={1}>
-                <Text color="gray">Default scope: {permissionRequest.defaultScope}</Text>
-                <Text>
-                  Scope: {scopeLabel("session", "Session")} {scopeLabel("project", "Project")} {scopeLabel("global", "Global")} {chalk.dim("(←/→)")}
-                </Text>
-                <Text color="dim">
-                  Suggested rule: {permissionRequest.ruleSuggestion ? chalk.italic(permissionRequest.ruleSuggestion) : chalk.dim("<none>")}
-                </Text>
-                <Text color="dim">Press 2 or Shift+Tab to allow always at the selected scope.</Text>
-              </Box>
-            )}
-
-            {permissionTab === "note" && (
-              <Box flexDirection="column" marginTop={1}>
-                <Text color="gray">Tell me what to do differently:</Text>
-                <Text wrap="truncate-end">{renderPermissionNoteLine(permissionNote, permissionNoteCursor)}</Text>
-                <Text color="dim">Type feedback • Enter deny once • Tab switch tabs</Text>
-              </Box>
-            )}
-
-            <Box flexDirection="column" marginTop={1}>
-              <Text color="gray">
-                Tab switch panel • Enter allow once • Shift+Tab allow always • 1 allow once • 2 allow always • 3 feedback • d deny once • D deny always
-              </Text>
-              <Text color="#FB7185">Esc stop (deny)</Text>
-            </Box>
-          </Box>
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={rows}
+            footerLines={footerLines}
+          />
         )
       },
     })
@@ -5698,8 +6514,9 @@ export const ReplView: React.FC<ReplViewProps> = ({
           matchCount={transcriptSearchOpen ? transcriptSearchMatches.length : undefined}
           activeMatchIndex={transcriptSearchOpen && transcriptSearchMatches.length > 0 ? transcriptSearchSafeIndex : undefined}
           activeMatchLine={transcriptSearchOpen ? transcriptSearchActiveLine : null}
-          toggleHint={keymap === "claude" ? "Ctrl+Shift+T transcript" : "Ctrl+T transcript"}
+          toggleHint={keymap === "claude" ? "Ctrl+O transcript" : "Ctrl+T transcript"}
           detailLabel={transcriptDetailLabel || undefined}
+          variant={keymap === "claude" ? "claude" : "default"}
         />
       ) : (
         <ModalHost stack={modalStack}>{baseContent}</ModalHost>

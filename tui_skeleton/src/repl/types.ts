@@ -88,7 +88,72 @@ export interface TaskEntry {
   readonly outputExcerpt?: string | null
   readonly artifactPath?: string | null
   readonly error?: string | null
+  readonly ctreeNodeId?: string | null
+  readonly ctreeSnapshot?: CTreeSnapshot | null
   readonly updatedAt: number
+}
+
+export type SkillType = "prompt" | "graph"
+
+export interface SkillEntry {
+  readonly id: string
+  readonly type: SkillType
+  readonly version: string
+  readonly label?: string | null
+  readonly group?: string | null
+  readonly description?: string | null
+  readonly long_description?: string | null
+  readonly tags?: string[] | null
+  readonly defaults?: Record<string, unknown> | null
+  readonly dependencies?: string[] | null
+  readonly conflicts?: string[] | null
+  readonly deprecated?: boolean | null
+  readonly provider_constraints?: Record<string, unknown> | null
+  readonly slot?: "system" | "developer" | "user" | "per_turn" | null
+  readonly steps?: number | null
+  readonly determinism?: string | null
+  readonly enabled?: boolean | null
+}
+
+export interface SkillSelection {
+  readonly mode?: "allowlist" | "blocklist"
+  readonly allowlist?: string[]
+  readonly blocklist?: string[]
+  readonly profile?: string | null
+}
+
+export interface SkillCatalog {
+  readonly catalog_version?: string
+  readonly selection?: SkillSelection | null
+  readonly skills?: SkillEntry[]
+  readonly prompt_skills?: Array<Record<string, unknown>>
+  readonly graph_skills?: Array<Record<string, unknown>>
+}
+
+export interface SkillCatalogSources {
+  readonly config_path?: string | null
+  readonly workspace?: string | null
+  readonly plugin_count?: number | null
+  readonly skill_paths?: string[] | null
+}
+
+export type SkillsMenuState =
+  | { readonly status: "hidden" }
+  | { readonly status: "loading" }
+  | { readonly status: "error"; readonly message: string }
+  | {
+      readonly status: "ready"
+      readonly catalog: SkillCatalog
+      readonly selection: SkillSelection | null
+      readonly sources?: SkillCatalogSources | null
+    }
+
+export interface CTreeSnapshot {
+  readonly snapshot?: Record<string, unknown> | null
+  readonly compiler?: Record<string, unknown> | null
+  readonly collapse?: Record<string, unknown> | null
+  readonly runner?: Record<string, unknown> | null
+  readonly last_node?: Record<string, unknown> | null
 }
 
 export interface ModelMenuItem {

@@ -20,11 +20,13 @@ goldens/
 repo_reconstruct_*
 repo_reconstruct_codex_parsed*/
 repo_reconstruct_codex_session_*/
+local_captures/
 
 # Local caches and build artifacts
 **/node_modules/
 **/dist/
 **/artifacts/
+**/artifacts/visual_baselines/
 **/.cache/
 implementations/tooling_sys_prompts_cached/
 **/.pytest_cache/

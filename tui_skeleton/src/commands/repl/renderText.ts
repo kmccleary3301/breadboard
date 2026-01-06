@@ -414,7 +414,7 @@ export const renderStateToText = (state: ReplState, options: RenderTextOptions =
   } else if (includeHeader) {
     lines.push("")
   }
-  lines.push("Slash commands: /help, /quit, /clear, /status, /remote on|off, /retry, /plan, /mode <plan|build|auto>, /model <id>, /test [suite], /files [path], /models")
+  lines.push("Slash commands: /help, /quit, /clear, /status, /remote on|off, /retry, /plan, /mode <plan|build|auto>, /model <id>, /test [suite], /files [path], /models, /skills")
   lines.push("! for bash • / for commands • @ for files • Tab to complete • Esc closes menus")
   lines.push(...formatGuardrailBanner(state.guardrailNotice ?? null, useColors))
   const { finals, streaming } = partitionConversation(state.conversation)

@@ -22,9 +22,19 @@ interface TimelineSummary {
   readonly totalBytes: number
   readonly sseEvents: number
   readonly warnings: string[]
+  readonly ghostLines: number | null
   readonly ttftSeconds: number | null
   readonly spinnerHz: number | null
   readonly linesPerEvent: number | null
+  readonly lineDiff?: {
+    readonly rows: number | null
+    readonly maxLinesChanged: number | null
+    readonly maxLinesChangedPct: number | null
+    readonly p95LinesChangedPct: number | null
+    readonly p99LinesChangedPct: number | null
+    readonly meanLinesChangedPct: number | null
+    readonly flickerLineEvents: number | null
+  }
   readonly chaos: Record<string, unknown> | null
   readonly resizeStats?: ResizeStats | null
 }
@@ -101,6 +111,7 @@ interface TimelineOptions {
   readonly metadataPath?: string | null
   readonly gridDeltaPath?: string | null
   readonly ssePath?: string | null
+  readonly anomaliesPath?: string | null
   readonly chaosInfo?: Record<string, unknown> | null
 }
 
@@ -108,11 +119,18 @@ export const buildTimelineArtifacts = async (caseDir: string, options?: Timeline
   const metadataPath = options?.metadataPath ?? path.join(caseDir, "pty_metadata.json")
   const gridDeltasPath = options?.gridDeltaPath ?? path.join(caseDir, "grid_deltas.ndjson")
   const ssePath = options?.ssePath ?? path.join(caseDir, "sse_events.txt")
+  const anomaliesPath = options?.anomaliesPath ?? path.join(caseDir, "anomalies.json")
   const timelinePath = path.join(caseDir, "timeline.ndjson")
   const summaryPath = path.join(caseDir, "timeline_summary.json")
 
-  const metadata = await readJsonIfExists<{ startedAt?: number; resizeStats?: Record<string, unknown> }>(metadataPath)
+  const metadata = await readJsonIfExists<{
+    startedAt?: number
+    resizeStats?: Record<string, unknown>
+    rows?: number
+    cols?: number
+  }>(metadataPath)
   const startedAt = typeof metadata?.startedAt === "number" ? metadata.startedAt : null
+  const gridRows = typeof metadata?.rows === "number" && Number.isFinite(metadata.rows) ? metadata.rows : null
   const normalizeResizeStats = (value: Record<string, unknown> | null | undefined): ResizeStats | null => {
     if (!value) return null
     const count = Number(value.count ?? 0)
@@ -148,6 +166,10 @@ export const buildTimelineArtifacts = async (caseDir: string, options?: Timeline
 
   const ptyEvents = await parsePtyDeltas(gridDeltasPath)
   const sseEvents = await parseSseEvents(ssePath)
+  const anomalies = await readJsonIfExists<Array<{ id?: string }>>(anomaliesPath)
+  const ghostLines = Array.isArray(anomalies)
+    ? anomalies.filter((entry) => typeof entry?.id === "string" && entry.id.includes("duplicate")).length
+    : null
 
   const timeline: TimelineEntry[] = []
   const warnings: string[] = []
@@ -182,6 +204,52 @@ export const buildTimelineArtifacts = async (caseDir: string, options?: Timeline
 
   const totalLinesChanged = ptyEvents.reduce((acc, event) => acc + event.changedLines.length, 0)
   const totalBytes = ptyEvents.reduce((acc, event) => acc + event.bytes, 0)
+  const lineChangeCounts = ptyEvents.map((event) => event.changedLines.length)
+  const maxLinesChanged = lineChangeCounts.length > 0 ? Math.max(...lineChangeCounts) : 0
+  const meanLinesChanged = lineChangeCounts.length > 0 ? totalLinesChanged / lineChangeCounts.length : 0
+
+  const buildPercentile = (values: number[], percentile: number) => {
+    if (values.length === 0) return null
+    const sorted = [...values].sort((a, b) => a - b)
+    const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(percentile * sorted.length) - 1))
+    return sorted[index]
+  }
+
+  let flickerLineEvents = 0
+  const lastLineChange = new Map<number, number>()
+  ptyEvents.forEach((event, index) => {
+    for (const line of event.changedLines) {
+      const last = lastLineChange.get(line)
+      if (last === index - 1) {
+        flickerLineEvents += 1
+      }
+      lastLineChange.set(line, index)
+    }
+  })
+
+  const lineDiff = (() => {
+    if (!gridRows || gridRows <= 0) {
+      return {
+        rows: gridRows ?? null,
+        maxLinesChanged,
+        maxLinesChangedPct: null,
+        p95LinesChangedPct: null,
+        p99LinesChangedPct: null,
+        meanLinesChangedPct: null,
+        flickerLineEvents: lineChangeCounts.length > 0 ? flickerLineEvents : null,
+      }
+    }
+    const toPct = (value: number | null) => (value == null ? null : value / gridRows)
+    return {
+      rows: gridRows,
+      maxLinesChanged,
+      maxLinesChangedPct: toPct(maxLinesChanged),
+      p95LinesChangedPct: toPct(buildPercentile(lineChangeCounts, 0.95)),
+      p99LinesChangedPct: toPct(buildPercentile(lineChangeCounts, 0.99)),
+      meanLinesChangedPct: toPct(meanLinesChanged),
+      flickerLineEvents: lineChangeCounts.length > 0 ? flickerLineEvents : null,
+    }
+  })()
 
   const firstPtyTimestamp = ptyEvents.find((event) => event.timestamp != null)?.timestamp ?? null
   const lastPtyTimestamp = [...ptyEvents].reverse().find((event) => event.timestamp != null)?.timestamp ?? null
@@ -210,9 +278,11 @@ export const buildTimelineArtifacts = async (caseDir: string, options?: Timeline
     totalBytes,
     sseEvents: sseEvents.length,
     warnings,
+    ghostLines,
     ttftSeconds,
     spinnerHz,
     linesPerEvent,
+    lineDiff,
     chaos: normalizeChaos(options?.chaosInfo ?? null),
     resizeStats: resizeStats ?? null,
   }

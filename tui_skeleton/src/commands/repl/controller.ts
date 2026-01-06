@@ -18,6 +18,11 @@ import type {
   ToolLogKind,
   TodoItem,
   TaskEntry,
+  SkillCatalog,
+  SkillSelection,
+  SkillCatalogSources,
+  SkillsMenuState,
+  CTreeSnapshot,
   PermissionRequest,
   PermissionDecision,
   PermissionRuleScope,
@@ -37,6 +42,7 @@ import { MarkdownStreamer } from "../../markdown/streamer.js"
 const MAX_HINTS = 6
 const MAX_TOOL_HISTORY = 400
 const MAX_RETRIES = 5
+const STOP_SOFT_TIMEOUT_MS = 30_000
 const DEBUG_EVENTS = process.env.BREADBOARD_DEBUG_EVENTS === "1"
 const DEBUG_WAIT = process.env.BREADBOARD_DEBUG_WAIT === "1"
 const DEBUG_MARKDOWN = process.env.BREADBOARD_DEBUG_MARKDOWN === "1"
@@ -73,6 +79,7 @@ export interface ReplState {
   readonly hints: string[]
   readonly stats: StreamStats
   readonly modelMenu: ModelMenuState
+  readonly skillsMenu: SkillsMenuState
   readonly completionReached: boolean
   readonly completionSeen: boolean
   readonly lastCompletion?: CompletionState | null
@@ -81,10 +88,12 @@ export interface ReplState {
   readonly viewClearAt?: number | null
   readonly viewPrefs: TranscriptPreferences
   readonly permissionRequest?: PermissionRequest | null
+  readonly permissionError?: string | null
   readonly permissionQueueDepth?: number
   readonly rewindMenu: RewindMenuState
   readonly todos: TodoItem[]
   readonly tasks: TaskEntry[]
+  readonly ctreeSnapshot?: CTreeSnapshot | null
 }
 
 type StateListener = (state: ReplState) => void
@@ -97,6 +106,23 @@ interface SubmissionPayload {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null
+
+const formatErrorPayload = (payload: unknown): string => {
+  if (!isRecord(payload)) return JSON.stringify(payload)
+  if (typeof payload.message === "string" && payload.message.trim()) return payload.message.trim()
+  if (typeof payload.detail === "string" && payload.detail.trim()) return payload.detail.trim()
+  const detail = payload.detail
+  if (isRecord(detail)) {
+    const detailMessage =
+      typeof detail.message === "string"
+        ? detail.message
+        : typeof detail.error === "string"
+          ? detail.error
+          : undefined
+    if (detailMessage && detailMessage.trim()) return detailMessage.trim()
+  }
+  return JSON.stringify(payload)
+}
 
 const stringifyReason = (value: string | undefined): string | undefined =>
   value?.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim() || undefined
@@ -380,6 +406,11 @@ export class ReplSessionController extends EventEmitter {
   private status = "Starting session…"
   private pendingResponse = false
   private modelMenu: ModelMenuState = { status: "hidden" }
+  private skillsMenu: SkillsMenuState = { status: "hidden" }
+  private skillsCatalog: SkillCatalog | null = null
+  private skillsSelection: SkillSelection | null = null
+  private skillsSources: SkillCatalogSources | null = null
+  private ctreeSnapshot: CTreeSnapshot | null = null
   private completionReached = false
   private completionSeen = false
   private lastCompletion: CompletionState | null = null
@@ -397,10 +428,15 @@ export class ReplSessionController extends EventEmitter {
   private markdownGloballyDisabled = false
   private viewClearAt: number | null = null
   private permissionActive: PermissionRequest | null = null
+  private permissionError: string | null = null
   private permissionQueue: PermissionRequest[] = []
   private rewindMenu: RewindMenuState = { status: "hidden" }
   private todos: TodoItem[] = []
   private tasks: TaskEntry[] = []
+  private lastEventId: string | null = null
+  private hasStreamedOnce = false
+  private stopRequestedAt: number | null = null
+  private stopTimer: NodeJS.Timeout | null = null
   private readonly taskMap = new Map<string, TaskEntry>()
   private mode: string | null = null
   private permissionMode: string | null = null
@@ -428,6 +464,7 @@ export class ReplSessionController extends EventEmitter {
       hints: [...this.hints],
       stats: { ...this.stats },
       modelMenu: this.modelMenu,
+      skillsMenu: this.skillsMenu,
       completionReached: this.completionReached,
       completionSeen: this.completionSeen,
       lastCompletion: this.lastCompletion,
@@ -436,10 +473,12 @@ export class ReplSessionController extends EventEmitter {
       viewClearAt: this.viewClearAt,
       viewPrefs: this.viewPrefs,
       permissionRequest: this.permissionActive,
+      permissionError: this.permissionError,
       permissionQueueDepth: this.permissionQueue.length,
       rewindMenu: this.rewindMenu,
       todos: [...this.todos],
       tasks: [...this.tasks],
+      ctreeSnapshot: this.ctreeSnapshot,
     }
   }
 
@@ -463,6 +502,10 @@ export class ReplSessionController extends EventEmitter {
     this.mode = normalizeModeValue(process.env.BREADBOARD_DEFAULT_MODE) ?? "build"
     const metadata: Record<string, unknown> = {}
     const overrides: Record<string, unknown> = {}
+    const debugPermissions = process.env.BREADBOARD_DEBUG_PERMISSIONS
+    if (debugPermissions && debugPermissions !== "0") {
+      metadata.debug_permissions = true
+    }
     if (permissionValue) {
       metadata.permission_mode = permissionValue
       if (interactivePermissions) {
@@ -491,6 +534,23 @@ export class ReplSessionController extends EventEmitter {
     }
     const session = await this.api().createSession(payload)
     this.sessionId = session.session_id
+    try {
+      const summary = await this.api().getSession(this.sessionId)
+      if (summary?.model && typeof summary.model === "string") {
+        this.stats.model = summary.model
+      }
+      if (summary?.mode && typeof summary.mode === "string") {
+        this.mode = normalizeModeValue(summary.mode) ?? this.mode
+      }
+      if (!summary?.model && !requestedModel) {
+        const catalog = await getModelCatalog({ configPath: this.config.configPath })
+        if (catalog?.defaultModel) {
+          this.stats.model = catalog.defaultModel
+        }
+      }
+    } catch {
+      // ignore summary fetch errors; keep optimistic defaults
+    }
     this.pushHint(`Session ${this.sessionId} started (remote ${this.stats.remote ? "enabled" : "disabled"}, model ${this.stats.model}).`)
     this.status = "Ready"
     this.completionSeen = false
@@ -704,6 +764,81 @@ export class ReplSessionController extends EventEmitter {
     this.emitChange()
   }
 
+  async openSkillsMenu(): Promise<void> {
+    if (this.skillsMenu.status !== "hidden") {
+      this.pushHint("Skills picker already open. Use Esc to cancel or apply selection.")
+      return
+    }
+    if (!this.sessionId) {
+      this.pushHint("Session not ready yet.")
+      return
+    }
+    this.status = "Loading skills…"
+    this.skillsMenu = { status: "loading" }
+    this.emitChange()
+    try {
+      const payload = await this.api().getSkillsCatalog(this.sessionId)
+      const catalog = (payload?.catalog ?? {}) as SkillCatalog
+      const selection = (payload?.selection ?? null) as SkillSelection | null
+      const sources = (payload?.sources ?? null) as SkillCatalogSources | null
+      this.skillsCatalog = catalog
+      this.skillsSelection = selection
+      this.skillsSources = sources
+      this.skillsMenu = { status: "ready", catalog, selection, sources }
+      this.status = "Skills ready"
+    } catch (error) {
+      if (this.skillsCatalog) {
+        this.skillsMenu = {
+          status: "ready",
+          catalog: this.skillsCatalog,
+          selection: this.skillsSelection,
+          sources: this.skillsSources,
+        }
+        this.status = "Skills ready"
+      } else {
+        this.skillsMenu = { status: "error", message: `Failed to load skills: ${(error as Error).message}` }
+        this.status = "Skills catalog unavailable"
+      }
+    }
+    this.emitChange()
+  }
+
+  closeSkillsMenu(): void {
+    if (this.skillsMenu.status !== "hidden") {
+      this.skillsMenu = { status: "hidden" }
+      this.emitChange()
+    }
+  }
+
+  async applySkillsSelection(selection: SkillSelection): Promise<void> {
+    const payload: Record<string, unknown> = {
+      mode: selection.mode ?? "blocklist",
+    }
+    if (selection.allowlist && selection.allowlist.length > 0) {
+      payload.allowlist = selection.allowlist
+    }
+    if (selection.blocklist && selection.blocklist.length > 0) {
+      payload.blocklist = selection.blocklist
+    }
+    if (selection.profile) {
+      payload.profile = selection.profile
+    }
+    const ok = await this.runSessionCommand("set_skills", payload, "Skills selection updated.")
+    if (ok) {
+      this.skillsSelection = selection
+      if (this.skillsMenu.status === "ready") {
+        this.skillsMenu = {
+          status: "ready",
+          catalog: this.skillsMenu.catalog,
+          selection: selection,
+          sources: this.skillsMenu.sources,
+        }
+      }
+      this.status = "Skills updated"
+      this.emitChange()
+    }
+  }
+
   closeModelMenu(): void {
     if (this.modelMenu.status !== "hidden") {
       this.modelMenu = { status: "hidden" }
@@ -898,7 +1033,8 @@ export class ReplSessionController extends EventEmitter {
         const ok = await this.runSessionCommand("stop", undefined, "Interrupt requested.")
         if (ok) {
           this.pendingResponse = false
-          this.status = "Interrupt requested"
+          this.status = "Stopping…"
+          this.noteStopRequested()
         }
       },
       help: async () => {
@@ -1063,6 +1199,9 @@ export class ReplSessionController extends EventEmitter {
       models: async () => {
         await this.openModelMenu()
       },
+      skills: async () => {
+        await this.openSkillsMenu()
+      },
       rewind: async () => {
         await this.openRewindMenu()
       },
@@ -1206,6 +1345,7 @@ export class ReplSessionController extends EventEmitter {
 
   private setPermissionActive(next: PermissionRequest | null): void {
     this.permissionActive = next
+    this.permissionError = null
     if (!next) {
       if (this.permissionQueue.length > 0) {
         this.permissionActive = this.permissionQueue.shift() ?? null
@@ -1238,11 +1378,15 @@ export class ReplSessionController extends EventEmitter {
       if (decision.kind === "deny-stop") {
         this.pendingResponse = false
         this.status = "Stopped (permission denied)"
+        this.clearStopRequest()
         this.permissionQueue.length = 0
         this.permissionActive = null
       } else {
         this.setPermissionActive(null)
       }
+      this.emitChange()
+    } else {
+      this.permissionError = "Permission decision failed. Check connection or engine status."
       this.emitChange()
     }
     return ok
@@ -1328,6 +1472,8 @@ export class ReplSessionController extends EventEmitter {
     const subagentType = extractString(payload, ["subagent_type", "subagentType"])
     const outputExcerpt = extractString(payload, ["output_excerpt", "output", "result", "message"])
     const error = extractString(payload, ["error"])
+    const ctreeNodeId = extractString(payload, ["ctree_node_id", "ctreeNodeId"])
+    const ctreeSnapshot = isRecord(payload.ctree_snapshot) ? (payload.ctree_snapshot as CTreeSnapshot) : null
     const artifact = isRecord(payload.artifact) ? payload.artifact : null
     const artifactPath =
       extractString(payload, ["artifact_path", "artifactPath", "artifact"]) ??
@@ -1344,6 +1490,8 @@ export class ReplSessionController extends EventEmitter {
       outputExcerpt: outputExcerpt ? outputExcerpt.slice(0, 400) : null,
       artifactPath: artifactPath ?? null,
       error: error ?? null,
+      ctreeNodeId: ctreeNodeId ?? null,
+      ctreeSnapshot,
       updatedAt,
     })
   }
@@ -1463,6 +1611,17 @@ export class ReplSessionController extends EventEmitter {
     const previous = state.lastText
     const delta = text.startsWith(previous) ? text.slice(previous.length) : text
     state.lastText = previous + delta
+    state.streamer.append(delta)
+    this.markEntryMarkdownStreaming(entryId, true)
+  }
+
+  private appendMarkdownDelta(delta: string): void {
+    if (!this.streamingEntryId || !this.shouldStreamMarkdown()) return
+    if (!delta) return
+    const entryId = this.streamingEntryId
+    const state = this.ensureMarkdownStreamer(entryId)
+    if (!state) return
+    state.lastText += delta
     state.streamer.append(delta)
     this.markEntryMarkdownStreaming(entryId, true)
   }
@@ -1648,10 +1807,25 @@ export class ReplSessionController extends EventEmitter {
     while (!this.abortRequested) {
       this.abortController = new AbortController()
       try {
-        for await (const event of this.providers.sdk.stream(this.sessionId, { signal: this.abortController.signal })) {
+        const resumeFrom = this.lastEventId ?? undefined
+        const warnOnReconnect = this.hasStreamedOnce
+        let warned = false
+        for await (const event of this.providers.sdk.stream(this.sessionId, {
+          signal: this.abortController.signal,
+          lastEventId: resumeFrom,
+        })) {
+          if (warnOnReconnect && !warned) {
+            this.pushHint("Reconnected to stream; some history may be missing.")
+            warned = true
+          }
+          this.hasStreamedOnce = true
+          this.disconnected = false
           this.consecutiveFailures = 0
           this.stats.eventCount += 1
           this.stats.lastTurn = event.turn ?? this.stats.lastTurn
+          if (typeof event.id === "string" && event.id.trim()) {
+            this.lastEventId = event.id
+          }
           this.enqueueEvent(event)
         }
         if (!this.awaitingRestart) {
@@ -1737,6 +1911,7 @@ export class ReplSessionController extends EventEmitter {
     }
     switch (event.type) {
       case "turn_start": {
+        this.clearStopRequest()
         this.pendingResponse = true
         this.status = "Assistant thinking…"
         const turnLabel = typeof event.turn === "number" ? `Turn ${event.turn} started` : "Turn started"
@@ -1754,6 +1929,12 @@ export class ReplSessionController extends EventEmitter {
         const normalizedText = this.normalizeAssistantText(text)
         this.addConversation("assistant", normalizedText, "streaming")
         this.appendMarkdownChunk(normalizedText)
+        break
+      }
+      case "assistant_delta": {
+        if (this.pendingResponse) this.status = "Assistant responding…"
+        const delta = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+        this.appendAssistantDelta(delta)
         break
       }
       case "user_message": {
@@ -1844,10 +2025,44 @@ export class ReplSessionController extends EventEmitter {
         this.pushHint(`Loaded ${parsed.length} checkpoint${parsed.length === 1 ? "" : "s"}.`)
         break
       }
+      case "skills_catalog": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const catalog = (payload.catalog ?? payload) as SkillCatalog
+        const selection = (payload.selection ?? null) as SkillSelection | null
+        const sources = (payload.sources ?? null) as SkillCatalogSources | null
+        this.skillsCatalog = catalog
+        this.skillsSelection = selection
+        this.skillsSources = sources
+        if (this.skillsMenu.status !== "hidden") {
+          this.skillsMenu = { status: "ready", catalog, selection, sources }
+        }
+        this.pushHint("Skills catalog updated.")
+        break
+      }
+      case "skills_selection": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const selection = (payload.selection ?? payload) as SkillSelection
+        this.skillsSelection = selection
+        if (this.skillsMenu.status === "ready") {
+          this.skillsMenu = {
+            status: "ready",
+            catalog: this.skillsMenu.catalog,
+            selection,
+            sources: this.skillsMenu.sources,
+          }
+        }
+        this.pushHint("Skills selection updated.")
+        break
+      }
       case "task_event": {
         const payload = isRecord(event.payload) ? event.payload : {}
         const taskId = extractString(payload, ["task_id", "id"])
         const status = extractString(payload, ["status", "state"]) ?? "update"
+        const statusLower = status.toLowerCase()
+        if (statusLower.includes("stop")) {
+          this.noteStopRequested()
+          this.status = "Stopping…"
+        }
         const description = extractString(payload, ["description", "title", "prompt"])
         const lineParts = [status, description, taskId].filter(Boolean)
         const line = lineParts.length > 0 ? lineParts.join(" · ") : JSON.stringify(payload)
@@ -1855,6 +2070,29 @@ export class ReplSessionController extends EventEmitter {
         const isComplete = status.toLowerCase().includes("complete") || status.toLowerCase().includes("done")
         this.addTool("status", `[task] ${line}`, isError ? "error" : isComplete ? "success" : "pending")
         this.handleTaskEvent(payload)
+        break
+      }
+      case "ctree_node": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const next: CTreeSnapshot = {
+          ...(this.ctreeSnapshot ?? {}),
+          ...(isRecord(payload.snapshot) ? { snapshot: payload.snapshot } : {}),
+          ...(isRecord(payload.node) ? { last_node: payload.node } : {}),
+        }
+        this.ctreeSnapshot = next
+        break
+      }
+      case "ctree_snapshot": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const next: CTreeSnapshot = {
+          ...(this.ctreeSnapshot ?? {}),
+          ...(payload.snapshot !== undefined ? { snapshot: payload.snapshot as Record<string, unknown> | null } : {}),
+          ...(payload.compiler !== undefined ? { compiler: payload.compiler as Record<string, unknown> | null } : {}),
+          ...(payload.collapse !== undefined ? { collapse: payload.collapse as Record<string, unknown> | null } : {}),
+          ...(payload.runner !== undefined ? { runner: payload.runner as Record<string, unknown> | null } : {}),
+          ...(payload.last_node !== undefined ? { last_node: payload.last_node as Record<string, unknown> | null } : {}),
+        }
+        this.ctreeSnapshot = next
         break
       }
       case "checkpoint_restored": {
@@ -1946,7 +2184,11 @@ export class ReplSessionController extends EventEmitter {
         break
       }
       case "error": {
-        const message = JSON.stringify(event.payload)
+        const raw = JSON.stringify(event.payload)
+        const message = formatErrorPayload(event.payload)
+        if (DEBUG_EVENTS && message !== raw) {
+          console.error(`[repl error payload] ${raw}`)
+        }
         this.pushHint(`[error] ${message}`)
         this.addTool("error", `[error] ${message}`, "error")
         this.pendingResponse = false
@@ -1955,6 +2197,7 @@ export class ReplSessionController extends EventEmitter {
       }
       case "completion": {
         this.finalizeStreamingEntry()
+        this.clearStopRequest()
         const view = formatCompletion(event.payload)
         if (DEBUG_EVENTS) {
           console.log(
@@ -1997,6 +2240,7 @@ export class ReplSessionController extends EventEmitter {
       }
       case "run_finished": {
         this.finalizeStreamingEntry()
+        this.clearStopRequest()
         if (typeof event.payload?.eventCount === "number" && Number.isFinite(event.payload.eventCount)) {
           this.stats.eventCount = event.payload.eventCount
         }
@@ -2023,5 +2267,42 @@ export class ReplSessionController extends EventEmitter {
       return "No coding task detected. Describe a concrete change (e.g., \"Implement bubble sort in sorter.py\") or switch models with /model."
     }
     return text
+  }
+
+  private appendAssistantDelta(delta: string): void {
+    if (!delta) return
+    if (this.streamingEntryId) {
+      const index = this.conversation.findIndex((entry) => entry.id === this.streamingEntryId)
+      if (index >= 0) {
+        const existing = this.conversation[index]
+        const nextText = `${existing.text ?? ""}${delta}`
+        this.conversation[index] = { ...existing, text: nextText, phase: "streaming" }
+      } else {
+        this.setStreamingConversation("assistant", delta)
+      }
+    } else {
+      this.setStreamingConversation("assistant", delta)
+    }
+    this.appendMarkdownDelta(delta)
+  }
+
+  private noteStopRequested(): void {
+    this.stopRequestedAt = Date.now()
+    if (this.stopTimer) clearTimeout(this.stopTimer)
+    this.stopTimer = setTimeout(() => {
+      if (this.stopRequestedAt && !this.completionSeen && !this.disconnected) {
+        this.pushHint("Still stopping…")
+        this.status = "Still stopping…"
+        this.emitChange()
+      }
+    }, STOP_SOFT_TIMEOUT_MS)
+  }
+
+  private clearStopRequest(): void {
+    if (this.stopTimer) {
+      clearTimeout(this.stopTimer)
+      this.stopTimer = null
+    }
+    this.stopRequestedAt = null
   }
 }

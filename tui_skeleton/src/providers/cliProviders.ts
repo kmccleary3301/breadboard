@@ -23,8 +23,12 @@ export class CliSdkProvider {
     return ApiClient
   }
 
-  stream(sessionId: string, options: { signal?: AbortSignal }) {
-    return streamSessionEvents(sessionId, { signal: options.signal, config: this.config })
+  stream(sessionId: string, options: { signal?: AbortSignal; lastEventId?: string }) {
+    return streamSessionEvents(sessionId, {
+      signal: options.signal,
+      lastEventId: options.lastEventId,
+      config: this.config,
+    })
   }
 
   uploadAttachments(sessionId: string, attachments: ReadonlyArray<AttachmentUploadPayload>) {

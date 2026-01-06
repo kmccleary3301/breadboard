@@ -1,0 +1,24 @@
+[
+  {
+    "delayMs": 0,
+    "event": { "type": "turn_start", "payload": { "summary": "mock table" }, "turn": 1 }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "### Table Example\n\n| Column | Value |\n| --- | --- |\n| Alpha | 1 |\n| Beta | 2 |\n\nDone.",
+        "message": {
+          "role": "assistant",
+          "content": "### Table Example\n\n| Column | Value |\n| --- | --- |\n| Alpha | 1 |\n| Beta | 2 |\n\nDone."
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "table" } } }
+  },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 4 } } }
+]

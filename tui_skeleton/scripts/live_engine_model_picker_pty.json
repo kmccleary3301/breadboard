@@ -1,10 +1,10 @@
 [
   { "action": "log", "message": "Live engine model picker start" },
-  { "action": "waitFor", "text": "breadboard", "timeoutMs": 20000 },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 20000 },
   { "action": "press", "key": "ctrl+k" },
-  { "action": "waitFor", "text": "Select a model", "timeoutMs": 5000 },
+  { "action": "waitFor", "text": "Select model —", "timeoutMs": 5000 },
   { "action": "snapshot", "label": "model-picker-open" },
-  { "action": "type", "text": "mock" },
+  { "action": "type", "text": "gpt-5" },
   { "action": "wait", "ms": 200 },
   { "action": "press", "key": "enter" },
   { "action": "waitFor", "text": "Model switch requested", "timeoutMs": 8000 },

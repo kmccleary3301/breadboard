@@ -1,6 +1,6 @@
 [
   { "action": "log", "message": "@ file picker fuzzy stress start" },
-  { "action": "waitFor", "text": "breadboard", "timeoutMs": 20000 },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 20000 },
   { "action": "snapshot", "label": "initial" },
   { "action": "type", "text": "@src/repl/components/Tran", "typingDelayMs": 8 },
   { "action": "wait", "ms": 350 },

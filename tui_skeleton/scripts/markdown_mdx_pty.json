@@ -1,0 +1,7 @@
+[
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "type", "text": "show mdx block", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 800 },
+  { "action": "snapshot", "label": "mdx-render" }
+]

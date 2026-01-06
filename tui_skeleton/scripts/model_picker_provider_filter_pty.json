@@ -1,0 +1,19 @@
+[
+  { "action": "log", "message": "Model picker provider filter PTY start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "press", "key": "ctrl+k" },
+  { "action": "waitFor", "text": "Select model —", "timeoutMs": 5000 },
+  { "action": "waitFor", "text": "Provider: All", "timeoutMs": 5000 },
+  { "action": "press", "key": "right" },
+  { "action": "waitFor", "text": "Provider: OpenAI", "timeoutMs": 5000 },
+  { "action": "press", "key": "right" },
+  { "action": "waitFor", "text": "Provider: Anthropic", "timeoutMs": 5000 },
+  { "action": "press", "key": "backspace" },
+  { "action": "waitFor", "text": "Provider: All", "timeoutMs": 5000 },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 200 },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 5000 },
+  { "action": "type", "text": "model-probe-123", "typingDelayMs": 10 },
+  { "action": "waitFor", "text": "model-probe-123", "timeoutMs": 5000 },
+  { "action": "log", "message": "Model picker provider filter PTY end" }
+]

@@ -1,0 +1,11 @@
+[
+  { "action": "log", "message": "Live engine CTree PTY harness start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 20000 },
+  { "action": "type", "text": "Show ctree summary", "typingDelayMs": 20 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 800 },
+  { "action": "press", "key": "ctrl+b" },
+  { "action": "waitFor", "text": "Background tasks", "timeoutMs": 10000 },
+  { "action": "snapshot", "label": "ctree-summary" },
+  { "action": "log", "message": "Live engine CTree PTY harness complete" }
+]

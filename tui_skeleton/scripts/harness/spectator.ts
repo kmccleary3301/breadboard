@@ -19,11 +19,15 @@ export type KeyName =
   | "enter"
   | "escape"
   | "tab"
+  | "space"
   | "backspace"
   | "ctrl+backspace"
   | "ctrl+c"
   | "ctrl+d"
   | "ctrl+b"
+  | "ctrl+g"
+  | "ctrl+z"
+  | "ctrl+y"
   | "ctrl+k"
   | "ctrl+l"
   | "ctrl+o"
@@ -302,6 +306,8 @@ const resolveKey = (key: KeyName): string => {
       return "\u001b"
     case "tab":
       return "\t"
+    case "space":
+      return " "
     case "backspace":
       return "\u007f"
     case "ctrl+backspace":
@@ -312,6 +318,12 @@ const resolveKey = (key: KeyName): string => {
       return "\u0004"
     case "ctrl+b":
       return "\u0002"
+    case "ctrl+g":
+      return "\u0007"
+    case "ctrl+z":
+      return "\u001a"
+    case "ctrl+y":
+      return "\u0019"
     case "ctrl+k":
       return "\u000b"
     case "ctrl+l":

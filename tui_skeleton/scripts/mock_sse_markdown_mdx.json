@@ -1,0 +1,24 @@
+[
+  {
+    "delayMs": 0,
+    "event": { "type": "turn_start", "payload": { "summary": "mock mdx" }, "turn": 1 }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Here is MDX:\n\n<MyComponent prop=\"x\" />\n\nPlain text after.",
+        "message": {
+          "role": "assistant",
+          "content": "Here is MDX:\n\n<MyComponent prop=\"x\" />\n\nPlain text after."
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mdx" } } }
+  },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 4 } } }
+]

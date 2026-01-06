@@ -8,6 +8,8 @@ import type {
   SessionFileInfo,
   SessionFileContent,
   ModelCatalogResponse,
+  SkillCatalogResponse,
+  CTreeSnapshotResponse,
 } from "./types.js"
 
 export class ApiError extends Error {
@@ -123,6 +125,10 @@ export const ApiClient = {
     }),
   getModelCatalog: (configPath: string) =>
     request<ModelCatalogResponse>("/models", "GET", { query: { config_path: configPath } }),
+  getSkillsCatalog: (sessionId: string) =>
+    request<SkillCatalogResponse>(`/sessions/${sessionId}/skills`, "GET"),
+  getCtreeSnapshot: (sessionId: string) =>
+    request<CTreeSnapshotResponse>(`/sessions/${sessionId}/ctrees`, "GET"),
   downloadArtifact: (sessionId: string, artifact: string) =>
     request<string>(`/sessions/${sessionId}/download`, "GET", { query: { artifact }, responseType: "text" }),
   uploadAttachments: async (sessionId: string, attachments: ReadonlyArray<AttachmentUploadPayload>) => {
@@ -176,4 +182,6 @@ export type {
   SessionFileInfo,
   SessionFileContent,
   ModelCatalogResponse,
+  SkillCatalogResponse,
+  CTreeSnapshotResponse,
 }

@@ -1,0 +1,16 @@
+[
+  { "action": "log", "message": "@ file picker large file PTY start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "initial" },
+  { "action": "type", "text": "@", "typingDelayMs": 10 },
+  { "action": "waitFor", "text": "big.txt", "timeoutMs": 10000 },
+  {
+    "action": "waitFor",
+    "text": "Large file selected",
+    "timeoutMs": 10000
+  },
+  { "action": "snapshot", "label": "large-file" },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 200 },
+  { "action": "log", "message": "@ file picker large file PTY end" }
+]

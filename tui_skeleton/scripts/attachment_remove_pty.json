@@ -1,0 +1,9 @@
+[
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "press", "key": "ctrl+v" },
+  { "action": "wait", "ms": 500 },
+  { "action": "snapshot", "label": "attachment-added" },
+  { "action": "press", "key": "backspace" },
+  { "action": "wait", "ms": 200 },
+  { "action": "snapshot", "label": "attachment-removed" }
+]

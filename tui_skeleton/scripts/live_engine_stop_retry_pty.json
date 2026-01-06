@@ -1,6 +1,6 @@
 [
   { "action": "log", "message": "Live engine stop/retry start" },
-  { "action": "waitFor", "text": "breadboard", "timeoutMs": 20000 },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 20000 },
   { "action": "type", "text": "Generate a bubble sort" },
   { "action": "press", "key": "enter" },
   { "action": "wait", "ms": 500 },

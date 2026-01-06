@@ -7,6 +7,82 @@ export interface EventStreamOptions {
   readonly signal?: AbortSignal
   readonly query?: Record<string, string | number | boolean>
   readonly config?: AppConfig
+  readonly lastEventId?: string
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const readString = (value: unknown): string | null =>
+  typeof value === "string" && value.trim().length > 0 ? value : null
+
+const readNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null
+
+const normalizeEvent = (
+  raw: unknown,
+  sessionIdFallback: string,
+  fallbackId: string | null,
+  syntheticId: () => string,
+): SessionEvent | null => {
+  if (!isRecord(raw)) return null
+  const type =
+    readString(raw.type) ??
+    readString(raw.event) ??
+    readString(raw.kind)
+  if (!type) return null
+  const sessionId = readString(raw.session_id) ?? readString(raw.sessionId) ?? sessionIdFallback
+  const payload =
+    raw.payload ??
+    raw.data ??
+    raw.message ??
+    raw.body ??
+    {}
+  const timestampRaw =
+    readNumber(raw.timestamp) ??
+    readNumber(raw.time) ??
+    readNumber(raw.ts)
+  const timestampMsRaw =
+    readNumber(raw.timestamp_ms) ??
+    readNumber(raw.timestampMs) ??
+    readNumber(raw.ts_ms)
+  const timestampFallback = Date.now()
+  const timestampValue = timestampRaw ?? timestampMsRaw ?? timestampFallback
+  const timestampMs =
+    timestampMsRaw ??
+    (timestampValue > 10_000_000_000 ? timestampValue : Math.round(timestampValue * 1000))
+  const id =
+    readString(raw.id) ??
+    readString(raw.event_id) ??
+    readString(raw.eventId) ??
+    fallbackId ??
+    syntheticId()
+  const turn =
+    readNumber(raw.turn) ??
+    readNumber(raw.turn_id) ??
+    readNumber(raw.turnId) ??
+    null
+  const seq = readNumber(raw.seq) ?? undefined
+  const runId = readString(raw.run_id) ?? readString(raw.runId)
+  const threadId = readString(raw.thread_id) ?? readString(raw.threadId)
+  const turnId =
+    readString(raw.turn_id) ??
+    readString(raw.turnId) ??
+    (typeof raw.turn_id === "number" ? raw.turn_id : undefined) ??
+    (typeof raw.turnId === "number" ? raw.turnId : undefined)
+  return {
+    id,
+    type: type as SessionEvent["type"],
+    session_id: sessionId,
+    turn,
+    timestamp: timestampMs,
+    timestamp_ms: timestampMs,
+    seq: seq ?? undefined,
+    run_id: runId ?? null,
+    thread_id: threadId ?? null,
+    turn_id: turnId ?? null,
+    payload: payload as SessionEvent["payload"],
+  }
 }
 
 export const streamSessionEvents = async function* (
@@ -28,7 +104,10 @@ export const streamSessionEvents = async function* (
   }
   const response = await fetch(url, {
     method: "GET",
-    headers: config.authToken ? { Authorization: `Bearer ${config.authToken}` } : undefined,
+    headers: {
+      ...(config.authToken ? { Authorization: `Bearer ${config.authToken}` } : {}),
+      ...(options.lastEventId ? { "Last-Event-ID": options.lastEventId } : {}),
+    },
     signal: controller.signal,
   })
   if (!response.ok) {
@@ -42,11 +121,14 @@ export const streamSessionEvents = async function* (
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   const buffer: SessionEvent[] = []
+  let syntheticIdCounter = 0
+  const nextSyntheticId = () => `synthetic-${syntheticIdCounter++}`
   const parser = createParser(((event: ParsedEvent | ReconnectInterval) => {
     if (event.type === "event" && "data" in event && event.data) {
       try {
-        const payload = JSON.parse(event.data) as SessionEvent
-        buffer.push(payload)
+        const raw = JSON.parse(event.data) as unknown
+        const normalized = normalizeEvent(raw, sessionId, event.id ?? null, nextSyntheticId)
+        if (normalized) buffer.push(normalized)
       } catch {
         // ignore malformed event
       }

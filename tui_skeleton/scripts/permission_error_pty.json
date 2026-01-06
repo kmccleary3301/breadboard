@@ -1,0 +1,10 @@
+[
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "type", "text": "Trigger permission error mock.", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Permission required", "timeoutMs": 8000 },
+  { "action": "snapshot", "label": "permission-error" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Permission decision sent.", "timeoutMs": 8000 },
+  { "action": "snapshot", "label": "permission-error-decision" }
+]

@@ -1,6 +1,5 @@
-import type { KeymapMode } from "./keymap.js"
-
-export type ChromeMode = "claude" | "codex"
+import type { ChromeMode, KeymapMode } from "./modes.js"
+import { loadProfileConfig } from "./profile.js"
 
 const normalizeChrome = (value: string | undefined): ChromeMode | null => {
   const normalized = (value ?? "").trim().toLowerCase()
@@ -9,5 +8,8 @@ const normalizeChrome = (value: string | undefined): ChromeMode | null => {
   return null
 }
 
-export const loadChromeMode = (fallback: KeymapMode): ChromeMode =>
-  normalizeChrome(process.env.BREADBOARD_TUI_CHROME) ?? fallback
+export const loadChromeMode = (fallback: KeymapMode): ChromeMode => {
+  const explicit = normalizeChrome(process.env.BREADBOARD_TUI_CHROME)
+  if (explicit) return explicit
+  return loadProfileConfig().chrome ?? fallback
+}

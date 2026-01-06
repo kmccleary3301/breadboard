@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process"
+import { spawn, type ChildProcess } from "node:child_process"
 import { createWriteStream, promises as fs } from "node:fs"
 import path from "node:path"
 import process from "node:process"
@@ -19,22 +19,179 @@ import { buildFlamegraph } from "../tools/timeline/flamegraph.ts"
 import { buildTtyDoc } from "../tools/reports/ttydoc.ts"
 import { buildBatchTtyDoc } from "../tools/reports/ttydocBatch.ts"
 import { runClipboardAssertions, ClipboardAssertions } from "../tools/assertions/clipboardChecks.ts"
+import { runContractChecks, type ContractOptions } from "../tools/assertions/contractChecks.ts"
 import { startReplayServer } from "../tools/mock/replaySse.ts"
 import { buildClipboardDiffReport } from "../tools/reports/clipboardDiffReport.ts"
 import { buildKeyFuzzReport } from "../tools/reports/keyFuzzReport.ts"
+import { buildManifestHashes } from "../tools/reports/manifestHasher.ts"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const ROOT_DIR = path.resolve(__dirname, "..")
 const REPRO_CWD = path.basename(ROOT_DIR)
 const SSE_WAIT_TIMEOUT_MS = 45_000
+const SSE_REPLAY_TIMEOUT_MS = 4_000
 const DEFAULT_KEEP_RUNS = 3
 
 const DEFAULT_CONFIG = process.env.CONFIG_PATH ?? process.env.STRESS_CONFIG ?? "../agent_configs/opencode_cli_mock_guardrails.yaml"
+const DEFAULT_LIVE_CONFIG =
+  process.env.BREADBOARD_LIVE_CONFIG || "../agent_configs/opencode_openai_gpt5nano_c_fs_cli_shared.yaml"
 const DEFAULT_BASE_URL = process.env.BASE_URL ?? process.env.BREADBOARD_API_URL ?? "http://127.0.0.1:9099"
 const DEFAULT_COMMAND = "node dist/main.js repl"
 const REPL_SCRIPT_MAX_DURATION_MS = Number(process.env.STRESS_SCRIPT_MAX_MS ?? 240_000)
 const LARGE_CLIPBOARD_PAYLOAD = "Large clipboard payload chunk ".repeat(40)
+const DEFAULT_LIVE_BOOT_TIMEOUT_MS = 15_000
+const LIVE_HEALTH_PATH = "/health"
+
+const readCommandOutput = async (argv: string[], cwd: string): Promise<string | null> => {
+  return await new Promise((resolve) => {
+    const child = spawn(argv[0], argv.slice(1), { cwd, stdio: ["ignore", "pipe", "pipe"] })
+    let stdout = ""
+    child.stdout?.on("data", (chunk) => (stdout += String(chunk)))
+    child.on("error", () => resolve(null))
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve(stdout.trim())
+      } else {
+        resolve(null)
+      }
+    })
+  })
+}
+
+const buildHealthUrl = (baseUrl: string): string => {
+  try {
+    const url = new URL(baseUrl)
+    url.pathname = LIVE_HEALTH_PATH
+    url.search = ""
+    url.hash = ""
+    return url.toString()
+  } catch {
+    return `${baseUrl.replace(/\/+$/, "")}${LIVE_HEALTH_PATH}`
+  }
+}
+
+const checkHealth = async (baseUrl: string): Promise<boolean> => {
+  const url = buildHealthUrl(baseUrl)
+  try {
+    const response = await fetch(url, { method: "GET" })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+const waitForHealth = async (baseUrl: string, timeoutMs: number): Promise<boolean> => {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    if (await checkHealth(baseUrl)) {
+      return true
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  return false
+}
+
+const spawnLiveBridge = (baseUrl: string): ChildProcess => {
+  const url = new URL(baseUrl)
+  const host = url.hostname || "127.0.0.1"
+  const port = url.port || process.env.BREADBOARD_CLI_PORT || "9099"
+  const env = {
+    ...process.env,
+    BREADBOARD_CLI_HOST: host,
+    BREADBOARD_CLI_PORT: String(port),
+  }
+  return spawn("python", ["-m", "agentic_coder_prototype.api.cli_bridge.server"], {
+    cwd: path.resolve(ROOT_DIR, ".."),
+    env,
+    stdio: "inherit",
+  })
+}
+
+const ensureLiveBridge = async (baseUrl: string, autoStart: boolean): Promise<ChildProcess | null> => {
+  if (await checkHealth(baseUrl)) {
+    return null
+  }
+  if (!autoStart) {
+    throw new Error(
+      `[stress] Live engine is not reachable at ${baseUrl}. Start the CLI bridge or re-run with --auto-start-live.`,
+    )
+  }
+  const child = spawnLiveBridge(baseUrl)
+  const ok = await waitForHealth(baseUrl, DEFAULT_LIVE_BOOT_TIMEOUT_MS)
+  if (!ok) {
+    try {
+      child.kill("SIGTERM")
+    } catch {
+      // ignore
+    }
+    throw new Error(`[stress] Live engine did not become healthy within ${DEFAULT_LIVE_BOOT_TIMEOUT_MS}ms.`)
+  }
+  return child
+}
+
+const captureTmuxPane = async (
+  target: string,
+  batchDir: string,
+  scale: number,
+): Promise<{ png: string; ansi: string; text: string } | null> => {
+  const scriptPath = path.resolve(ROOT_DIR, "..", "scripts", "tmux_capture_to_png.py")
+  try {
+    await fs.access(scriptPath)
+  } catch {
+    console.warn(`[stress] tmux capture script missing at ${scriptPath}`)
+    return null
+  }
+  const safeTarget = target.replace(/[^A-Za-z0-9_.-]+/g, "_")
+  const outPath = path.join(batchDir, `tmux_capture_${safeTarget}.png`)
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      "python",
+      [scriptPath, "--target", target, "--out", outPath, "--scale", String(scale ?? 1)],
+      { cwd: path.resolve(ROOT_DIR, ".."), stdio: "inherit" },
+    )
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(`tmux capture exited with code ${code}`))
+      }
+    })
+    child.on("error", (error) => reject(error))
+  })
+  return {
+    png: outPath,
+    ansi: outPath.replace(/\.png$/, ".ansi"),
+    text: outPath.replace(/\.png$/, ".txt"),
+  }
+}
+
+const readGitInfo = async () => {
+  const [commit, branch, status] = await Promise.all([
+    readCommandOutput(["git", "rev-parse", "HEAD"], ROOT_DIR),
+    readCommandOutput(["git", "rev-parse", "--abbrev-ref", "HEAD"], ROOT_DIR),
+    readCommandOutput(["git", "status", "--porcelain"], ROOT_DIR),
+  ])
+  if (!commit && !branch) return null
+  return {
+    commit,
+    branch,
+    dirty: Boolean(status && status.length > 0),
+  }
+}
+
+const triggerMockPlayback = async (baseUrl: string, sessionId: string) => {
+  try {
+    const url = new URL(`/sessions/${sessionId}/input`, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`)
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "" }),
+    })
+  } catch {
+    // ignore mock playback trigger errors
+  }
+}
 
 const readBridgeChaosFromEnv = () => {
   const latency = Number(process.env.BREADBOARD_CLI_LATENCY_MS ?? "0")
@@ -59,6 +216,49 @@ const mergeChaosInfo = (
     return { ...base, ...extra }
   }
   return base ?? extra ?? null
+}
+
+const writeEventsNdjson = async (ssePath: string, targetPath: string) => {
+  let contents = ""
+  try {
+    contents = await fs.readFile(ssePath, "utf8")
+  } catch {
+    await fs.writeFile(targetPath, "", "utf8").catch(() => undefined)
+    return
+  }
+  const lines = contents.split(/\r?\n/)
+  const events: unknown[] = []
+  let dataLines: string[] = []
+  const flush = () => {
+    if (dataLines.length === 0) return
+    const payload = dataLines.join("\n")
+    dataLines = []
+    try {
+      const parsed = JSON.parse(payload)
+      events.push(parsed)
+    } catch {
+      // ignore malformed JSON payloads
+    }
+  }
+  for (const line of lines) {
+    if (!line) {
+      flush()
+      continue
+    }
+    if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trimStart())
+      continue
+    }
+    if (line.startsWith(":")) {
+      continue
+    }
+    if (line.startsWith("event:") || line.startsWith("id:") || line.startsWith("retry:")) {
+      continue
+    }
+  }
+  flush()
+  const out = events.map((event) => JSON.stringify(event)).join("\n")
+  await fs.writeFile(targetPath, out.length > 0 ? `${out}\n` : "", "utf8")
 }
 
 const isBatchDirName = (value: string): boolean => /^\d{8}-\d{6}$/.test(value)
@@ -144,6 +344,18 @@ const STRESS_CASES: StressCase[] = [
     submitTimeoutMs: 0,
   },
   {
+    id: "resize_storm_modal",
+    kind: "pty",
+    script: "scripts/resize_storm_modal_pty.json",
+    description: "Resize storm with modal overlay open",
+    winchScript: "scripts/resize_storm_modal_winch.json",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    env: {
+      BREADBOARD_MODEL_CATALOG_PATH: "scripts/mock_model_catalog.json",
+    },
+  },
+  {
     id: "narrow_terminal",
     kind: "pty",
     script: "scripts/narrow_terminal_pty.json",
@@ -179,6 +391,76 @@ const STRESS_CASES: StressCase[] = [
     submitTimeoutMs: 0,
   },
   {
+    id: "history_ring",
+    kind: "pty",
+    script: "scripts/history_ring_pty.json",
+    description: "History ring wrap behavior",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "markdown_table",
+    kind: "pty",
+    script: "scripts/markdown_table_pty.json",
+    description: "Markdown table rendering",
+    mockSseScript: "scripts/mock_sse_markdown_table.json",
+  },
+  {
+    id: "markdown_mdx",
+    kind: "pty",
+    script: "scripts/markdown_mdx_pty.json",
+    description: "MDX fallback rendering",
+    mockSseScript: "scripts/mock_sse_markdown_mdx.json",
+  },
+  {
+    id: "attachment_remove",
+    kind: "pty",
+    script: "scripts/attachment_remove_pty.json",
+    description: "Attachment removal (Backspace) UX",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "tool_ordering",
+    kind: "pty",
+    script: "scripts/tool_ordering_pty.json",
+    description: "Tool ordering snapshot",
+    mockSseScript: "scripts/mock_sse_diff.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "tool_ordering_edge",
+    kind: "pty",
+    script: "scripts/tool_ordering_edge_pty.json",
+    description: "Tool ordering edge case (interleaved tool_result)",
+    mockSseScript: "scripts/mock_sse_tool_order_edge.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "ime_placeholder",
+    kind: "pty",
+    script: "scripts/ime_placeholder_pty.json",
+    description: "IME placeholder coverage (multi-byte input)",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "permission_error",
+    kind: "pty",
+    script: "scripts/permission_error_pty.json",
+    description: "Permission error banner (command timeout)",
+    mockSseScript: "scripts/mock_sse_permission_error.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "network_error",
+    kind: "pty",
+    script: "scripts/network_error_pty.json",
+    description: "Network error banner (mock stream ends)",
+    mockSseScript: "scripts/mock_sse_network_error.json",
+    submitTimeoutMs: 0,
+  },
+  {
     id: "permission_rewind",
     kind: "pty",
     script: "scripts/permission_rewind_pty.json",
@@ -208,6 +490,14 @@ const STRESS_CASES: StressCase[] = [
     script: "scripts/tasks_panel_pty.json",
     description: "Tasks panel open/close",
     mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "ctree_summary",
+    kind: "pty",
+    script: "scripts/ctree_summary_pty.json",
+    description: "CTree summary line in tasks panel",
+    mockSseScript: "scripts/mock_sse_ctree.json",
     submitTimeoutMs: 0,
   },
   {
@@ -251,6 +541,44 @@ const STRESS_CASES: StressCase[] = [
     submitTimeoutMs: 0,
   },
   {
+    id: "skills_picker",
+    kind: "pty",
+    script: "scripts/skills_picker_pty.json",
+    description: "Skills picker open + selection apply",
+    mockSseScript: "scripts/mock_sse_skills.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "skills_picker_ctrl_g",
+    kind: "pty",
+    script: "scripts/skills_picker_ctrl_g_pty.json",
+    description: "Skills picker open via Ctrl+G",
+    mockSseScript: "scripts/mock_sse_skills.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "file_picker_large",
+    kind: "pty",
+    script: "scripts/file_picker_large_pty.json",
+    description: "`@` file picker large file gating hint",
+    mockSseScript: "scripts/mock_sse_file_mentions.json",
+    submitTimeoutMs: 0,
+    env: {
+      BREADBOARD_TUI_FILE_MENTION_MAX_INLINE_BYTES_PER_FILE: "1",
+    },
+  },
+  {
+    id: "file_picker_truncated",
+    kind: "pty",
+    script: "scripts/file_picker_truncated_pty.json",
+    description: "`@` file picker truncated index hint",
+    mockSseScript: "scripts/mock_sse_file_picker.json",
+    submitTimeoutMs: 0,
+    env: {
+      BREADBOARD_TUI_FILE_PICKER_MAX_INDEX_FILES: "3",
+    },
+  },
+  {
     id: "file_mentions",
     kind: "pty",
     script: "scripts/file_mentions_pty.json",
@@ -273,12 +601,44 @@ const STRESS_CASES: StressCase[] = [
     },
   },
   {
+    id: "slash_menu_resize",
+    kind: "pty",
+    script: "scripts/slash_menu_resize_pty.json",
+    description: "Slash menu stays stable across resize",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    env: {
+      BREADBOARD_TUI_CHROME: "claude",
+    },
+  },
+  {
+    id: "shortcuts_overlay",
+    kind: "pty",
+    script: "scripts/shortcuts_overlay_pty.json",
+    description: "Shortcuts overlay capture",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    winchScript: "scripts/shortcuts_overlay_winch.json",
+    env: {
+      BREADBOARD_TUI_CHROME: "claude",
+      BREADBOARD_SHORTCUTS_STICKY: "1",
+    },
+  },
+  {
     id: "transcript_viewer_toggle",
     kind: "pty",
     script: "scripts/transcript_viewer_toggle_pty.json",
     description: "Ctrl+T transcript viewer toggle (alt-screen)",
     mockSseScript: "scripts/mock_sse_sample.json",
-    expectedAltText: "Esc back",
+    expectedAltText: "TOOLS:",
+  },
+  {
+    id: "transcript_viewer_search",
+    kind: "pty",
+    script: "scripts/transcript_viewer_search_pty.json",
+    description: "Transcript viewer search (`/` + n/p)",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
   },
   {
     id: "transcript_save",
@@ -332,6 +692,17 @@ const STRESS_CASES: StressCase[] = [
     },
   },
   {
+    id: "model_picker_provider_filter",
+    kind: "pty",
+    script: "scripts/model_picker_provider_filter_pty.json",
+    description: "Model picker provider filter (←/→ + backspace)",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    env: {
+      BREADBOARD_MODEL_CATALOG_PATH: "scripts/mock_model_catalog.json",
+    },
+  },
+  {
     id: "model_picker_page",
     kind: "pty",
     script: "scripts/model_picker_page_pty.json",
@@ -372,6 +743,9 @@ const STRESS_CASES: StressCase[] = [
     submitTimeoutMs: 0,
     configPath: "agent_configs/opencode_mock_c_fs.yaml",
     command: "node dist/main.js repl --permission-mode prompt",
+    env: {
+      BREADBOARD_DEBUG_PERMISSIONS: "1",
+    },
   },
   {
     id: "live_engine_model_picker",
@@ -387,6 +761,42 @@ const STRESS_CASES: StressCase[] = [
     kind: "pty",
     script: "scripts/live_engine_stop_retry_pty.json",
     description: "Live engine stop + /retry semantics (requires CLI bridge)",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "live_engine_tool_events",
+    kind: "pty",
+    script: "scripts/live_engine_tool_events_pty.json",
+    description: "Live engine tool events (requires CLI bridge)",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "live_engine_rewind",
+    kind: "pty",
+    script: "scripts/live_engine_rewind_pty.json",
+    description: "Live engine rewind checkpoints (requires CLI bridge)",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "live_engine_skills",
+    kind: "pty",
+    script: "scripts/live_engine_skills_pty.json",
+    description: "Live engine skills picker (requires CLI bridge)",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "live_engine_ctree",
+    kind: "pty",
+    script: "scripts/live_engine_ctree_pty.json",
+    description: "Live engine CTree summary (requires CLI bridge)",
     requiresLive: true,
     submitTimeoutMs: 0,
     configPath: "agent_configs/opencode_mock_c_fs.yaml",
@@ -433,6 +843,24 @@ const STRESS_CASES: StressCase[] = [
     mockSseScript: "scripts/mock_sse_sample.json",
   },
   {
+    id: "paste_undo",
+    kind: "pty",
+    script: "scripts/paste_undo_pty.json",
+    clipboardText: LARGE_CLIPBOARD_PAYLOAD,
+    description: "Paste chip then undo (Ctrl+Z) removes chip",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "paste_undo_redo",
+    kind: "pty",
+    script: "scripts/paste_undo_redo_pty.json",
+    clipboardText: LARGE_CLIPBOARD_PAYLOAD,
+    description: "Paste chip then undo/redo (Ctrl+Z/Ctrl+Y)",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+  },
+  {
     id: "attachment_submit",
     kind: "pty",
     script: "scripts/attachment_submit.json",
@@ -451,6 +879,7 @@ const STRESS_CASES: StressCase[] = [
 interface CliOptions {
   cases: ReadonlyArray<string> | null
   configPath: string
+  liveConfigPath: string | null
   baseUrl: string
   outDir: string
   command: string
@@ -461,11 +890,15 @@ interface CliOptions {
   mockSseDefaults: Omit<MockSseOptions, "script">
   useCaseMockSse: boolean
   includeLive: boolean
+  autoStartLive: boolean
+  tmuxCaptureTarget: string | null
+  tmuxCaptureScale: number
   keyFuzzIterations: number
   keyFuzzSteps: number
   keyFuzzSeed: number | null
   bridgeChaos: Record<string, unknown> | null
   chaosInfo: Record<string, unknown> | null
+  contractOverrides: ContractOptions | null
 }
 
 interface MockSseOptions {
@@ -482,6 +915,7 @@ const parseCliArgs = (): CliOptions => {
   const args = process.argv.slice(2)
   const selected: string[] = []
   let configPath = DEFAULT_CONFIG
+  let liveConfigPath: string | null = DEFAULT_LIVE_CONFIG
   let baseUrl = DEFAULT_BASE_URL
   let outDir = path.join(ROOT_DIR, "artifacts", "stress")
   let command = DEFAULT_COMMAND
@@ -497,9 +931,13 @@ const parseCliArgs = (): CliOptions => {
   let mockSseDropRate = 0
   let useCaseMockSse = true
   let includeLive = process.env.STRESS_INCLUDE_LIVE === "1" || process.env.BREADBOARD_STRESS_INCLUDE_LIVE === "1"
+  let autoStartLive = process.env.BREADBOARD_CLI_AUTO_START === "1"
+  let tmuxCaptureTarget: string | null = process.env.BREADBOARD_TMUX_CAPTURE_TARGET ?? null
+  let tmuxCaptureScale = Number(process.env.BREADBOARD_TMUX_CAPTURE_SCALE ?? "1")
   let keyFuzzIterations = 0
   let keyFuzzSteps = 60
   let keyFuzzSeed: number | null = null
+  let legacyContract = false
   const bridgeChaos = readBridgeChaosFromEnv()
 
   for (let i = 0; i < args.length; i += 1) {
@@ -510,6 +948,9 @@ const parseCliArgs = (): CliOptions => {
         break
       case "--config":
         configPath = args[++i]
+        break
+      case "--live-config":
+        liveConfigPath = args[++i]
         break
       case "--base-url":
         baseUrl = args[++i]
@@ -559,6 +1000,15 @@ const parseCliArgs = (): CliOptions => {
       case "--include-live":
         includeLive = true
         break
+      case "--auto-start-live":
+        autoStartLive = true
+        break
+      case "--tmux-capture-target":
+        tmuxCaptureTarget = args[++i] ?? null
+        break
+      case "--tmux-capture-scale":
+        tmuxCaptureScale = Number(args[++i])
+        break
       case "--key-fuzz-iterations":
         keyFuzzIterations = Number(args[++i])
         break
@@ -567,6 +1017,9 @@ const parseCliArgs = (): CliOptions => {
         break
       case "--key-fuzz-seed":
         keyFuzzSeed = Number(args[++i]) >>> 0
+        break
+      case "--legacy-contract":
+        legacyContract = true
         break
       default:
         break
@@ -592,6 +1045,7 @@ const parseCliArgs = (): CliOptions => {
   return {
     cases: selected.length > 0 ? selected : null,
     configPath,
+    liveConfigPath,
     baseUrl,
     outDir: absoluteOut,
     command,
@@ -602,6 +1056,9 @@ const parseCliArgs = (): CliOptions => {
     mockSseDefaults: mockDefaults,
     useCaseMockSse,
     includeLive,
+    autoStartLive,
+    tmuxCaptureTarget,
+    tmuxCaptureScale: Number.isFinite(tmuxCaptureScale) ? tmuxCaptureScale : 1,
     keyFuzzIterations,
     keyFuzzSteps,
     keyFuzzSeed,
@@ -616,6 +1073,7 @@ const parseCliArgs = (): CliOptions => {
           dropRate: mockSseDropRate,
         }
       : null,
+    contractOverrides: legacyContract ? { requireSeq: false } : null,
   }
 }
 
@@ -753,7 +1211,12 @@ const writeFallbackMessage = async (targetPath: string, message: string) => {
   await fs.writeFile(targetPath, `${message}\n`, "utf8").catch(() => undefined)
 }
 
-const tapSessionEvents = (baseUrl: string, sessionId: string, targetPath: string): SseHandle => {
+const tapSessionEvents = (
+  baseUrl: string,
+  sessionId: string,
+  targetPath: string,
+  options?: { replay?: boolean; limit?: number; fromId?: string },
+): SseHandle => {
   const controller = new AbortController()
   const stream = createWriteStream(targetPath)
   let didWrite = false
@@ -761,6 +1224,15 @@ const tapSessionEvents = (baseUrl: string, sessionId: string, targetPath: string
   const promise = (async () => {
     try {
       const url = new URL(`/sessions/${sessionId}/events`, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`)
+      if (options?.replay) {
+        url.searchParams.set("replay", "1")
+      }
+      if (options?.limit && Number.isFinite(options.limit)) {
+        url.searchParams.set("limit", String(options.limit))
+      }
+      if (options?.fromId) {
+        url.searchParams.set("from_id", options.fromId)
+      }
       const response = await fetch(url, { signal: controller.signal })
       if (!response.ok || !response.body) {
         stream.write(`[sse] Failed to attach (status ${response.status})\n`)
@@ -793,6 +1265,33 @@ const tapSessionEvents = (baseUrl: string, sessionId: string, targetPath: string
     },
     hasData: () => didWrite,
   }
+}
+
+const readLinesSafe = async (filePath: string): Promise<string[]> => {
+  try {
+    const contents = await fs.readFile(filePath, "utf8")
+    return contents.split(/\r?\n/)
+  } catch {
+    return []
+  }
+}
+
+const extractSessionIdFromStateDump = async (stateDumpPath: string): Promise<string | null> => {
+  const lines = await readLinesSafe(stateDumpPath)
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i]
+    if (!line || !line.trim()) continue
+    try {
+      const payload = JSON.parse(line) as { state?: { sessionId?: string } }
+      const sessionId = payload?.state?.sessionId
+      if (typeof sessionId === "string" && sessionId.trim()) {
+        return sessionId.trim()
+      }
+    } catch {
+      continue
+    }
+  }
+  return null
 }
 
 const resolveCaseList = (cases: ReadonlyArray<string> | null, includeLive: boolean): StressCase[] => {
@@ -939,6 +1438,10 @@ const validateReplArtifacts = async (caseDir: string, caseId: string) => {
     "transcript.txt",
     "cli.log",
     "sse_events.txt",
+    "events.ndjson",
+    "config.json",
+    "contract_report.json",
+    "metrics.json",
     "repl_state.ndjson",
     "timeline.ndjson",
     "timeline_summary.json",
@@ -962,6 +1465,11 @@ const validatePtyArtifacts = async (caseDir: string, caseId: string) => {
     "pty_manifest.json",
     "input_log.ndjson",
     "repl_state.ndjson",
+    "sse_events.txt",
+    "events.ndjson",
+    "config.json",
+    "contract_report.json",
+    "metrics.json",
     "grid_snapshots/active.txt",
     "grid_snapshots/final.txt",
     "grid_snapshots/final_vs_active.diff",
@@ -978,13 +1486,44 @@ const validatePtyArtifacts = async (caseDir: string, caseId: string) => {
   )
 }
 
+const readJsonFile = async <T>(filePath: string): Promise<T | null> => {
+  try {
+    const contents = await fs.readFile(filePath, "utf8")
+    return contents.trim().length > 0 ? (JSON.parse(contents) as T) : null
+  } catch {
+    return null
+  }
+}
+
+const buildMetricsReport = async (
+  summaryPath: string | null,
+  contractReport: { summary?: Record<string, unknown>; errors?: unknown[]; warnings?: unknown[] },
+) => {
+  const timelineSummary = summaryPath ? await readJsonFile<Record<string, unknown>>(summaryPath) : null
+  return {
+    timelineSummary,
+    contract: contractReport?.summary ?? null,
+    contractIssues: {
+      errors: Array.isArray(contractReport?.errors) ? contractReport.errors.length : 0,
+      warnings: Array.isArray(contractReport?.warnings) ? contractReport.warnings.length : 0,
+    },
+  }
+}
+
+const resolveConfigPath = (testCase: BaseCase, options: CliOptions): string => {
+  if (testCase.requiresLive && options.liveConfigPath) {
+    return options.liveConfigPath
+  }
+  return testCase.configPath ?? options.configPath
+}
+
 const runReplCase = async (
   testCase: ReplCase,
   options: CliOptions,
   caseDir: string,
   chaosInfo: Record<string, unknown> | null,
 ): Promise<Record<string, unknown>> => {
-  const configPath = testCase.configPath ?? options.configPath
+  const configPath = resolveConfigPath(testCase, options)
   const baseUrl = testCase.baseUrl ?? options.baseUrl
   const copiedScript = await copyScriptFile(testCase.script, caseDir)
   const scriptHash = await computeScriptHash(copiedScript.source)
@@ -1073,6 +1612,7 @@ const runReplCase = async (
         config: options.configPath,
         chaos: chaosInfo,
         env: envOverrides,
+        contractOverrides: options.contractOverrides,
       },
       null,
       2,
@@ -1082,6 +1622,10 @@ const runReplCase = async (
   const transcriptPath = path.join(caseDir, "transcript.txt")
   const logPath = path.join(caseDir, "cli.log")
   const ssePath = path.join(caseDir, "sse_events.txt")
+  const eventsNdjsonPath = path.join(caseDir, "events.ndjson")
+  const configOutPath = path.join(caseDir, "config.json")
+  const contractReportPath = path.join(caseDir, "contract_report.json")
+  const metricsPath = path.join(caseDir, "metrics.json")
   const stateDumpEnvPath = stateDumpRel
   const args = [
     "dist/main.js",
@@ -1107,6 +1651,23 @@ const runReplCase = async (
     BREADBOARD_STATE_DUMP_RATE_MS: "100",
     ...envOverrides,
   }
+  const profile = process.env.BREADBOARD_TUI_PROFILE ?? process.env.BREADBOARD_PROFILE ?? "claude_v1"
+  await fs.writeFile(
+    configOutPath,
+    JSON.stringify(
+      {
+        configPath,
+        baseUrl,
+        command: options.command,
+        profile,
+        env: envOverrides,
+        contractOverrides: options.contractOverrides,
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  )
   let sseHandle: { promise: Promise<void>; stop: () => void } | null = null
   const onStdoutChunk = (chunk: string) => {
     if (sseHandle) return
@@ -1140,6 +1701,7 @@ const runReplCase = async (
   } else {
     await writeFallbackMessage(ssePath, "[sse] Session id not observed in CLI output.")
   }
+  await writeEventsNdjson(ssePath, eventsNdjsonPath)
   const flamegraphPath = path.join(caseDir, "timeline_flamegraph.txt")
   const ttyDocPath = path.join(caseDir, "ttydoc.txt")
   const attachmentSummaryPath = testCase.id === "attachment_submit" ? path.join(caseDir, "attachments_summary.json") : undefined
@@ -1159,11 +1721,19 @@ const runReplCase = async (
     scriptPath: testCase.script,
     configPath: configPath,
   })
+  const contractReport = await runContractChecks(ssePath, options.contractOverrides ?? undefined)
+  await fs.writeFile(contractReportPath, JSON.stringify(contractReport, null, 2), "utf8")
+  const metricsReport = await buildMetricsReport(timelinePaths.summaryPath, contractReport)
+  await fs.writeFile(metricsPath, JSON.stringify(metricsReport, null, 2), "utf8")
   await validateReplArtifacts(caseDir, testCase.id)
   const stats = {
     transcriptPath,
     logPath,
     ssePath,
+    eventsNdjsonPath,
+    configPath: configOutPath,
+    contractReportPath,
+    metricsPath,
     stateDumpPath,
     timelinePath: timelinePaths.timelinePath,
     timelineSummaryPath: timelinePaths.summaryPath,
@@ -1171,6 +1741,21 @@ const runReplCase = async (
     ttyDocPath,
     caseInfoPath,
     chaosInfo,
+    outputs: {
+      transcript: transcriptPath,
+      log: logPath,
+      sse: ssePath,
+      sseEventsNdjson: eventsNdjsonPath,
+      config: configOutPath,
+      contractReport: contractReportPath,
+      metrics: metricsPath,
+      replState: stateDumpPath,
+      timeline: timelinePaths.timelinePath,
+      timelineSummary: timelinePaths.summaryPath,
+      timelineFlamegraph: flamegraphPath,
+      ttydoc: ttyDocPath,
+      caseInfo: caseInfoPath,
+    },
   }
   return stats
 }
@@ -1195,7 +1780,7 @@ const runPtyCase = async (
   const stateDumpRel = toRepoRootPath(stateDumpPath)
   const envOverrides = testCase.env ?? {}
   const command = testCase.command ?? options.command
-  const configPath = testCase.configPath ?? options.configPath
+  const configPath = resolveConfigPath(testCase, options)
   const baseUrl = testCase.baseUrl ?? options.baseUrl
   const repro = buildReproInfo(
     {
@@ -1297,6 +1882,7 @@ const runPtyCase = async (
         config: options.configPath,
         chaos: chaosInfo,
         env: envOverrides,
+        contractOverrides: options.contractOverrides,
       },
       null,
       2,
@@ -1309,6 +1895,7 @@ const runPtyCase = async (
   const metadataPath = path.join(caseDir, "pty_metadata.json")
   const frameLogPath = path.join(caseDir, "pty_frames.ndjson")
   const manifestPath = path.join(caseDir, "pty_manifest.json")
+  const configOutPath = path.join(caseDir, "config.json")
   const gridSnapshotDir = path.join(caseDir, "grid_snapshots")
   const gridFinalPath = path.join(gridSnapshotDir, "final.txt")
   const gridActivePath = path.join(gridSnapshotDir, "active.txt")
@@ -1318,6 +1905,10 @@ const runPtyCase = async (
   const gridAltActivePath = path.join(gridSnapshotDir, "alt_active.txt")
   const gridDeltaPath = path.join(caseDir, "grid_deltas.ndjson")
   const anomaliesPath = path.join(caseDir, "anomalies.json")
+  const ssePath = path.join(caseDir, "sse_events.txt")
+  const eventsNdjsonPath = path.join(caseDir, "events.ndjson")
+  const contractReportPath = path.join(caseDir, "contract_report.json")
+  const metricsPath = path.join(caseDir, "metrics.json")
   const gridDiffPath = path.join(gridSnapshotDir, "final_vs_active.diff")
   const flamegraphPath = path.join(caseDir, "timeline_flamegraph.txt")
   const ttyDocPath = path.join(caseDir, "ttydoc.txt")
@@ -1344,6 +1935,23 @@ const runPtyCase = async (
   const inputLog: string[] = []
   let harnessFailure: Error | null = null
   let harnessResult: Awaited<ReturnType<typeof runSpectatorHarness>>
+  const profile = process.env.BREADBOARD_TUI_PROFILE ?? process.env.BREADBOARD_PROFILE ?? "claude_v1"
+  await fs.writeFile(
+    configOutPath,
+    JSON.stringify(
+      {
+        configPath,
+        baseUrl,
+        command,
+        profile,
+        env: envOverrides,
+        contractOverrides: options.contractOverrides,
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  )
   try {
     harnessResult = await runSpectatorHarness({
       steps,
@@ -1379,6 +1987,38 @@ const runPtyCase = async (
   await writeFrames(harnessResult.frames, frameLogPath)
   await fs.writeFile(inputLogPath, inputLog.length > 0 ? `${inputLog.join("\n")}\n` : "", "utf8")
   let timelinePaths: { timelinePath: string; summaryPath: string } | null = null
+  const sessionId = await extractSessionIdFromStateDump(stateDumpPath)
+  if (sessionId) {
+    const useLiveCapture = chaosInfo?.mode === "mock-sse" || Boolean(options.mockSseConfig)
+    const sseHandle = useLiveCapture
+      ? tapSessionEvents(options.baseUrl, sessionId, ssePath)
+      : tapSessionEvents(options.baseUrl, sessionId, ssePath, { replay: true, limit: 1000 })
+    if (useLiveCapture) {
+      await triggerMockPlayback(options.baseUrl, sessionId)
+    }
+    await Promise.race([
+      sseHandle.promise,
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          sseHandle.stop()
+          resolve()
+        }, SSE_REPLAY_TIMEOUT_MS)
+      }),
+    ])
+    sseHandle.stop()
+    await sseHandle.promise.catch(() => undefined)
+    if (!sseHandle.hasData()) {
+      await writeFallbackMessage(
+        ssePath,
+        useLiveCapture ? "[sse] Live capture completed with no events." : "[sse] Replay completed with no events.",
+      )
+    }
+  } else {
+    await writeFallbackMessage(ssePath, "[sse] Session id not found in state dump.")
+  }
+  await writeEventsNdjson(ssePath, eventsNdjsonPath)
+  const contractReport = await runContractChecks(ssePath, options.contractOverrides ?? undefined)
+  await fs.writeFile(contractReportPath, JSON.stringify(contractReport, null, 2), "utf8")
 
   try {
     const gridRows = harnessResult.metadata.rows ?? options.rows ?? 36
@@ -1432,7 +2072,7 @@ const runPtyCase = async (
     const diffResult = computeGridDiff(linesFinal, linesActive, { labelA: "final", labelB: "active" })
     await fs.writeFile(gridDiffPath, diffResult.report, "utf8")
 
-    timelinePaths = await buildTimelineArtifacts(caseDir, { chaosInfo })
+    timelinePaths = await buildTimelineArtifacts(caseDir, { chaosInfo, ssePath, anomaliesPath })
     if (!timelinePaths) {
       throw new Error(`[stress:${testCase.id}] Failed to build timeline artifacts in ${caseDir}`)
     }
@@ -1464,6 +2104,9 @@ const runPtyCase = async (
     }
   }
 
+  const metricsReport = await buildMetricsReport(timelinePaths?.summaryPath ?? null, contractReport)
+  await fs.writeFile(metricsPath, JSON.stringify(metricsReport, null, 2), "utf8")
+
   await fs.writeFile(
     manifestPath,
     JSON.stringify(
@@ -1475,6 +2118,7 @@ const runPtyCase = async (
           raw: rawLogPath,
           plain: plainLogPath,
           metadata: metadataPath,
+          config: configOutPath,
           frames: frameLogPath,
           inputLog: inputLogPath,
           replState: stateDumpPath,
@@ -1491,6 +2135,10 @@ const runPtyCase = async (
           timelineSummary: timelinePaths?.summaryPath ?? null,
           timelineFlamegraph: timelinePaths ? flamegraphPath : null,
           ttydoc: timelinePaths ? ttyDocPath : null,
+          sse: ssePath,
+          sseEventsNdjson: eventsNdjsonPath,
+          metrics: metricsPath,
+          contractReport: contractReportPath,
         },
       },
       null,
@@ -1518,6 +2166,10 @@ const runPtyCase = async (
     inputLogPath,
     stateDumpPath,
     manifestPath,
+    metricsPath,
+    contractReportPath,
+    eventsNdjsonPath,
+    configPath: configOutPath,
     gridSnapshotDir,
     gridDeltaPath,
     anomaliesPath,
@@ -1526,6 +2178,35 @@ const runPtyCase = async (
     timelineFlamegraphPath: timelinePaths ? flamegraphPath : null,
     ttyDocPath: timelinePaths ? ttyDocPath : null,
     chaosInfo,
+    outputs: {
+      snapshots: snapshotsPath,
+      raw: rawLogPath,
+      plain: plainLogPath,
+      metadata: metadataPath,
+      config: configOutPath,
+      frames: frameLogPath,
+      inputLog: inputLogPath,
+      replState: stateDumpPath,
+      gridActive: gridActivePath,
+      gridFinal: gridFinalPath,
+      gridNormalFinal: gridNormalFinalPath,
+      gridNormalActive: gridNormalActivePath,
+      gridAltFinal: gridAltFinalPath,
+      gridAltActive: gridAltActivePath,
+      gridDeltas: gridDeltaPath,
+      gridDiff: gridDiffPath,
+      anomalies: anomaliesPath,
+      timeline: timelinePaths?.timelinePath ?? null,
+      timelineSummary: timelinePaths?.summaryPath ?? null,
+      timelineFlamegraph: timelinePaths ? flamegraphPath : null,
+      ttydoc: timelinePaths ? ttyDocPath : null,
+      sse: ssePath,
+      sseEventsNdjson: eventsNdjsonPath,
+      metrics: metricsPath,
+      contractReport: contractReportPath,
+      config: configOutPath,
+      caseInfo: caseInfoPath,
+    },
   }
 }
 
@@ -1696,6 +2377,7 @@ const main = async () => {
   await ensureDistBuild()
   const options = parseCliArgs()
   let mockProcess: MockSseHandle | null = null
+  let liveBridgeProcess: ChildProcess | null = null
   try {
     if (options.mockSseConfig) {
       mockProcess = await startMockSseServer(options.mockSseConfig)
@@ -1706,6 +2388,10 @@ const main = async () => {
     await fs.mkdir(batchDir, { recursive: true })
 
     const selectedCases = resolveCaseList(options.cases, options.includeLive)
+    const needsLive = selectedCases.some((entry) => entry.requiresLive)
+    if (needsLive) {
+      liveBridgeProcess = await ensureLiveBridge(options.baseUrl, options.autoStartLive)
+    }
     if (!options.includeLive && !options.cases) {
       const skipped = STRESS_CASES.filter((entry) => entry.requiresLive)
       if (skipped.length > 0) {
@@ -1714,22 +2400,42 @@ const main = async () => {
         )
       }
     }
-    const aggregateManifest: Record<string, unknown> = {
-      startedAt: Date.now(),
-      config: options.configPath,
-      baseUrl: options.baseUrl,
-      command: options.command,
-      cases: [] as Array<Record<string, unknown>>,
-    }
+  const profile = process.env.BREADBOARD_TUI_PROFILE ?? process.env.BREADBOARD_PROFILE ?? "claude_v1"
+  const aggregateManifest: Record<string, unknown> = {
+    schemaVersion: 1,
+    eventSchemaVersion: "event_envelope_v1",
+    startedAt: Date.now(),
+    config: options.configPath,
+    baseUrl: options.baseUrl,
+    command: options.command,
+    profile,
+    runtime: {
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch,
+    },
+    terminal: {
+      term: process.env.TERM ?? null,
+      cols: process.stdout?.columns ?? null,
+      rows: process.stdout?.rows ?? null,
+    },
+    cases: [] as Array<Record<string, unknown>>,
+  }
 
-    for (const testCase of selectedCases) {
+  const gitInfo = await readGitInfo()
+  if (gitInfo) {
+    aggregateManifest.git = gitInfo
+  }
+
+  for (const testCase of selectedCases) {
       const caseDir = path.join(batchDir, testCase.id)
       await fs.mkdir(caseDir, { recursive: true })
-      const summary = {
+      const summary: Record<string, unknown> = {
         id: testCase.id,
         kind: testCase.kind,
         description: testCase.description,
         script: testCase.script,
+        requiresLive: Boolean(testCase.requiresLive),
       }
       try {
         const stats = await runCaseWithOptionalMockSse(testCase, options, caseDir)
@@ -1744,6 +2450,9 @@ const main = async () => {
         )
         if (clipboardCopy) {
           summary.clipboardManifestPath = path.relative(batchDir, clipboardCopy)
+        }
+        if ((stats as Record<string, unknown>).outputs) {
+          summary.outputs = (stats as Record<string, unknown>).outputs
         }
         ;(aggregateManifest.cases as Array<Record<string, unknown>>).push(summary)
         console.log(`[stress] ${testCase.id} captured.`)
@@ -1818,12 +2527,36 @@ const main = async () => {
     }
   }
 
+  const manifestHashes = await buildManifestHashes(
+    batchDir,
+    aggregateManifest.cases as Array<Record<string, unknown>>,
+  ).catch(() => null)
+  if (manifestHashes) {
+    aggregateManifest.artifactHashes = manifestHashes
+  }
+
   const manifestPath = path.join(batchDir, "manifest.json")
   await fs.writeFile(manifestPath, JSON.stringify(aggregateManifest, null, 2), "utf8")
 
   await buildBatchTtyDoc(batchDir).catch((error) =>
     console.warn(`[stress] batch ttydoc report failed: ${(error as Error).message}`),
   )
+
+  if (options.tmuxCaptureTarget) {
+    try {
+      const capture = await captureTmuxPane(options.tmuxCaptureTarget, batchDir, options.tmuxCaptureScale)
+      if (capture) {
+        aggregateManifest.tmuxCapture = {
+          target: options.tmuxCaptureTarget,
+          png: path.relative(batchDir, capture.png),
+          ansi: path.relative(batchDir, capture.ansi),
+          text: path.relative(batchDir, capture.text),
+        }
+      }
+    } catch (error) {
+      console.warn(`[stress] tmux capture failed: ${(error as Error).message}`)
+    }
+  }
 
   if (options.zip) {
     const zipName = `${path.basename(batchDir)}.zip`
@@ -1840,6 +2573,13 @@ const main = async () => {
   } finally {
     if (mockProcess) {
       await mockProcess.stop().catch((error) => console.warn("[stress] mock SSE shutdown failed:", error))
+    }
+    if (liveBridgeProcess && !liveBridgeProcess.killed) {
+      try {
+        liveBridgeProcess.kill("SIGTERM")
+      } catch {
+        // ignore
+      }
     }
   }
 }

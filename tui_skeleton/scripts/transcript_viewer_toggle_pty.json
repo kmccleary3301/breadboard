@@ -1,6 +1,6 @@
 [
   { "action": "log", "message": "Transcript viewer toggle PTY harness start" },
-  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
   { "action": "snapshot", "label": "main" },
   { "action": "type", "text": "Hello viewer", "typingDelayMs": 12 },
   { "action": "press", "key": "enter" },

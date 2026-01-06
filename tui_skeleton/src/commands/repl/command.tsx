@@ -11,7 +11,7 @@ import { loadScript, runScript } from "./scriptRunner.js"
 import type { ScriptRunResult } from "./scriptRunner.js"
 import { renderStateToText } from "./renderText.js"
 import { forgetSession } from "../../cache/sessionCache.js"
-import type { ModelMenuItem, QueuedAttachment } from "../../repl/types.js"
+import type { ModelMenuItem, QueuedAttachment, SkillSelection } from "../../repl/types.js"
 import { CliProviders } from "../../providers/cliProviders.js"
 import type { PermissionDecision } from "../../repl/types.js"
 import { resolveBreadboardPath, resolveBreadboardWorkspace } from "../../utils/paths.js"
@@ -151,6 +151,18 @@ const runInteractive = async (controller: ReplSessionController) => {
     controller.closeModelMenu()
   }
 
+  const handleSkillsMenuOpen = async () => {
+    await controller.openSkillsMenu()
+  }
+
+  const handleSkillsMenuCancel = () => {
+    controller.closeSkillsMenu()
+  }
+
+  const handleSkillsApply = async (selection: SkillSelection) => {
+    await controller.applySkillsSelection(selection)
+  }
+
   const handleGuardrailToggle = () => {
     controller.toggleGuardrailNotice()
   }
@@ -193,23 +205,30 @@ const runInteractive = async (controller: ReplSessionController) => {
         liveSlots={state.liveSlots}
         status={state.status}
         pendingResponse={state.pendingResponse}
+        disconnected={state.disconnected}
         mode={state.mode}
         permissionMode={state.permissionMode}
         hints={state.hints}
         stats={state.stats}
         modelMenu={state.modelMenu}
+        skillsMenu={state.skillsMenu}
         guardrailNotice={state.guardrailNotice}
         viewClearAt={state.viewClearAt ?? null}
         viewPrefs={state.viewPrefs}
         todos={state.todos}
         tasks={state.tasks}
+        ctreeSnapshot={state.ctreeSnapshot ?? null}
         permissionRequest={state.permissionRequest}
+        permissionError={state.permissionError}
         permissionQueueDepth={state.permissionQueueDepth}
         rewindMenu={state.rewindMenu}
         onSubmit={handleSubmit}
         onModelMenuOpen={handleModelMenuOpen}
         onModelSelect={handleModelSelect}
         onModelMenuCancel={handleModelMenuCancel}
+        onSkillsMenuOpen={handleSkillsMenuOpen}
+        onSkillsMenuCancel={handleSkillsMenuCancel}
+        onSkillsApply={handleSkillsApply}
         onGuardrailToggle={handleGuardrailToggle}
         onGuardrailDismiss={handleGuardrailDismiss}
         onPermissionDecision={handlePermissionDecision}
@@ -231,23 +250,30 @@ const runInteractive = async (controller: ReplSessionController) => {
         liveSlots={state.liveSlots}
         status={state.status}
         pendingResponse={state.pendingResponse}
+        disconnected={state.disconnected}
         mode={state.mode}
         permissionMode={state.permissionMode}
         hints={state.hints}
         stats={state.stats}
         modelMenu={state.modelMenu}
+        skillsMenu={state.skillsMenu}
         guardrailNotice={state.guardrailNotice}
         viewClearAt={state.viewClearAt ?? null}
         viewPrefs={state.viewPrefs}
         todos={state.todos}
         tasks={state.tasks}
+        ctreeSnapshot={state.ctreeSnapshot ?? null}
         permissionRequest={state.permissionRequest}
+        permissionError={state.permissionError}
         permissionQueueDepth={state.permissionQueueDepth}
         rewindMenu={state.rewindMenu}
         onSubmit={handleSubmit}
         onModelMenuOpen={handleModelMenuOpen}
         onModelSelect={handleModelSelect}
         onModelMenuCancel={handleModelMenuCancel}
+        onSkillsMenuOpen={handleSkillsMenuOpen}
+        onSkillsMenuCancel={handleSkillsMenuCancel}
+        onSkillsApply={handleSkillsApply}
         onGuardrailToggle={handleGuardrailToggle}
         onGuardrailDismiss={handleGuardrailDismiss}
         onPermissionDecision={handlePermissionDecision}

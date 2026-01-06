@@ -19,6 +19,7 @@ const baseState = (): ReplState => ({
   hints: ["Use /help for commands."],
   stats: { eventCount: 4, toolCount: 1, lastTurn: 2, remote: false, model: "test/model" },
   modelMenu: { status: "hidden" },
+  skillsMenu: { status: "hidden" },
   liveSlots: [],
   completionReached: true,
   completionSeen: true,
@@ -28,6 +29,7 @@ const baseState = (): ReplState => ({
   rewindMenu: { status: "hidden" },
   todos: [],
   tasks: [],
+  ctreeSnapshot: null,
 })
 
 describe("renderStateToText", () => {

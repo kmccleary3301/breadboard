@@ -26,11 +26,12 @@ export const SLASH_COMMANDS: ReadonlyArray<SlashCommandInfo> = [
   { name: "test", usage: "[suite]", summary: "Trigger run_tests command." },
   { name: "files", usage: "[path]", summary: "List files for the current session." },
   { name: "models", summary: "Open interactive model picker.", shortcut: "Ctrl+K" },
+  { name: "skills", summary: "Open the skills picker.", shortcut: "Ctrl+G" },
   { name: "rewind", summary: "Open checkpoint rewind picker." },
   { name: "todos", summary: "Open the todos panel.", shortcut: "Ctrl+T (Claude keymap)" },
   { name: "usage", summary: "Open the usage summary panel." },
   { name: "tasks", summary: "Open the background tasks panel.", shortcut: "Ctrl+B" },
-  { name: "transcript", summary: "Open the transcript viewer.", shortcut: "Ctrl+T / Ctrl+Shift+T" },
+  { name: "transcript", summary: "Open the transcript viewer.", shortcut: "Ctrl+T (Codex) / Ctrl+O (Claude)" },
   { name: "view", usage: "<collapse|scroll|markdown> …", summary: "Adjust transcript collapse, scroll, or markdown modes." },
 ]
 

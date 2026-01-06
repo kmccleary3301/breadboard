@@ -22,6 +22,8 @@ export interface ReplayScriptDocument {
   readonly steps: ReplayScriptStep[]
   readonly files?: Record<string, ReplayScriptFileInfo[]>
   readonly fileContents?: Record<string, string>
+  readonly skills?: Record<string, unknown>
+  readonly ctreeSnapshot?: Record<string, unknown> | null
 }
 
 export interface ReplayServerOptions {
@@ -47,9 +49,13 @@ interface SessionState {
   readonly steps: ReplayScriptStep[]
   readonly files?: Record<string, ReplayScriptFileInfo[]>
   readonly fileContents?: Record<string, string>
+  readonly skills?: Record<string, unknown>
+  readonly ctreeSnapshot?: Record<string, unknown> | null
   playRequested: boolean
   finished: boolean
   playing: boolean
+  seqCounter: number
+  eventLog: Record<string, any>[]
   clients: Set<http.ServerResponse>
   commandHistory: Array<{ receivedAt: number; body: Record<string, unknown> }>
   commandQueue: Array<{ receivedAt: number; body: Record<string, unknown> }>
@@ -110,6 +116,18 @@ export const loadReplayScript = async (scriptPath: string): Promise<ReplayScript
     return entries
   })()
 
+  const skills = (() => {
+    if (!isRecord(parsed) || !isRecord(parsed.skills)) return undefined
+    return parsed.skills as Record<string, unknown>
+  })()
+
+  const ctreeSnapshot = (() => {
+    if (!isRecord(parsed)) return undefined
+    if (parsed.ctreeSnapshot === null) return null
+    if (!isRecord(parsed.ctreeSnapshot)) return undefined
+    return parsed.ctreeSnapshot as Record<string, unknown>
+  })()
+
   const steps = rawSteps.map((step) => {
     if (!step || typeof step !== "object") {
       throw new Error("Every mock SSE step must be an object.")
@@ -129,18 +147,38 @@ export const loadReplayScript = async (scriptPath: string): Promise<ReplayScript
     }
     return { delayMs: typeof step.delayMs === "number" ? step.delayMs : 0, event: step.event }
   })
-  return { steps, files, fileContents }
+  return { steps, files, fileContents, skills, ctreeSnapshot }
 }
 
-const finalizeEvent = (sessionId: string, rawEvent: Record<string, any>) => {
-  const timestamp = typeof rawEvent.timestamp === "number" ? rawEvent.timestamp : Date.now() / 1000
+const finalizeEvent = (state: SessionState, rawEvent: Record<string, any>) => {
+  const rawSeq =
+    typeof rawEvent.seq === "number" && Number.isFinite(rawEvent.seq)
+      ? rawEvent.seq
+      : typeof rawEvent.sequence === "number" && Number.isFinite(rawEvent.sequence)
+      ? rawEvent.sequence
+      : null
+  const rawTimestamp =
+    typeof rawEvent.timestamp === "number" && Number.isFinite(rawEvent.timestamp) ? rawEvent.timestamp : null
+  const rawTimestampMs =
+    typeof rawEvent.timestamp_ms === "number" && Number.isFinite(rawEvent.timestamp_ms) ? rawEvent.timestamp_ms : null
+  const timestampMs =
+    rawTimestampMs ??
+    (rawTimestamp != null
+      ? rawTimestamp > 10_000_000_000
+        ? rawTimestamp
+        : Math.round(rawTimestamp * 1000)
+      : Date.now())
+  const seq = rawSeq ?? state.seqCounter++
   return {
     id: rawEvent.id ?? randomUUID(),
     type: rawEvent.type ?? "assistant_message",
-    session_id: sessionId,
+    session_id: state.id,
     turn: rawEvent.turn ?? 1,
-    timestamp,
-    payload: rawEvent.payload ?? {},
+    seq,
+    timestamp: timestampMs,
+    timestamp_ms: timestampMs,
+    data: rawEvent.data ?? rawEvent.payload ?? {},
+    payload: rawEvent.payload,
   }
 }
 
@@ -245,9 +283,10 @@ const startPlaybackLoop = async (
         log?.(`[mock-sse] dropped event for session ${state.id}`)
         continue
       }
-      if (state.clients.size === 0) continue
       if (!step.event) continue
-      const event = finalizeEvent(state.id, step.event)
+      const event = finalizeEvent(state, step.event)
+      state.eventLog.push(event)
+      if (state.clients.size === 0) continue
       for (const client of state.clients) {
         writeSseEvent(client, event)
       }
@@ -301,16 +340,20 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
       res.end(JSON.stringify({ status: "ok", script: resolvedScript }))
       return
     }
-    if (req.method === "POST" && url.pathname === "/sessions") {
+  if (req.method === "POST" && url.pathname === "/sessions") {
       const sessionId = randomUUID()
       const sessionState: SessionState = {
         id: sessionId,
         steps: steps.map((step) => ({ ...step })),
         files: script.files,
         fileContents: script.fileContents,
+        skills: script.skills,
+        ctreeSnapshot: script.ctreeSnapshot,
         playRequested: false,
         finished: false,
         playing: false,
+        seqCounter: 0,
+        eventLog: [],
         clients: new Set(),
         commandHistory: [],
         commandQueue: [],
@@ -364,6 +407,23 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
       return
     }
     if (suffix === "events" && req.method === "GET") {
+      const replay = url.searchParams.get("replay")
+      if (replay === "1" || replay === "true") {
+        const limitParam = url.searchParams.get("limit")
+        const limit = limitParam ? Number(limitParam) : null
+        const events = Number.isFinite(limit) && limit != null ? state.eventLog.slice(0, Math.max(0, limit)) : state.eventLog
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          Connection: "keep-alive",
+          "Cache-Control": "no-cache",
+        })
+        res.write("\n")
+        for (const event of events) {
+          writeSseEvent(res, event)
+        }
+        res.end()
+        return
+      }
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         Connection: "keep-alive",
@@ -393,11 +453,29 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
       res.end(JSON.stringify(listing))
       return
     }
+    if (suffix === "skills" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(
+        JSON.stringify(
+          state.skills ?? {
+            catalog: {},
+            selection: null,
+            sources: null,
+          },
+        ),
+      )
+      return
+    }
+    if (suffix === "ctrees" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(JSON.stringify(state.ctreeSnapshot ?? {}))
+      return
+    }
     if (suffix === "input" && req.method === "POST") {
       const body = await readJsonBody(req)
       const content = typeof body.content === "string" ? body.content : null
       if (content && state.clients.size > 0) {
-        const event = finalizeEvent(state.id, { type: "user_message", payload: { text: content } })
+        const event = finalizeEvent(state, { type: "user_message", payload: { text: content } })
         for (const client of state.clients) {
           writeSseEvent(client, event)
         }

@@ -44,13 +44,20 @@ export const runLayoutAssertionsOnLines = (lines: string[]): LayoutAnomaly[] => 
     lines.some((line) => {
       const trimmed = line.trim()
       return trimmed.startsWith("Search:") && containsCaseInsensitive(trimmed, "esc back")
-    })
+    }) ||
+    lines.some((line) => /^\s*(USER|ASSISTANT|SYSTEM|TOOLS):/i.test(line))
+
+  const hasModalBorder = lines.some((line) => line.includes("╭") || line.includes("╮"))
+  const modalKeywords = ["Select model", "Provider · Model", "Skills", "Permission required"]
+  const modalActive =
+    hasModalBorder &&
+    lines.some((line) => modalKeywords.some((keyword) => containsCaseInsensitive(line, keyword)))
 
   const composerCandidate = lines.findIndex((line) => {
     const trimmed = line.trim()
     return trimmed.startsWith("›") || trimmed.startsWith(">") || containsCaseInsensitive(trimmed, "type your request")
   })
-  if (!transcriptViewerActive && composerCandidate === -1) {
+  if (!transcriptViewerActive && !modalActive && composerCandidate === -1) {
     anomalies.push({ id: "composer-missing", message: "Could not find composer prompt" })
   }
 

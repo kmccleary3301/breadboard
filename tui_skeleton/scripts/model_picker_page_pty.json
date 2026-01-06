@@ -1,8 +1,8 @@
 [
   { "action": "log", "message": "Model picker paging PTY harness start" },
-  { "action": "waitFor", "text": "breadboard", "timeoutMs": 15000 },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
   { "action": "press", "key": "ctrl+k" },
-  { "action": "waitFor", "text": "Select a model", "timeoutMs": 5000 },
+  { "action": "waitFor", "text": "Select model —", "timeoutMs": 5000 },
   { "action": "press", "key": "pagedown" },
   { "action": "press", "key": "pageup" },
   { "action": "press", "key": "escape" },
