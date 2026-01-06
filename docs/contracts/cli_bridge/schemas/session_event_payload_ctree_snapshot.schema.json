@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "snapshot": {
+      "type": ["object", "null"]
+    },
+    "compiler": {
+      "type": ["object", "null"]
+    },
+    "collapse": {
+      "type": ["object", "null"]
+    },
+    "runner": {
+      "type": ["object", "null"]
+    },
+    "last_node": {
+      "type": ["object", "null"]
+    },
+    "ctree_node_id": {
+      "type": ["string", "null"]
+    },
+    "ctree_snapshot": {
+      "type": ["object", "null"]
+    }
+  },
+  "required": [],
+  "title": "CTreeSnapshotPayload",
+  "type": "object"
+}

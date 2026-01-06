@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "deltas": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "snapshot": {
+      "type": ["object", "null"]
+    },
+    "policy": {
+      "type": ["object", "null"]
+    },
+    "meta": {
+      "type": ["object", "null"]
+    }
+  },
+  "required": [],
+  "title": "CTreeDeltaPayload",
+  "type": "object"
+}
