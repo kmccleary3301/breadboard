@@ -35,7 +35,7 @@ const DEFAULT_KEEP_RUNS = 3
 
 const DEFAULT_CONFIG = process.env.CONFIG_PATH ?? process.env.STRESS_CONFIG ?? "../agent_configs/opencode_cli_mock_guardrails.yaml"
 const DEFAULT_LIVE_CONFIG =
-  process.env.BREADBOARD_LIVE_CONFIG || "../agent_configs/opencode_openai_gpt5nano_c_fs_cli_shared.yaml"
+  process.env.BREADBOARD_LIVE_CONFIG || "../agent_configs/opencode_mock_c_fs.yaml"
 const DEFAULT_BASE_URL = process.env.BASE_URL ?? process.env.BREADBOARD_API_URL ?? "http://127.0.0.1:9099"
 const DEFAULT_COMMAND = "node dist/main.js repl"
 const REPL_SCRIPT_MAX_DURATION_MS = Number(process.env.STRESS_SCRIPT_MAX_MS ?? 240_000)
@@ -499,6 +499,24 @@ const STRESS_CASES: StressCase[] = [
     description: "CTree summary line in tasks panel",
     mockSseScript: "scripts/mock_sse_ctree.json",
     submitTimeoutMs: 0,
+    env: {
+      BREADBOARD_CTREES_ENABLED: "1",
+      BREADBOARD_CTREES_SUMMARY: "1",
+      BREADBOARD_CTREES_TASK_NODE: "1",
+    },
+  },
+  {
+    id: "ctree_delta",
+    kind: "pty",
+    script: "scripts/ctree_delta_pty.json",
+    description: "CTree delta event (forward-compatible)",
+    mockSseScript: "scripts/mock_sse_ctree_delta.json",
+    submitTimeoutMs: 0,
+    env: {
+      BREADBOARD_CTREES_ENABLED: "1",
+      BREADBOARD_CTREES_SUMMARY: "1",
+      BREADBOARD_CTREES_TASK_NODE: "1",
+    },
   },
   {
     id: "usage_modal",
@@ -1612,7 +1630,7 @@ const runReplCase = async (
         script: testCase.script,
         scriptHash,
         repro: baseRepro,
-        config: options.configPath,
+        config: configPath,
         chaos: chaosInfo,
         env: envOverrides,
         contractOverrides: options.contractOverrides,
@@ -1634,7 +1652,7 @@ const runReplCase = async (
     "dist/main.js",
     "repl",
     "--config",
-    options.configPath,
+    configPath,
     "--script",
     testCase.script,
     "--script-output",
@@ -1648,7 +1666,7 @@ const runReplCase = async (
   }
   const env = {
     ...process.env,
-    BREADBOARD_API_URL: options.baseUrl,
+    BREADBOARD_API_URL: baseUrl,
     BREADBOARD_STATE_DUMP_PATH: stateDumpEnvPath,
     BREADBOARD_STATE_DUMP_MODE: "summary",
     BREADBOARD_STATE_DUMP_RATE_MS: "100",
@@ -1885,7 +1903,7 @@ const runPtyCase = async (
         script: testCase.script,
         scriptHash,
         repro,
-        config: options.configPath,
+        config: configPath,
         chaos: chaosInfo,
         env: envOverrides,
         contractOverrides: options.contractOverrides,

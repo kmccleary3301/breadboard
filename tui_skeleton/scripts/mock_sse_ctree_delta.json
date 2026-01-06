@@ -1,0 +1,69 @@
+{
+  "steps": [
+    {
+      "delayMs": 0,
+      "event": {
+        "type": "turn_start",
+        "payload": { "summary": "ctree delta probe" },
+        "turn": 1
+      }
+    },
+    {
+      "delayMs": 150,
+      "event": {
+        "type": "assistant_message",
+        "payload": {
+          "text": "Mock assistant: ctree delta",
+          "message": { "role": "assistant", "content": "Mock assistant: ctree delta" }
+        }
+      }
+    },
+    {
+      "delayMs": 150,
+      "event": {
+        "type": "ctree_delta",
+        "payload": {
+          "snapshot": { "node_count": 84, "node_hash": "d00df00d1234" },
+          "compiler": { "z3": "fe12ed34" },
+          "collapse": { "policy": "prune", "dropped": 9 },
+          "runner": { "enabled": true, "branches": ["delta", "epsilon"] },
+          "last_node": { "id": "node-9cc0", "depth": 4 }
+        }
+      }
+    },
+    {
+      "delayMs": 100,
+      "event": {
+        "type": "task_event",
+        "payload": {
+          "task_id": "task-ctree-2",
+          "status": "running",
+          "description": "Apply delta updates",
+          "ctree_node_id": "node-9cc0",
+          "ctree_snapshot": {
+            "snapshot": { "node_count": 84, "node_hash": "d00df00d1234" },
+            "compiler": { "z3": "fe12ed34" },
+            "collapse": { "policy": "prune", "dropped": 9 },
+            "runner": { "enabled": true, "branches": ["delta", "epsilon"] },
+            "last_node": { "id": "node-9cc0", "depth": 4 }
+          },
+          "timestamp": 1735689600100
+        }
+      }
+    },
+    {
+      "delayMs": 200,
+      "event": {
+        "type": "completion",
+        "payload": { "summary": { "completed": true, "reason": "mock" } }
+      }
+    },
+    {
+      "delayMs": 0,
+      "event": {
+        "type": "run_finished",
+        "payload": { "eventCount": 6 }
+      }
+    }
+  ]
+}

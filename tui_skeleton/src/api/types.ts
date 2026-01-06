@@ -13,6 +13,7 @@ export type EventType =
   | "skills_selection"
   | "ctree_node"
   | "ctree_snapshot"
+  | "ctree_delta"
   | "task_event"
   | "reward_update"
   | "completion"

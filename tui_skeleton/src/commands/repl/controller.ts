@@ -2095,6 +2095,19 @@ export class ReplSessionController extends EventEmitter {
         this.ctreeSnapshot = next
         break
       }
+      case "ctree_delta": {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const next: CTreeSnapshot = {
+          ...(this.ctreeSnapshot ?? {}),
+          ...(payload.snapshot !== undefined ? { snapshot: payload.snapshot as Record<string, unknown> | null } : {}),
+          ...(payload.compiler !== undefined ? { compiler: payload.compiler as Record<string, unknown> | null } : {}),
+          ...(payload.collapse !== undefined ? { collapse: payload.collapse as Record<string, unknown> | null } : {}),
+          ...(payload.runner !== undefined ? { runner: payload.runner as Record<string, unknown> | null } : {}),
+          ...(payload.last_node !== undefined ? { last_node: payload.last_node as Record<string, unknown> | null } : {}),
+        }
+        this.ctreeSnapshot = next
+        break
+      }
       case "checkpoint_restored": {
         const payload = isRecord(event.payload) ? event.payload : {}
         const checkpointId = extractString(payload, ["checkpoint_id", "id"]) ?? null

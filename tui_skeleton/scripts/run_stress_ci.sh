@@ -6,8 +6,8 @@ REPO_ROOT="$(cd "${ROOT_DIR}/.." && pwd)"
 BRIDGE_SCRIPT="${REPO_ROOT}/scripts/run_cli_bridge_mock.sh"
 ARTIFACT_ROOT="${ROOT_DIR}/artifacts/stress"
 MOCK_API_KEY="${MOCK_API_KEY:-dummy}"
-CASES=(modal_overlay resize_storm_modal permission_rewind model_picker_small layout_ordering tool_ordering_edge ime_placeholder ctrl_v_paste ctrl_v_paste_large paste_undo mock_hello skills_picker skills_picker_ctrl_g ctree_summary)
-PTY_CASES=(resize_storm_modal permission_rewind model_picker_small model_picker_provider_filter ctrl_v_paste layout_ordering tool_ordering_edge ime_placeholder ctrl_v_paste_large paste_undo paste_undo_redo file_picker_large file_picker_truncated transcript_viewer_search slash_menu_resize skills_picker skills_picker_ctrl_g ctree_summary)
+CASES=(modal_overlay resize_storm_modal permission_rewind model_picker_small layout_ordering tool_ordering_edge ime_placeholder ctrl_v_paste ctrl_v_paste_large paste_undo mock_hello skills_picker skills_picker_ctrl_g ctree_summary ctree_delta)
+PTY_CASES=(resize_storm_modal permission_rewind model_picker_small model_picker_provider_filter ctrl_v_paste layout_ordering tool_ordering_edge ime_placeholder ctrl_v_paste_large paste_undo paste_undo_redo file_picker_large file_picker_truncated transcript_viewer_search slash_menu_resize skills_picker skills_picker_ctrl_g ctree_summary ctree_delta)
 OVERLAY_CASES=(modal_overlay resize_storm_modal permission_rewind model_picker_small model_picker_provider_filter shortcuts_overlay file_picker_large skills_picker)
 RESIZE_CASES=(resize_storm resize_storm_modal)
 if [[ -n "${STRESS_CI_CASES:-}" ]]; then
