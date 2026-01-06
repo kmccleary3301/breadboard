@@ -308,7 +308,7 @@ def resolve_todo_placeholders(
     if todo_snapshot:
         todos = todo_snapshot.get("todos")
     elif workspace_path:
-        todo_file = workspace_path / ".kyle" / "todos.json"
+        todo_file = workspace_path / ".breadboard" / "todos.json"
         if not todo_file.exists():
             return result
         try:

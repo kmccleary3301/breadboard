@@ -1,5 +1,6 @@
 # Docs/attachments (kept out of git)
 docs_tmp/
+docs_local/
 exports/
 logging/
 agent_ws_*/

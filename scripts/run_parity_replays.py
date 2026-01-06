@@ -50,7 +50,7 @@ def _workspace_root() -> tuple[Path, tempfile.TemporaryDirectory | None]:
 
 def _prune_seeded_workspace(workspace: Path) -> None:
     """Remove stateful directories from seeded workspaces to keep runs deterministic."""
-    for name in [".kyle"]:
+    for name in [".breadboard"]:
         target = workspace / name
         if target.exists():
             shutil.rmtree(target, ignore_errors=True)

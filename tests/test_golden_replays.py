@@ -113,7 +113,7 @@ def test_golden_opencode_replays(tmp_path: Path, scenario: ParityScenario) -> No
     if seed and seed.exists():
         workspace.mkdir(parents=True, exist_ok=True)
         shutil.copytree(seed, workspace, dirs_exist_ok=True)
-        seeded_state = workspace / ".kyle"
+        seeded_state = workspace / ".breadboard"
         if seeded_state.exists():
             shutil.rmtree(seeded_state, ignore_errors=True)
 

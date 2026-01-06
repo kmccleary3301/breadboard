@@ -553,7 +553,7 @@ class OpenAIConductor:
         try:
             workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
             if workspace_root.exists():
-                path = workspace_root / ".kyle" / "multi_agent_events.jsonl"
+                path = workspace_root / ".breadboard" / "multi_agent_events.jsonl"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 orchestrator.event_log.to_jsonl(str(path))
         except Exception:
@@ -848,7 +848,7 @@ class OpenAIConductor:
         try:
             workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
             if workspace_root.exists():
-                dest = workspace_root / ".kyle" / "subagents" / f"{task_id}.json"
+                dest = workspace_root / ".breadboard" / "subagents" / f"{task_id}.json"
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
         except Exception:
@@ -866,12 +866,12 @@ class OpenAIConductor:
         if not rows:
             return None
         payload = "\n".join([json.dumps(row, ensure_ascii=False) for row in rows]) + "\n"
-        rel_path = f".kyle/subagents/agent-{task_id}.jsonl"
+        rel_path = f".breadboard/subagents/agent-{task_id}.jsonl"
         recorded_path: Optional[str] = None
         try:
             workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
             if workspace_root.exists():
-                dest = workspace_root / ".kyle" / "subagents" / f"agent-{task_id}.jsonl"
+                dest = workspace_root / ".breadboard" / "subagents" / f"agent-{task_id}.jsonl"
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text(payload, encoding="utf-8")
                 recorded_path = rel_path
@@ -1180,7 +1180,7 @@ class OpenAIConductor:
                             "description": description,
                             "seq": getattr(spawn.job, "seq", None),
                             "status": "completed",
-                            "artifact": {"path": f".kyle/subagents/{task_id}.json"},
+                            "artifact": {"path": f".breadboard/subagents/{task_id}.json"},
                             "output_excerpt": (output_text or "")[:400],
                         }
                         if task_context:
@@ -1228,7 +1228,7 @@ class OpenAIConductor:
                             "description": description,
                             "seq": getattr(spawn.job, "seq", None),
                             "status": "failed",
-                            "artifact": {"path": f".kyle/subagents/{task_id}.json"},
+                            "artifact": {"path": f".breadboard/subagents/{task_id}.json"},
                             "error": str(exc),
                         }
                         if task_context:
@@ -1288,7 +1288,7 @@ class OpenAIConductor:
                     "description": description,
                     "seq": getattr(spawn.job, "seq", None),
                     "status": "running",
-                    "artifact": {"path": f".kyle/subagents/{task_id_sync}.json"},
+                    "artifact": {"path": f".breadboard/subagents/{task_id_sync}.json"},
                 }
                 if task_context:
                     spawn_event.update(task_context)
@@ -1355,7 +1355,7 @@ class OpenAIConductor:
                     "description": description,
                     "seq": getattr(spawn.job, "seq", None),
                     "status": status_value,
-                    "artifact": {"path": f".kyle/subagents/{task_id_sync}.json"},
+                    "artifact": {"path": f".breadboard/subagents/{task_id_sync}.json"},
                 }
                 if output_text:
                     finish_event["output_excerpt"] = output_text[:400]
@@ -1536,7 +1536,7 @@ class OpenAIConductor:
                     "subagent_type": agent,
                     "description": description,
                     "status": "completed",
-                    "artifact": {"path": f".kyle/subagents/{task_id}.json"},
+                    "artifact": {"path": f".breadboard/subagents/{task_id}.json"},
                     "output_excerpt": (output_text or "")[:400],
                 }
                 if task_context:
@@ -1566,7 +1566,7 @@ class OpenAIConductor:
                     "subagent_type": agent,
                     "description": description,
                     "status": "failed",
-                    "artifact": {"path": f".kyle/subagents/{task_id}.json"},
+                    "artifact": {"path": f".breadboard/subagents/{task_id}.json"},
                     "error": str(exc),
                 }
                 if task_context:
@@ -1596,7 +1596,7 @@ class OpenAIConductor:
             "subagent_type": agent,
             "description": description,
             "status": "running",
-            "artifact": {"path": f".kyle/subagents/{task_id}.json"},
+            "artifact": {"path": f".breadboard/subagents/{task_id}.json"},
         }
         if task_context:
             spawn_event.update(task_context)
@@ -2101,7 +2101,7 @@ class OpenAIConductor:
                         "subagent_type": job.agent,
                         "description": job.description,
                         "status": "cancelled",
-                        "artifact": {"path": f".kyle/subagents/{job.task_id}.json"},
+                        "artifact": {"path": f".breadboard/subagents/{job.task_id}.json"},
                     }
                 )
 
@@ -2150,7 +2150,7 @@ class OpenAIConductor:
                 "subagent_type": job.agent,
                 "description": job.description,
                 "status": "cancelled",
-                "artifact": {"path": f".kyle/subagents/{job.task_id}.json"},
+                "artifact": {"path": f".breadboard/subagents/{job.task_id}.json"},
             }
         )
 

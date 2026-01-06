@@ -152,7 +152,7 @@ class TodoStore:
     Thread safety is handled by the caller (session loop is single threaded per run).
     """
 
-    FILENAME = ".kyle/todos.json"
+    FILENAME = ".breadboard/todos.json"
 
     def __init__(self, workspace: str, *, load_existing: bool = True):
         self.workspace = Path(workspace)

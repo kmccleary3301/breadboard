@@ -139,7 +139,7 @@ M agent_configs/opencode_grok4fast_c_fs_compiled.yaml
  M agent_configs/opencode_grok4fast_c_fs_v2.yaml
  D docs/phase_2/CLAUDE_CODE_ANALYSIS.md
  M docs/phase_4/runbook.md
-?? .kyle/
+?? .breadboard/
 ?? bun.lock
 ?? docs/BreadBoard_Original_Concerns.md
 ?? docs/OPENCODE_PERMISSION_AUTOMATION_RESEARCH.md

@@ -12,7 +12,7 @@ DEFAULT_IGNORE_PATTERNS: Sequence[str] = (
     ".git",
     ".hg",
     ".svn",
-    ".kyle",
+    ".breadboard",
     ".claude",
     ".cache",
     "__pycache__",
@@ -85,4 +85,3 @@ def build_workspace_manifest(
         "files": [entry.__dict__ for entry in sorted(entries, key=lambda item: item.path)],
     }
     return manifest
-

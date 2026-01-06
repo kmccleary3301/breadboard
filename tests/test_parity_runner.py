@@ -23,7 +23,7 @@ def _write_run_dir(base: Path, guard_event: dict, todo_event: dict) -> None:
     }
     (base / "meta" / "run_summary.json").write_text(json.dumps(summary, indent=2))
     todo_store = {"journal": [todo_event]}
-    todo_path = final_dir / ".kyle"
+    todo_path = final_dir / ".breadboard"
     todo_path.mkdir(parents=True, exist_ok=True)
     (todo_path / "todos.json").write_text(json.dumps(todo_store, indent=2))
 

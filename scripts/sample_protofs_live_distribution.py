@@ -161,7 +161,7 @@ def _eval_workspace(workspace: Path, *, out_dir: Path) -> Dict[str, Any]:
     result["files_present"] = sorted(
         str(p.relative_to(workspace).as_posix())
         for p in workspace.rglob("*")
-        if p.is_file() and not any(part in {".git", ".kyle", ".cache", "__pycache__"} for part in p.parts)
+        if p.is_file() and not any(part in {".git", ".breadboard", ".cache", "__pycache__"} for part in p.parts)
     )
     return result
 
@@ -564,4 +564,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

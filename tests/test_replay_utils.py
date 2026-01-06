@@ -19,7 +19,7 @@ def test_resolve_todo_placeholders_with_snapshot(tmp_path: Path) -> None:
 
 def test_resolve_todo_placeholders_workspace_fallback(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    todo_dir = workspace / ".kyle"
+    todo_dir = workspace / ".breadboard"
     todo_dir.mkdir(parents=True)
     (todo_dir / "todos.json").write_text(
         '{"todos":[{"id":"todo-aaa"},{"id":"todo-bbb"}]}',

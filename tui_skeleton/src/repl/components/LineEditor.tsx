@@ -19,9 +19,65 @@ import { PASTE_COLLAPSE_THRESHOLD, type InputBufferState } from "../editor/types
 
 const DEBUG_INPUT = process.env.BREADBOARD_INPUT_DEBUG === "1"
 const PASTE_CHIP_COLOR = "#38BDF8"
-type GraphemerInstance = { nextBreak: (text: string, index: number) => number }
-const GraphemerClass = (GraphemerModule as unknown as { default: new () => GraphemerInstance }).default
-const graphemer = new GraphemerClass()
+type GraphemerInstance = {
+  splitGraphemes?: (text: string) => string[]
+  iterateGraphemes?: (text: string) => Iterable<string>
+}
+
+const GraphemerCtor = ((GraphemerModule as unknown as { default?: new () => GraphemerInstance }).default ??
+  (GraphemerModule as unknown as new () => GraphemerInstance)) as new () => GraphemerInstance
+
+let graphemer: GraphemerInstance | null = null
+try {
+  graphemer = new GraphemerCtor()
+} catch {
+  graphemer = null
+}
+
+const segmenter =
+  typeof Intl !== "undefined" && typeof (Intl as unknown as { Segmenter?: unknown }).Segmenter === "function"
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : null
+
+const graphemeBoundaries = (text: string): number[] => {
+  if (text.length === 0) return [0]
+
+  if (segmenter) {
+    const boundaries = new Set<number>()
+    boundaries.add(0)
+    for (const seg of segmenter.segment(text)) {
+      boundaries.add(seg.index)
+    }
+    boundaries.add(text.length)
+    return Array.from(boundaries).sort((a, b) => a - b)
+  }
+
+  if (graphemer?.iterateGraphemes) {
+    const boundaries: number[] = [0]
+    let offset = 0
+    for (const part of graphemer.iterateGraphemes(text)) {
+      offset += part.length
+      boundaries.push(offset)
+    }
+    if (boundaries[boundaries.length - 1] !== text.length) boundaries.push(text.length)
+    return boundaries
+  }
+
+  if (graphemer?.splitGraphemes) {
+    const boundaries: number[] = [0]
+    let offset = 0
+    for (const part of graphemer.splitGraphemes(text)) {
+      offset += part.length
+      boundaries.push(offset)
+    }
+    if (boundaries[boundaries.length - 1] !== text.length) boundaries.push(text.length)
+    return boundaries
+  }
+
+  const fallback: number[] = []
+  for (let index = 0; index <= text.length; index += 1) fallback.push(index)
+  return fallback
+}
 
 interface ChipRange {
   id: string
@@ -82,19 +138,22 @@ const clampCursorToChips = (cursor: number, chips: ChipRange[], textLength: numb
 
 const previousGraphemeBoundary = (text: string, index: number): number => {
   if (index <= 0) return 0
+  const boundaries = graphemeBoundaries(text)
   let prev = 0
-  let next = graphemer.nextBreak(text, prev)
-  while (next < index) {
-    prev = next
-    next = graphemer.nextBreak(text, prev)
+  for (const boundary of boundaries) {
+    if (boundary >= index) break
+    prev = boundary
   }
-  return Math.max(0, Math.min(prev, index - 1))
+  return Math.max(0, Math.min(prev, index))
 }
 
 const nextGraphemeBoundary = (text: string, index: number): number => {
   if (index >= text.length) return text.length
-  const next = graphemer.nextBreak(text, index)
-  return Math.max(index + 1, Math.min(text.length, next))
+  const boundaries = graphemeBoundaries(text)
+  for (const boundary of boundaries) {
+    if (boundary > index) return boundary
+  }
+  return text.length
 }
 
 const moveCursorLeft = (cursor: number, text: string, chips: ChipRange[]): number => {

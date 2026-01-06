@@ -581,7 +581,7 @@ class RunIR:
     multi_agent_ordering: Optional[str] = None
     lifecycle_events: List[Dict[str, Any]] = field(default_factory=list)
     ignore_workspace: List[str] = field(
-        default_factory=lambda: [".kyle", ".git", "summary.json", ".claude", "session_result.json"]
+        default_factory=lambda: [".breadboard", ".git", "summary.json", ".claude", "session_result.json"]
     )
 
 
@@ -593,7 +593,7 @@ def _load_workspace_manifest(run_dir: Path) -> Optional[Dict[str, Any]]:
 
 
 def _load_todo_snapshot(workspace_path: Path) -> Dict[str, Any]:
-    todo_path = workspace_path / ".kyle" / "todos.json"
+    todo_path = workspace_path / ".breadboard" / "todos.json"
     if not todo_path.exists():
         return {}
     try:
@@ -644,7 +644,7 @@ def build_run_ir_from_run_dir(run_dir: Path, workspace_override: Optional[Path] 
     workspace_manifest = _load_workspace_manifest(run_dir)
     multi_agent_path = run_dir / "meta" / "multi_agent_events.jsonl"
     if not multi_agent_path.exists():
-        multi_agent_path = workspace_path / ".kyle" / "multi_agent_events.jsonl"
+        multi_agent_path = workspace_path / ".breadboard" / "multi_agent_events.jsonl"
     multi_agent_events = _load_multi_agent_events(multi_agent_path)
     if not multi_agent_ordering and multi_agent_events:
         multi_agent_ordering = "total_event_id"
@@ -716,7 +716,7 @@ def build_expected_run_ir(
         except Exception:
             multi_agent_path = None
     if multi_agent_path is None:
-        candidate = workspace_path / ".kyle" / "multi_agent_events.jsonl"
+        candidate = workspace_path / ".breadboard" / "multi_agent_events.jsonl"
         if candidate.exists():
             multi_agent_path = candidate
     multi_agent_events = _load_multi_agent_events(multi_agent_path)

@@ -1,6 +1,6 @@
 # Provider Regression Matrix CI Guide
 
-KyleCode now ships a regression harness that exercises the key provider × streaming × tool combinations we care about for resiliency (see Phase 4 P2.1). To run it in automation:
+BreadBoard now ships a regression harness that exercises the key provider × streaming × tool combinations we care about for resiliency (see Phase 4 P2.1). To run it in automation:
 
 1. Ensure the following environment variables are set so the conductor operates in mock/local mode:
    * `AGENT_SCHEMA_V2_ENABLED=1`

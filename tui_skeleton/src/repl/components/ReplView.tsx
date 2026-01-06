@@ -1677,9 +1677,9 @@ export const ReplView: React.FC<ReplViewProps> = ({
     const candidates: string[] = []
     if (selectedTask.artifactPath) candidates.push(selectedTask.artifactPath)
     const taskId = selectedTask.id
-    candidates.push(`.kyle/subagents/agent-${taskId}.jsonl`)
-    candidates.push(`.kyle/subagents/${taskId}.jsonl`)
-    candidates.push(`.kyle/subagents/${taskId}.json`)
+    candidates.push(`.breadboard/subagents/agent-${taskId}.jsonl`)
+    candidates.push(`.breadboard/subagents/${taskId}.jsonl`)
+    candidates.push(`.breadboard/subagents/${taskId}.json`)
     let lastError: string | null = null
     for (const pathCandidate of candidates) {
       try {

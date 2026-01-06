@@ -15,7 +15,7 @@ import ray
 from dotenv import load_dotenv
 
 from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from kylecode.sandbox_virtualized import SandboxFactory, DeploymentMode
+from breadboard.sandbox_virtualized import SandboxFactory, DeploymentMode
 
 
 DEFAULT_CONFIG_PATH = Path(__file__).with_name("test_agent.yaml")
@@ -205,4 +205,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

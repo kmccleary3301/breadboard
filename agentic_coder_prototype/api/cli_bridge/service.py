@@ -339,7 +339,7 @@ class SessionService:
 
         attachment_entries: list[dict[str, Any]] = []
         handles: list[AttachmentHandle] = []
-        attachment_root = workspace_dir / ".kyle" / "attachments"
+        attachment_root = workspace_dir / ".breadboard" / "attachments"
         attachment_root.mkdir(parents=True, exist_ok=True)
         for index, upload in enumerate(files, start=1):
             try:

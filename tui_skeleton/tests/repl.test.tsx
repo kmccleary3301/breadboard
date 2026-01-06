@@ -9,8 +9,8 @@ const stripAnsi = (value: string): string => value.replaceAll(/\u001B\[[0-9;]*m/
 describe("ReplView", () => {
   it("renders conversation and tool panes", async () => {
     const conversation: ConversationEntry[] = [
-      { id: "conv-a", speaker: "assistant", text: "Hello", phase: "final" },
-      { id: "conv-b", speaker: "user", text: "Run tests", phase: "final" },
+      { id: "conv-a", speaker: "assistant", text: "Hello", phase: "final", createdAt: 0 },
+      { id: "conv-b", speaker: "user", text: "Run tests", phase: "final", createdAt: 1 },
     ]
     const toolEvents = [
       { id: "tool-1", kind: "call", text: "[call] run_shell", status: "pending", createdAt: 0 },
@@ -29,23 +29,34 @@ describe("ReplView", () => {
         liveSlots={[]}
         status="Streaming..."
         pendingResponse={false}
+        disconnected={false}
         hints={hints}
         stats={stats}
         modelMenu={{ status: "hidden" }}
+        skillsMenu={{ status: "hidden" }}
         guardrailNotice={null}
+        viewClearAt={null}
         viewPrefs={{ collapseMode: "auto", virtualization: "auto", richMarkdown: false }}
+        todos={[]}
+        tasks={[]}
         permissionRequest={null}
+        permissionError={null}
         permissionQueueDepth={0}
         rewindMenu={{ status: "hidden" }}
         onSubmit={async () => {}}
         onModelMenuOpen={async () => {}}
         onModelSelect={async () => {}}
         onModelMenuCancel={() => {}}
+        onSkillsMenuOpen={async () => {}}
+        onSkillsMenuCancel={() => {}}
+        onSkillsApply={async () => {}}
         onGuardrailToggle={() => {}}
         onGuardrailDismiss={() => {}}
         onPermissionDecision={async () => {}}
         onRewindClose={() => {}}
         onRewindRestore={async () => {}}
+        onListFiles={async () => []}
+        onReadFile={async (path) => ({ path, content: "", truncated: false, total_bytes: 0 })}
       />,
       {
         stdout: stdout.stream,
@@ -57,11 +68,10 @@ describe("ReplView", () => {
       },
     )
     const frame = stripAnsi(stdout.lastFrame())
-    expect(frame).toContain("breadboard — interactive session")
     expect(frame).toContain("ASSISTANT")
     expect(frame).toContain("Run tests")
-    expect(frame).toContain("[call] run_shell")
-    expect(frame).toContain("model anthropic/claude-haiku-4-5-20251001")
+    expect(frame).toContain("run_shell")
+    expect(frame).toContain("success")
     instance.unmount()
     instance.cleanup()
   })

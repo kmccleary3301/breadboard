@@ -9,7 +9,7 @@ from pathlib import Path
 
 import ray
 
-from kylecode.sandbox_v2 import DevSandboxV2
+from breadboard.sandbox_v2 import DevSandboxV2
 from .core.core import ToolDefinition, ToolParameter
 from .dialects.pythonic02 import Pythonic02Dialect
 from .dialects.pythonic_inline import PythonicInlineDialect
@@ -167,7 +167,7 @@ class OpenAIConductor:
         # If LSP integration is requested, wrap sandbox even if enhanced executor not enabled
         if enhanced_config.get("lsp_integration", {}).get("enabled", False):
             try:
-                from kylecode.sandbox_lsp_integration import LSPEnhancedSandbox
+                from breadboard.sandbox_lsp_integration import LSPEnhancedSandbox
                 self.sandbox = LSPEnhancedSandbox.remote(self.sandbox, workspace)
             except ImportError:
                 pass
@@ -176,7 +176,7 @@ class OpenAIConductor:
             sandbox_for_executor = self.sandbox
             if enhanced_config.get("lsp_integration", {}).get("enabled", False):
                 try:
-                    from kylecode.sandbox_lsp_integration import LSPEnhancedSandbox
+                    from breadboard.sandbox_lsp_integration import LSPEnhancedSandbox
                     sandbox_for_executor = LSPEnhancedSandbox.remote(self.sandbox, workspace)
                 except ImportError:
                     pass  # LSP integration not available, use regular sandbox
@@ -1589,5 +1589,3 @@ class OpenAIConductor:
         if stream_responses:
             print(f"[stop] reason=end-of-loop steps={max_steps}")
         return {"messages": messages, "transcript": transcript}
-
-

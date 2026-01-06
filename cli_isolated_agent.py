@@ -13,9 +13,9 @@ from typing import Dict, Any
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from kylecode.sandbox_virtualized import SandboxFactory, DeploymentMode
+from breadboard.sandbox_virtualized import SandboxFactory, DeploymentMode
 from agentic_coder_prototype.integration.lsp_integration import LSPIntegratedToolExecutor
-from kylecode.sandbox_lsp_integration import LSPEnhancedSandbox
+from breadboard.sandbox_lsp_integration import LSPEnhancedSandbox
 
 def load_config(config_path: str) -> Dict[str, Any]:
     """Load configuration from YAML file"""
