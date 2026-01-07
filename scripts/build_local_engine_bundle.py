@@ -91,6 +91,12 @@ def parse_args() -> argparse.Namespace:
         help="Optional base URL for manifest asset URLs (e.g. GitHub Releases download base).",
     )
     parser.add_argument(
+        "--ray-collection",
+        choices=["all", "auto", "submodules"],
+        default="all",
+        help="How aggressively to bundle Ray inside the engine onedir build.",
+    )
+    parser.add_argument(
         "--pyinstaller-arg",
         action="append",
         default=[],
@@ -138,6 +144,8 @@ def main() -> int:
             args.name,
             "--out-dir",
             str(build_root),
+            "--ray-collection",
+            args.ray_collection,
             *(["--clean"] if args.clean else []),
             *sum([["--pyinstaller-arg", item] for item in args.pyinstaller_arg if item], []),
         ],
@@ -189,6 +197,17 @@ def main() -> int:
     subprocess.check_call(cmd, cwd=str(ROOT))
 
     manifest = dist_root / "manifest.json"
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        assets = data.get("assets") if isinstance(data, dict) else None
+        if isinstance(assets, list) and assets:
+            first = assets[0]
+            if isinstance(first, dict) and "size_bytes" in first:
+                size_bytes = first.get("size_bytes")
+                if isinstance(size_bytes, int):
+                    print(f"[local-engine-bundle] archive size_bytes: {size_bytes}")
+    except Exception:
+        pass
     print()
     print("[local-engine-bundle] done.")
     print(f"[local-engine-bundle] manifest: {manifest}")

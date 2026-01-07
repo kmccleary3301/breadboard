@@ -3,17 +3,35 @@
   "additionalProperties": true,
   "properties": {
     "call_id": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "error": {
+      "type": "boolean"
+    },
+    "message": {},
+    "metadata": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "result": {},
+    "status": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "success": {
       "type": [
         "boolean",
         "null"
       ]
     },
-    "message": {},
-    "result": {},
-    "status": {
+    "tool": {
       "type": [
         "string",
         "null"
@@ -21,7 +39,8 @@
     }
   },
   "required": [
-    "call_id"
+    "status",
+    "error"
   ],
   "title": "ToolResultPayload",
   "type": "object"

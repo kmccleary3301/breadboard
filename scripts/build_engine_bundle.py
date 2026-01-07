@@ -209,6 +209,7 @@ def main() -> None:
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     print(f"[engine-bundle] wrote {archive_path}")
+    print(f"[engine-bundle] size_bytes {size_bytes}")
     print(f"[engine-bundle] sha256 {checksum}")
     print(f"[engine-bundle] manifest {manifest_path}")
 

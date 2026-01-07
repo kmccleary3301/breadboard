@@ -86,3 +86,30 @@ def test_git_apply_and_diff(ray_cluster, tmp_path):
     assert apply_res["ok"], apply_res
     status = ray.get(sb.vcs.remote({"action": "status"}))
     assert status["ok"]
+
+
+def test_workspace_boundary_blocks_escape(ray_cluster, tmp_path):
+    ensure_image("python-dev:latest", "python-dev.Dockerfile")
+    ws = tmp_path / f"ws-{uuid.uuid4()}"
+    ws.mkdir(parents=True, exist_ok=True)
+    outside = tmp_path / "outside_secret.txt"
+    outside.write_text("secret\n", encoding="utf-8")
+
+    os.environ["RAY_USE_DOCKER_SANDBOX"] = "0"
+    sb = new_dev_sandbox_v2("python-dev:latest", str(ws), name=f"sb-{uuid.uuid4()}")
+
+    # Reads should never return the outside content.
+    read_res = ray.get(sb.read_text.remote("../outside_secret.txt"))
+    assert isinstance(read_res, dict)
+    assert "secret" not in (read_res.get("content") or "")
+    assert str(ws) in str(read_res.get("path") or "")
+
+    raw = ray.get(sb.get.remote("../outside_secret.txt"))
+    assert b"secret" not in (raw or b"")
+
+    # Writes should never modify the outside file (implementation may raise or return an error).
+    try:
+        ray.get(sb.write_text.remote("../outside_secret.txt", "pwned\n"))
+    except Exception:
+        pass
+    assert outside.read_text(encoding="utf-8") == "secret\n"

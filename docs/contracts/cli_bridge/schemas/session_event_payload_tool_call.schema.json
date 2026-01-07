@@ -9,21 +9,25 @@
       ]
     },
     "call": {
-      "type": [
-        "object",
-        "null"
-      ]
+      "type": "object"
     },
     "call_id": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "diff_preview": {},
     "progress": {},
     "tool": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [
+    "call",
     "call_id",
     "tool"
   ],

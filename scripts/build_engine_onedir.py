@@ -48,6 +48,17 @@ def parse_args() -> argparse.Namespace:
         help="Delete prior build output for the same name before building.",
     )
     parser.add_argument(
+        "--ray-collection",
+        choices=["all", "auto", "submodules"],
+        default="all",
+        help=(
+            "How aggressively to bundle Ray. "
+            "'all' is safest but very large; "
+            "'auto' relies on PyInstaller analysis; "
+            "'submodules' forces Python submodules only (may miss data/binaries)."
+        ),
+    )
+    parser.add_argument(
         "--pyinstaller-arg",
         action="append",
         default=[],
@@ -104,7 +115,7 @@ def main() -> int:
     except Exception:
         extra_binaries = []
 
-    cmd = [
+    cmd: list[str] = [
         sys.executable,
         "-m",
         "PyInstaller",
@@ -124,9 +135,14 @@ def main() -> int:
         str(entry),
         "--collect-submodules",
         "agentic_coder_prototype",
-        "--collect-all",
-        "ray",
+        "--collect-data",
+        "colorful",
     ]
+    if args.ray_collection == "all":
+        cmd.extend(["--collect-all", "ray"])
+    elif args.ray_collection == "submodules":
+        cmd.extend(["--collect-submodules", "ray"])
+    # else: "auto" means rely on PyInstaller import analysis only.
 
     # Ray injects thirdparty_files onto sys.path at runtime; include its psutil extension modules.
     # Without these, the packaged engine fails early during `import ray`.
@@ -154,7 +170,25 @@ def main() -> int:
         print(f"[engine-onedir] expected output missing: {output}", file=sys.stderr)
         return 3
 
+    def _format_bytes(value: int) -> str:
+        units = ["B", "KB", "MB", "GB", "TB"]
+        size = float(value)
+        unit = 0
+        while size >= 1024 and unit < len(units) - 1:
+            size /= 1024
+            unit += 1
+        return f"{size:.2f} {units[unit]}"
+
+    total_bytes = 0
+    for item in output.rglob("*"):
+        try:
+            if item.is_file():
+                total_bytes += item.stat().st_size
+        except Exception:
+            pass
+
     print(f"[engine-onedir] built {output}")
+    print(f"[engine-onedir] size: {_format_bytes(total_bytes)} ({total_bytes} bytes)")
     return 0
 
 

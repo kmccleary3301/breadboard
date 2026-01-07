@@ -44,6 +44,41 @@ jobs:
         working-directory: tui_skeleton
         run: node dist/main.js --help
 
+      - name: npm pack smoke
+        run: node scripts/cli_pack_smoke.mjs
+
+  live_smoke:
+    name: Live smoke (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install engine dependencies
+        run: python -m pip install -r requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: tui_skeleton/package-lock.json
+
+      - name: Install TUI dependencies
+        working-directory: tui_skeleton
+        run: npm ci
+
+      - name: Phase 12 live smoke
+        env:
+          RAY_SCE_LOCAL_MODE: "1"
+          BREADBOARD_SKIP_LOCAL_BIN_INSTALL: "1"
+          BREADBOARD_INSTALL_QUIET: "1"
+        run: bash scripts/phase12_live_smoke.sh
+
   python:
     name: Python (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -62,6 +97,11 @@ jobs:
 
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
+
+      - name: Verify exported CLI bridge contracts are up-to-date
+        run: |
+          python scripts/export_cli_bridge_contracts.py
+          git diff --exit-code docs/contracts/cli_bridge
 
       - name: Targeted tests
         run: >

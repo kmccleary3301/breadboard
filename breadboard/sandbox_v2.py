@@ -31,17 +31,24 @@ class DevSandboxV2:
     def get_workspace(self) -> str:
         return self.workspace
 
-    def _resolve(self, path: str) -> str:
+    def _resolve_checked(self, path: str) -> Tuple[str, bool]:
         ws = Path(self.workspace).resolve()
         candidate = Path(path)
         if not candidate.is_absolute():
             candidate = ws / candidate
-        candidate = candidate.resolve()
+        try:
+            candidate = candidate.resolve()
+        except Exception:
+            return str(ws), False
         try:
             candidate.relative_to(ws)
         except Exception:
-            return str(ws)
-        return str(candidate)
+            return str(ws), False
+        return str(candidate), True
+
+    def _resolve(self, path: str) -> str:
+        abs_path, _ok = self._resolve_checked(path)
+        return abs_path
 
     def _touch_lsp(self, abs_path: str) -> None:
         actor = self.lsp_actor
@@ -60,11 +67,15 @@ class DevSandboxV2:
             pass
 
     def exists(self, path: str) -> bool:
-        abs_path = self._resolve(path)
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return False
         return Path(abs_path).exists()
 
     def stat(self, path: str) -> Dict[str, Any]:
-        abs_path = self._resolve(path)
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return {"path": abs_path, "exists": False, "error": "path_outside_workspace"}
         p = Path(abs_path)
         if not p.exists():
             return {"path": abs_path, "exists": False}
@@ -81,15 +92,22 @@ class DevSandboxV2:
             return {"path": abs_path, "exists": True}
 
     def put(self, path: str, content: bytes) -> Dict[str, Any]:
-        abs_path = self._resolve(path)
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return {"ok": False, "path": abs_path, "error": "path_outside_workspace"}
         p = Path(abs_path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(content or b"")
+        try:
+            p.write_bytes(content or b"")
+        except Exception as exc:
+            return {"ok": False, "path": abs_path, "error": str(exc)}
         self._touch_lsp(abs_path)
         return {"ok": True, "path": abs_path, "bytes": len(content or b"")}
 
     def get(self, path: str) -> bytes:
-        abs_path = self._resolve(path)
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return b""
         try:
             return Path(abs_path).read_bytes()
         except Exception:
@@ -102,7 +120,19 @@ class DevSandboxV2:
         limit: Optional[int] = None,
         encoding: str = "utf-8",
     ) -> Dict[str, Any]:
-        abs_path = self._resolve(path)
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            start = int(offset or 0) if offset is not None else 0
+            if start < 0:
+                start = 0
+            return {
+                "path": abs_path,
+                "content": "",
+                "truncated": False,
+                "offset": start,
+                "limit": limit,
+                "error": "path_outside_workspace",
+            }
         try:
             raw = Path(abs_path).read_text(encoding=encoding, errors="replace")
         except Exception:
@@ -127,15 +157,22 @@ class DevSandboxV2:
         return {"path": abs_path, "content": content, "truncated": truncated, "offset": start, "limit": limit}
 
     def write_text(self, path: str, content: str, encoding: str = "utf-8") -> Dict[str, Any]:
-        abs_path = self._resolve(path)
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return {"ok": False, "path": abs_path, "error": "path_outside_workspace"}
         p = Path(abs_path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content or "", encoding=encoding)
+        try:
+            p.write_text(content or "", encoding=encoding)
+        except Exception as exc:
+            return {"ok": False, "path": abs_path, "error": str(exc)}
         self._touch_lsp(abs_path)
         return {"ok": True, "path": abs_path, "bytes": len(content or "")}
 
     def ls(self, path: str, depth: int = 1) -> Dict[str, Any]:
-        abs_path = self._resolve(path)
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return {"path": abs_path, "entries": [], "items": [], "tree_format": False, "error": "path_outside_workspace"}
         depth = max(1, int(depth or 1))
         root = Path(abs_path)
         entries = []
@@ -159,7 +196,10 @@ class DevSandboxV2:
         return {"path": abs_path, "items": entries, "entries": entries, "tree_format": False}
 
     def glob(self, pattern: str, root: str = ".", limit: Optional[int] = None) -> List[str]:
-        root_path = Path(self._resolve(root))
+        resolved_root, ok = self._resolve_checked(root)
+        if not ok:
+            return []
+        root_path = Path(resolved_root)
         if not root_path.exists():
             return []
         matches: List[str] = []
@@ -296,7 +336,9 @@ class DevSandboxV2:
         count: int = 0,
         encoding: str = "utf-8",
     ) -> Dict[str, Any]:
-        abs_path = self._resolve(path)
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return {"ok": False, "path": abs_path, "error": "path_outside_workspace"}
         p = Path(abs_path)
         content = ""
         if p.exists():
@@ -306,7 +348,10 @@ class DevSandboxV2:
         else:
             updated = content.replace(old_string, new_string)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(updated, encoding=encoding)
+        try:
+            p.write_text(updated, encoding=encoding)
+        except Exception as exc:
+            return {"ok": False, "path": abs_path, "error": str(exc)}
         self._touch_lsp(abs_path)
         return {"ok": True, "path": abs_path}
 
