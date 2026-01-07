@@ -1,7 +1,8 @@
 """
-CLI bridge package exposing the FastAPI façade previously hosted in
-``tui_backend``. This allows the main engine runtime to serve the
-Node CLI without a separate backend process.
+CLI bridge package exposing the FastAPI façade used by the Node CLI/TUI.
+
+This lives in the engine so the CLI can talk to a stable HTTP/SSE boundary
+without a separate "backend wrapper" package.
 """
 
 from .app import create_app

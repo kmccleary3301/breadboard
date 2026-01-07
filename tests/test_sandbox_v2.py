@@ -3,8 +3,8 @@ import uuid
 import pytest
 import ray
 
-from adaptive_iter import decode_adaptive_iterable
-from sandbox_v2 import new_dev_sandbox_v2
+from breadboard.adaptive_iter import decode_adaptive_iterable
+from breadboard.sandbox_v2 import new_dev_sandbox_v2
 
 
 @pytest.fixture(scope="module")
@@ -83,5 +83,3 @@ def test_git_apply_and_diff(ray_cluster, tmp_path):
     assert apply_res["ok"], apply_res
     status = ray.get(sb.vcs.remote({"action": "status"}))
     assert status["ok"]
-
-

@@ -6,13 +6,13 @@ import json
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from sandbox_lsp_integration import (
+from breadboard.sandbox_lsp_integration import (
     LSPEnhancedSandbox,
     LSPSandboxFactory,
     integrate_lsp_with_agent_session,
     LSP_TOOL_DEFINITIONS
 )
-from sandbox_v2 import DevSandboxV2
+from breadboard.sandbox_v2 import DevSandboxV2
 
 
 @pytest.fixture(scope="module")

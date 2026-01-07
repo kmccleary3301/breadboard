@@ -2,7 +2,7 @@ import uuid
 import ray
 import pytest
 
-from lsp_manager import LSPManager
+from breadboard.lsp_manager import LSPManager
 
 
 @pytest.fixture(scope="module")
@@ -48,5 +48,4 @@ def fn():
     # hover on 'fn'
     hv = ray.get(lsp.hover.remote(str(p), 2, 6))
     assert hv and hv.get("contents")
-
 

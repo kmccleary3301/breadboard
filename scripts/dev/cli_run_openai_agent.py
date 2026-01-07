@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Any, Dict
 import yaml
 
-sys.path.insert(0, str(Path(__file__).parent.resolve()))
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 import ray
@@ -18,7 +20,7 @@ from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
 from breadboard.sandbox_virtualized import SandboxFactory, DeploymentMode
 
 
-DEFAULT_CONFIG_PATH = Path(__file__).with_name("test_agent.yaml")
+DEFAULT_CONFIG_PATH = PROJECT_ROOT / "agent_configs" / "test_agent.yaml"
 
 
 def _load_config(path: Path) -> Dict[str, Any]:
@@ -44,8 +46,8 @@ def main():
         sys.exit(1)
     cfg = _load_config(cfg_path)
 
-    # Resolve all paths relative to project root, not config directory
-    project_root = Path(__file__).parent
+    # Resolve all paths relative to repo root, not config directory
+    project_root = PROJECT_ROOT
     
     # Workspace path
     workspace = Path(cfg.get("workspace", "./agent_ws"))
@@ -64,7 +66,11 @@ def main():
     completion_sentinel = cfg.get("prompt", {}).get("completion_sentinel", ">>>>>> END RESPONSE")
 
     system_path = cfg.get("prompt", {}).get("system")
-    system_text = _read_text_file((project_root / system_path).resolve()) if system_path else _read_text_file(Path(__file__).with_name("SYSTEM_PROMPT.md"))
+    system_text = (
+        _read_text_file((project_root / system_path).resolve())
+        if system_path
+        else _read_text_file(project_root / "SYSTEM_PROMPT.md")
+    )
 
     task_file = cfg.get("task", {}).get("file")
     user_text = _read_text_file((project_root / task_file).resolve()) if task_file else ""

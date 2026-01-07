@@ -6,8 +6,9 @@ Tests all the new granular modes: persistent/temporary × short/medium/long comb
 import sys
 from pathlib import Path
 
-# Add tool_calling to path
-sys.path.insert(0, str(Path(__file__).parent / "tool_calling"))
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from tool_calling.multi_level_prompt_compiler import (
     MultiLevelPromptCompiler, PromptCompilationConfig, 

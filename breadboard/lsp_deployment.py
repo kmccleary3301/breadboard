@@ -10,8 +10,8 @@ from typing import Dict, List, Optional, Any
 from pathlib import Path
 
 import ray
-from lsp_manager_v2 import LSPManagerV2, LSP_SERVER_CONFIGS
-from sandbox_lsp_integration import LSPSandboxFactory, integrate_lsp_with_agent_session
+from .lsp_manager_v2 import LSPManagerV2, LSP_SERVER_CONFIGS
+from .sandbox_lsp_integration import LSPSandboxFactory, integrate_lsp_with_agent_session
 
 
 class LSPClusterManager:

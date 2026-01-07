@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from lsp_manager_v2 import (
+from breadboard.lsp_manager_v2 import (
     LSPManagerV2, 
     LSPServer, 
     LSPOrchestrator, 

@@ -2,8 +2,8 @@ import uuid
 import ray
 import pytest
 
-from sandbox_v2 import new_dev_sandbox_v2
-from lsp_manager import LSPManager
+from breadboard.sandbox_v2 import new_dev_sandbox_v2
+from breadboard.lsp_manager import LSPManager
 
 
 @pytest.fixture(scope="module")
@@ -34,7 +34,7 @@ def test_python_syntax_diagnostics(ray_cluster, tmp_path):
 
     # Low-level replacement: kill prior actor and create new with lsp
     ray.kill(sb)
-    from sandbox_v2 import DevSandboxV2
+    from breadboard.sandbox_v2 import DevSandboxV2
     sb = DevSandboxV2.options(name=f"sb-{uuid.uuid4()}").remote(image="python-dev:latest", workspace=str(ws), lsp_actor=lsp)
 
     # Write a file with a syntax error
@@ -63,5 +63,4 @@ def test_pyright_cli_if_available(ray_cluster, tmp_path):
     ray.get(lsp.touch_file.remote(str(bad), True))
     diags = ray.get(lsp.diagnostics.remote())
     assert str(bad) in diags and diags[str(bad)]
-
 

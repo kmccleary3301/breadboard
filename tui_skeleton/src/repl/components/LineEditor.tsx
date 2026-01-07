@@ -34,10 +34,10 @@ try {
   graphemer = null
 }
 
-const segmenter =
-  typeof Intl !== "undefined" && typeof (Intl as unknown as { Segmenter?: unknown }).Segmenter === "function"
-    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-    : null
+const SegmenterCtor =
+  (Intl as unknown as { Segmenter?: new (locales?: string | string[], options?: Record<string, unknown>) => any })
+    .Segmenter ?? null
+const segmenter = SegmenterCtor ? new SegmenterCtor(undefined, { granularity: "grapheme" }) : null
 
 const graphemeBoundaries = (text: string): number[] => {
   if (text.length === 0) return [0]

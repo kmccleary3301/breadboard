@@ -3,10 +3,13 @@
 
 set -e
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${ROOT_DIR}"
+
 echo "Building LSP Universal Container..."
 
 # Build the container
-docker build -f lsp-universal.Dockerfile -t lsp-universal:latest .
+docker build -f breadboard/lsp-universal.Dockerfile -t lsp-universal:latest .
 
 echo "Testing container build..."
 

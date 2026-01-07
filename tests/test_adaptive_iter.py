@@ -1,4 +1,9 @@
-from adaptive_iter import encode_adaptive_iterable, decode_adaptive_iterable, ADAPTIVE_PREFIX_ITERABLE, ADAPTIVE_PREFIX_NON_ITERABLE
+from breadboard.adaptive_iter import (
+    ADAPTIVE_PREFIX_ITERABLE,
+    ADAPTIVE_PREFIX_NON_ITERABLE,
+    decode_adaptive_iterable,
+    encode_adaptive_iterable,
+)
 
 
 def test_encode_iterable():
@@ -25,5 +30,4 @@ def test_decode_iterable_roundtrip():
     is_iter, it = decode_adaptive_iterable(encode_adaptive_iterable(src))
     assert is_iter is True
     assert list(it) == src
-
 

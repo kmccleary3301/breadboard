@@ -7,7 +7,7 @@ import os
 import ray
 from typing import Any, Dict, List, Optional
 
-from lsp_manager_v2 import LSPManagerV2
+from .lsp_manager_v2 import LSPManagerV2
 
 
 @ray.remote
@@ -190,9 +190,9 @@ class LSPSandboxFactory:
     def create_enhanced_sandbox(image: str, workspace: str, session_id: Optional[str] = None, 
                                lsp_actor: Optional[ray.actor.ActorHandle] = None) -> ray.ObjectRef:
         """
-        Create an LSP-enhanced sandbox that's compatible with existing agent_session.py
+        Create an LSP-enhanced sandbox that's compatible with the agent session actor.
         """
-        from sandbox_v2 import DevSandboxV2
+        from .sandbox_v2 import DevSandboxV2
         
         # Create base sandbox
         base_sandbox = DevSandboxV2.remote(image, session_id, workspace, lsp_actor)

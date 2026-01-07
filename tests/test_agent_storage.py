@@ -3,7 +3,7 @@ import uuid
 import ray
 import pytest
 
-from agent_session import OpenCodeAgent
+from agentic_coder_prototype.agent_session import OpenCodeAgent
 
 
 @pytest.fixture(scope="module")
@@ -28,5 +28,4 @@ def test_agent_persist_messages(ray_cluster, tmp_path):
     # Check on disk
     found = list(store.rglob("*.json"))
     assert found, "Expected persisted message files"
-
 

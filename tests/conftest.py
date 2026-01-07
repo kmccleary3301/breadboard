@@ -16,10 +16,7 @@ PROJ = os.path.abspath(os.path.join(ROOT, os.pardir))
 if PROJ not in sys.path:
     sys.path.insert(0, PROJ)
 
-# Add breadboard for direct imports (some legacy tests import `sandbox_v2`, etc.)
-KYLE = os.path.join(PROJ, 'breadboard')
-if KYLE not in sys.path:
-    sys.path.insert(0, KYLE)
+# Note: keep project root on sys.path so tests can import the `breadboard` package.
 
 # Ensure default docker runtime is standard runc during tests unless overridden
 os.environ.setdefault("RAY_DOCKER_RUNTIME", "runc")

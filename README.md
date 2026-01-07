@@ -37,9 +37,11 @@ Agent configurations are stored in the `agent_configs/` directory. Key configs:
   - `tool_calling/` - Tool calling system
 
 - **`agent_configs/`** - Agent configuration files
-- **`sandbox_v2.py`** - Secure execution environment
-- **`lsp_manager_v2.py`** - Language server integration
+- **`breadboard/`** - Sandboxing + LSP utilities
+  - `breadboard/sandbox_v2.py` - Secure execution environment
+  - `breadboard/lsp_manager_v2.py` - Language server integration
 - **`implementations/`** - Tool definitions and system prompts
+- **`tui_skeleton/`** - Claude Code-style TUI + CLI (`breadboard` binary)
 
 ### Key Features
 
@@ -57,9 +59,9 @@ Agent configurations are stored in the `agent_configs/` directory. Key configs:
 ├── main.py                     # CLI entry point
 ├── agentic_coder_prototype/    # Core agent system
 ├── agent_configs/              # Agent configurations
+├── breadboard/                 # Sandbox + LSP utilities
 ├── implementations/            # Tools and prompts
-├── sandbox_v2.py              # Execution sandbox
-├── lsp_manager_v2.py          # Language server manager
+├── tui_skeleton/               # TUI + CLI (Node/Ink)
 ├── tests/                     # Test suite
 └── misc/                      # Non-essential files
 ```

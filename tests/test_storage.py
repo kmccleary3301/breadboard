@@ -1,5 +1,5 @@
 import uuid
-from storage import JSONStorage
+from breadboard.storage import JSONStorage
 
 
 def test_json_storage_roundtrip(tmp_path):
@@ -10,5 +10,4 @@ def test_json_storage_roundtrip(tmp_path):
     assert obj["x"] == 1
     files = s.list("session")
     assert any(p.endswith("a.json") for p in files)
-
 

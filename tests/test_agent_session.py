@@ -3,7 +3,7 @@ import uuid
 import ray
 import pytest
 
-from agent_session import OpenCodeAgent
+from agentic_coder_prototype.agent_session import OpenCodeAgent
 
 
 @pytest.fixture(scope="module")
@@ -57,5 +57,4 @@ def test_agent_patch_flow(ray_cluster, tmp_path):
     assert parts and parts[0]["type"] == "tool_result"
     out = parts[0]["output"]
     assert out["action"] == "apply_patch"
-
 

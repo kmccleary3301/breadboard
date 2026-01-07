@@ -11,8 +11,9 @@ import time
 import yaml
 from pathlib import Path
 
-# Add tool_calling to path
-sys.path.insert(0, str(Path(__file__).parent / "tool_calling"))
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from tool_calling.core import ToolDefinition, ToolParameter
 from tool_calling.enhanced_agent_integration_v2 import EnhancedAgentIntegrationV2
@@ -24,7 +25,7 @@ def load_test_config(config_path: str) -> dict:
     """
     p = Path(config_path)
     if not p.exists():
-        alt = Path(__file__).parent / 'agent_configs' / p.name
+        alt = PROJECT_ROOT / "agent_configs" / p.name
         if alt.exists():
             p = alt
     with open(p, 'r') as f:

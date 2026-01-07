@@ -6,8 +6,8 @@ from typing import Any, Dict, List, Optional
 
 import ray
 
-from lsp_manager import LSPManager
-from sandbox_v2 import DevSandboxV2
+from breadboard.lsp_manager import LSPManager
+from breadboard.sandbox_v2 import DevSandboxV2
 
 
 def _now_ms() -> int:
@@ -73,7 +73,7 @@ class OpenCodeAgent:
 
     # Storage integration (optional)
     def enable_storage(self, storage_root: str) -> None:
-        from storage import JSONStorage
+        from breadboard.storage import JSONStorage
 
         self.storage_root = storage_root
         self.store = JSONStorage(storage_root)
@@ -128,5 +128,3 @@ class OpenCodeAgent:
             return {"output": out, "metadata": {"diagnostics": diags}}
         # Fallback
         return {"output": {"error": f"unknown tool: {name}"}, "metadata": {}}
-
-
