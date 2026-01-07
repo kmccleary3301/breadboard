@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
+import os
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional
@@ -35,6 +40,23 @@ def _matches_any(value: str, patterns: Iterable[str]) -> bool:
     return False
 
 
+def _canonical_json(payload: Any) -> bytes:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def sign_policy_payload(payload: Dict[str, Any], secret: str) -> str:
+    mac = hmac.new(secret.encode("utf-8"), _canonical_json(payload), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(mac).decode("ascii").rstrip("=")
+
+
+def verify_policy_payload(payload: Dict[str, Any], secret: str, signature: str) -> bool:
+    sig = str(signature or "").strip()
+    if not sig:
+        return False
+    expected = sign_policy_payload(payload, secret)
+    return hmac.compare_digest(expected, sig)
+
+
 @dataclass(frozen=True)
 class PolicyPack:
     """Policy pack enforced server-side for enterprise/security controls."""
@@ -50,6 +72,27 @@ class PolicyPack:
         raw = cfg.get("policies") or cfg.get("policy") or {}
         if not isinstance(raw, dict):
             raw = {}
+
+        # Optional signed policy pack (HMAC-SHA256).
+        #
+        # Format:
+        #   policies:
+        #     signed:
+        #       payload: { ...same shape as policies... }
+        #       signature: "<urlsafe_base64>"
+        signed = raw.get("signed")
+        if isinstance(signed, dict):
+            payload = signed.get("payload")
+            signature = signed.get("signature")
+            if isinstance(payload, dict) and isinstance(signature, str) and signature.strip():
+                secret = os.environ.get("BREADBOARD_POLICY_HMAC_SECRET", "").strip()
+                if not secret:
+                    raise ValueError(
+                        "Signed policy pack provided, but BREADBOARD_POLICY_HMAC_SECRET is not set."
+                    )
+                if not verify_policy_payload(payload, secret, signature):
+                    raise ValueError("Invalid signed policy pack signature.")
+                raw = payload
 
         tools_cfg = raw.get("tools") or raw.get("tool_allowlist") or raw.get("tool_allow") or {}
         models_cfg = raw.get("models") or raw.get("model_allowlist") or raw.get("model_allow") or {}
@@ -99,4 +142,3 @@ class PolicyPack:
         if self.model_denylist and _matches_any(name, self.model_denylist):
             return False
         return True
-

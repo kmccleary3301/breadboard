@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BreadBoard Policy Pack",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "policies": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "models": {
+          "type": ["object", "array", "string", "null"],
+          "description": "Model allow/deny rules (wildcards supported).",
+          "additionalProperties": true,
+          "properties": {
+            "allow": { "type": ["array", "string", "null"], "items": { "type": "string" } },
+            "deny": { "type": ["array", "string", "null"], "items": { "type": "string" } }
+          }
+        },
+        "tools": {
+          "type": ["object", "array", "string", "null"],
+          "description": "Tool allow/deny rules (wildcards supported).",
+          "additionalProperties": true,
+          "properties": {
+            "allow": { "type": ["array", "string", "null"], "items": { "type": "string" } },
+            "deny": { "type": ["array", "string", "null"], "items": { "type": "string" } }
+          }
+        },
+        "signed": {
+          "type": ["object", "null"],
+          "description": "Optional signed policy bundle (HMAC-SHA256). When provided, the engine verifies signature using BREADBOARD_POLICY_HMAC_SECRET and uses the embedded payload.",
+          "additionalProperties": true,
+          "properties": {
+            "payload": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "signature": {
+              "type": "string"
+            }
+          },
+          "required": ["payload", "signature"]
+        }
+      }
+    }
+  }
+}
+
