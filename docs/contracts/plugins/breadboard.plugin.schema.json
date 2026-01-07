@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BreadBoardPluginManifest",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["id", "version", "name", "description"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable plugin identifier (used for install dir + allowlists)."
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Plugin version string (SemVer recommended)."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable plugin name."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Short description of what the plugin provides."
+    },
+    "author": {
+      "type": ["string", "null"],
+      "description": "Plugin author or maintainer."
+    },
+    "homepage": {
+      "type": ["string", "null"],
+      "description": "Plugin homepage URL."
+    },
+    "license": {
+      "type": ["string", "null"],
+      "description": "License identifier or license text reference."
+    },
+    "skills": {
+      "description": "Skill files or directories relative to plugin root.",
+      "oneOf": [
+        {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "paths": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      ]
+    },
+    "tools": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "description": "Optional tool overlays or additional tool schemas."
+    },
+    "mcp": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "description": "Optional MCP server declarations shipped with this plugin.",
+      "properties": {
+        "servers": {
+          "type": ["array", "null"],
+          "items": { "type": "object", "additionalProperties": true }
+        }
+      }
+    },
+    "permissions": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "description": "Suggested permission rule additions (subject to engine enforcement)."
+    },
+    "runtime": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "description": "Runtime hints (trust/sandbox). Note: trust decisions are not accepted from untrusted plugin content."
+    }
+  }
+}
+

@@ -1353,7 +1353,8 @@ class SessionRunner:
         for manifest in plugin_manifests:
             for rel in getattr(manifest, "skills_paths", []) or []:
                 try:
-                    plugin_skill_paths.append(Path(str(workspace)) / rel)
+                    base = getattr(manifest, "root", None) or str(workspace)
+                    plugin_skill_paths.append(Path(str(base)) / rel)
                 except Exception:
                     continue
         prompt_skills, graph_skills = load_skills(

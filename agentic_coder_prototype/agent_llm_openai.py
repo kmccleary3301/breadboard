@@ -3476,7 +3476,8 @@ class OpenAIConductor:
             for manifest in plugin_manifests:
                 for rel in manifest.skills_paths:
                     try:
-                        plugin_skill_paths.append(Path(self.workspace) / rel)
+                        base = getattr(manifest, "root", None) or self.workspace
+                        plugin_skill_paths.append(Path(str(base)) / rel)
                     except Exception:
                         continue
             prompt_skills, graph_skills = load_skills(
