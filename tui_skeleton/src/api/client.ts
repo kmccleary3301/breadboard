@@ -1,4 +1,4 @@
-import { loadAppConfig } from "../config/appConfig.js"
+import { loadAppConfig, type AppConfig } from "../config/appConfig.js"
 import type {
   ErrorResponse,
   SessionCreateRequest,
@@ -55,6 +55,12 @@ export interface ReadSessionFileOptions {
   readonly maxBytes?: number
 }
 
+export interface ApiClientConfig {
+  readonly baseUrl: string
+  readonly authToken?: string
+  readonly requestTimeoutMs?: number
+}
+
 const buildUrl = (baseUrl: string, path: string, query?: RequestOptions["query"]): URL => {
   const url = new URL(path, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`)
   if (query) {
@@ -66,11 +72,16 @@ const buildUrl = (baseUrl: string, path: string, query?: RequestOptions["query"]
   return url
 }
 
-const request = async <T>(path: string, method: JsonMethod, options: RequestOptions = {}): Promise<T> => {
-  const config = loadAppConfig()
+const requestWithConfig = async <T>(
+  config: ApiClientConfig,
+  path: string,
+  method: JsonMethod,
+  options: RequestOptions = {},
+): Promise<T> => {
   const url = buildUrl(config.baseUrl, path, options.query)
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs)
+  const timeoutMs = config.requestTimeoutMs ?? 30_000
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers ?? {}),
@@ -104,19 +115,27 @@ const request = async <T>(path: string, method: JsonMethod, options: RequestOpti
   }
 }
 
-export const ApiClient = {
-  health: () => request<HealthResponse>("/health", "GET"),
-  createSession: (payload: SessionCreateRequest) => request<SessionCreateResponse>("/sessions", "POST", { body: payload }),
-  listSessions: () => request<SessionSummary[]>("/sessions", "GET"),
-  getSession: (sessionId: string) => request<SessionSummary>(`/sessions/${sessionId}`, "GET"),
+const toApiConfig = (config: AppConfig): ApiClientConfig => ({
+  baseUrl: config.baseUrl,
+  authToken: config.authToken,
+  requestTimeoutMs: config.requestTimeoutMs,
+})
+
+export const createApiClient = (config: ApiClientConfig) => ({
+  health: () => requestWithConfig<HealthResponse>(config, "/health", "GET"),
+  createSession: (payload: SessionCreateRequest) =>
+    requestWithConfig<SessionCreateResponse>(config, "/sessions", "POST", { body: payload }),
+  listSessions: () => requestWithConfig<SessionSummary[]>(config, "/sessions", "GET"),
+  getSession: (sessionId: string) => requestWithConfig<SessionSummary>(config, `/sessions/${sessionId}`, "GET"),
   postInput: (sessionId: string, body: { content: string; attachments?: ReadonlyArray<string> }) =>
-    request<void>(`/sessions/${sessionId}/input`, "POST", { body }),
-  postCommand: (sessionId: string, body: Record<string, unknown>) => request<void>(`/sessions/${sessionId}/command`, "POST", { body }),
-  deleteSession: (sessionId: string) => request<void>(`/sessions/${sessionId}`, "DELETE"),
+    requestWithConfig<void>(config, `/sessions/${sessionId}/input`, "POST", { body }),
+  postCommand: (sessionId: string, body: Record<string, unknown>) =>
+    requestWithConfig<void>(config, `/sessions/${sessionId}/command`, "POST", { body }),
+  deleteSession: (sessionId: string) => requestWithConfig<void>(config, `/sessions/${sessionId}`, "DELETE"),
   listSessionFiles: (sessionId: string, path?: string) =>
-    request<SessionFileInfo[]>(`/sessions/${sessionId}/files`, "GET", { query: path ? { path } : undefined }),
+    requestWithConfig<SessionFileInfo[]>(config, `/sessions/${sessionId}/files`, "GET", { query: path ? { path } : undefined }),
   readSessionFile: (sessionId: string, filePath: string, options?: ReadSessionFileOptions) =>
-    request<SessionFileContent>(`/sessions/${sessionId}/files`, "GET", {
+    requestWithConfig<SessionFileContent>(config, `/sessions/${sessionId}/files`, "GET", {
       query: {
         path: filePath,
         mode: options?.mode ?? "cat",
@@ -126,16 +145,15 @@ export const ApiClient = {
       },
     }),
   getModelCatalog: (configPath: string) =>
-    request<ModelCatalogResponse>("/models", "GET", { query: { config_path: configPath } }),
+    requestWithConfig<ModelCatalogResponse>(config, "/models", "GET", { query: { config_path: configPath } }),
   getSkillsCatalog: (sessionId: string) =>
-    request<SkillCatalogResponse>(`/sessions/${sessionId}/skills`, "GET"),
+    requestWithConfig<SkillCatalogResponse>(config, `/sessions/${sessionId}/skills`, "GET"),
   getCtreeSnapshot: (sessionId: string) =>
-    request<CTreeSnapshotResponse>(`/sessions/${sessionId}/ctrees`, "GET"),
+    requestWithConfig<CTreeSnapshotResponse>(config, `/sessions/${sessionId}/ctrees`, "GET"),
   downloadArtifact: (sessionId: string, artifact: string) =>
-    request<string>(`/sessions/${sessionId}/download`, "GET", { query: { artifact }, responseType: "text" }),
+    requestWithConfig<string>(config, `/sessions/${sessionId}/download`, "GET", { query: { artifact }, responseType: "text" }),
   uploadAttachments: async (sessionId: string, attachments: ReadonlyArray<AttachmentUploadPayload>) => {
     if (attachments.length === 0) return []
-    const config = loadAppConfig()
     const url = buildUrl(config.baseUrl, `/sessions/${sessionId}/attachments`)
     const form = new FormData()
     attachments.forEach((attachment, index) => {
@@ -150,7 +168,8 @@ export const ApiClient = {
       headers.Authorization = `Bearer ${config.authToken}`
     }
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs)
+    const timeoutMs = config.requestTimeoutMs ?? 30_000
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -173,7 +192,9 @@ export const ApiClient = {
       clearTimeout(timeout)
     }
   },
-}
+})
+
+export const ApiClient = createApiClient(toApiConfig(loadAppConfig()))
 
 export type {
   SessionCreateRequest,

@@ -1,12 +1,17 @@
 import { createParser, ParsedEvent, ReconnectInterval, EventSourceParseCallback } from "eventsource-parser"
-import { loadAppConfig, type AppConfig } from "../config/appConfig.js"
+import { loadAppConfig } from "../config/appConfig.js"
 import type { SessionEvent } from "./types.js"
 import { ApiError } from "./client.js"
+
+export interface StreamConfig {
+  readonly baseUrl: string
+  readonly authToken?: string
+}
 
 export interface EventStreamOptions {
   readonly signal?: AbortSignal
   readonly query?: Record<string, string | number | boolean>
-  readonly config?: AppConfig
+  readonly config?: StreamConfig
   readonly lastEventId?: string
 }
 
