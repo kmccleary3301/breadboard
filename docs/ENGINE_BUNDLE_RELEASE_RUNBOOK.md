@@ -42,6 +42,7 @@ The manifest includes (per-asset):
    - `create_release` ensures the release exists.
    - `build_bundles` runs on `ubuntu-latest`, `macos-latest`, `windows-latest` and uploads artifacts.
    - `publish_release_assets` merges per-runner manifests and uploads bundle archives + merged `manifest.json` to the release.
+   - The workflow also runs `scripts/validate_engine_manifest.py` to verify the manifest structure and asset presence.
 
 ## Validation steps (end-to-end)
 
@@ -85,4 +86,3 @@ Expected:
 
 - The CLI can also use a local manifest (filesystem path or `file://...`) for developer validation.
 - The “full” Ray collection profile is currently the default; a slimmer profile may be introduced later once validated against parity requirements.
-

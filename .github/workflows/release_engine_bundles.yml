@@ -167,6 +167,12 @@ jobs:
           fi
           python scripts/merge_engine_manifest.py --out dist/manifest.json "${fragments[@]}"
 
+      - name: Validate manifest assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/validate_engine_manifest.py dist/manifest.json --asset-root dist/collected
+
       - name: Upload bundles + manifest to release
         shell: bash
         run: |

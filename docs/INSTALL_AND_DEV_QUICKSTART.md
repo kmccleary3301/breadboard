@@ -47,6 +47,9 @@ Useful env toggles:
 - `BREADBOARD_ENGINE_KEEPALIVE=1` (don’t auto-shutdown engine on CLI exit)
 - `BREADBOARD_PROTOCOL_STRICT=1` (fail if engine protocol mismatches CLI)
 - `BREADBOARD_KEYCHAIN=1` (if available, allow API token lookup from OS keychain)
+- `BREADBOARD_SANDBOX_DRIVER=light|docker|process` (override sandbox driver selection)
+- `RAY_USE_DOCKER_SANDBOX=1` (legacy toggle; forces docker sandbox if available)
+- `BREADBOARD_DOCKER_NETWORK=<name>` (optional docker network name)
 
 Optional keychain credentials:
 ```bash

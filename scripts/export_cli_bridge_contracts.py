@@ -26,6 +26,40 @@ def _write_json(path: Path, payload: Dict[str, Any]) -> None:
 
 
 def _event_schema() -> Dict[str, Any]:
+    payload_schemas = [
+        ("turn_start", "session_event_payload_turn_start.schema.json"),
+        ("assistant_message", "session_event_payload_assistant_message.schema.json"),
+        ("user_message", "session_event_payload_user_message.schema.json"),
+        ("tool_call", "session_event_payload_tool_call.schema.json"),
+        ("tool_result", "session_event_payload_tool_result.schema.json"),
+        ("permission_request", "session_event_payload_permission_request.schema.json"),
+        ("permission_response", "session_event_payload_permission_response.schema.json"),
+        ("checkpoint_list", "session_event_payload_checkpoint_list.schema.json"),
+        ("checkpoint_restored", "session_event_payload_checkpoint_restored.schema.json"),
+        ("skills_catalog", "session_event_payload_skills_catalog.schema.json"),
+        ("skills_selection", "session_event_payload_skills_selection.schema.json"),
+        ("ctree_node", "session_event_payload_ctree_node.schema.json"),
+        ("ctree_snapshot", "session_event_payload_ctree_snapshot.schema.json"),
+        ("task_event", "session_event_payload_task_event.schema.json"),
+        ("reward_update", "session_event_payload_reward_update.schema.json"),
+        ("completion", "session_event_payload_completion.schema.json"),
+        ("log_link", "session_event_payload_log_link.schema.json"),
+        ("error", "session_event_payload_error.schema.json"),
+        ("run_finished", "session_event_payload_run_finished.schema.json"),
+    ]
+    event_variants = []
+    for event_type, schema_name in payload_schemas:
+        event_variants.append(
+            {
+                "title": f"{event_type}Event",
+                "type": "object",
+                "required": ["type", "payload"],
+                "properties": {
+                    "type": {"const": event_type},
+                    "payload": {"$ref": schema_name},
+                },
+            }
+        )
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "SessionEventEnvelope",
@@ -54,6 +88,7 @@ def _event_schema() -> Dict[str, Any]:
             "turn_id": {"type": ["string", "integer", "null"]},
             "payload": {"type": "object", "additionalProperties": True},
         },
+        "oneOf": event_variants,
     }
 
 def _payload_schema_tool_call() -> Dict[str, Any]:

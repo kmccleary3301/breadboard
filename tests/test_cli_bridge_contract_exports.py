@@ -46,3 +46,84 @@ def test_cli_bridge_contract_files_present() -> None:
     for name in expected_schemas:
         json.loads((schema_dir / name).read_text(encoding="utf-8"))
 
+
+def test_session_event_schema_variants_cover_all_event_types() -> None:
+    root = Path(__file__).resolve().parents[1]
+    schema_dir = root / "docs" / "contracts" / "cli_bridge" / "schemas"
+    envelope = json.loads((schema_dir / "session_event_envelope.schema.json").read_text(encoding="utf-8"))
+    variants = envelope.get("oneOf") or []
+    event_types = sorted({variant.get("properties", {}).get("type", {}).get("const") for variant in variants})
+    event_types = [value for value in event_types if value]
+    assert event_types, "Expected session_event_envelope.schema.json to include oneOf variants."
+    assert len(event_types) == len(set(event_types)), "Duplicate event types in schema variants."
+    expected = [
+        "turn_start",
+        "assistant_message",
+        "user_message",
+        "tool_call",
+        "tool_result",
+        "permission_request",
+        "permission_response",
+        "checkpoint_list",
+        "checkpoint_restored",
+        "skills_catalog",
+        "skills_selection",
+        "ctree_node",
+        "ctree_snapshot",
+        "task_event",
+        "reward_update",
+        "completion",
+        "log_link",
+        "error",
+        "run_finished",
+    ]
+    missing = [value for value in expected if value not in event_types]
+    assert not missing, f"Missing event schema variants for: {missing}"
+
+
+def test_session_event_payloads_validate_minimal_samples() -> None:
+    from jsonschema import Draft202012Validator
+    from jsonschema import RefResolver
+
+    root = Path(__file__).resolve().parents[1]
+    schema_dir = root / "docs" / "contracts" / "cli_bridge" / "schemas"
+    envelope = json.loads((schema_dir / "session_event_envelope.schema.json").read_text(encoding="utf-8"))
+    resolver = RefResolver(base_uri=schema_dir.resolve().as_uri() + "/", referrer=envelope)
+    validator = Draft202012Validator(envelope, resolver=resolver)
+
+    samples = {
+        "turn_start": {},
+        "assistant_message": {"text": "hello"},
+        "user_message": {"text": "hi"},
+        "tool_call": {"call": {}, "call_id": "call-1", "tool": "read_file"},
+        "tool_result": {"status": "ok", "error": False},
+        "permission_request": {"request_id": "req-1", "tool": "read_file", "kind": "tool"},
+        "permission_response": {"request_id": "req-1"},
+        "checkpoint_list": {"checkpoints": []},
+        "checkpoint_restored": {"checkpoint_id": "cp-1"},
+        "skills_catalog": {},
+        "skills_selection": {"selection": {}},
+        "ctree_node": {"node": {}, "snapshot": {}},
+        "ctree_snapshot": {},
+        "task_event": {"kind": "step"},
+        "reward_update": {"summary": {}},
+        "completion": {"summary": {}},
+        "log_link": {"url": "https://example.com/log"},
+        "error": {"message": "error"},
+        "run_finished": {"eventCount": 0},
+    }
+
+    base_fields = {
+        "id": "evt-1",
+        "session_id": "sess-1",
+        "timestamp": 0,
+        "timestamp_ms": 0,
+        "protocol_version": "1.0",
+    }
+
+    for event_type, payload in samples.items():
+        sample = dict(base_fields)
+        sample["type"] = event_type
+        sample["payload"] = payload
+        errors = list(validator.iter_errors(sample))
+        assert not errors, f"Schema validation failed for {event_type}: {errors}"

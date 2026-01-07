@@ -199,11 +199,32 @@ export const createApiClient = (config: ApiClientConfig) => ({
   },
 })
 
-const DEFAULT_CLIENT_CONFIG = loadAppConfig()
-export const ApiClient = createApiClient({
-  ...toApiConfig(DEFAULT_CLIENT_CONFIG),
-  authToken: () => resolveAuthToken(DEFAULT_CLIENT_CONFIG.baseUrl),
-})
+type ApiClientInstance = ReturnType<typeof createApiClient>
+
+const buildApiClient = (): ApiClientInstance => {
+  const config = loadAppConfig()
+  return createApiClient({
+    ...toApiConfig(config),
+    authToken: () => resolveAuthToken(config.baseUrl),
+  })
+}
+
+export const ApiClient: ApiClientInstance = {
+  health: (...args) => buildApiClient().health(...args),
+  createSession: (...args) => buildApiClient().createSession(...args),
+  listSessions: (...args) => buildApiClient().listSessions(...args),
+  getSession: (...args) => buildApiClient().getSession(...args),
+  postInput: (...args) => buildApiClient().postInput(...args),
+  postCommand: (...args) => buildApiClient().postCommand(...args),
+  deleteSession: (...args) => buildApiClient().deleteSession(...args),
+  listSessionFiles: (...args) => buildApiClient().listSessionFiles(...args),
+  readSessionFile: (...args) => buildApiClient().readSessionFile(...args),
+  getModelCatalog: (...args) => buildApiClient().getModelCatalog(...args),
+  getSkillsCatalog: (...args) => buildApiClient().getSkillsCatalog(...args),
+  getCtreeSnapshot: (...args) => buildApiClient().getCtreeSnapshot(...args),
+  downloadArtifact: (...args) => buildApiClient().downloadArtifact(...args),
+  uploadAttachments: (...args) => buildApiClient().uploadAttachments(...args),
+}
 
 export type {
   SessionCreateRequest,
