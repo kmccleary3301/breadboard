@@ -14,6 +14,7 @@ def test_signed_policy_pack_verifies_and_applies(monkeypatch: pytest.MonkeyPatch
     payload = {
         "models": {"allow": ["openrouter/*"]},
         "tools": {"deny": ["run_shell"]},
+        "network": {"allow": ["https://example.com/*"]},
     }
     signature = sign_policy_payload(payload, secret)
 
@@ -21,6 +22,8 @@ def test_signed_policy_pack_verifies_and_applies(monkeypatch: pytest.MonkeyPatch
     assert pack.is_model_allowed("openrouter/openai/gpt-5-nano") is True
     assert pack.is_model_allowed("openai/gpt-4.1") is False
     assert pack.is_tool_allowed("run_shell") is False
+    assert pack.is_webfetch_allowed("https://example.com/docs") is True
+    assert pack.is_webfetch_allowed("https://openai.com") is False
 
 
 def test_signed_policy_pack_rejects_invalid_signature(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -35,4 +38,3 @@ def test_signed_policy_pack_requires_secret(monkeypatch: pytest.MonkeyPatch) -> 
     payload = {"models": {"allow": ["openrouter/*"]}}
     with pytest.raises(ValueError):
         PolicyPack.from_config({"policies": {"signed": {"payload": payload, "signature": "sig"}}})
-

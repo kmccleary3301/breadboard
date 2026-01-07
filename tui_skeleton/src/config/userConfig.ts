@@ -6,6 +6,7 @@ import { promises as fsp } from "node:fs"
 export interface UserConfigFile {
   readonly baseUrl?: string
   readonly authToken?: string
+  readonly authTokenRef?: string
   readonly engineVersion?: string
   readonly enginePath?: string
 }
@@ -32,9 +33,10 @@ export const loadUserConfigSync = (): UserConfigFile => {
     if (!isRecord(parsed)) return {}
     const baseUrl = typeof parsed.baseUrl === "string" ? parsed.baseUrl : undefined
     const authToken = typeof parsed.authToken === "string" ? parsed.authToken : undefined
+    const authTokenRef = typeof parsed.authTokenRef === "string" ? parsed.authTokenRef : undefined
     const engineVersion = typeof parsed.engineVersion === "string" ? parsed.engineVersion : undefined
     const enginePath = typeof parsed.enginePath === "string" ? parsed.enginePath : undefined
-    return { baseUrl, authToken, engineVersion, enginePath }
+    return { baseUrl, authToken, authTokenRef, engineVersion, enginePath }
   } catch {
     return {}
   }
@@ -46,6 +48,7 @@ export const writeUserConfig = async (next: UserConfigFile): Promise<void> => {
   const payload = {
     ...(next.baseUrl ? { baseUrl: next.baseUrl } : {}),
     ...(next.authToken ? { authToken: next.authToken } : {}),
+    ...(next.authTokenRef ? { authTokenRef: next.authTokenRef } : {}),
     ...(next.engineVersion ? { engineVersion: next.engineVersion } : {}),
     ...(next.enginePath ? { enginePath: next.enginePath } : {}),
   }

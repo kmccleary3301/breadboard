@@ -93,6 +93,38 @@ jobs:
             --clean \
             --base-url "$BASE_URL"
 
+      - name: Smoke bundled engine (/health)
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT=19123
+          export BREADBOARD_CLI_HOST=127.0.0.1
+          export BREADBOARD_CLI_PORT="$PORT"
+
+          shopt -s nullglob
+          candidates=(dist/engine_bundles/build/"$VERSION"/*/dist/breadboard-engine*)
+          if [ "${#candidates[@]}" -eq 0 ]; then
+            echo "No onedir output found under dist/engine_bundles/build/$VERSION" >&2
+            exit 2
+          fi
+          onedir="${candidates[0]}"
+          exe=""
+          if [ -f "$onedir/breadboard-engine" ]; then
+            exe="$onedir/breadboard-engine"
+          elif [ -f "$onedir/breadboard-engine.exe" ]; then
+            exe="$onedir/breadboard-engine.exe"
+          else
+            echo "Unable to locate engine executable in $onedir" >&2
+            ls -la "$onedir" || true
+            exit 3
+          fi
+          chmod +x "$exe" || true
+          "$exe" &
+          pid="$!"
+          trap 'kill "$pid" >/dev/null 2>&1 || true' EXIT
+          sleep 3
+          curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null
+
       - name: Rename manifest fragment
         shell: bash
         run: |
@@ -146,4 +178,3 @@ jobs:
             exit 2
           fi
           gh release upload "$TAG" dist/manifest.json "${assets[@]}" --clobber
-

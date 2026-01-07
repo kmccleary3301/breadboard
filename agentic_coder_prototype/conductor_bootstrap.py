@@ -36,6 +36,7 @@ from .guardrail_coordinator import GuardrailCoordinator
 from .guardrail_orchestrator import GuardrailOrchestrator
 from .plan_bootstrapper import PlanBootstrapper
 from .permission_broker import PermissionBroker
+from .policy_pack import PolicyPack
 from .loop_detection import LoopDetectionService
 from .context_window_guard import ContextWindowGuard
 from .streaming_policy import StreamingPolicy
@@ -102,7 +103,8 @@ def setup_sandbox(
 ) -> None:
     """Initialize sandbox based on virtualization mode."""
     sandbox_cfg = ((config or {}).get("workspace", {}) or {}).get("sandbox", {}) or {}
-    sandbox_driver = str(sandbox_cfg.get("driver") or "process").strip().lower()
+    raw_driver = sandbox_cfg.get("driver") if isinstance(sandbox_cfg, dict) else None
+    sandbox_driver = str(raw_driver).strip().lower() if isinstance(raw_driver, str) and raw_driver.strip() else None
     sandbox_options = dict(sandbox_cfg.get("options") or {}) if isinstance(sandbox_cfg, dict) else {}
     mirror_cfg = ((config or {}).get("workspace", {}) or {}).get("mirror", {})
     mirror_mode = str(mirror_cfg.get("mode", "development")).lower()
@@ -228,7 +230,8 @@ def initialize_provider_components(conductor: Any) -> None:
 
 def initialize_execution_components(conductor: Any) -> None:
     """Initialize execution-related components."""
-    conductor.permission_broker = PermissionBroker(conductor.config.get("permissions"))
+    policy = PolicyPack.from_config(conductor.config)
+    conductor.permission_broker = PermissionBroker(conductor.config.get("permissions"), policy_pack=policy)
     conductor.loop_detector = LoopDetectionService()
     conductor.context_guard = ContextWindowGuard()
     conductor.message_formatter = MessageFormatter(conductor.workspace)

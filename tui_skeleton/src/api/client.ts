@@ -1,4 +1,5 @@
 import { loadAppConfig, type AppConfig } from "../config/appConfig.js"
+import { resolveAuthToken } from "../config/authTokenProvider.js"
 import type {
   ErrorResponse,
   SessionCreateRequest,
@@ -57,7 +58,7 @@ export interface ReadSessionFileOptions {
 
 export interface ApiClientConfig {
   readonly baseUrl: string
-  readonly authToken?: string
+  readonly authToken?: string | (() => Promise<string | undefined>)
   readonly requestTimeoutMs?: number
 }
 
@@ -82,12 +83,14 @@ const requestWithConfig = async <T>(
   const controller = new AbortController()
   const timeoutMs = config.requestTimeoutMs ?? 30_000
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  const authToken =
+    typeof config.authToken === "function" ? await config.authToken() : config.authToken
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers ?? {}),
   }
-  if (config.authToken) {
-    headers.Authorization = `Bearer ${config.authToken}`
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`
   }
   try {
     const response = await fetch(url, {
@@ -164,8 +167,10 @@ export const createApiClient = (config: ApiClientConfig) => ({
     })
     form.append("metadata", JSON.stringify({ source: "clipboard" }))
     const headers: Record<string, string> = {}
-    if (config.authToken) {
-      headers.Authorization = `Bearer ${config.authToken}`
+    const authToken =
+      typeof config.authToken === "function" ? await config.authToken() : config.authToken
+    if (authToken) {
+      headers.Authorization = `Bearer ${authToken}`
     }
     const controller = new AbortController()
     const timeoutMs = config.requestTimeoutMs ?? 30_000
@@ -194,7 +199,11 @@ export const createApiClient = (config: ApiClientConfig) => ({
   },
 })
 
-export const ApiClient = createApiClient(toApiConfig(loadAppConfig()))
+const DEFAULT_CLIENT_CONFIG = loadAppConfig()
+export const ApiClient = createApiClient({
+  ...toApiConfig(DEFAULT_CLIENT_CONFIG),
+  authToken: () => resolveAuthToken(DEFAULT_CLIENT_CONFIG.baseUrl),
+})
 
 export type {
   SessionCreateRequest,

@@ -1003,6 +1003,8 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const shortcutsOpenedAtRef = useRef<number | null>(null)
   const [usageOpen, setUsageOpen] = useState(false)
+  const [inspectRawOpen, setInspectRawOpen] = useState(false)
+  const [inspectRawScroll, setInspectRawScroll] = useState(0)
   const [modelSearch, setModelSearch] = useState("")
   const [modelIndex, setModelIndex] = useState(0)
   const [modelOffset, setModelOffset] = useState(0)
@@ -1144,6 +1146,33 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const columnWidth = stdout?.columns && Number.isFinite(stdout.columns) ? stdout.columns : 80
   const contentWidth = useMemo(() => Math.max(10, columnWidth - 2), [columnWidth])
   const rowCount = stdout?.rows && Number.isFinite(stdout.rows) ? stdout.rows : 40
+  useEffect(() => {
+    if (inspectMenu.status === "hidden") {
+      setInspectRawOpen(false)
+      setInspectRawScroll(0)
+    }
+  }, [inspectMenu.status])
+  const inspectRawViewportRows = useMemo(() => Math.max(10, Math.min(24, Math.floor(rowCount * 0.6))), [rowCount])
+  const inspectRawLines = useMemo(() => {
+    if (!inspectRawOpen || inspectMenu.status !== "ready") return []
+    try {
+      const payload = {
+        session: inspectMenu.session,
+        skills: inspectMenu.skills,
+        ctree: inspectMenu.ctree ?? null,
+      }
+      return JSON.stringify(payload, null, 2).split("\n")
+    } catch {
+      return ["<unable to serialize inspector payload>"]
+    }
+  }, [inspectMenu, inspectRawOpen])
+  const inspectRawMaxScroll = useMemo(
+    () => Math.max(0, inspectRawLines.length - inspectRawViewportRows),
+    [inspectRawLines.length, inspectRawViewportRows],
+  )
+  useEffect(() => {
+    setInspectRawScroll((prev) => Math.max(0, Math.min(prev, inspectRawMaxScroll)))
+  }, [inspectRawMaxScroll])
   const PANEL_WIDTH = useMemo(() => Math.min(96, Math.max(60, Math.floor(columnWidth * 0.8))), [columnWidth])
   const modelColumnLayout = useMemo(() => computeModelColumns(columnWidth), [columnWidth])
   const modelMenuCompact = useMemo(() => rowCount <= 20 || columnWidth <= 70, [columnWidth, rowCount])
@@ -2982,6 +3011,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         return true
       }
       if (inspectMenu.status !== "hidden") {
+        const clampInspectScroll = (value: number) => Math.max(0, Math.min(value, inspectRawMaxScroll))
         if (key.escape || char === "\u001b") {
           void onSubmit("/inspect close")
           return true
@@ -2989,6 +3019,29 @@ export const ReplView: React.FC<ReplViewProps> = ({
         if (!key.ctrl && !key.meta && lowerChar === "r") {
           void onSubmit("/inspect refresh")
           return true
+        }
+        if (!key.ctrl && !key.meta && lowerChar === "j") {
+          setInspectRawOpen((prev) => !prev)
+          setInspectRawScroll(0)
+          return true
+        }
+        if (inspectRawOpen) {
+          if (key.upArrow) {
+            setInspectRawScroll((prev) => clampInspectScroll(prev - 1))
+            return true
+          }
+          if (key.downArrow) {
+            setInspectRawScroll((prev) => clampInspectScroll(prev + 1))
+            return true
+          }
+          if (key.pageUp) {
+            setInspectRawScroll((prev) => clampInspectScroll(prev - inspectRawViewportRows))
+            return true
+          }
+          if (key.pageDown) {
+            setInspectRawScroll((prev) => clampInspectScroll(prev + inspectRawViewportRows))
+            return true
+          }
         }
       }
       if (isCtrlShiftT && keymap !== "claude") {
@@ -5088,7 +5141,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         ["@ for file paths", "ctrl + o for transcript", "ctrl + v to paste images"],
         ["& for background", "ctrl + t to show todos", "alt + p to switch model"],
         ["", "shift + ⏎ for newline", "ctrl + s to stash prompt"],
-        ["", "ctrl + g for skills", ""],
+        ["", "ctrl + g for skills", "ctrl + r for rewind"],
       ]
       const colWidth = Math.max(22, Math.floor((contentWidth - 4) / 3))
       return rows.map(([a, b, c]) => {
@@ -5118,6 +5171,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
       ["Alt+P", "Model picker"],
       ["Ctrl+G", "Skills picker"],
       ["Ctrl+B", "Background tasks"],
+      ["Ctrl+R", "Rewind (checkpoints)"],
       ["/usage", "Usage summary"],
       ["Tab", "Complete @ or / list"],
       ["/", "Slash commands"],
@@ -5264,6 +5318,14 @@ export const ReplView: React.FC<ReplViewProps> = ({
       }
       if (isCtrlB) {
         setTasksOpen((prev) => !prev)
+        return true
+      }
+      if (key.ctrl && lowerChar === "r") {
+        if (rewindMenu.status === "hidden") {
+          void onSubmit("/rewind")
+        } else {
+          onRewindClose()
+        }
         return true
       }
       if (key.ctrl && lowerChar === "l") {
@@ -6348,8 +6410,14 @@ export const ReplView: React.FC<ReplViewProps> = ({
         const sheetMode = isBreadboardProfile
         const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
         const titleLines: SelectPanelLine[] = [{ text: chalk.bold("Inspect"), color: "#FB923C" }]
-        const hintLines: SelectPanelLine[] = [{ text: "R refresh • Esc close", color: "dim" }]
+        const hintLines: SelectPanelLine[] = [
+          {
+            text: inspectRawOpen ? "J summary • ↑↓ scroll • R refresh • Esc close" : "J raw • R refresh • Esc close",
+            color: "dim",
+          },
+        ]
         const rows: SelectPanelRow[] = []
+        const footerLines: SelectPanelLine[] = []
 
         const isRecord = (value: unknown): value is Record<string, unknown> =>
           typeof value === "object" && value !== null && !Array.isArray(value)
@@ -6364,68 +6432,83 @@ export const ReplView: React.FC<ReplViewProps> = ({
         } else if (inspectMenu.status === "error") {
           rows.push({ kind: "empty", text: inspectMenu.message, color: "red" })
         } else if (inspectMenu.status === "ready") {
-          const session = inspectMenu.session
-          const skillsPayload = inspectMenu.skills
-
-          rows.push({ kind: "header", text: "Session", color: "dim" })
-          if (isRecord(session)) {
-            pushKV("ID", sessionId, "gray")
-            pushKV("Status", session.status, "white")
-            pushKV("Model", session.model ?? stats.model, "white")
-            pushKV("Mode", session.mode ?? mode ?? "—", "white")
-            pushKV("Created", session.created_at ?? session.createdAt, "gray")
-            pushKV("Last activity", session.last_activity_at ?? session.lastActivityAt, "gray")
-            if (session.logging_dir ?? session.loggingDir) {
-              pushKV("Logging", session.logging_dir ?? session.loggingDir, "gray")
-            }
-            const meta = isRecord(session.metadata) ? session.metadata : null
-            if (meta) {
-              rows.push({ kind: "header", text: "Metadata", color: "dim" })
-              pushKV("Keys", Object.keys(meta).length, "gray")
-              const pluginSnapshot = meta.plugin_snapshot ?? meta.plugins ?? null
-              const mcpSnapshot = meta.mcp_snapshot ?? meta.mcp ?? null
-              if (pluginSnapshot) pushKV("Plugin snapshot", typeof pluginSnapshot, "gray")
-              if (mcpSnapshot) pushKV("MCP snapshot", typeof mcpSnapshot, "gray")
+          if (inspectRawOpen) {
+            rows.push({ kind: "header", text: "Raw JSON", color: "dim" })
+            const scroll = Math.max(0, Math.min(inspectRawScroll, inspectRawMaxScroll))
+            const visible = inspectRawLines.slice(scroll, scroll + inspectRawViewportRows)
+            visible.forEach((line) => {
+              rows.push({ kind: "item", text: line, color: "gray" })
+            })
+            if (inspectRawLines.length > inspectRawViewportRows) {
+              footerLines.push({
+                text: `${scroll + 1}-${Math.min(scroll + inspectRawViewportRows, inspectRawLines.length)} of ${inspectRawLines.length}`,
+                color: "dim",
+              })
             }
           } else {
-            pushKV("ID", sessionId, "gray")
-            pushKV("Status", status, "white")
-            pushKV("Model", stats.model, "white")
-          }
+            const session = inspectMenu.session
+            const skillsPayload = inspectMenu.skills
 
-          if (isRecord(skillsPayload)) {
-            const sources = isRecord(skillsPayload.sources) ? skillsPayload.sources : null
-            const catalog = isRecord(skillsPayload.catalog) ? skillsPayload.catalog : null
-            const catalogSkills = catalog && Array.isArray(catalog.skills) ? catalog.skills : []
-            rows.push({ kind: "header", text: "Skills", color: "dim" })
-            pushKV("Count", catalogSkills.length, "gray")
-            const selection = isRecord(skillsPayload.selection) ? skillsPayload.selection : null
-            if (selection?.mode) {
-              pushKV("Selection", selection.mode, "gray")
+            rows.push({ kind: "header", text: "Session", color: "dim" })
+            if (isRecord(session)) {
+              pushKV("ID", sessionId, "gray")
+              pushKV("Status", session.status, "white")
+              pushKV("Model", session.model ?? stats.model, "white")
+              pushKV("Mode", session.mode ?? mode ?? "—", "white")
+              pushKV("Created", session.created_at ?? session.createdAt, "gray")
+              pushKV("Last activity", session.last_activity_at ?? session.lastActivityAt, "gray")
+              if (session.logging_dir ?? session.loggingDir) {
+                pushKV("Logging", session.logging_dir ?? session.loggingDir, "gray")
+              }
+              const meta = isRecord(session.metadata) ? session.metadata : null
+              if (meta) {
+                rows.push({ kind: "header", text: "Metadata", color: "dim" })
+                pushKV("Keys", Object.keys(meta).length, "gray")
+                const pluginSnapshot = meta.plugin_snapshot ?? meta.plugins ?? null
+                const mcpSnapshot = meta.mcp_snapshot ?? meta.mcp ?? null
+                if (pluginSnapshot) pushKV("Plugin snapshot", typeof pluginSnapshot, "gray")
+                if (mcpSnapshot) pushKV("MCP snapshot", typeof mcpSnapshot, "gray")
+              }
+            } else {
+              pushKV("ID", sessionId, "gray")
+              pushKV("Status", status, "white")
+              pushKV("Model", stats.model, "white")
             }
-            if (sources) {
-              if (sources.config_path) pushKV("Config", sources.config_path, "gray")
-              if (sources.workspace) pushKV("Workspace", sources.workspace, "gray")
-              if (sources.plugin_count != null) pushKV("Plugins", sources.plugin_count, "gray")
-              const snapshot = sources.plugin_snapshot
-              if (isRecord(snapshot) && Array.isArray(snapshot.plugins)) {
-                const plugins = snapshot.plugins.slice(0, 6).map((p: any) => p?.id ?? "?")
-                if (plugins.length > 0) pushKV("Plugin IDs", plugins.join(", "), "gray")
+
+            if (isRecord(skillsPayload)) {
+              const sources = isRecord(skillsPayload.sources) ? skillsPayload.sources : null
+              const catalog = isRecord(skillsPayload.catalog) ? skillsPayload.catalog : null
+              const catalogSkills = catalog && Array.isArray(catalog.skills) ? catalog.skills : []
+              rows.push({ kind: "header", text: "Skills", color: "dim" })
+              pushKV("Count", catalogSkills.length, "gray")
+              const selection = isRecord(skillsPayload.selection) ? skillsPayload.selection : null
+              if (selection?.mode) {
+                pushKV("Selection", selection.mode, "gray")
+              }
+              if (sources) {
+                if (sources.config_path) pushKV("Config", sources.config_path, "gray")
+                if (sources.workspace) pushKV("Workspace", sources.workspace, "gray")
+                if (sources.plugin_count != null) pushKV("Plugins", sources.plugin_count, "gray")
+                const snapshot = sources.plugin_snapshot
+                if (isRecord(snapshot) && Array.isArray(snapshot.plugins)) {
+                  const plugins = snapshot.plugins.slice(0, 6).map((p: any) => p?.id ?? "?")
+                  if (plugins.length > 0) pushKV("Plugin IDs", plugins.join(", "), "gray")
+                }
               }
             }
-          }
 
-          if (inspectMenu.ctree) {
-            rows.push({ kind: "header", text: "CTree", color: "dim" })
-            pushKV("Loaded", "yes", "gray")
-          }
+            if (inspectMenu.ctree) {
+              rows.push({ kind: "header", text: "CTree", color: "dim" })
+              pushKV("Loaded", "yes", "gray")
+            }
 
-          rows.push({ kind: "header", text: "Local", color: "dim" })
-          pushKV("Pending response", pendingResponse ? "yes" : "no", pendingResponse ? "#F59E0B" : "gray")
-          pushKV("Events", stats.eventCount, "gray")
-          pushKV("Tools", stats.toolCount, "gray")
-          pushKV("Todos", todos.length, "gray")
-          pushKV("Tasks", tasks.length, "gray")
+            rows.push({ kind: "header", text: "Local", color: "dim" })
+            pushKV("Pending response", pendingResponse ? "yes" : "no", pendingResponse ? "#F59E0B" : "gray")
+            pushKV("Events", stats.eventCount, "gray")
+            pushKV("Tools", stats.toolCount, "gray")
+            pushKV("Todos", todos.length, "gray")
+            pushKV("Tasks", tasks.length, "gray")
+          }
         }
 
         return (
@@ -6439,6 +6522,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
             titleLines={titleLines}
             hintLines={hintLines}
             rows={rows}
+            footerLines={footerLines}
           />
         )
       },

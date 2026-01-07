@@ -30,8 +30,9 @@ class PermissionBroker:
 
     STATE_KEY = "permission_broker_state"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, config: Optional[Dict[str, Any]] = None, *, policy_pack: Any | None = None) -> None:
         raw = config or {}
+        self._policy_pack = policy_pack
         self._options = self._extract_options(raw)
         self._ask_mode = str(self._options.get("mode") or self._options.get("ask_mode") or "auto_allow").strip().lower()
         self._auto_allow = self._ask_mode in {"auto", "auto_allow", "allow", "yes", "true", "1"}
@@ -188,6 +189,8 @@ class PermissionBroker:
         request = self._build_request(call)
         if not request:
             return None
+        if self._policy_denies(request):
+            return "deny"
         return self._resolve_action(request)
 
     def ensure_allowed(self, session_state, parsed_calls: Iterable[Any]) -> None:
@@ -198,6 +201,14 @@ class PermissionBroker:
             request = self._build_request(call)
             if not request:
                 continue
+            if self._policy_denies(request):
+                self._log_event(session_state, request, status="denied", note="policy_pack_deny")
+                message = (
+                    "<VALIDATION_ERROR>\n"
+                    f"{request.category.title()} pattern '{request.pattern}' is denied by the policy pack.\n"
+                    "</VALIDATION_ERROR>"
+                )
+                raise PermissionDeniedError(message)
             action = self._resolve_action(request)
             if action == "deny":
                 self._log_event(session_state, request, status="denied", note="config_deny")
@@ -506,6 +517,32 @@ class PermissionBroker:
         key = str(request.pattern or request.metadata.get("function") or "")
         action = self._wildcard_all(key, patterns)
         return str(action or patterns.get("*") or "allow").lower()
+
+    def _policy_denies(self, request: PermissionRequest) -> bool:
+        policy = getattr(self, "_policy_pack", None)
+        if policy is None:
+            return False
+        metadata = request.metadata if isinstance(request.metadata, dict) else {}
+        function = str(metadata.get("function") or "").strip().lower()
+        if function:
+            checker = getattr(policy, "is_tool_allowed", None)
+            if callable(checker):
+                try:
+                    if not bool(checker(function)):
+                        return True
+                except Exception:
+                    pass
+        if str(request.category or "").lower() == "webfetch":
+            url = str(metadata.get("url") or request.pattern or "").strip()
+            if url:
+                checker = getattr(policy, "is_webfetch_allowed", None)
+                if callable(checker):
+                    try:
+                        if not bool(checker(url)):
+                            return True
+                    except Exception:
+                        pass
+        return False
 
     def _build_request(self, call: Any) -> Optional[PermissionRequest]:
         function = self._extract_function_name(call)

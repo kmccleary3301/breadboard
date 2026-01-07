@@ -65,6 +65,8 @@ class PolicyPack:
     tool_denylist: Optional[List[str]] = None
     model_allowlist: Optional[List[str]] = None
     model_denylist: Optional[List[str]] = None
+    webfetch_allowlist: Optional[List[str]] = None
+    webfetch_denylist: Optional[List[str]] = None
 
     @classmethod
     def from_config(cls, config: Dict[str, Any] | None) -> "PolicyPack":
@@ -96,6 +98,7 @@ class PolicyPack:
 
         tools_cfg = raw.get("tools") or raw.get("tool_allowlist") or raw.get("tool_allow") or {}
         models_cfg = raw.get("models") or raw.get("model_allowlist") or raw.get("model_allow") or {}
+        network_cfg = raw.get("network") or raw.get("webfetch") or raw.get("web") or {}
 
         tool_allow = None
         tool_deny = None
@@ -113,11 +116,21 @@ class PolicyPack:
         else:
             model_allow = _as_str_list(models_cfg)
 
+        webfetch_allow = None
+        webfetch_deny = None
+        if isinstance(network_cfg, dict):
+            webfetch_allow = _as_str_list(network_cfg.get("allow") or network_cfg.get("allowlist"))
+            webfetch_deny = _as_str_list(network_cfg.get("deny") or network_cfg.get("denylist") or network_cfg.get("block"))
+        else:
+            webfetch_allow = _as_str_list(network_cfg)
+
         return cls(
             tool_allowlist=tool_allow,
             tool_denylist=tool_deny,
             model_allowlist=model_allow,
             model_denylist=model_deny,
+            webfetch_allowlist=webfetch_allow,
+            webfetch_denylist=webfetch_deny,
         )
 
     def is_tool_allowed(self, tool_name: str) -> bool:
@@ -140,5 +153,15 @@ class PolicyPack:
         if self.model_allowlist is not None and not _matches_any(name, self.model_allowlist):
             return False
         if self.model_denylist and _matches_any(name, self.model_denylist):
+            return False
+        return True
+
+    def is_webfetch_allowed(self, url: str) -> bool:
+        text = str(url or "")
+        if not text:
+            return False
+        if self.webfetch_allowlist is not None and not _matches_any(text, self.webfetch_allowlist):
+            return False
+        if self.webfetch_denylist and _matches_any(text, self.webfetch_denylist):
             return False
         return True

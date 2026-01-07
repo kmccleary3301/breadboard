@@ -46,6 +46,14 @@ Useful env toggles:
 - `RAY_SCE_LOCAL_MODE=1` (skip Ray init during engine startup)
 - `BREADBOARD_ENGINE_KEEPALIVE=1` (don’t auto-shutdown engine on CLI exit)
 - `BREADBOARD_PROTOCOL_STRICT=1` (fail if engine protocol mismatches CLI)
+- `BREADBOARD_KEYCHAIN=1` (if available, allow API token lookup from OS keychain)
+
+Optional keychain credentials:
+```bash
+breadboard auth set "<token>"
+breadboard auth status
+breadboard auth clear
+```
 
 ## Packaging smokes (local)
 
@@ -80,4 +88,3 @@ TUI:
 ```bash
 npm -C tui_skeleton test
 ```
-

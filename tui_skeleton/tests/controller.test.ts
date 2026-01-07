@@ -52,4 +52,37 @@ describe("ReplSessionController", () => {
     expect(state.permissionRequest).toBeNull()
     expect(state.permissionQueueDepth).toBe(0)
   })
+
+  it("inserts tool_result immediately after matching tool_call", () => {
+    const controller = new ReplSessionController({
+      configPath: "agent_configs/opencode_grok4fast_c_fs_v2.yaml",
+    })
+    // @ts-expect-error mutating private field in test
+    controller.sessionId = "test-session"
+
+    // @ts-expect-error invoke private helper
+    controller.applyEvent({
+      id: "evt-call",
+      type: "tool_call",
+      session_id: "test-session",
+      turn: 1,
+      timestamp: 0,
+      payload: { call_id: "call-1", tool: "run_shell", action: "start" },
+    })
+    // @ts-expect-error invoke private helper
+    controller.applyEvent({
+      id: "evt-result",
+      type: "tool_result",
+      session_id: "test-session",
+      turn: 1,
+      timestamp: 1,
+      payload: { call_id: "call-1", status: "ok", error: false, result: { exit: 0 } },
+    })
+
+    const events = controller.getState().toolEvents
+    const callIndex = events.findIndex((entry) => entry.text.includes("[call]"))
+    const resultIndex = events.findIndex((entry) => entry.text.includes("[result]"))
+    expect(callIndex).toBeGreaterThanOrEqual(0)
+    expect(resultIndex).toBe(callIndex + 1)
+  })
 })

@@ -15,6 +15,7 @@ import { runCommand } from "./commands/run.js"
 import { connectCommand } from "./commands/connect.js"
 import { engineCommand } from "./commands/engine.js"
 import { pluginCommand } from "./commands/plugin.js"
+import { authCommand } from "./commands/auth.js"
 import { ensureEngine } from "./engine/engineSupervisor.js"
 import { loadAppConfig } from "./config/appConfig.js"
 import { CLI_VERSION } from "./config/version.js"
@@ -34,6 +35,7 @@ const root = Command.make("breadboard", {}, () => Effect.succeed(undefined)).pip
     connectCommand,
     engineCommand,
     pluginCommand,
+    authCommand,
     Command.make("config", {}, () => Console.log("config command not yet implemented")),
   ]),
 )
@@ -50,7 +52,7 @@ const shouldSkipEngine = (args: string[]): boolean => {
   const command = args[2]
   if (!command) return false
   if (command.startsWith("-")) return true
-  if (command === "connect" || command === "config" || command === "engine") return true
+  if (command === "connect" || command === "config" || command === "engine" || command === "auth") return true
   if (args.includes("--help") || args.includes("-h") || args.includes("--version") || args.includes("-v")) {
     return true
   }

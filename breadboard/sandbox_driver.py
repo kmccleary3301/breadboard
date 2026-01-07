@@ -23,7 +23,7 @@ class SandboxLaunchSpec:
     driver_options: Dict[str, Any] = field(default_factory=dict)
 
 
-def resolve_driver_from_env(default: str = "process") -> str:
+def resolve_driver_from_env(default: str = "light") -> str:
     """Resolve sandbox driver name from environment (best-effort)."""
     explicit = os.environ.get("BREADBOARD_SANDBOX_DRIVER") or os.environ.get("SANDBOX_DRIVER")
     if explicit and explicit.strip():
@@ -70,7 +70,7 @@ def create_sandbox(spec: SandboxLaunchSpec) -> ray.actor.ActorHandle:
         )
 
     if driver == "none":
-        # Legacy alias: treat as process for now.
+        # Legacy alias: treat as light sandbox for now.
         return DevSandboxV2.options(name=actor_name).remote(
             image=spec.image,
             session_id=spec.session_id,

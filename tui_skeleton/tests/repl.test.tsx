@@ -1,10 +1,12 @@
 import React from "react"
 import { render as inkRender } from "ink"
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
+import { render } from "ink-testing-library"
 import { ReplView, ConversationEntry, StreamStats } from "../src/commands/repl.js"
 import { createMockStdin, createWritableCapture } from "./helpers/inkStreams.js"
 
 const stripAnsi = (value: string): string => value.replaceAll(/\u001B\[[0-9;]*m/g, "")
+const delay = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms))
 
 describe("ReplView", () => {
   it("renders conversation and tool panes", async () => {
@@ -75,5 +77,74 @@ describe("ReplView", () => {
     expect(frame).toContain("success")
     instance.unmount()
     instance.cleanup()
+  })
+
+  it("sends deny-stop when Esc pressed during permission prompt", async () => {
+    const stdinPatch = (stream: any) => {
+      stream.ref = () => stream
+      stream.unref = () => stream
+      return stream
+    }
+    const onPermissionDecision = vi.fn(async () => {})
+
+    const stats: StreamStats = { eventCount: 0, toolCount: 0, lastTurn: 0, remote: true, model: "m" }
+    const permissionRequest = {
+      requestId: "perm-1",
+      tool: "write_file",
+      kind: "edit",
+      rewindable: true,
+      summary: "Permission required.",
+      diffText: null,
+      ruleSuggestion: null,
+      defaultScope: "project" as const,
+      createdAt: Date.now(),
+    }
+
+    const { stdin, unmount } = render(
+      <ReplView
+        sessionId="sess-1"
+        conversation={[]}
+        toolEvents={[]}
+        liveSlots={[]}
+        status="Permission required"
+        pendingResponse={false}
+        disconnected={false}
+        hints={[]}
+        stats={stats}
+        modelMenu={{ status: "hidden" }}
+        skillsMenu={{ status: "hidden" }}
+        inspectMenu={{ status: "hidden" }}
+        guardrailNotice={null}
+        viewClearAt={null}
+        viewPrefs={{ collapseMode: "auto", virtualization: "auto", richMarkdown: false }}
+        todos={[]}
+        tasks={[]}
+        permissionRequest={permissionRequest}
+        permissionError={null}
+        permissionQueueDepth={0}
+        rewindMenu={{ status: "hidden" }}
+        onSubmit={async () => {}}
+        onModelMenuOpen={async () => {}}
+        onModelSelect={async () => {}}
+        onModelMenuCancel={() => {}}
+        onSkillsMenuOpen={async () => {}}
+        onSkillsMenuCancel={() => {}}
+        onSkillsApply={async () => {}}
+        onGuardrailToggle={() => {}}
+        onGuardrailDismiss={() => {}}
+        onPermissionDecision={onPermissionDecision}
+        onRewindClose={() => {}}
+        onRewindRestore={async () => {}}
+        onListFiles={async () => []}
+        onReadFile={async (path) => ({ path, content: "", truncated: false, total_bytes: 0 })}
+      />,
+    )
+
+    stdinPatch(stdin).write("\u001b")
+    await delay(200)
+
+    expect(onPermissionDecision).toHaveBeenCalledWith({ kind: "deny-stop" })
+
+    unmount()
   })
 })

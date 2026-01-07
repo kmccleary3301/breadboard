@@ -3459,7 +3459,12 @@ class OpenAIConductor:
                 except Exception:
                     pass
                 try:
-                    self.permission_broker = PermissionBroker(merged_permissions)
+                    from agentic_coder_prototype.policy_pack import PolicyPack
+
+                    self.permission_broker = PermissionBroker(
+                        merged_permissions,
+                        policy_pack=PolicyPack.from_config(self.config),
+                    )
                 except Exception:
                     pass
             hook_manager = build_hook_manager(
