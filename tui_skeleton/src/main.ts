@@ -14,6 +14,7 @@ import { uiCommand } from "./commands/ui.js"
 import { runCommand } from "./commands/run.js"
 import { connectCommand } from "./commands/connect.js"
 import { engineCommand } from "./commands/engine.js"
+import { pluginCommand } from "./commands/plugin.js"
 import { ensureEngine } from "./engine/engineSupervisor.js"
 import { loadAppConfig } from "./config/appConfig.js"
 import { CLI_VERSION } from "./config/version.js"
@@ -32,6 +33,7 @@ const root = Command.make("breadboard", {}, () => Effect.succeed(undefined)).pip
     doctorCommand,
     connectCommand,
     engineCommand,
+    pluginCommand,
     Command.make("config", {}, () => Console.log("config command not yet implemented")),
   ]),
 )
