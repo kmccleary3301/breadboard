@@ -22,7 +22,7 @@ from agentic_coder_prototype.skills.registry import (
     normalize_skill_selection,
     apply_skill_selection,
 )
-from agentic_coder_prototype.plugins.loader import discover_plugin_manifests
+from agentic_coder_prototype.plugins.loader import discover_plugin_manifests, plugin_snapshot
 from agentic_coder_prototype.policy_pack import PolicyPack
 from agentic_coder_prototype.permission_rules_store import (
     build_permission_overrides,
@@ -1365,6 +1365,11 @@ class SessionRunner:
         selection = normalize_skill_selection(config, self.session.metadata.get("skills_selection"))
         _, _, enabled_map = apply_skill_selection(prompt_skills, graph_skills, selection)
         catalog = build_skill_catalog(prompt_skills, graph_skills, selection=selection, enabled_map=enabled_map)
+        snapshot = None
+        try:
+            snapshot = plugin_snapshot(plugin_manifests)
+        except Exception:
+            snapshot = None
         return {
             "catalog": catalog,
             "selection": selection,
@@ -1372,6 +1377,7 @@ class SessionRunner:
                 "config_path": self.request.config_path,
                 "workspace": str(workspace),
                 "plugin_count": len(plugin_manifests),
+                "plugin_snapshot": snapshot,
                 "skill_paths": [str(p) for p in plugin_skill_paths],
             },
         }
