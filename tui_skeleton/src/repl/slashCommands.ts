@@ -18,6 +18,7 @@ export const SLASH_COMMANDS: ReadonlyArray<SlashCommandInfo> = [
   { name: "stop", summary: "Interrupt the current run (if any).", shortcut: "Esc" },
   { name: "clear", summary: "Clear view (history preserved).", shortcut: "Ctrl+Shift+C" },
   { name: "status", summary: "Refresh session status." },
+  { name: "inspect", summary: "Open the inspector panel.", shortcut: "Ctrl+I" },
   { name: "remote", usage: "on|off", summary: "Toggle remote streaming preference." },
   { name: "retry", summary: "Restart the current stream." },
   { name: "plan", summary: "Request plan-focused mode." },

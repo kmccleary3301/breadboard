@@ -22,6 +22,7 @@ import type {
   SkillSelection,
   SkillCatalogSources,
   SkillsMenuState,
+  InspectMenuState,
   CTreeSnapshot,
   PermissionRequest,
   PermissionDecision,
@@ -80,6 +81,7 @@ export interface ReplState {
   readonly stats: StreamStats
   readonly modelMenu: ModelMenuState
   readonly skillsMenu: SkillsMenuState
+  readonly inspectMenu: InspectMenuState
   readonly completionReached: boolean
   readonly completionSeen: boolean
   readonly lastCompletion?: CompletionState | null
@@ -407,6 +409,7 @@ export class ReplSessionController extends EventEmitter {
   private pendingResponse = false
   private modelMenu: ModelMenuState = { status: "hidden" }
   private skillsMenu: SkillsMenuState = { status: "hidden" }
+  private inspectMenu: InspectMenuState = { status: "hidden" }
   private skillsCatalog: SkillCatalog | null = null
   private skillsSelection: SkillSelection | null = null
   private skillsSources: SkillCatalogSources | null = null
@@ -465,6 +468,7 @@ export class ReplSessionController extends EventEmitter {
       stats: { ...this.stats },
       modelMenu: this.modelMenu,
       skillsMenu: this.skillsMenu,
+      inspectMenu: this.inspectMenu,
       completionReached: this.completionReached,
       completionSeen: this.completionSeen,
       lastCompletion: this.lastCompletion,
@@ -803,6 +807,68 @@ export class ReplSessionController extends EventEmitter {
     this.emitChange()
   }
 
+  async openInspectMenu(): Promise<void> {
+    if (this.inspectMenu.status !== "hidden") {
+      this.pushHint("Inspector already open. Use Esc to close or /inspect refresh.")
+      return
+    }
+    if (!this.sessionId) {
+      this.pushHint("Session not ready yet.")
+      return
+    }
+    this.status = "Loading inspector…"
+    this.inspectMenu = { status: "loading" }
+    this.emitChange()
+    try {
+      const session = (await this.api().getSession(this.sessionId)) as unknown as Record<string, unknown>
+      let skills: Record<string, unknown> | null = null
+      try {
+        skills = (await this.api().getSkillsCatalog(this.sessionId)) as unknown as Record<string, unknown>
+      } catch {
+        skills = null
+      }
+      const ctree = this.ctreeSnapshot ? (this.ctreeSnapshot as unknown as Record<string, unknown>) : null
+      this.inspectMenu = { status: "ready", session, skills, ctree }
+      this.status = "Inspector ready"
+    } catch (error) {
+      this.inspectMenu = { status: "error", message: (error as Error).message }
+      this.status = "Inspector unavailable"
+    }
+    this.emitChange()
+  }
+
+  async refreshInspectMenu(): Promise<void> {
+    if (this.inspectMenu.status === "hidden") {
+      await this.openInspectMenu()
+      return
+    }
+    this.inspectMenu = { status: "loading" }
+    this.emitChange()
+    try {
+      const session = (await this.api().getSession(this.sessionId)) as unknown as Record<string, unknown>
+      let skills: Record<string, unknown> | null = null
+      try {
+        skills = (await this.api().getSkillsCatalog(this.sessionId)) as unknown as Record<string, unknown>
+      } catch {
+        skills = null
+      }
+      const ctree = this.ctreeSnapshot ? (this.ctreeSnapshot as unknown as Record<string, unknown>) : null
+      this.inspectMenu = { status: "ready", session, skills, ctree }
+      this.status = "Inspector refreshed"
+    } catch (error) {
+      this.inspectMenu = { status: "error", message: (error as Error).message }
+      this.status = "Inspector unavailable"
+    }
+    this.emitChange()
+  }
+
+  closeInspectMenu(): void {
+    if (this.inspectMenu.status !== "hidden") {
+      this.inspectMenu = { status: "hidden" }
+      this.emitChange()
+    }
+  }
+
   closeSkillsMenu(): void {
     if (this.skillsMenu.status !== "hidden") {
       this.skillsMenu = { status: "hidden" }
@@ -1055,6 +1121,22 @@ export class ReplSessionController extends EventEmitter {
           }
         } catch (error) {
           this.pushHint(`Status check failed: ${(error as Error).message}`)
+        }
+      },
+      inspect: async (args) => {
+        const action = args[0]?.toLowerCase()
+        if (action === "close") {
+          this.closeInspectMenu()
+          return
+        }
+        if (action === "refresh" || action === "reload") {
+          await this.refreshInspectMenu()
+          return
+        }
+        if (this.inspectMenu.status === "hidden") {
+          await this.openInspectMenu()
+        } else {
+          this.closeInspectMenu()
         }
       },
       remote: async (args) => {

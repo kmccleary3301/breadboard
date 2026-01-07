@@ -137,6 +137,17 @@ export interface SkillCatalogSources {
   readonly skill_paths?: string[] | null
 }
 
+export type InspectMenuState =
+  | { readonly status: "hidden" }
+  | { readonly status: "loading" }
+  | { readonly status: "error"; readonly message: string }
+  | {
+      readonly status: "ready"
+      readonly session?: Record<string, unknown> | null
+      readonly skills?: Record<string, unknown> | null
+      readonly ctree?: Record<string, unknown> | null
+    }
+
 export type SkillsMenuState =
   | { readonly status: "hidden" }
   | { readonly status: "loading" }

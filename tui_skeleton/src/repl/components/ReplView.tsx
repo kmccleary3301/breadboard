@@ -11,6 +11,7 @@ import type {
   ModelMenuState,
   ModelMenuItem,
   SkillsMenuState,
+  InspectMenuState,
   SkillEntry,
   SkillSelection,
   CTreeSnapshot,
@@ -896,6 +897,7 @@ interface ReplViewProps {
   readonly stats: StreamStats
   readonly modelMenu: ModelMenuState
   readonly skillsMenu: SkillsMenuState
+  readonly inspectMenu: InspectMenuState
   readonly guardrailNotice?: GuardrailNotice | null
   readonly viewClearAt?: number | null
   readonly viewPrefs: TranscriptPreferences
@@ -936,6 +938,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   stats,
   modelMenu,
   skillsMenu,
+  inspectMenu,
   guardrailNotice,
   viewClearAt,
   viewPrefs,
@@ -1316,6 +1319,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const inputLocked =
     modelMenu.status !== "hidden" ||
     skillsMenu.status !== "hidden" ||
+    inspectMenu.status !== "hidden" ||
     paletteState.status === "open" ||
     confirmState.status === "prompt" ||
     shortcutsOpen ||
@@ -1329,6 +1333,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
   const overlayActive =
     modelMenu.status !== "hidden" ||
     skillsMenu.status !== "hidden" ||
+    inspectMenu.status !== "hidden" ||
     paletteState.status === "open" ||
     confirmState.status === "prompt" ||
     (shortcutsOpen && !claudeChrome) ||
@@ -2119,6 +2124,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
         confirmState.status === "prompt" ||
         modelMenu.status !== "hidden" ||
         skillsMenu.status !== "hidden" ||
+        inspectMenu.status !== "hidden" ||
         shortcutsOpen ||
         usageOpen ||
         permissionRequest ||
@@ -2135,6 +2141,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
       confirmState.status,
       modelMenu.status,
       skillsMenu.status,
+      inspectMenu.status,
       shortcutsOpen,
       usageOpen,
       paletteState.status,
@@ -2974,6 +2981,16 @@ export const ReplView: React.FC<ReplViewProps> = ({
         setUsageOpen(false)
         return true
       }
+      if (inspectMenu.status !== "hidden") {
+        if (key.escape || char === "\u001b") {
+          void onSubmit("/inspect close")
+          return true
+        }
+        if (!key.ctrl && !key.meta && lowerChar === "r") {
+          void onSubmit("/inspect refresh")
+          return true
+        }
+      }
       if (isCtrlShiftT && keymap !== "claude") {
         if (transcriptViewerOpen) {
           exitTranscriptViewer()
@@ -3740,6 +3757,7 @@ export const ReplView: React.FC<ReplViewProps> = ({
       modelProviderOrder,
       modelSearch.length,
       MODEL_VISIBLE_ROWS,
+      inspectMenu.status,
       applySkillsSelection,
       onSkillsMenuCancel,
       resetSkillsSelection,
@@ -5366,6 +5384,10 @@ export const ReplView: React.FC<ReplViewProps> = ({
         }
         return true
       }
+      if (key.ctrl && lowerChar === "i") {
+        void onSubmit("/inspect")
+        return true
+      }
       if (key.ctrl && key.shift && lowerChar === "c") {
         openConfirm("Clear conversation and tool logs?", async () => {
           await onSubmit("/clear")
@@ -6312,6 +6334,111 @@ export const ReplView: React.FC<ReplViewProps> = ({
             titleLines={titleLines}
             hintLines={hintLines}
             rows={panelRows}
+          />
+        )
+      },
+    })
+  }
+
+  if (inspectMenu.status !== "hidden") {
+    modalStack.push({
+      id: "inspect",
+      layout: isBreadboardProfile ? "sheet" : undefined,
+      render: () => {
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
+        const titleLines: SelectPanelLine[] = [{ text: chalk.bold("Inspect"), color: "#FB923C" }]
+        const hintLines: SelectPanelLine[] = [{ text: "R refresh • Esc close", color: "dim" }]
+        const rows: SelectPanelRow[] = []
+
+        const isRecord = (value: unknown): value is Record<string, unknown> =>
+          typeof value === "object" && value !== null && !Array.isArray(value)
+
+        const pushKV = (label: string, value: unknown, color: string = "white") => {
+          const textValue = value == null ? "—" : typeof value === "string" ? value : JSON.stringify(value)
+          rows.push({ kind: "item", text: `${chalk.cyan(label.padEnd(18, " "))} ${textValue}`, color })
+        }
+
+        if (inspectMenu.status === "loading") {
+          rows.push({ kind: "empty", text: "Loading inspector snapshot…", color: "cyan" })
+        } else if (inspectMenu.status === "error") {
+          rows.push({ kind: "empty", text: inspectMenu.message, color: "red" })
+        } else if (inspectMenu.status === "ready") {
+          const session = inspectMenu.session
+          const skillsPayload = inspectMenu.skills
+
+          rows.push({ kind: "header", text: "Session", color: "dim" })
+          if (isRecord(session)) {
+            pushKV("ID", sessionId, "gray")
+            pushKV("Status", session.status, "white")
+            pushKV("Model", session.model ?? stats.model, "white")
+            pushKV("Mode", session.mode ?? mode ?? "—", "white")
+            pushKV("Created", session.created_at ?? session.createdAt, "gray")
+            pushKV("Last activity", session.last_activity_at ?? session.lastActivityAt, "gray")
+            if (session.logging_dir ?? session.loggingDir) {
+              pushKV("Logging", session.logging_dir ?? session.loggingDir, "gray")
+            }
+            const meta = isRecord(session.metadata) ? session.metadata : null
+            if (meta) {
+              rows.push({ kind: "header", text: "Metadata", color: "dim" })
+              pushKV("Keys", Object.keys(meta).length, "gray")
+              const pluginSnapshot = meta.plugin_snapshot ?? meta.plugins ?? null
+              const mcpSnapshot = meta.mcp_snapshot ?? meta.mcp ?? null
+              if (pluginSnapshot) pushKV("Plugin snapshot", typeof pluginSnapshot, "gray")
+              if (mcpSnapshot) pushKV("MCP snapshot", typeof mcpSnapshot, "gray")
+            }
+          } else {
+            pushKV("ID", sessionId, "gray")
+            pushKV("Status", status, "white")
+            pushKV("Model", stats.model, "white")
+          }
+
+          if (isRecord(skillsPayload)) {
+            const sources = isRecord(skillsPayload.sources) ? skillsPayload.sources : null
+            const catalog = isRecord(skillsPayload.catalog) ? skillsPayload.catalog : null
+            const catalogSkills = catalog && Array.isArray(catalog.skills) ? catalog.skills : []
+            rows.push({ kind: "header", text: "Skills", color: "dim" })
+            pushKV("Count", catalogSkills.length, "gray")
+            const selection = isRecord(skillsPayload.selection) ? skillsPayload.selection : null
+            if (selection?.mode) {
+              pushKV("Selection", selection.mode, "gray")
+            }
+            if (sources) {
+              if (sources.config_path) pushKV("Config", sources.config_path, "gray")
+              if (sources.workspace) pushKV("Workspace", sources.workspace, "gray")
+              if (sources.plugin_count != null) pushKV("Plugins", sources.plugin_count, "gray")
+              const snapshot = sources.plugin_snapshot
+              if (isRecord(snapshot) && Array.isArray(snapshot.plugins)) {
+                const plugins = snapshot.plugins.slice(0, 6).map((p: any) => p?.id ?? "?")
+                if (plugins.length > 0) pushKV("Plugin IDs", plugins.join(", "), "gray")
+              }
+            }
+          }
+
+          if (inspectMenu.ctree) {
+            rows.push({ kind: "header", text: "CTree", color: "dim" })
+            pushKV("Loaded", "yes", "gray")
+          }
+
+          rows.push({ kind: "header", text: "Local", color: "dim" })
+          pushKV("Pending response", pendingResponse ? "yes" : "no", pendingResponse ? "#F59E0B" : "gray")
+          pushKV("Events", stats.eventCount, "gray")
+          pushKV("Tools", stats.toolCount, "gray")
+          pushKV("Todos", todos.length, "gray")
+          pushKV("Tasks", tasks.length, "gray")
+        }
+
+        return (
+          <SelectPanel
+            width={panelWidth}
+            borderColor="#FB923C"
+            paddingX={2}
+            paddingY={1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={rows}
           />
         )
       },

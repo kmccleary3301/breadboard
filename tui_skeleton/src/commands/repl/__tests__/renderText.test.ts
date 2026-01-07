@@ -20,6 +20,7 @@ const baseState = (): ReplState => ({
   stats: { eventCount: 4, toolCount: 1, lastTurn: 2, remote: false, model: "test/model" },
   modelMenu: { status: "hidden" },
   skillsMenu: { status: "hidden" },
+  inspectMenu: { status: "hidden" },
   liveSlots: [],
   completionReached: true,
   completionSeen: true,

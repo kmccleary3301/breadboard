@@ -34,6 +34,7 @@ describe("ReplView", () => {
         stats={stats}
         modelMenu={{ status: "hidden" }}
         skillsMenu={{ status: "hidden" }}
+        inspectMenu={{ status: "hidden" }}
         guardrailNotice={null}
         viewClearAt={null}
         viewPrefs={{ collapseMode: "auto", virtualization: "auto", richMarkdown: false }}

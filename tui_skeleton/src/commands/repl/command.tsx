@@ -212,6 +212,7 @@ const runInteractive = async (controller: ReplSessionController) => {
         stats={state.stats}
         modelMenu={state.modelMenu}
         skillsMenu={state.skillsMenu}
+        inspectMenu={state.inspectMenu}
         guardrailNotice={state.guardrailNotice}
         viewClearAt={state.viewClearAt ?? null}
         viewPrefs={state.viewPrefs}
@@ -257,6 +258,7 @@ const runInteractive = async (controller: ReplSessionController) => {
         stats={state.stats}
         modelMenu={state.modelMenu}
         skillsMenu={state.skillsMenu}
+        inspectMenu={state.inspectMenu}
         guardrailNotice={state.guardrailNotice}
         viewClearAt={state.viewClearAt ?? null}
         viewPrefs={state.viewPrefs}
