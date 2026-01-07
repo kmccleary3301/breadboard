@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "selection": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "selection"
+  ],
+  "title": "SkillsSelectionPayload",
+  "type": "object"
+}

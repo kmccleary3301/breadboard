@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import ray
 
-from breadboard.sandbox_v2 import DevSandboxV2
+from breadboard.sandbox_v2 import DevSandboxV2, new_dev_sandbox_v2
 from breadboard.sandbox_virtualized import SandboxFactory, DeploymentMode
 from .execution.dialect_manager import DialectManager
 from .execution.agent_executor import AgentToolExecutor
@@ -101,6 +101,9 @@ def setup_sandbox(
     local_mode: bool,
 ) -> None:
     """Initialize sandbox based on virtualization mode."""
+    sandbox_cfg = ((config or {}).get("workspace", {}) or {}).get("sandbox", {}) or {}
+    sandbox_driver = str(sandbox_cfg.get("driver") or "process").strip().lower()
+    sandbox_options = dict(sandbox_cfg.get("options") or {}) if isinstance(sandbox_cfg, dict) else {}
     mirror_cfg = ((config or {}).get("workspace", {}) or {}).get("mirror", {})
     mirror_mode = str(mirror_cfg.get("mode", "development")).lower()
     use_virtualized = mirror_cfg.get("enabled", True)
@@ -118,14 +121,27 @@ def setup_sandbox(
         except Exception:
             mode = DeploymentMode.DEVELOPMENT
         factory = SandboxFactory()
-        vsb, session_id = factory.create_sandbox(mode, {"runtime": {"image": image}, "workspace": workspace})
+        vsb, session_id = factory.create_sandbox(
+            mode,
+            {
+                "runtime": {"image": image},
+                "workspace": workspace,
+                "sandbox": {"driver": sandbox_driver, "options": sandbox_options},
+            },
+        )
         conductor.sandbox = vsb
     elif conductor.local_mode:
         dev_cls = DevSandboxV2.__ray_metadata__.modified_class
         dev_impl = dev_cls(image=image, session_id=f"local-{uuid.uuid4()}", workspace=workspace, lsp_actor=None)
         conductor.sandbox = LocalActorProxy(dev_impl)
     else:
-        conductor.sandbox = DevSandboxV2.options(name=f"oa-sb-{uuid.uuid4()}").remote(image=image, workspace=workspace)
+        conductor.sandbox = new_dev_sandbox_v2(
+            image,
+            workspace,
+            name=f"oa-sb-{uuid.uuid4()}",
+            driver=sandbox_driver,
+            driver_options=sandbox_options,
+        )
 
 
 def load_replay_session_data(conductor: Any, config: Optional[Dict[str, Any]]) -> None:

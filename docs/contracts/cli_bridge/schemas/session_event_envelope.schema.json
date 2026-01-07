@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "protocol_version": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seq": {
+      "type": "integer"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "thread_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "timestamp": {
+      "type": "integer"
+    },
+    "timestamp_ms": {
+      "type": "integer"
+    },
+    "turn": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "turn_id": {
+      "type": [
+        "string",
+        "integer",
+        "null"
+      ]
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "type",
+    "session_id",
+    "payload",
+    "timestamp",
+    "timestamp_ms",
+    "protocol_version"
+  ],
+  "title": "SessionEventEnvelope",
+  "type": "object"
+}

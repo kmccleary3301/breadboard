@@ -32,6 +32,7 @@ from .models import (
 from .registry import SessionRecord, SessionRegistry
 from .session_runner import SessionRunner
 from ...compilation.v2_loader import load_agent_config
+from ...policy_pack import PolicyPack
 
 logger = logging.getLogger(__name__)
 
@@ -523,6 +524,12 @@ class SessionService:
             normalized = normalize_entry(entry)
             if normalized:
                 entries.append(normalized)
+
+        policy = PolicyPack.from_config(config)
+        if policy.model_allowlist is not None or policy.model_denylist:
+            entries = [entry for entry in entries if policy.is_model_allowed(entry.id)]
+            if default_model and not policy.is_model_allowed(str(default_model)):
+                default_model = entries[0].id if entries else None
 
         return ModelCatalogResponse(
             models=entries,

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "completed": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "eventCount": {
+      "type": "integer"
+    },
+    "logging_dir": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "steps": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "usage": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "eventCount"
+  ],
+  "title": "RunFinishedPayload",
+  "type": "object"
+}

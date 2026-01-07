@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "mode": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "turn": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "title": "TurnStartPayload",
+  "type": "object"
+}

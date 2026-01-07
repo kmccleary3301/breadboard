@@ -86,6 +86,11 @@ def parse_args() -> argparse.Namespace:
         help="CLI bridge protocol version (default: import from agentic_coder_prototype.api.cli_bridge.events).",
     )
     parser.add_argument(
+        "--base-url",
+        default=None,
+        help="Optional base URL for manifest asset URLs (e.g. GitHub Releases download base).",
+    )
+    parser.add_argument(
         "--pyinstaller-arg",
         action="append",
         default=[],
@@ -178,6 +183,8 @@ def main() -> int:
     ]
     if min_cli_version:
         cmd.extend(["--min-cli-version", min_cli_version])
+    if args.base_url:
+        cmd.extend(["--base-url", str(args.base_url)])
 
     subprocess.check_call(cmd, cwd=str(ROOT))
 

@@ -269,6 +269,9 @@ def summarize_execution_results(
                 pass
         if tool_name in ("apply_unified_patch", "patch", "apply_search_replace", "create_file_from_block", "write", "write_file"):
             metadata["is_write"] = True
+        call_id_value = getattr(tool_parsed, "call_id", None)
+        if isinstance(call_id_value, str) and call_id_value.strip():
+            metadata.setdefault("call_id", call_id_value.strip())
         if tool_name == "run_shell":
             metadata["is_run_shell"] = True
             metadata["command"] = command

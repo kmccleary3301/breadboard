@@ -17,6 +17,7 @@ from .ctrees.compiler import compile_ctree
 from .ctrees.collapse import collapse_ctree
 from .ctrees.runner import TreeRunner
 from .reward import aggregate_reward_v1, validate_reward_v1
+from .policy_pack import PolicyPack
 
 
 def run_main_loop(
@@ -42,6 +43,7 @@ def run_main_loop(
 
     completed = False
     step_index = -1
+    policy = PolicyPack.from_config(getattr(self, "config", None))
 
     def poll_control_stop() -> bool:
         """Non-blocking check for a stop/interrupt signal from the CLI bridge."""
@@ -423,6 +425,16 @@ def run_main_loop(
                     disabled = broker.disabled_tool_names() if broker and hasattr(broker, "disabled_tool_names") else set()
                     if disabled:
                         allowed_names = [name for name in allowed_names if name not in disabled]
+                        effective_tool_defs = [
+                            definition
+                            for definition in (effective_tool_defs or [])
+                            if getattr(definition, "name", None) in allowed_names
+                        ]
+                except Exception:
+                    pass
+                try:
+                    if policy.tool_allowlist is not None or policy.tool_denylist:
+                        allowed_names = policy.filter_tool_names(allowed_names)
                         effective_tool_defs = [
                             definition
                             for definition in (effective_tool_defs or [])

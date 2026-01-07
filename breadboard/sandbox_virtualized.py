@@ -4,7 +4,7 @@ import uuid
 from enum import Enum
 from typing import Any, Dict, Tuple
 
-from .sandbox_v2 import DevSandboxV2
+from .sandbox_v2 import new_dev_sandbox_v2
 
 
 class DeploymentMode(str, Enum):
@@ -20,10 +20,17 @@ class SandboxFactory:
         runtime_cfg = (config or {}).get("runtime") or {}
         workspace = (config or {}).get("workspace") or "."
         image = runtime_cfg.get("image", "python-dev:latest")
-        actor = DevSandboxV2.options(name=f"sb-{session_id}").remote(
-            image=image,
+        sandbox_cfg = (config or {}).get("sandbox") or {}
+        driver = str((sandbox_cfg or {}).get("driver") or "process").strip().lower()
+        options = dict((sandbox_cfg or {}).get("options") or {}) if isinstance(sandbox_cfg, dict) else {}
+
+        actor = new_dev_sandbox_v2(
+            image,
+            str(workspace),
+            name=f"sb-{session_id}",
             session_id=session_id,
-            workspace=str(workspace),
+            driver=driver,
+            driver_options=options,
             lsp_actor=None,
         )
         return actor, session_id

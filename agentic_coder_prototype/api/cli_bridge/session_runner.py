@@ -23,6 +23,12 @@ from agentic_coder_prototype.skills.registry import (
     apply_skill_selection,
 )
 from agentic_coder_prototype.plugins.loader import discover_plugin_manifests
+from agentic_coder_prototype.policy_pack import PolicyPack
+from agentic_coder_prototype.permission_rules_store import (
+    build_permission_overrides,
+    load_permission_rules,
+    upsert_permission_rule,
+)
 
 from .events import EventType, SessionEvent
 from .models import SessionCreateRequest, SessionStatus
@@ -224,6 +230,25 @@ class SessionRunner:
                         self._persist_metadata_snapshot_threadsafe()
                     except Exception:
                         pass
+                if (
+                    isinstance(rule, str)
+                    and rule.strip()
+                    and normalized in {"allow-always", "allow_always", "deny-always", "deny_always"}
+                ):
+                    category = self._infer_permission_category(request_id.strip())
+                    workspace_dir = self.get_workspace_dir()
+                    if category and workspace_dir:
+                        decision_value = "allow" if normalized.startswith("allow") else "deny"
+                        try:
+                            upsert_permission_rule(
+                                workspace_dir,
+                                category=category,
+                                pattern=rule.strip(),
+                                decision=decision_value,
+                                scope=str(scope or "project"),
+                            )
+                        except Exception:
+                            pass
                 detail = await self.handle_command("respond_permission", permission_payload)
                 if normalized in {"deny-stop", "deny_stop"} or bool(payload.get("stop")):
                     await self.handle_command("stop", {})
@@ -280,6 +305,13 @@ class SessionRunner:
                 model_value = payload.get("model")
                 if not isinstance(model_value, str) or not model_value.strip():
                     raise ValueError("set_model requires non-empty 'model'")
+                try:
+                    cfg = dict(getattr(self._agent, "config", {}) or {}) if self._agent else load_agent_config(self.request.config_path)
+                except Exception:
+                    cfg = {}
+                policy = PolicyPack.from_config(cfg)
+                if (policy.model_allowlist is not None or policy.model_denylist) and not policy.is_model_allowed(model_value.strip()):
+                    raise ValueError(f"set_model denied by policy: {model_value.strip()}")
                 self._model_override = model_value.strip()
                 self.session.metadata["model"] = self._model_override
                 self._apply_model_override()
@@ -356,18 +388,53 @@ class SessionRunner:
             # sandboxes; for a Claude Code-style experience we must preserve the user's
             # working directory unless explicitly overridden by the caller.
             os.environ.setdefault("PRESERVE_SEEDED_WORKSPACE", "1")
+            overrides = dict(self.request.overrides or {})
             permission_mode = (self.request.permission_mode or self.session.metadata.get("permission_mode") or "").strip().lower()
             if permission_mode in {"prompt", "ask", "interactive"}:
-                overrides = dict(self.request.overrides or {})
                 overrides.setdefault("permissions.options.mode", "prompt")
                 overrides.setdefault("permissions.options.default_response", "reject")
                 overrides.setdefault("permissions.edit.default", "ask")
                 overrides.setdefault("permissions.shell.default", "ask")
                 overrides.setdefault("permissions.webfetch.default", "ask")
-                self.request.overrides = overrides
                 if not self.request.permission_mode:
                     self.request.permission_mode = permission_mode
                 self.session.metadata["permission_mode"] = permission_mode
+
+            # Merge persisted project-scoped permission rules (allow/deny) into overrides.
+            try:
+                base_cfg = load_agent_config(self.request.config_path)
+            except Exception:
+                base_cfg = {}
+            workspace_guess = self.request.workspace
+            if not workspace_guess:
+                try:
+                    workspace_guess = (base_cfg.get("workspace", {}) or {}).get("root")
+                except Exception:
+                    workspace_guess = None
+            if workspace_guess:
+                try:
+                    rules = load_permission_rules(Path(str(workspace_guess)).resolve())
+                except Exception:
+                    rules = []
+                if rules:
+                    merged = build_permission_overrides(base_cfg, rules)
+
+                    def _merge_list(existing: Any, extra: Any) -> Any:
+                        if not isinstance(existing, list) or not isinstance(extra, list):
+                            return extra
+                        out: list[Any] = []
+                        for item in list(existing) + list(extra):
+                            if item not in out:
+                                out.append(item)
+                        return out
+
+                    for key, value in merged.items():
+                        if key in overrides:
+                            overrides[key] = _merge_list(overrides.get(key), value)
+                        else:
+                            overrides[key] = value
+
+            self.request.overrides = overrides
             self._agent = self.agent_factory(
                 self.request.config_path,
                 self.request.workspace,
@@ -495,6 +562,29 @@ class SessionRunner:
         task_id = str(entry.get("task_session_id") or "")
         req_id = str(entry.get("request_id") or entry.get("id") or "")
         return source, task_id, req_id
+
+    def _infer_permission_category(self, request_id: str) -> Optional[str]:
+        pending = self.session.metadata.get("pending_permissions")
+        if not isinstance(pending, list):
+            return None
+        for entry in pending:
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("request_id") or "") != request_id:
+                continue
+            request = entry.get("request") or {}
+            if isinstance(request, dict):
+                category = request.get("category")
+                if isinstance(category, str) and category.strip():
+                    return category.strip().lower()
+                items = request.get("items")
+                if isinstance(items, list) and items:
+                    first = items[0] if isinstance(items[0], dict) else {}
+                    cat = first.get("category") if isinstance(first, dict) else None
+                    if isinstance(cat, str) and cat.strip():
+                        return cat.strip().lower()
+            return None
+        return None
 
     def _update_pending_permissions(
         self,

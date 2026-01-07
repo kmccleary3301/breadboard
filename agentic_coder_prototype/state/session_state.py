@@ -429,13 +429,19 @@ class SessionState:
                 self.tool_usage_summary["successful_tests"] += 1
         self.set_provider_metadata("turn_has_tool_usage", True)
         turn_hint = turn_index if isinstance(turn_index, int) else self._active_turn_index
+        payload: Dict[str, Any] = {
+            "tool": tool_name,
+            "success": bool(success),
+            "metadata": dict(metadata or {}),
+            "status": "ok" if success else "error",
+            "error": (not bool(success)),
+        }
+        call_id = meta.get("call_id") or meta.get("tool_call_id") or meta.get("toolCallId")
+        if isinstance(call_id, str) and call_id.strip():
+            payload["call_id"] = call_id.strip()
         self._emit_event(
             "tool_result",
-            {
-                "tool": tool_name,
-                "success": bool(success),
-                "metadata": dict(metadata or {}),
-            },
+            payload,
             turn=turn_hint,
         )
 

@@ -1,0 +1,94 @@
+{
+  "description": "Incoming payload for POST /sessions.",
+  "properties": {
+    "config_path": {
+      "description": "Path to agent config YAML/JSON.",
+      "title": "Config Path",
+      "type": "string"
+    },
+    "max_steps": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Override max steps for the loop.",
+      "title": "Max Steps"
+    },
+    "metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Opaque metadata for UX features.",
+      "title": "Metadata"
+    },
+    "overrides": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Dotted-key override map.",
+      "title": "Overrides"
+    },
+    "permission_mode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Agent permission preset.",
+      "title": "Permission Mode"
+    },
+    "stream": {
+      "default": true,
+      "description": "Request streaming responses when supported.",
+      "title": "Stream",
+      "type": "boolean"
+    },
+    "task": {
+      "description": "User prompt or path to task file.",
+      "title": "Task",
+      "type": "string"
+    },
+    "workspace": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional explicit workspace root.",
+      "title": "Workspace"
+    }
+  },
+  "required": [
+    "config_path",
+    "task"
+  ],
+  "title": "SessionCreateRequest",
+  "type": "object"
+}

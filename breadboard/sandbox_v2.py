@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import os
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, List
 
 import ray
+
+from .adaptive_iter import ADAPTIVE_PREFIX_ITERABLE
 
 
 @ray.remote
@@ -22,6 +25,12 @@ class DevSandboxV2:
         self.workspace = str(workspace)
         self.lsp_actor = lsp_actor
 
+    def get_session_id(self) -> str:
+        return self.session_id
+
+    def get_workspace(self) -> str:
+        return self.workspace
+
     def _resolve(self, path: str) -> str:
         ws = Path(self.workspace).resolve()
         candidate = Path(path)
@@ -34,19 +43,95 @@ class DevSandboxV2:
             return str(ws)
         return str(candidate)
 
-    def read_text(self, path: str) -> Dict[str, Any]:
-        abs_path = self._resolve(path)
+    def _touch_lsp(self, abs_path: str) -> None:
+        actor = self.lsp_actor
+        if actor is None:
+            return
         try:
-            content = Path(abs_path).read_text(encoding="utf-8", errors="replace")
+            touch = getattr(actor, "touch_file", None)
+            if touch is None:
+                return
+            remote = getattr(touch, "remote", None)
+            if callable(remote):
+                remote(abs_path, False)
+            elif callable(touch):
+                touch(abs_path, False)
         except Exception:
-            content = ""
-        return {"path": abs_path, "content": content}
+            pass
 
-    def write_text(self, path: str, content: str) -> Dict[str, Any]:
+    def exists(self, path: str) -> bool:
+        abs_path = self._resolve(path)
+        return Path(abs_path).exists()
+
+    def stat(self, path: str) -> Dict[str, Any]:
+        abs_path = self._resolve(path)
+        p = Path(abs_path)
+        if not p.exists():
+            return {"path": abs_path, "exists": False}
+        try:
+            st = p.stat()
+            return {
+                "path": abs_path,
+                "exists": True,
+                "type": "dir" if p.is_dir() else "file",
+                "size": st.st_size,
+                "mtime": st.st_mtime,
+            }
+        except Exception:
+            return {"path": abs_path, "exists": True}
+
+    def put(self, path: str, content: bytes) -> Dict[str, Any]:
         abs_path = self._resolve(path)
         p = Path(abs_path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content or "", encoding="utf-8")
+        p.write_bytes(content or b"")
+        self._touch_lsp(abs_path)
+        return {"ok": True, "path": abs_path, "bytes": len(content or b"")}
+
+    def get(self, path: str) -> bytes:
+        abs_path = self._resolve(path)
+        try:
+            return Path(abs_path).read_bytes()
+        except Exception:
+            return b""
+
+    def read_text(
+        self,
+        path: str,
+        offset: Optional[int] = None,
+        limit: Optional[int] = None,
+        encoding: str = "utf-8",
+    ) -> Dict[str, Any]:
+        abs_path = self._resolve(path)
+        try:
+            raw = Path(abs_path).read_text(encoding=encoding, errors="replace")
+        except Exception:
+            raw = ""
+
+        start = int(offset or 0) if offset is not None else 0
+        if start < 0:
+            start = 0
+        truncated = False
+        content = raw
+        if start:
+            content = content[start:]
+        if limit is not None:
+            try:
+                lim = int(limit)
+            except Exception:
+                lim = None
+            if lim is not None and lim >= 0 and len(content) > lim:
+                content = content[:lim]
+                truncated = True
+
+        return {"path": abs_path, "content": content, "truncated": truncated, "offset": start, "limit": limit}
+
+    def write_text(self, path: str, content: str, encoding: str = "utf-8") -> Dict[str, Any]:
+        abs_path = self._resolve(path)
+        p = Path(abs_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content or "", encoding=encoding)
+        self._touch_lsp(abs_path)
         return {"ok": True, "path": abs_path, "bytes": len(content or "")}
 
     def ls(self, path: str, depth: int = 1) -> Dict[str, Any]:
@@ -71,7 +156,7 @@ class DevSandboxV2:
                 pass
 
         _walk(root, Path("."), depth)
-        return {"path": abs_path, "entries": entries}
+        return {"path": abs_path, "items": entries, "entries": entries, "tree_format": False}
 
     def glob(self, pattern: str, root: str = ".", limit: Optional[int] = None) -> List[str]:
         root_path = Path(self._resolve(root))
@@ -139,8 +224,23 @@ class DevSandboxV2:
         except Exception:
             return {"matches": matches}
 
-    def run(self, command: str, timeout: int = 30, stream: bool = False, env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-        return self.run_shell(command, timeout=timeout, env=env, stream=stream)
+    def run(
+        self,
+        cmd: str,
+        timeout: Optional[int] = None,
+        stdin_data: Optional[str] = None,
+        env: Optional[Dict[str, str]] = None,
+        stream: bool = True,
+        shell: bool = True,
+    ):
+        return self.run_shell(
+            cmd,
+            timeout=timeout or 30,
+            env=env,
+            stream=stream,
+            stdin_data=stdin_data,
+            shell=shell,
+        )
 
     def run_shell(
         self,
@@ -148,57 +248,230 @@ class DevSandboxV2:
         timeout: int = 30,
         env: Optional[Dict[str, str]] = None,
         stream: bool = False,
+        stdin_data: Optional[str] = None,
+        shell: bool = True,
     ) -> Dict[str, Any]:
         cmd = command or ""
         try:
             result = subprocess.run(
                 cmd,
                 cwd=self.workspace,
-                shell=True,
+                shell=bool(shell),
                 timeout=timeout,
                 env={**os.environ, **(env or {})},
+                input=stdin_data,
                 capture_output=True,
                 text=True,
             )
-            return {
-                "exit": result.returncode,
-                "stdout": result.stdout or "",
-                "stderr": result.stderr or "",
-            }
-        except subprocess.TimeoutExpired:
-            return {"exit": 124, "stdout": "", "stderr": "Command timed out"}
-        except Exception as exc:
-            return {"exit": 1, "stdout": "", "stderr": str(exc)}
+            stdout = result.stdout or ""
+            stderr = result.stderr or ""
+            payload = {"exit": result.returncode, "stdout": stdout, "stderr": stderr}
+            if not stream:
+                return payload
 
-    def edit_replace(self, path: str, old_string: str, new_string: str, count: int = 0) -> Dict[str, Any]:
+            lines: List[Any] = [ADAPTIVE_PREFIX_ITERABLE]
+            for line in (stdout.splitlines() or []):
+                lines.append(line)
+            if not stdout and stderr:
+                for line in stderr.splitlines():
+                    lines.append(line)
+            lines.append(payload)
+            return lines  # type: ignore[return-value]
+        except subprocess.TimeoutExpired:
+            payload = {"exit": 124, "stdout": "", "stderr": "Command timed out"}
+            if not stream:
+                return payload
+            return [ADAPTIVE_PREFIX_ITERABLE, payload]  # type: ignore[return-value]
+        except Exception as exc:
+            payload = {"exit": 1, "stdout": "", "stderr": str(exc)}
+            if not stream:
+                return payload
+            return [ADAPTIVE_PREFIX_ITERABLE, payload]  # type: ignore[return-value]
+
+    def edit_replace(
+        self,
+        path: str,
+        old_string: str,
+        new_string: str,
+        count: int = 0,
+        encoding: str = "utf-8",
+    ) -> Dict[str, Any]:
         abs_path = self._resolve(path)
         p = Path(abs_path)
         content = ""
         if p.exists():
-            content = p.read_text(encoding="utf-8", errors="replace")
+            content = p.read_text(encoding=encoding, errors="replace")
         if count and count > 0:
             updated = content.replace(old_string, new_string, count)
         else:
             updated = content.replace(old_string, new_string)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(updated, encoding="utf-8")
+        p.write_text(updated, encoding=encoding)
+        self._touch_lsp(abs_path)
         return {"ok": True, "path": abs_path}
 
+    def multiedit(self, edits: List[Dict[str, Any]], encoding: str = "utf-8") -> Dict[str, Any]:
+        """Apply multiple edits in sequence.
+
+        Each edit may contain:
+          - path + content (write)
+          - path + old + new (+ count) (replace)
+        """
+
+        results: List[Dict[str, Any]] = []
+        for edit in edits or []:
+            if not isinstance(edit, dict):
+                continue
+            path = str(edit.get("path") or "")
+            if not path:
+                continue
+            if "content" in edit:
+                results.append(self.write_text(path, str(edit.get("content") or ""), encoding=encoding))
+                continue
+            old = str(edit.get("old") or edit.get("old_string") or "")
+            new = str(edit.get("new") or edit.get("new_string") or "")
+            count = int(edit.get("count") or 0)
+            results.append(self.edit_replace(path, old, new, count, encoding=encoding))
+        return {"ok": True, "results": results}
+
+    def _run_git(self, args: List[str], *, timeout: int = 10) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args],
+            cwd=self.workspace,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
     def vcs(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        op = (request or {}).get("operation") or "status"
-        if op == "status":
-            try:
-                result = subprocess.run(
-                    ["git", "status", "--porcelain"],
-                    cwd=self.workspace,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-                return {"ok": True, "output": result.stdout}
-            except Exception as exc:
-                return {"ok": False, "error": str(exc)}
-        return {"ok": False, "error": f"Unsupported vcs op: {op}"}
+        action = (request or {}).get("action") or (request or {}).get("operation") or "status"
+        action = str(action).strip().lower()
+        params = (request or {}).get("params") or {}
+        if not isinstance(params, dict):
+            params = {}
+
+        try:
+            if action == "init":
+                user = (request or {}).get("user") or {}
+                self._run_git(["init"])
+                name = (user.get("name") if isinstance(user, dict) else None) or "BreadBoard"
+                email = (user.get("email") if isinstance(user, dict) else None) or "breadboard@local"
+                self._run_git(["config", "user.name", str(name)])
+                self._run_git(["config", "user.email", str(email)])
+                return {"ok": True}
+
+            if action == "add":
+                res = self._run_git(["add", "-A"])
+                return {"ok": res.returncode == 0, "stdout": res.stdout, "stderr": res.stderr}
+
+            if action == "commit":
+                message = str((params or {}).get("message") or "update")
+                res = self._run_git(["commit", "-m", message])
+                ok = res.returncode == 0
+                return {"ok": ok, "stdout": res.stdout, "stderr": res.stderr}
+
+            if action == "status":
+                res = self._run_git(["status", "--porcelain"])
+                return {"ok": res.returncode == 0, "data": {"output": res.stdout}, "stderr": res.stderr}
+
+            if action == "diff":
+                staged = bool((params or {}).get("staged"))
+                unified = (params or {}).get("unified")
+                args = ["diff"]
+                if staged:
+                    args.append("--cached")
+                if unified is not None:
+                    try:
+                        args.append(f"-U{int(unified)}")
+                    except Exception:
+                        pass
+                res = self._run_git(args, timeout=20)
+                return {"ok": res.returncode == 0, "data": {"diff": res.stdout}}
+
+            if action == "apply_patch":
+                patch_text = str((params or {}).get("patch") or "")
+                if not patch_text.strip():
+                    return {"ok": False, "error": "empty patch"}
+                patch_path = Path(self.workspace) / f".breadboard_patch_{uuid.uuid4().hex}.diff"
+                patch_path.write_text(patch_text, encoding="utf-8")
+                args = ["apply"]
+                if bool((params or {}).get("three_way") or (params or {}).get("threeWay")):
+                    args.append("--3way")
+                if bool((params or {}).get("index")):
+                    args.append("--index")
+                whitespace = (params or {}).get("whitespace")
+                if isinstance(whitespace, str) and whitespace.strip():
+                    args.append(f"--whitespace={whitespace.strip()}")
+                if bool((params or {}).get("reverse")):
+                    args.append("-R")
+                if bool((params or {}).get("keep_rejects")):
+                    args.append("--reject")
+                args.append(str(patch_path))
+                res = self._run_git(args, timeout=30)
+                try:
+                    patch_path.unlink(missing_ok=True)  # type: ignore[arg-type]
+                except Exception:
+                    pass
+                return {"ok": res.returncode == 0, "stdout": res.stdout, "stderr": res.stderr}
+
+            return {"ok": False, "error": f"Unsupported vcs action: {action}"}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
 
     def lsp_diagnostics(self, path: str) -> Dict[str, Any]:
+        actor = self.lsp_actor
+        if actor is None:
+            return {}
+        try:
+            diagnostics = getattr(actor, "diagnostics", None)
+            remote = getattr(diagnostics, "remote", None) if diagnostics is not None else None
+            if callable(remote):
+                return ray.get(remote())
+            if callable(diagnostics):
+                return diagnostics()
+        except Exception:
+            return {}
         return {}
+
+
+def new_dev_sandbox_v2(
+    image: str,
+    workspace: str,
+    *,
+    name: str | None = None,
+    session_id: str | None = None,
+    lsp_actor: Any = None,
+    driver: str | None = None,
+    driver_options: Dict[str, Any] | None = None,
+):
+    """Create a sandbox actor for the requested driver.
+
+    This is the primary constructor used by tests and higher-level engine code.
+    """
+
+    from .sandbox_driver import SandboxLaunchSpec, create_sandbox, resolve_driver_from_env
+
+    resolved_driver = (driver or resolve_driver_from_env()).strip().lower()
+    spec = SandboxLaunchSpec(
+        driver=resolved_driver,
+        image=str(image),
+        workspace=str(workspace),
+        session_id=session_id or f"sb-{uuid.uuid4()}",
+        name=name,
+        lsp_actor=lsp_actor,
+        driver_options=dict(driver_options or {}),
+    )
+    try:
+        return create_sandbox(spec)
+    except NotImplementedError:
+        # Docker driver is optional; fall back to process sandbox until implemented.
+        fallback = SandboxLaunchSpec(
+            driver="process",
+            image=str(image),
+            workspace=str(workspace),
+            session_id=spec.session_id,
+            name=name,
+            lsp_actor=lsp_actor,
+            driver_options=spec.driver_options,
+        )
+        return create_sandbox(fallback)

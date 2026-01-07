@@ -1,0 +1,28 @@
+{
+  "properties": {
+    "command": {
+      "description": "Command identifier (e.g. set_model, set_mode).",
+      "title": "Command",
+      "type": "string"
+    },
+    "payload": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional command payload.",
+      "title": "Payload"
+    }
+  },
+  "required": [
+    "command"
+  ],
+  "title": "SessionCommandRequest",
+  "type": "object"
+}

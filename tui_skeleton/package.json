@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "tsx src/main.ts",
-    "build": "tsc -p tsconfig.json && cp -f src/ascii_header.txt dist/ascii_header.txt",
+    "build": "tsc -p tsconfig.json && tsx scripts/copyAsciiHeader.ts",
     "postbuild": "tsx scripts/installLocalBin.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",

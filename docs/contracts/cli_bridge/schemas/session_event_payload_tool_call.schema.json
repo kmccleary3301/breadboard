@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "action": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "call": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "call_id": {
+      "type": "string"
+    },
+    "diff_preview": {},
+    "progress": {},
+    "tool": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "call_id",
+    "tool"
+  ],
+  "title": "ToolCallPayload",
+  "type": "object"
+}

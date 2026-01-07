@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "call_id": {
+      "type": "string"
+    },
+    "error": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "message": {},
+    "result": {},
+    "status": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "call_id"
+  ],
+  "title": "ToolResultPayload",
+  "type": "object"
+}

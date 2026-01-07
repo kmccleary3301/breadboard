@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "url"
+  ],
+  "title": "LogLinkPayload",
+  "type": "object"
+}
