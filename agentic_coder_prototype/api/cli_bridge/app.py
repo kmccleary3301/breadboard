@@ -76,7 +76,7 @@ def create_app(service: SessionService | None = None) -> FastAPI:
             if not ray.is_initialized():
                 ray.init(address="local", include_dashboard=False)
                 logger.info("Ray initialized during engine startup")
-        except Exception as exc:  # noqa: BLE001
+        except BaseException as exc:  # noqa: BLE001
             # Do not crash the engine; sessions may fall back to local execution if Ray is unavailable.
             logger.warning("Ray init failed during engine startup: %s", exc)
 
