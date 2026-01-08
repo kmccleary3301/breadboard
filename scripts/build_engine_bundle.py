@@ -160,7 +160,7 @@ def main() -> None:
 
     asset_url = f"{args.version}/{archive_name}"
     if args.base_url:
-        asset_url = f"{args.base_url.rstrip('/')}/{args.version}/{archive_name}"
+        asset_url = f"{args.base_url.rstrip('/')}/{archive_name}"
 
     manifest_path = Path(args.manifest_path) if args.manifest_path else out_dir / "manifest.json"
     asset_payload: Dict[str, Any] = {
