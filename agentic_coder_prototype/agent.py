@@ -14,10 +14,22 @@ import threading
 from typing import Any, Dict, List, Optional, Tuple, Callable
 from pathlib import Path
 
-try:
-    import ray  # type: ignore
-except Exception:  # pragma: no cover - optional runtime
-    ray = None
+_ray = None
+_ray_attempted = False
+
+
+def _get_ray():  # type: ignore[no-untyped-def]
+    global _ray_attempted, _ray
+    if _ray_attempted:
+        return _ray
+    _ray_attempted = True
+    try:
+        import ray as _ray_mod  # type: ignore
+    except Exception:  # pragma: no cover - optional runtime
+        _ray = None
+    else:
+        _ray = _ray_mod
+    return _ray
 from .agent_llm_openai import OpenAIConductor
 from .compilation.v2_loader import load_agent_config
 from .provider_routing import provider_router
@@ -57,7 +69,7 @@ class AgenticCoder:
         except Exception:
             pass
         self.agent = None
-        self._local_mode = os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1" or ray is None
+        self._local_mode = os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1"
         
     def _load_config(self) -> Dict[str, Any]:
         """Load and validate configuration (v2-aware)."""
@@ -198,6 +210,7 @@ class AgenticCoder:
         
         # Initialize Ray and underlying actor
         if not self._local_mode:
+            ray = _get_ray()
             if ray is None:
                 self._local_mode = True
             else:
@@ -324,7 +337,10 @@ class AgenticCoder:
             control_queue=control_queue,
             context=context,
         )
-        return ray.get(ref)
+        ray_mod = _get_ray()
+        if ray_mod is None:
+            raise RuntimeError("Ray is unavailable for remote execution.")
+        return ray_mod.get(ref)
     
     def interactive_session(self) -> None:
         """Start an interactive session with the agent."""
@@ -358,7 +374,10 @@ class AgenticCoder:
                         max_steps=5,
                         tool_prompt_mode=tool_prompt_mode,
                     )
-                    result = ray.get(ref)
+                    ray_mod = _get_ray()
+                    if ray_mod is None:
+                        raise RuntimeError("Ray is unavailable for remote execution.")
+                    result = ray_mod.get(ref)
                 print(f"Agent completed with status: {result.get('completion_reason', 'unknown')}")
                 
             except KeyboardInterrupt:
