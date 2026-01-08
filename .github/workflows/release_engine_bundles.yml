@@ -8,7 +8,7 @@ name: Release engine bundles
         required: true
         type: string
       release_tag:
-        description: GitHub release tag (default: engine-v<version>)
+        description: "GitHub release tag (default: engine-v<version>)"
         required: false
         type: string
       prerelease:
