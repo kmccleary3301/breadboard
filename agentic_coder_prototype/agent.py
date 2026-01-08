@@ -14,7 +14,10 @@ import threading
 from typing import Any, Dict, List, Optional, Tuple, Callable
 from pathlib import Path
 
-import ray
+try:
+    import ray  # type: ignore
+except Exception:  # pragma: no cover - optional runtime
+    ray = None
 from .agent_llm_openai import OpenAIConductor
 from .compilation.v2_loader import load_agent_config
 from .provider_routing import provider_router
@@ -54,7 +57,7 @@ class AgenticCoder:
         except Exception:
             pass
         self.agent = None
-        self._local_mode = os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1"
+        self._local_mode = os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1" or ray is None
         
     def _load_config(self) -> Dict[str, Any]:
         """Load and validate configuration (v2-aware)."""
@@ -195,17 +198,20 @@ class AgenticCoder:
         
         # Initialize Ray and underlying actor
         if not self._local_mode:
-            try:
-                if not ray.is_initialized():
-                    if threading.current_thread() is not threading.main_thread():
-                        logger.warning(
-                            "Ray init requested from non-main thread; falling back to local mode."
-                        )
-                        raise RuntimeError("Ray init requested from non-main thread")
-                    # Start an isolated local cluster with a nonstandard dashboard port
-                    ray.init(address="local", include_dashboard=False)
-            except Exception:
+            if ray is None:
                 self._local_mode = True
+            else:
+                try:
+                    if not ray.is_initialized():
+                        if threading.current_thread() is not threading.main_thread():
+                            logger.warning(
+                                "Ray init requested from non-main thread; falling back to local mode."
+                            )
+                            raise RuntimeError("Ray init requested from non-main thread")
+                        # Start an isolated local cluster with a nonstandard dashboard port
+                        ray.init(address="local", include_dashboard=False)
+                except Exception:
+                    self._local_mode = True
 
         if self._local_mode:
             print("[Ray disabled] Using local in-process execution mode.")
