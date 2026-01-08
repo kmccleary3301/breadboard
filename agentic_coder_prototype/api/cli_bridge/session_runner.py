@@ -13,7 +13,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Sequence, List
 
-from agentic_coder_prototype.agent import AgenticCoder, create_agent
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
 from agentic_coder_prototype.checkpointing.checkpoint_manager import CheckpointManager
 from agentic_coder_prototype.skills.registry import (
@@ -37,7 +36,7 @@ from .registry import SessionRecord, SessionRegistry
 logger = logging.getLogger(__name__)
 
 
-AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], AgenticCoder]
+AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
 
 
 class SessionRunner:
@@ -57,7 +56,7 @@ class SessionRunner:
         self.agent_factory = agent_factory or self._default_factory
 
         self._task: Optional[asyncio.Task[None]] = None
-        self._agent: Optional[AgenticCoder] = None
+        self._agent: Optional[Any] = None
         self._stop_event = asyncio.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._input_queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
@@ -83,7 +82,9 @@ class SessionRunner:
         config_path: str,
         workspace_dir: Optional[str],
         overrides: Optional[Dict[str, Any]],
-    ) -> AgenticCoder:
+    ) -> Any:
+        from agentic_coder_prototype.agent import create_agent
+
         return create_agent(config_path, workspace_dir=workspace_dir, overrides=overrides)
 
     async def start(self) -> None:
