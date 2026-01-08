@@ -17,6 +17,9 @@ name: Release engine bundles
         default: true
         type: boolean
 
+permissions:
+  contents: write
+
 jobs:
   create_release:
     runs-on: ubuntu-latest
