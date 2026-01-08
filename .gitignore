@@ -3,6 +3,8 @@ docs_tmp/
 docs_local/
 exports/
 logging/
+!agentic_coder_prototype/logging/
+!agentic_coder_prototype/logging/**
 agent_ws_*/
 c_sessions_extracted/
 .cursor/
