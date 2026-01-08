@@ -26,12 +26,12 @@ os.environ.setdefault("RAY_DOCKER_RUNTIME", "runc")
 os.environ.setdefault("RAY_ADDRESS", "local")
 os.environ.setdefault("RAY_DASHBOARD_PORT", "8299")
 
-def pytest_ignore_collect(path, config):
+def pytest_ignore_collect(collection_path, config):
     """Completely ignore industry reference test suites by default.
     Set INCLUDE_INDUSTRY_REFS_TESTS=1 to include them.
     """
     include_industry = os.environ.get("INCLUDE_INDUSTRY_REFS_TESTS", "0") == "1"
-    p = str(path)
+    p = str(collection_path)
     if not include_industry and "/industry_coder_refs/" in p:
         return True
     return False
