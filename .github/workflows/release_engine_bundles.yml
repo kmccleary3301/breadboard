@@ -125,8 +125,14 @@ jobs:
           "$exe" &
           pid="$!"
           trap 'kill "$pid" >/dev/null 2>&1 || true' EXIT
-          sleep 3
-          curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null
+          for i in {1..20}; do
+            if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Engine /health check failed after retries" >&2
+          exit 7
 
       - name: Rename manifest fragment
         shell: bash
