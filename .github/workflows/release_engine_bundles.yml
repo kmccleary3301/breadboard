@@ -103,6 +103,7 @@ jobs:
           PORT=19123
           export BREADBOARD_CLI_HOST=127.0.0.1
           export BREADBOARD_CLI_PORT="$PORT"
+          export RAY_SCE_LOCAL_MODE=1
 
           shopt -s nullglob
           candidates=(dist/engine_bundles/build/"$VERSION"/*/dist/breadboard-engine*)
