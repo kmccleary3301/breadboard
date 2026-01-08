@@ -1,6 +1,6 @@
 name: Release engine bundles
 
-on:
+"on":
   workflow_dispatch:
     inputs:
       version:
