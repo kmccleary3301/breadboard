@@ -593,7 +593,9 @@ def _load_workspace_manifest(run_dir: Path) -> Optional[Dict[str, Any]]:
 
 
 def _load_todo_snapshot(workspace_path: Path) -> Dict[str, Any]:
-    todo_path = workspace_path / ".breadboard" / "todos.json"
+    primary = workspace_path / ".breadboard" / "todos.json"
+    fallback = workspace_path / ".kyle" / "todos.json"
+    todo_path = primary if primary.exists() else fallback
     if not todo_path.exists():
         return {}
     try:
