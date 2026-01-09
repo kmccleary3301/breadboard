@@ -13,6 +13,8 @@ ALLOWED_FAIL_SCENARIOS=("modal_overlay_stress" "resize_storm")
 BRIDGE_HOST="${BREADBOARD_CLI_HOST:-127.0.0.1}"
 BRIDGE_PORT="${BREADBOARD_CLI_PORT:-9099}"
 WORKSPACE_DIR="${ROOT_DIR}/agent_ws_opencode"
+export MOCK_API_KEY="${MOCK_API_KEY:-kc_parity_mock_key}"
+export BREADBOARD_API_TIMEOUT_MS="${BREADBOARD_API_TIMEOUT_MS:-180000}"
 SCENARIO_ORDER=("coding_task" "multi_file" "modal_overlay_stress" "resize_storm")
 SELECTED_SCENARIOS=()
 

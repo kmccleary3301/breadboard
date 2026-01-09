@@ -66,9 +66,30 @@ def _read_cli_version() -> str | None:
     return None
 
 
+def _git_sha() -> str:
+    try:
+        raw = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=str(ROOT))
+        sha = raw.decode("utf-8").strip()
+        return sha or "nogit"
+    except Exception:
+        return "nogit"
+
+
+def _default_version() -> str:
+    base = _read_cli_version() or "0.0.0"
+    sha = _git_sha()
+    if "+" in base:
+        return f"{base}.{sha}"
+    return f"{base}+{sha}"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build + package a local BreadBoard engine bundle.")
-    parser.add_argument("--version", required=True, help="Engine version to write into the manifest.")
+    parser.add_argument(
+        "--version",
+        default=None,
+        help="Engine version to write into the manifest (default: <cli_version>+<gitsha>).",
+    )
     parser.add_argument("--name", default=DEFAULT_NAME, help="Executable name (default: breadboard-engine)")
     parser.add_argument(
         "--out-root",
@@ -123,6 +144,8 @@ def _resolve_protocol_version() -> str:
 
 def main() -> int:
     args = parse_args()
+    if not args.version:
+        args.version = _default_version()
     platform_name = _default_platform()
     arch_name = _default_arch()
 

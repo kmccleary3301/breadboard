@@ -138,7 +138,9 @@ const verifyProtocol = async (baseUrl: string) => {
   const health = await fetchHealth(baseUrl)
   if (!health?.protocol_version) return
   if (health.protocol_version !== CLI_PROTOCOL_VERSION) {
-    const strict = process.env.BREADBOARD_PROTOCOL_STRICT === "1"
+    const strict =
+      process.env.BREADBOARD_PROTOCOL_STRICT !== "0" &&
+      process.env.BREADBOARD_ALLOW_PROTOCOL_MISMATCH !== "1"
     const message = `Engine protocol ${health.protocol_version} does not match CLI protocol ${CLI_PROTOCOL_VERSION}`
     if (strict) {
       throw new Error(message)
@@ -147,9 +149,12 @@ const verifyProtocol = async (baseUrl: string) => {
   }
   if (health.version && process.env.BREADBOARD_ENGINE_VERSION) {
     if (health.version !== process.env.BREADBOARD_ENGINE_VERSION) {
-      console.warn(
-        `[engine] Engine version ${health.version} does not match expected ${process.env.BREADBOARD_ENGINE_VERSION}`,
-      )
+      const strict = process.env.BREADBOARD_ENGINE_ALLOW_VERSION_MISMATCH !== "1"
+      const message = `[engine] Engine version ${health.version} does not match expected ${process.env.BREADBOARD_ENGINE_VERSION}`
+      if (strict) {
+        throw new Error(message)
+      }
+      console.warn(message)
     }
   }
 }

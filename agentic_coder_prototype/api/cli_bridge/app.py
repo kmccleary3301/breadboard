@@ -60,7 +60,8 @@ def _load_chaos_config() -> Dict[str, float] | None:
 
 
 def create_app(service: SessionService | None = None) -> FastAPI:
-    app = FastAPI(title="BreadBoard CLI Bridge", version=os.environ.get("BREADBOARD_ENGINE_VERSION", "0.1.0"))
+    engine_version = (os.environ.get("BREADBOARD_ENGINE_VERSION") or "0.1.0").strip() or "0.1.0"
+    app = FastAPI(title="BreadBoard CLI Bridge", version=engine_version)
     _service = service or SessionService()
     chaos_config = _load_chaos_config()
 
