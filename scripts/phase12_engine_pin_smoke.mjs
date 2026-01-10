@@ -25,11 +25,19 @@ const main = async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "bb-pin-smoke-"))
   const userConfigPath = path.join(tmp, "config.json")
   try {
-    run(npmCmd, ["run", "build"], {
-      cwd: tuiDir,
-      env: { ...process.env, BREADBOARD_SKIP_LOCAL_BIN_INSTALL: "1", BREADBOARD_INSTALL_QUIET: "1" },
-      shell: process.platform === "win32",
-    })
+    const distMain = path.join(tuiDir, "dist", "main.js")
+    const skipBuild = process.env.BREADBOARD_SKIP_TUI_BUILD === "1"
+    const hasDist = await fs
+      .stat(distMain)
+      .then(() => true)
+      .catch(() => false)
+    if (!skipBuild && !hasDist) {
+      run(npmCmd, ["run", "build"], {
+        cwd: tuiDir,
+        env: { ...process.env, BREADBOARD_SKIP_LOCAL_BIN_INSTALL: "1", BREADBOARD_INSTALL_QUIET: "1" },
+        shell: process.platform === "win32",
+      })
+    }
 
     const cli = path.join(tuiDir, "dist", "main.js")
     const env = { ...process.env, BREADBOARD_USER_CONFIG: userConfigPath }
@@ -59,4 +67,3 @@ main().catch((error) => {
   console.error(`[engine-pin-smoke] failed: ${error.message}`)
   process.exit(1)
 })
-

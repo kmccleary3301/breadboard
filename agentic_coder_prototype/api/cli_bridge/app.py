@@ -75,7 +75,19 @@ def create_app(service: SessionService | None = None) -> FastAPI:
             return
         try:
             if not ray.is_initialized():
-                ray.init(address="local", include_dashboard=False)
+                timeout_s = float(os.environ.get("BREADBOARD_RAY_INIT_TIMEOUT_S", "8") or "8")
+
+                def _init_ray_sync() -> None:
+                    ray.init(address="local", include_dashboard=False)
+
+                if timeout_s > 0:
+                    try:
+                        await asyncio.wait_for(asyncio.to_thread(_init_ray_sync), timeout=timeout_s)
+                    except asyncio.TimeoutError:
+                        logger.warning("Ray init timed out during engine startup (%.1fs)", timeout_s)
+                        return
+                else:
+                    _init_ray_sync()
                 logger.info("Ray initialized during engine startup")
         except BaseException as exc:  # noqa: BLE001
             # Do not crash the engine; sessions may fall back to local execution if Ray is unavailable.

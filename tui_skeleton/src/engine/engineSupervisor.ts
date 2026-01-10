@@ -29,8 +29,15 @@ const ENGINE_DIR = path.join(homedir(), ".breadboard", "engine")
 const ENGINE_LOCK_PATH = path.join(ENGINE_DIR, "engine.lock")
 const DEFAULT_PORT = 9099
 const DEFAULT_HOST = "127.0.0.1"
-const STARTUP_TIMEOUT_MS = 20_000
-const HEALTH_TIMEOUT_MS = 2_500
+const envInt = (key: string, fallback: number): number => {
+  const raw = process.env[key]
+  if (!raw) return fallback
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+const STARTUP_TIMEOUT_MS = envInt("BREADBOARD_ENGINE_STARTUP_TIMEOUT_MS", 20_000)
+const HEALTH_TIMEOUT_MS = envInt("BREADBOARD_ENGINE_HEALTH_TIMEOUT_MS", 2_500)
 
 let activeChild: ChildProcess | null = null
 let activeBaseUrl: string | null = null

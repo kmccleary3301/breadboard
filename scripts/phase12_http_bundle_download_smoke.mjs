@@ -46,11 +46,19 @@ const rimraf = async (target) => {
 
 const main = async () => {
   // Ensure the TUI dist exists so we can import engineBundles from compiled JS.
-  run(npmCmd, ["run", "build"], {
-    cwd: tuiDir,
-    env: { ...process.env, BREADBOARD_SKIP_LOCAL_BIN_INSTALL: "1", BREADBOARD_INSTALL_QUIET: "1" },
-    shell: process.platform === "win32",
-  })
+  const distBundles = path.join(tuiDir, "dist", "engine", "engineBundles.js")
+  const skipBuild = process.env.BREADBOARD_SKIP_TUI_BUILD === "1"
+  const hasDist = await fs
+    .stat(distBundles)
+    .then(() => true)
+    .catch(() => false)
+  if (!skipBuild && !hasDist) {
+    run(npmCmd, ["run", "build"], {
+      cwd: tuiDir,
+      env: { ...process.env, BREADBOARD_SKIP_LOCAL_BIN_INSTALL: "1", BREADBOARD_INSTALL_QUIET: "1" },
+      shell: process.platform === "win32",
+    })
+  }
 
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "bb-http-bundle-smoke-"))
   const staging = path.join(tmp, "bundle")
@@ -150,4 +158,3 @@ main().catch((error) => {
   console.error(`[http-bundle-smoke] failed: ${error.message}`)
   process.exit(1)
 })
-
