@@ -39,6 +39,7 @@ def _event_schema() -> Dict[str, Any]:
         ("skills_catalog", "session_event_payload_skills_catalog.schema.json"),
         ("skills_selection", "session_event_payload_skills_selection.schema.json"),
         ("ctree_node", "session_event_payload_ctree_node.schema.json"),
+        ("ctree_delta", "session_event_payload_ctree_delta.schema.json"),
         ("ctree_snapshot", "session_event_payload_ctree_snapshot.schema.json"),
         ("task_event", "session_event_payload_task_event.schema.json"),
         ("reward_update", "session_event_payload_reward_update.schema.json"),
@@ -231,6 +232,238 @@ def _payload_schema_ctree_node() -> Dict[str, Any]:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "CTreeNodePayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["node", "snapshot"],
+        "properties": {
+            "node": {"type": "object"},
+            "snapshot": {"type": "object"},
+        },
+    }
+
+
+def _payload_schema_ctree_delta() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "CTreeDeltaPayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["node", "snapshot"],
+        "properties": {
+            "node": {"type": "object"},
+            "snapshot": {"type": "object"},
+        },
+    }
+
+
+def _payload_schema_ctree_snapshot() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "CTreeSnapshotPayload",
+        "type": "object",
+        "additionalProperties": True,
+    }
+
+
+def _payload_schema_task_event() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "TaskEventPayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["kind"],
+        "properties": {
+            "kind": {"type": "string"},
+            "task_id": {"type": ["string", "integer", "null"]},
+            "description": {"type": ["string", "null"]},
+            "status": {"type": ["string", "null"]},
+            "timestamp": {"type": ["number", "null"]},
+            "tree_path": {"type": ["string", "null"]},
+            "depth": {"type": ["integer", "null"]},
+        },
+    }
+
+
+def _payload_schema_reward_update() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "RewardUpdatePayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["summary"],
+        "properties": {"summary": {"type": "object"}},
+    }
+
+
+def _payload_schema_completion() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "CompletionPayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["summary"],
+        "properties": {
+            "summary": {"type": "object"},
+            "mode": {"type": ["string", "null"]},
+            "usage": {"type": ["object", "null"]},
+        },
+    }
+
+
+def _payload_schema_log_link() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "LogLinkPayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["url"],
+        "properties": {"url": {"type": "string"}},
+    }
+
+
+def _payload_schema_error() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ErrorPayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["message"],
+        "properties": {"message": {"type": "string"}},
+    }
+
+
+def _payload_schema_run_finished() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "RunFinishedPayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["eventCount"],
+        "properties": {
+            "eventCount": {"type": "integer"},
+            "steps": {"type": ["integer", "null"]},
+            "completed": {"type": ["boolean", "null"]},
+            "reason": {"type": ["string", "null"]},
+            "logging_dir": {"type": ["string", "null"]},
+            "usage": {"type": ["object", "null"]},
+        },
+    }
+
+
+def _payload_schema_turn_start() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "TurnStartPayload",
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "turn": {"type": ["integer", "null"]},
+            "mode": {"type": ["string", "null"]},
+        },
+    }
+
+
+def _payload_schema_assistant_message() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AssistantMessagePayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["text"],
+        "properties": {
+            "text": {"type": "string"},
+            "message": {},
+            "source": {"type": ["string", "null"]},
+        },
+    }
+
+
+def _payload_schema_user_message() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "UserMessagePayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["text"],
+        "properties": {
+            "text": {"type": "string"},
+            "message": {},
+            "source": {"type": ["string", "null"]},
+        },
+    }
+
+
+def _payload_schema_checkpoint_list() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "CheckpointListPayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["checkpoints"],
+        "properties": {
+            "checkpoints": {"type": "array", "items": {"type": "object"}},
+        },
+    }
+
+
+def _payload_schema_checkpoint_restored() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "CheckpointRestoredPayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["checkpoint_id"],
+        "properties": {
+            "checkpoint_id": {"type": "string"},
+            "mode": {"type": ["string", "null"]},
+            "prune": {"type": ["boolean", "null"]},
+        },
+    }
+
+
+def _payload_schema_skills_catalog() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "SkillsCatalogPayload",
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "catalog": {"type": ["object", "null"]},
+            "selection": {"type": ["object", "null"]},
+            "sources": {"type": ["object", "null"]},
+        },
+    }
+
+
+def _payload_schema_skills_selection() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "SkillsSelectionPayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["selection"],
+        "properties": {"selection": {"type": "object"}},
+    }
+
+
+def _payload_schema_ctree_node() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "CTreeNodePayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["node", "snapshot"],
+        "properties": {
+            "node": {"type": "object"},
+            "snapshot": {"type": "object"},
+        },
+    }
+
+
+def _payload_schema_ctree_delta() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "CTreeDeltaPayload",
         "type": "object",
         "additionalProperties": True,
         "required": ["node", "snapshot"],
@@ -505,6 +738,139 @@ def _command_schema_v1() -> Dict[str, Any]:
         ],
     }
 
+def _command_schema_v1() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "SessionCommandRequestV1",
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["command"],
+        "properties": {
+            "command": {
+                "type": "string",
+                "enum": [
+                    "list_checkpoints",
+                    "restore_checkpoint",
+                    "permission_decision",
+                    "set_skills",
+                    "stop",
+                    "set_model",
+                    "set_mode",
+                    "respond_permission",
+                    "permission_response",
+                ],
+            },
+            "payload": {"type": ["object", "null"]},
+        },
+        "oneOf": [
+            {
+                "title": "ListCheckpoints",
+                "properties": {
+                    "command": {"const": "list_checkpoints"},
+                    "payload": {"type": ["object", "null"]},
+                },
+            },
+            {
+                "title": "RestoreCheckpoint",
+                "properties": {
+                    "command": {"const": "restore_checkpoint"},
+                    "payload": {
+                        "type": "object",
+                        "additionalProperties": True,
+                        "required": ["checkpoint_id"],
+                        "properties": {
+                            "checkpoint_id": {"type": "string"},
+                            "checkpointId": {"type": "string"},
+                            "id": {"type": "string"},
+                            "mode": {"type": "string", "enum": ["code", "conversation", "both"]},
+                        },
+                    },
+                },
+            },
+            {
+                "title": "PermissionDecision",
+                "properties": {
+                    "command": {"const": "permission_decision"},
+                    "payload": {
+                        "type": "object",
+                        "additionalProperties": True,
+                        "required": ["request_id", "decision"],
+                        "properties": {
+                            "request_id": {"type": "string"},
+                            "requestId": {"type": "string"},
+                            "permission_id": {"type": "string"},
+                            "permissionId": {"type": "string"},
+                            "id": {"type": "string"},
+                            "decision": {"type": "string"},
+                            "response": {"type": "string"},
+                            "rule": {"type": ["string", "null"]},
+                            "scope": {"type": ["string", "null"]},
+                            "note": {"type": ["string", "null"]},
+                            "stop": {"type": ["boolean", "null"]},
+                        },
+                    },
+                },
+            },
+            {
+                "title": "SetSkills",
+                "properties": {
+                    "command": {"const": "set_skills"},
+                    "payload": {"type": "object", "additionalProperties": True},
+                },
+            },
+            {
+                "title": "Stop",
+                "properties": {"command": {"const": "stop"}, "payload": {"type": ["object", "null"]}},
+            },
+            {
+                "title": "SetModel",
+                "properties": {
+                    "command": {"const": "set_model"},
+                    "payload": {
+                        "type": "object",
+                        "additionalProperties": True,
+                        "required": ["model"],
+                        "properties": {"model": {"type": "string"}},
+                    },
+                },
+            },
+            {
+                "title": "SetMode",
+                "properties": {
+                    "command": {"const": "set_mode"},
+                    "payload": {
+                        "type": "object",
+                        "additionalProperties": True,
+                        "required": ["mode"],
+                        "properties": {"mode": {"type": "string"}},
+                    },
+                },
+            },
+            {
+                "title": "RespondPermission",
+                "properties": {
+                    "command": {"enum": ["respond_permission", "permission_response"]},
+                    "payload": {
+                        "type": "object",
+                        "additionalProperties": True,
+                        "required": ["request_id"],
+                        "properties": {
+                            "request_id": {"type": "string"},
+                            "requestId": {"type": "string"},
+                            "permission_id": {"type": "string"},
+                            "permissionId": {"type": "string"},
+                            "id": {"type": "string"},
+                            "response": {"type": ["string", "null"]},
+                            "decision": {"type": ["string", "null"]},
+                            "responses": {"type": ["object", "null"]},
+                            "items": {"type": ["object", "null"]},
+                        },
+                    },
+                },
+            },
+        ],
+    }
+
 
 def _model_schema(model: Any) -> Dict[str, Any]:
     if hasattr(model, "model_json_schema"):
@@ -549,6 +915,7 @@ def main() -> None:
         _payload_schema_skills_selection(),
     )
     _write_json(SCHEMA_DIR / "session_event_payload_ctree_node.schema.json", _payload_schema_ctree_node())
+    _write_json(SCHEMA_DIR / "session_event_payload_ctree_delta.schema.json", _payload_schema_ctree_delta())
     _write_json(SCHEMA_DIR / "session_event_payload_ctree_snapshot.schema.json", _payload_schema_ctree_snapshot())
     _write_json(SCHEMA_DIR / "session_event_payload_task_event.schema.json", _payload_schema_task_event())
     _write_json(SCHEMA_DIR / "session_event_payload_reward_update.schema.json", _payload_schema_reward_update())

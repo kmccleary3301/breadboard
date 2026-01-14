@@ -127,6 +127,20 @@ class SessionFileContent(BaseModel):
     total_bytes: Optional[int] = None
 
 
+class SessionFileInfo(BaseModel):
+    path: str
+    type: str = Field(..., description="file or directory")
+    size: Optional[int] = None
+    updated_at: Optional[str] = None
+
+
+class SessionFileContent(BaseModel):
+    path: str
+    content: str
+    truncated: bool = Field(default=False)
+    total_bytes: Optional[int] = None
+
+
 class ModelCatalogEntry(BaseModel):
     id: str
     adapter: Optional[str] = None

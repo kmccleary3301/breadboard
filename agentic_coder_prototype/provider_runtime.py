@@ -2453,6 +2453,54 @@ class MockRuntime(ProviderRuntime):
 provider_registry.register_runtime("mock_chat", MockRuntime)
 
 
+class SmokeRuntime(ProviderRuntime):
+    """Deterministic single-turn runtime for CI/smoke checks.
+
+    Emits a completion sentinel immediately (no tool calls) so headless runs
+    can validate the full request/stream/shutdown path without spending tokens.
+    """
+
+    def create_client(
+        self,
+        api_key: str,
+        *,
+        base_url: Optional[str] = None,
+        default_headers: Optional[Dict[str, str]] = None,
+    ) -> Any:
+        return {"smoke": True}
+
+    def invoke(
+        self,
+        *,
+        client: Any,
+        model: str,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]],
+        stream: bool,
+        context: ProviderRuntimeContext,
+    ) -> ProviderResult:
+        out_messages = [
+            ProviderMessage(
+                role="assistant",
+                content="Hi! All systems nominal.\n\nTASK COMPLETE\n\n>>>>>> END RESPONSE",
+                tool_calls=[],
+                finish_reason="stop",
+                index=0,
+            )
+        ]
+        return ProviderResult(
+            messages=out_messages,
+            raw_response={"smoke": True},
+            usage=None,
+            encrypted_reasoning=None,
+            reasoning_summaries=None,
+            model="smoke",
+        )
+
+
+provider_registry.register_runtime("smoke_chat", SmokeRuntime)
+
+
 class CliMockRuntime(ProviderRuntime):
     """Deterministic runtime for CLI guardrail fixtures."""
 

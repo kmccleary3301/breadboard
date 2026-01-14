@@ -18,6 +18,7 @@ from .ctrees.collapse import collapse_ctree
 from .ctrees.runner import TreeRunner
 from .reward import aggregate_reward_v1, validate_reward_v1
 from .policy_pack import PolicyPack
+from .policy_pack import PolicyPack
 
 
 def run_main_loop(
@@ -43,6 +44,7 @@ def run_main_loop(
 
     completed = False
     step_index = -1
+    policy = PolicyPack.from_config(getattr(self, "config", None))
     policy = PolicyPack.from_config(getattr(self, "config", None))
 
     def poll_control_stop() -> bool:
@@ -163,6 +165,15 @@ def run_main_loop(
                 pass
         guardrail_counters = session_state.get_guardrail_counters()
         guardrail_events = session_state.get_guardrail_events()
+        if session_state.get_provider_metadata("replay_mode"):
+            try:
+                replay_cfg = (self.config.get("replay") or {}) if isinstance(self.config, dict) else {}
+                expected_guardrails = replay_cfg.get("guardrail_expected")
+                if isinstance(expected_guardrails, list):
+                    guardrail_events = list(expected_guardrails)
+                    session_state.guardrail_events = list(expected_guardrails)
+            except Exception:
+                pass
         if session_state.get_provider_metadata("replay_mode"):
             try:
                 replay_cfg = (self.config.get("replay") or {}) if isinstance(self.config, dict) else {}
@@ -362,6 +373,14 @@ def run_main_loop(
             pass
 
         session_state.write_snapshot(output_json_path, model, diff)
+        try:
+            ctree_cfg = (self.config.get("ctrees") or {}) if isinstance(self.config, dict) else {}
+            if ctree_cfg.get("persist") and getattr(self.logger_v2, "run_dir", None):
+                ctree_store = getattr(session_state, "ctree_store", None)
+                if ctree_store is not None and hasattr(ctree_store, "persist"):
+                    ctree_store.persist(self.logger_v2.run_dir)
+        except Exception:
+            pass
         if stream_responses:
             reason_label = summary.get("reason", default_reason or "unknown")
             print(f"[stop] reason={reason_label} steps={steps_taken} exit={exit_kind_value}")

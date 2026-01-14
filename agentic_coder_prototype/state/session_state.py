@@ -68,6 +68,7 @@ class SessionState:
         self._turn_user_emitted = False
         self._last_ctree_node_id: Optional[str] = None
         self._last_ctree_snapshot: Optional[Dict[str, Any]] = None
+        self._hook_manager = None
         self.todo_manager = None
         self.tool_usage_summary.setdefault("todo_calls", 0)
         self.ctree_store = CTreeStore()
@@ -77,6 +78,9 @@ class SessionState:
         emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]],
     ) -> None:
         self._event_emitter = emitter
+
+    def set_hook_manager(self, hook_manager: Any) -> None:
+        self._hook_manager = hook_manager
 
     def _next_event_seq(self) -> int:
         self._event_seq += 1
@@ -242,15 +246,54 @@ class SessionState:
         *,
         turn: Optional[int] = None,
     ) -> Optional[str]:
-        node_id = self.ctree_store.record(kind, payload, turn=turn)
-        try:
-            node = self.ctree_store.nodes[-1] if self.ctree_store.nodes else None
-            if isinstance(node, dict):
-                self._last_ctree_node_id = node.get("id")
+        node_id: Optional[str] = None
+        node: Optional[Any] = None
+        snapshot: Optional[Dict[str, Any]] = None
+        hook_manager = self._hook_manager
+
+        if hook_manager is not None:
+            try:
+                hook_result = hook_manager.run(
+                    "ctree_record",
+                    {"kind": kind, "payload": payload, "turn": turn},
+                    session_state=self,
+                    turn=turn,
+                )
+                if isinstance(getattr(hook_result, "payload", None), dict):
+                    payload_dict = hook_result.payload
+                    node_id = payload_dict.get("node_id")
+                    node = payload_dict.get("node")
+                    snapshot = payload_dict.get("snapshot")
+            except Exception:
+                pass
+
+        if node_id is None:
+            node_id = self.ctree_store.record(kind, payload, turn=turn)
+        if node is None:
+            try:
+                node = self.ctree_store.nodes[-1] if self.ctree_store.nodes else None
+            except Exception:
+                node = None
+        if snapshot is None:
+            try:
                 snapshot = self.ctree_store.snapshot()
+            except Exception:
+                snapshot = None
+
+        try:
+            if isinstance(node, dict) and isinstance(snapshot, dict):
+                self._last_ctree_node_id = node.get("id")
                 self._last_ctree_snapshot = snapshot
                 self._emit_event(
                     "ctree_node",
+                    {
+                        "node": dict(node),
+                        "snapshot": snapshot,
+                    },
+                    turn=turn,
+                )
+                self._emit_event(
+                    "ctree_delta",
                     {
                         "node": dict(node),
                         "snapshot": snapshot,

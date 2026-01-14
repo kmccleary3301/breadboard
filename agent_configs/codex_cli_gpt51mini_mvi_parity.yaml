@@ -31,12 +31,12 @@ features:
 prompts:
   packs:
     base:
-      system: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      plan: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      builder: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      compact: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      tools_catalog_full: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      tools_catalog_short: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+      system: implementations/system_prompts/opencode/codex.md
+      plan: implementations/system_prompts/opencode/codex.md
+      builder: implementations/system_prompts/opencode/codex.md
+      compact: implementations/system_prompts/opencode/codex.md
+      tools_catalog_full: implementations/system_prompts/opencode/codex.md
+      tools_catalog_short: implementations/system_prompts/opencode/codex.md
   tool_prompt_mode: none
   tool_prompt_synthesis:
     enabled: false
@@ -55,4 +55,3 @@ tools:
 completion:
   # Codex CLI can end runs with a content-only final response (no mark_task_complete tool).
   allow_content_only_completion: true
-

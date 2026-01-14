@@ -1,0 +1,9 @@
+{
+  "name": "breadboard-opentui-slab",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@opentui/core": "0.1.72"
+  }
+}
+

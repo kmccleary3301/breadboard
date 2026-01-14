@@ -40,6 +40,45 @@ def _safe_path(repo_root: Path, rel_path: str) -> Path:
     return target
 
 
+def _unique_conflict_path(path: Path) -> Path:
+    base = path.with_name(path.name + ".file_conflict")
+    if not base.exists():
+        return base
+    for i in range(1, 1000):
+        cand = path.with_name(f"{path.name}.file_conflict.{i}")
+        if not cand.exists():
+            return cand
+    raise RuntimeError(f"Failed to find unique conflict path for {path}")
+
+
+def _mkdir_parents_resolving_files(repo_root: Path, target_dir: Path, *, errors: List[str], label: str, lenient: bool) -> None:
+    """Ensure target_dir exists; if any path component is a file, rename it aside (lenient mode)."""
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        return
+    except FileExistsError:
+        if not lenient:
+            raise
+    # Find first conflicting component.
+    rel = target_dir.resolve().relative_to(repo_root.resolve())
+    cur = repo_root.resolve()
+    for part in rel.parts:
+        cur = (cur / part).resolve()
+        if cur.exists() and cur.is_file():
+            moved = _unique_conflict_path(cur)
+            try:
+                cur.rename(moved)
+                errors.append(f"[dir-fixup] renamed file {cur.relative_to(repo_root)} -> {moved.relative_to(repo_root)} ({label})")
+            except Exception as exc:
+                if not lenient:
+                    raise
+                errors.append(f"[dir-fixup-skip] could not rename {cur}: {exc} ({label})")
+                return
+            break
+    # Retry once.
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+
 def _iter_patch_records(manifest_path: Path, out_dir: Path) -> List[PatchRecord]:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     records: List[PatchRecord] = []
@@ -129,7 +168,14 @@ def _apply_operations_with_stats(
             if dry_run:
                 applied += 1
                 continue
-            dst.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                _mkdir_parents_resolving_files(repo_root, dst.parent, errors=errors, label=f"add {file_path}", lenient=lenient)
+            except FileExistsError as exc:
+                if not lenient:
+                    raise
+                skipped += 1
+                errors.append(f"[add-skip] {file_path}: parent mkdir failed ({exc})")
+                continue
             dst.write_text(getattr(op, "content", "") or "", encoding="utf-8")
             applied += 1
             continue
@@ -222,7 +268,16 @@ def _apply_operations_with_stats(
             if dry_run:
                 applied += 1
                 continue
-            dst.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                _mkdir_parents_resolving_files(
+                    repo_root, dst.parent, errors=errors, label=f"update {dst_rel}", lenient=lenient
+                )
+            except FileExistsError as exc:
+                if not lenient:
+                    raise
+                skipped += 1
+                errors.append(f"[update-skip] {dst_rel}: parent mkdir failed ({exc})")
+                continue
             dst.write_text(updated, encoding="utf-8")
             if move_to and move_to != file_path and src.exists() and src.is_file():
                 src.unlink()
@@ -235,6 +290,11 @@ def _apply_operations_with_stats(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Replay extracted Codex CLI patches to reconstruct the TUI.")
+    parser.add_argument(
+        "--repo-root",
+        default=".",
+        help="Target repo root to apply patches into (default: current working directory).",
+    )
     parser.add_argument(
         "--patch-out-dir",
         default="misc/codex_tui_patch_recovery",
@@ -275,9 +335,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    repo_root = Path(__file__).resolve().parents[1]
-    out_dir = (repo_root / args.patch_out_dir).resolve()
-    manifest_path = (repo_root / args.manifest).resolve()
+    repo_root = Path(args.repo_root).resolve()
+    out_dir = (Path(__file__).resolve().parents[1] / args.patch_out_dir).resolve()
+    manifest_path = (Path(__file__).resolve().parents[1] / args.manifest).resolve()
 
     records = _iter_patch_records(manifest_path, out_dir)
     if args.max_patches and args.max_patches > 0:

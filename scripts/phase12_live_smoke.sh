@@ -11,6 +11,8 @@ RUN_TIMEOUT_S="${RUN_TIMEOUT_S:-120}"
 
 export MOCK_API_KEY="${MOCK_API_KEY:-dummy}"
 export BREADBOARD_ENGINE_KEEPALIVE="${BREADBOARD_ENGINE_KEEPALIVE:-0}"
+export BREADBOARD_ENGINE_MODE="${BREADBOARD_ENGINE_MODE:-auto}"
+export RAY_DISABLE_DASHBOARD="${RAY_DISABLE_DASHBOARD:-1}"
 
 TUI_DIR="${ROOT_DIR}/tui_skeleton"
 
@@ -26,3 +28,4 @@ echo "[phase12-smoke] run"
 timeout "${RUN_TIMEOUT_S}s" node "${TUI_DIR}/dist/main.js" run --config "${CONFIG_PATH}" --workspace "${WORKSPACE}" "Smoke test: say hi and exit."
 
 echo "[phase12-smoke] ok"
+

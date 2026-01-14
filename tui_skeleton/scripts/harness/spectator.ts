@@ -47,6 +47,7 @@ export type KeyName =
 export type Step =
   | { readonly action: "wait"; readonly ms: number }
   | { readonly action: "type"; readonly text: string; readonly typingDelayMs?: number }
+  | { readonly action: "paste"; readonly text: string }
   | { readonly action: "press"; readonly key: KeyName; readonly repeat?: number; readonly delayMs?: number }
   | { readonly action: "snapshot"; readonly label: string }
   | { readonly action: "waitFor"; readonly text: string; readonly timeoutMs?: number }
@@ -92,6 +93,7 @@ export interface ClipboardMetadata {
 export interface SpectatorHarnessOptions {
   readonly steps: Step[]
   readonly command: string
+  readonly cwd?: string
   readonly configPath?: string
   readonly baseUrl?: string
   readonly cols: number
@@ -424,7 +426,7 @@ export const runSpectatorHarness = async (
     name: "xterm-256color",
     cols: options.cols,
     rows: options.rows,
-    cwd: process.cwd(),
+    cwd: options.cwd ?? process.cwd(),
     env,
   })
   let didExit = false
@@ -621,6 +623,16 @@ export const runSpectatorHarness = async (
             }
             checkGuards()
           }
+          break
+        case "paste":
+          if (step.text.length > 0) {
+            hasPendingInput = true
+          }
+          child.write("\u001b[200~")
+          child.write(step.text)
+          child.write("\u001b[201~")
+          logInput({ action: "paste", length: step.text.length })
+          checkGuards()
           break
         case "press": {
           const sequence = resolveKey(step.key)

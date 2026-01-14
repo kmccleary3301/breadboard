@@ -7,10 +7,11 @@ import json
 import logging
 import os
 import random
-from typing import AsyncIterator, Dict
+import time
+from typing import Any, AsyncIterator, Dict
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 
 try:
     from dotenv import load_dotenv
@@ -40,6 +41,7 @@ from .models import (
 from .service import SessionService
 
 logger = logging.getLogger(__name__)
+ENGINE_STARTED_AT = time.time()
 
 
 def _load_chaos_config() -> Dict[str, float] | None:
@@ -60,24 +62,56 @@ def _load_chaos_config() -> Dict[str, float] | None:
 
 
 def create_app(service: SessionService | None = None) -> FastAPI:
-    app = FastAPI(title="BreadBoard CLI Bridge", version=os.environ.get("BREADBOARD_ENGINE_VERSION", "0.1.0"))
+    engine_version = (os.environ.get("BREADBOARD_ENGINE_VERSION") or "0.1.0").strip() or "0.1.0"
+    app = FastAPI(title="BreadBoard CLI Bridge", version=engine_version)
     _service = service or SessionService()
     chaos_config = _load_chaos_config()
+    required_token = (os.environ.get("BREADBOARD_API_TOKEN") or "").strip()
+
+    @app.middleware("http")
+    async def _auth_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+        if not required_token:
+            return await call_next(request)
+        header = request.headers.get("authorization") or ""
+        token = ""
+        if header.lower().startswith("bearer "):
+            token = header[7:].strip()
+        if not token or token != required_token:
+            return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"message": "unauthorized"})
+        return await call_next(request)
 
     @app.on_event("startup")
     async def _ensure_ray_initialized() -> None:
         if os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1":
             return
+        strict_required = os.environ.get("BREADBOARD_RAY_INIT_REQUIRED", "").lower() in {"1", "true", "yes"}
         try:
             import ray  # type: ignore
         except Exception:  # pragma: no cover - optional runtime
+            if strict_required:
+                raise RuntimeError("Ray is required but not importable during engine startup.")
             return
         try:
             if not ray.is_initialized():
-                ray.init(address="local", include_dashboard=False)
+                timeout_s = float(os.environ.get("BREADBOARD_RAY_INIT_TIMEOUT_S", "8") or "8")
+
+                def _init_ray_sync() -> None:
+                    os.environ.setdefault("RAY_DISABLE_DASHBOARD", "1")
+                    ray.init(address="local", include_dashboard=False)
+
+                # Important: initialize Ray in the main thread. Session execution happens in worker
+                # threads, and Ray can degrade or refuse to install signal handlers if initialized
+                # off the main thread.
+                start = time.monotonic()
+                _init_ray_sync()
+                elapsed = time.monotonic() - start
+                if timeout_s > 0 and elapsed > timeout_s:
+                    logger.warning("Ray init exceeded configured timeout (%.1fs > %.1fs)", elapsed, timeout_s)
                 logger.info("Ray initialized during engine startup")
         except BaseException as exc:  # noqa: BLE001
             # Do not crash the engine; sessions may fall back to local execution if Ray is unavailable.
+            if strict_required:
+                raise
             logger.warning("Ray init failed during engine startup: %s", exc)
 
     def get_service() -> SessionService:
@@ -106,6 +140,31 @@ def create_app(service: SessionService | None = None) -> FastAPI:
             "protocol_version": PROTOCOL_VERSION,
             "version": app.version,
             "engine_version": app.version,
+        }
+
+    @app.get("/status")
+    async def engine_status() -> dict[str, Any]:
+        ray_available = False
+        ray_initialized = False
+        try:
+            import ray  # type: ignore
+
+            ray_available = True
+            ray_initialized = bool(ray.is_initialized())
+        except Exception:
+            ray_available = False
+            ray_initialized = False
+        return {
+            "status": "ok",
+            "pid": os.getpid(),
+            "uptime_s": max(0.0, time.time() - ENGINE_STARTED_AT),
+            "protocol_version": PROTOCOL_VERSION,
+            "version": app.version,
+            "engine_version": app.version,
+            "ray": {
+                "available": ray_available,
+                "initialized": ray_initialized,
+            },
         }
 
     @app.get(

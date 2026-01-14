@@ -1,0 +1,10 @@
+extends: opencode_grok4fast_c_fs_v2.yaml
+
+profile: { name: opencode-smoke-mock }
+
+providers:
+  default_model: smoke/dev
+  models:
+    - id: smoke/dev
+      adapter: smoke_chat
+

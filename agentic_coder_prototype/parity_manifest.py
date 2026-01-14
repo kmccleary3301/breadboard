@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
+import os
 
 import yaml
 
@@ -10,6 +11,13 @@ from .parity import EquivalenceLevel
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = REPO_ROOT / "misc" / "opencode_runs" / "parity_scenarios.yaml"
+
+
+def _fixture_root() -> Optional[Path]:
+    raw = os.environ.get("BREADBOARD_FIXTURE_ROOT") or os.environ.get("BREADBOARD_PARITY_FIXTURE_ROOT")
+    if not raw:
+        return None
+    return Path(raw).expanduser().resolve()
 
 
 @dataclass(frozen=True)
@@ -43,6 +51,16 @@ def _resolve_path(value: Optional[str]) -> Optional[Path]:
         return None
     candidate = Path(value)
     if not candidate.is_absolute():
+        fixture_root = _fixture_root()
+        if fixture_root:
+            fixture_candidate = (fixture_root / value).resolve()
+            if fixture_candidate.exists():
+                return fixture_candidate
+            if value.startswith("misc/"):
+                trimmed = value[len("misc/") :]
+                fixture_trimmed = (fixture_root / trimmed).resolve()
+                if fixture_trimmed.exists():
+                    return fixture_trimmed
         candidate = (REPO_ROOT / candidate).resolve()
     return candidate
 

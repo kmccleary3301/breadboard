@@ -89,8 +89,28 @@ def _wait_for_port(host: str, port: int, *, timeout_s: float = 10.0) -> None:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run parity scenarios against goldens.")
     parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail required gate-tier scenarios if fixtures/configs are missing.",
+    )
+    parser.add_argument(
+        "--strict-gate",
+        type=int,
+        default=None,
+        help="Gate tier threshold for strict enforcement (default: env PARITY_STRICT_GATE or 1).",
+    )
+    parser.add_argument(
+        "--strict-live",
+        action="store_true",
+        help="When strict, fail gate-tier task scenarios if live runs are disabled.",
+    )
+    parser.add_argument(
         "--manifest",
         help="Override path to misc/opencode_runs/parity_scenarios.yaml",
+    )
+    parser.add_argument(
+        "--fixture-root",
+        help="Root directory for parity fixtures (overrides BREADBOARD_FIXTURE_ROOT).",
     )
     parser.add_argument(
         "--scenario",
@@ -120,6 +140,15 @@ def _parse_args() -> argparse.Namespace:
         help="Override the timestamped run id used under artifacts/parity_runs/.",
     )
     return parser.parse_args()
+
+
+def _tier_rank(value: str) -> int:
+    if not value:
+        return 99
+    normalized = value.strip().upper()
+    if normalized.startswith("E") and normalized[1:].isdigit():
+        return int(normalized[1:])
+    return 99
 
 
 def _collect_logging_dirs(root: Path) -> Set[str]:
@@ -528,7 +557,7 @@ def _augment_record(scenario, record: Dict[str, Any], *, status_override: Option
     return enriched
 
 
-def _write_summary(result_dir: Path, records: List[Dict[str, Any]]) -> None:
+def _write_summary(result_dir: Path, records: List[Dict[str, Any]], *, manifest_path: Optional[Path] = None) -> None:
     result_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = result_dir / "parity_results.jsonl"
     summary_path = result_dir / "parity_summary.json"
@@ -562,6 +591,11 @@ def _write_summary(result_dir: Path, records: List[Dict[str, Any]]) -> None:
         "warned": warned_names,
         "results_file": str(jsonl_path),
     }
+    fixture_root = os.environ.get("BREADBOARD_FIXTURE_ROOT") or os.environ.get("BREADBOARD_PARITY_FIXTURE_ROOT")
+    if manifest_path:
+        summary_payload["manifest_path"] = str(manifest_path)
+    if fixture_root:
+        summary_payload["fixture_root"] = fixture_root
     # Surface hash deltas (short summary for tool-schema + allowlist hashes).
     deltas = []
     for record in records:
@@ -632,6 +666,8 @@ def _publish_parity_status(parity_root: Path, run_dir: Path, records: List[Dict[
 
 def main() -> None:
     args = _parse_args()
+    if args.fixture_root:
+        os.environ["BREADBOARD_FIXTURE_ROOT"] = args.fixture_root
     manifest_path = Path(args.manifest).resolve() if args.manifest else None
     all_scenarios = load_parity_scenarios(manifest_path)
     if not all_scenarios:
@@ -639,6 +675,11 @@ def main() -> None:
         return
     name_filter = {name.strip().lower() for name in (args.scenarios or []) if name and name.strip()}
     tag_filter = {tag.strip().lower() for tag in (args.tags or []) if tag and tag.strip()}
+    strict = bool(args.strict or os.environ.get("PARITY_STRICT", "").lower() in {"1", "true", "yes"})
+    strict_gate = args.strict_gate
+    if strict_gate is None:
+        strict_gate = int(os.environ.get("PARITY_STRICT_GATE", "1") or "1")
+    strict_live = bool(args.strict_live or os.environ.get("PARITY_STRICT_LIVE", "").lower() in {"1", "true", "yes"})
     scenarios: List[Any] = []
     for scenario in all_scenarios:
         if not args.include_disabled and not scenario.enabled:
@@ -681,6 +722,31 @@ def main() -> None:
                 print(f"[parity] Unsupported mode '{scenario.mode}' for {scenario.name}; marking pending.")
                 records.append(_augment_record(scenario, {"status": "pending"}, status_override="pending"))
                 continue
+            gate_rank = _tier_rank(scenario.gate_tier)
+            if scenario.config and not scenario.config.exists():
+                reason = "missing_config"
+                message = f"[parity] Skipping {scenario.name}: missing config at {scenario.config}"
+                if strict and gate_rank <= strict_gate:
+                    raise RuntimeError(f"{message} (strict gate)")
+                print(message)
+                records.append(_augment_record(scenario, {"status": "skipped", "reason": reason}))
+                continue
+            if scenario.mode == "replay" and scenario.session and not scenario.session.exists():
+                reason = "missing_session"
+                message = f"[parity] Skipping {scenario.name}: missing replay session at {scenario.session}"
+                if strict and gate_rank <= strict_gate:
+                    raise RuntimeError(f"{message} (strict gate)")
+                print(message)
+                records.append(_augment_record(scenario, {"status": "skipped", "reason": reason}))
+                continue
+            if scenario.mode == "task" and os.environ.get("PARITY_RUN_LIVE", "").lower() not in {"1", "true", "yes"}:
+                reason = "live_disabled"
+                message = f"[parity] Skipping {scenario.name}: PARITY_RUN_LIVE not enabled."
+                if strict and strict_live and gate_rank <= strict_gate:
+                    raise RuntimeError(f"{message} (strict live gate)")
+                print(message)
+                records.append(_augment_record(scenario, {"status": "skipped", "reason": reason}))
+                continue
             try:
                 if scenario.mode == "task":
                     record = _run_task_scenario(scenario, workspace=workspace, result_dir=result_dir)
@@ -699,7 +765,7 @@ def main() -> None:
     finally:
         if tmp_handle:
             tmp_handle.cleanup()
-        _write_summary(result_dir, records)
+        _write_summary(result_dir, records, manifest_path=manifest_path)
         _publish_parity_status(parity_root, result_dir, records)
     print("[parity] Completed all scenarios")
 

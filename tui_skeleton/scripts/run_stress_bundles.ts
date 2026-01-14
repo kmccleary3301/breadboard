@@ -10,7 +10,7 @@ import {
   SpectatorHarnessError,
   runSpectatorHarness,
   writeSnapshotFile,
-} from "./harness/spectator.js"
+} from "./harness/spectator.ts"
 import { renderGridFromFrames } from "../tools/tty/vtgrid.ts"
 import { runLayoutAssertions, type LayoutAnomaly } from "../tools/assertions/layoutChecks.ts"
 import { computeGridDiff, readGridLines } from "../tools/tty/gridDiff.ts"
@@ -28,14 +28,32 @@ import { buildManifestHashes } from "../tools/reports/manifestHasher.ts"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const ROOT_DIR = path.resolve(__dirname, "..")
+const REPO_ROOT = path.resolve(ROOT_DIR, "..")
+process.chdir(ROOT_DIR)
 const REPRO_CWD = path.basename(ROOT_DIR)
 const SSE_WAIT_TIMEOUT_MS = 45_000
 const SSE_REPLAY_TIMEOUT_MS = 4_000
 const DEFAULT_KEEP_RUNS = 3
 
-const DEFAULT_CONFIG = process.env.CONFIG_PATH ?? process.env.STRESS_CONFIG ?? "../agent_configs/opencode_cli_mock_guardrails.yaml"
-const DEFAULT_LIVE_CONFIG =
-  process.env.BREADBOARD_LIVE_CONFIG || "../agent_configs/opencode_openai_gpt5nano_c_fs_cli_shared.yaml"
+const resolveRepoPath = (value: string): string => {
+  if (path.isAbsolute(value)) return value
+  if (value.startsWith("./") || value.startsWith("../")) {
+    return path.resolve(ROOT_DIR, value)
+  }
+  return path.resolve(REPO_ROOT, value)
+}
+
+const resolveTuiPath = (value: string): string => {
+  if (path.isAbsolute(value)) return value
+  return path.resolve(ROOT_DIR, value)
+}
+
+const DEFAULT_CONFIG = resolveRepoPath(
+  process.env.CONFIG_PATH ?? process.env.STRESS_CONFIG ?? "../agent_configs/opencode_cli_mock_guardrails.yaml",
+)
+const DEFAULT_LIVE_CONFIG = resolveRepoPath(
+  process.env.BREADBOARD_LIVE_CONFIG || "../agent_configs/opencode_openai_gpt5nano_c_fs_cli_shared.yaml",
+)
 const DEFAULT_BASE_URL = process.env.BASE_URL ?? process.env.BREADBOARD_API_URL ?? "http://127.0.0.1:9099"
 const DEFAULT_COMMAND = "node dist/main.js repl"
 const REPL_SCRIPT_MAX_DURATION_MS = Number(process.env.STRESS_SCRIPT_MAX_MS ?? 240_000)
@@ -291,6 +309,7 @@ interface BaseCase {
   readonly env?: Record<string, string>
   readonly configPath?: string
   readonly command?: string
+  readonly cwd?: string
   readonly baseUrl?: string
   readonly requiresLive?: boolean
 }
@@ -812,6 +831,34 @@ const STRESS_CASES: StressCase[] = [
     },
   },
   {
+    id: "opentui_slab_smoke",
+    kind: "pty",
+    script: "scripts/opentui_slab_smoke_pty.json",
+    description: "OpenTUI splitHeight slab smoke (scrollback-first transcript)",
+    command: "bun run index.ts",
+    cwd: "../opentui_slab",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "opentui_slab_resize_storm",
+    kind: "pty",
+    script: "scripts/opentui_slab_resize_storm_pty.json",
+    description: "OpenTUI splitHeight slab under resize storm",
+    command: "bun run index.ts",
+    cwd: "../opentui_slab",
+    winchScript: "scripts/opentui_slab_resize_storm_winch.json",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "opentui_slab_paste_torture",
+    kind: "pty",
+    script: "scripts/opentui_slab_paste_torture_pty.json",
+    description: "OpenTUI splitHeight slab bracketed paste torture",
+    command: "bun run index.ts",
+    cwd: "../opentui_slab",
+    submitTimeoutMs: 0,
+  },
+  {
     id: "paste_flood",
     kind: "repl",
     script: "scripts/paste_flood.json",
@@ -1026,7 +1073,9 @@ const parseCliArgs = (): CliOptions => {
     }
   }
 
-  const absoluteOut = path.isAbsolute(outDir) ? outDir : path.resolve(ROOT_DIR, outDir)
+  const absoluteOut = resolveTuiPath(outDir)
+  const normalizedConfigPath = resolveRepoPath(configPath)
+  const normalizedLiveConfigPath = liveConfigPath ? resolveRepoPath(liveConfigPath) : null
   const mockDefaults: Omit<MockSseOptions, "script"> = {
     host: mockSseHost,
     port: mockSsePort,
@@ -1037,15 +1086,15 @@ const parseCliArgs = (): CliOptions => {
   }
   const mockSseConfig = mockSseScript
     ? {
-        script: path.isAbsolute(mockSseScript) ? mockSseScript : path.join(process.cwd(), mockSseScript),
+        script: resolveRepoPath(mockSseScript),
         ...mockDefaults,
       }
     : null
 
   return {
     cases: selected.length > 0 ? selected : null,
-    configPath,
-    liveConfigPath,
+    configPath: normalizedConfigPath,
+    liveConfigPath: normalizedLiveConfigPath,
     baseUrl,
     outDir: absoluteOut,
     command,
@@ -1512,9 +1561,10 @@ const buildMetricsReport = async (
 
 const resolveConfigPath = (testCase: BaseCase, options: CliOptions): string => {
   if (testCase.requiresLive && options.liveConfigPath) {
-    return options.liveConfigPath
+    return resolveRepoPath(options.liveConfigPath)
   }
-  return testCase.configPath ?? options.configPath
+  const raw = testCase.configPath ?? options.configPath
+  return resolveRepoPath(raw)
 }
 
 const runReplCase = async (
@@ -1781,6 +1831,9 @@ const runPtyCase = async (
   const inputLogPath = path.join(caseDir, "input_log.ndjson")
   const stateDumpPath = path.join(caseDir, "repl_state.ndjson")
   const stateDumpRel = toRepoRootPath(stateDumpPath)
+  // Some PTY cases may not be BreadBoard's Ink TUI (e.g. external prototypes).
+  // Keep the artifact contract stable by ensuring a state dump file exists.
+  await fs.writeFile(stateDumpPath, "", "utf8").catch(() => undefined)
   const envOverrides = { ...(testCase.env ?? {}) }
   if (chaosInfo?.mode === "mock-sse" && !envOverrides.BREADBOARD_ENGINE_MODE) {
     envOverrides.BREADBOARD_ENGINE_MODE = "off"
@@ -1962,6 +2015,7 @@ const runPtyCase = async (
     harnessResult = await runSpectatorHarness({
       steps,
       command,
+      cwd: testCase.cwd ? path.join(ROOT_DIR, testCase.cwd) : undefined,
       configPath,
       baseUrl,
       envOverrides,
@@ -2391,7 +2445,6 @@ const runGuardrailMetrics = async (batchDir: string, guardLogs: ReadonlyArray<st
 }
 
 const main = async () => {
-  await ensureDistBuild()
   const options = parseCliArgs()
   let mockProcess: MockSseHandle | null = null
   let liveBridgeProcess: ChildProcess | null = null
@@ -2405,6 +2458,16 @@ const main = async () => {
     await fs.mkdir(batchDir, { recursive: true })
 
     const selectedCases = resolveCaseList(options.cases, options.includeLive)
+    const needsDistBuild = selectedCases.some((entry) => {
+      if (entry.kind === "pty" && entry.command) {
+        return entry.command.includes("dist/main.js")
+      }
+      // repl cases and pty cases without an explicit command rely on the built TUI.
+      return true
+    })
+    if (needsDistBuild) {
+      await ensureDistBuild()
+    }
     const needsLive = selectedCases.some((entry) => entry.requiresLive)
     if (needsLive) {
       liveBridgeProcess = await ensureLiveBridge(options.baseUrl, options.autoStartLive)

@@ -248,3 +248,4 @@ def plugin_snapshot(manifests: List[PluginManifest]) -> Dict[str, Any]:
             for m in manifests
         ]
     }
+

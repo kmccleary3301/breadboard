@@ -165,3 +165,4 @@ class PolicyPack:
         if self.webfetch_denylist and _matches_any(text, self.webfetch_denylist):
             return False
         return True
+

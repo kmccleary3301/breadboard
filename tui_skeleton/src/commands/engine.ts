@@ -1,113 +1,156 @@
 import { Args, Command, Options } from "@effect/cli"
 import { Console, Effect, Option } from "effect"
-import { loadUserConfigSync, writeUserConfig } from "../config/userConfig.js"
-import { downloadBundle, getEngineCacheRoot, listCachedBundles } from "../engine/engineBundles.js"
-import { CLI_PROTOCOL_VERSION, CLI_VERSION } from "../config/version.js"
+import { ApiClient, ApiError } from "../api/client.js"
+import { loadAppConfig } from "../config/appConfig.js"
+import { ensureEngine, getEngineLogPath, startEngineDetached, stopEngineFromLock, shutdownEngine } from "../engine/engineSupervisor.js"
+import { CLI_PROTOCOL_VERSION } from "../config/version.js"
+import { spawn } from "node:child_process"
+import fs from "node:fs"
 
-const manifestOption = Options.text("manifest").pipe(Options.optional)
-const versionOption = Options.text("version").pipe(Options.optional)
-const pinOption = Options.boolean("pin").pipe(Options.optional)
+const hostOption = Options.text("host").pipe(Options.withDefault("127.0.0.1"))
+const portOption = Options.integer("port").pipe(Options.withDefault(9099))
+const followOption = Options.boolean("follow").pipe(Options.optional)
+const linesOption = Options.integer("lines").pipe(Options.withDefault(200))
 
-const formatBundle = (entry: {
-  version: string
-  platform: string
-  arch: string
-  entry: string
-  minCliVersion?: string
-  protocolVersion?: string
-}) =>
-  `${entry.version} (${entry.platform}/${entry.arch}) -> ${entry.entry}${
-    entry.protocolVersion ? ` [proto ${entry.protocolVersion}]` : ""
-  }${entry.minCliVersion ? ` [min cli ${entry.minCliVersion}]` : ""}`
+const formatBool = (value: boolean | null | undefined): string =>
+  value === null || value === undefined ? "unknown" : value ? "yes" : "no"
+
+const formatNumber = (value: number | null | undefined): string =>
+  value === null || value === undefined || !Number.isFinite(value) ? "unknown" : String(value)
 
 const statusCommand = Command.make("status", {}, () =>
   Effect.tryPromise(async () => {
-    const config = loadUserConfigSync()
-    const cached = await listCachedBundles()
+    const appConfig = loadAppConfig()
     await Console.log("Engine status")
-    await Console.log(`Cache root: ${getEngineCacheRoot()}`)
-    await Console.log(`Pinned version: ${config.engineVersion ?? "none"}`)
-    await Console.log(`Explicit path: ${config.enginePath ?? "none"}`)
-    if (cached.length === 0) {
-      await Console.log("Cached bundles: none")
-    } else {
-      await Console.log(`Cached bundles (${cached.length}):`)
-      for (const entry of cached) {
-        await Console.log(`- ${formatBundle(entry)}`)
+    await Console.log(`Base URL: ${appConfig.baseUrl}`)
+    try {
+      const health = await ApiClient.health()
+      await Console.log(
+        `Health: ${health.status} (protocol ${health.protocol_version ?? "unknown"}, version ${health.version ?? "unknown"})`,
+      )
+    } catch (error) {
+      if (error instanceof ApiError) {
+        await Console.error(`Health check failed (${error.status}).`)
+      } else {
+        await Console.error(`Health check failed: ${(error as Error).message}`)
+      }
+      return
+    }
+
+    try {
+      const info = await ApiClient.engineStatus()
+      await Console.log(`PID: ${formatNumber(info.pid)}`)
+      await Console.log(`Uptime (s): ${formatNumber(info.uptime_s)}`)
+      await Console.log(`Ray available: ${formatBool(info.ray?.available)}`)
+      await Console.log(`Ray initialized: ${formatBool(info.ray?.initialized)}`)
+      if (info.protocol_version && info.protocol_version !== CLI_PROTOCOL_VERSION) {
+        await Console.log(`Protocol mismatch: engine ${info.protocol_version} vs cli ${CLI_PROTOCOL_VERSION}`)
+      }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        await Console.error(`/status failed (${error.status}).`)
+      } else {
+        await Console.error(`/status failed: ${(error as Error).message}`)
       }
     }
   }),
 )
 
-const updateCommand = Command.make(
-  "update",
+const startCommand = Command.make(
+  "start",
   {
-    manifest: manifestOption,
-    version: versionOption,
-    pin: pinOption,
+    host: hostOption,
+    port: portOption,
   },
-  ({ manifest, version, pin }) =>
+  ({ host, port }) =>
     Effect.tryPromise(async () => {
-      const manifestUrl =
-        Option.getOrNull(manifest) || process.env.BREADBOARD_ENGINE_MANIFEST_URL?.trim() || ""
-      if (!manifestUrl) {
-        throw new Error("Provide --manifest or set BREADBOARD_ENGINE_MANIFEST_URL to download bundles.")
-      }
-      const versionValue = Option.getOrNull(version)
-      const info = await downloadBundle(manifestUrl, {
-        version: versionValue ?? undefined,
-        cliVersion: CLI_VERSION,
-        protocolVersion: CLI_PROTOCOL_VERSION,
-        retries: 2,
-      })
-      await Console.log(`Downloaded engine ${info.version} to ${info.root}`)
-      const shouldPin = Option.match(pin, { onNone: () => false, onSome: (value) => value })
-      if (shouldPin) {
-        const current = loadUserConfigSync()
-        await writeUserConfig({
-          ...current,
-          engineVersion: info.version,
-          enginePath: undefined,
-        })
-        await Console.log(`Pinned engine version ${info.version}`)
-      }
+      process.env.BREADBOARD_ENGINE_KEEPALIVE = "1"
+      process.env.RAY_DISABLE_DASHBOARD ??= "1"
+
+      const result = await startEngineDetached({ host, port })
+      await Console.log(`Engine started: ${result.baseUrl} (pid ${result.pid})`)
+      await Console.log(`Logs: ${result.logPath}`)
     }),
 )
 
-const pinCommand = Command.make(
-  "pin",
+const serveCommand = Command.make(
+  "serve",
   {
-    version: Args.text({ name: "version" }),
+    host: hostOption,
+    port: portOption,
   },
-  ({ version }) =>
+  ({ host, port }) =>
     Effect.tryPromise(async () => {
-      const current = loadUserConfigSync()
-      await writeUserConfig({
-        ...current,
-        engineVersion: version,
-        enginePath: undefined,
+      const normalizedHost = host.trim() || "127.0.0.1"
+      const normalizedPort = Number.isFinite(port) && port > 0 ? port : 9099
+      process.env.BREADBOARD_API_URL = `http://${normalizedHost}:${normalizedPort}`
+      process.env.BREADBOARD_ENGINE_KEEPALIVE = "1"
+      process.env.RAY_DISABLE_DASHBOARD ??= "1"
+
+      const { baseUrl, pid, started } = await ensureEngine({ allowSpawn: true, isolated: false })
+      await Console.log(`Engine: ${baseUrl}${pid ? ` (pid ${pid})` : ""}${started ? " [started]" : ""}`)
+      await Console.log("Press Ctrl-C to stop.")
+
+      await new Promise<void>((resolve) => {
+        process.once("SIGINT", () => resolve())
+        process.once("SIGTERM", () => resolve())
       })
-      await Console.log(`Pinned engine version ${version}`)
+
+      process.env.BREADBOARD_ENGINE_KEEPALIVE = "0"
+      const stopped = await shutdownEngine({ timeoutMs: 5_000, force: true }).catch(() => false)
+      await Console.log(stopped ? "Engine stopped." : "Engine stop requested.")
     }),
 )
 
-const useCommand = Command.make(
-  "use",
+const logsCommand = Command.make(
+  "logs",
   {
-    path: Args.text({ name: "path" }),
+    follow: followOption,
+    lines: linesOption,
   },
-  ({ path }) =>
+  ({ follow, lines }) =>
     Effect.tryPromise(async () => {
-      const current = loadUserConfigSync()
-      await writeUserConfig({
-        ...current,
-        enginePath: path,
-        engineVersion: undefined,
-      })
-      await Console.log(`Using engine binary at ${path}`)
+      const logPath = getEngineLogPath()
+      const followEnabled = Option.match(follow, { onNone: () => false, onSome: (value) => value })
+      const lineCount = Number.isFinite(lines) && lines > 0 ? lines : 200
+
+      await Console.log(`Log path: ${logPath}`)
+      if (!fs.existsSync(logPath)) {
+        await Console.log("No log file found yet.")
+        return
+      }
+
+      if (followEnabled) {
+        const child = spawn("tail", ["-n", String(lineCount), "-f", logPath], { stdio: "inherit" })
+        await new Promise<void>((resolve) => child.once("exit", () => resolve()))
+        return
+      }
+
+      const output = spawn("tail", ["-n", String(lineCount), logPath], { stdio: "inherit" })
+      await new Promise<void>((resolve) => output.once("exit", () => resolve()))
+    }),
+)
+
+const stopCommand = Command.make(
+  "stop",
+  {},
+  () =>
+    Effect.tryPromise(async () => {
+      const result = await stopEngineFromLock({ timeoutMs: 5_000, force: true })
+      if (result.stopped) {
+        await Console.log(`Stopped engine${result.pid ? ` (pid ${result.pid})` : ""}.`)
+        return
+      }
+      await Console.log(`No managed engine stopped${result.pid ? ` (pid ${result.pid})` : ""}.`)
     }),
 )
 
 export const engineCommand = Command.make("engine", {}, () => Effect.succeed(undefined)).pipe(
-  Command.withSubcommands([statusCommand, updateCommand, pinCommand, useCommand]),
+  Command.withSubcommands([
+    statusCommand,
+    startCommand,
+    serveCommand,
+    logsCommand,
+    stopCommand,
+  ]),
 )

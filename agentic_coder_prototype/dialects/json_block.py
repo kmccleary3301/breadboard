@@ -259,4 +259,6 @@ You can call multiple tools by adding more objects to the "tool_calls" array."""
             return True
         except Exception:
             return False
+        except Exception:
+            return False
         

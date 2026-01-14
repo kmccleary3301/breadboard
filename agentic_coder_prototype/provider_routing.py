@@ -206,6 +206,17 @@ class ProviderRouter:
                 supports_reasoning_traces=False,
                 supports_cache_control=False,
             ),
+            "smoke": ProviderConfig(
+                provider_id="smoke",
+                supports_native_tools=False,
+                tool_schema_format="openai",
+                api_key_env="MOCK_API_KEY",
+                runtime_id="smoke_chat",
+                default_api_variant="mock",
+                supports_streaming=False,
+                supports_reasoning_traces=False,
+                supports_cache_control=False,
+            ),
             "replay": ProviderConfig(
                 provider_id="replay",
                 supports_native_tools=True,

@@ -667,7 +667,7 @@ class SessionRunner:
         queue_thread = None
 
         def handle_runtime_event(event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> None:
-            if event_type == "ctree_node":
+            if event_type in {"ctree_node", "ctree_delta"}:
                 try:
                     node = (payload or {}).get("node")
                     if isinstance(node, dict):
@@ -1292,6 +1292,7 @@ class SessionRunner:
             "skills_catalog": EventType.SKILLS_CATALOG,
             "skills_selection": EventType.SKILLS_SELECTION,
             "ctree_node": EventType.CTREE_NODE,
+            "ctree_delta": EventType.CTREE_DELTA,
             "ctree_snapshot": EventType.CTREE_SNAPSHOT,
             "task_event": EventType.TASK_EVENT,
             "reward_update": EventType.REWARD_UPDATE,

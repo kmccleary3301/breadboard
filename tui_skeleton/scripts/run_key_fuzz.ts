@@ -2,10 +2,26 @@ import { promises as fs } from "node:fs"
 import path from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
-import { runSpectatorHarness, type SpectatorStep } from "./harness/spectator.js"
+import { runSpectatorHarness, type SpectatorStep } from "./harness/spectator.ts"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+const ROOT_DIR = path.resolve(__dirname, "..")
+const REPO_ROOT = path.resolve(ROOT_DIR, "..")
+process.chdir(ROOT_DIR)
+
+const resolveRepoPath = (value: string): string => {
+  if (path.isAbsolute(value)) return value
+  if (value.startsWith("./") || value.startsWith("../")) {
+    return path.resolve(ROOT_DIR, value)
+  }
+  return path.resolve(REPO_ROOT, value)
+}
+
+const resolveTuiPath = (value: string): string => {
+  if (path.isAbsolute(value)) return value
+  return path.resolve(ROOT_DIR, value)
+}
 
 interface FuzzOptions {
   readonly iterations: number
@@ -41,7 +57,7 @@ class XorShift32 {
   }
 }
 
-const DEFAULT_CONFIG = "../agent_configs/opencode_cli_mock_guardrails.yaml"
+const DEFAULT_CONFIG = resolveRepoPath("../agent_configs/opencode_cli_mock_guardrails.yaml")
 const DEFAULT_COMMAND = "node dist/main.js repl"
 const DEFAULT_BASE_URL = process.env.BREADBOARD_API_URL ?? "http://127.0.0.1:9099"
 
@@ -121,7 +137,20 @@ const parseArgs = (): FuzzOptions => {
     }
   }
 
-  return { iterations, stepsPerIteration, seed, command, configPath, baseUrl, cols, rows, submitTimeoutMs, artifactDir }
+  const normalizedConfigPath = resolveRepoPath(configPath)
+  const normalizedArtifactDir = resolveTuiPath(artifactDir)
+  return {
+    iterations,
+    stepsPerIteration,
+    seed,
+    command,
+    configPath: normalizedConfigPath,
+    baseUrl,
+    cols,
+    rows,
+    submitTimeoutMs,
+    artifactDir: normalizedArtifactDir,
+  }
 }
 
 const randomText = (length: number, rng: XorShift32) => {

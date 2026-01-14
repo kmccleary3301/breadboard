@@ -1,0 +1,11 @@
+[
+  { "action": "log", "message": "opentui_slab smoke start" },
+  { "action": "wait", "ms": 250 },
+  { "action": "snapshot", "label": "slab_initial" },
+  { "action": "type", "text": "hello from slab" },
+  { "action": "wait", "ms": 150 },
+  { "action": "snapshot", "label": "slab_typed" },
+  { "action": "press", "key": "ctrl+d" },
+  { "action": "wait", "ms": 250 },
+  { "action": "log", "message": "opentui_slab smoke end" }
+]

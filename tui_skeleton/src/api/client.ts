@@ -9,6 +9,7 @@ import type {
   SessionFileInfo,
   SessionFileContent,
   HealthResponse,
+  EngineStatusResponse,
   ModelCatalogResponse,
   SkillCatalogResponse,
   CTreeSnapshotResponse,
@@ -126,6 +127,7 @@ const toApiConfig = (config: AppConfig): ApiClientConfig => ({
 
 export const createApiClient = (config: ApiClientConfig) => ({
   health: () => requestWithConfig<HealthResponse>(config, "/health", "GET"),
+  engineStatus: () => requestWithConfig<EngineStatusResponse>(config, "/status", "GET"),
   createSession: (payload: SessionCreateRequest) =>
     requestWithConfig<SessionCreateResponse>(config, "/sessions", "POST", { body: payload }),
   listSessions: () => requestWithConfig<SessionSummary[]>(config, "/sessions", "GET"),
@@ -211,6 +213,7 @@ const buildApiClient = (): ApiClientInstance => {
 
 export const ApiClient: ApiClientInstance = {
   health: (...args) => buildApiClient().health(...args),
+  engineStatus: (...args) => buildApiClient().engineStatus(...args),
   createSession: (...args) => buildApiClient().createSession(...args),
   listSessions: (...args) => buildApiClient().listSessions(...args),
   getSession: (...args) => buildApiClient().getSession(...args),
@@ -235,6 +238,7 @@ export type {
   SessionFileInfo,
   SessionFileContent,
   HealthResponse,
+  EngineStatusResponse,
   ModelCatalogResponse,
   SkillCatalogResponse,
   CTreeSnapshotResponse,

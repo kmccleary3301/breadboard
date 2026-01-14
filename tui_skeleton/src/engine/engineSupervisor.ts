@@ -7,7 +7,6 @@ import net from "node:net"
 import { fileURLToPath } from "node:url"
 import { loadAppConfig } from "../config/appConfig.js"
 import { loadUserConfigSync } from "../config/userConfig.js"
-import { downloadBundle, resolveCachedBundle } from "./engineBundles.js"
 import { CLI_PROTOCOL_VERSION, CLI_VERSION } from "../config/version.js"
 
 interface EngineLock {
@@ -27,10 +26,18 @@ export interface EngineSupervisorResult {
 
 const ENGINE_DIR = path.join(homedir(), ".breadboard", "engine")
 const ENGINE_LOCK_PATH = path.join(ENGINE_DIR, "engine.lock")
+const ENGINE_LOG_PATH = path.join(ENGINE_DIR, "engine.log")
 const DEFAULT_PORT = 9099
 const DEFAULT_HOST = "127.0.0.1"
-const STARTUP_TIMEOUT_MS = 20_000
-const HEALTH_TIMEOUT_MS = 2_500
+const envInt = (key: string, fallback: number): number => {
+  const raw = process.env[key]
+  if (!raw) return fallback
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+const STARTUP_TIMEOUT_MS = envInt("BREADBOARD_ENGINE_STARTUP_TIMEOUT_MS", 20_000)
+const HEALTH_TIMEOUT_MS = envInt("BREADBOARD_ENGINE_HEALTH_TIMEOUT_MS", 2_500)
 
 let activeChild: ChildProcess | null = null
 let activeBaseUrl: string | null = null
@@ -103,7 +110,10 @@ const healthCheck = async (baseUrl: string, timeoutMs = HEALTH_TIMEOUT_MS): Prom
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(new URL("/health", baseUrl), { signal: controller.signal })
+    const token = loadAppConfig().authToken
+    const headers: Record<string, string> = {}
+    if (token) headers.Authorization = `Bearer ${token}`
+    const response = await fetch(new URL("/health", baseUrl), { signal: controller.signal, headers })
     return response.ok
   } catch {
     return false
@@ -119,7 +129,10 @@ const fetchHealth = async (
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(new URL("/health", baseUrl), { signal: controller.signal })
+    const token = loadAppConfig().authToken
+    const headers: Record<string, string> = {}
+    if (token) headers.Authorization = `Bearer ${token}`
+    const response = await fetch(new URL("/health", baseUrl), { signal: controller.signal, headers })
     if (!response.ok) return null
     const payload = (await response.json().catch(() => null)) as Record<string, any> | null
     if (!payload || typeof payload !== "object") return null
@@ -138,7 +151,9 @@ const verifyProtocol = async (baseUrl: string) => {
   const health = await fetchHealth(baseUrl)
   if (!health?.protocol_version) return
   if (health.protocol_version !== CLI_PROTOCOL_VERSION) {
-    const strict = process.env.BREADBOARD_PROTOCOL_STRICT === "1"
+    const strict =
+      process.env.BREADBOARD_PROTOCOL_STRICT !== "0" &&
+      process.env.BREADBOARD_ALLOW_PROTOCOL_MISMATCH !== "1"
     const message = `Engine protocol ${health.protocol_version} does not match CLI protocol ${CLI_PROTOCOL_VERSION}`
     if (strict) {
       throw new Error(message)
@@ -147,9 +162,12 @@ const verifyProtocol = async (baseUrl: string) => {
   }
   if (health.version && process.env.BREADBOARD_ENGINE_VERSION) {
     if (health.version !== process.env.BREADBOARD_ENGINE_VERSION) {
-      console.warn(
-        `[engine] Engine version ${health.version} does not match expected ${process.env.BREADBOARD_ENGINE_VERSION}`,
-      )
+      const strict = process.env.BREADBOARD_ENGINE_ALLOW_VERSION_MISMATCH !== "1"
+      const message = `[engine] Engine version ${health.version} does not match expected ${process.env.BREADBOARD_ENGINE_VERSION}`
+      if (strict) {
+        throw new Error(message)
+      }
+      console.warn(message)
     }
   }
 }
@@ -225,33 +243,18 @@ const resolveEngineCommand = async (): Promise<{ command: string; args: string[]
   if (explicitPath) {
     return { command: explicitPath, args: [] }
   }
-  const version = process.env.BREADBOARD_ENGINE_VERSION?.trim() || userConfig.engineVersion
-  const manifestUrl = process.env.BREADBOARD_ENGINE_MANIFEST_URL?.trim()
-  if (version) {
-    const cached = await resolveCachedBundle(version)
-    if (cached) {
-      return { command: cached.entry, args: [], cwd: cached.root }
+
+  const engineRoot = resolveEngineRoot()
+  if (engineRoot) {
+    const python = process.env.BREADBOARD_ENGINE_PYTHON?.trim() || "python"
+    return {
+      command: python,
+      args: ["-m", "agentic_coder_prototype.api.cli_bridge.server"],
+      cwd: engineRoot,
     }
-    if (manifestUrl && process.env.BREADBOARD_ENGINE_AUTO_DOWNLOAD === "1") {
-      const downloaded = await downloadBundle(manifestUrl, {
-        version,
-        cliVersion: CLI_VERSION,
-        protocolVersion: CLI_PROTOCOL_VERSION,
-        retries: 2,
-      })
-      return { command: path.join(downloaded.root, downloaded.entry), args: [], cwd: downloaded.root }
-    }
-  }
-  if (manifestUrl && process.env.BREADBOARD_ENGINE_AUTO_DOWNLOAD === "1") {
-    const downloaded = await downloadBundle(manifestUrl, {
-      cliVersion: CLI_VERSION,
-      protocolVersion: CLI_PROTOCOL_VERSION,
-      retries: 2,
-    })
-    return { command: path.join(downloaded.root, downloaded.entry), args: [], cwd: downloaded.root }
   }
   const python = process.env.BREADBOARD_ENGINE_PYTHON?.trim() || "python"
-  const cwd = resolveEngineRoot() ?? process.cwd()
+  const cwd = engineRoot ?? process.cwd()
   return {
     command: python,
     args: ["-m", "agentic_coder_prototype.api.cli_bridge.server"],
@@ -330,6 +333,118 @@ export const shutdownEngine = async (
   return true
 }
 
+export const getEngineLogPath = (): string => ENGINE_LOG_PATH
+
+export const stopEngineFromLock = async (
+  options: { timeoutMs?: number; force?: boolean } = {},
+): Promise<{ stopped: boolean; pid?: number; baseUrl?: string }> => {
+  const lock = readLockSync()
+  if (!lock) return { stopped: false }
+  if (!isProcessAlive(lock.pid)) {
+    await clearLock()
+    return { stopped: false, pid: lock.pid, baseUrl: lock.baseUrl }
+  }
+
+  const timeoutMs = options.timeoutMs ?? 5_000
+  const signal = options.force ? "SIGKILL" : process.platform === "win32" ? "SIGTERM" : "SIGINT"
+  try {
+    process.kill(lock.pid, signal)
+  } catch {
+    await clearLock()
+    return { stopped: false, pid: lock.pid, baseUrl: lock.baseUrl }
+  }
+
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    if (!isProcessAlive(lock.pid)) {
+      await clearLock()
+      return { stopped: true, pid: lock.pid, baseUrl: lock.baseUrl }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+
+  if (!options.force) {
+    try {
+      process.kill(lock.pid, "SIGKILL")
+    } catch {
+      // ignore
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+
+  const stopped = !isProcessAlive(lock.pid)
+  if (stopped) {
+    await clearLock()
+  }
+  return { stopped, pid: lock.pid, baseUrl: lock.baseUrl }
+}
+
+export const startEngineDetached = async ({
+  host = DEFAULT_HOST,
+  port = DEFAULT_PORT,
+}: {
+  host?: string
+  port?: number
+} = {}): Promise<{ baseUrl: string; pid: number; logPath: string }> => {
+  const baseHost = host.trim() || DEFAULT_HOST
+  const requestedPort = Number.isFinite(port) && (port ?? 0) > 0 ? (port as number) : DEFAULT_PORT
+
+  // Prefer existing engine via lock if healthy.
+  const lock = readLockSync()
+  if (lock && isProcessAlive(lock.pid)) {
+    const ok = await healthCheck(lock.baseUrl)
+    if (ok) {
+      return { baseUrl: lock.baseUrl, pid: lock.pid, logPath: ENGINE_LOG_PATH }
+    }
+  }
+
+  // Avoid surprising port changes for a "daemon-style" command; require explicit port if in use.
+  const available = await isPortAvailable(baseHost, requestedPort)
+  if (!available) {
+    throw new Error(
+      `Port ${requestedPort} is not available on ${baseHost}. Stop the existing engine or choose a different --port.`,
+    )
+  }
+
+  await fsp.mkdir(path.dirname(ENGINE_LOG_PATH), { recursive: true })
+  const outFd = fs.openSync(ENGINE_LOG_PATH, "a")
+  const { command, args, cwd, shell } = await resolveEngineCommand()
+  const child = spawn(command, args, {
+    cwd,
+    env: {
+      ...process.env,
+      BREADBOARD_CLI_HOST: baseHost,
+      BREADBOARD_CLI_PORT: String(requestedPort),
+    },
+    stdio: ["ignore", outFd, outFd],
+    detached: true,
+    shell,
+  })
+  child.unref()
+
+  if (!child.pid) {
+    throw new Error("Failed to start engine (missing pid).")
+  }
+
+  const resolvedBaseUrl = `http://${baseHost}:${requestedPort}`
+  await writeLock({
+    pid: child.pid,
+    port: requestedPort,
+    baseUrl: resolvedBaseUrl,
+    startedAt: new Date().toISOString(),
+    root: cwd,
+    command: [command, ...args].join(" "),
+  })
+
+  const ready = await waitForHealth(resolvedBaseUrl, STARTUP_TIMEOUT_MS)
+  if (!ready) {
+    throw new Error(`Engine failed to become healthy at ${resolvedBaseUrl}. See logs: ${ENGINE_LOG_PATH}`)
+  }
+
+  await verifyProtocol(resolvedBaseUrl)
+  return { baseUrl: resolvedBaseUrl, pid: child.pid, logPath: ENGINE_LOG_PATH }
+}
+
 const pickEphemeralPort = (host: string): Promise<number> =>
   new Promise((resolve, reject) => {
     const server = net.createServer()
@@ -346,7 +461,7 @@ const pickEphemeralPort = (host: string): Promise<number> =>
   })
 
 export const ensureEngine = async ({
-  allowSpawn = true,
+  allowSpawn,
   isolated = false,
 }: {
   allowSpawn?: boolean
@@ -357,6 +472,12 @@ export const ensureEngine = async ({
   }
 
   const mode = process.env.BREADBOARD_ENGINE_MODE?.trim().toLowerCase()
+  // Old default behavior: if the engine is local and unreachable, auto-start it from source.
+  // Set BREADBOARD_ENGINE_MODE=external|remote|off to disable spawning.
+  const defaultAllowSpawn = mode ? mode === "auto" || mode === "spawn" || mode === "managed" : true
+  if (allowSpawn === undefined) {
+    allowSpawn = defaultAllowSpawn
+  }
   if (mode === "external" || mode === "remote" || mode === "off") {
     allowSpawn = false
   }
@@ -393,7 +514,9 @@ export const ensureEngine = async ({
   }
 
   if (!shouldSpawn) {
-    throw new Error(`Engine not reachable at ${baseUrl}. Use "breadboard connect" or start the engine.`)
+    throw new Error(
+      `Engine not reachable at ${baseUrl}. Start it with "breadboard engine start" (background) or "breadboard engine serve" (foreground), or use "breadboard connect" to point at an existing engine.`,
+    )
   }
 
   const preferredPortRaw = configUrl?.port

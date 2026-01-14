@@ -125,6 +125,11 @@ class OpenCodeAgent:
                 )
             )
             diags = ray.get(self.lsp.diagnostics.remote())
-            return {"output": out, "metadata": {"diagnostics": diags}}
+            if isinstance(out, dict):
+                out.setdefault("action", "apply_patch")
+                output = out
+            else:
+                output = {"action": "apply_patch", "result": out}
+            return {"output": output, "metadata": {"diagnostics": diags}}
         # Fallback
         return {"output": {"error": f"unknown tool: {name}"}, "metadata": {}}

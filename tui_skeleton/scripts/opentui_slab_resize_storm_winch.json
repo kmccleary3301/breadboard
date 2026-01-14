@@ -1,0 +1,14 @@
+{
+  "events": [
+    { "delayMs": 50, "cols": 120, "rows": 36 },
+    { "delayMs": 50, "cols": 100, "rows": 30 },
+    { "delayMs": 50, "cols": 140, "rows": 40 },
+    { "delayMs": 50, "cols": 90, "rows": 24 },
+    { "delayMs": 50, "cols": 160, "rows": 45 },
+    { "delayMs": 50, "cols": 80, "rows": 20 },
+    { "delayMs": 50, "cols": 120, "rows": 36 },
+    { "delayMs": 50, "cols": 70, "rows": 18 },
+    { "delayMs": 50, "cols": 150, "rows": 44 },
+    { "delayMs": 50, "cols": 120, "rows": 36 }
+  ]
+}

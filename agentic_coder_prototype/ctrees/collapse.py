@@ -8,5 +8,14 @@ from .store import CTreeStore
 def collapse_ctree(store: CTreeStore) -> Dict[str, Any]:
     """Placeholder collapse stage producing a deterministic summary payload."""
 
-    return {"kind": "stub", "collapsed": True, "node_count": len(getattr(store, "nodes", []) or [])}
-
+    hashes = {}
+    try:
+        hashes = store.hashes()
+    except Exception:
+        hashes = {}
+    return {
+        "kind": "stub",
+        "collapsed": True,
+        "node_count": len(getattr(store, "nodes", []) or []),
+        "hashes": hashes,
+    }

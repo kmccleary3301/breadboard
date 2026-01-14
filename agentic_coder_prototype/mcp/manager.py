@@ -200,3 +200,4 @@ class MCPManager:
             self.close()
         except Exception:
             pass
+

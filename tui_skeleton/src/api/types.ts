@@ -55,6 +55,19 @@ export interface HealthResponse {
   readonly engine_version?: string | null
 }
 
+export interface EngineStatusResponse {
+  readonly status: string
+  readonly pid?: number | null
+  readonly uptime_s?: number | null
+  readonly protocol_version?: string | null
+  readonly version?: string | null
+  readonly engine_version?: string | null
+  readonly ray?: {
+    readonly available?: boolean | null
+    readonly initialized?: boolean | null
+  } | null
+}
+
 export interface ModelCatalogEntry {
   readonly id: string
   readonly adapter?: string | null

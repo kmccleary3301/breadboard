@@ -95,7 +95,7 @@ if [[ ! -p "$fifo" ]]; then
   mkfifo "$fifo"
 fi
 
-env_line="BREADBOARD_STATE_DUMP_PATH='${state_dir}/repl_state.ndjson' BREADBOARD_STATE_DUMP_MODE='summary' BREADBOARD_STATE_DUMP_RATE_MS='1000'"
+env_line="KYLECODE_STATE_DUMP_PATH='${state_dir}/repl_state.ndjson' KYLECODE_STATE_DUMP_MODE='summary' KYLECODE_STATE_DUMP_RATE_MS='1000'"
 cli_path="$(command -v "$cli" 2>/dev/null || echo "$cli")"
 
 quoted_args=""

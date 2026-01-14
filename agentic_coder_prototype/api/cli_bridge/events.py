@@ -25,6 +25,7 @@ class EventType(str, enum.Enum):
     SKILLS_CATALOG = "skills_catalog"
     SKILLS_SELECTION = "skills_selection"
     CTREE_NODE = "ctree_node"
+    CTREE_DELTA = "ctree_delta"
     CTREE_SNAPSHOT = "ctree_snapshot"
     TASK_EVENT = "task_event"
     REWARD_UPDATE = "reward_update"
