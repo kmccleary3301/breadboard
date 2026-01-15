@@ -6,6 +6,7 @@ import pytest
 
 from agentic_coder_prototype.permission_broker import PermissionBroker, PermissionDeniedError
 from agentic_coder_prototype.policy_pack import PolicyPack
+from agentic_coder_prototype.policy_pack import PolicyPack
 
 
 class _DummySessionState:
@@ -84,6 +85,24 @@ def test_webfetch_permission_denied_blocks_execution() -> None:
     session = _DummySessionState()
     with pytest.raises(PermissionDeniedError):
         broker.ensure_allowed(session, [_webfetch_call("https://example.com")])
+
+
+def test_policy_pack_tool_denylist_blocks_shell_even_if_permissions_allow() -> None:
+    policy = PolicyPack.from_config({"policies": {"tools": {"deny": ["bash"]}}})
+    broker = PermissionBroker({"shell": {"default": "allow"}}, policy_pack=policy)
+    session = _DummySessionState()
+    with pytest.raises(PermissionDeniedError):
+        broker.ensure_allowed(session, [_shell_call("echo hello")])
+
+
+def test_policy_pack_network_allowlist_blocks_webfetch_url() -> None:
+    policy = PolicyPack.from_config({"policies": {"network": {"allow": ["https://example.com/*"]}}})
+    broker = PermissionBroker({"webfetch": {"default": "allow"}}, policy_pack=policy)
+    session = _DummySessionState()
+    with pytest.raises(PermissionDeniedError):
+        broker.ensure_allowed(session, [_webfetch_call("https://openai.com")])
+    # Allowed URL should pass without raising.
+    broker.ensure_allowed(session, [_webfetch_call("https://example.com/docs")])
 
 
 def test_policy_pack_tool_denylist_blocks_shell_even_if_permissions_allow() -> None:

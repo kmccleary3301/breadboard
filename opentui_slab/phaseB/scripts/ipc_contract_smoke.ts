@@ -2,7 +2,6 @@ import { spawn } from "node:child_process"
 import net from "node:net"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-
 import { createNdjsonParser, encodeLine } from "../ndjson.ts"
 import { nowEnvelope } from "../protocol.ts"
 

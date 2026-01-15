@@ -127,3 +127,4 @@ def test_session_event_payloads_validate_minimal_samples() -> None:
         sample["payload"] = payload
         errors = list(validator.iter_errors(sample))
         assert not errors, f"Schema validation failed for {event_type}: {errors}"
+

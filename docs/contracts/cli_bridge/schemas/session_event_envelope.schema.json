@@ -197,22 +197,6 @@
     {
       "properties": {
         "payload": {
-          "$ref": "session_event_payload_ctree_delta.schema.json"
-        },
-        "type": {
-          "const": "ctree_delta"
-        }
-      },
-      "required": [
-        "type",
-        "payload"
-      ],
-      "title": "ctree_deltaEvent",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "payload": {
           "$ref": "session_event_payload_ctree_snapshot.schema.json"
         },
         "type": {

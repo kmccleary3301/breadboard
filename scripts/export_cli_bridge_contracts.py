@@ -238,6 +238,7 @@ def _payload_schema_ctree_node() -> Dict[str, Any]:
         "properties": {
             "node": {"type": "object"},
             "snapshot": {"type": "object"},
+            "schema_version": {"type": ["string", "null"]},
         },
     }
 
@@ -252,6 +253,16 @@ def _payload_schema_ctree_delta() -> Dict[str, Any]:
         "properties": {
             "node": {"type": "object"},
             "snapshot": {"type": "object"},
+            "schema_version": {"type": ["string", "null"]},
+            "delta": {
+                "type": ["object", "null"],
+                "additionalProperties": True,
+                "properties": {
+                    "op": {"type": "string"},
+                    "node": {"type": "object"},
+                    "snapshot": {"type": "object"},
+                },
+            },
         },
     }
 
@@ -262,6 +273,7 @@ def _payload_schema_ctree_snapshot() -> Dict[str, Any]:
         "title": "CTreeSnapshotPayload",
         "type": "object",
         "additionalProperties": True,
+        "properties": {"schema_version": {"type": ["string", "null"]}},
     }
 
 

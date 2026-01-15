@@ -6,7 +6,6 @@ import json
 import os
 import random
 import shutil
-import shlex
 import sys
 import time
 import uuid
@@ -2890,13 +2889,7 @@ class OpenAIConductor:
         target = self._normalize_workspace_path(str(path))
         return self._ray_get(self.sandbox.ls.remote(target, depth))
 
-    def run_shell(
-        self,
-        command: str,
-        timeout: Optional[float] = None,
-        *,
-        workdir: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    def run_shell(self, command: str, timeout: Optional[int] = None) -> Dict[str, Any]:
         def _maybe_append_system_reminder(text: str) -> str:
             if not text:
                 return text
@@ -2924,22 +2917,7 @@ class OpenAIConductor:
             except Exception:
                 return text
 
-        cmd = command or ""
-        if workdir:
-            try:
-                normalized = self._normalize_workspace_path(str(workdir))
-            except Exception:
-                normalized = None
-            if normalized:
-                try:
-                    ws_path = Path(self.workspace).resolve()
-                    wd_path = Path(normalized).resolve()
-                    if wd_path != ws_path:
-                        cmd = f"cd {shlex.quote(str(wd_path))} && {cmd}"
-                except Exception:
-                    cmd = f"cd {shlex.quote(str(normalized))} && {cmd}"
-
-        result = self._ray_get(self.sandbox.run.remote(cmd, timeout=timeout or 30, stream=True))
+        result = self._ray_get(self.sandbox.run.remote(command, timeout=timeout or 30, stream=True))
 
         # Newer sandbox implementations return a dict payload directly.
         if isinstance(result, dict):
@@ -2997,12 +2975,6 @@ class OpenAIConductor:
             normalized = "todo.write_board"
         elif normalized == "todoread":
             normalized = "todo.list"
-        elif normalized == "shell_command":
-            normalized = "run_shell"
-        elif normalized == "apply_patch":
-            normalized = "apply_unified_patch"
-            if isinstance(args, dict) and "patch" not in args and "input" in args:
-                args["patch"] = args.get("input")
 
         if normalized.startswith("mcp."):
             return self._handle_mcp_tool(tool_call)
@@ -3074,14 +3046,7 @@ class OpenAIConductor:
                 if str(expected_status or "").lower() == "error":
                     return {"error": expected_output, "__mvi_text_output": expected_output}
                 return {"stdout": expected_output, "exit": 0, "__mvi_text_output": expected_output}
-            timeout = args.get("timeout")
-            if timeout is None and args.get("timeout_ms") is not None:
-                try:
-                    timeout = float(args.get("timeout_ms")) / 1000.0
-                except Exception:
-                    timeout = None
-            workdir = args.get("workdir") or args.get("cwd")
-            return self.run_shell(args["command"], timeout, workdir=workdir)
+            return self.run_shell(args["command"], args.get("timeout"))
         if normalized == "apply_search_replace":
             target = self._normalize_workspace_path(str(args.get("file_name", "")))
             search_text = str(args.get("search", ""))
@@ -3131,28 +3096,6 @@ class OpenAIConductor:
                     if retries is not None:
                         return retries
             return result
-        if normalized == "update_plan":
-            expected_output = tool_call.get("expected_output")
-            expected_status = tool_call.get("expected_status")
-            if expected_output is not None:
-                text = str(expected_output)
-                if str(expected_status or "").lower() == "error":
-                    return {"error": text, "__mvi_text_output": text}
-                return {"output": text, "__mvi_text_output": text}
-            session_state = getattr(self, "_active_session_state", None)
-            if session_state is not None:
-                try:
-                    session_state.set_provider_metadata(
-                        "latest_plan_update",
-                        {
-                            "plan": args.get("plan"),
-                            "explanation": args.get("explanation"),
-                        },
-                    )
-                except Exception:
-                    pass
-            msg = "Plan updated"
-            return {"output": msg, "__mvi_text_output": msg}
         if name == "TodoWrite":
             # Claude Code's TodoWrite is a separate surface from KyleCode's internal
             # todo.* tools. For Claude parity configs we keep todo.* disabled but
@@ -3550,17 +3493,9 @@ class OpenAIConductor:
             )
             if hook_manager:
                 self.hook_manager = hook_manager
-                try:
-                    session_state.set_hook_manager(hook_manager)
-                except Exception:
-                    pass
                 session_state.set_provider_metadata("hook_snapshot", hook_manager.snapshot())
             else:
                 self.hook_manager = None
-                try:
-                    session_state.set_hook_manager(None)
-                except Exception:
-                    pass
             plugin_skill_paths: List[Path] = []
             for manifest in plugin_manifests:
                 for rel in manifest.skills_paths:

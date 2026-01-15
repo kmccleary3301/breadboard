@@ -295,9 +295,10 @@ export const streamSessionEvents = async function* (
   for await (const evt of iterSseEvents(url, options)) {
     if (!evt.data) continue
     try {
-      const parsed = JSON.parse(evt.data) as unknown
-      if (!parsed || typeof parsed !== "object") continue
-      yield parsed as BridgeEvent
+      const parsed = JSON.parse(evt.data) as BridgeEvent
+      if (parsed && typeof parsed.type === "string") {
+        yield parsed
+      }
     } catch {
       // ignore malformed events
     }

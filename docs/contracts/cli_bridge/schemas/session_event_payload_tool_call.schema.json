@@ -1,36 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": true,
-  "properties": {
-    "action": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "call": {
-      "type": "object"
-    },
-    "call_id": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "diff_preview": {},
-    "progress": {},
-    "tool": {
-      "type": [
-        "string",
-        "null"
-      ]
-    }
-  },
-  "required": [
-    "call",
-    "call_id",
-    "tool"
-  ],
   "title": "ToolCallPayload",
-  "type": "object"
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["call_id", "tool"],
+  "properties": {
+    "call_id": { "type": "string" },
+    "tool": { "type": "string" },
+    "action": { "type": ["string", "null"] },
+    "call": { "type": ["object", "null"] },
+    "diff_preview": {},
+    "progress": {}
+  }
 }
+

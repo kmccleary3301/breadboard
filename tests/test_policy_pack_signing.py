@@ -38,3 +38,4 @@ def test_signed_policy_pack_requires_secret(monkeypatch: pytest.MonkeyPatch) -> 
     payload = {"models": {"allow": ["openrouter/*"]}}
     with pytest.raises(ValueError):
         PolicyPack.from_config({"policies": {"signed": {"payload": payload, "signature": "sig"}}})
+

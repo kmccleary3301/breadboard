@@ -1,3 +1,5 @@
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
+
 export const encodeLine = (value: unknown): string => `${JSON.stringify(value)}\n`
 
 export const createNdjsonParser = (onObject: (obj: unknown) => void) => {

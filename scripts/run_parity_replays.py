@@ -23,6 +23,9 @@ from typing import Any, Dict, List, Optional, Set
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
 from agentic_coder_prototype.parity import (
     build_expected_run_ir,
@@ -30,6 +33,7 @@ from agentic_coder_prototype.parity import (
     compare_run_ir,
 )
 from agentic_coder_prototype.parity_manifest import load_parity_scenarios
+from safe_delete import safe_rmtree
 
 REPLAY_SCRIPT = ROOT_DIR / "scripts" / "replay_opencode_session.py"
 MAIN_ENTRY = ROOT_DIR / "main.py"
@@ -41,19 +45,97 @@ _CLI_BUNDLE_BUILT = False
 def _workspace_root() -> tuple[Path, tempfile.TemporaryDirectory | None]:
     base = os.environ.get("REPLAY_WORKSPACE_BASE")
     if base:
-        path = Path(base).resolve()
+        path = Path(base).expanduser().resolve()
+        if path == ROOT_DIR or path in ROOT_DIR.parents:
+            if os.environ.get("BREADBOARD_ALLOW_REPLAY_WORKSPACE_IN_REPO") != "1":
+                raise RuntimeError(
+                    f"[safety] Refusing REPLAY_WORKSPACE_BASE='{path}' (repo root/ancestor). "
+                    "Set BREADBOARD_ALLOW_REPLAY_WORKSPACE_IN_REPO=1 to override."
+                )
+        if path.exists() and not path.is_dir():
+            raise RuntimeError(f"[safety] REPLAY_WORKSPACE_BASE is not a directory: {path}")
         path.mkdir(parents=True, exist_ok=True)
         return path, None
     tmp_dir = tempfile.TemporaryDirectory(prefix="kc_parity.")
     return Path(tmp_dir.name), tmp_dir
 
 
+def _resolve_existing(path: Path) -> Path:
+    try:
+        return path.expanduser().resolve()
+    except FileNotFoundError:
+        return path.expanduser().absolute()
+
+
+def _is_within(base: Path, candidate: Path) -> bool:
+    try:
+        candidate.relative_to(base)
+        return True
+    except ValueError:
+        return False
+
+
+def _assert_safe_workspace(path: Path, *, label: str) -> Path:
+    resolved = _resolve_existing(path)
+    repo_root = _resolve_existing(ROOT_DIR)
+    home = _resolve_existing(Path.home())
+    tmp_root = _resolve_existing(Path(tempfile.gettempdir()))
+
+    if resolved == Path("/"):
+        raise RuntimeError(f"[safety] Refusing to use {label}: '{resolved}'")
+    if resolved == repo_root:
+        raise RuntimeError(f"[safety] Refusing to use {label}: '{resolved}' (repo root)")
+    if resolved in repo_root.parents:
+        raise RuntimeError(
+            f"[safety] Refusing to use {label}: '{resolved}' (ancestor of repo root '{repo_root}')"
+        )
+    if resolved == home:
+        raise RuntimeError(f"[safety] Refusing to use {label}: '{resolved}' (home dir)")
+    if resolved == tmp_root:
+        raise RuntimeError(f"[safety] Refusing to use {label}: '{resolved}' (tmp dir root)")
+    if (resolved / ".git").exists():
+        raise RuntimeError(f"[safety] Refusing to use {label}: '{resolved}' (contains .git)")
+
+    if not (_is_within(repo_root, resolved) or _is_within(tmp_root, resolved)):
+        if os.environ.get("BREADBOARD_ALLOW_UNSAFE_RMTREE") != "1":
+            raise RuntimeError(
+                f"[safety] Refusing to use {label}: '{resolved}' (outside repo/tmp). "
+                "Set BREADBOARD_ALLOW_UNSAFE_RMTREE=1 to override."
+            )
+
+    if resolved.exists() and not resolved.is_dir():
+        raise RuntimeError(f"[safety] Refusing to use {label}: '{resolved}' (not a directory)")
+
+    return resolved
+
+
+def _resolve_workspace(base: Path, name: str) -> Path:
+    candidate = _resolve_existing(base / name)
+    base_resolved = _resolve_existing(base)
+    if not _is_within(base_resolved, candidate):
+        raise RuntimeError(
+            f"[safety] Refusing workspace '{candidate}' outside base '{base_resolved}'"
+        )
+    return _assert_safe_workspace(candidate, label=f"workspace '{candidate}'")
+
+
+def _safe_reset_dir(path: Path, *, label: str) -> None:
+    resolved = _assert_safe_workspace(path, label=label)
+    if resolved.exists():
+        safe_rmtree(resolved, repo_root=ROOT_DIR, label=label)
+    resolved.mkdir(parents=True, exist_ok=True)
+
+
 def _prune_seeded_workspace(workspace: Path) -> None:
     """Remove stateful directories from seeded workspaces to keep runs deterministic."""
     for name in [".breadboard"]:
         target = workspace / name
-        if target.exists():
-            shutil.rmtree(target, ignore_errors=True)
+        if not target.exists():
+            continue
+        if target.is_dir():
+            safe_rmtree(target, repo_root=ROOT_DIR, label=f"seeded workspace '{target}'", ignore_errors=True)
+        else:
+            target.unlink()
 
 
 def _ensure_cli_bundle() -> None:
@@ -250,9 +332,7 @@ def _extract_tool_order_diffs(mismatches: Any) -> List[Dict[str, Any]]:
 def _run_task_scenario(scenario, *, workspace: Path, result_dir: Path) -> Dict[str, Any]:
     logging_root = scenario.logging_root or (ROOT_DIR / "logging")
     before = _collect_logging_dirs(logging_root)
-    if workspace.exists():
-        shutil.rmtree(workspace)
-    workspace.mkdir(parents=True, exist_ok=True)
+    _safe_reset_dir(workspace, label=f"scenario workspace '{workspace}'")
     # Seed workspaces with the golden contents to stabilize manifest comparisons.
     golden_ws = Path(scenario.golden_workspace) if scenario.golden_workspace else None
     if golden_ws and golden_ws.exists():
@@ -261,16 +341,16 @@ def _run_task_scenario(scenario, *, workspace: Path, result_dir: Path) -> Dict[s
         _prune_seeded_workspace(workspace)
         try:
             cfg = yaml.safe_load(Path(scenario.config).read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"[parity] WARNING: failed to read config {scenario.config}: {exc}", file=sys.stderr)
+            cfg = None
+        if isinstance(cfg, dict):
             cfg_ws = Path(cfg.get("workspace", {}).get("root", "./agent_ws_claude"))
             if not cfg_ws.is_absolute():
                 cfg_ws = (ROOT_DIR / cfg_ws).resolve()
-            if cfg_ws.exists():
-                shutil.rmtree(cfg_ws)
-            cfg_ws.mkdir(parents=True, exist_ok=True)
+            _safe_reset_dir(cfg_ws, label=f"config workspace '{cfg_ws}'")
             shutil.copytree(golden_ws, cfg_ws, dirs_exist_ok=True)
             _prune_seeded_workspace(cfg_ws)
-        except Exception:
-            pass
     cmd = [
         sys.executable,
         str(MAIN_ENTRY),
@@ -333,9 +413,7 @@ def _run_cli_guard_scenario(scenario, *, workspace: Path, result_dir: Path) -> D
         raise RuntimeError(f"[parity] Scenario {scenario.name} missing golden workspace/meta")
     _ensure_cli_bundle()
     logging_root = scenario.logging_root or (ROOT_DIR / "logging")
-    if workspace.exists():
-        shutil.rmtree(workspace)
-    workspace.mkdir(parents=True, exist_ok=True)
+    _safe_reset_dir(workspace, label=f"scenario workspace '{workspace}'")
     golden_ws = Path(scenario.golden_workspace) if scenario.golden_workspace else None
     if golden_ws and golden_ws.exists():
         shutil.copytree(golden_ws, workspace, dirs_exist_ok=True)
@@ -421,9 +499,7 @@ def _run_cli_guard_scenario(scenario, *, workspace: Path, result_dir: Path) -> D
 
 
 def _run_replay_scenario(scenario, *, workspace: Path, result_dir: Path) -> Dict[str, Any]:
-    if workspace.exists():
-        shutil.rmtree(workspace)
-    workspace.mkdir(parents=True, exist_ok=True)
+    _safe_reset_dir(workspace, label=f"scenario workspace '{workspace}'")
     # Seed workspace with golden files if provided so manifest comparisons align.
     golden_ws = Path(scenario.golden_workspace) if scenario.golden_workspace else None
     if golden_ws and golden_ws.exists():
@@ -432,31 +508,30 @@ def _run_replay_scenario(scenario, *, workspace: Path, result_dir: Path) -> Dict
         # Also seed the configured workspace root if the agent ignores --workspace.
         try:
             cfg = yaml.safe_load(Path(scenario.config).read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"[parity] WARNING: failed to read config {scenario.config}: {exc}", file=sys.stderr)
+            cfg = None
+        if isinstance(cfg, dict):
             cfg_ws = Path(cfg.get("workspace", {}).get("root", "./agent_ws_claude"))
             if not cfg_ws.is_absolute():
                 cfg_ws = (ROOT_DIR / cfg_ws).resolve()
-            if cfg_ws.exists():
-                shutil.rmtree(cfg_ws)
-            cfg_ws.mkdir(parents=True, exist_ok=True)
+            _safe_reset_dir(cfg_ws, label=f"config workspace '{cfg_ws}'")
             shutil.copytree(golden_ws, cfg_ws, dirs_exist_ok=True)
             _prune_seeded_workspace(cfg_ws)
-        except Exception:
-            pass
         # Also seed the configured workspace root if the agent ignores --workspace.
         try:
             import yaml  # noqa: PLC0415
 
             cfg = yaml.safe_load(Path(scenario.config).read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"[parity] WARNING: failed to read config {scenario.config}: {exc}", file=sys.stderr)
+            cfg = None
+        if isinstance(cfg, dict):
             cfg_ws = Path(cfg.get("workspace", {}).get("root", "./agent_ws_claude"))
             if not cfg_ws.is_absolute():
                 cfg_ws = (ROOT_DIR / cfg_ws).resolve()
-            if cfg_ws.exists():
-                shutil.rmtree(cfg_ws)
-            cfg_ws.mkdir(parents=True, exist_ok=True)
+            _safe_reset_dir(cfg_ws, label=f"config workspace '{cfg_ws}'")
             shutil.copytree(golden_ws, cfg_ws, dirs_exist_ok=True)
-        except Exception:
-            # Best effort; continue even if config parse fails.
-            pass
     result_json = result_dir / f"{scenario.name}_result.json"
     cmd = [
         sys.executable,
@@ -716,7 +791,7 @@ def main() -> None:
 
     try:
         for scenario in scenarios:
-            workspace = work_root / scenario.name
+            workspace = _resolve_workspace(work_root, scenario.name)
             print(f"[parity] Running {scenario.name} ({scenario.mode})")
             if scenario.mode not in {"task", "replay", "cli_guard"}:
                 print(f"[parity] Unsupported mode '{scenario.mode}' for {scenario.name}; marking pending.")

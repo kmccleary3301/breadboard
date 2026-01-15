@@ -1588,26 +1588,6 @@
         },
         "summary": "Session Skills"
       }
-    },
-    "/status": {
-      "get": {
-        "operationId": "engine_status_status_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Engine Status Status Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Engine Status"
-      }
     }
   }
 }

@@ -571,17 +571,15 @@ def initialize_config_validator(conductor: Any) -> None:
 
 def initialize_enhanced_executor(conductor: Any) -> None:
     enhanced_config = conductor.config.get("enhanced_tools", {})
-    skip_lsp = os.environ.get("RAY_SCE_SKIP_LSP", "").lower() in {"1", "true", "yes"}
-    lsp_enabled = enhanced_config.get("lsp_integration", {}).get("enabled", False) and not skip_lsp
-    if lsp_enabled:
+    if enhanced_config.get("lsp_integration", {}).get("enabled", False):
         try:
             from breadboard.sandbox_lsp_integration import LSPEnhancedSandbox
             conductor.sandbox = LSPEnhancedSandbox.remote(conductor.sandbox, conductor.workspace)
         except ImportError:
             pass
-    if enhanced_config.get("enabled", False) or lsp_enabled:
+    if enhanced_config.get("enabled", False) or enhanced_config.get("lsp_integration", {}).get("enabled", False):
         sandbox_for_executor = conductor.sandbox
-        if lsp_enabled:
+        if enhanced_config.get("lsp_integration", {}).get("enabled", False):
             try:
                 from breadboard.sandbox_lsp_integration import LSPEnhancedSandbox
                 sandbox_for_executor = LSPEnhancedSandbox.remote(conductor.sandbox, conductor.workspace)

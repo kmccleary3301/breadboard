@@ -84,3 +84,4 @@ policies:
 
     result = await runner.handle_command("set_model", {"model": "openrouter/openai/gpt-5-nano"})
     assert result["status"] == "ok"
+

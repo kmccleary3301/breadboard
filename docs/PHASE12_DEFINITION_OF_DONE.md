@@ -1,13 +1,12 @@
-# Phase 12 — Definition of Done (Packaging)
+# Phase 12 — Definition of Done (Server-first)
 
-This document defines what “Phase 12 is done” means for BreadBoard packaging.
+This document defines what “Phase 12 is done” means for BreadBoard’s server-first engine architecture.
 
 ## In scope
 
 - The **TUI/CLI package** (`tui_skeleton/`) builds and runs as `breadboard`.
 - The **engine** runs behind the CLI bridge HTTP/SSE contract.
 - A user can run **doctor / ui / run** locally with reasonable defaults.
-- We can publish and validate **standalone engine bundles** via GitHub Releases.
 - CI provides guardrails against contract drift and packaging regressions.
 
 ## Done criteria
@@ -34,15 +33,11 @@ Phase 12 is considered **done** when all items below are true:
 
 ### Engine bundling + publishing
 
-- `.github/workflows/release_engine_bundles.yml` can be run via `workflow_dispatch` and publishes:
-  - per-platform bundle archives
-  - merged `manifest.json`
-- The CLI can auto-download from the release manifest:
-  - `BREADBOARD_ENGINE_AUTO_DOWNLOAD=1`
-  - `BREADBOARD_ENGINE_MANIFEST_URL=<release-manifest-url>`
-  - `BREADBOARD_ENGINE_VERSION=<manifest.version>`
-- The release runbook is accurate:
-  - `docs/ENGINE_BUNDLE_RELEASE_RUNBOOK.md`
+Engine bundling is **explicitly out of scope** for Phase 12 due to workstation stability constraints.
+The supported deployment story is:
+- run the engine from Python (`python -m agentic_coder_prototype.api.cli_bridge.server`)
+- connect the CLI/TUI to a running engine (local or remote), optionally via SSH tunnels
+- rely on Ray for concurrency/multi-agent work (with safe defaults)
 
 ### Sandbox baseline safety
 
@@ -52,6 +47,5 @@ Phase 12 is considered **done** when all items below are true:
 ## Explicitly deferred (out of scope)
 
 - C-Trees research work and deeper engine scheduling semantics.
-- Bundle slimming/optimization beyond basic knobs (size work is iterative).
-- Signing / provenance / supply-chain hardening beyond checksums.
+- Bundling/packaging the engine as a standalone executable.
 

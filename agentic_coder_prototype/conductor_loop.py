@@ -373,14 +373,6 @@ def run_main_loop(
             pass
 
         session_state.write_snapshot(output_json_path, model, diff)
-        try:
-            ctree_cfg = (self.config.get("ctrees") or {}) if isinstance(self.config, dict) else {}
-            if ctree_cfg.get("persist") and getattr(self.logger_v2, "run_dir", None):
-                ctree_store = getattr(session_state, "ctree_store", None)
-                if ctree_store is not None and hasattr(ctree_store, "persist"):
-                    ctree_store.persist(self.logger_v2.run_dir)
-        except Exception:
-            pass
         if stream_responses:
             reason_label = summary.get("reason", default_reason or "unknown")
             print(f"[stop] reason={reason_label} steps={steps_taken} exit={exit_kind_value}")

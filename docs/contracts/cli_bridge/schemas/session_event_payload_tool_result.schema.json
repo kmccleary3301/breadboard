@@ -1,47 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ToolResultPayload",
+  "type": "object",
   "additionalProperties": true,
   "properties": {
-    "call_id": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "error": {
-      "type": "boolean"
-    },
-    "message": {},
-    "metadata": {
-      "type": [
-        "object",
-        "null"
-      ]
-    },
+    "call_id": { "type": "string" },
+    "status": { "type": ["string", "null"] },
+    "error": { "type": ["boolean", "null"] },
     "result": {},
-    "status": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "success": {
-      "type": [
-        "boolean",
-        "null"
-      ]
-    },
-    "tool": {
-      "type": [
-        "string",
-        "null"
-      ]
-    }
-  },
-  "required": [
-    "status",
-    "error"
-  ],
-  "title": "ToolResultPayload",
-  "type": "object"
+    "message": {}
+  }
 }

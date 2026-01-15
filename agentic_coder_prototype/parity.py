@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -1056,10 +1055,6 @@ def compare_surface_manifest(actual: Dict[str, Any], expected: Dict[str, Any]) -
 def compare_run_ir(lhs: RunIR, rhs: RunIR, level: EquivalenceLevel) -> List[str]:
     mismatches: List[str] = []
     ordering_model = rhs.multi_agent_ordering or lhs.multi_agent_ordering
-    extra_ignore: List[str] = []
-    raw_ignore = os.environ.get("BREADBOARD_PARITY_IGNORE_WORKSPACE") or os.environ.get("PARITY_IGNORE_WORKSPACE")
-    if raw_ignore:
-        extra_ignore = [token.strip() for token in raw_ignore.split(",") if token.strip()]
 
     ladder = [
         EquivalenceLevel.SEMANTIC,
@@ -1073,11 +1068,10 @@ def compare_run_ir(lhs: RunIR, rhs: RunIR, level: EquivalenceLevel) -> List[str]
         max_index = 0
 
     def _do_semantic() -> None:
-        ignore_workspace = list(dict.fromkeys(list(rhs.ignore_workspace) + extra_ignore))
         if lhs.workspace_manifest and rhs.workspace_manifest:
-            mismatches.extend(compare_workspace_manifests(lhs.workspace_manifest, rhs.workspace_manifest, ignore_workspace))
+            mismatches.extend(compare_workspace_manifests(lhs.workspace_manifest, rhs.workspace_manifest, rhs.ignore_workspace))
         else:
-            mismatches.extend(compare_workspace_files(lhs.workspace_path, rhs.workspace_path, ignore_workspace))
+            mismatches.extend(compare_workspace_files(lhs.workspace_path, rhs.workspace_path, rhs.ignore_workspace))
         mismatches.extend(_compare_summary_fields(lhs.completion_summary, rhs.completion_summary))
         mismatches.extend(_compare_guard_counters(lhs.guard_counters, rhs.guard_counters))
         mismatches.extend(_compare_todo_snapshot(lhs.todo_snapshot, rhs.todo_snapshot))

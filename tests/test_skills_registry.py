@@ -55,3 +55,4 @@ def test_load_skills_from_json_paths(tmp_path: Path) -> None:
     enabled_by_id = {f"{s['id']}@{s['version']}": s.get("enabled") for s in catalog.get("skills", [])}
     assert enabled_by_id["repo.search@1.0.0"] is False
     assert enabled_by_id["graph.ctree@0.1.0"] is True
+

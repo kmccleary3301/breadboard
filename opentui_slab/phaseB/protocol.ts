@@ -72,12 +72,6 @@ export type UIPermissionRespond = IpcEnvelope<
     readonly stop?: boolean | null
   }
 >
-export type UIDraftUpdate = IpcEnvelope<
-  "ui.draft.update",
-  {
-    readonly text: string
-  }
->
 export type UIShutdown = IpcEnvelope<"ui.shutdown", {}>
 
 export type UIToControllerMessage =
@@ -89,7 +83,6 @@ export type UIToControllerMessage =
   | UIPaletteClose
   | UICommand
   | UIPermissionRespond
-  | UIDraftUpdate
   | UIShutdown
 
 export type CtrlHello = IpcEnvelope<
@@ -107,9 +100,6 @@ export type CtrlState = IpcEnvelope<
     readonly base_url?: string | null
     readonly config_path?: string | null
     readonly current_model?: string | null
-    readonly model_default?: string | null
-    readonly model_providers?: string[] | null
-    readonly draft_text?: string | null
     readonly status: "idle" | "starting" | "running" | "stopped" | "error"
     readonly pending_permissions?: Array<Record<string, unknown>> | null
   }
@@ -192,3 +182,4 @@ export const nowEnvelope = <TType extends string, TPayload>(
   timestamp_ms: Date.now(),
   payload,
 })
+

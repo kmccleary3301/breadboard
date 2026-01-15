@@ -66,14 +66,6 @@ breadboard auth clear
 bash scripts/phase12_live_smoke.sh
 ```
 
-### Bundled engine smoke (developer validation)
-
-This uses a gitignored local bundle at `local_engine_bundles/dist/manifest.json`:
-
-```bash
-bash scripts/phase12_bundled_engine_smoke.sh
-```
-
 ### npm pack smoke (cross-platform)
 
 ```bash
@@ -91,3 +83,4 @@ TUI:
 ```bash
 npm -C tui_skeleton test
 ```
+
