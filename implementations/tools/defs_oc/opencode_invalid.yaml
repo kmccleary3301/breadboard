@@ -1,0 +1,22 @@
+id: invalid
+name: invalid
+description: Invalid tool (OpenCode-compatible)
+type_id: python
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: tool
+    type: string
+    description: The tool name that was invalid
+    required: true
+  - name: error
+    type: string
+    description: The validation error message
+    required: true
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+

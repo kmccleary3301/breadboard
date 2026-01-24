@@ -1,0 +1,10 @@
+[
+  { "action": "log", "message": "opentui_slab resize storm start" },
+  { "action": "wait", "ms": 250 },
+  { "action": "snapshot", "label": "slab_initial" },
+  { "action": "wait", "ms": 2500 },
+  { "action": "snapshot", "label": "slab_after_winch" },
+  { "action": "press", "key": "ctrl+d" },
+  { "action": "wait", "ms": 250 },
+  { "action": "log", "message": "opentui_slab resize storm end" }
+]

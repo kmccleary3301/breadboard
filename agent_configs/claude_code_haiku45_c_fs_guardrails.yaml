@@ -1,0 +1,96 @@
+extends: claude_code_haiku45_c_fs_v2.yaml
+
+profile: { name: claude-code-haiku45-c-fs-guardrails }
+
+guardrails:
+  include:
+    - implementations/guardrails/base_workspace.yaml
+    - implementations/guardrails/execution_baseline.yaml
+  overrides:
+    workspace_context:
+      parameters:
+        require_exploration_before_edit: true
+        require_read_before_edit: true
+        require_progress_before_todo_updates: true
+    todo_rate_limit:
+      parameters:
+        enabled: true
+        todo_updates_before_progress: 0
+    completion_guard:
+      parameters:
+        warnings_before_abort: 2
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 3
+        abort_after_turns: 8
+        emit_event: true
+  plan_bootstrap:
+    strategy: soft
+    max_turns: 1
+    warmup_turns: 1
+    seed_file: implementations/system_prompts/opencode/plan_bootstrap_protofs.yaml
+    extra_calls:
+      - function: list
+        arguments:
+          path: "."
+      - function: read_file
+        arguments:
+          path: "protofs_c.md"
+
+enhanced_tools:
+  validation:
+    enabled: true
+    rules: [read_before_edit]
+    rule_config:
+      read_before_edit:
+        mode: strict
+        require_fresh_read: true
+        max_age_seconds: 900
+  diff_policy:
+    patch_splitting:
+      policy: auto_split
+
+loop:
+  guardrails:
+    shell_write:
+      enabled: true
+      validation_message: |
+        <VALIDATION_ERROR>
+        Do not use bash heredocs or redirection to write files. Use the Write tool instead.
+        </VALIDATION_ERROR>
+  turn_strategy:
+    allow_multiple_per_turn: true
+  plan_turn_limit: 0
+
+features:
+  plan: false
+  todos:
+    enabled: false
+    strict: false
+
+prompts:
+  packs:
+    base:
+      system: implementations/system_prompts/claude_code/system-identity.prompt.md
+      plan: implementations/system_prompts/claude_code/system-workflow.prompt.md
+      builder: implementations/system_prompts/claude_code/system-workflow.prompt.md
+      compact: implementations/system_prompts/claude_code/system-workflow.prompt.md
+
+completion:
+  build_guard:
+    enabled: true
+    require_write: true
+    require_run_shell: true
+    require_successful_tests: false
+
+modes:
+  - name: plan
+    prompt: "@pack(base).plan"
+    tools_enabled: [Read, Glob, TodoWrite]
+    tools_disabled: [Edit, Write, Bash, mark_task_complete]
+  - name: build
+    prompt: "@pack(base).builder"
+    tools_enabled: [Read, Glob, Edit, Write, Bash, TodoWrite, mark_task_complete]
+  - name: compact
+    prompt: "@pack(base).compact"
+    tools_enabled: []

@@ -1,0 +1,113 @@
+extends: base_v2.yaml
+
+profile: { name: claude-code-sonnet45-c-fs }
+
+providers:
+  default_model: anthropic/claude-3-5-haiku-20241022
+  routing:
+    disable_native_tools_on_probe_failure: false
+  models:
+    - id: anthropic/claude-3-5-haiku-20241022
+      adapter: anthropic
+      params:
+        tool_use: true
+        temperature: 0.1
+      routing:
+        fallback_models: []
+
+provider_tools:
+  use_native: true
+  suppress_prompts: false
+  anthropic:
+    max_output_tokens: 256
+    temperature: 0.1
+    turn_delay_seconds: 1.0
+    tool_choice: any
+    prompt_cache:
+      beta_header: null
+      apply_to_system: true
+      cache_control:
+        type: ephemeral
+        ttl: 1h
+    rate_limit:
+      enabled: true
+      token_buffer: 4000
+      fallback_cooldown_seconds: 5
+      min_wait_seconds: 1.0
+      max_retries: 2
+      retry_base_seconds: 2.0
+      retry_max_seconds: 20.0
+      retry_jitter_seconds: 0.5
+
+prompts:
+  packs:
+    base:
+      system: implementations/system_prompts/claude_code/system-identity.prompt.md
+      plan: implementations/system_prompts/claude_code/system-workflow.prompt.md
+      builder: implementations/system_prompts/claude_code/system-workflow.prompt.md
+      compact: implementations/system_prompts/claude_code/system-workflow.prompt.md
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  injection:
+    system_order:
+      - '@pack(base).system'
+  tool_prompt_synthesis:
+    enabled: false
+
+modes:
+  - name: plan
+    prompt: "@pack(base).plan"
+    tools_enabled: [Read, List, TodoWrite]
+    tools_disabled: [apply_unified_patch, apply_search_replace, Write, create_file, Bash, mark_task_complete]
+  - name: build
+    prompt: "@pack(base).builder"
+    tools_enabled: [Read, List, Write, apply_unified_patch, apply_search_replace, Bash, TodoWrite, mark_task_complete]
+  - name: compact
+    prompt: "@pack(base).compact"
+    tools_enabled: []
+
+loop:
+  sequence:
+    - if: "features.plan"
+      then: { mode: plan }
+    - mode: build
+  plan_turn_limit: 1
+  turn_strategy:
+    relay: tool_role
+    flow: assistant_continuation
+    allow_multiple_per_turn: true
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs
+  overlays:
+    - rename:
+        read_file: Read
+        list_dir: List
+        create_file_from_block: Write
+        run_shell: Bash
+  aliases: null
+  dialects:
+    preference:
+      default: [aider_search_replace, unified_diff, bash_block]
+      by_model:
+        "anthropic/*":
+          order: [aider_search_replace, unified_diff, bash_block]
+    selection:
+      by_model:
+        "anthropic/*": [aider_search_replace, unified_diff]
+
+features:
+  plan: true
+  todos:
+    enabled: true
+    strict: true
+
+workspace:
+  root: ./agent_ws_claude
+  sandbox:
+    driver: process
+  mirror:
+    enabled: false
+    path: ./agent_ws_claude
+    mode: development

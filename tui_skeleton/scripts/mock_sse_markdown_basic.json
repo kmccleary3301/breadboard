@@ -1,0 +1,24 @@
+[
+  {
+    "delayMs": 0,
+    "event": { "type": "turn_start", "payload": { "summary": "mock markdown start" }, "turn": 1 }
+  },
+  {
+    "delayMs": 300,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "## Mock Markdown Response\n- First bullet with `inline code`\n- Second bullet with a short note\n\nThanks!",
+        "message": {
+          "role": "assistant",
+          "content": "## Mock Markdown Response\n- First bullet with `inline code`\n- Second bullet with a short note\n\nThanks!"
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mock" } } }
+  },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 4 } } }
+]

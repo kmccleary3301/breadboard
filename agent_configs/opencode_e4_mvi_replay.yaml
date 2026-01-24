@@ -1,0 +1,31 @@
+extends: opencode_openai_codexmini_c_fs_guardrails.yaml
+
+# OpenCode E4 track: preserve OpenCode tool IDs and gate tool-result content
+# against recorded OpenCode session dumps (model variance removed via replay).
+replay:
+  preserve_tool_names: true
+  compare_tool_outputs:
+    - bash
+    - write
+
+guardrails:
+  overrides:
+    # OpenCode does not enforce a "no shell redirection/heredoc writes" rule at
+    # tool-execution time (it is prompt guidance only). Enforcing it would be a
+    # model-visible divergence and breaks OpenCode session replays that include
+    # such commands.
+    shell_write_block:
+      parameters:
+        enabled: false
+
+enhanced_tools:
+  lsp_integration:
+    enabled: true
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs_oc
+    include:
+      - bash
+      - write

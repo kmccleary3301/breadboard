@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CTreeNodePayload",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["node", "snapshot"],
+  "properties": {
+    "node": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "digest", "kind", "payload"],
+      "properties": {
+        "id": { "type": "string" },
+        "digest": { "type": "string" },
+        "kind": { "type": "string" },
+        "turn": { "type": ["integer", "null"] },
+        "payload": {}
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schema_version", "node_count", "event_count", "last_id", "node_hash"],
+      "properties": {
+        "schema_version": { "type": "string" },
+        "node_count": { "type": "integer" },
+        "event_count": { "type": "integer" },
+        "last_id": { "type": ["string", "null"] },
+        "node_hash": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

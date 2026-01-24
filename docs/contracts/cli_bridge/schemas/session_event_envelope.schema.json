@@ -1,0 +1,373 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_turn_start.schema.json"
+        },
+        "type": {
+          "const": "turn_start"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "turn_startEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_assistant_message.schema.json"
+        },
+        "type": {
+          "const": "assistant_message"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "assistant_messageEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_user_message.schema.json"
+        },
+        "type": {
+          "const": "user_message"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "user_messageEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_tool_call.schema.json"
+        },
+        "type": {
+          "const": "tool_call"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "tool_callEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_tool_result.schema.json"
+        },
+        "type": {
+          "const": "tool_result"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "tool_resultEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_permission_request.schema.json"
+        },
+        "type": {
+          "const": "permission_request"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "permission_requestEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_permission_response.schema.json"
+        },
+        "type": {
+          "const": "permission_response"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "permission_responseEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_checkpoint_list.schema.json"
+        },
+        "type": {
+          "const": "checkpoint_list"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "checkpoint_listEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_checkpoint_restored.schema.json"
+        },
+        "type": {
+          "const": "checkpoint_restored"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "checkpoint_restoredEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_skills_catalog.schema.json"
+        },
+        "type": {
+          "const": "skills_catalog"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "skills_catalogEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_skills_selection.schema.json"
+        },
+        "type": {
+          "const": "skills_selection"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "skills_selectionEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_ctree_node.schema.json"
+        },
+        "type": {
+          "const": "ctree_node"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "ctree_nodeEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_ctree_snapshot.schema.json"
+        },
+        "type": {
+          "const": "ctree_snapshot"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "ctree_snapshotEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_task_event.schema.json"
+        },
+        "type": {
+          "const": "task_event"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "task_eventEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_reward_update.schema.json"
+        },
+        "type": {
+          "const": "reward_update"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "reward_updateEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_completion.schema.json"
+        },
+        "type": {
+          "const": "completion"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "completionEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_log_link.schema.json"
+        },
+        "type": {
+          "const": "log_link"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "log_linkEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_error.schema.json"
+        },
+        "type": {
+          "const": "error"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "errorEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
+          "$ref": "session_event_payload_run_finished.schema.json"
+        },
+        "type": {
+          "const": "run_finished"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "run_finishedEvent",
+      "type": "object"
+    }
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "protocol_version": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seq": {
+      "type": "integer"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "thread_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "timestamp": {
+      "type": "integer"
+    },
+    "timestamp_ms": {
+      "type": "integer"
+    },
+    "turn": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "turn_id": {
+      "type": [
+        "string",
+        "integer",
+        "null"
+      ]
+    },
+    "type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "type",
+    "session_id",
+    "payload",
+    "timestamp",
+    "timestamp_ms",
+    "protocol_version"
+  ],
+  "title": "SessionEventEnvelope",
+  "type": "object"
+}

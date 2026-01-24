@@ -1,0 +1,44 @@
+[
+  {
+    "delayMs": 0,
+    "event": { "type": "turn_start", "payload": { "summary": "streaming markdown" }, "turn": 1 }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "## Streaming\n- first",
+        "message": { "role": "assistant", "content": "## Streaming\n- first" }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "## Streaming\n- first\n- second",
+        "message": { "role": "assistant", "content": "## Streaming\n- first\n- second" }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "## Streaming\n- first\n- second\n\nFinal.",
+        "message": { "role": "assistant", "content": "## Streaming\n- first\n- second\n\nFinal." }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "completion",
+      "payload": { "summary": { "completed": true, "reason": "mock" } }
+    }
+  },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 6 } } }
+]

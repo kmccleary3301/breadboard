@@ -1,0 +1,56 @@
+extends: claude_code_haiku45_e4_replay.yaml
+
+profile: { name: claude-code-haiku45-phase8-wakeup-replay }
+
+replay:
+  # We only gate multi-agent wakeup/event ordering here; tool outputs are not asserted.
+  compare_tool_outputs: []
+  fail_on_tool_output_mismatch: false
+
+multi_agent:
+  enabled: true
+  event_log_path: misc/multi_agent_runs/claude_phase8_wakeup_event_log.jsonl
+  team_config:
+    team:
+      id: claude_phase8_wakeup
+      version: 1
+      agents:
+        main:
+          role: main
+          config_ref: agent_configs/claude_code_haiku45_phase8_wakeup_replay.yaml
+          entrypoint: true
+        repo-scanner:
+          role: repo-scanner
+          config_ref: agent_configs/claude_code_haiku45_phase8_subagent_readonly.yaml
+          entrypoint: false
+          capabilities:
+            read_only: true
+            allow_spawn: false
+        grep-summarizer:
+          role: grep-summarizer
+          config_ref: agent_configs/claude_code_haiku45_phase8_subagent_readonly.yaml
+          entrypoint: false
+          capabilities:
+            read_only: true
+            allow_spawn: false
+      topology:
+        edges:
+          - { from: main, to: repo-scanner, mode: [async] }
+          - { from: main, to: grep-summarizer, mode: [async] }
+      orchestration:
+        scheduler:
+          kind: deterministic_event_loop
+          max_concurrent_agents: 2
+        spawn_protocol:
+          tool_name: Task
+          async:
+            enabled: true
+        join_policy:
+          default: block_until_complete
+      bus:
+        model_visible_topics: [tool_result, wakeup]
+        retention: { max_events: 2000, max_age_seconds: 86400 }
+      workspace:
+        sharing:
+          default: shared_readonly_subagents
+          write_lock: main_only

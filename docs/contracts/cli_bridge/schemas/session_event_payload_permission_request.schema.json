@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PermissionRequestPayload",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["request_id", "tool", "kind"],
+  "properties": {
+    "request_id": { "type": "string" },
+    "tool": { "type": ["string", "null"] },
+    "kind": { "type": ["string", "null"] },
+    "summary": { "type": ["string", "null"] },
+    "default_scope": { "type": ["string", "null"] },
+    "rewindable": { "type": ["boolean", "null"] },
+    "diff": { "type": ["string", "null"] },
+    "rule_suggestion": {},
+    "items": { "type": ["array", "null"] },
+    "metadata": { "type": ["object", "null"] }
+  }
+}
+

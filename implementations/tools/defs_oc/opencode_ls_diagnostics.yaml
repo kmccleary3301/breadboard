@@ -1,0 +1,16 @@
+id: lsp-diagnostics
+name: lsp-diagnostics
+description: Return diagnostics from LSP server (OpenCode-compatible)
+type_id: python
+manipulations: []
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters: []
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: false
+
+
+

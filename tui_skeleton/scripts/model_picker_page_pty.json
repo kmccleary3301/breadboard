@@ -1,0 +1,10 @@
+[
+  { "action": "log", "message": "Model picker paging PTY harness start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "press", "key": "ctrl+k" },
+  { "action": "waitFor", "text": "Loading model catalog", "timeoutMs": 5000 },
+  { "action": "press", "key": "pagedown" },
+  { "action": "press", "key": "pageup" },
+  { "action": "press", "key": "escape" },
+  { "action": "log", "message": "Model picker paging PTY harness complete" }
+]

@@ -1,0 +1,7 @@
+{"_type":"ctree_eventlog_header","schema_version":"0.1"}
+{"kind":"message","payload":{"role":"system","content":"sys"},"turn":0}
+{"kind":"message","payload":{"role":"user","content":"Check file"},"turn":1}
+{"kind":"tool_call","payload":{"tool":"read_file","args":{"path":"README.md"}},"turn":1}
+{"kind":"tool_result","payload":{"status":"ok","result":{"bytes":12}},"turn":1}
+{"kind":"message","payload":{"role":"assistant","content":"Done."},"turn":1}
+{"kind":"message","payload":{"role":"user","content":"Summarize"},"turn":2}

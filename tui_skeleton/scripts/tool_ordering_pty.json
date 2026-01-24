@@ -1,0 +1,7 @@
+[
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "type", "text": "run tool ordering check", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 1200 },
+  { "action": "snapshot", "label": "tool-order" }
+]

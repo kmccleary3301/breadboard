@@ -1,0 +1,23 @@
+extends: base_v2.yaml
+
+profile: { name: breadboard-tui-engine-smoke-mock }
+
+providers:
+  default_model: mock/echo
+  models:
+    - id: mock/echo
+      adapter: mock_chat
+
+features:
+  plan: false
+  todos:
+    enabled: false
+    strict: false
+
+guardrails:
+  overrides:
+    plan_bootstrap:
+      strategy: never
+
+completion:
+  allow_zero_tool_completion: true

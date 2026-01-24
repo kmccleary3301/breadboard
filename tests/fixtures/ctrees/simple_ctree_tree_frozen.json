@@ -1,0 +1,141 @@
+{
+  "hashes": {
+    "node_hash": "4844a2a9bed20cccbf90126f0f14419d3715130c",
+    "tree_sha256": "3825e7d9cc79f5a8fdb34746a75b28935b47d36b187dec4ea452b9a000b8c63a",
+    "z1": "8318874bc1e8a4feb6dc634be5e290b85fc7f3be",
+    "z2": "8d53952730e5e728898295cfd695a6c508c80f81",
+    "z3": "73a00bd8e44b8a810fdca5fd5b9cebc3d5c8ddfd"
+  },
+  "nodes": [
+    {
+      "id": "ctrees:root",
+      "kind": "root",
+      "label": "C-Trees",
+      "meta": {
+        "node_hash": "4844a2a9bed20cccbf90126f0f14419d3715130c",
+        "selection_sha256": "686ce31e475e47082ecfcadeb08621ba0c3d865d01f878a176c5f4d6edf2d6e8",
+        "stage": "FROZEN",
+        "z1": "8318874bc1e8a4feb6dc634be5e290b85fc7f3be",
+        "z2": "8d53952730e5e728898295cfd695a6c508c80f81",
+        "z3": "73a00bd8e44b8a810fdca5fd5b9cebc3d5c8ddfd"
+      },
+      "parent_id": null,
+      "turn": null
+    },
+    {
+      "id": "ctrees:turn:0",
+      "kind": "turn",
+      "label": "Turn 0",
+      "meta": {},
+      "parent_id": "ctrees:root",
+      "turn": 0
+    },
+    {
+      "id": "ctrees:turn:1",
+      "kind": "turn",
+      "label": "Turn 1",
+      "meta": {},
+      "parent_id": "ctrees:root",
+      "turn": 1
+    },
+    {
+      "id": "ctrees:tasks",
+      "kind": "task_root",
+      "label": "Tasks",
+      "meta": {},
+      "parent_id": "ctrees:root",
+      "turn": null
+    },
+    {
+      "id": "ctrees:task:t1",
+      "kind": "task",
+      "label": "Task t1",
+      "meta": {},
+      "parent_id": "ctrees:tasks",
+      "turn": null
+    },
+    {
+      "id": "ctrees:node:n00000001_54dd7f92",
+      "kind": "message",
+      "label": "message:user",
+      "meta": {
+        "collapsed": false,
+        "content_hash": "364bbe8fa82f2a1e8be2406e115b43698f9efc4d",
+        "content_len": 6,
+        "digest": "54dd7f92d3fa9ef0c9b19e5413ed28ecc172db10",
+        "dropped": false,
+        "kept": true,
+        "name": null,
+        "payload_hash": "2d658ce0988711fe1d361c7c7473bdf49d629d77",
+        "role": "user",
+        "selected": true,
+        "tool_call_count": null
+      },
+      "parent_id": "ctrees:turn:1",
+      "turn": 1
+    },
+    {
+      "id": "ctrees:node:n00000002_282a55bf",
+      "kind": "message",
+      "label": "message:assistant",
+      "meta": {
+        "collapsed": false,
+        "content_hash": "26b45cb6db302b48a75062d551c6163a452d9c24",
+        "content_len": 9,
+        "digest": "282a55bf5fd4f9216cf5495f0e0218cf149ad6e1",
+        "dropped": false,
+        "kept": true,
+        "name": null,
+        "payload_hash": "38185bcebe2de912f7638f8d0f5f2d73588683f5",
+        "role": "assistant",
+        "selected": true,
+        "tool_call_count": null
+      },
+      "parent_id": "ctrees:turn:1",
+      "turn": 1
+    },
+    {
+      "id": "ctrees:node:n00000003_c21875af",
+      "kind": "task_event",
+      "label": "task:subagent_spawned",
+      "meta": {
+        "collapsed": false,
+        "digest": "c21875af8b009ada13cd7c49dcb79d0d131199b6",
+        "dropped": false,
+        "kept": false,
+        "payload_sha1": "16d3625cc1906b45667632b1891979964c352883",
+        "selected": false
+      },
+      "parent_id": "ctrees:task:t1",
+      "turn": 1
+    }
+  ],
+  "root_id": "ctrees:root",
+  "selection": {
+    "candidate_count": 3,
+    "candidate_ids": [
+      "n00000000_99a87b9b",
+      "n00000001_54dd7f92",
+      "n00000002_282a55bf"
+    ],
+    "collapsed_count": 0,
+    "collapsed_ids": [],
+    "dropped_count": 1,
+    "dropped_ids": [
+      "n00000000_99a87b9b"
+    ],
+    "kept_count": 2,
+    "kept_ids": [
+      "n00000001_54dd7f92",
+      "n00000002_282a55bf"
+    ],
+    "pinned_count": 2,
+    "pinned_ids": [
+      "n00000001_54dd7f92",
+      "n00000002_282a55bf"
+    ],
+    "selection_sha256": "686ce31e475e47082ecfcadeb08621ba0c3d865d01f878a176c5f4d6edf2d6e8",
+    "stage": "FROZEN"
+  },
+  "stage": "FROZEN"
+}

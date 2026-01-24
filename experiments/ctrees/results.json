@@ -1,0 +1,72 @@
+{
+  "generated_at": "2026-01-22T22:30:31Z",
+  "registry": "experiments/ctrees/registry.json",
+  "results": [
+    {
+      "candidate_count": 3,
+      "collapsed_count": 1,
+      "dropped_count": 0,
+      "kept_count": 3,
+      "node_hash": "ef38babacc2da147089fdda9a6d5d6241b7ce12e",
+      "policy_id": "default",
+      "scenario_id": "short_single_turn",
+      "selection_sha256": "577b15d98b79dadac192bd89ddeaf2ee65c4d0f86082a0126154673ca5769048",
+      "stable": true
+    },
+    {
+      "candidate_count": 2,
+      "collapsed_count": 0,
+      "dropped_count": 0,
+      "kept_count": 2,
+      "node_hash": "ef38babacc2da147089fdda9a6d5d6241b7ce12e",
+      "policy_id": "aggressive",
+      "scenario_id": "short_single_turn",
+      "selection_sha256": "eeb5232bd85b007e6591642ac29c303feeead363cb67c7734cf1feab73dfb840",
+      "stable": true
+    },
+    {
+      "candidate_count": 4,
+      "collapsed_count": 2,
+      "dropped_count": 0,
+      "kept_count": 4,
+      "node_hash": "5d45ac82aa2e9b554feef9cf88ad889c7befe21c",
+      "policy_id": "default",
+      "scenario_id": "multi_tool",
+      "selection_sha256": "33d0530629489bf3d240b8f0768318c772a6f62215da2257f87323b828de35fd",
+      "stable": true
+    },
+    {
+      "candidate_count": 2,
+      "collapsed_count": 0,
+      "dropped_count": 0,
+      "kept_count": 2,
+      "node_hash": "5d45ac82aa2e9b554feef9cf88ad889c7befe21c",
+      "policy_id": "aggressive",
+      "scenario_id": "multi_tool",
+      "selection_sha256": "a1feaf0328047ced64d65584dcedbfbe57eff76f817866d7f1145c8c8547ebfb",
+      "stable": true
+    },
+    {
+      "candidate_count": 4,
+      "collapsed_count": 2,
+      "dropped_count": 0,
+      "kept_count": 4,
+      "node_hash": "de01d66595db98eeecc8407a3343b6824343591b",
+      "policy_id": "default",
+      "scenario_id": "async_subagent",
+      "selection_sha256": "382d72a27b7105ec6ceff1f42c6c4f0c9a221a300bb1c318b90b20efd2e55d47",
+      "stable": true
+    },
+    {
+      "candidate_count": 2,
+      "collapsed_count": 0,
+      "dropped_count": 0,
+      "kept_count": 2,
+      "node_hash": "de01d66595db98eeecc8407a3343b6824343591b",
+      "policy_id": "aggressive",
+      "scenario_id": "async_subagent",
+      "selection_sha256": "ffd32b84d07bfac774df1bdad0eedec14e65ea18db28606617e087defcf25919",
+      "stable": true
+    }
+  ]
+}

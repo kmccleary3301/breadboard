@@ -1,0 +1,12 @@
+[
+  { "action": "log", "message": "Live engine skills picker PTY harness start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 20000 },
+  { "action": "type", "text": "/skills", "typingDelayMs": 25 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Skills", "timeoutMs": 20000 },
+  { "action": "snapshot", "label": "skills-open" },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 250 },
+  { "action": "snapshot", "label": "skills-closed" },
+  { "action": "log", "message": "Live engine skills picker PTY harness complete" }
+]

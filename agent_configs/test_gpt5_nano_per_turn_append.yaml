@@ -1,0 +1,62 @@
+# GPT-5 Nano Test with per_turn_append mode  
+# Final validation of enhanced tool calling system
+
+workspace: ./agent_ws_per_turn_test
+output:
+  json: ./session_out.json
+  markdown: ./session_out.md
+
+model:
+  id: gpt-5-nano
+  provider: openai
+
+prompt:
+  system: implementations/system_prompts/default.md
+  mode: per_turn_append  # Critical for gpt-5-nano
+  completion_sentinel: ">>>>>> END RESPONSE"
+
+task:
+  file: fibonacci_task.md
+
+runtime:
+  image: python-dev:latest
+
+tools:
+  registry: implementations/tools/enhanced_tools.yaml
+  enabled:
+    run_shell: true
+    create_file: true
+    read_file: true
+    list_dir: true
+    apply_search_replace: true
+    apply_unified_patch: true
+    create_file_from_block: true
+    mark_task_complete: true
+
+dialects:
+  - pythonic02
+  - pythonic_inline  
+  - bash_block
+  - aider_diff
+  - unified_diff
+  - opencode_patch
+
+limits:
+  max_steps: 20
+  stream_responses: true
+  clean_workspace: true
+
+# Enhanced tools configuration
+enhanced_tools:
+  enabled: true
+  lsp_integration:
+    enabled: false  # Keep disabled to avoid issues
+    format_feedback: true
+  validation:
+    enabled: false
+
+# Development deployment
+deployment:
+  mode: "development"
+  isolation: true
+  mirror_results: true

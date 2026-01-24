@@ -1,0 +1,30 @@
+{
+  "properties": {
+    "attachments": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Attachment IDs returned by /attachments.",
+      "title": "Attachments"
+    },
+    "content": {
+      "description": "User supplied input text.",
+      "title": "Content",
+      "type": "string"
+    }
+  },
+  "required": [
+    "content"
+  ],
+  "title": "SessionInputRequest",
+  "type": "object"
+}

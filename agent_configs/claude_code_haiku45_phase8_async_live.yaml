@@ -1,0 +1,87 @@
+extends: claude_code_haiku45_c_fs_v2.yaml
+
+profile: { name: claude-code-haiku45-phase8-async-live }
+
+providers:
+  default_model: openai/gpt-5.2
+  models:
+    - id: openai/gpt-5.2
+      adapter: openai
+      params: { temperature: 0.2, top_p: 0.9 }
+
+provider_tools:
+  api_variant: responses
+  openai:
+    responses_extra:
+      reasoning:
+        effort: low
+
+permissions:
+  options:
+    mode: auto_allow
+  edit:
+    default: deny
+  shell:
+    default: allow
+    deny:
+      - rm *
+      - rm -rf *
+      - mv *
+      - sudo *
+      - chmod *
+      - chown *
+      - dd *
+      - mkfs*
+      - shutdown*
+      - reboot*
+      - kill *
+      - pkill *
+      - killall *
+
+multi_agent:
+  enabled: true
+  event_log_path: misc/multi_agent_runs/claude_phase8_async_event_log.jsonl
+  team_config:
+    team:
+      id: claude_phase8_async
+      version: 1
+      agents:
+        main:
+          role: main
+          config_ref: agent_configs/claude_code_haiku45_phase8_async_live.yaml
+          entrypoint: true
+        repo-scanner:
+          role: repo-scanner
+          config_ref: agent_configs/claude_code_haiku45_phase8_subagent_readonly.yaml
+          entrypoint: false
+          capabilities:
+            read_only: true
+            allow_spawn: false
+        grep-summarizer:
+          role: grep-summarizer
+          config_ref: agent_configs/claude_code_haiku45_phase8_subagent_readonly.yaml
+          entrypoint: false
+          capabilities:
+            read_only: true
+            allow_spawn: false
+      topology:
+        edges:
+          - { from: main, to: repo-scanner, mode: [async] }
+          - { from: main, to: grep-summarizer, mode: [async] }
+      orchestration:
+        scheduler:
+          kind: deterministic_event_loop
+          max_concurrent_agents: 2
+        spawn_protocol:
+          tool_name: Task
+          async:
+            enabled: true
+        join_policy:
+          default: block_until_complete
+      bus:
+        model_visible_topics: [tool_result]
+        retention: { max_events: 2000, max_age_seconds: 86400 }
+      workspace:
+        sharing:
+          default: shared_readonly_subagents
+          write_lock: main_only

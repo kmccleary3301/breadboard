@@ -1,0 +1,9 @@
+[
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "type", "text": "IME placeholder: \u30c6\u30b9\u30c8 \u4e2d\u6587" },
+  { "action": "wait", "ms": 200 },
+  { "action": "snapshot", "label": "ime-placeholder" },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "ime-placeholder-submit" }
+]

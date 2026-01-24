@@ -1,0 +1,30 @@
+id: create_file_from_block
+name: create_file_from_block
+description: Create a new file from provided content block
+type_id: python
+manipulations:
+  - file.write
+syntax_formats_supported: [json_block]
+preferred_formats: [json_block]
+parameters:
+  - name: filePath
+    type: string
+    description: Path to the new file (OpenCode-compatible)
+    required: false
+  - name: file_name
+    type: string
+    description: Path to the new file (legacy alias)
+    required: false
+  - name: content
+    type: string
+    description: Full file content to write
+    required: true
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    fallback_formats: [json_block]
+  anthropic:
+    native_primary: true
+    fallback_formats: [json_block]

@@ -1,0 +1,13 @@
+extends: opencode_cli_mock_guardrails.yaml
+
+profile: { name: opencode-cli-mock-workspace-guard }
+
+guardrails:
+  overrides:
+    workspace_context:
+      parameters:
+        require_exploration_before_edit: true
+        require_read_before_edit: true
+        require_progress_before_todo_updates: false
+  plan_bootstrap:
+    strategy: never

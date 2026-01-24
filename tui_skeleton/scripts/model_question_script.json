@@ -1,0 +1,12 @@
+[
+  { "action": "log", "message": "Start scripted session" },
+  { "action": "openModelMenu" },
+  { "action": "wait", "for": "hint", "includes": "Model picker", "timeoutMs": 8000 },
+  { "action": "selectModel", "value": "openrouter/x-ai/grok-4-fast" },
+  { "action": "wait", "for": "hint", "includes": "Model switch requested", "timeoutMs": 8000 },
+  { "action": "type", "text": "Tell me a quick joke about coding." },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "assistant", "timeoutMs": 30000 },
+  { "action": "wait", "for": "completion", "timeoutMs": 30000 },
+  { "action": "log", "message": "Scenario complete" }
+]

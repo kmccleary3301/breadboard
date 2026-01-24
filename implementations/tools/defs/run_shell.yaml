@@ -1,0 +1,29 @@
+id: run_shell
+name: run_shell
+description: Execute a shell command in the project workspace
+type_id: python
+manipulations:
+  - shell.exec
+syntax_formats_supported: [native_function_calling, json_block, yaml_command]
+preferred_formats: [yaml_command]
+parameters:
+  - name: command
+    type: string
+    description: The shell command to run
+    required: true
+  - name: timeout
+    type: integer
+    description: Timeout in seconds
+    required: false
+    default: 60
+execution:
+  blocking: true
+  max_per_turn: 1
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    fallback_formats: [json_block, yaml_command]
+  anthropic:
+    native_primary: true
+    fallback_formats: [yaml_command]

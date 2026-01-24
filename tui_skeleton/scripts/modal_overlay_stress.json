@@ -1,0 +1,13 @@
+{
+  "steps": [
+    { "action": "log", "label": "start", "message": "Modal overlay stress sequence" },
+    { "action": "openModelMenu" },
+    { "action": "delay", "ms": 400 },
+    { "action": "press", "key": "escape" },
+    { "action": "snapshot", "label": "overlay-closed" },
+  { "action": "type", "text": "Acknowledge this is a UI stress test. Respond with one short markdown line (no tools, no edits)." },
+    { "action": "press", "key": "enter" },
+    { "action": "wait", "for": "completion", "timeoutMs": 240000 },
+    { "action": "snapshot", "label": "post-response", "includeHints": true }
+  ]
+}

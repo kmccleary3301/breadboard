@@ -1,0 +1,23 @@
+extends: base_v2.yaml
+
+profile: { name: opencode-compat }
+
+prompts:
+  packs:
+    base:
+      system: implementations/system_prompts/opencode/system.md
+      plan: implementations/system_prompts/opencode/plan.md
+      builder: implementations/system_prompts/default.md
+
+tools:
+  registry:
+    paths: [implementations/tools/defs]
+  dialects:
+    order: [opencode_patch, unified_diff, aider_search_replace]
+
+modes:
+  - name: plan
+    tools_disabled: [apply_unified_patch, apply_search_replace, run_shell]
+  - name: build
+
+

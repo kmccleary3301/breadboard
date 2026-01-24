@@ -1,0 +1,6 @@
+{"_type":"ctree_eventlog_header","schema_version":"0.1"}
+{"kind":"message","payload":{"role":"system","content":"sys"},"turn":0}
+{"kind":"message","payload":{"role":"user","content":"Start subagent"},"turn":1}
+{"kind":"message","payload":{"role":"assistant","content":"Spawning..."},"turn":1}
+{"kind":"message","payload":{"role":"user","content":"Continue main"},"turn":2}
+{"kind":"task_event","payload":{"kind":"subagent_completed","task_id":"task_0001","subagent_type":"repo-scanner","status":"completed"},"turn":1}

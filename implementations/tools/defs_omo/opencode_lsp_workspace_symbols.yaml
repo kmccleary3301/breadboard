@@ -1,0 +1,36 @@
+id: lsp_workspace_symbols
+name: lsp_workspace_symbols
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: Search symbols by name across ENTIRE workspace.
+parameters:
+- name: filePath
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: query
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string
+- name: limit
+  type: number
+  description: ''
+  required: false
+  schema:
+    type: number

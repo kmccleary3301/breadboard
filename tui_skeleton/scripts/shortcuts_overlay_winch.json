@@ -1,0 +1,4 @@
+[
+  { "delayMs": 200, "cols": 90, "rows": 28 },
+  { "delayMs": 500, "cols": 120, "rows": 36 }
+]

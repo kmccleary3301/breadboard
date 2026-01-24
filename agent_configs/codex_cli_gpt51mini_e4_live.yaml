@@ -1,0 +1,38 @@
+extends: base_v2.yaml
+
+profile: { name: codex-cli-gpt5.1-codex-mini-e4-live }
+
+workspace:
+  root: agent_ws/codex_cli_gpt51mini_e4_live
+
+providers:
+  default_model: openai/gpt-5.2
+  models:
+    - id: openai/gpt-5.2
+      adapter: openai
+      params: { temperature: 0.2, top_p: 0.9 }
+
+provider_tools:
+  use_native: true
+  suppress_prompts: true
+  api_variant: responses
+  openai:
+    responses_extra:
+      reasoning:
+        effort: low
+
+prompts:
+  packs:
+    base:
+      system: implementations/system_prompts/opentui_live_system.md
+  tool_prompt_synthesis:
+    enabled: false
+  injection:
+    system_order:
+      - '@pack(base).system'
+    per_turn_order: []
+
+features:
+  plan: false
+  todos:
+    enabled: false

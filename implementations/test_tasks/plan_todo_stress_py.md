@@ -1,0 +1,1 @@
+Solve a small Python bugfix while strictly maintaining a TODO/plan cadence. Start by listing current files, then create a TODO plan, update TODOs as you complete each step, and keep the list tidy. The repo contains a failing test in `tests/test_service.py`; fix the underlying code with minimal edits and run `pytest` to confirm. Do not skip the TODO updates.

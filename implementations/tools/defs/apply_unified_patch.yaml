@@ -1,0 +1,23 @@
+id: apply_unified_patch
+name: apply_unified_patch
+description: Apply a unified-diff patch (edits/additions/deletions) to files
+type_id: python
+manipulations:
+  - diff.apply
+syntax_formats_supported: [unified_diff, json_block]
+preferred_formats: [unified_diff]
+parameters:
+  - name: patch
+    type: string
+    description: Unified-diff text; use ```diff fenced blocks when authoring
+    required: true
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: false
+    fallback_formats: [unified_diff]
+  anthropic:
+    native_primary: false
+    fallback_formats: [unified_diff]
+

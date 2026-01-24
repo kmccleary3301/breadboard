@@ -1,0 +1,22 @@
+extends: opencode_openai_codexmini_c_fs_cli_shared.yaml
+
+profile: { name: opencode-mock-zero-tool-sentinel }
+
+providers:
+  default_model: mock/no_tools
+  models:
+    - id: mock/no_tools
+      adapter: mock_chat
+
+guardrails:
+  overrides:
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 1
+        abort_after_turns: 3
+    plan_bootstrap:
+      strategy: never
+
+completion:
+  allow_zero_tool_completion: false
+

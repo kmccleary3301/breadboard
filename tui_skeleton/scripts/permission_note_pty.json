@@ -1,0 +1,20 @@
+[
+  { "action": "log", "message": "Permission note PTY harness start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "type", "text": "Please create bubble_sort.py and run it" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Permission required", "timeoutMs": 8000 },
+  { "action": "waitFor", "text": "Summary  |  Diff", "timeoutMs": 4000 },
+  { "action": "snapshot", "label": "permission-tab-diff" },
+  { "action": "press", "key": "tab" },
+  { "action": "snapshot", "label": "permission-tab-rules" },
+  { "action": "type", "text": "3" },
+  { "action": "waitFor", "text": "Tell me what to do differently", "timeoutMs": 4000 },
+  { "action": "type", "text": "Use a smaller diff next time.", "typingDelayMs": 6 },
+  { "action": "wait", "ms": 200 },
+  { "action": "snapshot", "label": "permission-note" },
+  { "action": "press", "key": "enter", "delayMs": 120 },
+  { "action": "waitFor", "text": "Permission decision sent.", "timeoutMs": 8000 },
+  { "action": "snapshot", "label": "permission-note-submitted" },
+  { "action": "log", "message": "Permission note PTY harness complete" }
+]

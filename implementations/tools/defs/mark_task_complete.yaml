@@ -1,0 +1,19 @@
+id: mark_task_complete
+name: mark_task_complete
+description: Signal that the task is fully complete and end the session
+type_id: python
+manipulations:
+  - session.complete
+syntax_formats_supported: [native_function_calling, json_block]
+preferred_formats: [native_function_calling]
+parameters: []
+execution:
+  blocking: true
+  max_per_turn: 1
+provider_routing:
+  openai:
+    native_primary: true
+    fallback_formats: [json_block]
+  anthropic:
+    native_primary: true
+    fallback_formats: [json_block]

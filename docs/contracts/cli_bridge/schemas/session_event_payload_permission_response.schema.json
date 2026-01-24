@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PermissionResponsePayload",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["request_id"],
+  "properties": {
+    "request_id": { "type": "string" },
+    "decision": { "type": ["string", "null"] },
+    "response": { "type": ["string", "null"] },
+    "responses": { "type": ["object", "null"] }
+  }
+}
+

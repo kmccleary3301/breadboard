@@ -1,0 +1,14 @@
+[
+  { "action": "log", "message": "Usage metrics PTY harness start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "wait", "ms": 400 },
+  { "action": "type", "text": "trigger usage" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Mock assistant response", "timeoutMs": 15000 },
+  { "action": "type", "text": "/usage" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Total tokens", "timeoutMs": 8000 },
+  { "action": "snapshot", "label": "usage-summary" },
+  { "action": "press", "key": "escape" },
+  { "action": "log", "message": "Usage metrics PTY harness complete" }
+]

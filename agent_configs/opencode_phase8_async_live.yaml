@@ -1,0 +1,133 @@
+extends: opencode_openai_codexmini_c_fs_cli_shared.yaml
+
+profile: { name: opencode-phase8-async-live }
+
+providers:
+  default_model: openai/gpt-5.2
+  models:
+    - id: openai/gpt-5.2
+      adapter: openai
+      params: { temperature: 0.2, top_p: 0.9 }
+
+permissions:
+  options:
+    mode: auto_allow
+  edit:
+    default: deny
+  shell:
+    default: allow
+    deny:
+      - rm *
+      - rm -rf *
+      - mv *
+      - sudo *
+      - chmod *
+      - chown *
+      - dd *
+      - mkfs*
+      - shutdown*
+      - reboot*
+      - kill *
+      - pkill *
+      - killall *
+
+# Expand tool exposure for Phase 8 multi-agent and OMO background tools.
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs_oc
+    include:
+      - bash
+      - read
+      - glob
+      - grep
+      - list
+      - edit
+      - write
+      - task
+      - webfetch
+      - todowrite
+      - todoread
+      - skill
+  aliases: {}
+
+provider_tools:
+  suppress_prompts: true
+  api_variant: responses
+  responses_use_developer_role: true
+  responses_stateful: false
+  tool_choice: auto
+  openai:
+    responses_extra:
+      reasoning:
+        effort: low
+
+features:
+  plan: false
+  todos:
+    enabled: true
+    strict: false
+
+prompts:
+  tool_prompt_synthesis:
+    enabled: false
+  injection:
+    system_order:
+      - '@pack(base).system'
+    per_turn_order: []
+
+turn_strategy:
+  flow: tool_role
+
+loop:
+  sequence:
+    - mode: build
+  plan_turn_limit: 0
+
+multi_agent:
+  enabled: true
+  event_log_path: misc/multi_agent_runs/opencode_phase8_async_event_log.jsonl
+  team_config:
+    team:
+      id: opencode_phase8_async
+      version: 1
+      agents:
+        main:
+          role: main
+          config_ref: agent_configs/opencode_phase8_async_live.yaml
+          entrypoint: true
+        repo-scanner:
+          role: repo-scanner
+          config_ref: agent_configs/opencode_phase8_subagent_readonly.yaml
+          entrypoint: false
+          capabilities:
+            read_only: true
+            allow_spawn: false
+        grep-summarizer:
+          role: grep-summarizer
+          config_ref: agent_configs/opencode_phase8_subagent_readonly.yaml
+          entrypoint: false
+          capabilities:
+            read_only: true
+            allow_spawn: false
+      topology:
+        edges:
+          - { from: main, to: repo-scanner, mode: [sync] }
+          - { from: main, to: grep-summarizer, mode: [sync] }
+      orchestration:
+        scheduler:
+          kind: deterministic_event_loop
+          max_concurrent_agents: 2
+        spawn_protocol:
+          tool_name: task
+          async:
+            enabled: false
+        join_policy:
+          default: block_until_complete
+      bus:
+        model_visible_topics: [tool_result]
+        retention: { max_events: 2000, max_age_seconds: 86400 }
+      workspace:
+        sharing:
+          default: shared_readonly_subagents
+          write_lock: main_only

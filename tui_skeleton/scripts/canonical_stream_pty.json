@@ -1,0 +1,9 @@
+[
+  { "action": "wait", "ms": 2000 },
+  { "action": "type", "text": "/view tools both" },
+  { "action": "press", "key": "enter" },
+  { "action": "type", "text": "/view raw on" },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 8000 },
+  { "action": "snapshot", "label": "canonical-stream" }
+]

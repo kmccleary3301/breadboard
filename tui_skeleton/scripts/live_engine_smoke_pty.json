@@ -1,0 +1,7 @@
+[
+  { "action": "wait", "ms": 500 },
+  { "action": "type", "text": "hello from live engine" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "ASSISTANT", "timeoutMs": 45000 },
+  { "action": "snapshot", "label": "after-assistant" }
+]

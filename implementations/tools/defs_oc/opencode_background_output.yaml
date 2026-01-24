@@ -1,0 +1,26 @@
+id: background_output
+name: background_output
+description: Get output from background task. System notifies on completion, so block=true rarely needed.
+type_id: python
+manipulations: []
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: task_id
+    type: string
+    description: The background task id returned by background_task
+    required: true
+  - name: block
+    type: boolean
+    description: If true, wait until the task finishes
+    required: false
+  - name: timeout
+    type: number
+    description: "Max wait time in ms (default: 60000, max: 600000)"
+    required: false
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto

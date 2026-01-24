@@ -1,0 +1,28 @@
+id: apply_search_replace
+name: apply_search_replace
+description: Edit a file by replacing exact text blocks (Aider SEARCH/REPLACE style)
+type_id: python
+manipulations:
+  - diff.apply
+syntax_formats_supported: [json_block]
+preferred_formats: [json_block]
+parameters:
+  - name: file_name
+    type: string
+    description: Target file path to edit
+    required: true
+  - name: search
+    type: string
+    description: Exact text to replace (anchor)
+    required: true
+  - name: replace
+    type: string
+    description: Replacement text
+    required: true
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: false
+    fallback_formats: [json_block]
+

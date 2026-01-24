@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "summary": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "summary"
+  ],
+  "title": "RewardUpdatePayload",
+  "type": "object"
+}

@@ -1,0 +1,14 @@
+[
+  { "action": "log", "message": "opentui_slab paste torture start" },
+  { "action": "wait", "ms": 250 },
+  { "action": "snapshot", "label": "slab_initial" },
+  {
+    "action": "paste",
+    "text": "PASTE_START\\nThis is a bracketed paste payload.\\nIt includes multiple lines, unicode: café 😀, and some ANSI that should be treated as text: \\u001b[31mNOT_RED\\u001b[0m\\nPASTE_END\\n"
+  },
+  { "action": "wait", "ms": 250 },
+  { "action": "snapshot", "label": "slab_after_paste" },
+  { "action": "press", "key": "ctrl+d" },
+  { "action": "wait", "ms": 250 },
+  { "action": "log", "message": "opentui_slab paste torture end" }
+]

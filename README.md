@@ -1,0 +1,128 @@
+# BreadBoard - Agentic Coding System
+
+A streamlined, modular implementation of an agentic coding system that can generate, modify, and debug code autonomously. Works with gVisor template containers that are autoscaled by Ray. 
+
+## Quick Start
+
+### Basic Usage
+
+```bash
+# Run a task with a specific config
+python main.py agent_configs/test_enhanced_agent_v2.yaml -t "Create a fibonacci calculator in Python"
+
+# Start interactive session
+python main.py agent_configs/test_enhanced_agent_v2.yaml -i
+
+# Use custom workspace
+python main.py agent_configs/test_enhanced_agent_v2.yaml -w my_project -t "Build a web scraper"
+```
+
+### Configuration
+
+Agent configurations are stored in the `agent_configs/` directory. Key configs:
+
+- `test_enhanced_agent_v2.yaml` - Enhanced agent with multiple tool calling modes
+- `test_opencode_gpt5_nano_c_fs.yaml` - Specialized for C filesystem tasks
+- `test_simple_native.yaml` - Simple native tool calling setup
+
+## Architecture
+
+### Core Components
+
+- **`agentic_coder_prototype/`** - Main agent implementation
+  - `agent.py` - Simplified interface
+  - `agent_llm_openai.py` - Core LLM agent logic
+  - `provider_routing.py` - Multi-provider support
+  - `provider_adapters.py` - Provider-specific adapters
+  - `tool_calling/` - Tool calling system
+
+- **`agent_configs/`** - Agent configuration files
+- **`breadboard/`** - Sandboxing + LSP utilities
+  - `breadboard/sandbox_v2.py` - Secure execution environment
+  - `breadboard/lsp_manager_v2.py` - Language server integration
+- **`implementations/`** - Tool definitions and system prompts
+- **`tui_skeleton/`** - Claude Code-style TUI + CLI (`breadboard` binary)
+
+### Key Features
+
+- **Multi-Provider Support**: OpenAI, Anthropic, OpenRouter
+- **Secure Sandboxing**: Isolated execution environments
+- **LSP Integration**: Language server support for enhanced code intelligence
+- **Flexible Tool Calling**: Multiple syntax formats and execution modes
+- **Modular Design**: Clean separation of concerns
+
+## Development
+
+### Project Structure
+
+```
+├── main.py                     # CLI entry point
+├── agentic_coder_prototype/    # Core agent system
+├── agent_configs/              # Agent configurations
+├── breadboard/                 # Sandbox + LSP utilities
+├── implementations/            # Tools and prompts
+├── tui_skeleton/               # TUI + CLI (Node/Ink)
+├── tests/                     # Test suite
+└── misc/                      # Non-essential files
+```
+
+### Testing
+
+```bash
+# Run specific tests
+python -m pytest tests/test_agent_session.py -v
+
+# Run all tests
+python -m pytest tests/ -v
+```
+
+### Phase 9 Utilities
+
+- Surface manifest smoke check:
+  ```bash
+  python scripts/phase9_surface_smoke_check.py --run-dir <logging_run_dir>
+  ```
+- TreeRunner scaffold config snippet:
+  ```yaml
+  ctrees:
+    runner:
+      enabled: true
+      branches: 2
+  ```
+
+### Configuration
+
+Agent behavior is controlled through YAML configuration files. Key parameters:
+
+- `model`: LLM model to use (e.g., "openrouter/openai/gpt-4")
+- `max_iterations`: Maximum agent loop iterations
+- `tool_prompt_mode`: Tool calling syntax preference
+- `tools_file`: Path to tool definitions
+
+## Examples
+
+### Creating a Simple Calculator
+
+```bash
+python main.py agent_configs/test_enhanced_agent_v2.yaml -t "Create a calculator.py that can add, subtract, multiply, and divide two numbers with error handling"
+```
+
+### Building a Web API
+
+```bash
+python main.py agent_configs/test_enhanced_agent_v2.yaml -t "Create a FastAPI web service with endpoints for user management (create, read, update, delete users)"
+```
+
+### Interactive Development
+
+```bash
+python main.py agent_configs/test_enhanced_agent_v2.yaml -i
+> Create a data processing script
+> Add unit tests for the script  
+> Fix any bugs found in testing
+> exit
+```
+
+## License
+
+This project is experimental research software. Use at your own risk.

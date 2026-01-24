@@ -1,0 +1,1 @@
+Add a new module `parsers/json_parser.py` that exposes `load_json(path: str) -> dict` and `dump_json(path: str, data: dict) -> None`. Use safe UTF-8 reading/writing, preserve ordering, and raise clear errors on invalid JSON. Wire a focused test module under `tests/` to cover happy path, invalid JSON, and overwriting an existing file. Run `pytest` to ensure the suite passes.

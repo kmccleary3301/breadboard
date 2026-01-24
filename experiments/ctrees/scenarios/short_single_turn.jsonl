@@ -1,0 +1,4 @@
+{"_type":"ctree_eventlog_header","schema_version":"0.1"}
+{"kind":"message","payload":{"role":"system","content":"sys"},"turn":0}
+{"kind":"message","payload":{"role":"user","content":"Hello"},"turn":1}
+{"kind":"message","payload":{"role":"assistant","content":"Hi!"},"turn":1}

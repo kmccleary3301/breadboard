@@ -1,0 +1,44 @@
+id: cc.TaskOutput
+name: TaskOutput
+description: '- Retrieves output from a running or completed task (background shell, agent, or remote session)
+
+  - Takes a task_id parameter identifying the task
+
+  - Returns the task output along with status information
+
+  - Use block=true (default) to wait for task completion
+
+  - Use block=false for non-blocking check of current status
+
+  - Task IDs can be found using the /tasks command
+
+  - Works with all task types: background shells, async agents, and remote sessions'
+type_id: python
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters:
+- name: task_id
+  required: true
+  type: string
+  description: The task ID to get output from
+- name: block
+  required: false
+  type: boolean
+  default: true
+  description: Whether to wait for completion
+- name: timeout
+  required: false
+  type: number
+  minimum: 0
+  maximum: 600000
+  default: 30000
+  description: Max wait time in ms
+execution:
+  blocking: false
+provider_routing:
+  anthropic:
+    native_primary: true
+    additional_properties: false
+    schema_uri: http://json-schema.org/draft-07/schema#

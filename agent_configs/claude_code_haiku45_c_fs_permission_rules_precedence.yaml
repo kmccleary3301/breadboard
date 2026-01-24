@@ -1,0 +1,13 @@
+extends: claude_code_haiku45_c_fs_v2.yaml
+
+profile: { name: claude-code-haiku45-c-fs-permission-rules-precedence }
+
+claude:
+  tool_rules:
+    # Mirrors `--allowedTools Bash(pwd:*) --disallowedTools Bash(pwd:*)` where
+    # deny takes precedence over allow.
+    allow:
+      - Bash(pwd:*)
+    deny:
+      - Bash(pwd:*)
+

@@ -1,0 +1,145 @@
+[
+  {
+    "delayMs": 3000,
+    "event": { "type": "stream.hello", "payload": { "version": "v2" } }
+  },
+  {
+    "delayMs": 0,
+    "event": { "type": "session.start", "payload": { "label": "f3 tool reasoning" } }
+  },
+  {
+    "delayMs": 50,
+    "event": { "type": "session.meta", "payload": { "model": "openai/gpt-5.1-mini-codex", "mode": "build" } }
+  },
+  {
+    "delayMs": 50,
+    "event": { "type": "run.start", "payload": { "reason": "mock" } }
+  },
+  {
+    "delayMs": 80,
+    "event": { "type": "assistant.reasoning.delta", "payload": { "delta": "Thinking about the tool call." } }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.message.start",
+      "payload": { "message_id": "m1", "channel": "text", "format": "markdown" }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.message.delta",
+      "payload": { "message_id": "m1", "channel": "text", "delta": "Running a tool with streaming output." }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.message.end",
+      "payload": { "message_id": "m1", "channel": "text", "stop_reason": "tool_call" }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.tool_call.start",
+      "payload": { "tool_call_id": "call_1", "tool_name": "bash" }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.tool_call.delta",
+      "payload": { "tool_call_id": "call_1", "args_text_delta": "{\"cmd\":\"ls" }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.tool_call.delta",
+      "payload": { "tool_call_id": "call_1", "args_text_delta": " -la\"}" }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.tool_call.end",
+      "payload": { "tool_call_id": "call_1", "args_text": "{\"cmd\":\"ls -la\"}" }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "tool.exec.start",
+      "payload": { "tool_call_id": "call_1", "exec_id": "exec_1", "command": "ls -la", "tool_name": "bash" }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "tool.exec.stdout.delta",
+      "payload": { "tool_call_id": "call_1", "exec_id": "exec_1", "delta": "file_a.txt\\n" }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "tool.exec.stderr.delta",
+      "payload": { "tool_call_id": "call_1", "exec_id": "exec_1", "delta": "warn: hidden file\\n" }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "tool.exec.stdout.delta",
+      "payload": { "tool_call_id": "call_1", "exec_id": "exec_1", "delta": "file_b.log\\n" }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "tool.exec.end",
+      "payload": { "tool_call_id": "call_1", "exec_id": "exec_1", "exit_code": 0 }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "tool.result",
+      "payload": { "tool_call_id": "call_1", "exec_id": "exec_1", "ok": true, "summary": "listed files with warning" }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.thought_summary.delta",
+      "payload": { "delta": "Tool completed; composing response." }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.message.start",
+      "payload": { "message_id": "m2", "channel": "text", "format": "markdown" }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.message.delta",
+      "payload": { "message_id": "m2", "channel": "text", "delta": "Command completed with a warning." }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.message.end",
+      "payload": { "message_id": "m2", "channel": "text", "stop_reason": "end_turn" }
+    }
+  },
+  {
+    "delayMs": 50,
+    "event": { "type": "run.end", "payload": { "status": "ok" } }
+  }
+]

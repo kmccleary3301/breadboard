@@ -1,0 +1,6 @@
+{"_type":"ctree_eventlog_header","schema_version":"0.1"}
+{"kind":"message","node_id":"n00000000_aaaa1111","payload":{"content":"sys","role":"system"},"turn":0}
+{"kind":"message","node_id":"n00000001_bbbb2222","payload":{"content":"Hello","role":"user"},"turn":1}
+{"kind":"message","node_id":"n00000002_cccc3333","payload":{"content":"hi","role":"assistant"},"turn":1}
+{"kind":"message","node_id":"n00000003_dddd4444","payload":{"content":"next","role":"user"},"turn":2}
+{"kind":"task_event","node_id":"n00000004_eeee5555","payload":{"kind":"subagent_completed","task_id":"task_0001","subagent_type":"repo-scanner","status":"completed"},"turn":1}

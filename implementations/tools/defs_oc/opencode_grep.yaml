@@ -1,0 +1,59 @@
+id: grep
+name: grep
+description: '- Fast content search tool that works with any codebase size
+
+  - Searches file contents using regular expressions
+
+  - Supports full regex syntax (eg. "log.*Error", "function\s+\w+", etc.)
+
+  - Filter files by pattern with the include parameter (eg. "*.js", "*.{ts,tsx}")
+
+  - Returns file paths and line numbers with at least one match sorted by modification
+  time
+
+  - Use this tool when you need to find files containing specific patterns
+
+  - If you need to identify/count the number of matches within files, use the Bash
+  tool with `rg` (ripgrep) directly. Do NOT use `grep`.
+
+  - When you are doing an open ended search that may require multiple rounds of globbing
+  and grepping, use the Task tool instead
+
+  '
+type_id: python
+manipulations:
+- search.grep
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters:
+- name: pattern
+  type: string
+  description: The regex pattern to search for in file contents
+  required: true
+  schema:
+    description: The regex pattern to search for in file contents
+    type: string
+- name: path
+  type: string
+  description: The directory to search in. Defaults to the current working directory.
+  required: false
+  schema:
+    description: The directory to search in. Defaults to the current working directory.
+    type: string
+- name: include
+  type: string
+  description: File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")
+  required: false
+  schema:
+    description: File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")
+    type: string
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false

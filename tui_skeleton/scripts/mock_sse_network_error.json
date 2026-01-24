@@ -1,0 +1,5 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "turn": 1, "payload": { "summary": "network error mock" } } },
+  { "delayMs": 200, "event": { "type": "assistant_message", "payload": { "text": "Starting stream...", "message": { "role": "assistant", "content": "Starting stream..." } } } },
+  { "delayMs": 200, "event": { "type": "assistant_message", "payload": { "text": "Partial output before drop.", "message": { "role": "assistant", "content": "Partial output before drop." } } } }
+]

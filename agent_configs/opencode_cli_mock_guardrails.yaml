@@ -1,0 +1,29 @@
+extends: opencode_openai_codexmini_c_fs_guardrails.yaml
+
+profile: { name: opencode-cli-mock-guardrails }
+
+providers:
+  default_model: cli_mock/dev
+  models:
+    - id: cli_mock/dev
+      adapter: mock_chat
+
+guardrails:
+  include:
+    - implementations/guardrails/execution_baseline.yaml
+  overrides:
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 999
+        abort_after_turns: 999
+  plan_bootstrap:
+    strategy: hard
+    max_turns: 1
+    warmup_turns: 0
+    seed_file: implementations/system_prompts/opencode/plan_bootstrap_protofs.yaml
+
+features:
+  plan: true
+  todos:
+    enabled: true
+    strict: false

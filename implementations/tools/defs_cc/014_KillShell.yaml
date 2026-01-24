@@ -1,0 +1,22 @@
+id: cc.KillShell
+name: KillShell
+description: "\n- Kills a running background bash shell by its ID\n- Takes a shell_id parameter identifying the shell to kill\n\
+  - Returns a success or failure status \n- Use this tool when you need to terminate a long-running shell\n- Shell IDs can\
+  \ be found using the /tasks command\n"
+type_id: python
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters:
+- name: shell_id
+  required: true
+  type: string
+  description: The ID of the background shell to kill
+execution:
+  blocking: false
+provider_routing:
+  anthropic:
+    native_primary: true
+    additional_properties: false
+    schema_uri: http://json-schema.org/draft-07/schema#

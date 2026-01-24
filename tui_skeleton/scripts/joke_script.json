@@ -1,0 +1,9 @@
+[
+  { "action": "log", "message": "Start scripted joke" },
+  { "action": "type", "text": "Tell me a quick coding joke." },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "for": "assistant", "timeoutMs": 30000 },
+  { "action": "wait", "for": "completion", "timeoutMs": 30000 },
+  { "action": "snapshot", "label": "after-response", "includeStatus": true },
+  { "action": "log", "message": "Done" }
+]

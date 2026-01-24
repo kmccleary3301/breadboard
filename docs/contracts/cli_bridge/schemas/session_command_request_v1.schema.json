@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "properties": {
+        "command": {
+          "const": "list_checkpoints"
+        },
+        "payload": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "title": "ListCheckpoints"
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "restore_checkpoint"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "properties": {
+            "checkpointId": {
+              "type": "string"
+            },
+            "checkpoint_id": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mode": {
+              "enum": [
+                "code",
+                "conversation",
+                "both"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "checkpoint_id"
+          ],
+          "type": "object"
+        }
+      },
+      "title": "RestoreCheckpoint"
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "permission_decision"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "properties": {
+            "decision": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "note": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permissionId": {
+              "type": "string"
+            },
+            "permission_id": {
+              "type": "string"
+            },
+            "requestId": {
+              "type": "string"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "response": {
+              "type": "string"
+            },
+            "rule": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "scope": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "stop": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "request_id",
+            "decision"
+          ],
+          "type": "object"
+        }
+      },
+      "title": "PermissionDecision"
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "set_skills"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "title": "SetSkills"
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "stop"
+        },
+        "payload": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "title": "Stop"
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "set_model"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "properties": {
+            "model": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "model"
+          ],
+          "type": "object"
+        }
+      },
+      "title": "SetModel"
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "set_mode"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "properties": {
+            "mode": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        }
+      },
+      "title": "SetMode"
+    },
+    {
+      "properties": {
+        "command": {
+          "enum": [
+            "respond_permission",
+            "permission_response"
+          ]
+        },
+        "payload": {
+          "additionalProperties": true,
+          "properties": {
+            "decision": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "items": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "permissionId": {
+              "type": "string"
+            },
+            "permission_id": {
+              "type": "string"
+            },
+            "requestId": {
+              "type": "string"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "response": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "responses": {
+              "type": [
+                "object",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "request_id"
+          ],
+          "type": "object"
+        }
+      },
+      "title": "RespondPermission"
+    }
+  ],
+  "properties": {
+    "command": {
+      "enum": [
+        "list_checkpoints",
+        "restore_checkpoint",
+        "permission_decision",
+        "set_skills",
+        "stop",
+        "set_model",
+        "set_mode",
+        "respond_permission",
+        "permission_response"
+      ],
+      "type": "string"
+    },
+    "payload": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "command"
+  ],
+  "title": "SessionCommandRequestV1",
+  "type": "object"
+}

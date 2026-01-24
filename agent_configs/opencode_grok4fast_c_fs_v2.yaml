@@ -1,0 +1,73 @@
+version: 2
+
+profile:
+  name: opencode-grok4fast-c-fs
+
+workspace:
+  root: agent_ws_opencode
+  mirror:
+    enabled: false
+    mode: development
+
+providers:
+  default_model: openrouter/x-ai/grok-4-fast
+  models:
+    - id: openrouter/x-ai/grok-4-fast
+      adapter: openrouter
+      params: { temperature: 0.2, top_p: 0.9 }
+
+prompts:
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+
+provider_tools:
+  use_native: true
+  suppress_prompts: true
+
+features:
+  plan: true
+  todos:
+    enabled: true
+    strict: false
+    reset_streak_on_todo: true
+
+completion:
+  allow_zero_tool_completion: true
+
+loop:
+  sequence:
+    - mode: plan
+    - mode: build
+
+modes:
+  - name: plan
+    prompt: ""
+    tools_enabled: [read_file, list_dir]
+    tools_disabled: []
+  - name: build
+    prompt: ""
+    tools_enabled: ["*"]
+    tools_disabled: []
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs
+      - implementations/tools/defs_oc
+    include:
+      - read_file
+      - list_dir
+      - create_file_from_block
+      - apply_unified_patch
+      - run_shell
+      - patch
+      - bash
+      - mark_task_complete
+      - todo.create
+      - todo.update
+      - todo.complete
+      - todo.cancel
+      - todo.reorder
+      - todo.attach
+      - todo.note
+      - todo.list
+      - todo.write_board

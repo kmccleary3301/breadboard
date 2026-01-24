@@ -1,0 +1,49 @@
+{
+  "scenarios": [
+    {
+      "id": "short_single_turn",
+      "path": "experiments/ctrees/scenarios/short_single_turn.jsonl",
+      "description": "Single turn with system/user/assistant messages."
+    },
+    {
+      "id": "multi_tool",
+      "path": "experiments/ctrees/scenarios/multi_tool.jsonl",
+      "description": "Single turn with a tool call + tool result."
+    },
+    {
+      "id": "async_subagent",
+      "path": "experiments/ctrees/scenarios/async_subagent.jsonl",
+      "description": "Async subagent completion injected on a prior turn boundary."
+    }
+  ],
+  "policies": [
+    {
+      "id": "default",
+      "selection_config": {},
+      "header_config": {
+        "mode": "hash_only",
+        "preview_chars": 16,
+        "redact_secret_like": true
+      },
+      "collapse_target": null,
+      "collapse_mode": "all_but_last",
+      "stage": "FROZEN"
+    },
+    {
+      "id": "aggressive",
+      "selection_config": {
+        "kind_allowlist": ["message"],
+        "max_nodes": 1,
+        "pin_latest_user_assistant": true
+      },
+      "header_config": {
+        "mode": "hash_only",
+        "preview_chars": 16,
+        "redact_secret_like": true
+      },
+      "collapse_target": 1,
+      "collapse_mode": "all_but_last",
+      "stage": "FROZEN"
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+id: slashcommand
+name: slashcommand
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    function_call: auto
+    additional_properties: false
+    strict: false
+description: 'Execute a slash command within the main conversation.
+
+
+  When you use this tool, the slash command gets expanded to a full prompt that provides
+  detailed instructions on how to complete the task.
+
+
+  How slash commands work:
+
+  - Invoke commands using this tool with the command name (without arguments)
+
+  - The command''s prompt will expand and provide detailed instructions
+
+  - Arguments from user input should be passed separately
+
+
+  Important:
+
+  - Only use commands listed in Available Commands below
+
+  - Do not invoke a command that is already running
+
+  - **CRITICAL**: When user''s message starts with ''/'' (e.g., "/commit", "/plan"),
+  you MUST immediately invoke this tool with that command. Do NOT attempt to handle
+  the command manually.
+
+
+  Commands are loaded from (priority order, highest wins):
+
+  - .opencode/command/ (opencode-project - OpenCode project-specific commands)
+
+  - ./.claude/commands/ (project - Claude Code project-specific commands)
+
+  - ~/.config/opencode/command/ (opencode - OpenCode global commands)
+
+  - ~/.claude/commands/ (user - Claude Code global commands)
+
+
+  Each command is a markdown file with:
+
+  - YAML frontmatter: description, argument-hint, model, agent, subtask (optional)
+
+  - Markdown body: The command instructions/prompt
+
+  - File references: @path/to/file (relative to command file location)
+
+  - Shell injection: `!`command`` (executes and injects output)
+
+
+  Available Commands:
+
+  '
+parameters:
+- name: command
+  type: string
+  description: ''
+  required: true
+  schema:
+    type: string

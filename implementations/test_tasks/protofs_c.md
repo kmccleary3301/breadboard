@@ -1,0 +1,2 @@
+Create a proto file system using C and headers that compiles with GCC. Provide basic operations: read, write, rename, list. Store data in a single self-contained binary file `filesystem.fs`. Write a C test suite that compiles and runs against the library to validate operations. Use tools to write files and run shell commands. Do this in one go, and use bash commands to test, refine the code, and repeat until it works.
+

@@ -1,0 +1,50 @@
+[
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "turn_start",
+      "payload": { "summary": "todos mock" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 250,
+    "event": {
+      "type": "tool_result",
+      "payload": {
+        "tool": {
+          "name": "todo.write_board",
+          "todos": [
+            { "id": "todo-1", "title": "Audit project structure", "status": "in_progress" },
+            { "id": "todo-2", "title": "Implement todos panel", "status": "todo" },
+            { "id": "todo-3", "title": "Verify PTY harness", "status": "todo" }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Updated todos.",
+        "message": { "role": "assistant", "content": "Updated todos." }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "completion",
+      "payload": { "summary": { "completed": true, "reason": "todos" } }
+    }
+  },
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "run_finished",
+      "payload": { "eventCount": 4 }
+    }
+  }
+]

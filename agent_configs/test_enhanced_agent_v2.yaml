@@ -1,0 +1,129 @@
+# Enhanced Agent Test Configuration V2
+# Incorporates OpenCode/Crush insights and per_turn_append mode for gpt-5-nano
+
+agent_config:
+  model_id: "gpt-5-nano"
+  provider: "openai"
+  
+  # Agent behavior settings (based on research)
+  system_prompt: |
+    You are a senior, general-purpose agentic software engineer. You work autonomously to deliver high-quality, runnable code and concise reasoning. You operate in a real repository with a build/test toolchain. Be pragmatic, reliable, and fast.
+
+    Principles:
+    - Ownership: Treat each task as yours end-to-end. Plan, implement, build, test, and iterate until done.
+    - Truthfulness: Never invent APIs, files, or results. Read the repo and verify by running commands and tests.
+    - Minimal prose: Prefer actions (edits, diffs, commands) over long explanations. Add brief notes where they change decisions.
+    - Safety: Avoid destructive actions. Keep edits surgical and reversible. Preserve unrelated code and formatting.
+    - Determinism: Make outputs reproducible. Pin versions and capture exact commands when relevant.
+
+    General Workflow:
+    1) Understand: Skim the repo layout, read relevant files, and restate the objective succinctly.
+    2) Plan: Outline a short, actionable plan (1–5 steps). Update the plan as you learn.
+    3) Execute: Make focused edits, add/modify files, and wire everything cleanly. Prefer small, composable changes.
+    4) Validate: Build, run tests, and sanity-check behavior. If something fails, diagnose and fix before moving on.
+    5) Conclude: When the objective is achieved, present a brief summary of what changed and why.
+
+  # Tool calling configuration (Enhanced V2)
+  tool_calling:
+    mode: "per_turn_append"  # Critical for gpt-5-nano
+    timeout_per_tool: 60     # 60s timeout as requested
+    max_parallel_tools: 1    # Sequential execution for gpt-5-nano
+    
+    # Format preferences (research-based)
+    preferred_formats:
+      - "aider_diff"        # 2.3x success rate advantage
+      - "opencode_patch"    # Good structured alternative
+      - "unified_diff"      # Last resort
+      
+    # Provider-specific optimizations  
+    provider_settings:
+      openai:
+        temperature: 0.1
+        top_p: 0.95
+        tool_call_format: "xml_blocks"  # Better for smaller models
+        
+  # Performance monitoring
+  performance:
+    monitor_enabled: true
+    collect_metrics: true
+    alert_on_failures: true
+    
+  # Available tools (minimal set for testing)
+  tools:
+    - name: "run_shell"
+      type: "python"
+      description: "Execute shell commands"
+      
+    - name: "create_file"
+      type: "python" 
+      description: "Create new files with content"
+      
+    - name: "read_file"
+      type: "python"
+      description: "Read file contents"
+      
+    - name: "list_dir"
+      type: "python"
+      description: "List directory contents"
+      
+    - name: "apply_search_replace"
+      type: "aider_diff"
+      description: "Apply Aider SEARCH/REPLACE format changes"
+      preferred: true  # Mark as preferred format
+      
+    - name: "apply_unified_patch" 
+      type: "unified_diff"
+      description: "Apply unified diff patches"
+      
+    - name: "create_file_from_block"
+      type: "opencode_patch"
+      description: "Create files using OpenCode format"
+      
+    - name: "mark_task_complete"
+      type: "python"
+      description: "Mark task as complete with status"
+
+# Test task configuration
+test_task:
+  workspace: "agent_ws_v2"  # New workspace for V2 testing
+  task_description: |
+    Create a simple Python calculator module with basic arithmetic operations (add, subtract, multiply, divide). 
+    Include error handling for division by zero. Write a test file that validates all operations. 
+    Use the build system to ensure everything works correctly.
+  
+  expected_files:
+    - "calculator.py"
+    - "test_calculator.py"
+    - "requirements.txt" 
+    
+  validation_commands:
+    - "python -m pytest test_calculator.py -v"
+    - "python calculator.py"  # Should run without errors
+
+# Enhanced integration settings (V2 features)
+enhanced_integration:
+  class: "EnhancedAgentIntegrationV2"
+  lazy_loading: true
+  streaming_execution: true
+  permission_system: false  # Disabled for testing
+  
+  # OpenCode-style provider optimizations
+  provider_optimizations:
+    openai:
+      function_calling: false  # Use XML blocks instead
+      streaming: true
+      context_caching: false
+      
+  # Crush-style execution features  
+  execution_features:
+    graceful_cancellation: true
+    parallel_tool_limit: 1
+    execution_timeout: 60
+    retry_on_failure: false  # Disabled for testing
+    
+  # Performance monitoring (research validation)
+  monitoring:
+    track_format_success_rates: true
+    compare_with_baseline: true
+    generate_reports: true
+    database_path: "enhanced_tool_calling_performance_v2.db"

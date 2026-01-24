@@ -1,0 +1,115 @@
+# Enhanced Agent Test Config - Using Optimal Tool Calling Configuration
+
+workspace: ./agent_ws_c
+output:
+  json: ./session_out.json
+  markdown: ./session_out.md
+
+model:
+  id: gpt-5-nano
+  provider: openai
+
+prompt:
+  system: implementations/system_prompts/default.md
+  # Use the new research-based mode for optimal performance
+  mode: system_compiled_and_persistent_per_turn
+  completion_sentinel: ">>>>>> END RESPONSE"
+
+task:
+  file: implementations/test_tasks/protofs_c.md
+
+runtime:
+  image: gcc-dev:latest  # Use GCC for C development
+
+tools:
+  registry: implementations/tools/enhanced_tools.yaml
+  enabled:
+    run_shell: true
+    create_file: true
+    read_file: true
+    list_dir: true
+    apply_search_replace: true
+    apply_unified_patch: true
+    create_file_from_block: true
+    mark_task_complete: true
+
+# NEW: Use the optimal dialect configuration
+dialects:
+  - pythonic02
+  - unified_diff  # High-performance format (61% vs 20% success)
+  - bash_block
+  - aider_diff
+  - opencode_patch
+
+limits:
+  max_steps: 20
+  stream_responses: true
+  clean_workspace: true
+
+# Enhanced tools with optimal configuration
+enhanced_tools:
+  enabled: true
+  lsp_integration:
+    enabled: true
+    format_feedback: true
+    real_time_feedback: true
+  validation:
+    enabled: true
+    strict_mode: false
+
+# Use the optimal tool calling configuration
+tool_calling:
+  strategy: adaptive
+  default_format: unified_diff  # Best for code editing tasks
+  fallback_chain:
+    - unified_diff
+    - json_block
+    - xml_python_hybrid
+  
+  formats:
+    unified_diff:
+      enabled: true
+      priority: 100
+      use_cases: ["code_editing", "file_modification"]
+      min_success_rate: 0.60
+      fallback: false
+      
+    json_block:
+      enabled: true
+      priority: 70
+      fallback: true
+      min_success_rate: 0.65
+      
+    xml_python_hybrid:
+      enabled: true
+      priority: 10
+      fallback: true
+      min_success_rate: 0.30
+  
+  performance_monitoring:
+    enabled: true
+    database_path: enhanced_tool_calling_performance.db
+    collection_interval: 60
+    alert_enabled: true
+    low_success_rate_threshold: 0.70
+  
+  adaptive_selection:
+    enabled: true
+    performance_weight: 0.8
+    compatibility_weight: 0.2
+    min_sample_size: 10
+
+# Research-based optimizations
+research_optimizations:
+  bash_constraint:
+    enabled: true
+    description: "Only one bash command per turn (critical research finding)"
+  
+  format_preferences:
+    code_editing_tasks: ["unified_diff"]
+    c_development: ["unified_diff", "json_block"]
+
+deployment:
+  mode: "testing"
+  isolation: true
+  mirror_results: true

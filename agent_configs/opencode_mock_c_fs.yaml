@@ -1,0 +1,19 @@
+extends: opencode_grok4fast_c_fs_v2.yaml
+
+profile: { name: opencode-mock-c-fs }
+
+providers:
+  default_model: mock/dev
+  models:
+    - id: mock/dev
+      adapter: mock_chat
+
+prompts:
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+
+provider_tools:
+  use_native: false
+  suppress_prompts: false
+
+features: { plan: true }
+

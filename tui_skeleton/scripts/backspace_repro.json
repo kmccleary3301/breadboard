@@ -1,0 +1,11 @@
+[
+  { "action": "wait", "ms": 1500 },
+  { "action": "log", "message": "typing sample input" },
+  { "action": "type", "text": "testing backspace", "typingDelayMs": 25 },
+  { "action": "wait", "ms": 500 },
+  { "action": "snapshot", "label": "after-type" },
+  { "action": "press", "key": "backspace", "repeat": 5, "delayMs": 30 },
+  { "action": "wait", "ms": 400 },
+  { "action": "snapshot", "label": "after-backspace" },
+  { "action": "press", "key": "ctrl+c" }
+]

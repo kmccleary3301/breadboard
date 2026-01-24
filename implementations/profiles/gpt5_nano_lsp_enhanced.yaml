@@ -1,0 +1,135 @@
+# GPT-5-nano Enhanced Profile with LSP Integration
+# Advanced configuration combining dialect management, validation, and LSP integration
+
+model: "gpt-5-nano"
+provider: "openai"
+description: "GPT-5-nano with comprehensive enhancements: dialect filtering, validation framework, and LSP integration"
+
+enhanced_tools:
+  # Core enhanced tool settings
+  enabled: true
+  
+  # Dialect management configuration
+  dialect_filtering:
+    enabled: true
+    mode: "exclusive"  # Only use preferred dialects per operation type
+    operation_dialects:
+      file_creation:
+        - "bash_block"        # Prefer bash blocks for file creation
+        - "unified_diff"      # Fallback to unified diff
+      file_editing:
+        - "unified_diff"      # Primary: unified diff patches
+        - "aider_diff"        # Secondary: aider-style diffs  
+      shell_execution:
+        - "bash_block"        # Prefer bash blocks
+      file_operations:
+        - "pythonic02"        # Standard file operations
+        - "unified_diff"      # Fallback to diffs
+    fallback_mode: "mixed"   # Fall back to mixed mode if exclusive fails
+  
+  # Validation framework configuration  
+  validation:
+    enabled: true
+    rules:
+      - "no_redundant_creation"    # Prevent redundant file creation
+      - "read_before_edit"         # Require reading files before editing  
+      - "file_exists"              # Check file existence
+      - "lsp_validation"           # LSP-based validation
+    rule_config:
+      no_redundant_creation:
+        strictness: "error"        # Block redundant creation attempts
+        session_tracking: true
+      read_before_edit:
+        strictness: "warn"         # Warn but don't block
+        exceptions: ["created_this_session"]
+      file_exists:
+        check_before_read: true
+        check_before_edit: true
+      lsp_validation:
+        enabled: true
+        max_errors_shown: 3
+  
+  # LSP Integration configuration (uses existing LSP v2 system)
+  lsp_integration:
+    enabled: true                  # Enable LSP integration with existing LSPEnhancedSandbox
+    format_feedback: true          # Format LSP diagnostics for AI model
+    max_errors_shown: 3           # Limit errors shown to AI model
+  
+  # Workspace state tracking
+  workspace_tracking:
+    enabled: true
+    track_file_operations: true
+    track_session_state: true
+    context_for_prompts: true
+
+# Model-specific prompt modifications
+prompt_modifications:
+  # Add LSP feedback to system prompts
+  system_prompt_additions:
+    - "After file operations, you will receive LSP diagnostic feedback in the format 'Operation completed with N linter errors' or specific error details."
+    - "Pay attention to LSP feedback and fix any syntax or semantic errors immediately."
+    - "Use the feedback to improve code quality and ensure your implementations are correct."
+  
+  # Tool result formatting
+  tool_response_format:
+    include_lsp_feedback: true     # Include LSP feedback in tool responses
+    highlight_errors: true         # Highlight errors prominently
+    suggest_fixes: true            # Suggest fixes when possible
+
+# Tool calling settings  
+tool_calling:
+  max_retries: 2
+  timeout_seconds: 30
+  
+  # Error handling with LSP awareness
+  error_handling:
+    lsp_errors_as_failures: false  # Don't fail operation on LSP errors
+    retry_on_lsp_errors: false     # Don't retry purely for LSP issues
+    escalate_syntax_errors: true   # Do escalate syntax errors
+
+# Session management
+session:
+  clear_state_on_new_task: false  # Maintain state across tasks
+  max_operations_per_session: 50
+  
+  # LSP session settings
+  lsp_session:
+    cleanup_on_exit: true         # Cleanup LSP servers on session end
+    reuse_servers: true           # Reuse language servers across operations
+
+# Performance and resource management
+performance:
+  parallel_tool_calls: true
+  max_concurrent_tools: 3
+  
+  # LSP performance settings
+  lsp_performance:
+    validation_timeout: 5         # Timeout for LSP validation (seconds)
+    max_concurrent_validations: 2 # Limit concurrent LSP operations
+    cache_diagnostics: true       # Cache diagnostics for performance
+
+# Logging and debugging
+logging:
+  level: "INFO"
+  include_lsp_logs: true         # Include LSP logs in output
+  log_validation_results: true   # Log validation outcomes
+  log_dialect_selection: true    # Log dialect choices
+
+# Advanced features
+advanced:
+  # Auto-correction capabilities
+  auto_correction:
+    enabled: false               # Disable auto-correction for now
+    max_auto_fixes: 1           # Limit auto-fixes per operation
+  
+  # Learning and adaptation
+  adaptive_behavior:
+    enabled: true
+    learn_from_lsp_feedback: true # Adapt based on LSP feedback patterns
+    adjust_dialect_preferences: true # Adjust dialect choices based on success
+  
+  # Integration with external tools
+  external_integrations:
+    git_integration: true        # Enhanced git operations
+    test_runner_integration: false # Test runner integration (future)
+    ci_cd_integration: false    # CI/CD pipeline integration (future)

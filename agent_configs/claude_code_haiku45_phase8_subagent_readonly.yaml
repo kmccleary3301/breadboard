@@ -1,0 +1,44 @@
+extends: claude_code_haiku45_c_fs_v2.yaml
+
+profile: { name: claude-code-haiku45-phase8-subagent-readonly }
+
+features:
+  plan: false
+
+permissions:
+  options:
+    mode: auto_allow
+  edit:
+    default: deny
+  shell:
+    default: allow
+    deny:
+      - rm *
+      - rm -rf *
+      - mv *
+      - sudo *
+      - chmod *
+      - chown *
+      - dd *
+      - mkfs*
+      - shutdown*
+      - reboot*
+      - kill *
+      - pkill *
+      - killall *
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs_cc
+    include:
+      - Read
+      - Glob
+      - Grep
+      - Bash
+  aliases: null
+
+loop:
+  sequence:
+    - mode: build
+  plan_turn_limit: 0

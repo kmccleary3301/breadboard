@@ -1,0 +1,15 @@
+[
+  { "action": "log", "message": "@ file picker fuzzy PTY harness start" },
+  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "initial" },
+  { "action": "type", "text": "@LineEditor.tsx", "typingDelayMs": 15 },
+  { "action": "waitFor", "text": "src/repl/components/LineEditor.tsx", "timeoutMs": 20000 },
+  { "action": "snapshot", "label": "fuzzy-results" },
+  { "action": "press", "key": "tab" },
+  { "action": "waitFor", "text": "@src/repl/components/LineEditor.tsx", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "completed" },
+  { "action": "press", "key": "tab" },
+  { "action": "waitFor", "text": "@src/repl/components/LineEditor.tsx ", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "selected" },
+  { "action": "log", "message": "@ file picker fuzzy PTY harness complete" }
+]

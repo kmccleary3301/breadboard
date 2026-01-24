@@ -1,0 +1,18 @@
+id: todo.list
+name: todo.list
+description: List current todos, optionally filtering by status.
+type_id: python
+syntax_formats_supported: [native_function_calling]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: status
+    type: array
+    description: Optional list (or single string) of statuses to include (todo, in_progress, blocked, done, canceled).
+    required: false
+    items:
+      type: string
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true

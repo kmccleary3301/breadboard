@@ -1,0 +1,5 @@
+{"_type":"ctree_eventlog_header","schema_version":"0.1"}
+{"kind":"message","node_id":"n00000000_99a87b9b","payload":{"content":"sys","role":"system"},"turn":0}
+{"kind":"message","node_id":"n00000001_54dd7f92","payload":{"content":"Hello!","role":"user"},"turn":1}
+{"kind":"message","node_id":"n00000002_282a55bf","payload":{"content":"Hi there.","role":"assistant"},"turn":1}
+{"kind":"task_event","node_id":"n00000003_c21875af","payload":{"kind":"subagent_spawned","status":"running","task_id":"t1"},"turn":1}

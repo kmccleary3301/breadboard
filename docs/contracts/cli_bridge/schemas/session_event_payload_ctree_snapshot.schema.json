@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CTreeSnapshotPayload",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["snapshot"],
+  "properties": {
+    "snapshot": { "type": ["object", "null"] },
+    "compiler": { "type": ["object", "null"] },
+    "collapse": { "type": ["object", "null"] },
+    "runner": { "type": ["object", "null"] },
+    "hash_summary": { "type": ["object", "null"] },
+    "context_engine": { "type": ["object", "null"] }
+  }
+}
