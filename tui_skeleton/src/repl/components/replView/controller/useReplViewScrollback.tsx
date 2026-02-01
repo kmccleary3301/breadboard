@@ -290,12 +290,16 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     const parts = raw.split("/")
     return parts[parts.length - 1] || raw
   }, [stats.model])
+  const landingWidth = useMemo(
+    () => Math.max(10, contentWidth - (claudeChrome ? 1 : 0)),
+    [claudeChrome, contentWidth],
+  )
   const landingNode = useMemo(
     () =>
       buildScrollbackLanding(
-        buildLandingContext(contentWidth, modelLabel, chromeLabel, configLabel, process.cwd()),
+        buildLandingContext(landingWidth, modelLabel, chromeLabel, configLabel, process.cwd()),
       ),
-    [chromeLabel, configLabel, contentWidth, modelLabel],
+    [chromeLabel, configLabel, landingWidth, modelLabel],
   )
 
   const { staticFeed, pushCommandResult: pushCommandResultFromFeed, printedConversationIdsRef, printedToolIdsRef } =
