@@ -51,7 +51,9 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
 
   if (claudeChrome && modelMenu.status !== "hidden") return null
 
-  const ruleWidth = Number.isFinite(columnWidth) ? Math.max(1, Math.floor(columnWidth) - 1) : Math.max(1, promptRule.length - 1)
+  const ruleWidth = Number.isFinite(columnWidth)
+    ? Math.max(1, Math.floor(columnWidth) - (claudeChrome ? 0 : 1))
+    : Math.max(1, promptRule.length - (claudeChrome ? 0 : 1))
   const promptRuleLine =
     promptRule.length >= ruleWidth ? promptRule.slice(0, ruleWidth) : promptRule.padEnd(ruleWidth, " ")
 

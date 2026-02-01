@@ -11,6 +11,7 @@ type RenderNodesContext = {
   keymap: string
   contentWidth: number
   hints: string[]
+  completionHint?: string | null
   shortcutsOpen: boolean
   ctrlCPrimedAt: number | null
   escPrimedAt: number | null
@@ -35,6 +36,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     keymap,
     contentWidth,
     hints,
+    completionHint,
     shortcutsOpen,
     ctrlCPrimedAt,
     escPrimedAt,
@@ -253,7 +255,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
           </Text>
         ))
       }
-      let statusText = filtered.slice(-1)[0] ?? ""
+      let statusText = completionHint ?? filtered.slice(-1)[0] ?? ""
       if (escPrimedAt && !pendingResponse) {
         statusText = "Press Esc again to clear input."
       } else if (ctrlCPrimedAt) {
@@ -297,7 +299,17 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
       )
     }
     return nodes
-  }, [claudeChrome, contentWidth, ctrlCPrimedAt, escPrimedAt, hints, pendingResponse, shortcutLines, shortcutsOpen])
+  }, [
+    claudeChrome,
+    completionHint,
+    contentWidth,
+    ctrlCPrimedAt,
+    escPrimedAt,
+    hints,
+    pendingResponse,
+    shortcutLines,
+    shortcutsOpen,
+  ])
 
   const collapsedHintNode = useMemo(() => {
     if (collapsibleEntries.length === 0) return null

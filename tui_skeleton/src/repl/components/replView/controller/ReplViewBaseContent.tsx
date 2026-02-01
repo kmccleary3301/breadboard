@@ -68,7 +68,7 @@ export const ReplViewBaseContent: React.FC<ReplViewBaseContentProps> = ({
   virtualizationHintNode,
   composerPanelContext,
 }) => (
-  <Box flexDirection="column" paddingX={1} marginTop={scrollbackMode ? 0 : 1}>
+  <Box flexDirection="column" paddingX={claudeChrome ? 0 : 1} marginTop={scrollbackMode ? 0 : 1}>
     {!claudeChrome && (
       <Text>
         {CHALK.dim(sessionId.slice(0, 12))} {statusGlyph} {status} {modelGlyph} model {CHALK.bold(stats.model)}{" "}

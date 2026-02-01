@@ -599,7 +599,7 @@ const buildReplCommand = (name: string) =>
           return
         }
 
-        if (!scriptPath) {
+        if (!scriptPath && process.env.BREADBOARD_TUI_SUPPRESS_MAINTENANCE !== "1") {
           console.warn("[tui] Classic Ink TUI is in maintenance mode; use --tui opentui for the new slab UI.")
         }
 

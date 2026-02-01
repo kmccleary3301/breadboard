@@ -172,6 +172,7 @@ export class ReplSessionController extends EventEmitter {
   private emitScheduled = false
   private status = "Starting session…"
   private pendingResponse = false
+  private pendingStartedAt: number | null = null
   private modelMenu: ModelMenuState = { status: "hidden" }
   private skillsMenu: SkillsMenuState = { status: "hidden" }
   private inspectMenu: InspectMenuState = { status: "hidden" }
@@ -499,6 +500,9 @@ export class ReplSessionController extends EventEmitter {
     this.lastCompletion = null
     this.removeLiveSlot("guardrail")
     this.pendingResponse = true
+    if (this.pendingStartedAt == null) {
+      this.pendingStartedAt = Date.now()
+    }
     this.status = statusLabel
     this.emitChange()
     try {

@@ -1,3 +1,115 @@
+type CompletionView = {
+  completed: boolean
+  status: string
+  toolLine: string
+  hint?: string
+  conversationLine?: string
+  warningSlot?: { text: string; color?: string }
+}
+
+const formatDurationMs = (ms: number): string => {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  const hours = Math.floor(minutes / 60)
+  if (hours > 0) {
+    const remMinutes = minutes % 60
+    return `${hours}h ${remMinutes}m`
+  }
+  if (minutes > 0) return `${minutes}m ${seconds}s`
+  return `${seconds}s`
+}
+
+const extractDurationMs = (payload: Record<string, unknown>): number | null => {
+  const sources = [
+    payload,
+    isRecord(payload.summary) ? payload.summary : null,
+    isRecord(payload.completion_summary) ? payload.completion_summary : null,
+    isRecord(payload.usage) ? payload.usage : null,
+  ].filter(Boolean) as Record<string, unknown>[]
+  const numberFrom = (obj: Record<string, unknown>, keys: string[]): number | null => {
+    for (const key of keys) {
+      const value = parseNumberish(obj[key])
+      if (value != null && Number.isFinite(value)) return value
+    }
+    return null
+  }
+  const msKeys = [
+    "duration_ms",
+    "durationMs",
+    "elapsed_ms",
+    "elapsedMs",
+    "latency_ms",
+    "latencyMs",
+    "latency",
+  ]
+  const secKeys = [
+    "duration_seconds",
+    "durationSeconds",
+    "elapsed_seconds",
+    "elapsedSeconds",
+    "latency_seconds",
+    "latencySeconds",
+  ]
+  for (const source of sources) {
+    const ms = numberFrom(source, msKeys)
+    if (ms != null) return ms
+  }
+  for (const source of sources) {
+    const seconds = numberFrom(source, secKeys)
+    if (seconds != null) return seconds * 1000
+  }
+  return null
+}
+
+const notePendingStart = (controller: { pendingStartedAt: number | null }): void => {
+  if (controller.pendingStartedAt == null) {
+    controller.pendingStartedAt = Date.now()
+  }
+}
+
+const takePendingDurationMs = (controller: { pendingStartedAt: number | null }): number | null => {
+  const startedAt = controller.pendingStartedAt
+  controller.pendingStartedAt = null
+  if (typeof startedAt === "number" && Number.isFinite(startedAt)) {
+    const elapsed = Date.now() - startedAt
+    return elapsed >= 0 ? elapsed : 0
+  }
+  return null
+}
+
+const formatCompletion = (payload: unknown): CompletionView => {
+  const data = isRecord(payload) ? payload : {}
+  const completed = Boolean(
+    data.completed ??
+      data.complete ??
+      data.success ??
+      data.ok ??
+      (typeof data.status === "string" && data.status.toLowerCase().includes("complete")),
+  )
+  const reason = extractString(data, ["reason", "message", "detail", "status"]) ?? ""
+  const reasonText = reason.trim()
+  const status = completed ? "Finished" : reasonText ? `Halted (${reasonText})` : "Halted"
+  const toolLine = completed ? (reasonText ? `completed (${reasonText})` : "completed") : reasonText || "halted"
+  const durationMs = extractDurationMs(data)
+  const hint = durationMs
+    ? `✻ Cooked for ${formatDurationMs(durationMs)}`
+    : completed
+      ? "✻ Completed"
+      : "✻ Halted"
+  const conversationLine =
+    extractString(data, ["conversation", "final_message", "summary", "result", "output"]) ?? undefined
+  const warningSource = isRecord(data.warning) ? data.warning : isRecord(data.guardrail) ? data.guardrail : null
+  const warningText =
+    (warningSource ? extractString(warningSource, ["text", "summary", "message", "detail"]) : undefined) ??
+    extractString(data, ["warning", "guardrail", "notice"])
+  const warningColor = warningSource ? extractString(warningSource, ["color"]) : undefined
+  const warningSlot = warningText
+    ? { text: warningText, color: warningColor ?? SEMANTIC_COLORS.warning }
+    : undefined
+  return { completed, status, toolLine, hint, conversationLine, warningSlot }
+}
+
 export function handleToolCall(this: any, payload: Record<string, unknown>, callIdOverride?: string | null, allowExisting = true): string | null {
   if (this.pendingResponse) this.status = "Tool call in progress…"
   const callId = callIdOverride ?? (typeof payload.call_id === "string" ? payload.call_id : null)
@@ -223,6 +335,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
     }
     case "run.start": {
       this.pendingResponse = true
+      notePendingStart(this)
       this.status = "Run started"
       this.pushHint("Run started.")
       break
@@ -230,9 +343,12 @@ export function applyEvent(this: any, event: SessionEvent): void {
     case "turn_start": {
       this.clearStopRequest()
       this.pendingResponse = true
+      notePendingStart(this)
       this.status = "Assistant thinking…"
-      const turnLabel = typeof event.turn === "number" ? `Turn ${event.turn} started` : "Turn started"
-      this.addTool("status", `[turn] ${turnLabel}`)
+      if (DEBUG_EVENTS || this.viewPrefs.rawStream) {
+        const turnLabel = typeof event.turn === "number" ? `Turn ${event.turn} started` : "Turn started"
+        this.addTool("status", `[turn] ${turnLabel}`)
+      }
       const payload = isRecord(event.payload) ? event.payload : {}
       const mode = normalizeModeValue(extractString(payload, ["mode", "agent_mode", "phase"]))
       if (mode) {
@@ -734,6 +850,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
     case "cancel.acknowledged": {
       this.clearStopRequest()
       this.pendingResponse = false
+      this.pendingStartedAt = null
       this.status = "Cancelled"
       this.addTool("status", "[cancel] acknowledged", "success")
       break
@@ -747,6 +864,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.pushHint(`[error] ${message}`)
       this.addTool("error", `[error] ${message}`, "error")
       this.pendingResponse = false
+      this.pendingStartedAt = null
       this.status = "Error received"
       break
     }
@@ -754,6 +872,8 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.finalizeStreamingEntry()
       this.clearStopRequest()
       const view = formatCompletion(event.payload)
+      const pendingDurationMs = takePendingDurationMs(this)
+      const cookedHint = pendingDurationMs != null ? `✻ Cooked for ${formatDurationMs(pendingDurationMs)}` : view.hint
       if (DEBUG_EVENTS) {
         console.log(
           `[repl event] completion`,
@@ -772,17 +892,16 @@ export function applyEvent(this: any, event: SessionEvent): void {
       }
       this.pendingResponse = false
       this.status = view.status
-      this.addTool("completion", `[completion] ${view.toolLine}`, view.completed ? "success" : "error")
       if (view.conversationLine) {
         const lastEntry = this.conversation.length > 0 ? this.conversation[this.conversation.length - 1] : undefined
         if (!(lastEntry && lastEntry.speaker === "system" && lastEntry.text === view.conversationLine)) {
           this.addConversation("system", view.conversationLine)
         }
       }
-      if (view.hint) this.pushHint(view.hint)
+      if (cookedHint) this.pushHint(cookedHint)
       if (view.warningSlot) {
         this.upsertLiveSlot("guardrail", view.warningSlot.text, view.warningSlot.color, "error")
-        this.setGuardrailNotice(view.warningSlot.text, view.hint ?? view.conversationLine)
+        this.setGuardrailNotice(view.warningSlot.text, cookedHint ?? view.conversationLine)
       } else {
         this.removeLiveSlot("guardrail")
         this.clearGuardrailNotice()
@@ -800,6 +919,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const completed = Boolean(payload.completed)
       const reason = typeof payload.reason === "string" ? payload.reason : undefined
       this.pendingResponse = false
+      this.pendingStartedAt = null
       this.status = completed ? "Finished" : "Halted"
       if (!this.completionSeen) {
         this.completionSeen = true
@@ -818,6 +938,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const completed = Boolean(event.payload?.completed)
       const reason = typeof event.payload?.reason === "string" ? event.payload.reason : undefined
       this.pendingResponse = false
+      this.pendingStartedAt = null
       this.status = completed ? "Finished" : "Halted"
       if (!this.completionSeen) {
         this.completionSeen = true

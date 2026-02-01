@@ -302,7 +302,10 @@ export const useReplViewController = ({
       : stdout?.columns && Number.isFinite(stdout.columns)
         ? stdout.columns
         : 80
-  const contentWidth = useMemo(() => Math.max(10, columnWidth - 2), [columnWidth])
+  const contentWidth = useMemo(
+    () => Math.max(10, columnWidth - (claudeChrome ? 0 : 2)),
+    [claudeChrome, columnWidth],
+  )
   const rowCount = stdout?.rows && Number.isFinite(stdout.rows) ? stdout.rows : 40
   useEffect(() => {
     if (inspectMenu.status === "hidden") {
@@ -861,6 +864,8 @@ export const useReplViewController = ({
     fileMentions,
     transcriptViewerOpen,
     transcriptNudge,
+    completionHint:
+      claudeChrome && lastDurationMs != null ? `✻ Cooked for ${formatDuration(lastDurationMs)}` : null,
     renderConversationEntryForFeed,
     renderToolEntryForFeed,
     renderConversationEntryRef,

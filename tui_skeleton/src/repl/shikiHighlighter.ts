@@ -1,7 +1,7 @@
 import chalk from "chalk"
 import type { Highlighter } from "shiki"
 
-const SHIKI_THEME = "github-dark"
+const SHIKI_THEME = "andromeeda"
 const MAX_SHIKI_LINES = 500
 const MAX_SHIKI_CHARS = 120_000
 const DEFAULT_LANGS = [
