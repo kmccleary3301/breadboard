@@ -37,6 +37,7 @@ import { ensureShikiLoaded, maybeHighlightCode, subscribeShiki } from "../../../
 import { getSessionDraft, updateSessionDraft } from "../../../../cache/sessionCache.js"
 import { buildConversationWindow, MAX_TRANSCRIPT_ENTRIES, MIN_TRANSCRIPT_ROWS } from "../../../transcriptUtils.js"
 import { CLI_VERSION, COLOR_MODE, DELTA_GLYPH, DOT_SEPARATOR, uiText } from "../theme.js"
+import { formatDuration } from "../utils/format.js"
 import {
   formatBytes,
   formatDuration,
@@ -93,29 +94,6 @@ import {
 } from "./replViewControllerUtils.js"
 import { useReplViewModalStack } from "./useReplViewModalStack.js"
 import { ReplViewBaseContent } from "./ReplViewBaseContent.js"
-import {
-  ALWAYS_ALLOW_SCOPE,
-  BOX_CHARS,
-  DOUBLE_CTRL_C_WINDOW_MS,
-  MODEL_PROVIDER_ORDER,
-  SKILL_GROUP_ORDER,
-  buildModelRowText,
-  buildSkillKey,
-  centerPlain,
-  colorCentered,
-  colorLine,
-  formatContextCell,
-  formatCtreeSummary,
-  formatPriceCell,
-  formatProfileLabel,
-  formatProviderCell,
-  formatProviderLabel,
-  isSkillSelected,
-  normalizeModeLabel,
-  normalizePermissionLabel,
-  normalizeProviderKey,
-  resolveGreetingName,
-} from "./replViewControllerUtils.js"
 
 const META_LINE_COUNT = 2
 const COMPOSER_MIN_ROWS = 6
@@ -124,9 +102,24 @@ const TOOL_COLLAPSE_HEAD = 6
 const TOOL_COLLAPSE_TAIL = 6
 const TOOL_LABEL_WIDTH = 12
 const LABEL_WIDTH = 9
-const SCROLLBACK_MODE = true
+const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => {
+  if (value == null) return fallback
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return fallback
+  if (["1", "true", "yes", "on"].includes(normalized)) return true
+  if (["0", "false", "no", "off"].includes(normalized)) return false
+  return fallback
+}
+
+const resolveScrollbackMode = (): boolean => {
+  const explicitMode = (process.env.BREADBOARD_TUI_MODE ?? "").trim().toLowerCase()
+  if (explicitMode === "window") return false
+  if (explicitMode === "scrollback") return true
+  return parseBoolEnv(process.env.BREADBOARD_TUI_SCROLLBACK, true)
+}
 
 export const useReplViewController = ({
+  configPath,
   sessionId,
   conversation: conversationProp,
   toolEvents: toolEventsProp,
@@ -176,12 +169,13 @@ export const useReplViewController = ({
   onCtreeRequest,
   onCtreeRefresh,
 }: ReplViewProps) => {
+  const SCROLLBACK_MODE = useMemo(() => resolveScrollbackMode(), [])
   const collapsedEntriesRef = useRef(new Map<string, boolean>())
   const [collapsedVersion, setCollapsedVersion] = useState(0)
   const [selectedCollapsibleEntryId, setSelectedCollapsibleEntryId] = useState<string | null>(null)
   const [pendingStartedAt, setPendingStartedAt] = useState<number | null>(null)
   const [lastDurationMs, setLastDurationMs] = useState<number | null>(null)
-  const [completeShownUntil, setCompleteShownUntil] = useState<number | null>(null)
+  const pendingStartedAtRef = useRef<number | null>(null)
   const {
     paletteState,
     setPaletteState,
@@ -269,13 +263,43 @@ export const useReplViewController = ({
     [],
   )
   const conversation = useMemo(() => {
-    if (!viewClearAt) return conversationProp
-    return conversationProp.filter((entry) => entry.createdAt >= viewClearAt)
+    const filtered = conversationProp.filter((entry) => {
+      if (!entry || typeof entry.text !== "string") return true
+      const trimmed = entry.text.trim().toLowerCase()
+      if (entry.speaker === "assistant" && trimmed === "none") return false
+      return true
+    })
+    if (!viewClearAt) return filtered
+    return filtered.filter((entry) => entry.createdAt >= viewClearAt)
   }, [conversationProp, viewClearAt])
   const toolEvents = useMemo(() => {
     const base = viewPrefs.rawStream ? [...toolEventsProp, ...rawEvents] : toolEventsProp
-    if (!viewClearAt) return base
-    return base.filter((entry) => entry.createdAt >= viewClearAt)
+    const filteredBase = base.filter((entry) => {
+      const text = entry.text?.trim()
+      if (!text) return false
+      const lowered = text.toLowerCase()
+      if (lowered === "tool" || lowered === "toolz" || lowered === "none") return false
+      return true
+    })
+    const deduped: typeof filteredBase = []
+    for (const entry of filteredBase) {
+      const lines = entry.text.split(/\r?\n/)
+      const header = (lines[0] ?? "").trim()
+      const last = deduped[deduped.length - 1]
+      if (last) {
+        const lastHeader = (last.text.split(/\r?\n/)[0] ?? "").trim()
+        if (lastHeader && lastHeader === header) {
+          const lastPending = last.kind === "call" || last.status === "pending"
+          if (lastPending || entry.text.length >= last.text.length) {
+            deduped[deduped.length - 1] = entry
+            continue
+          }
+        }
+      }
+      deduped.push(entry)
+    }
+    if (!viewClearAt) return deduped
+    return deduped.filter((entry) => entry.createdAt >= viewClearAt)
   }, [rawEvents, toolEventsProp, viewClearAt, viewPrefs.rawStream])
   const fileMentionConfig = useMemo(() => loadFileMentionConfig(), [])
   const filePickerConfig = useMemo(() => loadFilePickerConfig(), [])
@@ -287,21 +311,22 @@ export const useReplViewController = ({
   const filePickerResources = useMemo(() => loadFilePickerResources(), [])
   const [, forceRedraw] = useState(0)
   useEffect(() => {
-    if (!viewPrefs.richMarkdown) return
     const unsubscribe = subscribeShiki(() => {
       forceShikiRefresh((value) => value + 1)
     })
     ensureShikiLoaded()
     return unsubscribe
-  }, [forceShikiRefresh, viewPrefs.richMarkdown])
+  }, [forceShikiRefresh])
   const fixedFrameWidthRaw = (process.env.BREADBOARD_TUI_FRAME_WIDTH ?? "").toString().trim()
   const fixedFrameWidth = fixedFrameWidthRaw ? Number(fixedFrameWidthRaw) : NaN
+  const resolvedColumns =
+    stdout?.columns && Number.isFinite(stdout.columns) && stdout.columns > 0 ? stdout.columns : null
   const columnWidth =
     Number.isFinite(fixedFrameWidth) && fixedFrameWidth > 0
-      ? fixedFrameWidth
-      : stdout?.columns && Number.isFinite(stdout.columns)
-        ? stdout.columns
-        : 80
+      ? resolvedColumns
+        ? Math.min(fixedFrameWidth, resolvedColumns)
+        : fixedFrameWidth
+      : resolvedColumns ?? 80
   const contentWidth = useMemo(
     () => Math.max(10, columnWidth - (claudeChrome ? 0 : 2)),
     [claudeChrome, columnWidth],
@@ -315,18 +340,17 @@ export const useReplViewController = ({
   }, [inspectMenu.status])
   useEffect(() => {
     if (pendingResponse) {
-      if (pendingStartedAt == null) {
-        setPendingStartedAt(Date.now())
+      if (pendingStartedAtRef.current == null) {
+        pendingStartedAtRef.current = Date.now()
       }
       return
     }
-    if (pendingStartedAt != null) {
-      const duration = Date.now() - pendingStartedAt
+    if (pendingStartedAtRef.current != null) {
+      const duration = Date.now() - pendingStartedAtRef.current
+      pendingStartedAtRef.current = null
       setLastDurationMs(duration)
-      setPendingStartedAt(null)
-      setCompleteShownUntil(Date.now() + 8000)
     }
-  }, [pendingResponse, pendingStartedAt])
+  }, [pendingResponse])
   const inspectRawViewportRows = useMemo(() => Math.max(10, Math.min(24, Math.floor(rowCount * 0.6))), [rowCount])
   const panels = useReplViewPanels({
     inspectRawOpen,
@@ -358,6 +382,8 @@ export const useReplViewController = ({
     setShortcutsOpen,
     conversation,
     toolEvents,
+    rawEvents,
+    viewPrefs,
     verboseOutput,
     keymap,
     transcriptSearchQuery,
@@ -471,7 +497,6 @@ export const useReplViewController = ({
     formatCTreeNodeFlags,
     requestTaskTail,
   } = panels
-  const skillsSelection = skillsMenu.status === "ready" ? skillsMenu.selection : null
   const skillsSelection = skillsMenu.status === "ready" ? skillsMenu.selection : null
   const menus = useReplViewMenus({
     skillsMenu,
@@ -592,6 +617,7 @@ export const useReplViewController = ({
     handleEditorKeys,
     handlePaletteKeys,
   } = useReplViewInputHandlers({
+    configPath,
     input,
     cursor,
     inputLocked,
@@ -810,10 +836,7 @@ export const useReplViewController = ({
     toolsGlyph,
     eventsGlyph,
     turnGlyph,
-    finalConversationEntries,
-    streamingConversationEntry,
     staticFeed,
-    toolWindow,
     conversationWindow,
     collapsibleEntries,
     collapsibleMeta,
@@ -826,6 +849,7 @@ export const useReplViewController = ({
     metaNodes,
     shortcutLines,
     hintNodes,
+    shortcutHintNodes,
     collapsedHintNode,
     virtualizationHintNode,
     transcriptNodes,
@@ -953,11 +977,16 @@ export const useReplViewController = ({
     global: handleGlobalKeys,
   })
 
+  const landingAlways = useMemo(() => {
+    const raw = (process.env.BREADBOARD_TUI_LANDING_ALWAYS ?? "").trim().toLowerCase()
+    return ["1", "true", "yes", "on"].includes(raw)
+  }, [])
+
   const showLandingInline =
     SCROLLBACK_MODE &&
+    !landingAlways &&
     staticFeed.length === 0 &&
-    finalConversationEntries.length === 0 &&
-    !streamingConversationEntry &&
+    conversation.length === 0 &&
     toolEvents.length === 0
 
   const composerPanelContext = {
@@ -966,7 +995,7 @@ export const useReplViewController = ({
     overlayActive, filePickerActive, fileIndexMeta, fileMenuMode, filePicker, fileMenuRows, fileMenuHasLarge,
     fileMenuWindow, fileMenuIndex, fileMenuNeedlePending, filePickerQueryParts, filePickerConfig, fileMentionConfig,
     selectedFileIsLarge, columnWidth, suggestions, suggestionWindow, suggestionPrefix, suggestionLayout,
-    buildSuggestionLines, suggestIndex, activeSlashQuery, hintNodes,
+    buildSuggestionLines, suggestIndex, activeSlashQuery, hintNodes, shortcutHintNodes,
   }
   const baseContent = (
     <ReplViewBaseContent
@@ -1108,7 +1137,5 @@ export const useReplViewController = ({
     baseContent,
   }
 }
-
-export type ReplViewController = ReturnType<typeof useReplViewController>
 
 export type ReplViewController = ReturnType<typeof useReplViewController>

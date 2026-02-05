@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo } from "react"
 import { HEADER_COLOR } from "../../../viewUtils.js"
 import { useScrollbackFeed } from "../scrollback/useScrollbackFeed.js"
+import { buildTranscript } from "../../../transcriptBuilder.js"
+import type { TranscriptItem } from "../../../transcriptModel.js"
+import type { ToolLogEntry, ToolLogKind } from "../../../types.js"
 import { useToolRenderer } from "../renderers/toolRenderer.js"
 import { useConversationMeasure, useConversationRenderer } from "../renderers/conversationRenderer.js"
 import { sliceTailByLineBudget, trimTailByLineCount } from "../layout/windowing.js"
@@ -43,11 +46,11 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     suggestions,
     suggestionWindow,
     hints,
-    completionHint,
     attachments,
     fileMentions,
     transcriptViewerOpen,
     transcriptNudge,
+    completionHint,
     renderConversationEntryForFeed,
     renderToolEntryForFeed,
     renderConversationEntryRef,
@@ -168,7 +171,22 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
   const compactMode =
     viewPrefs.virtualization === "compact" || (viewPrefs.virtualization === "auto" && rowCount <= 32)
 
-  const headerReserveRows = useMemo(() => (SCROLLBACK_MODE ? 0 : headerLines.length + 5), [headerLines.length, SCROLLBACK_MODE])
+  const transcript = useMemo(() => {
+    const includeTools = viewPrefs.toolRail !== false || viewPrefs.rawStream === true
+    return buildTranscript(
+      {
+        conversation,
+        toolEvents: includeTools ? toolEvents : [],
+        rawEvents: viewPrefs.rawStream ? context.rawEvents ?? [] : [],
+      },
+      { includeRawEvents: viewPrefs.rawStream === true, pendingToolsInTail: true },
+    )
+  }, [conversation, toolEvents, viewPrefs.rawStream, viewPrefs.toolRail, context.rawEvents])
+
+  const headerReserveRows = useMemo(() => {
+    if (SCROLLBACK_MODE) return 0
+    return claudeChrome ? 0 : 3
+  }, [SCROLLBACK_MODE, claudeChrome])
   const guardrailReserveRows = useMemo(() => {
     if (!guardrailNotice) return 0
     const expanded = Boolean(guardrailNotice.detail && guardrailNotice.expanded)
@@ -212,7 +230,15 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
       return 1 + suggestionWindow.lineCount + hiddenRows
     })()
     const hintCount = overlayActive ? 0 : Math.min(4, hints.length)
-    const hintRows = overlayActive ? 0 : claudeChrome ? 1 : hintCount > 0 ? 1 + hintCount : 0
+    const claudeStatusRows = claudeChrome ? 1 : 0
+    const claudeShortcutRows = claudeChrome ? (context.shortcutsOpen ? 6 : 1) : 0
+    const hintRows = overlayActive
+      ? 0
+      : claudeChrome
+        ? claudeStatusRows + claudeShortcutRows
+        : hintCount > 0
+          ? 1 + hintCount
+          : 0
     const attachmentRows = overlayActive ? 0 : attachments.length > 0 ? attachments.length + 3 : 0
     const fileMentionRows = overlayActive ? 0 : fileMentions.length > 0 ? fileMentions.length + 3 : 0
     return (
@@ -267,20 +293,8 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
   const eventsGlyph = stats.eventCount > 0 ? CHALK.hex("#A855F7")("●") : CHALK.hex("#475569")("○")
   const turnGlyph = stats.lastTurn != null ? CHALK.hex("#34D399")("●") : CHALK.hex("#475569")("○")
 
-  const finalConversationEntries = useMemo(
-    () => conversation.filter((entry: any) => entry.phase === "final"),
-    [conversation],
-  )
-
-  const streamingConversationEntry = useMemo(() => {
-    for (let index = conversation.length - 1; index >= 0; index -= 1) {
-      const entry = conversation[index]
-      if (entry?.phase === "streaming") {
-        return entry
-      }
-    }
-    return undefined
-  }, [conversation])
+  const transcriptCommitted = transcript.committed
+  const transcriptTail = transcript.tail
 
   const chromeLabel = claudeChrome ? "Claude Code" : keymap === "codex" ? "Codex" : "Breadboard"
   const configLabel = chromeLabel
@@ -302,7 +316,49 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     [chromeLabel, configLabel, landingWidth, modelLabel],
   )
 
-  const { staticFeed, pushCommandResult: pushCommandResultFromFeed, printedConversationIdsRef, printedToolIdsRef } =
+  const toToolLogEntry = useCallback((entry: TranscriptItem): ToolLogEntry | null => {
+    if (entry.kind === "tool") {
+      return {
+        id: entry.id,
+        kind: entry.toolKind,
+        text: entry.text,
+        status: entry.status,
+        callId: entry.callId ?? null,
+        display: entry.display ?? null,
+        createdAt: entry.createdAt,
+      }
+    }
+    if (entry.kind === "system") {
+      const mapKind = (kind: TranscriptItem["kind"] | string): ToolLogKind => {
+        if (kind === "error") return "error"
+        if (kind === "reward") return "reward"
+        if (kind === "completion") return "completion"
+        return "status"
+      }
+      return {
+        id: entry.id,
+        kind: mapKind(entry.systemKind),
+        text: entry.text,
+        status: entry.status,
+        createdAt: entry.createdAt,
+      }
+    }
+    return null
+  }, [])
+
+  const renderTranscriptEntryForFeed = useCallback(
+    (entry: TranscriptItem, key?: string) => {
+      if (entry.kind === "message") {
+        return renderConversationEntryForFeed(entry as any, key)
+      }
+      const toolEntry = toToolLogEntry(entry)
+      if (!toolEntry) return null
+      return renderToolEntryForFeed(toolEntry, key)
+    },
+    [renderConversationEntryForFeed, renderToolEntryForFeed, toToolLogEntry],
+  )
+
+  const { staticFeed, pushCommandResult: pushCommandResultFromFeed, printedTranscriptIdsRef } =
     useScrollbackFeed({
       enabled: SCROLLBACK_MODE,
       sessionId: context.sessionId,
@@ -310,11 +366,9 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
       headerLines,
       headerSubtitleLines,
       landingNode,
-      conversationEntries: finalConversationEntries,
-      streamingEntry: streamingConversationEntry ?? null,
-      toolEvents,
-      renderConversationEntry: renderConversationEntryForFeed,
-      renderToolEntry: renderToolEntryForFeed,
+      transcriptEntries: transcriptCommitted,
+      streamingEntries: transcriptTail,
+      renderTranscriptEntry: renderTranscriptEntryForFeed,
       transcriptViewerOpen,
     })
 
@@ -329,6 +383,8 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     collapseHead: context.TOOL_COLLAPSE_HEAD,
     collapseTail: context.TOOL_COLLAPSE_TAIL,
     labelWidth: context.TOOL_LABEL_WIDTH,
+    contentWidth,
+    diffLineNumbers: viewPrefs?.diffLineNumbers,
   })
 
   const { isEntryCollapsible, measureConversationEntryLines } = useConversationMeasure({
@@ -336,70 +392,47 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     verboseOutput: context.verboseOutput,
     collapsedEntriesRef,
     collapsedVersion,
+    contentWidth,
   })
 
-  const toolLineBudget = useMemo(() => {
-    if (overlayActive) return 0
-    if (toolEvents.length === 0) return 0
-    return Math.max(0, Math.min(14, Math.floor(bodyBudgetRows * 0.33)))
-  }, [bodyBudgetRows, overlayActive, toolEvents.length])
-
-  const toolEventsForWindow = useMemo(() => {
-    if (!SCROLLBACK_MODE) {
-      if (transcriptNudge > 0) {
-        return trimTailByLineCount(toolEvents, transcriptNudge, measureToolEntryLines)
+  const measureTranscriptEntryLines = useCallback(
+    (entry: TranscriptItem) => {
+      if (entry.kind === "message") {
+        return measureConversationEntryLines(entry as any)
       }
-      return toolEvents
-    }
-    const printed = printedToolIdsRef.current
-    return toolEvents.filter((entry: any) => !printed.has(entry.id))
-  }, [measureToolEntryLines, toolEvents, transcriptNudge, printedToolIdsRef, SCROLLBACK_MODE])
+      const toolEntry = toToolLogEntry(entry)
+      if (!toolEntry) return 0
+      return measureToolEntryLines(toolEntry)
+    },
+    [measureConversationEntryLines, measureToolEntryLines, toToolLogEntry],
+  )
 
-  const toolWindow = useMemo(() => {
-    if (toolLineBudget === 0) {
-      return { items: [], hiddenCount: toolEventsForWindow.length, usedLines: 0, truncated: false }
-    }
-    return sliceTailByLineBudget(toolEventsForWindow, toolLineBudget, measureToolEntryLines)
-  }, [measureToolEntryLines, toolEventsForWindow, toolLineBudget])
+  const unprintedTranscriptEntries = useMemo(() => {
+    if (!SCROLLBACK_MODE) return transcriptCommitted
+    const printed = printedTranscriptIdsRef.current
+    return transcriptCommitted.filter((entry: any) => !printed.has(entry.id))
+  }, [transcriptCommitted, printedTranscriptIdsRef, SCROLLBACK_MODE])
 
-  const toolSectionMargin = !overlayActive && toolWindow.items.length > 0 ? 1 : 0
-  const remainingBodyBudgetForTranscript = Math.max(0, bodyBudgetRows - toolWindow.usedLines - toolSectionMargin)
-
-  const unprintedFinalConversationEntries = useMemo(() => {
-    if (!SCROLLBACK_MODE) return finalConversationEntries
-    const printed = printedConversationIdsRef.current
-    return finalConversationEntries.filter((entry: any) => !printed.has(entry.id))
-  }, [finalConversationEntries, printedConversationIdsRef, SCROLLBACK_MODE])
-
-  const conversationEntriesForWindow = useMemo(() => {
+  const transcriptEntriesForWindow = useMemo(() => {
     if (!SCROLLBACK_MODE) {
-      const base = streamingConversationEntry
-        ? [...finalConversationEntries, streamingConversationEntry]
-        : finalConversationEntries
+      const base = transcriptTail.length > 0 ? [...transcriptCommitted, ...transcriptTail] : transcriptCommitted
       if (transcriptNudge > 0) {
-        return trimTailByLineCount(base, transcriptNudge, measureConversationEntryLines)
+        return trimTailByLineCount(base, transcriptNudge, measureTranscriptEntryLines)
       }
       return base
     }
-    if (!streamingConversationEntry) return unprintedFinalConversationEntries
-    return [...unprintedFinalConversationEntries, streamingConversationEntry]
-  }, [
-    finalConversationEntries,
-    measureConversationEntryLines,
-    streamingConversationEntry,
-    transcriptNudge,
-    unprintedFinalConversationEntries,
-    SCROLLBACK_MODE,
-  ])
+    return transcriptTail.length > 0 ? [...unprintedTranscriptEntries, ...transcriptTail] : unprintedTranscriptEntries
+  }, [transcriptCommitted, transcriptTail, transcriptNudge, measureTranscriptEntryLines, unprintedTranscriptEntries, SCROLLBACK_MODE])
 
-  const transcriptLineBudget = overlayActive ? Math.min(10, remainingBodyBudgetForTranscript) : remainingBodyBudgetForTranscript
+  const transcriptLineBudget = overlayActive ? Math.min(10, bodyBudgetRows) : bodyBudgetRows
   const conversationWindow = useMemo(
-    () => sliceTailByLineBudget(conversationEntriesForWindow, transcriptLineBudget, measureConversationEntryLines),
-    [conversationEntriesForWindow, measureConversationEntryLines, transcriptLineBudget],
+    () => sliceTailByLineBudget(transcriptEntriesForWindow, transcriptLineBudget, measureTranscriptEntryLines),
+    [transcriptEntriesForWindow, measureTranscriptEntryLines, transcriptLineBudget],
   )
 
   const collapsibleEntries = useMemo(
-    () => conversationWindow.items.filter((entry: any) => isEntryCollapsible(entry)),
+    () =>
+      conversationWindow.items.filter((entry: any) => entry.kind === "message" && isEntryCollapsible(entry as any)),
     [conversationWindow, isEntryCollapsible],
   )
 
@@ -498,8 +531,21 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     collapsibleMeta,
     selectedCollapsibleEntryId,
     labelWidth: context.LABEL_WIDTH,
+    contentWidth,
     isEntryCollapsible,
   })
+
+  const renderTranscriptEntry = useCallback(
+    (entry: TranscriptItem, key?: string) => {
+      if (entry.kind === "message") {
+        return renderConversationEntry(entry as any, key)
+      }
+      const toolEntry = toToolLogEntry(entry)
+      if (!toolEntry) return null
+      return renderToolEntry(toolEntry, key)
+    },
+    [renderConversationEntry, renderToolEntry, toToolLogEntry],
+  )
 
   useEffect(() => {
     renderConversationEntryRef.current = renderConversationEntry
@@ -516,8 +562,6 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     ctrlCPrimedAt: context.ctrlCPrimedAt,
     escPrimedAt: context.escPrimedAt,
     pendingResponse,
-    toolWindow,
-    renderToolEntry,
     scrollbackMode: SCROLLBACK_MODE,
     liveSlots,
     animationTick,
@@ -525,9 +569,8 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     collapsibleMeta,
     selectedCollapsibleEntryId,
     compactMode,
-    conversationWindow,
-    streamingConversationEntry,
-    renderConversationEntry,
+    transcriptWindow: conversationWindow,
+    renderTranscriptEntry,
   })
 
   return {
@@ -554,10 +597,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     toolsGlyph,
     eventsGlyph,
     turnGlyph,
-    finalConversationEntries,
-    streamingConversationEntry,
     staticFeed,
-    toolWindow,
     conversationWindow,
     collapsibleEntries,
     collapsibleMeta,

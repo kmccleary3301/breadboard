@@ -17,7 +17,6 @@ import { CliProviders } from "../../providers/cliProviders.js"
 import type { PermissionDecision } from "../../repl/types.js"
 import { resolveBreadboardPath, resolveBreadboardWorkspace } from "../../utils/paths.js"
 import { resolveAsciiOnly, resolveColorMode } from "../../repl/designSystem.js"
-import { resolveAsciiOnly, resolveColorMode } from "../../repl/designSystem.js"
 
 const DEFAULT_CONFIG = process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/opencode_openrouter_grok4fast_cli_default.yaml"
 const DEFAULT_SCRIPT_MAX_DURATION_MS = 180_000
@@ -34,72 +33,15 @@ const scriptColorsOption = Options.boolean("script-color").pipe(Options.optional
 const scriptFinalOnlyOption = Options.boolean("script-final-only").pipe(Options.optional)
 const scriptMaxDurationOption = Options.integer("script-max-duration-ms").pipe(Options.optional)
 const tuiOption = Options.text("tui").pipe(Options.optional)
-const tuiOption = Options.text("tui").pipe(Options.optional)
 
 const getOptionValue = <T,>(value: Option.Option<T>): T | null => Option.getOrNull(value)
 
 type StateDumpMode = "summary" | "full"
 type TuiMode = "opentui" | "classic"
-type TuiMode = "opentui" | "classic"
 
 const parseStateDumpMode = (value: string | undefined): StateDumpMode => {
   const normalized = (value ?? "").trim().toLowerCase()
   return normalized === "full" ? "full" : "summary"
-}
-
-const normalizeTuiMode = (value?: string | null): TuiMode | null => {
-  const normalized = (value ?? "").trim().toLowerCase()
-  if (normalized === "opentui" || normalized === "classic") return normalized
-  return null
-}
-
-const resolveTuiMode = (args: {
-  scriptPath?: string | null
-  cliValue?: string | null
-}): TuiMode => {
-  if (args.scriptPath) return "classic"
-  const cliMode = normalizeTuiMode(args.cliValue)
-  if (cliMode) return cliMode
-  const envMode = normalizeTuiMode(process.env.BREADBOARD_TUI_MODE)
-  if (envMode) return envMode
-  return "opentui"
-}
-
-const runOpenTui = async (options: {
-  configPath: string
-  workspace?: string | null
-  permissionMode?: string | null
-}): Promise<void> => {
-  const opentuiRoot = resolveBreadboardPath("opentui_slab")
-  const args = ["run", "phaseB/controller.ts"]
-  if (options.configPath) {
-    args.push("--config", options.configPath)
-  }
-  if (options.workspace) {
-    args.push("--workspace", options.workspace)
-  }
-  if (options.permissionMode) {
-    args.push("--permission-mode", options.permissionMode)
-  }
-  const child = spawn("bun", args, {
-    cwd: opentuiRoot,
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      BREADBOARD_ENGINE_PREFER_BUNDLE: "0",
-    },
-  })
-
-  await new Promise<void>((resolve, reject) => {
-    child.once("error", (err) => reject(err))
-    child.once("exit", (code) => {
-      if (code && code !== 0) {
-        reject(new Error(`OpenTUI exited with code ${code}`))
-        return
-      }
-      resolve()
-    })
-  })
 }
 
 const normalizeTuiMode = (value?: string | null): TuiMode | null => {
@@ -319,19 +261,12 @@ const runInteractive = async (controller: ReplSessionController) => {
     await controller.refreshCtreeTree(options)
   }
 
-  const handleCtreeRequest = async (force?: boolean) => {
-    await controller.requestCtreeTree(force)
-  }
-
-  const handleCtreeRefresh = async (options?: { stage?: string; includePreviews?: boolean; source?: string }) => {
-    await controller.refreshCtreeTree(options)
-  }
-
   const rerender = () => {
     if (!ink) return
     state = controller.getState()
     ink.rerender(
       <ReplView
+        configPath={state.configPath ?? null}
         sessionId={state.sessionId}
         conversation={state.conversation}
         toolEvents={state.toolEvents}
@@ -386,8 +321,14 @@ const runInteractive = async (controller: ReplSessionController) => {
 
   const unsubscribe = controller.onChange(() => rerender())
 
+  const resizeHandler = () => rerender()
+  if (process.stdout?.isTTY) {
+    process.stdout.on("resize", resizeHandler)
+  }
+
   ink = render(
       <ReplView
+        configPath={state.configPath ?? null}
         sessionId={state.sessionId}
         conversation={state.conversation}
         toolEvents={state.toolEvents}
@@ -449,6 +390,9 @@ const runInteractive = async (controller: ReplSessionController) => {
     await controller.untilStopped()
   } finally {
     process.off("SIGINT", sigintHandler)
+    if (process.stdout?.isTTY) {
+      process.stdout.off("resize", resizeHandler)
+    }
     unsubscribe()
     ink?.unmount()
   }

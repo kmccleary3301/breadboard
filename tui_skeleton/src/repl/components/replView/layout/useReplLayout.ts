@@ -51,10 +51,10 @@ export const useReplLayout = (options: ReplLayoutOptions) => {
     selectedFileIsLarge,
   } = options
 
-  const headerReserveRows = useMemo(
-    () => (scrollbackMode ? 0 : headerLinesLength + 5),
-    [headerLinesLength, scrollbackMode],
-  )
+  const headerReserveRows = useMemo(() => {
+    if (scrollbackMode) return 0
+    return claudeChrome ? 0 : 3
+  }, [scrollbackMode, claudeChrome])
 
   const guardrailReserveRows = useMemo(() => {
     if (!guardrailNotice) return 0
