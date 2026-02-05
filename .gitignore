@@ -81,6 +81,7 @@ replay_apply_summary.json
 
 # Local runtime state
 .kyle/
+.ray_tmp/
 tmp/
 .breadboard/
 **/.breadboard/

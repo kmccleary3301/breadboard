@@ -37,7 +37,6 @@ import { ensureShikiLoaded, maybeHighlightCode, subscribeShiki } from "../../../
 import { getSessionDraft, updateSessionDraft } from "../../../../cache/sessionCache.js"
 import { buildConversationWindow, MAX_TRANSCRIPT_ENTRIES, MIN_TRANSCRIPT_ROWS } from "../../../transcriptUtils.js"
 import { CLI_VERSION, COLOR_MODE, DELTA_GLYPH, DOT_SEPARATOR, uiText } from "../theme.js"
-import { formatDuration } from "../utils/format.js"
 import {
   formatBytes,
   formatDuration,
