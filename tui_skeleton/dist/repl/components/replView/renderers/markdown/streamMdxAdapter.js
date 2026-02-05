@@ -273,6 +273,33 @@ const resolveTerminalRuleWidth = () => {
     return Math.max(10, base);
 };
 const RULE_GLYPH = ASCII_ONLY ? "-" : "─";
+const TABLE_CHARS = ASCII_ONLY
+    ? {
+        h: "-",
+        v: "|",
+        tl: "+",
+        tm: "+",
+        tr: "+",
+        ml: "+",
+        mm: "+",
+        mr: "+",
+        bl: "+",
+        bm: "+",
+        br: "+",
+    }
+    : {
+        h: "─",
+        v: "│",
+        tl: "┌",
+        tm: "┬",
+        tr: "┐",
+        ml: "├",
+        mm: "┼",
+        mr: "┤",
+        bl: "└",
+        bm: "┴",
+        br: "┘",
+    };
 const isHorizontalRuleLine = (line) => {
     const trimmed = line.trim();
     return /^([-*_])(?:\s*\1){2,}$/.test(trimmed);
@@ -606,7 +633,7 @@ const renderTableLines = (raw, meta, options) => {
         }
     }
     const buildRule = (left, mid, right) => {
-        const segments = widths.map((width) => "─".repeat(width + 2));
+        const segments = widths.map((width) => TABLE_CHARS.h.repeat(width + 2));
         return `${left}${segments.join(mid)}${right}`;
     };
     const renderRow = (row, alignOverride) => {
@@ -619,26 +646,26 @@ const renderTableLines = (raw, meta, options) => {
                 const alignment = alignOverride ?? table.align[idx] ?? null;
                 return padCellContent(value, widths[idx], alignment);
             });
-            lines.push(`│ ${lineCells.join(" │ ")} │`);
+            lines.push(`${TABLE_CHARS.v} ${lineCells.join(` ${TABLE_CHARS.v} `)} ${TABLE_CHARS.v}`);
         }
         return lines;
     };
     const output = [];
-    output.push(buildRule("┌", "┬", "┐"));
+    output.push(buildRule(TABLE_CHARS.tl, TABLE_CHARS.tm, TABLE_CHARS.tr));
     if (normalizedHeader) {
         const headerCells = normalizedHeader.map((cell) => ({
             ...cell,
             segments: applyStyleToSegments(cell.segments, CHALK.bold),
         }));
         output.push(...renderRow(headerCells, "center"));
-        output.push(buildRule("├", "┼", "┤"));
+        output.push(buildRule(TABLE_CHARS.ml, TABLE_CHARS.mm, TABLE_CHARS.mr));
     }
     normalizedRows.forEach((row, rowIndex) => {
         output.push(...renderRow(row));
         if (rowIndex < normalizedRows.length - 1)
-            output.push(buildRule("├", "┼", "┤"));
+            output.push(buildRule(TABLE_CHARS.ml, TABLE_CHARS.mm, TABLE_CHARS.mr));
     });
-    output.push(buildRule("└", "┴", "┘"));
+    output.push(buildRule(TABLE_CHARS.bl, TABLE_CHARS.bm, TABLE_CHARS.br));
     return output;
 };
 const renderInlineMarkdown = (text) => renderInlineSegments(parseInlineMarkdownSegments(text));

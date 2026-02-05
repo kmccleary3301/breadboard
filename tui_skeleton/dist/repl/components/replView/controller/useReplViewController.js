@@ -153,9 +153,23 @@ export const useReplViewController = ({ configPath, sessionId, conversation: con
             const last = deduped[deduped.length - 1];
             if (last) {
                 const lastHeader = (last.text.split(/\r?\n/)[0] ?? "").trim();
-                if (lastHeader && lastHeader === header) {
+                const sameTool = last.id === entry.id || (last.callId && entry.callId && last.callId === entry.callId);
+                const exactDuplicate = last.kind === entry.kind && last.status === entry.status && last.text === entry.text;
+                if (exactDuplicate) {
+                    continue;
+                }
+                if (sameTool) {
                     const lastPending = last.kind === "call" || last.status === "pending";
-                    if (lastPending || entry.text.length >= last.text.length) {
+                    const entryPending = entry.kind === "call" || entry.status === "pending";
+                    if ((!entryPending && lastPending) || entry.text.length >= last.text.length) {
+                        deduped[deduped.length - 1] = entry;
+                        continue;
+                    }
+                }
+                else if (lastHeader && lastHeader === header) {
+                    const lastPending = last.kind === "call" || last.status === "pending";
+                    const timeDelta = Math.abs(entry.createdAt - last.createdAt);
+                    if (lastPending && timeDelta < 1500 && entry.text.length >= last.text.length) {
                         deduped[deduped.length - 1] = entry;
                         continue;
                     }
