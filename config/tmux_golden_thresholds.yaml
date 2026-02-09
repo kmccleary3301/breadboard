@@ -1,0 +1,53 @@
+{
+  "defaults": {
+    "layout": {
+      "max_drift_score": 0.35,
+      "max_missing_frames": 0,
+      "max_max_line_count_delta": 6
+    },
+    "semantic": {
+      "max_misses": 0,
+      "max_action_count_delta": 1
+    },
+    "provider": {
+      "allow_banner_drift": false,
+      "max_token_drifts": 0,
+      "require_compaction_markers": true
+    },
+    "pixel": {
+      "enabled": false,
+      "max_final_change_ratio": 0.12,
+      "max_final_mean_abs_diff": 0.08
+    }
+  },
+  "providers": {
+    "claude": {
+      "layout": {
+        "max_drift_score": 0.38
+      },
+      "provider": {
+        "max_token_drifts": 1
+      }
+    },
+    "codex": {
+      "layout": {
+        "max_drift_score": 0.38
+      },
+      "provider": {
+        "max_token_drifts": 1
+      }
+    }
+  },
+  "scenarios": {
+    "claude/e2e_compact_semantic_v1": {
+      "semantic": {
+        "max_action_count_delta": 2
+      }
+    },
+    "codex/e2e_compact_semantic_v1": {
+      "semantic": {
+        "max_action_count_delta": 2
+      }
+    }
+  }
+}
