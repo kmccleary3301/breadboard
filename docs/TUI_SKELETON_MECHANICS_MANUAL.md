@@ -295,6 +295,8 @@ Primary scripts (repo root `scripts/`):
 - `scripts/tmux_capture_poll.py`
 - `scripts/tmux_capture_to_png.py`
 - `scripts/run_tmux_capture_scenario.py`
+- `scripts/run_claude_alignment.py` (paired Claude vs Breadboard runs + final-frame diff report)
+- `scripts/claude_alignment_manifest.example.yaml` (safe-to-commit manifest example)
 
 Recommended workflow:
 1. Run a scenario driver that produces deterministic UI behavior (typed commands, waits, keypresses).
@@ -339,4 +341,3 @@ The internal UI baselines (U1/U2/U3) currently target only the Ink scrollback TU
 ### When the input bar has an extra blank line
 - Inspect `ComposerPanel.tsx` for double rules or stray padding/margins.
 - Inspect `LineEditor` placeholder logic (it can render an extra row if the caret row is present but empty).
-
