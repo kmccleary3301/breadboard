@@ -39,6 +39,8 @@ type CliOptions = {
   manifestPath: string
   sourceRoot: string
   blessedRoot: string
+  withGrid: boolean
+  withMeta: boolean
 }
 
 const parseArgs = (): CliOptions => {
@@ -46,6 +48,8 @@ const parseArgs = (): CliOptions => {
   let manifestPath = "misc/tui_goldens/manifests/tui_goldens.yaml"
   let sourceRoot = ""
   let blessedRoot = "misc/tui_goldens/scenarios"
+  let withGrid = false
+  let withMeta = false
 
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]
@@ -59,16 +63,24 @@ const parseArgs = (): CliOptions => {
       case "--blessed-root":
         blessedRoot = args[++i] ?? blessedRoot
         break
+      case "--with-grid":
+        withGrid = true
+        break
+      case "--with-meta":
+        withMeta = true
+        break
       default:
         break
     }
   }
 
   if (!sourceRoot) {
-    throw new Error("Usage: tsx scripts/bless_tui_goldens.ts --source <dir> [--manifest <path>]")
+    throw new Error(
+      "Usage: tsx scripts/bless_tui_goldens.ts --source <dir> [--manifest <path>] [--with-grid] [--with-meta]",
+    )
   }
 
-  return { manifestPath, sourceRoot, blessedRoot }
+  return { manifestPath, sourceRoot, blessedRoot, withGrid, withMeta }
 }
 
 const normalizePath = (value: string, baseDir: string): string => {
@@ -110,23 +122,27 @@ const main = async () => {
     const destPath = path.join(destDir, "render.txt")
     await fs.access(sourcePath)
     await fs.copyFile(sourcePath, destPath)
-    try {
-      await fs.access(sourceGridPath)
-      await fs.copyFile(sourceGridPath, path.join(destDir, "frame.grid.json"))
-    } catch {
-      // grid artifact optional
+    if (options.withGrid) {
+      try {
+        await fs.access(sourceGridPath)
+        await fs.copyFile(sourceGridPath, path.join(destDir, "frame.grid.json"))
+      } catch {
+        // grid artifact optional
+      }
     }
-    const meta = {
-      id: scenario.id,
-      blessed_at: new Date().toISOString(),
-      git_sha: gitSha || null,
-      manifest_version: manifest.version,
-      render: { ...renderDefaults, ...(scenario.render ?? {}) },
-      normalize: { ...normalizeDefaults, ...(scenario.normalize ?? {}) },
-      source: sourcePath,
-      source_grid: sourceGridPath,
+    if (options.withMeta) {
+      const meta = {
+        id: scenario.id,
+        blessed_at: new Date().toISOString(),
+        git_sha: gitSha || null,
+        manifest_version: manifest.version,
+        render: { ...renderDefaults, ...(scenario.render ?? {}) },
+        normalize: { ...normalizeDefaults, ...(scenario.normalize ?? {}) },
+        source: sourcePath,
+        source_grid: sourceGridPath,
+      }
+      await fs.writeFile(path.join(destDir, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`, "utf8")
     }
-    await fs.writeFile(path.join(destDir, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`, "utf8")
     console.log(`[bless] ${scenario.id} -> ${destPath}`)
   }
 }

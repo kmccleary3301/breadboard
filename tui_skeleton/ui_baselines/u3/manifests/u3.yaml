@@ -1,0 +1,25 @@
+version: 1
+defaults:
+  render:
+    include_header: false
+    include_status: true
+    include_hints: false
+    include_model_menu: false
+    colors: true
+    ascii_only: false
+    color_mode: truecolor
+    max_width: 120
+  normalize:
+    timestamps: true
+    tokens: true
+    paths: true
+    status: true
+    strip_ansi: true
+  style:
+    require_ansi: true
+    diff_add_bg: true
+    diff_del_bg: true
+    tool_dot: true
+scenarios:
+  - id: diff_patch_preview
+    input: ../scenarios/diff_patch_preview/input/events.jsonl
