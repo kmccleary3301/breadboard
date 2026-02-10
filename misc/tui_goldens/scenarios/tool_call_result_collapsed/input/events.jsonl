@@ -1,0 +1,4 @@
+{"event": {"id": "e1", "seq": 1, "type": "run.start", "payload": {}}}
+{"event": {"id": "e2", "seq": 2, "type": "tool_call", "payload": {"call_id": "call-ht", "tool_name": "bash", "args": {"command": "echo test"}, "display": {"title": "Bash(echo test)"}}}}
+{"event": {"id": "e3", "seq": 3, "type": "tool.result", "payload": {"call_id": "call-ht", "tool_name": "bash", "display": {"title": "Bash(echo test)", "summary": "Output 4 lines", "detail": ["one", "two", "three", "four"], "detail_truncated": {"hidden": 2, "tail": 1, "mode": "head_tail", "hint": "(ctrl+o to expand)"}}}}}
+{"event": {"id": "e4", "seq": 4, "type": "run.end", "payload": {"completed": true}}}

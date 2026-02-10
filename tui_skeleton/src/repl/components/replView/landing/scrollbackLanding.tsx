@@ -1,11 +1,10 @@
 import React from "react"
 import { Box, Text } from "ink"
 import { applyForegroundGradient, Gradients } from "../../../../colors/gradients.js"
-import { stripAnsiCodes } from "../utils/ansi.js"
-import { truncateLine } from "../utils/format.js"
+import { stripAnsiCodes, stringWidth, visibleWidth } from "../utils/ansi.js"
 import { ASCII_HEADER } from "../../../viewUtils.js"
 import { BRAND_COLORS } from "../../../designSystem.js"
-import { CHALK, COLORS, DOT_SEPARATOR, ICONS, CLI_VERSION } from "../theme.js"
+import { CHALK, COLORS, DOT_SEPARATOR, GLYPHS, ICONS, CLI_VERSION } from "../theme.js"
 
 type LandingVariant = "board" | "split" | "compact"
 
@@ -31,7 +30,23 @@ const BOX = {
 const frameColor = CHALK.hex(BRAND_COLORS.strawberryRed)
 const dividerColor = CHALK.hex(COLORS.dim)
 
-const visibleLength = (value: string) => stripAnsiCodes(value).length
+const visibleLength = (value: string) => visibleWidth(value)
+
+const truncatePlain = (value: string, width: number): string => {
+  if (width <= 0) return ""
+  if (stringWidth(value) <= width) return value
+  if (width === 1) return GLYPHS.ellipsis
+  const target = Math.max(0, width - 1)
+  let out = ""
+  let used = 0
+  for (const char of value) {
+    const next = used + stringWidth(char)
+    if (next > target) break
+    out += char
+    used = next
+  }
+  return `${out}${GLYPHS.ellipsis}`
+}
 
 const padAnsi = (value: string, width: number, align: "left" | "right" | "center" = "left") => {
   const len = visibleLength(value)
@@ -50,7 +65,7 @@ const buildTitleLine = (width: number, leftLabel: string, rightLabel?: string) =
   const inner = width - 2
   const leftText = `${BOX.h.repeat(2)} ${stripAnsiCodes(leftLabel).trim()} `
   const rightText = rightLabel ? ` ${stripAnsiCodes(rightLabel).trim()} ${BOX.h.repeat(2)}` : ""
-  const gap = Math.max(0, inner - leftText.length - rightText.length)
+  const gap = Math.max(0, inner - stringWidth(leftText) - stringWidth(rightText))
   const left = `${frameColor(BOX.h.repeat(2))} ${leftLabel.trim()} `
   const right = rightLabel ? ` ${rightLabel.trim()} ${frameColor(BOX.h.repeat(2))}` : ""
   const line = `${left}${frameColor(BOX.h.repeat(gap))}${right}`
@@ -91,12 +106,13 @@ const formatConfig = (label: string) => {
 
 const renderAsciiLines = (width: number) =>
   ASCII_HEADER.map((line: string) => {
-    const colored = applyForegroundGradient(line, Gradients.breadboard, true)
-    return padAnsi(colored, width, "center")
-  })
+  const clamped = truncatePlain(line, width)
+  const colored = applyForegroundGradient(clamped, Gradients.breadboard, true)
+  return padAnsi(colored, width, "center")
+})
 
 const buildBoardLines = (context: LandingContext) => {
-  const width = Math.max(1, context.contentWidth)
+  const width = Math.max(1, context.contentWidth - 1)
   const leftPad = 0
   const inner = width - 2
   const leftWidth = Math.floor((inner - 1) * 0.55)
@@ -110,22 +126,22 @@ const buildBoardLines = (context: LandingContext) => {
 
   const leftLines = [
     "",
-    CHALK.hex(COLORS.textBright)(truncateLine(hello, leftInnerWidth)),
+    CHALK.hex(COLORS.textBright)(truncatePlain(hello, leftInnerWidth)),
     "",
     ...renderAsciiLines(leftInnerWidth),
     "",
     CHALK.hex(COLORS.info)
-      .bold(truncateLine(configLine, leftInnerWidth)),
-    CHALK.hex(COLORS.textMuted)(truncateLine(modelLine, leftInnerWidth)),
-    CHALK.hex(COLORS.textMuted)(truncateLine(cwdLine, leftInnerWidth)),
+      .bold(truncatePlain(configLine, leftInnerWidth)),
+    CHALK.hex(COLORS.textMuted)(truncatePlain(modelLine, leftInnerWidth)),
+    CHALK.hex(COLORS.textMuted)(truncatePlain(cwdLine, leftInnerWidth)),
   ]
 
-  const tipHeader = CHALK.hex(BRAND_COLORS.jamRed).bold(truncateLine("Tips for getting started", rightInnerWidth))
-  const tipLine = CHALK.hex(COLORS.text)(truncateLine("Run /init to create an AGENTS.md", rightInnerWidth))
-  const tipLine2 = CHALK.hex(COLORS.text)(truncateLine("Use @ to attach files", rightInnerWidth))
+  const tipHeader = CHALK.hex(BRAND_COLORS.jamRed).bold(truncatePlain("Tips for getting started", rightInnerWidth))
+  const tipLine = CHALK.hex(COLORS.text)(truncatePlain("Run /init to create an AGENTS.md", rightInnerWidth))
+  const tipLine2 = CHALK.hex(COLORS.text)(truncatePlain("Use @ to attach files", rightInnerWidth))
   const divider = dividerColor(BOX.h.repeat(rightInnerWidth))
-  const recentHeader = CHALK.hex(BRAND_COLORS.jamRed).bold(truncateLine("Recent activity", rightInnerWidth))
-  const recentLine = CHALK.hex(COLORS.textMuted)(truncateLine("No recent activity", rightInnerWidth))
+  const recentHeader = CHALK.hex(BRAND_COLORS.jamRed).bold(truncatePlain("Recent activity", rightInnerWidth))
+  const recentLine = CHALK.hex(COLORS.textMuted)(truncatePlain("No recent activity", rightInnerWidth))
 
   const rightLines = [
     tipHeader,
@@ -153,16 +169,16 @@ const buildBoardLines = (context: LandingContext) => {
 }
 
 const buildSplitLines = (context: LandingContext) => {
-  const width = context.contentWidth
+  const width = Math.max(1, context.contentWidth - 1)
   const asciiWidth = Math.max(...ASCII_HEADER.map((line) => line.length))
   const leftWidth = Math.min(width - 20, asciiWidth + 2)
   const gap = 3
   const rightWidth = Math.max(10, width - leftWidth - gap)
   const title = frameColor.bold(`BreadBoard v${CLI_VERSION}`)
   const config = CHALK.hex(COLORS.info)
-    .bold(truncateLine(`Using Config \`${formatConfig(context.configLabel)}\``, rightWidth))
-  const model = CHALK.hex(COLORS.textMuted)(truncateLine(`${formatModel(context.modelLabel)}${context.chromeLabel ? `${DOT_SEPARATOR}${context.chromeLabel}` : ""}`, rightWidth))
-  const cwd = CHALK.hex(COLORS.textMuted)(truncateLine(context.cwd, rightWidth))
+    .bold(truncatePlain(`Using Config \`${formatConfig(context.configLabel)}\``, rightWidth))
+  const model = CHALK.hex(COLORS.textMuted)(truncatePlain(`${formatModel(context.modelLabel)}${context.chromeLabel ? `${DOT_SEPARATOR}${context.chromeLabel}` : ""}`, rightWidth))
+  const cwd = CHALK.hex(COLORS.textMuted)(truncatePlain(context.cwd, rightWidth))
   const rightLines = [title, config, model, cwd]
   const leftLines = renderAsciiLines(leftWidth)
   const total = Math.max(leftLines.length, rightLines.length)
@@ -176,7 +192,7 @@ const buildSplitLines = (context: LandingContext) => {
 }
 
 const buildCompactLines = (context: LandingContext) => {
-  const width = Math.max(1, context.contentWidth)
+  const width = Math.max(1, context.contentWidth - 1)
   const leftPad = 0
   const inner = width - 2
   const contentWidth = Math.max(1, inner - 2)
@@ -185,17 +201,17 @@ const buildCompactLines = (context: LandingContext) => {
   const configLine = `Config: ${formatConfig(context.configLabel)}`
   const cwdLine = context.cwd
   const infoLines = [
-    CHALK.hex(COLORS.info).bold(truncateLine(configLine, contentWidth)),
-    CHALK.hex(COLORS.textMuted)(truncateLine(modelLine, contentWidth)),
+    CHALK.hex(COLORS.info).bold(truncatePlain(configLine, contentWidth)),
+    CHALK.hex(COLORS.textMuted)(truncatePlain(modelLine, contentWidth)),
   ]
   const lines = [
     "",
-    CHALK.hex(COLORS.textBright)(truncateLine(hello, contentWidth)),
+    CHALK.hex(COLORS.textBright)(truncatePlain(hello, contentWidth)),
     "",
     ...renderAsciiLines(contentWidth),
     "",
     ...infoLines,
-    CHALK.hex(COLORS.textMuted)(truncateLine(cwdLine, contentWidth)),
+    CHALK.hex(COLORS.textMuted)(truncatePlain(cwdLine, contentWidth)),
     "",
   ].map((line: string) => padAnsi(line, contentWidth, "center"))
 
@@ -235,4 +251,3 @@ export const buildLandingContext = (contentWidth: number, modelLabel: string, ch
   cwd,
   variant: resolveLandingVariant(contentWidth),
 })
-

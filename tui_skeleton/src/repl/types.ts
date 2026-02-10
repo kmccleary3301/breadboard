@@ -1,4 +1,4 @@
-import type { Block } from "@stream-mdx/core/types"
+import type { Block, DiffKind, TokenLineV1 } from "@stream-mdx/core/types"
 
 export interface ConversationEntry {
   readonly id: string
@@ -56,6 +56,7 @@ export interface TranscriptPreferences {
   readonly toolInline?: boolean
   readonly rawStream?: boolean
   readonly showReasoning?: boolean
+  readonly diffLineNumbers?: boolean
 }
 
 export interface CompletionState {
@@ -65,6 +66,58 @@ export interface CompletionState {
 
 export type ToolLogKind = "command" | "status" | "call" | "result" | "reward" | "error" | "completion"
 
+export interface DiffBlock {
+  readonly kind: "diff"
+  readonly filePath?: string | null
+  readonly unified?: string | null
+  readonly additions?: number | null
+  readonly deletions?: number | null
+  readonly language?: string | null
+  readonly toolCallId?: string | null
+  readonly title?: string | null
+}
+
+export interface TuiToken {
+  readonly content: string
+  readonly color?: string | null
+  readonly fontStyle?: number | null
+}
+
+export type TuiTokenLine = ReadonlyArray<TuiToken>
+
+export type TuiDiffLineKind = "meta" | "hunk" | "add" | "del" | "context"
+
+export interface TuiDiffLine {
+  readonly kind: TuiDiffLineKind
+  readonly marker: string
+  readonly text: string
+  readonly oldNo?: number | null
+  readonly newNo?: number | null
+  readonly tokens?: TuiTokenLine | null
+}
+
+export interface MarkdownCodeLine {
+  readonly text: string
+  readonly tokens?: TokenLineV1 | null
+  readonly diffKind?: DiffKind | null
+  readonly oldNo?: number | null
+  readonly newNo?: number | null
+}
+
+export interface ToolDisplayPayload {
+  readonly title?: string | null
+  readonly summary?: string | string[] | null
+  readonly detail?: string | string[] | null
+  readonly detail_truncated?: {
+    readonly hidden?: number | null
+    readonly tail?: number | null
+    readonly mode?: string | null
+    readonly hint?: string | null
+  } | null
+  readonly category?: string | null
+  readonly diff_blocks?: DiffBlock[] | null
+}
+
 export interface ToolLogEntry {
   readonly id: string
   readonly kind: ToolLogKind
@@ -72,6 +125,7 @@ export interface ToolLogEntry {
   readonly status?: LiveSlotStatus
   readonly callId?: string | null
   readonly createdAt: number
+  readonly display?: ToolDisplayPayload | null
 }
 
 export interface TodoItem {

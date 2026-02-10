@@ -47,6 +47,7 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     suggestIndex,
     activeSlashQuery,
     hintNodes,
+    shortcutHintNodes,
   } = context
 
   if (claudeChrome && modelMenu.status !== "hidden") return null
@@ -57,30 +58,35 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
   const promptRuleLine =
     promptRule.length >= ruleWidth ? promptRule.slice(0, ruleWidth) : promptRule.padEnd(ruleWidth, " ")
 
+  const showClaudePlaceholder =
+    claudeChrome && input.length === 0 && attachments.length === 0 && fileMentions.length === 0
+
   return (
     <Box marginTop={1} flexDirection="column" width={ruleWidth}>
       {claudeChrome && pendingClaudeStatus && <Text color="dim">{pendingClaudeStatus}</Text>}
+      {!overlayActive && claudeChrome && hintNodes.length > 0 && (
+        <Box flexDirection="column">
+          {hintNodes}
+        </Box>
+      )}
       {claudeChrome && (
         <Text color={COLORS.textMuted} wrap="truncate">
           {promptRuleLine}
         </Text>
       )}
-      <Box minHeight={1} width={ruleWidth}>
+      <Box minHeight={1} width={ruleWidth} flexDirection="row">
         <Text>
           <Text color={claudeChrome ? COLORS.textBright : "cyan"}>{`${GLYPHS.chevron} `}</Text>
-          {claudeChrome && input.length === 0 && attachments.length === 0 && fileMentions.length === 0 ? (
-            <Text color={COLORS.textMuted}>{'Try "refactor <filepath>"'}</Text>
-          ) : null}
         </Text>
         <LineEditor
           value={input}
           cursor={cursor}
           focus={!inputLocked}
           placeholder={
-            claudeChrome && input.length === 0 && attachments.length === 0 && fileMentions.length === 0
-              ? ""
+            showClaudePlaceholder
+              ? 'Try "refactor <filepath>"'
               : claudeChrome
-                ? 'Try "refactor <filepath>"'
+                ? ""
                 : `Type your request${GLYPHS.ellipsis}`
           }
           placeholderPad={!claudeChrome}
@@ -277,7 +283,12 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
       ) : claudeChrome ? null : (
         <Text color="dim">{" "}</Text>
       )}
-      {!overlayActive && hintNodes.length > 0 && (
+      {!overlayActive && claudeChrome && shortcutHintNodes.length > 0 && (
+        <Box flexDirection="column">
+          {shortcutHintNodes}
+        </Box>
+      )}
+      {!overlayActive && !claudeChrome && hintNodes.length > 0 && (
         <Box marginTop={claudeChrome ? 0 : 1} flexDirection="column">
           {hintNodes}
         </Box>

@@ -662,8 +662,9 @@ const renderTableLines = (raw, meta, options) => {
     }
     normalizedRows.forEach((row, rowIndex) => {
         output.push(...renderRow(row));
-        if (rowIndex < normalizedRows.length - 1)
+        if (rowIndex < normalizedRows.length - 1) {
             output.push(buildRule(TABLE_CHARS.ml, TABLE_CHARS.mm, TABLE_CHARS.mr));
+        }
     });
     output.push(buildRule(TABLE_CHARS.bl, TABLE_CHARS.bm, TABLE_CHARS.br));
     return output;

@@ -1,0 +1,12 @@
+░█▄▄ █▀█ █▀▀ ▄▀█ █▀▄░░░░░
+░█▄█ █▀▄ ██▄ █▀█ █▄▀░░░░░
+░░░░░█▄▄ █▀█ ▄▀█ █▀█ █▀▄░
+░░░░░█▄█ █▄█ █▀█ █▀▄ █▄▀░
+breadboard — interactive session
+(pending) ● Assistant responding… ● model openrouter/x-ai/grok-4-fast ○ local ○ events 0 ○ tools 0
+
+
+❯ Show a pending response example.
+
+• Thinking about it
+● Run started.

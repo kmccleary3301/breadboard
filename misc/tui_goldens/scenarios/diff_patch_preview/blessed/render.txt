@@ -1,0 +1,15 @@
+░█▄▄ █▀█ █▀▀ ▄▀█ █▀▄░░░░░
+░█▄█ █▀▄ ██▄ █▀█ █▄▀░░░░░
+░░░░░█▄▄ █▀█ ▄▀█ █▀█ █▀▄░
+░░░░░█▄█ █▄█ █▀█ █▀▄ █▄▀░
+breadboard — interactive session
+(pending) ● Finished ● model openrouter/x-ai/grok-4-fast ○ local ○ events 0 ● tools 2
+
+
+● Patch(hello.c)
+  │ -     printf("hello world\n");
+  │ +     printf("goodbye world\n");
+  └ 
+● Tool: running
+● Run started.
+● Run finished.

@@ -1,0 +1,85 @@
+❯ Create a file called big.txt with 40 numbered lines.
+
+● Write(big.txt)
+  ⎿  Wrote 41 lines to big.txt
+     1
+     2
+     3
+     4
+     5
+     6
+     7
+     8
+     9
+     10
+     … +31 lines (ctrl+o to expand)
+
+● Done! I've created big.txt with 40 numbered lines (1 through 40).
+
+❯ Now patch it so lines 10-35 say "CHANGED <n>" instead of the original content.
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(big.txt)
+  ⎿  Added 26 lines, removed 26 lines
+       7  7
+       8  8
+       9  9
+      10 -10
+      11 -11
+      12 -12
+      13 -13
+      14 -14
+      15 -15
+      16 -16
+      17 -17
+      18 -18
+      19 -19
+      20 -20
+      21 -21
+      22 -22
+      23 -23
+      24 -24
+      25 -25
+      26 -26
+      27 -27
+      28 -28
+      29 -29
+      30 -30
+      31 -31
+      32 -32
+      33 -33
+      34 -34
+      35 -35
+      10 +CHANGED 10
+      11 +CHANGED 11
+      12 +CHANGED 12
+      13 +CHANGED 13
+      14 +CHANGED 14
+      15 +CHANGED 15
+      16 +CHANGED 16
+      17 +CHANGED 17
+      18 +CHANGED 18
+      19 +CHANGED 19
+      20 +CHANGED 20
+      21 +CHANGED 21
+      22 +CHANGED 22
+      23 +CHANGED 23
+      24 +CHANGED 24
+      25 +CHANGED 25
+      26 +CHANGED 26
+      27 +CHANGED 27
+      28 +CHANGED 28
+      29 +CHANGED 29
+      30 +CHANGED 30
+      31 +CHANGED 31
+      32 +CHANGED 32
+      33 +CHANGED 33
+      34 +CHANGED 34
+      35 +CHANGED 35
+      36  36
+      37  37
+      38  38
+
+● Done! I've updated big.txt so that lines 10-35 now say "CHANGED " instead of the original numbers. Lines 1-9 and
+  36-40 remain unchanged.

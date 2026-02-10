@@ -12,7 +12,6 @@ export type CTreeModelAction =
   | { readonly type: "ctree_node"; readonly node: CTreeNode; readonly snapshot: CTreeSnapshotSummary }
   | { readonly type: "seed_snapshot"; readonly snapshot: CTreeSnapshotSummary | null }
   | { readonly type: "ctree_snapshot"; readonly snapshot: CTreeSnapshotSummary | null }
-  | { readonly type: "ctree_snapshot"; readonly snapshot: CTreeSnapshotSummary | null }
 
 export const createEmptyCTreeModel = (): CTreeModel => ({
   nodesById: {},
@@ -28,8 +27,6 @@ export const reduceCTreeModel = (state: CTreeModel, action: CTreeModelAction): C
     case "reset":
       return createEmptyCTreeModel()
     case "seed_snapshot":
-      return { ...state, snapshot: action.snapshot }
-    case "ctree_snapshot":
       return { ...state, snapshot: action.snapshot }
     case "ctree_snapshot":
       return { ...state, snapshot: action.snapshot }

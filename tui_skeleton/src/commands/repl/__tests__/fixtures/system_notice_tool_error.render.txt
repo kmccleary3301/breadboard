@@ -1,0 +1,4 @@
+X Warning · Low disk space
+
+X Bash(rm -rf /tmp/bad)
+  `- rm: cannot remove '/tmp/bad': Permission denied

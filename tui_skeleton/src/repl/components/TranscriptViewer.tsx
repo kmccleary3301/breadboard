@@ -2,43 +2,9 @@ import React from "react"
 import { Box, Text } from "ink"
 import chalk from "chalk"
 import { NEUTRAL_COLORS, SEMANTIC_COLORS, resolveAsciiOnly, resolveColorMode, resolveIcons } from "../designSystem.js"
-import { NEUTRAL_COLORS, SEMANTIC_COLORS, resolveAsciiOnly, resolveColorMode, resolveIcons } from "../designSystem.js"
 
 const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 40
-const ASCII_ONLY = resolveAsciiOnly()
-const ICONS = resolveIcons(ASCII_ONLY)
-const COLOR_MODE = resolveColorMode()
-if (COLOR_MODE === "none") {
-  ;(chalk as typeof chalk & { level: number }).level = 0
-}
-const CHALK = chalk
-const GLYPHS = {
-  bullet: ICONS.bullet,
-  chevron: ICONS.userChevron,
-  hline: ASCII_ONLY ? "-" : "─",
-} as const
-const STAR_GLYPH = ASCII_ONLY ? "*" : "★"
-const HOLLOW_DOT = ASCII_ONLY ? "o" : "○"
-const DASH_GLYPH = ASCII_ONLY ? "-" : "—"
-const uiText = (value: string): string => {
-  if (!ASCII_ONLY) return value
-  return value
-    .replaceAll("•", GLYPHS.bullet)
-    .replaceAll("·", ".")
-    .replaceAll("●", GLYPHS.bullet)
-    .replaceAll("○", HOLLOW_DOT)
-    .replaceAll("★", STAR_GLYPH)
-    .replaceAll("—", DASH_GLYPH)
-    .replaceAll("–", "-")
-    .replaceAll("←", "<-")
-    .replaceAll("→", "->")
-    .replaceAll("↑", "^")
-    .replaceAll("↓", "v")
-    .replaceAll("×", "x")
-    .replaceAll("⏎", "Enter")
-    .replaceAll("…", "...")
-}
 const ASCII_ONLY = resolveAsciiOnly()
 const ICONS = resolveIcons(ASCII_ONLY)
 const COLOR_MODE = resolveColorMode()

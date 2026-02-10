@@ -1,0 +1,4 @@
+{"event": {"id": "p1", "seq": 1, "type": "run.start", "payload": {}}}
+{"event": {"id": "p2", "seq": 2, "type": "user.message", "payload": {"text": "Show a pending response example."}}}
+{"event": {"id": "p3", "seq": 3, "type": "assistant.message.start", "payload": {}}}
+{"event": {"id": "p4", "seq": 4, "type": "assistant.message.delta", "payload": {"delta": "Thinking about it"}}}

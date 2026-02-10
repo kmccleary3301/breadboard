@@ -1,0 +1,9 @@
+# Runtime outputs (never commit)
+artifacts/
+_runs/
+claude_compare/
+claude_compare_runs/
+
+# Legacy/experimental scratch
+misc/
+

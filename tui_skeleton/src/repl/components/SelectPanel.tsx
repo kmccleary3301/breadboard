@@ -1,7 +1,6 @@
 import React, { type ComponentProps } from "react"
 import { Box, Text } from "ink"
 import { BRAND_COLORS, NEUTRAL_COLORS, SEMANTIC_COLORS } from "../designSystem.js"
-import { BRAND_COLORS, NEUTRAL_COLORS, SEMANTIC_COLORS } from "../designSystem.js"
 
 export type SelectPanelRow =
   | { readonly kind: "header"; readonly text: string; readonly color?: string }

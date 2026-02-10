@@ -13,6 +13,7 @@ export const useReplViewInputHandlers = (context: InputHandlersContext) => {
   const {
     input,
     cursor,
+    configPath,
     inputLocked,
     inputTextVersion,
     claudeChrome,
@@ -272,6 +273,7 @@ export const useReplViewInputHandlers = (context: InputHandlersContext) => {
   }, [cursor, handleLineEdit, inputValueRef, permissionNote, permissionRequest, setPermissionNote, setPermissionNoteCursor, permissionActiveRef, permissionInputSnapshotRef])
 
   const { applySuggestion, applyPaletteItem, handleAtCommand, handleLineSubmit } = useReplCommands({
+    configPath,
     closeFilePicker: filePickerController.closeFilePicker,
     fileMentionConfig,
     handleLineEdit,

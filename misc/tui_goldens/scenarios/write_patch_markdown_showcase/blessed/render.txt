@@ -1,0 +1,267 @@
+░█▄▄ █▀█ █▀▀ ▄▀█ █▀▄░░░░░
+░█▄█ █▀▄ ██▄ █▀█ █▄▀░░░░░
+░░░░░█▄▄ █▀█ ▄▀█ █▀█ █▀▄░
+░░░░░█▄█ █▄█ █▀█ █▀▄ █▄▀░
+breadboard — interactive session
+(pending) ● Finished ● model openrouter/x-ai/grok-4-fast ○ local ○ events 0 ● tools 4
+
+
+❯ Create a hello world in C.
+
+● Write(hello.c)
+  │ Wrote 7 lines to hello.c
+  │ + #include <stdio.h>
+  │ + int main() {
+  │ +     printf("Hello, World!\n");
+  │ +     return 0;
+  └ + }
+
+• Created a hello world program in C at hello.c. To compile and run it:
+  
+  gcc hello.c -o hello
+  ./hello
+  
+  This will output: Hello, World!
+  
+  The program includes the standard I/O library (stdio.h), defines a main function that prints the greeting using
+  printf, and returns 0 to indicate successful execution.
+
+❯ Now patch it to say goodbye world.
+
+● Update(hello.c)
+  │ Added 1 line, removed 1 line
+  │   #include <stdio.h>
+  │ 
+  │   int main() {
+  │ -     printf("Hello, World!\n");
+  │ +     printf("Goodbye, World!\n");
+  │       return 0;
+  └   }
+
+• Done! The program now prints Goodbye, World! instead.
+
+❯ Show a long markdown response demonstrating all formatting features.
+
+• Markdown Formatting Demonstration
+  
+  Headings
+  
+  This is a demonstration of all major markdown formatting features available in Claude Code's CLI output.
+  
+  Level 3 Heading
+  
+  Level 4 Heading
+  
+  Level 5 Heading
+  
+  Level 6 Heading
+  
+  ---
+  Text Formatting
+  
+  Here are various text formatting options:
+  
+  Bold text - Use two asterisks or underscores
+  Italic text - Use single asterisks or underscores
+  Bold and italic - Use three asterisks
+  ~~Strikethrough text~~ - Use two tildes
+  
+  Combined: This is bold italic with some ~~strikethrough~~ and bold text mixed in.
+  
+  ---
+  Lists
+  
+  Unordered Lists
+  
+  - First item
+  - Second item
+  - Third item with more detail
+    - Nested item level 2
+    - Another nested item
+        - Nested item level 3
+      - Yet another one
+  - Back to level 1
+  
+  Ordered Lists
+  
+  1. First step
+  2. Second step
+  3. Third step
+    a. Sub-step A
+    b. Sub-step B
+    c. Sub-step C
+  4. Back to main level
+  
+  Mixed Lists
+  
+  1. Start with ordered
+    - Switch to unordered
+    - Keep going
+        i. Back to ordered
+      ii. Continue
+    - Back to unordered
+  2. Main level again
+  
+  ---
+  Code Blocks
+  
+  Inline Code
+  
+  Use inline code for short snippets like const x = 42; or git status.
+  
+  Fenced Code Blocks
+  
+  Plain text code block without syntax highlighting
+  Just plain ASCII art or text output
+  
+  # Python example with syntax highlighting
+  def hello_world():
+      print("Hello, World!")
+      return 42
+  
+  // JavaScript example
+  const greeting = "Hello, World!";
+  console.log(greeting);
+  
+  # Bash script example
+  echo "Hello, World!"
+  mkdir -p /tmp/test
+  ls -la
+  
+  {
+    "name": "example",
+    "version": "1.0.0",
+    "features": [
+      "markdown",
+      "formatting",
+      "cli"
+    ]
+  }
+  
+  ---
+  Blockquotes
+  
+  This is a simple blockquote.
+  
+  This is a longer blockquote that might span multiple lines.
+  It contains multiple sentences and demonstrates how blockquotes
+  can be used to highlight important information or quotes from sources.
+  
+  Note: Blockquotes can contain other formatting like bold, italic, and code.
+  
+  They can also contain:
+  - Lists
+  - Multiple paragraphs
+  
+  And other nested elements.
+  
+  ---
+  Tables
+  ┌─────────┬─────────┬───────────┐
+  │ Feature │ Support │  Status   │
+  ├─────────┼─────────┼───────────┤
+  │ Bold    │ ✓       │ Supported │
+  ├─────────┼─────────┼───────────┤
+  │ Italic  │ ✓       │ Supported │
+  ├─────────┼─────────┼───────────┤
+  │ Code    │ ✓       │ Supported │
+  ├─────────┼─────────┼───────────┤
+  │ Lists   │ ✓       │ Supported │
+  ├─────────┼─────────┼───────────┤
+  │ Tables  │ ✓       │ Supported │
+  └─────────┴─────────┴───────────┘
+  ┌────────────┬──────────────────────┬────────────┐
+  │  Language  │       Example        │ Complexity │
+  ├────────────┼──────────────────────┼────────────┤
+  │ Python     │ print("hello")       │ Low        │
+  ├────────────┼──────────────────────┼────────────┤
+  │ JavaScript │ console.log("hello") │ Medium     │
+  ├────────────┼──────────────────────┼────────────┤
+  │ C++        │ std::cout << "hello" │ High       │
+  └────────────┴──────────────────────┴────────────┘
+  ---
+  Links and References
+  
+  Text Links
+  
+  This is a https://example.com in the middle of a sentence.
+  
+  https://openai.com - Another link example.
+  
+  You can also use reference-style links like https://example.com/reference.
+  
+  URL Links
+  
+  Direct URLs like https://github.com are automatically recognized.
+  
+  ---
+  Emphasis and Special Formatting
+  
+  - Important - Use backticks for emphasis
+  - Critical - Use bold italic for strong emphasis
+  Warning: Use blockquotes for warnings
+  
+  Examples of effective emphasis:
+  
+  Key Point: The markdown renderer supports all CommonMark features.
+  
+  Secondary note: This is less emphasized than bold.
+  
+  Most emphasized: This gets maximum visual weight.
+  
+  ---
+  Horizontal Rules
+  
+  You can create visual separation with horizontal rules (shown above with ---).
+  
+  ---
+  Complex Nested Example
+  
+  Important Configuration
+  
+  This is a blockquote containing a heading and a code example:
+  
+  configuration:
+    enabled: true
+    options:
+      - feature_a
+      - feature_b
+  
+  Remember:
+  1. Always validate syntax
+  2. Test before deploying
+  3. Review changes carefully
+  
+  ---
+  Lists with Code
+  
+  Here's an example of lists containing code:
+  
+  - Setup phase:
+    - Install dependencies: npm install
+    - Configure settings: npm run config
+    - Build project: npm run build
+  - Runtime phase:
+  npm start
+  
+  ---
+  Summary
+  
+  This demonstration covered:
+  
+  ✓ Headings - All 6 levels
+  ✓ Text formatting - Bold, italic, strikethrough
+  ✓ Lists - Ordered, unordered, nested, mixed
+  ✓ Code blocks - Inline and fenced with syntax highlighting
+  ✓ Blockquotes - Simple and complex
+  ✓ Tables - Multi-column alignment
+  ✓ Links - Text and reference-style
+  ✓ Emphasis techniques - Various methods for highlighting
+  ✓ Nested content - Complex structures combining multiple elements
+  
+  All of these features are rendered properly in Claude Code's command-line interface using CommonMark markdown
+  specification.
+● Tool: running
+● Tool: running
+● Run started.
+● Run finished.

@@ -19,6 +19,7 @@ export const buildCTreeTreeRows = (
   const rows: CTreeTreeRow[] = []
   const nodeById = new Map<string, CTreeTreeNode>()
   const childrenByParent = new Map<string | null, string[]>()
+  const parentById = new Map<string, string | null>()
   if (!tree?.nodes?.length) {
     return { rows, nodeById, childrenByParent }
   }
@@ -26,6 +27,7 @@ export const buildCTreeTreeRows = (
   for (const node of tree.nodes) {
     nodeById.set(node.id, node)
     const parentId = node.parent_id ?? null
+    parentById.set(node.id, parentId)
     const list = childrenByParent.get(parentId)
     if (list) {
       list.push(node.id)
@@ -48,6 +50,15 @@ export const buildCTreeTreeRows = (
     }
   }
 
+  const isUnderCollapsed = (nodeId: string): boolean => {
+    let current = parentById.get(nodeId) ?? null
+    while (current) {
+      if (collapsed.has(current)) return true
+      current = parentById.get(current) ?? null
+    }
+    return false
+  }
+
   const rootId = tree.root_id
   if (rootId && nodeById.has(rootId)) {
     walk(rootId, 0, false)
@@ -60,6 +71,7 @@ export const buildCTreeTreeRows = (
 
   for (const nodeId of nodeById.keys()) {
     if (!visited.has(nodeId)) {
+      if (isUnderCollapsed(nodeId)) continue
       walk(nodeId, 0, true)
     }
   }

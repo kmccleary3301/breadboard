@@ -1,0 +1,107 @@
+version: 1
+defaults:
+  render:
+    include_header: true
+    include_status: true
+    include_hints: true
+    include_model_menu: false
+    colors: true
+    ascii_only: false
+    max_width: 120
+  normalize:
+    timestamps: true
+    tokens: true
+    paths: true
+    status: true
+  style:
+    require_ansi: false
+    diff_add: false
+    diff_del: false
+scenarios:
+  - id: streaming_pending_basic
+    input: ../scenarios/streaming_pending_basic/input/events.jsonl
+  - id: streaming_pending_basic_w80
+    input: ../scenarios/streaming_pending_basic/input/events.jsonl
+    render:
+      max_width: 80
+  - id: streaming_pending_basic_w100
+    input: ../scenarios/streaming_pending_basic/input/events.jsonl
+    render:
+      max_width: 100
+  - id: tool_call_result_collapsed
+    input: ../scenarios/tool_call_result_collapsed/input/events.jsonl
+    style:
+      tool_dot: true
+  - id: tool_call_result_collapsed_w80
+    input: ../scenarios/tool_call_result_collapsed/input/events.jsonl
+    render:
+      max_width: 80
+    style:
+      tool_dot: true
+  - id: tool_call_result_collapsed_w100
+    input: ../scenarios/tool_call_result_collapsed/input/events.jsonl
+    render:
+      max_width: 100
+    style:
+      tool_dot: true
+  - id: ascii_only_pending
+    input: ../scenarios/ascii_only_pending/input/events.jsonl
+    render:
+      colors: false
+      ascii_only: true
+  - id: ascii_only_pending_w80
+    input: ../scenarios/ascii_only_pending/input/events.jsonl
+    render:
+      colors: false
+      ascii_only: true
+      max_width: 80
+  - id: ascii_only_pending_w100
+    input: ../scenarios/ascii_only_pending/input/events.jsonl
+    render:
+      colors: false
+      ascii_only: true
+      max_width: 100
+  - id: diff_patch_preview
+    input: ../scenarios/diff_patch_preview/input/events.jsonl
+    render:
+      include_header: true
+      include_status: true
+      include_hints: true
+      include_model_menu: false
+      colors: true
+      ascii_only: false
+      max_width: 120
+    style:
+      require_ansi: true
+      diff_add: true
+      diff_del: true
+      diff_add_bg: true
+      diff_del_bg: true
+  - id: write_patch_markdown_showcase
+    input: ../claude_compare_inputs/claude_write_patch_markdown/input/events.jsonl
+    render:
+      include_header: true
+      include_status: true
+      include_hints: true
+      include_model_menu: false
+      colors: true
+      ascii_only: false
+      max_width: 120
+    style:
+      require_ansi: true
+      tool_dot: true
+      diff_add_bg: true
+      diff_del_bg: true
+  - id: diff_patch_preview_truncated
+    input: ../scenarios/diff_patch_preview_truncated/input/events.jsonl
+    render:
+      include_header: true
+      include_status: true
+      include_hints: true
+      include_model_menu: false
+      colors: true
+      ascii_only: false
+      max_width: 120
+    style:
+      diff_add_bg: true
+      collapse_dim: true

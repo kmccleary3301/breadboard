@@ -16,8 +16,6 @@ type RenderNodesContext = {
   ctrlCPrimedAt: number | null
   escPrimedAt: number | null
   pendingResponse: boolean
-  toolWindow: { items: ReadonlyArray<any>; truncated: boolean; hiddenCount: number }
-  renderToolEntry: (entry: any) => React.ReactNode
   scrollbackMode: boolean
   liveSlots: any[]
   animationTick: number
@@ -25,9 +23,8 @@ type RenderNodesContext = {
   collapsibleMeta: Map<string, { index: number; total: number }>
   selectedCollapsibleEntryId: string | null
   compactMode: boolean
-  conversationWindow: { items: ReadonlyArray<any>; truncated: boolean; hiddenCount: number }
-  streamingConversationEntry: any | null
-  renderConversationEntry: (entry: any, key?: string) => React.ReactNode
+  transcriptWindow: { items: ReadonlyArray<any>; truncated: boolean; hiddenCount: number }
+  renderTranscriptEntry: (entry: any, key?: string) => React.ReactNode
 }
 
 export const useReplViewRenderNodes = (context: RenderNodesContext) => {
@@ -41,8 +38,6 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     ctrlCPrimedAt,
     escPrimedAt,
     pendingResponse,
-    toolWindow,
-    renderToolEntry,
     scrollbackMode,
     liveSlots,
     animationTick,
@@ -50,34 +45,16 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     collapsibleMeta,
     selectedCollapsibleEntryId,
     compactMode,
-    conversationWindow,
-    streamingConversationEntry,
-    renderConversationEntry,
+    transcriptWindow,
+    renderTranscriptEntry,
   } = context
 
-  const toolNodes = useMemo(() => {
-    if (toolWindow.items.length === 0) return []
-    const nodes: React.ReactNode[] = []
-    if (!scrollbackMode && toolWindow.truncated) {
-      nodes.push(
-        <Text key="tool-truncated" color="dim">
-          … {toolWindow.hiddenCount} earlier tool event{toolWindow.hiddenCount === 1 ? "" : "s"} hidden …
-        </Text>,
-      )
-    }
-    for (const entry of toolWindow.items) {
-      nodes.push(renderToolEntry(entry))
-    }
-    return nodes
-  }, [renderToolEntry, scrollbackMode, toolWindow])
+  const toolNodes = useMemo(() => [], [])
 
-  const liveSlotNodes = useMemo(
-    () =>
-      liveSlots.map((slot, idx) => (
-        <LiveSlot key={`slot-${slot.id}`} slot={slot} index={idx} tick={animationTick} />
-      )),
-    [animationTick, liveSlots],
-  )
+  const liveSlotNodes = useMemo(() => {
+    if (scrollbackMode) return []
+    return liveSlots.map((slot, idx) => <LiveSlot key={`slot-${slot.id}`} slot={slot} index={idx} tick={animationTick} />)
+  }, [animationTick, liveSlots, scrollbackMode])
 
   const renderPermissionNoteLine = useCallback((value: string, cursorIndex: number) => {
     if (!value) {
@@ -189,91 +166,19 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     return rows.map(([key, desc]) => `${CHALK.cyan(key.padEnd(pad))} ${desc}`)
   }, [claudeChrome, contentWidth, keymap])
 
-  const shortcutLines = useMemo(() => {
-    if (claudeChrome) {
-      const rows: Array<[string, string, string?]> = [
-        ["! for bash mode", "double tap esc to clear input", "ctrl + _ to undo"],
-        ["/ for commands", "shift + tab to auto-accept edits", "ctrl + z to suspend"],
-        ["@ for file paths", "ctrl + o for transcript", "ctrl + v to paste images"],
-        ["& for background", "ctrl + t to show todos", "alt + p to switch model"],
-        ["", "shift + ⏎ for newline", "ctrl + s to stash prompt"],
-        ["", "ctrl + g for skills", "ctrl + r for rewind"],
-      ]
-      const colWidth = Math.max(22, Math.floor((contentWidth - 4) / 3))
-      return rows.map(([a, b, c]) => {
-        const left = formatCell(a, colWidth, "left")
-        const mid = formatCell(b, colWidth, "left")
-        const right = formatCell(c ?? "", colWidth, "left")
-        return `${left}  ${mid}  ${right}`.trimEnd()
-      })
-    }
-    const rows: Array<[string, string]> = [
-      ["Ctrl+C ×2", "Exit the REPL"],
-      ["Ctrl+D", "Exit immediately"],
-      ["Ctrl+Z", "Suspend (empty input)"],
-      ["Ctrl+L", "Clear screen (keep transcript)"],
-      ["Ctrl+A", "Start of line"],
-      ["Ctrl+E", "End of line"],
-      ["Home/End", "Start/end of line"],
-      ["Ctrl+U", "Delete to start"],
-      ["Ctrl+S", "Stash input to history"],
-      ["Esc", "Stop streaming"],
-      ["Esc Esc", "Clear input"],
-      ["Shift+Enter", "Insert newline"],
-      ["Alt+Enter", "Insert newline"],
-      ["Ctrl+O", keymap === "claude" ? "Transcript viewer" : "Toggle detailed transcript"],
-      ["Ctrl+P", "Command palette"],
-      ["Ctrl+K", "Model picker"],
-      ["Alt+P", "Model picker"],
-      ["Ctrl+G", "Skills picker"],
-      ["Ctrl+B", "Background tasks"],
-      ["Ctrl+R", "Rewind (checkpoints)"],
-      ["/usage", "Usage summary"],
-      ["Tab", "Complete @ or / list"],
-      ["/", "Slash commands"],
-      ["@", "File picker"],
-      ["n/p", "Transcript match nav"],
-      ["s", "Save transcript (viewer)"],
-      ["?", "Toggle shortcuts"],
-    ]
-    if (keymap === "claude") {
-      rows.push(["Ctrl+T", "Todos panel"])
-    } else {
-      rows.push(["Ctrl+T", "Transcript viewer"])
-    }
-    const pad = 14
-    return rows.map(([key, desc]) => `${CHALK.cyan(key.padEnd(pad))} ${desc}`)
-  }, [claudeChrome, contentWidth, keymap])
-
   const hintNodes = useMemo(() => {
     const filtered = claudeChrome ? hints.filter((hint) => !hint.startsWith("Session ")) : hints
     if (claudeChrome) {
-      if (shortcutsOpen) {
-        return shortcutLines.map((line, index) => (
-          <Text key={`hint-shortcut-${index}`} wrap="truncate-end">
-            {line}
-          </Text>
-        ))
-      }
       let statusText = completionHint ?? filtered.slice(-1)[0] ?? ""
       if (escPrimedAt && !pendingResponse) {
         statusText = "Press Esc again to clear input."
       } else if (ctrlCPrimedAt) {
         statusText = "Press Ctrl+C again to exit."
       }
-      const leftText = "  ? for shortcuts"
-      const leftLen = stripAnsiCodes(leftText).length
-      const gutter = 2
-      const rightMax = Math.max(0, contentWidth - leftLen - gutter)
-      const trimmedStatus = statusText.length > 0 && rightMax > 0
-        ? formatCell(statusText, rightMax, "right").trimStart()
-        : ""
-      const rightText = trimmedStatus.length > 0 ? formatCell(trimmedStatus, rightMax, "right").trimStart() : ""
-      const line = rightText.length > 0
-        ? `${leftText}${" ".repeat(gutter)}${rightText}`
-        : leftText
+      if (!statusText) return []
+      const line = formatCell(statusText, Math.max(1, contentWidth), "left")
       return [
-        <Text key="hint-claude-footer" color={COLORS.textMuted}>
+        <Text key="hint-claude-status" color={COLORS.textMuted}>
           {line}
         </Text>,
       ]
@@ -307,9 +212,23 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     escPrimedAt,
     hints,
     pendingResponse,
-    shortcutLines,
-    shortcutsOpen,
   ])
+
+  const shortcutHintNodes = useMemo(() => {
+    if (!claudeChrome) return []
+    if (shortcutsOpen) {
+      return shortcutLines.map((line, index) => (
+        <Text key={`hint-shortcut-${index}`} wrap="truncate-end">
+          {line}
+        </Text>
+      ))
+    }
+    return [
+      <Text key="hint-claude-shortcuts" color={COLORS.textMuted}>
+        {"  ? for shortcuts"}
+      </Text>,
+    ]
+  }, [claudeChrome, shortcutLines, shortcutsOpen])
 
   const collapsedHintNode = useMemo(() => {
     if (collapsibleEntries.length === 0) return null
@@ -325,22 +244,20 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
   const virtualizationHintNode = useMemo(() => {
     if (scrollbackMode) return null
     if (!compactMode) return null
-    const hidden = conversationWindow.hiddenCount
+    const hidden = transcriptWindow.hiddenCount
     const hiddenText = hidden > 0 ? ` (${hidden} hidden)` : ""
     return (
       <Text color="dim">
-        Compact transcript mode active — showing last {conversationWindow.items.length} message{conversationWindow.items.length === 1 ? "" : "s"}
+        Compact transcript mode active — showing last {transcriptWindow.items.length} entry{transcriptWindow.items.length === 1 ? "" : "s"}
         {hiddenText}. Use /view scroll auto to expand.
       </Text>
     )
-  }, [compactMode, conversationWindow.hiddenCount, conversationWindow.items.length, scrollbackMode])
+  }, [compactMode, transcriptWindow.hiddenCount, transcriptWindow.items.length, scrollbackMode])
 
   const transcriptNodes = useMemo(() => {
-    if (conversationWindow.items.length === 0) {
+    if (transcriptWindow.items.length === 0) {
       if (scrollbackMode) {
-        return streamingConversationEntry
-          ? [renderConversationEntry(streamingConversationEntry, "streaming-only")]
-          : []
+        return []
       }
       return [
         <Text key="transcript-empty" color="gray">
@@ -349,18 +266,25 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
       ]
     }
     const nodes: React.ReactNode[] = []
-    if (!scrollbackMode && conversationWindow.truncated) {
+    if (!scrollbackMode && transcriptWindow.truncated) {
       nodes.push(
         <Text key="transcript-truncated" color="dim">
-          … {conversationWindow.hiddenCount} earlier {conversationWindow.hiddenCount === 1 ? "message" : "messages"} hidden …
+          … {transcriptWindow.hiddenCount} earlier {transcriptWindow.hiddenCount === 1 ? "entry" : "entries"} hidden …
         </Text>,
       )
     }
-    for (const entry of conversationWindow.items) {
-      nodes.push(renderConversationEntry(entry))
+    for (const entry of transcriptWindow.items) {
+      const rendered = renderTranscriptEntry(entry)
+      if (rendered) nodes.push(rendered)
     }
-    return nodes
-  }, [conversationWindow, pendingResponse, renderConversationEntry, scrollbackMode, streamingConversationEntry])
+    const spaced: React.ReactNode[] = []
+    nodes.filter(Boolean).forEach((node, idx) => {
+      if (idx === 0) spaced.push(<Text key="transcript-gap-start"> </Text>)
+      spaced.push(node)
+      if (idx < nodes.length - 1) spaced.push(<Text key={`transcript-gap-${idx}`}> </Text>)
+    })
+    return spaced
+  }, [transcriptWindow, pendingResponse, renderTranscriptEntry, scrollbackMode])
 
   return {
     toolNodes,
@@ -369,6 +293,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     metaNodes,
     shortcutLines,
     hintNodes,
+    shortcutHintNodes,
     collapsedHintNode,
     virtualizationHintNode,
     transcriptNodes,

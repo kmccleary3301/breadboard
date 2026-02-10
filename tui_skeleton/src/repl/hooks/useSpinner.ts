@@ -1,6 +1,5 @@
 import chalk from "chalk"
 import { useAnimationClock } from "./useAnimationClock.js"
-import { BRAND_COLORS } from "../designSystem.js"
 import {
   BRAND_COLORS,
   STATUS_SPINNER_FRAMES,

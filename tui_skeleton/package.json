@@ -12,7 +12,10 @@
     "postbuild": "tsx scripts/installLocalBin.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "tui:goldens:report": "node --import tsx scripts/tui_goldens_report.ts",
+    "tui:goldens:strict": "node --import tsx scripts/tui_goldens_strict.ts",
+    "claude:compare:report": "node --import tsx scripts/claude_compare_report.ts"
   },
   "dependencies": {
     "@effect/cli": "^0.69.0",
@@ -21,8 +24,8 @@
     "@effect/platform-node": "^0.95.0",
     "@effect/printer": "^0.45.0",
     "@effect/printer-ansi": "^0.45.0",
-    "@stream-mdx/core": "^0.0.2",
-    "@stream-mdx/worker": "^0.0.2",
+    "@stream-mdx/core": "^0.3.0",
+    "@stream-mdx/worker": "^0.3.0",
     "@types/node": "^24.2.1",
     "chalk": "^5.3.0",
     "chroma-js": "^2.4.2",
@@ -35,7 +38,8 @@
     "ink-select-input": "^6.2.0",
     "ink-text-input": "^6.0.0",
     "react": "^18.2.0",
-    "shiki": "^3.20.0"
+    "shiki": "^3.20.0",
+    "yaml": "^2.8.1"
   },
   "optionalDependencies": {
     "keytar": "^7.9.0"

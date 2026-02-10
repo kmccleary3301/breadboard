@@ -1,0 +1,23 @@
+{
+  "id": "diff_patch_preview",
+  "blessed_at": "2026-02-09T21:23:36.070Z",
+  "git_sha": "2ba0477e2cb3efb7c5a6b6381a484e76c7b69954",
+  "manifest_version": 1,
+  "render": {
+    "include_header": true,
+    "include_status": true,
+    "include_hints": true,
+    "include_model_menu": false,
+    "colors": true,
+    "ascii_only": false,
+    "max_width": 120
+  },
+  "normalize": {
+    "timestamps": true,
+    "tokens": true,
+    "paths": true,
+    "status": true
+  },
+  "source": "/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/misc/tui_goldens/artifacts/run-1770672086428/diff_patch_preview/render.txt",
+  "source_grid": "/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/misc/tui_goldens/artifacts/run-1770672086428/diff_patch_preview/frame.grid.json"
+}

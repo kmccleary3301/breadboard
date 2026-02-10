@@ -1,9 +1,19 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { Box, Text } from "ink"
-import { Box, Text } from "ink"
-import type { ConversationEntry, ToolLogEntry } from "../../../types.js"
+import type { TranscriptItem } from "../../../transcriptModel.js"
 import { buildCommandResultEntry, COMMAND_RESULT_LIMIT } from "./commandResults.js"
 import type { StaticFeedItem } from "../types.js"
+
+const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => {
+  if (value == null) return fallback
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return fallback
+  if (["1", "true", "yes", "on"].includes(normalized)) return true
+  if (["0", "false", "no", "off"].includes(normalized)) return false
+  return fallback
+}
+
+const LANDING_ALWAYS = parseBoolEnv(process.env.BREADBOARD_TUI_LANDING_ALWAYS, false)
 
 interface ScrollbackFeedOptions {
   readonly enabled: boolean
@@ -12,11 +22,9 @@ interface ScrollbackFeedOptions {
   readonly headerLines: string[]
   readonly headerSubtitleLines: string[]
   readonly landingNode: React.ReactNode | null
-  readonly conversationEntries: ConversationEntry[]
-  readonly streamingEntry: ConversationEntry | null
-  readonly toolEvents: ToolLogEntry[]
-  readonly renderConversationEntry: (entry: ConversationEntry, key?: string) => React.ReactNode
-  readonly renderToolEntry: (entry: ToolLogEntry, key?: string) => React.ReactNode
+  readonly transcriptEntries: TranscriptItem[]
+  readonly streamingEntries: TranscriptItem[]
+  readonly renderTranscriptEntry: (entry: TranscriptItem, key?: string) => React.ReactNode
   readonly transcriptViewerOpen: boolean
 }
 
@@ -25,8 +33,7 @@ export interface ScrollbackFeedState {
   readonly pushCommandResult: (title: string, lines: string[]) => void
   readonly headerPrintedRef: React.MutableRefObject<boolean>
   readonly landingPrintedRef: React.MutableRefObject<boolean>
-  readonly printedConversationIdsRef: React.MutableRefObject<Set<string>>
-  readonly printedToolIdsRef: React.MutableRefObject<Set<string>>
+  readonly printedTranscriptIdsRef: React.MutableRefObject<Set<string>>
 }
 
 export const useScrollbackFeed = (options: ScrollbackFeedOptions): ScrollbackFeedState => {
@@ -37,18 +44,15 @@ export const useScrollbackFeed = (options: ScrollbackFeedOptions): ScrollbackFee
     headerLines,
     headerSubtitleLines,
     landingNode,
-    conversationEntries,
-    streamingEntry,
-    toolEvents,
-    renderConversationEntry,
-    renderToolEntry,
+    transcriptEntries,
+    streamingEntries,
+    renderTranscriptEntry,
     transcriptViewerOpen,
   } = options
   const [staticFeed, setStaticFeed] = useState<StaticFeedItem[]>([])
   const headerPrintedRef = useRef(false)
   const landingPrintedRef = useRef(false)
-  const printedConversationIdsRef = useRef(new Set<string>())
-  const printedToolIdsRef = useRef(new Set<string>())
+  const printedTranscriptIdsRef = useRef(new Set<string>())
   const lastConversationSignatureRef = useRef<{ sig: string; createdAt?: number | null } | null>(null)
 
   const pushCommandResult = useCallback((title: string, lines: string[]) => {
@@ -64,8 +68,7 @@ export const useScrollbackFeed = (options: ScrollbackFeedOptions): ScrollbackFee
     if (!enabled) return
     headerPrintedRef.current = false
     landingPrintedRef.current = false
-    printedConversationIdsRef.current.clear()
-    printedToolIdsRef.current.clear()
+    printedTranscriptIdsRef.current.clear()
     lastConversationSignatureRef.current = null
     setStaticFeed([])
   }, [enabled, sessionId, viewClearAt])
@@ -79,9 +82,7 @@ export const useScrollbackFeed = (options: ScrollbackFeedOptions): ScrollbackFee
 
       const landingActive =
         Boolean(landingNode) &&
-        conversationEntries.length === 0 &&
-        !streamingEntry &&
-        toolEvents.length === 0
+        (LANDING_ALWAYS || (transcriptEntries.length === 0 && streamingEntries.length === 0))
 
       if (!headerPrintedRef.current) {
         if (!landingActive) {
@@ -110,44 +111,48 @@ export const useScrollbackFeed = (options: ScrollbackFeedOptions): ScrollbackFee
       const pending: Array<{ id: string; node: React.ReactNode; order: number; seq: number }> = []
       let seq = 0
 
-      for (const entry of conversationEntries) {
-        if (printedConversationIdsRef.current.has(entry.id)) continue
-        const sig = `${entry.speaker}|${entry.text}`
-        const createdAt = Number.isFinite(entry.createdAt) ? entry.createdAt : null
-        const lastSig = lastConversationSignatureRef.current
-        const isDup =
-          lastSig &&
-          lastSig.sig === sig &&
-          ((createdAt != null && lastSig.createdAt != null && Math.abs(createdAt - lastSig.createdAt) < 2000) ||
-            (createdAt == null && lastSig.createdAt == null))
-        if (isDup) {
-          printedConversationIdsRef.current.add(entry.id)
-          continue
+      for (const entry of transcriptEntries) {
+        if (printedTranscriptIdsRef.current.has(entry.id)) continue
+        if (entry.kind === "message") {
+          const sig = `${entry.speaker}|${entry.text}`
+          const createdAt = Number.isFinite(entry.createdAt) ? entry.createdAt : null
+          const lastSig = lastConversationSignatureRef.current
+          const isDup =
+            lastSig &&
+            lastSig.sig === sig &&
+            ((createdAt != null && lastSig.createdAt != null && Math.abs(createdAt - lastSig.createdAt) < 2000) ||
+              (createdAt == null && lastSig.createdAt == null))
+          if (isDup) {
+            printedTranscriptIdsRef.current.add(entry.id)
+            continue
+          }
+          lastConversationSignatureRef.current = { sig, createdAt }
         }
-        printedConversationIdsRef.current.add(entry.id)
-        pending.push({
-          id: `conv-${entry.id}`,
-          node: renderConversationEntry(entry, `static-${entry.id}`),
-          order: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now(),
-          seq: seq++,
-        })
-        lastConversationSignatureRef.current = { sig, createdAt }
-      }
-
-      for (const entry of toolEvents) {
-        if (printedToolIdsRef.current.has(entry.id)) continue
-        printedToolIdsRef.current.add(entry.id)
-        pending.push({
-          id: `tool-${entry.id}`,
-          node: renderToolEntry(entry, `static-${entry.id}`),
-          order: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now(),
-          seq: seq++,
-        })
+        printedTranscriptIdsRef.current.add(entry.id)
+        const node = renderTranscriptEntry(entry, `static-${entry.id}`)
+        if (node) {
+          pending.push({
+            id: `tx-${entry.id}`,
+            node,
+            order: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now(),
+            seq: seq++,
+          })
+        }
       }
 
       if (pending.length > 0) {
         pending.sort((a, b) => (a.order - b.order) || (a.seq - b.seq))
-        next = [...next, ...pending.map((item) => ({ id: item.id, node: item.node }))]
+        const spaced: StaticFeedItem[] = []
+        let needsSpacer = next.length > 0
+        let spacerIndex = 0
+        for (const item of pending) {
+          if (needsSpacer) {
+            spaced.push({ id: `spacer-${sessionId}-${spacerIndex++}`, node: <Text> </Text> })
+          }
+          spaced.push({ id: item.id, node: item.node })
+          needsSpacer = true
+        }
+        next = [...next, ...spaced]
         changed = true
       }
 
@@ -158,11 +163,9 @@ export const useScrollbackFeed = (options: ScrollbackFeedOptions): ScrollbackFee
     headerLines,
     headerSubtitleLines,
     landingNode,
-    conversationEntries,
-    streamingEntry,
-    toolEvents,
-    renderConversationEntry,
-    renderToolEntry,
+    transcriptEntries,
+    streamingEntries,
+    renderTranscriptEntry,
     sessionId,
     transcriptViewerOpen,
   ])
@@ -172,7 +175,6 @@ export const useScrollbackFeed = (options: ScrollbackFeedOptions): ScrollbackFee
     pushCommandResult,
     headerPrintedRef,
     landingPrintedRef,
-    printedConversationIdsRef,
-    printedToolIdsRef,
+    printedTranscriptIdsRef,
   }
 }

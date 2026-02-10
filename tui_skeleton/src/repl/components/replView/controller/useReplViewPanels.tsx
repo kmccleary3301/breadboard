@@ -4,6 +4,8 @@ import { computeModelColumns, CONTEXT_COLUMN_WIDTH, PRICE_COLUMN_WIDTH } from ".
 import { useSpinner } from "../../../hooks/useSpinner.js"
 import { useAnimationClock } from "../../../hooks/useAnimationClock.js"
 import { computeDiffPreview } from "../../../transcriptUtils.js"
+import { buildTranscript } from "../../../transcriptBuilder.js"
+import type { TranscriptItem } from "../../../transcriptModel.js"
 import { renderCodeLines } from "../renderers/markdown/streamMdxAdapter.js"
 import { stripAnsiCodes } from "../utils/ansi.js"
 import { formatCell } from "../utils/format.js"
@@ -48,6 +50,8 @@ export const useReplViewPanels = (context: PanelsContext) => {
     inputLocked: inputLockedOverride,
     conversation,
     toolEvents,
+    rawEvents,
+    viewPrefs,
     verboseOutput,
     keymap,
     transcriptSearchQuery,
@@ -330,67 +334,40 @@ export const useReplViewPanels = (context: PanelsContext) => {
   const transcriptViewerLines = useMemo(() => {
     const lines: string[] = []
     const normalizeNewlines = (text: string) => text.replace(/\\r\\n?/g, "\\n")
-    const detailedTranscriptActive = verboseOutput || (keymap === "claude" && transcriptViewerOpen)
-    for (const entry of conversation) {
-      const speaker = entry.speaker.toUpperCase()
-      lines.push(`${speaker}:`)
-      const entryLines = normalizeNewlines(entry.text).split("\\n")
-      for (const line of entryLines) {
-        lines.push(`  ${line}`)
+    const transcript = buildTranscript(
+      { conversation, toolEvents, rawEvents },
+      { includeRawEvents: viewPrefs.rawStream === true, pendingToolsInTail: false },
+    )
+    const items: TranscriptItem[] = transcriptViewerOpen
+      ? [...transcript.committed, ...transcript.tail]
+      : transcript.committed
+
+    const renderLines = (prefix: string, text: string) => {
+      const entryLines = normalizeNewlines(text).split("\\n")
+      entryLines.forEach((line, idx) => {
+        lines.push(`${idx === 0 ? prefix : "  "}${line}`)
+      })
+    }
+
+    for (const item of items) {
+      if (item.kind === "message") {
+        const glyph = item.speaker === "user" ? "❯" : item.speaker === "assistant" ? GLYPHS.assistantDot : GLYPHS.systemDot
+        renderLines(`${glyph} `, item.text)
+      } else {
+        renderLines(`${GLYPHS.bullet} `, item.text)
       }
       lines.push("")
-    }
-    if (toolEvents.length > 0) {
-      if (lines.length > 0 && lines[lines.length - 1] !== "") {
-        lines.push("")
-      }
-      lines.push("TOOLS:")
-      for (const entry of toolEvents) {
-        const status = entry.status ? ` ${entry.status}` : ""
-        const kindToken = `[${entry.kind}]`
-        const entryText = entry.text.startsWith(kindToken)
-          ? entry.text.slice(kindToken.length).trimStart()
-          : entry.text
-        lines.push(`  [${entry.kind}]${status}`)
-        const toolLines = normalizeNewlines(entryText).split("\\n")
-        if (detailedTranscriptActive || toolLines.length <= 24) {
-          for (const line of toolLines) {
-            lines.push(`    ${line}`)
-          }
-        } else {
-          const head = toolLines.slice(0, 2)
-          const tail = toolLines.slice(-1)
-          const hidden = Math.max(0, toolLines.length - head.length - tail.length)
-          for (const line of head) {
-            lines.push(`    ${line}`)
-          }
-          if (hidden > 0) {
-            const diffPreview = computeDiffPreview(toolLines)
-            const filesPart =
-              diffPreview && diffPreview.files.length > 0 ? ` in ${diffPreview.files.join(", ")}` : ""
-            const summary =
-              diffPreview
-                ? `${DELTA_GLYPH} +${diffPreview.additions}/-${diffPreview.deletions}${filesPart}`
-                : `${hidden} line${hidden === 1 ? "" : "s"} hidden`
-            lines.push(`    ${GLYPHS.ellipsis} ${summary} (Ctrl+O for detailed transcript)`)
-          }
-          for (const line of tail) {
-            lines.push(`    ${line}`)
-          }
-        }
-        lines.push("")
-      }
     }
     while (lines.length > 0 && lines[lines.length - 1] === "") {
       lines.pop()
     }
     return lines
-  }, [conversation, keymap, toolEvents, transcriptViewerOpen, verboseOutput])
+  }, [conversation, rawEvents, toolEvents, transcriptViewerOpen, viewPrefs.rawStream])
   const transcriptToolLines = useMemo(() => {
     const indices: number[] = []
     for (let line = 0; line < transcriptViewerLines.length; line += 1) {
       const value = transcriptViewerLines[line] ?? ""
-      if (value.startsWith("  [")) {
+      if (value.startsWith(`${GLYPHS.bullet} `)) {
         indices.push(line)
       }
     }

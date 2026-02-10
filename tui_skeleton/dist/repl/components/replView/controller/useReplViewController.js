@@ -9,7 +9,7 @@ import { loadProfileConfig } from "../../../profile.js";
 import { loadChromeMode } from "../../../chrome.js";
 import { ensureShikiLoaded, subscribeShiki } from "../../../shikiHighlighter.js";
 import { CLI_VERSION, DOT_SEPARATOR, uiText } from "../theme.js";
-import { formatDuration } from "../utils/format.js";
+import { formatDuration, } from "../utils/format.js";
 import { clearToEnd, } from "../utils/text.js";
 import { useReplKeyRouter } from "../keybindings/useReplKeyRouter.js";
 import { useModalController } from "../features/modals/useModalController.js";

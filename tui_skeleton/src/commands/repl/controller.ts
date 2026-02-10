@@ -86,6 +86,7 @@ export interface CompletionView {
 }
 
 export interface ReplState {
+  readonly configPath?: string | null
   readonly sessionId: string
   readonly status: string
   readonly pendingResponse: boolean
@@ -115,6 +116,7 @@ export interface ReplState {
   readonly tasks: TaskEntry[]
   readonly ctreeSnapshot?: CTreeSnapshot | null
   readonly ctreeTree?: CTreeTreeResponse | null
+  readonly ctreeModel?: CTreeModel | null
   readonly ctreeTreeStatus: "idle" | "loading" | "error"
   readonly ctreeTreeError?: string | null
   readonly ctreeStage: CTreeTreeStage | string
@@ -153,13 +155,16 @@ export class ReplSessionController extends EventEmitter {
   private conversationSequence = 0
   private streamingEntryId: string | null = null
   private viewPrefs: TranscriptPreferences = {
-    collapseMode: "auto",
+    collapseMode: "none",
     virtualization: "auto",
     richMarkdown: DEFAULT_RICH_MARKDOWN,
     toolRail: true,
     toolInline: false,
     rawStream: false,
     showReasoning: false,
+    diffLineNumbers: ["1", "true", "yes", "on"].includes(
+      (process.env.BREADBOARD_DIFF_LINE_NUMBERS ?? "").toLowerCase(),
+    ),
   }
   private submissionHistory: SubmissionPayload[] = []
   private readonly stats: StreamStats = {
@@ -181,6 +186,7 @@ export class ReplSessionController extends EventEmitter {
   private skillsSources: SkillCatalogSources | null = null
   private ctreeSnapshot: CTreeSnapshot | null = null
   private ctreeTree: CTreeTreeResponse | null = null
+  private ctreeModel: CTreeModel = createEmptyCTreeModel()
   private ctreeTreeStatus: "idle" | "loading" | "error" = "idle"
   private ctreeTreeError: string | null = null
   private ctreeStage: CTreeTreeStage | string = "FROZEN"
@@ -215,6 +221,8 @@ export class ReplSessionController extends EventEmitter {
   private todos: TodoItem[] = []
   private tasks: TaskEntry[] = []
   private lastEventId: string | null = null
+  private eventClock = 0
+  private currentEventSeq: number | null = null
   private hasStreamedOnce = false
   private stopRequestedAt: number | null = null
   private stopTimer: NodeJS.Timeout | null = null
@@ -234,6 +242,7 @@ export class ReplSessionController extends EventEmitter {
   getState(): ReplState {
     const liveSlotList = Array.from(this.liveSlots.values()).sort((a, b) => a.updatedAt - b.updatedAt)
     return {
+      configPath: this.config.configPath,
       sessionId: this.sessionId,
       status: this.status,
       pendingResponse: this.pendingResponse,
@@ -263,6 +272,7 @@ export class ReplSessionController extends EventEmitter {
       tasks: [...this.tasks],
       ctreeSnapshot: this.ctreeSnapshot,
       ctreeTree: this.ctreeTree,
+      ctreeModel: this.ctreeModel,
       ctreeTreeStatus: this.ctreeTreeStatus,
       ctreeTreeError: this.ctreeTreeError,
       ctreeStage: this.ctreeStage,
@@ -282,6 +292,7 @@ export class ReplSessionController extends EventEmitter {
     const appConfig = this.providers.args.config
     this.ctreeSnapshot = null
     this.ctreeTree = null
+    this.ctreeModel = createEmptyCTreeModel()
     this.ctreeTreeStatus = "idle"
     this.ctreeTreeError = null
     this.ctreeStage = "FROZEN"
@@ -666,8 +677,23 @@ export class ReplSessionController extends EventEmitter {
     return stateMethods.addTool.call(this, kind, text, status, options)
   }
 
+  private updateToolEntry(
+    entryId: string,
+    patch: Partial<Omit<ToolLogEntry, "id" | "createdAt">>,
+  ): ToolLogEntry | null {
+    return stateMethods.updateToolEntry.call(this, entryId, patch)
+  }
+
   private formatToolSlot(payload: unknown): { text: string; color?: string; summary?: string } {
     return stateMethods.formatToolSlot.call(this, payload)
+  }
+
+  private resolveToolDisplayPayload(payload: Record<string, unknown>): Record<string, unknown> | null {
+    return stateMethods.resolveToolDisplayPayload.call(this, payload)
+  }
+
+  private formatToolDisplayText(payload: Record<string, unknown>): string {
+    return stateMethods.formatToolDisplayText.call(this, payload)
   }
 
   private resolveToolCallId(payload: Record<string, unknown>): string | null {
@@ -795,8 +821,13 @@ export class ReplSessionController extends EventEmitter {
     return stateMethods.emitChange.call(this)
   }
 
-  private handleToolCall(payload: Record<string, unknown>, callIdOverride?: string | null, allowExisting = true): string | null {
-    return eventMethods.handleToolCall.call(this, payload, callIdOverride, allowExisting)
+  private handleToolCall(
+    payload: Record<string, unknown>,
+    callIdOverride?: string | null,
+    allowExisting = true,
+    logEntry = true,
+  ): string | null {
+    return eventMethods.handleToolCall.call(this, payload, callIdOverride, allowExisting, logEntry)
   }
 
   private handleToolResult(payload: Record<string, unknown>, callIdOverride?: string | null): void {

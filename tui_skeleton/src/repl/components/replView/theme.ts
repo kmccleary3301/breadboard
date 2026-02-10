@@ -39,8 +39,11 @@ export const CHALK = chalk
 export const GLYPHS = {
   bullet: ICONS.bullet,
   chevron: ICONS.userChevron,
+  assistantDot: ICONS.assistantDot,
+  systemDot: ICONS.systemDot,
   select: ASCII_ONLY ? ">" : "▶",
   treeBranch: ICONS.treeBranch,
+  treeLine: ICONS.verticalLine,
   ellipsis: ICONS.ellipsis,
 } as const
 

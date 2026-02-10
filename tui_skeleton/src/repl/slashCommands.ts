@@ -35,6 +35,7 @@ export const SLASH_COMMANDS: ReadonlyArray<SlashCommandInfo> = [
   { name: "tasks", summary: "Open the background tasks panel.", shortcut: "Ctrl+B" },
   { name: "transcript", summary: "Open the transcript viewer.", shortcut: "Ctrl+T (Codex) / Ctrl+O (Claude)" },
   { name: "view", usage: "<collapse|scroll|markdown|raw|tools|reasoning> …", summary: "Adjust transcript, raw stream, or tool display modes." },
+  { name: "tool-display", usage: "list", summary: "List resolved tool display rules." },
 ]
 
 export const SLASH_COMMAND_HINT = SLASH_COMMANDS.map((entry) => `/${entry.name}${entry.usage ? ` ${entry.usage}` : ""}`).join(", ")

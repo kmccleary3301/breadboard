@@ -21,6 +21,7 @@ import type {
 import type { SessionFileInfo, SessionFileContent, CTreeTreeResponse } from "../../../api/types.js"
 
 export interface ReplViewProps {
+  readonly configPath?: string | null
   readonly sessionId: string
   readonly conversation: ConversationEntry[]
   readonly toolEvents: ToolLogEntry[]

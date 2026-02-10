@@ -309,7 +309,22 @@ const stripDiffPrefix = (line) => {
 };
 const applyWriteBackground = (line) => {
     const bg = backgroundAnsiCode(DIFF_INLINE_BG_COLORS.add);
-    return bg ? `${bg}${line}${ANSI_BG_RESET}` : line;
+    if (!bg)
+        return line;
+    let out = "";
+    let index = 0;
+    while (index < line.length) {
+        const token = readAnsiToken(line, index);
+        if (token) {
+            out += token;
+            out += bg;
+            index += token.length;
+            continue;
+        }
+        out += line[index];
+        index += 1;
+    }
+    return `${bg}${out}${ANSI_BG_RESET}`;
 };
 const resolveWriteLanguage = (pathValue) => {
     if (!pathValue)

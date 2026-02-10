@@ -1,4 +1,0 @@
-Slash commands: /help, /quit, /clear, /status, /remote on|off, /retry, /plan, /mode <plan|build|auto>, /model <id>, /test [suite], /files [path], /models, /skills
-! for bash • / for commands • @ for files • Tab to complete • Esc closes menus
-USER      Hello
-ASSISTANT Streaming partial

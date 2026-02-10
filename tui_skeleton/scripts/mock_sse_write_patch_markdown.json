@@ -1,0 +1,174 @@
+[
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "turn_start",
+      "payload": { "summary": "hello world c" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 150,
+    "event": {
+      "type": "user_message",
+      "payload": { "text": "Create a hello world in C." }
+    }
+  },
+  {
+    "delayMs": 150,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Sure — I'll write a simple C hello world program."
+      }
+    }
+  },
+  {
+    "delayMs": 250,
+    "event": {
+      "type": "tool_call",
+      "payload": {
+        "tool": {
+          "name": "write_file",
+          "args": {
+            "path": "hello.c",
+            "content": "#include <stdio.h>\n\nint main(void) {\n    printf(\"hello world\\n\");\n    return 0;\n}\n"
+          }
+        },
+        "display": { "title": "Write(hello.c)" }
+      }
+    }
+  },
+  {
+    "delayMs": 350,
+    "event": {
+      "type": "tool_result",
+      "payload": {
+        "tool": {
+          "name": "write_file",
+          "status": "success",
+          "output": "Wrote hello.c"
+        },
+        "display": {
+          "title": "Write(hello.c)",
+          "summary": "Wrote 6 lines",
+          "detail": [
+            "#include <stdio.h>",
+            "",
+            "int main(void) {",
+            "    printf(\"hello world\\n\");",
+            "    return 0;",
+            "}"
+          ],
+          "detail_truncated": {
+            "hidden": 0
+          }
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Done."
+      }
+    }
+  },
+  {
+    "delayMs": 250,
+    "event": {
+      "type": "user_message",
+      "payload": { "text": "Now patch it to say goodbye world." }
+    }
+  },
+  {
+    "delayMs": 150,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Applying patch to update the string."
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "tool_call",
+      "payload": {
+        "tool": {
+          "name": "apply_patch",
+          "args": {
+            "path": "hello.c",
+            "diff": "@@ -2,5 +2,5 @@\n-    printf(\"hello world\\n\");\n+    printf(\"goodbye world\\n\");\n"
+          }
+        },
+        "display": { "title": "Patch(hello.c)" }
+      }
+    }
+  },
+  {
+    "delayMs": 300,
+    "event": {
+      "type": "tool_result",
+      "payload": {
+        "tool": {
+          "name": "apply_patch",
+          "status": "success",
+          "output": "Patched hello.c"
+        },
+        "display": {
+          "title": "Patch(hello.c)",
+          "summary": "Updated hello.c",
+          "diff_blocks": [
+            {
+              "kind": "diff",
+              "filePath": "hello.c",
+              "unified": "diff --git a/hello.c b/hello.c\nindex 1111111..2222222 100644\n--- a/hello.c\n+++ b/hello.c\n@@ -2,5 +2,5 @@\n-    printf(\"hello world\\n\");\n+    printf(\"goodbye world\\n\");\n"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Patched."
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "user_message",
+      "payload": { "text": "Show a long markdown response demonstrating all formatting features." }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "# Markdown Showcase\nHere is **bold**, *italic*, **_both_**, and `inline()` in one line.\n> Blockquote with **bold** and `code`.\n1. Ordered item\n2. Second item\n- Bullet one\n  - Nested bullet\n    - Nested bullet deep with `code`\n- [x] Task done\n- [ ] Task todo\n\n```ts\nconst x: number = 1\n```\n\n| Feature | Example |\n| --- | --- |\n| Bold | **bold** |\n| Italic | *italic* |\n\nInline link [BreadBoard](https://example.com) and `code`.\nls -la"
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "completion",
+      "payload": { "summary": { "completed": true, "reason": "hello->goodbye" } }
+    }
+  },
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "run_finished",
+      "payload": { "eventCount": 15 }
+    }
+  }
+]

@@ -77,16 +77,6 @@ const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => 
   return fallback
 }
 const AUTOPLAY_ON_TASK = parseBoolEnv(process.env.BREADBOARD_MOCK_AUTOPLAY_ON_TASK, true)
-const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => {
-  if (value == null) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) return fallback
-  if (["1", "true", "yes", "on"].includes(normalized)) return true
-  if (["0", "false", "no", "off"].includes(normalized)) return false
-  return fallback
-}
-const AUTOPLAY_ON_TASK = parseBoolEnv(process.env.BREADBOARD_MOCK_AUTOPLAY_ON_TASK, true)
-
 const sleep = (ms: number) => (ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve())
 
 export const resolveScriptPath = (scriptPath: string) =>
@@ -448,7 +438,14 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
         for (const event of events) {
           writeSseEvent(res, event)
         }
-        res.end()
+        state.clients.add(res)
+        if (!state.playRequested && !state.finished) {
+          state.playRequested = true
+        }
+        req.on("close", () => {
+          state.clients.delete(res)
+        })
+        tryStartPlayback(state, normalized, log)
         return
       }
       res.writeHead(200, {
@@ -458,6 +455,9 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
       })
       res.write("\n")
       state.clients.add(res)
+      if (!state.playRequested && !state.finished) {
+        state.playRequested = true
+      }
       req.on("close", () => {
         state.clients.delete(res)
       })

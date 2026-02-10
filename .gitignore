@@ -22,6 +22,10 @@ $SCRIPT
 $tmpdir/
 $TMP_DIR/
 misc/
+!misc/
+misc/*
+!misc/tui_goldens/
+!misc/tui_goldens/**
 perf/
 goldens/
 repo_reconstruct_*
