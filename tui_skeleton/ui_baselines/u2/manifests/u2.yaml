@@ -1,0 +1,26 @@
+version: 1
+defaults:
+  render:
+    include_header: false
+    include_status: true
+    include_hints: false
+    include_model_menu: false
+    colors: true
+    ascii_only: false
+    max_width: 120
+    color_mode: truecolor
+  normalize:
+    timestamps: true
+    tokens: true
+    paths: true
+    status: true
+    strip_ansi: true
+  style:
+    require_ansi: true
+scenarios:
+  - id: tool_call_result_collapsed
+    input: ../scenarios/tool_call_result_collapsed/input/events.jsonl
+  - id: streaming_pending_basic
+    input: ../scenarios/streaming_pending_basic/input/events.jsonl
+  - id: pending_unicode_color
+    input: ../scenarios/pending_unicode_color/input/events.jsonl
