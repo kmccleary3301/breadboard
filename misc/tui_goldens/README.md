@@ -151,29 +151,34 @@ Until that exists, the end-to-end path is:
 
 ## Tmux Capture Polling (Unified)
 
-Use these scripts for deterministic panel capture and PNG rendering:
+Use these scripts for deterministic panel capture and PNG rendering.
+
+Run from repo root (recommended).
 
 ```bash
-python scripts/tmux_capture_poll.py \
+python scripts/tmux_capture.py poll \
   --target <session:window.pane> \
-  --interval 0.5 \
   --duration 60 \
+  --refresh-interval 0.5 \
   --capture-mode pane \
-  --png \
-  --out-root ../docs_tmp/tmux_captures \
   --scenario <scenario_id>
+```
+
+If you need deterministic sizing (strongly recommended for comparisons), resize the tmux window first:
+
+```bash
+tmux resize-window -t <session:window> -x 120 -y 30
 ```
 
 Scripted multi-step captures:
 
 ```bash
-python scripts/run_tmux_capture_scenario.py \
+python scripts/tmux_capture.py scenario \
   --target <session:window.pane> \
   --scenario <family/name> \
-  --actions ../docs_tmp/tmux_captures/scenario_actions/<name>.json \
+  --actions /shared_folders/querylake_server/ray_testing/ray_SCE/docs_tmp/tmux_captures/scenario_actions/<name>.json \
   --duration 180 \
-  --interval 0.5 \
-  --out-root ../docs_tmp/tmux_captures/scenarios
+  --interval 0.5
 ```
 
 For provider-dump validation, add:
