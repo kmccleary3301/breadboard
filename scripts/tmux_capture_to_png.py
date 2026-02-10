@@ -205,6 +205,11 @@ def render_ansi_to_png(
     row = 0
     col = 0
     idx = 0
+    # tmux emits fixed-width lines (often fully padded). When a rendered row
+    # exactly fills terminal width, our cell writer naturally wraps once and
+    # tmux may still emit a newline for that same visual row. Suppress the
+    # immediate newline after a hard wrap to avoid double-spacing artifacts.
+    just_wrapped = False
 
     while idx < len(ansi_text) and row < rows:
         ch = ansi_text[idx]
@@ -356,12 +361,16 @@ def render_ansi_to_png(
             continue
 
         if ch == "\n":
-            row += 1
-            col = 0
+            if just_wrapped:
+                just_wrapped = False
+            else:
+                row += 1
+                col = 0
             idx += 1
             continue
         if ch == "\r":
             col = 0
+            just_wrapped = False
             idx += 1
             continue
         if ch == "\t":
@@ -393,6 +402,9 @@ def render_ansi_to_png(
         if col >= cols:
             row += 1
             col = 0
+            just_wrapped = True
+        else:
+            just_wrapped = False
 
         idx += 1
 
@@ -404,7 +416,12 @@ def render_ansi_to_png(
     bbox = font_regular.getbbox("M")
     cell_w = max(8, bbox[2] - bbox[0])
     ascent, descent = font_regular.getmetrics()
-    cell_h = max(16, ascent + descent + 4)
+    glyph_h = max(1, bbox[3] - bbox[1])
+    metrics_h = max(1, ascent + descent)
+    # Use a tighter default than ascent+descent to avoid excessive inter-line
+    # gaps in PNG renders while keeping enough room for descenders.
+    auto_h = max(glyph_h + 4, ascent + 2)
+    cell_h = max(16, min(metrics_h, auto_h))
     if cell_width > 0:
         cell_w = cell_width
     if cell_height > 0:
@@ -430,9 +447,9 @@ def render_ansi_to_png(
                     cell_font = font_bold
                 elif cell.style.italic and font_italic is not None:
                     cell_font = font_italic
-                draw.text((x0, y0 + 1), cell.ch, font=cell_font, fill=cell.style.fg)
+                draw.text((x0, y0), cell.ch, font=cell_font, fill=cell.style.fg)
                 if cell.style.bold and cell_font == font_regular and font_bold is None:
-                    draw.text((x0 + 1, y0 + 1), cell.ch, font=cell_font, fill=cell.style.fg)
+                    draw.text((x0 + 1, y0), cell.ch, font=cell_font, fill=cell.style.fg)
             if cell.style.underline:
                 underline_y = y0 + cell_h - 3
                 draw.line([x0, underline_y, x0 + cell_w - 1, underline_y], fill=cell.style.fg)
@@ -654,7 +671,11 @@ def main() -> None:
     parser.add_argument("--ansi", help="path to ANSI capture file (skips tmux)")
     parser.add_argument("--cols", type=int, default=0, help="columns when rendering --ansi capture")
     parser.add_argument("--rows", type=int, default=0, help="rows when rendering --ansi capture")
-    parser.add_argument("--out", default="", help="output PNG path (default: docs_tmp/tmux_captures/<ts>_<target>.png)")
+    parser.add_argument(
+        "--out",
+        default="",
+        help="output PNG path (default: <ray_SCE>/docs_tmp/tmux_captures/<ts>_<target>.png)",
+    )
     parser.add_argument("--bg", default="0f172a", help="default background hex (e.g. 0f172a)")
     parser.add_argument("--fg", default="f1f5f9", help="default foreground hex (e.g. f1f5f9)")
     parser.add_argument("--font-size", type=int, default=18, help="font size for rendering")
@@ -682,13 +703,18 @@ def main() -> None:
     if not args.target and not args.ansi:
         raise SystemExit("Provide --target (tmux) or --ansi (file) to render.")
 
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+    # Default outside the git repo to avoid accidental commits.
+    default_docs_tmp = repo_root.parent.parent / "docs_tmp"
+
     ts = time.strftime("%Y%m%d-%H%M%S")
     if args.ansi:
         ansi_path = Path(args.ansi).expanduser().resolve()
         if not ansi_path.exists():
             raise SystemExit(f"ANSI capture not found: {ansi_path}")
         safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", ansi_path.stem)
-        default_dir = Path("docs_tmp") / "ansi_captures"
+        default_dir = default_docs_tmp / "ansi_captures"
         out_png = Path(args.out) if args.out else (default_dir / f"{ts}_{safe_target}.png")
         out_ansi = ansi_path
         out_txt = out_png.with_suffix(".txt")
@@ -701,7 +727,7 @@ def main() -> None:
     else:
         cols, rows = tmux_pane_size(args.target)
         safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", args.target)
-        default_dir = Path("docs_tmp") / "tmux_captures"
+        default_dir = default_docs_tmp / "tmux_captures"
         out_png = Path(args.out) if args.out else (default_dir / f"{ts}_{safe_target}.png")
         out_ansi = out_png.with_suffix(".ansi")
         out_txt = out_png.with_suffix(".txt")
