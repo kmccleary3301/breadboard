@@ -70,6 +70,7 @@ docs/**/render_samples/
 tui_skeleton/scripts/*_output_cli_shared_latest.txt
 tui_skeleton/scripts/*_cli_shared_latest.txt
 **/*_cli_shared_latest.txt
+tui_skeleton/ui_baselines/**/_runs/
 
 # Recovery artifacts
 photorec.*
