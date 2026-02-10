@@ -139,33 +139,15 @@ To add new references, capture in Claude Code and drop the results in
 
 ## Engine Replay -> TUI Bridge
 
-You can now convert replay-mode parity runs into TUI-ready event fixtures and render them end-to-end.
+Planned, but not implemented yet in this repo.
 
-1. Export replay `events.jsonl` from engine replay runs:
+Target state:
+- A script that runs engine replays and exports `events.jsonl` suitable for the Ink scrollback TUI.
+- A script that renders those exported event streams into deterministic TUI snapshots (text + grid IR).
 
-```bash
-python scripts/run_engine_replay_and_export_events.py \
-  --manifest misc/opencode_runs/parity_scenarios.yaml \
-  --tag replay \
-  --strict
-```
-
-2. Render TUI snapshots from the exported events:
-
-```bash
-python scripts/run_e2e_tui_from_engine_replays.py \
-  --include-header \
-  --include-status \
-  --include-hints \
-  --colors \
-  --unicode \
-  --strict
-```
-
-Artifacts are written under:
-
-- `misc/tui_goldens/_runs/engine_replay_events/run-*/`
-- `misc/tui_goldens/_runs/engine_replay_tui/run-*/`
+Until that exists, the end-to-end path is:
+1. Capture or synthesize `events.jsonl` fixtures for the TUI.
+2. Run `scripts/run_tui_goldens.ts` (or `npm run tui:goldens:*`) against those fixtures.
 
 ## Tmux Capture Polling (Unified)
 
