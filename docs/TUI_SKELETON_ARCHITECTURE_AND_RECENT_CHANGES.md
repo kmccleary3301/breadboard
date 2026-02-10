@@ -306,6 +306,22 @@ Notes:
 - Candidate outputs are written under `tui_skeleton/ui_baselines/**/_runs/` and are gitignored.
 - These baselines are intentionally narrow; higher-fidelity style/pixel baselines should be layered in later once U1 is stable.
 
+## Internal TUI Baselines (U2)
+
+U2 extends U1 with:
+- Unicode glyphs enabled (`ascii_only: false`)
+- Color rendering enabled (`colors: true`, `color_mode: truecolor`)
+- Structural comparisons that **strip ANSI** during equality checks while still asserting that ANSI is present (`normalize.strip_ansi: true`, `style.require_ansi: true`)
+
+Paths:
+- Manifest: `tui_skeleton/ui_baselines/u2/manifests/u2.yaml`
+- Scenarios: `tui_skeleton/ui_baselines/u2/scenarios/*`
+
+CI wiring:
+- Workflow: `breadboard_repo/.github/workflows/tui-u2-goldens.yml`
+- Report-only: `node --import tsx scripts/tui_u2_goldens_report.ts`
+- Gate: `node --import tsx scripts/tui_u2_goldens_strict.ts`
+
 - Tool artifact rendering (Write/Patch):
   - show only the concise tool header (file path) + body
   - render diffs “simple” (no full diff headers unless needed)

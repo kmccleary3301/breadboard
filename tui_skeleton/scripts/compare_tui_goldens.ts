@@ -22,6 +22,7 @@ type NormalizeOptions = {
   tokens?: boolean
   paths?: boolean
   status?: boolean
+  strip_ansi?: boolean
 }
 
 type StyleOptions = {
@@ -128,7 +129,8 @@ const applyNormalize = (value: string, options: NormalizeOptions): string => {
 }
 
 const normalizeText = (value: string, options: NormalizeOptions): string => {
-  const lines = value.split(/\r?\n/)
+  const raw = options.strip_ansi ? stripAnsi(value) : value
+  const lines = raw.split(/\r?\n/)
   return lines.map((line) => applyNormalize(line, options)).join("\n")
 }
 
@@ -230,6 +232,7 @@ const main = async () => {
       styleOptions.collapse_dim
     ) {
       const lines = candidateRaw.split(/\r?\n/)
+      const hasAnyAnsi = lines.some((line) => line !== stripAnsi(line))
       let addAnsi = false
       let delAnsi = false
       let addBg = false
@@ -294,7 +297,7 @@ const main = async () => {
         failCount += 1
         continue
       }
-      if (styleOptions.require_ansi && !addAnsi && !delAnsi && !lines.some((line) => /\+\s|-\s/.test(stripAnsi(line)))) {
+      if (styleOptions.require_ansi && !hasAnyAnsi) {
         console.log(`[compare] ${scenario.id}: style mismatch (missing ANSI)`)
         index.push({ id: scenario.id, ok: false, reason: "style_ansi_missing" })
         failed = true
