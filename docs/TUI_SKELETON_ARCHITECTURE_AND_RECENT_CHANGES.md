@@ -5,7 +5,7 @@ It is written for engine developers who need to understand how the UI is wired, 
 
 Scope:
 - This covers `tui_skeleton/` (Ink/React) and its interactions with the BreadBoard engine / CLI-bridge event stream.
-- “Goldens” and “replays” are currently engine concepts. The TUI reads live streams and can also render replayed event logs, but does not (yet) own a first-class golden/replay harness end-to-end in the same sense as the engine.
+- “Goldens” and “replays” are historically engine concepts. As of February 2026, the Ink TUI also has a small, deterministic **internal UI baseline harness** (U1) that replays `SessionEvent` JSONL into the controller and gates a few text snapshots in CI (see “Internal TUI Baselines (U1)” below).
 
 Non-goals:
 - This is not a full engine architecture document. See `docs/CTREES_TUI_INTEGRATION.md` and related docs for broader system context.
@@ -53,6 +53,13 @@ Token rendering (from stream-mdx / worker tokens):
 Design system (colors, icons, “Cooked for …” verbs, color mode handling):
 - `tui_skeleton/src/repl/designSystem.ts`
 - `tui_skeleton/src/repl/components/replView/theme.ts`
+
+Internal UI baselines (deterministic `SessionEvent` replay -> text snapshot):
+- `tui_skeleton/ui_baselines/u1/` (tracked fixtures + blessed snapshots)
+- `tui_skeleton/scripts/run_tui_goldens.ts` (render runner)
+- `tui_skeleton/scripts/compare_tui_goldens.ts` (text compare + normalization)
+- `tui_skeleton/scripts/tui_u1_goldens_report.ts` (Phase 0 report-only)
+- `tui_skeleton/scripts/tui_u1_goldens_strict.ts` (Phase 1 gate)
 
 ---
 
@@ -259,6 +266,46 @@ This is a non-exhaustive list of changes we made while aligning the TUI with Cla
   - default theme set to `andromeeda` (`tui_skeleton/src/repl/shikiHighlighter.ts`)
   - avoiding ad-hoc per-render theme selection; prefer a single theme constant
 
+---
+
+## Internal TUI Baselines (U1)
+
+Why this exists:
+- The engine golden system answers: “Does the engine reproduce the model-visible contract?”
+- The Ink TUI baselines answer: “Given a fixed event stream, does the UI render a stable, readable transcript?”
+- U1 is intentionally limited to **ASCII + no-color** text snapshots to maximize determinism and CI reliability.
+
+Where the baselines live:
+- `tui_skeleton/ui_baselines/u1/`
+- Inputs are `SessionEvent` JSONL files per scenario:
+  - `tui_skeleton/ui_baselines/u1/scenarios/*/input/events.jsonl`
+- Blessed snapshots are plain text:
+  - `tui_skeleton/ui_baselines/u1/scenarios/*/blessed/render.txt`
+- The manifest lists which scenarios to run and which render flags to apply:
+  - `tui_skeleton/ui_baselines/u1/manifests/u1.yaml`
+
+How baselines are generated:
+- Render (candidate) by replaying events into `ReplSessionController.applyEvent()` and then calling `renderStateToText()`:
+  - `tui_skeleton/scripts/run_tui_goldens.ts`
+- Compare candidate vs blessed with normalization (timestamps/tokens/paths):
+  - `tui_skeleton/scripts/compare_tui_goldens.ts`
+
+CI wiring:
+- Workflow: `breadboard_repo/.github/workflows/tui-u1-goldens.yml`
+- Phase 0 (report-only): `node --import tsx scripts/tui_u1_goldens_report.ts`
+- Phase 1 (gate): `node --import tsx scripts/tui_u1_goldens_strict.ts`
+
+Developer usage (local):
+```bash
+cd tui_skeleton
+node --import tsx scripts/tui_u1_goldens_report.ts
+node --import tsx scripts/tui_u1_goldens_strict.ts
+```
+
+Notes:
+- Candidate outputs are written under `tui_skeleton/ui_baselines/**/_runs/` and are gitignored.
+- These baselines are intentionally narrow; higher-fidelity style/pixel baselines should be layered in later once U1 is stable.
+
 - Tool artifact rendering (Write/Patch):
   - show only the concise tool header (file path) + body
   - render diffs “simple” (no full diff headers unless needed)
@@ -327,4 +374,3 @@ If you’re trying to connect engine output to what’s on-screen:
 
 4. For regressions:
    - prefer writing a capture scenario and comparing against goldens (engine-side today).
-
