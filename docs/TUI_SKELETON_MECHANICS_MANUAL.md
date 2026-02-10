@@ -297,6 +297,7 @@ Primary scripts (repo root `scripts/`):
 - `scripts/run_tmux_capture_scenario.py`
 - `scripts/run_claude_alignment.py` (paired Claude vs Breadboard runs + final-frame diff report)
 - `scripts/claude_alignment_manifest.example.yaml` (safe-to-commit manifest example)
+- `scripts/pixel_diff_png.py` (optional pixel diff helper for trophy comparisons)
 
 Recommended workflow:
 1. Run a scenario driver that produces deterministic UI behavior (typed commands, waits, keypresses).
