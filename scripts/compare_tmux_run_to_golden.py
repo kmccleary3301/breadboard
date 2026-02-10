@@ -42,6 +42,17 @@ TOKEN_ASSIGN_RE = re.compile(
 TOKEN_BEARER_RE = re.compile(r"\bBearer\s+[A-Za-z0-9_\-\.=]{12,}\b", re.IGNORECASE)
 TOKEN_SK_RE = re.compile(r"\bsk-[A-Za-z0-9]{20,}\b", re.IGNORECASE)
 
+# Prompt line in Codex/Claude tends to be either:
+# - "› Try \"...\""
+# - "❯ /command ..."
+# - a bare prompt like "❯" (often with trailing spaces that tmux capture may rstrip)
+PROMPT_LINE_RE = re.compile(r"^\s*[›❯>](?:\s+.*)?$")
+CONTEXT_LEFT_RE = re.compile(r"\b\d{1,3}%\s+context\s+left\b", re.IGNORECASE)
+WORKING_RE = re.compile(r"\bWorking\s*\([^)]*\)")
+SHORTCUTS_RE = re.compile(r"\?\s+for\s+shortcuts\b", re.IGNORECASE)
+BYPASS_PERMS_RE = re.compile(r"\bbypass\s+permissions\s+on\b", re.IGNORECASE)
+ESC_INTERRUPT_RE = re.compile(r"\besc\s+to\s+interrupt\b", re.IGNORECASE)
+
 
 def strip_ansi(text: str) -> str:
     return ANSI_RE.sub("", text)
@@ -201,6 +212,150 @@ def similarity(a: str, b: str) -> float:
     if not a and not b:
         return 1.0
     return SequenceMatcher(None, a, b).ratio()
+
+
+def _layout_normalize_line(line: str) -> str:
+    """
+    Normalize volatile UI elements that should not count as "layout drift":
+    - prompt / suggestion lines (content varies between runs)
+    - context-left counters (value varies)
+    - active turn timers (string varies)
+    """
+    if CONTEXT_LEFT_RE.search(line):
+        line = CONTEXT_LEFT_RE.sub("<pct>% context left", line)
+    if WORKING_RE.search(line):
+        line = WORKING_RE.sub("Working(<duration>)", line)
+    if PROMPT_LINE_RE.match(line):
+        # Avoid brittle compares over dynamic prompt suggestions like:
+        #   › Try "fix lint errors"
+        #   › Run /review on my current changes
+        # Keep only the chevron to preserve indentation/placement.
+        stripped = line.lstrip()
+        if stripped.startswith("›"):
+            return "› <prompt>"
+        if stripped.startswith("❯"):
+            return "❯ <prompt>"
+        if stripped.startswith(">"):
+            return "> <prompt>"
+        return "<prompt>"
+    return line
+
+
+def layout_signature(text: str, *, provider: str, head_lines: int = 30, tail_lines: int = 30) -> str:
+    """
+    Generate a layout-focused signature from a full-frame capture.
+
+    We intentionally avoid comparing the entire transcript content verbatim because
+    provider UIs can include dynamic suggestions, counters, and non-deterministic
+    assistant text. Instead, we focus on:
+    - top chrome (header box / banners)
+    - bottom chrome (composer/input + hints)
+    - any box-drawing lines (strong indicator of wrapping/width changes)
+    """
+    # NOTE: Layout signatures should be stable across:
+    # - differing transcript content (assistant text varies run-to-run)
+    # - differing capture duration (extra frames at the beginning/end)
+    # - minor prompt suggestion changes
+    #
+    # They should remain sensitive to:
+    # - width/height regressions that cause wrapping/tearing of chrome
+    # - composer/input bar structure changes (extra blank lines, missing borders)
+    # - provider banner presence/absence
+    normalized = normalize_text(text)
+    lines = normalized.splitlines()
+    if not lines:
+        return ""
+
+    box_chars = set("┌┐└┘─│╭╮╰╯")
+
+    # 1) Identify a "composer window" around the last prompt line.
+    # We use this both for stable layout comparisons and to detect the extra-blank-line
+    # regression in the input bar area.
+    composer_window: set[int] = set()
+    last_prompt_index: int | None = None
+    prompt_indices = [i for i, line in enumerate(lines) if PROMPT_LINE_RE.match(line)]
+    if prompt_indices and tail_lines > 0:
+        i_prompt = prompt_indices[-1]
+        last_prompt_index = i_prompt
+        tail_window = min(max(6, tail_lines // 3), 14)
+        start = max(0, i_prompt - tail_window)
+        end = min(len(lines), i_prompt + 8)
+        composer_window = set(range(start, end))
+
+    # 2) Identify a "header window" (top chrome) without pulling in transcript content.
+    header_window: set[int] = set()
+    if head_lines > 0:
+        limit = min(head_lines, len(lines))
+        for i in range(limit):
+            line = lines[i]
+            if any(ch in box_chars for ch in line):
+                header_window.add(i)
+                continue
+            if "OpenAI Codex" in line or "Claude Code" in line:
+                header_window.add(i)
+                continue
+            if "[codex-logged]" in line or "[claude-code-logged]" in line:
+                header_window.add(i)
+                continue
+            if "Auth conflict" in line or "warning:" in line.lower():
+                header_window.add(i)
+
+    # 3) Collect lines that are strong indicators of layout/chrome, but only inside
+    # the windows above. This avoids signature drift when transcript content changes
+    # or when the view scrolls.
+    important_idx: set[int] = set()
+    for i, line in enumerate(lines):
+        if i not in header_window and i not in composer_window:
+            continue
+        if any(ch in box_chars for ch in line):
+            important_idx.add(i)
+            continue
+        if i in composer_window and last_prompt_index is not None and i == last_prompt_index:
+            important_idx.add(i)
+            continue
+        if SHORTCUTS_RE.search(line) or CONTEXT_LEFT_RE.search(line):
+            important_idx.add(i)
+            continue
+        if BYPASS_PERMS_RE.search(line) or ESC_INTERRUPT_RE.search(line):
+            important_idx.add(i)
+            continue
+        if "OpenAI Codex" in line or "Claude Code" in line:
+            important_idx.add(i)
+            continue
+        if "[codex-logged]" in line or "[claude-code-logged]" in line:
+            important_idx.add(i)
+            continue
+        if "Auth conflict" in line or "warning:" in line.lower():
+            important_idx.add(i)
+
+    # 4) Build signature preserving order, and encoding blank-line gaps between
+    # kept lines as "<empty>" markers so spacing regressions are visible.
+    picked: list[str] = []
+    last_kept: int | None = None
+    for i in sorted(important_idx):
+        if last_kept is not None:
+            gap = i - last_kept - 1
+            # Only encode small gaps; large gaps are usually transcript height drift.
+            if 0 < gap <= 3:
+                picked.extend(["<empty>"] * gap)
+            elif gap > 3:
+                picked.append("<...>")
+        picked.append(_layout_normalize_line(lines[i]))
+        last_kept = i
+
+    # De-noise: drop consecutive duplicates (common when borders repeat).
+    deduped: list[str] = []
+    for line in picked:
+        if deduped and deduped[-1] == line:
+            continue
+        deduped.append(line)
+
+    # Trim to a bounded size so diffs are readable and SequenceMatcher stays fast.
+    if len(deduped) > (head_lines + tail_lines + 120):
+        head = deduped[:head_lines]
+        tail = deduped[-tail_lines:]
+        return "\n".join(head + ["<...>"] + tail)
+    return "\n".join(deduped)
 
 
 def _load_rgba(path: Path):
@@ -368,22 +523,28 @@ def compare(
     golden_missing = sorted(idx for idx in overlap_indices if idx not in golden_frames)
     run_extra = sorted(idx for idx in run_indices if idx not in overlap_indices)
     golden_extra = sorted(idx for idx in golden_indices if idx not in overlap_indices)
+    # Use *composer-only* layout signatures (not raw frame line counts) so terminal
+    # height/padding differences and transcript scroll state don't automatically fail
+    # the layout check.
     line_deltas = []
     for idx in common:
-        run_lines = len(run_frames[idx].splitlines())
-        golden_lines = len(golden_frames[idx].splitlines())
-        line_deltas.append(abs(run_lines - golden_lines))
+        run_sig_lines = len(layout_signature(run_frames[idx], provider=provider, head_lines=0, tail_lines=30).splitlines())
+        golden_sig_lines = len(
+            layout_signature(golden_frames[idx], provider=provider, head_lines=0, tail_lines=30).splitlines()
+        )
+        line_deltas.append(abs(run_sig_lines - golden_sig_lines))
     max_line_delta = max(line_deltas) if line_deltas else 0
     mean_line_delta = (sum(line_deltas) / len(line_deltas)) if line_deltas else 0.0
-    # Compare "final" layout at the end of overlap so trailing capture duration
-    # drift (extra frames outside overlap) does not cause false layout failures.
-    common_overlap = sorted(idx for idx in common if idx in overlap_indices)
-    if common_overlap:
-        overlap_tail = common_overlap[-1]
-        final_similarity = similarity(run_frames[overlap_tail], golden_frames[overlap_tail])
-    else:
-        final_similarity = similarity(run_final, golden_final)
-    head_similarity = similarity("\n".join(run_first.splitlines()[:40]), "\n".join(golden_first.splitlines()[:40]))
+    # Compare "final" layout at the *last captured frame* for each run. This is
+    # more meaningful than aligning by frame indices when capture durations differ.
+    final_similarity = similarity(
+        layout_signature(run_final, provider=provider, head_lines=0, tail_lines=30),
+        layout_signature(golden_final, provider=provider, head_lines=0, tail_lines=30),
+    )
+    head_similarity = similarity(
+        layout_signature("\n".join(run_first.splitlines()[:80]), provider=provider, head_lines=30, tail_lines=0),
+        layout_signature("\n".join(golden_first.splitlines()[:80]), provider=provider, head_lines=30, tail_lines=0),
+    )
     layout_drift_score = round(1.0 - (0.7 * final_similarity + 0.3 * head_similarity), 4)
 
     # Semantic metrics
