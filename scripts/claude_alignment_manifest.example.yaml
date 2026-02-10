@@ -1,0 +1,32 @@
+# Example manifest for Claude Code alignment captures.
+#
+# This is intentionally safe to commit:
+# - no keys
+# - no PII
+# - no captured output paths
+#
+# Captured artifacts should go to the workspace-level docs_tmp folder:
+#   <repo_root>/../docs_tmp/...
+#
+# Run with:
+#   python scripts/run_claude_alignment.py --manifest scripts/claude_alignment_manifest.example.yaml
+
+version: 1
+defaults:
+  duration: 30
+  interval: 0.5
+  cols: 120
+  rows: 40
+  settle_ms: 140
+  settle_attempts: 5
+  no_png: false
+
+scenarios:
+  - id: claude_multiturn_smoke
+    claude:
+      target: breadboard_test_claude_code_logged:0.0
+      actions: scripts/scenarios/claude_code/multiturn_smoke.json
+    breadboard:
+      target: breadboard_test_breadboard_tui:0.0
+      actions: scripts/scenarios/breadboard_tui/multiturn_smoke.json
+
