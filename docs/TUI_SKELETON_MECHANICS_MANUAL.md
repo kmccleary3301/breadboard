@@ -300,8 +300,9 @@ Primary scripts (repo root `scripts/`):
 
 Recommended workflow:
 1. Run a scenario driver that produces deterministic UI behavior (typed commands, waits, keypresses).
-2. Poll-capture the tmux panel to `.txt` frames at a fixed interval.
-3. Convert those frames to `.png` using a consistent terminal renderer so the images are stable and reviewable.
+2. Keep the deterministic interaction plan in a committed JSON actions file under `scripts/scenarios/` so reruns are consistent.
+3. Poll-capture the tmux panel to `.txt` frames at a fixed interval.
+4. Convert those frames to `.png` using a consistent terminal renderer so the images are stable and reviewable.
 
 Important UI correctness gap:
 - “Enter submits” vs “Enter inserts newline” depends on target app behavior and key mapping.
