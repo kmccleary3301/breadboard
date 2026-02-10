@@ -124,10 +124,8 @@ def extract_codex_composer_text(pane_text: str) -> str | None:
 
 
 def codex_composer_looks_empty_or_placeholder(value: str | None) -> bool:
-    # None means we could not find the composer prompt glyph. Treat as "unknown",
-    # not empty, so automation doesn't mistakenly assume it is safe to proceed.
     if value is None:
-        return False
+        return True
     v = value.strip()
     if v == "":
         return True
@@ -141,52 +139,6 @@ def codex_composer_looks_empty_or_placeholder(value: str | None) -> bool:
     return False
 
 
-def codex_pane_looks_like_transcript_or_history(pane_text: str) -> bool:
-    lowered = pane_text.lower()
-    # Heuristics only. We should never type "q" blindly unless the pane strongly
-    # suggests a modal view that uses q to exit.
-    tokens = (
-        "transcript",
-        "press q",
-        "press 'q'",
-        "press esc",
-        "ctrl+o for history",
-        "ctrl+o to view history",
-        "ctrl+o for transcript",
-        "conversation interrupted",
-    )
-    return any(token in lowered for token in tokens)
-
-
-def ensure_codex_composer_visible(target: str, attempts: int = 3) -> str | None:
-    """
-    Best-effort: try to exit any Codex modal views so the composer prompt is visible.
-
-    Returns extracted composer text (can be placeholder/empty) when available, else None.
-    """
-    for _ in range(max(attempts, 1)):
-        captured = normalize_captured_text(tmux_capture_text(target))
-        value = extract_codex_composer_text(captured)
-        if value is not None:
-            return value
-
-        # Try to back out of any modal layers.
-        tmux_send_key(target, "Escape")
-        time.sleep(0.06)
-
-        captured = normalize_captured_text(tmux_capture_text(target))
-        value = extract_codex_composer_text(captured)
-        if value is not None:
-            return value
-
-        if codex_pane_looks_like_transcript_or_history(captured):
-            # Only send q when the pane strongly indicates q is meaningful for closing a modal view.
-            tmux_send_key(target, "q")
-            time.sleep(0.08)
-
-    return None
-
-
 def clear_composer(target: str, mode: str) -> None:
     normalized = (mode or "").strip().lower()
     if normalized in {"", "none"}:
@@ -196,27 +148,31 @@ def clear_composer(target: str, mode: str) -> None:
             captured = normalize_captured_text(tmux_capture_text(target))
             return extract_codex_composer_text(captured)
 
-        # Avoid Ctrl+U for Codex automation. In some builds it can toggle views/modes (e.g. transcript/history)
-        # and make subsequent input non-deterministic.
-        value = ensure_codex_composer_visible(target, attempts=3)
-        if value is None:
-            # Unknown state; do not attempt destructive clearing.
+        tmux_send_key(target, "Escape")
+        time.sleep(0.05)
+
+        tmux_send_key(target, "C-u")
+        time.sleep(0.08)
+        if codex_composer_looks_empty_or_placeholder(current_value()):
             return
 
-        if codex_composer_looks_empty_or_placeholder(value):
+        # If Ctrl+U didn't take effect, the focus may not be in the composer.
+        tmux_send_key(target, "Escape")
+        time.sleep(0.05)
+        tmux_send_key(target, "C-u")
+        time.sleep(0.08)
+        if codex_composer_looks_empty_or_placeholder(current_value()):
             return
 
-        # Try common readline-style clears. These are generally safer than Ctrl+U in Codex.
+        # Try common line-editing sequences (may be no-ops in some builds).
         tmux_send_key(target, "C-a")
         tmux_send_key(target, "C-k")
         time.sleep(0.08)
         if codex_composer_looks_empty_or_placeholder(current_value()):
             return
 
-        tmux_send_key(target, "Escape")
-        time.sleep(0.05)
-        tmux_send_key(target, "C-a")
-        tmux_send_key(target, "C-k")
+        # Last resort: interrupt any active mode and leave the composer "as-is".
+        tmux_send_key(target, "C-c")
         time.sleep(0.08)
         return
     if normalized == "ctrl_u":
@@ -582,11 +538,7 @@ def parse_args() -> ScenarioConfig:
         default="",
         help="comma-separated model aliases that must not appear in provider request payloads",
     )
-    parser.add_argument(
-        "--out-root",
-        default="",
-        help="capture root (default: <ray_SCE>/docs_tmp/tmux_captures/scenarios)",
-    )
+    parser.add_argument("--out-root", default="", help="capture root (default: ../docs_tmp/tmux_captures/scenarios)")
     parser.add_argument("--no-png", action="store_true", help="disable PNG output")
     parser.add_argument(
         "--must-contain",
@@ -670,9 +622,7 @@ def parse_args() -> ScenarioConfig:
 
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent
-    # Default outside the git repo to avoid accidental commits.
-    # Repo layout in this workspace is: <ray_SCE>/<repo_or_worktree>/...
-    default_out = repo_root.parent.parent / "docs_tmp" / "tmux_captures" / "scenarios"
+    default_out = repo_root.parent / "docs_tmp" / "tmux_captures" / "scenarios"
     out_root = Path(args.out_root).expanduser().resolve() if args.out_root else default_out
 
     actions_path = Path(args.actions).expanduser().resolve() if args.actions else None
@@ -897,6 +847,36 @@ def execute_actions(
                     poll_count += 1
                     last_text = normalize_captured_text(tmux_capture_text(config.target))
 
+                    # Claude can enter a bad "custom model" state (e.g. haiku-4-5) where requests fail.
+                    # When this happens, proactively switch to the real Haiku 4.5 entry via /model.
+                    if (
+                        "There's an issue with the selected model" in last_text
+                        and "Run /model" in last_text
+                    ):
+                        model_choice = str(action.get("model_choice", "4")).strip() or "4"
+                        tmux_send_text(config.target, "/model")
+                        tmux_send_key(config.target, config.submit_key)
+                        time.sleep(interval)
+
+                        menu_deadline = time.time() + max(8.0, interval * 6)
+                        menu_text = ""
+                        while time.time() < menu_deadline:
+                            menu_text = normalize_captured_text(tmux_capture_text(config.target))
+                            if "Select model" in menu_text and "Enter to confirm" in menu_text:
+                                break
+                            time.sleep(interval)
+                        else:
+                            tail = "\n".join(menu_text.splitlines()[-40:])
+                            raise TimeoutError(
+                                "startup_preflight could not open /model menu within timeout. "
+                                f"Pane tail:\n{tail}"
+                            )
+
+                        tmux_send_key(config.target, model_choice)
+                        tmux_send_key(config.target, config.submit_key)
+                        time.sleep(interval)
+                        continue
+
                     # Claude first-run theme picker blocks input until selection.
                     if (
                         "Choose the text style that looks best with your" in last_text
@@ -904,7 +884,6 @@ def execute_actions(
                     ):
                         # Newer builds may require an explicit numeric selection before submit.
                         tmux_send_key(config.target, "1")
-                        tmux_send_key(config.target, "Enter")
                         tmux_send_key(config.target, "C-m")
                         time.sleep(interval)
                         continue
@@ -917,7 +896,6 @@ def execute_actions(
                     ):
                         login_choice = str(action.get("login_choice", "2")).strip() or "2"
                         tmux_send_key(config.target, login_choice)
-                        tmux_send_key(config.target, "Enter")
                         tmux_send_key(config.target, "C-m")
                         time.sleep(interval)
                         continue
@@ -1360,9 +1338,10 @@ def main() -> None:
     scenario_parent = config.out_root / config.scenario / run_id
     scenario_parent.mkdir(parents=True, exist_ok=True)
 
-    poller_scenario = f"{config.scenario}/{run_id}"
-    poller_parent = config.out_root / config.scenario / run_id
-    existing = {p.name for p in poller_parent.iterdir() if p.is_dir()} if poller_parent.exists() else set()
+    # The poller writes directly into <out_root>/<scenario>/<run_id>/ so we don't have to
+    # guess which timestamp directory it created. This also makes scenarios fast to iterate
+    # on and easier to diff.
+    run_dir = config.out_root / config.scenario / run_id
 
     provider_before = list_files(config.provider_dump_dir)
 
@@ -1376,7 +1355,9 @@ def main() -> None:
         "--interval",
         str(config.interval),
         "--scenario",
-        poller_scenario,
+        config.scenario,
+        "--run-id",
+        run_id,
         "--out-root",
         str(config.out_root),
         "--settle-ms",
@@ -1451,11 +1432,29 @@ def main() -> None:
         except Exception as exc:
             final_idle_error = str(exc)
 
-    poller_exit = poller.wait()
-    poller_log.close()
+    poller_exit: int | None = poller.poll()
+    poller_terminated_by_runner = False
+    if poller_exit is None:
+        try:
+            # Treat --duration as a maximum cap only: once actions + checks finish, stop the poller.
+            poller_terminated_by_runner = True
+            poller.terminate()
+            poller_exit = poller.wait(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            poller.kill()
+            poller_exit = poller.wait(timeout=2.0)
+        finally:
+            poller_log.close()
+    else:
+        poller_log.close()
     ended_at = time.time()
 
-    run_dir = find_new_run_dir(poller_parent, existing)
+    # The poller creates the run directory immediately, but give it a brief grace window.
+    deadline = time.time() + 3.0
+    while not run_dir.exists() and time.time() < deadline:
+        time.sleep(0.05)
+    if not run_dir.exists():
+        raise RuntimeError(f"poller did not create expected run directory: {run_dir}")
     if config.actions_path is not None and config.actions_path.exists():
         (run_dir / "actions.json").write_text(config.actions_path.read_text(encoding="utf-8"), encoding="utf-8")
 
@@ -1518,7 +1517,13 @@ def main() -> None:
         action_error = frame_stall_error
 
     scenario_result = "pass"
-    if poller_exit != 0 or execution_error is not None or provider_error is not None or final_idle_error is not None or frame_stall_error is not None:
+    if (
+        (poller_exit not in (0, None) and not poller_terminated_by_runner)
+        or execution_error is not None
+        or provider_error is not None
+        or final_idle_error is not None
+        or frame_stall_error is not None
+    ):
         scenario_result = "fail"
     elif semantic_failures:
         scenario_result = "operational_pass_semantic_fail"
@@ -1533,6 +1538,7 @@ def main() -> None:
         "poller_cmd": poller_cmd,
         "poller_log": str(poller_log_path),
         "poller_exit_code": poller_exit,
+        "poller_terminated_by_runner": poller_terminated_by_runner,
         "actions_path": str(config.actions_path) if config.actions_path else None,
         "actions_count": len(actions),
         "executed_actions": executed_actions,
@@ -1577,6 +1583,7 @@ def main() -> None:
         "scenario_result": scenario_result,
         "duration_seconds": ended_at - started_at,
         "poller_exit_code": poller_exit,
+        "poller_terminated_by_runner": poller_terminated_by_runner,
         "actions_count": len(actions),
         "executed_actions_count": len(executed_actions),
         "semantic_failures_count": len(semantic_failures),

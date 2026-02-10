@@ -6,7 +6,14 @@ RUNNER="${ROOT_DIR}/scripts/run_tmux_capture_scenario.py"
 COMPARATOR="${ROOT_DIR}/scripts/compare_tmux_run_to_golden.py"
 SUMMARY_RENDER="${ROOT_DIR}/scripts/render_tmux_compare_pr_summary.py"
 OUT_ROOT="/shared_folders/querylake_server/ray_testing/ray_SCE/docs_tmp/tmux_captures/scenarios"
-ACTIONS_ROOT="${TMUX_ACTIONS_ROOT:-${ROOT_DIR}/misc/tui_goldens/tmux_actions}"
+# Prefer git-tracked action manifests so CI/dev runs don't rely on local docs_tmp state.
+# Fall back to the legacy docs_tmp location if needed.
+ACTIONS_ROOT_DEFAULT="${ROOT_DIR}/config/tmux_scenario_actions"
+ACTIONS_ROOT_LEGACY="/shared_folders/querylake_server/ray_testing/ray_SCE/docs_tmp/tmux_captures/scenario_actions"
+ACTIONS_ROOT="${ACTIONS_ROOT_DEFAULT}"
+if [[ ! -d "${ACTIONS_ROOT}" ]]; then
+  ACTIONS_ROOT="${ACTIONS_ROOT_LEGACY}"
+fi
 THRESHOLDS_PATH="${TMUX_GOLDEN_THRESHOLDS_PATH:-${ROOT_DIR}/config/tmux_golden_thresholds_strict.yaml}"
 COMPARE_FAIL_MODE="${TMUX_GOLDEN_FAIL_MODE:-strict}"
 ENABLE_PIXEL_COMPARE="${TMUX_GOLDEN_ENABLE_PIXEL:-0}"
@@ -39,6 +46,14 @@ run_and_compare() {
   local provider="$5"
   local golden_dir="$6"
 
+  local clear_args=()
+  # Codex's composer often shows a suggestion that is replaced by typing; sending
+  # "clear" keybindings can change focus/mode and cause flakiness. Keep clearing
+  # enabled for Claude (helps avoid queued/partial input), but not for Codex.
+  if [[ "${provider}" == "claude" ]]; then
+    clear_args+=(--clear-before-send)
+  fi
+
   set +e
   python "${RUNNER}" \
     --target "${target}" \
@@ -47,7 +62,7 @@ run_and_compare() {
     --duration 360 \
     --interval 0.5 \
     --out-root "${OUT_ROOT}" \
-    --clear-before-send \
+    "${clear_args[@]}" \
     --wait-idle-accept-active-timeout \
     --wait-idle-accept-stable-active-after 8 \
     --must-not-contain "Conversation interrupted" \

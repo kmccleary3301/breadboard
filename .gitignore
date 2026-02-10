@@ -85,7 +85,13 @@ replay_apply_summary.json
 
 # Local runtime state
 .kyle/
+.claude/
+.claude.json
+.claude.json.*
 .ray_tmp/
+
+# Ad-hoc demo artifacts (should never be committed).
+/hello.c
 tmp/
 .breadboard/
 **/.breadboard/

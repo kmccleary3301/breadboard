@@ -47,6 +47,7 @@ class CaptureConfig:
     rows: Optional[int]
     out_root: str
     scenario: str
+    run_id: str
     settle_ms: int
     settle_attempts: int
 
@@ -157,6 +158,11 @@ def parse_args() -> CaptureConfig:
     parser.add_argument("--out-root", default=None, help="output root directory")
     parser.add_argument("--scenario", default="capture", help="scenario name for output folder")
     parser.add_argument(
+        "--run-id",
+        default="",
+        help="optional stable run folder name. If omitted, a timestamp is used.",
+    )
+    parser.add_argument(
         "--settle-ms",
         type=int,
         default=140,
@@ -173,9 +179,7 @@ def parse_args() -> CaptureConfig:
 
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent
-    # Default outside the git repo to avoid accidental commits.
-    # Repo layout in this workspace is: <ray_SCE>/<repo_or_worktree>/...
-    default_out = repo_root.parent.parent / "docs_tmp" / "tmux_captures"
+    default_out = repo_root.parent / "docs_tmp" / "tmux_captures"
     out_root = Path(args.out_root).expanduser() if args.out_root else default_out
 
     capture_mode = "scrollback" if args.scrollback else args.capture_mode
@@ -191,6 +195,7 @@ def parse_args() -> CaptureConfig:
         rows=args.rows if args.rows > 0 else None,
         out_root=str(out_root),
         scenario=args.scenario,
+        run_id=str(args.run_id or "").strip(),
         settle_ms=max(args.settle_ms, 0),
         settle_attempts=max(args.settle_attempts, 1),
     )
@@ -201,7 +206,8 @@ def main() -> None:
     script_dir = Path(__file__).resolve().parent
     out_root = Path(config.out_root)
     ts = run_timestamp()
-    run_dir = out_root / config.scenario / ts
+    run_folder = config.run_id or ts
+    run_dir = out_root / config.scenario / run_folder
     frames_dir = run_dir / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
 
@@ -222,6 +228,7 @@ def main() -> None:
         "rows": rows,
         "dynamic_size": dynamic_size,
         "scenario": config.scenario,
+        "run_id": config.run_id or None,
         "settle_ms": config.settle_ms,
         "settle_attempts": config.settle_attempts,
         "started_at": ts,
