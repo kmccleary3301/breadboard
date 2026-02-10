@@ -582,7 +582,11 @@ def parse_args() -> ScenarioConfig:
         default="",
         help="comma-separated model aliases that must not appear in provider request payloads",
     )
-    parser.add_argument("--out-root", default="", help="capture root (default: ../docs_tmp/tmux_captures/scenarios)")
+    parser.add_argument(
+        "--out-root",
+        default="",
+        help="capture root (default: <ray_SCE>/docs_tmp/tmux_captures/scenarios)",
+    )
     parser.add_argument("--no-png", action="store_true", help="disable PNG output")
     parser.add_argument(
         "--must-contain",
