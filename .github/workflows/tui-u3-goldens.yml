@@ -1,0 +1,66 @@
+name: tui-u3-goldens
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  tui_u3_report:
+    name: "TUI U3 (report-only)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install deps (tui_skeleton)
+        working-directory: tui_skeleton
+        run: npm ci
+
+      - name: Run U3 report
+        working-directory: tui_skeleton
+        run: node --import tsx scripts/tui_u3_goldens_report.ts
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tui-u3-report-runs
+          path: |
+            tui_skeleton/ui_baselines/u3/_runs
+
+  tui_u3_gate:
+    name: "TUI U3 (gate)"
+    runs-on: ubuntu-latest
+    needs: tui_u3_report
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install deps (tui_skeleton)
+        working-directory: tui_skeleton
+        run: npm ci
+
+      - name: Run U3 strict
+        working-directory: tui_skeleton
+        run: node --import tsx scripts/tui_u3_goldens_strict.ts
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tui-u3-gate-runs
+          path: |
+            tui_skeleton/ui_baselines/u3/_runs
+

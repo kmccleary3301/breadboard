@@ -322,6 +322,27 @@ CI wiring:
 - Report-only: `node --import tsx scripts/tui_u2_goldens_report.ts`
 - Gate: `node --import tsx scripts/tui_u2_goldens_strict.ts`
 
+## Internal TUI Baselines (U3)
+
+U3 extends U2 with a focused “diff style” gate:
+- Inputs are deterministic `SessionEvent` JSONL streams.
+- Equality comparisons can strip ANSI (for stability), but style checks still inspect the raw candidate text.
+- We additionally assert:
+  - ANSI exists somewhere in the candidate output (`style.require_ansi`)
+  - added lines have background ANSI sequences (`style.diff_add_bg`)
+  - deleted lines have background ANSI sequences (`style.diff_del_bg`)
+
+This is the first place we explicitly gate “diff look” (backgrounds) without moving all the way to pixel diffs.
+
+Paths:
+- Manifest: `tui_skeleton/ui_baselines/u3/manifests/u3.yaml`
+- Scenario: `tui_skeleton/ui_baselines/u3/scenarios/diff_patch_preview/`
+
+CI wiring:
+- Workflow: `breadboard_repo/.github/workflows/tui-u3-goldens.yml`
+- Report-only: `node --import tsx scripts/tui_u3_goldens_report.ts`
+- Gate: `node --import tsx scripts/tui_u3_goldens_strict.ts`
+
 - Tool artifact rendering (Write/Patch):
   - show only the concise tool header (file path) + body
   - render diffs “simple” (no full diff headers unless needed)
