@@ -1,0 +1,14 @@
+[
+  {"type":"startup_preflight","timeout":240},
+  {"type":"wait_until","require_contains_any":["Haiku 4.5","haiku-4-5","for shortcuts","bypass permissions on"],"require_timeout":60,"timeout":90},
+  {"type":"send","text":"Reply exactly with: OK","submit":true,"must_match_regex":["(?m)^[●•*]\\s*OK\\s*$"],"semantic_timeout":60},
+  {"type":"send","text":"Reply exactly with: compact-precheck","submit":true,"must_match_regex":["(?m)^[●•*]\\s*compact-precheck\\s*$"],"semantic_timeout":90},
+  {"type":"wait_for_idle","timeout":180,"quiet_seconds":2.0,"accept_active_timeout":true,"accept_stable_active_after":8.0},
+  {"type":"send","text":"/compact","submit":true},
+  {"type":"wait_until","require_contains_any":["compact","compacted","Conversation compacted"],"require_timeout":120,"timeout":180,"must_not_contain":["Conversation interrupted"]},
+  {"type":"wait_for_idle","timeout":300,"quiet_seconds":2.0,"accept_active_timeout":true,"accept_stable_active_after":8.0},
+  {"type":"send","text":"Continue after compaction and reply exactly with: compact-ready","submit":true,"must_match_regex":["(?m)^[●•*]\\s*compact-ready\\s*$"],"must_not_contain":["Conversation interrupted"],"semantic_timeout":240},
+  {"type":"wait_for_idle","timeout":360,"quiet_seconds":2.0,"accept_active_timeout":true,"accept_stable_active_after":8.0},
+  {"type":"send","text":"Show a markdown showcase with headings, bold/italic, inline code, fenced ts code block, table, and nested lists.","submit":true,"must_match_regex_any":["(?m)^\\s*#\\s+","(?m)^\\s*\\|.+\\|","(?m)^\\s*```","(?m)^\\s*[-*]\\s+","(?m)^\\s*\\d+\\.\\s+"],"semantic_timeout":420}
+]
+

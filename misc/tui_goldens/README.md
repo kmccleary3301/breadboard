@@ -176,7 +176,7 @@ Scripted multi-step captures:
 python scripts/tmux_capture.py scenario \
   --target <session:window.pane> \
   --scenario <family/name> \
-  --actions /shared_folders/querylake_server/ray_testing/ray_SCE/docs_tmp/tmux_captures/scenario_actions/<name>.json \
+  --actions misc/tui_goldens/tmux_actions/<name>.json \
   --duration 180 \
   --interval 0.5
 ```
