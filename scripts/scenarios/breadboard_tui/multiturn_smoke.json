@@ -1,0 +1,31 @@
+[
+  {
+    "type": "startup_preflight",
+    "timeout": 30,
+    "interval": 0.4,
+    "ready_tokens": [
+      "Try \"",
+      "for shortcuts"
+    ]
+  },
+  {
+    "type": "send",
+    "text": "Create a tiny hello-world C program in hello.c. Then patch it to say goodbye world. Then output a markdown showcase with headers, bold/italic, inline code, fenced ts code block, table, and nested lists.",
+    "send_mode": "submit",
+    "wait": 0.2
+  },
+  {
+    "type": "wait_for_idle",
+    "timeout": 180,
+    "interval": 0.5,
+    "quiet_seconds": 3.0,
+    "must_contain_any": [
+      "Write(",
+      "Patch(",
+      "Markdown",
+      "```",
+      "|"
+    ]
+  }
+]
+
