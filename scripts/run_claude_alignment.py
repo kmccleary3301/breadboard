@@ -187,6 +187,13 @@ def main() -> None:
     parser.add_argument("--manifest", required=True, help="YAML manifest with scenario pairs")
     parser.add_argument("--out-root", default="", help="output root (default: <repo_root>/../docs_tmp/claude_alignment)")
     parser.add_argument("--strip-ansi", action="store_true", help="strip ANSI before text diffing (recommended)")
+    parser.add_argument("--png-diff", action="store_true", help="also compute a pixel diff of the final PNG frames")
+    parser.add_argument(
+        "--png-mask-rect",
+        action="append",
+        default=[],
+        help="mask rect x,y,w,h applied to pixel diffs (repeatable)",
+    )
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -245,12 +252,39 @@ def main() -> None:
         )
         (scenario_out / "final_frame.diff.txt").write_text(diff_text, encoding="utf-8")
 
+        diff_png_path = ""
+        diff_png_summary = ""
+        if args.png_diff:
+            claude_png = find_latest_frame(claude_run / "frames", "png")
+            breadboard_png = find_latest_frame(breadboard_run / "frames", "png")
+            diff_png = scenario_out / "final_frame.diff.png"
+            diff_summary = scenario_out / "final_frame.diff.summary.json"
+            cmd = [
+                sys.executable,
+                str(repo_root / "scripts" / "pixel_diff_png.py"),
+                "--a",
+                str(claude_png),
+                "--b",
+                str(breadboard_png),
+                "--out",
+                str(diff_png),
+                "--summary-out",
+                str(diff_summary),
+            ]
+            for rect in args.png_mask_rect:
+                cmd.extend(["--mask-rect", str(rect)])
+            run(cmd)
+            diff_png_path = str(diff_png)
+            diff_png_summary = str(diff_summary)
+
         run_index.append(
             {
                 "id": scenario.id,
                 "claude_run": str(claude_run),
                 "breadboard_run": str(breadboard_run),
                 "diff": str(scenario_out / "final_frame.diff.txt"),
+                "diff_png": diff_png_path or None,
+                "diff_png_summary": diff_png_summary or None,
             }
         )
 
@@ -259,4 +293,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
