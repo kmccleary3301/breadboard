@@ -20,6 +20,34 @@ mkdir -p "${CLAUDE_CODE_LOG_DIR}"
 mkdir -p "${CLAUDE_CODE_WORKSPACE}"
 mkdir -p "${CLAUDE_CODE_HOME}"
 
+maybe_load_api_key_from_dotenv() {
+  local var_name="$1"
+  local dotenv_path="${ROOT_DIR}/.env"
+  if [[ -n "${!var_name:-}" ]]; then
+    return 0
+  fi
+  if [[ ! -f "${dotenv_path}" ]]; then
+    return 0
+  fi
+  # Minimal, safe .env parsing: only accept `KEY=VALUE` on a single line.
+  local raw
+  raw="$(grep -E "^${var_name}=" "${dotenv_path}" | tail -n 1 || true)"
+  if [[ -z "${raw}" ]]; then
+    return 0
+  fi
+  local value="${raw#*=}"
+  # Strip optional surrounding quotes.
+  value="${value%\"}"
+  value="${value#\"}"
+  value="${value%\'}"
+  value="${value#\'}"
+  if [[ -n "${value}" ]]; then
+    export "${var_name}=${value}"
+  fi
+}
+
+maybe_load_api_key_from_dotenv "ANTHROPIC_API_KEY"
+
 if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
   echo "[claude-code-logged] warning: ANTHROPIC_API_KEY is not set; requests will fail until you export a valid key." >&2
 fi
