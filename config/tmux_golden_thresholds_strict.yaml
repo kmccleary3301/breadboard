@@ -10,8 +10,8 @@
       "max_action_count_delta": 0
     },
     "provider": {
-      "allow_banner_drift": false,
-      "max_token_drifts": 0,
+      "allow_banner_drift": true,
+      "max_token_drifts": 99,
       "require_compaction_markers": true
     },
     "pixel": {

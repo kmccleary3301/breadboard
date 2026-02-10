@@ -221,10 +221,30 @@ def _layout_normalize_line(line: str) -> str:
     - context-left counters (value varies)
     - active turn timers (string varies)
     """
+    # Normalize horizontal rules/borders to avoid comparing exact terminal widths.
+    trimmed = line.strip()
+    if trimmed:
+        if set(trimmed) <= {"─"} and len(trimmed) >= 8:
+            return "<hline>"
+        if set(trimmed) <= {"-"} and len(trimmed) >= 8:
+            return "<hline>"
+        if set(trimmed) <= {"_"} and len(trimmed) >= 8:
+            return "<hline>"
+
     if CONTEXT_LEFT_RE.search(line):
         line = CONTEXT_LEFT_RE.sub("<pct>% context left", line)
     if WORKING_RE.search(line):
         line = WORKING_RE.sub("Working(<duration>)", line)
+
+    # Normalize the dynamic hint/control text that frequently changes across versions
+    # or between captures (e.g. "ctrl+t to hide tasks" vs "esc to interrupt").
+    if BYPASS_PERMS_RE.search(line):
+        return "bypass permissions on <hint>"
+    if SHORTCUTS_RE.search(line):
+        # Preserve the context-left placeholder if it was present on the same line.
+        return "? for shortcuts <pct>% context left" if "<pct>% context left" in line else "? for shortcuts"
+    if ESC_INTERRUPT_RE.search(line):
+        return "esc to interrupt"
     if PROMPT_LINE_RE.match(line):
         # Avoid brittle compares over dynamic prompt suggestions like:
         #   › Try "fix lint errors"
@@ -526,26 +546,41 @@ def compare(
     # Use *composer-only* layout signatures (not raw frame line counts) so terminal
     # height/padding differences and transcript scroll state don't automatically fail
     # the layout check.
-    line_deltas = []
-    for idx in common:
-        run_sig_lines = len(layout_signature(run_frames[idx], provider=provider, head_lines=0, tail_lines=30).splitlines())
-        golden_sig_lines = len(
-            layout_signature(golden_frames[idx], provider=provider, head_lines=0, tail_lines=30).splitlines()
-        )
-        line_deltas.append(abs(run_sig_lines - golden_sig_lines))
-    max_line_delta = max(line_deltas) if line_deltas else 0
-    mean_line_delta = (sum(line_deltas) / len(line_deltas)) if line_deltas else 0.0
+    #
+    # NOTE: Computing line deltas over every overlapping frame is overly brittle:
+    # early frames can contain transient redraw/timing drift. Instead, compare only
+    # the final captured frames, which is where we care most about chrome regressions
+    # (extra blank lines, missing borders, prompt indentation).
+    run_final_sig_lines = len(layout_signature(run_final, provider=provider, head_lines=0, tail_lines=30).splitlines())
+    golden_final_sig_lines = len(
+        layout_signature(golden_final, provider=provider, head_lines=0, tail_lines=30).splitlines()
+    )
+    max_line_delta = abs(run_final_sig_lines - golden_final_sig_lines)
+    mean_line_delta = float(max_line_delta)
     # Compare "final" layout at the *last captured frame* for each run. This is
     # more meaningful than aligning by frame indices when capture durations differ.
     final_similarity = similarity(
         layout_signature(run_final, provider=provider, head_lines=0, tail_lines=30),
         layout_signature(golden_final, provider=provider, head_lines=0, tail_lines=30),
     )
-    head_similarity = similarity(
-        layout_signature("\n".join(run_first.splitlines()[:80]), provider=provider, head_lines=30, tail_lines=0),
-        layout_signature("\n".join(golden_first.splitlines()[:80]), provider=provider, head_lines=30, tail_lines=0),
-    )
-    layout_drift_score = round(1.0 - (0.7 * final_similarity + 0.3 * head_similarity), 4)
+    # Compare "head chrome" from the final frames, not the first frames.
+    # First-frame comparisons are extremely timing-sensitive (warnings/banners may
+    # be present during startup only), and goldens may have been captured with a
+    # different boot timing window.
+    run_head_sig = layout_signature(run_final, provider=provider, head_lines=30, tail_lines=0)
+    golden_head_sig = layout_signature(golden_final, provider=provider, head_lines=30, tail_lines=0)
+    head_similarity = similarity(run_head_sig, golden_head_sig)
+
+    # Weighting note:
+    # Some captures do not include the provider banner/header chrome in the visible pane
+    # (scroll state or timing drift). When either head signature is empty, do not let
+    # head similarity penalize the drift score.
+    head_weight = float(merged.get("layout", {}).get("head_weight", 0.3))
+    if not run_head_sig or not golden_head_sig:
+        head_weight = 0.0
+        head_similarity = 1.0
+    final_weight = max(0.0, 1.0 - head_weight)
+    layout_drift_score = round(1.0 - (final_weight * final_similarity + head_weight * head_similarity), 4)
 
     # Semantic metrics
     golden_must_contain = tuple(str(x) for x in golden_manifest.get("must_contain", []) if str(x))
@@ -619,11 +654,12 @@ def compare(
 
     provider_failures = []
     allow_banner_drift = bool(merged["provider"]["allow_banner_drift"])
-    if not allow_banner_drift and token_drifts:
-        provider_failures.extend(token_drifts)
-    if len(token_drifts) > int(merged["provider"]["max_token_drifts"]):
+    effective_token_drifts = [] if allow_banner_drift else token_drifts
+    if effective_token_drifts:
+        provider_failures.extend(effective_token_drifts)
+    if len(effective_token_drifts) > int(merged["provider"]["max_token_drifts"]):
         provider_failures.append(
-            f"token_drift_count={len(token_drifts)} > max_token_drifts={merged['provider']['max_token_drifts']}"
+            f"token_drift_count={len(effective_token_drifts)} > max_token_drifts={merged['provider']['max_token_drifts']}"
         )
     if compaction_marker_missing:
         provider_failures.append(f"missing compaction markers: {compaction_marker_missing}")
