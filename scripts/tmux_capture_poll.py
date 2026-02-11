@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import signal
 import subprocess
 import sys
 import time
@@ -52,6 +53,15 @@ class CaptureConfig:
     run_id: str
     settle_ms: int
     settle_attempts: int
+
+
+_stop_requested = False
+
+
+def _request_stop(signum: int, frame: object | None) -> None:  # pragma: no cover - signal handler
+    # Graceful shutdown: finish the current frame (including PNG) and exit cleanly.
+    global _stop_requested
+    _stop_requested = True
 
 
 def tmux_base_args(socket_name: str) -> list[str]:
@@ -239,6 +249,9 @@ def parse_args() -> CaptureConfig:
 
 
 def main() -> None:
+    signal.signal(signal.SIGTERM, _request_stop)
+    signal.signal(signal.SIGINT, _request_stop)
+
     config = parse_args()
     script_dir = Path(__file__).resolve().parent
     out_root = Path(config.out_root)
@@ -324,6 +337,9 @@ def main() -> None:
     index_file: TextIO
     index_file = index_path.open("a", encoding="utf-8")
     while True:
+        # Stop is handled gracefully: we finish the current loop iteration
+        # (capture + optional PNG) then exit after writing to index.jsonl.
+        stop_after_this_frame = bool(_stop_requested)
         now = time.monotonic()
         if end_time is not None and now >= end_time:
             break
@@ -365,6 +381,8 @@ def main() -> None:
         index_file.flush()
 
         next_tick += config.interval
+        if stop_after_this_frame:
+            break
     index_file.close()
 
     print(f"[tmux-capture] wrote {i} frames -> {run_dir}")
