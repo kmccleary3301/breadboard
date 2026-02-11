@@ -7,6 +7,8 @@ type InputBusCommand = {
   readonly special?: ReadonlyArray<string>
   readonly enter?: boolean
   readonly newline?: boolean
+  readonly send_mode?: "submit" | "multiline" | "literal"
+  readonly sendMode?: "submit" | "multiline" | "literal"
   readonly delayMs?: number
   readonly enterDelayMs?: number
 }
@@ -17,6 +19,12 @@ let fifo = `/tmp/${session}-input.fifo`
 let targetWindow = "0"
 let verbose = false
 let defaultEnterDelayMs = 15
+let submitKey = "C-m"
+let newlineKey = "C-j"
+let newlinePrefix = ""
+let submitKeySetByArg = false
+let newlineKeySetByArg = false
+let newlinePrefixSetByArg = false
 
 for (let i = 0; i < argv.length; i += 1) {
   const arg = argv[i]
@@ -29,13 +37,41 @@ for (let i = 0; i < argv.length; i += 1) {
     targetWindow = argv[++i]
   } else if (arg === "--enter-delay-ms") {
     defaultEnterDelayMs = Number(argv[++i] ?? "15")
+  } else if (arg === "--submit-key") {
+    submitKey = argv[++i] ?? "Enter"
+    submitKeySetByArg = true
+  } else if (arg === "--newline-key") {
+    newlineKey = argv[++i] ?? "C-j"
+    newlineKeySetByArg = true
+  } else if (arg === "--newline-prefix") {
+    newlinePrefix = argv[++i] ?? ""
+    newlinePrefixSetByArg = true
   } else if (arg === "--verbose") {
     verbose = true
   } else if (arg === "--help") {
     console.log(
-      "Usage: agent_input_bus.ts [--session <name>] [--fifo <path>] [--pane <index>] [--enter-delay-ms <n>] [--verbose]",
+      "Usage: agent_input_bus.ts [--session <name>] [--fifo <path>] [--pane <index>] [--enter-delay-ms <n>] [--submit-key <tmux-key>] [--newline-key <tmux-key>] [--newline-prefix <text>] [--verbose]",
     )
     process.exit(0)
+  }
+}
+
+const sessionLower = session.toLowerCase()
+const isClaudeSession = sessionLower.includes("claude")
+if (isClaudeSession) {
+  if (!submitKeySetByArg) {
+    // Claude submit must be sent as a dedicated carriage return; raw Enter can
+    // be interpreted as composer newline in some automation paths.
+    submitKey = "C-m"
+  }
+  if (!newlineKeySetByArg) {
+    // For multiline composition, Claude behaves more reliably when we send a
+    // literal line-feed (Ctrl+J) rather than "Enter". This avoids ambiguity
+    // where Enter may submit or may insert a newline depending on UI focus.
+    newlineKey = "C-j"
+  }
+  if (!newlinePrefixSetByArg) {
+    newlinePrefix = "\\"
   }
 }
 
@@ -72,9 +108,26 @@ const tmuxSendKeys = (keys: ReadonlyArray<string>, options?: { readonly literal?
 }
 
 // NOTE: Claude Code appears to apply paste-safety heuristics based on input chunk boundaries.
-// If "typed text" and "Enter" arrive in the same chunk, it may refuse to submit.
-// Therefore we intentionally send Enter as a separate tmux invocation.
+// If "typed text" and "submit key" arrive in the same chunk, it may refuse to submit.
+// Therefore we intentionally send submit as a separate tmux invocation.
 const sendToTmux = async (command: InputBusCommand) => {
+  const sendMode = (command.send_mode ?? command.sendMode ?? "").toString().trim().toLowerCase()
+  if (sendMode) {
+    if (sendMode === "submit") {
+      command = { ...command, newline: false, enter: true }
+    } else if (sendMode === "multiline") {
+      command = { ...command, newline: true, enter: false }
+    } else if (sendMode === "literal") {
+      command = { ...command, newline: false, enter: false }
+    } else {
+      throw new Error(`Unknown send_mode: ${sendMode}`)
+    }
+  }
+
+  if (command.keys && command.keys.includes("\n") && sendMode !== "literal") {
+    throw new Error('InputBusCommand.keys contains literal newlines; use send_mode="multiline" or send_mode="literal".')
+  }
+
   const hasAny =
     (command.keys && command.keys.length > 0) ||
     (command.special && command.special.length > 0) ||
@@ -94,13 +147,22 @@ const sendToTmux = async (command: InputBusCommand) => {
   }
 
   if (command.special) {
-    for (const key of command.special) {
+    // Claude Code can interpret raw "Enter" differently across automation paths.
+    // Normalize "Enter" to the submit key unless the caller explicitly requested a newline.
+    const normalizedSpecial =
+      isClaudeSession && !command.newline
+        ? command.special.map((key) => (key === "Enter" ? submitKey : key))
+        : command.special
+    for (const key of normalizedSpecial) {
       tmuxSendKeys([key])
     }
   }
 
   if (command.newline) {
-    tmuxSendKeys(["C-j"])
+    if (newlinePrefix.length > 0) {
+      tmuxSendKeys([newlinePrefix], { literal: true })
+    }
+    tmuxSendKeys([newlineKey])
   }
 
   if (command.enter) {
@@ -108,7 +170,7 @@ const sendToTmux = async (command: InputBusCommand) => {
     if (sentNonEnter && enterDelayMs > 0) {
       await sleep(enterDelayMs)
     }
-    tmuxSendKeys(["Enter"])
+    tmuxSendKeys([submitKey])
   }
 }
 

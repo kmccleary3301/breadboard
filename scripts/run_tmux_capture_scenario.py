@@ -442,8 +442,12 @@ def infer_target_key_defaults(target: str) -> tuple[str, str, str]:
     target_lower = target.lower()
     if "claude" in target_lower:
         # Claude submit should be carriage return; multiline requires explicit
-        # escape prefix + Enter so automation matches interactive behavior.
-        return ("C-m", "Enter", "\\")
+        # escape prefix + newline key so automation matches interactive behavior.
+        #
+        # In practice, sending "Enter" for newline is ambiguous (it can submit or
+        # insert a newline depending on focus). A literal line-feed (Ctrl+J)
+        # is much more reliable for newline insertion in automation.
+        return ("C-m", "C-j", "\\")
     return ("C-m", "C-j", "")
 
 
