@@ -1,0 +1,58 @@
+import path from "node:path"
+import { findLatestRunDir, runNodeWithTsx } from "./tui_goldens_utils.js"
+
+const main = async (): Promise<number> => {
+  const manifest = path.resolve("..", "misc", "tui_goldens", "manifests", "tui_goldens.yaml")
+  const artifactsRoot = path.resolve("..", "misc", "tui_goldens", "artifacts")
+  const blessedRoot = path.resolve("..", "misc", "tui_goldens", "scenarios")
+
+  console.log("[tui_goldens] rendering...")
+  const render = runNodeWithTsx(["scripts/run_tui_goldens.ts", "--manifest", manifest, "--out", artifactsRoot])
+  if (!render.ok) {
+    console.error(`[tui_goldens] render failed (status=${render.status}); report-only, continuing`)
+    return 0
+  }
+
+  const latestRun = await findLatestRunDir(artifactsRoot)
+  console.log(`[tui_goldens] latest run: ${latestRun}`)
+
+  console.log("[tui_goldens] compare (report-only)...")
+  const compare = runNodeWithTsx([
+    "scripts/compare_tui_goldens.ts",
+    "--manifest",
+    manifest,
+    "--candidate",
+    latestRun,
+    "--blessed-root",
+    blessedRoot,
+    "--summary",
+  ])
+  if (!compare.ok) {
+    console.error(`[tui_goldens] compare failed (status=${compare.status}); report-only`)
+  }
+
+  console.log("[tui_goldens] grid compare (report-only)...")
+  const grid = runNodeWithTsx([
+    "scripts/compare_tui_goldens_grid.ts",
+    "--manifest",
+    manifest,
+    "--candidate",
+    latestRun,
+    "--blessed-root",
+    blessedRoot,
+    "--summary",
+  ])
+  if (!grid.ok) {
+    console.error(`[tui_goldens] grid compare failed (status=${grid.status}); report-only`)
+  }
+
+  return 0
+}
+
+main()
+  .then((code) => process.exit(code))
+  .catch((error) => {
+    console.error("[tui_goldens_report] failed:", error)
+    process.exit(0)
+  })
+
