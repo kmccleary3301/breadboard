@@ -42,10 +42,6 @@ export const useComposerController = (options: ComposerControllerOptions) => {
     setAttachments([])
   }, [])
 
-  const clearAttachments = useCallback(() => {
-    setAttachments([])
-  }, [])
-
   const handleLineEdit = useCallback(
     (nextValue: string, nextCursor: number) => {
       const prevValue = inputValueRef.current
@@ -154,7 +150,6 @@ export const useComposerController = (options: ComposerControllerOptions) => {
     attachments,
     handleAttachment,
     removeLastAttachment,
-    clearAttachments,
     clearAttachments,
     inputTextVersion,
     inputValueRef,

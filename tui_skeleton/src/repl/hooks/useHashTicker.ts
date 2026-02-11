@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react"
 import chalk from "chalk"
 import chroma from "chroma-js"
 import { BRAND_COLORS, resolveColorMode } from "../designSystem.js"
-import { BRAND_COLORS, resolveColorMode } from "../designSystem.js"
 
 const HASH_LENGTH = 14
 const INTERVAL_MS = 1200

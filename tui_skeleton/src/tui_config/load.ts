@@ -226,8 +226,12 @@ export const resolveTuiConfig = async (options: ResolvedTuiConfigOptions): Promi
   merged = validated.config
 
   const colorAllowed = options.colorAllowed ?? true
+  const noColorRequested = Boolean(process.env.NO_COLOR)
   const displayAsciiOnly = merged.display?.asciiOnly ?? resolveAsciiOnly()
-  const displayColorMode = merged.display?.colorMode ?? resolveColorMode(undefined, colorAllowed)
+  // Contract: NO_COLOR must win unless the caller explicitly disables color globally
+  // via `colorAllowed=false` (used by deterministic harness lanes).
+  const requestedColorMode = merged.display?.colorMode ?? resolveColorMode(undefined, colorAllowed)
+  const displayColorMode = colorAllowed && noColorRequested ? "none" : requestedColorMode
   const activeText = merged.statusLine?.activeText?.trim() || DEFAULT_RESOLVED_TUI_CONFIG.statusLine.activeText
   const completionTemplate =
     merged.statusLine?.completionTemplate?.trim() || DEFAULT_RESOLVED_TUI_CONFIG.statusLine.completionTemplate

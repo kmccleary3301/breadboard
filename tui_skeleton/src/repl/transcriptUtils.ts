@@ -6,13 +6,19 @@ export interface ConversationWindow {
   readonly hiddenCount: number
 }
 
+export interface TranscriptWindow<T> {
+  readonly entries: T[]
+  readonly truncated: boolean
+  readonly hiddenCount: number
+}
+
 export const MAX_TRANSCRIPT_ENTRIES = 120
 export const MIN_TRANSCRIPT_ROWS = 4
 
-export const buildConversationWindow = (
-  entries: ReadonlyArray<ConversationEntry>,
+export const buildTranscriptWindow = <T>(
+  entries: ReadonlyArray<T>,
   capacity: number = MAX_TRANSCRIPT_ENTRIES,
-): ConversationWindow => {
+): TranscriptWindow<T> => {
   const cap = Math.max(MIN_TRANSCRIPT_ROWS, Math.min(MAX_TRANSCRIPT_ENTRIES, capacity))
   if (entries.length <= cap) {
     return {
@@ -28,6 +34,11 @@ export const buildConversationWindow = (
     hiddenCount,
   }
 }
+
+export const buildConversationWindow = (
+  entries: ReadonlyArray<ConversationEntry>,
+  capacity: number = MAX_TRANSCRIPT_ENTRIES,
+): ConversationWindow => buildTranscriptWindow(entries, capacity)
 
 export const findStreamingEntry = (entries: ReadonlyArray<ConversationEntry>): ConversationEntry | undefined => {
   for (let index = entries.length - 1; index >= 0; index -= 1) {

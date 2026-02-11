@@ -1,10 +1,16 @@
-import type { Block, DiffBlock as StreamDiffBlock, DiffKind, InlineNode, TokenLineV1 } from "@stream-mdx/core/types"
+import type { Block, InlineNode } from "@stream-mdx/core/types"
 import { maybeHighlightCode } from "../../../../shikiHighlighter.js"
 import { CHALK, COLORS, ASCII_ONLY } from "../../theme.js"
 import { stringWidth, stripAnsiCodes, visibleWidth } from "../../utils/ansi.js"
 import type { MarkdownCodeLine, TuiDiffLineKind, TuiTokenLine } from "../../../../types.js"
 import { renderTokenLine, tokenLineFromThemed, tokenLineFromV1 } from "../../../../markdown/tokenRender.js"
 import { DEFAULT_DIFF_RENDER_STYLE, type DiffRenderStyle } from "../diffStyles.js"
+import type {
+  DiffBlock as StreamDiffBlock,
+  DiffKind,
+  ThemedLine,
+  TokenLineV1,
+} from "../../../../markdown/streamMdxCompatTypes.js"
 
 export const stripFence = (raw: string): { code: string; langHint?: string } => {
   const normalized = raw.replace(/\r\n?/g, "\n")
@@ -398,7 +404,7 @@ const renderDiffBlocks = (diffBlocks: ReadonlyArray<StreamDiffBlock>, diffStyle:
   for (const block of diffBlocks) {
     for (const line of block.lines ?? []) {
       const kind = line.kind as TuiDiffLineKind
-      const tokens = allowTokens ? tokenLineFromThemed(line.tokens ?? null) : null
+      const tokens = allowTokens ? tokenLineFromThemed((line.tokens as ThemedLine | null) ?? null) : null
       const raw = typeof line.raw === "string" ? line.raw : ""
       lines.push(renderDiffLine(raw, kind, diffStyle, tokens))
     }

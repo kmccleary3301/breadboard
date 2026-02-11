@@ -1,0 +1,5 @@
+{"event": {"id": "w1", "seq": 1, "type": "run.start", "payload": {}}}
+{"event": {"id": "w2", "seq": 2, "type": "warning", "payload": {"message": "Low disk space"}}}
+{"event": {"id": "w3", "seq": 3, "type": "tool_call", "payload": {"call_id": "call-3", "tool_name": "bash", "args": {"command": "rm -rf /tmp/bad"}, "display": {"title": "Bash(rm -rf /tmp/bad)"}}}}
+{"event": {"id": "w4", "seq": 4, "type": "tool.result", "payload": {"call_id": "call-3", "tool_name": "bash", "status": "error", "display": {"title": "Bash(rm -rf /tmp/bad)", "summary": "Error: Permission denied", "detail": ["rm: cannot remove '/tmp/bad': Permission denied"]}}}}
+{"event": {"id": "w5", "seq": 5, "type": "run.end", "payload": {"completed": false, "reason": "error"}}}

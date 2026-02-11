@@ -1,3 +1,35 @@
+import { ApiError } from "../../api/client.js"
+import type {
+  CTreeNode,
+  CTreeSnapshotSummary,
+  SessionEvent,
+} from "../../api/types.js"
+import { reduceCTreeModel } from "../../repl/ctrees/reducer.js"
+import { BRAND_COLORS, SEMANTIC_COLORS } from "../../repl/designSystem.js"
+import { stripAnsi } from "../../repl/stringUtils.js"
+import type {
+  CheckpointSummary,
+  CTreeSnapshot,
+  PermissionRequest,
+  SkillCatalog,
+  SkillSelection,
+  SkillCatalogSources,
+} from "../../repl/types.js"
+import {
+  DEBUG_EVENTS,
+  MAX_RETRIES,
+  STOP_SOFT_TIMEOUT_MS,
+  createSlotId,
+  extractCtreeSnapshotSummary,
+  extractRawString,
+  extractString,
+  formatErrorPayload,
+  isRecord,
+  normalizeModeValue,
+  normalizePermissionMode,
+  parseNumberish,
+  sleep,
+} from "./controllerUtils.js"
 type CompletionView = {
   completed: boolean
   status: string
@@ -7,6 +39,7 @@ type CompletionView = {
   warningSlot?: { text: string; color?: string }
 }
 
+const MAX_SEEN_EVENT_IDS = 2000
 const formatDurationMs = (ms: number): string => {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
   const minutes = Math.floor(totalSeconds / 60)
@@ -110,20 +143,39 @@ const formatCompletion = (payload: unknown): CompletionView => {
   return { completed, status, toolLine, hint, conversationLine, warningSlot }
 }
 
-export function handleToolCall(this: any, payload: Record<string, unknown>, callIdOverride?: string | null, allowExisting = true): string | null {
+export function handleToolCall(
+  this: any,
+  payload: Record<string, unknown>,
+  callIdOverride?: string | null,
+  allowExisting = true,
+  logEntry = true,
+): string | null {
+  this.finalizeStreamingEntry()
   if (this.pendingResponse) this.status = "Tool call in progress…"
-  const callId = callIdOverride ?? (typeof payload.call_id === "string" ? payload.call_id : null)
-  if (callId && !allowExisting && this.toolSlotsByCallId.has(callId)) {
+  const callId = callIdOverride ?? this.resolveToolCallId(payload)
+  if (callId && !allowExisting && (this.toolSlotsByCallId.has(callId) || this.toolLogEntryByCallId.has(callId))) {
     return callId
   }
   this.stats.toolCount += 1
-  const payloadText = JSON.stringify(payload)
-  const callEntry = this.addTool("call", `[call] ${payloadText}`, "pending", { callId })
+  const display = this.resolveToolDisplayPayload(payload)
+  const toolText = this.formatToolDisplayText(display ? { ...payload, display } : payload)
+  const cleanedToolText = stripAnsi(toolText).trim()
+  const shouldLog = logEntry && Boolean(cleanedToolText && cleanedToolText !== "Tool")
+  let callEntry = callId ? this.toolLogEntryByCallId.get(callId) ?? null : null
+  if (shouldLog) {
+    if (callEntry) {
+      this.updateToolEntry(callEntry, { text: toolText, status: "pending", ...(display ? { display } : {}) })
+    } else {
+      callEntry = this.addTool("call", toolText, "pending", { callId, display }).id
+    }
+  }
   const slotId = createSlotId()
   const slot = this.formatToolSlot(payload)
   if (callId) {
     this.toolSlotsByCallId.set(callId, slotId)
-    this.toolLogEntryByCallId.set(callId, callEntry.id)
+    if (callEntry) {
+      this.toolLogEntryByCallId.set(callId, callEntry)
+    }
   } else {
     this.toolSlotFallback.push(slotId)
   }
@@ -140,15 +192,46 @@ export function handleToolCall(this: any, payload: Record<string, unknown>, call
 }
 
 export function handleToolResult(this: any, payload: Record<string, unknown>, callIdOverride?: string | null): void {
+  this.finalizeStreamingEntry()
   if (this.pendingResponse) this.status = "Tool result received"
   this.stats.toolCount += 1
   const resultWasError = this.isToolResultError(payload)
-  const callId = callIdOverride ?? (typeof payload.call_id === "string" ? payload.call_id : null)
+  const callId = callIdOverride ?? this.resolveToolCallId(payload)
   const callEntryId = callId ? this.toolLogEntryByCallId.get(callId) : null
-  this.addTool("result", `[result] ${JSON.stringify(payload)}`, resultWasError ? "error" : "success", {
-    callId,
-    insertAfterId: callEntryId,
-  })
+  const display = this.resolveToolDisplayPayload(payload)
+  const toolText = this.formatToolDisplayText(display ? { ...payload, display } : payload)
+  const cleanedToolText = stripAnsi(toolText).trim()
+  const shouldLog = Boolean(cleanedToolText && cleanedToolText !== "Tool")
+  if (callEntryId) {
+    this.updateToolEntry(callEntryId, {
+      ...(shouldLog ? { text: toolText } : {}),
+      status: resultWasError ? "error" : "success",
+      ...(display ? { display } : {}),
+    })
+  } else if (shouldLog) {
+    const header = toolText.split(/\r?\n/)[0]?.trim()
+    let fallbackId: string | null = null
+    if (header) {
+      for (let i = this.toolEvents.length - 1; i >= 0; i -= 1) {
+        const entry = this.toolEvents[i]
+        if (!entry || entry.kind !== "call") continue
+        const entryHeader = entry.text.split(/\r?\n/)[0]?.trim()
+        if (entryHeader === header) {
+          fallbackId = entry.id
+          break
+        }
+      }
+    }
+    if (fallbackId) {
+      this.updateToolEntry(fallbackId, {
+        text: toolText,
+        status: resultWasError ? "error" : "success",
+        ...(display ? { display } : {}),
+      })
+    } else {
+      this.addTool("result", toolText, resultWasError ? "error" : "success", { callId, display })
+    }
+  }
   if (callId) {
     const slotId = this.toolSlotsByCallId.get(callId)
     if (slotId) {
@@ -186,6 +269,7 @@ export function handleToolResult(this: any, payload: Record<string, unknown>, ca
 
 export async function streamLoop(this: any): Promise<void> {
   const appConfig = this.providers.args.config
+  const retrySuffix = Number.isFinite(MAX_RETRIES) ? `/${MAX_RETRIES}` : ""
   while (!this.abortRequested) {
     this.abortController = new AbortController()
     try {
@@ -205,15 +289,20 @@ export async function streamLoop(this: any): Promise<void> {
         this.consecutiveFailures = 0
         this.stats.eventCount += 1
         this.stats.lastTurn = event.turn ?? this.stats.lastTurn
-        if (typeof event.id === "string" && event.id.trim()) {
-          this.lastEventId = event.id
+        const seqValue = typeof event.seq === "number" && Number.isFinite(event.seq) ? event.seq : null
+        if (seqValue !== null) {
+          this.lastEventId = String(seqValue)
+        } else if (typeof event.id === "string" && /^[0-9]+$/.test(event.id.trim())) {
+          this.lastEventId = event.id.trim()
         }
         this.enqueueEvent(event)
       }
       if (!this.awaitingRestart) {
         this.pendingResponse = false
         this.consecutiveFailures += 1
-        if (this.consecutiveFailures > MAX_RETRIES) {
+        const retriesExhausted =
+          Number.isFinite(MAX_RETRIES) && this.consecutiveFailures > MAX_RETRIES
+        if (retriesExhausted) {
           this.pushHint("Stream ended unexpectedly and reconnection attempts exhausted.")
           this.status = "Disconnected"
           this.disconnected = true
@@ -221,8 +310,10 @@ export async function streamLoop(this: any): Promise<void> {
           break
         }
         const retryDelay = Math.min(4000, 500 * 2 ** (this.consecutiveFailures - 1))
-        this.pushHint(`Stream ended unexpectedly. Retrying in ${retryDelay}ms (attempt ${this.consecutiveFailures}/${MAX_RETRIES}).`)
-        this.status = `Reconnecting (${this.consecutiveFailures}/${MAX_RETRIES})`
+        this.pushHint(
+          `Stream ended unexpectedly. Retrying in ${retryDelay}ms (attempt ${this.consecutiveFailures}${retrySuffix}).`,
+        )
+        this.status = `Reconnecting (${this.consecutiveFailures}${retrySuffix})`
         this.emitChange()
         await sleep(retryDelay)
         continue
@@ -268,7 +359,9 @@ export async function streamLoop(this: any): Promise<void> {
       this.consecutiveFailures += 1
       const delay = Math.min(4000, 500 * 2 ** (this.consecutiveFailures - 1))
       const message = error instanceof Error ? error.message : String(error)
-      if (this.consecutiveFailures > MAX_RETRIES) {
+      const retriesExhausted =
+        Number.isFinite(MAX_RETRIES) && this.consecutiveFailures > MAX_RETRIES
+      if (retriesExhausted) {
         this.pendingResponse = false
         this.pushHint(`Stream interruption: ${message}. Giving up after ${MAX_RETRIES} attempts.`)
         this.status = "Disconnected"
@@ -277,8 +370,10 @@ export async function streamLoop(this: any): Promise<void> {
         break
       }
       this.pendingResponse = false
-      this.pushHint(`Stream interruption: ${message}. Retrying in ${delay}ms (attempt ${this.consecutiveFailures}/${MAX_RETRIES}).`)
-      this.status = `Reconnecting (${this.consecutiveFailures}/${MAX_RETRIES})`
+      this.pushHint(
+        `Stream interruption: ${message}. Retrying in ${delay}ms (attempt ${this.consecutiveFailures}${retrySuffix}).`,
+      )
+      this.status = `Reconnecting (${this.consecutiveFailures}${retrySuffix})`
       this.emitChange()
       await sleep(delay)
     }
@@ -286,6 +381,27 @@ export async function streamLoop(this: any): Promise<void> {
 }
 
 export function enqueueEvent(this: any, event: SessionEvent): void {
+  const eventId =
+    typeof event.id === "string" && event.id.trim().length > 0
+      ? event.id
+      : typeof event.seq === "number"
+        ? String(event.seq)
+        : null
+  if (eventId) {
+    if (this.seenEventIds?.has(eventId)) {
+      return
+    }
+    if (this.seenEventIds) {
+      this.seenEventIds.add(eventId)
+      this.seenEventIdQueue.push(eventId)
+      if (this.seenEventIdQueue.length > MAX_SEEN_EVENT_IDS) {
+        const stale = this.seenEventIdQueue.shift()
+        if (stale) {
+          this.seenEventIds.delete(stale)
+        }
+      }
+    }
+  }
   this.pendingEvents.push(event)
   if (this.eventsScheduled) return
   this.eventsScheduled = true
@@ -302,6 +418,19 @@ export function enqueueEvent(this: any, event: SessionEvent): void {
 
 export function applyEvent(this: any, event: SessionEvent): void {
   this.pushRawEvent(event)
+  const prevSeq = this.currentEventSeq
+  let nextSeq: number | null = null
+  if (typeof event.seq === "number" && Number.isFinite(event.seq)) {
+    nextSeq = event.seq
+    if (typeof this.eventClock === "number" && nextSeq > this.eventClock) {
+      this.eventClock = nextSeq
+    }
+  } else {
+    this.eventClock = typeof this.eventClock === "number" ? this.eventClock + 1 : 1
+    nextSeq = this.eventClock
+  }
+  this.currentEventSeq = nextSeq
+  try {
   if (!DEBUG_EVENTS && Array.isArray(event.tags) && event.tags.includes("legacy")) {
     return
   }
@@ -341,18 +470,19 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "turn_start": {
+      this.finalizeStreamingEntry()
       this.clearStopRequest()
       this.pendingResponse = true
       notePendingStart(this)
       this.status = "Assistant thinking…"
-      if (DEBUG_EVENTS || this.viewPrefs.rawStream) {
-        const turnLabel = typeof event.turn === "number" ? `Turn ${event.turn} started` : "Turn started"
-        this.addTool("status", `[turn] ${turnLabel}`)
-      }
       const payload = isRecord(event.payload) ? event.payload : {}
       const mode = normalizeModeValue(extractString(payload, ["mode", "agent_mode", "phase"]))
       if (mode) {
         this.mode = mode
+      }
+      if (DEBUG_EVENTS || this.viewPrefs.rawStream) {
+        const turnLabel = typeof event.turn === "number" ? `Turn ${event.turn} started` : "Turn started"
+        this.addTool("status", `[turn] ${turnLabel}`)
       }
       break
     }
@@ -365,7 +495,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
     case "assistant.message.delta": {
       if (this.pendingResponse) this.status = "Assistant responding…"
       const payload = isRecord(event.payload) ? event.payload : {}
-      const delta = extractString(payload, ["delta", "text"])
+      const delta = extractRawString(payload, ["delta", "text"])
       if (delta) {
         this.appendAssistantDelta(delta)
       }
@@ -377,41 +507,61 @@ export function applyEvent(this: any, event: SessionEvent): void {
     }
     case "assistant_message": {
       if (this.pendingResponse) this.status = "Assistant responding…"
-      const text = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+      const raw = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+      const text = typeof raw === "string" ? raw : ""
       const normalizedText = this.normalizeAssistantText(text)
+      const trimmed = normalizedText.trim()
+      if (!trimmed || trimmed.toLowerCase() === "none") break
       this.addConversation("assistant", normalizedText, "streaming")
       this.appendMarkdownChunk(normalizedText)
+      // Non-streaming assistant_message events can finalize immediately.
+      this.finalizeStreamingEntry()
       break
     }
     case "assistant_delta": {
       if (this.pendingResponse) this.status = "Assistant responding…"
-      const delta = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+      const raw = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+      const delta = typeof raw === "string" ? raw : ""
       this.appendAssistantDelta(delta)
       break
     }
     case "assistant.reasoning.delta":
     case "assistant.thought_summary.delta": {
       const payload = isRecord(event.payload) ? event.payload : {}
-      const delta = extractString(payload, ["delta", "text"]) ?? JSON.stringify(event.payload)
+      const raw = extractRawString(payload, ["delta", "text"]) ?? JSON.stringify(event.payload)
+      const delta = typeof raw === "string" ? raw : ""
       if (this.viewPrefs.showReasoning || DEBUG_EVENTS) {
         this.addTool("status", `[reasoning] ${delta}`, "pending")
       }
       break
     }
     case "user_message": {
-      const text = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+      const raw = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+      const text = typeof raw === "string" ? raw : ""
+      const normalized = text.trim()
+      if (this.pendingUserEcho && normalized && this.pendingUserEcho === normalized) {
+        this.pendingUserEcho = null
+        break
+      }
       this.addConversation("user", text)
       break
     }
     case "user.message": {
       const payload = isRecord(event.payload) ? event.payload : {}
-      const text = extractString(payload, ["text", "content", "message"]) ?? JSON.stringify(event.payload)
+      const raw = extractString(payload, ["text", "content", "message"]) ?? JSON.stringify(event.payload)
+      const text = typeof raw === "string" ? raw : ""
+      const normalized = text.trim()
+      if (this.pendingUserEcho && normalized && this.pendingUserEcho === normalized) {
+        this.pendingUserEcho = null
+        break
+      }
       this.addConversation("user", text)
       break
     }
     case "user.command": {
       const payload = isRecord(event.payload) ? event.payload : {}
-      const command = extractString(payload, ["command", "text", "content"]) ?? JSON.stringify(event.payload)
+      const raw = extractString(payload, ["command", "text", "content"]) ?? JSON.stringify(event.payload)
+      const command = typeof raw === "string" ? raw : ""
       this.addConversation("user", command.startsWith("/") ? command : `/${command}`)
       break
     }
@@ -624,6 +774,13 @@ export function applyEvent(this: any, event: SessionEvent): void {
         ...(isRecord(payload.node) ? { last_node: payload.node } : {}),
       }
       this.ctreeSnapshot = next
+      if (isRecord(payload.node) && isRecord(payload.snapshot)) {
+        this.ctreeModel = reduceCTreeModel(this.ctreeModel, {
+          type: "ctree_node",
+          node: payload.node as unknown as CTreeNode,
+          snapshot: payload.snapshot as unknown as CTreeSnapshotSummary,
+        })
+      }
       this.scheduleCtreeRefresh()
       break
     }
@@ -638,6 +795,13 @@ export function applyEvent(this: any, event: SessionEvent): void {
         ...(payload.last_node !== undefined ? { last_node: payload.last_node as Record<string, unknown> | null } : {}),
       }
       this.ctreeSnapshot = next
+      if (isRecord(payload.snapshot)) {
+        const summary = extractCtreeSnapshotSummary(payload.snapshot)
+        this.ctreeModel = reduceCTreeModel(this.ctreeModel, {
+          type: "ctree_snapshot",
+          snapshot: summary,
+        })
+      }
       this.scheduleCtreeRefresh()
       break
     }
@@ -647,7 +811,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const mode = extractString(payload, ["mode"]) ?? null
       const prune = typeof payload.prune === "boolean" ? payload.prune : mode !== "code"
       if (checkpointId && prune) {
-        const checkpoints =
+        const checkpoints: CheckpointSummary[] =
           this.rewindMenu.status === "ready" || this.rewindMenu.status === "error" || this.rewindMenu.status === "loading"
             ? this.rewindMenu.checkpoints
             : []
@@ -671,15 +835,16 @@ export function applyEvent(this: any, event: SessionEvent): void {
         call_id: callId ?? undefined,
         tool: toolName ?? payload.tool,
         action: "calling",
+        ...(payload.display !== undefined ? { display: payload.display } : {}),
       }
-      this.handleToolCall(normalizedPayload, callId ?? null, false)
+      this.handleToolCall(normalizedPayload, callId ?? null, false, true)
       break
     }
     case "assistant.tool_call.delta": {
       const payload = isRecord(event.payload) ? event.payload : {}
       const callId = this.resolveToolCallId(payload)
       if (!callId) break
-      const delta = extractString(payload, ["args_text_delta", "delta", "text"]) ?? ""
+      const delta = extractRawString(payload, ["args_text_delta", "delta", "text"]) ?? ""
       const next = this.appendToolCallArgs(callId, delta)
       const slotId = this.toolSlotsByCallId.get(callId)
       if (slotId) {
@@ -699,14 +864,17 @@ export function applyEvent(this: any, event: SessionEvent): void {
         extractString(payload, ["args_text", "args"]) ??
         this.toolCallArgsById.get(callId) ??
         ""
-      if (argsText) {
-        const callEntryId = this.toolLogEntryByCallId.get(callId) ?? null
-        this.addTool(
-          "call",
-          `[call] ${toolName} ${argsText}`.trim(),
-          "pending",
-          { callId, insertAfterId: callEntryId },
-        )
+      const callEntryId = this.toolLogEntryByCallId.get(callId) ?? null
+      const normalizedPayload: Record<string, unknown> = {
+        ...payload,
+        call_id: callId,
+        tool: toolName,
+        tool_name: toolName,
+        ...(argsText ? { args_text: argsText } : {}),
+      }
+      const toolText = this.formatToolDisplayText(normalizedPayload)
+      if (callEntryId) {
+        this.updateToolEntry(callEntryId, { text: toolText, status: "pending" })
       }
       break
     }
@@ -739,7 +907,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const callId = this.resolveToolCallId(payload)
       const execId = extractString(payload, ["exec_id", "execId"]) ?? null
       if (!callId && !execId) break
-      const delta = extractString(payload, ["delta", "text"]) ?? ""
+      const delta = extractRawString(payload, ["delta", "text"]) ?? ""
       const outputKey = callId ?? execId
       if (!outputKey) break
       if (event.type === "tool.exec.stdout.delta") {
@@ -777,14 +945,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       }
       const outputKey = callId ?? execId
       if (outputKey) {
-        const output = this.formatToolExecOutput(this.takeToolExecOutput(outputKey))
-        if (output) {
-          const callEntryId = callId ? this.toolLogEntryByCallId.get(callId) ?? null : null
-          this.addTool("result", `[output]\n${output}`, exitCode === 0 || exitCode == null ? "success" : "error", {
-            callId,
-            insertAfterId: callEntryId,
-          })
-        }
+        this.takeToolExecOutput(outputKey)
       }
       if (execId) this.toolExecMetaById.delete(execId)
       if (callId) this.toolExecMetaById.delete(callId)
@@ -792,7 +953,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
     }
     case "tool_call": {
       const payload = isRecord(event.payload) ? event.payload : {}
-      this.handleToolCall(payload)
+      this.handleToolCall(payload, null, false, true)
       break
     }
     case "tool.result": {
@@ -801,8 +962,10 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const normalizedPayload: Record<string, unknown> = {
         ...payload,
         call_id: callId ?? undefined,
+        tool: payload.tool_name ?? payload.tool,
         status: payload.ok === false ? "error" : payload.status ?? undefined,
         result: payload.result ?? payload.output ?? payload,
+        ...(payload.display !== undefined ? { display: payload.display } : {}),
       }
       this.handleToolResult(normalizedPayload, callId ?? null)
       break
@@ -813,6 +976,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "reward_update": {
+      this.finalizeStreamingEntry()
       if (this.pendingResponse) this.status = "Reward update received"
       const summary = JSON.stringify(event.payload.summary ?? event.payload)
       this.addTool("reward", `[reward] ${summary}`, "success")
@@ -820,6 +984,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "log_link": {
+      this.finalizeStreamingEntry()
       const payload = isRecord(event.payload) ? event.payload : {}
       const link = extractString(payload, ["url", "href", "path"]) ?? JSON.stringify(payload)
       this.addTool("status", `[log] ${link}`)
@@ -834,6 +999,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "warning": {
+      this.finalizeStreamingEntry()
       const payload = isRecord(event.payload) ? event.payload : {}
       const message = extractString(payload, ["message", "detail", "summary"]) ?? JSON.stringify(payload)
       this.pushHint(`[warning] ${message}`)
@@ -856,6 +1022,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "error": {
+      this.finalizeStreamingEntry()
       const raw = JSON.stringify(event.payload)
       const message = formatErrorPayload(event.payload)
       if (DEBUG_EVENTS && message !== raw) {
@@ -906,9 +1073,9 @@ export function applyEvent(this: any, event: SessionEvent): void {
         this.removeLiveSlot("guardrail")
         this.clearGuardrailNotice()
       }
-      this.toolSlotsByCallId.forEach((slotId) => this.removeLiveSlot(slotId))
+      this.toolSlotsByCallId.forEach((slotId: string) => this.removeLiveSlot(slotId))
       this.toolSlotsByCallId.clear()
-      this.toolSlotFallback.splice(0).forEach((slotId) => this.removeLiveSlot(slotId))
+      this.toolSlotFallback.splice(0).forEach((slotId: string) => this.removeLiveSlot(slotId))
       this.removeLiveSlot("reward")
       break
     }
@@ -951,6 +1118,9 @@ export function applyEvent(this: any, event: SessionEvent): void {
     default:
       break
   }
+  } finally {
+    this.currentEventSeq = prevSeq
+  }
 }
 
 export function normalizeAssistantText(this: any, text: string): string {
@@ -964,7 +1134,7 @@ export function normalizeAssistantText(this: any, text: string): string {
 export function appendAssistantDelta(this: any, delta: string): void {
   if (!delta) return
   if (this.streamingEntryId) {
-    const index = this.conversation.findIndex((entry) => entry.id === this.streamingEntryId)
+    const index = this.conversation.findIndex((entry: { id: string }) => entry.id === this.streamingEntryId)
     if (index >= 0) {
       const existing = this.conversation[index]
       const nextText = `${existing.text ?? ""}${delta}`
@@ -996,5 +1166,4 @@ export function clearStopRequest(this: any): void {
     this.stopTimer = null
   }
   this.stopRequestedAt = null
-}
 }

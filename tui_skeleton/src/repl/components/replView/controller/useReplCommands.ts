@@ -17,6 +17,7 @@ import {
 } from "../utils/text.js"
 import { formatBytes } from "../utils/format.js"
 import { GLYPHS } from "../theme.js"
+import { loadToolDisplayRules } from "../../../toolDisplayConfig.js"
 
 // Intentionally broad while we continue to split the controller.
 type CommandsContext = Record<string, any>
@@ -24,6 +25,7 @@ type CommandsContext = Record<string, any>
 export const useReplCommands = (context: CommandsContext) => {
   const {
     closeFilePicker,
+    configPath,
     fileMentionConfig,
     handleLineEdit,
     onListFiles,
@@ -182,6 +184,30 @@ export const useReplCommands = (context: CommandsContext) => {
       const normalized = value.trimEnd()
       if (trimmed.startsWith("/")) {
         const [command] = trimmed.slice(1).split(/\s+/)
+        if (command === "tool-display") {
+          const parts = trimmed.split(/\s+/).slice(1)
+          const subcommand = parts[0] ?? "list"
+          if (subcommand !== "list") {
+            pushCommandResult("/tool-display", ["Usage: /tool-display list"])
+            handleLineEdit("", 0)
+            return
+          }
+          const rules = await loadToolDisplayRules(configPath ?? undefined)
+          if (!rules.length) {
+            pushCommandResult("/tool-display", ["No tool display rules found."])
+            handleLineEdit("", 0)
+            return
+          }
+          const lines = rules.map((rule) => {
+            const match = rule.match ? JSON.stringify(rule.match) : "match: *"
+            const priority = rule.priority != null ? `p${rule.priority}` : "p?"
+            const category = rule.category ? ` · ${rule.category}` : ""
+            return `${GLYPHS.bullet} ${rule.id} (${priority}) ${match}${category}`
+          })
+          pushCommandResult("Tool display rules", lines)
+          handleLineEdit("", 0)
+          return
+        }
         if (command === "todos") {
           setTodosOpen(true)
           handleLineEdit("", 0)
@@ -284,6 +310,7 @@ export const useReplCommands = (context: CommandsContext) => {
     },
     [
       attachments,
+      configPath,
       enterTranscriptViewer,
       fileMentionConfig,
       fileMentions,
@@ -292,6 +319,7 @@ export const useReplCommands = (context: CommandsContext) => {
       inputLocked,
       onReadFile,
       onSubmit,
+      pushCommandResult,
       setSuggestIndex,
       setTasksOpen,
       setTodosOpen,

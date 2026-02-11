@@ -66,7 +66,7 @@ export const BUILTIN_TUI_PRESETS: Record<TuiPresetId, TuiConfigInput> = {
       align: "left",
       showWhenPending: true,
       showOnComplete: true,
-      activeText: "• Working ({elapsed} • esc to interrupt)",
+      activeText: "• Working (esc to interrupt)",
       completionTemplate: "• Worked for {duration}",
     },
   },

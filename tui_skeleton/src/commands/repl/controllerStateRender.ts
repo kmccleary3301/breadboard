@@ -6,11 +6,23 @@ import type {
   LiveSlotStatus,
   TranscriptPreferences,
 } from "../../repl/types.js"
-import type { ReplSessionController } from "./controller.js"
+
+const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => {
+  if (value == null) return fallback
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return fallback
+  if (["1", "true", "yes", "on"].includes(normalized)) return true
+  if (["0", "false", "no", "off"].includes(normalized)) return false
+  return fallback
+}
+
+const STREAM_MARKDOWN = parseBoolEnv(process.env.BREADBOARD_MARKDOWN_STREAM, true)
 
 export function shouldStreamMarkdown(this: any): boolean {
-  return this.viewPrefs.richMarkdown && !this.markdownGloballyDisabled
+  return STREAM_MARKDOWN && this.viewPrefs.richMarkdown && !this.markdownGloballyDisabled
 }
+
+const LIVE_TOKENIZATION = process.env.BREADBOARD_STREAM_MDX_LIVE_TOKENS === "1"
 
 export function ensureMarkdownStreamer(
   this: any,
@@ -19,7 +31,16 @@ export function ensureMarkdownStreamer(
   if (!this.shouldStreamMarkdown()) return null
   const existing = this.markdownStreams.get(entryId)
   if (existing) return existing
-  const streamer = new MarkdownStreamer()
+  const streamer = new MarkdownStreamer({
+    docPlugins: {
+      codeHighlighting: LIVE_TOKENIZATION ? "incremental" : "final",
+      outputMode: "tokens",
+      emitHighlightTokens: true,
+      emitDiffBlocks: true,
+      liveTokenization: LIVE_TOKENIZATION,
+      liveCodeHighlighting: false,
+    },
+  })
   streamer.subscribe((blocks, meta) => this.applyMarkdownBlocks(entryId, blocks, meta?.error ?? null, meta?.finalized ?? false))
   streamer.initialize()
   const state = { streamer, lastText: "" }
@@ -55,11 +76,23 @@ export function finalizeMarkdown(this: any, entryId: string | null): void {
   const state = this.markdownStreams.get(entryId)
   if (!state) return
   state.streamer.finalize()
-  const blocks = [...state.streamer.getBlocks()]
-  const error = state.streamer.getError()
-  state.streamer.dispose()
-  this.markdownStreams.delete(entryId)
-  this.applyMarkdownBlocks(entryId, blocks, error ?? null, true)
+  const start = Date.now()
+  const maxWaitMs = 1500
+  const poll = () => {
+    const active = this.markdownStreams.get(entryId)
+    if (!active || active !== state) return
+    const blocks = [...active.streamer.getBlocks()]
+    const error = active.streamer.getError()
+    const allFinal = blocks.length > 0 && blocks.every((block) => block.isFinalized)
+    if (error || allFinal || Date.now() - start >= maxWaitMs) {
+      active.streamer.dispose()
+      this.markdownStreams.delete(entryId)
+      this.applyMarkdownBlocks(entryId, blocks, error ?? null, true)
+      return
+    }
+    setTimeout(poll, 50)
+  }
+  setTimeout(poll, 50)
 }
 
 export function disposeAllMarkdown(this: any): void {
@@ -79,7 +112,7 @@ export function applyMarkdownBlocks(
   error: string | null,
   finalized: boolean,
 ): void {
-  const index = this.conversation.findIndex((entry) => entry.id === entryId)
+  const index = this.conversation.findIndex((entry: ConversationEntry) => entry.id === entryId)
   if (index === -1) return
   const existing = this.conversation[index]
   const next: ConversationEntry = {
@@ -97,7 +130,7 @@ export function applyMarkdownBlocks(
 }
 
 export function markEntryMarkdownStreaming(this: any, entryId: string, streaming: boolean): void {
-  const index = this.conversation.findIndex((entry) => entry.id === entryId)
+  const index = this.conversation.findIndex((entry: ConversationEntry) => entry.id === entryId)
   if (index === -1) return
   const existing = this.conversation[index]
   if (existing.markdownStreaming === streaming) return

@@ -1,0 +1,9 @@
+{"event": {"id": "s1", "seq": 1, "type": "run.start", "payload": {}}}
+{"event": {"id": "s2", "seq": 2, "type": "user.message", "payload": {"text": "List files"}}}
+{"event": {"id": "s3", "seq": 3, "type": "assistant.message.start", "payload": {}}}
+{"event": {"id": "s4", "seq": 4, "type": "assistant.message.delta", "payload": {"delta": "Sure, I'll check."}}}
+{"event": {"id": "s5", "seq": 5, "type": "tool_call", "payload": {"call_id": "call-2", "tool_name": "list_dir", "args": {"path": "./"}, "display": {"title": "List(./)"}}}}
+{"event": {"id": "s6", "seq": 6, "type": "tool.result", "payload": {"call_id": "call-2", "tool_name": "list_dir", "display": {"title": "List(./)", "summary": "Found 1 file", "detail": ["README.md"]}}}}
+{"event": {"id": "s7", "seq": 7, "type": "assistant.message.delta", "payload": {"delta": " Done."}}}
+{"event": {"id": "s8", "seq": 8, "type": "assistant.message.end", "payload": {}}}
+{"event": {"id": "s9", "seq": 9, "type": "run.end", "payload": {"completed": true}}}

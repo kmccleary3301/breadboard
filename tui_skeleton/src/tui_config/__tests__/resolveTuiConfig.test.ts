@@ -11,6 +11,7 @@ const envKeys = [
   "BREADBOARD_TUI_SHIKI_THEME",
   "BREADBOARD_TUI_DIFF_PREVIEW_MAX_LINES",
   "BREADBOARD_TUI_CONFIG_STRICT",
+  "NO_COLOR",
 ]
 
 const snapshotEnv = () => new Map(envKeys.map((key) => [key, process.env[key]]))
@@ -137,5 +138,40 @@ describe("resolveTuiConfig", () => {
         cliStrict: true,
       }),
     ).rejects.toThrow(/diff\.previewMaxLines/)
+  })
+
+  it("enforces NO_COLOR precedence over configured display.colorMode", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bb-tui-config-nocolor-"))
+    const cliConfigPath = path.join(root, "nocolor.yaml")
+    await fs.writeFile(
+      cliConfigPath,
+      [
+        "display:",
+        "  colorMode: truecolor",
+      ].join("\n"),
+      "utf8",
+    )
+    process.env.NO_COLOR = "1"
+    const resolved = await resolveTuiConfig({
+      workspace: root,
+      cliConfigPath,
+      cliStrict: true,
+      colorAllowed: true,
+    })
+    expect(resolved.display.colorMode).toBe("none")
+  })
+
+  it("loads codex_cli_like preset defaults", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bb-tui-config-codex-preset-"))
+    const resolved = await resolveTuiConfig({
+      workspace: root,
+      cliPreset: "codex_cli_like",
+      cliStrict: true,
+      colorAllowed: true,
+    })
+    expect(resolved.preset).toBe("codex_cli_like")
+    expect(resolved.composer.promptPrefix).toBe("›")
+    expect(resolved.composer.showBottomRule).toBe(false)
+    expect(resolved.statusLine.completionTemplate).toBe("• Worked for {duration}")
   })
 })

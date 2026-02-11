@@ -1,3 +1,52 @@
+import { ApiError } from "../../api/client.js"
+import type { SessionEvent } from "../../api/types.js"
+import type { SessionFileInfo } from "../../api/types.js"
+import { BRAND_COLORS, resolveIcons } from "../../repl/designSystem.js"
+import { SLASH_COMMANDS } from "../../repl/slashCommands.js"
+import { computeDiffPreview } from "../../repl/transcriptUtils.js"
+import type {
+  CheckpointSummary,
+  ConversationEntry,
+  CTreeSnapshot,
+  LiveSlotStatus,
+  PermissionDecision,
+  PermissionRequest,
+  PermissionRuleScope,
+  TaskEntry,
+  TodoItem,
+  ToolDisplayPayload,
+  ToolLogEntry,
+  ToolLogKind,
+} from "../../repl/types.js"
+import {
+  MAX_HINTS,
+  MAX_RAW_EVENTS,
+  MAX_RAW_EVENT_CHARS,
+  MAX_TOOL_EXEC_OUTPUT,
+  MAX_TOOL_HISTORY,
+  createSlotId,
+  extractProgress,
+  extractString,
+  extractUsageMetrics,
+  isRecord,
+  numberOrUndefined,
+  parseTodoEntry,
+  parseTodoList,
+  tryParseJsonTodos,
+} from "./controllerUtils.js"
+
+type SlashHandler = (args: string[]) => Promise<void>
+
+const normalizeTaskStatus = (rawStatus?: string | null, rawKind?: string | null): string | null => {
+  const seed = (rawStatus ?? rawKind ?? "").toLowerCase()
+  if (!seed) return rawStatus ?? rawKind ?? null
+  if (seed.includes("complete") || seed.includes("done") || seed.includes("success")) return "completed"
+  if (seed.includes("error") || seed.includes("fail")) return "failed"
+  if (seed.includes("cancel") || seed.includes("stop")) return "stopped"
+  if (seed.includes("start") || seed.includes("run") || seed.includes("progress")) return "running"
+  return rawStatus ?? rawKind ?? null
+}
+
 export function slashHandlers(this: any): Record<string, SlashHandler> {
   return {
     quit: async () => {
@@ -259,7 +308,7 @@ export function slashHandlers(this: any): Record<string, SlashHandler> {
       try {
         const files = await this.api().listSessionFiles(this.sessionId, scope === "." ? undefined : scope)
         const output = files
-          .map((file) => `${file.type.padEnd(4, " ")} ${file.path}${file.size != null ? ` ${file.size}` : ""}`)
+          .map((file: SessionFileInfo) => `${file.type.padEnd(4, " ")} ${file.path}${file.size != null ? ` ${file.size}` : ""}`)
           .join("\n")
         this.pushHint(`Files listed for ${scope === "." ? "(root)" : scope}.`)
         this.addTool("status", `[files]\n${output}`)
@@ -472,6 +521,10 @@ export function addConversation(this: any,
   text: string,
   phase: ConversationEntry["phase"] = "final",
 ): void {
+  const resolveEventTimestamp = (ctx: any): number => {
+    const seq = ctx.currentEventSeq
+    return typeof seq === "number" && Number.isFinite(seq) ? seq : Date.now()
+  }
   if (phase === "streaming") {
     this.setStreamingConversation(speaker, text)
     return
@@ -482,14 +535,18 @@ export function addConversation(this: any,
     speaker,
     text,
     phase: "final",
-    createdAt: Date.now(),
+    createdAt: resolveEventTimestamp(this),
   }
   this.conversation.push(entry)
 }
 
 export function setStreamingConversation(this: any, speaker: ConversationEntry["speaker"], text: string): void {
+  const resolveEventTimestamp = (ctx: any): number => {
+    const seq = ctx.currentEventSeq
+    return typeof seq === "number" && Number.isFinite(seq) ? seq : Date.now()
+  }
   if (this.streamingEntryId) {
-    const index = this.conversation.findIndex((entry) => entry.id === this.streamingEntryId)
+    const index = this.conversation.findIndex((entry: ConversationEntry) => entry.id === this.streamingEntryId)
     if (index >= 0) {
       const existing = this.conversation[index]
       this.conversation[index] = { ...existing, speaker, text, phase: "streaming" }
@@ -501,7 +558,7 @@ export function setStreamingConversation(this: any, speaker: ConversationEntry["
     speaker,
     text,
     phase: "streaming",
-    createdAt: Date.now(),
+    createdAt: resolveEventTimestamp(this),
   }
   this.conversation.push(entry)
   this.streamingEntryId = entry.id
@@ -510,7 +567,7 @@ export function setStreamingConversation(this: any, speaker: ConversationEntry["
 export function finalizeStreamingEntry(this: any): void {
   if (!this.streamingEntryId) return
   this.finalizeMarkdown(this.streamingEntryId)
-  const index = this.conversation.findIndex((entry) => entry.id === this.streamingEntryId)
+  const index = this.conversation.findIndex((entry: ConversationEntry) => entry.id === this.streamingEntryId)
   if (index >= 0) {
     const existing = this.conversation[index]
     if (existing.phase !== "final") {
@@ -533,7 +590,8 @@ export function upsertTask(this: any, entry: TaskEntry): void {
     updatedAt: entry.updatedAt || existing?.updatedAt || Date.now(),
   }
   this.taskMap.set(merged.id, merged)
-  this.tasks = Array.from(this.taskMap.values()).sort((a, b) => b.updatedAt - a.updatedAt)
+  const taskEntries = Array.from(this.taskMap.values()) as TaskEntry[]
+  this.tasks = taskEntries.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 export function handleTaskEvent(this: any, payload: Record<string, unknown>): void {
@@ -591,23 +649,53 @@ export function trimToolHistory(this: any): void {
   }
 }
 
-export function addTool(this: any, 
+export function addTool(this: any,
   kind: ToolLogKind,
   text: string,
   status?: LiveSlotStatus,
-  options?: { callId?: string | null; insertAfterId?: string | null },
+  options?: { callId?: string | null; insertAfterId?: string | null; display?: ToolDisplayPayload | null },
 ): ToolLogEntry {
+  const resolveEventTimestamp = (ctx: any): number => {
+    const seq = ctx.currentEventSeq
+    return typeof seq === "number" && Number.isFinite(seq) ? seq : Date.now()
+  }
+  const insertAfterId = options?.insertAfterId ?? null
+  if (!insertAfterId && this.toolEvents.length > 0) {
+    const last = this.toolEvents[this.toolEvents.length - 1] as ToolLogEntry
+    const mergeableKind = kind === "call" || kind === "result"
+    const lastMergeable = last.kind === "call" || last.kind === "result"
+    const sameText = last.text === text
+    const nextHeader = text.split(/\r?\n/)[0]?.trim()
+    const lastHeader = last.text.split(/\r?\n/)[0]?.trim()
+    const sameHeader = Boolean(nextHeader && lastHeader && nextHeader === lastHeader)
+    const callId = options?.callId ?? null
+    const display = options?.display ?? null
+    const sameCall = callId && last.callId ? callId === last.callId : true
+    if (mergeableKind && lastMergeable && (sameText || sameHeader) && sameCall) {
+      const nextKind = kind === "result" || last.kind === "result" ? "result" : last.kind
+      const merged: ToolLogEntry = {
+        ...last,
+        kind: nextKind,
+        text,
+        status: status ?? last.status,
+        callId: last.callId ?? callId,
+        display: display ?? last.display ?? null,
+      }
+      this.toolEvents[this.toolEvents.length - 1] = merged
+      return merged
+    }
+  }
   const entry: ToolLogEntry = {
     id: createSlotId(),
     kind,
     text,
     status,
     callId: options?.callId ?? null,
-    createdAt: Date.now(),
+    display: options?.display ?? null,
+    createdAt: resolveEventTimestamp(this),
   }
-  const insertAfterId = options?.insertAfterId ?? null
   if (insertAfterId) {
-    const index = this.toolEvents.findIndex((item) => item.id === insertAfterId)
+    const index = this.toolEvents.findIndex((item: ToolLogEntry) => item.id === insertAfterId)
     if (index >= 0) {
       this.toolEvents.splice(index + 1, 0, entry)
     } else {
@@ -620,6 +708,24 @@ export function addTool(this: any,
   return entry
 }
 
+export function updateToolEntry(
+  this: any,
+  entryId: string,
+  patch: Partial<Omit<ToolLogEntry, "id" | "createdAt">>,
+): ToolLogEntry | null {
+  const index = this.toolEvents.findIndex((item: ToolLogEntry) => item.id === entryId)
+  if (index < 0) return null
+  const current = this.toolEvents[index] as ToolLogEntry
+  const next: ToolLogEntry = {
+    ...current,
+    ...patch,
+    id: current.id,
+    createdAt: current.createdAt,
+  }
+  this.toolEvents[index] = next
+  return next
+}
+
 export function formatToolSlot(this: any, payload: unknown): { text: string; color?: string; summary?: string } {
   const data = isRecord(payload) ? payload : {}
   const toolName = extractString(data, ["tool", "name", "command"]) ?? "Tool"
@@ -629,13 +735,168 @@ export function formatToolSlot(this: any, payload: unknown): { text: string; col
   return { text: `${toolName}: ${action}${progressText}`, color: BRAND_COLORS.duneOrange, summary: this.extractDiffSummary(payload) }
 }
 
+const normalizeDisplayLines = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((line) => (typeof line === "string" ? line.trimEnd() : ""))
+      .filter((line) => line.trim().length > 0)
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/\r?\n/)
+      .map((line) => line.trimEnd())
+      .filter((line) => line.trim().length > 0)
+  }
+  return []
+}
+
+const TOOL_PREVIEW_MAX_LINES = 24
+
+const normalizeToolArgs = (
+  payload: Record<string, unknown>,
+): { name: string | null; args: Record<string, unknown> | null } => {
+  const toolRecord = isRecord(payload.tool) ? payload.tool : isRecord(payload.tool_call) ? payload.tool_call : null
+  const name =
+    extractString((toolRecord ?? {}) as Record<string, unknown>, ["name", "tool", "command"]) ??
+    extractString(payload, ["tool_name", "tool", "name", "command"]) ??
+    null
+  const args = isRecord(toolRecord?.args) ? toolRecord?.args : isRecord(payload.args) ? payload.args : null
+  return { name, args }
+}
+
+const normalizePreviewLines = (value: string): string[] => {
+  const normalized = value.replace(/\r\n?/g, "\n")
+  const lines = normalized.split("\n")
+  while (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop()
+  }
+  return lines
+}
+
+const truncatePreviewLines = (lines: string[], maxLines: number) => {
+  if (lines.length <= maxLines) return { lines, hidden: 0 }
+  return { lines: lines.slice(0, maxLines), hidden: lines.length - maxLines }
+}
+
+export function resolveToolDisplayPayload(this: any, payload: Record<string, unknown>): Record<string, unknown> | null {
+  const base = isRecord(payload.display) ? { ...payload.display } : {}
+  const { name, args } = normalizeToolArgs(payload)
+  const normalizedName = (name ?? "").toLowerCase()
+  const pathValue = typeof args?.path === "string" ? args.path.trim() : null
+
+  const ensureTitle = (prefix: string) => {
+    if (!base.title && pathValue) {
+      base.title = `${prefix}(${pathValue})`
+    }
+  }
+
+  const isWrite =
+    normalizedName === "write_file" ||
+    normalizedName === "write" ||
+    normalizedName === "write-file"
+  const isPatch =
+    normalizedName === "apply_patch" ||
+    normalizedName === "patch"
+
+  if (isWrite) {
+    ensureTitle("Write")
+    const content = typeof args?.content === "string" ? args.content : null
+    if (!base.detail && content) {
+      const rawLines = normalizePreviewLines(content)
+      const { lines, hidden } = truncatePreviewLines(rawLines, TOOL_PREVIEW_MAX_LINES)
+      base.detail = lines
+      if (hidden > 0 && !isRecord(base.detail_truncated)) {
+        base.detail_truncated = { hidden }
+      }
+      if (!base.summary) {
+        base.summary = `Wrote ${rawLines.length} ${rawLines.length === 1 ? "line" : "lines"}`
+      }
+    }
+  }
+
+  if (isPatch) {
+    ensureTitle("Patch")
+    const diff =
+      typeof args?.diff === "string"
+        ? args?.diff
+        : typeof args?.patch === "string"
+          ? args?.patch
+          : typeof args?.unified_diff === "string"
+            ? args?.unified_diff
+            : typeof args?.unified === "string"
+              ? args?.unified
+              : null
+    if (!Array.isArray(base.diff_blocks) || base.diff_blocks.length === 0) {
+      if (diff) {
+        const normalized = diff.replace(/(?:\r?\n)+$/, "")
+        base.diff_blocks = [
+          {
+            kind: "diff",
+            filePath: pathValue,
+            unified: normalized,
+          },
+        ]
+      }
+    }
+  }
+
+  return Object.keys(base).length > 0 ? base : null
+}
+
+export function formatToolDisplayText(this: any, payload: Record<string, unknown>): string {
+  const icons = resolveIcons()
+  const display = isRecord(payload.display) ? payload.display : null
+  const title =
+    extractString(display ?? {}, ["title"]) ??
+    extractString(payload, ["tool_name", "tool", "name"]) ??
+    "Tool"
+  const debugRule = extractString(display ?? {}, ["debug_rule_id"])
+  const titleWithDebug = debugRule ? `${title} ⟪${debugRule}⟫` : title
+  const summaryLines = normalizeDisplayLines(display ? display.summary : undefined)
+  const detailLines = normalizeDisplayLines(display ? display.detail : undefined)
+  const lines: string[] = [titleWithDebug]
+  const truncated = isRecord(display?.detail_truncated) ? display?.detail_truncated : null
+  const hiddenCount = truncated && typeof truncated.hidden === "number" ? truncated.hidden : null
+  const hint = truncated && typeof truncated.hint === "string" ? truncated.hint : null
+  const mode = truncated && typeof truncated.mode === "string" ? truncated.mode : null
+  const tailCount = truncated && typeof truncated.tail === "number" ? truncated.tail : null
+
+  const contentLines = detailLines.length > 0 ? detailLines.slice() : summaryLines.slice()
+  if (detailLines.length > 0 && hiddenCount && hiddenCount > 0) {
+    const summaryLine = `${icons.ellipsis} ${hiddenCount} lines hidden${hint ? ` — ${hint}` : ""}`
+    if (mode === "head_tail" && tailCount && tailCount > 0 && tailCount < contentLines.length) {
+      const head = contentLines.slice(0, contentLines.length - tailCount)
+      const tail = contentLines.slice(-tailCount)
+      contentLines.length = 0
+      contentLines.push(...head, summaryLine, ...tail)
+    } else {
+      contentLines.push(summaryLine)
+    }
+  }
+  if (contentLines.length > 0) {
+    contentLines.forEach((line, index) => {
+      const prefix = index === contentLines.length - 1 ? icons.treeBranch : icons.verticalLine
+      lines.push(`${prefix} ${line}`)
+    })
+  }
+  return lines.join("\n")
+}
+
 export function resolveToolCallId(this: any, payload: Record<string, unknown>): string | null {
-  return (
+  const direct =
     extractString(payload, ["tool_call_id", "toolCallId"]) ??
     extractString(payload, ["call_id", "callId"]) ??
-    extractString(payload, ["id"]) ??
-    null
-  )
+    extractString(payload, ["id"])
+  if (direct) return direct
+  const nestedToolCall = isRecord(payload.tool_call) ? payload.tool_call : isRecord(payload.toolCall) ? payload.toolCall : null
+  if (nestedToolCall) {
+    return (
+      extractString(nestedToolCall, ["tool_call_id", "toolCallId"]) ??
+      extractString(nestedToolCall, ["call_id", "callId", "id"]) ??
+      null
+    )
+  }
+  return null
 }
 
 export function appendToolCallArgs(this: any, callId: string, delta: string): string {

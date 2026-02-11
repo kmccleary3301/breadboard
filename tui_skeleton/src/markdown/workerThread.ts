@@ -1,4 +1,5 @@
 import path from "node:path"
+import { existsSync } from "node:fs"
 import { createRequire } from "node:module"
 import { Worker, type WorkerOptions } from "node:worker_threads"
 import { pathToFileURL } from "node:url"
@@ -27,7 +28,9 @@ export type MarkdownThreadOptions = WorkerOptions & {
 export const createMarkdownWorkerThread = (options: MarkdownThreadOptions = {}): Worker => {
   const { workerBundle, ...workerOptions } = options
   const bundleUrl = normalizeWorkerBundleUrl(workerBundle)
-  const runnerUrl = new URL("./worker-thread-entry.js", import.meta.url)
+  const jsEntry = new URL("./worker-thread-entry.js", import.meta.url)
+  const tsEntry = new URL("./worker-thread-entry.ts", import.meta.url)
+  const runnerUrl = existsSync(jsEntry) ? jsEntry : tsEntry
   return new Worker(runnerUrl, {
     ...workerOptions,
     workerData: {

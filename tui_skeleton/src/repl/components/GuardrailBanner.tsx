@@ -3,7 +3,6 @@ import { Box, Text } from "ink"
 import chalk from "chalk"
 import type { GuardrailNotice } from "../types.js"
 import { SEMANTIC_COLORS, resolveAsciiOnly, resolveIcons, resolveColorMode } from "../designSystem.js"
-import { SEMANTIC_COLORS, resolveAsciiOnly, resolveIcons, resolveColorMode } from "../designSystem.js"
 
 interface GuardrailBannerProps {
   readonly notice: GuardrailNotice

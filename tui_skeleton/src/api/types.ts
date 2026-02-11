@@ -269,52 +269,6 @@ export interface CTreeTreeResponse {
   readonly hashes?: Record<string, unknown> | null
 }
 
-export interface CTreeDiskArtifact {
-  readonly path: string
-  readonly exists: boolean
-  readonly size_bytes?: number | null
-  readonly sha256?: string | null
-  readonly sha256_skipped?: boolean | null
-}
-
-export interface CTreeDiskArtifactsResponse {
-  readonly root: string
-  readonly artifacts: Record<string, CTreeDiskArtifact>
-}
-
-export interface CTreeEventsResponse {
-  readonly source: string
-  readonly root?: string | null
-  readonly offset: number
-  readonly limit?: number | null
-  readonly has_more?: boolean
-  readonly truncated?: boolean
-  readonly header?: Record<string, unknown> | null
-  readonly events: Record<string, unknown>[]
-  readonly artifact?: CTreeDiskArtifact | null
-}
-
-export type CTreeTreeStage = "RAW" | "SPEC" | "HEADER" | "FROZEN"
-export type CTreeTreeSource = "auto" | "disk" | "eventlog" | "memory"
-
-export interface CTreeTreeNode {
-  readonly id: string
-  readonly parent_id?: string | null
-  readonly kind: string
-  readonly turn?: number | null
-  readonly label?: string | null
-  readonly meta?: Record<string, unknown>
-}
-
-export interface CTreeTreeResponse {
-  readonly source: CTreeTreeSource | string
-  readonly stage: CTreeTreeStage | string
-  readonly root_id: string
-  readonly nodes: CTreeTreeNode[]
-  readonly selection?: Record<string, unknown> | null
-  readonly hashes?: Record<string, unknown> | null
-}
-
 export interface SessionArtifactInfo {
   readonly name: string
   readonly path: string

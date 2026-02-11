@@ -8,9 +8,6 @@ import { stripAnsiCodes } from "../utils/ansi.js"
 import type { SlashCommandInfo } from "../../../slashCommands.js"
 import type { PermissionRuleScope } from "../../../types.js"
 import { buildConfirmModal, buildShortcutsModal } from "./modalBasics.js"
-import type { SlashCommandInfo } from "../../../slashCommands.js"
-import type { PermissionRuleScope } from "../../../types.js"
-import { buildConfirmModal, buildShortcutsModal } from "./modalBasics.js"
 
 // Intentionally broad to keep modal composition decoupled from controller internals.
 type ModalStackContext = Record<string, any>
