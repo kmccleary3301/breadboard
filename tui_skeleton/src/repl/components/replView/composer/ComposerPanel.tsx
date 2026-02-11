@@ -58,7 +58,7 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     promptRule.length >= ruleWidth ? promptRule.slice(0, ruleWidth) : promptRule.padEnd(ruleWidth, " ")
 
   return (
-    <Box marginTop={1} flexDirection="column" width={ruleWidth}>
+    <Box marginTop={claudeChrome ? 0 : 1} flexDirection="column" width={ruleWidth}>
       {claudeChrome && pendingClaudeStatus && <Text color="dim">{pendingClaudeStatus}</Text>}
       {claudeChrome && (
         <Text color={COLORS.textMuted} wrap="truncate">
