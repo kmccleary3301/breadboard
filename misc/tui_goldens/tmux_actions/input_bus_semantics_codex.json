@@ -1,0 +1,33 @@
+[
+  {
+    "type": "comment",
+    "note": "E3 fixture: Codex multiline newline should not require a Claude-style backslash prefix."
+  },
+  {
+    "type": "wait_for_idle",
+    "timeout": 30,
+    "quiet_seconds": 2.5
+  },
+  {
+    "type": "send",
+    "text": "first line",
+    "send_mode": "multiline",
+    "newline_prefix": "",
+    "must_not_contain": [
+      "first line\\"
+    ],
+    "semantic_timeout": 8
+  },
+  {
+    "type": "send",
+    "text": "second line",
+    "send_mode": "submit"
+  },
+  {
+    "type": "wait_for_idle",
+    "timeout": 90,
+    "quiet_seconds": 2.5,
+    "wait_idle_accept_active_timeout": true,
+    "wait_idle_accept_stable_active_after": 5.0
+  }
+]
