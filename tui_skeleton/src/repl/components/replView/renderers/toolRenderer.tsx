@@ -7,6 +7,7 @@ import { CHALK, COLORS, DASH_SEPARATOR, DELTA_GLYPH, GLYPHS } from "../theme.js"
 import { computeDiffPreview } from "../../../transcriptUtils.js"
 import { maybeHighlightCode } from "../../../shikiHighlighter.js"
 import { computeInlineDiffSpans, shiftSpans, type InlineSpan } from "../../../diff/inlineDiff.js"
+import { DEFAULT_DIFF_RENDER_STYLE, type DiffRenderStyle } from "./diffStyles.js"
 
 interface ToolRendererOptions {
   readonly claudeChrome: boolean
@@ -18,6 +19,7 @@ interface ToolRendererOptions {
   /** Inner content width (excludes outer padding), in terminal columns. */
   readonly contentWidth: number
   readonly diffLineNumbers?: boolean
+  readonly diffStyle?: DiffRenderStyle
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null
@@ -31,32 +33,10 @@ const toLineArray = (value: unknown): string[] => {
   return []
 }
 
-const DIFF_BG_COLORS = {
-  add: "#123225",
-  del: "#3a1426",
-  hunk: "#2c2436",
-} as const
-
-const DIFF_FG_COLORS = {
-  add: "#2dbd8d",
-  del: COLORS.error,
-  hunk: COLORS.accent,
-  meta: COLORS.info,
-} as const
-
 type DiffLineKind = "meta" | "hunk" | "add" | "del" | "context"
 type AnnotatedDiffLine = { line: string; oldNo: number | null; newNo: number | null; kind: DiffLineKind }
 
 const DIFF_HUNK_PATTERN = /@@\s*-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s*@@/
-
-const DIFF_INLINE_BG_COLORS = {
-  add: "#1a4d33",
-  del: "#6d1c3a",
-  hunk: "#3b2f4d",
-} as const
-
-const MAX_TOKENIZED_DIFF_LINES = 400
-const TOOL_PREVIEW_MAX_LINES = 24
 
 const normalizeDiffLanguage = (value: unknown): string | null => {
   if (typeof value !== "string") return null
@@ -185,25 +165,25 @@ const annotateUnifiedDiffLines = (lines: string[]): AnnotatedDiffLine[] => {
   })
 }
 
-const applyDiffBackground = (line: string, kind: DiffLineKind): string => {
-  if (kind === "add") return CHALK.bgHex(DIFF_BG_COLORS.add)(line)
-  if (kind === "del") return CHALK.bgHex(DIFF_BG_COLORS.del)(line)
-  if (kind === "hunk") return CHALK.bgHex(DIFF_BG_COLORS.hunk)(line)
+const applyDiffBackground = (line: string, kind: DiffLineKind, diffStyle: DiffRenderStyle): string => {
+  if (kind === "add") return CHALK.bgHex(diffStyle.colors.addLineBg)(line)
+  if (kind === "del") return CHALK.bgHex(diffStyle.colors.deleteLineBg)(line)
+  if (kind === "hunk") return CHALK.bgHex(diffStyle.colors.hunkLineBg)(line)
   return line
 }
 
-const styleDiffLine = (line: string, kind: DiffLineKind, withBackground = true): string => {
+const styleDiffLine = (line: string, kind: DiffLineKind, diffStyle: DiffRenderStyle, withBackground = true): string => {
   if (!line) return line
   const hasAnsi = line.includes("\u001b")
   let styled = line
   if (!hasAnsi) {
-    if (kind === "add") styled = CHALK.hex(DIFF_FG_COLORS.add)(line)
-    else if (kind === "del") styled = CHALK.hex(DIFF_FG_COLORS.del)(line)
-    else if (kind === "hunk") styled = CHALK.hex(DIFF_FG_COLORS.hunk)(line)
-    else if (kind === "meta") styled = CHALK.hex(DIFF_FG_COLORS.meta)(line)
+    if (kind === "add") styled = CHALK.hex(diffStyle.colors.addText)(line)
+    else if (kind === "del") styled = CHALK.hex(diffStyle.colors.deleteText)(line)
+    else if (kind === "hunk") styled = CHALK.hex(diffStyle.colors.hunkText)(line)
+    else if (kind === "meta") styled = CHALK.hex(diffStyle.colors.metaText)(line)
   }
   if (!withBackground) return styled
-  return applyDiffBackground(styled, kind)
+  return applyDiffBackground(styled, kind, diffStyle)
 }
 
 const extractToolPayload = (
@@ -304,8 +284,8 @@ const stripDiffPrefix = (line: string): string => {
   return line
 }
 
-const applyWriteBackground = (line: string): string => {
-  const bg = backgroundAnsiCode(DIFF_INLINE_BG_COLORS.add)
+const applyWriteBackground = (line: string, bgHex: string): string => {
+  const bg = backgroundAnsiCode(bgHex)
   if (!bg) return line
   let out = ""
   let index = 0
@@ -331,12 +311,13 @@ const resolveWriteLanguage = (pathValue: string | null): string | null => {
 const buildWriteBlockLines = (
   lines: string[],
   diffLineNumbers: boolean,
-  maxLines = TOOL_PREVIEW_MAX_LINES,
+  diffStyle: DiffRenderStyle,
+  maxLines = diffStyle.previewMaxLines,
   language?: string | null,
 ): string[] => {
   const trimmed = lines.map((line) => line.replace(/\r?\n/g, ""))
   const highlighted =
-    language && trimmed.length > 0 && trimmed.length <= MAX_TOKENIZED_DIFF_LINES
+    language && trimmed.length > 0 && trimmed.length <= diffStyle.maxTokenizedLines
       ? maybeHighlightCode(trimmed.join("\n"), language)
       : null
   const visible = trimmed.slice(0, maxLines)
@@ -346,10 +327,10 @@ const buildWriteBlockLines = (
     const number = diffLineNumbers ? String(index + 1).padStart(width, " ") : ""
     const prefix = diffLineNumbers ? `${number} + ` : "+ "
     const baseLine = highlighted?.[index] ?? line
-    const prefixStyled = baseLine.includes("\u001b") ? CHALK.hex(DIFF_FG_COLORS.add)(prefix) : prefix
+    const prefixStyled = baseLine.includes("\u001b") ? CHALK.hex(diffStyle.colors.addText)(prefix) : prefix
     const combined = `${prefixStyled}${baseLine}`.trimEnd()
-    const styled = baseLine.includes("\u001b") ? combined : CHALK.hex(DIFF_FG_COLORS.add)(combined)
-    return applyWriteBackground(styled)
+    const styled = baseLine.includes("\u001b") ? combined : CHALK.hex(diffStyle.colors.addText)(combined)
+    return applyWriteBackground(styled, diffStyle.colors.addInlineBg)
   })
   if (hidden > 0) {
     const spacer = diffLineNumbers ? " ".repeat(width) : ""
@@ -362,18 +343,19 @@ const buildWriteBlockLines = (
 const buildDiffBlockLines = (
   block: Record<string, unknown>,
   diffLineNumbers: boolean,
+  diffStyle: DiffRenderStyle,
 ): string[] => {
   const unified = typeof block.unified === "string" ? block.unified : ""
   if (!unified.trim()) return []
   const rawLines = unified.replace(/\r\n?/g, "\n").split("\n")
   const annotated = annotateUnifiedDiffLines(rawLines)
   const allVisible = annotated.filter((entry) => entry.kind !== "meta" && entry.kind !== "hunk")
-  const hidden = Math.max(0, allVisible.length - TOOL_PREVIEW_MAX_LINES)
-  const visible = hidden > 0 ? allVisible.slice(0, TOOL_PREVIEW_MAX_LINES) : allVisible
+  const hidden = Math.max(0, allVisible.length - diffStyle.previewMaxLines)
+  const visible = hidden > 0 ? allVisible.slice(0, diffStyle.previewMaxLines) : allVisible
   const baseLines = visible.map((entry) => stripDiffPrefix(entry.line))
   const diffLang = resolveDiffLanguage(block)
   const highlightedLines =
-    diffLang && baseLines.length > 0 && baseLines.length <= MAX_TOKENIZED_DIFF_LINES
+    diffLang && baseLines.length > 0 && baseLines.length <= diffStyle.maxTokenizedLines
       ? maybeHighlightCode(baseLines.join("\n"), diffLang)
       : null
   const inlineMap = new Map<number, InlineSpan[]>()
@@ -414,16 +396,22 @@ const buildDiffBlockLines = (
     const combined = `${prefix}${baseLine}`.trimEnd()
     const spans = inlineMap.get(index) ?? []
     if (spans.length > 0 && (entry.kind === "add" || entry.kind === "del")) {
-      const baseFg = styleDiffLine(combined, entry.kind, false)
-      const baseBg = backgroundAnsiCode(DIFF_BG_COLORS[entry.kind])
-      const inlineBg = backgroundAnsiCode(DIFF_INLINE_BG_COLORS[entry.kind])
+      const baseFg = styleDiffLine(combined, entry.kind, diffStyle, false)
+      const baseBg =
+        entry.kind === "add"
+          ? backgroundAnsiCode(diffStyle.colors.addLineBg)
+          : backgroundAnsiCode(diffStyle.colors.deleteLineBg)
+      const inlineBg =
+        entry.kind === "add"
+          ? backgroundAnsiCode(diffStyle.colors.addInlineBg)
+          : backgroundAnsiCode(diffStyle.colors.deleteInlineBg)
       if (baseBg && inlineBg) {
         const shifted = shiftSpans(spans, prefix.length)
         const withInline = applyInlineBackground(baseFg, shifted, baseBg, inlineBg)
         return `${baseBg}${withInline}${ANSI_BG_RESET}`
       }
     }
-    return styleDiffLine(combined, entry.kind, true)
+    return styleDiffLine(combined, entry.kind, diffStyle, true)
   })
   if (hidden > 0) {
     const spacer = diffLineNumbers ? " ".repeat(width) : ""
@@ -469,8 +457,17 @@ const countDisplayLines = (
 }
 
 export const useToolRenderer = (options: ToolRendererOptions) => {
-  const { claudeChrome, verboseOutput, collapseThreshold, collapseHead, collapseTail, labelWidth, diffLineNumbers, contentWidth } =
-    options
+  const {
+    claudeChrome,
+    verboseOutput,
+    collapseThreshold,
+    collapseHead,
+    collapseTail,
+    labelWidth,
+    diffLineNumbers,
+    contentWidth,
+    diffStyle = DEFAULT_DIFF_RENDER_STYLE,
+  } = options
   const wrapWidth = Math.max(1, Math.floor(contentWidth - 2))
 
   const splitToWidth = useCallback(
@@ -582,11 +579,11 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         if (!line) return line
         if (line.includes("\u001b")) return line
         if (isError) return CHALK.hex(COLORS.error)(line)
-        if (line.startsWith("diff --git") || line.startsWith("index ")) return CHALK.hex(COLORS.info)(line)
-        if (line.startsWith("@@")) return CHALK.hex(COLORS.accent)(line)
-        if (line.startsWith("---") || line.startsWith("+++")) return CHALK.hex(COLORS.info)(line)
-        if (line.startsWith("+") && !line.startsWith("+++")) return CHALK.hex(COLORS.success)(line)
-        if (line.startsWith("-") && !line.startsWith("---")) return CHALK.hex(COLORS.error)(line)
+        if (line.startsWith("diff --git") || line.startsWith("index ")) return CHALK.hex(diffStyle.colors.metaText)(line)
+        if (line.startsWith("@@")) return CHALK.hex(diffStyle.colors.hunkText)(line)
+        if (line.startsWith("---") || line.startsWith("+++")) return CHALK.hex(diffStyle.colors.metaText)(line)
+        if (line.startsWith("+") && !line.startsWith("+++")) return CHALK.hex(diffStyle.colors.addText)(line)
+        if (line.startsWith("-") && !line.startsWith("---")) return CHALK.hex(diffStyle.colors.deleteText)(line)
         return CHALK.gray(line)
       }
       const renderLine = (line: string, index: number) => {
@@ -631,11 +628,11 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         const colorizeLine = (line: string) => {
           if (!line) return line
           if (line.includes("\u001b")) return line
-          if (line.startsWith("diff --git") || line.startsWith("index ")) return CHALK.hex(COLORS.info)(line)
-          if (line.startsWith("@@")) return CHALK.hex(COLORS.accent)(line)
-          if (line.startsWith("---") || line.startsWith("+++")) return CHALK.hex(COLORS.info)(line)
-          if (line.startsWith("+") && !line.startsWith("+++")) return CHALK.hex(COLORS.success)(line)
-          if (line.startsWith("-") && !line.startsWith("---")) return CHALK.hex(COLORS.error)(line)
+          if (line.startsWith("diff --git") || line.startsWith("index ")) return CHALK.hex(diffStyle.colors.metaText)(line)
+          if (line.startsWith("@@")) return CHALK.hex(diffStyle.colors.hunkText)(line)
+          if (line.startsWith("---") || line.startsWith("+++")) return CHALK.hex(diffStyle.colors.metaText)(line)
+          if (line.startsWith("+") && !line.startsWith("+++")) return CHALK.hex(diffStyle.colors.addText)(line)
+          if (line.startsWith("-") && !line.startsWith("---")) return CHALK.hex(diffStyle.colors.deleteText)(line)
           return CHALK.hex(COLORS.textMuted)(line)
         }
         const diffBlocks = Array.isArray(display.diff_blocks)
@@ -661,14 +658,14 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         }
         if (diffBlocks.length > 0) {
           diffBlocks.forEach((block) => {
-            outputLines.push(...buildDiffBlockLines(block, diffLineNumbers === true))
+            outputLines.push(...buildDiffBlockLines(block, diffLineNumbers === true, diffStyle))
           })
         }
         if (diffBlocks.length === 0 && isWrite && detailLines.length > 0) {
           outputLines.length = 0
           outputLines.push(...summaryLines)
           outputLines.push(
-            ...buildWriteBlockLines(detailLines, diffLineNumbers === true, TOOL_PREVIEW_MAX_LINES, writeLanguage),
+            ...buildWriteBlockLines(detailLines, diffLineNumbers === true, diffStyle, diffStyle.previewMaxLines, writeLanguage),
           )
         }
         const derivedTitle =
@@ -779,11 +776,11 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
           const colorizeClaudeLine = (line: string) => {
             if (!line) return line
             if (line.includes("\u001b")) return line
-            if (line.startsWith("diff --git") || line.startsWith("index ")) return CHALK.hex(COLORS.info)(line)
-            if (line.startsWith("@@")) return CHALK.hex(COLORS.accent)(line)
-            if (line.startsWith("---") || line.startsWith("+++")) return CHALK.hex(COLORS.info)(line)
-            if (line.startsWith("+") && !line.startsWith("+++")) return CHALK.hex(COLORS.success)(line)
-            if (line.startsWith("-") && !line.startsWith("---")) return CHALK.hex(COLORS.error)(line)
+            if (line.startsWith("diff --git") || line.startsWith("index ")) return CHALK.hex(diffStyle.colors.metaText)(line)
+            if (line.startsWith("@@")) return CHALK.hex(diffStyle.colors.hunkText)(line)
+            if (line.startsWith("---") || line.startsWith("+++")) return CHALK.hex(diffStyle.colors.metaText)(line)
+            if (line.startsWith("+") && !line.startsWith("+++")) return CHALK.hex(diffStyle.colors.addText)(line)
+            if (line.startsWith("-") && !line.startsWith("---")) return CHALK.hex(diffStyle.colors.deleteText)(line)
             return line
           }
           return (
@@ -828,6 +825,8 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
       collapseHead,
       collapseTail,
       collapseThreshold,
+      diffLineNumbers,
+      diffStyle,
       labelWidth,
       splitToWidth,
       verboseOutput,

@@ -5,6 +5,7 @@ import { buildTranscript } from "../../../transcriptBuilder.js"
 import type { TranscriptItem } from "../../../transcriptModel.js"
 import type { ToolLogEntry, ToolLogKind } from "../../../types.js"
 import { useToolRenderer } from "../renderers/toolRenderer.js"
+import { resolveDiffRenderStyle } from "../renderers/diffStyles.js"
 import { useConversationMeasure, useConversationRenderer } from "../renderers/conversationRenderer.js"
 import { sliceTailByLineBudget, trimTailByLineCount } from "../layout/windowing.js"
 import { CHALK, COLORS } from "../theme.js"
@@ -51,6 +52,8 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     transcriptViewerOpen,
     transcriptNudge,
     completionHint,
+    statusLinePosition,
+    statusLineAlign,
     renderConversationEntryForFeed,
     renderToolEntryForFeed,
     renderConversationEntryRef,
@@ -69,6 +72,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     spinner,
     liveSlots,
     keymap,
+    tuiConfig,
   } = context
 
   const visibleModels = useMemo(() => {
@@ -145,10 +149,13 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
       CHALK.dim(cwdLine),
     ]
   }, [claudeChrome, modeBadge, permissionBadge, stats.model, context])
-  const promptRule = useMemo(() => "─".repeat(contentWidth), [contentWidth])
+  const promptRule = useMemo(() => {
+    const glyph = tuiConfig.composer.ruleCharacter || "─"
+    return glyph.repeat(contentWidth)
+  }, [contentWidth, tuiConfig.composer.ruleCharacter])
   const pendingClaudeStatus = useMemo(
-    () => (claudeChrome && pendingResponse ? "· Deciphering… (esc to interrupt · thinking)" : null),
-    [claudeChrome, pendingResponse],
+    () => (claudeChrome && pendingResponse && tuiConfig.statusLine.showWhenPending ? tuiConfig.statusLine.activeText : null),
+    [claudeChrome, pendingResponse, tuiConfig.statusLine.activeText, tuiConfig.statusLine.showWhenPending],
   )
   const networkBanner = useMemo(() => {
     if (disconnected) {
@@ -311,9 +318,26 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
   const landingNode = useMemo(
     () =>
       buildScrollbackLanding(
-        buildLandingContext(landingWidth, modelLabel, chromeLabel, configLabel, process.cwd()),
+        buildLandingContext({
+          contentWidth: landingWidth,
+          modelLabel,
+          chromeLabel,
+          configLabel,
+          cwd: process.cwd(),
+          variant: tuiConfig.landing.variant,
+          borderStyle: tuiConfig.landing.borderStyle,
+          showAsciiArt: tuiConfig.landing.showAsciiArt,
+        }),
       ),
-    [chromeLabel, configLabel, landingWidth, modelLabel],
+    [
+      chromeLabel,
+      configLabel,
+      landingWidth,
+      modelLabel,
+      tuiConfig.landing.borderStyle,
+      tuiConfig.landing.showAsciiArt,
+      tuiConfig.landing.variant,
+    ],
   )
 
   const toToolLogEntry = useCallback((entry: TranscriptItem): ToolLogEntry | null => {
@@ -375,6 +399,11 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
   useEffect(() => {
     pushCommandResultRef.current = pushCommandResultFromFeed
   }, [pushCommandResultFromFeed, pushCommandResultRef])
+  const diffRenderStyle = useMemo(() => resolveDiffRenderStyle(tuiConfig), [tuiConfig])
+  const markdownRenderOptions = useMemo(
+    () => ({ diffStyle: diffRenderStyle }),
+    [diffRenderStyle],
+  )
 
   const { measureToolEntryLines, renderToolEntry } = useToolRenderer({
     claudeChrome,
@@ -385,6 +414,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     labelWidth: context.TOOL_LABEL_WIDTH,
     contentWidth,
     diffLineNumbers: viewPrefs?.diffLineNumbers,
+    diffStyle: diffRenderStyle,
   })
 
   const { isEntryCollapsible, measureConversationEntryLines } = useConversationMeasure({
@@ -393,6 +423,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     collapsedEntriesRef,
     collapsedVersion,
     contentWidth,
+    markdownRenderOptions,
   })
 
   const measureTranscriptEntryLines = useCallback(
@@ -533,6 +564,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     labelWidth: context.LABEL_WIDTH,
     contentWidth,
     isEntryCollapsible,
+    markdownRenderOptions,
   })
 
   const renderTranscriptEntry = useCallback(
@@ -558,6 +590,8 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     contentWidth,
     hints,
     completionHint,
+    statusLinePosition,
+    statusLineAlign,
     shortcutsOpen: context.shortcutsOpen,
     ctrlCPrimedAt: context.ctrlCPrimedAt,
     escPrimedAt: context.escPrimedAt,

@@ -33,7 +33,7 @@ import { loadFilePickerConfig, loadFilePickerResources, type FilePickerMode, typ
 import { loadKeymapConfig } from "../../../keymap.js"
 import { loadProfileConfig } from "../../../profile.js"
 import { loadChromeMode } from "../../../chrome.js"
-import { ensureShikiLoaded, maybeHighlightCode, subscribeShiki } from "../../../shikiHighlighter.js"
+import { configureShikiTheme, ensureShikiLoaded, maybeHighlightCode, subscribeShiki } from "../../../shikiHighlighter.js"
 import { getSessionDraft, updateSessionDraft } from "../../../../cache/sessionCache.js"
 import { buildConversationWindow, MAX_TRANSCRIPT_ENTRIES, MIN_TRANSCRIPT_ROWS } from "../../../transcriptUtils.js"
 import { CLI_VERSION, COLOR_MODE, DELTA_GLYPH, DOT_SEPARATOR, uiText } from "../theme.js"
@@ -93,6 +93,8 @@ import {
 } from "./replViewControllerUtils.js"
 import { useReplViewModalStack } from "./useReplViewModalStack.js"
 import { ReplViewBaseContent } from "./ReplViewBaseContent.js"
+import { useTuiConfig } from "../../../../tui_config/context.js"
+import { formatConfiguredCompletionLine } from "../../../../tui_config/load.js"
 
 const META_LINE_COUNT = 2
 const COMPOSER_MIN_ROWS = 6
@@ -168,6 +170,7 @@ export const useReplViewController = ({
   onCtreeRequest,
   onCtreeRefresh,
 }: ReplViewProps) => {
+  const tuiConfig = useTuiConfig()
   const SCROLLBACK_MODE = useMemo(() => resolveScrollbackMode(), [])
   const collapsedEntriesRef = useRef(new Map<string, boolean>())
   const [collapsedVersion, setCollapsedVersion] = useState(0)
@@ -325,12 +328,13 @@ export const useReplViewController = ({
   const filePickerResources = useMemo(() => loadFilePickerResources(), [])
   const [, forceRedraw] = useState(0)
   useEffect(() => {
+    configureShikiTheme(tuiConfig.markdown.shikiTheme)
     const unsubscribe = subscribeShiki(() => {
       forceShikiRefresh((value) => value + 1)
     })
     ensureShikiLoaded()
     return unsubscribe
-  }, [forceShikiRefresh])
+  }, [forceShikiRefresh, tuiConfig.markdown.shikiTheme])
   const fixedFrameWidthRaw = (process.env.BREADBOARD_TUI_FRAME_WIDTH ?? "").toString().trim()
   const fixedFrameWidth = fixedFrameWidthRaw ? Number(fixedFrameWidthRaw) : NaN
   const resolvedColumns =
@@ -903,7 +907,11 @@ export const useReplViewController = ({
     transcriptViewerOpen,
     transcriptNudge,
     completionHint:
-      claudeChrome && lastDurationMs != null ? `✻ Cooked for ${formatDuration(lastDurationMs)}` : null,
+      claudeChrome && lastDurationMs != null && tuiConfig.statusLine.showOnComplete
+        ? formatConfiguredCompletionLine(tuiConfig, formatDuration(lastDurationMs))
+        : null,
+    statusLinePosition: tuiConfig.statusLine.position,
+    statusLineAlign: tuiConfig.statusLine.align,
     renderConversationEntryForFeed,
     renderToolEntryForFeed,
     renderConversationEntryRef,
@@ -936,6 +944,7 @@ export const useReplViewController = ({
     shortcutsOpen,
     ctrlCPrimedAt,
     escPrimedAt,
+    tuiConfig,
   })
 
   const handleGlobalKeys = useGlobalKeys({
@@ -1010,6 +1019,11 @@ export const useReplViewController = ({
     fileMenuWindow, fileMenuIndex, fileMenuNeedlePending, filePickerQueryParts, filePickerConfig, fileMentionConfig,
     selectedFileIsLarge, columnWidth, suggestions, suggestionWindow, suggestionPrefix, suggestionLayout,
     buildSuggestionLines, suggestIndex, activeSlashQuery, hintNodes, shortcutHintNodes,
+    composerPromptPrefix: tuiConfig.composer.promptPrefix,
+    composerPlaceholderClassic: tuiConfig.composer.placeholderClassic,
+    composerPlaceholderClaude: tuiConfig.composer.placeholderClaude,
+    composerShowTopRule: tuiConfig.composer.showTopRule,
+    composerShowBottomRule: tuiConfig.composer.showBottomRule,
   }
   const baseContent = (
     <ReplViewBaseContent

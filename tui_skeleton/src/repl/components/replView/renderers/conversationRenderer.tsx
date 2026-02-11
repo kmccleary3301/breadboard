@@ -9,6 +9,7 @@ import {
   shouldAutoCollapseEntry,
 } from "../../../transcriptUtils.js"
 import { blocksToLines, renderMarkdownFallbackLines } from "./markdown/streamMdxAdapter.js"
+import type { MarkdownRenderOptions } from "./markdown/streamMdxAdapter.js"
 import { stripAnsiCodes, stringWidth } from "../utils/ansi.js"
 import { CHALK, COLORS, DASH_SEPARATOR, DELTA_GLYPH, GLYPHS, HOLLOW_DOT, STAR_GLYPH } from "../theme.js"
 
@@ -19,6 +20,7 @@ interface ConversationMeasureOptions {
   readonly collapsedVersion: number
   /** Inner content width (excludes outer padding), in terminal columns. */
   readonly contentWidth: number
+  readonly markdownRenderOptions?: Omit<MarkdownRenderOptions, "width">
 }
 
 interface ConversationRenderOptions {
@@ -31,6 +33,7 @@ interface ConversationRenderOptions {
   /** Inner content width (excludes outer padding), in terminal columns. */
   readonly contentWidth: number
   readonly isEntryCollapsible: (entry: ConversationEntry) => boolean
+  readonly markdownRenderOptions?: Omit<MarkdownRenderOptions, "width">
 }
 
 const splitTokenByWidth = (token: string, maxWidth: number): string[] => {
@@ -104,7 +107,7 @@ const countWrappedTerminalLines = (value: string, maxWidth: number): number => {
 }
 
 export const useConversationMeasure = (options: ConversationMeasureOptions) => {
-  const { viewPrefs, verboseOutput, collapsedEntriesRef, collapsedVersion, contentWidth } = options
+  const { viewPrefs, verboseOutput, collapsedEntriesRef, collapsedVersion, contentWidth, markdownRenderOptions } = options
 
   const isEntryCollapsible = useCallback(
     (entry: ConversationEntry) => {
@@ -124,9 +127,11 @@ export const useConversationMeasure = (options: ConversationMeasureOptions) => {
       const hasRichBlocks = Boolean(entry.richBlocks && entry.richBlocks.length > 0)
       const useRich = viewPrefs.richMarkdown && hasRichBlocks && !entry.markdownError
       const fallback = viewPrefs.richMarkdown
-        ? renderMarkdownFallbackLines(entry.text, { width: markdownWidth })
+        ? renderMarkdownFallbackLines(entry.text, { ...markdownRenderOptions, width: markdownWidth })
         : entry.text.split(/\r?\n/)
-      const lines = (useRich ? blocksToLines(entry.richBlocks, { width: markdownWidth }) : fallback) as string[]
+      const lines = (useRich
+        ? blocksToLines(entry.richBlocks, { ...markdownRenderOptions, width: markdownWidth })
+        : fallback) as string[]
       const plainLines = lines.map(stripAnsiCodes)
 
       const speakerGlyph =
@@ -182,7 +187,7 @@ export const useConversationMeasure = (options: ConversationMeasureOptions) => {
       tail.forEach((line, idx) => countRenderedLine(line, head.length + idx + 1))
       return Math.max(1, rowCount)
     },
-    [collapsedVersion, contentWidth, isEntryCollapsible, markdownWidth, viewPrefs.richMarkdown],
+    [collapsedVersion, contentWidth, isEntryCollapsible, markdownRenderOptions, markdownWidth, viewPrefs.richMarkdown],
   )
 
   return { isEntryCollapsible, measureConversationEntryLines }
@@ -198,6 +203,7 @@ export const useConversationRenderer = (options: ConversationRenderOptions) => {
     labelWidth,
     contentWidth,
     isEntryCollapsible,
+    markdownRenderOptions,
   } = options
 
   const markdownWidth = Math.max(1, Math.floor(contentWidth - 2))
@@ -243,9 +249,11 @@ export const useConversationRenderer = (options: ConversationRenderOptions) => {
         </Text>
       )
       const fallback = viewPrefs.richMarkdown
-        ? renderMarkdownFallbackLines(entry.text, { width: markdownWidth })
+        ? renderMarkdownFallbackLines(entry.text, { ...markdownRenderOptions, width: markdownWidth })
         : entry.text.split(/\r?\n/)
-      const lines = (useRich ? blocksToLines(entry.richBlocks, { width: markdownWidth }) : fallback) as string[]
+      const lines = (useRich
+        ? blocksToLines(entry.richBlocks, { ...markdownRenderOptions, width: markdownWidth })
+        : fallback) as string[]
       const plainLines = useRich ? lines.map(stripAnsiCodes) : lines.map(stripAnsiCodes)
       const collapsible = isEntryCollapsible(entry)
       const collapsed = collapsible ? collapsedEntriesRef.current.get(entry.id) !== false : false
@@ -290,6 +298,7 @@ export const useConversationRenderer = (options: ConversationRenderOptions) => {
       collapsibleMeta,
       isEntryCollapsible,
       labelWidth,
+      markdownRenderOptions,
       markdownWidth,
       selectedCollapsibleEntryId,
       viewPrefs.richMarkdown,
