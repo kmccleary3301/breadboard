@@ -17,6 +17,8 @@ import { CliProviders } from "../../providers/cliProviders.js"
 import type { PermissionDecision } from "../../repl/types.js"
 import { resolveBreadboardPath, resolveBreadboardWorkspace } from "../../utils/paths.js"
 import { resolveAsciiOnly, resolveColorMode } from "../../repl/designSystem.js"
+import { resolveTuiConfig } from "../../tui_config/load.js"
+import type { ResolvedTuiConfig } from "../../tui_config/types.js"
 
 const DEFAULT_CONFIG = process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/opencode_openrouter_grok4fast_cli_default.yaml"
 const DEFAULT_SCRIPT_MAX_DURATION_MS = 180_000
@@ -33,6 +35,9 @@ const scriptColorsOption = Options.boolean("script-color").pipe(Options.optional
 const scriptFinalOnlyOption = Options.boolean("script-final-only").pipe(Options.optional)
 const scriptMaxDurationOption = Options.integer("script-max-duration-ms").pipe(Options.optional)
 const tuiOption = Options.text("tui").pipe(Options.optional)
+const tuiPresetOption = Options.text("tui-preset").pipe(Options.optional)
+const tuiConfigOption = Options.text("tui-config").pipe(Options.optional)
+const tuiConfigStrictOption = Options.boolean("tui-config-strict").pipe(Options.optional)
 
 const getOptionValue = <T,>(value: Option.Option<T>): T | null => Option.getOrNull(value)
 
@@ -190,7 +195,7 @@ const startStateDump = async (
   }
 }
 
-const runInteractive = async (controller: ReplSessionController) => {
+const runInteractive = async (controller: ReplSessionController, tuiConfig: ResolvedTuiConfig) => {
   let state = controller.getState()
   let ink: InkInstance | null = null
 
@@ -266,6 +271,7 @@ const runInteractive = async (controller: ReplSessionController) => {
     state = controller.getState()
     ink.rerender(
       <ReplView
+        tuiConfig={tuiConfig}
         configPath={state.configPath ?? null}
         sessionId={state.sessionId}
         conversation={state.conversation}
@@ -328,6 +334,7 @@ const runInteractive = async (controller: ReplSessionController) => {
 
   ink = render(
       <ReplView
+        tuiConfig={tuiConfig}
         configPath={state.configPath ?? null}
         sessionId={state.sessionId}
         conversation={state.conversation}
@@ -404,6 +411,7 @@ interface ScriptModeOptions {
   readonly useColors: boolean
   readonly finalOnly: boolean
   readonly maxDurationMs?: number | null
+  readonly tuiConfig: ResolvedTuiConfig
 }
 
 const runScriptMode = async (controller: ReplSessionController, scriptPath: string, options: ScriptModeOptions) => {
@@ -427,8 +435,8 @@ const runScriptMode = async (controller: ReplSessionController, scriptPath: stri
       finalOnly: options.finalOnly,
       renderOptions: {
         colors: options.useColors,
-        colorMode: resolveColorMode(undefined, options.useColors),
-        asciiOnly: resolveAsciiOnly(),
+        colorMode: options.tuiConfig.display.colorMode ?? resolveColorMode(undefined, options.useColors),
+        asciiOnly: options.tuiConfig.display.asciiOnly ?? resolveAsciiOnly(),
         includeStatus: options.finalOnly,
       },
     })
@@ -506,6 +514,9 @@ const buildReplCommand = (name: string) =>
       scriptFinalOnly: scriptFinalOnlyOption,
       scriptMaxDurationMs: scriptMaxDurationOption,
       tui: tuiOption,
+      tuiPreset: tuiPresetOption,
+      tuiConfigPath: tuiConfigOption,
+      tuiConfigStrict: tuiConfigStrictOption,
     },
     ({
       config,
@@ -520,6 +531,9 @@ const buildReplCommand = (name: string) =>
       scriptFinalOnly,
       scriptMaxDurationMs,
       tui,
+      tuiPreset,
+      tuiConfigPath,
+      tuiConfigStrict,
     }) =>
       Effect.tryPromise(async () => {
         const scriptPath = getOptionValue(script)
@@ -533,6 +547,15 @@ const buildReplCommand = (name: string) =>
         })
         const resolvedConfigPath = resolveBreadboardPath(config)
         const resolvedWorkspace = resolveBreadboardWorkspace(workspaceValue)
+        const resolvedTuiConfig = await resolveTuiConfig({
+          workspace: resolvedWorkspace,
+          cliPreset: getOptionValue(tuiPreset),
+          cliConfigPath: getOptionValue(tuiConfigPath),
+          cliStrict: getOptionValue(tuiConfigStrict),
+        })
+        for (const warning of resolvedTuiConfig.meta.warnings) {
+          console.warn(`[tui config] ${warning}`)
+        }
 
         if (tuiMode === "opentui") {
           await runOpenTui({
@@ -566,18 +589,19 @@ const buildReplCommand = (name: string) =>
               useColors: getOptionValue(scriptColor) ?? false,
               finalOnly: getOptionValue(scriptFinalOnly) ?? false,
               maxDurationMs: getOptionValue(scriptMaxDurationMs) ?? undefined,
+              tuiConfig: resolvedTuiConfig,
             })
             return
           }
 
-          await runInteractive(controller)
+          await runInteractive(controller, resolvedTuiConfig)
           if (process.env.BREADBOARD_PRINT_FINAL_STATE === "1") {
             const finalState = controller.getState()
             console.log(
               renderStateToText(finalState, {
                 colors: false,
-                colorMode: resolveColorMode(undefined, false),
-                asciiOnly: resolveAsciiOnly(),
+                colorMode: resolvedTuiConfig.display.colorMode ?? resolveColorMode(undefined, false),
+                asciiOnly: resolvedTuiConfig.display.asciiOnly ?? resolveAsciiOnly(),
               }),
             )
           }

@@ -1,4 +1,4 @@
-import type { ThemedLine, TokenLineV1, TokenSpan } from "@stream-mdx/core/types"
+import type { ThemedLine, TokenLineV1, TokenSpan } from "./streamMdxCompatTypes.js"
 import type { TuiToken, TuiTokenLine } from "../types.js"
 
 export type TokenTheme = "dark" | "light"

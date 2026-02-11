@@ -4,7 +4,7 @@ import { applyForegroundGradient, Gradients } from "../../../../colors/gradients
 import { stripAnsiCodes, stringWidth, visibleWidth } from "../utils/ansi.js"
 import { ASCII_HEADER } from "../../../viewUtils.js"
 import { BRAND_COLORS } from "../../../designSystem.js"
-import { CHALK, COLORS, DOT_SEPARATOR, GLYPHS, ICONS, CLI_VERSION } from "../theme.js"
+import { CHALK, COLORS, DOT_SEPARATOR, GLYPHS, CLI_VERSION, ASCII_ONLY } from "../theme.js"
 
 type LandingVariant = "board" | "split" | "compact"
 
@@ -15,15 +15,39 @@ type LandingContext = {
   configLabel: string
   cwd: string
   variant: LandingVariant
+  borderStyle: "round" | "single"
+  showAsciiArt: boolean
 }
 
-const BOX = {
-  tl: "╭",
-  tr: "╮",
-  bl: "╰",
-  br: "╯",
-  h: "─",
-  v: "│",
+const resolveBoxChars = (style: LandingContext["borderStyle"]) => {
+  if (ASCII_ONLY) {
+    return {
+      tl: "+",
+      tr: "+",
+      bl: "+",
+      br: "+",
+      h: "-",
+      v: "|",
+    }
+  }
+  if (style === "single") {
+    return {
+      tl: "┌",
+      tr: "┐",
+      bl: "└",
+      br: "┘",
+      h: "─",
+      v: "│",
+    }
+  }
+  return {
+    tl: "╭",
+    tr: "╮",
+    bl: "╰",
+    br: "╯",
+    h: "─",
+    v: "│",
+  }
 }
 
 // Landing uses a more "Claude-like" chrome: warm border accents + muted secondary text.
@@ -61,19 +85,19 @@ const padAnsi = (value: string, width: number, align: "left" | "right" | "center
   return `${value}${" ".repeat(pad)}`
 }
 
-const buildTitleLine = (width: number, leftLabel: string, rightLabel?: string) => {
+const buildTitleLine = (width: number, box: ReturnType<typeof resolveBoxChars>, leftLabel: string, rightLabel?: string) => {
   const inner = width - 2
-  const leftText = `${BOX.h.repeat(2)} ${stripAnsiCodes(leftLabel).trim()} `
-  const rightText = rightLabel ? ` ${stripAnsiCodes(rightLabel).trim()} ${BOX.h.repeat(2)}` : ""
+  const leftText = `${box.h.repeat(2)} ${stripAnsiCodes(leftLabel).trim()} `
+  const rightText = rightLabel ? ` ${stripAnsiCodes(rightLabel).trim()} ${box.h.repeat(2)}` : ""
   const gap = Math.max(0, inner - stringWidth(leftText) - stringWidth(rightText))
-  const left = `${frameColor(BOX.h.repeat(2))} ${leftLabel.trim()} `
-  const right = rightLabel ? ` ${rightLabel.trim()} ${frameColor(BOX.h.repeat(2))}` : ""
-  const line = `${left}${frameColor(BOX.h.repeat(gap))}${right}`
-  return `${frameColor(BOX.tl)}${line}${frameColor(BOX.tr)}`
+  const left = `${frameColor(box.h.repeat(2))} ${leftLabel.trim()} `
+  const right = rightLabel ? ` ${rightLabel.trim()} ${frameColor(box.h.repeat(2))}` : ""
+  const line = `${left}${frameColor(box.h.repeat(gap))}${right}`
+  return `${frameColor(box.tl)}${line}${frameColor(box.tr)}`
 }
 
-const buildFooterLine = (width: number) =>
-  `${frameColor(BOX.bl)}${frameColor(BOX.h.repeat(Math.max(0, width - 2)))}${frameColor(BOX.br)}`
+const buildFooterLine = (width: number, box: ReturnType<typeof resolveBoxChars>) =>
+  `${frameColor(box.bl)}${frameColor(box.h.repeat(Math.max(0, width - 2)))}${frameColor(box.br)}`
 
 const formatName = () => {
   const raw =
@@ -112,6 +136,7 @@ const renderAsciiLines = (width: number) =>
 })
 
 const buildBoardLines = (context: LandingContext) => {
+  const BOX = resolveBoxChars(context.borderStyle)
   const width = Math.max(1, context.contentWidth - 1)
   const leftPad = 0
   const inner = width - 2
@@ -124,11 +149,12 @@ const buildBoardLines = (context: LandingContext) => {
   const configLine = `Config: ${formatConfig(context.configLabel)}`
   const cwdLine = context.cwd
 
+  const asciiLines = context.showAsciiArt ? renderAsciiLines(leftInnerWidth) : []
   const leftLines = [
     "",
     CHALK.hex(COLORS.textBright)(truncatePlain(hello, leftInnerWidth)),
     "",
-    ...renderAsciiLines(leftInnerWidth),
+    ...asciiLines,
     "",
     CHALK.hex(COLORS.info)
       .bold(truncatePlain(configLine, leftInnerWidth)),
@@ -163,8 +189,8 @@ const buildBoardLines = (context: LandingContext) => {
     rows.push(`${" ".repeat(leftPad)}${line}`)
   }
 
-  const top = `${" ".repeat(leftPad)}${buildTitleLine(width, frameColor.bold(`BreadBoard v${CLI_VERSION}`), frameColor("By Kyle McCleary"))}`
-  const bottom = `${" ".repeat(leftPad)}${buildFooterLine(width)}`
+  const top = `${" ".repeat(leftPad)}${buildTitleLine(width, BOX, frameColor.bold(`BreadBoard v${CLI_VERSION}`), frameColor("By Kyle McCleary"))}`
+  const bottom = `${" ".repeat(leftPad)}${buildFooterLine(width, BOX)}`
   return [top, ...rows, bottom]
 }
 
@@ -180,7 +206,7 @@ const buildSplitLines = (context: LandingContext) => {
   const model = CHALK.hex(COLORS.textMuted)(truncatePlain(`${formatModel(context.modelLabel)}${context.chromeLabel ? `${DOT_SEPARATOR}${context.chromeLabel}` : ""}`, rightWidth))
   const cwd = CHALK.hex(COLORS.textMuted)(truncatePlain(context.cwd, rightWidth))
   const rightLines = [title, config, model, cwd]
-  const leftLines = renderAsciiLines(leftWidth)
+  const leftLines = context.showAsciiArt ? renderAsciiLines(leftWidth) : []
   const total = Math.max(leftLines.length, rightLines.length)
   const lines: string[] = []
   for (let i = 0; i < total; i += 1) {
@@ -192,6 +218,7 @@ const buildSplitLines = (context: LandingContext) => {
 }
 
 const buildCompactLines = (context: LandingContext) => {
+  const BOX = resolveBoxChars(context.borderStyle)
   const width = Math.max(1, context.contentWidth - 1)
   const leftPad = 0
   const inner = width - 2
@@ -204,19 +231,20 @@ const buildCompactLines = (context: LandingContext) => {
     CHALK.hex(COLORS.info).bold(truncatePlain(configLine, contentWidth)),
     CHALK.hex(COLORS.textMuted)(truncatePlain(modelLine, contentWidth)),
   ]
+  const asciiLines = context.showAsciiArt ? renderAsciiLines(contentWidth) : []
   const lines = [
     "",
     CHALK.hex(COLORS.textBright)(truncatePlain(hello, contentWidth)),
     "",
-    ...renderAsciiLines(contentWidth),
+    ...asciiLines,
     "",
     ...infoLines,
     CHALK.hex(COLORS.textMuted)(truncatePlain(cwdLine, contentWidth)),
     "",
   ].map((line: string) => padAnsi(line, contentWidth, "center"))
 
-  const top = `${" ".repeat(leftPad)}${buildTitleLine(width, frameColor.bold(`BreadBoard v${CLI_VERSION}`), frameColor("By Kyle McCleary"))}`
-  const bottom = `${" ".repeat(leftPad)}${buildFooterLine(width)}`
+  const top = `${" ".repeat(leftPad)}${buildTitleLine(width, BOX, frameColor.bold(`BreadBoard v${CLI_VERSION}`), frameColor("By Kyle McCleary"))}`
+  const bottom = `${" ".repeat(leftPad)}${buildFooterLine(width, BOX)}`
   const body = lines.map(
     (line) => `${" ".repeat(leftPad)}${frameColor(BOX.v)} ${line} ${frameColor(BOX.v)}`,
   )
@@ -236,18 +264,27 @@ export const buildScrollbackLanding = (context: LandingContext): React.ReactNode
 }
 
 export const resolveLandingVariant = (contentWidth: number): LandingVariant => {
-  const override = process.env.BREADBOARD_TUI_LANDING_VARIANT?.trim().toLowerCase()
-  if (override === "board" || override === "split" || override === "compact") return override
   if (contentWidth >= 92) return "board"
   if (contentWidth >= 76) return "split"
   return "compact"
 }
 
-export const buildLandingContext = (contentWidth: number, modelLabel: string, chromeLabel: string, configLabel: string, cwd: string): LandingContext => ({
-  contentWidth,
-  modelLabel,
-  chromeLabel,
-  configLabel,
-  cwd,
-  variant: resolveLandingVariant(contentWidth),
+export const buildLandingContext = (context: {
+  contentWidth: number
+  modelLabel: string
+  chromeLabel: string
+  configLabel: string
+  cwd: string
+  variant: "auto" | LandingVariant
+  borderStyle: "round" | "single"
+  showAsciiArt: boolean
+}): LandingContext => ({
+  contentWidth: context.contentWidth,
+  modelLabel: context.modelLabel,
+  chromeLabel: context.chromeLabel,
+  configLabel: context.configLabel,
+  cwd: context.cwd,
+  variant: context.variant === "auto" ? resolveLandingVariant(context.contentWidth) : context.variant,
+  borderStyle: context.borderStyle,
+  showAsciiArt: context.showAsciiArt,
 })

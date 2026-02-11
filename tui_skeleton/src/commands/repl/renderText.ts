@@ -3,7 +3,7 @@ import path from "node:path"
 import type { ConversationEntry, LiveSlotEntry, GuardrailNotice, ToolLogEntry, ToolLogKind } from "../../repl/types.js"
 import type { ReplState } from "./controller.js"
 import { ASCII_HEADER, HEADER_COLOR, speakerColor, TOOL_EVENT_COLOR } from "../../repl/viewUtils.js"
-import type { Block, DiffBlock as StreamDiffBlock, DiffKind, InlineNode, TokenLineV1 } from "@stream-mdx/core/types"
+import type { Block, InlineNode } from "@stream-mdx/core/types"
 import {
   BRAND_COLORS,
   NEUTRAL_COLORS,
@@ -17,6 +17,7 @@ import {
 import { maybeHighlightCode } from "../../repl/shikiHighlighter.js"
 import type { MarkdownCodeLine, TuiDiffLineKind, TuiTokenLine } from "../../repl/types.js"
 import { renderTokenLine, tokenLineFromThemed, tokenLineFromV1 } from "../../repl/markdown/tokenRender.js"
+import type { DiffBlock as StreamDiffBlock, DiffKind, ThemedLine, TokenLineV1 } from "../../repl/markdown/streamMdxCompatTypes.js"
 import { computeInlineDiffSpans, shiftSpans, type InlineSpan } from "../../repl/diff/inlineDiff.js"
 import {
   buildTranscriptWindow,
@@ -615,7 +616,7 @@ const renderDiffBlocks = (
   for (const block of diffBlocks) {
     for (const line of block.lines ?? []) {
       const kind = line.kind as TuiDiffLineKind
-      const tokens = allowTokens ? tokenLineFromThemed(line.tokens ?? null) : null
+      const tokens = allowTokens ? tokenLineFromThemed((line.tokens as ThemedLine | null) ?? null) : null
       const raw = typeof line.raw === "string" ? line.raw : ""
       lines.push(renderMarkdownDiffLine(raw, kind, tokens, useColors, colorMode))
     }

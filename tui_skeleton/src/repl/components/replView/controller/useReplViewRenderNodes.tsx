@@ -12,6 +12,8 @@ type RenderNodesContext = {
   contentWidth: number
   hints: string[]
   completionHint?: string | null
+  statusLinePosition: "above_input" | "below_input"
+  statusLineAlign: "left" | "right"
   shortcutsOpen: boolean
   ctrlCPrimedAt: number | null
   escPrimedAt: number | null
@@ -34,6 +36,8 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     contentWidth,
     hints,
     completionHint,
+    statusLinePosition,
+    statusLineAlign,
     shortcutsOpen,
     ctrlCPrimedAt,
     escPrimedAt,
@@ -175,8 +179,8 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
       } else if (ctrlCPrimedAt) {
         statusText = "Press Ctrl+C again to exit."
       }
-      if (!statusText) return []
-      const line = formatCell(statusText, Math.max(1, contentWidth), "left")
+      if (!statusText || statusLinePosition === "below_input") return []
+      const line = formatCell(statusText, Math.max(1, contentWidth), statusLineAlign)
       return [
         <Text key="hint-claude-status" color={COLORS.textMuted}>
           {line}
@@ -212,23 +216,36 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     escPrimedAt,
     hints,
     pendingResponse,
+    statusLineAlign,
+    statusLinePosition,
   ])
 
   const shortcutHintNodes = useMemo(() => {
     if (!claudeChrome) return []
+    const statusText = completionHint ?? hints.filter((hint) => !hint.startsWith("Session ")).slice(-1)[0] ?? ""
+    const belowStatusLine =
+      statusLinePosition === "below_input" && statusText
+        ? [
+            <Text key="hint-claude-status-below" color={COLORS.textMuted}>
+              {formatCell(statusText, Math.max(1, contentWidth), statusLineAlign)}
+            </Text>,
+          ]
+        : []
     if (shortcutsOpen) {
-      return shortcutLines.map((line, index) => (
+      const lines = shortcutLines.map((line, index) => (
         <Text key={`hint-shortcut-${index}`} wrap="truncate-end">
           {line}
         </Text>
       ))
+      return [...belowStatusLine, ...lines]
     }
     return [
+      ...belowStatusLine,
       <Text key="hint-claude-shortcuts" color={COLORS.textMuted}>
         {"  ? for shortcuts"}
       </Text>,
     ]
-  }, [claudeChrome, shortcutLines, shortcutsOpen])
+  }, [claudeChrome, completionHint, contentWidth, hints, shortcutLines, shortcutsOpen, statusLineAlign, statusLinePosition])
 
   const collapsedHintNode = useMemo(() => {
     if (collapsibleEntries.length === 0) return null

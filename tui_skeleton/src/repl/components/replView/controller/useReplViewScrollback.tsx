@@ -311,9 +311,26 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
   const landingNode = useMemo(
     () =>
       buildScrollbackLanding(
-        buildLandingContext(landingWidth, modelLabel, chromeLabel, configLabel, process.cwd()),
+        buildLandingContext({
+          contentWidth: landingWidth,
+          modelLabel,
+          chromeLabel,
+          configLabel,
+          cwd: process.cwd(),
+          variant: context.landingVariant ?? "auto",
+          borderStyle: context.landingBorderStyle ?? "round",
+          showAsciiArt: context.landingShowAsciiArt ?? true,
+        }),
       ),
-    [chromeLabel, configLabel, landingWidth, modelLabel],
+    [
+      chromeLabel,
+      configLabel,
+      context.landingBorderStyle,
+      context.landingShowAsciiArt,
+      context.landingVariant,
+      landingWidth,
+      modelLabel,
+    ],
   )
 
   const toToolLogEntry = useCallback((entry: TranscriptItem): ToolLogEntry | null => {
@@ -558,6 +575,8 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     contentWidth,
     hints,
     completionHint,
+    statusLinePosition: context.statusLinePosition ?? "above_input",
+    statusLineAlign: context.statusLineAlign ?? "left",
     shortcutsOpen: context.shortcutsOpen,
     ctrlCPrimedAt: context.ctrlCPrimedAt,
     escPrimedAt: context.escPrimedAt,

@@ -19,8 +19,10 @@ import type {
   RewindMenuState,
 } from "../../types.js"
 import type { SessionFileInfo, SessionFileContent, CTreeTreeResponse } from "../../../api/types.js"
+import type { ResolvedTuiConfig } from "../../../tui_config/types.js"
 
 export interface ReplViewProps {
+  readonly tuiConfig?: ResolvedTuiConfig
   readonly configPath?: string | null
   readonly sessionId: string
   readonly conversation: ConversationEntry[]

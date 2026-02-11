@@ -1,4 +1,5 @@
-import type { Block, DiffKind, TokenLineV1 } from "@stream-mdx/core/types"
+import type { Block } from "@stream-mdx/core/types"
+import type { DiffKind, TokenLineV1 } from "./markdown/streamMdxCompatTypes.js"
 
 export interface ConversationEntry {
   readonly id: string

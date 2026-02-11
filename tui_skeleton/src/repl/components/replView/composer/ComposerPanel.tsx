@@ -15,6 +15,11 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     modelMenu,
     pendingClaudeStatus,
     promptRule,
+    composerPromptPrefix,
+    composerPlaceholderClassic,
+    composerPlaceholderClaude,
+    composerShowTopRule,
+    composerShowBottomRule,
     input,
     cursor,
     inputLocked,
@@ -62,7 +67,7 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     claudeChrome && input.length === 0 && attachments.length === 0 && fileMentions.length === 0
 
   return (
-    <Box marginTop={1} flexDirection="column" width={ruleWidth}>
+    <Box marginTop={claudeChrome ? 0 : 1} flexDirection="column" width={ruleWidth}>
       {claudeChrome && pendingClaudeStatus && <Text color="dim">{pendingClaudeStatus}</Text>}
       {!overlayActive && claudeChrome && hintNodes.length > 0 && (
         <Box flexDirection="column">
@@ -70,13 +75,15 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
         </Box>
       )}
       {claudeChrome && (
-        <Text color={COLORS.textMuted} wrap="truncate">
-          {promptRuleLine}
-        </Text>
+        composerShowTopRule ? (
+          <Text color={COLORS.textMuted} wrap="truncate">
+            {promptRuleLine}
+          </Text>
+        ) : null
       )}
       <Box minHeight={1} width={ruleWidth} flexDirection="row">
         <Text>
-          <Text color={claudeChrome ? COLORS.textBright : "cyan"}>{`${GLYPHS.chevron} `}</Text>
+          <Text color={claudeChrome ? COLORS.textBright : "cyan"}>{`${composerPromptPrefix || GLYPHS.chevron} `}</Text>
         </Text>
         <LineEditor
           value={input}
@@ -84,10 +91,10 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
           focus={!inputLocked}
           placeholder={
             showClaudePlaceholder
-              ? 'Try "refactor <filepath>"'
+              ? (composerPlaceholderClaude || 'Try "refactor <filepath>"')
               : claudeChrome
                 ? ""
-                : `Type your request${GLYPHS.ellipsis}`
+                : (composerPlaceholderClassic || `Type your request${GLYPHS.ellipsis}`)
           }
           placeholderPad={!claudeChrome}
           hideCaretWhenPlaceholder={claudeChrome}
@@ -99,9 +106,11 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
         />
       </Box>
       {claudeChrome && (
-        <Text color={COLORS.textMuted} wrap="truncate">
-          {promptRuleLine}
-        </Text>
+        composerShowBottomRule ? (
+          <Text color={COLORS.textMuted} wrap="truncate">
+            {promptRuleLine}
+          </Text>
+        ) : null
       )}
       {overlayActive ? (
         claudeChrome ? null : <Text color="dim">{uiText("Input locked — use the active modal controls.")}</Text>

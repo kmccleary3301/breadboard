@@ -16,6 +16,7 @@ import { connectCommand } from "./commands/connect.js"
 import { engineCommand } from "./commands/engine.js"
 import { pluginCommand } from "./commands/plugin.js"
 import { authCommand } from "./commands/auth.js"
+import { configCommand } from "./commands/config.js"
 import { ensureEngine } from "./engine/engineSupervisor.js"
 import { loadAppConfig } from "./config/appConfig.js"
 import { CLI_VERSION } from "./config/version.js"
@@ -36,7 +37,7 @@ const root = Command.make("breadboard", {}, () => Effect.succeed(undefined)).pip
     engineCommand,
     pluginCommand,
     authCommand,
-    Command.make("config", {}, () => Console.log("config command not yet implemented")),
+    configCommand,
   ]),
 )
 

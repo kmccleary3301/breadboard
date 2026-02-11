@@ -1,9 +1,16 @@
-import type { Block, DiffBlock as StreamDiffBlock, DiffKind, InlineNode, TokenLineV1 } from "@stream-mdx/core/types"
+import type { Block, InlineNode } from "@stream-mdx/core/types"
 import { maybeHighlightCode } from "../../../../shikiHighlighter.js"
 import { CHALK, COLORS, ASCII_ONLY } from "../../theme.js"
 import { stringWidth, stripAnsiCodes, visibleWidth } from "../../utils/ansi.js"
 import type { MarkdownCodeLine, TuiDiffLineKind, TuiTokenLine } from "../../../../types.js"
 import { renderTokenLine, tokenLineFromThemed, tokenLineFromV1 } from "../../../../markdown/tokenRender.js"
+import { DEFAULT_DIFF_RENDER_STYLE, type DiffRenderStyle } from "../diffStyles.js"
+import type {
+  DiffBlock as StreamDiffBlock,
+  DiffKind,
+  ThemedLine,
+  TokenLineV1,
+} from "../../../../markdown/streamMdxCompatTypes.js"
 
 export const stripFence = (raw: string): { code: string; langHint?: string } => {
   const normalized = raw.replace(/\r\n?/g, "\n")
@@ -29,6 +36,7 @@ export interface MarkdownRenderOptions {
    * If omitted, falls back to process.stdout.columns.
    */
   readonly width?: number
+  readonly diffStyle?: DiffRenderStyle
 }
 
 type InlineSegment = {
@@ -328,11 +336,15 @@ const resolveRuleWidth = (options?: MarkdownRenderOptions): number => {
 const renderHorizontalRule = (options?: MarkdownRenderOptions): string =>
   CHALK.hex(COLORS.textMuted)(RULE_GLYPH.repeat(Math.max(1, resolveRuleWidth(options))))
 
-const colorDiffLine = (line: string): string => {
-  if (line.startsWith("+++ ") || line.startsWith("--- ")) return CHALK.hex(COLORS.info)(line)
-  if (line.startsWith("@@")) return CHALK.hex(COLORS.accent)(line)
-  if (line.startsWith("+")) return CHALK.bgHex("#1b6a3b").hex(COLORS.success)(line)
-  if (line.startsWith("-")) return CHALK.bgHex("#7a1f4d").hex(COLORS.error)(line)
+const colorDiffLine = (line: string, diffStyle: DiffRenderStyle): string => {
+  if (line.startsWith("+++ ") || line.startsWith("--- ")) return CHALK.hex(diffStyle.colors.metaText)(line)
+  if (line.startsWith("@@")) return CHALK.hex(diffStyle.colors.hunkText)(line)
+  if (line.startsWith("+")) {
+    return CHALK.bgHex(diffStyle.colors.addInlineBg).hex(diffStyle.colors.addText)(line)
+  }
+  if (line.startsWith("-")) {
+    return CHALK.bgHex(diffStyle.colors.deleteInlineBg).hex(diffStyle.colors.deleteText)(line)
+  }
   return line
 }
 
@@ -345,13 +357,6 @@ const looksLikeDiffBlock = (lines: ReadonlyArray<string>): boolean =>
       line.startsWith("+++ ") ||
       line.startsWith("--- "),
   )
-
-const DIFF_BG_COLORS = {
-  add: "#123225",
-  del: "#3a1426",
-} as const
-
-const MAX_TOKENIZED_DIFF_LINES = 400
 
 const tokenStyleFns = {
   color: (text: string, color: string) => CHALK.hex(color)(text),
@@ -368,67 +373,69 @@ const normalizeDiffKind = (kind: DiffKind | null | undefined): TuiDiffLineKind =
   return "context"
 }
 
-const styleDiffLine = (line: string, kind: TuiDiffLineKind): string => {
-  if (kind === "add") return CHALK.bgHex(DIFF_BG_COLORS.add)(line)
-  if (kind === "del") return CHALK.bgHex(DIFF_BG_COLORS.del)(line)
-  if (kind === "hunk") return CHALK.hex(COLORS.accent)(line)
-  if (kind === "meta") return CHALK.hex(COLORS.info)(line)
+const styleDiffLine = (line: string, kind: TuiDiffLineKind, diffStyle: DiffRenderStyle): string => {
+  if (kind === "add") return CHALK.bgHex(diffStyle.colors.addLineBg).hex(diffStyle.colors.addText)(line)
+  if (kind === "del") return CHALK.bgHex(diffStyle.colors.deleteLineBg).hex(diffStyle.colors.deleteText)(line)
+  if (kind === "hunk") return CHALK.hex(diffStyle.colors.hunkText)(line)
+  if (kind === "meta") return CHALK.hex(diffStyle.colors.metaText)(line)
   return line
 }
 
 const renderDiffLine = (
   raw: string,
   kind: TuiDiffLineKind,
+  diffStyle: DiffRenderStyle,
   tokens?: TuiTokenLine | null,
 ): string => {
   if (!tokens || tokens.length === 0) {
-    return styleDiffLine(raw, kind)
+    return styleDiffLine(raw, kind, diffStyle)
   }
   const marker = raw.startsWith("+") || raw.startsWith("-") || raw.startsWith(" ") ? raw[0] : ""
   const content = renderTokenLine(tokens, tokenStyleFns)
   const hasMarker = marker && tokens[0]?.content?.startsWith(marker)
   const combined = marker && !hasMarker ? `${marker}${content}` : content
-  return styleDiffLine(combined, kind)
+  return styleDiffLine(combined, kind, diffStyle)
 }
 
-const renderDiffBlocks = (diffBlocks: ReadonlyArray<StreamDiffBlock>): string[] => {
+const renderDiffBlocks = (diffBlocks: ReadonlyArray<StreamDiffBlock>, diffStyle: DiffRenderStyle): string[] => {
   const lines: string[] = []
   const totalLines = diffBlocks.reduce((acc, block) => acc + (block.lines?.length ?? 0), 0)
-  const allowTokens = totalLines <= MAX_TOKENIZED_DIFF_LINES
+  const allowTokens = totalLines <= diffStyle.maxTokenizedLines
   for (const block of diffBlocks) {
     for (const line of block.lines ?? []) {
       const kind = line.kind as TuiDiffLineKind
-      const tokens = allowTokens ? tokenLineFromThemed(line.tokens ?? null) : null
+      const tokens = allowTokens ? tokenLineFromThemed((line.tokens as ThemedLine | null) ?? null) : null
       const raw = typeof line.raw === "string" ? line.raw : ""
-      lines.push(renderDiffLine(raw, kind, tokens))
+      lines.push(renderDiffLine(raw, kind, diffStyle, tokens))
     }
   }
   return lines
 }
 
-const renderDiffFromCodeLines = (codeLines: ReadonlyArray<MarkdownCodeLine>): string[] => {
+const renderDiffFromCodeLines = (codeLines: ReadonlyArray<MarkdownCodeLine>, diffStyle: DiffRenderStyle): string[] => {
   const isDiff = codeLines.some((line) => line.diffKind != null)
-  const allowTokens = !isDiff || codeLines.length <= MAX_TOKENIZED_DIFF_LINES
+  const allowTokens = !isDiff || codeLines.length <= diffStyle.maxTokenizedLines
   return codeLines.map((line) => {
     const kind = normalizeDiffKind(line.diffKind ?? null)
     const raw = line.text ?? ""
     const tokens = allowTokens ? tokenLineFromV1(line.tokens as TokenLineV1 | null, "dark") : null
-    return renderDiffLine(raw, kind, tokens)
+    return renderDiffLine(raw, kind, diffStyle, tokens)
   })
 }
 
-export const renderCodeLines = (raw: string, lang?: string): string[] => {
+export const renderCodeLines = (raw: string, lang?: string, options?: MarkdownRenderOptions): string[] => {
   const { code, langHint } = stripFence(raw)
   const finalLang = lang ?? langHint
   const content = (code || raw).replace(/\r\n?/g, "\n")
   const isDiff = finalLang ? finalLang.toLowerCase().includes("diff") : false
   const shikiLines = maybeHighlightCode(content, finalLang)
   if (shikiLines) return shikiLines
+  const diffStyle = options?.diffStyle ?? DEFAULT_DIFF_RENDER_STYLE
   const lines = content.split("\n")
   return lines.map((line) => {
-    if (isDiff) return colorDiffLine(line)
-    if (line.startsWith("+")) return CHALK.hex(COLORS.success)(line)
-    if (line.startsWith("-")) return CHALK.hex(COLORS.error)(line)
+    if (isDiff) return colorDiffLine(line, diffStyle)
+    if (line.startsWith("+")) return CHALK.hex(diffStyle.colors.addText)(line)
+    if (line.startsWith("-")) return CHALK.hex(diffStyle.colors.deleteText)(line)
     if (line.startsWith("@@")) return CHALK.hex(COLORS.info)(line)
     return CHALK.hex(COLORS.text)(line)
   })
@@ -722,7 +729,7 @@ export const renderMarkdownFallbackLines = (rawText: string, options?: MarkdownR
       }
       if (index < lines.length) index += 1
       const fenced = lang ? `\`\`\`${lang}\n${codeLines.join("\n")}\n\`\`\`` : codeLines.join("\n")
-      output.push(...renderCodeLines(fenced, lang))
+      output.push(...renderCodeLines(fenced, lang, options))
       continue
     }
     if (line.includes("|") && index + 1 < lines.length && isTableSeparatorLine(lines[index + 1])) {
@@ -774,6 +781,7 @@ export const renderMarkdownFallbackLines = (rawText: string, options?: MarkdownR
 
 const blockToLines = (block: Block, options?: MarkdownRenderOptions): string[] => {
   const meta = (block.payload?.meta ?? {}) as Record<string, unknown>
+  const diffStyle = options?.diffStyle ?? DEFAULT_DIFF_RENDER_STYLE
   switch (block.type) {
     case "thematic-break":
     case "thematicBreak":
@@ -786,7 +794,7 @@ const blockToLines = (block: Block, options?: MarkdownRenderOptions): string[] =
         return [renderHorizontalRule(options)]
       }
       const lines = value.split(/\r?\n/)
-      return looksLikeDiffBlock(lines) ? lines.map((line) => colorDiffLine(line)) : lines
+      return looksLikeDiffBlock(lines) ? lines.map((line) => colorDiffLine(line, diffStyle)) : lines
     }
     case "heading": {
       const levelRaw = typeof meta.level === "number" ? meta.level : typeof meta.depth === "number" ? meta.depth : 1
@@ -810,14 +818,14 @@ const blockToLines = (block: Block, options?: MarkdownRenderOptions): string[] =
               : undefined
       const diffBlocks = Array.isArray(meta.diffBlocks) ? (meta.diffBlocks as StreamDiffBlock[]) : null
       if (diffBlocks && diffBlocks.length > 0) {
-        return renderDiffBlocks(diffBlocks)
+        return renderDiffBlocks(diffBlocks, diffStyle)
       }
       const codeLines = Array.isArray(meta.codeLines) ? (meta.codeLines as MarkdownCodeLine[]) : null
       if (codeLines && codeLines.length > 0) {
-        return renderDiffFromCodeLines(codeLines)
+        return renderDiffFromCodeLines(codeLines, diffStyle)
       }
       const raw = block.payload.raw ?? ""
-      return renderCodeLines(raw, lang)
+      return renderCodeLines(raw, lang, options)
     }
     case "list": {
       const raw = block.payload.raw ?? ""
