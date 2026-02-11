@@ -1,0 +1,39 @@
+claude
+(base) querylake_manager@gizmo:<path> claude
+
+╭─── Claude Code v2.1.30 ───────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting started                                     │
+│                 Welcome back Kenny!                │ Run /init to create a CLAUDE.md file with instructions for … │
+│                                                    │ ──────────────────────────────────────────────────────────── │
+│                                                    │ Recent activity                                              │
+│                       ▐▛███▜▌                      │ No recent activity                                           │
+│                      ▝▜█████▛▘                     │                                                              │
+│                        ▘▘ ▝▝                       │                                                              │
+│ Haiku 4.5 · API Usage Billing · Kenny‘s Individual │                                                              │
+│  Org                                               │                                                              │
+│       /…/ray_testing/ray_SCE/breadboard_repo       │                                                              │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+❯ Explain the difference between UDP and TCP in 6 bullet points.
+
+● UDP vs TCP
+
+  - Connection Model: TCP is connection-oriented (establishes a connection before sending data), while UDP is
+  connectionless (sends data directly without setup)
+  - Reliability: TCP guarantees reliable, ordered delivery of all data; UDP offers no delivery guarantees and may
+  lose or reorder packets
+  - Speed: UDP is faster with lower latency due to minimal overhead; TCP is slower due to connection management and
+  error-checking
+  - Header Size: TCP has a larger header (20+ bytes) with more control information; UDP has a minimal 8-byte header
+  - Use Cases: TCP suits applications requiring accuracy (email, file transfer, web browsing); UDP suits applications
+   prioritizing speed (video streaming, online gaming, DNS)
+  - Error Checking: TCP performs extensive error detection and correction; UDP has basic checksum validation but
+  doesn't retransmit corrupted packets
+
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ? for shortcuts
+
+
+

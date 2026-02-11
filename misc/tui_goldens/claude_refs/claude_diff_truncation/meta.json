@@ -1,0 +1,12 @@
+{
+  "scenario_id": "claude_diff_truncation",
+  "tmux_target": "claude_alignment_v3:3",
+  "terminal_cols": 120,
+  "terminal_rows": 36,
+  "theme": "BreadBoard dark",
+  "font": "default",
+  "model": "Haiku 4.5",
+  "captured_at": "2026-02-03T20:43:42Z",
+  "mode": "live",
+  "notes": "Large edit diff; no explicit truncation line displayed in collapsed view."
+}

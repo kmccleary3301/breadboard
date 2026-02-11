@@ -1,0 +1,8 @@
+{"event": {"id": "t1", "seq": 1, "type": "run.start", "payload": {}}}
+{"event": {"id": "t2", "seq": 2, "type": "user.message", "payload": {"text": "Use bash to list the files in the current directory and show only the first 5 entries."}}}
+{"event": {"id": "t3", "seq": 3, "type": "tool.result", "payload": {"call_id": "call-read-1", "tool_name": "read_file", "display": {"title": "Read 1 file (ctrl+o to expand)"}}}}
+{"event": {"id": "t4", "seq": 4, "type": "assistant_message", "payload": {"text": "Here are the first 5 entries in the current directory:\n\n1. adaptive_iter.py\n2. agent_configs\n3. agentic_coder_prototype\n4. agent_ws\n5. agent_ws_claude"}}}
+{"event": {"id": "t5", "seq": 5, "type": "user.message", "payload": {"text": "Run the bash command: ls -la | head -n 5. Show only the command output."}}}
+{"event": {"id": "t6", "seq": 6, "type": "tool.result", "payload": {"call_id": "call-read-2", "tool_name": "read_file", "display": {"title": "Read 1 file (ctrl+o to expand)"}}}}
+{"event": {"id": "t7", "seq": 7, "type": "assistant_message", "payload": {"text": "total 252\ndrwxrwxr-x  33 querylake_manager querylake_manager  4096 Feb  3 14:34 .\ndrwxrwxr-x  27 querylake_manager querylake_manager  4096 Feb  3 12:44 ..\n-rw-rw-r--   1 querylake_manager querylake_manager   378 Jan 23 13:52 adaptive_iter.py\ndrwxrwxr-x   2 querylake_manager querylake_manager 12288 Feb  3 13:34 agent_configs"}}}
+{"event": {"id": "t8", "seq": 8, "type": "run.end", "payload": {"completed": true}}}

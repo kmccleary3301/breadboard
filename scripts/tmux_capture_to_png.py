@@ -205,6 +205,11 @@ def render_ansi_to_png(
     row = 0
     col = 0
     idx = 0
+    # tmux emits fixed-width lines (often fully padded). When a rendered row
+    # exactly fills terminal width, our cell writer naturally wraps once and
+    # tmux may still emit a newline for that same visual row. Suppress the
+    # immediate newline after a hard wrap to avoid double-spacing artifacts.
+    just_wrapped = False
 
     while idx < len(ansi_text) and row < rows:
         ch = ansi_text[idx]
@@ -356,12 +361,16 @@ def render_ansi_to_png(
             continue
 
         if ch == "\n":
-            row += 1
-            col = 0
+            if just_wrapped:
+                just_wrapped = False
+            else:
+                row += 1
+                col = 0
             idx += 1
             continue
         if ch == "\r":
             col = 0
+            just_wrapped = False
             idx += 1
             continue
         if ch == "\t":
@@ -393,6 +402,9 @@ def render_ansi_to_png(
         if col >= cols:
             row += 1
             col = 0
+            just_wrapped = True
+        else:
+            just_wrapped = False
 
         idx += 1
 
@@ -401,10 +413,18 @@ def render_ansi_to_png(
     font_italic = fonts.italic
     font_bold_italic = fonts.bold_italic
 
-    bbox = font_regular.getbbox("M")
-    cell_w = max(8, bbox[2] - bbox[0])
-    ascent, descent = font_regular.getmetrics()
-    cell_h = max(16, ascent + descent + 4)
+    # Pillow uses y as the *top* of the glyph bounding box, not the baseline.
+    # If we size cells using ascent+descent but draw at y0, the glyph will sit
+    # toward the top of the cell and the remaining vertical space reads as a
+    # blank line in PNG output. Compute a reference bbox and align it instead.
+    bbox_w = font_regular.getbbox("M")
+    bbox_h = font_regular.getbbox("Mg")
+    cell_w = max(8, bbox_w[2] - bbox_w[0])
+    glyph_h = max(1, bbox_h[3] - bbox_h[1])
+    # Align bbox top to cell top; bbox_h[1] may be negative.
+    text_y_offset = -bbox_h[1]
+    # Add a small pad so underline doesn't clip.
+    cell_h = max(12, glyph_h + 2)
     if cell_width > 0:
         cell_w = cell_width
     if cell_height > 0:
@@ -430,11 +450,11 @@ def render_ansi_to_png(
                     cell_font = font_bold
                 elif cell.style.italic and font_italic is not None:
                     cell_font = font_italic
-                draw.text((x0, y0 + 1), cell.ch, font=cell_font, fill=cell.style.fg)
+                draw.text((x0, y0 + text_y_offset), cell.ch, font=cell_font, fill=cell.style.fg)
                 if cell.style.bold and cell_font == font_regular and font_bold is None:
-                    draw.text((x0 + 1, y0 + 1), cell.ch, font=cell_font, fill=cell.style.fg)
+                    draw.text((x0 + 1, y0 + text_y_offset), cell.ch, font=cell_font, fill=cell.style.fg)
             if cell.style.underline:
-                underline_y = y0 + cell_h - 3
+                underline_y = y0 + cell_h - 2
                 draw.line([x0, underline_y, x0 + cell_w - 1, underline_y], fill=cell.style.fg)
 
     if scale and abs(scale - 1.0) > 1e-3:
@@ -569,8 +589,19 @@ def render_ansi_with_xterm(
 
 
 def tmux_pane_size(target: str) -> Tuple[int, int]:
+    return tmux_pane_size_with_socket(target, "")
+
+
+def tmux_base_args(socket_name: str) -> list[str]:
+    socket_name = (socket_name or "").strip()
+    if not socket_name:
+        return ["tmux"]
+    return ["tmux", "-L", socket_name]
+
+
+def tmux_pane_size_with_socket(target: str, socket_name: str) -> Tuple[int, int]:
     out = subprocess.check_output(
-        ["tmux", "display-message", "-p", "-t", target, "#{pane_width} #{pane_height}"],
+        [*tmux_base_args(socket_name), "display-message", "-p", "-t", target, "#{pane_width} #{pane_height}"],
         text=True,
     ).strip()
     parts = out.split()
@@ -586,18 +617,35 @@ def tmux_capture(
     out_scrollback_ansi: Path | None = None,
     out_scrollback_txt: Path | None = None,
 ) -> None:
+    tmux_capture_with_socket(target, out_ansi, out_txt, out_scrollback_ansi, out_scrollback_txt, "")
+
+
+def tmux_capture_with_socket(
+    target: str,
+    out_ansi: Path,
+    out_txt: Path,
+    out_scrollback_ansi: Path | None,
+    out_scrollback_txt: Path | None,
+    socket_name: str,
+) -> None:
     out_ansi.parent.mkdir(parents=True, exist_ok=True)
     out_txt.parent.mkdir(parents=True, exist_ok=True)
     # -e: include escape sequences; -p: print to stdout
-    ansi = subprocess.check_output(["tmux", "capture-pane", "-ep", "-t", target], text=False)
+    ansi = subprocess.check_output([*tmux_base_args(socket_name), "capture-pane", "-ep", "-t", target], text=False)
     out_ansi.write_bytes(ansi)
-    txt = subprocess.check_output(["tmux", "capture-pane", "-p", "-t", target], text=True)
+    txt = subprocess.check_output([*tmux_base_args(socket_name), "capture-pane", "-p", "-t", target], text=True)
     out_txt.write_text(txt)
     if out_scrollback_ansi is not None:
-        ansi_full = subprocess.check_output(["tmux", "capture-pane", "-ep", "-t", target, "-S", "-"], text=False)
+        ansi_full = subprocess.check_output(
+            [*tmux_base_args(socket_name), "capture-pane", "-ep", "-t", target, "-S", "-"],
+            text=False,
+        )
         out_scrollback_ansi.write_bytes(ansi_full)
     if out_scrollback_txt is not None:
-        txt_full = subprocess.check_output(["tmux", "capture-pane", "-p", "-t", target, "-S", "-"], text=True)
+        txt_full = subprocess.check_output(
+            [*tmux_base_args(socket_name), "capture-pane", "-p", "-t", target, "-S", "-"],
+            text=True,
+        )
         out_scrollback_txt.write_text(txt_full)
 
 
@@ -651,6 +699,11 @@ def strip_ansi(payload: str) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", help="tmux pane target (e.g. session:window.pane or session:window)")
+    parser.add_argument(
+        "--tmux-socket",
+        default="",
+        help="tmux socket name (tmux -L <name>). Use this for isolated capture servers.",
+    )
     parser.add_argument("--ansi", help="path to ANSI capture file (skips tmux)")
     parser.add_argument("--cols", type=int, default=0, help="columns when rendering --ansi capture")
     parser.add_argument("--rows", type=int, default=0, help="rows when rendering --ansi capture")
@@ -676,7 +729,10 @@ def main() -> None:
     parser.add_argument("--pad-x", type=int, default=0, help="horizontal padding in pixels")
     parser.add_argument("--pad-y", type=int, default=0, help="vertical padding in pixels")
     parser.add_argument("--scrollback", action="store_true", help="also capture full scrollback to .scrollback.txt/.ansi")
-    parser.add_argument("--keep", action="store_true", help="keep alongside .ansi and .txt (default keeps)")
+    # Keep .ansi/.txt by default; callers can opt out to reduce artifact volume.
+    parser.add_argument("--keep", action="store_true", help="keep alongside .ansi and .txt (default: keep)")
+    parser.add_argument("--no-keep", dest="keep", action="store_false", help="delete .ansi and .txt after rendering")
+    parser.set_defaults(keep=True)
     args = parser.parse_args()
 
     if not args.target and not args.ansi:
@@ -699,7 +755,7 @@ def main() -> None:
         ansi_text = out_ansi.read_text(errors="replace")
         out_txt.write_text(strip_ansi(ansi_text))
     else:
-        cols, rows = tmux_pane_size(args.target)
+        cols, rows = tmux_pane_size_with_socket(args.target, str(args.tmux_socket or "").strip())
         safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", args.target)
         default_dir = Path("docs_tmp") / "tmux_captures"
         out_png = Path(args.out) if args.out else (default_dir / f"{ts}_{safe_target}.png")
@@ -707,7 +763,14 @@ def main() -> None:
         out_txt = out_png.with_suffix(".txt")
         scroll_ansi = out_png.with_suffix(".scrollback.ansi") if args.scrollback else None
         scroll_txt = out_png.with_suffix(".scrollback.txt") if args.scrollback else None
-        tmux_capture(args.target, out_ansi, out_txt, scroll_ansi, scroll_txt)
+        tmux_capture_with_socket(
+            args.target,
+            out_ansi,
+            out_txt,
+            scroll_ansi,
+            scroll_txt,
+            str(args.tmux_socket or "").strip(),
+        )
         ansi_text = out_ansi.read_text(errors="replace")
     font_paths = resolve_font_paths(
         args.font_path,

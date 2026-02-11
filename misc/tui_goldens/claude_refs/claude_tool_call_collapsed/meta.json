@@ -1,0 +1,12 @@
+{
+  "scenario_id": "claude_tool_call_collapsed",
+  "tmux_target": "claude_alignment_v3:2",
+  "terminal_cols": 120,
+  "terminal_rows": 36,
+  "theme": "BreadBoard dark",
+  "font": "default",
+  "model": "Haiku 4.5",
+  "captured_at": "2026-02-03T20:40:02Z",
+  "mode": "live",
+  "notes": "Prompted for ls; model used a collapsed file-read indicator instead of bash tool output."
+}

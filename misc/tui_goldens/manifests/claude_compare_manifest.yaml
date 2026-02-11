@@ -1,0 +1,35 @@
+version: 1
+
+defaults:
+  render:
+    include_header: false
+    include_status: false
+    include_hints: false
+    include_model_menu: false
+    colors: false
+    ascii_only: false
+    max_width: 120
+    render_profile: claude
+    view_prefs:
+      collapseMode: none
+      virtualization: auto
+      richMarkdown: false
+      toolRail: true
+      toolInline: false
+      rawStream: false
+      showReasoning: false
+      diffLineNumbers: true
+
+scenarios:
+  - id: claude_write_patch_markdown
+    input: ../claude_compare_inputs/claude_write_patch_markdown/input/events.jsonl
+  - id: claude_tool_call_collapsed
+    input: ../claude_compare_inputs/claude_tool_call_collapsed/input/events.jsonl
+  - id: claude_diff_truncation
+    input: ../claude_compare_inputs/claude_diff_truncation/input/events.jsonl
+  - id: claude_diff_patch_preview
+    input: ../claude_compare_inputs/claude_diff_patch_preview/input/events.jsonl
+  - id: claude_diff_patch_truncated
+    input: ../claude_compare_inputs/claude_diff_patch_truncated/input/events.jsonl
+  - id: claude_streaming_pending
+    input: ../claude_compare_inputs/claude_streaming_pending/input/events.jsonl

@@ -21,7 +21,27 @@ $script
 $SCRIPT
 $tmpdir/
 $TMP_DIR/
-misc/
+# Keep most of misc/ ignored, but allow a small, curated subset of
+# misc/tui_goldens that CI reads as inputs.
+#
+# Note: You cannot re-include files inside an ignored parent directory unless
+# you re-include the parent itself. This block intentionally re-includes
+# misc/ and then re-ignores everything except the allowlist below.
+!misc/
+misc/*
+!misc/tui_goldens/
+misc/tui_goldens/*
+!misc/tui_goldens/GOLDEN_VERSION
+!misc/tui_goldens/README.md
+!misc/tui_goldens/claude_compare_manifest.yaml
+!misc/tui_goldens/manifests/
+!misc/tui_goldens/manifests/**
+!misc/tui_goldens/claude_refs/
+!misc/tui_goldens/claude_refs/**
+!misc/tui_goldens/claude_compare_inputs/
+!misc/tui_goldens/claude_compare_inputs/**
+!misc/tui_goldens/tmux_actions/
+!misc/tui_goldens/tmux_actions/**
 perf/
 goldens/
 repo_reconstruct_*

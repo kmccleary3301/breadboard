@@ -38,6 +38,7 @@ from tmux_capture_time import run_timestamp
 @dataclass
 class CaptureConfig:
     target: str
+    tmux_socket: str
     interval: float
     duration: float
     frames: int
@@ -45,6 +46,7 @@ class CaptureConfig:
     render_png: bool
     cols: Optional[int]
     rows: Optional[int]
+    resize_pane: bool
     out_root: str
     scenario: str
     run_id: str
@@ -52,49 +54,72 @@ class CaptureConfig:
     settle_attempts: int
 
 
-def run_tmux(cmd: list[str]) -> str:
-    result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+def tmux_base_args(socket_name: str) -> list[str]:
+    socket_name = (socket_name or "").strip()
+    if not socket_name:
+        return ["tmux"]
+    return ["tmux", "-L", socket_name]
+
+
+def run_tmux(cmd: list[str], socket_name: str) -> str:
+    result = subprocess.run(
+        [*tmux_base_args(socket_name), *cmd],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     return result.stdout
 
 
-def ensure_target_exists(target: str) -> None:
+def ensure_target_exists(target: str, socket_name: str) -> None:
     try:
-        run_tmux(["tmux", "display-message", "-p", "-t", target, "#{pane_id}"])
+        run_tmux(["display-message", "-p", "-t", target, "#{pane_id}"], socket_name)
     except subprocess.CalledProcessError as exc:
         stderr = exc.stderr.strip() if exc.stderr else ""
         detail = f": {stderr}" if stderr else ""
         raise RuntimeError(f"tmux target '{target}' is not available{detail}") from exc
 
 
-def get_pane_size(target: str) -> tuple[int, int]:
-    raw = run_tmux(["tmux", "list-panes", "-t", target, "-F", "#{pane_width} #{pane_height}"]).strip()
-    first = raw.splitlines()[0] if raw else ""
-    parts = first.split()
-    if len(parts) < 2:
-        raise RuntimeError(f"unable to resolve pane size for target '{target}'")
-    cols = int(parts[0])
-    rows = int(parts[1])
-    return cols, rows
+def get_pane_size(target: str, socket_name: str) -> tuple[int, int]:
+    raw = run_tmux(["display-message", "-p", "-t", target, "#{pane_width} #{pane_height}"], socket_name).strip()
+    parts = raw.split()
+    if len(parts) != 2:
+        raise RuntimeError(f"unable to resolve pane size for target '{target}' (raw={raw!r})")
+    return int(parts[0]), int(parts[1])
 
 
-def capture_raw(target: str, capture_mode: str) -> tuple[str, str]:
+def window_target_from_pane_target(target: str) -> str:
+    """
+    Convert session:window.pane -> session:window.
+    If already session:window, returns unchanged.
+    """
+    # tmux targets can be session:window.pane or session:window
+    if "." not in target:
+        return target
+    # Strip trailing .<pane>
+    return target.rsplit(".", 1)[0]
+
+
+def capture_raw(target: str, capture_mode: str, socket_name: str) -> tuple[str, str]:
     if capture_mode == "scrollback":
         # Full scrollback
-        run_tmux(["tmux", "capture-pane", "-ep", "-S", "-", "-t", target, "-b", "capture"])
-        ansi = run_tmux(["tmux", "save-buffer", "-b", "capture", "-"])
-        run_tmux(["tmux", "delete-buffer", "-b", "capture"])
-        run_tmux(["tmux", "capture-pane", "-p", "-S", "-", "-t", target, "-b", "capture_txt"])
-        txt = run_tmux(["tmux", "save-buffer", "-b", "capture_txt", "-"])
-        run_tmux(["tmux", "delete-buffer", "-b", "capture_txt"])
+        run_tmux(["capture-pane", "-ep", "-S", "-", "-t", target, "-b", "capture"], socket_name)
+        ansi = run_tmux(["save-buffer", "-b", "capture", "-"], socket_name)
+        run_tmux(["delete-buffer", "-b", "capture"], socket_name)
+        run_tmux(["capture-pane", "-p", "-S", "-", "-t", target, "-b", "capture_txt"], socket_name)
+        txt = run_tmux(["save-buffer", "-b", "capture_txt", "-"], socket_name)
+        run_tmux(["delete-buffer", "-b", "capture_txt"], socket_name)
     else:
         # Visible pane only (full panel): top-to-bottom pane contents.
-        ansi = run_tmux(["tmux", "capture-pane", "-ep", "-t", target])
-        txt = run_tmux(["tmux", "capture-pane", "-p", "-t", target])
+        ansi = run_tmux(["capture-pane", "-ep", "-t", target], socket_name)
+        txt = run_tmux(["capture-pane", "-p", "-t", target], socket_name)
     return ansi, txt
 
 
 def capture_pane(
     target: str,
+    socket_name: str,
     capture_mode: str,
     ansi_path: Path,
     txt_path: Path,
@@ -104,7 +129,7 @@ def capture_pane(
     last_ansi = ""
     last_txt = ""
     for attempt in range(max(settle_attempts, 1)):
-        ansi, txt = capture_raw(target, capture_mode)
+        ansi, txt = capture_raw(target, capture_mode, socket_name)
         if attempt > 0 and ansi == last_ansi and txt == last_txt:
             break
         last_ansi = ansi
@@ -136,6 +161,11 @@ def render_png(ansi_path: Path, png_path: Path, cols: int, rows: int, script_dir
 def parse_args() -> CaptureConfig:
     parser = argparse.ArgumentParser(description="Poll a tmux pane and capture frames.")
     parser.add_argument("--target", required=True, help="tmux target (session:window.pane)")
+    parser.add_argument(
+        "--tmux-socket",
+        default="",
+        help="tmux socket name (tmux -L <name>). Use this for isolated capture servers.",
+    )
     parser.add_argument("--interval", type=float, default=0.5, help="seconds between frames")
     parser.add_argument("--duration", type=float, default=60.0, help="total duration in seconds")
     parser.add_argument("--frames", type=int, default=0, help="number of frames (overrides duration if >0)")
@@ -155,6 +185,11 @@ def parse_args() -> CaptureConfig:
     parser.set_defaults(render_png=True)
     parser.add_argument("--cols", type=int, default=0, help="override columns (default: tmux pane width)")
     parser.add_argument("--rows", type=int, default=0, help="override rows (default: tmux pane height)")
+    parser.add_argument(
+        "--resize-pane",
+        action="store_true",
+        help="resize the tmux pane to --cols/--rows before capturing (only allowed for breadboard_test_* sessions)",
+    )
     parser.add_argument("--out-root", default=None, help="output root directory")
     parser.add_argument("--scenario", default="capture", help="scenario name for output folder")
     parser.add_argument(
@@ -186,6 +221,7 @@ def parse_args() -> CaptureConfig:
 
     return CaptureConfig(
         target=args.target,
+        tmux_socket=str(args.tmux_socket or "").strip(),
         interval=max(args.interval, 0.05),
         duration=max(args.duration, 0.0),
         frames=max(args.frames, 0),
@@ -193,6 +229,7 @@ def parse_args() -> CaptureConfig:
         render_png=bool(args.render_png),
         cols=args.cols if args.cols > 0 else None,
         rows=args.rows if args.rows > 0 else None,
+        resize_pane=bool(args.resize_pane),
         out_root=str(out_root),
         scenario=args.scenario,
         run_id=str(args.run_id or "").strip(),
@@ -211,10 +248,40 @@ def main() -> None:
     frames_dir = run_dir / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
 
-    ensure_target_exists(config.target)
-    base_cols, base_rows = get_pane_size(config.target)
-    cols = config.cols or base_cols
-    rows = config.rows or base_rows
+    ensure_target_exists(config.target, config.tmux_socket)
+
+    requested_cols = config.cols
+    requested_rows = config.rows
+    if config.resize_pane:
+        session_name = config.target.split(":", 1)[0].strip()
+        if not session_name.startswith("breadboard_test_"):
+            raise RuntimeError(
+                f"--resize-pane is only allowed for breadboard_test_* sessions (target={config.target!r})"
+            )
+        if config.cols is None or config.rows is None:
+            raise RuntimeError("--resize-pane requires both --cols and --rows")
+        # For single-pane windows, resize-pane is often a no-op because tmux
+        # forces the pane to fill the entire window. We resize the window first,
+        # then resize the pane as a best-effort for split layouts.
+        window_target = window_target_from_pane_target(config.target)
+        run_tmux(
+            ["resize-window", "-t", window_target, "-x", str(int(config.cols)), "-y", str(int(config.rows))],
+            config.tmux_socket,
+        )
+        run_tmux(
+            ["resize-pane", "-t", config.target, "-x", str(int(config.cols)), "-y", str(int(config.rows))],
+            config.tmux_socket,
+        )
+        # Give the UI a moment to settle after a resize before we start polling.
+        time.sleep(0.25)
+
+    base_cols, base_rows = get_pane_size(config.target, config.tmux_socket)
+    # If we resized, always trust the *actual* pane size for rendering.
+    if config.resize_pane:
+        cols, rows = base_cols, base_rows
+    else:
+        cols = config.cols or base_cols
+        rows = config.rows or base_rows
     dynamic_size = config.cols is None and config.rows is None
 
     meta = {
@@ -226,6 +293,9 @@ def main() -> None:
         "render_png": config.render_png,
         "cols": cols,
         "rows": rows,
+        "resize_pane": config.resize_pane,
+        "requested_cols": requested_cols,
+        "requested_rows": requested_rows,
         "dynamic_size": dynamic_size,
         "scenario": config.scenario,
         "run_id": config.run_id or None,
@@ -237,6 +307,7 @@ def main() -> None:
     # Keep an exact one-shot snapshot of the first visible frame for easy QA.
     capture_pane(
         config.target,
+        config.tmux_socket,
         config.capture_mode,
         run_dir / "initial.ansi",
         run_dir / "initial.txt",
@@ -263,7 +334,7 @@ def main() -> None:
 
         i += 1
         if dynamic_size:
-            cols, rows = get_pane_size(config.target)
+            cols, rows = get_pane_size(config.target, config.tmux_socket)
         frame_id = f"frame_{i:04d}"
         ansi_path = frames_dir / f"{frame_id}.ansi"
         txt_path = frames_dir / f"{frame_id}.txt"
@@ -271,6 +342,7 @@ def main() -> None:
 
         capture_pane(
             config.target,
+            config.tmux_socket,
             config.capture_mode,
             ansi_path,
             txt_path,
