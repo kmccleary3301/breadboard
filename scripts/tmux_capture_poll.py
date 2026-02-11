@@ -47,6 +47,7 @@ class CaptureConfig:
     rows: Optional[int]
     out_root: str
     scenario: str
+    run_id: str
     settle_ms: int
     settle_attempts: int
 
@@ -139,6 +140,11 @@ def parse_args() -> CaptureConfig:
     parser.add_argument("--duration", type=float, default=60.0, help="total duration in seconds")
     parser.add_argument("--frames", type=int, default=0, help="number of frames (overrides duration if >0)")
     parser.add_argument(
+        "--run-id",
+        default="",
+        help="explicit run id folder name (default: generated timestamp). Useful for scenario runners.",
+    )
+    parser.add_argument(
         "--capture-mode",
         choices=("pane", "scrollback"),
         default="pane",
@@ -191,6 +197,7 @@ def parse_args() -> CaptureConfig:
         rows=args.rows if args.rows > 0 else None,
         out_root=str(out_root),
         scenario=args.scenario,
+        run_id=str(args.run_id or "").strip(),
         settle_ms=max(args.settle_ms, 0),
         settle_attempts=max(args.settle_attempts, 1),
     )
@@ -200,7 +207,7 @@ def main() -> None:
     config = parse_args()
     script_dir = Path(__file__).resolve().parent
     out_root = Path(config.out_root)
-    ts = run_timestamp()
+    ts = config.run_id or run_timestamp()
     run_dir = out_root / config.scenario / ts
     frames_dir = run_dir / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
