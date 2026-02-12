@@ -13,6 +13,39 @@ interface MarkdownStreamerOptions {
 
 const DEFAULT_PREWARM = ["typescript", "tsx", "javascript", "bash", "shell", "python", "json", "markdown", "diff", "yaml"]
 
+type SnapshotNode = {
+  id: string
+  type: string
+  parentId: string | null
+  children: string[]
+  props: Record<string, unknown>
+}
+
+const attachCodeLineMeta = (snapshot: DocumentSnapshot, blocks: ReadonlyArray<Block>): ReadonlyArray<Block> => {
+  if (!snapshot?.nodes || blocks.length === 0) return blocks
+  let changed = false
+  const nextBlocks = blocks.map((block) => {
+    if (block.type !== "code") return block
+    const node = snapshot.nodes.get(block.id) as SnapshotNode | undefined
+    if (!node || !Array.isArray(node.children) || node.children.length === 0) return block
+    const codeLines = node.children
+      .map((childId) => snapshot.nodes.get(childId) as SnapshotNode | undefined)
+      .filter((child): child is SnapshotNode => Boolean(child && child.type === "code-line"))
+      .map((child) => ({
+        text: typeof child.props.text === "string" ? (child.props.text as string) : "",
+        tokens: child.props.tokens ?? null,
+        diffKind: child.props.diffKind ?? null,
+        oldNo: typeof child.props.oldNo === "number" ? (child.props.oldNo as number) : child.props.oldNo ?? null,
+        newNo: typeof child.props.newNo === "number" ? (child.props.newNo as number) : child.props.newNo ?? null,
+      }))
+    if (codeLines.length === 0) return block
+    const meta = { ...(block.payload.meta ?? {}), codeLines }
+    changed = true
+    return { ...block, payload: { ...block.payload, meta } }
+  })
+  return changed ? nextBlocks : blocks
+}
+
 // Inline fallback used if worker cannot start.
 const buildInlineBlocks = (buffer: string, finalized: boolean): Block[] => {
   const blocks: Block[] = []
@@ -124,6 +157,7 @@ export class MarkdownStreamer {
   private worker: Worker | null = null
   private snapshot: DocumentSnapshot = createInitialSnapshot()
   private pendingChunks: string[] = []
+  private pendingFinalize = false
   private ready = false
   private disposed = false
   private errored: string | null = null
@@ -149,6 +183,7 @@ export class MarkdownStreamer {
     if (this.disposed) return
     this.snapshot = createInitialSnapshot()
     this.ready = false
+    this.pendingFinalize = false
     this.finalized = false
     this.inlineBuffer = initialContent
     this.spawnWorker(initialContent)
@@ -176,6 +211,10 @@ export class MarkdownStreamer {
     this.finalized = true
     if (this.inlineMode || !this.worker) {
       this.emit(true)
+      return
+    }
+    if (!this.ready) {
+      this.pendingFinalize = true
       return
     }
     this.worker.postMessage({ type: "FINALIZE" } satisfies WorkerIn)
@@ -251,6 +290,10 @@ export class MarkdownStreamer {
             this.worker?.postMessage({ type: "APPEND", text: chunk } satisfies WorkerIn)
           }
         }
+        if (this.pendingFinalize) {
+          this.pendingFinalize = false
+          this.worker?.postMessage({ type: "FINALIZE" } satisfies WorkerIn)
+        }
         this.emit(false)
         break
       }
@@ -280,7 +323,7 @@ export class MarkdownStreamer {
     if (this.inlineMode || !this.worker) {
       return buildInlineBlocks(this.inlineBuffer, this.finalized || this.errored != null)
     }
-    return this.snapshot.blocks
+    return attachCodeLineMeta(this.snapshot, this.snapshot.blocks)
   }
 
   private emit(finalized: boolean): void {

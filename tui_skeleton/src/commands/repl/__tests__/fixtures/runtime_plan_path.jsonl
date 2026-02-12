@@ -1,0 +1,10 @@
+{"event": {"id": "rp1", "seq": 1, "type": "run.start", "payload": {}}}
+{"event": {"id": "rp2", "seq": 2, "type": "turn_start", "payload": {}}}
+{"event": {"id": "rp3", "seq": 3, "type": "assistant.message.start", "payload": {}}}
+{"event": {"id": "rp4", "seq": 4, "type": "assistant.message.delta", "payload": {"delta": "Working on your request. "}}}
+{"event": {"id": "rp5", "seq": 5, "type": "tool_call", "payload": {"call_id": "plan-call-1", "tool_name": "Write"}}}
+{"event": {"id": "rp6", "seq": 6, "type": "permission.request", "payload": {"request_id": "plan-perm-1", "tool": "Write"}}}
+{"event": {"id": "rp7", "seq": 7, "type": "permission.decision", "payload": {"decision": "allow-once"}}}
+{"event": {"id": "rp8", "seq": 8, "type": "assistant.message.start", "payload": {}}}
+{"event": {"id": "rp9", "seq": 9, "type": "assistant.message.delta", "payload": {"delta": "Done."}}}
+{"event": {"id": "rp10", "seq": 10, "type": "completion", "payload": {"completed": true}}}

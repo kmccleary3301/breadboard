@@ -68,7 +68,15 @@ interface SessionState {
 }
 
 const DEFAULT_PROTOCOL_VERSION = process.env.BREADBOARD_PROTOCOL_VERSION ?? "1.0"
-
+const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => {
+  if (value == null) return fallback
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return fallback
+  if (["1", "true", "yes", "on"].includes(normalized)) return true
+  if (["0", "false", "no", "off"].includes(normalized)) return false
+  return fallback
+}
+const AUTOPLAY_ON_TASK = parseBoolEnv(process.env.BREADBOARD_MOCK_AUTOPLAY_ON_TASK, true)
 const sleep = (ms: number) => (ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve())
 
 export const resolveScriptPath = (scriptPath: string) =>
@@ -343,7 +351,9 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
       res.end(JSON.stringify({ status: "ok", script: resolvedScript }))
       return
     }
-  if (req.method === "POST" && url.pathname === "/sessions") {
+    if (req.method === "POST" && url.pathname === "/sessions") {
+      const body = await readJsonBody(req)
+      const task = typeof body.task === "string" ? body.task.trim() : ""
       const sessionId = randomUUID()
       const sessionState: SessionState = {
         id: sessionId,
@@ -361,6 +371,10 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
         commandHistory: [],
         commandQueue: [],
         commandWaiters: [],
+      }
+      if (task && AUTOPLAY_ON_TASK) {
+        sessionState.playRequested = true
+        log?.(`[mock-sse] task provided on create (session ${sessionId}) autoplay=${AUTOPLAY_ON_TASK}`)
       }
       sessions.set(sessionId, sessionState)
       res.writeHead(200, { "Content-Type": "application/json" })
@@ -424,7 +438,14 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
         for (const event of events) {
           writeSseEvent(res, event)
         }
-        res.end()
+        state.clients.add(res)
+        if (!state.playRequested && !state.finished) {
+          state.playRequested = true
+        }
+        req.on("close", () => {
+          state.clients.delete(res)
+        })
+        tryStartPlayback(state, normalized, log)
         return
       }
       res.writeHead(200, {
@@ -434,6 +455,9 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
       })
       res.write("\n")
       state.clients.add(res)
+      if (!state.playRequested && !state.finished) {
+        state.playRequested = true
+      }
       req.on("close", () => {
         state.clients.delete(res)
       })

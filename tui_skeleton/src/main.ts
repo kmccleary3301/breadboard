@@ -16,6 +16,7 @@ import { connectCommand } from "./commands/connect.js"
 import { engineCommand } from "./commands/engine.js"
 import { pluginCommand } from "./commands/plugin.js"
 import { authCommand } from "./commands/auth.js"
+import { configCommand } from "./commands/config.js"
 import { ensureEngine } from "./engine/engineSupervisor.js"
 import { loadAppConfig } from "./config/appConfig.js"
 import { CLI_VERSION } from "./config/version.js"
@@ -36,7 +37,7 @@ const root = Command.make("breadboard", {}, () => Effect.succeed(undefined)).pip
     engineCommand,
     pluginCommand,
     authCommand,
-    Command.make("config", {}, () => Console.log("config command not yet implemented")),
+    configCommand,
   ]),
 )
 
@@ -55,6 +56,18 @@ const shouldSkipEngine = (args: string[]): boolean => {
   if (command === "connect" || command === "config" || command === "engine" || command === "auth") return true
   if (args.includes("--help") || args.includes("-h") || args.includes("--version") || args.includes("-v")) {
     return true
+  }
+  if (command === "repl" || command === "ui") {
+    if (args.includes("--script")) return false
+    const tuiIndex = args.indexOf("--tui")
+    if (tuiIndex >= 0) {
+      const value = (args[tuiIndex + 1] ?? "").trim().toLowerCase()
+      if (value === "classic") return false
+      if (value === "opentui") return true
+    }
+    const envMode = (process.env.BREADBOARD_TUI_MODE ?? "").trim().toLowerCase()
+    if (envMode === "classic") return false
+    return envMode === "opentui" || envMode === "" // default to OpenTUI
   }
   return false
 }

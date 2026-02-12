@@ -2,8 +2,16 @@ import React from "react"
 import { Box, Text } from "ink"
 import chalk from "chalk"
 import type { StreamStats } from "../types.js"
+import { BRAND_COLORS, SEMANTIC_COLORS, resolveAsciiOnly, resolveIcons, resolveColorMode } from "../designSystem.js"
 
-const coloredDot = (active: boolean, color: string) => chalk.hex(color)(active ? "●" : "○")
+const ASCII_ONLY = resolveAsciiOnly()
+const ICONS = resolveIcons(ASCII_ONLY)
+const COLOR_MODE = resolveColorMode()
+if (COLOR_MODE === "none") {
+  ;(chalk as typeof chalk & { level: number }).level = 0
+}
+const HOLLOW_DOT = ASCII_ONLY ? "o" : "○"
+const coloredDot = (active: boolean, color: string) => chalk.hex(color)(active ? ICONS.bullet : HOLLOW_DOT)
 
 interface StatusBarProps {
   readonly status: string
@@ -15,13 +23,15 @@ interface StatusBarProps {
 
 export const StatusBar: React.FC<StatusBarProps> = ({ status, stats, hashline, spinner, pending }) => {
   const statusDot = status.toLowerCase().startsWith("completed")
-  const statusIndicator = pending ? spinner : coloredDot(statusDot, "#14b8a6")
+  const statusIndicator = pending ? spinner : coloredDot(statusDot, BRAND_COLORS.duneOrange)
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text>
-        {statusIndicator} {status}  {coloredDot(true, "#f97316")} model {chalk.bold(stats.model)}  {coloredDot(stats.remote, "#60a5fa")}{" "}
-        {stats.remote ? "remote" : "local"}  {coloredDot(stats.eventCount > 0, "#a855f7")} events {stats.eventCount}  {coloredDot(stats.toolCount > 0, "#facc15")} tools {stats.toolCount}{" "}
-        {coloredDot(stats.lastTurn != null, "#34d399")} turn {stats.lastTurn ?? "-"}
+        {statusIndicator} {status}  {coloredDot(true, BRAND_COLORS.duneOrange)} model {chalk.bold(stats.model)}{" "}
+        {coloredDot(stats.remote, SEMANTIC_COLORS.info)} {stats.remote ? "remote" : "local"}{" "}
+        {coloredDot(stats.eventCount > 0, SEMANTIC_COLORS.info)} events {stats.eventCount}{" "}
+        {coloredDot(stats.toolCount > 0, SEMANTIC_COLORS.tool)} tools {stats.toolCount}{" "}
+        {coloredDot(stats.lastTurn != null, SEMANTIC_COLORS.success)} turn {stats.lastTurn ?? "-"}
       </Text>
       <Text>{hashline}</Text>
     </Box>

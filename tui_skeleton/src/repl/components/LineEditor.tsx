@@ -16,9 +16,10 @@ import {
 import { HiddenPasteStore } from "../editor/hiddenPasteStore.js"
 import { UndoManager } from "../editor/undoManager.js"
 import { PASTE_COLLAPSE_THRESHOLD, type InputBufferState } from "../editor/types.js"
+import { SEMANTIC_COLORS } from "../designSystem.js"
 
 const DEBUG_INPUT = process.env.BREADBOARD_INPUT_DEBUG === "1"
-const PASTE_CHIP_COLOR = "#38BDF8"
+const PASTE_CHIP_COLOR = SEMANTIC_COLORS.info
 type GraphemerInstance = {
   splitGraphemes?: (text: string) => string[]
   iterateGraphemes?: (text: string) => Iterable<string>
@@ -676,14 +677,10 @@ export const LineEditor: React.FC<LineEditorProps> = ({
 
   if (value.length === 0 && chips.length === 0) {
     if (placeholder && hideCaretWhenPlaceholder) {
-      return (
-        <Box>
-          <Text color="gray">{placeholder}</Text>
-        </Box>
-      )
+      return <Text color="gray">{placeholder}</Text>
     }
     return (
-      <Box>
+      <Box flexDirection="row">
         <Text inverse>{" "}</Text>
         {placeholder && (
           <Text color="gray">

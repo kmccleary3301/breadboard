@@ -1,5 +1,6 @@
 import React, { type ComponentProps } from "react"
 import { Box, Text } from "ink"
+import { BRAND_COLORS, NEUTRAL_COLORS, SEMANTIC_COLORS } from "../designSystem.js"
 
 export type SelectPanelRow =
   | { readonly kind: "header"; readonly text: string; readonly color?: string }
@@ -46,7 +47,7 @@ const renderLine = (line: SelectPanelLine, index: number) => (
 
 export const SelectPanel = ({
   width,
-  borderColor = "#7CF2FF",
+  borderColor = SEMANTIC_COLORS.info,
   borderStyle = "round",
   showBorder = true,
   paddingX = 2,
@@ -85,16 +86,20 @@ export const SelectPanel = ({
           return (
             <Box key={`row-${idx}`} flexDirection="column">
               <Text
-                color={isActive ? row.activeColor ?? "#0F172A" : row.color}
-                backgroundColor={isActive ? row.activeBackground ?? "#7CF2FF" : undefined}
+                color={isActive ? row.activeColor ?? NEUTRAL_COLORS.nearBlack : row.color}
+                backgroundColor={isActive ? row.activeBackground ?? BRAND_COLORS.duneOrange : undefined}
                 wrap={row.wrap ?? "truncate-end"}
               >
                 {row.text}
               </Text>
               {row.secondaryText && (
                 <Text
-                  color={isActive ? row.secondaryActiveColor ?? row.activeColor ?? "#0F172A" : row.secondaryColor ?? row.color ?? "dim"}
-                  backgroundColor={isActive ? row.activeBackground ?? "#7CF2FF" : undefined}
+                  color={
+                    isActive
+                      ? row.secondaryActiveColor ?? row.activeColor ?? NEUTRAL_COLORS.nearBlack
+                      : row.secondaryColor ?? row.color ?? "dim"
+                  }
+                  backgroundColor={isActive ? row.activeBackground ?? BRAND_COLORS.duneOrange : undefined}
                   wrap="truncate-end"
                 >
                   {row.secondaryText}

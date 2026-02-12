@@ -18,6 +18,7 @@ export const SLASH_COMMANDS: ReadonlyArray<SlashCommandInfo> = [
   { name: "stop", summary: "Interrupt the current run (if any).", shortcut: "Esc" },
   { name: "clear", summary: "Clear view (history preserved).", shortcut: "Ctrl+Shift+C" },
   { name: "status", summary: "Refresh session status." },
+  { name: "ctree", usage: "[status|refresh|stage|previews|source] …", summary: "Refresh or configure the C-Tree view." },
   { name: "inspect", summary: "Open the inspector panel.", shortcut: "Ctrl+I" },
   { name: "remote", usage: "on|off", summary: "Toggle remote streaming preference." },
   { name: "retry", summary: "Restart the current stream." },
@@ -33,7 +34,10 @@ export const SLASH_COMMANDS: ReadonlyArray<SlashCommandInfo> = [
   { name: "usage", summary: "Open the usage summary panel." },
   { name: "tasks", summary: "Open the background tasks panel.", shortcut: "Ctrl+B" },
   { name: "transcript", summary: "Open the transcript viewer.", shortcut: "Ctrl+T (Codex) / Ctrl+O (Claude)" },
-  { name: "view", usage: "<collapse|scroll|markdown> …", summary: "Adjust transcript collapse, scroll, or markdown modes." },
+  { name: "thinking", usage: "[summary|raw]", summary: "Show the retained thinking artifact for the active turn." },
+  { name: "runtime", usage: "[telemetry]", summary: "Show runtime telemetry and recent activity transitions." },
+  { name: "view", usage: "<collapse|scroll|markdown|raw|tools|reasoning> …", summary: "Adjust transcript, raw stream, or tool display modes." },
+  { name: "tool-display", usage: "list", summary: "List resolved tool display rules." },
 ]
 
 export const SLASH_COMMAND_HINT = SLASH_COMMANDS.map((entry) => `/${entry.name}${entry.usage ? ` ${entry.usage}` : ""}`).join(", ")

@@ -1,0 +1,5 @@
+{"event": {"id": "s1", "seq": 1, "type": "run.start", "payload": {}}}
+{"event": {"id": "s2", "seq": 2, "type": "user.message", "payload": {"text": "Stream a short list."}}}
+{"event": {"id": "s3", "seq": 3, "type": "assistant.message.start", "payload": {}}}
+{"event": {"id": "s4", "seq": 4, "type": "assistant.message.delta", "payload": {"delta": "## Streaming\n- first"}}}
+{"event": {"id": "s5", "seq": 5, "type": "assistant.message.delta", "payload": {"delta": "\n- second"}}}

@@ -1,0 +1,15 @@
+{"event": {"id": "m1", "seq": 1, "type": "run.start", "payload": {}}}
+{"event": {"id": "m2", "seq": 2, "type": "user.message", "payload": {"text": "Show me the root directory."}}}
+{"event": {"id": "m3", "seq": 3, "type": "assistant.message.start", "payload": {}}}
+{"event": {"id": "m4", "seq": 4, "type": "assistant.message.delta", "payload": {"delta": "Checking now."}}}
+{"event": {"id": "m5", "seq": 5, "type": "tool_call", "payload": {"call_id": "call-a", "tool_name": "list_dir", "args": {"path": "/"}, "display": {"title": "List(/)"}}}}
+{"event": {"id": "m6", "seq": 6, "type": "tool.result", "payload": {"call_id": "call-a", "tool_name": "list_dir", "display": {"title": "List(/)", "summary": "Found 2 dirs", "detail": ["bin", "etc"]}}}}
+{"event": {"id": "m7", "seq": 7, "type": "assistant.message.delta", "payload": {"delta": " Done."}}}
+{"event": {"id": "m8", "seq": 8, "type": "assistant.message.end", "payload": {}}}
+{"event": {"id": "m9", "seq": 9, "type": "user.message", "payload": {"text": "Now list home."}}}
+{"event": {"id": "m10", "seq": 10, "type": "assistant.message.start", "payload": {}}}
+{"event": {"id": "m11", "seq": 11, "type": "assistant.message.delta", "payload": {"delta": "Looking in /home."}}}
+{"event": {"id": "m12", "seq": 12, "type": "tool_call", "payload": {"call_id": "call-b", "tool_name": "list_dir", "args": {"path": "/home"}, "display": {"title": "List(/home)"}}}}
+{"event": {"id": "m13", "seq": 13, "type": "tool.result", "payload": {"call_id": "call-b", "tool_name": "list_dir", "display": {"title": "List(/home)", "summary": "Found 1 dir", "detail": ["querylake_manager"]}}}}
+{"event": {"id": "m14", "seq": 14, "type": "assistant.message.end", "payload": {}}}
+{"event": {"id": "m15", "seq": 15, "type": "run.end", "payload": {"completed": true}}}

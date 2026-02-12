@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { ReplState } from "../controller.js"
+import type { Block } from "@stream-mdx/core/types"
 import { renderStateToText } from "../renderText.js"
 
 const baseState = (): ReplState => ({
@@ -22,6 +23,7 @@ const baseState = (): ReplState => ({
   skillsMenu: { status: "hidden" },
   inspectMenu: { status: "hidden" },
   liveSlots: [],
+  rawEvents: [],
   completionReached: true,
   completionSeen: true,
   lastCompletion: { completed: true, summary: null },
@@ -31,6 +33,13 @@ const baseState = (): ReplState => ({
   todos: [],
   tasks: [],
   ctreeSnapshot: null,
+  ctreeTree: null,
+  ctreeTreeStatus: "idle",
+  ctreeTreeError: null,
+  ctreeStage: "FROZEN",
+  ctreeIncludePreviews: false,
+  ctreeSource: "auto",
+  ctreeUpdatedAt: null,
 })
 
 describe("renderStateToText", () => {
@@ -38,8 +47,8 @@ describe("renderStateToText", () => {
     const snapshot = renderStateToText(baseState())
     expect(snapshot).toContain("session-123")
     expect(snapshot).toContain("Ready")
-    expect(snapshot).toContain("USER")
-    expect(snapshot).toContain("ASSISTANT")
+    expect(snapshot).toContain("❯")
+    expect(snapshot).toContain("•")
     expect(snapshot).toContain("tools 1")
     expect(snapshot).toContain("Use /help for commands.")
   })
@@ -78,13 +87,59 @@ describe("renderStateToText", () => {
     expect(snapshot).toContain("Typing...")
   })
 
+  it("inserts a blank line between top-level conversation entries", () => {
+    const snapshot = renderStateToText(baseState(), { includeHeader: false, includeStatus: false })
+    const lines = snapshot.split(/\r?\n/)
+    const userIndex = lines.findIndex((line) => line.includes("Hello world"))
+    const assistantIndex = lines.findIndex((line) => line.includes("Hi there!"))
+    expect(userIndex).toBeGreaterThan(-1)
+    expect(assistantIndex).toBeGreaterThan(userIndex)
+    expect(lines[assistantIndex - 1]).toBe("")
+  })
+
   it("can suppress streaming entry when includeStreamingTail is false", () => {
     const state: ReplState = {
       ...baseState(),
       conversation: [{ id: "conv-1", speaker: "assistant", text: "Typing...", phase: "streaming", createdAt: 0 }],
+      toolEvents: [],
+      hints: [],
     }
     const snapshot = renderStateToText(state, { includeStreamingTail: false })
+    expect(snapshot).not.toContain("Typing...")
     expect(snapshot).toContain("No conversation yet")
+  })
+
+  it("uses ASCII ellipsis when asciiOnly is true", () => {
+    const state: ReplState = {
+      ...baseState(),
+      conversation: [],
+      toolEvents: [],
+      hints: [],
+      pendingResponse: true,
+    }
+    const snapshot = renderStateToText(state, { includeHeader: false, includeStatus: false, colors: false, asciiOnly: true })
+    expect(snapshot).toContain("Assistant is thinking...")
+  })
+
+  it("respects NO_COLOR in ASCII mode", () => {
+    const prev = process.env.NO_COLOR
+    process.env.NO_COLOR = "1"
+    const snapshot = renderStateToText(baseState(), { includeHeader: false, includeStatus: false, colors: true, asciiOnly: true })
+    expect(snapshot).not.toMatch(/\u001b\[/)
+    if (prev == null) delete process.env.NO_COLOR
+    else process.env.NO_COLOR = prev
+  })
+
+  it("renders ASCII fallback glyphs and ellipsis", () => {
+    const state: ReplState = {
+      ...baseState(),
+      pendingResponse: true,
+      toolEvents: [{ id: "tool-1", kind: "call", text: "List(./)", status: "pending", createdAt: 0 }],
+    }
+    const snapshot = renderStateToText(state, { includeHeader: false, includeStatus: false, colors: false, asciiOnly: true })
+    expect(snapshot).toContain("> Hello world")
+    expect(snapshot).toContain("* Hi there!")
+    expect(snapshot).toContain("o List(./)")
   })
 
   it("shows compact transcript hint when virtualization active", () => {
@@ -127,6 +182,47 @@ describe("renderStateToText", () => {
     expect(snapshot).toContain("Paragraph **text**")
     expect(snapshot).toContain("+add")
     expect(snapshot).toContain("-remove")
+  })
+
+  it("renders diffBlocks with tokenized content in rich markdown", () => {
+    const diffBlock: Block = {
+      id: "b-diff",
+      type: "code",
+      isFinalized: true,
+      payload: {
+        raw: "```diff\n+foo\n```",
+        meta: {
+          diffBlocks: [
+            {
+              kind: "diff",
+              lines: [
+                {
+                  kind: "add",
+                  raw: "+foo",
+                  tokens: [{ content: "foo", color: "#ff0000" }],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    }
+    const state: ReplState = {
+      ...baseState(),
+      viewPrefs: { collapseMode: "auto", virtualization: "auto", richMarkdown: true },
+      conversation: [
+        {
+          id: "conv-1",
+          speaker: "assistant",
+          text: "fallback",
+          phase: "final",
+          createdAt: 0,
+          richBlocks: [diffBlock],
+        },
+      ],
+    }
+    const snapshot = renderStateToText(state, { includeHeader: false, includeStatus: false, colors: false })
+    expect(snapshot).toContain("+foo")
   })
 
   it("shows markdown error banner on assistant entry", () => {

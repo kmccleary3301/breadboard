@@ -3,6 +3,7 @@ import { Command, Options } from "@effect/cli"
 import { Effect, Option } from "effect"
 import { render } from "ink"
 import type { Instance as InkInstance } from "ink"
+import { spawn } from "node:child_process"
 import { createWriteStream, promises as fs } from "node:fs"
 import path from "node:path"
 import { ReplView } from "../../repl/components/ReplView.js"
@@ -15,6 +16,9 @@ import type { ModelMenuItem, QueuedAttachment, SkillSelection } from "../../repl
 import { CliProviders } from "../../providers/cliProviders.js"
 import type { PermissionDecision } from "../../repl/types.js"
 import { resolveBreadboardPath, resolveBreadboardWorkspace } from "../../utils/paths.js"
+import { resolveAsciiOnly, resolveColorMode } from "../../repl/designSystem.js"
+import { resolveTuiConfig } from "../../tui_config/load.js"
+import type { ResolvedTuiConfig } from "../../tui_config/types.js"
 
 const DEFAULT_CONFIG = process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/opencode_openrouter_grok4fast_cli_default.yaml"
 const DEFAULT_SCRIPT_MAX_DURATION_MS = 180_000
@@ -30,14 +34,74 @@ const scriptSnapshotsOption = Options.boolean("script-snapshots").pipe(Options.o
 const scriptColorsOption = Options.boolean("script-color").pipe(Options.optional)
 const scriptFinalOnlyOption = Options.boolean("script-final-only").pipe(Options.optional)
 const scriptMaxDurationOption = Options.integer("script-max-duration-ms").pipe(Options.optional)
+const tuiOption = Options.text("tui").pipe(Options.optional)
+const tuiPresetOption = Options.text("tui-preset").pipe(Options.optional)
+const tuiConfigOption = Options.text("tui-config").pipe(Options.optional)
+const tuiConfigStrictOption = Options.boolean("tui-config-strict").pipe(Options.optional)
 
 const getOptionValue = <T,>(value: Option.Option<T>): T | null => Option.getOrNull(value)
 
 type StateDumpMode = "summary" | "full"
+type TuiMode = "opentui" | "classic"
 
 const parseStateDumpMode = (value: string | undefined): StateDumpMode => {
   const normalized = (value ?? "").trim().toLowerCase()
   return normalized === "full" ? "full" : "summary"
+}
+
+const normalizeTuiMode = (value?: string | null): TuiMode | null => {
+  const normalized = (value ?? "").trim().toLowerCase()
+  if (normalized === "opentui" || normalized === "classic") return normalized
+  return null
+}
+
+const resolveTuiMode = (args: {
+  scriptPath?: string | null
+  cliValue?: string | null
+}): TuiMode => {
+  if (args.scriptPath) return "classic"
+  const cliMode = normalizeTuiMode(args.cliValue)
+  if (cliMode) return cliMode
+  const envMode = normalizeTuiMode(process.env.BREADBOARD_TUI_MODE)
+  if (envMode) return envMode
+  return "opentui"
+}
+
+const runOpenTui = async (options: {
+  configPath: string
+  workspace?: string | null
+  permissionMode?: string | null
+}): Promise<void> => {
+  const opentuiRoot = resolveBreadboardPath("opentui_slab")
+  const args = ["run", "phaseB/controller.ts"]
+  if (options.configPath) {
+    args.push("--config", options.configPath)
+  }
+  if (options.workspace) {
+    args.push("--workspace", options.workspace)
+  }
+  if (options.permissionMode) {
+    args.push("--permission-mode", options.permissionMode)
+  }
+  const child = spawn("bun", args, {
+    cwd: opentuiRoot,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      BREADBOARD_ENGINE_PREFER_BUNDLE: "0",
+    },
+  })
+
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", (err) => reject(err))
+    child.once("exit", (code) => {
+      if (code && code !== 0) {
+        reject(new Error(`OpenTUI exited with code ${code}`))
+        return
+      }
+      resolve()
+    })
+  })
 }
 
 const summarizeStateForDump = (state: ReplState) => {
@@ -131,7 +195,7 @@ const startStateDump = async (
   }
 }
 
-const runInteractive = async (controller: ReplSessionController) => {
+const runInteractive = async (controller: ReplSessionController, tuiConfig: ResolvedTuiConfig) => {
   let state = controller.getState()
   let ink: InkInstance | null = null
 
@@ -194,14 +258,25 @@ const runInteractive = async (controller: ReplSessionController) => {
     return await controller.readFile(path, options)
   }
 
+  const handleCtreeRequest = async (force?: boolean) => {
+    await controller.requestCtreeTree(force)
+  }
+
+  const handleCtreeRefresh = async (options?: { stage?: string; includePreviews?: boolean; source?: string }) => {
+    await controller.refreshCtreeTree(options)
+  }
+
   const rerender = () => {
     if (!ink) return
     state = controller.getState()
     ink.rerender(
       <ReplView
+        tuiConfig={tuiConfig}
+        configPath={state.configPath ?? null}
         sessionId={state.sessionId}
         conversation={state.conversation}
         toolEvents={state.toolEvents}
+        rawEvents={state.rawEvents}
         liveSlots={state.liveSlots}
         status={state.status}
         pendingResponse={state.pendingResponse}
@@ -219,6 +294,13 @@ const runInteractive = async (controller: ReplSessionController) => {
         todos={state.todos}
         tasks={state.tasks}
         ctreeSnapshot={state.ctreeSnapshot ?? null}
+        ctreeTree={state.ctreeTree ?? null}
+        ctreeTreeStatus={state.ctreeTreeStatus}
+        ctreeTreeError={state.ctreeTreeError ?? null}
+        ctreeStage={state.ctreeStage}
+        ctreeIncludePreviews={state.ctreeIncludePreviews}
+        ctreeSource={state.ctreeSource}
+        ctreeUpdatedAt={state.ctreeUpdatedAt ?? null}
         permissionRequest={state.permissionRequest}
         permissionError={state.permissionError}
         permissionQueueDepth={state.permissionQueueDepth}
@@ -237,17 +319,27 @@ const runInteractive = async (controller: ReplSessionController) => {
         onRewindRestore={handleRewindRestore}
         onListFiles={handleListFiles}
         onReadFile={handleReadFile}
+        onCtreeRequest={handleCtreeRequest}
+        onCtreeRefresh={handleCtreeRefresh}
       />,
     )
   }
 
   const unsubscribe = controller.onChange(() => rerender())
 
+  const resizeHandler = () => rerender()
+  if (process.stdout?.isTTY) {
+    process.stdout.on("resize", resizeHandler)
+  }
+
   ink = render(
       <ReplView
+        tuiConfig={tuiConfig}
+        configPath={state.configPath ?? null}
         sessionId={state.sessionId}
         conversation={state.conversation}
         toolEvents={state.toolEvents}
+        rawEvents={state.rawEvents}
         liveSlots={state.liveSlots}
         status={state.status}
         pendingResponse={state.pendingResponse}
@@ -265,6 +357,13 @@ const runInteractive = async (controller: ReplSessionController) => {
         todos={state.todos}
         tasks={state.tasks}
         ctreeSnapshot={state.ctreeSnapshot ?? null}
+        ctreeTree={state.ctreeTree ?? null}
+        ctreeTreeStatus={state.ctreeTreeStatus}
+        ctreeTreeError={state.ctreeTreeError ?? null}
+        ctreeStage={state.ctreeStage}
+        ctreeIncludePreviews={state.ctreeIncludePreviews}
+        ctreeSource={state.ctreeSource}
+        ctreeUpdatedAt={state.ctreeUpdatedAt ?? null}
         permissionRequest={state.permissionRequest}
         permissionError={state.permissionError}
         permissionQueueDepth={state.permissionQueueDepth}
@@ -283,6 +382,8 @@ const runInteractive = async (controller: ReplSessionController) => {
         onRewindRestore={handleRewindRestore}
         onListFiles={handleListFiles}
         onReadFile={handleReadFile}
+        onCtreeRequest={handleCtreeRequest}
+        onCtreeRefresh={handleCtreeRefresh}
     />,
     { exitOnCtrlC: false },
   )
@@ -296,6 +397,9 @@ const runInteractive = async (controller: ReplSessionController) => {
     await controller.untilStopped()
   } finally {
     process.off("SIGINT", sigintHandler)
+    if (process.stdout?.isTTY) {
+      process.stdout.off("resize", resizeHandler)
+    }
     unsubscribe()
     ink?.unmount()
   }
@@ -307,6 +411,7 @@ interface ScriptModeOptions {
   readonly useColors: boolean
   readonly finalOnly: boolean
   readonly maxDurationMs?: number | null
+  readonly tuiConfig: ResolvedTuiConfig
 }
 
 const runScriptMode = async (controller: ReplSessionController, scriptPath: string, options: ScriptModeOptions) => {
@@ -330,6 +435,8 @@ const runScriptMode = async (controller: ReplSessionController, scriptPath: stri
       finalOnly: options.finalOnly,
       renderOptions: {
         colors: options.useColors,
+        colorMode: options.tuiConfig.display.colorMode ?? resolveColorMode(undefined, options.useColors),
+        asciiOnly: options.tuiConfig.display.asciiOnly ?? resolveAsciiOnly(),
         includeStatus: options.finalOnly,
       },
     })
@@ -406,6 +513,10 @@ const buildReplCommand = (name: string) =>
       scriptColor: scriptColorsOption,
       scriptFinalOnly: scriptFinalOnlyOption,
       scriptMaxDurationMs: scriptMaxDurationOption,
+      tui: tuiOption,
+      tuiPreset: tuiPresetOption,
+      tuiConfigPath: tuiConfigOption,
+      tuiConfigStrict: tuiConfigStrictOption,
     },
     ({
       config,
@@ -419,8 +530,14 @@ const buildReplCommand = (name: string) =>
       scriptColor,
       scriptFinalOnly,
       scriptMaxDurationMs,
+      tui,
+      tuiPreset,
+      tuiConfigPath,
+      tuiConfigStrict,
     }) =>
       Effect.tryPromise(async () => {
+        const scriptPath = getOptionValue(script)
+        const tuiMode = resolveTuiMode({ scriptPath, cliValue: getOptionValue(tui) })
         const workspaceValue = getOptionValue(workspace)
         const modelValue = getOptionValue(model)
         const permissionValue = getOptionValue(permissionMode)
@@ -430,6 +547,28 @@ const buildReplCommand = (name: string) =>
         })
         const resolvedConfigPath = resolveBreadboardPath(config)
         const resolvedWorkspace = resolveBreadboardWorkspace(workspaceValue)
+        const resolvedTuiConfig = await resolveTuiConfig({
+          workspace: resolvedWorkspace,
+          cliPreset: getOptionValue(tuiPreset),
+          cliConfigPath: getOptionValue(tuiConfigPath),
+          cliStrict: getOptionValue(tuiConfigStrict),
+        })
+        for (const warning of resolvedTuiConfig.meta.warnings) {
+          console.warn(`[tui config] ${warning}`)
+        }
+
+        if (tuiMode === "opentui") {
+          await runOpenTui({
+            configPath: resolvedConfigPath,
+            workspace: resolvedWorkspace,
+            permissionMode: permissionValue ?? null,
+          })
+          return
+        }
+
+        if (!scriptPath && process.env.BREADBOARD_TUI_SUPPRESS_MAINTENANCE !== "1") {
+          console.warn("[tui] Classic Ink TUI is in maintenance mode; use --tui opentui for the new slab UI.")
+        }
 
         const controller = new ReplSessionController({
           configPath: resolvedConfigPath,
@@ -443,7 +582,6 @@ const buildReplCommand = (name: string) =>
         const stateDump = await startStateDump(controller)
 
         try {
-          const scriptPath = getOptionValue(script)
           if (scriptPath) {
             await runScriptMode(controller, scriptPath, {
               outputPath: getOptionValue(scriptOutput),
@@ -451,14 +589,21 @@ const buildReplCommand = (name: string) =>
               useColors: getOptionValue(scriptColor) ?? false,
               finalOnly: getOptionValue(scriptFinalOnly) ?? false,
               maxDurationMs: getOptionValue(scriptMaxDurationMs) ?? undefined,
+              tuiConfig: resolvedTuiConfig,
             })
             return
           }
 
-          await runInteractive(controller)
+          await runInteractive(controller, resolvedTuiConfig)
           if (process.env.BREADBOARD_PRINT_FINAL_STATE === "1") {
             const finalState = controller.getState()
-            console.log(renderStateToText(finalState, { colors: false }))
+            console.log(
+              renderStateToText(finalState, {
+                colors: false,
+                colorMode: resolvedTuiConfig.display.colorMode ?? resolveColorMode(undefined, false),
+                asciiOnly: resolvedTuiConfig.display.asciiOnly ?? resolveAsciiOnly(),
+              }),
+            )
           }
           await controller.stop()
         } finally {

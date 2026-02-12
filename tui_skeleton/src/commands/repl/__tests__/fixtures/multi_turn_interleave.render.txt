@@ -1,0 +1,16 @@
+> Show me the root directory.
+
+* Checking now.
+
+o List(/)
+  | bin
+  `- etc
+
+*  Done.
+
+> Now list home.
+
+* Looking in /home.
+
+o List(/home)
+  `- querylake_manager

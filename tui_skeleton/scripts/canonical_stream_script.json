@@ -1,0 +1,7 @@
+[
+  { "action": "send", "text": "/view tools both" },
+  { "action": "send", "text": "/view raw on" },
+  { "action": "send", "text": "start" },
+  { "action": "wait", "for": "events", "count": 20, "timeoutMs": 20000 },
+  { "action": "snapshot", "label": "canonical-stream", "includeStatus": true }
+]

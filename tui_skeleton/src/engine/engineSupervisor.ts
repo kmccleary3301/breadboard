@@ -490,18 +490,18 @@ export const ensureEngine = async ({
     : configUrl?.toString().replace(/\/$/, "") ?? `http://${DEFAULT_HOST}:${DEFAULT_PORT}`
 
   if (!isolated) {
-  const lock = readLockSync()
-  if (lock && isProcessAlive(lock.pid)) {
-    const ok = await healthCheck(lock.baseUrl)
-    if (ok) {
-      activeBaseUrl = lock.baseUrl
-      process.env.BREADBOARD_API_URL = lock.baseUrl
-      await verifyProtocol(lock.baseUrl)
-      return { baseUrl: lock.baseUrl, started: false, pid: lock.pid }
+    const lock = readLockSync()
+    if (lock && isProcessAlive(lock.pid)) {
+      const ok = await healthCheck(lock.baseUrl)
+      if (ok) {
+        activeBaseUrl = lock.baseUrl
+        process.env.BREADBOARD_API_URL = lock.baseUrl
+        await verifyProtocol(lock.baseUrl)
+        return { baseUrl: lock.baseUrl, started: false, pid: lock.pid }
+      }
+    } else if (lock) {
+      await clearLock()
     }
-  } else if (lock) {
-    await clearLock()
-  }
   }
 
   const shouldSpawn = allowSpawn && isLocalHost(baseHost)
