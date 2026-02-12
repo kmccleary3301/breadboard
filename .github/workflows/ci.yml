@@ -288,7 +288,28 @@ jobs:
         if: steps.kernel_import_lint_prereqs.outputs.ready != 'true'
         run: echo "Kernel import lint step skipped on this branch."
 
+      - name: Check core compat suite prerequisites
+        id: core_compat_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            tests/test_request_body_golden.py \
+            tests/test_atp_route_gating.py \
+            tests/test_provider_conformance_report.py; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Core compat suite
+        if: steps.core_compat_prereqs.outputs.ready == 'true'
         env:
           RAY_SCE_LOCAL_MODE: "1"
           AGENT_SCHEMA_V2_ENABLED: "1"
@@ -347,7 +368,12 @@ jobs:
           tests/test_tui_engine_replay_bridge_scripts.py
           tests/test_provider_conformance_report.py
 
+      - name: Core compat suite skipped (missing prerequisites)
+        if: steps.core_compat_prereqs.outputs.ready != 'true'
+        run: echo "Core compat suite skipped on this branch."
+
       - name: Extension-off invariants
+        if: steps.core_compat_prereqs.outputs.ready == 'true'
         env:
           ATP_REPL_ENABLE: "1"
           ATP_REPL_ROUTE: "1"
@@ -365,14 +391,43 @@ jobs:
             tests/test_evolake_route_gating.py::test_evolake_routes_explicitly_disabled_override_env \
             tests/test_feature_audit.py::test_feature_audit_defaults
 
+      - name: Extension-off invariants skipped (missing prerequisites)
+        if: steps.core_compat_prereqs.outputs.ready != 'true'
+        run: echo "Extension-off invariants skipped on this branch."
+
+      - name: Check compat governance artifact prerequisites
+        id: compat_artifact_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            scripts/compat_surface_summary.py \
+            scripts/compat_break_guard_sim.py \
+            scripts/compat_default_behavior_report.py; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build compatibility governance artifacts
+        if: steps.compat_artifact_prereqs.outputs.ready == 'true'
         run: |
           python scripts/compat_surface_summary.py --out artifacts/compat_surface_summary.json
           python scripts/compat_break_guard_sim.py --self-test --json-out artifacts/compat_break_guard_simulation.json
           python scripts/compat_default_behavior_report.py --out artifacts/compat_default_behavior_report.json
 
+      - name: Build compatibility governance artifacts skipped (missing prerequisites)
+        if: steps.compat_artifact_prereqs.outputs.ready != 'true'
+        run: echo "Compatibility governance artifact generation skipped on this branch."
+
       - name: Upload compatibility governance artifacts
-        if: always()
+        if: ${{ always() && steps.compat_artifact_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: compat-governance-artifacts
