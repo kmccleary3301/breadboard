@@ -150,7 +150,9 @@ const parseEvent = (raw: string): Record<string, unknown> | null => {
 
 const main = async () => {
   const options = parseArgs()
-  if (!process.env.FORCE_COLOR) {
+  if (typeof process.env.NO_COLOR !== "undefined") {
+    delete process.env.FORCE_COLOR
+  } else if (!process.env.FORCE_COLOR) {
     process.env.FORCE_COLOR = options.colors ? "1" : "0"
   }
   const { ReplSessionController } = await import("../src/commands/repl/controller.js")

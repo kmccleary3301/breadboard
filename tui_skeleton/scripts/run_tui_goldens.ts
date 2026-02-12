@@ -200,7 +200,9 @@ const renderTextToGrid = (text: string, options: RenderOptions) => {
 
 const main = async () => {
   const options = parseArgs()
-  if (!process.env.FORCE_COLOR) {
+  if (typeof process.env.NO_COLOR !== "undefined") {
+    delete process.env.FORCE_COLOR
+  } else if (!process.env.FORCE_COLOR) {
     process.env.FORCE_COLOR = "1"
   }
   const manifestPath = normalizePath(options.manifestPath, process.cwd())
