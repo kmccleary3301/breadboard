@@ -107,23 +107,38 @@ jobs:
 
   conformance_gate:
     name: Conformance gate (ubuntu)
-    if: >-
-      ${{
-        hashFiles('scripts/conformance_scoreboard.py') != '' &&
-        hashFiles('scripts/provider_conformance_report.py') != '' &&
-        hashFiles('docs/conformance/scoreboard_baseline.json') != '' &&
-        hashFiles('docs/conformance/provider_conformance_baseline.json') != ''
-      }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check conformance prerequisites
+        id: conformance_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            scripts/conformance_scoreboard.py \
+            scripts/provider_conformance_report.py \
+            docs/conformance/scoreboard_baseline.json \
+            docs/conformance/provider_conformance_baseline.json; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.conformance_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
 
       - name: Resolve conformance regression override context
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ steps.conformance_prereqs.outputs.ready == 'true' && github.event_name == 'pull_request' }}
         id: conformance_override
         run: |
           python - <<'PY'
@@ -145,6 +160,7 @@ jobs:
           PY
 
       - name: Conformance scoreboard strict+regression gate
+        if: steps.conformance_prereqs.outputs.ready == 'true'
         env:
           SCORE_ALLOW: ${{ steps.conformance_override.outputs.allow }}
           SCORE_REASON: ${{ steps.conformance_override.outputs.reason }}
@@ -166,12 +182,14 @@ jobs:
             --json-out artifacts/conformance/scoreboard.json \
             --markdown-out artifacts/conformance/scoreboard.md
       - name: Provider conformance report
+        if: steps.conformance_prereqs.outputs.ready == 'true'
         run: |
           python scripts/provider_conformance_report.py \
             --baseline docs/conformance/provider_conformance_baseline.json \
             --out artifacts/provider_conformance/report.json
 
       - name: Docs references guard (core + conformance docs)
+        if: steps.conformance_prereqs.outputs.ready == 'true'
         run: |
           python scripts/check_docs_references.py \
             docs/INSTALL_AND_DEV_QUICKSTART.md \
@@ -188,8 +206,13 @@ jobs:
             docs/CONFORMANCE_REGRESSION_PLAYBOOK.md \
             docs/CONFORMANCE_DEV_GUIDE.md
 
+      - name: Conformance gate skipped (missing prerequisites)
+        if: steps.conformance_prereqs.outputs.ready != 'true'
+        run: |
+          echo "Skipping conformance gate: prerequisite scripts/baselines are not present on this branch."
+
       - name: Upload conformance artifacts
-        if: always()
+        if: ${{ always() && steps.conformance_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: conformance-scoreboard
