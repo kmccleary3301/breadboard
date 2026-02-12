@@ -1,9 +1,0 @@
-breadboard — interactive session
-(pending) ● Finished ● model openrouter/x-ai/grok-4-fast ○ local ○ events 0 ● tools 2
-
-
-● List(./)
-  │ a.txt
-  │ b.txt
-  └ docs/
-● Tool: running

@@ -1,5 +1,0 @@
-> Stream a short list.
-
-* ## Streaming
-  - first
-  - second

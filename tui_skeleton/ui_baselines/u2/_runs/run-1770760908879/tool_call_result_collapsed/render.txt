@@ -1,5 +1,0 @@
-● List(./)
-  │ a.txt
-  │ b.txt
-  └ docs/
-● Tool: running

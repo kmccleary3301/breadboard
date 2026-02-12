@@ -1,5 +1,0 @@
-o List(./)
-  | a.txt
-  | b.txt
-  `- docs/
-o Tool: running

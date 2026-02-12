@@ -1,9 +1,0 @@
-[96mbreadboard — interactive session[39m
-(pending) [93m●[39m Assistant responding… [96m●[39m model openrouter/x-ai/grok-4-fast [30m○[39m local [30m○[39m events 0 [30m○[39m tools 0
-
-
-[96m❯[39m Stream a short list.
-
-[37m•[39m ## Streaming
-  [91m- first[39m
-  [91m- second[39m
