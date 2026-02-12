@@ -49,6 +49,10 @@ export const configCommand = Command.make(
         console.log(`markdown.shikiTheme: ${resolved.markdown.shikiTheme}`)
         console.log(`diff.previewMaxLines: ${resolved.diff.previewMaxLines}`)
         console.log(`diff.maxTokenizedLines: ${resolved.diff.maxTokenizedLines}`)
+        console.log(`subagents.enabled: ${resolved.subagents.enabled}`)
+        console.log(`subagents.coalesceMs: ${resolved.subagents.coalesceMs}`)
+        console.log(`subagents.maxWorkItems: ${resolved.subagents.maxWorkItems}`)
+        console.log(`subagents.maxStepsPerTask: ${resolved.subagents.maxStepsPerTask}`)
         console.log(`meta.strict: ${resolved.meta.strict}`)
         console.log(`meta.sources: ${resolved.meta.sources.join(" -> ")}`)
         if (resolved.meta.warnings.length > 0) {

@@ -105,6 +105,9 @@ export interface RuntimeTelemetry {
   readonly markdownFlushes: number
   readonly thinkingUpdates: number
   readonly adaptiveCadenceAdjustments: number
+  readonly workgraphFlushes: number
+  readonly workgraphEvents: number
+  readonly workgraphMaxQueueDepth: number
 }
 
 export type ThinkingMode = "off" | "summary" | "full"
@@ -139,6 +142,14 @@ export interface RuntimeBehaviorFlags {
   readonly adaptiveMarkdownMinChunkChars: number
   readonly adaptiveMarkdownMinCoalesceMs: number
   readonly adaptiveMarkdownBurstChars: number
+  readonly subagentWorkGraphEnabled: boolean
+  readonly subagentStripEnabled: boolean
+  readonly subagentToastsEnabled: boolean
+  readonly subagentTaskboardEnabled: boolean
+  readonly subagentFocusEnabled: boolean
+  readonly subagentCoalesceMs: number
+  readonly subagentMaxWorkItems: number
+  readonly subagentMaxStepsPerTask: number
 }
 
 export interface ProviderCapabilitiesSnapshot {
@@ -223,6 +234,76 @@ export interface TodoItem {
   readonly status: string
   readonly priority?: string | number | null
   readonly metadata?: Record<string, unknown> | null
+}
+
+export type WorkStatus = "pending" | "running" | "blocked" | "completed" | "failed" | "cancelled"
+
+export type WorkMode = "sync" | "async" | "unknown"
+
+export type WorkStepKind = "tool" | "note" | "message"
+
+export interface WorkStep {
+  readonly stepId: string
+  readonly kind: WorkStepKind
+  readonly label: string
+  readonly status: WorkStatus
+  readonly startedAt?: number
+  readonly endedAt?: number
+  readonly attempt?: number
+  readonly detail?: string
+}
+
+export interface WorkCounters {
+  readonly completed: number
+  readonly running: number
+  readonly failed: number
+  readonly total: number
+}
+
+export interface WorkItem {
+  readonly workId: string
+  readonly laneId: string
+  readonly laneLabel: string
+  readonly title: string
+  readonly mode: WorkMode
+  readonly status: WorkStatus
+  readonly createdAt: number
+  readonly updatedAt: number
+  readonly parentWorkId?: string | null
+  readonly treePath?: string | null
+  readonly depth?: number | null
+  readonly artifactPaths?: ReadonlyArray<string>
+  readonly lastSafeExcerpt?: string | null
+  readonly steps: ReadonlyArray<WorkStep>
+  readonly counters: WorkCounters
+}
+
+export type LaneKind = "main" | "subagent" | "background_task"
+
+export interface LaneStatusSummary {
+  readonly running: number
+  readonly failed: number
+  readonly blocked: number
+}
+
+export interface Lane {
+  readonly laneId: string
+  readonly label: string
+  readonly kind: LaneKind
+  readonly statusSummary: LaneStatusSummary
+  readonly artifact?: {
+    readonly jsonl?: string | null
+    readonly metaJson?: string | null
+  } | null
+}
+
+export interface WorkGraphState {
+  readonly itemsById: Record<string, WorkItem>
+  readonly itemOrder: ReadonlyArray<string>
+  readonly lanesById: Record<string, Lane>
+  readonly laneOrder: ReadonlyArray<string>
+  readonly processedEventKeys: ReadonlyArray<string>
+  readonly lastSeq: number
 }
 
 export interface TaskEntry {

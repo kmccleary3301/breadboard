@@ -23,6 +23,7 @@ import type {
   ToolLogKind,
   TodoItem,
   TaskEntry,
+  WorkGraphState,
   SkillCatalog,
   SkillSelection,
   SkillCatalogSources,
@@ -67,7 +68,7 @@ import {
   waitFor,
   waitForCompletion,
 } from "./controllerUserMethods.js"
-import { DEFAULT_RICH_MARKDOWN, normalizeModeValue, normalizePermissionMode } from "./controllerUtils.js"
+import { DEFAULT_RICH_MARKDOWN, normalizeModeValue, normalizePermissionMode, numberOrUndefined } from "./controllerUtils.js"
 import * as stateMethods from "./controllerStateMethods.js"
 import * as renderState from "./controllerStateRender.js"
 import * as eventMethods from "./controllerEventMethods.js"
@@ -80,6 +81,12 @@ import {
   resolveRuntimeBehaviorFlags,
   type ActivityTransitionInput,
 } from "./controllerActivityRuntime.js"
+import {
+  createWorkGraphState,
+  reduceWorkGraphEvents,
+  resolveWorkGraphLimits,
+  type WorkGraphReduceInput,
+} from "./controllerWorkGraphRuntime.js"
 import type { ActivityTransitionTrace } from "./controllerTransitionTimeline.js"
 import { resolveProviderCapabilities } from "./providerCapabilityResolution.js"
 
@@ -135,6 +142,7 @@ export interface ReplState {
   readonly rewindMenu: RewindMenuState
   readonly todos: TodoItem[]
   readonly tasks: TaskEntry[]
+  readonly workGraph: WorkGraphState
   readonly ctreeSnapshot?: CTreeSnapshot | null
   readonly ctreeTree?: CTreeTreeResponse | null
   readonly ctreeModel?: CTreeModel | null
@@ -259,6 +267,9 @@ export class ReplSessionController extends EventEmitter {
   private stopRequestedAt: number | null = null
   private stopTimer: NodeJS.Timeout | null = null
   private readonly taskMap = new Map<string, TaskEntry>()
+  private workGraph: WorkGraphState = createWorkGraphState()
+  private workGraphQueue: WorkGraphReduceInput[] = []
+  private workGraphFlushTimer: NodeJS.Timeout | null = null
   private mode: string | null = null
   private permissionMode: string | null = null
   private runtimeFlags: RuntimeBehaviorFlags = resolveRuntimeBehaviorFlags(process.env)
@@ -328,6 +339,7 @@ export class ReplSessionController extends EventEmitter {
       rewindMenu: this.rewindMenu,
       todos: [...this.todos],
       tasks: [...this.tasks],
+      workGraph: this.workGraph,
       ctreeSnapshot: this.ctreeSnapshot,
       ctreeTree: this.ctreeTree,
       ctreeModel: this.ctreeModel,
@@ -606,6 +618,61 @@ export class ReplSessionController extends EventEmitter {
     this.thinkingArtifact = null
     this.thinkingInlineEntryId = null
     this.lastThinkingPeekAt = 0
+    this.workGraph = createWorkGraphState()
+    this.workGraphQueue = []
+    if (this.workGraphFlushTimer) {
+      clearTimeout(this.workGraphFlushTimer)
+      this.workGraphFlushTimer = null
+    }
+  }
+
+  private enqueueWorkGraphEvent(
+    payload: Record<string, unknown>,
+    options?: {
+      readonly eventType?: string
+      readonly eventId?: string | null
+      readonly seq?: number | null
+      readonly timestamp?: number | null
+    },
+  ): void {
+    if (!this.runtimeFlags.subagentWorkGraphEnabled) return
+    const event: WorkGraphReduceInput = {
+      eventType: options?.eventType ?? "task_event",
+      payload,
+      eventId: options?.eventId ?? null,
+      seq: options?.seq ?? this.currentEventSeq ?? null,
+      timestamp: options?.timestamp ?? numberOrUndefined(payload.timestamp) ?? Date.now(),
+    }
+    this.workGraphQueue.push(event)
+    this.runtimeTelemetry = {
+      ...this.runtimeTelemetry,
+      workgraphEvents: this.runtimeTelemetry.workgraphEvents + 1,
+      workgraphMaxQueueDepth: Math.max(this.runtimeTelemetry.workgraphMaxQueueDepth, this.workGraphQueue.length),
+    }
+    if (this.runtimeFlags.subagentCoalesceMs <= 0) {
+      this.flushWorkGraphEvents()
+      return
+    }
+    if (this.workGraphFlushTimer) return
+    this.workGraphFlushTimer = setTimeout(() => {
+      this.workGraphFlushTimer = null
+      this.flushWorkGraphEvents()
+    }, this.runtimeFlags.subagentCoalesceMs)
+  }
+
+  private flushWorkGraphEvents(): void {
+    if (!this.runtimeFlags.subagentWorkGraphEnabled || this.workGraphQueue.length === 0) return
+    const queue = this.workGraphQueue
+    this.workGraphQueue = []
+    this.workGraph = reduceWorkGraphEvents(
+      this.workGraph,
+      queue,
+      resolveWorkGraphLimits({
+        maxWorkItems: this.runtimeFlags.subagentMaxWorkItems,
+        maxStepsPerTask: this.runtimeFlags.subagentMaxStepsPerTask,
+      }),
+    )
+    this.runtimeTelemetry = bumpTelemetry(this.runtimeTelemetry, "workgraphFlushes")
   }
 
   private resolveProviderCapabilitiesSnapshot(modelId: string | null): void {
@@ -825,8 +892,16 @@ export class ReplSessionController extends EventEmitter {
     return stateMethods.upsertTask.call(this, entry)
   }
 
-  private handleTaskEvent(payload: Record<string, unknown>): void {
-    return stateMethods.handleTaskEvent.call(this, payload)
+  private handleTaskEvent(
+    payload: Record<string, unknown>,
+    options?: {
+      readonly eventType?: string
+      readonly eventId?: string | null
+      readonly seq?: number | null
+      readonly timestamp?: number | null
+    },
+  ): void {
+    return stateMethods.handleTaskEvent.call(this, payload, options)
   }
 
   private updateUsageFromPayload(payload: Record<string, unknown>): void {

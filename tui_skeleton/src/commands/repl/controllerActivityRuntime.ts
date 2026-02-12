@@ -16,6 +16,9 @@ const DEFAULT_THINKING_MAX_LINES = 6
 const DEFAULT_ADAPTIVE_MIN_CHUNK_CHARS = 8
 const DEFAULT_ADAPTIVE_MIN_COALESCE_MS = 12
 const DEFAULT_ADAPTIVE_BURST_CHARS = 48
+const DEFAULT_SUBAGENT_COALESCE_MS = 125
+const DEFAULT_SUBAGENT_MAX_WORK_ITEMS = 200
+const DEFAULT_SUBAGENT_MAX_STEPS_PER_TASK = 50
 
 const PRIMARY_LABELS: Record<ActivityPrimary, string> = {
   idle: "Ready",
@@ -224,6 +227,29 @@ export const resolveRuntimeBehaviorFlags = (env: NodeJS.ProcessEnv): RuntimeBeha
     1,
     10_000,
   ),
+  subagentWorkGraphEnabled: parseBoolEnv(env.BREADBOARD_SUBAGENTS_V2_ENABLED, false),
+  subagentStripEnabled: parseBoolEnv(env.BREADBOARD_SUBAGENTS_STRIP_ENABLED, false),
+  subagentToastsEnabled: parseBoolEnv(env.BREADBOARD_SUBAGENTS_TOASTS_ENABLED, false),
+  subagentTaskboardEnabled: parseBoolEnv(env.BREADBOARD_SUBAGENTS_TASKBOARD_ENABLED, false),
+  subagentFocusEnabled: parseBoolEnv(env.BREADBOARD_SUBAGENTS_FOCUS_ENABLED, false),
+  subagentCoalesceMs: parseBoundedIntEnv(
+    env.BREADBOARD_SUBAGENTS_COALESCE_MS,
+    DEFAULT_SUBAGENT_COALESCE_MS,
+    0,
+    5000,
+  ),
+  subagentMaxWorkItems: parseBoundedIntEnv(
+    env.BREADBOARD_SUBAGENTS_MAX_WORK_ITEMS,
+    DEFAULT_SUBAGENT_MAX_WORK_ITEMS,
+    1,
+    5000,
+  ),
+  subagentMaxStepsPerTask: parseBoundedIntEnv(
+    env.BREADBOARD_SUBAGENTS_MAX_STEPS_PER_TASK,
+    DEFAULT_SUBAGENT_MAX_STEPS_PER_TASK,
+    1,
+    5000,
+  ),
 })
 
 export const createRuntimeTelemetry = (): RuntimeTelemetry => ({
@@ -233,6 +259,9 @@ export const createRuntimeTelemetry = (): RuntimeTelemetry => ({
   markdownFlushes: 0,
   thinkingUpdates: 0,
   adaptiveCadenceAdjustments: 0,
+  workgraphFlushes: 0,
+  workgraphEvents: 0,
+  workgraphMaxQueueDepth: 0,
 })
 
 export const bumpTelemetry = (

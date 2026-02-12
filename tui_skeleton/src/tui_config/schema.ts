@@ -113,6 +113,31 @@ const readPositiveInt = (
   return parsed
 }
 
+const readNonNegativeInt = (
+  source: Record<string, unknown>,
+  key: string,
+  path: readonly string[],
+  issues: ValidationIssue[],
+): number | undefined => {
+  if (!(key in source) || source[key] == null) return undefined
+  const value = source[key]
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number.parseInt(value.trim(), 10)
+        : Number.NaN
+  if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+    issues.push({
+      severity: "error",
+      path: toPath([...path, key]),
+      message: "Expected non-negative integer.",
+    })
+    return undefined
+  }
+  return parsed
+}
+
 const readEnum = <T extends string>(
   source: Record<string, unknown>,
   key: string,
@@ -164,7 +189,7 @@ export const validateTuiConfigInput = (input: unknown, options: ValidationOption
   const root = input
   detectUnknownKeys(
     root,
-    ["preset", "display", "landing", "composer", "statusLine", "markdown", "diff"],
+    ["preset", "display", "landing", "composer", "statusLine", "markdown", "diff", "subagents"],
     [],
     issues,
     options.strictUnknownKeys,
@@ -348,6 +373,44 @@ export const validateTuiConfigInput = (input: unknown, options: ValidationOption
       diff.colors = colors
     }
     config.diff = diff
+  }
+
+  const subagentsRaw = readRecord(root, "subagents", [], issues)
+  if (subagentsRaw) {
+    detectUnknownKeys(
+      subagentsRaw,
+      [
+        "enabled",
+        "stripEnabled",
+        "toastsEnabled",
+        "taskboardEnabled",
+        "focusEnabled",
+        "coalesceMs",
+        "maxWorkItems",
+        "maxStepsPerTask",
+      ],
+      ["subagents"],
+      issues,
+      options.strictUnknownKeys,
+    )
+    const subagents: NonNullable<TuiConfigInput["subagents"]> = {}
+    const enabled = readBoolean(subagentsRaw, "enabled", ["subagents"], issues)
+    if (enabled != null) subagents.enabled = enabled
+    const stripEnabled = readBoolean(subagentsRaw, "stripEnabled", ["subagents"], issues)
+    if (stripEnabled != null) subagents.stripEnabled = stripEnabled
+    const toastsEnabled = readBoolean(subagentsRaw, "toastsEnabled", ["subagents"], issues)
+    if (toastsEnabled != null) subagents.toastsEnabled = toastsEnabled
+    const taskboardEnabled = readBoolean(subagentsRaw, "taskboardEnabled", ["subagents"], issues)
+    if (taskboardEnabled != null) subagents.taskboardEnabled = taskboardEnabled
+    const focusEnabled = readBoolean(subagentsRaw, "focusEnabled", ["subagents"], issues)
+    if (focusEnabled != null) subagents.focusEnabled = focusEnabled
+    const coalesceMs = readNonNegativeInt(subagentsRaw, "coalesceMs", ["subagents"], issues)
+    if (coalesceMs != null) subagents.coalesceMs = coalesceMs
+    const maxWorkItems = readPositiveInt(subagentsRaw, "maxWorkItems", ["subagents"], issues)
+    if (maxWorkItems != null) subagents.maxWorkItems = maxWorkItems
+    const maxStepsPerTask = readPositiveInt(subagentsRaw, "maxStepsPerTask", ["subagents"], issues)
+    if (maxStepsPerTask != null) subagents.maxStepsPerTask = maxStepsPerTask
+    config.subagents = subagents
   }
 
   return { config, issues }

@@ -10,6 +10,8 @@ const envKeys = [
   "BREADBOARD_TUI_PROMPT_PREFIX",
   "BREADBOARD_TUI_SHIKI_THEME",
   "BREADBOARD_TUI_DIFF_PREVIEW_MAX_LINES",
+  "BREADBOARD_TUI_SUBAGENTS_ENABLED",
+  "BREADBOARD_TUI_SUBAGENTS_COALESCE_MS",
   "BREADBOARD_TUI_CONFIG_STRICT",
   "NO_COLOR",
 ]
@@ -92,6 +94,9 @@ describe("resolveTuiConfig", () => {
     expect(resolved.diff.previewMaxLines).toBe(31)
     expect(resolved.diff.maxTokenizedLines).toBe(222)
     expect(resolved.diff.colors.addText).toBe("#22ee88")
+    expect(resolved.subagents.enabled).toBe(false)
+    expect(resolved.subagents.coalesceMs).toBe(125)
+    expect(resolved.subagents.maxWorkItems).toBe(200)
     expect(resolved.meta.sources.some((value) => value.startsWith("repo:"))).toBe(true)
     expect(resolved.meta.sources.some((value) => value.startsWith("cli-config:"))).toBe(true)
 
@@ -173,5 +178,58 @@ describe("resolveTuiConfig", () => {
     expect(resolved.composer.promptPrefix).toBe("›")
     expect(resolved.composer.showBottomRule).toBe(false)
     expect(resolved.statusLine.completionTemplate).toBe("• Worked for {duration}")
+  })
+
+  it("resolves subagents settings across yaml and env layers", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bb-tui-config-subagents-"))
+    const cliConfigPath = path.join(root, "subagents.yaml")
+    await fs.writeFile(
+      cliConfigPath,
+      [
+        "subagents:",
+        "  enabled: true",
+        "  stripEnabled: true",
+        "  toastsEnabled: false",
+        "  taskboardEnabled: true",
+        "  focusEnabled: false",
+        "  coalesceMs: 70",
+        "  maxWorkItems: 333",
+        "  maxStepsPerTask: 44",
+      ].join("\n"),
+      "utf8",
+    )
+    process.env.BREADBOARD_TUI_SUBAGENTS_ENABLED = "false"
+    process.env.BREADBOARD_TUI_SUBAGENTS_COALESCE_MS = "10"
+    const resolved = await resolveTuiConfig({
+      workspace: root,
+      cliConfigPath,
+      cliStrict: true,
+    })
+    expect(resolved.subagents.enabled).toBe(false)
+    expect(resolved.subagents.stripEnabled).toBe(true)
+    expect(resolved.subagents.taskboardEnabled).toBe(true)
+    expect(resolved.subagents.coalesceMs).toBe(10)
+    expect(resolved.subagents.maxWorkItems).toBe(333)
+    expect(resolved.subagents.maxStepsPerTask).toBe(44)
+  })
+
+  it("validates subagents numeric knobs", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bb-tui-config-subagents-int-"))
+    const cliConfigPath = path.join(root, "invalid-subagents.yaml")
+    await fs.writeFile(
+      cliConfigPath,
+      [
+        "subagents:",
+        "  coalesceMs: -1",
+      ].join("\n"),
+      "utf8",
+    )
+    await expect(
+      resolveTuiConfig({
+        workspace: root,
+        cliConfigPath,
+        cliStrict: true,
+      }),
+    ).rejects.toThrow(/subagents\.coalesceMs/)
   })
 })

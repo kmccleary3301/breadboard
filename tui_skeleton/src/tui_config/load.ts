@@ -35,6 +35,7 @@ const mergeConfigInput = (base: TuiConfigInput, patch: TuiConfigInput): TuiConfi
       ...(patch.diff?.colors ?? {}),
     },
   },
+  subagents: { ...(base.subagents ?? {}), ...(patch.subagents ?? {}) },
 })
 
 const readYamlInput = async (filePath: string, strictUnknownKeys: boolean): Promise<{ config: TuiConfigInput; warnings: string[] }> => {
@@ -83,6 +84,7 @@ const envConfigLayer = (): TuiConfigInput => {
   const markdown: NonNullable<TuiConfigInput["markdown"]> = {}
   const diff: NonNullable<TuiConfigInput["diff"]> = {}
   const diffColors: NonNullable<NonNullable<TuiConfigInput["diff"]>["colors"]> = {}
+  const subagents: NonNullable<TuiConfigInput["subagents"]> = {}
   const config: TuiConfigInput = {}
 
   if (process.env.BREADBOARD_TUI_PRESET?.trim()) config.preset = process.env.BREADBOARD_TUI_PRESET.trim()
@@ -139,6 +141,28 @@ const envConfigLayer = (): TuiConfigInput => {
   if (process.env.BREADBOARD_TUI_DIFF_DELETE_TEXT?.trim()) diffColors.deleteText = process.env.BREADBOARD_TUI_DIFF_DELETE_TEXT
   if (process.env.BREADBOARD_TUI_DIFF_HUNK_TEXT?.trim()) diffColors.hunkText = process.env.BREADBOARD_TUI_DIFF_HUNK_TEXT
   if (process.env.BREADBOARD_TUI_DIFF_META_TEXT?.trim()) diffColors.metaText = process.env.BREADBOARD_TUI_DIFF_META_TEXT
+  const envSubagentsEnabled = parseBooleanLike(process.env.BREADBOARD_TUI_SUBAGENTS_ENABLED)
+  if (envSubagentsEnabled != null) subagents.enabled = envSubagentsEnabled
+  const envSubagentsStrip = parseBooleanLike(process.env.BREADBOARD_TUI_SUBAGENTS_STRIP_ENABLED)
+  if (envSubagentsStrip != null) subagents.stripEnabled = envSubagentsStrip
+  const envSubagentsToasts = parseBooleanLike(process.env.BREADBOARD_TUI_SUBAGENTS_TOASTS_ENABLED)
+  if (envSubagentsToasts != null) subagents.toastsEnabled = envSubagentsToasts
+  const envSubagentsTaskboard = parseBooleanLike(process.env.BREADBOARD_TUI_SUBAGENTS_TASKBOARD_ENABLED)
+  if (envSubagentsTaskboard != null) subagents.taskboardEnabled = envSubagentsTaskboard
+  const envSubagentsFocus = parseBooleanLike(process.env.BREADBOARD_TUI_SUBAGENTS_FOCUS_ENABLED)
+  if (envSubagentsFocus != null) subagents.focusEnabled = envSubagentsFocus
+  if (process.env.BREADBOARD_TUI_SUBAGENTS_COALESCE_MS?.trim()) {
+    const parsed = Number.parseInt(process.env.BREADBOARD_TUI_SUBAGENTS_COALESCE_MS, 10)
+    if (Number.isFinite(parsed) && parsed >= 0) subagents.coalesceMs = parsed
+  }
+  if (process.env.BREADBOARD_TUI_SUBAGENTS_MAX_WORK_ITEMS?.trim()) {
+    const parsed = Number.parseInt(process.env.BREADBOARD_TUI_SUBAGENTS_MAX_WORK_ITEMS, 10)
+    if (Number.isFinite(parsed) && parsed > 0) subagents.maxWorkItems = parsed
+  }
+  if (process.env.BREADBOARD_TUI_SUBAGENTS_MAX_STEPS_PER_TASK?.trim()) {
+    const parsed = Number.parseInt(process.env.BREADBOARD_TUI_SUBAGENTS_MAX_STEPS_PER_TASK, 10)
+    if (Number.isFinite(parsed) && parsed > 0) subagents.maxStepsPerTask = parsed
+  }
 
   if (Object.keys(display).length > 0) config.display = display
   if (Object.keys(landing).length > 0) config.landing = landing
@@ -147,6 +171,7 @@ const envConfigLayer = (): TuiConfigInput => {
   if (Object.keys(markdown).length > 0) config.markdown = markdown
   if (Object.keys(diffColors).length > 0) diff.colors = diffColors
   if (Object.keys(diff).length > 0) config.diff = diff
+  if (Object.keys(subagents).length > 0) config.subagents = subagents
   return config
 }
 
@@ -280,6 +305,16 @@ export const resolveTuiConfig = async (options: ResolvedTuiConfigOptions): Promi
         hunkText: merged.diff?.colors?.hunkText ?? DEFAULT_RESOLVED_TUI_CONFIG.diff.colors.hunkText,
         metaText: merged.diff?.colors?.metaText ?? DEFAULT_RESOLVED_TUI_CONFIG.diff.colors.metaText,
       },
+    },
+    subagents: {
+      enabled: merged.subagents?.enabled ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.enabled,
+      stripEnabled: merged.subagents?.stripEnabled ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.stripEnabled,
+      toastsEnabled: merged.subagents?.toastsEnabled ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.toastsEnabled,
+      taskboardEnabled: merged.subagents?.taskboardEnabled ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.taskboardEnabled,
+      focusEnabled: merged.subagents?.focusEnabled ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.focusEnabled,
+      coalesceMs: merged.subagents?.coalesceMs ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.coalesceMs,
+      maxWorkItems: merged.subagents?.maxWorkItems ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.maxWorkItems,
+      maxStepsPerTask: merged.subagents?.maxStepsPerTask ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.maxStepsPerTask,
     },
     meta: {
       strict,

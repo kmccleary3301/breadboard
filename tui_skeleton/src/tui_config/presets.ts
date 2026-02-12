@@ -119,6 +119,16 @@ export const DEFAULT_RESOLVED_TUI_CONFIG: ResolvedTuiConfig = {
       metaText: "#7CF2FF",
     },
   },
+  subagents: {
+    enabled: false,
+    stripEnabled: false,
+    toastsEnabled: false,
+    taskboardEnabled: false,
+    focusEnabled: false,
+    coalesceMs: 125,
+    maxWorkItems: 200,
+    maxStepsPerTask: 50,
+  },
   meta: {
     strict: false,
     warnings: [],

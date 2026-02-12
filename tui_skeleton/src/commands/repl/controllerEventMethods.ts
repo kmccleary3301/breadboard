@@ -968,7 +968,12 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const isError = typeof payload.error === "string" && payload.error.trim().length > 0
       const isComplete = status.toLowerCase().includes("complete") || status.toLowerCase().includes("done")
       this.addTool("status", `[task] ${line}`, isError ? "error" : isComplete ? "success" : "pending")
-      this.handleTaskEvent(payload)
+      this.handleTaskEvent(payload, {
+        eventType: event.type,
+        eventId: event.id,
+        seq: nextSeq,
+        timestamp: event.timestamp,
+      })
       break
     }
     case "agent.spawn":
@@ -981,7 +986,12 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const lineParts = [status, description, taskId].filter(Boolean)
       const line = lineParts.length > 0 ? lineParts.join(" · ") : JSON.stringify(payload)
       this.addTool("status", `[agent] ${line}`, status === "end" ? "success" : "pending")
-      this.handleTaskEvent({ ...payload, status })
+      this.handleTaskEvent({ ...payload, status }, {
+        eventType: event.type,
+        eventId: event.id,
+        seq: nextSeq,
+        timestamp: event.timestamp,
+      })
       break
     }
     case "ctree_node": {

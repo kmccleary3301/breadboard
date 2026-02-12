@@ -53,6 +53,16 @@ export type TuiConfigInput = {
     maxTokenizedLines?: number
     colors?: TuiDiffColorPaletteInput
   }
+  subagents?: {
+    enabled?: boolean
+    stripEnabled?: boolean
+    toastsEnabled?: boolean
+    taskboardEnabled?: boolean
+    focusEnabled?: boolean
+    coalesceMs?: number
+    maxWorkItems?: number
+    maxStepsPerTask?: number
+  }
 }
 
 export type ResolvedTuiConfig = {
@@ -99,6 +109,16 @@ export type ResolvedTuiConfig = {
       readonly hunkText: string
       readonly metaText: string
     }
+  }
+  readonly subagents: {
+    readonly enabled: boolean
+    readonly stripEnabled: boolean
+    readonly toastsEnabled: boolean
+    readonly taskboardEnabled: boolean
+    readonly focusEnabled: boolean
+    readonly coalesceMs: number
+    readonly maxWorkItems: number
+    readonly maxStepsPerTask: number
   }
   readonly meta: {
     readonly strict: boolean
