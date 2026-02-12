@@ -269,8 +269,24 @@ jobs:
         if: steps.sdk_guardrail_prereqs.outputs.ready != 'true'
         run: echo "SDK guardrail step skipped on this branch."
 
+      - name: Check kernel import lint prerequisites
+        id: kernel_import_lint_prereqs
+        shell: bash
+        run: |
+          if [ -f tools/import_lint.py ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping kernel import lint: missing tools/import_lint.py"
+          fi
+
       - name: Kernel import lint
+        if: steps.kernel_import_lint_prereqs.outputs.ready == 'true'
         run: python tools/import_lint.py
+
+      - name: Kernel import lint skipped (missing script)
+        if: steps.kernel_import_lint_prereqs.outputs.ready != 'true'
+        run: echo "Kernel import lint step skipped on this branch."
 
       - name: Core compat suite
         env:

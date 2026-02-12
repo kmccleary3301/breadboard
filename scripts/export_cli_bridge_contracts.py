@@ -890,9 +890,25 @@ def _model_schema(model: Any) -> Dict[str, Any]:
     return model.schema()
 
 
+def _normalize_openapi(payload: Dict[str, Any]) -> Dict[str, Any]:
+    # FastAPI/Pydantic version skew can add optional ValidationError fields
+    # (e.g. ctx/input), which causes noisy contract diffs across environments.
+    schemas = (
+        payload.get("components", {})
+        .get("schemas", {})
+    )
+    validation_error = schemas.get("ValidationError")
+    if isinstance(validation_error, dict):
+        properties = validation_error.get("properties")
+        if isinstance(properties, dict):
+            properties.pop("ctx", None)
+            properties.pop("input", None)
+    return payload
+
+
 def main() -> None:
     app = create_app()
-    openapi = app.openapi()
+    openapi = _normalize_openapi(app.openapi())
     _write_json(CONTRACT_DIR / "openapi.json", openapi)
 
     _write_json(SCHEMA_DIR / "session_event_envelope.schema.json", _event_schema())
