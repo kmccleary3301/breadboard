@@ -6,6 +6,8 @@ import { ApiError } from "./client.js"
 export interface StreamConfig {
   readonly baseUrl: string
   readonly authToken?: string
+  readonly streamSchema?: number | null
+  readonly streamIncludeLegacy?: boolean | null
 }
 
 export interface EventStreamOptions {
@@ -68,8 +70,15 @@ const normalizeEvent = (
     readNumber(raw.turnId) ??
     null
   const seq = readNumber(raw.seq) ?? undefined
+  const v = readNumber(raw.v) ?? undefined
+  const schemaRev = readString(raw.schema_rev) ?? readString(raw.schemaRev)
   const runId = readString(raw.run_id) ?? readString(raw.runId)
   const threadId = readString(raw.thread_id) ?? readString(raw.threadId)
+  const spanId = readString(raw.span_id) ?? readString(raw.spanId)
+  const parentSpanId = readString(raw.parent_span_id) ?? readString(raw.parentSpanId)
+  const visibility = readString(raw.visibility) ?? undefined
+  const actor = isRecord(raw.actor) ? raw.actor : undefined
+  const tags = Array.isArray(raw.tags) ? raw.tags.filter((tag) => typeof tag === "string") : undefined
   const turnId =
     readString(raw.turn_id) ??
     readString(raw.turnId) ??
@@ -83,9 +92,16 @@ const normalizeEvent = (
     timestamp: timestampMs,
     timestamp_ms: timestampMs,
     seq: seq ?? undefined,
+    v,
+    schema_rev: schemaRev ?? null,
     run_id: runId ?? null,
     thread_id: threadId ?? null,
     turn_id: turnId ?? null,
+    span_id: spanId ?? null,
+    parent_span_id: parentSpanId ?? null,
+    actor: actor ?? null,
+    visibility: visibility ?? null,
+    tags: tags ?? null,
     payload: payload as SessionEvent["payload"],
   }
 }
@@ -96,8 +112,18 @@ export const streamSessionEvents = async function* (
 ): AsyncGenerator<SessionEvent, void, void> {
   const config = options.config ?? loadAppConfig()
   const url = new URL(`/sessions/${sessionId}/events`, config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`)
-  if (options.query) {
-    for (const [key, value] of Object.entries(options.query)) {
+  const query: Record<string, string | number | boolean> = { ...(options.query ?? {}) }
+  if (!("schema" in query) && !("v" in query)) {
+    query.schema = config.streamSchema ?? 2
+  }
+  if (!("include_legacy" in query)) {
+    query.include_legacy = config.streamIncludeLegacy ?? false
+  }
+  if (!("replay" in query) && !options.lastEventId) {
+    query.replay = true
+  }
+  if (Object.keys(query).length > 0) {
+    for (const [key, value] of Object.entries(query)) {
       url.searchParams.set(key, String(value))
     }
   }

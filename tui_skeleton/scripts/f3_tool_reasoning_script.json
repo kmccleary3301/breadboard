@@ -1,0 +1,8 @@
+[
+  { "action": "send", "text": "/view tools both" },
+  { "action": "send", "text": "/view reasoning on" },
+  { "action": "send", "text": "/view raw on" },
+  { "action": "send", "text": "start" },
+  { "action": "wait", "for": "events", "count": 24, "timeoutMs": 20000 },
+  { "action": "snapshot", "label": "f3-tool-reasoning", "includeStatus": true }
+]

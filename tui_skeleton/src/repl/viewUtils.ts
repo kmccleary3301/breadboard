@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { SEMANTIC_COLORS } from "./designSystem.js"
 
 const resolveAsciiHeader = (): string[] => {
   try {
@@ -23,17 +24,18 @@ const resolveAsciiHeader = (): string[] => {
 }
 
 export const ASCII_HEADER = resolveAsciiHeader()
+export const HEADER_COLOR = "#FF4D6D"
 
 export const speakerColor = (speaker: "assistant" | "user" | "system"): string => {
   switch (speaker) {
     case "user":
-      return "#00D38D"
+      return SEMANTIC_COLORS.user
     case "assistant":
-      return "#B36BFF"
+      return SEMANTIC_COLORS.assistant
     case "system":
     default:
-      return "#FACC15"
+      return SEMANTIC_COLORS.system
   }
 }
 
-export const TOOL_EVENT_COLOR = "#FBBF24"
+export const TOOL_EVENT_COLOR = SEMANTIC_COLORS.tool

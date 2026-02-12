@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FrameGrid",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "rows": { "type": "integer", "minimum": 1 },
+    "cols": { "type": "integer", "minimum": 1 },
+    "grid": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "activeBuffer": {
+      "type": "string",
+      "enum": ["normal", "alternate"]
+    },
+    "normalGrid": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "alternateGrid": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "timestamp": { "type": "integer" }
+  },
+  "required": ["rows", "cols", "grid", "activeBuffer", "normalGrid", "alternateGrid", "timestamp"]
+}

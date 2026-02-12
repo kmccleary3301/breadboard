@@ -1,9 +1,43 @@
 import React from "react"
 import { Box, Text } from "ink"
 import chalk from "chalk"
+import { NEUTRAL_COLORS, SEMANTIC_COLORS, resolveAsciiOnly, resolveColorMode, resolveIcons } from "../designSystem.js"
 
 const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 40
+const ASCII_ONLY = resolveAsciiOnly()
+const ICONS = resolveIcons(ASCII_ONLY)
+const COLOR_MODE = resolveColorMode()
+if (COLOR_MODE === "none") {
+  ;(chalk as typeof chalk & { level: number }).level = 0
+}
+const CHALK = chalk
+const GLYPHS = {
+  bullet: ICONS.bullet,
+  chevron: ICONS.userChevron,
+  hline: ASCII_ONLY ? "-" : "─",
+} as const
+const STAR_GLYPH = ASCII_ONLY ? "*" : "★"
+const HOLLOW_DOT = ASCII_ONLY ? "o" : "○"
+const DASH_GLYPH = ASCII_ONLY ? "-" : "—"
+const uiText = (value: string): string => {
+  if (!ASCII_ONLY) return value
+  return value
+    .replaceAll("•", GLYPHS.bullet)
+    .replaceAll("·", ".")
+    .replaceAll("●", GLYPHS.bullet)
+    .replaceAll("○", HOLLOW_DOT)
+    .replaceAll("★", STAR_GLYPH)
+    .replaceAll("—", DASH_GLYPH)
+    .replaceAll("–", "-")
+    .replaceAll("←", "<-")
+    .replaceAll("→", "->")
+    .replaceAll("↑", "^")
+    .replaceAll("↓", "v")
+    .replaceAll("×", "x")
+    .replaceAll("⏎", "Enter")
+    .replaceAll("…", "...")
+}
 
 export interface TranscriptViewerProps {
   readonly lines: ReadonlyArray<string>
@@ -20,7 +54,7 @@ export interface TranscriptViewerProps {
   readonly variant?: "default" | "claude"
 }
 
-const horizontalRule = (width: number): string => "─".repeat(Math.max(1, width))
+const horizontalRule = (width: number): string => GLYPHS.hline.repeat(Math.max(1, width))
 
 const highlightSubstring = (value: string, query: string): string => {
   const needle = query.trim()
@@ -36,7 +70,7 @@ const highlightSubstring = (value: string, query: string): string => {
       break
     }
     out += value.slice(index, found)
-    out += chalk.bgHex("#1e293b").hex("#7CF2FF")(value.slice(found, found + needle.length))
+    out += CHALK.bgHex(NEUTRAL_COLORS.darkGray).hex(SEMANTIC_COLORS.info)(value.slice(found, found + needle.length))
     index = found + needle.length
   }
   return out
@@ -86,10 +120,16 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
           <Text
             key={`tx-${start}-${index}`}
             wrap="truncate-end"
-            backgroundColor={isActive ? "#334155" : undefined}
-            color={isActive ? "#e2e8f0" : undefined}
+            backgroundColor={isActive ? NEUTRAL_COLORS.darkGray : undefined}
+            color={isActive ? NEUTRAL_COLORS.nearWhite : undefined}
           >
-            {variant === "claude" ? "" : isActive ? chalk.hex("#7CF2FF")("› ") : isMatch ? chalk.dim("• ") : "  "}
+            {variant === "claude"
+              ? ""
+              : isActive
+                ? CHALK.hex(SEMANTIC_COLORS.info)(`${GLYPHS.chevron} `)
+                : isMatch
+                  ? CHALK.dim(`${GLYPHS.bullet} `)
+                  : "  "}
             {rendered}
           </Text>
         )
@@ -106,7 +146,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
       typeof activeMatchIndex === "number" && typeof matchCount === "number" && matchCount > 0
         ? ` • ${activeMatchIndex + 1}/${matchCount}`
         : ""
-    const searchLine = hasSearch ? `Search: ${trimmedQuery}${matchSummary}${indexSummary}` : ""
+    const searchLine = hasSearch ? uiText(`Search: ${trimmedQuery}${matchSummary}${indexSummary}`) : ""
     return (
       <Box flexDirection="column" width={width} height={height}>
         {body}
@@ -131,7 +171,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Text wrap="truncate-end">{chalk.cyan("breadboard")} {chalk.dim("transcript viewer")}</Text>
+      <Text wrap="truncate-end">{CHALK.hex(SEMANTIC_COLORS.info)("breadboard")} {CHALK.dim("transcript viewer")}</Text>
       {detailLabel ? (
         <Text color="dim" wrap="truncate-end">
           {detailLabel}
@@ -139,17 +179,21 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
       ) : null}
       <Text color="dim" wrap="truncate-end">
         {searchQuery && searchQuery.trim().length > 0
-          ? `Search: ${searchQuery}  ${typeof matchCount === "number" ? `• ${matchCount} match${matchCount === 1 ? "" : "es"}` : ""}${
-              typeof activeMatchIndex === "number" && typeof matchCount === "number" && matchCount > 0
-                ? ` • ${activeMatchIndex + 1}/${matchCount}`
-                : ""
-            }`
+          ? uiText(
+              `Search: ${searchQuery}  ${typeof matchCount === "number" ? `• ${matchCount} match${matchCount === 1 ? "" : "es"}` : ""}${
+                typeof activeMatchIndex === "number" && typeof matchCount === "number" && matchCount > 0
+                  ? ` • ${activeMatchIndex + 1}/${matchCount}`
+                  : ""
+              }`,
+            )
           : "Press / to search"}
         {"  "}
-        {chalk.dim(
-          `Esc back • ↑/↓ scroll • PgUp/PgDn page${searchQuery && searchQuery.trim().length > 0 ? " • n/p match" : ""} • t tools • s save • ${
-            toggleHint ?? "Ctrl+T toggle"
-          }`,
+        {CHALK.dim(
+          uiText(
+            `Esc back • ↑/↓ scroll • PgUp/PgDn page${searchQuery && searchQuery.trim().length > 0 ? " • n/p match" : ""} • t tools • s save • ${
+              toggleHint ?? "Ctrl+T toggle"
+            }`,
+          ),
         )}
       </Text>
       <Text color="dim" wrap="truncate">
@@ -159,7 +203,9 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
       <Text color="dim" wrap="truncate-end">
         {lines.length === 0
           ? "No transcript entries."
-          : `Lines ${start + 1}-${end} of ${lines.length}${maxScroll > 0 ? ` • scroll ${start}/${maxScroll}` : ""}`}
+          : uiText(
+              `Lines ${start + 1}-${end} of ${lines.length}${maxScroll > 0 ? ` • scroll ${start}/${maxScroll}` : ""}`,
+            )}
       </Text>
     </Box>
   )

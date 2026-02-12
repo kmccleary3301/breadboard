@@ -1,0 +1,6 @@
+o Bash(echo test)
+  | one
+  | two
+  | three
+  | ... 2 lines hidden — (ctrl+o to expand)
+  `- four

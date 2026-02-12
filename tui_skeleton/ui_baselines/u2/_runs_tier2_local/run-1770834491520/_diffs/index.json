@@ -1,0 +1,20 @@
+{
+  "okCount": 3,
+  "failCount": 0,
+  "missingBlessed": 0,
+  "missingCandidate": 0,
+  "index": [
+    {
+      "id": "tool_call_result_collapsed",
+      "ok": true
+    },
+    {
+      "id": "streaming_pending_basic",
+      "ok": true
+    },
+    {
+      "id": "pending_unicode_color",
+      "ok": true
+    }
+  ]
+}

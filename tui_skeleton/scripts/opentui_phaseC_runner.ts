@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import pty from "node-pty"
 import stripAnsi from "strip-ansi"
 
-type Scenario = "smoke" | "all"
+type Scenario = "smoke" | "permission_variants" | "palette_commands" | "all"
 
 const THIS_DIR = path.dirname(fileURLToPath(import.meta.url))
 
@@ -59,6 +59,7 @@ const runPty = async (options: {
   const rawStream = fs.createWriteStream(rawPath)
   let plainBuffer = ""
   let exited = false
+  let actionsError: string | null = null
 
   const term = pty.spawn("bash", ["-lc", options.command], {
     name: "xterm-256color",
@@ -88,26 +89,39 @@ const runPty = async (options: {
     throw new Error(`[${options.caseId}] timed out waiting for: ${needle}`)
   }
 
-  const timeoutAt = Date.now() + options.timeoutMs
-  while (Date.now() < timeoutAt && !exited) {
-    const remaining = timeoutAt - Date.now()
-    await Promise.race([
-      options.actions({ term, waitForPlainIncludes, getPlain: () => plainBuffer }),
-      sleep(Math.min(remaining, options.timeoutMs)),
-    ])
-    break
+  try {
+    const timeoutAt = Date.now() + options.timeoutMs
+    while (Date.now() < timeoutAt && !exited) {
+      const remaining = timeoutAt - Date.now()
+      await Promise.race([
+        options.actions({ term, waitForPlainIncludes, getPlain: () => plainBuffer }),
+        sleep(Math.min(remaining, options.timeoutMs)),
+      ])
+      break
+    }
+  } catch (err) {
+    actionsError = (err as Error).message
+  } finally {
+    await sleep(500)
+    try {
+      term.kill()
+    } catch {}
+    rawStream.end()
+    await new Promise((resolve) => rawStream.on("close", resolve))
+
+    const rawDisk = await fs.promises.readFile(rawPath, "utf8").catch(() => "")
+    const plainDisk = stripAnsi(rawDisk)
+    await fs.promises.writeFile(plainPath, `${plainDisk}\n`, "utf8")
+    await fs.promises.writeFile(
+      resultPath,
+      `${JSON.stringify({ caseId: options.caseId, actionsError, rawPath, plainPath }, null, 2)}\n`,
+      "utf8",
+    )
   }
 
-  await sleep(500)
-  try {
-    term.kill()
-  } catch {}
-  rawStream.end()
-  await new Promise((resolve) => rawStream.on("close", resolve))
-
-  const rawDisk = await fs.promises.readFile(rawPath, "utf8").catch(() => "")
-  const plainDisk = stripAnsi(rawDisk)
-  await fs.promises.writeFile(plainPath, `${plainDisk}\n`, "utf8")
+  if (actionsError) {
+    throw new Error(actionsError)
+  }
 
   return { rawPath, plainPath, resultPath }
 }
@@ -117,7 +131,13 @@ const assert = (ok: boolean, message: string) => ({ ok, message })
 const main = async () => {
   const args = parseArgs(process.argv)
   const root = path.resolve(THIS_DIR, "..", "..")
-  const artifactsRoot = path.join(root, "opentui_slab", "artifacts", "phaseC_pty", utcStamp())
+  const artifactsBaseRaw = (process.env.BB_PHASEC_PTY_ARTIFACTS_BASE ?? "").trim()
+  const artifactsBase = artifactsBaseRaw
+    ? path.isAbsolute(artifactsBaseRaw)
+      ? artifactsBaseRaw
+      : path.resolve(root, artifactsBaseRaw)
+    : path.resolve(root, "..", "docs_tmp", "cli_phase_3", "artifacts", "opentui_phaseC_pty")
+  const artifactsRoot = path.join(artifactsBase, utcStamp())
   await fs.promises.mkdir(artifactsRoot, { recursive: true })
 
   const controllerCmd =
@@ -202,8 +222,155 @@ const main = async () => {
     return capture
   }
 
+  const runPermissionVariants = async () => {
+    const dir = path.join(artifactsRoot, "permission_variants")
+    const capture = await runPty({
+      caseId: "permission_variants",
+      command: controllerCmd,
+      cwd: path.join(root, "tui_skeleton"),
+      rows: 42,
+      cols: 140,
+      timeoutMs: args.timeoutMs,
+      artifactDir: dir,
+      env: {
+        BREADBOARD_ENGINE_PREFER_BUNDLE: "0",
+        BREADBOARD_WORKSPACE: ".",
+        BREADBOARD_DEBUG_FAKE_PERMISSION: "1",
+      },
+      actions: async ({ term, waitForPlainIncludes }) => {
+        await waitForPlainIncludes("Enter submit", 45_000)
+
+        term.write("\x0b")
+        await sleep(350)
+        term.write("debug")
+        await sleep(650)
+        term.write("\r")
+        await waitForPlainIncludes("[permission] request_id=debug-", 25_000)
+        await sleep(500)
+
+        // Deny once shortcut (permission modal)
+        term.write("r")
+        await waitForPlainIncludes("[permission] decision deny-once", 25_000)
+
+        // Allow always via list selection (down + enter)
+        term.write("\x0b")
+        await sleep(350)
+        term.write("debug")
+        await sleep(650)
+        term.write("\r")
+        await waitForPlainIncludes("[permission] request_id=debug-", 25_000)
+        await sleep(500)
+        term.write("\x1b[B")
+        await sleep(120)
+        term.write("\r")
+        await waitForPlainIncludes("[permission] decision allow-always", 25_000)
+
+        // Deny always via list selection (down x3 + enter)
+        term.write("\x0b")
+        await sleep(350)
+        term.write("debug")
+        await sleep(650)
+        term.write("\r")
+        await waitForPlainIncludes("[permission] request_id=debug-", 25_000)
+        await sleep(500)
+        term.write("\x1b[B")
+        await sleep(80)
+        term.write("\x1b[B")
+        await sleep(80)
+        term.write("\x1b[B")
+        await sleep(120)
+        term.write("\r")
+        await waitForPlainIncludes("[permission] decision deny-always", 25_000)
+
+        // Re-open and deny-stop
+        term.write("\x0b")
+        await sleep(350)
+        term.write("debug")
+        await sleep(650)
+        term.write("\r")
+        await waitForPlainIncludes("[permission] request_id=debug-", 25_000)
+        await sleep(500)
+        term.write("s")
+        await waitForPlainIncludes("[permission] decision deny-stop", 25_000)
+      },
+    })
+
+    const plainDisk = await fs.promises.readFile(capture.plainPath, "utf8").catch(() => "")
+    const checks = [
+      assert(plainDisk.includes("[permission] decision deny-once"), "deny-once is printable via modal shortcut"),
+      assert(plainDisk.includes("[permission] decision allow-always"), "allow-always is printable via modal selection"),
+      assert(plainDisk.includes("[permission] decision deny-always"), "deny-always is printable via modal selection"),
+      assert(plainDisk.includes("[permission] decision deny-stop"), "deny-stop is printable via modal shortcut"),
+    ]
+    const pass = checks.every((c) => c.ok)
+    await fs.promises.writeFile(capture.resultPath, `${JSON.stringify({ pass, checks, capture }, null, 2)}\n`, "utf8")
+    if (!pass) throw new Error("permission variants failed")
+  }
+
+  const runPaletteCommands = async () => {
+    const dir = path.join(artifactsRoot, "palette_commands")
+    const capture = await runPty({
+      caseId: "palette_commands",
+      command: controllerCmd,
+      cwd: path.join(root, "tui_skeleton"),
+      rows: 42,
+      cols: 140,
+      timeoutMs: args.timeoutMs,
+      artifactDir: dir,
+      env: {
+        BREADBOARD_ENGINE_PREFER_BUNDLE: "0",
+        BREADBOARD_WORKSPACE: ".",
+        BREADBOARD_DEBUG_FAKE_PERMISSION: "0",
+      },
+      actions: async ({ term, waitForPlainIncludes }) => {
+        await waitForPlainIncludes("Enter submit", 45_000)
+
+        // Create a session (so status/stop/retry paths are exercised).
+        term.write("hello")
+        await sleep(100)
+        term.write("\r")
+        await waitForPlainIncludes("[session]", 45_000)
+
+        term.write("\x0b")
+        await sleep(300)
+        term.write("status")
+        await sleep(450)
+        term.write("\r")
+        await waitForPlainIncludes("[command] status", 25_000)
+
+        term.write("\x0b")
+        await sleep(300)
+        term.write("retry")
+        await sleep(450)
+        term.write("\r")
+        await waitForPlainIncludes("[command] retry", 25_000)
+
+        term.write("\x0b")
+        await sleep(300)
+        term.write("stop")
+        await sleep(450)
+        term.write("\r")
+        await waitForPlainIncludes("[command] stop", 25_000)
+      },
+    })
+
+    const plainDisk = await fs.promises.readFile(capture.plainPath, "utf8").catch(() => "")
+    const checks = [
+      assert(plainDisk.includes("[command] status"), "status is printable from commands palette"),
+      assert(plainDisk.includes("[command] retry"), "retry is printable from commands palette"),
+      assert(plainDisk.includes("[command] stop"), "stop is printable from commands palette"),
+    ]
+    const pass = checks.every((c) => c.ok)
+    await fs.promises.writeFile(capture.resultPath, `${JSON.stringify({ pass, checks, capture }, null, 2)}\n`, "utf8")
+    if (!pass) throw new Error("palette commands failed")
+  }
+
   if (args.scenario === "smoke" || args.scenario === "all") {
     await runSmoke()
+  }
+  if (args.scenario === "all") {
+    await runPermissionVariants()
+    await runPaletteCommands()
   }
 
   process.stdout.write(`[phaseC_pty] artifacts: ${artifactsRoot}\n`)

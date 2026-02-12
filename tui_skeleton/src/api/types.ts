@@ -1,4 +1,36 @@
 export type EventType =
+  | "stream.hello"
+  | "stream.gap"
+  | "session.start"
+  | "session.meta"
+  | "run.start"
+  | "run.end"
+  | "user.message"
+  | "user.command"
+  | "assistant.message.start"
+  | "assistant.message.delta"
+  | "assistant.message.end"
+  | "assistant.reasoning.delta"
+  | "assistant.thought_summary.delta"
+  | "assistant.tool_call.start"
+  | "assistant.tool_call.delta"
+  | "assistant.tool_call.end"
+  | "tool.exec.start"
+  | "tool.exec.stdout.delta"
+  | "tool.exec.stderr.delta"
+  | "tool.exec.end"
+  | "tool.result"
+  | "permission.request"
+  | "permission.decision"
+  | "permission.timeout"
+  | "warning"
+  | "interrupt"
+  | "cancel.requested"
+  | "cancel.acknowledged"
+  | "usage.update"
+  | "agent.spawn"
+  | "agent.status"
+  | "agent.end"
   | "turn_start"
   | "assistant_delta"
   | "assistant_message"
@@ -28,9 +60,16 @@ export interface SessionEvent<TPayload = Record<string, unknown>> {
   readonly timestamp: number
   readonly timestamp_ms?: number
   readonly seq?: number
+  readonly v?: number
+  readonly schema_rev?: string | null
   readonly run_id?: string | null
   readonly thread_id?: string | null
   readonly turn_id?: string | number | null
+  readonly span_id?: string | null
+  readonly parent_span_id?: string | null
+  readonly actor?: Record<string, unknown> | null
+  readonly visibility?: string | null
+  readonly tags?: string[] | null
   readonly payload: TPayload
 }
 
@@ -65,6 +104,23 @@ export interface EngineStatusResponse {
   readonly ray?: {
     readonly available?: boolean | null
     readonly initialized?: boolean | null
+  } | null
+  readonly eventlog?: {
+    readonly enabled?: boolean | null
+    readonly dir?: string | null
+    readonly bootstrap?: boolean | null
+    readonly replay?: boolean | null
+    readonly max_mb?: string | number | null
+    readonly sessions?: number | null
+    readonly last_activity?: string | null
+    readonly capped?: boolean | null
+  } | null
+  readonly session_index?: {
+    readonly enabled?: boolean | null
+    readonly dir?: string | null
+    readonly engine?: string | null
+    readonly sessions?: number | null
+    readonly last_activity?: string | null
   } | null
 }
 
@@ -128,12 +184,89 @@ export interface SkillCatalogResponse {
   readonly sources?: Record<string, unknown> | null
 }
 
-export interface CTreeSnapshotResponse {
-  readonly snapshot?: Record<string, unknown> | null
+export interface CTreeNode {
+  readonly id: string
+  readonly digest: string
+  readonly kind: string
+  readonly turn?: number | null
+  readonly payload: unknown
+}
+
+export interface CTreeSnapshotSummary {
+  readonly schema_version: string
+  readonly node_count: number
+  readonly event_count: number
+  readonly last_id: string | null
+  readonly node_hash: string | null
+}
+
+export interface CTreeNodeEventPayload {
+  readonly node: CTreeNode
+  readonly snapshot: CTreeSnapshotSummary
+}
+
+export interface CTreeSnapshotEventPayload {
+  readonly snapshot: Record<string, unknown> | null
   readonly compiler?: Record<string, unknown> | null
   readonly collapse?: Record<string, unknown> | null
   readonly runner?: Record<string, unknown> | null
-  readonly last_node?: Record<string, unknown> | null
+  readonly hash_summary?: Record<string, unknown> | null
+  readonly last_node?: CTreeNode | Record<string, unknown> | null
+}
+
+export interface CTreeSnapshotResponse {
+  readonly snapshot?: CTreeSnapshotSummary | Record<string, unknown> | null
+  readonly compiler?: Record<string, unknown> | null
+  readonly collapse?: Record<string, unknown> | null
+  readonly runner?: Record<string, unknown> | null
+  readonly hash_summary?: Record<string, unknown> | null
+  readonly last_node?: CTreeNode | Record<string, unknown> | null
+}
+
+export interface CTreeDiskArtifact {
+  readonly path: string
+  readonly exists: boolean
+  readonly size_bytes?: number | null
+  readonly sha256?: string | null
+  readonly sha256_skipped?: boolean | null
+}
+
+export interface CTreeDiskArtifactsResponse {
+  readonly root: string
+  readonly artifacts: Record<string, CTreeDiskArtifact>
+}
+
+export interface CTreeEventsResponse {
+  readonly source: string
+  readonly root?: string | null
+  readonly offset: number
+  readonly limit?: number | null
+  readonly has_more?: boolean
+  readonly truncated?: boolean
+  readonly header?: Record<string, unknown> | null
+  readonly events: Record<string, unknown>[]
+  readonly artifact?: CTreeDiskArtifact | null
+}
+
+export type CTreeTreeStage = "RAW" | "SPEC" | "HEADER" | "FROZEN"
+export type CTreeTreeSource = "auto" | "disk" | "eventlog" | "memory"
+
+export interface CTreeTreeNode {
+  readonly id: string
+  readonly parent_id?: string | null
+  readonly kind: string
+  readonly turn?: number | null
+  readonly label?: string | null
+  readonly meta?: Record<string, unknown>
+}
+
+export interface CTreeTreeResponse {
+  readonly source: CTreeTreeSource | string
+  readonly stage: CTreeTreeStage | string
+  readonly root_id: string
+  readonly nodes: CTreeTreeNode[]
+  readonly selection?: Record<string, unknown> | null
+  readonly hashes?: Record<string, unknown> | null
 }
 
 export interface SessionArtifactInfo {

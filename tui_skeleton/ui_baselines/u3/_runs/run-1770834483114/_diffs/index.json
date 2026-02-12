@@ -1,0 +1,12 @@
+{
+  "okCount": 1,
+  "failCount": 0,
+  "missingBlessed": 0,
+  "missingCandidate": 0,
+  "index": [
+    {
+      "id": "diff_patch_preview",
+      "ok": true
+    }
+  ]
+}

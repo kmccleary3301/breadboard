@@ -5,6 +5,397 @@ on:
   pull_request:
 
 jobs:
+  compat_break_guard:
+    name: Compat break guard
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const core = require('@actions/core');
+            const fs = require('fs');
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.info('No pull_request context; skipping.');
+              return;
+            }
+            const labels = new Set((pr.labels || []).map(l => l.name));
+            const body = pr.body || '';
+            const bodyChecked = /\[x\]\s*\*\*Compat break\*\*/i.test(body) || /\[x\]\s*Compat break/i.test(body);
+
+            const patterns = [
+              "agentic_coder_prototype/state/session_state.py",
+              "agentic_coder_prototype/api/cli_bridge/events.py",
+              "agentic_coder_prototype/api/cli_bridge/service.py",
+              "agentic_coder_prototype/api/cli_bridge/app.py",
+              "implementations/tools/defs/",
+              "implementations/system_prompts/",
+              "agent_configs/",
+              "agentic_coder_prototype/tools.py",
+              "agentic_coder_prototype/tool_calling/",
+              "agentic_coder_prototype/tool_prompt_planner.py",
+              "agentic_coder_prototype/guardrail_orchestrator.py",
+              "agentic_coder_prototype/permission_broker.py",
+              "agentic_coder_prototype/guardrails/",
+              "agentic_coder_prototype/provider_runtime.py",
+              "agentic_coder_prototype/provider_ir.py",
+              "agentic_coder_prototype/agent_llm_openai.py",
+              "agentic_coder_prototype/compilation/system_prompt_compiler.py",
+              "agentic_coder_prototype/parity.py",
+              "scripts/run_parity_replays.py",
+              "scripts/replay_opencode_session.py",
+              "breadboard/ext/interfaces.py",
+              "breadboard/ext/registry.py",
+              "agentic_coder_prototype/api/cli_bridge/extension_loader.py",
+              "tests/fixtures/compat/",
+            ];
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const touched = files.filter(f => patterns.some(p => f.filename === p || f.filename.startsWith(p)));
+            const fixtureTouched = files.filter(f => f.filename.startsWith("tests/fixtures/compat/"));
+            const hasLabel = labels.has('compat-break') || labels.has('compat_break') || labels.has('compat');
+            const hasKernelChanges = touched.length > 0 || fixtureTouched.length > 0;
+            const report = {
+              event: context.eventName,
+              repository: `${context.repo.owner}/${context.repo.repo}`,
+              pull_number: pr.number,
+              labels: Array.from(labels).sort(),
+              has_compat_break_label: hasLabel,
+              has_template_checkbox: bodyChecked,
+              has_kernel_changes: hasKernelChanges,
+              requires_compat_break: hasKernelChanges,
+              touched_paths: touched.map(f => f.filename),
+              compat_fixture_paths: fixtureTouched.map(f => f.filename),
+              ok: !hasKernelChanges || hasLabel || bodyChecked,
+            };
+
+            fs.mkdirSync('artifacts', { recursive: true });
+            fs.writeFileSync('artifacts/compat_break_guard_report.json', JSON.stringify(report, null, 2) + "\n");
+
+            if (!hasKernelChanges) {
+              core.info('No parity-kernel paths touched.');
+              return;
+            }
+
+            if (!report.ok) {
+              core.setFailed(
+                [
+                  "Compat-break label required for parity-kernel changes.",
+                  "Add label 'compat-break' or check the Compat break box in the PR template.",
+                  "Touched paths:",
+                  ...touched.map(f => `- ${f.filename}`),
+                  ...(fixtureTouched.length ? ["Compat fixtures changed:", ...fixtureTouched.map(f => `- ${f.filename}`)] : []),
+                ].join("\\n")
+              );
+            } else {
+              core.info('Compat-break label/body present for parity-kernel changes.');
+            }
+
+      - name: Upload compat-break guard report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compat-break-guard-report
+          path: artifacts/compat_break_guard_report.json
+          if-no-files-found: error
+
+  conformance_gate:
+    name: Conformance gate (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve conformance regression override context
+        if: ${{ github.event_name == 'pull_request' }}
+        id: conformance_override
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+
+          data = json.loads(open(os.environ["GITHUB_EVENT_PATH"], "r", encoding="utf-8").read())
+          pr = data.get("pull_request") or {}
+          labels = {str(item.get("name", "")) for item in (pr.get("labels") or []) if isinstance(item, dict)}
+          body = pr.get("body") or ""
+          match = re.search(r"Conformance override reason:\\s*(.+)", body, flags=re.IGNORECASE)
+          reason = (match.group(1).strip() if match else "")
+          allow = bool(reason and "conformance-override" in labels)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"allow={str(allow).lower()}\n")
+              fh.write(f"reason={reason}\n")
+          PY
+
+      - name: Conformance scoreboard strict+regression gate
+        env:
+          SCORE_ALLOW: ${{ steps.conformance_override.outputs.allow }}
+          SCORE_REASON: ${{ steps.conformance_override.outputs.reason }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [[ "${SCORE_ALLOW:-}" == "true" && -n "${SCORE_REASON:-}" ]]; then
+            EXTRA+=(--allow-regression --override-reason "${SCORE_REASON}")
+          fi
+          python scripts/conformance_scoreboard.py \
+            --strict-all-five \
+            --baseline-json docs/conformance/scoreboard_baseline.json \
+            --require-no-regression \
+            "${EXTRA[@]}"
+          python scripts/conformance_scoreboard.py \
+            --baseline-json docs/conformance/scoreboard_baseline.json \
+            --require-no-regression \
+            "${EXTRA[@]}" \
+            --json-out artifacts/conformance/scoreboard.json \
+            --markdown-out artifacts/conformance/scoreboard.md
+      - name: Provider conformance report
+        run: |
+          python scripts/provider_conformance_report.py \
+            --baseline docs/conformance/provider_conformance_baseline.json \
+            --out artifacts/provider_conformance/report.json
+
+      - name: Docs references guard (core + conformance docs)
+        run: |
+          python scripts/check_docs_references.py \
+            docs/INSTALL_AND_DEV_QUICKSTART.md \
+            docs/REPLAY_EVAL_LANE.md \
+            docs/PROVIDER_CONFORMANCE_MATRIX.md \
+            docs/EXECUTION_BUDGETS_AND_CANCELLATION.md \
+            docs/ORCHESTRATION_EVENT_TAXONOMY.md \
+            docs/SDK_DOCS_INDEX.md \
+            docs/MIGRATION_AND_COMPATIBILITY.md \
+            docs/KNOWN_LIMITS_AND_ROADMAP.md \
+            docs/CONFORMANCE_5_0_SPEC.md \
+            docs/CONFORMANCE_SCOREBOARD.md \
+            docs/CONFORMANCE_GOVERNANCE.md \
+            docs/CONFORMANCE_REGRESSION_PLAYBOOK.md \
+            docs/CONFORMANCE_DEV_GUIDE.md
+
+      - name: Upload conformance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-scoreboard
+          path: |
+            artifacts/conformance/**
+            artifacts/provider_conformance/report.json
+          if-no-files-found: error
+
+  compat_core:
+    name: Compat core (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-core.txt
+
+      - name: Install core dependencies
+        run: python -m pip install -r requirements-core.txt
+
+      - name: Core install smoke
+        run: python -c "import breadboard"
+
+      - name: SDK doctor + smoke guardrail
+        env:
+          RAY_SCE_LOCAL_MODE: "1"
+          OPENAI_API_KEY: compat-dummy
+          ANTHROPIC_API_KEY: compat-dummy
+          OPENROUTER_API_KEY: compat-dummy
+        run: bash scripts/sdk_ci_guardrail.sh agent_configs/opencode_mock_c_fs.yaml
+
+      - name: Kernel import lint
+        run: python tools/import_lint.py
+
+      - name: Core compat suite
+        env:
+          RAY_SCE_LOCAL_MODE: "1"
+          AGENT_SCHEMA_V2_ENABLED: "1"
+          OPENAI_API_KEY: compat-dummy
+          ANTHROPIC_API_KEY: compat-dummy
+          OPENROUTER_API_KEY: compat-dummy
+          BB_COMPAT_WORKSPACE_ROOT: /tmp/bb_compat_workspaces
+        run: >
+          python -m pytest -q
+          tests/test_request_body_golden.py
+          tests/test_tool_schema_golden.py
+          tests/test_prompt_compilation_golden.py
+          tests/test_ctrees_determinism_corpus.py
+          tests/test_compat_break_guard_sim.py
+          tests/test_compat_break_guard_ci_parity.py
+          tests/test_compat_default_behavior_report.py
+          tests/test_atp_route_gating.py
+          tests/test_atp_repl_batch.py
+          tests/test_atp_replay_fixtures.py
+          tests/test_atp_vsock_protocol_conformance.py
+          tests/test_atp_benchmark_drift_checker.py
+          tests/test_atp_state_ref_regression_recovery.py
+          tests/test_atp_state_ref_variance_report.py
+          tests/test_state_store_lifecycle.py
+          tests/test_firecracker_file_io_fallback.py
+          tests/test_evolake_route_gating.py
+          tests/test_extension_route_prefix_policy.py
+          tests/test_extension_endpoint_enablement_matrix.py
+          tests/test_feature_audit_contract_schema.py
+          tests/test_plugin_loader.py
+          tests/test_plugin_signing.py
+          tests/test_plugin_manifest_malformed_fuzz.py
+          tests/test_plugin_isolation_and_permissions.py
+          tests/test_requirements_profiles.py
+          tests/test_import_boundaries.py
+          tests/test_kernel_imports.py
+          tests/test_vsock_protocol.py
+          tests/test_vsock_protocol_fallback.py
+          tests/test_vsock_fixture_parity.py
+          tests/test_vsock_envelope_policy.py
+          tests/test_vsock_legacy_scope.py
+          tests/test_firecracker_protocol_errors.py
+          tests/test_firecracker_ci_opt_in_policy.py
+          tests/test_atp_runbook_guardrails.py
+          tests/test_pr_template_governance.py
+          tests/test_otel_events_projection.py
+          tests/test_export_otel_from_events_script.py
+          tests/test_otlp_export.py
+          tests/test_sdk_compat_bridges.py
+          tests/test_export_bridge_views_script.py
+          tests/test_orchestration_event_taxonomy.py
+          tests/test_orchestration_scheduler_semantics.py
+          tests/test_replay_derive.py
+          tests/test_replay_eval_lane.py
+          tests/test_replay_eval_lane_script.py
+          tests/test_tui_engine_replay_bridge_scripts.py
+          tests/test_provider_conformance_report.py
+
+      - name: Extension-off invariants
+        env:
+          ATP_REPL_ENABLE: "1"
+          ATP_REPL_ROUTE: "1"
+        run: |
+          cat > /tmp/extensions_off.yaml <<'YAML'
+          extensions:
+            atp:
+              enabled: false
+            evolake:
+              enabled: false
+          YAML
+          export BREADBOARD_EXTENSIONS_CONFIG_PATH=/tmp/extensions_off.yaml
+          python -m pytest -q \
+            tests/test_atp_route_gating.py::test_atp_routes_explicitly_disabled_override_env \
+            tests/test_evolake_route_gating.py::test_evolake_routes_explicitly_disabled_override_env \
+            tests/test_feature_audit.py::test_feature_audit_defaults
+
+      - name: Build compatibility governance artifacts
+        run: |
+          python scripts/compat_surface_summary.py --out artifacts/compat_surface_summary.json
+          python scripts/compat_break_guard_sim.py --self-test --json-out artifacts/compat_break_guard_simulation.json
+          python scripts/compat_default_behavior_report.py --out artifacts/compat_default_behavior_report.json
+
+      - name: Upload compatibility governance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compat-governance-artifacts
+          path: |
+            artifacts/compat_surface_summary.json
+            artifacts/compat_break_guard_simulation.json
+            artifacts/compat_default_behavior_report.json
+          if-no-files-found: error
+
+  compat_break_regen:
+    name: Compat break regen guard
+    if: >-
+      ${{
+        github.event_name == 'pull_request' && (
+          contains(github.event.pull_request.labels.*.name, 'compat-break') ||
+          contains(github.event.pull_request.labels.*.name, 'compat_break') ||
+          contains(github.event.pull_request.labels.*.name, 'compat') ||
+          contains(github.event.pull_request.body || '', '[x] **Compat break**') ||
+          contains(github.event.pull_request.body || '', '[x] Compat break') ||
+          contains(github.event.pull_request.body || '', '[X] **Compat break**') ||
+          contains(github.event.pull_request.body || '', '[X] Compat break')
+        )
+      }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-core.txt
+
+      - name: Install core dependencies
+        run: python -m pip install -r requirements-core.txt
+
+      - name: Regenerate request-body fixtures
+        env:
+          RAY_SCE_LOCAL_MODE: "1"
+          AGENT_SCHEMA_V2_ENABLED: "1"
+          OPENAI_API_KEY: compat-dummy
+          ANTHROPIC_API_KEY: compat-dummy
+          OPENROUTER_API_KEY: compat-dummy
+          BB_COMPAT_WORKSPACE_ROOT: /tmp/bb_compat_workspaces
+        run: python scripts/compat_dump_request_bodies.py
+
+      - name: Ensure fixtures checked in
+        run: git diff --exit-code tests/fixtures/compat/request_bodies
+
+  firecracker_atp:
+    name: ATP Firecracker (self-hosted)
+    if: ${{ vars.ATP_FIRECRACKER_SMOKE == '1' }}
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Snapshot preflight (firecracker ATP)
+        env:
+          FIRECRACKER_SNAPSHOT: ${{ vars.FIRECRACKER_SNAPSHOT }}
+          FIRECRACKER_SNAPSHOT_DIRS: ${{ vars.FIRECRACKER_SNAPSHOT_DIRS }}
+        run: python scripts/atp_snapshot_preflight.py --json
+
+      - name: Run Firecracker ATP smoke + bench
+        env:
+          FIRECRACKER_SNAPSHOT: ${{ vars.FIRECRACKER_SNAPSHOT }}
+          FIRECRACKER_SNAPSHOT_MEM: ${{ vars.FIRECRACKER_SNAPSHOT_MEM }}
+          FIRECRACKER_SNAPSHOT_VSOCK: ${{ vars.FIRECRACKER_SNAPSHOT_VSOCK }}
+          FIRECRACKER_ROOTFS: ${{ vars.FIRECRACKER_ROOTFS }}
+          FIRECRACKER_BIN: ${{ vars.FIRECRACKER_BIN }}
+          FIRECRACKER_VSOCK_PORT: ${{ vars.FIRECRACKER_VSOCK_PORT }}
+          BUDGET_P95_MS: ${{ vars.ATP_REPL_BUDGET_P95_MS }}
+          ITERS: ${{ vars.ATP_REPL_BENCH_ITERS }}
+          ATP_REPL_BENCH_VALIDATE: ${{ vars.ATP_REPL_BENCH_VALIDATE || '1' }}
+          ATP_REPL_BENCH_SUMMARY_PATH: ${{ vars.ATP_REPL_BENCH_SUMMARY_PATH }}
+          ATP_REPL_LOAD_VALIDATE: ${{ vars.ATP_REPL_LOAD_VALIDATE || '1' }}
+          ATP_REPL_LOAD_CONCURRENCY: ${{ vars.ATP_REPL_LOAD_CONCURRENCY }}
+          ATP_REPL_LOAD_ITERS: ${{ vars.ATP_REPL_LOAD_ITERS }}
+          ATP_REPL_LOAD_SUMMARY_PATH: ${{ vars.ATP_REPL_LOAD_SUMMARY_PATH }}
+          ATP_SNAPSHOT_POOL_PROBE: ${{ vars.ATP_SNAPSHOT_POOL_PROBE || '0' }}
+          ATP_SNAPSHOT_POOL_MIN_HEALTHY: ${{ vars.ATP_SNAPSHOT_POOL_MIN_HEALTHY || '1' }}
+        run: bash scripts/atp_firecracker_ci.sh
+
   tui:
     name: TUI (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -32,6 +423,95 @@ jobs:
       - name: Unit tests
         working-directory: tui_skeleton
         run: npm test
+
+      - name: Runtime gate suite (strict, ubuntu only)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        working-directory: tui_skeleton
+        run: npm run runtime:gates:strict
+
+      - name: Runtime gate artifacts (ubuntu only)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        working-directory: tui_skeleton
+        run: |
+          mkdir -p ../artifacts/runtime_gates
+          cat > ../artifacts/runtime_gates/jitter_baseline.json <<'JSON'
+          ["x\ny\nz", "x\nY\nz"]
+          JSON
+          cat > ../artifacts/runtime_gates/jitter_candidate.json <<'JSON'
+          ["x\ny\nz", "x\ny\nz\nw"]
+          JSON
+          npm run runtime:gate:jitter -- \
+            --baseline ../artifacts/runtime_gates/jitter_baseline.json \
+            --candidate ../artifacts/runtime_gates/jitter_candidate.json \
+            --strict \
+            --out ../artifacts/runtime_gates/jitter_gate.json
+          npm run runtime:gate:noise -- \
+            --fixture src/commands/repl/__tests__/fixtures/multi_turn_interleave.jsonl \
+            --threshold 2 \
+            --strict \
+            --out ../artifacts/runtime_gates/noise_gate.json
+          npm run runtime:gate:noise:matrix -- \
+            --fixtures src/commands/repl/__tests__/fixtures/tool_call_result.jsonl,src/commands/repl/__tests__/fixtures/multi_turn_interleave.jsonl \
+            --threshold 100 \
+            --strict \
+            --out ../artifacts/runtime_gates/noise_matrix.json
+          npm run runtime:gate:dashboard -- \
+            --artifacts ../artifacts/runtime_gates \
+            --strict-tests-ok \
+            --strict \
+            --out ../artifacts/runtime_gates/dashboard.json \
+            --markdown-out ../artifacts/runtime_gates/dashboard.md
+
+      - name: Runtime gate summary (ubuntu only)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          if [ -f artifacts/runtime_gates/dashboard.md ]; then
+            cat artifacts/runtime_gates/dashboard.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Runtime Gate Dashboard" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "missing artifacts/runtime_gates/dashboard.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: TUI goldens (report-only)
+        working-directory: tui_skeleton
+        run: npm run tui:goldens:report
+
+      - name: Claude alignment (report-only)
+        working-directory: tui_skeleton
+        run: npm run claude:compare:report
+
+      - name: TUI goldens (strict gate, ubuntu only)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        working-directory: tui_skeleton
+        run: npm run tui:goldens:strict
+
+      - name: Upload TUI golden artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tui-goldens-${{ matrix.os }}
+          path: |
+            misc/tui_goldens/artifacts/run-*/**
+          if-no-files-found: ignore
+
+      - name: Upload Claude alignment artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-compare-${{ matrix.os }}
+          path: |
+            misc/tui_goldens/claude_compare/run-*/**
+          if-no-files-found: ignore
+
+      - name: Upload runtime gate artifacts
+        if: ${{ always() && matrix.os == 'ubuntu-latest' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-gates-${{ matrix.os }}
+          path: |
+            artifacts/runtime_gates/**
+          if-no-files-found: ignore
 
       - name: Build
         working-directory: tui_skeleton
@@ -116,6 +596,43 @@ jobs:
           tests/test_plugin_loader.py
           tests/test_skills_registry.py
           tests/test_mcp_manager.py
+          tests/test_atp_snapshot_preflight.py
+          tests/test_snapshot_dirs.py
+          tests/test_atp_firecracker_repl_load_snapshot_dirs.py
+          tests/test_feature_audit_contract_schema.py
+          tests/test_atp_snapshot_dir_validation.py
+          tests/test_atp_snapshot_pool_health.py
+          tests/test_atp_snapshot_pool_locks.py
+          tests/test_atp_snapshot_pool_builder.py
+          tests/test_atp_snapshot_pool_stability.py
+          tests/test_atp_ops_digest.py
+          tests/test_atp_seven_day_stability_report.py
+          tests/test_atp_threshold_policy.py
+          tests/test_atp_runbook_commands.py
+          tests/test_atp_artifact_validation.py
+          tests/test_atp_benchmark_drift_checker.py
+          tests/test_atp_state_ref_variance_report.py
+          tests/test_promote_atp_state_ref_baseline.py
+          tests/test_firecracker_file_io_fallback.py
+          tests/test_evolake_route_gating.py
+          tests/test_evolake_tools.py
+          tests/test_evolake_campaign_route.py
+
+      - name: Stream chaos suite
+        run: |
+          mkdir -p artifacts/stream_chaos
+          python -m pytest -q \
+            tests/test_cli_backend_streaming.py \
+            tests/test_cli_bridge_eventlog.py \
+            --junitxml artifacts/stream_chaos/pytest.xml
+
+      - name: Upload stream chaos artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stream-chaos-${{ matrix.os }}
+          path: artifacts/stream_chaos/pytest.xml
+          if-no-files-found: error
 
   python_smoke:
     name: Python smoke (${{ matrix.os }})

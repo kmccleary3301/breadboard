@@ -13,6 +13,8 @@ export interface AppConfig {
   readonly sessionCachePath: string
   readonly remoteStreamDefault: boolean
   readonly requestTimeoutMs: number
+  readonly streamSchema: number | null
+  readonly streamIncludeLegacy: boolean | null
 }
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:9099"
@@ -38,12 +40,28 @@ const computeConfig = (): AppConfig => {
   const remoteEnv = process.env.BREADBOARD_ENABLE_REMOTE_STREAM
   const remoteStreamDefault = remoteEnv === undefined ? true : remoteEnv === "1"
   const timeout = Number(process.env.BREADBOARD_API_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS)
+  const schemaEnv =
+    process.env.BREADBOARD_STREAM_SCHEMA ??
+    process.env.BREADBOARD_TUI_STREAM_SCHEMA ??
+    process.env.BREADBOARD_OPENTUI_STREAM_SCHEMA
+  const parsedSchema = schemaEnv ? Number(schemaEnv) : NaN
+  const streamSchema = Number.isFinite(parsedSchema) ? parsedSchema : null
+  const includeLegacyEnv =
+    process.env.BREADBOARD_STREAM_INCLUDE_LEGACY ??
+    process.env.BREADBOARD_TUI_STREAM_INCLUDE_LEGACY ??
+    process.env.BREADBOARD_OPENTUI_STREAM_INCLUDE_LEGACY
+  const streamIncludeLegacy =
+    includeLegacyEnv === undefined
+      ? null
+      : includeLegacyEnv === "1" || includeLegacyEnv.toLowerCase() === "true"
   return {
     baseUrl,
     authToken,
     sessionCachePath: resolveCachePath(),
     remoteStreamDefault,
     requestTimeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : DEFAULT_TIMEOUT_MS,
+    streamSchema,
+    streamIncludeLegacy,
   }
 }
 

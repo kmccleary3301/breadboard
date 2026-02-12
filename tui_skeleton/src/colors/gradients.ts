@@ -2,11 +2,13 @@ import chalk from "chalk"
 import chroma from "chroma-js"
 
 export const Gradients = {
-  // Crush-like duo: purple → cyan
-  crush: ["#B36BFF", "#7CF2FF"] as const,
+  // Brand duo: rail blue → jumper green
+  crush: ["#4da3ff", "#2ee59d"] as const,
+  // Brand trio: jam red → magenta → rail blue
+  breadboard: ["#ff4d6d", "#d94dff", "#4da3ff"] as const,
   // Alternates
-  candy: ["#FF6EC7", "#7C83FD"] as const,
-  limeOcean: ["#00D38D", "#2BD9FE"] as const,
+  candy: ["#ed840f", "#ff4d6d"] as const,
+  limeOcean: ["#2ee59d", "#4da3ff"] as const,
 } as const
 
 const seg =
@@ -39,4 +41,3 @@ export function applyForegroundGradient(input: string, stops: readonly string[],
 export function gradientLines(lines: string[], stops: readonly string[], bold = false): string[] {
   return lines.map((l) => applyForegroundGradient(l, stops, bold))
 }
-

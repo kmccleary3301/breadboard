@@ -1,4 +1,4 @@
-import type { Block } from "@stream-mdx/core/types"
+import type { Block, DiffKind, TokenLineV1 } from "@stream-mdx/core/types"
 
 export interface ConversationEntry {
   readonly id: string
@@ -52,6 +52,11 @@ export interface TranscriptPreferences {
   readonly collapseMode: "auto" | "none" | "all"
   readonly virtualization: "auto" | "compact"
   readonly richMarkdown: boolean
+  readonly toolRail?: boolean
+  readonly toolInline?: boolean
+  readonly rawStream?: boolean
+  readonly showReasoning?: boolean
+  readonly diffLineNumbers?: boolean
 }
 
 export interface CompletionState {
@@ -59,7 +64,148 @@ export interface CompletionState {
   readonly summary?: Record<string, unknown> | null
 }
 
+export type ActivityPrimary =
+  | "idle"
+  | "session"
+  | "run"
+  | "thinking"
+  | "responding"
+  | "tool_call"
+  | "tool_result"
+  | "permission_required"
+  | "permission_resolved"
+  | "reconnecting"
+  | "compacting"
+  | "completed"
+  | "halted"
+  | "cancelled"
+  | "error"
+
+export type ActivitySource = "runtime" | "event" | "user" | "system"
+
+export interface ActivityDetail {
+  readonly message?: string | null
+  readonly eventType?: string | null
+  readonly source?: ActivitySource | null
+}
+
+export interface ActivitySnapshot {
+  readonly primary: ActivityPrimary
+  readonly label: string
+  readonly detail?: ActivityDetail | null
+  readonly updatedAt: number
+  readonly displayedAt: number
+  readonly seq: number
+}
+
+export interface RuntimeTelemetry {
+  readonly statusTransitions: number
+  readonly suppressedTransitions: number
+  readonly illegalTransitions: number
+  readonly markdownFlushes: number
+  readonly thinkingUpdates: number
+  readonly adaptiveCadenceAdjustments: number
+}
+
+export type ThinkingMode = "off" | "summary" | "full"
+
+export interface ThinkingArtifact {
+  readonly id: string
+  readonly mode: ThinkingMode
+  readonly startedAt: number
+  readonly updatedAt: number
+  readonly finalizedAt?: number | null
+  readonly summary: string
+  readonly rawText?: string | null
+  readonly summaryTruncated?: boolean
+  readonly rawTruncated?: boolean
+  readonly sourceEventTypes?: ReadonlyArray<string>
+}
+
+export interface RuntimeBehaviorFlags {
+  readonly activityEnabled: boolean
+  readonly lifecycleToastsEnabled: boolean
+  readonly thinkingEnabled: boolean
+  readonly allowFullThinking: boolean
+  readonly allowRawThinkingPeek: boolean
+  readonly inlineThinkingBlockEnabled: boolean
+  readonly markdownCoalescingEnabled: boolean
+  readonly adaptiveMarkdownCadenceEnabled: boolean
+  readonly transitionDebug: boolean
+  readonly minDisplayMs: number
+  readonly statusUpdateMs: number
+  readonly thinkingMaxChars: number
+  readonly thinkingMaxLines: number
+  readonly adaptiveMarkdownMinChunkChars: number
+  readonly adaptiveMarkdownMinCoalesceMs: number
+  readonly adaptiveMarkdownBurstChars: number
+}
+
+export interface ProviderCapabilitiesSnapshot {
+  readonly provider: string
+  readonly model: string | null
+  readonly reasoningEvents: boolean
+  readonly thoughtSummaryEvents: boolean
+  readonly contextUsage: boolean
+  readonly activitySurface: boolean
+  readonly rawThinkingPeek: boolean
+  readonly inlineThinkingBlock: boolean
+  readonly warnings?: ReadonlyArray<string>
+}
+
 export type ToolLogKind = "command" | "status" | "call" | "result" | "reward" | "error" | "completion"
+
+export interface DiffBlock {
+  readonly kind: "diff"
+  readonly filePath?: string | null
+  readonly unified?: string | null
+  readonly additions?: number | null
+  readonly deletions?: number | null
+  readonly language?: string | null
+  readonly toolCallId?: string | null
+  readonly title?: string | null
+}
+
+export interface TuiToken {
+  readonly content: string
+  readonly color?: string | null
+  readonly fontStyle?: number | null
+}
+
+export type TuiTokenLine = ReadonlyArray<TuiToken>
+
+export type TuiDiffLineKind = "meta" | "hunk" | "add" | "del" | "context"
+
+export interface TuiDiffLine {
+  readonly kind: TuiDiffLineKind
+  readonly marker: string
+  readonly text: string
+  readonly oldNo?: number | null
+  readonly newNo?: number | null
+  readonly tokens?: TuiTokenLine | null
+}
+
+export interface MarkdownCodeLine {
+  readonly text: string
+  readonly tokens?: TokenLineV1 | null
+  readonly diffKind?: DiffKind | null
+  readonly oldNo?: number | null
+  readonly newNo?: number | null
+}
+
+export interface ToolDisplayPayload {
+  readonly title?: string | null
+  readonly summary?: string | string[] | null
+  readonly detail?: string | string[] | null
+  readonly detail_truncated?: {
+    readonly hidden?: number | null
+    readonly tail?: number | null
+    readonly mode?: string | null
+    readonly hint?: string | null
+  } | null
+  readonly category?: string | null
+  readonly diff_blocks?: DiffBlock[] | null
+}
 
 export interface ToolLogEntry {
   readonly id: string
@@ -68,6 +214,7 @@ export interface ToolLogEntry {
   readonly status?: LiveSlotStatus
   readonly callId?: string | null
   readonly createdAt: number
+  readonly display?: ToolDisplayPayload | null
 }
 
 export interface TodoItem {
@@ -164,6 +311,7 @@ export interface CTreeSnapshot {
   readonly compiler?: Record<string, unknown> | null
   readonly collapse?: Record<string, unknown> | null
   readonly runner?: Record<string, unknown> | null
+  readonly hash_summary?: Record<string, unknown> | null
   readonly last_node?: Record<string, unknown> | null
 }
 

@@ -13,6 +13,9 @@ import type {
   ModelCatalogResponse,
   SkillCatalogResponse,
   CTreeSnapshotResponse,
+  CTreeTreeResponse,
+  CTreeDiskArtifactsResponse,
+  CTreeEventsResponse,
 } from "./types.js"
 
 export class ApiError extends Error {
@@ -155,6 +158,38 @@ export const createApiClient = (config: ApiClientConfig) => ({
     requestWithConfig<SkillCatalogResponse>(config, `/sessions/${sessionId}/skills`, "GET"),
   getCtreeSnapshot: (sessionId: string) =>
     requestWithConfig<CTreeSnapshotResponse>(config, `/sessions/${sessionId}/ctrees`, "GET"),
+  getCtreeTree: (
+    sessionId: string,
+    options?: {
+      readonly stage?: string
+      readonly includePreviews?: boolean
+      readonly source?: string
+    },
+  ) =>
+    requestWithConfig<CTreeTreeResponse>(config, `/sessions/${sessionId}/ctrees/tree`, "GET", {
+      query: {
+        stage: options?.stage,
+        include_previews: options?.includePreviews,
+        source: options?.source,
+      },
+    }),
+  getCtreeDisk: (sessionId: string) =>
+    requestWithConfig<CTreeDiskArtifactsResponse>(config, `/sessions/${sessionId}/ctrees/disk`, "GET"),
+  getCtreeEvents: (
+    sessionId: string,
+    options?: {
+      readonly source?: string
+      readonly offset?: number
+      readonly limit?: number
+    },
+  ) =>
+    requestWithConfig<CTreeEventsResponse>(config, `/sessions/${sessionId}/ctrees/events`, "GET", {
+      query: {
+        source: options?.source,
+        offset: options?.offset,
+        limit: options?.limit,
+      },
+    }),
   downloadArtifact: (sessionId: string, artifact: string) =>
     requestWithConfig<string>(config, `/sessions/${sessionId}/download`, "GET", { query: { artifact }, responseType: "text" }),
   uploadAttachments: async (sessionId: string, attachments: ReadonlyArray<AttachmentUploadPayload>) => {
@@ -225,6 +260,9 @@ export const ApiClient: ApiClientInstance = {
   getModelCatalog: (...args) => buildApiClient().getModelCatalog(...args),
   getSkillsCatalog: (...args) => buildApiClient().getSkillsCatalog(...args),
   getCtreeSnapshot: (...args) => buildApiClient().getCtreeSnapshot(...args),
+  getCtreeTree: (...args) => buildApiClient().getCtreeTree(...args),
+  getCtreeDisk: (...args) => buildApiClient().getCtreeDisk(...args),
+  getCtreeEvents: (...args) => buildApiClient().getCtreeEvents(...args),
   downloadArtifact: (...args) => buildApiClient().downloadArtifact(...args),
   uploadAttachments: (...args) => buildApiClient().uploadAttachments(...args),
 }
@@ -242,4 +280,7 @@ export type {
   ModelCatalogResponse,
   SkillCatalogResponse,
   CTreeSnapshotResponse,
+  CTreeTreeResponse,
+  CTreeDiskArtifactsResponse,
+  CTreeEventsResponse,
 }

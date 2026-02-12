@@ -1,0 +1,7 @@
+breadboard — interactive session
+(pending) ● Assistant responding… ● model openrouter/x-ai/grok-4-fast ○ local ○ events 0 ○ tools 0
+
+
+❯ Check unicode + color rendering.
+
+• Working…

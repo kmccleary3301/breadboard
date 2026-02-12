@@ -11,7 +11,8 @@ describe("LineEditor", () => {
     const { stdin } = render(
       <LineEditor value="abc" cursor={3} focus placeholder="test" onChange={handleChange} onSubmit={() => {}} />,
     )
-    stdin.write("\b")
+    await flush()
+    stdin.write("\x7f")
     await flush()
     expect(handleChange).toHaveBeenCalledWith("ab", 2)
   })

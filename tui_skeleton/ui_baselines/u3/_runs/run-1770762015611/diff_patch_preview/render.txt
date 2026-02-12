@@ -1,0 +1,8 @@
+[96mbreadboard — interactive session[39m
+(pending) [96m●[39m Finished [96m●[39m model openrouter/x-ai/grok-4-fast [30m○[39m local [30m○[39m events 0 [93m●[39m tools 2
+
+
+[36m●[39m [1m[97mPatch(hello.c)[0m
+  │ - printf("hello world\n");
+  └ + printf("goodbye world\n");
+[36m●[39m [93mTool: running[39m

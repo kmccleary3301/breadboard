@@ -1,0 +1,8 @@
+[
+  { "action": "send", "text": "/view tools both" },
+  { "action": "send", "text": "/view reasoning on" },
+  { "action": "send", "text": "/view raw off" },
+  { "action": "send", "text": "start" },
+  { "action": "wait", "for": "events", "count": 26, "timeoutMs": 20000 },
+  { "action": "snapshot", "label": "f5-fidelity", "includeStatus": true }
+]

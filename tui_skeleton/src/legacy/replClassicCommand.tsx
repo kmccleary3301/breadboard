@@ -22,7 +22,7 @@ const DEMO_MODELS: ReadonlyArray<DemoModel> = [
   { id: "openrouter/anthropic/claude-3.5-sonnet", label: "Claude 3.5 Sonnet", provider: "OpenRouter", detail: "ctx 200k" },
   { id: "openrouter/google/gemini-pro", label: "Gemini Pro", provider: "OpenRouter", detail: "ctx 32k" },
   { id: "openrouter/mistral/mistral-large", label: "Mistral Large", provider: "OpenRouter", detail: "ctx 65k" },
-  { id: "openai/gpt-4o-mini", label: "GPT-4o mini", provider: "OpenAI", detail: "ctx 128k" },
+  { id: "openai/gpt-5.2", label: "GPT-5.2", provider: "OpenAI", detail: "ctx ?" },
 ]
 
 const DEMO_SLASH_COMMANDS: ReadonlyArray<{ readonly name: string; readonly summary: string; readonly usage?: string }> = [

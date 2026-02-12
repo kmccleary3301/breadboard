@@ -1,0 +1,5 @@
+[
+  { "action": "send", "text": "/view tools both" },
+  { "action": "send", "text": "start" },
+  { "action": "wait", "for": "events", "count": 12, "timeoutMs": 20000 }
+]

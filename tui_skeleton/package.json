@@ -12,7 +12,18 @@
     "postbuild": "tsx scripts/installLocalBin.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "runtime:gate:jitter": "node --import tsx scripts/runtime_jitter_gate.ts",
+    "runtime:gate:jitter:matrix": "node --import tsx scripts/runtime_jitter_matrix.ts",
+    "runtime:gate:noise": "node --import tsx scripts/runtime_transcript_noise_gate.ts",
+    "runtime:gate:noise:matrix": "node --import tsx scripts/runtime_noise_matrix.ts",
+    "runtime:gate:dashboard": "node --import tsx scripts/runtime_gate_dashboard.ts",
+    "runtime:triage:quick": "node --import tsx scripts/runtime_quick_triage_snapshots.ts",
+    "runtime:gates:strict": "vitest run src/commands/repl/__tests__/runtimeTransitionGate.test.ts src/commands/repl/__tests__/runtimeSafetyGate.test.ts src/repl/markdown/__tests__/jitterGate.test.ts src/repl/markdown/__tests__/streamingStressGate.test.ts src/commands/repl/__tests__/transcriptNoiseGate.test.ts",
+    "runtime:gates:p2": "bash scripts/runtime_p2_gate_pack.sh",
+    "tui:goldens:report": "node --import tsx scripts/tui_goldens_report.ts",
+    "tui:goldens:strict": "node --import tsx scripts/tui_goldens_strict.ts",
+    "claude:compare:report": "node --import tsx scripts/claude_compare_report.ts"
   },
   "dependencies": {
     "@effect/cli": "^0.69.0",
@@ -21,8 +32,8 @@
     "@effect/platform-node": "^0.95.0",
     "@effect/printer": "^0.45.0",
     "@effect/printer-ansi": "^0.45.0",
-    "@stream-mdx/core": "^0.0.2",
-    "@stream-mdx/worker": "^0.0.2",
+    "@stream-mdx/core": "^0.3.0",
+    "@stream-mdx/worker": "^0.3.0",
     "@types/node": "^24.2.1",
     "chalk": "^5.3.0",
     "chroma-js": "^2.4.2",
@@ -35,7 +46,8 @@
     "ink-select-input": "^6.2.0",
     "ink-text-input": "^6.0.0",
     "react": "^18.2.0",
-    "shiki": "^3.20.0"
+    "shiki": "^3.20.0",
+    "yaml": "^2.8.1"
   },
   "optionalDependencies": {
     "keytar": "^7.9.0"

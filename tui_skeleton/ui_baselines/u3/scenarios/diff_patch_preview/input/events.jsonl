@@ -1,0 +1,4 @@
+{"event": {"id": "d1", "seq": 1, "type": "run.start", "payload": {}}}
+{"event": {"id": "d2", "seq": 2, "type": "tool_call", "payload": {"call_id": "call-diff-1", "tool_name": "apply_patch", "args": {"path": "hello.c"}, "display": {"title": "Patch(hello.c)"}}}}
+{"event": {"id": "d3", "seq": 3, "type": "tool.result", "payload": {"call_id": "call-diff-1", "tool_name": "apply_patch", "display": {"title": "Patch(hello.c)", "summary": "Patched.", "diff_blocks": [{"unified": "--- a/hello.c\n+++ b/hello.c\n@@ -1,5 +1,5 @@\n-int main(void) {\n-    printf(\"hello world\\n\");\n+int main(void) {\n+    printf(\"goodbye world\\n\");\n     return 0;\n }\n"}], "detail_truncated": {"hidden": 0}}}}}
+{"event": {"id": "d4", "seq": 4, "type": "run.end", "payload": {"completed": true}}}

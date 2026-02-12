@@ -1,0 +1,9 @@
+{
+  "jitter": {
+    "maxPrefixChurnDelta": 0,
+    "maxReflowDelta": 0
+  },
+  "noise": {
+    "threshold": 0.8
+  }
+}

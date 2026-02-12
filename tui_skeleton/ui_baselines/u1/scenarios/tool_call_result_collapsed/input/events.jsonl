@@ -1,0 +1,4 @@
+{"event": {"id": "e1", "seq": 1, "type": "run.start", "payload": {}}}
+{"event": {"id": "e2", "seq": 2, "type": "tool_call", "payload": {"call_id": "call-1", "tool_name": "list_dir", "args": {"path": "./"}, "display": {"title": "List(./)"}}}}
+{"event": {"id": "e3", "seq": 3, "type": "tool.result", "payload": {"call_id": "call-1", "tool_name": "list_dir", "display": {"title": "List(./)", "summary": "Found 2 files, 1 folder", "detail": ["a.txt", "b.txt", "docs/"]}}}}
+{"event": {"id": "e4", "seq": 4, "type": "run.end", "payload": {"completed": true}}}

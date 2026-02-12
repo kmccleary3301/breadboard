@@ -1,7 +1,7 @@
 import chalk from "chalk"
 import type { Highlighter } from "shiki"
 
-const SHIKI_THEME = "github-dark"
+export const DEFAULT_SHIKI_THEME = "andromeeda"
 const MAX_SHIKI_LINES = 500
 const MAX_SHIKI_CHARS = 120_000
 const DEFAULT_LANGS = [
@@ -45,6 +45,7 @@ let status: ShikiStatus = "idle"
 let highlighter: Highlighter | null = null
 let loadPromise: Promise<Highlighter> | null = null
 let lastError: string | null = null
+let currentTheme = DEFAULT_SHIKI_THEME
 const listeners = new Set<() => void>()
 const languageLoads = new Map<string, Promise<void>>()
 
@@ -64,13 +65,31 @@ export const getShikiStatus = (): { status: ShikiStatus; error: string | null } 
   error: lastError,
 })
 
+export const getShikiTheme = (): string => currentTheme
+
+export const configureShikiTheme = (theme: string | undefined | null): void => {
+  const normalized = typeof theme === "string" && theme.trim().length > 0 ? theme.trim() : DEFAULT_SHIKI_THEME
+  if (normalized === currentTheme) return
+  currentTheme = normalized
+  if (highlighter && typeof (highlighter as { dispose?: () => void }).dispose === "function") {
+    ;(highlighter as { dispose?: () => void }).dispose?.()
+  }
+  highlighter = null
+  loadPromise = null
+  languageLoads.clear()
+  lastError = null
+  status = "idle"
+  ensureShikiLoaded()
+  notify()
+}
+
 export const ensureShikiLoaded = (): void => {
   if (status !== "idle") return
   status = "loading"
   loadPromise = import("shiki")
     .then(async ({ createHighlighter }) => {
       const loaded = await createHighlighter({
-        themes: [SHIKI_THEME],
+        themes: [currentTheme],
         langs: DEFAULT_LANGS,
       })
       return loaded
@@ -151,6 +170,6 @@ export const maybeHighlightCode = (code: string, lang?: string): string[] | null
     return null
   }
 
-  const result = highlighter.codeToTokens(code, { lang: langId as ShikiLang, theme: SHIKI_THEME })
+  const result = highlighter.codeToTokens(code, { lang: langId as ShikiLang, theme: currentTheme })
   return tokensToAnsiLines(result.tokens as ShikiToken[][])
 }
