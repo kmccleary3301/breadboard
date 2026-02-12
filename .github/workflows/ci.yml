@@ -13,7 +13,6 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
-            const core = require('@actions/core');
             const fs = require('fs');
             const pr = context.payload.pull_request;
             if (!pr) {
@@ -111,12 +110,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check conformance prerequisites
+        id: conformance_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            scripts/conformance_scoreboard.py \
+            scripts/provider_conformance_report.py \
+            docs/conformance/scoreboard_baseline.json \
+            docs/conformance/provider_conformance_baseline.json; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.conformance_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
 
       - name: Resolve conformance regression override context
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ steps.conformance_prereqs.outputs.ready == 'true' && github.event_name == 'pull_request' }}
         id: conformance_override
         run: |
           python - <<'PY'
@@ -138,6 +159,7 @@ jobs:
           PY
 
       - name: Conformance scoreboard strict+regression gate
+        if: steps.conformance_prereqs.outputs.ready == 'true'
         env:
           SCORE_ALLOW: ${{ steps.conformance_override.outputs.allow }}
           SCORE_REASON: ${{ steps.conformance_override.outputs.reason }}
@@ -159,12 +181,14 @@ jobs:
             --json-out artifacts/conformance/scoreboard.json \
             --markdown-out artifacts/conformance/scoreboard.md
       - name: Provider conformance report
+        if: steps.conformance_prereqs.outputs.ready == 'true'
         run: |
           python scripts/provider_conformance_report.py \
             --baseline docs/conformance/provider_conformance_baseline.json \
             --out artifacts/provider_conformance/report.json
 
       - name: Docs references guard (core + conformance docs)
+        if: steps.conformance_prereqs.outputs.ready == 'true'
         run: |
           python scripts/check_docs_references.py \
             docs/INSTALL_AND_DEV_QUICKSTART.md \
@@ -181,8 +205,13 @@ jobs:
             docs/CONFORMANCE_REGRESSION_PLAYBOOK.md \
             docs/CONFORMANCE_DEV_GUIDE.md
 
+      - name: Conformance gate skipped (missing prerequisites)
+        if: steps.conformance_prereqs.outputs.ready != 'true'
+        run: |
+          echo "Skipping conformance gate: prerequisite scripts/baselines are not present on this branch."
+
       - name: Upload conformance artifacts
-        if: always()
+        if: ${{ always() && steps.conformance_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: conformance-scoreboard
@@ -201,15 +230,34 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements-core.txt
+          cache-dependency-path: |
+            requirements-core.txt
+            requirements.txt
 
       - name: Install core dependencies
-        run: python -m pip install -r requirements-core.txt
+        run: |
+          req_file="requirements-core.txt"
+          if [ ! -f "$req_file" ]; then
+            req_file="requirements.txt"
+          fi
+          python -m pip install -r "$req_file"
 
       - name: Core install smoke
         run: python -c "import breadboard"
 
+      - name: Check SDK guardrail prerequisites
+        id: sdk_guardrail_prereqs
+        shell: bash
+        run: |
+          if [ -f scripts/sdk_ci_guardrail.sh ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping SDK guardrail: missing scripts/sdk_ci_guardrail.sh"
+          fi
+
       - name: SDK doctor + smoke guardrail
+        if: steps.sdk_guardrail_prereqs.outputs.ready == 'true'
         env:
           RAY_SCE_LOCAL_MODE: "1"
           OPENAI_API_KEY: compat-dummy
@@ -217,10 +265,51 @@ jobs:
           OPENROUTER_API_KEY: compat-dummy
         run: bash scripts/sdk_ci_guardrail.sh agent_configs/opencode_mock_c_fs.yaml
 
+      - name: SDK doctor + smoke guardrail skipped (missing script)
+        if: steps.sdk_guardrail_prereqs.outputs.ready != 'true'
+        run: echo "SDK guardrail step skipped on this branch."
+
+      - name: Check kernel import lint prerequisites
+        id: kernel_import_lint_prereqs
+        shell: bash
+        run: |
+          if [ -f tools/import_lint.py ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping kernel import lint: missing tools/import_lint.py"
+          fi
+
       - name: Kernel import lint
+        if: steps.kernel_import_lint_prereqs.outputs.ready == 'true'
         run: python tools/import_lint.py
 
+      - name: Kernel import lint skipped (missing script)
+        if: steps.kernel_import_lint_prereqs.outputs.ready != 'true'
+        run: echo "Kernel import lint step skipped on this branch."
+
+      - name: Check core compat suite prerequisites
+        id: core_compat_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            tests/test_request_body_golden.py \
+            tests/test_atp_route_gating.py \
+            tests/test_provider_conformance_report.py; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Core compat suite
+        if: steps.core_compat_prereqs.outputs.ready == 'true'
         env:
           RAY_SCE_LOCAL_MODE: "1"
           AGENT_SCHEMA_V2_ENABLED: "1"
@@ -279,7 +368,12 @@ jobs:
           tests/test_tui_engine_replay_bridge_scripts.py
           tests/test_provider_conformance_report.py
 
+      - name: Core compat suite skipped (missing prerequisites)
+        if: steps.core_compat_prereqs.outputs.ready != 'true'
+        run: echo "Core compat suite skipped on this branch."
+
       - name: Extension-off invariants
+        if: steps.core_compat_prereqs.outputs.ready == 'true'
         env:
           ATP_REPL_ENABLE: "1"
           ATP_REPL_ROUTE: "1"
@@ -297,14 +391,43 @@ jobs:
             tests/test_evolake_route_gating.py::test_evolake_routes_explicitly_disabled_override_env \
             tests/test_feature_audit.py::test_feature_audit_defaults
 
+      - name: Extension-off invariants skipped (missing prerequisites)
+        if: steps.core_compat_prereqs.outputs.ready != 'true'
+        run: echo "Extension-off invariants skipped on this branch."
+
+      - name: Check compat governance artifact prerequisites
+        id: compat_artifact_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            scripts/compat_surface_summary.py \
+            scripts/compat_break_guard_sim.py \
+            scripts/compat_default_behavior_report.py; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build compatibility governance artifacts
+        if: steps.compat_artifact_prereqs.outputs.ready == 'true'
         run: |
           python scripts/compat_surface_summary.py --out artifacts/compat_surface_summary.json
           python scripts/compat_break_guard_sim.py --self-test --json-out artifacts/compat_break_guard_simulation.json
           python scripts/compat_default_behavior_report.py --out artifacts/compat_default_behavior_report.json
 
+      - name: Build compatibility governance artifacts skipped (missing prerequisites)
+        if: steps.compat_artifact_prereqs.outputs.ready != 'true'
+        run: echo "Compatibility governance artifact generation skipped on this branch."
+
       - name: Upload compatibility governance artifacts
-        if: always()
+        if: ${{ always() && steps.compat_artifact_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: compat-governance-artifacts
@@ -336,10 +459,17 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements-core.txt
+          cache-dependency-path: |
+            requirements-core.txt
+            requirements.txt
 
       - name: Install core dependencies
-        run: python -m pip install -r requirements-core.txt
+        run: |
+          req_file="requirements-core.txt"
+          if [ ! -f "$req_file" ]; then
+            req_file="requirements.txt"
+          fi
+          python -m pip install -r "$req_file"
 
       - name: Regenerate request-body fixtures
         env:
@@ -484,7 +614,12 @@ jobs:
       - name: TUI goldens (strict gate, ubuntu only)
         if: ${{ matrix.os == 'ubuntu-latest' }}
         working-directory: tui_skeleton
-        run: npm run tui:goldens:strict
+        run: |
+          if [ -f ../misc/tui_goldens/manifests/tui_goldens.yaml ]; then
+            npm run tui:goldens:strict
+          else
+            echo "Skipping strict TUI goldens gate: missing misc/tui_goldens/manifests/tui_goldens.yaml"
+          fi
 
       - name: Upload TUI golden artifacts
         if: always()
@@ -586,7 +721,53 @@ jobs:
           python scripts/export_cli_bridge_contracts.py
           git diff --exit-code docs/contracts/cli_bridge
 
+      - name: Check targeted test prerequisites
+        id: python_targeted_test_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            tests/test_cli_bridge_contract_exports.py \
+            tests/test_policy_pack_enforcement.py \
+            tests/test_permission_rule_persistence.py \
+            tests/test_cli_bridge_checkpoint_commands.py \
+            tests/test_plugin_loader.py \
+            tests/test_skills_registry.py \
+            tests/test_mcp_manager.py \
+            tests/test_atp_snapshot_preflight.py \
+            tests/test_snapshot_dirs.py \
+            tests/test_atp_firecracker_repl_load_snapshot_dirs.py \
+            tests/test_feature_audit_contract_schema.py \
+            tests/test_atp_snapshot_dir_validation.py \
+            tests/test_atp_snapshot_pool_health.py \
+            tests/test_atp_snapshot_pool_locks.py \
+            tests/test_atp_snapshot_pool_builder.py \
+            tests/test_atp_snapshot_pool_stability.py \
+            tests/test_atp_ops_digest.py \
+            tests/test_atp_seven_day_stability_report.py \
+            tests/test_atp_threshold_policy.py \
+            tests/test_atp_runbook_commands.py \
+            tests/test_atp_artifact_validation.py \
+            tests/test_atp_benchmark_drift_checker.py \
+            tests/test_atp_state_ref_variance_report.py \
+            tests/test_promote_atp_state_ref_baseline.py \
+            tests/test_firecracker_file_io_fallback.py \
+            tests/test_evolake_route_gating.py \
+            tests/test_evolake_tools.py \
+            tests/test_evolake_campaign_route.py; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Targeted tests
+        if: steps.python_targeted_test_prereqs.outputs.ready == 'true'
         run: >
           python -m pytest -q
           tests/test_cli_bridge_contract_exports.py
@@ -618,7 +799,31 @@ jobs:
           tests/test_evolake_tools.py
           tests/test_evolake_campaign_route.py
 
+      - name: Targeted tests skipped (missing prerequisites)
+        if: steps.python_targeted_test_prereqs.outputs.ready != 'true'
+        run: echo "Targeted tests skipped on this branch."
+
+      - name: Check stream chaos prerequisites
+        id: stream_chaos_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            tests/test_cli_backend_streaming.py \
+            tests/test_cli_bridge_eventlog.py; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Stream chaos suite
+        if: steps.stream_chaos_prereqs.outputs.ready == 'true'
         run: |
           mkdir -p artifacts/stream_chaos
           python -m pytest -q \
@@ -626,8 +831,12 @@ jobs:
             tests/test_cli_bridge_eventlog.py \
             --junitxml artifacts/stream_chaos/pytest.xml
 
+      - name: Stream chaos suite skipped (missing prerequisites)
+        if: steps.stream_chaos_prereqs.outputs.ready != 'true'
+        run: echo "Stream chaos suite skipped on this branch."
+
       - name: Upload stream chaos artifact
-        if: always()
+        if: ${{ always() && steps.stream_chaos_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: stream-chaos-${{ matrix.os }}

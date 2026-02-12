@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 import { buildCTreeTreeRows } from "../treeView.js"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const fixturePath = path.resolve(__dirname, "../../../../../tests/fixtures/ctrees/simple_ctree_tree_frozen.json")
+const fixturePath = path.resolve(__dirname, "fixtures/simple_ctree_tree_frozen.json")
 
 const loadFixture = () => JSON.parse(fs.readFileSync(fixturePath, "utf8"))
 
