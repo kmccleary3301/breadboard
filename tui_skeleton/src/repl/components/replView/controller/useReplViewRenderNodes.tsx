@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from "react"
-import { Text } from "ink"
+import { Box, Text } from "ink"
 import { LiveSlot } from "../../LiveSlot.js"
 import { SLASH_COMMAND_HINT } from "../../../slashCommands.js"
 import { CHALK, COLORS } from "../theme.js"
@@ -19,6 +19,7 @@ type RenderNodesContext = {
   escPrimedAt: number | null
   pendingResponse: boolean
   scrollbackMode: boolean
+  subagentStrip: { headline: string; detail?: string; tone: "info" | "success" | "error" } | null
   liveSlots: any[]
   animationTick: number
   collapsibleEntries: any[]
@@ -43,6 +44,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     escPrimedAt,
     pendingResponse,
     scrollbackMode,
+    subagentStrip,
     liveSlots,
     animationTick,
     collapsibleEntries,
@@ -54,6 +56,22 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
   } = context
 
   const toolNodes = useMemo(() => [], [])
+
+  const subagentStripNode = useMemo(() => {
+    if (scrollbackMode || !subagentStrip) return null
+    const toneColor =
+      subagentStrip.tone === "error"
+        ? COLORS.error
+        : subagentStrip.tone === "success"
+          ? COLORS.success
+          : COLORS.info
+    return (
+      <Box flexDirection="column">
+        <Text color={toneColor}>{subagentStrip.headline}</Text>
+        {subagentStrip.detail ? <Text color={COLORS.textMuted}>{subagentStrip.detail}</Text> : null}
+      </Box>
+    )
+  }, [scrollbackMode, subagentStrip])
 
   const liveSlotNodes = useMemo(() => {
     if (scrollbackMode) return []
@@ -305,6 +323,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
 
   return {
     toolNodes,
+    subagentStripNode,
     liveSlotNodes,
     renderPermissionNoteLine,
     metaNodes,

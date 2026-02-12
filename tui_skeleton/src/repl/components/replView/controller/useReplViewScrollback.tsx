@@ -50,6 +50,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     hints,
     attachments,
     fileMentions,
+    workGraph,
     transcriptViewerOpen,
     transcriptNudge,
     completionHint,
@@ -590,6 +591,31 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     [renderConversationEntry, renderToolEntry, toToolLogEntry],
   )
 
+  const subagentStrip = useMemo(() => {
+    if (!tuiConfig.subagents.stripEnabled) return null
+    const order = Array.isArray(workGraph?.itemOrder) ? workGraph.itemOrder : []
+    if (order.length === 0) return null
+    let running = 0
+    let failed = 0
+    let completed = 0
+    let blocked = 0
+    let lead: { status?: string; title?: string } | null = null
+    for (const workId of order) {
+      const item = workGraph?.itemsById?.[workId]
+      if (!item) continue
+      if (!lead) lead = item
+      if (item.status === "running") running += 1
+      else if (item.status === "failed") failed += 1
+      else if (item.status === "completed") completed += 1
+      else if (item.status === "blocked") blocked += 1
+    }
+    return {
+      headline: `subagents ${running} run · ${completed} done · ${failed} fail · ${blocked} blocked`,
+      detail: lead ? `${lead.status ?? "pending"} · ${lead.title ?? "task"}` : undefined,
+      tone: failed > 0 ? ("error" as const) : running > 0 ? ("info" as const) : ("success" as const),
+    }
+  }, [tuiConfig.subagents.stripEnabled, workGraph])
+
   useEffect(() => {
     renderConversationEntryRef.current = renderConversationEntry
     renderToolEntryRef.current = renderToolEntry
@@ -608,6 +634,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     escPrimedAt: context.escPrimedAt,
     pendingResponse,
     scrollbackMode: SCROLLBACK_MODE,
+    subagentStrip,
     liveSlots,
     animationTick,
     collapsibleEntries,

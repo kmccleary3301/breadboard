@@ -38,6 +38,7 @@ import {
   parseNumberish,
   sleep,
 } from "./controllerUtils.js"
+import { resolveSubagentUiPolicy, type SubagentUiPolicy } from "./subagentUiPolicy.js"
 type CompletionView = {
   completed: boolean
   status: string
@@ -163,6 +164,76 @@ const maybeLifecycleToast = (controller: any, message: string, eventType: string
     BRAND_COLORS.duneOrange,
     "pending",
     1100,
+    eventType,
+  )
+}
+
+const normalizeSubagentStatus = (rawStatus: string): "running" | "completed" | "failed" | "blocked" | "cancelled" | "pending" => {
+  const seed = rawStatus.trim().toLowerCase()
+  if (!seed) return "pending"
+  if (seed.includes("complete") || seed.includes("done") || seed.includes("success")) return "completed"
+  if (seed.includes("fail") || seed.includes("error") || seed.includes("timeout")) return "failed"
+  if (seed.includes("block") || seed.includes("wait")) return "blocked"
+  if (seed.includes("cancel") || seed.includes("stop")) return "cancelled"
+  if (seed.includes("run") || seed.includes("progress") || seed.includes("spawn") || seed.includes("start")) return "running"
+  return "pending"
+}
+
+const resolveSubagentStatus = (payload: Record<string, unknown>, fallback?: string): string => {
+  const status = extractString(payload, ["status", "state", "kind", "event", "type"]) ?? fallback ?? "update"
+  return status.trim() || "update"
+}
+
+const emitSubagentToast = (
+  controller: any,
+  payload: Record<string, unknown>,
+  eventType: string,
+  policy: SubagentUiPolicy,
+): void => {
+  if (!policy.routeTaskEventsToLiveSlots) return
+  const taskId = extractString(payload, ["task_id", "taskId", "id"]) ?? "task"
+  const statusRaw = resolveSubagentStatus(payload)
+  const status = normalizeSubagentStatus(statusRaw)
+  const description =
+    extractString(payload, ["description", "title", "summary", "prompt", "subagent_type", "subagentType"]) ?? taskId
+  const now = Date.now()
+  const key = `subagent:${taskId}`
+  const ledger = controller.subagentToastLedger as Map<string, { status: string; at: number }>
+  const last = ledger.get(key)
+  if (last && last.status === status && now - last.at < policy.toastMergeWindowMs) return
+  ledger.set(key, { status, at: now })
+  if (ledger.size > 256) {
+    const stale = ledger.keys().next().value
+    if (stale) ledger.delete(stale)
+  }
+  const statusLabel =
+    status === "completed"
+      ? "completed"
+      : status === "failed"
+        ? "failed"
+        : status === "blocked"
+          ? "blocked"
+          : status === "cancelled"
+            ? "cancelled"
+            : status === "running"
+              ? "running"
+              : statusRaw
+  const slotStatus = status === "completed" ? "success" : status === "failed" ? "error" : "pending"
+  const color =
+    status === "completed"
+      ? SEMANTIC_COLORS.success
+      : status === "failed"
+        ? SEMANTIC_COLORS.error
+      : status === "blocked"
+          ? BRAND_COLORS.duneOrange
+          : BRAND_COLORS.railBlue
+  const ttl = status === "failed" ? policy.toastErrorTtlMs : policy.toastTtlMs
+  controller.upsertLiveSlot?.(
+    key,
+    `[subagent] ${statusLabel} · ${description}`,
+    color,
+    slotStatus,
+    ttl,
     eventType,
   )
 }
@@ -955,6 +1026,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
     }
     case "task_event": {
       const payload = isRecord(event.payload) ? event.payload : {}
+      const policy = resolveSubagentUiPolicy(this.runtimeFlags ?? {}, process.env)
       const taskId = extractString(payload, ["task_id", "id"])
       const status = extractString(payload, ["status", "state"]) ?? "update"
       const statusLower = status.toLowerCase()
@@ -967,31 +1039,38 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const line = lineParts.length > 0 ? lineParts.join(" · ") : JSON.stringify(payload)
       const isError = typeof payload.error === "string" && payload.error.trim().length > 0
       const isComplete = status.toLowerCase().includes("complete") || status.toLowerCase().includes("done")
-      this.addTool("status", `[task] ${line}`, isError ? "error" : isComplete ? "success" : "pending")
+      if (policy.routeTaskEventsToToolRail) {
+        this.addTool("status", `[task] ${line}`, isError ? "error" : isComplete ? "success" : "pending")
+      }
       this.handleTaskEvent(payload, {
         eventType: event.type,
         eventId: event.id,
         seq: nextSeq,
         timestamp: event.timestamp,
       })
+      emitSubagentToast(this, payload, event.type, policy)
       break
     }
     case "agent.spawn":
     case "agent.status":
     case "agent.end": {
       const payload = isRecord(event.payload) ? event.payload : {}
+      const policy = resolveSubagentUiPolicy(this.runtimeFlags ?? {}, process.env)
       const status = event.type.split(".")[1] ?? "update"
       const description = extractString(payload, ["summary", "description", "title"]) ?? "Subagent"
       const taskId = extractString(payload, ["task_id", "id"]) ?? undefined
       const lineParts = [status, description, taskId].filter(Boolean)
       const line = lineParts.length > 0 ? lineParts.join(" · ") : JSON.stringify(payload)
-      this.addTool("status", `[agent] ${line}`, status === "end" ? "success" : "pending")
+      if (policy.routeTaskEventsToToolRail) {
+        this.addTool("status", `[agent] ${line}`, status === "end" ? "success" : "pending")
+      }
       this.handleTaskEvent({ ...payload, status }, {
         eventType: event.type,
         eventId: event.id,
         seq: nextSeq,
         timestamp: event.timestamp,
       })
+      emitSubagentToast(this, { ...payload, status }, event.type, policy)
       break
     }
     case "ctree_node": {

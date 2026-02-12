@@ -141,6 +141,7 @@ export const useReplViewController = ({
   viewPrefs,
   todos,
   tasks,
+  workGraph,
   ctreeSnapshot,
   ctreeTree,
   ctreeTreeStatus,
@@ -862,6 +863,7 @@ export const useReplViewController = ({
     cycleCollapsibleSelection,
     toggleSelectedCollapsibleEntry,
     toolNodes,
+    subagentStripNode,
     liveSlotNodes,
     renderPermissionNoteLine,
     metaNodes,
@@ -904,6 +906,7 @@ export const useReplViewController = ({
     hints,
     attachments,
     fileMentions,
+    workGraph,
     transcriptViewerOpen,
     transcriptNudge,
     completionHint:
@@ -1049,6 +1052,7 @@ export const useReplViewController = ({
       transcriptNodes={transcriptNodes}
       toolNodes={toolNodes}
       overlayActive={overlayActive}
+      subagentStripNode={subagentStripNode}
       liveSlotNodes={liveSlotNodes}
       collapsedHintNode={collapsedHintNode}
       virtualizationHintNode={virtualizationHintNode}

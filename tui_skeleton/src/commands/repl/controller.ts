@@ -267,6 +267,7 @@ export class ReplSessionController extends EventEmitter {
   private stopRequestedAt: number | null = null
   private stopTimer: NodeJS.Timeout | null = null
   private readonly taskMap = new Map<string, TaskEntry>()
+  private readonly subagentToastLedger = new Map<string, { status: string; at: number }>()
   private workGraph: WorkGraphState = createWorkGraphState()
   private workGraphQueue: WorkGraphReduceInput[] = []
   private workGraphFlushTimer: NodeJS.Timeout | null = null
@@ -620,6 +621,7 @@ export class ReplSessionController extends EventEmitter {
     this.lastThinkingPeekAt = 0
     this.workGraph = createWorkGraphState()
     this.workGraphQueue = []
+    this.subagentToastLedger.clear()
     if (this.workGraphFlushTimer) {
       clearTimeout(this.workGraphFlushTimer)
       this.workGraphFlushTimer = null
