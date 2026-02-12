@@ -867,13 +867,14 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             const globalIndex = scroll + idx
             const isActive = globalIndex === selectedTaskIndex
             const statusLabel = (row.status || "update").replace(/[_-]+/g, " ")
-            const laneLabel = row.task.subagentType || "primary"
+            const laneLabel = row.task.subagentType || row.task.laneId || "primary"
             const idLabel = row.id.slice(0, 8)
             const suffix = CHALK.dim(`#${idLabel}`)
             const laneWidth = Math.min(16, Math.max(8, Math.floor(lineWidth * 0.25)))
             const laneCell = formatCell(`[${laneLabel}]`, laneWidth)
             const leftWidth = Math.max(0, lineWidth - stripAnsiCodes(suffix).length - laneWidth - 2)
-            const left = formatCell(`${statusLabel} · ${row.label}`, leftWidth)
+            const progress = row.progressLabel ? ` · steps ${row.progressLabel}` : ""
+            const left = formatCell(`${statusLabel} · ${row.label}${progress}`, leftWidth)
             const line = `${laneCell} ${left} ${suffix}`
             panelRows.push({
               kind: "item",
@@ -896,6 +897,15 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         const footerLines: SelectPanelLine[] = []
         if (selectedTask) {
           footerLines.push({ text: `ID: ${selectedTask.id}`, color: "dim" })
+          if (selectedTask.mode) {
+            footerLines.push({ text: `Mode: ${selectedTask.mode}`, color: "dim" })
+          }
+          if (selectedTask.counters?.total) {
+            footerLines.push({
+              text: `Steps: ${selectedTask.counters.completed ?? 0}/${selectedTask.counters.total} (running ${selectedTask.counters.running ?? 0}, failed ${selectedTask.counters.failed ?? 0})`,
+              color: "dim",
+            })
+          }
           if (selectedTask.outputExcerpt) {
             footerLines.push({ text: `Output: ${selectedTask.outputExcerpt}`, color: "dim" })
           }

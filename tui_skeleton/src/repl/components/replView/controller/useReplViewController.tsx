@@ -419,6 +419,8 @@ export const useReplViewController = ({
     rewindIndex,
     todos,
     tasks,
+    workGraph,
+    subagentTaskboardEnabled: tuiConfig.subagents.taskboardEnabled,
     taskIndex,
     taskSearchQuery,
     taskStatusFilter,

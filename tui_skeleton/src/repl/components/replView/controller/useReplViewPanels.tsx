@@ -68,6 +68,8 @@ export const useReplViewPanels = (context: PanelsContext) => {
     rewindIndex,
     todos,
     tasks,
+    workGraph,
+    subagentTaskboardEnabled,
     taskIndex,
     taskSearchQuery,
     taskStatusFilter,
@@ -534,10 +536,42 @@ export const useReplViewPanels = (context: PanelsContext) => {
   const todoViewportRows = useMemo(() => Math.max(8, Math.min(18, Math.floor(rowCount * 0.45))), [rowCount])
   const todoMaxScroll = Math.max(0, todoRows.length - todoViewportRows)
 
-  const sortedTasks = useMemo(
-    () => [...tasks].sort((a: any, b: any) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)),
-    [tasks],
-  )
+  const sortedTasks = useMemo(() => {
+    const legacySorted = [...tasks].sort((a: any, b: any) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+    if (!subagentTaskboardEnabled) return legacySorted
+    const byId = new Map<string, any>()
+    for (const task of legacySorted) {
+      if (task?.id) byId.set(task.id, task)
+    }
+    const merged: any[] = []
+    const seen = new Set<string>()
+    const itemOrder = Array.isArray(workGraph?.itemOrder) ? workGraph.itemOrder : []
+    for (const workId of itemOrder) {
+      const item = workGraph?.itemsById?.[workId]
+      if (!item) continue
+      const base = byId.get(workId) ?? {}
+      seen.add(workId)
+      merged.push({
+        ...base,
+        id: workId,
+        description: base.description ?? item.title ?? null,
+        subagentType: base.subagentType ?? item.laneLabel ?? null,
+        status: base.status ?? item.status ?? null,
+        outputExcerpt: base.outputExcerpt ?? item.lastSafeExcerpt ?? null,
+        artifactPath: base.artifactPath ?? item.artifactPaths?.[0] ?? null,
+        updatedAt: Math.max(base.updatedAt ?? 0, item.updatedAt ?? 0),
+        counters: item.counters ?? null,
+        steps: item.steps ?? [],
+        mode: item.mode ?? null,
+        laneId: item.laneId ?? null,
+      })
+    }
+    for (const task of legacySorted) {
+      if (!task?.id || seen.has(task.id)) continue
+      merged.push(task)
+    }
+    return merged.sort((a: any, b: any) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+  }, [subagentTaskboardEnabled, tasks, workGraph])
   const filteredTasks = useMemo(() => {
     const query = taskSearchQuery.trim().toLowerCase()
     const statusFilter = taskStatusFilter
@@ -571,10 +605,16 @@ export const useReplViewPanels = (context: PanelsContext) => {
       if (task.subagentType) {
         labelParts.push(`(${task.subagentType})`)
       }
+      const counters = task.counters
+      const progressLabel =
+        counters && Number.isFinite(counters.total) && counters.total > 0
+          ? `${counters.completed ?? 0}/${counters.total}`
+          : null
       return {
         id: task.id,
         status,
         label: labelParts.join(" "),
+        progressLabel,
         task,
       }
     })
