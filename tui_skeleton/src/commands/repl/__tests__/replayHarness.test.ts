@@ -5,6 +5,7 @@ import { ReplSessionController } from "../controller.js"
 import { renderStateToText } from "../renderText.js"
 
 type RawEvent = Record<string, unknown>
+const normalizeEol = (value: string): string => value.replace(/\r\n/g, "\n")
 
 const parseEvent = (raw: string): RawEvent | null => {
   let parsed: any
@@ -80,17 +81,17 @@ const readExpected = (name: string): string => {
 describe("render_events_jsonl replay fixtures", () => {
   it("matches tool call + tool result fixture", () => {
     const snapshot = renderFixture("tool_call_result")
-    expect(snapshot).toBe(readExpected("tool_call_result"))
+    expect(normalizeEol(snapshot)).toBe(normalizeEol(readExpected("tool_call_result")))
   })
 
   it("matches tool display head/tail truncation fixture", () => {
     const snapshot = renderFixture("tool_display_head_tail")
-    expect(snapshot).toBe(readExpected("tool_display_head_tail"))
+    expect(normalizeEol(snapshot)).toBe(normalizeEol(readExpected("tool_display_head_tail")))
   })
 
   it("matches assistant streaming interrupted by tool fixture", () => {
     const snapshot = renderFixture("assistant_tool_interleave")
-    expect(snapshot).toBe(readExpected("assistant_tool_interleave"))
+    expect(normalizeEol(snapshot)).toBe(normalizeEol(readExpected("assistant_tool_interleave")))
   })
 
   it("segments assistant output around tool events", () => {
@@ -104,12 +105,12 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("matches system notice + tool error fixture", () => {
     const snapshot = renderFixture("system_notice_tool_error")
-    expect(snapshot).toBe(readExpected("system_notice_tool_error"))
+    expect(normalizeEol(snapshot)).toBe(normalizeEol(readExpected("system_notice_tool_error")))
   })
 
   it("matches multi-turn interleaving fixture", () => {
     const snapshot = renderFixture("multi_turn_interleave")
-    expect(snapshot).toBe(readExpected("multi_turn_interleave"))
+    expect(normalizeEol(snapshot)).toBe(normalizeEol(readExpected("multi_turn_interleave")))
   })
 
   it("merges tool call + result into a single tool entry", () => {

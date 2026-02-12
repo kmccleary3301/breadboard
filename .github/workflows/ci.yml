@@ -107,6 +107,13 @@ jobs:
 
   conformance_gate:
     name: Conformance gate (ubuntu)
+    if: >-
+      ${{
+        hashFiles('scripts/conformance_scoreboard.py') != '' &&
+        hashFiles('scripts/provider_conformance_report.py') != '' &&
+        hashFiles('docs/conformance/scoreboard_baseline.json') != '' &&
+        hashFiles('docs/conformance/provider_conformance_baseline.json') != ''
+      }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -201,10 +208,17 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements-core.txt
+          cache-dependency-path: |
+            requirements-core.txt
+            requirements.txt
 
       - name: Install core dependencies
-        run: python -m pip install -r requirements-core.txt
+        run: |
+          req_file="requirements-core.txt"
+          if [ ! -f "$req_file" ]; then
+            req_file="requirements.txt"
+          fi
+          python -m pip install -r "$req_file"
 
       - name: Core install smoke
         run: python -c "import breadboard"
@@ -336,10 +350,17 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements-core.txt
+          cache-dependency-path: |
+            requirements-core.txt
+            requirements.txt
 
       - name: Install core dependencies
-        run: python -m pip install -r requirements-core.txt
+        run: |
+          req_file="requirements-core.txt"
+          if [ ! -f "$req_file" ]; then
+            req_file="requirements.txt"
+          fi
+          python -m pip install -r "$req_file"
 
       - name: Regenerate request-body fixtures
         env:

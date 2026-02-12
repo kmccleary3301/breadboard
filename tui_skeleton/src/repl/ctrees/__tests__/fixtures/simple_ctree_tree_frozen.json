@@ -1,0 +1,44 @@
+{
+  "root_id": "ctrees:root",
+  "nodes": [
+    {
+      "id": "ctrees:root",
+      "kind": "root"
+    },
+    {
+      "id": "ctrees:turn:0",
+      "parent_id": "ctrees:root",
+      "kind": "turn"
+    },
+    {
+      "id": "ctrees:turn:1",
+      "parent_id": "ctrees:root",
+      "kind": "turn"
+    },
+    {
+      "id": "ctrees:node:n00000001_54dd7f92",
+      "parent_id": "ctrees:turn:1",
+      "kind": "message"
+    },
+    {
+      "id": "ctrees:node:n00000002_282a55bf",
+      "parent_id": "ctrees:turn:1",
+      "kind": "message"
+    },
+    {
+      "id": "ctrees:tasks",
+      "parent_id": "ctrees:root",
+      "kind": "tasks"
+    },
+    {
+      "id": "ctrees:task:t1",
+      "parent_id": "ctrees:tasks",
+      "kind": "task"
+    },
+    {
+      "id": "ctrees:node:n00000003_c21875af",
+      "parent_id": "ctrees:task:t1",
+      "kind": "message"
+    }
+  ]
+}
