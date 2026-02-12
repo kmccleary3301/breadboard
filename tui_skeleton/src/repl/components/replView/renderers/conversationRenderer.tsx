@@ -6,6 +6,7 @@ import {
   computeDiffPreview,
   ENTRY_COLLAPSE_HEAD,
   ENTRY_COLLAPSE_TAIL,
+  stripInlineThinkingMarker,
   shouldAutoCollapseEntry,
 } from "../../../transcriptUtils.js"
 import { blocksToLines, renderMarkdownFallbackLines } from "./markdown/streamMdxAdapter.js"
@@ -126,9 +127,10 @@ export const useConversationMeasure = (options: ConversationMeasureOptions) => {
     (entry: ConversationEntry): number => {
       const hasRichBlocks = Boolean(entry.richBlocks && entry.richBlocks.length > 0)
       const useRich = viewPrefs.richMarkdown && hasRichBlocks && !entry.markdownError
+      const normalizedText = stripInlineThinkingMarker(entry.text)
       const fallback = viewPrefs.richMarkdown
-        ? renderMarkdownFallbackLines(entry.text, { ...markdownRenderOptions, width: markdownWidth })
-        : entry.text.split(/\r?\n/)
+        ? renderMarkdownFallbackLines(normalizedText, { ...markdownRenderOptions, width: markdownWidth })
+        : normalizedText.split(/\r?\n/)
       const lines = (useRich
         ? blocksToLines(entry.richBlocks, { ...markdownRenderOptions, width: markdownWidth })
         : fallback) as string[]
@@ -212,7 +214,8 @@ export const useConversationRenderer = (options: ConversationRenderOptions) => {
     (entry: ConversationEntry, key?: string) => {
       const hasRichBlocks = Boolean(entry.richBlocks && entry.richBlocks.length > 0)
       const useRich = viewPrefs.richMarkdown && hasRichBlocks && !entry.markdownError
-      const rawText = entry.text.trim()
+      const normalizedText = stripInlineThinkingMarker(entry.text)
+      const rawText = normalizedText.trim()
       if (!hasRichBlocks && !entry.markdownError && (!rawText || rawText.toLowerCase() === "none")) {
         return null
       }
@@ -249,8 +252,8 @@ export const useConversationRenderer = (options: ConversationRenderOptions) => {
         </Text>
       )
       const fallback = viewPrefs.richMarkdown
-        ? renderMarkdownFallbackLines(entry.text, { ...markdownRenderOptions, width: markdownWidth })
-        : entry.text.split(/\r?\n/)
+        ? renderMarkdownFallbackLines(normalizedText, { ...markdownRenderOptions, width: markdownWidth })
+        : normalizedText.split(/\r?\n/)
       const lines = (useRich
         ? blocksToLines(entry.richBlocks, { ...markdownRenderOptions, width: markdownWidth })
         : fallback) as string[]

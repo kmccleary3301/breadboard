@@ -1,3 +1,43 @@
+import { ApiError } from "../../api/client.js"
+import type {
+  CTreeNode,
+  CTreeSnapshotSummary,
+  SessionEvent,
+} from "../../api/types.js"
+import { reduceCTreeModel } from "../../repl/ctrees/reducer.js"
+import { BRAND_COLORS, SEMANTIC_COLORS } from "../../repl/designSystem.js"
+import { stripAnsi } from "../../repl/stringUtils.js"
+import { INLINE_THINKING_MARKER } from "../../repl/transcriptUtils.js"
+import type {
+  CheckpointSummary,
+  CTreeSnapshot,
+  PermissionRequest,
+  SkillCatalog,
+  SkillSelection,
+  SkillCatalogSources,
+  ThinkingMode,
+} from "../../repl/types.js"
+import {
+  appendThinkingArtifact,
+  createThinkingArtifact,
+  finalizeThinkingArtifact,
+  normalizeThinkingSignal,
+} from "./controllerActivityRuntime.js"
+import {
+  DEBUG_EVENTS,
+  MAX_RETRIES,
+  STOP_SOFT_TIMEOUT_MS,
+  createSlotId,
+  extractCtreeSnapshotSummary,
+  extractRawString,
+  extractString,
+  formatErrorPayload,
+  isRecord,
+  normalizeModeValue,
+  normalizePermissionMode,
+  parseNumberish,
+  sleep,
+} from "./controllerUtils.js"
 type CompletionView = {
   completed: boolean
   status: string
@@ -7,6 +47,7 @@ type CompletionView = {
   warningSlot?: { text: string; color?: string }
 }
 
+const MAX_SEEN_EVENT_IDS = 2000
 const formatDurationMs = (ms: number): string => {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
   const minutes = Math.floor(totalSeconds / 60)
@@ -78,6 +119,127 @@ const takePendingDurationMs = (controller: { pendingStartedAt: number | null }):
   return null
 }
 
+const resolveThinkingMode = (controller: {
+  viewPrefs?: { showReasoning?: boolean }
+  runtimeFlags?: { allowFullThinking?: boolean; thinkingEnabled?: boolean }
+}): ThinkingMode =>
+  controller.viewPrefs?.showReasoning && controller.runtimeFlags?.allowFullThinking === true
+    ? "full"
+    : "summary"
+
+const markThinkingActive = (controller: any, eventType: string): void => {
+  controller.setActivityStatus?.("Assistant thinking…", {
+    to: "thinking",
+    eventType,
+    source: "event",
+  })
+}
+
+const markAssistantResponding = (controller: any, eventType: string): void => {
+  if (!controller.pendingResponse) return
+  controller.setActivityStatus?.("Assistant responding…", {
+    to: "responding",
+    eventType,
+    source: "event",
+  })
+}
+
+const maybeLifecycleToast = (controller: any, message: string, eventType: string): void => {
+  if (controller.runtimeFlags?.lifecycleToastsEnabled !== true) return
+  const now = Date.now()
+  const cooldownMs = Math.max(300, Number(controller.runtimeFlags?.statusUpdateMs ?? 120))
+  if (
+    controller.lastLifecycleToastMessage === message &&
+    Number.isFinite(controller.lastLifecycleToastAt) &&
+    now - Number(controller.lastLifecycleToastAt) < cooldownMs
+  ) {
+    return
+  }
+  controller.lastLifecycleToastAt = now
+  controller.lastLifecycleToastMessage = message
+  controller.upsertLiveSlot?.(
+    "lifecycle-toast",
+    `[lifecycle] ${message}`,
+    BRAND_COLORS.duneOrange,
+    "pending",
+    1100,
+    eventType,
+  )
+}
+
+const shouldThrottleReasoningPeek = (controller: any, now: number): boolean => {
+  const cadenceMs = Math.max(50, Number(controller.runtimeFlags?.statusUpdateMs ?? 120))
+  const lastUpdatedAt = Number(controller.lastThinkingPeekAt ?? 0)
+  if (!Number.isFinite(lastUpdatedAt)) return false
+  return now - lastUpdatedAt < cadenceMs
+}
+
+const resolveEventTimestamp = (controller: any): number => {
+  const seq = controller.currentEventSeq
+  return typeof seq === "number" && Number.isFinite(seq) ? seq : Date.now()
+}
+
+const isInlineThinkingBlockEnabled = (controller: any): boolean => {
+  const flags = controller.runtimeFlags ?? {}
+  const capabilities = controller.providerCapabilities ?? {}
+  if (flags.inlineThinkingBlockEnabled !== true) return false
+  if (flags.thinkingEnabled === false) return false
+  if (capabilities.inlineThinkingBlock === false) return false
+  return capabilities.reasoningEvents !== false || capabilities.thoughtSummaryEvents !== false
+}
+
+const appendInlineThinkingBlock = (
+  controller: any,
+  signal: { kind: "delta" | "summary"; text: string },
+): void => {
+  if (!isInlineThinkingBlockEnabled(controller)) return
+  const normalized = signal.text.replace(/\r\n?/g, "\n").trim()
+  if (!normalized) return
+  const allowRawInline =
+    controller.runtimeFlags?.allowFullThinking === true &&
+    controller.runtimeFlags?.allowRawThinkingPeek === true &&
+    controller.viewPrefs?.showReasoning === true
+  if (signal.kind === "delta" && !allowRawInline) return
+  const marker = INLINE_THINKING_MARKER
+  const linePrefix = signal.kind === "summary" ? "summary: " : "delta: "
+  const line = `${linePrefix}${normalized}`
+  const maxLines = 12
+  if (controller.thinkingInlineEntryId) {
+    const index = controller.conversation.findIndex(
+      (entry: { id: string }) => entry.id === controller.thinkingInlineEntryId,
+    )
+    if (index >= 0) {
+      const existing = controller.conversation[index]
+      const body = String(existing.text ?? "")
+      const lines = body
+        .replace(/\r\n?/g, "\n")
+        .split("\n")
+        .filter((item: string) => item.length > 0)
+      const markerPresent = lines[0] === marker
+      const payloadLines = markerPresent ? lines.slice(1) : lines
+      if (payloadLines[payloadLines.length - 1] === line) return
+      const nextPayload = [...payloadLines, line].slice(-maxLines)
+      const nextText = `${marker}\n${nextPayload.join("\n")}`
+      controller.conversation[index] = {
+        ...existing,
+        speaker: "assistant",
+        text: nextText,
+        phase: "final",
+      }
+      return
+    }
+  }
+  const entry = {
+    id: controller.nextConversationId?.() ?? `conv-thinking-${Date.now().toString(36)}`,
+    speaker: "assistant" as const,
+    text: `${marker}\n${line}`,
+    phase: "final" as const,
+    createdAt: resolveEventTimestamp(controller),
+  }
+  controller.conversation.push(entry)
+  controller.thinkingInlineEntryId = entry.id
+}
+
 const formatCompletion = (payload: unknown): CompletionView => {
   const data = isRecord(payload) ? payload : {}
   const completed = Boolean(
@@ -110,20 +272,41 @@ const formatCompletion = (payload: unknown): CompletionView => {
   return { completed, status, toolLine, hint, conversationLine, warningSlot }
 }
 
-export function handleToolCall(this: any, payload: Record<string, unknown>, callIdOverride?: string | null, allowExisting = true): string | null {
-  if (this.pendingResponse) this.status = "Tool call in progress…"
-  const callId = callIdOverride ?? (typeof payload.call_id === "string" ? payload.call_id : null)
-  if (callId && !allowExisting && this.toolSlotsByCallId.has(callId)) {
+export function handleToolCall(
+  this: any,
+  payload: Record<string, unknown>,
+  callIdOverride?: string | null,
+  allowExisting = true,
+  logEntry = true,
+): string | null {
+  this.finalizeStreamingEntry()
+  if (this.pendingResponse) {
+    this.setActivityStatus?.("Tool call in progress…", { to: "tool_call", eventType: "tool_call", source: "event" })
+  }
+  const callId = callIdOverride ?? this.resolveToolCallId(payload)
+  if (callId && !allowExisting && (this.toolSlotsByCallId.has(callId) || this.toolLogEntryByCallId.has(callId))) {
     return callId
   }
   this.stats.toolCount += 1
-  const payloadText = JSON.stringify(payload)
-  const callEntry = this.addTool("call", `[call] ${payloadText}`, "pending", { callId })
+  const display = this.resolveToolDisplayPayload(payload)
+  const toolText = this.formatToolDisplayText(display ? { ...payload, display } : payload)
+  const cleanedToolText = stripAnsi(toolText).trim()
+  const shouldLog = logEntry && Boolean(cleanedToolText && cleanedToolText !== "Tool")
+  let callEntry = callId ? this.toolLogEntryByCallId.get(callId) ?? null : null
+  if (shouldLog) {
+    if (callEntry) {
+      this.updateToolEntry(callEntry, { text: toolText, status: "pending", ...(display ? { display } : {}) })
+    } else {
+      callEntry = this.addTool("call", toolText, "pending", { callId, display }).id
+    }
+  }
   const slotId = createSlotId()
   const slot = this.formatToolSlot(payload)
   if (callId) {
     this.toolSlotsByCallId.set(callId, slotId)
-    this.toolLogEntryByCallId.set(callId, callEntry.id)
+    if (callEntry) {
+      this.toolLogEntryByCallId.set(callId, callEntry)
+    }
   } else {
     this.toolSlotFallback.push(slotId)
   }
@@ -140,15 +323,48 @@ export function handleToolCall(this: any, payload: Record<string, unknown>, call
 }
 
 export function handleToolResult(this: any, payload: Record<string, unknown>, callIdOverride?: string | null): void {
-  if (this.pendingResponse) this.status = "Tool result received"
+  this.finalizeStreamingEntry()
+  if (this.pendingResponse) {
+    this.setActivityStatus?.("Tool result received", { to: "tool_result", eventType: "tool_result", source: "event" })
+  }
   this.stats.toolCount += 1
   const resultWasError = this.isToolResultError(payload)
-  const callId = callIdOverride ?? (typeof payload.call_id === "string" ? payload.call_id : null)
+  const callId = callIdOverride ?? this.resolveToolCallId(payload)
   const callEntryId = callId ? this.toolLogEntryByCallId.get(callId) : null
-  this.addTool("result", `[result] ${JSON.stringify(payload)}`, resultWasError ? "error" : "success", {
-    callId,
-    insertAfterId: callEntryId,
-  })
+  const display = this.resolveToolDisplayPayload(payload)
+  const toolText = this.formatToolDisplayText(display ? { ...payload, display } : payload)
+  const cleanedToolText = stripAnsi(toolText).trim()
+  const shouldLog = Boolean(cleanedToolText && cleanedToolText !== "Tool")
+  if (callEntryId) {
+    this.updateToolEntry(callEntryId, {
+      ...(shouldLog ? { text: toolText } : {}),
+      status: resultWasError ? "error" : "success",
+      ...(display ? { display } : {}),
+    })
+  } else if (shouldLog) {
+    const header = toolText.split(/\r?\n/)[0]?.trim()
+    let fallbackId: string | null = null
+    if (header) {
+      for (let i = this.toolEvents.length - 1; i >= 0; i -= 1) {
+        const entry = this.toolEvents[i]
+        if (!entry || entry.kind !== "call") continue
+        const entryHeader = entry.text.split(/\r?\n/)[0]?.trim()
+        if (entryHeader === header) {
+          fallbackId = entry.id
+          break
+        }
+      }
+    }
+    if (fallbackId) {
+      this.updateToolEntry(fallbackId, {
+        text: toolText,
+        status: resultWasError ? "error" : "success",
+        ...(display ? { display } : {}),
+      })
+    } else {
+      this.addTool("result", toolText, resultWasError ? "error" : "success", { callId, display })
+    }
+  }
   if (callId) {
     const slotId = this.toolSlotsByCallId.get(callId)
     if (slotId) {
@@ -186,6 +402,7 @@ export function handleToolResult(this: any, payload: Record<string, unknown>, ca
 
 export async function streamLoop(this: any): Promise<void> {
   const appConfig = this.providers.args.config
+  const retrySuffix = Number.isFinite(MAX_RETRIES) ? `/${MAX_RETRIES}` : ""
   while (!this.abortRequested) {
     this.abortController = new AbortController()
     try {
@@ -205,31 +422,43 @@ export async function streamLoop(this: any): Promise<void> {
         this.consecutiveFailures = 0
         this.stats.eventCount += 1
         this.stats.lastTurn = event.turn ?? this.stats.lastTurn
-        if (typeof event.id === "string" && event.id.trim()) {
-          this.lastEventId = event.id
+        const seqValue = typeof event.seq === "number" && Number.isFinite(event.seq) ? event.seq : null
+        if (seqValue !== null) {
+          this.lastEventId = String(seqValue)
+        } else if (typeof event.id === "string" && /^[0-9]+$/.test(event.id.trim())) {
+          this.lastEventId = event.id.trim()
         }
         this.enqueueEvent(event)
       }
       if (!this.awaitingRestart) {
         this.pendingResponse = false
         this.consecutiveFailures += 1
-        if (this.consecutiveFailures > MAX_RETRIES) {
+        const retriesExhausted =
+          Number.isFinite(MAX_RETRIES) && this.consecutiveFailures > MAX_RETRIES
+        if (retriesExhausted) {
           this.pushHint("Stream ended unexpectedly and reconnection attempts exhausted.")
-          this.status = "Disconnected"
+          this.setActivityStatus?.("Disconnected", { to: "halted", eventType: "stream.end", source: "runtime" })
           this.disconnected = true
           this.emitChange()
           break
         }
         const retryDelay = Math.min(4000, 500 * 2 ** (this.consecutiveFailures - 1))
-        this.pushHint(`Stream ended unexpectedly. Retrying in ${retryDelay}ms (attempt ${this.consecutiveFailures}/${MAX_RETRIES}).`)
-        this.status = `Reconnecting (${this.consecutiveFailures}/${MAX_RETRIES})`
+        this.pushHint(
+          `Stream ended unexpectedly. Retrying in ${retryDelay}ms (attempt ${this.consecutiveFailures}${retrySuffix}).`,
+        )
+        maybeLifecycleToast(this, "Reconnecting", "stream.reconnect")
+        this.setActivityStatus?.(`Reconnecting (${this.consecutiveFailures}${retrySuffix})`, {
+          to: "reconnecting",
+          eventType: "stream.reconnect",
+          source: "runtime",
+        })
         this.emitChange()
         await sleep(retryDelay)
         continue
       }
       this.awaitingRestart = false
       this.consecutiveFailures = 0
-      this.status = "Restarting…"
+      this.setActivityStatus?.("Restarting…", { to: "run", eventType: "stream.restart", source: "runtime" })
       this.pendingResponse = true
       this.emitChange()
       await sleep(250)
@@ -242,7 +471,12 @@ export async function streamLoop(this: any): Promise<void> {
           void this.refreshCtreeTree({ source: "disk" })
         }
         this.lastEventId = null
-        this.status = "Reconnecting (resume reset)"
+        maybeLifecycleToast(this, "Reconnecting", "stream.resume.reset")
+        this.setActivityStatus?.("Reconnecting (resume reset)", {
+          to: "reconnecting",
+          eventType: "stream.resume.reset",
+          source: "runtime",
+        })
         this.emitChange()
         await sleep(250)
         continue
@@ -250,7 +484,7 @@ export async function streamLoop(this: any): Promise<void> {
       if (this.abortController.signal.aborted) {
         if (this.abortRequested) {
           this.pendingResponse = false
-          this.status = "Aborted"
+          this.setActivityStatus?.("Aborted", { to: "cancelled", eventType: "stream.abort", source: "runtime" })
           this.disconnected = true
           this.emitChange()
           break
@@ -259,7 +493,7 @@ export async function streamLoop(this: any): Promise<void> {
           this.awaitingRestart = false
           this.consecutiveFailures = 0
           this.pendingResponse = true
-          this.status = "Restarting…"
+          this.setActivityStatus?.("Restarting…", { to: "run", eventType: "stream.restart", source: "runtime" })
           this.emitChange()
           await sleep(250)
           continue
@@ -268,17 +502,26 @@ export async function streamLoop(this: any): Promise<void> {
       this.consecutiveFailures += 1
       const delay = Math.min(4000, 500 * 2 ** (this.consecutiveFailures - 1))
       const message = error instanceof Error ? error.message : String(error)
-      if (this.consecutiveFailures > MAX_RETRIES) {
+      const retriesExhausted =
+        Number.isFinite(MAX_RETRIES) && this.consecutiveFailures > MAX_RETRIES
+      if (retriesExhausted) {
         this.pendingResponse = false
         this.pushHint(`Stream interruption: ${message}. Giving up after ${MAX_RETRIES} attempts.`)
-        this.status = "Disconnected"
+        this.setActivityStatus?.("Disconnected", { to: "halted", eventType: "stream.error", source: "runtime" })
         this.disconnected = true
         this.emitChange()
         break
       }
       this.pendingResponse = false
-      this.pushHint(`Stream interruption: ${message}. Retrying in ${delay}ms (attempt ${this.consecutiveFailures}/${MAX_RETRIES}).`)
-      this.status = `Reconnecting (${this.consecutiveFailures}/${MAX_RETRIES})`
+      this.pushHint(
+        `Stream interruption: ${message}. Retrying in ${delay}ms (attempt ${this.consecutiveFailures}${retrySuffix}).`,
+      )
+      maybeLifecycleToast(this, "Reconnecting", "stream.error")
+      this.setActivityStatus?.(`Reconnecting (${this.consecutiveFailures}${retrySuffix})`, {
+        to: "reconnecting",
+        eventType: "stream.error",
+        source: "runtime",
+      })
       this.emitChange()
       await sleep(delay)
     }
@@ -286,6 +529,27 @@ export async function streamLoop(this: any): Promise<void> {
 }
 
 export function enqueueEvent(this: any, event: SessionEvent): void {
+  const eventId =
+    typeof event.id === "string" && event.id.trim().length > 0
+      ? event.id
+      : typeof event.seq === "number"
+        ? String(event.seq)
+        : null
+  if (eventId) {
+    if (this.seenEventIds?.has(eventId)) {
+      return
+    }
+    if (this.seenEventIds) {
+      this.seenEventIds.add(eventId)
+      this.seenEventIdQueue.push(eventId)
+      if (this.seenEventIdQueue.length > MAX_SEEN_EVENT_IDS) {
+        const stale = this.seenEventIdQueue.shift()
+        if (stale) {
+          this.seenEventIds.delete(stale)
+        }
+      }
+    }
+  }
   this.pendingEvents.push(event)
   if (this.eventsScheduled) return
   this.eventsScheduled = true
@@ -302,13 +566,27 @@ export function enqueueEvent(this: any, event: SessionEvent): void {
 
 export function applyEvent(this: any, event: SessionEvent): void {
   this.pushRawEvent(event)
+  const prevSeq = this.currentEventSeq
+  let nextSeq: number | null = null
+  if (typeof event.seq === "number" && Number.isFinite(event.seq)) {
+    nextSeq = event.seq
+    if (typeof this.eventClock === "number" && nextSeq > this.eventClock) {
+      this.eventClock = nextSeq
+    }
+  } else {
+    this.eventClock = typeof this.eventClock === "number" ? this.eventClock + 1 : 1
+    nextSeq = this.eventClock
+  }
+  this.currentEventSeq = nextSeq
+  try {
   if (!DEBUG_EVENTS && Array.isArray(event.tags) && event.tags.includes("legacy")) {
     return
   }
   if (isRecord(event.payload)) {
     this.updateUsageFromPayload(event.payload)
   }
-  switch (event.type) {
+  const eventType = String(event.type)
+  switch (eventType) {
     case "stream.hello": {
       if (DEBUG_EVENTS) {
         this.pushHint("Stream connected.")
@@ -317,10 +595,32 @@ export function applyEvent(this: any, event: SessionEvent): void {
     }
     case "stream.gap": {
       this.pushHint("Stream gap detected; some events may be missing.")
+      maybeLifecycleToast(this, "Reconnecting", event.type)
+      this.setActivityStatus?.("Reconnecting…", { to: "reconnecting", eventType: event.type, source: "event" })
+      break
+    }
+    case "conversation.compact.start":
+    case "conversation.compaction.start":
+    case "session.compaction.start":
+    case "context.compaction.start": {
+      maybeLifecycleToast(this, "Compaction started", event.type)
+      this.setActivityStatus?.("Compacting conversation…", { to: "compacting", eventType: event.type, source: "event" })
+      this.pushHint("Compaction started.")
+      break
+    }
+    case "conversation.compact.end":
+    case "conversation.compaction.end":
+    case "session.compaction.end":
+    case "context.compaction.end":
+    case "context_compacted":
+    case "conversation.compacted": {
+      maybeLifecycleToast(this, "Compaction complete", event.type)
+      this.setActivityStatus?.("Compaction complete", { to: "session", eventType: event.type, source: "event" })
+      this.pushHint("Compaction complete.")
       break
     }
     case "session.start": {
-      this.status = "Session started"
+      this.setActivityStatus?.("Session started", { to: "session", eventType: event.type, source: "event" })
       break
     }
     case "session.meta": {
@@ -336,36 +636,49 @@ export function applyEvent(this: any, event: SessionEvent): void {
     case "run.start": {
       this.pendingResponse = true
       notePendingStart(this)
-      this.status = "Run started"
+      markThinkingActive(this, event.type)
+      maybeLifecycleToast(this, "Run started", event.type)
       this.pushHint("Run started.")
       break
     }
     case "turn_start": {
+      this.finalizeStreamingEntry()
       this.clearStopRequest()
       this.pendingResponse = true
       notePendingStart(this)
-      this.status = "Assistant thinking…"
-      if (DEBUG_EVENTS || this.viewPrefs.rawStream) {
-        const turnLabel = typeof event.turn === "number" ? `Turn ${event.turn} started` : "Turn started"
-        this.addTool("status", `[turn] ${turnLabel}`)
+      markThinkingActive(this, event.type)
+      this.lastThinkingPeekAt = 0
+      this.thinkingInlineEntryId = null
+      if (this.thinkingArtifact) {
+        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
+      }
+      if (this.runtimeFlags?.thinkingEnabled !== false) {
+        const mode: ThinkingMode = resolveThinkingMode(this)
+        this.thinkingArtifact = createThinkingArtifact(mode, Date.now())
+      } else {
+        this.thinkingArtifact = null
       }
       const payload = isRecord(event.payload) ? event.payload : {}
       const mode = normalizeModeValue(extractString(payload, ["mode", "agent_mode", "phase"]))
       if (mode) {
         this.mode = mode
       }
+      if (DEBUG_EVENTS || this.viewPrefs.rawStream) {
+        const turnLabel = typeof event.turn === "number" ? `Turn ${event.turn} started` : "Turn started"
+        this.addTool("status", `[turn] ${turnLabel}`)
+      }
       break
     }
     case "assistant.message.start": {
       this.finalizeStreamingEntry()
-      if (this.pendingResponse) this.status = "Assistant responding…"
+      markAssistantResponding(this, event.type)
       this.setStreamingConversation("assistant", "")
       break
     }
     case "assistant.message.delta": {
-      if (this.pendingResponse) this.status = "Assistant responding…"
+      markAssistantResponding(this, event.type)
       const payload = isRecord(event.payload) ? event.payload : {}
-      const delta = extractString(payload, ["delta", "text"])
+      const delta = extractRawString(payload, ["delta", "text"])
       if (delta) {
         this.appendAssistantDelta(delta)
       }
@@ -376,42 +689,87 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "assistant_message": {
-      if (this.pendingResponse) this.status = "Assistant responding…"
-      const text = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+      markAssistantResponding(this, event.type)
+      const raw = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+      const text = typeof raw === "string" ? raw : ""
       const normalizedText = this.normalizeAssistantText(text)
+      const trimmed = normalizedText.trim()
+      if (!trimmed || trimmed.toLowerCase() === "none") break
       this.addConversation("assistant", normalizedText, "streaming")
       this.appendMarkdownChunk(normalizedText)
+      // Non-streaming assistant_message events can finalize immediately.
+      this.finalizeStreamingEntry()
       break
     }
     case "assistant_delta": {
-      if (this.pendingResponse) this.status = "Assistant responding…"
-      const delta = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+      markAssistantResponding(this, event.type)
+      const raw = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+      const delta = typeof raw === "string" ? raw : ""
       this.appendAssistantDelta(delta)
       break
     }
     case "assistant.reasoning.delta":
     case "assistant.thought_summary.delta": {
-      const payload = isRecord(event.payload) ? event.payload : {}
-      const delta = extractString(payload, ["delta", "text"]) ?? JSON.stringify(event.payload)
-      if (this.viewPrefs.showReasoning || DEBUG_EVENTS) {
-        this.addTool("status", `[reasoning] ${delta}`, "pending")
+      const signal = normalizeThinkingSignal(event.type, event.payload)
+      const delta = signal?.text ?? ""
+      const capabilities = this.providerCapabilities ?? {
+        reasoningEvents: true,
+        thoughtSummaryEvents: true,
+        rawThinkingPeek: false,
+        inlineThinkingBlock: false,
+      }
+      const signalAllowed =
+        signal != null &&
+        (signal.kind === "summary" ? capabilities.thoughtSummaryEvents !== false : capabilities.reasoningEvents !== false)
+      if (signal && signalAllowed && this.runtimeFlags?.thinkingEnabled !== false) {
+        const mode: ThinkingMode = resolveThinkingMode(this)
+        const seed = this.thinkingArtifact ?? createThinkingArtifact(mode, Date.now())
+        this.thinkingArtifact = appendThinkingArtifact(seed, signal, this.runtimeFlags, Date.now())
+        this.bumpRuntimeTelemetry?.("thinkingUpdates")
+      }
+      if (signal) {
+        appendInlineThinkingBlock(this, signal)
+      }
+      if ((this.viewPrefs.showReasoning && this.runtimeFlags?.allowFullThinking === true) || DEBUG_EVENTS) {
+        const rawPeekAllowed =
+          this.runtimeFlags?.allowRawThinkingPeek === true || capabilities.rawThinkingPeek === true
+        const peekText = signal?.kind === "summary" || rawPeekAllowed ? delta : ""
+        if (!peekText.trim()) break
+        const now = Date.now()
+        if (!shouldThrottleReasoningPeek(this, now)) {
+          this.addTool("status", `[reasoning] ${peekText}`, "pending")
+          this.lastThinkingPeekAt = now
+        }
       }
       break
     }
     case "user_message": {
-      const text = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+      const raw = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
+      const text = typeof raw === "string" ? raw : ""
+      const normalized = text.trim()
+      if (this.pendingUserEcho && normalized && this.pendingUserEcho === normalized) {
+        this.pendingUserEcho = null
+        break
+      }
       this.addConversation("user", text)
       break
     }
     case "user.message": {
       const payload = isRecord(event.payload) ? event.payload : {}
-      const text = extractString(payload, ["text", "content", "message"]) ?? JSON.stringify(event.payload)
+      const raw = extractString(payload, ["text", "content", "message"]) ?? JSON.stringify(event.payload)
+      const text = typeof raw === "string" ? raw : ""
+      const normalized = text.trim()
+      if (this.pendingUserEcho && normalized && this.pendingUserEcho === normalized) {
+        this.pendingUserEcho = null
+        break
+      }
       this.addConversation("user", text)
       break
     }
     case "user.command": {
       const payload = isRecord(event.payload) ? event.payload : {}
-      const command = extractString(payload, ["command", "text", "content"]) ?? JSON.stringify(event.payload)
+      const raw = extractString(payload, ["command", "text", "content"]) ?? JSON.stringify(event.payload)
+      const command = typeof raw === "string" ? raw : ""
       this.addConversation("user", command.startsWith("/") ? command : `/${command}`)
       break
     }
@@ -460,7 +818,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
         this.permissionActive = request
       }
       this.pendingResponse = false
-      this.status = "Permission required"
+      this.setActivityStatus?.("Permission required", { to: "permission_required", eventType: event.type, source: "event" })
       this.pushHint(`Permission needed: ${tool}.`)
       this.addTool("status", `[permission] ${tool} (${kind})`, "pending")
       break
@@ -496,7 +854,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
         this.permissionActive = request
       }
       this.pendingResponse = false
-      this.status = "Permission required"
+      this.setActivityStatus?.("Permission required", { to: "permission_required", eventType: event.type, source: "event" })
       this.pushHint(`Permission needed: ${tool}.`)
       this.addTool("status", `[permission] ${tool} (${kind})`, "pending")
       break
@@ -507,22 +865,32 @@ export function applyEvent(this: any, event: SessionEvent): void {
         extractString(payload, ["response", "decision"]) ??
         (isRecord(payload.responses) && typeof payload.responses.default === "string" ? payload.responses.default : undefined)
       const responseLabel = response ? response.replace(/[_-]+/g, " ") : "response received"
+      const denied = Boolean(responseLabel.match(/\b(deny|denied|reject|rejected|block|blocked)\b/i))
       this.addTool("status", `[permission] ${responseLabel}`, "success")
       this.pushHint(`Permission ${responseLabel}.`)
       this.setPermissionActive(null)
-      this.pendingResponse = false
-      this.status = "Permission response received"
+      this.pendingResponse = !denied
+      this.setActivityStatus?.(denied ? "Permission denied" : "Permission response received", {
+        to: denied ? "halted" : "permission_resolved",
+        eventType: event.type,
+        source: "event",
+      })
       break
     }
     case "permission.decision": {
       const payload = isRecord(event.payload) ? event.payload : {}
       const response = extractString(payload, ["decision", "response"]) ?? "decision received"
       const responseLabel = response.replace(/[_-]+/g, " ")
+      const denied = Boolean(responseLabel.match(/\b(deny|denied|reject|rejected|block|blocked)\b/i))
       this.addTool("status", `[permission] ${responseLabel}`, "success")
       this.pushHint(`Permission ${responseLabel}.`)
       this.setPermissionActive(null)
-      this.pendingResponse = false
-      this.status = "Permission response received"
+      this.pendingResponse = !denied
+      this.setActivityStatus?.(denied ? "Permission denied" : "Permission response received", {
+        to: denied ? "halted" : "permission_resolved",
+        eventType: event.type,
+        source: "event",
+      })
       break
     }
     case "permission.timeout": {
@@ -533,7 +901,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.pushHint("Permission request timed out.")
       this.setPermissionActive(null)
       this.pendingResponse = false
-      this.status = "Permission timeout"
+      this.setActivityStatus?.("Permission timeout", { to: "halted", eventType: event.type, source: "event" })
       break
     }
     case "checkpoint_list": {
@@ -552,7 +920,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       }
       parsed.sort((a, b) => b.createdAt - a.createdAt)
       this.rewindMenu = { status: "ready", checkpoints: parsed }
-      this.status = "Checkpoints ready"
+      this.setActivityStatus?.("Checkpoints ready", { to: "session", eventType: event.type, source: "event" })
       this.pushHint(`Loaded ${parsed.length} checkpoint${parsed.length === 1 ? "" : "s"}.`)
       break
     }
@@ -592,7 +960,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const statusLower = status.toLowerCase()
       if (statusLower.includes("stop")) {
         this.noteStopRequested()
-        this.status = "Stopping…"
+        this.setActivityStatus?.("Stopping…", { to: "cancelled", eventType: event.type, source: "event" })
       }
       const description = extractString(payload, ["description", "title", "prompt"])
       const lineParts = [status, description, taskId].filter(Boolean)
@@ -624,6 +992,13 @@ export function applyEvent(this: any, event: SessionEvent): void {
         ...(isRecord(payload.node) ? { last_node: payload.node } : {}),
       }
       this.ctreeSnapshot = next
+      if (isRecord(payload.node) && isRecord(payload.snapshot)) {
+        this.ctreeModel = reduceCTreeModel(this.ctreeModel, {
+          type: "ctree_node",
+          node: payload.node as unknown as CTreeNode,
+          snapshot: payload.snapshot as unknown as CTreeSnapshotSummary,
+        })
+      }
       this.scheduleCtreeRefresh()
       break
     }
@@ -638,6 +1013,13 @@ export function applyEvent(this: any, event: SessionEvent): void {
         ...(payload.last_node !== undefined ? { last_node: payload.last_node as Record<string, unknown> | null } : {}),
       }
       this.ctreeSnapshot = next
+      if (isRecord(payload.snapshot)) {
+        const summary = extractCtreeSnapshotSummary(payload.snapshot)
+        this.ctreeModel = reduceCTreeModel(this.ctreeModel, {
+          type: "ctree_snapshot",
+          snapshot: summary,
+        })
+      }
       this.scheduleCtreeRefresh()
       break
     }
@@ -647,7 +1029,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const mode = extractString(payload, ["mode"]) ?? null
       const prune = typeof payload.prune === "boolean" ? payload.prune : mode !== "code"
       if (checkpointId && prune) {
-        const checkpoints =
+        const checkpoints: CheckpointSummary[] =
           this.rewindMenu.status === "ready" || this.rewindMenu.status === "error" || this.rewindMenu.status === "loading"
             ? this.rewindMenu.checkpoints
             : []
@@ -658,7 +1040,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
         }
       }
       this.closeRewindMenu()
-      this.status = "Rewind applied"
+      this.setActivityStatus?.("Rewind applied", { to: "session", eventType: event.type, source: "event" })
       this.pushHint(mode ? `Rewind restored (${mode}).` : "Rewind restored.")
       break
     }
@@ -671,15 +1053,16 @@ export function applyEvent(this: any, event: SessionEvent): void {
         call_id: callId ?? undefined,
         tool: toolName ?? payload.tool,
         action: "calling",
+        ...(payload.display !== undefined ? { display: payload.display } : {}),
       }
-      this.handleToolCall(normalizedPayload, callId ?? null, false)
+      this.handleToolCall(normalizedPayload, callId ?? null, false, true)
       break
     }
     case "assistant.tool_call.delta": {
       const payload = isRecord(event.payload) ? event.payload : {}
       const callId = this.resolveToolCallId(payload)
       if (!callId) break
-      const delta = extractString(payload, ["args_text_delta", "delta", "text"]) ?? ""
+      const delta = extractRawString(payload, ["args_text_delta", "delta", "text"]) ?? ""
       const next = this.appendToolCallArgs(callId, delta)
       const slotId = this.toolSlotsByCallId.get(callId)
       if (slotId) {
@@ -699,14 +1082,17 @@ export function applyEvent(this: any, event: SessionEvent): void {
         extractString(payload, ["args_text", "args"]) ??
         this.toolCallArgsById.get(callId) ??
         ""
-      if (argsText) {
-        const callEntryId = this.toolLogEntryByCallId.get(callId) ?? null
-        this.addTool(
-          "call",
-          `[call] ${toolName} ${argsText}`.trim(),
-          "pending",
-          { callId, insertAfterId: callEntryId },
-        )
+      const callEntryId = this.toolLogEntryByCallId.get(callId) ?? null
+      const normalizedPayload: Record<string, unknown> = {
+        ...payload,
+        call_id: callId,
+        tool: toolName,
+        tool_name: toolName,
+        ...(argsText ? { args_text: argsText } : {}),
+      }
+      const toolText = this.formatToolDisplayText(normalizedPayload)
+      if (callEntryId) {
+        this.updateToolEntry(callEntryId, { text: toolText, status: "pending" })
       }
       break
     }
@@ -739,7 +1125,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const callId = this.resolveToolCallId(payload)
       const execId = extractString(payload, ["exec_id", "execId"]) ?? null
       if (!callId && !execId) break
-      const delta = extractString(payload, ["delta", "text"]) ?? ""
+      const delta = extractRawString(payload, ["delta", "text"]) ?? ""
       const outputKey = callId ?? execId
       if (!outputKey) break
       if (event.type === "tool.exec.stdout.delta") {
@@ -777,14 +1163,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       }
       const outputKey = callId ?? execId
       if (outputKey) {
-        const output = this.formatToolExecOutput(this.takeToolExecOutput(outputKey))
-        if (output) {
-          const callEntryId = callId ? this.toolLogEntryByCallId.get(callId) ?? null : null
-          this.addTool("result", `[output]\n${output}`, exitCode === 0 || exitCode == null ? "success" : "error", {
-            callId,
-            insertAfterId: callEntryId,
-          })
-        }
+        this.takeToolExecOutput(outputKey)
       }
       if (execId) this.toolExecMetaById.delete(execId)
       if (callId) this.toolExecMetaById.delete(callId)
@@ -792,7 +1171,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
     }
     case "tool_call": {
       const payload = isRecord(event.payload) ? event.payload : {}
-      this.handleToolCall(payload)
+      this.handleToolCall(payload, null, false, true)
       break
     }
     case "tool.result": {
@@ -801,8 +1180,10 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const normalizedPayload: Record<string, unknown> = {
         ...payload,
         call_id: callId ?? undefined,
+        tool: payload.tool_name ?? payload.tool,
         status: payload.ok === false ? "error" : payload.status ?? undefined,
         result: payload.result ?? payload.output ?? payload,
+        ...(payload.display !== undefined ? { display: payload.display } : {}),
       }
       this.handleToolResult(normalizedPayload, callId ?? null)
       break
@@ -813,13 +1194,17 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "reward_update": {
-      if (this.pendingResponse) this.status = "Reward update received"
+      this.finalizeStreamingEntry()
+      if (this.pendingResponse) {
+        this.setActivityStatus?.("Reward update received", { to: "responding", eventType: event.type, source: "event" })
+      }
       const summary = JSON.stringify(event.payload.summary ?? event.payload)
       this.addTool("reward", `[reward] ${summary}`, "success")
       this.upsertLiveSlot("reward", `Reward update: ${summary}`, SEMANTIC_COLORS.info, "success", 2000)
       break
     }
     case "log_link": {
+      this.finalizeStreamingEntry()
       const payload = isRecord(event.payload) ? event.payload : {}
       const link = extractString(payload, ["url", "href", "path"]) ?? JSON.stringify(payload)
       this.addTool("status", `[log] ${link}`)
@@ -834,6 +1219,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "warning": {
+      this.finalizeStreamingEntry()
       const payload = isRecord(event.payload) ? event.payload : {}
       const message = extractString(payload, ["message", "detail", "summary"]) ?? JSON.stringify(payload)
       this.pushHint(`[warning] ${message}`)
@@ -843,7 +1229,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
     case "interrupt":
     case "cancel.requested": {
       this.noteStopRequested()
-      this.status = "Stopping…"
+      this.setActivityStatus?.("Stopping…", { to: "cancelled", eventType: event.type, source: "event" })
       this.addTool("status", `[${event.type}] stopping`, "pending")
       break
     }
@@ -851,11 +1237,16 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.clearStopRequest()
       this.pendingResponse = false
       this.pendingStartedAt = null
-      this.status = "Cancelled"
+      this.thinkingInlineEntryId = null
+      if (this.thinkingArtifact) {
+        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
+      }
+      this.setActivityStatus?.("Cancelled", { to: "cancelled", eventType: event.type, source: "event" })
       this.addTool("status", "[cancel] acknowledged", "success")
       break
     }
     case "error": {
+      this.finalizeStreamingEntry()
       const raw = JSON.stringify(event.payload)
       const message = formatErrorPayload(event.payload)
       if (DEBUG_EVENTS && message !== raw) {
@@ -865,7 +1256,11 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.addTool("error", `[error] ${message}`, "error")
       this.pendingResponse = false
       this.pendingStartedAt = null
-      this.status = "Error received"
+      this.thinkingInlineEntryId = null
+      if (this.thinkingArtifact) {
+        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
+      }
+      this.setActivityStatus?.("Error received", { to: "error", eventType: event.type, source: "event" })
       break
     }
     case "completion": {
@@ -891,7 +1286,15 @@ export function applyEvent(this: any, event: SessionEvent): void {
         summary: (event.payload && (event.payload.summary as Record<string, unknown> | undefined)) ?? null,
       }
       this.pendingResponse = false
-      this.status = view.status
+      this.thinkingInlineEntryId = null
+      this.setActivityStatus?.(view.status, {
+        to: view.completed ? "completed" : "halted",
+        eventType: event.type,
+        source: "event",
+      })
+      if (this.thinkingArtifact) {
+        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
+      }
       if (view.conversationLine) {
         const lastEntry = this.conversation.length > 0 ? this.conversation[this.conversation.length - 1] : undefined
         if (!(lastEntry && lastEntry.speaker === "system" && lastEntry.text === view.conversationLine)) {
@@ -906,9 +1309,9 @@ export function applyEvent(this: any, event: SessionEvent): void {
         this.removeLiveSlot("guardrail")
         this.clearGuardrailNotice()
       }
-      this.toolSlotsByCallId.forEach((slotId) => this.removeLiveSlot(slotId))
+      this.toolSlotsByCallId.forEach((slotId: string) => this.removeLiveSlot(slotId))
       this.toolSlotsByCallId.clear()
-      this.toolSlotFallback.splice(0).forEach((slotId) => this.removeLiveSlot(slotId))
+      this.toolSlotFallback.splice(0).forEach((slotId: string) => this.removeLiveSlot(slotId))
       this.removeLiveSlot("reward")
       break
     }
@@ -920,7 +1323,15 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const reason = typeof payload.reason === "string" ? payload.reason : undefined
       this.pendingResponse = false
       this.pendingStartedAt = null
-      this.status = completed ? "Finished" : "Halted"
+      this.thinkingInlineEntryId = null
+      this.setActivityStatus?.(completed ? "Finished" : "Halted", {
+        to: completed ? "completed" : "halted",
+        eventType: event.type,
+        source: "event",
+      })
+      if (this.thinkingArtifact) {
+        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
+      }
       if (!this.completionSeen) {
         this.completionSeen = true
         this.completionReached = completed
@@ -939,7 +1350,15 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const reason = typeof event.payload?.reason === "string" ? event.payload.reason : undefined
       this.pendingResponse = false
       this.pendingStartedAt = null
-      this.status = completed ? "Finished" : "Halted"
+      this.thinkingInlineEntryId = null
+      this.setActivityStatus?.(completed ? "Finished" : "Halted", {
+        to: completed ? "completed" : "halted",
+        eventType: event.type,
+        source: "event",
+      })
+      if (this.thinkingArtifact) {
+        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
+      }
       if (!this.completionSeen) {
         this.completionSeen = true
         this.completionReached = completed
@@ -950,6 +1369,9 @@ export function applyEvent(this: any, event: SessionEvent): void {
     }
     default:
       break
+  }
+  } finally {
+    this.currentEventSeq = prevSeq
   }
 }
 
@@ -964,7 +1386,7 @@ export function normalizeAssistantText(this: any, text: string): string {
 export function appendAssistantDelta(this: any, delta: string): void {
   if (!delta) return
   if (this.streamingEntryId) {
-    const index = this.conversation.findIndex((entry) => entry.id === this.streamingEntryId)
+    const index = this.conversation.findIndex((entry: { id: string }) => entry.id === this.streamingEntryId)
     if (index >= 0) {
       const existing = this.conversation[index]
       const nextText = `${existing.text ?? ""}${delta}`
@@ -984,7 +1406,7 @@ export function noteStopRequested(this: any): void {
   this.stopTimer = setTimeout(() => {
     if (this.stopRequestedAt && !this.completionSeen && !this.disconnected) {
       this.pushHint("Still stopping…")
-      this.status = "Still stopping…"
+      this.setActivityStatus?.("Still stopping…", { to: "cancelled", eventType: "stop.timeout", source: "runtime" })
       this.emitChange()
     }
   }, STOP_SOFT_TIMEOUT_MS)
@@ -996,5 +1418,4 @@ export function clearStopRequest(this: any): void {
     this.stopTimer = null
   }
   this.stopRequestedAt = null
-}
 }
