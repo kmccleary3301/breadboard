@@ -8,6 +8,7 @@ import { useToolRenderer } from "../renderers/toolRenderer.js"
 import { resolveDiffRenderStyle } from "../renderers/diffStyles.js"
 import { useConversationMeasure, useConversationRenderer } from "../renderers/conversationRenderer.js"
 import { sliceTailByLineBudget, trimTailByLineCount } from "../layout/windowing.js"
+import { isInlineThinkingBlockText } from "../../../transcriptUtils.js"
 import { CHALK, COLORS } from "../theme.js"
 import { formatCostUsd, formatLatency } from "../utils/format.js"
 import { useReplViewRenderNodes } from "./useReplViewRenderNodes.js"
@@ -487,7 +488,17 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
       }
     }
     if (viewPrefs.collapseMode === "none") {
-      for (const id of activeIds) {
+      for (const entry of collapsibleEntries as any[]) {
+        const id = String(entry.id ?? "")
+        if (!id) continue
+        const forcedCollapsed = typeof entry.text === "string" && isInlineThinkingBlockText(entry.text)
+        if (forcedCollapsed) {
+          if (!map.has(id)) {
+            map.set(id, true)
+            changed = true
+          }
+          continue
+        }
         if (map.get(id) !== false) {
           map.set(id, false)
           changed = true

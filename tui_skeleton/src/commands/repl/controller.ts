@@ -4,6 +4,11 @@ import path from "node:path"
 import type { Block } from "@stream-mdx/core/types"
 import type { MarkdownStreamer } from "../../markdown/streamer.js"
 import type {
+  ActivitySnapshot,
+  RuntimeTelemetry,
+  RuntimeBehaviorFlags,
+  ThinkingArtifact,
+  ProviderCapabilitiesSnapshot,
   ModelMenuItem,
   ModelMenuState,
   ConversationEntry,
@@ -67,6 +72,16 @@ import * as stateMethods from "./controllerStateMethods.js"
 import * as renderState from "./controllerStateRender.js"
 import * as eventMethods from "./controllerEventMethods.js"
 import * as ctreeMethods from "./controllerEventCtree.js"
+import {
+  bumpTelemetry,
+  createActivitySnapshot,
+  createRuntimeTelemetry,
+  reduceActivityTransition,
+  resolveRuntimeBehaviorFlags,
+  type ActivityTransitionInput,
+} from "./controllerActivityRuntime.js"
+import type { ActivityTransitionTrace } from "./controllerTransitionTimeline.js"
+import { resolveProviderCapabilities } from "./providerCapabilityResolution.js"
 
 export interface ReplControllerOptions {
   readonly configPath: string
@@ -86,6 +101,7 @@ export interface CompletionView {
 }
 
 export interface ReplState {
+  readonly configPath?: string | null
   readonly sessionId: string
   readonly status: string
   readonly pendingResponse: boolean
@@ -103,6 +119,12 @@ export interface ReplState {
   readonly completionReached: boolean
   readonly completionSeen: boolean
   readonly lastCompletion?: CompletionState | null
+  readonly activity?: ActivitySnapshot
+  readonly runtimeTelemetry?: RuntimeTelemetry
+  readonly runtimeFlags?: RuntimeBehaviorFlags
+  readonly thinkingArtifact?: ThinkingArtifact | null
+  readonly providerCapabilities?: ProviderCapabilitiesSnapshot
+  readonly activityTransitionTrace?: ReadonlyArray<ActivityTransitionTrace>
   readonly disconnected: boolean
   readonly guardrailNotice?: GuardrailNotice | null
   readonly viewClearAt?: number | null
@@ -115,6 +137,7 @@ export interface ReplState {
   readonly tasks: TaskEntry[]
   readonly ctreeSnapshot?: CTreeSnapshot | null
   readonly ctreeTree?: CTreeTreeResponse | null
+  readonly ctreeModel?: CTreeModel | null
   readonly ctreeTreeStatus: "idle" | "loading" | "error"
   readonly ctreeTreeError?: string | null
   readonly ctreeStage: CTreeTreeStage | string
@@ -153,13 +176,16 @@ export class ReplSessionController extends EventEmitter {
   private conversationSequence = 0
   private streamingEntryId: string | null = null
   private viewPrefs: TranscriptPreferences = {
-    collapseMode: "auto",
+    collapseMode: "none",
     virtualization: "auto",
     richMarkdown: DEFAULT_RICH_MARKDOWN,
     toolRail: true,
     toolInline: false,
     rawStream: false,
     showReasoning: false,
+    diffLineNumbers: ["1", "true", "yes", "on"].includes(
+      (process.env.BREADBOARD_DIFF_LINE_NUMBERS ?? "").toLowerCase(),
+    ),
   }
   private submissionHistory: SubmissionPayload[] = []
   private readonly stats: StreamStats = {
@@ -171,6 +197,7 @@ export class ReplSessionController extends EventEmitter {
   }
   private emitScheduled = false
   private status = "Starting session…"
+  private statusUpdatedAt = Date.now()
   private pendingResponse = false
   private pendingStartedAt: number | null = null
   private modelMenu: ModelMenuState = { status: "hidden" }
@@ -181,6 +208,7 @@ export class ReplSessionController extends EventEmitter {
   private skillsSources: SkillCatalogSources | null = null
   private ctreeSnapshot: CTreeSnapshot | null = null
   private ctreeTree: CTreeTreeResponse | null = null
+  private ctreeModel: CTreeModel = createEmptyCTreeModel()
   private ctreeTreeStatus: "idle" | "loading" | "error" = "idle"
   private ctreeTreeError: string | null = null
   private ctreeStage: CTreeTreeStage | string = "FROZEN"
@@ -205,6 +233,16 @@ export class ReplSessionController extends EventEmitter {
   private eventsScheduled = false
   private readonly providers = CliProviders
   private readonly markdownStreams = new Map<string, { streamer: MarkdownStreamer; lastText: string }>()
+  private readonly markdownStableState = new Map<
+    string,
+    {
+      fullText: string
+      emittedLen: number
+      stableBoundaryLen: number
+      state: { inFence: boolean; fenceMarker: "```" | "~~~" | null; inList: boolean; inTable: boolean }
+    }
+  >()
+  private readonly markdownPendingDeltas = new Map<string, { buffer: string; timer: NodeJS.Timeout | null }>()
   private pendingUserEcho: string | null = null
   private markdownGloballyDisabled = false
   private viewClearAt: number | null = null
@@ -215,12 +253,34 @@ export class ReplSessionController extends EventEmitter {
   private todos: TodoItem[] = []
   private tasks: TaskEntry[] = []
   private lastEventId: string | null = null
+  private eventClock = 0
+  private currentEventSeq: number | null = null
   private hasStreamedOnce = false
   private stopRequestedAt: number | null = null
   private stopTimer: NodeJS.Timeout | null = null
   private readonly taskMap = new Map<string, TaskEntry>()
   private mode: string | null = null
   private permissionMode: string | null = null
+  private runtimeFlags: RuntimeBehaviorFlags = resolveRuntimeBehaviorFlags(process.env)
+  private runtimeTelemetry: RuntimeTelemetry = createRuntimeTelemetry()
+  private activity: ActivitySnapshot = createActivitySnapshot("idle")
+  private activityTransitionTrace: ActivityTransitionTrace[] = []
+  private lastLifecycleToastAt = 0
+  private lastLifecycleToastMessage: string | null = null
+  private thinkingArtifact: ThinkingArtifact | null = null
+  private thinkingInlineEntryId: string | null = null
+  private lastThinkingPeekAt = 0
+  private providerCapabilities: ProviderCapabilitiesSnapshot = {
+    provider: "unknown",
+    model: null,
+    reasoningEvents: true,
+    thoughtSummaryEvents: true,
+    contextUsage: true,
+    activitySurface: true,
+    rawThinkingPeek: false,
+    inlineThinkingBlock: false,
+    warnings: [],
+  }
 
   constructor(options: ReplControllerOptions) {
     super()
@@ -234,6 +294,7 @@ export class ReplSessionController extends EventEmitter {
   getState(): ReplState {
     const liveSlotList = Array.from(this.liveSlots.values()).sort((a, b) => a.updatedAt - b.updatedAt)
     return {
+      configPath: this.config.configPath,
       sessionId: this.sessionId,
       status: this.status,
       pendingResponse: this.pendingResponse,
@@ -251,6 +312,12 @@ export class ReplSessionController extends EventEmitter {
       completionReached: this.completionReached,
       completionSeen: this.completionSeen,
       lastCompletion: this.lastCompletion,
+      activity: this.activity,
+      runtimeTelemetry: this.runtimeTelemetry,
+      runtimeFlags: this.runtimeFlags,
+      thinkingArtifact: this.thinkingArtifact,
+      providerCapabilities: this.providerCapabilities,
+      activityTransitionTrace: [...this.activityTransitionTrace],
       disconnected: this.disconnected,
       guardrailNotice: this.guardrailNotice,
       viewClearAt: this.viewClearAt,
@@ -263,6 +330,7 @@ export class ReplSessionController extends EventEmitter {
       tasks: [...this.tasks],
       ctreeSnapshot: this.ctreeSnapshot,
       ctreeTree: this.ctreeTree,
+      ctreeModel: this.ctreeModel,
       ctreeTreeStatus: this.ctreeTreeStatus,
       ctreeTreeError: this.ctreeTreeError,
       ctreeStage: this.ctreeStage,
@@ -280,8 +348,11 @@ export class ReplSessionController extends EventEmitter {
 
   async start(): Promise<void> {
     const appConfig = this.providers.args.config
+    this.runtimeFlags = resolveRuntimeBehaviorFlags(process.env)
+    this.resolveProviderCapabilitiesSnapshot(this.config.model?.trim() ?? null)
     this.ctreeSnapshot = null
     this.ctreeTree = null
+    this.ctreeModel = createEmptyCTreeModel()
     this.ctreeTreeStatus = "idle"
     this.ctreeTreeError = null
     this.ctreeStage = "FROZEN"
@@ -297,9 +368,12 @@ export class ReplSessionController extends EventEmitter {
     }
     this.lastEventId = null
     this.hasStreamedOnce = false
+    this.resetTransientRuntimeState()
+    this.activity = createActivitySnapshot("session")
     const requestedModel = this.config.model?.trim()
     const modelLabel = requestedModel ?? this.stats.model
     this.stats.model = modelLabel
+    this.resolveProviderCapabilitiesSnapshot(modelLabel)
     const remotePreference = this.config.remotePreference ?? appConfig.remoteStreamDefault
     this.stats.remote = remotePreference
     const permissionValue = this.config.permissionMode?.trim()
@@ -345,6 +419,7 @@ export class ReplSessionController extends EventEmitter {
       const summary = await this.api().getSession(this.sessionId)
       if (summary?.model && typeof summary.model === "string") {
         this.stats.model = summary.model
+        this.resolveProviderCapabilitiesSnapshot(summary.model)
       }
       if (summary?.mode && typeof summary.mode === "string") {
         this.mode = normalizeModeValue(summary.mode) ?? this.mode
@@ -353,6 +428,7 @@ export class ReplSessionController extends EventEmitter {
         const catalog = await getModelCatalog({ configPath: this.config.configPath })
         if (catalog?.defaultModel) {
           this.stats.model = catalog.defaultModel
+          this.resolveProviderCapabilitiesSnapshot(catalog.defaultModel)
         }
       }
     } catch {
@@ -365,7 +441,7 @@ export class ReplSessionController extends EventEmitter {
       // ignore ctree bootstrap errors
     }
     this.pushHint(`Session ${this.sessionId} started (remote ${this.stats.remote ? "enabled" : "disabled"}, model ${this.stats.model}).`)
-    this.status = "Ready"
+    this.setActivityStatus("Ready", { to: "idle", eventType: "session.ready", source: "runtime" })
     this.completionSeen = false
     this.lastCompletion = null
     this.stats.usage = undefined
@@ -386,6 +462,7 @@ export class ReplSessionController extends EventEmitter {
       this.ctreeRefreshTimer = null
     }
     this.disposeAllMarkdown()
+    this.setActivityStatus("Ready", { to: "idle", eventType: "session.stop", source: "runtime" })
   }
 
   async untilStopped(): Promise<void> {
@@ -500,10 +577,10 @@ export class ReplSessionController extends EventEmitter {
     this.lastCompletion = null
     this.removeLiveSlot("guardrail")
     this.pendingResponse = true
+    this.setActivityStatus(statusLabel, { to: "run", eventType: "input.submit", source: "user" })
     if (this.pendingStartedAt == null) {
       this.pendingStartedAt = Date.now()
     }
-    this.status = statusLabel
     this.emitChange()
     try {
       await this.api().postInput(this.sessionId, payload)
@@ -515,10 +592,113 @@ export class ReplSessionController extends EventEmitter {
         this.pushHint(`Failed to send input: ${(error as Error).message}`)
       }
       this.pendingResponse = false
-      this.status = "Ready"
+      this.setActivityStatus("Ready", { to: "idle", eventType: "input.error", source: "system" })
       this.emitChange()
       throw error
     }
+  }
+
+  private resetTransientRuntimeState(): void {
+    this.runtimeTelemetry = createRuntimeTelemetry()
+    this.activityTransitionTrace = []
+    this.lastLifecycleToastAt = 0
+    this.lastLifecycleToastMessage = null
+    this.thinkingArtifact = null
+    this.thinkingInlineEntryId = null
+    this.lastThinkingPeekAt = 0
+  }
+
+  private resolveProviderCapabilitiesSnapshot(modelId: string | null): void {
+    let overrideSchema: unknown = undefined
+    const rawOverride = process.env.BREADBOARD_TUI_PROVIDER_CAPABILITIES_OVERRIDES
+    if (rawOverride && rawOverride.trim().length > 0) {
+      try {
+        overrideSchema = JSON.parse(rawOverride)
+      } catch {
+        overrideSchema = "__invalid_json__"
+      }
+    }
+    const runtimeOverrides = {
+      rawThinkingPeek: this.runtimeFlags.allowRawThinkingPeek === true,
+    }
+    const result = resolveProviderCapabilities({
+      modelId,
+      preset: process.env.BREADBOARD_TUI_CAPABILITY_PRESET ?? null,
+      overrideSchema,
+      runtimeOverrides,
+    })
+    this.providerCapabilities = {
+      provider: result.provider,
+      model: result.model,
+      reasoningEvents: result.capabilities.reasoningEvents,
+      thoughtSummaryEvents: result.capabilities.thoughtSummaryEvents,
+      contextUsage: result.capabilities.contextUsage,
+      activitySurface: result.capabilities.activitySurface,
+      rawThinkingPeek: result.capabilities.rawThinkingPeek,
+      inlineThinkingBlock: result.capabilities.inlineThinkingBlock,
+      warnings: result.warnings,
+    }
+    if (result.warnings.length > 0) {
+      this.pushHint(`[capabilities] ${result.warnings[0]}`)
+    }
+  }
+
+  private transitionActivity(input: ActivityTransitionInput): void {
+    const previous = this.activity
+    const result = reduceActivityTransition(this.activity, input, this.runtimeFlags)
+    this.activityTransitionTrace.push({
+      at: Number.isFinite(input.now as number) ? (input.now as number) : Date.now(),
+      from: previous.primary,
+      to: input.to,
+      eventType: input.eventType ?? null,
+      source: input.source ?? null,
+      reason: result.reason,
+      applied: result.applied,
+    })
+    if (this.activityTransitionTrace.length > 200) {
+      this.activityTransitionTrace = this.activityTransitionTrace.slice(-200)
+    }
+    if (this.runtimeFlags.transitionDebug) {
+      console.debug(
+        `[activity] ${previous.primary} -> ${input.to} (${result.reason})${input.eventType ? ` event=${input.eventType}` : ""}`,
+      )
+    }
+    if (result.applied) {
+      this.runtimeTelemetry = bumpTelemetry(this.runtimeTelemetry, "statusTransitions")
+      this.activity = result.snapshot
+      return
+    }
+    if (result.reason === "illegal") {
+      this.runtimeTelemetry = bumpTelemetry(this.runtimeTelemetry, "illegalTransitions")
+    } else {
+      this.runtimeTelemetry = bumpTelemetry(this.runtimeTelemetry, "suppressedTransitions")
+    }
+  }
+
+  private setActivityStatus(
+    status: string,
+    transition?: Omit<ActivityTransitionInput, "label">,
+  ): void {
+    const now = Date.now()
+    const withinCoalesceWindow =
+      this.runtimeFlags.statusUpdateMs > 0 && now - this.statusUpdatedAt < this.runtimeFlags.statusUpdateMs
+    const sameStatus = status === this.status
+    const samePrimary = transition ? transition.to === this.activity.primary : true
+    if (withinCoalesceWindow && sameStatus && samePrimary) {
+      return
+    }
+    this.status = status
+    this.statusUpdatedAt = now
+    if (transition) {
+      this.transitionActivity({ ...transition, label: status, now })
+    }
+  }
+
+  private bumpRuntimeTelemetry(
+    key: keyof RuntimeTelemetry,
+    by = 1,
+  ): void {
+    this.runtimeTelemetry = bumpTelemetry(this.runtimeTelemetry, key, by)
   }
 
   async dispatchSlashCommand(command: string, args: string[]): Promise<void> {
@@ -666,8 +846,23 @@ export class ReplSessionController extends EventEmitter {
     return stateMethods.addTool.call(this, kind, text, status, options)
   }
 
+  private updateToolEntry(
+    entryId: string,
+    patch: Partial<Omit<ToolLogEntry, "id" | "createdAt">>,
+  ): ToolLogEntry | null {
+    return stateMethods.updateToolEntry.call(this, entryId, patch)
+  }
+
   private formatToolSlot(payload: unknown): { text: string; color?: string; summary?: string } {
     return stateMethods.formatToolSlot.call(this, payload)
+  }
+
+  private resolveToolDisplayPayload(payload: Record<string, unknown>): Record<string, unknown> | null {
+    return stateMethods.resolveToolDisplayPayload.call(this, payload)
+  }
+
+  private formatToolDisplayText(payload: Record<string, unknown>): string {
+    return stateMethods.formatToolDisplayText.call(this, payload)
   }
 
   private resolveToolCallId(payload: Record<string, unknown>): string | null {
@@ -795,8 +990,13 @@ export class ReplSessionController extends EventEmitter {
     return stateMethods.emitChange.call(this)
   }
 
-  private handleToolCall(payload: Record<string, unknown>, callIdOverride?: string | null, allowExisting = true): string | null {
-    return eventMethods.handleToolCall.call(this, payload, callIdOverride, allowExisting)
+  private handleToolCall(
+    payload: Record<string, unknown>,
+    callIdOverride?: string | null,
+    allowExisting = true,
+    logEntry = true,
+  ): string | null {
+    return eventMethods.handleToolCall.call(this, payload, callIdOverride, allowExisting, logEntry)
   }
 
   private handleToolResult(payload: Record<string, unknown>, callIdOverride?: string | null): void {

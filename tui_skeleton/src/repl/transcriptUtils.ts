@@ -6,13 +6,19 @@ export interface ConversationWindow {
   readonly hiddenCount: number
 }
 
+export interface TranscriptWindow<T> {
+  readonly entries: T[]
+  readonly truncated: boolean
+  readonly hiddenCount: number
+}
+
 export const MAX_TRANSCRIPT_ENTRIES = 120
 export const MIN_TRANSCRIPT_ROWS = 4
 
-export const buildConversationWindow = (
-  entries: ReadonlyArray<ConversationEntry>,
+export const buildTranscriptWindow = <T>(
+  entries: ReadonlyArray<T>,
   capacity: number = MAX_TRANSCRIPT_ENTRIES,
-): ConversationWindow => {
+): TranscriptWindow<T> => {
   const cap = Math.max(MIN_TRANSCRIPT_ROWS, Math.min(MAX_TRANSCRIPT_ENTRIES, capacity))
   if (entries.length <= cap) {
     return {
@@ -29,6 +35,11 @@ export const buildConversationWindow = (
   }
 }
 
+export const buildConversationWindow = (
+  entries: ReadonlyArray<ConversationEntry>,
+  capacity: number = MAX_TRANSCRIPT_ENTRIES,
+): ConversationWindow => buildTranscriptWindow(entries, capacity)
+
 export const findStreamingEntry = (entries: ReadonlyArray<ConversationEntry>): ConversationEntry | undefined => {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]
@@ -42,6 +53,7 @@ export const findStreamingEntry = (entries: ReadonlyArray<ConversationEntry>): C
 export const ENTRY_COLLAPSE_THRESHOLD = 24
 export const ENTRY_COLLAPSE_HEAD = 8
 export const ENTRY_COLLAPSE_TAIL = 4
+export const INLINE_THINKING_MARKER = "[thinking-inline]"
 
 export interface DiffPreview {
   readonly additions: number
@@ -50,6 +62,9 @@ export interface DiffPreview {
 }
 
 export const shouldAutoCollapseEntry = (entry: ConversationEntry): boolean => {
+  if (isInlineThinkingBlockText(entry.text)) {
+    return true
+  }
   if (entry.speaker === "system") {
     return false
   }
@@ -61,6 +76,18 @@ export const shouldAutoCollapseEntry = (entry: ConversationEntry): boolean => {
     entry.text.includes("+++ ") ||
     entry.text.includes("@@ ")
   return lineCount >= ENTRY_COLLAPSE_THRESHOLD || hasDiff
+}
+
+export const isInlineThinkingBlockText = (text: string): boolean => {
+  const normalized = text.replace(/\r\n?/g, "\n")
+  return normalized === INLINE_THINKING_MARKER || normalized.startsWith(`${INLINE_THINKING_MARKER}\n`)
+}
+
+export const stripInlineThinkingMarker = (text: string): string => {
+  const normalized = text.replace(/\r\n?/g, "\n")
+  if (normalized === INLINE_THINKING_MARKER) return "Thinking summary unavailable."
+  if (!normalized.startsWith(`${INLINE_THINKING_MARKER}\n`)) return text
+  return normalized.slice(INLINE_THINKING_MARKER.length + 1)
 }
 
 const DIFF_GIT_PATTERN = /^diff --git a\/(.+?) b\/(.+)$/
