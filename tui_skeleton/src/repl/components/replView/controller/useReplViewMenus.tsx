@@ -56,6 +56,7 @@ export const useReplViewMenus = (context: MenusContext) => {
     setTaskStatusFilter,
     setTaskTailLines,
     setTaskTailPath,
+    setTaskFocusLaneId,
     taskRows,
     taskMaxScroll,
     ctreeOpen,
@@ -463,7 +464,8 @@ export const useReplViewMenus = (context: MenusContext) => {
     setTaskStatusFilter("all")
     setTaskTailLines([])
     setTaskTailPath(null)
-  }, [tasksOpen, setTaskIndex, setTaskNotice, setTaskScroll, setTaskSearchQuery, setTaskStatusFilter, setTaskTailLines, setTaskTailPath])
+    setTaskFocusLaneId(null)
+  }, [tasksOpen, setTaskFocusLaneId, setTaskIndex, setTaskNotice, setTaskScroll, setTaskSearchQuery, setTaskStatusFilter, setTaskTailLines, setTaskTailPath])
 
   useEffect(() => {
     if (!tasksOpen) return

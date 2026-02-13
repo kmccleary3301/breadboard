@@ -71,6 +71,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
     workGraph,
     subagentTaskboardEnabled,
     taskIndex,
+    taskFocusLaneId,
     taskSearchQuery,
     taskStatusFilter,
     setTaskNotice,
@@ -619,13 +620,33 @@ export const useReplViewPanels = (context: PanelsContext) => {
       }
     })
   }, [filteredTasks])
+  const taskLaneOrder = useMemo(() => {
+    const explicitOrder = Array.isArray(workGraph?.laneOrder) ? workGraph.laneOrder.filter((id: unknown) => typeof id === "string") : []
+    if (explicitOrder.length > 0) return explicitOrder
+    const fallback = new Set<string>()
+    for (const row of taskRows) {
+      const laneId = row.task?.laneId
+      if (typeof laneId === "string" && laneId.length > 0) fallback.add(laneId)
+    }
+    return Array.from(fallback)
+  }, [taskRows, workGraph?.laneOrder])
+  const taskRowsForDisplay = useMemo(() => {
+    if (!taskFocusLaneId) return taskRows
+    return taskRows.filter((row: any) => row.task?.laneId === taskFocusLaneId)
+  }, [taskFocusLaneId, taskRows])
+  const taskFocusLaneLabel = useMemo(() => {
+    if (!taskFocusLaneId) return null
+    const lane = workGraph?.lanesById?.[taskFocusLaneId]
+    if (lane?.label) return lane.label
+    return taskFocusLaneId
+  }, [taskFocusLaneId, workGraph?.lanesById])
   const taskViewportRows = useMemo(() => Math.max(8, Math.min(16, Math.floor(rowCount * 0.45))), [rowCount])
-  const taskMaxScroll = Math.max(0, taskRows.length - taskViewportRows)
+  const taskMaxScroll = Math.max(0, taskRowsForDisplay.length - taskViewportRows)
   const selectedTaskIndex = useMemo(() => {
-    if (taskRows.length === 0) return 0
-    return Math.max(0, Math.min(taskIndex, taskRows.length - 1))
-  }, [taskIndex, taskRows.length])
-  const selectedTask = useMemo(() => taskRows[selectedTaskIndex]?.task ?? null, [selectedTaskIndex, taskRows])
+    if (taskRowsForDisplay.length === 0) return 0
+    return Math.max(0, Math.min(taskIndex, taskRowsForDisplay.length - 1))
+  }, [taskIndex, taskRowsForDisplay.length])
+  const selectedTask = useMemo(() => taskRowsForDisplay[selectedTaskIndex]?.task ?? null, [selectedTaskIndex, taskRowsForDisplay])
 
   const { rows: ctreeRows, childrenByParent: ctreeChildrenByParent } = useMemo(
     () => buildCTreeTreeRows(ctreeTree ?? null, ctreeCollapsedNodes),
@@ -783,7 +804,10 @@ export const useReplViewPanels = (context: PanelsContext) => {
     todoRows,
     todoViewportRows,
     todoMaxScroll,
-    taskRows,
+    taskRows: taskRowsForDisplay,
+    taskLaneOrder,
+    taskFocusLaneId,
+    taskFocusLaneLabel,
     taskViewportRows,
     taskMaxScroll,
     selectedTaskIndex,

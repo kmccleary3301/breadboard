@@ -94,6 +94,8 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     formatCTreeNodePreview,
     formatCTreeNodeFlags,
     tasksOpen,
+    taskFocusLaneId,
+    taskFocusLaneLabel,
     taskScroll,
     taskMaxScroll,
     taskRows,
@@ -845,23 +847,35 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           }
         }
         const lineWidth = Math.max(12, panelWidth - 6)
-        const titleLines: SelectPanelLine[] = [{ text: CHALK.bold("Background tasks"), color: COLORS.info }]
+        const titleLines: SelectPanelLine[] = [
+          { text: CHALK.bold(taskFocusLaneId ? "Task Focus" : "Background tasks"), color: COLORS.info },
+        ]
         const hintLines: SelectPanelLine[] = [
           {
             text:
               tasks.length === 0
                 ? "No background tasks yet."
-                : `${tasks.length} task${tasks.length === 1 ? "" : "s"} • ↑/↓ select • PgUp/PgDn page • Enter tail • Esc close`,
+                : taskFocusLaneId
+                  ? `${taskRows.length} in lane • ↑/↓ select • ←/→ or [/] lane • F exit focus • Enter tail • Esc close`
+                  : `${tasks.length} task${tasks.length === 1 ? "" : "s"} • ↑/↓ select • PgUp/PgDn page • Enter tail • Esc close`,
             color: "gray",
           },
           {
-            text: `Search: ${taskSearchQuery.length > 0 ? taskSearchQuery : CHALK.dim("<type to filter>")} • Filter: ${taskStatusFilter} (0 all · 1 run · 2 done · 3 fail)`,
+            text: taskFocusLaneId
+              ? `Lane: ${taskFocusLaneLabel ?? taskFocusLaneId}`
+              : `Search: ${taskSearchQuery.length > 0 ? taskSearchQuery : CHALK.dim("<type to filter>")} • Filter: ${taskStatusFilter} (0 all · 1 run · 2 done · 3 fail) • F focus lane`,
             color: "dim",
           },
         ]
         const panelRows: SelectPanelRow[] = []
         if (taskRows.length === 0) {
-          panelRows.push({ kind: "empty", text: "No tasks match the current filter.", color: "dim" })
+          panelRows.push({
+            kind: "empty",
+            text: taskFocusLaneId
+              ? "No tasks in this lane for current filters."
+              : "No tasks match the current filter.",
+            color: "dim",
+          })
         } else {
           visible.forEach((row: any, idx: number) => {
             const globalIndex = scroll + idx

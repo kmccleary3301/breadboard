@@ -36,9 +36,13 @@ export const handleListOverlayKeys = (
     setTaskScroll,
     setTaskIndex,
     taskRows,
+    taskLaneOrder,
+    taskFocusLaneId,
+    setTaskFocusLaneId,
     setTaskSearchQuery,
     setTaskStatusFilter,
     selectedTaskIndex,
+    selectedTask,
     requestTaskTail,
     rewindMenu,
     rewindVisibleLimit,
@@ -182,6 +186,36 @@ export const handleListOverlayKeys = (
       setTasksOpen(false)
       return true
     }
+    const normalizeLaneId = (value: unknown): string | null =>
+      typeof value === "string" && value.trim().length > 0 ? value : null
+    const laneOrder = Array.isArray(taskLaneOrder)
+      ? taskLaneOrder.map((value: unknown) => normalizeLaneId(value)).filter(Boolean) as string[]
+      : []
+    if (!key.ctrl && !key.meta && lowerChar === "f") {
+      if (taskFocusLaneId) {
+        setTaskFocusLaneId(null)
+        setTaskIndex(0)
+        setTaskScroll(0)
+      } else {
+        const preferredLane = normalizeLaneId(selectedTask?.laneId) ?? laneOrder[0] ?? null
+        if (preferredLane) {
+          setTaskFocusLaneId(preferredLane)
+          setTaskIndex(0)
+          setTaskScroll(0)
+        }
+      }
+      return true
+    }
+    const laneDelta = key.rightArrow || lowerChar === "]" ? 1 : key.leftArrow || lowerChar === "[" ? -1 : 0
+    if (taskFocusLaneId && laneOrder.length > 0 && laneDelta !== 0) {
+      const currentIndex = Math.max(0, laneOrder.indexOf(taskFocusLaneId))
+      const delta = laneDelta
+      const nextIndex = (currentIndex + delta + laneOrder.length) % laneOrder.length
+      setTaskFocusLaneId(laneOrder[nextIndex] ?? null)
+      setTaskIndex(0)
+      setTaskScroll(0)
+      return true
+    }
     const clampScroll = (value: number) => Math.max(0, Math.min(taskMaxScroll, value))
     if (key.pageUp) {
       setTaskScroll((prev: number) => clampScroll(prev - taskViewportRows))
@@ -194,6 +228,9 @@ export const handleListOverlayKeys = (
       return true
     }
     if (key.ctrl && lowerChar === "u") {
+      if (taskFocusLaneId) {
+        setTaskFocusLaneId(null)
+      }
       setTaskSearchQuery("")
       setTaskIndex(0)
       setTaskScroll(0)
@@ -207,24 +244,28 @@ export const handleListOverlayKeys = (
     }
     if (!key.ctrl && !key.meta) {
       if (lowerChar === "0") {
+        if (taskFocusLaneId) setTaskFocusLaneId(null)
         setTaskStatusFilter("all")
         setTaskIndex(0)
         setTaskScroll(0)
         return true
       }
       if (lowerChar === "1") {
+        if (taskFocusLaneId) setTaskFocusLaneId(null)
         setTaskStatusFilter("running")
         setTaskIndex(0)
         setTaskScroll(0)
         return true
       }
       if (lowerChar === "2") {
+        if (taskFocusLaneId) setTaskFocusLaneId(null)
         setTaskStatusFilter("completed")
         setTaskIndex(0)
         setTaskScroll(0)
         return true
       }
       if (lowerChar === "3") {
+        if (taskFocusLaneId) setTaskFocusLaneId(null)
         setTaskStatusFilter("failed")
         setTaskIndex(0)
         setTaskScroll(0)
@@ -250,6 +291,9 @@ export const handleListOverlayKeys = (
       return true
     }
     if (char && char.length > 0 && !key.ctrl && !key.meta && !key.return && !key.escape) {
+      if (taskFocusLaneId) {
+        setTaskFocusLaneId(null)
+      }
       setTaskSearchQuery((prev: string) => prev + char)
       setTaskIndex(0)
       setTaskScroll(0)

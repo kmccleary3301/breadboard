@@ -227,6 +227,7 @@ export const useReplViewController = ({
   const [taskStatusFilter, setTaskStatusFilter] = useState<"all" | "running" | "completed" | "failed">("all")
   const [taskTailLines, setTaskTailLines] = useState<string[]>([])
   const [taskTailPath, setTaskTailPath] = useState<string | null>(null)
+  const [taskFocusLaneId, setTaskFocusLaneId] = useState<string | null>(null)
   const [ctreeOpen, setCtreeOpen] = useState(false)
   const [ctreeScroll, setCtreeScroll] = useState(0)
   const [ctreeIndex, setCtreeIndex] = useState(0)
@@ -422,6 +423,7 @@ export const useReplViewController = ({
     workGraph,
     subagentTaskboardEnabled: tuiConfig.subagents.taskboardEnabled,
     taskIndex,
+    taskFocusLaneId,
     taskSearchQuery,
     taskStatusFilter,
     setTaskNotice,
@@ -503,6 +505,8 @@ export const useReplViewController = ({
     todoViewportRows,
     todoMaxScroll,
     taskRows,
+    taskLaneOrder,
+    taskFocusLaneLabel,
     taskViewportRows,
     taskMaxScroll,
     selectedTaskIndex,
@@ -569,6 +573,7 @@ export const useReplViewController = ({
     setTaskStatusFilter,
     setTaskTailLines,
     setTaskTailPath,
+    setTaskFocusLaneId,
     taskRows,
     taskMaxScroll,
     ctreeOpen,
@@ -744,6 +749,7 @@ export const useReplViewController = ({
     setTaskScroll,
     setTaskSearchQuery,
     setTaskStatusFilter,
+    setTaskFocusLaneId,
     setTodoScroll,
     setTranscriptSearchIndex,
     setTranscriptSearchOpen,
@@ -761,9 +767,11 @@ export const useReplViewController = ({
     stdout,
     taskMaxScroll,
     taskRows,
+    taskLaneOrder,
     taskScroll,
     taskSearchQuery,
     taskStatusFilter,
+    taskFocusLaneId,
     taskViewportRows,
     tasksOpen,
     todoMaxScroll,
@@ -782,6 +790,7 @@ export const useReplViewController = ({
     selectedCTreeIndex,
     selectedCTreeRow,
     selectedTaskIndex,
+    selectedTask,
     requestTaskTail,
     usageOpen,
     suggestIndex,
@@ -1118,6 +1127,8 @@ export const useReplViewController = ({
     inspectRawScroll,
     tasks,
     tasksOpen,
+    taskFocusLaneId,
+    taskFocusLaneLabel,
     taskScroll,
     taskSearchQuery,
     taskStatusFilter,

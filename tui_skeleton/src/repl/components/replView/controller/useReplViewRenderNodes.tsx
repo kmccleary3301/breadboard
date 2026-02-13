@@ -102,7 +102,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
       "Ctrl+L clear screen",
       "Ctrl+K model",
       `Ctrl+O ${keymap === "claude" ? "transcript" : "detailed"}`,
-      "Ctrl+B tasks",
+      "Ctrl+B tasks/focus",
       "/usage",
     ]
     if (keymap === "claude") {
@@ -169,7 +169,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
       ["Ctrl+K", "Model picker"],
       ["Alt+P", "Model picker"],
       ["Ctrl+G", "Skills picker"],
-      ["Ctrl+B", "Background tasks"],
+      ["Ctrl+B", "Background tasks (F focus, [/] cycle lane)"],
       ["Ctrl+R", "Rewind (checkpoints)"],
       ["/usage", "Usage summary"],
       ["Tab", "Complete @ or / list"],
