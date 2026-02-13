@@ -632,8 +632,8 @@ jobs:
         working-directory: tui_skeleton
         run: npm run tui:goldens:report
 
-      - name: TUI goldens (report-only) summary
-        if: always()
+      - name: TUI goldens (report-only) summary (ubuntu only)
+        if: ${{ always() && matrix.os == 'ubuntu-latest' }}
         run: |
           python - <<'PY'
           import glob, json, os
