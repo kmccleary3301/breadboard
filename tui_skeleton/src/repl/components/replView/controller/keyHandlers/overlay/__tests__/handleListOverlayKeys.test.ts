@@ -72,9 +72,13 @@ const baseContext = () => ({
   taskFocusLaneId: null as string | null,
   taskFocusViewOpen: false,
   taskFocusFollowTail: true,
+  taskFocusRawMode: false,
+  taskFocusTailLines: 24,
   setTaskFocusLaneId: vi.fn(),
   setTaskFocusViewOpen: vi.fn(),
   setTaskFocusFollowTail: vi.fn(),
+  setTaskFocusRawMode: vi.fn(),
+  setTaskFocusTailLines: vi.fn(),
   setTaskSearchQuery: vi.fn(),
   setTaskStatusFilter: vi.fn(),
   selectedTaskIndex: 0,
@@ -101,10 +105,12 @@ describe("handleListOverlayKeys task focus mode", () => {
     expect(handled).toBe(true)
     expect(context.setTaskFocusLaneId).toHaveBeenCalledWith("lane-a")
     expect(context.setTaskFocusFollowTail).toHaveBeenCalledWith(true)
+    expect(context.setTaskFocusRawMode).toHaveBeenCalledWith(false)
+    expect(context.setTaskFocusTailLines).toHaveBeenCalledWith(24)
     expect(context.setTaskFocusViewOpen).toHaveBeenCalledWith(true)
     expect(context.setTaskIndex).toHaveBeenCalledWith(0)
     expect(context.setTaskScroll).toHaveBeenCalledWith(0)
-    expect(context.requestTaskTail).toHaveBeenCalled()
+    expect(context.requestTaskTail).toHaveBeenCalledWith({ raw: false, tailLines: 24 })
   })
 
   it("cycles focused lane with left/right arrows inside focus view", () => {
@@ -165,5 +171,16 @@ describe("handleListOverlayKeys task focus mode", () => {
     )
     expect(handled).toBe(true)
     expect(context.setTaskFocusFollowTail).toHaveBeenCalledWith(false)
+  })
+
+  it("toggles raw mode with tab while focus view is open", () => {
+    const context = { ...baseContext(), taskFocusViewOpen: true, taskFocusLaneId: "lane-a", taskFocusRawMode: false }
+    const handled = handleListOverlayKeys(
+      context,
+      makeInfo({ key: { tab: true }, isTabKey: true }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTaskFocusRawMode).toHaveBeenCalledWith(true)
+    expect(context.requestTaskTail).toHaveBeenCalledWith({ raw: true, tailLines: 24 })
   })
 })

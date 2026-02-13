@@ -230,6 +230,8 @@ export const useReplViewController = ({
   const [taskFocusLaneId, setTaskFocusLaneId] = useState<string | null>(null)
   const [taskFocusViewOpen, setTaskFocusViewOpen] = useState(false)
   const [taskFocusFollowTail, setTaskFocusFollowTail] = useState(true)
+  const [taskFocusRawMode, setTaskFocusRawMode] = useState(false)
+  const [taskFocusTailLines, setTaskFocusTailLines] = useState(24)
   const [ctreeOpen, setCtreeOpen] = useState(false)
   const [ctreeScroll, setCtreeScroll] = useState(0)
   const [ctreeIndex, setCtreeIndex] = useState(0)
@@ -579,6 +581,8 @@ export const useReplViewController = ({
     setTaskFocusLaneId,
     setTaskFocusViewOpen,
     setTaskFocusFollowTail,
+    setTaskFocusRawMode,
+    setTaskFocusTailLines,
     taskRows,
     taskMaxScroll,
     ctreeOpen,
@@ -757,6 +761,8 @@ export const useReplViewController = ({
     setTaskFocusLaneId,
     setTaskFocusViewOpen,
     setTaskFocusFollowTail,
+    setTaskFocusRawMode,
+    setTaskFocusTailLines,
     setTodoScroll,
     setTranscriptSearchIndex,
     setTranscriptSearchOpen,
@@ -781,6 +787,8 @@ export const useReplViewController = ({
     taskFocusLaneId,
     taskFocusViewOpen,
     taskFocusFollowTail,
+    taskFocusRawMode,
+    taskFocusTailLines,
     taskViewportRows,
     tasksOpen,
     todoMaxScroll,
@@ -1094,12 +1102,12 @@ export const useReplViewController = ({
   useEffect(() => {
     if (!tasksOpen || !taskFocusViewOpen || !taskFocusFollowTail) return
     if (!selectedTask) return
-    void requestTaskTail()
+    void requestTaskTail({ raw: taskFocusRawMode, tailLines: taskFocusTailLines })
     const interval = setInterval(() => {
-      void requestTaskTail()
+      void requestTaskTail({ raw: taskFocusRawMode, tailLines: taskFocusTailLines })
     }, 1500)
     return () => clearInterval(interval)
-  }, [requestTaskTail, selectedTask, taskFocusFollowTail, taskFocusViewOpen, tasksOpen])
+  }, [requestTaskTail, selectedTask, taskFocusFollowTail, taskFocusRawMode, taskFocusTailLines, taskFocusViewOpen, tasksOpen])
 
   const modalStack = useReplViewModalStack({
     confirmState,
@@ -1148,6 +1156,8 @@ export const useReplViewController = ({
     tasksOpen,
     taskFocusViewOpen,
     taskFocusFollowTail,
+    taskFocusRawMode,
+    taskFocusTailLines,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,

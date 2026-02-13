@@ -709,7 +709,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
     return flags
   }, [])
 
-  const requestTaskTail = useCallback(async () => {
+  const requestTaskTail = useCallback(async (options?: { raw?: boolean; tailLines?: number; maxBytes?: number }) => {
     if (!selectedTask) {
       setTaskNotice("No task selected.")
       return
@@ -723,12 +723,21 @@ export const useReplViewPanels = (context: PanelsContext) => {
     let lastError: string | null = null
     for (const pathCandidate of candidates) {
       try {
-        const content = await onReadFile(pathCandidate, { mode: "snippet", headLines: 4, tailLines: 24, maxBytes: 40_000 })
+        const rawMode = options?.raw === true
+        const tailLines = Math.max(8, Math.min(400, Math.floor(options?.tailLines ?? 24)))
+        const readMode: "cat" | "snippet" = rawMode ? "cat" : "snippet"
+        const content = await onReadFile(pathCandidate, {
+          mode: readMode,
+          headLines: rawMode ? undefined : 4,
+          tailLines: rawMode ? undefined : tailLines,
+          maxBytes: options?.maxBytes ?? (rawMode ? 120_000 : 40_000),
+        })
         const lines = content.content.replace(/\\r\\n?/g, "\\n").split("\\n")
         setTaskTailLines(lines)
         setTaskTailPath(content.path)
         const truncated = content.truncated ? " (truncated)" : ""
-        setTaskNotice(`Loaded ${content.path}${truncated}`)
+        const modeLabel = rawMode ? "raw" : `tail ${tailLines}`
+        setTaskNotice(`Loaded ${content.path} (${modeLabel})${truncated}`)
         return
       } catch (error) {
         lastError = (error as Error).message

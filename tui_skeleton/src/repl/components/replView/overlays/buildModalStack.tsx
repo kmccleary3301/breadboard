@@ -96,6 +96,8 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     tasksOpen,
     taskFocusViewOpen,
     taskFocusFollowTail,
+    taskFocusRawMode,
+    taskFocusTailLines,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,
@@ -997,8 +999,12 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         ]
         const hintLines: SelectPanelLine[] = [
           {
-            text: `${taskRows.length} in lane • ↑/↓ select • ←/→ or [/] lane • Enter tail • P ${taskFocusFollowTail ? "pause" : "follow"} • R refresh • F/Esc return`,
+            text: `${taskRows.length} in lane • ↑/↓ select • ←/→ or [/] lane • Enter tail • Tab ${taskFocusRawMode ? "snippet" : "raw"} • L load more • P ${taskFocusFollowTail ? "pause" : "follow"} • R refresh • F/Esc return`,
             color: "gray",
+          },
+          {
+            text: `View: ${taskFocusRawMode ? "raw" : "snippet"}${taskFocusRawMode ? "" : ` · tail lines ${taskFocusTailLines}`}`,
+            color: "dim",
           },
         ]
 

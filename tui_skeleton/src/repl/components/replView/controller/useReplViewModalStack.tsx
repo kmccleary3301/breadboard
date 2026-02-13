@@ -48,6 +48,8 @@ type ModalStackContext = {
   tasksOpen: boolean
   taskFocusViewOpen: boolean
   taskFocusFollowTail: boolean
+  taskFocusRawMode: boolean
+  taskFocusTailLines: number
   taskFocusLaneId: string | null
   taskFocusLaneLabel: string | null
   taskScroll: number
@@ -132,6 +134,8 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     tasksOpen,
     taskFocusViewOpen,
     taskFocusFollowTail,
+    taskFocusRawMode,
+    taskFocusTailLines,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,
@@ -289,6 +293,8 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     tasksOpen,
     taskFocusViewOpen,
     taskFocusFollowTail,
+    taskFocusRawMode,
+    taskFocusTailLines,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,

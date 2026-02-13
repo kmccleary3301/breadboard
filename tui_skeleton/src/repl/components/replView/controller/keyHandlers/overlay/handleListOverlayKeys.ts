@@ -40,9 +40,13 @@ export const handleListOverlayKeys = (
     taskFocusLaneId,
     taskFocusViewOpen,
     taskFocusFollowTail,
+    taskFocusRawMode,
+    taskFocusTailLines,
     setTaskFocusLaneId,
     setTaskFocusViewOpen,
     setTaskFocusFollowTail,
+    setTaskFocusRawMode,
+    setTaskFocusTailLines,
     setTaskSearchQuery,
     setTaskStatusFilter,
     selectedTaskIndex,
@@ -58,7 +62,7 @@ export const handleListOverlayKeys = (
     closeConfirm,
     runConfirmAction,
   } = context
-  const { char, key, lowerChar, isReturnKey, isCtrlT, isCtrlB, isCtrlY } = info
+  const { char, key, lowerChar, isReturnKey, isTabKey, isCtrlT, isCtrlB, isCtrlY } = info
 
   if (todosOpen) {
     if (key.escape || char === "\u001b") {
@@ -234,7 +238,19 @@ export const handleListOverlayKeys = (
         return true
       }
       if (key.return) {
-        void requestTaskTail()
+        void requestTaskTail({ raw: taskFocusRawMode, tailLines: taskFocusTailLines })
+        return true
+      }
+      if (isTabKey) {
+        const nextRawMode = !taskFocusRawMode
+        setTaskFocusRawMode(nextRawMode)
+        void requestTaskTail({ raw: nextRawMode, tailLines: taskFocusTailLines })
+        return true
+      }
+      if (!key.ctrl && !key.meta && lowerChar === "l" && !taskFocusRawMode) {
+        const nextTailLines = Math.max(8, Math.min(400, taskFocusTailLines + 24))
+        setTaskFocusTailLines(nextTailLines)
+        void requestTaskTail({ raw: false, tailLines: nextTailLines, maxBytes: 80_000 })
         return true
       }
       if (!key.ctrl && !key.meta && lowerChar === "p") {
@@ -242,7 +258,7 @@ export const handleListOverlayKeys = (
         return true
       }
       if (!key.ctrl && !key.meta && lowerChar === "r") {
-        void requestTaskTail()
+        void requestTaskTail({ raw: taskFocusRawMode, tailLines: taskFocusTailLines })
         return true
       }
       return true
@@ -261,10 +277,12 @@ export const handleListOverlayKeys = (
       if (preferredLane) {
         setTaskFocusLaneId(preferredLane)
         setTaskFocusFollowTail(true)
+        setTaskFocusRawMode(false)
+        setTaskFocusTailLines(24)
         setTaskFocusViewOpen(true)
         setTaskIndex(0)
         setTaskScroll(0)
-        void requestTaskTail()
+        void requestTaskTail({ raw: false, tailLines: 24 })
       }
       return true
     }
