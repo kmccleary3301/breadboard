@@ -3,7 +3,7 @@
 Date: 2026-02-13  
 Scope baseline: `docs_tmp/cli_phase_4/SUBAGENTS_PRIMITIVES_AND_DISPLAY_EXECUTION_PLAN_V2.md`  
 Snapshot branch: `feature/subagents-v2-cp0`  
-Snapshot commit floor: `05455d24`
+Snapshot commit floor: `8b90fc7a`
 
 Status legend:
 - `done`: implemented and evidenced in code/tests/docs
@@ -27,7 +27,7 @@ Status legend:
 | CP0-011 | done | `tui_skeleton/src/commands/repl/__tests__/controllerWorkGraphRuntime.test.ts` |
 | CP0-012 | done | `tui_skeleton/src/commands/repl/__tests__/controllerWorkGraphRuntime.test.ts` |
 | CP0-013 | done | `tui_skeleton/src/commands/repl/__tests__/controllerWorkGraphRuntime.test.ts` |
-| CP0-014 | partial | Flags-off behavior covered in runtime flag tests; no dedicated snapshot evidence bundle linked |
+| CP0-014 | done | `tui_skeleton/scripts/subagents_cp0_capture_scenarios.ts`, `tui_skeleton/docs/subagents_scenarios/cp0_flags_off_baseline_capture_20260213.json` |
 | CP0-015 | done | `docs_tmp/cli_phase_4/SUBAGENTS_CONTRACT_HANDSHAKE_20260213.md` |
 | CP0-016 | done | `tui_skeleton/src/commands/repl/controllerWorkGraphRuntime.ts`, `tui_skeleton/src/commands/repl/controller.ts` |
 | CP0-017 | done | `docs_tmp/cli_phase_4/SUBAGENTS_WORKGRAPH_FLOW_DIAGRAM.md`, linked from handshake doc |
@@ -84,17 +84,17 @@ Status legend:
 | CP3-003 | done | `tui_skeleton/src/repl/components/replView/overlays/buildModalStack.tsx` |
 | CP3-004 | done | `tui_skeleton/src/repl/components/replView/controller/useReplViewPanels.tsx` (tail-first snippet reads) |
 | CP3-005 | done | `tui_skeleton/src/repl/components/replView/controller/keyHandlers/overlay/handleListOverlayKeys.ts` |
-| CP3-006 | partial | Follow/pause behavior implemented; explicit cadence-focused unit assertions still limited |
+| CP3-006 | done | `tui_skeleton/src/repl/components/replView/controller/taskFocusCadence.ts`, `tui_skeleton/src/repl/components/replView/controller/__tests__/taskFocusCadence.test.ts` |
 | CP3-007 | done | `tui_skeleton/src/repl/components/replView/controller/useReplViewPanels.tsx` |
 | CP3-008 | done | `tui_skeleton/src/repl/components/replView/controller/taskFocusLoader.ts`, `tui_skeleton/src/repl/components/replView/controller/__tests__/taskFocusLoader.test.ts` |
 | CP3-009 | done | `tui_skeleton/src/repl/components/replView/controller/keyHandlers/overlay/__tests__/handleListOverlayKeys.test.ts` |
 | CP3-010 | done | Default snippet + explicit raw toggle behavior documented and tested |
 | CP3-011 | done | `tui_skeleton/src/repl/components/replView/controller/keyHandlers/overlay/__tests__/handleListOverlayKeys.test.ts` |
-| CP3-012 | partial | Key toggle tests present; cadence timing tests pending |
+| CP3-012 | done | `tui_skeleton/src/repl/components/replView/controller/__tests__/taskFocusCadence.test.ts` |
 | CP3-013 | done | `tui_skeleton/docs/subagents_scenarios/cp3_focus_active_updates_capture_20260213.json`, `docs/SUBAGENTS_CP3_GATE_REPORT_20260213.md` |
 | CP3-014 | done | `tui_skeleton/docs/subagents_scenarios/cp3_focus_rapid_lane_switch_capture_20260213.json`, `docs/SUBAGENTS_CP3_GATE_REPORT_20260213.md` |
 | CP3-015 | done | `tui_skeleton/scripts/runtime_focus_latency_gate.ts`, `focusLatency.test.ts` |
-| CP3-016 | todo | Optional cache optimization not yet implemented |
+| CP3-016 | done | `tui_skeleton/src/repl/components/replView/controller/taskFocusLoader.ts`, `tui_skeleton/docs/subagents_scenarios/cp3_focus_cache_benchmark_capture_20260213.json` |
 
 ## CP4 Status
 
@@ -118,20 +118,18 @@ Status legend:
 
 | ID | Status | Evidence |
 | --- | --- | --- |
-| EX1-001 | todo | No `focus.mode=swap` implementation yet |
-| EX1-002 | todo | No swap-mode stress scenarios yet |
-| EX2-001 | todo | No lane offset index cache optimization yet |
-| EX3-001 | todo | No hotspot diagnostics heatmap yet |
-| EX4-001 | todo | Additional preset variants beyond baseline pair not yet added |
+| EX1-001 | done | `tui_skeleton/src/repl/components/replView/overlays/buildModalStack.tsx`, `tui_skeleton/src/repl/components/replView/controller/keyHandlers/overlay/handleListOverlayKeys.ts`, `tui_skeleton/docs/subagents_scenarios/ex1_focus_swap_capture_20260213.json` |
+| EX1-002 | done | `tui_skeleton/docs/subagents_scenarios/ex1_focus_swap_capture_20260213.json` |
+| EX2-001 | partial | `taskFocusLoader` cache optimization and benchmark added (`cp3_focus_cache_benchmark_capture_20260213.json`), full offset index cache not implemented |
+| EX3-001 | done | `tui_skeleton/src/repl/components/replView/controller/diagnosticsHeatmap.ts`, `tui_skeleton/src/repl/components/replView/controller/__tests__/diagnosticsHeatmap.test.ts`, `tui_skeleton/docs/subagents_scenarios/ex3_diagnostics_heatmap_capture_20260213.json` |
+| EX4-001 | done | `tui_skeleton/src/tui_config/presets.ts`, `tui_skeleton/src/tui_config/__tests__/resolveTuiConfig.test.ts`, `tui_skeleton/docs/subagents_scenarios/ex4_preset_variants_capture_20260213.json` |
 
 ## Gate Summary Snapshot
 
 - `Gate A (MVP Go)`: done  
-- `Gate B (Operator Go)`: partial  
-- `Gate C (Full Tranche Go)`: partial
+- `Gate B (Operator Go)`: done  
+- `Gate C (Full Tranche Go)`: done (with EX2 explicitly tracked as non-blocking partial)
 
 Blocking deltas to full tranche go:
-1. CP0-014 remains partial (no dedicated flags-off snapshot bundle).
-2. CP3-006 and CP3-012 remain partial (cadence-focused assertions can be expanded).
-3. CP3-016 optional cache optimization is not implemented.
-4. Expansion track (`EX1`..`EX4`) has not started.
+1. No mandatory blocking deltas remain in CP0-CP4.
+2. Optional EX2 follow-up remains if full lane offset indexing is required beyond current cache optimization.
