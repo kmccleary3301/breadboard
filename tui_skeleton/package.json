@@ -18,6 +18,8 @@
     "runtime:gate:noise": "node --import tsx scripts/runtime_transcript_noise_gate.ts",
     "runtime:gate:noise:warn": "node --import tsx scripts/runtime_noise_warn_ci.ts",
     "runtime:gate:noise:matrix": "node --import tsx scripts/runtime_noise_matrix.ts",
+    "runtime:gate:focus-latency": "node --import tsx scripts/runtime_focus_latency_gate.ts --strict",
+    "runtime:gate:focus-latency:warn": "node --import tsx scripts/runtime_focus_latency_gate.ts",
     "runtime:gate:strip-churn": "node --import tsx scripts/runtime_strip_churn_gate.ts --strict",
     "runtime:gate:strip-churn:warn": "node --import tsx scripts/runtime_strip_churn_gate.ts",
     "runtime:gate:dashboard": "node --import tsx scripts/runtime_gate_dashboard.ts",

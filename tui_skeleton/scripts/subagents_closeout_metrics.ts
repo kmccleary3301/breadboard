@@ -35,6 +35,7 @@ const main = (): void => {
     ),
     runGate("warn-noise-gate", "npm run runtime:gate:noise:warn"),
     runGate("warn-strip-churn-gate", "npm run runtime:gate:strip-churn:warn"),
+    runGate("warn-focus-latency-gate", "npm run runtime:gate:focus-latency:warn"),
     runGate("ascii-no-color", "npm run runtime:validate:ascii-no-color"),
   ]
 
