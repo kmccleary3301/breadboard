@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict, deque
+from dataclasses import dataclass, field
 import logging
 import os
+import threading
 import uuid
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional, Sequence
@@ -35,6 +38,145 @@ from ...compilation.v2_loader import load_agent_config
 from ...policy_pack import PolicyPack
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _TailIndexIdentity:
+    dev: int
+    ino: int
+    mtime_ns: int
+
+
+@dataclass
+class _TailIndexEntry:
+    identity: _TailIndexIdentity
+    size: int
+    scanned_from: int
+    # Absolute byte offsets for b"\\n", in ascending order within the scanned suffix.
+    newlines: "deque[int]" = field(default_factory=deque)
+    lock: "threading.Lock" = field(default_factory=threading.Lock, repr=False)
+    # Diagnostics counters (used by EX2 capture + tests).
+    index_read_ops: int = 0
+    index_read_bytes: int = 0
+    tail_read_ops: int = 0
+    tail_read_bytes: int = 0
+
+
+class _TailLineIndexCache:
+    def __init__(self, *, max_entries: int = 48, chunk_size: int = 64 * 1024) -> None:
+        self._lock = threading.Lock()
+        self._entries: "OrderedDict[str, _TailIndexEntry]" = OrderedDict()
+        self._max_entries = max(1, int(max_entries))
+        self._chunk_size = max(4 * 1024, int(chunk_size))
+
+    def _stat_identity(self, stat: os.stat_result) -> _TailIndexIdentity:
+        return _TailIndexIdentity(
+            dev=int(getattr(stat, "st_dev", 0)),
+            ino=int(getattr(stat, "st_ino", 0)),
+            mtime_ns=int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))),
+        )
+
+    def _get_entry(self, path: Path, stat: os.stat_result) -> _TailIndexEntry:
+        key = str(path)
+        identity = self._stat_identity(stat)
+        size = int(stat.st_size)
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is not None:
+                # Invalidate on rotation/replace (dev+ino), or timestamp changes, or truncation.
+                if (
+                    entry.identity.dev != identity.dev
+                    or entry.identity.ino != identity.ino
+                    or identity.mtime_ns < entry.identity.mtime_ns
+                    or size < entry.size
+                ):
+                    entry = None
+                else:
+                    # Refresh LRU position.
+                    self._entries.move_to_end(key)
+            if entry is None:
+                entry = _TailIndexEntry(identity=identity, size=size, scanned_from=size)
+                self._entries[key] = entry
+                self._entries.move_to_end(key)
+                while len(self._entries) > self._max_entries:
+                    self._entries.popitem(last=False)
+            else:
+                # File append: keep cached offsets and allow incremental extension.
+                entry.identity = identity
+            return entry
+
+    def _read_range(self, handle, start: int, length: int) -> bytes:
+        handle.seek(start)
+        data = handle.read(length)
+        return data if isinstance(data, (bytes, bytearray)) else bytes(data)
+
+    def read_tail_text(self, path: Path, *, tail_lines: int, max_bytes: int) -> tuple[str, dict[str, int]]:
+        tail_lines = max(0, int(tail_lines))
+        max_bytes = max(1, int(max_bytes))
+        stat = path.stat()
+        entry = self._get_entry(path, stat)
+        size = int(stat.st_size)
+
+        if tail_lines == 0:
+            return "", {"total_bytes": size, "returned_bytes": 0, "start_offset": size}
+
+        with entry.lock:
+            # Extend index for appended bytes (cheap incremental read).
+            if size > entry.size:
+                start = entry.size
+                remaining = size - entry.size
+                with path.open("rb") as handle:
+                    offset = start
+                    while remaining > 0:
+                        chunk = self._read_range(handle, offset, min(self._chunk_size, remaining))
+                        entry.index_read_ops += 1
+                        entry.index_read_bytes += len(chunk)
+                        for idx in (i for i, b in enumerate(chunk) if b == 0x0A):
+                            entry.newlines.append(offset + idx)
+                        offset += len(chunk)
+                        remaining -= len(chunk)
+                entry.size = size
+                # If we had never scanned previously, keep scanned_from at end.
+                entry.scanned_from = min(entry.scanned_from, size)
+
+            # Scan backwards until we have enough newline offsets (or reach BOF).
+            with path.open("rb") as handle:
+                while len(entry.newlines) < tail_lines and entry.scanned_from > 0:
+                    chunk_end = entry.scanned_from
+                    chunk_start = max(0, chunk_end - self._chunk_size)
+                    chunk = self._read_range(handle, chunk_start, chunk_end - chunk_start)
+                    entry.index_read_ops += 1
+                    entry.index_read_bytes += len(chunk)
+                    offsets: list[int] = []
+                    for idx in (i for i, b in enumerate(chunk) if b == 0x0A):
+                        offsets.append(chunk_start + idx)
+                    # Prepend earlier offsets while preserving ascending order.
+                    for off in reversed(offsets):
+                        entry.newlines.appendleft(off)
+                    entry.scanned_from = chunk_start
+
+                if len(entry.newlines) >= tail_lines:
+                    # Nth newline from the end (1-indexed).
+                    start_offset = int(entry.newlines[-tail_lines]) + 1
+                else:
+                    start_offset = 0
+
+                start_offset = max(start_offset, max(0, size - max_bytes))
+                returned_len = max(0, size - start_offset)
+                tail_raw = self._read_range(handle, start_offset, returned_len)
+                entry.tail_read_ops += 1
+                entry.tail_read_bytes += len(tail_raw)
+
+        tail_text = tail_raw.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+        # Enforce the caller's line budget (useful when a chunk yields many more offsets than requested).
+        lines = tail_text.split("\n")
+        if len(lines) > tail_lines:
+            lines = lines[-tail_lines:]
+            tail_text = "\n".join(lines)
+        return tail_text, {"total_bytes": size, "returned_bytes": len(tail_raw), "start_offset": start_offset}
+
+
+_TAIL_LINE_INDEX_CACHE = _TailLineIndexCache()
 
 
 def _load_bridge_chaos_metadata() -> dict[str, float] | None:
@@ -422,9 +564,9 @@ class SessionService:
         file_path: str,
         *,
         mode: str = "cat",
-        head_lines: int = 200,
-        tail_lines: int = 80,
-        max_bytes: int = 80_000,
+        head_lines: int | None = None,
+        tail_lines: int | None = None,
+        max_bytes: int | None = None,
     ) -> SessionFileContent:
         record = await self.ensure_session(session_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
@@ -445,13 +587,56 @@ class SessionService:
         total_bytes = stat.st_size
 
         if mode == "snippet":
-            snippet = self._read_snippet(target, head_lines=head_lines, tail_lines=tail_lines, max_bytes=max_bytes)
+            resolved_head_lines = 200 if head_lines is None else head_lines
+            resolved_tail_lines = 80 if tail_lines is None else tail_lines
+            resolved_max_bytes = 80_000 if max_bytes is None else max_bytes
+            snippet, returned_bytes = self._read_snippet(
+                target,
+                head_lines=resolved_head_lines,
+                tail_lines=resolved_tail_lines,
+                max_bytes=resolved_max_bytes,
+            )
             return SessionFileContent(
                 path=target.relative_to(workspace_dir).as_posix(),
                 content=snippet,
-                truncated=True if total_bytes > max_bytes else False,
+                truncated=True if returned_bytes < total_bytes else False,
                 total_bytes=total_bytes,
             )
+
+        # Optional: bounded reads for "cat" to keep focus/raw mode performant on large artifacts.
+        if mode == "cat":
+            effective_tail_lines = None if tail_lines is None else max(0, int(tail_lines))
+            effective_max_bytes = None if max_bytes is None else max(1, int(max_bytes))
+            if effective_tail_lines is not None and effective_max_bytes is None:
+                # Defensive fallback: avoid unbounded reads if caller asked for tail lines but omitted a byte cap.
+                effective_max_bytes = 80_000
+
+            if effective_tail_lines is not None and effective_tail_lines > 0 and effective_max_bytes is not None:
+                content, meta = _TAIL_LINE_INDEX_CACHE.read_tail_text(
+                    target, tail_lines=effective_tail_lines, max_bytes=effective_max_bytes
+                )
+                start_offset = int(meta.get("start_offset", 0))
+                return SessionFileContent(
+                    path=target.relative_to(workspace_dir).as_posix(),
+                    content=content,
+                    truncated=True if start_offset > 0 else False,
+                    total_bytes=total_bytes,
+                )
+
+            if effective_max_bytes is not None and total_bytes > effective_max_bytes:
+                try:
+                    with target.open("rb") as handle:
+                        handle.seek(max(0, total_bytes - effective_max_bytes))
+                        raw = handle.read(effective_max_bytes)
+                except Exception as exc:  # pragma: no cover - defensive
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+                text = raw.decode("utf-8", errors="replace")
+                return SessionFileContent(
+                    path=target.relative_to(workspace_dir).as_posix(),
+                    content=text,
+                    truncated=True,
+                    total_bytes=total_bytes,
+                )
 
         try:
             content = target.read_text("utf-8", errors="replace")
@@ -591,26 +776,48 @@ class SessionService:
         return resolved
 
     @staticmethod
-    def _read_snippet(target: Path, *, head_lines: int, tail_lines: int, max_bytes: int) -> str:
+    def _read_snippet(target: Path, *, head_lines: int, tail_lines: int, max_bytes: int) -> tuple[str, int]:
         max_bytes = max(1, int(max_bytes))
-        head_bytes = max(1, max_bytes // 2)
-        tail_bytes = max(1, max_bytes - head_bytes)
+        head_lines = max(0, int(head_lines))
+        tail_lines = max(0, int(tail_lines))
         stat = target.stat()
         size = stat.st_size
 
+        # Tail-only snippet: used by focus modal when it explicitly requests head_lines=0.
+        if head_lines == 0:
+            if tail_lines == 0:
+                return "", 0
+            tail_text, meta = _TAIL_LINE_INDEX_CACHE.read_tail_text(
+                target, tail_lines=tail_lines, max_bytes=max_bytes
+            )
+            returned_bytes = int(meta.get("returned_bytes", 0))
+            return tail_text, returned_bytes
+
+        if size <= max_bytes:
+            raw = target.read_bytes()
+            text = raw.decode("utf-8", errors="replace")
+            return text.replace("\r\n", "\n").replace("\r", "\n"), len(raw)
+
+        # Classic head+tail snippet behavior (used by @read + large file mentions).
+        if tail_lines == 0:
+            head_bytes = max_bytes
+            tail_bytes = 0
+        else:
+            head_bytes = max(1, max_bytes // 2)
+            tail_bytes = max(1, max_bytes - head_bytes)
+
         with target.open("rb") as handle:
-            head_raw = handle.read(head_bytes)
-            if size > tail_bytes:
-                handle.seek(max(0, size - tail_bytes))
-            tail_raw = handle.read(tail_bytes)
+            head_raw = handle.read(head_bytes) if head_bytes > 0 else b""
+            tail_raw = b""
+            if tail_bytes > 0:
+                if size > tail_bytes:
+                    handle.seek(max(0, size - tail_bytes))
+                tail_raw = handle.read(tail_bytes)
 
         head_text = head_raw.decode("utf-8", errors="replace")
         tail_text = tail_raw.decode("utf-8", errors="replace")
-        head_list = head_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")[: max(0, int(head_lines))]
-        tail_list = tail_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")[-max(0, int(tail_lines)) :]
-
-        if size <= max_bytes:
-            return "\n".join(head_list)
+        head_list = head_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")[:head_lines]
+        tail_list = tail_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")[-tail_lines:] if tail_lines else []
 
         parts: list[str] = []
         if head_list:
@@ -618,7 +825,7 @@ class SessionService:
         parts.extend(["", "… (truncated) …", ""])
         if tail_list:
             parts.extend(tail_list)
-        return "\n".join(parts)
+        return "\n".join(parts), len(head_raw) + len(tail_raw)
 
     @staticmethod
     def _sanitize_filename(filename: str) -> str:

@@ -157,8 +157,9 @@ export const loadTaskFocusTail = async (
       const readMode: "cat" | "snippet" = options.rawMode ? "cat" : "snippet"
       const content = await onReadFile(pathCandidate, {
         mode: readMode,
-        headLines: options.rawMode ? undefined : 0,
-        tailLines: options.rawMode ? undefined : tailLines,
+        // Even in raw mode, keep reads tail-bounded so large JSONL artifacts remain responsive.
+        headLines: 0,
+        tailLines,
         maxBytes: options.maxBytes,
       })
       const lines = content.content.replace(/\r\n?/g, "\n").split("\n")

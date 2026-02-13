@@ -34,6 +34,7 @@
     "subagents:capture:cp2": "node --import tsx scripts/subagents_cp2_capture_scenarios.ts",
     "subagents:capture:cp3": "node --import tsx scripts/subagents_cp3_capture_scenarios.ts",
     "subagents:capture:cp3-cache": "node --import tsx scripts/subagents_cp3_cache_benchmark.ts",
+    "subagents:capture:ex2": "node --import tsx scripts/subagents_ex2_tail_index_capture.ts",
     "subagents:capture:expansion": "node --import tsx scripts/subagents_expansion_capture_scenarios.ts",
     "subagents:bundle": "node --import tsx scripts/subagents_runtime_bundle.ts --strict",
     "subagents:bundle:warn": "node --import tsx scripts/subagents_runtime_bundle.ts",

@@ -120,7 +120,7 @@ Status legend:
 | --- | --- | --- |
 | EX1-001 | done | `tui_skeleton/src/repl/components/replView/overlays/buildModalStack.tsx`, `tui_skeleton/src/repl/components/replView/controller/keyHandlers/overlay/handleListOverlayKeys.ts`, `tui_skeleton/docs/subagents_scenarios/ex1_focus_swap_capture_20260213.json` |
 | EX1-002 | done | `tui_skeleton/docs/subagents_scenarios/ex1_focus_swap_capture_20260213.json` |
-| EX2-001 | partial | `taskFocusLoader` cache optimization and benchmark added (`cp3_focus_cache_benchmark_capture_20260213.json`), full offset index cache not implemented |
+| EX2-001 | done | Tail line-offset index cache + bounded raw reads (`agentic_coder_prototype/api/cli_bridge/service.py`, `agentic_coder_prototype/api/cli_bridge/app.py`, `tui_skeleton/src/repl/components/replView/controller/taskFocusLoader.ts`, `tests/test_cli_bridge_tail_index_cache.py`, `tui_skeleton/docs/subagents_scenarios/ex2_focus_tail_index_cache_capture_20260213.json`) |
 | EX3-001 | done | `tui_skeleton/src/repl/components/replView/controller/diagnosticsHeatmap.ts`, `tui_skeleton/src/repl/components/replView/controller/__tests__/diagnosticsHeatmap.test.ts`, `tui_skeleton/docs/subagents_scenarios/ex3_diagnostics_heatmap_capture_20260213.json` |
 | EX4-001 | done | `tui_skeleton/src/tui_config/presets.ts`, `tui_skeleton/src/tui_config/__tests__/resolveTuiConfig.test.ts`, `tui_skeleton/docs/subagents_scenarios/ex4_preset_variants_capture_20260213.json` |
 

@@ -1,6 +1,6 @@
 {
   "scenario": "cp3_focus_rapid_lane_switch",
-  "generatedAt": "2026-02-13T08:04:42.314Z",
+  "generatedAt": "2026-02-13T19:51:20.170Z",
   "acceptanceChecks": {
     "noStaleLaneMixups": true,
     "boundedSwitchReadLatency": true,
@@ -9,8 +9,8 @@
   "metrics": {
     "laneCount": 4,
     "switchCount": 200,
-    "maxSwitchMs": 0.4283279999999934,
-    "p95SwitchMs": 0.023065000000002556,
+    "maxSwitchMs": 0.4337770000000063,
+    "p95SwitchMs": 0.024638000000010152,
     "staleMismatchCount": 0
   }
 }

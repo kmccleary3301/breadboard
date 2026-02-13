@@ -32,6 +32,7 @@ const DEFAULT_FIXTURES = [
   "docs/subagents_scenarios/cp3_focus_active_updates_capture_20260213.json",
   "docs/subagents_scenarios/cp3_focus_rapid_lane_switch_capture_20260213.json",
   "docs/subagents_scenarios/cp3_focus_cache_benchmark_capture_20260213.json",
+  "docs/subagents_scenarios/ex2_focus_tail_index_cache_capture_20260213.json",
   "docs/subagents_scenarios/ex1_focus_swap_capture_20260213.json",
   "docs/subagents_scenarios/ex3_diagnostics_heatmap_capture_20260213.json",
   "docs/subagents_scenarios/ex4_preset_variants_capture_20260213.json",

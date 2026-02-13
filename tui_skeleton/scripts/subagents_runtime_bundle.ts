@@ -96,6 +96,7 @@ const main = (): void => {
     runStep("capture-cp2", "npm run subagents:capture:cp2"),
     runStep("capture-cp3", "npm run subagents:capture:cp3"),
     runStep("capture-cp3-cache", "npm run subagents:capture:cp3-cache"),
+    runStep("capture-ex2", "npm run subagents:capture:ex2"),
     runStep("capture-expansion", "npm run subagents:capture:expansion"),
     runStep("subagents-scenario-gate", "npm run runtime:gate:subagents-scenarios"),
     runStep("strip-churn-strict", "npm run runtime:gate:strip-churn"),

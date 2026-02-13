@@ -1,0 +1,33 @@
+{
+  "scenario": "ex2_focus_tail_index_cache_benchmark",
+  "generatedAt": "2026-02-13T19:51:21Z",
+  "acceptanceChecks": {
+    "returnsTailLines": true,
+    "cacheAvoidsRepeatedIndexOps": true,
+    "cacheAvoidsRepeatedIndexBytes": true,
+    "cachedP95NoWorse": true
+  },
+  "metrics": {
+    "file": {
+      "bytes": 10888890,
+      "linesGenerated": 500000
+    },
+    "params": {
+      "tailLines": 400,
+      "maxBytes": 120000,
+      "samples": 40
+    },
+    "uncached": {
+      "p95Ms": 1.4823899837210774,
+      "maxMs": 1.5529380179941654,
+      "indexReadOpsTotal": 40,
+      "indexReadBytesTotal": 2621440
+    },
+    "cached": {
+      "p95Ms": 0.030737021006643772,
+      "maxMs": 0.03886898048222065,
+      "indexReadOpsDelta": 0,
+      "indexReadBytesDelta": 0
+    }
+  }
+}
