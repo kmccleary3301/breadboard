@@ -95,6 +95,11 @@ import { useReplViewModalStack } from "./useReplViewModalStack.js"
 import { ReplViewBaseContent } from "./ReplViewBaseContent.js"
 import { useTuiConfig } from "../../../../tui_config/context.js"
 import { formatConfiguredCompletionLine } from "../../../../tui_config/load.js"
+import {
+  buildTaskFocusCadenceRequest,
+  deriveTaskFocusCadencePlan,
+  type TaskFocusCadenceState,
+} from "./taskFocusCadence.js"
 
 const META_LINE_COUNT = 2
 const COMPOSER_MIN_ROWS = 6
@@ -263,7 +268,9 @@ export const useReplViewController = ({
     () => parseIntEnv(process.env.BREADBOARD_SUBAGENTS_FOCUS_REFRESH_MS, DEFAULT_TASK_FOCUS_REFRESH_MS, 250, 15000),
     [],
   )
+  const taskFocusMode = tuiConfig.subagents.focusMode === "swap" ? "swap" : "lane"
   const [taskFocusTailLines, setTaskFocusTailLines] = useState(taskFocusDefaultTailLines)
+  const taskFocusCadenceRef = useRef<TaskFocusCadenceState | null>(null)
   const [ctreeOpen, setCtreeOpen] = useState(false)
   const [ctreeScroll, setCtreeScroll] = useState(0)
   const [ctreeIndex, setCtreeIndex] = useState(0)
@@ -892,6 +899,7 @@ export const useReplViewController = ({
     taskFocusFollowTail,
     taskFocusRawMode,
     taskFocusTailLines,
+    taskFocusMode,
     taskFocusDefaultTailLines,
     taskViewportRows,
     tasksOpen,
@@ -1206,11 +1214,23 @@ export const useReplViewController = ({
   }, [transcriptExportNotice, verboseOutput])
 
   useEffect(() => {
-    if (!tasksOpen || !taskFocusViewOpen || !taskFocusFollowTail) return
-    if (!selectedTask) return
-    void requestTaskTail({ raw: taskFocusRawMode, tailLines: taskFocusTailLines })
+    const nextCadence: TaskFocusCadenceState = {
+      tasksOpen,
+      focusViewOpen: taskFocusViewOpen,
+      followTail: taskFocusFollowTail,
+      selectedTaskId: selectedTask?.id ?? null,
+      rawMode: taskFocusRawMode,
+      tailLines: taskFocusTailLines,
+      refreshMs: taskFocusRefreshMs,
+    }
+    const cadencePlan = deriveTaskFocusCadencePlan(taskFocusCadenceRef.current, nextCadence)
+    taskFocusCadenceRef.current = nextCadence
+    if (!cadencePlan.active || !selectedTask) return
+    if (cadencePlan.immediate) {
+      void requestTaskTail(buildTaskFocusCadenceRequest(nextCadence))
+    }
     const interval = setInterval(() => {
-      void requestTaskTail({ raw: taskFocusRawMode, tailLines: taskFocusTailLines })
+      void requestTaskTail(buildTaskFocusCadenceRequest(nextCadence))
     }, taskFocusRefreshMs)
     return () => clearInterval(interval)
   }, [requestTaskTail, selectedTask, taskFocusFollowTail, taskFocusRawMode, taskFocusTailLines, taskFocusViewOpen, taskFocusRefreshMs, tasksOpen])
@@ -1264,6 +1284,7 @@ export const useReplViewController = ({
     taskFocusFollowTail,
     taskFocusRawMode,
     taskFocusTailLines,
+    taskFocusMode,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,

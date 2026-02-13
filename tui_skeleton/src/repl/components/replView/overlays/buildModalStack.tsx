@@ -20,6 +20,12 @@ import {
 // Intentionally broad to keep modal composition decoupled from controller internals.
 type ModalStackContext = Record<string, any>
 
+const SUBAGENT_DIAGNOSTIC_HEATMAP_ENABLED = ["1", "true", "yes", "on"].includes(
+  String(process.env.BREADBOARD_SUBAGENTS_DIAGNOSTIC_HEATMAP ?? "")
+    .trim()
+    .toLowerCase(),
+)
+
 export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] => {
   const {
     confirmState,
@@ -106,11 +112,13 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     taskFocusFollowTail,
     taskFocusRawMode,
     taskFocusTailLines,
+    taskFocusMode,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,
     taskMaxScroll,
     taskRows,
+    diagnosticsHeatmapRows,
     taskViewportRows,
     taskSearchQuery,
     taskStatusFilter,
@@ -730,6 +738,29 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             pushKV("Tools", stats.toolCount, "gray")
             pushKV("Todos", todos.length, "gray")
             pushKV("Tasks", tasks.length, "gray")
+
+            if (SUBAGENT_DIAGNOSTIC_HEATMAP_ENABLED && Array.isArray(diagnosticsHeatmapRows)) {
+              const heatRows = diagnosticsHeatmapRows.slice(0, 6)
+              if (heatRows.length > 0) {
+                const colorForIntensity = (intensity: string): string => {
+                  if (intensity === "critical") return COLORS.error
+                  if (intensity === "high") return COLORS.warning
+                  if (intensity === "medium") return COLORS.info
+                  return "gray"
+                }
+                rows.push({ kind: "header", text: "Subagent heatmap", color: "dim" })
+                for (const hotspot of heatRows) {
+                  const label = String(hotspot.laneLabel ?? hotspot.laneId ?? "lane")
+                  const score = Number.isFinite(hotspot.score) ? Math.max(0, Math.min(100, Math.round(hotspot.score))) : 0
+                  const metrics = `tasks ${hotspot.taskCount ?? 0} · run ${hotspot.running ?? 0} · fail ${hotspot.failed ?? 0} · blocked ${hotspot.blocked ?? 0}`
+                  rows.push({
+                    kind: "item",
+                    text: `${CHALK.cyan(label.padEnd(14, " "))} ${String(hotspot.bar ?? "").padEnd(10, " ")} ${String(score).padStart(3, " ")} · ${metrics}`,
+                    color: colorForIntensity(String(hotspot.intensity ?? "low")),
+                  })
+                }
+              }
+            }
           }
         }
 
@@ -868,21 +899,28 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           }
         }
         const lineWidth = Math.max(12, panelWidth - 6)
+        const swapActive = taskFocusMode === "swap" && taskFocusViewOpen
         const titleLines: SelectPanelLine[] = [{ text: CHALK.bold("Background tasks"), color: COLORS.info }]
         const hintLines: SelectPanelLine[] = [
           {
             text:
               tasks.length === 0
                 ? "No background tasks yet."
-                : `${tasks.length} task${tasks.length === 1 ? "" : "s"} • ↑/↓ select • PgUp/PgDn page • F focus lane • Enter tail • Esc close`,
+                : swapActive
+                  ? `${tasks.length} task${tasks.length === 1 ? "" : "s"} • swap lane: ${taskFocusLaneLabel ?? taskFocusLaneId ?? "unknown"} • ↑/↓ select • ←/→ or [/] lane • Enter tail • Tab ${taskFocusRawMode ? "snippet" : "raw"} • L load more • P ${taskFocusFollowTail ? "pause" : "follow"} • F/Esc return`
+                  : `${tasks.length} task${tasks.length === 1 ? "" : "s"} • ↑/↓ select • PgUp/PgDn page • F ${taskFocusMode === "swap" ? "swap lane" : "focus lane"} • Enter tail • Esc close`,
             color: "gray",
           },
           {
-            text: `Search: ${taskSearchQuery.length > 0 ? taskSearchQuery : CHALK.dim("<type to filter>")} • Filter: ${taskStatusFilter} (0 all · 1 run · 2 done · 3 fail · 4 blocked · 5 cancelled · 6 pending)`,
+            text: swapActive
+              ? `View: ${taskFocusRawMode ? "raw" : "snippet"}${taskFocusRawMode ? "" : ` · tail lines ${taskFocusTailLines}`} • Ctrl+B close tasks`
+              : `Search: ${taskSearchQuery.length > 0 ? taskSearchQuery : CHALK.dim("<type to filter>")} • Filter: ${taskStatusFilter} (0 all · 1 run · 2 done · 3 fail · 4 blocked · 5 cancelled · 6 pending)`,
             color: "dim",
           },
           {
-            text: `Group: ${taskGroupMode} (G toggle) • Lane: ${taskLaneFilter} (L cycle) • C collapse selected group • E expand all`,
+            text: swapActive
+              ? "Experimental swap mode isolates a single lane in-taskboard."
+              : `Group: ${taskGroupMode} (G toggle) • Lane: ${taskLaneFilter} (L cycle) • C collapse selected group • E expand all`,
             color: "dim",
           },
         ]
@@ -1065,7 +1103,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     })
   }
 
-  if (tasksOpen && taskFocusViewOpen) {
+  if (tasksOpen && taskFocusViewOpen && taskFocusMode !== "swap") {
     modalStack.push({
       id: "task-focus",
       layout: isBreadboardProfile ? "sheet" : undefined,

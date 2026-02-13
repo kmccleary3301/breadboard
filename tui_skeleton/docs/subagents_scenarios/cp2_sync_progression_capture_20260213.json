@@ -1,6 +1,6 @@
 {
   "scenario": "cp2_sync_progression",
-  "generatedAt": "2026-02-13T07:41:17.757Z",
+  "generatedAt": "2026-02-13T08:04:42.095Z",
   "acceptanceChecks": {
     "hasSingleTask": true,
     "terminalCompleted": true,

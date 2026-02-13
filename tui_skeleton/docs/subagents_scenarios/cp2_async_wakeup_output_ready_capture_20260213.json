@@ -1,6 +1,6 @@
 {
   "scenario": "cp2_async_wakeup_output_ready",
-  "generatedAt": "2026-02-13T07:41:17.758Z",
+  "generatedAt": "2026-02-13T08:04:42.096Z",
   "acceptanceChecks": {
     "terminalCompleted": true,
     "asyncModeRecorded": true,

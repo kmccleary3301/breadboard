@@ -43,6 +43,7 @@ export const handleListOverlayKeys = (
     taskFocusRawMode,
     taskFocusTailLines,
     taskFocusDefaultTailLines,
+    taskFocusMode,
     taskLaneFilter,
     taskGroupMode,
     taskCollapsedGroupKeys,
@@ -193,6 +194,7 @@ export const handleListOverlayKeys = (
   }
 
   if (tasksOpen) {
+    const focusMode = taskFocusMode === "swap" ? "swap" : "lane"
     const lastIndex = Math.max(0, taskRows.length - 1)
     const normalizeLaneId = (value: unknown): string | null =>
       typeof value === "string" && value.trim().length > 0 ? value : null
@@ -215,6 +217,9 @@ export const handleListOverlayKeys = (
     if (taskFocusViewOpen) {
       if (key.escape || char === "\u001b" || (!key.ctrl && !key.meta && lowerChar === "f")) {
         setTaskFocusViewOpen(false)
+        if (focusMode === "swap") {
+          setTaskFocusLaneId(null)
+        }
         return true
       }
       if (isCtrlB) {

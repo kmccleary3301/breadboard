@@ -1,6 +1,6 @@
 {
   "scenario": "cp2_failure_retry_completion",
-  "generatedAt": "2026-02-13T07:41:17.759Z",
+  "generatedAt": "2026-02-13T08:04:42.097Z",
   "acceptanceChecks": {
     "terminalCompleted": true,
     "includesRetryAttemptGrammar": true,

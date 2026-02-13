@@ -1,6 +1,6 @@
 {
   "scenario": "cp1_async_completion",
-  "generatedAt": "2026-02-13T07:41:10.869Z",
+  "generatedAt": "2026-02-13T08:04:35.209Z",
   "acceptanceChecks": {
     "noTaskToolRailSpam": true,
     "completedToastPresent": true,

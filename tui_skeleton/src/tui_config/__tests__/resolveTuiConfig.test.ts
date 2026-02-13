@@ -12,6 +12,7 @@ const envKeys = [
   "BREADBOARD_TUI_DIFF_PREVIEW_MAX_LINES",
   "BREADBOARD_TUI_SUBAGENTS_ENABLED",
   "BREADBOARD_TUI_SUBAGENTS_COALESCE_MS",
+  "BREADBOARD_TUI_SUBAGENTS_FOCUS_MODE",
   "BREADBOARD_TUI_CONFIG_STRICT",
   "NO_COLOR",
 ]
@@ -97,6 +98,7 @@ describe("resolveTuiConfig", () => {
     expect(resolved.subagents.enabled).toBe(false)
     expect(resolved.subagents.coalesceMs).toBe(125)
     expect(resolved.subagents.maxWorkItems).toBe(200)
+    expect(resolved.subagents.focusMode).toBe("lane")
     expect(resolved.meta.sources.some((value) => value.startsWith("repo:"))).toBe(true)
     expect(resolved.meta.sources.some((value) => value.startsWith("cli-config:"))).toBe(true)
 
@@ -192,6 +194,7 @@ describe("resolveTuiConfig", () => {
     expect(resolved.subagents.enabled).toBe(true)
     expect(resolved.subagents.taskboardEnabled).toBe(true)
     expect(resolved.subagents.focusEnabled).toBe(true)
+    expect(resolved.subagents.focusMode).toBe("lane")
     expect(resolved.subagents.maxWorkItems).toBe(300)
   })
 
@@ -206,7 +209,38 @@ describe("resolveTuiConfig", () => {
     expect(resolved.preset).toBe("opencode_like_subagents")
     expect(resolved.composer.promptPrefix).toBe(">")
     expect(resolved.subagents.enabled).toBe(true)
+    expect(resolved.subagents.focusMode).toBe("lane")
     expect(resolved.subagents.maxStepsPerTask).toBe(64)
+  })
+
+  it("loads claude_like_subagents_swap preset defaults", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bb-tui-config-claude-subagents-swap-preset-"))
+    const resolved = await resolveTuiConfig({
+      workspace: root,
+      cliPreset: "claude_like_subagents_swap",
+      cliStrict: true,
+      colorAllowed: true,
+    })
+    expect(resolved.preset).toBe("claude_like_subagents_swap")
+    expect(resolved.subagents.enabled).toBe(true)
+    expect(resolved.subagents.focusEnabled).toBe(true)
+    expect(resolved.subagents.focusMode).toBe("swap")
+    expect(resolved.subagents.maxWorkItems).toBe(320)
+  })
+
+  it("loads codex_like_subagents_dense preset defaults", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bb-tui-config-codex-subagents-dense-preset-"))
+    const resolved = await resolveTuiConfig({
+      workspace: root,
+      cliPreset: "codex_like_subagents_dense",
+      cliStrict: true,
+      colorAllowed: true,
+    })
+    expect(resolved.preset).toBe("codex_like_subagents_dense")
+    expect(resolved.composer.promptPrefix).toBe("›")
+    expect(resolved.subagents.enabled).toBe(true)
+    expect(resolved.subagents.focusMode).toBe("lane")
+    expect(resolved.subagents.maxStepsPerTask).toBe(120)
   })
 
   it("keeps default profile unchanged when no subagent preset is selected", async () => {
@@ -220,6 +254,7 @@ describe("resolveTuiConfig", () => {
     expect(resolved.subagents.enabled).toBe(false)
     expect(resolved.subagents.taskboardEnabled).toBe(false)
     expect(resolved.subagents.focusEnabled).toBe(false)
+    expect(resolved.subagents.focusMode).toBe("lane")
   })
 
   it("resolves subagents settings across yaml and env layers", async () => {
@@ -234,6 +269,7 @@ describe("resolveTuiConfig", () => {
         "  toastsEnabled: false",
         "  taskboardEnabled: true",
         "  focusEnabled: false",
+        "  focusMode: swap",
         "  coalesceMs: 70",
         "  maxWorkItems: 333",
         "  maxStepsPerTask: 44",
@@ -242,6 +278,7 @@ describe("resolveTuiConfig", () => {
     )
     process.env.BREADBOARD_TUI_SUBAGENTS_ENABLED = "false"
     process.env.BREADBOARD_TUI_SUBAGENTS_COALESCE_MS = "10"
+    process.env.BREADBOARD_TUI_SUBAGENTS_FOCUS_MODE = "lane"
     const resolved = await resolveTuiConfig({
       workspace: root,
       cliConfigPath,
@@ -250,6 +287,7 @@ describe("resolveTuiConfig", () => {
     expect(resolved.subagents.enabled).toBe(false)
     expect(resolved.subagents.stripEnabled).toBe(true)
     expect(resolved.subagents.taskboardEnabled).toBe(true)
+    expect(resolved.subagents.focusMode).toBe("lane")
     expect(resolved.subagents.coalesceMs).toBe(10)
     expect(resolved.subagents.maxWorkItems).toBe(333)
     expect(resolved.subagents.maxStepsPerTask).toBe(44)
@@ -273,5 +311,25 @@ describe("resolveTuiConfig", () => {
         cliStrict: true,
       }),
     ).rejects.toThrow(/subagents\.coalesceMs/)
+  })
+
+  it("validates subagents focusMode enum", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bb-tui-config-subagents-focus-mode-"))
+    const cliConfigPath = path.join(root, "invalid-subagents-focus-mode.yaml")
+    await fs.writeFile(
+      cliConfigPath,
+      [
+        "subagents:",
+        "  focusMode: not-real",
+      ].join("\n"),
+      "utf8",
+    )
+    await expect(
+      resolveTuiConfig({
+        workspace: root,
+        cliConfigPath,
+        cliStrict: true,
+      }),
+    ).rejects.toThrow(/subagents\.focusMode/)
   })
 })

@@ -79,6 +79,7 @@ const baseContext = () => ({
   taskFocusRawMode: false,
   taskFocusTailLines: 24,
   taskFocusDefaultTailLines: 24,
+  taskFocusMode: "lane" as "lane" | "swap",
   taskLaneFilter: "all",
   taskGroupMode: "status" as "status" | "lane",
   taskCollapsedGroupKeys: new Set<string>(),
@@ -171,6 +172,22 @@ describe("handleListOverlayKeys task focus mode", () => {
     expect(context.setTaskFocusViewOpen).toHaveBeenCalledWith(false)
     expect(context.setTaskIndex).not.toHaveBeenCalled()
     expect(context.setTaskScroll).not.toHaveBeenCalled()
+  })
+
+  it("clears focused lane when exiting experimental swap mode", () => {
+    const context = {
+      ...baseContext(),
+      taskFocusMode: "swap" as const,
+      taskFocusViewOpen: true,
+      taskFocusLaneId: "lane-a",
+    }
+    const handled = handleListOverlayKeys(
+      context,
+      makeInfo({ key: { escape: true } }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTaskFocusViewOpen).toHaveBeenCalledWith(false)
+    expect(context.setTaskFocusLaneId).toHaveBeenCalledWith(null)
   })
 
   it("updates search query when typing in taskboard list mode", () => {

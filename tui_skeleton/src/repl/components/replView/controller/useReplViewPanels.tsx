@@ -24,6 +24,7 @@ import {
   sortTasksForStatusGrouping,
 } from "./taskboardStatus.js"
 import { loadTaskFocusTail } from "./taskFocusLoader.js"
+import { buildLaneDiagnosticsHeatmap } from "./diagnosticsHeatmap.js"
 
 type PanelsContext = Record<string, any>
 
@@ -627,6 +628,13 @@ export const useReplViewPanels = (context: PanelsContext) => {
     }
     return labels
   }, [workGraph?.lanesById])
+  const diagnosticsHeatmapRows = useMemo(
+    () =>
+      buildLaneDiagnosticsHeatmap(sortedTasks, {
+        laneLabelById,
+      }),
+    [laneLabelById, sortedTasks],
+  )
   const filteredTasks = useMemo(() => {
     return filterTasksForTaskboard(sortedTasks, {
       query: taskSearchQuery,
@@ -846,6 +854,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
     todoViewportRows,
     todoMaxScroll,
     taskRows: taskRowsForDisplay,
+    diagnosticsHeatmapRows,
     taskGroups,
     taskGroupMode,
     taskCollapsedGroupKeys,

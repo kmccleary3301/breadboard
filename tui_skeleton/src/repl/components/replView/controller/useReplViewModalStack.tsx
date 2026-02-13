@@ -50,6 +50,7 @@ type ModalStackContext = {
   taskFocusFollowTail: boolean
   taskFocusRawMode: boolean
   taskFocusTailLines: number
+  taskFocusMode: "lane" | "swap"
   taskFocusLaneId: string | null
   taskFocusLaneLabel: string | null
   taskScroll: number
@@ -139,6 +140,7 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     taskFocusFollowTail,
     taskFocusRawMode,
     taskFocusTailLines,
+    taskFocusMode,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,
@@ -191,6 +193,7 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     todoViewportRows,
     todoMaxScroll,
     taskRows,
+    diagnosticsHeatmapRows,
     taskGroups,
     taskViewportRows,
     taskMaxScroll,
@@ -303,11 +306,13 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     taskFocusFollowTail,
     taskFocusRawMode,
     taskFocusTailLines,
+    taskFocusMode,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,
     taskMaxScroll,
     taskRows,
+    diagnosticsHeatmapRows,
     taskViewportRows,
     taskSearchQuery,
     taskStatusFilter,

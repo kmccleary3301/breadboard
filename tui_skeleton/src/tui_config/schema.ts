@@ -385,6 +385,7 @@ export const validateTuiConfigInput = (input: unknown, options: ValidationOption
         "toastsEnabled",
         "taskboardEnabled",
         "focusEnabled",
+        "focusMode",
         "coalesceMs",
         "maxWorkItems",
         "maxStepsPerTask",
@@ -404,6 +405,8 @@ export const validateTuiConfigInput = (input: unknown, options: ValidationOption
     if (taskboardEnabled != null) subagents.taskboardEnabled = taskboardEnabled
     const focusEnabled = readBoolean(subagentsRaw, "focusEnabled", ["subagents"], issues)
     if (focusEnabled != null) subagents.focusEnabled = focusEnabled
+    const focusMode = readEnum(subagentsRaw, "focusMode", ["lane", "swap"] as const, ["subagents"], issues)
+    if (focusMode != null) subagents.focusMode = focusMode
     const coalesceMs = readNonNegativeInt(subagentsRaw, "coalesceMs", ["subagents"], issues)
     if (coalesceMs != null) subagents.coalesceMs = coalesceMs
     const maxWorkItems = readPositiveInt(subagentsRaw, "maxWorkItems", ["subagents"], issues)

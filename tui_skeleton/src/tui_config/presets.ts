@@ -98,6 +98,7 @@ export const BUILTIN_TUI_PRESETS: Record<TuiPresetId, TuiConfigInput> = {
       toastsEnabled: true,
       taskboardEnabled: true,
       focusEnabled: true,
+      focusMode: "lane",
       coalesceMs: 100,
       maxWorkItems: 300,
       maxStepsPerTask: 80,
@@ -131,9 +132,78 @@ export const BUILTIN_TUI_PRESETS: Record<TuiPresetId, TuiConfigInput> = {
       toastsEnabled: true,
       taskboardEnabled: true,
       focusEnabled: true,
+      focusMode: "lane",
       coalesceMs: 120,
       maxWorkItems: 250,
       maxStepsPerTask: 64,
+    },
+  },
+  claude_like_subagents_swap: {
+    landing: {
+      variant: "board",
+      borderStyle: "round",
+      showAsciiArt: true,
+    },
+    composer: {
+      promptPrefix: "❯",
+      placeholderClassic: "Describe the task for background agents",
+      placeholderClaude: 'Try "delegate test matrix and swap focus lane"',
+      ruleCharacter: "─",
+      showTopRule: true,
+      showBottomRule: true,
+    },
+    statusLine: {
+      position: "above_input",
+      align: "left",
+      showWhenPending: true,
+      showOnComplete: true,
+      activeText: "· Coordinating subagents… (swap mode · esc to interrupt)",
+      completionTemplate: "✻ Subagent run complete in {duration}",
+    },
+    subagents: {
+      enabled: true,
+      stripEnabled: true,
+      toastsEnabled: true,
+      taskboardEnabled: true,
+      focusEnabled: true,
+      focusMode: "swap",
+      coalesceMs: 110,
+      maxWorkItems: 320,
+      maxStepsPerTask: 90,
+    },
+  },
+  codex_like_subagents_dense: {
+    landing: {
+      variant: "compact",
+      borderStyle: "single",
+      showAsciiArt: true,
+    },
+    composer: {
+      promptPrefix: "›",
+      placeholderClassic: "Queue dense background work and inspect lanes",
+      placeholderClaude: 'Try "run parallel checks and inspect dense taskboard"',
+      ruleCharacter: "─",
+      showTopRule: true,
+      showBottomRule: false,
+    },
+    statusLine: {
+      position: "above_input",
+      align: "left",
+      showWhenPending: true,
+      showOnComplete: true,
+      activeText: "• Running dense subagent lanes (esc to interrupt)",
+      completionTemplate: "• Dense run finished in {duration}",
+    },
+    subagents: {
+      enabled: true,
+      stripEnabled: true,
+      toastsEnabled: true,
+      taskboardEnabled: true,
+      focusEnabled: true,
+      focusMode: "lane",
+      coalesceMs: 90,
+      maxWorkItems: 360,
+      maxStepsPerTask: 120,
     },
   },
 }
@@ -191,6 +261,7 @@ export const DEFAULT_RESOLVED_TUI_CONFIG: ResolvedTuiConfig = {
     toastsEnabled: false,
     taskboardEnabled: false,
     focusEnabled: false,
+    focusMode: "lane",
     coalesceMs: 125,
     maxWorkItems: 200,
     maxStepsPerTask: 50,
@@ -207,4 +278,6 @@ export const isBuiltinPreset = (value: string): value is TuiPresetId =>
   value === "claude_code_like" ||
   value === "codex_cli_like" ||
   value === "claude_like_subagents" ||
-  value === "opencode_like_subagents"
+  value === "opencode_like_subagents" ||
+  value === "claude_like_subagents_swap" ||
+  value === "codex_like_subagents_dense"

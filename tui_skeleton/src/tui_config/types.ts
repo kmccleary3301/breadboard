@@ -6,10 +6,13 @@ export type TuiPresetId =
   | "codex_cli_like"
   | "claude_like_subagents"
   | "opencode_like_subagents"
+  | "claude_like_subagents_swap"
+  | "codex_like_subagents_dense"
 export type LandingVariant = "auto" | "board" | "split" | "compact"
 export type LandingBorderStyle = "round" | "single"
 export type StatusLinePosition = "above_input" | "below_input"
 export type StatusLineAlign = "left" | "right"
+export type SubagentFocusMode = "lane" | "swap"
 
 export type TuiDiffColorPaletteInput = {
   addLineBg?: string
@@ -64,6 +67,7 @@ export type TuiConfigInput = {
     toastsEnabled?: boolean
     taskboardEnabled?: boolean
     focusEnabled?: boolean
+    focusMode?: SubagentFocusMode
     coalesceMs?: number
     maxWorkItems?: number
     maxStepsPerTask?: number
@@ -121,6 +125,7 @@ export type ResolvedTuiConfig = {
     readonly toastsEnabled: boolean
     readonly taskboardEnabled: boolean
     readonly focusEnabled: boolean
+    readonly focusMode: SubagentFocusMode
     readonly coalesceMs: number
     readonly maxWorkItems: number
     readonly maxStepsPerTask: number

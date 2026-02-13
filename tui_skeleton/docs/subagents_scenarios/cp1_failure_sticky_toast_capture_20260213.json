@@ -1,6 +1,6 @@
 {
   "scenario": "cp1_failure_sticky_toast",
-  "generatedAt": "2026-02-13T07:41:15.371Z",
+  "generatedAt": "2026-02-13T08:04:39.710Z",
   "acceptanceChecks": {
     "failedToastInitiallyPresent": true,
     "failedToastStillPresentAt2s": true,

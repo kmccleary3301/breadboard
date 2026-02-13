@@ -151,6 +151,9 @@ const envConfigLayer = (): TuiConfigInput => {
   if (envSubagentsTaskboard != null) subagents.taskboardEnabled = envSubagentsTaskboard
   const envSubagentsFocus = parseBooleanLike(process.env.BREADBOARD_TUI_SUBAGENTS_FOCUS_ENABLED)
   if (envSubagentsFocus != null) subagents.focusEnabled = envSubagentsFocus
+  if (process.env.BREADBOARD_TUI_SUBAGENTS_FOCUS_MODE?.trim()) {
+    subagents.focusMode = process.env.BREADBOARD_TUI_SUBAGENTS_FOCUS_MODE.trim() as any
+  }
   if (process.env.BREADBOARD_TUI_SUBAGENTS_COALESCE_MS?.trim()) {
     const parsed = Number.parseInt(process.env.BREADBOARD_TUI_SUBAGENTS_COALESCE_MS, 10)
     if (Number.isFinite(parsed) && parsed >= 0) subagents.coalesceMs = parsed
@@ -312,6 +315,7 @@ export const resolveTuiConfig = async (options: ResolvedTuiConfigOptions): Promi
       toastsEnabled: merged.subagents?.toastsEnabled ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.toastsEnabled,
       taskboardEnabled: merged.subagents?.taskboardEnabled ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.taskboardEnabled,
       focusEnabled: merged.subagents?.focusEnabled ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.focusEnabled,
+      focusMode: merged.subagents?.focusMode ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.focusMode,
       coalesceMs: merged.subagents?.coalesceMs ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.coalesceMs,
       maxWorkItems: merged.subagents?.maxWorkItems ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.maxWorkItems,
       maxStepsPerTask: merged.subagents?.maxStepsPerTask ?? DEFAULT_RESOLVED_TUI_CONFIG.subagents.maxStepsPerTask,

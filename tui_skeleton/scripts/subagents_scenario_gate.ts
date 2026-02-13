@@ -21,6 +21,7 @@ interface FixtureGateResult {
 }
 
 const DEFAULT_FIXTURES = [
+  "docs/subagents_scenarios/cp0_flags_off_baseline_capture_20260213.json",
   "docs/subagents_scenarios/cp1_async_completion_capture_20260213.json",
   "docs/subagents_scenarios/cp1_failure_sticky_toast_capture_20260213.json",
   "docs/subagents_scenarios/cp1_ascii_no_color_fallback_capture_20260213.json",
@@ -30,6 +31,10 @@ const DEFAULT_FIXTURES = [
   "docs/subagents_scenarios/cp2_concurrency_20_tasks_capture_20260213.json",
   "docs/subagents_scenarios/cp3_focus_active_updates_capture_20260213.json",
   "docs/subagents_scenarios/cp3_focus_rapid_lane_switch_capture_20260213.json",
+  "docs/subagents_scenarios/cp3_focus_cache_benchmark_capture_20260213.json",
+  "docs/subagents_scenarios/ex1_focus_swap_capture_20260213.json",
+  "docs/subagents_scenarios/ex3_diagnostics_heatmap_capture_20260213.json",
+  "docs/subagents_scenarios/ex4_preset_variants_capture_20260213.json",
 ]
 
 const parseArgs = (): Args => {
@@ -91,9 +96,12 @@ const evaluateFixture = (fixturePath: string, threshold: number): FixtureGateRes
   const failedChecks: string[] = []
   const taskToolRailValues: number[] = []
   const noiseRatios: number[] = []
+  let allowTaskToolRailLines = false
   try {
     const raw = readFileSync(fixturePath, "utf8")
     const parsed = JSON.parse(raw) as Record<string, unknown>
+    const gatePolicy = parsed.gatePolicy as Record<string, unknown> | undefined
+    allowTaskToolRailLines = gatePolicy?.allowTaskToolRailLines === true
     const checksRaw = parsed.acceptanceChecks
     if (!checksRaw || typeof checksRaw !== "object" || Array.isArray(checksRaw)) {
       errors.push("missing acceptanceChecks map")
@@ -119,7 +127,7 @@ const evaluateFixture = (fixturePath: string, threshold: number): FixtureGateRes
   }
 
   const taskToolRailLinesMax = taskToolRailValues.length > 0 ? Math.max(...taskToolRailValues) : 0
-  if (taskToolRailLinesMax > 0) {
+  if (!allowTaskToolRailLines && taskToolRailLinesMax > 0) {
     errors.push(`taskToolRailLines exceeded budget: max=${taskToolRailLinesMax}`)
   }
 

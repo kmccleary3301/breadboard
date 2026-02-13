@@ -1,6 +1,6 @@
 {
   "scenario": "cp1_ascii_no_color_fallback",
-  "generatedAt": "2026-02-13T07:41:15.393Z",
+  "generatedAt": "2026-02-13T08:04:39.733Z",
   "acceptanceChecks": {
     "asciiOnlyResolved": true,
     "colorModeResolvedNone": true,

@@ -1,0 +1,21 @@
+{
+  "scenario": "cp3_focus_cache_benchmark",
+  "generatedAt": "2026-02-13T08:04:42.636Z",
+  "acceptanceChecks": {
+    "cachedP95Improves": true,
+    "cachedMaxBounded": true,
+    "cacheHitRatioHealthy": true
+  },
+  "metrics": {
+    "sampleCount": 120,
+    "uncached": {
+      "p95Ms": 1.1022660000000002,
+      "maxMs": 1.6664439999999843
+    },
+    "cached": {
+      "p95Ms": 0.0016329999999982192,
+      "maxMs": 1.1567400000000134,
+      "hitRatio": 0.9916666666666667
+    }
+  }
+}
