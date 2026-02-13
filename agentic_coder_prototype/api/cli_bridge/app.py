@@ -274,13 +274,23 @@ def create_app(service: SessionService | None = None) -> FastAPI:
         svc: SessionService = Depends(get_service),
     ):
         if mode:
+            # Preserve explicit "0" values (e.g. head_lines=0 means "no head"),
+            # while still applying sane defaults for snippet mode.
+            if mode == "snippet":
+                resolved_head_lines = 200 if head_lines is None else head_lines
+                resolved_tail_lines = 80 if tail_lines is None else tail_lines
+                resolved_max_bytes = 80_000 if max_bytes is None else max_bytes
+            else:
+                resolved_head_lines = head_lines
+                resolved_tail_lines = tail_lines
+                resolved_max_bytes = max_bytes
             return await svc.read_file(
                 session_id,
                 path or ".",
                 mode=mode,
-                head_lines=head_lines or 200,
-                tail_lines=tail_lines or 80,
-                max_bytes=max_bytes or 80_000,
+                head_lines=resolved_head_lines,
+                tail_lines=resolved_tail_lines,
+                max_bytes=resolved_max_bytes,
             )
         return await svc.list_files(session_id, root=path or ".")
 

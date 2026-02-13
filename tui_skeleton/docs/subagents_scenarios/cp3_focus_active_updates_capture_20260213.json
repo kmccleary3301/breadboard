@@ -1,0 +1,16 @@
+{
+  "scenario": "cp3_focus_active_updates",
+  "generatedAt": "2026-02-13T19:51:20.166Z",
+  "acceptanceChecks": {
+    "noStaleLaneMixups": true,
+    "boundedReadLatency": true,
+    "sufficientSampleCount": true
+  },
+  "metrics": {
+    "laneId": "lane-primary",
+    "sampleCount": 90,
+    "maxReadMs": 0.8203120000000013,
+    "p95ReadMs": 0.020851999999990767,
+    "staleMismatchCount": 0
+  }
+}

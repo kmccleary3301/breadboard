@@ -14,6 +14,7 @@ import type {
   ToolLogEntry,
   TodoItem,
   TaskEntry,
+  WorkGraphState,
   PermissionRequest,
   PermissionDecision,
   RewindMenuState,
@@ -44,6 +45,7 @@ export interface ReplViewProps {
   readonly viewPrefs: TranscriptPreferences
   readonly todos: TodoItem[]
   readonly tasks: TaskEntry[]
+  readonly workGraph: WorkGraphState
   readonly ctreeSnapshot?: CTreeSnapshot | null
   readonly ctreeTree?: CTreeTreeResponse | null
   readonly ctreeTreeStatus: "idle" | "loading" | "error"

@@ -41,6 +41,7 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
     setEscPrimedAt,
     setTasksOpen,
     setTodosOpen,
+    taskboardDefaultView,
     setTranscriptNudge,
     setVerboseOutput,
     skillsMenu,
@@ -80,6 +81,20 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
       }
       if (isCtrlB) {
         setCtreeOpen(false)
+        if (taskboardDefaultView === "todos") {
+          setTasksOpen(false)
+          setTodosOpen((prev: boolean) => !prev)
+          return true
+        }
+        if (taskboardDefaultView === "combined") {
+          setTasksOpen((prev: boolean) => {
+            const next = !prev
+            setTodosOpen(next)
+            return next
+          })
+          return true
+        }
+        setTodosOpen(false)
         setTasksOpen((prev: boolean) => !prev)
         return true
       }
@@ -269,6 +284,7 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
       pushCommandResult,
       rewindMenu.status,
       scrollbackMode,
+      taskboardDefaultView,
       transcriptViewerBodyRows,
       transcriptViewerOpen,
       toggleSelectedCollapsibleEntry,

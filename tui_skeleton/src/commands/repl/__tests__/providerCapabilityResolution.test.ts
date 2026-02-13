@@ -125,4 +125,63 @@ describe("provider capability resolution", () => {
     expect(result.capabilities.reasoningEvents).toBe(true)
     expect(result.capabilities.thoughtSummaryEvents).toBe(true)
   })
+
+  it("rejects provider and model overrides outside whitelist with clear diagnostics", () => {
+    const result = resolveProviderCapabilities({
+      modelId: "openai/gpt-5-mini",
+      overrideSchema: {
+        providers: {
+          typo_provider: { reasoningEvents: false },
+        },
+        models: {
+          "badprovider/model-x": { thoughtSummaryEvents: false },
+          "openai/": { thoughtSummaryEvents: false },
+        },
+      },
+    })
+
+    const warningText = result.warnings.join(" | ")
+    expect(warningText).toContain("providers.typo_provider rejected")
+    expect(warningText).toContain("models.badprovider/model-x rejected")
+    expect(warningText).toContain("models.openai/ rejected")
+    expect(result.capabilities.reasoningEvents).toBe(true)
+    expect(result.capabilities.thoughtSummaryEvents).toBe(true)
+  })
+
+  it("accepts explicitly allowlisted provider/model override keys", () => {
+    const result = resolveProviderCapabilities({
+      modelId: "azure/gpt-4.1",
+      providerWhitelist: ["openai", "azure", "unknown"],
+      modelWhitelist: ["azure/gpt-4.1"],
+      overrideSchema: {
+        providers: {
+          azure: { reasoningEvents: false },
+        },
+        models: {
+          "azure/gpt-4.1": { thoughtSummaryEvents: false },
+        },
+      },
+    })
+
+    expect(result.warnings.join(" | ")).not.toContain("rejected")
+    expect(result.provider).toBe("azure")
+    expect(result.model).toBe("azure/gpt-4.1")
+    expect(result.capabilities.reasoningEvents).toBe(false)
+    expect(result.capabilities.thoughtSummaryEvents).toBe(false)
+  })
+
+  it("rejects model overrides missing from explicit model whitelist", () => {
+    const result = resolveProviderCapabilities({
+      modelId: "openai/gpt-5-mini",
+      modelWhitelist: ["openai/gpt-4.1"],
+      overrideSchema: {
+        models: {
+          "openai/gpt-5-mini": { thoughtSummaryEvents: false },
+        },
+      },
+    })
+
+    expect(result.warnings.some((warning) => warning.includes("not in whitelist"))).toBe(true)
+    expect(result.capabilities.thoughtSummaryEvents).toBe(true)
+  })
 })

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { HEADER_COLOR } from "../../../viewUtils.js"
 import { useScrollbackFeed } from "../scrollback/useScrollbackFeed.js"
 import { buildTranscript } from "../../../transcriptBuilder.js"
@@ -13,8 +13,36 @@ import { CHALK, COLORS } from "../theme.js"
 import { formatCostUsd, formatLatency } from "../utils/format.js"
 import { useReplViewRenderNodes } from "./useReplViewRenderNodes.js"
 import { buildLandingContext, buildScrollbackLanding } from "../landing/scrollbackLanding.js"
+import {
+  buildSubagentStripSummary,
+  createSubagentStripLifecycleState,
+  reduceSubagentStripLifecycle,
+  type SubagentStripSummary,
+} from "./subagentStrip.js"
 
 type ScrollbackContext = Record<string, any>
+
+const parseBoundedIntEnv = (value: string | undefined, fallback: number, min: number, max: number): number => {
+  if (!value?.trim()) return fallback
+  const parsed = Number.parseInt(value.trim(), 10)
+  if (!Number.isFinite(parsed)) return fallback
+  if (parsed < min) return min
+  if (parsed > max) return max
+  return parsed
+}
+
+const SUBAGENT_STRIP_IDLE_COOLDOWN_MS = parseBoundedIntEnv(
+  process.env.BREADBOARD_SUBAGENTS_STRIP_IDLE_COOLDOWN_MS,
+  1500,
+  0,
+  60_000,
+)
+const SUBAGENT_STRIP_MIN_UPDATE_MS = parseBoundedIntEnv(
+  process.env.BREADBOARD_SUBAGENTS_STRIP_UPDATE_MS,
+  120,
+  0,
+  5_000,
+)
 
 export const useReplViewScrollback = (context: ScrollbackContext) => {
   const {
@@ -50,6 +78,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     hints,
     attachments,
     fileMentions,
+    workGraph,
     transcriptViewerOpen,
     transcriptNudge,
     completionHint,
@@ -75,6 +104,10 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     keymap,
     tuiConfig,
   } = context
+  const subagentStripLifecycleRef = useRef(createSubagentStripLifecycleState())
+  const subagentStripSummaryRef = useRef<SubagentStripSummary | null>(null)
+  const subagentStripTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const [subagentStrip, setSubagentStrip] = useState<SubagentStripSummary | null>(null)
 
   const visibleModels = useMemo(() => {
     if (modelMenu.status !== "ready") return []
@@ -590,6 +623,60 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     [renderConversationEntry, renderToolEntry, toToolLogEntry],
   )
 
+  const subagentStripSummary = useMemo(() => {
+    if (!tuiConfig.subagents.stripEnabled) return null
+    return buildSubagentStripSummary(workGraph)
+  }, [tuiConfig.subagents.stripEnabled, workGraph])
+
+  useEffect(() => {
+    subagentStripSummaryRef.current = subagentStripSummary
+  }, [subagentStripSummary])
+
+  useEffect(() => {
+    if (subagentStripTimerRef.current) {
+      clearTimeout(subagentStripTimerRef.current)
+      subagentStripTimerRef.current = null
+    }
+    if (!tuiConfig.subagents.stripEnabled) {
+      subagentStripLifecycleRef.current = createSubagentStripLifecycleState()
+      setSubagentStrip(null)
+      return
+    }
+
+    const nowMs = Date.now()
+    const reduced = reduceSubagentStripLifecycle(subagentStripLifecycleRef.current, {
+      summary: subagentStripSummary,
+      nowMs,
+      idleCooldownMs: SUBAGENT_STRIP_IDLE_COOLDOWN_MS,
+      minUpdateMs: SUBAGENT_STRIP_MIN_UPDATE_MS,
+    })
+    subagentStripLifecycleRef.current = reduced
+    setSubagentStrip(reduced.rendered)
+
+    const hasRunning = Boolean(subagentStripSummary && subagentStripSummary.counts.running > 0)
+    const waitForCooldownMs = hasRunning ? 0 : Math.max(0, reduced.visibleUntilMs - nowMs)
+    const waitForCadenceMs = Math.max(0, reduced.lastUpdatedMs + SUBAGENT_STRIP_MIN_UPDATE_MS - nowMs)
+    const wakeMs = Math.max(waitForCooldownMs, waitForCadenceMs)
+    if (wakeMs > 0) {
+      subagentStripTimerRef.current = setTimeout(() => {
+        const next = reduceSubagentStripLifecycle(subagentStripLifecycleRef.current, {
+          summary: subagentStripSummaryRef.current,
+          nowMs: Date.now(),
+          idleCooldownMs: SUBAGENT_STRIP_IDLE_COOLDOWN_MS,
+          minUpdateMs: SUBAGENT_STRIP_MIN_UPDATE_MS,
+        })
+        subagentStripLifecycleRef.current = next
+        setSubagentStrip(next.rendered)
+      }, wakeMs + 5)
+    }
+    return () => {
+      if (subagentStripTimerRef.current) {
+        clearTimeout(subagentStripTimerRef.current)
+        subagentStripTimerRef.current = null
+      }
+    }
+  }, [subagentStripSummary, tuiConfig.subagents.stripEnabled])
+
   useEffect(() => {
     renderConversationEntryRef.current = renderConversationEntry
     renderToolEntryRef.current = renderToolEntry
@@ -608,6 +695,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     escPrimedAt: context.escPrimedAt,
     pendingResponse,
     scrollbackMode: SCROLLBACK_MODE,
+    subagentStrip,
     liveSlots,
     animationTick,
     collapsibleEntries,

@@ -34,6 +34,7 @@ type ReplViewBaseContentProps = {
   transcriptNodes: React.ReactNode[]
   toolNodes: React.ReactNode[]
   overlayActive: boolean
+  subagentStripNode: React.ReactNode | null
   liveSlotNodes: React.ReactNode[]
   collapsedHintNode: React.ReactNode | null
   virtualizationHintNode: React.ReactNode | null
@@ -63,6 +64,7 @@ export const ReplViewBaseContent: React.FC<ReplViewBaseContentProps> = ({
   transcriptNodes,
   toolNodes,
   overlayActive,
+  subagentStripNode,
   liveSlotNodes,
   collapsedHintNode,
   virtualizationHintNode,
@@ -109,6 +111,9 @@ export const ReplViewBaseContent: React.FC<ReplViewBaseContentProps> = ({
         <Box marginTop={1} flexDirection="column">
           {toolNodes}
         </Box>
+      )}
+      {!overlayActive && subagentStripNode && (
+        <Box marginTop={1}>{subagentStripNode}</Box>
       )}
       {!overlayActive && liveSlotNodes.length > 0 && (
         <Box marginTop={1} flexDirection="column">

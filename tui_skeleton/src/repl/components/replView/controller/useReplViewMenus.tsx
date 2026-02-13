@@ -54,8 +54,17 @@ export const useReplViewMenus = (context: MenusContext) => {
     setTaskNotice,
     setTaskSearchQuery,
     setTaskStatusFilter,
+    setTaskLaneFilter,
+    setTaskGroupMode,
+    setTaskCollapsedGroupKeys,
     setTaskTailLines,
     setTaskTailPath,
+    setTaskFocusLaneId,
+    setTaskFocusViewOpen,
+    setTaskFocusFollowTail,
+    setTaskFocusRawMode,
+    setTaskFocusTailLines,
+    taskFocusDefaultTailLines,
     taskRows,
     taskMaxScroll,
     ctreeOpen,
@@ -459,11 +468,19 @@ export const useReplViewMenus = (context: MenusContext) => {
     setTaskIndex(0)
     setTaskScroll(0)
     setTaskNotice(null)
-    setTaskSearchQuery("")
-    setTaskStatusFilter("all")
     setTaskTailLines([])
     setTaskTailPath(null)
-  }, [tasksOpen, setTaskIndex, setTaskNotice, setTaskScroll, setTaskSearchQuery, setTaskStatusFilter, setTaskTailLines, setTaskTailPath])
+    setTaskFocusLaneId(null)
+    setTaskFocusViewOpen(false)
+    setTaskFocusFollowTail(true)
+    setTaskFocusRawMode(false)
+    setTaskFocusTailLines(taskFocusDefaultTailLines)
+  }, [taskFocusDefaultTailLines, tasksOpen, setTaskFocusFollowTail, setTaskFocusLaneId, setTaskFocusRawMode, setTaskFocusTailLines, setTaskFocusViewOpen, setTaskIndex, setTaskNotice, setTaskScroll, setTaskTailLines, setTaskTailPath])
+
+  useEffect(() => {
+    if (tasksOpen) return
+    setTaskFocusViewOpen(false)
+  }, [tasksOpen, setTaskFocusViewOpen])
 
   useEffect(() => {
     if (!tasksOpen) return

@@ -23,6 +23,14 @@ describe("controllerActivityRuntime", () => {
     expect(flags.inlineThinkingBlockEnabled).toBe(false)
     expect(flags.markdownCoalescingEnabled).toBe(true)
     expect(flags.adaptiveMarkdownCadenceEnabled).toBe(false)
+    expect(flags.subagentWorkGraphEnabled).toBe(false)
+    expect(flags.subagentStripEnabled).toBe(false)
+    expect(flags.subagentToastsEnabled).toBe(false)
+    expect(flags.subagentTaskboardEnabled).toBe(false)
+    expect(flags.subagentFocusEnabled).toBe(false)
+    expect(flags.subagentCoalesceMs).toBeGreaterThanOrEqual(0)
+    expect(flags.subagentMaxWorkItems).toBeGreaterThanOrEqual(1)
+    expect(flags.subagentMaxStepsPerTask).toBeGreaterThanOrEqual(1)
     expect(flags.minDisplayMs).toBeGreaterThanOrEqual(0)
     expect(flags.statusUpdateMs).toBeGreaterThanOrEqual(0)
   })
@@ -45,6 +53,14 @@ describe("controllerActivityRuntime", () => {
       BREADBOARD_MARKDOWN_ADAPTIVE_MIN_CHUNK_CHARS: "5",
       BREADBOARD_MARKDOWN_ADAPTIVE_MIN_COALESCE_MS: "11",
       BREADBOARD_MARKDOWN_ADAPTIVE_BURST_CHARS: "42",
+      BREADBOARD_SUBAGENTS_V2_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_FOCUS_ENABLED: "true",
+      BREADBOARD_SUBAGENTS_COALESCE_MS: "64",
+      BREADBOARD_SUBAGENTS_MAX_WORK_ITEMS: "250",
+      BREADBOARD_SUBAGENTS_MAX_STEPS_PER_TASK: "75",
     })
     expect(flags.activityEnabled).toBe(false)
     expect(flags.lifecycleToastsEnabled).toBe(true)
@@ -62,6 +78,14 @@ describe("controllerActivityRuntime", () => {
     expect(flags.adaptiveMarkdownMinChunkChars).toBe(5)
     expect(flags.adaptiveMarkdownMinCoalesceMs).toBe(11)
     expect(flags.adaptiveMarkdownBurstChars).toBe(42)
+    expect(flags.subagentWorkGraphEnabled).toBe(true)
+    expect(flags.subagentStripEnabled).toBe(true)
+    expect(flags.subagentToastsEnabled).toBe(true)
+    expect(flags.subagentTaskboardEnabled).toBe(true)
+    expect(flags.subagentFocusEnabled).toBe(true)
+    expect(flags.subagentCoalesceMs).toBe(64)
+    expect(flags.subagentMaxWorkItems).toBe(250)
+    expect(flags.subagentMaxStepsPerTask).toBe(75)
   })
 
   it("enforces legality matrix", () => {
@@ -154,5 +178,8 @@ describe("controllerActivityRuntime", () => {
     expect(telemetry.markdownFlushes).toBe(0)
     expect(telemetry.thinkingUpdates).toBe(0)
     expect(telemetry.adaptiveCadenceAdjustments).toBe(0)
+    expect(telemetry.workgraphFlushes).toBe(0)
+    expect(telemetry.workgraphEvents).toBe(0)
+    expect(telemetry.workgraphMaxQueueDepth).toBe(0)
   })
 })

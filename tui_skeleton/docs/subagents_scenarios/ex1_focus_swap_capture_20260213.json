@@ -1,0 +1,22 @@
+{
+  "scenario": "ex1_focus_swap",
+  "generatedAt": "2026-02-13T19:51:21.269Z",
+  "acceptanceChecks": {
+    "swapPresetResolves": true,
+    "swapPresetKeepsTaskboardEnabled": true,
+    "baselineLanePresetRemainsLane": true,
+    "compatibilityDefaultsRemainEnabled": true
+  },
+  "summary": {
+    "swapPreset": {
+      "preset": "claude_like_subagents_swap",
+      "focusMode": "swap",
+      "focusEnabled": true,
+      "taskboardEnabled": true
+    },
+    "baselinePreset": {
+      "preset": "claude_like_subagents",
+      "focusMode": "lane"
+    }
+  }
+}

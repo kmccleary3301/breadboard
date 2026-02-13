@@ -1,0 +1,37 @@
+{
+  "scenario": "cp2_async_wakeup_output_ready",
+  "generatedAt": "2026-02-13T19:51:19.955Z",
+  "acceptanceChecks": {
+    "terminalCompleted": true,
+    "asyncModeRecorded": true,
+    "hasChecklistRows": true
+  },
+  "summary": {
+    "itemCount": 1,
+    "countsByStatus": {
+      "running": 0,
+      "blocked": 0,
+      "failed": 0,
+      "completed": 1,
+      "cancelled": 0,
+      "pending": 0
+    },
+    "rows": [
+      {
+        "id": "task-cp2-async",
+        "status": "completed",
+        "laneId": "task:task-cp2-async",
+        "mode": "async",
+        "counters": {
+          "completed": 1,
+          "running": 0,
+          "failed": 0,
+          "total": 1
+        },
+        "steps": [
+          "[done] parse_output - output-ready"
+        ]
+      }
+    ]
+  }
+}

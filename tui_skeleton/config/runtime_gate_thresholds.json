@@ -5,5 +5,12 @@
   },
   "noise": {
     "threshold": 0.8
+  },
+  "stripChurn": {
+    "threshold": 0.55
+  },
+  "focusLatency": {
+    "openP95Ms": 120,
+    "switchP95Ms": 90
   }
 }

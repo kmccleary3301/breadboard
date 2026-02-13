@@ -677,7 +677,16 @@ export function upsertTask(this: any, entry: TaskEntry): void {
   this.tasks = taskEntries.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-export function handleTaskEvent(this: any, payload: Record<string, unknown>): void {
+export function handleTaskEvent(
+  this: any,
+  payload: Record<string, unknown>,
+  options?: {
+    readonly eventType?: string
+    readonly eventId?: string | null
+    readonly seq?: number | null
+    readonly timestamp?: number | null
+  },
+): void {
   const taskId =
     extractString(payload, ["task_id", "taskId", "id"]) ??
     extractString(payload, ["session_id", "sessionId"])
@@ -709,6 +718,12 @@ export function handleTaskEvent(this: any, payload: Record<string, unknown>): vo
     ctreeNodeId: ctreeNodeId ?? null,
     ctreeSnapshot,
     updatedAt,
+  })
+  this.enqueueWorkGraphEvent?.(payload, {
+    eventType: options?.eventType ?? "task_event",
+    eventId: options?.eventId ?? null,
+    seq: options?.seq ?? this.currentEventSeq ?? null,
+    timestamp: options?.timestamp ?? updatedAt,
   })
 }
 

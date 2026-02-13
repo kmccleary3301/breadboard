@@ -46,9 +46,19 @@ type ModalStackContext = {
   inspectRawScroll: number
   tasks: unknown[]
   tasksOpen: boolean
+  taskFocusViewOpen: boolean
+  taskFocusFollowTail: boolean
+  taskFocusRawMode: boolean
+  taskFocusTailLines: number
+  taskFocusMode: "lane" | "swap"
+  taskFocusLaneId: string | null
+  taskFocusLaneLabel: string | null
   taskScroll: number
   taskSearchQuery: string
   taskStatusFilter: string
+  taskLaneFilter: string
+  taskGroupMode: string
+  taskCollapsedGroupKeys: Set<string>
   permissionRequest: unknown
   permissionQueueDepth: number
   permissionTab: unknown
@@ -126,9 +136,19 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     inspectRawScroll,
     tasks,
     tasksOpen,
+    taskFocusViewOpen,
+    taskFocusFollowTail,
+    taskFocusRawMode,
+    taskFocusTailLines,
+    taskFocusMode,
+    taskFocusLaneId,
+    taskFocusLaneLabel,
     taskScroll,
     taskSearchQuery,
     taskStatusFilter,
+    taskLaneFilter,
+    taskGroupMode,
+    taskCollapsedGroupKeys,
     permissionRequest,
     permissionQueueDepth,
     permissionTab,
@@ -173,9 +193,12 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     todoViewportRows,
     todoMaxScroll,
     taskRows,
+    diagnosticsHeatmapRows,
+    taskGroups,
     taskViewportRows,
     taskMaxScroll,
     selectedTaskIndex,
+    selectedTaskRow,
     selectedTask,
     taskNotice,
     taskTailLines,
@@ -279,14 +302,27 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     formatCTreeNodePreview,
     formatCTreeNodeFlags,
     tasksOpen,
+    taskFocusViewOpen,
+    taskFocusFollowTail,
+    taskFocusRawMode,
+    taskFocusTailLines,
+    taskFocusMode,
+    taskFocusLaneId,
+    taskFocusLaneLabel,
     taskScroll,
     taskMaxScroll,
     taskRows,
+    diagnosticsHeatmapRows,
     taskViewportRows,
     taskSearchQuery,
     taskStatusFilter,
+    taskLaneFilter,
+    taskGroupMode,
+    taskCollapsedGroupKeys,
     selectedTaskIndex,
+    selectedTaskRow,
     selectedTask,
+    taskGroups,
     taskNotice,
     taskTailLines,
     taskTailPath,

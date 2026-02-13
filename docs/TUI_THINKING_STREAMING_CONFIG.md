@@ -57,6 +57,12 @@ This document defines the runtime knobs for activity status, thinking artifacts,
   - `default -> preset -> provider -> model -> runtime`
   - Supported capability keys include:
   - `reasoningEvents`, `thoughtSummaryEvents`, `contextUsage`, `activitySurface`, `rawThinkingPeek`, `inlineThinkingBlock`
+- `BREADBOARD_TUI_CAPABILITY_PROVIDER_WHITELIST`
+  - Optional comma-separated provider ids used to validate override schema keys under `providers.*` and `models.<provider>/...`.
+  - Defaults to: `anthropic,openai,openrouter,unknown`.
+- `BREADBOARD_TUI_CAPABILITY_MODEL_WHITELIST`
+  - Optional comma-separated model ids used to validate override schema keys under `models.*`.
+  - When set, non-listed model keys are rejected with a warning.
 
 Reference implementation:
 - `tui_skeleton/src/commands/repl/providerCapabilityResolution.ts`

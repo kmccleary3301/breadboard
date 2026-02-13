@@ -25,14 +25,29 @@ export type MarkdownThreadOptions = WorkerOptions & {
   workerBundle?: string | URL
 }
 
+const withTsxImport = (argv: readonly string[]): string[] => {
+  // Avoid duplicating preload flags if caller already configured them.
+  for (let index = 0; index < argv.length - 1; index += 1) {
+    if (argv[index] === "--import" && argv[index + 1] === "tsx") return [...argv]
+  }
+  return [...argv, "--import", "tsx"]
+}
+
 export const createMarkdownWorkerThread = (options: MarkdownThreadOptions = {}): Worker => {
   const { workerBundle, ...workerOptions } = options
   const bundleUrl = normalizeWorkerBundleUrl(workerBundle)
   const jsEntry = new URL("./worker-thread-entry.js", import.meta.url)
   const tsEntry = new URL("./worker-thread-entry.ts", import.meta.url)
-  const runnerUrl = existsSync(jsEntry) ? jsEntry : tsEntry
+  const hasJsEntry = existsSync(jsEntry)
+  const runnerUrl = hasJsEntry ? jsEntry : tsEntry
+  // When developing from TS sources, worker_threads needs a TS loader.
+  const execArgv =
+    hasJsEntry
+      ? workerOptions.execArgv
+      : withTsxImport(workerOptions.execArgv ?? process.execArgv)
   return new Worker(runnerUrl, {
     ...workerOptions,
+    execArgv,
     workerData: {
       ...(workerOptions.workerData ?? {}),
       bundleUrl,

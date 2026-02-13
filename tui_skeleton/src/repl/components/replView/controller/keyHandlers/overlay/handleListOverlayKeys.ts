@@ -36,9 +36,30 @@ export const handleListOverlayKeys = (
     setTaskScroll,
     setTaskIndex,
     taskRows,
+    taskLaneOrder,
+    taskFocusLaneId,
+    taskFocusViewOpen,
+    taskFocusFollowTail,
+    taskFocusRawMode,
+    taskFocusTailLines,
+    taskFocusDefaultTailLines,
+    taskFocusMode,
+    taskLaneFilter,
+    taskGroupMode,
+    taskCollapsedGroupKeys,
+    setTaskFocusLaneId,
+    setTaskFocusViewOpen,
+    setTaskFocusFollowTail,
+    setTaskFocusRawMode,
+    setTaskFocusTailLines,
+    setTaskLaneFilter,
+    setTaskGroupMode,
+    setTaskCollapsedGroupKeys,
     setTaskSearchQuery,
     setTaskStatusFilter,
     selectedTaskIndex,
+    selectedTaskRow,
+    selectedTask,
     requestTaskTail,
     rewindMenu,
     rewindVisibleLimit,
@@ -50,7 +71,7 @@ export const handleListOverlayKeys = (
     closeConfirm,
     runConfirmAction,
   } = context
-  const { char, key, lowerChar, isReturnKey, isCtrlT, isCtrlB, isCtrlY } = info
+  const { char, key, lowerChar, isReturnKey, isTabKey, isCtrlT, isCtrlB, isCtrlY, isHomeKey, isEndKey } = info
 
   if (todosOpen) {
     if (key.escape || char === "\u001b") {
@@ -173,7 +194,110 @@ export const handleListOverlayKeys = (
   }
 
   if (tasksOpen) {
+    const focusMode = taskFocusMode === "swap" ? "swap" : "lane"
     const lastIndex = Math.max(0, taskRows.length - 1)
+    const normalizeLaneId = (value: unknown): string | null =>
+      typeof value === "string" && value.trim().length > 0 ? value : null
+    const laneOrder = Array.isArray(taskLaneOrder)
+      ? taskLaneOrder.map((value: unknown) => normalizeLaneId(value)).filter(Boolean) as string[]
+      : []
+    const cycleLaneFilter = () => {
+      const options = ["all", ...laneOrder]
+      if (options.length <= 1) {
+        setTaskLaneFilter("all")
+        return
+      }
+      const current = normalizeLaneId(taskLaneFilter) ?? "all"
+      const currentIndex = Math.max(0, options.indexOf(current))
+      const nextIndex = (currentIndex + 1) % options.length
+      setTaskLaneFilter(options[nextIndex] ?? "all")
+    }
+    const laneDelta = key.rightArrow || lowerChar === "]" ? 1 : key.leftArrow || lowerChar === "[" ? -1 : 0
+
+    if (taskFocusViewOpen) {
+      if (key.escape || char === "\u001b" || (!key.ctrl && !key.meta && lowerChar === "f")) {
+        setTaskFocusViewOpen(false)
+        if (focusMode === "swap") {
+          setTaskFocusLaneId(null)
+        }
+        return true
+      }
+      if (isCtrlB) {
+        setTaskFocusViewOpen(false)
+        setTasksOpen(false)
+        return true
+      }
+      if (laneDelta !== 0 && laneOrder.length > 0) {
+        const baseLane = normalizeLaneId(taskFocusLaneId) ?? laneOrder[0] ?? null
+        const currentIndex = Math.max(0, laneOrder.indexOf(baseLane ?? ""))
+        const nextIndex = (currentIndex + laneDelta + laneOrder.length) % laneOrder.length
+        setTaskFocusLaneId(laneOrder[nextIndex] ?? null)
+        setTaskIndex(0)
+        setTaskScroll(0)
+        return true
+      }
+      const clampScroll = (value: number) => Math.max(0, Math.min(taskMaxScroll, value))
+      if (isHomeKey) {
+        setTaskIndex(0)
+        setTaskScroll(0)
+        return true
+      }
+      if (isEndKey) {
+        setTaskIndex(lastIndex)
+        setTaskScroll(taskMaxScroll)
+        return true
+      }
+      if (key.pageUp) {
+        setTaskScroll((prev: number) => clampScroll(prev - taskViewportRows))
+        setTaskIndex((prev: number) => Math.max(0, prev - taskViewportRows))
+        return true
+      }
+      if (key.pageDown) {
+        setTaskScroll((prev: number) => clampScroll(prev + taskViewportRows))
+        setTaskIndex((prev: number) => Math.min(lastIndex, prev + taskViewportRows))
+        return true
+      }
+      if (key.upArrow) {
+        setTaskIndex((prev: number) => Math.max(0, prev - 1))
+        if (selectedTaskIndex <= taskScroll) {
+          setTaskScroll((prev: number) => clampScroll(prev - 1))
+        }
+        return true
+      }
+      if (key.downArrow) {
+        setTaskIndex((prev: number) => Math.min(lastIndex, prev + 1))
+        if (selectedTaskIndex >= taskScroll + taskViewportRows - 1) {
+          setTaskScroll((prev: number) => clampScroll(prev + 1))
+        }
+        return true
+      }
+      if (key.return) {
+        void requestTaskTail({ raw: taskFocusRawMode, tailLines: taskFocusTailLines })
+        return true
+      }
+      if (isTabKey) {
+        const nextRawMode = !taskFocusRawMode
+        setTaskFocusRawMode(nextRawMode)
+        void requestTaskTail({ raw: nextRawMode, tailLines: taskFocusTailLines })
+        return true
+      }
+      if (!key.ctrl && !key.meta && lowerChar === "l" && !taskFocusRawMode) {
+        const nextTailLines = Math.max(8, Math.min(400, taskFocusTailLines + 24))
+        setTaskFocusTailLines(nextTailLines)
+        void requestTaskTail({ raw: false, tailLines: nextTailLines, maxBytes: 80_000 })
+        return true
+      }
+      if (!key.ctrl && !key.meta && lowerChar === "p") {
+        setTaskFocusFollowTail(!taskFocusFollowTail)
+        return true
+      }
+      if (!key.ctrl && !key.meta && lowerChar === "r") {
+        void requestTaskTail({ raw: taskFocusRawMode, tailLines: taskFocusTailLines })
+        return true
+      }
+      return true
+    }
+
     if (key.escape || char === "\u001b") {
       setTasksOpen(false)
       return true
@@ -182,7 +306,31 @@ export const handleListOverlayKeys = (
       setTasksOpen(false)
       return true
     }
+    if (!key.ctrl && !key.meta && lowerChar === "f") {
+      const preferredLane = normalizeLaneId(selectedTask?.laneId) ?? laneOrder[0] ?? null
+      if (preferredLane) {
+        setTaskFocusLaneId(preferredLane)
+        setTaskFocusFollowTail(true)
+        setTaskFocusRawMode(false)
+        setTaskFocusTailLines(taskFocusDefaultTailLines)
+        setTaskFocusViewOpen(true)
+        setTaskIndex(0)
+        setTaskScroll(0)
+        void requestTaskTail({ raw: false, tailLines: taskFocusDefaultTailLines })
+      }
+      return true
+    }
     const clampScroll = (value: number) => Math.max(0, Math.min(taskMaxScroll, value))
+    if (isHomeKey) {
+      setTaskIndex(0)
+      setTaskScroll(0)
+      return true
+    }
+    if (isEndKey) {
+      setTaskIndex(lastIndex)
+      setTaskScroll(taskMaxScroll)
+      return true
+    }
     if (key.pageUp) {
       setTaskScroll((prev: number) => clampScroll(prev - taskViewportRows))
       setTaskIndex((prev: number) => Math.max(0, prev - taskViewportRows))
@@ -206,6 +354,42 @@ export const handleListOverlayKeys = (
       return true
     }
     if (!key.ctrl && !key.meta) {
+      if (lowerChar === "g") {
+        setTaskGroupMode((prev: "status" | "lane") => (prev === "status" ? "lane" : "status"))
+        setTaskIndex(0)
+        setTaskScroll(0)
+        return true
+      }
+      if (lowerChar === "l") {
+        cycleLaneFilter()
+        setTaskIndex(0)
+        setTaskScroll(0)
+        return true
+      }
+      if (lowerChar === "c") {
+        const groupKey =
+          typeof selectedTaskRow?.groupKey === "string" && selectedTaskRow.groupKey.length > 0
+            ? selectedTaskRow.groupKey
+            : null
+        if (groupKey) {
+          setTaskCollapsedGroupKeys((prev: Set<string>) => {
+            const base = prev instanceof Set ? prev : new Set(taskCollapsedGroupKeys ?? [])
+            const next = new Set(base)
+            if (next.has(groupKey)) next.delete(groupKey)
+            else next.add(groupKey)
+            return next
+          })
+          setTaskIndex(0)
+          setTaskScroll(0)
+        }
+        return true
+      }
+      if (lowerChar === "e") {
+        setTaskCollapsedGroupKeys(new Set())
+        setTaskIndex(0)
+        setTaskScroll(0)
+        return true
+      }
       if (lowerChar === "0") {
         setTaskStatusFilter("all")
         setTaskIndex(0)
@@ -226,6 +410,24 @@ export const handleListOverlayKeys = (
       }
       if (lowerChar === "3") {
         setTaskStatusFilter("failed")
+        setTaskIndex(0)
+        setTaskScroll(0)
+        return true
+      }
+      if (lowerChar === "4") {
+        setTaskStatusFilter("blocked")
+        setTaskIndex(0)
+        setTaskScroll(0)
+        return true
+      }
+      if (lowerChar === "5") {
+        setTaskStatusFilter("cancelled")
+        setTaskIndex(0)
+        setTaskScroll(0)
+        return true
+      }
+      if (lowerChar === "6") {
+        setTaskStatusFilter("pending")
         setTaskIndex(0)
         setTaskScroll(0)
         return true
