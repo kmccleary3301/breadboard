@@ -39,8 +39,10 @@ export const handleListOverlayKeys = (
     taskLaneOrder,
     taskFocusLaneId,
     taskFocusViewOpen,
+    taskFocusFollowTail,
     setTaskFocusLaneId,
     setTaskFocusViewOpen,
+    setTaskFocusFollowTail,
     setTaskSearchQuery,
     setTaskStatusFilter,
     selectedTaskIndex,
@@ -235,6 +237,14 @@ export const handleListOverlayKeys = (
         void requestTaskTail()
         return true
       }
+      if (!key.ctrl && !key.meta && lowerChar === "p") {
+        setTaskFocusFollowTail(!taskFocusFollowTail)
+        return true
+      }
+      if (!key.ctrl && !key.meta && lowerChar === "r") {
+        void requestTaskTail()
+        return true
+      }
       return true
     }
 
@@ -250,9 +260,11 @@ export const handleListOverlayKeys = (
       const preferredLane = normalizeLaneId(selectedTask?.laneId) ?? laneOrder[0] ?? null
       if (preferredLane) {
         setTaskFocusLaneId(preferredLane)
+        setTaskFocusFollowTail(true)
         setTaskFocusViewOpen(true)
         setTaskIndex(0)
         setTaskScroll(0)
+        void requestTaskTail()
       }
       return true
     }

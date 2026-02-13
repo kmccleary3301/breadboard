@@ -229,6 +229,7 @@ export const useReplViewController = ({
   const [taskTailPath, setTaskTailPath] = useState<string | null>(null)
   const [taskFocusLaneId, setTaskFocusLaneId] = useState<string | null>(null)
   const [taskFocusViewOpen, setTaskFocusViewOpen] = useState(false)
+  const [taskFocusFollowTail, setTaskFocusFollowTail] = useState(true)
   const [ctreeOpen, setCtreeOpen] = useState(false)
   const [ctreeScroll, setCtreeScroll] = useState(0)
   const [ctreeIndex, setCtreeIndex] = useState(0)
@@ -577,6 +578,7 @@ export const useReplViewController = ({
     setTaskTailPath,
     setTaskFocusLaneId,
     setTaskFocusViewOpen,
+    setTaskFocusFollowTail,
     taskRows,
     taskMaxScroll,
     ctreeOpen,
@@ -754,6 +756,7 @@ export const useReplViewController = ({
     setTaskStatusFilter,
     setTaskFocusLaneId,
     setTaskFocusViewOpen,
+    setTaskFocusFollowTail,
     setTodoScroll,
     setTranscriptSearchIndex,
     setTranscriptSearchOpen,
@@ -777,6 +780,7 @@ export const useReplViewController = ({
     taskStatusFilter,
     taskFocusLaneId,
     taskFocusViewOpen,
+    taskFocusFollowTail,
     taskViewportRows,
     tasksOpen,
     todoMaxScroll,
@@ -1087,6 +1091,16 @@ export const useReplViewController = ({
     return parts.join(DOT_SEPARATOR)
   }, [transcriptExportNotice, verboseOutput])
 
+  useEffect(() => {
+    if (!tasksOpen || !taskFocusViewOpen || !taskFocusFollowTail) return
+    if (!selectedTask) return
+    void requestTaskTail()
+    const interval = setInterval(() => {
+      void requestTaskTail()
+    }, 1500)
+    return () => clearInterval(interval)
+  }, [requestTaskTail, selectedTask, taskFocusFollowTail, taskFocusViewOpen, tasksOpen])
+
   const modalStack = useReplViewModalStack({
     confirmState,
     shortcutsOpen,
@@ -1133,6 +1147,7 @@ export const useReplViewController = ({
     tasks,
     tasksOpen,
     taskFocusViewOpen,
+    taskFocusFollowTail,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,

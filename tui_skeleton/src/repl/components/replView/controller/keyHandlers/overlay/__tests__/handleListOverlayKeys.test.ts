@@ -71,8 +71,10 @@ const baseContext = () => ({
   taskLaneOrder: ["lane-a", "lane-b"],
   taskFocusLaneId: null as string | null,
   taskFocusViewOpen: false,
+  taskFocusFollowTail: true,
   setTaskFocusLaneId: vi.fn(),
   setTaskFocusViewOpen: vi.fn(),
+  setTaskFocusFollowTail: vi.fn(),
   setTaskSearchQuery: vi.fn(),
   setTaskStatusFilter: vi.fn(),
   selectedTaskIndex: 0,
@@ -98,9 +100,11 @@ describe("handleListOverlayKeys task focus mode", () => {
     )
     expect(handled).toBe(true)
     expect(context.setTaskFocusLaneId).toHaveBeenCalledWith("lane-a")
+    expect(context.setTaskFocusFollowTail).toHaveBeenCalledWith(true)
     expect(context.setTaskFocusViewOpen).toHaveBeenCalledWith(true)
     expect(context.setTaskIndex).toHaveBeenCalledWith(0)
     expect(context.setTaskScroll).toHaveBeenCalledWith(0)
+    expect(context.requestTaskTail).toHaveBeenCalled()
   })
 
   it("cycles focused lane with left/right arrows inside focus view", () => {
@@ -151,5 +155,15 @@ describe("handleListOverlayKeys task focus mode", () => {
     )
     expect(handled).toBe(true)
     expect(context.setTaskSearchQuery).not.toHaveBeenCalled()
+  })
+
+  it("toggles focus follow mode with `p`", () => {
+    const context = { ...baseContext(), taskFocusViewOpen: true, taskFocusLaneId: "lane-a", taskFocusFollowTail: true }
+    const handled = handleListOverlayKeys(
+      context,
+      makeInfo({ char: "p", lowerChar: "p" }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTaskFocusFollowTail).toHaveBeenCalledWith(false)
   })
 })

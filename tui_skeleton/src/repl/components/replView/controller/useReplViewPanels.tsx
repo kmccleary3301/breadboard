@@ -560,6 +560,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
         subagentType: base.subagentType ?? item.laneLabel ?? null,
         status: base.status ?? item.status ?? null,
         outputExcerpt: base.outputExcerpt ?? item.lastSafeExcerpt ?? null,
+        createdAt: base.createdAt ?? item.createdAt ?? item.updatedAt ?? 0,
         artifactPath: base.artifactPath ?? item.artifactPaths?.[0] ?? null,
         updatedAt: Math.max(base.updatedAt ?? 0, item.updatedAt ?? 0),
         counters: item.counters ?? null,

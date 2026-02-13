@@ -95,6 +95,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     formatCTreeNodeFlags,
     tasksOpen,
     taskFocusViewOpen,
+    taskFocusFollowTail,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,
@@ -966,16 +967,37 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         const scroll = Math.max(0, Math.min(taskScroll, taskMaxScroll))
         const visible = taskRows.slice(scroll, scroll + taskViewportRows)
         const lineWidth = Math.max(12, panelWidth - 6)
+        const focusStatus = String(selectedTask?.status ?? "pending")
+          .replace(/[_-]+/g, " ")
+          .toLowerCase()
+        const elapsedMs = (() => {
+          const createdAt = Number(selectedTask?.createdAt)
+          const updatedAt = Number(selectedTask?.updatedAt)
+          if (!Number.isFinite(createdAt) || createdAt <= 0) return null
+          const terminal = focusStatus === "completed" || focusStatus === "failed" || focusStatus === "cancelled"
+          const end = terminal && Number.isFinite(updatedAt) ? updatedAt : Date.now()
+          return Math.max(0, end - createdAt)
+        })()
+        const elapsedLabel = elapsedMs != null ? formatDuration(elapsedMs) : null
+        const metaParts = [
+          `status: ${focusStatus}`,
+          elapsedLabel ? `elapsed: ${elapsedLabel}` : null,
+          selectedTask?.mode ? `mode: ${selectedTask.mode}` : null,
+        ].filter(Boolean) as string[]
         const titleLines: SelectPanelLine[] = [
           { text: CHALK.bold("Task Focus"), color: COLORS.info },
           {
             text: taskFocusLaneLabel ?? taskFocusLaneId ?? "unknown lane",
             color: "dim",
           },
+          {
+            text: metaParts.join(" • "),
+            color: "dim",
+          },
         ]
         const hintLines: SelectPanelLine[] = [
           {
-            text: `${taskRows.length} in lane • ↑/↓ select • ←/→ or [/] lane • Enter tail • F/Esc return`,
+            text: `${taskRows.length} in lane • ↑/↓ select • ←/→ or [/] lane • Enter tail • P ${taskFocusFollowTail ? "pause" : "follow"} • R refresh • F/Esc return`,
             color: "gray",
           },
         ]
