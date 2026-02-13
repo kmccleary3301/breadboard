@@ -1,6 +1,11 @@
 import type { ColorMode } from "../repl/designSystem.js"
 
-export type TuiPresetId = "breadboard_default" | "claude_code_like" | "codex_cli_like"
+export type TuiPresetId =
+  | "breadboard_default"
+  | "claude_code_like"
+  | "codex_cli_like"
+  | "claude_like_subagents"
+  | "opencode_like_subagents"
 export type LandingVariant = "auto" | "board" | "split" | "compact"
 export type LandingBorderStyle = "round" | "single"
 export type StatusLinePosition = "above_input" | "below_input"

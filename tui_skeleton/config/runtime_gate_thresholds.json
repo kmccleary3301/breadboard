@@ -5,5 +5,8 @@
   },
   "noise": {
     "threshold": 0.8
+  },
+  "stripChurn": {
+    "threshold": 0.55
   }
 }

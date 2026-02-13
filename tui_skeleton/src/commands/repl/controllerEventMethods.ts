@@ -184,6 +184,16 @@ const resolveSubagentStatus = (payload: Record<string, unknown>, fallback?: stri
   return status.trim() || "update"
 }
 
+const sanitizeSubagentPreview = (value: string, maxChars = 120): string => {
+  const cleaned = stripAnsi(value)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+  if (!cleaned) return "task"
+  if (cleaned.length <= maxChars) return cleaned
+  return `${cleaned.slice(0, Math.max(1, maxChars - 3))}...`
+}
+
 const emitSubagentToast = (
   controller: any,
   payload: Record<string, unknown>,
@@ -191,11 +201,13 @@ const emitSubagentToast = (
   policy: SubagentUiPolicy,
 ): void => {
   if (!policy.routeTaskEventsToLiveSlots) return
-  const taskId = extractString(payload, ["task_id", "taskId", "id"]) ?? "task"
+  const rawTaskId = extractString(payload, ["task_id", "taskId", "id"]) ?? "task"
+  const taskId = sanitizeSubagentPreview(rawTaskId, 64)
   const statusRaw = resolveSubagentStatus(payload)
   const status = normalizeSubagentStatus(statusRaw)
-  const description =
+  const rawDescription =
     extractString(payload, ["description", "title", "summary", "prompt", "subagent_type", "subagentType"]) ?? taskId
+  const description = sanitizeSubagentPreview(rawDescription, 120)
   const now = Date.now()
   const key = `subagent:${taskId}`
   const ledger = controller.subagentToastLedger as Map<string, { status: string; at: number }>

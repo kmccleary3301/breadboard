@@ -16,6 +16,8 @@ const DEFAULT_KEY = {
   delete: false,
   pageUp: false,
   pageDown: false,
+  home: false,
+  end: false,
 }
 
 const makeInfo = (overrides?: Partial<any>) => ({
@@ -33,6 +35,8 @@ const makeInfo = (overrides?: Partial<any>) => ({
   isCtrlB: false,
   isCtrlY: false,
   isCtrlG: false,
+  isHomeKey: false,
+  isEndKey: false,
   ...(overrides ?? {}),
 })
 
@@ -74,14 +78,22 @@ const baseContext = () => ({
   taskFocusFollowTail: true,
   taskFocusRawMode: false,
   taskFocusTailLines: 24,
+  taskFocusDefaultTailLines: 24,
+  taskLaneFilter: "all",
+  taskGroupMode: "status" as "status" | "lane",
+  taskCollapsedGroupKeys: new Set<string>(),
   setTaskFocusLaneId: vi.fn(),
   setTaskFocusViewOpen: vi.fn(),
   setTaskFocusFollowTail: vi.fn(),
   setTaskFocusRawMode: vi.fn(),
   setTaskFocusTailLines: vi.fn(),
+  setTaskLaneFilter: vi.fn(),
+  setTaskGroupMode: vi.fn(),
+  setTaskCollapsedGroupKeys: vi.fn(),
   setTaskSearchQuery: vi.fn(),
   setTaskStatusFilter: vi.fn(),
   selectedTaskIndex: 0,
+  selectedTaskRow: { groupKey: "status:running", groupLabel: "Running", task: { laneId: "lane-a" } },
   selectedTask: { laneId: "lane-a" },
   requestTaskTail: vi.fn(),
   rewindMenu: { status: "hidden", checkpoints: [] },
@@ -151,6 +163,67 @@ describe("handleListOverlayKeys task focus mode", () => {
     )
     expect(handled).toBe(true)
     expect(context.setTaskSearchQuery).toHaveBeenCalled()
+  })
+
+  it("toggles group mode with `g`", () => {
+    const context = baseContext()
+    const handled = handleListOverlayKeys(context, makeInfo({ char: "g", lowerChar: "g" }))
+    expect(handled).toBe(true)
+    expect(context.setTaskGroupMode).toHaveBeenCalled()
+    const reducer = context.setTaskGroupMode.mock.calls[0]?.[0]
+    expect(typeof reducer).toBe("function")
+    expect(reducer("status")).toBe("lane")
+    expect(reducer("lane")).toBe("status")
+  })
+
+  it("cycles lane filter with `l` in taskboard list mode", () => {
+    const context = { ...baseContext(), taskLaneFilter: "all", taskLaneOrder: ["lane-a", "lane-b"] }
+    const handled = handleListOverlayKeys(context, makeInfo({ char: "l", lowerChar: "l" }))
+    expect(handled).toBe(true)
+    expect(context.setTaskLaneFilter).toHaveBeenCalledWith("lane-a")
+  })
+
+  it("toggles selected group collapse with `c`", () => {
+    const context = baseContext()
+    const handled = handleListOverlayKeys(context, makeInfo({ char: "c", lowerChar: "c" }))
+    expect(handled).toBe(true)
+    expect(context.setTaskCollapsedGroupKeys).toHaveBeenCalled()
+    const reducer = context.setTaskCollapsedGroupKeys.mock.calls[0]?.[0]
+    expect(typeof reducer).toBe("function")
+    const collapsed = reducer(new Set<string>())
+    expect(collapsed.has("status:running")).toBe(true)
+    const expanded = reducer(new Set<string>(["status:running"]))
+    expect(expanded.has("status:running")).toBe(false)
+  })
+
+  it("expands all groups with `e`", () => {
+    const context = baseContext()
+    const handled = handleListOverlayKeys(context, makeInfo({ char: "e", lowerChar: "e" }))
+    expect(handled).toBe(true)
+    expect(context.setTaskCollapsedGroupKeys).toHaveBeenCalledWith(new Set())
+  })
+
+  it("applies extended status filters for blocked/cancelled/pending", () => {
+    const context = baseContext()
+    expect(handleListOverlayKeys(context, makeInfo({ char: "4", lowerChar: "4" }))).toBe(true)
+    expect(context.setTaskStatusFilter).toHaveBeenCalledWith("blocked")
+    expect(handleListOverlayKeys(context, makeInfo({ char: "5", lowerChar: "5" }))).toBe(true)
+    expect(context.setTaskStatusFilter).toHaveBeenCalledWith("cancelled")
+    expect(handleListOverlayKeys(context, makeInfo({ char: "6", lowerChar: "6" }))).toBe(true)
+    expect(context.setTaskStatusFilter).toHaveBeenCalledWith("pending")
+  })
+
+  it("jumps to top and bottom with home/end in task list mode", () => {
+    const context = { ...baseContext(), taskRows: new Array(8).fill(0).map((_, i) => ({ id: `t-${i}`, task: { laneId: "lane-a" } })), taskMaxScroll: 4 }
+    const homeHandled = handleListOverlayKeys(context, makeInfo({ isHomeKey: true }))
+    expect(homeHandled).toBe(true)
+    expect(context.setTaskIndex).toHaveBeenCalledWith(0)
+    expect(context.setTaskScroll).toHaveBeenCalledWith(0)
+
+    const endHandled = handleListOverlayKeys(context, makeInfo({ isEndKey: true }))
+    expect(endHandled).toBe(true)
+    expect(context.setTaskIndex).toHaveBeenCalledWith(7)
+    expect(context.setTaskScroll).toHaveBeenCalledWith(4)
   })
 
   it("suppresses search typing while focus view is open", () => {

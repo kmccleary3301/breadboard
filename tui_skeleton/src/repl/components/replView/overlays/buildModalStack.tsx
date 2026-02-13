@@ -8,6 +8,14 @@ import { stripAnsiCodes } from "../utils/ansi.js"
 import type { SlashCommandInfo } from "../../../slashCommands.js"
 import type { PermissionRuleScope } from "../../../types.js"
 import { buildConfirmModal, buildShortcutsModal } from "./modalBasics.js"
+import {
+  countTaskRowsByStatusGroup,
+  formatTaskModeBadge,
+  formatTaskStepLine,
+  normalizeTaskStatusGroup,
+  sanitizeTaskPreview,
+  taskStatusGroupLabel,
+} from "../controller/taskboardStatus.js"
 
 // Intentionally broad to keep modal composition decoupled from controller internals.
 type ModalStackContext = Record<string, any>
@@ -106,8 +114,13 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     taskViewportRows,
     taskSearchQuery,
     taskStatusFilter,
+    taskLaneFilter,
+    taskGroupMode,
+    taskCollapsedGroupKeys,
     selectedTaskIndex,
+    selectedTaskRow,
     selectedTask,
+    taskGroups,
     taskNotice,
     taskTailLines,
     taskTailPath,
@@ -839,13 +852,17 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         const scroll = Math.max(0, Math.min(taskScroll, taskMaxScroll))
         const visible = taskRows.slice(scroll, scroll + taskViewportRows)
         const colorForStatus = (status?: string) => {
-          switch (status) {
+          switch (normalizeTaskStatusGroup(status)) {
             case "running":
               return COLORS.info
+            case "blocked":
+              return COLORS.warning
             case "completed":
               return COLORS.success
             case "failed":
               return COLORS.error
+            case "cancelled":
+              return COLORS.textMuted
             default:
               return COLORS.warning
           }
@@ -861,22 +878,73 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             color: "gray",
           },
           {
-            text: `Search: ${taskSearchQuery.length > 0 ? taskSearchQuery : CHALK.dim("<type to filter>")} • Filter: ${taskStatusFilter} (0 all · 1 run · 2 done · 3 fail)`,
+            text: `Search: ${taskSearchQuery.length > 0 ? taskSearchQuery : CHALK.dim("<type to filter>")} • Filter: ${taskStatusFilter} (0 all · 1 run · 2 done · 3 fail · 4 blocked · 5 cancelled · 6 pending)`,
+            color: "dim",
+          },
+          {
+            text: `Group: ${taskGroupMode} (G toggle) • Lane: ${taskLaneFilter} (L cycle) • C collapse selected group • E expand all`,
             color: "dim",
           },
         ]
         const panelRows: SelectPanelRow[] = []
+        const statusCounts = countTaskRowsByStatusGroup(taskRows)
+        const collapsedGroupSet =
+          taskCollapsedGroupKeys instanceof Set ? taskCollapsedGroupKeys : new Set<string>()
         if (taskRows.length === 0) {
-          panelRows.push({
-            kind: "empty",
-            text: "No tasks match the current filter.",
-            color: "dim",
-          })
+          if (Array.isArray(taskGroups) && taskGroups.length > 0) {
+            for (const group of taskGroups) {
+              const collapsed = collapsedGroupSet.has(group.key)
+              const marker = collapsed ? "▸" : "▾"
+              panelRows.push({
+                kind: "header",
+                text: `${marker} ${group.label} (${group.items.length})`,
+                color: "dim",
+              })
+            }
+            panelRows.push({
+              kind: "empty",
+              text: "All visible groups are collapsed or empty.",
+              color: "dim",
+            })
+          } else {
+            panelRows.push({
+              kind: "empty",
+              text: "No tasks match the current filter.",
+              color: "dim",
+            })
+          }
         } else {
+          if (Array.isArray(taskGroups) && taskGroups.length > 0) {
+            for (const group of taskGroups) {
+              const collapsed = collapsedGroupSet.has(group.key)
+              const marker = collapsed ? "▸" : "▾"
+              const countLabel =
+                group.mode === "status"
+                  ? statusCounts[normalizeTaskStatusGroup(group.items[0]?.status)] ?? group.items.length
+                  : group.items.length
+              panelRows.push({
+                kind: "header",
+                text: `${marker} ${group.label} (${countLabel})`,
+                color: "dim",
+              })
+            }
+          }
+          let previousGroup = scroll > 0 ? taskRows[scroll - 1]?.groupKey ?? null : null
           visible.forEach((row: any, idx: number) => {
             const globalIndex = scroll + idx
             const isActive = globalIndex === selectedTaskIndex
-            const statusLabel = (row.status || "update").replace(/[_-]+/g, " ")
+            const normalizedStatus = normalizeTaskStatusGroup(row.status)
+            if (idx === 0 || previousGroup !== row.groupKey) {
+              if (!Array.isArray(taskGroups) || taskGroups.length === 0) {
+                panelRows.push({
+                  kind: "header",
+                  text: `${taskStatusGroupLabel(normalizedStatus)} (${statusCounts[normalizedStatus]})`,
+                  color: "dim",
+                })
+              }
+            }
+            previousGroup = row.groupKey ?? null
+            const statusLabel = normalizedStatus.replace(/[_-]+/g, " ")
             const laneLabel = row.task.subagentType || row.task.laneId || "primary"
             const idLabel = row.id.slice(0, 8)
             const suffix = CHALK.dim(`#${idLabel}`)
@@ -884,13 +952,14 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             const laneCell = formatCell(`[${laneLabel}]`, laneWidth)
             const leftWidth = Math.max(0, lineWidth - stripAnsiCodes(suffix).length - laneWidth - 2)
             const progress = row.progressLabel ? ` · steps ${row.progressLabel}` : ""
-            const left = formatCell(`${statusLabel} · ${row.label}${progress}`, leftWidth)
+            const modeBadge = formatTaskModeBadge(row.task.mode)
+            const left = formatCell(`${modeBadge ? `${modeBadge} ` : ""}${statusLabel} · ${row.label}${progress}`, leftWidth)
             const line = `${laneCell} ${left} ${suffix}`
             panelRows.push({
               kind: "item",
               text: `${isActive ? "› " : "  "}${line}`,
               isActive,
-              color: colorForStatus(row.status),
+              color: colorForStatus(normalizedStatus),
               activeColor: COLORS.selectionFg,
               activeBackground: COLORS.info,
             })
@@ -916,17 +985,51 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
               color: "dim",
             })
           }
+          if (Array.isArray(selectedTask.steps) && selectedTask.steps.length > 0) {
+            footerLines.push({ text: "Checklist:", color: "dim" })
+            const visibleSteps = selectedTask.steps.slice(-12)
+            for (const step of visibleSteps) {
+              const normalized = normalizeTaskStatusGroup(step?.status)
+              const color =
+                normalized === "failed"
+                  ? COLORS.error
+                  : normalized === "running"
+                    ? COLORS.info
+                    : normalized === "completed"
+                      ? COLORS.success
+                      : "dim"
+              footerLines.push({
+                text: formatTaskStepLine(step),
+                color,
+              })
+            }
+            if (selectedTask.steps.length > visibleSteps.length) {
+              footerLines.push({
+                text: `…${selectedTask.steps.length - visibleSteps.length} earlier step${selectedTask.steps.length - visibleSteps.length === 1 ? "" : "s"}`,
+                color: "dim",
+              })
+            }
+          }
           if (selectedTask.outputExcerpt) {
-            footerLines.push({ text: `Output: ${selectedTask.outputExcerpt}`, color: "dim" })
+            const safeExcerpt = sanitizeTaskPreview(selectedTask.outputExcerpt, 240)
+            if (safeExcerpt) {
+              footerLines.push({ text: `Output: ${safeExcerpt}`, color: "dim" })
+            }
           }
           if (selectedTask.artifactPath) {
             footerLines.push({ text: `Artifact: ${selectedTask.artifactPath}`, color: "dim" })
           }
           if (selectedTask.error) {
-            footerLines.push({ text: `Error: ${selectedTask.error}`, color: COLORS.error })
+            const safeError = sanitizeTaskPreview(selectedTask.error, 240)
+            if (safeError) {
+              footerLines.push({ text: `Error: ${safeError}`, color: COLORS.error })
+            }
           }
           if (selectedTask.ctreeNodeId) {
             footerLines.push({ text: `CTree node: ${selectedTask.ctreeNodeId}`, color: "dim" })
+          }
+          if (selectedTaskRow?.groupLabel) {
+            footerLines.push({ text: `Group: ${selectedTaskRow.groupLabel}`, color: "dim" })
           }
           footerLines.push({ text: "Enter: load output tail.", color: "dim" })
         }
@@ -935,7 +1038,10 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           footerLines.push({ text: ctreeSummary, color: "dim" })
         }
         if (taskNotice) {
-          footerLines.push({ text: taskNotice, color: "dim" })
+          const safeTaskNotice = sanitizeTaskPreview(taskNotice, 240)
+          if (safeTaskNotice) {
+            footerLines.push({ text: safeTaskNotice, color: "dim" })
+          }
         }
         if (taskTailLines.length > 0) {
           footerLines.push({ text: taskTailPath ? `Tail: ${taskTailPath}` : "Tail output", color: "dim" })
@@ -1033,7 +1139,8 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             const suffix = CHALK.dim(`#${idLabel}`)
             const leftWidth = Math.max(0, lineWidth - stripAnsiCodes(suffix).length - 1)
             const progress = row.progressLabel ? ` · steps ${row.progressLabel}` : ""
-            const line = `${formatCell(`${statusLabel} · ${row.label}${progress}`, leftWidth)} ${suffix}`
+            const modeBadge = formatTaskModeBadge(row.task.mode)
+            const line = `${formatCell(`${modeBadge ? `${modeBadge} ` : ""}${statusLabel} · ${row.label}${progress}`, leftWidth)} ${suffix}`
             panelRows.push({
               kind: "item",
               text: `${isActive ? "› " : "  "}${line}`,

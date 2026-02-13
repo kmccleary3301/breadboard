@@ -103,6 +103,17 @@ const TOOL_COLLAPSE_HEAD = 6
 const TOOL_COLLAPSE_TAIL = 6
 const TOOL_LABEL_WIDTH = 12
 const LABEL_WIDTH = 9
+const DEFAULT_TASK_FOCUS_TAIL_LINES = 24
+const DEFAULT_TASK_FOCUS_REFRESH_MS = 1500
+
+type TaskboardSessionPrefs = {
+  readonly statusFilter: "all" | "running" | "blocked" | "completed" | "failed" | "cancelled" | "pending"
+  readonly groupMode: "status" | "lane"
+  readonly laneFilter: string
+  readonly collapsedGroups: ReadonlyArray<string>
+}
+
+const TASKBOARD_SESSION_PREFS = new Map<string, TaskboardSessionPrefs>()
 const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => {
   if (value == null) return fallback
   const normalized = value.trim().toLowerCase()
@@ -110,6 +121,13 @@ const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => 
   if (["1", "true", "yes", "on"].includes(normalized)) return true
   if (["0", "false", "no", "off"].includes(normalized)) return false
   return fallback
+}
+
+const parseIntEnv = (value: string | undefined, fallback: number, minimum: number, maximum: number): number => {
+  if (value == null) return fallback
+  const parsed = Number(value.trim())
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(minimum, Math.min(maximum, Math.floor(parsed)))
 }
 
 const resolveScrollbackMode = (): boolean => {
@@ -224,14 +242,28 @@ export const useReplViewController = ({
   const [taskIndex, setTaskIndex] = useState(0)
   const [taskNotice, setTaskNotice] = useState<string | null>(null)
   const [taskSearchQuery, setTaskSearchQuery] = useState("")
-  const [taskStatusFilter, setTaskStatusFilter] = useState<"all" | "running" | "completed" | "failed">("all")
+  const [taskStatusFilter, setTaskStatusFilter] = useState<
+    "all" | "running" | "blocked" | "completed" | "failed" | "cancelled" | "pending"
+  >("all")
+  const [taskLaneFilter, setTaskLaneFilter] = useState<string>("all")
+  const [taskGroupMode, setTaskGroupMode] = useState<"status" | "lane">("status")
+  const [taskCollapsedGroupKeys, setTaskCollapsedGroupKeys] = useState<Set<string>>(new Set())
+  const [taskSelectedTaskId, setTaskSelectedTaskId] = useState<string | null>(null)
   const [taskTailLines, setTaskTailLines] = useState<string[]>([])
   const [taskTailPath, setTaskTailPath] = useState<string | null>(null)
   const [taskFocusLaneId, setTaskFocusLaneId] = useState<string | null>(null)
   const [taskFocusViewOpen, setTaskFocusViewOpen] = useState(false)
   const [taskFocusFollowTail, setTaskFocusFollowTail] = useState(true)
   const [taskFocusRawMode, setTaskFocusRawMode] = useState(false)
-  const [taskFocusTailLines, setTaskFocusTailLines] = useState(24)
+  const taskFocusDefaultTailLines = useMemo(
+    () => parseIntEnv(process.env.BREADBOARD_SUBAGENTS_FOCUS_MAX_LINES_INITIAL, DEFAULT_TASK_FOCUS_TAIL_LINES, 8, 400),
+    [],
+  )
+  const taskFocusRefreshMs = useMemo(
+    () => parseIntEnv(process.env.BREADBOARD_SUBAGENTS_FOCUS_REFRESH_MS, DEFAULT_TASK_FOCUS_REFRESH_MS, 250, 15000),
+    [],
+  )
+  const [taskFocusTailLines, setTaskFocusTailLines] = useState(taskFocusDefaultTailLines)
   const [ctreeOpen, setCtreeOpen] = useState(false)
   const [ctreeScroll, setCtreeScroll] = useState(0)
   const [ctreeIndex, setCtreeIndex] = useState(0)
@@ -329,6 +361,11 @@ export const useReplViewController = ({
   const keymap = useMemo(() => loadKeymapConfig(), [])
   const chromeMode = useMemo(() => loadChromeMode(keymap), [keymap])
   const profile = useMemo(() => loadProfileConfig(), [])
+  const taskboardDefaultView = useMemo(() => {
+    const raw = (process.env.BREADBOARD_SUBAGENTS_DEFAULT_VIEW ?? "tasks").trim().toLowerCase()
+    if (raw === "todos" || raw === "combined") return raw
+    return "tasks"
+  }, [])
   const isBreadboardProfile = profile.name === "breadboard_v1"
   const claudeChrome = chromeMode === "claude"
   const filePickerResources = useMemo(() => loadFilePickerResources(), [])
@@ -429,8 +466,11 @@ export const useReplViewController = ({
     taskIndex,
     taskFocusLaneId,
     taskFocusViewOpen,
+    taskGroupMode,
+    taskCollapsedGroupKeys,
     taskSearchQuery,
     taskStatusFilter,
+    taskLaneFilter,
     setTaskNotice,
     setTaskTailLines,
     setTaskTailPath,
@@ -510,11 +550,13 @@ export const useReplViewController = ({
     todoViewportRows,
     todoMaxScroll,
     taskRows,
+    taskGroups,
     taskLaneOrder,
     taskFocusLaneLabel,
     taskViewportRows,
     taskMaxScroll,
     selectedTaskIndex,
+    selectedTaskRow,
     selectedTask,
     ctreeRows,
     ctreeCollapsibleIds,
@@ -527,6 +569,56 @@ export const useReplViewController = ({
     formatCTreeNodeFlags,
     requestTaskTail,
   } = panels
+  useEffect(() => {
+    const liveKeys = new Set(
+      Array.isArray(taskGroups)
+        ? taskGroups
+            .map((group: any) => (typeof group?.key === "string" ? group.key : null))
+            .filter((value: string | null): value is string => Boolean(value))
+        : [],
+    )
+    setTaskCollapsedGroupKeys((prev) => {
+      if (!(prev instanceof Set) || prev.size === 0) return prev
+      let changed = false
+      const next = new Set<string>()
+      for (const key of prev) {
+        if (liveKeys.has(key)) next.add(key)
+        else changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [taskGroups])
+  useEffect(() => {
+    const activeSessionId = String(sessionId ?? "").trim()
+    if (!activeSessionId) return
+    const stored = TASKBOARD_SESSION_PREFS.get(activeSessionId)
+    if (!stored) return
+    setTaskStatusFilter(stored.statusFilter)
+    setTaskGroupMode(stored.groupMode)
+    setTaskLaneFilter(stored.laneFilter)
+    setTaskCollapsedGroupKeys(new Set(stored.collapsedGroups))
+  }, [sessionId])
+  useEffect(() => {
+    const activeSessionId = String(sessionId ?? "").trim()
+    if (!activeSessionId) return
+    TASKBOARD_SESSION_PREFS.set(activeSessionId, {
+      statusFilter: taskStatusFilter,
+      groupMode: taskGroupMode,
+      laneFilter: taskLaneFilter,
+      collapsedGroups: Array.from(taskCollapsedGroupKeys),
+    })
+  }, [sessionId, taskCollapsedGroupKeys, taskGroupMode, taskLaneFilter, taskStatusFilter])
+  useEffect(() => {
+    if (!tasksOpen || !selectedTask?.id) return
+    if (taskSelectedTaskId === selectedTask.id) return
+    setTaskSelectedTaskId(selectedTask.id)
+  }, [selectedTask?.id, taskSelectedTaskId, tasksOpen])
+  useEffect(() => {
+    if (!tasksOpen || !taskSelectedTaskId) return
+    const stableIndex = taskRows.findIndex((row: any) => row?.id === taskSelectedTaskId)
+    if (stableIndex < 0 || stableIndex === selectedTaskIndex) return
+    setTaskIndex(stableIndex)
+  }, [selectedTaskIndex, setTaskIndex, taskRows, taskSelectedTaskId, tasksOpen])
   const skillsSelection = skillsMenu.status === "ready" ? skillsMenu.selection : null
   const menus = useReplViewMenus({
     skillsMenu,
@@ -576,6 +668,9 @@ export const useReplViewController = ({
     setTaskNotice,
     setTaskSearchQuery,
     setTaskStatusFilter,
+    setTaskLaneFilter,
+    setTaskGroupMode,
+    setTaskCollapsedGroupKeys,
     setTaskTailLines,
     setTaskTailPath,
     setTaskFocusLaneId,
@@ -583,6 +678,7 @@ export const useReplViewController = ({
     setTaskFocusFollowTail,
     setTaskFocusRawMode,
     setTaskFocusTailLines,
+    taskFocusDefaultTailLines,
     taskRows,
     taskMaxScroll,
     ctreeOpen,
@@ -758,6 +854,9 @@ export const useReplViewController = ({
     setTaskScroll,
     setTaskSearchQuery,
     setTaskStatusFilter,
+    setTaskLaneFilter,
+    setTaskGroupMode,
+    setTaskCollapsedGroupKeys,
     setTaskFocusLaneId,
     setTaskFocusViewOpen,
     setTaskFocusFollowTail,
@@ -780,15 +879,20 @@ export const useReplViewController = ({
     stdout,
     taskMaxScroll,
     taskRows,
+    taskGroups,
     taskLaneOrder,
     taskScroll,
     taskSearchQuery,
     taskStatusFilter,
+    taskLaneFilter,
+    taskGroupMode,
+    taskCollapsedGroupKeys,
     taskFocusLaneId,
     taskFocusViewOpen,
     taskFocusFollowTail,
     taskFocusRawMode,
     taskFocusTailLines,
+    taskFocusDefaultTailLines,
     taskViewportRows,
     tasksOpen,
     todoMaxScroll,
@@ -807,6 +911,7 @@ export const useReplViewController = ({
     selectedCTreeIndex,
     selectedCTreeRow,
     selectedTaskIndex,
+    selectedTaskRow,
     selectedTask,
     requestTaskTail,
     usageOpen,
@@ -1015,6 +1120,7 @@ export const useReplViewController = ({
     setEscPrimedAt,
     setTasksOpen,
     setTodosOpen,
+    taskboardDefaultView,
     setTranscriptNudge,
     setVerboseOutput,
     skillsMenu,
@@ -1105,9 +1211,9 @@ export const useReplViewController = ({
     void requestTaskTail({ raw: taskFocusRawMode, tailLines: taskFocusTailLines })
     const interval = setInterval(() => {
       void requestTaskTail({ raw: taskFocusRawMode, tailLines: taskFocusTailLines })
-    }, 1500)
+    }, taskFocusRefreshMs)
     return () => clearInterval(interval)
-  }, [requestTaskTail, selectedTask, taskFocusFollowTail, taskFocusRawMode, taskFocusTailLines, taskFocusViewOpen, tasksOpen])
+  }, [requestTaskTail, selectedTask, taskFocusFollowTail, taskFocusRawMode, taskFocusTailLines, taskFocusViewOpen, taskFocusRefreshMs, tasksOpen])
 
   const modalStack = useReplViewModalStack({
     confirmState,
@@ -1163,6 +1269,9 @@ export const useReplViewController = ({
     taskScroll,
     taskSearchQuery,
     taskStatusFilter,
+    taskLaneFilter,
+    taskGroupMode,
+    taskCollapsedGroupKeys,
     permissionRequest,
     permissionQueueDepth: permissionQueueDepth ?? 0,
     permissionTab,

@@ -70,6 +70,72 @@ export const BUILTIN_TUI_PRESETS: Record<TuiPresetId, TuiConfigInput> = {
       completionTemplate: "• Worked for {duration}",
     },
   },
+  claude_like_subagents: {
+    landing: {
+      variant: "board",
+      borderStyle: "round",
+      showAsciiArt: true,
+    },
+    composer: {
+      promptPrefix: "❯",
+      placeholderClassic: "Describe the task for background agents",
+      placeholderClaude: 'Try "delegate test matrix and summarize"',
+      ruleCharacter: "─",
+      showTopRule: true,
+      showBottomRule: true,
+    },
+    statusLine: {
+      position: "above_input",
+      align: "left",
+      showWhenPending: true,
+      showOnComplete: true,
+      activeText: "· Coordinating subagents… (esc to interrupt)",
+      completionTemplate: "✻ Subagent run complete in {duration}",
+    },
+    subagents: {
+      enabled: true,
+      stripEnabled: true,
+      toastsEnabled: true,
+      taskboardEnabled: true,
+      focusEnabled: true,
+      coalesceMs: 100,
+      maxWorkItems: 300,
+      maxStepsPerTask: 80,
+    },
+  },
+  opencode_like_subagents: {
+    landing: {
+      variant: "compact",
+      borderStyle: "single",
+      showAsciiArt: true,
+    },
+    composer: {
+      promptPrefix: ">",
+      placeholderClassic: "Queue background work and inspect lanes",
+      placeholderClaude: 'Try "run async checks and show focus lane"',
+      ruleCharacter: "-",
+      showTopRule: true,
+      showBottomRule: false,
+    },
+    statusLine: {
+      position: "above_input",
+      align: "left",
+      showWhenPending: true,
+      showOnComplete: true,
+      activeText: ". Running subagent lanes (esc to interrupt)",
+      completionTemplate: ". Background run finished in {duration}",
+    },
+    subagents: {
+      enabled: true,
+      stripEnabled: true,
+      toastsEnabled: true,
+      taskboardEnabled: true,
+      focusEnabled: true,
+      coalesceMs: 120,
+      maxWorkItems: 250,
+      maxStepsPerTask: 64,
+    },
+  },
 }
 
 export const DEFAULT_TUI_PRESET: TuiPresetId = "breadboard_default"
@@ -137,4 +203,8 @@ export const DEFAULT_RESOLVED_TUI_CONFIG: ResolvedTuiConfig = {
 }
 
 export const isBuiltinPreset = (value: string): value is TuiPresetId =>
-  value === "breadboard_default" || value === "claude_code_like" || value === "codex_cli_like"
+  value === "breadboard_default" ||
+  value === "claude_code_like" ||
+  value === "codex_cli_like" ||
+  value === "claude_like_subagents" ||
+  value === "opencode_like_subagents"

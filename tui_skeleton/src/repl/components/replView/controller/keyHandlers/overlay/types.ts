@@ -14,6 +14,8 @@ export type OverlayKeyInfo = {
   isCtrlB: boolean
   isCtrlY: boolean
   isCtrlG: boolean
+  isHomeKey: boolean
+  isEndKey: boolean
 }
 
 export type OverlayHandlerResult = boolean | undefined

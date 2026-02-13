@@ -46,6 +46,10 @@ export const useOverlayKeys = (context: OverlayHandlerContext): KeyHandler =>
       const isCtrlB = key.ctrl && lowerChar === "b"
       const isCtrlY = (key.ctrl && lowerChar === "y") || char === "\u0019"
       const isCtrlG = (key.ctrl && lowerChar === "g") || char === "\u0007"
+      const hasHomeChar = char === "\u001b[H" || char === "\u001b[1~" || char === "\u001bOH"
+      const hasEndChar = char === "\u001b[F" || char === "\u001b[4~" || char === "\u001bOF"
+      const isHomeKey = Boolean((key as Record<string, unknown>).home) || hasHomeChar
+      const isEndKey = Boolean((key as Record<string, unknown>).end) || hasEndChar
 
       const info: OverlayKeyInfo = {
         char,
@@ -59,6 +63,8 @@ export const useOverlayKeys = (context: OverlayHandlerContext): KeyHandler =>
         isCtrlB,
         isCtrlY,
         isCtrlG,
+        isHomeKey,
+        isEndKey,
       }
 
       const handlers = [

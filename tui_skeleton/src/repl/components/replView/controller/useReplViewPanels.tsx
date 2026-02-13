@@ -15,8 +15,23 @@ import { splitUnifiedDiff } from "../utils/diff.js"
 import { useComposerController } from "../features/composer/useComposerController.js"
 import { computeInputLocked, computeOverlayActive } from "../keybindings/overlayState.js"
 import { DELTA_GLYPH, GLYPHS, uiText } from "../theme.js"
+import {
+  buildTaskGroups,
+  filterTasksForTaskboard,
+  flattenTaskGroups,
+  normalizeTaskStatusGroup,
+  sanitizeTaskPreview,
+  sortTasksForStatusGrouping,
+} from "./taskboardStatus.js"
 
 type PanelsContext = Record<string, any>
+
+const parseBoundedInt = (raw: string | undefined, fallback: number, min: number, max: number): number => {
+  if (raw == null) return fallback
+  const parsed = Number(raw.trim())
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, Math.floor(parsed)))
+}
 
 export const useReplViewPanels = (context: PanelsContext) => {
   const {
@@ -73,8 +88,11 @@ export const useReplViewPanels = (context: PanelsContext) => {
     taskIndex,
     taskFocusLaneId,
     taskFocusViewOpen,
+    taskGroupMode,
+    taskCollapsedGroupKeys,
     taskSearchQuery,
     taskStatusFilter,
+    taskLaneFilter,
     setTaskNotice,
     setTaskTailLines,
     setTaskTailPath,
@@ -84,6 +102,14 @@ export const useReplViewPanels = (context: PanelsContext) => {
     ctreeIncludePreviews,
     onReadFile,
   } = context
+  const focusRawMaxBytes = useMemo(
+    () => parseBoundedInt(process.env.BREADBOARD_SUBAGENTS_FOCUS_RAW_MAX_BYTES, 120_000, 32_000, 1_000_000),
+    [],
+  )
+  const focusSnippetMaxBytes = useMemo(
+    () => parseBoundedInt(process.env.BREADBOARD_SUBAGENTS_FOCUS_SNIPPET_MAX_BYTES, 40_000, 8_000, 500_000),
+    [],
+  )
 
   const inspectRawLines = useMemo(() => {
     if (!inspectRawOpen || inspectMenu.status !== "ready") return []
@@ -559,7 +585,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
         description: base.description ?? item.title ?? null,
         subagentType: base.subagentType ?? item.laneLabel ?? null,
         status: base.status ?? item.status ?? null,
-        outputExcerpt: base.outputExcerpt ?? item.lastSafeExcerpt ?? null,
+        outputExcerpt: sanitizeTaskPreview(base.outputExcerpt ?? item.lastSafeExcerpt ?? null),
         createdAt: base.createdAt ?? item.createdAt ?? item.updatedAt ?? 0,
         artifactPath: base.artifactPath ?? item.artifactPaths?.[0] ?? null,
         updatedAt: Math.max(base.updatedAt ?? 0, item.updatedAt ?? 0),
@@ -575,67 +601,79 @@ export const useReplViewPanels = (context: PanelsContext) => {
     }
     return merged.sort((a: any, b: any) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
   }, [subagentTaskboardEnabled, tasks, workGraph])
-  const filteredTasks = useMemo(() => {
-    const query = taskSearchQuery.trim().toLowerCase()
-    const statusFilter = taskStatusFilter
-    return sortedTasks.filter((task: any) => {
-      if (statusFilter !== "all") {
-        const normalized = (task.status ?? "").toLowerCase()
-        if (!normalized || !normalized.includes(statusFilter)) {
-          return false
-        }
-      }
-      if (!query) return true
-      const haystack = [
-        task.id,
-        task.description ?? "",
-        task.subagentType ?? "",
-        task.status ?? "",
-        task.kind ?? "",
-        task.sessionId ?? "",
-      ]
-        .join(" ")
-        .toLowerCase()
-      return haystack.includes(query)
-    })
-  }, [sortedTasks, taskSearchQuery, taskStatusFilter])
-  const taskRows = useMemo(() => {
-    return filteredTasks.map((task: any) => {
-      const status = (task.status ?? "").toLowerCase()
-      const labelParts = []
-      const description = task.description || task.kind || "task"
-      labelParts.push(description)
-      if (task.subagentType) {
-        labelParts.push(`(${task.subagentType})`)
-      }
-      const counters = task.counters
-      const progressLabel =
-        counters && Number.isFinite(counters.total) && counters.total > 0
-          ? `${counters.completed ?? 0}/${counters.total}`
-          : null
-      return {
-        id: task.id,
-        status,
-        label: labelParts.join(" "),
-        progressLabel,
-        task,
-      }
-    })
-  }, [filteredTasks])
   const taskLaneOrder = useMemo(() => {
-    const explicitOrder = Array.isArray(workGraph?.laneOrder) ? workGraph.laneOrder.filter((id: unknown) => typeof id === "string") : []
+    const explicitOrder = Array.isArray(workGraph?.laneOrder)
+      ? workGraph.laneOrder.filter((id: unknown) => typeof id === "string")
+      : []
     if (explicitOrder.length > 0) return explicitOrder
     const fallback = new Set<string>()
-    for (const row of taskRows) {
-      const laneId = row.task?.laneId
-      if (typeof laneId === "string" && laneId.length > 0) fallback.add(laneId)
+    for (const task of sortedTasks) {
+      const laneId = typeof task?.laneId === "string" && task.laneId.trim().length > 0 ? task.laneId : null
+      if (laneId) fallback.add(laneId)
     }
     return Array.from(fallback)
-  }, [taskRows, workGraph?.laneOrder])
+  }, [sortedTasks, workGraph?.laneOrder])
+  const laneLabelById = useMemo(() => {
+    const labels: Record<string, string> = {}
+    const source = (workGraph?.lanesById ?? {}) as Record<string, any>
+    for (const [laneId, lane] of Object.entries(source)) {
+      if (typeof laneId !== "string" || laneId.trim().length === 0) continue
+      if (typeof lane?.label === "string" && lane.label.trim().length > 0) {
+        labels[laneId] = lane.label.trim()
+        continue
+      }
+      labels[laneId] = laneId
+    }
+    return labels
+  }, [workGraph?.lanesById])
+  const filteredTasks = useMemo(() => {
+    return filterTasksForTaskboard(sortedTasks, {
+      query: taskSearchQuery,
+      statusFilter: taskStatusFilter,
+      laneFilter: taskLaneFilter,
+    })
+  }, [sortedTasks, taskLaneFilter, taskSearchQuery, taskStatusFilter])
+  const taskGroups = useMemo(
+    () =>
+      buildTaskGroups(filteredTasks, {
+        mode: taskGroupMode,
+        laneOrder: taskLaneOrder,
+        laneLabelById,
+      }),
+    [filteredTasks, taskGroupMode, taskLaneOrder, laneLabelById],
+  )
+  const mapTaskRow = useCallback((task: any, groupKey: string, groupLabel: string) => {
+    const status = normalizeTaskStatusGroup(task.status)
+    const labelParts = []
+    const description = task.description || task.kind || "task"
+    labelParts.push(description)
+    if (task.subagentType) {
+      labelParts.push(`(${task.subagentType})`)
+    }
+    const counters = task.counters
+    const progressLabel =
+      counters && Number.isFinite(counters.total) && counters.total > 0
+        ? `${counters.completed ?? 0}/${counters.total}`
+        : null
+    return {
+      id: task.id,
+      status,
+      label: labelParts.join(" "),
+      progressLabel,
+      groupKey,
+      groupLabel,
+      task,
+    }
+  }, [])
+  const taskRows = useMemo(() => {
+    const collapsed = taskCollapsedGroupKeys instanceof Set ? taskCollapsedGroupKeys : new Set<string>()
+    return flattenTaskGroups(taskGroups, collapsed).map((entry) => mapTaskRow(entry.task, entry.groupKey, entry.groupLabel))
+  }, [mapTaskRow, taskCollapsedGroupKeys, taskGroups])
   const taskRowsForDisplay = useMemo(() => {
     if (!taskFocusViewOpen || !taskFocusLaneId) return taskRows
-    return taskRows.filter((row: any) => row.task?.laneId === taskFocusLaneId)
-  }, [taskFocusLaneId, taskFocusViewOpen, taskRows])
+    const laneTasks = filteredTasks.filter((task: any) => task?.laneId === taskFocusLaneId)
+    return sortTasksForStatusGrouping(laneTasks).map((task: any) => mapTaskRow(task, `lane:${taskFocusLaneId}`, taskFocusLaneId))
+  }, [filteredTasks, mapTaskRow, taskFocusLaneId, taskFocusViewOpen, taskRows])
   const taskFocusLaneLabel = useMemo(() => {
     if (!taskFocusLaneId) return null
     const lane = workGraph?.lanesById?.[taskFocusLaneId]
@@ -648,7 +686,8 @@ export const useReplViewPanels = (context: PanelsContext) => {
     if (taskRowsForDisplay.length === 0) return 0
     return Math.max(0, Math.min(taskIndex, taskRowsForDisplay.length - 1))
   }, [taskIndex, taskRowsForDisplay.length])
-  const selectedTask = useMemo(() => taskRowsForDisplay[selectedTaskIndex]?.task ?? null, [selectedTaskIndex, taskRowsForDisplay])
+  const selectedTaskRow = useMemo(() => taskRowsForDisplay[selectedTaskIndex] ?? null, [selectedTaskIndex, taskRowsForDisplay])
+  const selectedTask = useMemo(() => selectedTaskRow?.task ?? null, [selectedTaskRow])
 
   const { rows: ctreeRows, childrenByParent: ctreeChildrenByParent } = useMemo(
     () => buildCTreeTreeRows(ctreeTree ?? null, ctreeCollapsedNodes),
@@ -728,9 +767,10 @@ export const useReplViewPanels = (context: PanelsContext) => {
         const readMode: "cat" | "snippet" = rawMode ? "cat" : "snippet"
         const content = await onReadFile(pathCandidate, {
           mode: readMode,
-          headLines: rawMode ? undefined : 4,
+          // Tail-first loading keeps first open latency bounded for large artifacts.
+          headLines: rawMode ? undefined : 0,
           tailLines: rawMode ? undefined : tailLines,
-          maxBytes: options?.maxBytes ?? (rawMode ? 120_000 : 40_000),
+          maxBytes: options?.maxBytes ?? (rawMode ? focusRawMaxBytes : focusSnippetMaxBytes),
         })
         const lines = content.content.replace(/\\r\\n?/g, "\\n").split("\\n")
         setTaskTailLines(lines)
@@ -744,7 +784,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
       }
     }
     setTaskNotice(lastError ?? "Unable to load task output.")
-  }, [onReadFile, selectedTask, setTaskNotice, setTaskTailLines, setTaskTailPath])
+  }, [focusRawMaxBytes, focusSnippetMaxBytes, onReadFile, selectedTask, setTaskNotice, setTaskTailLines, setTaskTailPath])
 
   return {
     inspectRawLines,
@@ -816,12 +856,17 @@ export const useReplViewPanels = (context: PanelsContext) => {
     todoViewportRows,
     todoMaxScroll,
     taskRows: taskRowsForDisplay,
+    taskGroups,
+    taskGroupMode,
+    taskCollapsedGroupKeys,
+    taskLaneFilter,
     taskLaneOrder,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskViewportRows,
     taskMaxScroll,
     selectedTaskIndex,
+    selectedTaskRow,
     selectedTask,
     ctreeRows,
     ctreeCollapsibleIds,

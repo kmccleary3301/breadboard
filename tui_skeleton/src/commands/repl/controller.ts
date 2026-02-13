@@ -83,6 +83,7 @@ import {
 } from "./controllerActivityRuntime.js"
 import {
   createWorkGraphState,
+  formatWorkGraphReducerTrace,
   reduceWorkGraphEvents,
   resolveWorkGraphLimits,
   type WorkGraphReduceInput,
@@ -666,7 +667,7 @@ export class ReplSessionController extends EventEmitter {
     if (!this.runtimeFlags.subagentWorkGraphEnabled || this.workGraphQueue.length === 0) return
     const queue = this.workGraphQueue
     this.workGraphQueue = []
-    this.workGraph = reduceWorkGraphEvents(
+    const next = reduceWorkGraphEvents(
       this.workGraph,
       queue,
       resolveWorkGraphLimits({
@@ -674,12 +675,24 @@ export class ReplSessionController extends EventEmitter {
         maxStepsPerTask: this.runtimeFlags.subagentMaxStepsPerTask,
       }),
     )
+    if (process.env.BREADBOARD_SUBAGENTS_TRACE_REDUCER === "1") {
+      console.debug(formatWorkGraphReducerTrace(this.workGraph, next, queue))
+    }
+    this.workGraph = next
     this.runtimeTelemetry = bumpTelemetry(this.runtimeTelemetry, "workgraphFlushes")
   }
 
   private resolveProviderCapabilitiesSnapshot(modelId: string | null): void {
     let overrideSchema: unknown = undefined
     const rawOverride = process.env.BREADBOARD_TUI_PROVIDER_CAPABILITIES_OVERRIDES
+    const parseWhitelistEnv = (rawValue?: string): string[] | null => {
+      if (!rawValue) return null
+      const items = rawValue
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+      return items.length > 0 ? items : null
+    }
     if (rawOverride && rawOverride.trim().length > 0) {
       try {
         overrideSchema = JSON.parse(rawOverride)
@@ -695,6 +708,8 @@ export class ReplSessionController extends EventEmitter {
       preset: process.env.BREADBOARD_TUI_CAPABILITY_PRESET ?? null,
       overrideSchema,
       runtimeOverrides,
+      providerWhitelist: parseWhitelistEnv(process.env.BREADBOARD_TUI_CAPABILITY_PROVIDER_WHITELIST),
+      modelWhitelist: parseWhitelistEnv(process.env.BREADBOARD_TUI_CAPABILITY_MODEL_WHITELIST),
     })
     this.providerCapabilities = {
       provider: result.provider,

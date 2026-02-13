@@ -180,6 +180,48 @@ describe("resolveTuiConfig", () => {
     expect(resolved.statusLine.completionTemplate).toBe("• Worked for {duration}")
   })
 
+  it("loads claude_like_subagents preset defaults", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bb-tui-config-claude-subagents-preset-"))
+    const resolved = await resolveTuiConfig({
+      workspace: root,
+      cliPreset: "claude_like_subagents",
+      cliStrict: true,
+      colorAllowed: true,
+    })
+    expect(resolved.preset).toBe("claude_like_subagents")
+    expect(resolved.subagents.enabled).toBe(true)
+    expect(resolved.subagents.taskboardEnabled).toBe(true)
+    expect(resolved.subagents.focusEnabled).toBe(true)
+    expect(resolved.subagents.maxWorkItems).toBe(300)
+  })
+
+  it("loads opencode_like_subagents preset defaults", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bb-tui-config-opencode-subagents-preset-"))
+    const resolved = await resolveTuiConfig({
+      workspace: root,
+      cliPreset: "opencode_like_subagents",
+      cliStrict: true,
+      colorAllowed: true,
+    })
+    expect(resolved.preset).toBe("opencode_like_subagents")
+    expect(resolved.composer.promptPrefix).toBe(">")
+    expect(resolved.subagents.enabled).toBe(true)
+    expect(resolved.subagents.maxStepsPerTask).toBe(64)
+  })
+
+  it("keeps default profile unchanged when no subagent preset is selected", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "bb-tui-config-default-compat-"))
+    const resolved = await resolveTuiConfig({
+      workspace: root,
+      cliStrict: true,
+      colorAllowed: true,
+    })
+    expect(resolved.preset).toBe("breadboard_default")
+    expect(resolved.subagents.enabled).toBe(false)
+    expect(resolved.subagents.taskboardEnabled).toBe(false)
+    expect(resolved.subagents.focusEnabled).toBe(false)
+  })
+
   it("resolves subagents settings across yaml and env layers", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "bb-tui-config-subagents-"))
     const cliConfigPath = path.join(root, "subagents.yaml")

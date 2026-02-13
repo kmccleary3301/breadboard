@@ -55,6 +55,9 @@ type ModalStackContext = {
   taskScroll: number
   taskSearchQuery: string
   taskStatusFilter: string
+  taskLaneFilter: string
+  taskGroupMode: string
+  taskCollapsedGroupKeys: Set<string>
   permissionRequest: unknown
   permissionQueueDepth: number
   permissionTab: unknown
@@ -141,6 +144,9 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     taskScroll,
     taskSearchQuery,
     taskStatusFilter,
+    taskLaneFilter,
+    taskGroupMode,
+    taskCollapsedGroupKeys,
     permissionRequest,
     permissionQueueDepth,
     permissionTab,
@@ -185,9 +191,11 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     todoViewportRows,
     todoMaxScroll,
     taskRows,
+    taskGroups,
     taskViewportRows,
     taskMaxScroll,
     selectedTaskIndex,
+    selectedTaskRow,
     selectedTask,
     taskNotice,
     taskTailLines,
@@ -303,8 +311,13 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     taskViewportRows,
     taskSearchQuery,
     taskStatusFilter,
+    taskLaneFilter,
+    taskGroupMode,
+    taskCollapsedGroupKeys,
     selectedTaskIndex,
+    selectedTaskRow,
     selectedTask,
+    taskGroups,
     taskNotice,
     taskTailLines,
     taskTailPath,

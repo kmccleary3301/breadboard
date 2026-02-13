@@ -352,3 +352,27 @@ export const reduceWorkGraphEvents = (
   }
   return state
 }
+
+export const formatWorkGraphReducerTrace = (
+  previous: WorkGraphState,
+  next: WorkGraphState,
+  events: ReadonlyArray<WorkGraphReduceInput>,
+): string => {
+  const eventCount = events.length
+  const eventTypes = Array.from(new Set(events.map((event) => event.eventType))).slice(0, 8).join(",")
+  const seqs = events
+    .map((event) => event.seq)
+    .filter((seq): seq is number => typeof seq === "number" && Number.isFinite(seq))
+  const seqRange = seqs.length > 0 ? `${Math.min(...seqs)}..${Math.max(...seqs)}` : "n/a"
+  const keyDelta = Math.max(0, next.processedEventKeys.length - previous.processedEventKeys.length)
+  return [
+    "[workgraph-trace]",
+    `events=${eventCount}`,
+    `seq=${seqRange}`,
+    `types=${eventTypes || "n/a"}`,
+    `items=${previous.itemOrder.length}->${next.itemOrder.length}`,
+    `lanes=${previous.laneOrder.length}->${next.laneOrder.length}`,
+    `keysApplied=${keyDelta}`,
+    `lastSeq=${previous.lastSeq}->${next.lastSeq}`,
+  ].join(" ")
+}
