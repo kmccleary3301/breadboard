@@ -700,32 +700,44 @@ jobs:
               print("\n".join(lines))
 
           def summarize_lane(lane: str):
-              paths = sorted(glob.glob(f"tui_skeleton/ui_baselines/{lane}/_runs/run-*/_diffs/index.json"))
-              if not paths:
-                  append([f"### Tier-1 {lane} strict", "", f"- missing `tui_skeleton/ui_baselines/{lane}/_runs/run-*/_diffs/index.json`", ""])
-                  return
-              p = paths[-1]
-              with open(p, "r", encoding="utf-8") as f:
-                  data = json.load(f)
-              total = int(data.get(\"okCount\", 0)) + int(data.get(\"failCount\", 0))
-              append(
-                  [
-                      f\"### Tier-1 {lane} strict\",
-                      \"\",
-                      f\"- run: `{p.split('/_diffs/')[0]}`\",
-                      f\"- scenarios: `{total}`\",
-                      f\"- ok: `{data.get('okCount', 0)}`\",
-                      f\"- fail: `{data.get('failCount', 0)}`\",
-                      f\"- missing_blessed: `{data.get('missingBlessed', 0)}`\",
-                      f\"- missing_candidate: `{data.get('missingCandidate', 0)}`\",
-                      f\"- diff index: `{p}`\",
-                      \"\",
-                  ]
-              )
+              try:
+                  paths = sorted(glob.glob(f"tui_skeleton/ui_baselines/{lane}/_runs/run-*/_diffs/index.json"))
+                  if not paths:
+                      append(
+                          [
+                              f"### Tier-1 {lane} strict",
+                              "",
+                              f"- missing `tui_skeleton/ui_baselines/{lane}/_runs/run-*/_diffs/index.json`",
+                              "",
+                          ]
+                      )
+                      return
 
-          summarize_lane(\"u1\")
-          summarize_lane(\"u2\")
-          summarize_lane(\"u3\")
+                  p = paths[-1]
+                  with open(p, "r", encoding="utf-8") as f:
+                      data = json.load(f)
+
+                  total = int(data.get("okCount", 0)) + int(data.get("failCount", 0))
+                  append(
+                      [
+                          f"### Tier-1 {lane} strict",
+                          "",
+                          f"- run: `{p.split('/_diffs/')[0]}`",
+                          f"- scenarios: `{total}`",
+                          f"- ok: `{data.get('okCount', 0)}`",
+                          f"- fail: `{data.get('failCount', 0)}`",
+                          f"- missing_blessed: `{data.get('missingBlessed', 0)}`",
+                          f"- missing_candidate: `{data.get('missingCandidate', 0)}`",
+                          f"- diff index: `{p}`",
+                          "",
+                      ]
+                  )
+              except Exception as e:
+                  append([f"### Tier-1 {lane} strict", "", f"- summary error: `{type(e).__name__}: {e}`", ""])
+
+          summarize_lane("u1")
+          summarize_lane("u2")
+          summarize_lane("u3")
           PY
 
       - name: Upload TUI golden artifacts
