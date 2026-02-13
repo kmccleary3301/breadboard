@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.api.cli_bridge.service import SessionService, _TailLineIndexCache
+from agentic_coder_prototype.api.cli_bridge.service import SessionService
+from agentic_coder_prototype.api.cli_bridge.tail_index import _TailLineIndexCache
 
 
 def _write_lines(path: Path, lines: list[str], *, trailing_newline: bool = False) -> None:
@@ -58,4 +59,3 @@ def test_read_snippet_head_tail_smoke(tmp_path: Path, tail_lines: int) -> None:
     snippet, returned_bytes = SessionService._read_snippet(target, head_lines=3, tail_lines=tail_lines, max_bytes=256)
     assert isinstance(snippet, str)
     assert returned_bytes > 0
-

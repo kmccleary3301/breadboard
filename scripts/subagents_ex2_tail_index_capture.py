@@ -14,8 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-# Import the implementation under test from the repo.
-from agentic_coder_prototype.api.cli_bridge.service import _TailLineIndexCache  # type: ignore  # noqa: E402
+# Import the implementation under test from the repo (dependency-free).
+from agentic_coder_prototype.api.cli_bridge.tail_index import _TailLineIndexCache  # type: ignore  # noqa: E402
 
 
 def _percentile(values: list[float], q: float) -> float:
