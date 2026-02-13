@@ -632,19 +632,113 @@ jobs:
         working-directory: tui_skeleton
         run: npm run tui:goldens:report
 
+      - name: TUI goldens (report-only) summary (ubuntu only)
+        if: ${{ always() && matrix.os == 'ubuntu-latest' }}
+        run: |
+          python - <<'PY'
+          import glob, json, os
+
+          def append(lines):
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with open(summary, "a", encoding="utf-8") as out:
+                      out.write("\n".join(lines) + "\n")
+              print("\n".join(lines))
+
+          paths = sorted(glob.glob("misc/tui_goldens/artifacts/run-*/_diffs/index.json"))
+          if not paths:
+              append(["### TUI goldens report-only", "", "- missing `misc/tui_goldens/artifacts/run-*/_diffs/index.json`", ""])
+              raise SystemExit(0)
+
+          p = paths[-1]
+          with open(p, "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          total = int(data.get("okCount", 0)) + int(data.get("failCount", 0))
+          append(
+              [
+                  "### TUI goldens report-only",
+                  "",
+                  f"- run: `{p.split('/_diffs/')[0]}`",
+                  f"- scenarios: `{total}`",
+                  f"- ok: `{data.get('okCount', 0)}`",
+                  f"- fail: `{data.get('failCount', 0)}`",
+                  f"- missing_blessed: `{data.get('missingBlessed', 0)}`",
+                  f"- missing_candidate: `{data.get('missingCandidate', 0)}`",
+                  f"- diff index: `{p}`",
+                  "",
+              ]
+          )
+          PY
+
       - name: Claude alignment (report-only)
         working-directory: tui_skeleton
         run: npm run claude:compare:report
 
-      - name: TUI goldens (strict gate, ubuntu only)
+      - name: Tier-1 UI baselines (strict gate, ubuntu only)
         if: ${{ matrix.os == 'ubuntu-latest' }}
         working-directory: tui_skeleton
         run: |
-          if [ -f ../misc/tui_goldens/manifests/tui_goldens.yaml ]; then
-            npm run tui:goldens:strict
-          else
-            echo "Skipping strict TUI goldens gate: missing misc/tui_goldens/manifests/tui_goldens.yaml"
-          fi
+          unset NO_COLOR || true
+          export BREADBOARD_ASCII=0
+          export BREADBOARD_TUI_PRESET=breadboard_default
+          node --import tsx scripts/tui_u1_goldens_strict.ts
+          node --import tsx scripts/tui_u2_goldens_strict.ts
+          node --import tsx scripts/tui_u3_goldens_strict.ts
+
+      - name: Tier-1 UI baselines summary (ubuntu only)
+        if: ${{ always() && matrix.os == 'ubuntu-latest' }}
+        run: |
+          python - <<'PY'
+          import glob, json, os
+
+          def append(lines):
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with open(summary, "a", encoding="utf-8") as out:
+                      out.write("\n".join(lines) + "\n")
+              print("\n".join(lines))
+
+          def summarize_lane(lane: str):
+              try:
+                  paths = sorted(glob.glob(f"tui_skeleton/ui_baselines/{lane}/_runs/run-*/_diffs/index.json"))
+                  if not paths:
+                      append(
+                          [
+                              f"### Tier-1 {lane} strict",
+                              "",
+                              f"- missing `tui_skeleton/ui_baselines/{lane}/_runs/run-*/_diffs/index.json`",
+                              "",
+                          ]
+                      )
+                      return
+
+                  p = paths[-1]
+                  with open(p, "r", encoding="utf-8") as f:
+                      data = json.load(f)
+
+                  total = int(data.get("okCount", 0)) + int(data.get("failCount", 0))
+                  append(
+                      [
+                          f"### Tier-1 {lane} strict",
+                          "",
+                          f"- run: `{p.split('/_diffs/')[0]}`",
+                          f"- scenarios: `{total}`",
+                          f"- ok: `{data.get('okCount', 0)}`",
+                          f"- fail: `{data.get('failCount', 0)}`",
+                          f"- missing_blessed: `{data.get('missingBlessed', 0)}`",
+                          f"- missing_candidate: `{data.get('missingCandidate', 0)}`",
+                          f"- diff index: `{p}`",
+                          "",
+                      ]
+                  )
+              except Exception as e:
+                  append([f"### Tier-1 {lane} strict", "", f"- summary error: `{type(e).__name__}: {e}`", ""])
+
+          summarize_lane("u1")
+          summarize_lane("u2")
+          summarize_lane("u3")
+          PY
 
       - name: Upload TUI golden artifacts
         if: always()
@@ -653,6 +747,9 @@ jobs:
           name: tui-goldens-${{ matrix.os }}
           path: |
             misc/tui_goldens/artifacts/run-*/**
+            tui_skeleton/ui_baselines/u1/_runs/run-*/**
+            tui_skeleton/ui_baselines/u2/_runs/run-*/**
+            tui_skeleton/ui_baselines/u3/_runs/run-*/**
           if-no-files-found: ignore
 
       - name: Upload Claude alignment artifacts
