@@ -46,6 +46,7 @@ type ModalStackContext = {
   inspectRawScroll: number
   tasks: unknown[]
   tasksOpen: boolean
+  taskFocusViewOpen: boolean
   taskFocusLaneId: string | null
   taskFocusLaneLabel: string | null
   taskScroll: number
@@ -128,6 +129,7 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     inspectRawScroll,
     tasks,
     tasksOpen,
+    taskFocusViewOpen,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,
@@ -283,6 +285,7 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     formatCTreeNodePreview,
     formatCTreeNodeFlags,
     tasksOpen,
+    taskFocusViewOpen,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,

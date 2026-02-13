@@ -70,7 +70,9 @@ const baseContext = () => ({
   taskRows: [{ id: "task-1", task: { laneId: "lane-a" } }],
   taskLaneOrder: ["lane-a", "lane-b"],
   taskFocusLaneId: null as string | null,
+  taskFocusViewOpen: false,
   setTaskFocusLaneId: vi.fn(),
+  setTaskFocusViewOpen: vi.fn(),
   setTaskSearchQuery: vi.fn(),
   setTaskStatusFilter: vi.fn(),
   selectedTaskIndex: 0,
@@ -96,12 +98,13 @@ describe("handleListOverlayKeys task focus mode", () => {
     )
     expect(handled).toBe(true)
     expect(context.setTaskFocusLaneId).toHaveBeenCalledWith("lane-a")
+    expect(context.setTaskFocusViewOpen).toHaveBeenCalledWith(true)
     expect(context.setTaskIndex).toHaveBeenCalledWith(0)
     expect(context.setTaskScroll).toHaveBeenCalledWith(0)
   })
 
-  it("cycles focused lane with left/right arrows", () => {
-    const context = { ...baseContext(), taskFocusLaneId: "lane-a" }
+  it("cycles focused lane with left/right arrows inside focus view", () => {
+    const context = { ...baseContext(), taskFocusViewOpen: true, taskFocusLaneId: "lane-a" }
     const handled = handleListOverlayKeys(
       context,
       makeInfo({ key: { rightArrow: true } }),
@@ -111,7 +114,7 @@ describe("handleListOverlayKeys task focus mode", () => {
   })
 
   it("cycles focused lane with bracket fallback keys", () => {
-    const context = { ...baseContext(), taskFocusLaneId: "lane-b" }
+    const context = { ...baseContext(), taskFocusViewOpen: true, taskFocusLaneId: "lane-b" }
     const handled = handleListOverlayKeys(
       context,
       makeInfo({ char: "]", lowerChar: "]" }),
@@ -120,26 +123,33 @@ describe("handleListOverlayKeys task focus mode", () => {
     expect(context.setTaskFocusLaneId).toHaveBeenCalledWith("lane-a")
   })
 
-  it("exits focus lane mode on `f` when already focused", () => {
-    const context = { ...baseContext(), taskFocusLaneId: "lane-a" }
+  it("closes focus view on `f` when already focused", () => {
+    const context = { ...baseContext(), taskFocusViewOpen: true, taskFocusLaneId: "lane-a" }
     const handled = handleListOverlayKeys(
       context,
       makeInfo({ char: "f", lowerChar: "f" }),
     )
     expect(handled).toBe(true)
-    expect(context.setTaskFocusLaneId).toHaveBeenCalledWith(null)
-    expect(context.setTaskIndex).toHaveBeenCalledWith(0)
-    expect(context.setTaskScroll).toHaveBeenCalledWith(0)
+    expect(context.setTaskFocusViewOpen).toHaveBeenCalledWith(false)
   })
 
-  it("drops focus mode when typing a search character", () => {
+  it("updates search query when typing in taskboard list mode", () => {
     const context = { ...baseContext(), taskFocusLaneId: "lane-b" }
     const handled = handleListOverlayKeys(
       context,
       makeInfo({ char: "x", lowerChar: "x" }),
     )
     expect(handled).toBe(true)
-    expect(context.setTaskFocusLaneId).toHaveBeenCalledWith(null)
     expect(context.setTaskSearchQuery).toHaveBeenCalled()
+  })
+
+  it("suppresses search typing while focus view is open", () => {
+    const context = { ...baseContext(), taskFocusViewOpen: true, taskFocusLaneId: "lane-a" }
+    const handled = handleListOverlayKeys(
+      context,
+      makeInfo({ char: "x", lowerChar: "x" }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTaskSearchQuery).not.toHaveBeenCalled()
   })
 })

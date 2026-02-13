@@ -25,6 +25,7 @@ export const handleGlobalOverlayKeys = (
     exitTranscriptViewer,
     setTodosOpen,
     setTasksOpen,
+    setTaskFocusViewOpen,
     ctreeOpen,
     skillsMenu,
     onSkillsMenuOpen,
@@ -132,12 +133,14 @@ export const handleGlobalOverlayKeys = (
   }
   if (isCtrlB) {
     setCtreeOpen(false)
+    setTaskFocusViewOpen(false)
     setTasksOpen((prev: boolean) => !prev)
     return true
   }
   if (isCtrlY) {
     if (!ctreeOpen) {
       setTodosOpen(false)
+      setTaskFocusViewOpen(false)
       setTasksOpen(false)
     }
     setCtreeOpen((prev: boolean) => !prev)

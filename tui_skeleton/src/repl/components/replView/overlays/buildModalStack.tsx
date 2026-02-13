@@ -94,6 +94,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     formatCTreeNodePreview,
     formatCTreeNodeFlags,
     tasksOpen,
+    taskFocusViewOpen,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,
@@ -847,23 +848,17 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           }
         }
         const lineWidth = Math.max(12, panelWidth - 6)
-        const titleLines: SelectPanelLine[] = [
-          { text: CHALK.bold(taskFocusLaneId ? "Task Focus" : "Background tasks"), color: COLORS.info },
-        ]
+        const titleLines: SelectPanelLine[] = [{ text: CHALK.bold("Background tasks"), color: COLORS.info }]
         const hintLines: SelectPanelLine[] = [
           {
             text:
               tasks.length === 0
                 ? "No background tasks yet."
-                : taskFocusLaneId
-                  ? `${taskRows.length} in lane • ↑/↓ select • ←/→ or [/] lane • F exit focus • Enter tail • Esc close`
-                  : `${tasks.length} task${tasks.length === 1 ? "" : "s"} • ↑/↓ select • PgUp/PgDn page • Enter tail • Esc close`,
+                : `${tasks.length} task${tasks.length === 1 ? "" : "s"} • ↑/↓ select • PgUp/PgDn page • F focus lane • Enter tail • Esc close`,
             color: "gray",
           },
           {
-            text: taskFocusLaneId
-              ? `Lane: ${taskFocusLaneLabel ?? taskFocusLaneId}`
-              : `Search: ${taskSearchQuery.length > 0 ? taskSearchQuery : CHALK.dim("<type to filter>")} • Filter: ${taskStatusFilter} (0 all · 1 run · 2 done · 3 fail) • F focus lane`,
+            text: `Search: ${taskSearchQuery.length > 0 ? taskSearchQuery : CHALK.dim("<type to filter>")} • Filter: ${taskStatusFilter} (0 all · 1 run · 2 done · 3 fail)`,
             color: "dim",
           },
         ]
@@ -871,9 +866,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         if (taskRows.length === 0) {
           panelRows.push({
             kind: "empty",
-            text: taskFocusLaneId
-              ? "No tasks in this lane for current filters."
-              : "No tasks match the current filter.",
+            text: "No tasks match the current filter.",
             color: "dim",
           })
         } else {
@@ -945,6 +938,103 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           footerLines.push({ text: taskTailPath ? `Tail: ${taskTailPath}` : "Tail output", color: "dim" })
           taskTailLines.forEach((line: any) => footerLines.push({ text: line, color: "dim" }))
         }
+        return (
+          <SelectPanel
+            width={panelWidth}
+            borderColor={COLORS.info}
+            paddingX={2}
+            paddingY={1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={panelRows}
+            footerLines={footerLines}
+          />
+        )
+      },
+    })
+  }
+
+  if (tasksOpen && taskFocusViewOpen) {
+    modalStack.push({
+      id: "task-focus",
+      layout: isBreadboardProfile ? "sheet" : undefined,
+      render: () => {
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
+        const scroll = Math.max(0, Math.min(taskScroll, taskMaxScroll))
+        const visible = taskRows.slice(scroll, scroll + taskViewportRows)
+        const lineWidth = Math.max(12, panelWidth - 6)
+        const titleLines: SelectPanelLine[] = [
+          { text: CHALK.bold("Task Focus"), color: COLORS.info },
+          {
+            text: taskFocusLaneLabel ?? taskFocusLaneId ?? "unknown lane",
+            color: "dim",
+          },
+        ]
+        const hintLines: SelectPanelLine[] = [
+          {
+            text: `${taskRows.length} in lane • ↑/↓ select • ←/→ or [/] lane • Enter tail • F/Esc return`,
+            color: "gray",
+          },
+        ]
+
+        const colorForStatus = (status?: string) => {
+          switch (status) {
+            case "running":
+              return COLORS.info
+            case "completed":
+              return COLORS.success
+            case "failed":
+              return COLORS.error
+            default:
+              return COLORS.warning
+          }
+        }
+
+        const panelRows: SelectPanelRow[] = []
+        if (taskRows.length === 0) {
+          panelRows.push({ kind: "empty", text: "No tasks in this lane.", color: "dim" })
+        } else {
+          visible.forEach((row: any, idx: number) => {
+            const globalIndex = scroll + idx
+            const isActive = globalIndex === selectedTaskIndex
+            const statusLabel = (row.status || "update").replace(/[_-]+/g, " ")
+            const idLabel = row.id.slice(0, 8)
+            const suffix = CHALK.dim(`#${idLabel}`)
+            const leftWidth = Math.max(0, lineWidth - stripAnsiCodes(suffix).length - 1)
+            const progress = row.progressLabel ? ` · steps ${row.progressLabel}` : ""
+            const line = `${formatCell(`${statusLabel} · ${row.label}${progress}`, leftWidth)} ${suffix}`
+            panelRows.push({
+              kind: "item",
+              text: `${isActive ? "› " : "  "}${line}`,
+              isActive,
+              color: colorForStatus(row.status),
+              activeColor: COLORS.selectionFg,
+              activeBackground: COLORS.info,
+            })
+          })
+        }
+
+        const footerLines: SelectPanelLine[] = []
+        if (selectedTask) {
+          footerLines.push({ text: `ID: ${selectedTask.id}`, color: "dim" })
+          if (selectedTask.mode) footerLines.push({ text: `Mode: ${selectedTask.mode}`, color: "dim" })
+          if (selectedTask.counters?.total) {
+            footerLines.push({
+              text: `Steps: ${selectedTask.counters.completed ?? 0}/${selectedTask.counters.total} (running ${selectedTask.counters.running ?? 0}, failed ${selectedTask.counters.failed ?? 0})`,
+              color: "dim",
+            })
+          }
+          footerLines.push({ text: "Enter: load output tail.", color: "dim" })
+        }
+        if (taskNotice) footerLines.push({ text: taskNotice, color: "dim" })
+        if (taskTailLines.length > 0) {
+          footerLines.push({ text: taskTailPath ? `Tail: ${taskTailPath}` : "Tail output", color: "dim" })
+          taskTailLines.forEach((line: string) => footerLines.push({ text: line, color: "dim" }))
+        }
+
         return (
           <SelectPanel
             width={panelWidth}

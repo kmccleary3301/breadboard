@@ -228,6 +228,7 @@ export const useReplViewController = ({
   const [taskTailLines, setTaskTailLines] = useState<string[]>([])
   const [taskTailPath, setTaskTailPath] = useState<string | null>(null)
   const [taskFocusLaneId, setTaskFocusLaneId] = useState<string | null>(null)
+  const [taskFocusViewOpen, setTaskFocusViewOpen] = useState(false)
   const [ctreeOpen, setCtreeOpen] = useState(false)
   const [ctreeScroll, setCtreeScroll] = useState(0)
   const [ctreeIndex, setCtreeIndex] = useState(0)
@@ -424,6 +425,7 @@ export const useReplViewController = ({
     subagentTaskboardEnabled: tuiConfig.subagents.taskboardEnabled,
     taskIndex,
     taskFocusLaneId,
+    taskFocusViewOpen,
     taskSearchQuery,
     taskStatusFilter,
     setTaskNotice,
@@ -574,6 +576,7 @@ export const useReplViewController = ({
     setTaskTailLines,
     setTaskTailPath,
     setTaskFocusLaneId,
+    setTaskFocusViewOpen,
     taskRows,
     taskMaxScroll,
     ctreeOpen,
@@ -750,6 +753,7 @@ export const useReplViewController = ({
     setTaskSearchQuery,
     setTaskStatusFilter,
     setTaskFocusLaneId,
+    setTaskFocusViewOpen,
     setTodoScroll,
     setTranscriptSearchIndex,
     setTranscriptSearchOpen,
@@ -772,6 +776,7 @@ export const useReplViewController = ({
     taskSearchQuery,
     taskStatusFilter,
     taskFocusLaneId,
+    taskFocusViewOpen,
     taskViewportRows,
     tasksOpen,
     todoMaxScroll,
@@ -1127,6 +1132,7 @@ export const useReplViewController = ({
     inspectRawScroll,
     tasks,
     tasksOpen,
+    taskFocusViewOpen,
     taskFocusLaneId,
     taskFocusLaneLabel,
     taskScroll,

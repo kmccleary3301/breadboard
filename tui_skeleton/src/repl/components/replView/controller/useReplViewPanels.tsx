@@ -72,6 +72,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
     subagentTaskboardEnabled,
     taskIndex,
     taskFocusLaneId,
+    taskFocusViewOpen,
     taskSearchQuery,
     taskStatusFilter,
     setTaskNotice,
@@ -631,9 +632,9 @@ export const useReplViewPanels = (context: PanelsContext) => {
     return Array.from(fallback)
   }, [taskRows, workGraph?.laneOrder])
   const taskRowsForDisplay = useMemo(() => {
-    if (!taskFocusLaneId) return taskRows
+    if (!taskFocusViewOpen || !taskFocusLaneId) return taskRows
     return taskRows.filter((row: any) => row.task?.laneId === taskFocusLaneId)
-  }, [taskFocusLaneId, taskRows])
+  }, [taskFocusLaneId, taskFocusViewOpen, taskRows])
   const taskFocusLaneLabel = useMemo(() => {
     if (!taskFocusLaneId) return null
     const lane = workGraph?.lanesById?.[taskFocusLaneId]
