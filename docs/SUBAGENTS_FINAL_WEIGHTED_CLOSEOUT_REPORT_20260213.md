@@ -27,15 +27,15 @@ Scoring rule for each checkpoint item:
 ## Weighted Results
 
 1. Core tranche (`CP0..CP4`)
-- `CP0`: `16 done`, `1 partial`, `0 todo` -> `97.06%` contribution basis
+- `CP0`: `17 done`, `0 partial`, `0 todo` -> `100%`
 - `CP1`: `15 done`, `0 partial`, `0 todo` -> `100%`
 - `CP2`: `18 done`, `0 partial`, `0 todo` -> `100%`
-- `CP3`: `13 done`, `2 partial`, `1 todo` -> `87.50%`
+- `CP3`: `16 done`, `0 partial`, `0 todo` -> `100%`
 - `CP4`: `13 done`, `0 partial`, `0 todo` -> `100%`
-- **Weighted core score: `97.06%`**
+- **Weighted core score: `100%`**
 
 2. Expansion track (`EX1..EX4`)
-- `0 done`, `0 partial`, `5 todo` -> `0%`
+- `5 done`, `0 partial`, `0 todo` -> `100%`
 
 ## Acceptance Bundle Outcome
 
@@ -51,6 +51,6 @@ Scoring rule for each checkpoint item:
 ## Verdict
 
 - CP4 closeout acceptance bundle is **complete and passing** for the core tranche.
-- Remaining non-closed scope is concentrated in:
-  1. CP3 optional optimization (`CP3-016`)
-  2. Expansion track (`EX1-001` .. `EX4-001`)
+- Core tranche completion (CP0..CP4): **100%** by the tracker’s scoring rules.
+- Expansion track completion (EX1..EX4): **100%** by the tracker’s scoring rules.
+- Residual non-blocking hygiene warning: the transcript-noise gate remains above threshold for some legacy fixtures and is currently warn-only (see `docs/SUBAGENTS_SAFETY_AUDIT_CP4_20260213.md`).

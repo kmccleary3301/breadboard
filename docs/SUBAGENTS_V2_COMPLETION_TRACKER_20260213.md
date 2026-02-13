@@ -128,8 +128,8 @@ Status legend:
 
 - `Gate A (MVP Go)`: done  
 - `Gate B (Operator Go)`: done  
-- `Gate C (Full Tranche Go)`: done (with EX2 explicitly tracked as non-blocking partial)
+- `Gate C (Full Tranche Go)`: done
 
 Blocking deltas to full tranche go:
 1. No mandatory blocking deltas remain in CP0-CP4.
-2. Optional EX2 follow-up remains if full lane offset indexing is required beyond current cache optimization.
+2. No mandatory expansion-track deltas remain; any further lane indexing work is future optimization only.
