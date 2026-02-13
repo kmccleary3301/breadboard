@@ -155,6 +155,24 @@ describe("handleListOverlayKeys task focus mode", () => {
     expect(context.setTaskFocusViewOpen).toHaveBeenCalledWith(false)
   })
 
+  it("returns from focus without disturbing task selection context", () => {
+    const context = {
+      ...baseContext(),
+      taskFocusViewOpen: true,
+      taskFocusLaneId: "lane-a",
+      selectedTaskIndex: 3,
+      taskScroll: 2,
+    }
+    const handled = handleListOverlayKeys(
+      context,
+      makeInfo({ key: { escape: true } }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTaskFocusViewOpen).toHaveBeenCalledWith(false)
+    expect(context.setTaskIndex).not.toHaveBeenCalled()
+    expect(context.setTaskScroll).not.toHaveBeenCalled()
+  })
+
   it("updates search query when typing in taskboard list mode", () => {
     const context = { ...baseContext(), taskFocusLaneId: "lane-b" }
     const handled = handleListOverlayKeys(
@@ -246,6 +264,16 @@ describe("handleListOverlayKeys task focus mode", () => {
     expect(context.setTaskFocusFollowTail).toHaveBeenCalledWith(false)
   })
 
+  it("resumes focus follow mode with `p` when paused", () => {
+    const context = { ...baseContext(), taskFocusViewOpen: true, taskFocusLaneId: "lane-a", taskFocusFollowTail: false }
+    const handled = handleListOverlayKeys(
+      context,
+      makeInfo({ char: "p", lowerChar: "p" }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTaskFocusFollowTail).toHaveBeenCalledWith(true)
+  })
+
   it("toggles raw mode with tab while focus view is open", () => {
     const context = { ...baseContext(), taskFocusViewOpen: true, taskFocusLaneId: "lane-a", taskFocusRawMode: false }
     const handled = handleListOverlayKeys(
@@ -255,5 +283,26 @@ describe("handleListOverlayKeys task focus mode", () => {
     expect(handled).toBe(true)
     expect(context.setTaskFocusRawMode).toHaveBeenCalledWith(true)
     expect(context.requestTaskTail).toHaveBeenCalledWith({ raw: true, tailLines: 24 })
+  })
+
+  it("loads more lines in snippet mode with `l`", () => {
+    const context = { ...baseContext(), taskFocusViewOpen: true, taskFocusLaneId: "lane-a", taskFocusRawMode: false, taskFocusTailLines: 24 }
+    const handled = handleListOverlayKeys(
+      context,
+      makeInfo({ char: "l", lowerChar: "l" }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTaskFocusTailLines).toHaveBeenCalledWith(48)
+    expect(context.requestTaskTail).toHaveBeenCalledWith({ raw: false, tailLines: 48, maxBytes: 80_000 })
+  })
+
+  it("triggers explicit refresh in focus mode with `r`", () => {
+    const context = { ...baseContext(), taskFocusViewOpen: true, taskFocusLaneId: "lane-a", taskFocusRawMode: true, taskFocusTailLines: 80 }
+    const handled = handleListOverlayKeys(
+      context,
+      makeInfo({ char: "r", lowerChar: "r" }),
+    )
+    expect(handled).toBe(true)
+    expect(context.requestTaskTail).toHaveBeenCalledWith({ raw: true, tailLines: 80 })
   })
 })

@@ -1,0 +1,178 @@
+{
+  "scenario": "cp2_concurrency_20_tasks",
+  "generatedAt": "2026-02-13T07:41:17.765Z",
+  "acceptanceChecks": {
+    "boundedByMaxWorkItems": true,
+    "newestTaskRetained": true,
+    "oldestTaskEvicted": true
+  },
+  "summary": {
+    "itemCount": 12,
+    "countsByStatus": {
+      "running": 12,
+      "blocked": 0,
+      "failed": 0,
+      "completed": 0,
+      "cancelled": 0,
+      "pending": 0
+    },
+    "rows": [
+      {
+        "id": "task-cp2-burst-20",
+        "status": "running",
+        "laneId": "task:task-cp2-burst-20",
+        "mode": "async",
+        "counters": {
+          "completed": 0,
+          "running": 0,
+          "failed": 0,
+          "total": 0
+        },
+        "steps": []
+      },
+      {
+        "id": "task-cp2-burst-19",
+        "status": "running",
+        "laneId": "task:task-cp2-burst-19",
+        "mode": "async",
+        "counters": {
+          "completed": 0,
+          "running": 0,
+          "failed": 0,
+          "total": 0
+        },
+        "steps": []
+      },
+      {
+        "id": "task-cp2-burst-18",
+        "status": "running",
+        "laneId": "task:task-cp2-burst-18",
+        "mode": "async",
+        "counters": {
+          "completed": 0,
+          "running": 0,
+          "failed": 0,
+          "total": 0
+        },
+        "steps": []
+      },
+      {
+        "id": "task-cp2-burst-17",
+        "status": "running",
+        "laneId": "task:task-cp2-burst-17",
+        "mode": "async",
+        "counters": {
+          "completed": 0,
+          "running": 0,
+          "failed": 0,
+          "total": 0
+        },
+        "steps": []
+      },
+      {
+        "id": "task-cp2-burst-16",
+        "status": "running",
+        "laneId": "task:task-cp2-burst-16",
+        "mode": "async",
+        "counters": {
+          "completed": 0,
+          "running": 0,
+          "failed": 0,
+          "total": 0
+        },
+        "steps": []
+      },
+      {
+        "id": "task-cp2-burst-15",
+        "status": "running",
+        "laneId": "task:task-cp2-burst-15",
+        "mode": "async",
+        "counters": {
+          "completed": 0,
+          "running": 0,
+          "failed": 0,
+          "total": 0
+        },
+        "steps": []
+      },
+      {
+        "id": "task-cp2-burst-14",
+        "status": "running",
+        "laneId": "task:task-cp2-burst-14",
+        "mode": "async",
+        "counters": {
+          "completed": 0,
+          "running": 0,
+          "failed": 0,
+          "total": 0
+        },
+        "steps": []
+      },
+      {
+        "id": "task-cp2-burst-13",
+        "status": "running",
+        "laneId": "task:task-cp2-burst-13",
+        "mode": "async",
+        "counters": {
+          "completed": 0,
+          "running": 0,
+          "failed": 0,
+          "total": 0
+        },
+        "steps": []
+      },
+      {
+        "id": "task-cp2-burst-12",
+        "status": "running",
+        "laneId": "task:task-cp2-burst-12",
+        "mode": "async",
+        "counters": {
+          "completed": 0,
+          "running": 0,
+          "failed": 0,
+          "total": 0
+        },
+        "steps": []
+      },
+      {
+        "id": "task-cp2-burst-11",
+        "status": "running",
+        "laneId": "task:task-cp2-burst-11",
+        "mode": "async",
+        "counters": {
+          "completed": 0,
+          "running": 0,
+          "failed": 0,
+          "total": 0
+        },
+        "steps": []
+      },
+      {
+        "id": "task-cp2-burst-10",
+        "status": "running",
+        "laneId": "task:task-cp2-burst-10",
+        "mode": "async",
+        "counters": {
+          "completed": 0,
+          "running": 0,
+          "failed": 0,
+          "total": 0
+        },
+        "steps": []
+      },
+      {
+        "id": "task-cp2-burst-9",
+        "status": "running",
+        "laneId": "task:task-cp2-burst-9",
+        "mode": "async",
+        "counters": {
+          "completed": 0,
+          "running": 0,
+          "failed": 0,
+          "total": 0
+        },
+        "steps": []
+      }
+    ]
+  }
+}

@@ -32,11 +32,22 @@ Status: `DONE`
 - `tui_skeleton/scripts/subagents_closeout_metrics.ts`
   - includes `warn-focus-latency-gate`
 
-3. Safety audit document
+3. Strict scoped subagent gates + bundle
+- `tui_skeleton/scripts/subagents_scenario_gate.ts`
+- `tui_skeleton/scripts/subagents_runtime_bundle.ts`
+- `tui_skeleton/scripts/subagents_rollback_validation.ts`
+- `artifacts/subagents_bundle/summary.json`
+- `artifacts/subagents_rollback/summary.json`
+- CI wiring: `.github/workflows/ci.yml` (`Subagents runtime bundle` step)
+
+4. Safety audit document
 - `docs/SUBAGENTS_SAFETY_AUDIT_CP4_20260213.md`
 
-4. Runtime notes updated
-- `docs_tmp/cli_phase_4/SUBAGENTS_RUNTIME_NOTES_AND_ROLLBACK_20260213.md`
+5. Compatibility + rollback + weighted closeout docs
+- `docs/SUBAGENTS_COMPATIBILITY_AUDIT_20260213.md`
+- `docs/SUBAGENTS_ROLLBACK_VALIDATION_20260213.md`
+- `docs/SUBAGENTS_STRICT_PROMOTION_RUNBOOK_20260213.md`
+- `docs/SUBAGENTS_FINAL_WEIGHTED_CLOSEOUT_REPORT_20260213.md`
 
 ## 3) Evidence Index (Command + Result)
 
@@ -64,15 +75,23 @@ npm run test -- src/repl/components/replView/controller/__tests__/focusLatency.t
 - Command: `npm run runtime:gate:strip-churn`
 - Result: pass
 
-5. Noise warn gate
-- Command: `npm run runtime:gate:noise:warn`
-- Result: warn-only gate reports fixture over-thresholds (non-blocking by policy)
+5. Strict scoped scenario gate
+- Command: `npm run runtime:gate:subagents-scenarios`
+- Result: pass (`ok: true`, `failed: 0`)
 
-6. ASCII/NO_COLOR
+6. Deterministic subagents bundle
+- Command: `npm run subagents:bundle -- --out ../artifacts/subagents_bundle/summary.json --markdown-out ../artifacts/subagents_bundle/summary.md`
+- Result: pass (`ok: true`, `failed: 0`, `total: 10`)
+
+7. Rollback level validation
+- Command: `npm run subagents:validate:rollback -- --out ../artifacts/subagents_rollback/summary.json --markdown-out ../artifacts/subagents_rollback/summary.md`
+- Result: pass (`ok: true`, `failedLevels: 0`)
+
+8. ASCII/NO_COLOR
 - Command: `npm run runtime:validate:ascii-no-color`
 - Result: pass
 
-7. Consolidated closeout metrics
+9. Consolidated closeout metrics
 - Command: `npm run subagents:closeout:metrics`
 - Result: pass (`ok: true`, `failed: 0`)
 
@@ -82,19 +101,22 @@ npm run test -- src/repl/components/replView/controller/__tests__/focusLatency.t
 - noise warn gate: yes
 - strip churn gate: yes
 - focus latency gate: yes
+- strict scoped subagents scenario gate: yes
+- strict deterministic subagents bundle gate: yes
 
 2. Safety audit published:
 - yes (`docs/SUBAGENTS_SAFETY_AUDIT_CP4_20260213.md`)
 
 3. Rollback/knobs documentation:
-- yes (`docs_tmp/cli_phase_4/SUBAGENTS_RUNTIME_NOTES_AND_ROLLBACK_20260213.md`)
+- yes (`docs/SUBAGENTS_ROLLBACK_VALIDATION_20260213.md`)
 
 4. Residual non-blocking debt:
 - transcript noise fixtures still above warn threshold
 - tracked for later strict promotion decision
+- optional CP3 cache optimization and expansion track remain open
 
 ## 5) Release Readiness for This Tranche
 
 - Functional tranche status: ready
 - Safety status: pass with documented residual warning
-- CI/gate posture: sufficient for current warn-only noise policy
+- CI/gate posture: strict scoped subagent bundle enforced in CI (ubuntu TUI job)

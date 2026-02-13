@@ -1,0 +1,128 @@
+{
+  "scenario": "cp1_failure_sticky_toast",
+  "generatedAt": "2026-02-13T07:41:15.371Z",
+  "acceptanceChecks": {
+    "failedToastInitiallyPresent": true,
+    "failedToastStillPresentAt2s": true,
+    "failedToastExpiredBy4_5s": true
+  },
+  "immediate": {
+    "taskToolRailLines": 0,
+    "subagentSlotCount": 1,
+    "subagentSlots": [
+      {
+        "text": "[subagent] failed · Parse logs",
+        "status": "error",
+        "createdAt": 0,
+        "expiresAt": 0
+      }
+    ],
+    "workGraphOrder": [
+      "task-cp1-fail"
+    ],
+    "workGraphStatuses": [
+      {
+        "id": "task-cp1-fail",
+        "status": "failed"
+      }
+    ],
+    "stripSummary": {
+      "headline": "subagents 0 run · 0 done · 1 fail · 0 blocked",
+      "detail": "failed · Parse logs",
+      "tone": "error",
+      "counts": {
+        "running": 0,
+        "completed": 0,
+        "failed": 1,
+        "blocked": 0
+      }
+    },
+    "noise": {
+      "ok": true,
+      "threshold": 0.8,
+      "metrics": {
+        "canonicalChars": 0,
+        "noiseChars": 0,
+        "ratio": 0
+      },
+      "summary": "ok"
+    }
+  },
+  "midAfter2_1s": {
+    "taskToolRailLines": 0,
+    "subagentSlotCount": 1,
+    "subagentSlots": [
+      {
+        "text": "[subagent] failed · Parse logs",
+        "status": "error",
+        "createdAt": 0,
+        "expiresAt": 0
+      }
+    ],
+    "workGraphOrder": [
+      "task-cp1-fail"
+    ],
+    "workGraphStatuses": [
+      {
+        "id": "task-cp1-fail",
+        "status": "failed"
+      }
+    ],
+    "stripSummary": {
+      "headline": "subagents 0 run · 0 done · 1 fail · 0 blocked",
+      "detail": "failed · Parse logs",
+      "tone": "error",
+      "counts": {
+        "running": 0,
+        "completed": 0,
+        "failed": 1,
+        "blocked": 0
+      }
+    },
+    "noise": {
+      "ok": true,
+      "threshold": 0.8,
+      "metrics": {
+        "canonicalChars": 0,
+        "noiseChars": 0,
+        "ratio": 0
+      },
+      "summary": "ok"
+    }
+  },
+  "after4_5s": {
+    "taskToolRailLines": 0,
+    "subagentSlotCount": 0,
+    "subagentSlots": [],
+    "workGraphOrder": [
+      "task-cp1-fail"
+    ],
+    "workGraphStatuses": [
+      {
+        "id": "task-cp1-fail",
+        "status": "failed"
+      }
+    ],
+    "stripSummary": {
+      "headline": "subagents 0 run · 0 done · 1 fail · 0 blocked",
+      "detail": "failed · Parse logs",
+      "tone": "error",
+      "counts": {
+        "running": 0,
+        "completed": 0,
+        "failed": 1,
+        "blocked": 0
+      }
+    },
+    "noise": {
+      "ok": true,
+      "threshold": 0.8,
+      "metrics": {
+        "canonicalChars": 0,
+        "noiseChars": 0,
+        "ratio": 0
+      },
+      "summary": "ok"
+    }
+  }
+}

@@ -23,6 +23,7 @@ import {
   sanitizeTaskPreview,
   sortTasksForStatusGrouping,
 } from "./taskboardStatus.js"
+import { loadTaskFocusTail } from "./taskFocusLoader.js"
 
 type PanelsContext = Record<string, any>
 
@@ -753,37 +754,26 @@ export const useReplViewPanels = (context: PanelsContext) => {
       setTaskNotice("No task selected.")
       return
     }
-    const candidates: string[] = []
-    if (selectedTask.artifactPath) candidates.push(selectedTask.artifactPath)
-    const taskId = selectedTask.id
-    candidates.push(`.breadboard/subagents/agent-${taskId}.jsonl`)
-    candidates.push(`.breadboard/subagents/${taskId}.jsonl`)
-    candidates.push(`.breadboard/subagents/${taskId}.json`)
-    let lastError: string | null = null
-    for (const pathCandidate of candidates) {
-      try {
-        const rawMode = options?.raw === true
-        const tailLines = Math.max(8, Math.min(400, Math.floor(options?.tailLines ?? 24)))
-        const readMode: "cat" | "snippet" = rawMode ? "cat" : "snippet"
-        const content = await onReadFile(pathCandidate, {
-          mode: readMode,
-          // Tail-first loading keeps first open latency bounded for large artifacts.
-          headLines: rawMode ? undefined : 0,
-          tailLines: rawMode ? undefined : tailLines,
-          maxBytes: options?.maxBytes ?? (rawMode ? focusRawMaxBytes : focusSnippetMaxBytes),
-        })
-        const lines = content.content.replace(/\\r\\n?/g, "\\n").split("\\n")
-        setTaskTailLines(lines)
-        setTaskTailPath(content.path)
-        const truncated = content.truncated ? " (truncated)" : ""
-        const modeLabel = rawMode ? "raw" : `tail ${tailLines}`
-        setTaskNotice(`Loaded ${content.path} (${modeLabel})${truncated}`)
-        return
-      } catch (error) {
-        lastError = (error as Error).message
-      }
+    const rawMode = options?.raw === true
+    const result = await loadTaskFocusTail(
+      {
+        id: selectedTask.id,
+        artifactPath: selectedTask.artifactPath ?? null,
+      },
+      {
+        rawMode,
+        tailLines: options?.tailLines ?? 24,
+        maxBytes: options?.maxBytes ?? (rawMode ? focusRawMaxBytes : focusSnippetMaxBytes),
+      },
+      onReadFile,
+    )
+    if (result.ok) {
+      setTaskTailLines(result.value?.lines ?? [])
+      setTaskTailPath(result.value?.path ?? null)
+      setTaskNotice(result.value?.notice ?? null)
+      return
     }
-    setTaskNotice(lastError ?? "Unable to load task output.")
+    setTaskNotice(result.failure?.error ?? "Unable to load task output.")
   }, [focusRawMaxBytes, focusSnippetMaxBytes, onReadFile, selectedTask, setTaskNotice, setTaskTailLines, setTaskTailPath])
 
   return {

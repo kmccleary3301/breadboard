@@ -1,0 +1,55 @@
+{
+  "scenario": "cp1_ascii_no_color_fallback",
+  "generatedAt": "2026-02-13T07:41:15.393Z",
+  "acceptanceChecks": {
+    "asciiOnlyResolved": true,
+    "colorModeResolvedNone": true,
+    "subagentToastRendered": true
+  },
+  "config": {
+    "asciiOnly": true,
+    "colorMode": "none"
+  },
+  "state": {
+    "taskToolRailLines": 0,
+    "subagentSlotCount": 1,
+    "subagentSlots": [
+      {
+        "text": "[subagent] completed · Ascii fallback",
+        "status": "success",
+        "createdAt": 0,
+        "expiresAt": 0
+      }
+    ],
+    "workGraphOrder": [
+      "task-cp1-ascii"
+    ],
+    "workGraphStatuses": [
+      {
+        "id": "task-cp1-ascii",
+        "status": "completed"
+      }
+    ],
+    "stripSummary": {
+      "headline": "subagents 0 run · 1 done · 0 fail · 0 blocked",
+      "detail": "completed · Ascii fallback",
+      "tone": "success",
+      "counts": {
+        "running": 0,
+        "completed": 1,
+        "failed": 0,
+        "blocked": 0
+      }
+    },
+    "noise": {
+      "ok": true,
+      "threshold": 0.8,
+      "metrics": {
+        "canonicalChars": 0,
+        "noiseChars": 0,
+        "ratio": 0
+      },
+      "summary": "ok"
+    }
+  }
+}

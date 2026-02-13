@@ -592,6 +592,15 @@ jobs:
             --out ../artifacts/runtime_gates/dashboard.json \
             --markdown-out ../artifacts/runtime_gates/dashboard.md
 
+      - name: Subagents runtime bundle (ubuntu only)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        working-directory: tui_skeleton
+        run: |
+          mkdir -p ../artifacts/subagents_bundle
+          npm run subagents:bundle -- \
+            --out ../artifacts/subagents_bundle/summary.json \
+            --markdown-out ../artifacts/subagents_bundle/summary.md
+
       - name: Runtime gate summary (ubuntu only)
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
@@ -601,6 +610,22 @@ jobs:
             echo "### Runtime Gate Dashboard" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "missing artifacts/runtime_gates/dashboard.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f artifacts/subagents_bundle/summary.md ]; then
+            cat artifacts/subagents_bundle/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Subagents Runtime Bundle" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "missing artifacts/subagents_bundle/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f artifacts/subagents_rollback/summary.md ]; then
+            cat artifacts/subagents_rollback/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Subagents Rollback Validation" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "missing artifacts/subagents_rollback/summary.md" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: TUI goldens (report-only)
@@ -646,6 +671,8 @@ jobs:
           name: runtime-gates-${{ matrix.os }}
           path: |
             artifacts/runtime_gates/**
+            artifacts/subagents_bundle/**
+            artifacts/subagents_rollback/**
           if-no-files-found: ignore
 
       - name: Build

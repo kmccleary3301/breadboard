@@ -1,0 +1,38 @@
+{
+  "scenario": "cp2_failure_retry_completion",
+  "generatedAt": "2026-02-13T07:41:17.759Z",
+  "acceptanceChecks": {
+    "terminalCompleted": true,
+    "includesRetryAttemptGrammar": true,
+    "includesFailureSemantic": true
+  },
+  "summary": {
+    "itemCount": 1,
+    "countsByStatus": {
+      "running": 0,
+      "blocked": 0,
+      "failed": 0,
+      "completed": 1,
+      "cancelled": 0,
+      "pending": 0
+    },
+    "rows": [
+      {
+        "id": "task-cp2-retry",
+        "status": "completed",
+        "laneId": "task:task-cp2-retry",
+        "mode": "async",
+        "counters": {
+          "completed": 1,
+          "running": 0,
+          "failed": 1,
+          "total": 2
+        },
+        "steps": [
+          "[failed/timeout] fetch - timeout after 5s",
+          "[done] fetch (attempt 2) - artifact ready"
+        ]
+      }
+    ]
+  }
+}
