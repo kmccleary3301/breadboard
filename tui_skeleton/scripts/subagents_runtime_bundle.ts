@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { writeFileSync } from "node:fs"
+import { mkdirSync, writeFileSync } from "node:fs"
 import path from "node:path"
 
 interface Args {
@@ -65,6 +65,12 @@ const runStep = (name: string, command: string): BundleStepResult => {
   }
 }
 
+const ensureParentDir = (filePath: string): void => {
+  // Be robust in CI and local runs: callers may pass `--out` paths whose parent
+  // directories haven't been created yet.
+  mkdirSync(path.dirname(filePath), { recursive: true })
+}
+
 const renderMarkdown = (summary: any): string => {
   const lines: string[] = []
   lines.push("# Subagents Runtime Bundle")
@@ -120,8 +126,16 @@ const main = (): void => {
 
   const json = JSON.stringify(summary, null, 2)
   console.log(json)
-  if (args.out) writeFileSync(path.resolve(args.out), `${json}\n`, "utf8")
-  if (args.markdownOut) writeFileSync(path.resolve(args.markdownOut), renderMarkdown(summary), "utf8")
+  if (args.out) {
+    const outPath = path.resolve(args.out)
+    ensureParentDir(outPath)
+    writeFileSync(outPath, `${json}\n`, "utf8")
+  }
+  if (args.markdownOut) {
+    const markdownPath = path.resolve(args.markdownOut)
+    ensureParentDir(markdownPath)
+    writeFileSync(markdownPath, renderMarkdown(summary), "utf8")
+  }
   if (args.strict && !summary.ok) process.exit(1)
   process.exit(0)
 }
