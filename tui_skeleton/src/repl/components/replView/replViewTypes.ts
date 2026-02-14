@@ -44,6 +44,10 @@ export interface ReplViewProps {
   readonly guardrailNotice?: GuardrailNotice | null
   readonly viewClearAt?: number | null
   readonly viewPrefs: TranscriptPreferences
+  readonly todoScopeKey: string
+  readonly todoScopeLabel: string
+  readonly todoScopeStale: boolean
+  readonly todoScopeOrder: ReadonlyArray<string>
   readonly todoStore: TodoStoreSnapshot
   readonly todos: TodoItem[]
   readonly tasks: TaskEntry[]

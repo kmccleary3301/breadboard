@@ -34,6 +34,7 @@ export const SLASH_COMMANDS: ReadonlyArray<SlashCommandInfo> = [
   { name: "usage", summary: "Open the usage summary panel." },
   { name: "tasks", summary: "Open the background tasks panel.", shortcut: "Ctrl+B" },
   { name: "transcript", summary: "Open the transcript viewer.", shortcut: "Ctrl+T (Codex) / Ctrl+O (Claude)" },
+  { name: "todo-scope", usage: "[status|list|next|prev|set <key>]", summary: "Switch which todo scope is displayed.", shortcut: "Ctrl+U" },
   { name: "thinking", usage: "[summary|raw]", summary: "Show the retained thinking artifact for the active turn." },
   { name: "runtime", usage: "[telemetry]", summary: "Show runtime telemetry and recent activity transitions." },
   { name: "view", usage: "<collapse|scroll|markdown|raw|tools|reasoning> …", summary: "Adjust transcript, raw stream, or tool display modes." },

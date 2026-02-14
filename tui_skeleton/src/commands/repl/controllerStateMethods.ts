@@ -95,6 +95,77 @@ export function slashHandlers(this: any): Record<string, SlashHandler> {
         this.pushHint(`Status check failed: ${(error as Error).message}`)
       }
     },
+    "todo-scope": async (args) => {
+      const normalizeKey = (value: string): string => value.trim().replace(/\s+/g, "_").slice(0, 64)
+      const scopeOrder: string[] = Array.isArray(this.todoScopeOrder) && this.todoScopeOrder.length > 0 ? [...this.todoScopeOrder] : ["main"]
+      const stores: Record<string, any> = this.todoStoresByScope && typeof this.todoStoresByScope === "object" ? this.todoStoresByScope : {}
+      const labels: Record<string, string> =
+        this.todoScopeLabelsByKey && typeof this.todoScopeLabelsByKey === "object" ? this.todoScopeLabelsByKey : {}
+      const stale: Record<string, boolean> =
+        this.todoScopeStaleByKey && typeof this.todoScopeStaleByKey === "object" ? this.todoScopeStaleByKey : {}
+
+      const current = typeof this.activeTodoScopeKey === "string" && this.activeTodoScopeKey.trim() ? this.activeTodoScopeKey : "main"
+      const action = (args[0] ?? "status").toLowerCase()
+
+      const describe = (key: string): string => {
+        const label = labels[key] ?? key
+        const count = Array.isArray(stores[key]?.order) ? stores[key].order.length : 0
+        const activeMark = key === current ? "*" : " "
+        const staleMark = stale[key] ? " (stale)" : ""
+        return `${activeMark} ${key}${label && label !== key ? ` (${label})` : ""} · ${count} item${count === 1 ? "" : "s"}${staleMark}`
+      }
+
+      const setActive = (key: string): void => {
+        const next = normalizeKey(key)
+        if (!next) return
+        this.activeTodoScopeKey = next
+        if (this.todoScopeLabelsByKey && !this.todoScopeLabelsByKey[next]) {
+          this.todoScopeLabelsByKey[next] = next
+        }
+        this.emitChange()
+      }
+
+      if (action === "status" || action === "show") {
+        const label = labels[current] ?? current
+        const count = Array.isArray(stores[current]?.order) ? stores[current].order.length : 0
+        const staleMark = stale[current] ? " (stale)" : ""
+        this.pushHint(`Todo scope: ${current}${label && label !== current ? ` (${label})` : ""} · ${count} item${count === 1 ? "" : "s"}${staleMark}`)
+        if (scopeOrder.length > 1) {
+          this.pushHint(`Scopes: ${scopeOrder.map((key) => (key === current ? `*${key}` : key)).join(", ")} (Ctrl+U to cycle)`)
+        }
+        return
+      }
+      if (action === "list") {
+        const lines = scopeOrder.map(describe)
+        this.addTool("status", `[todo-scope] ${lines.join(" | ")}`)
+        this.pushHint(lines.join(" | "))
+        return
+      }
+      if (action === "next" || action === "prev") {
+        const dir = action === "prev" ? -1 : 1
+        const idx = Math.max(0, scopeOrder.indexOf(current))
+        const nextIdx = scopeOrder.length > 0 ? (idx + dir + scopeOrder.length) % scopeOrder.length : 0
+        const nextKey = scopeOrder[nextIdx] ?? "main"
+        setActive(nextKey)
+        this.pushHint(`Todo scope: ${describe(nextKey).replace(/^\\*\\s+/, "")}`)
+        return
+      }
+      if (action === "set") {
+        const key = args[1] ? normalizeKey(args[1]) : ""
+        if (!key) {
+          this.pushHint("Usage: /todo-scope set <key>")
+          return
+        }
+        if (!stores[key]) {
+          this.pushHint(`Unknown todo scope: ${key}`)
+          return
+        }
+        setActive(key)
+        this.pushHint(`Todo scope: ${describe(key).replace(/^\\*\\s+/, "")}`)
+        return
+      }
+      this.pushHint("Usage: /todo-scope [status|list|next|prev|set <key>]")
+    },
     ctree: async (args) => {
       const action = args[0]?.toLowerCase()
       if (!action || action === "status") {

@@ -1,0 +1,12 @@
+[38;2;77;163;255mbreadboard — interactive session[39m
+(pending) [38;2;77;163;255m●[39m Starting session… [38;2;77;163;255m●[39m model openrouter/x-ai/grok-4-fast [38;2;100;100;110m○[39m local [38;2;100;100;110m○[39m events 0 [38;2;237;132;15m●[39m tools 1
+
+Slash commands: /help, /quit, /clear, /status, /remote on|off, /retry, /plan, /mode <plan|build|auto>, /model <id>, /test [suite], /files [path], /models, /skills
+! for bash • / for commands • @ for files • Tab to complete • Esc closes menus
+No conversation yet. Type a prompt to get started.
+
+TODOs: 2/5 · +2
+[~] Render todo preview above input
+[ ] Add reducer tests
+[!] Fix flaky CI
+❯ 

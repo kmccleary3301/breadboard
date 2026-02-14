@@ -1,0 +1,1 @@
+{"type":"tool_result","id":"1","seq":1,"timestamp":1,"payload":{"tool_name":"TodoWrite","todos":[{"content":"Ship U2 baseline ✓","status":"done"},{"content":"Render todo preview above input","status":"in_progress"},{"content":"Add reducer tests","status":"todo"},{"content":"Fix flaky CI","status":"blocked"},{"content":"Refactor preview widget","status":"done"}]}}

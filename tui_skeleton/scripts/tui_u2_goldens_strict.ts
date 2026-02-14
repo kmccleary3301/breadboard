@@ -2,6 +2,11 @@ import path from "node:path"
 import { findLatestRunDir, runNodeWithTsx } from "./tui_goldens_utils.js"
 
 const main = async (): Promise<number> => {
+  // U2 requires ANSI + unicode output even if the user's shell exports NO_COLOR.
+  delete process.env.NO_COLOR
+  process.env.FORCE_COLOR = "1"
+  process.env.BREADBOARD_ASCII = "0"
+
   const manifest = path.resolve("ui_baselines", "u2", "manifests", "u2.yaml")
   const runsRoot = path.resolve("ui_baselines", "u2", "_runs")
   const blessedRoot = path.resolve("ui_baselines", "u2", "scenarios")
@@ -44,4 +49,3 @@ main()
     console.error("[tui_u2_goldens_strict] failed:", error)
     process.exit(1)
   })
-
