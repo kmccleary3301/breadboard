@@ -21,6 +21,9 @@ type BuildTodoPreviewOptions = {
   readonly strategy?: TodoPreviewSelectionStrategy
   readonly showHeader?: boolean
   readonly showHiddenCount?: boolean
+  readonly scopeKey?: string | null
+  readonly scopeLabel?: string | null
+  readonly stale?: boolean
 }
 
 const statusMark = (status: string): string => {
@@ -47,6 +50,9 @@ export const buildTodoPreviewModel = (
   const strategy = options.strategy ?? "first_n"
   const showHeader = options.showHeader ?? true
   const showHiddenCount = options.showHiddenCount ?? false
+  const scopeKey = options.scopeKey?.trim() || null
+  const scopeLabel = options.scopeLabel?.trim() || null
+  const stale = Boolean(options.stale)
 
   const { done: doneCount, total: totalCount } = todoStoreCounts(store)
   const selection = selectTodoPreviewItems(store, { maxItems, strategy })
@@ -57,7 +63,11 @@ export const buildTodoPreviewModel = (
   }))
 
   const hiddenSuffix = showHiddenCount && selection.hiddenCount > 0 ? ` · +${selection.hiddenCount}` : ""
-  const header = showHeader ? `TODOs: ${doneCount}/${totalCount}${hiddenSuffix}` : ""
+  const scopeName = scopeLabel ?? scopeKey
+  const showScope = Boolean(scopeName && scopeName !== "main")
+  const scopePrefix = showScope ? ` (${scopeName})` : ""
+  const staleSuffix = stale ? " (stale)" : ""
+  const header = showHeader ? `TODOs${scopePrefix}: ${doneCount}/${totalCount}${hiddenSuffix}${staleSuffix}` : ""
   return { header, doneCount, totalCount, items }
 }
 

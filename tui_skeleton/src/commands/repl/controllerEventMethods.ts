@@ -6,7 +6,7 @@ import type {
 } from "../../api/types.js"
 import { reduceCTreeModel } from "../../repl/ctrees/reducer.js"
 import { BRAND_COLORS, SEMANTIC_COLORS } from "../../repl/designSystem.js"
-import { reduceTodoStore } from "../../repl/todos/todoStore.js"
+import { createEmptyTodoStore, reduceTodoStore } from "../../repl/todos/todoStore.js"
 import { stripAnsi } from "../../repl/stringUtils.js"
 import { INLINE_THINKING_MARKER } from "../../repl/transcriptUtils.js"
 import type {
@@ -18,6 +18,7 @@ import type {
   SkillCatalogSources,
   ThinkingMode,
   TodoUpdate,
+  TodoUpdatePatch,
 } from "../../repl/types.js"
 import {
   appendThinkingArtifact,
@@ -357,35 +358,195 @@ const formatCompletion = (payload: unknown): CompletionView => {
   return { completed, status, toolLine, hint, conversationLine, warningSlot }
 }
 
-const extractProjectedTodoUpdate = (controller: any, payload: Record<string, unknown>, at: number): TodoUpdate | null => {
+const DEFAULT_TODO_SCOPE_KEY = "main"
+
+const normalizeScopeKey = (value: string): string => {
+  const trimmed = value.trim()
+  if (!trimmed) return DEFAULT_TODO_SCOPE_KEY
+  // Keep scope keys terminal-friendly (used in headers and commands).
+  return trimmed.replace(/\s+/g, "_").slice(0, 64)
+}
+
+const resolveTodoScope = (
+  payload: Record<string, unknown>,
+  todoEnvelope: Record<string, unknown> | null,
+): { scopeKey: string; scopeLabel: string | null } => {
+  const scopeFromTodo = todoEnvelope ? extractString(todoEnvelope, ["scope_key", "scopeKey", "scope"]) : null
+  const scopeFromPayload = extractString(payload, [
+    "scope_key",
+    "scopeKey",
+    "scope",
+    "lane_id",
+    "laneId",
+    "task_id",
+    "taskId",
+    "agent_id",
+    "agentId",
+  ])
+  const scopeKey = normalizeScopeKey(scopeFromTodo ?? scopeFromPayload ?? DEFAULT_TODO_SCOPE_KEY)
+  const labelFromTodo = todoEnvelope ? extractString(todoEnvelope, ["scope_label", "scopeLabel", "label"]) : null
+  const labelFromPayload = extractString(payload, ["lane_label", "laneLabel", "subagent_type", "subagentType"])
+  const scopeLabel = (labelFromTodo ?? labelFromPayload ?? null)?.trim() || null
+  return { scopeKey, scopeLabel }
+}
+
+const parseTodoSourceRevision = (todoEnvelope: Record<string, unknown> | null): number | null => {
+  if (!todoEnvelope) return null
+  const rev =
+    parseNumberish(todoEnvelope.revision) ??
+    parseNumberish(todoEnvelope.rev) ??
+    parseNumberish(todoEnvelope.seq) ??
+    parseNumberish(todoEnvelope.version)
+  return rev != null && Number.isFinite(rev) ? Math.floor(rev) : null
+}
+
+const ensureTodoScope = (controller: any, scopeKey: string, scopeLabel: string | null): void => {
+  const key = normalizeScopeKey(scopeKey)
+  if (!controller.todoStoresByScope) {
+    controller.todoStoresByScope = { [DEFAULT_TODO_SCOPE_KEY]: createEmptyTodoStore() }
+  }
+  if (!controller.todoScopeOrder) {
+    controller.todoScopeOrder = [DEFAULT_TODO_SCOPE_KEY]
+  }
+  if (!controller.todoScopeLabelsByKey) {
+    controller.todoScopeLabelsByKey = { [DEFAULT_TODO_SCOPE_KEY]: DEFAULT_TODO_SCOPE_KEY }
+  }
+  if (!controller.todoScopeStaleByKey) {
+    controller.todoScopeStaleByKey = { [DEFAULT_TODO_SCOPE_KEY]: false }
+  }
+  if (!controller.todoSourceRevisionByScope) {
+    controller.todoSourceRevisionByScope = {}
+  }
+  if (!controller.todoStoresByScope[key]) {
+    controller.todoStoresByScope[key] = createEmptyTodoStore()
+    if (Array.isArray(controller.todoScopeOrder) && !controller.todoScopeOrder.includes(key)) {
+      controller.todoScopeOrder = [...controller.todoScopeOrder, key]
+    }
+    if (controller.todoScopeStaleByKey) {
+      controller.todoScopeStaleByKey[key] = false
+    }
+  }
+  if (scopeLabel && controller.todoScopeLabelsByKey) {
+    controller.todoScopeLabelsByKey[key] = scopeLabel
+  } else if (controller.todoScopeLabelsByKey && !controller.todoScopeLabelsByKey[key]) {
+    controller.todoScopeLabelsByKey[key] = key
+  }
+}
+
+const extractProjectedTodoUpdate = (
+  controller: any,
+  payload: Record<string, unknown>,
+  at: number,
+): { update: TodoUpdate; sourceRevision: number | null; scopeKey: string; scopeLabel: string | null } | null => {
   const todo = payload.todo
   if (!todo) return null
+
   if (Array.isArray(todo)) {
-    // Allow engine/projection to attach a direct array snapshot.
     const items = controller.extractTodosFromPayload(todo)
-    return items ? { op: "replace", at, scopeKey: "main", items } : null
+    if (!items) return null
+    const { scopeKey, scopeLabel } = resolveTodoScope(payload, null)
+    return { update: { op: "replace", at, scopeKey, items }, sourceRevision: null, scopeKey, scopeLabel }
   }
+
   if (!isRecord(todo)) return null
-  const opRaw = String(todo.op ?? todo.operation ?? "").trim().toLowerCase()
-  if (opRaw === "clear") return { op: "clear", at, scopeKey: "main" }
-  if (opRaw === "replace" || opRaw === "snapshot") {
-    const items = controller.extractTodosFromPayload((todo as Record<string, unknown>).items ?? (todo as Record<string, unknown>).todos ?? todo)
-    return items ? { op: "replace", at, scopeKey: "main", items } : null
+  const envelope = todo as Record<string, unknown>
+  const { scopeKey, scopeLabel } = resolveTodoScope(payload, envelope)
+  const sourceRevision = parseTodoSourceRevision(envelope)
+
+  const opRaw = String(envelope.op ?? envelope.operation ?? envelope.type ?? "").trim().toLowerCase()
+  const op = opRaw === "snapshot" ? "replace" : opRaw === "reset" ? "clear" : opRaw
+
+  if (op === "clear") {
+    return { update: { op: "clear", at, scopeKey }, sourceRevision, scopeKey, scopeLabel }
   }
+
+  if (op === "replace") {
+    const items = controller.extractTodosFromPayload(envelope.items ?? envelope.todos ?? envelope)
+    if (!items) return null
+    return { update: { op: "replace", at, scopeKey, items }, sourceRevision, scopeKey, scopeLabel }
+  }
+
+  if (op === "delete" || op === "remove") {
+    const idsRaw = envelope.ids ?? envelope.id ?? envelope.todo_id ?? envelope.todoId
+    const ids = Array.isArray(idsRaw)
+      ? idsRaw.map((v) => String(v)).filter((v) => v.trim().length > 0)
+      : typeof idsRaw === "string" && idsRaw.trim()
+        ? [idsRaw.trim()]
+        : []
+    if (ids.length === 0) return null
+    return { update: { op: "delete", at, scopeKey, ids }, sourceRevision, scopeKey, scopeLabel }
+  }
+
+  if (op === "upsert" || op === "add") {
+    const parsed = controller.extractTodosFromPayload([envelope.item ?? envelope.todo ?? envelope])
+    const item = parsed && parsed.length > 0 ? parsed[0] : null
+    if (!item) return null
+    const positionRaw = parseNumberish(envelope.position)
+    const position = positionRaw != null && Number.isFinite(positionRaw) ? Math.floor(positionRaw) : null
+    return { update: { op: "upsert", at, scopeKey, item, position }, sourceRevision, scopeKey, scopeLabel }
+  }
+
+  if (op === "patch" || op === "update") {
+    const patchesRaw = envelope.patches ?? envelope.patch ?? []
+    const patchesList = Array.isArray(patchesRaw) ? patchesRaw : isRecord(patchesRaw) ? [patchesRaw] : []
+    const patches = patchesList
+      .map((entry) => {
+        if (!isRecord(entry)) return null
+        const id =
+          extractString(entry, ["id", "todo_id", "todoId"]) ??
+          extractString(envelope, ["id", "todo_id", "todoId"]) ??
+          null
+        if (!id) return null
+        const patch: Record<string, unknown> = {}
+        const title = extractString(entry, ["title"])
+        const status = extractString(entry, ["status"])
+        const priority = parseNumberish((entry as any).priority)
+        if (title != null) patch.title = title
+        if (status != null) patch.status = status
+        if (priority != null && Number.isFinite(priority)) patch.priority = priority
+        if ((entry as any).metadata != null) patch.metadata = (entry as any).metadata
+        if (Object.keys(patch).length === 0) return null
+        return { id, patch: patch as any } as TodoUpdatePatch
+      })
+      .filter((value): value is TodoUpdatePatch => value != null)
+    if (patches.length === 0) return null
+    return { update: { op: "patch", at, scopeKey, patches }, sourceRevision, scopeKey, scopeLabel }
+  }
+
   return null
 }
 
 const maybeApplyTodoUpdateFromPayload = (controller: any, payload: Record<string, unknown>): number | null => {
   const at = Date.now()
   const projected = extractProjectedTodoUpdate(controller, payload, at)
-  const update = projected ?? (() => {
-    const items = controller.extractTodosFromPayload(payload)
-    return items ? ({ op: "replace", at, scopeKey: "main", items } as TodoUpdate) : null
-  })()
-  if (!update) return null
-  const next = reduceTodoStore(controller.todoStore, update)
-  if (next === controller.todoStore) return null
-  controller.todoStore = next
+  const fallback: { update: TodoUpdate; sourceRevision: number | null; scopeKey: string; scopeLabel: string | null } | null =
+    projected ??
+    (() => {
+      const items = controller.extractTodosFromPayload(payload)
+      if (!items) return null
+      const { scopeKey, scopeLabel } = resolveTodoScope(payload, null)
+      return { update: { op: "replace", at, scopeKey, items } as TodoUpdate, sourceRevision: null, scopeKey, scopeLabel }
+    })()
+
+  if (!fallback) return null
+
+  const { update, sourceRevision, scopeKey, scopeLabel } = fallback
+  ensureTodoScope(controller, scopeKey, scopeLabel)
+
+  if (sourceRevision != null) {
+    const prev = controller.todoSourceRevisionByScope?.[scopeKey]
+    if (typeof prev === "number" && Number.isFinite(prev) && sourceRevision <= prev) {
+      return null
+    }
+    controller.todoSourceRevisionByScope[scopeKey] = sourceRevision
+  }
+
+  const currentStore = controller.todoStoresByScope?.[scopeKey] ?? createEmptyTodoStore()
+  const next = reduceTodoStore(currentStore, update)
+  if (next === currentStore) return null
+  controller.todoStoresByScope[scopeKey] = next
+  if (controller.todoScopeStaleByKey) controller.todoScopeStaleByKey[scopeKey] = false
+
   if (update.op === "replace") return update.items.length
   return 0
 }
@@ -531,6 +692,11 @@ export async function streamLoop(this: any): Promise<void> {
       })) {
         if (warnOnReconnect && !warned) {
           this.pushHint("Reconnected to stream; some history may be missing.")
+          if (this.todoScopeStaleByKey && typeof this.todoScopeStaleByKey === "object") {
+            for (const key of Object.keys(this.todoScopeStaleByKey)) {
+              this.todoScopeStaleByKey[key] = true
+            }
+          }
           warned = true
         }
         this.hasStreamedOnce = true
@@ -582,6 +748,11 @@ export async function streamLoop(this: any): Promise<void> {
       if (error instanceof ApiError && error.status === 409) {
         this.pendingResponse = false
         this.pushHint("Stream resume window exceeded; reconnecting without history.")
+        if (this.todoScopeStaleByKey && typeof this.todoScopeStaleByKey === "object") {
+          for (const key of Object.keys(this.todoScopeStaleByKey)) {
+            this.todoScopeStaleByKey[key] = true
+          }
+        }
         if (this.ctreeTreeRequested && this.ctreeSource !== "disk") {
           this.pushHint("CTree resume window exceeded; switching to disk tree view.")
           void this.refreshCtreeTree({ source: "disk" })

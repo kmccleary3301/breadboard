@@ -139,6 +139,10 @@ export interface ReplState {
   readonly guardrailNotice?: GuardrailNotice | null
   readonly viewClearAt?: number | null
   readonly viewPrefs: TranscriptPreferences
+  readonly todoScopeKey: string
+  readonly todoScopeLabel: string
+  readonly todoScopeStale: boolean
+  readonly todoScopeOrder: ReadonlyArray<string>
   readonly permissionRequest?: PermissionRequest | null
   readonly permissionError?: string | null
   readonly permissionQueueDepth?: number
@@ -262,7 +266,12 @@ export class ReplSessionController extends EventEmitter {
   private permissionError: string | null = null
   private permissionQueue: PermissionRequest[] = []
   private rewindMenu: RewindMenuState = { status: "hidden" }
-  private todoStore: TodoStoreSnapshot = createEmptyTodoStore()
+  private todoStoresByScope: Record<string, TodoStoreSnapshot> = { main: createEmptyTodoStore() }
+  private todoScopeOrder: string[] = ["main"]
+  private activeTodoScopeKey = "main"
+  private todoScopeLabelsByKey: Record<string, string> = { main: "main" }
+  private todoScopeStaleByKey: Record<string, boolean> = { main: false }
+  private todoSourceRevisionByScope: Record<string, number> = {}
   private tasks: TaskEntry[] = []
   private lastEventId: string | null = null
   private eventClock = 0
@@ -309,7 +318,12 @@ export class ReplSessionController extends EventEmitter {
 
   getState(): ReplState {
     const liveSlotList = Array.from(this.liveSlots.values()).sort((a, b) => a.updatedAt - b.updatedAt)
-    const todos = todoStoreToList(this.todoStore)
+    const activeScopeKey = this.activeTodoScopeKey || "main"
+    const todoStore =
+      this.todoStoresByScope[activeScopeKey] ?? this.todoStoresByScope.main ?? createEmptyTodoStore()
+    const todos = todoStoreToList(todoStore)
+    const todoScopeLabel = this.todoScopeLabelsByKey[activeScopeKey] ?? activeScopeKey
+    const todoScopeStale = Boolean(this.todoScopeStaleByKey[activeScopeKey])
     return {
       configPath: this.config.configPath,
       sessionId: this.sessionId,
@@ -339,11 +353,15 @@ export class ReplSessionController extends EventEmitter {
       guardrailNotice: this.guardrailNotice,
       viewClearAt: this.viewClearAt,
       viewPrefs: this.viewPrefs,
+      todoScopeKey: activeScopeKey,
+      todoScopeLabel,
+      todoScopeStale,
+      todoScopeOrder: [...this.todoScopeOrder],
       permissionRequest: this.permissionActive,
       permissionError: this.permissionError,
       permissionQueueDepth: this.permissionQueue.length,
       rewindMenu: this.rewindMenu,
-      todoStore: this.todoStore,
+      todoStore,
       todos,
       tasks: [...this.tasks],
       workGraph: this.workGraph,
@@ -388,7 +406,12 @@ export class ReplSessionController extends EventEmitter {
     this.lastEventId = null
     this.hasStreamedOnce = false
     this.resetTransientRuntimeState()
-    this.todoStore = createEmptyTodoStore()
+    this.todoStoresByScope = { main: createEmptyTodoStore() }
+    this.todoScopeOrder = ["main"]
+    this.activeTodoScopeKey = "main"
+    this.todoScopeLabelsByKey = { main: "main" }
+    this.todoScopeStaleByKey = { main: false }
+    this.todoSourceRevisionByScope = {}
     this.activity = createActivitySnapshot("session")
     const requestedModel = this.config.model?.trim()
     const modelLabel = requestedModel ?? this.stats.model

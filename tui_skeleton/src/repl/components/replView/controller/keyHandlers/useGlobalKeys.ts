@@ -59,6 +59,7 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
       const isCtrlB = key.ctrl && lowerChar === "b"
       const isCtrlY = (key.ctrl && lowerChar === "y") || char === "\u0019"
       const isCtrlG = (key.ctrl && lowerChar === "g") || char === "\u0007"
+      const isCtrlU = (key.ctrl && lowerChar === "u") || char === "\u0015"
       if (isCtrlShiftT) {
         setCtreeOpen(false)
         if (transcriptViewerOpen) {
@@ -230,6 +231,10 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
         } else {
           onSkillsMenuCancel()
         }
+        return true
+      }
+      if (isCtrlU) {
+        void onSubmit("/todo-scope next")
         return true
       }
       if (key.ctrl && lowerChar === "i") {

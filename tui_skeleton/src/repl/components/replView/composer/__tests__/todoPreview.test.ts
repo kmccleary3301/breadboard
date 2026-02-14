@@ -24,6 +24,22 @@ describe("buildTodoPreviewModel", () => {
     expect(getTodoPreviewRowCount(model)).toBe(1 + 3)
   })
 
+  it("includes scope label for non-main scopes", () => {
+    const model = buildTodoPreviewModel(
+      storeFromTodos([{ id: "1", title: "Only", status: "todo" }]),
+      { scopeKey: "lane-1" },
+    )
+    expect(model?.header).toBe("TODOs (lane-1): 0/1")
+  })
+
+  it("marks header as stale when requested", () => {
+    const model = buildTodoPreviewModel(
+      storeFromTodos([{ id: "1", title: "Only", status: "todo" }]),
+      { stale: true },
+    )
+    expect(model?.header).toBe("TODOs: 0/1 (stale)")
+  })
+
   it("truncates to maxItems and preserves order", () => {
     const todos = Array.from({ length: DEFAULT_TODO_PREVIEW_MAX_ITEMS + 4 }).map((_, idx) => ({
       id: String(idx + 1),
