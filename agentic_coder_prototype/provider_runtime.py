@@ -1872,6 +1872,19 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         snapshot["captured_at"] = time.time()
         session_state.set_provider_metadata("anthropic_rate_limits", snapshot)
 
+        # Also emit a normalized limits_update event for the CLI bridge stream (best-effort).
+        try:
+            from .limits.parse_headers import parse_rate_limit_headers
+
+            provider_id = getattr(getattr(self, "descriptor", None), "provider_id", None) or "anthropic"
+            parsed = parse_rate_limit_headers(headers, provider=str(provider_id))
+            if parsed:
+                emit = getattr(session_state, "_emit_event", None)
+                if callable(emit):
+                    emit("limits_update", parsed, turn=getattr(session_state, "_active_turn_index", None))
+        except Exception:
+            pass
+
     def _is_overloaded_error(self, exc: Exception) -> bool:
         if AnthropicOverloadedError is not None and isinstance(exc, AnthropicOverloadedError):
             return True
