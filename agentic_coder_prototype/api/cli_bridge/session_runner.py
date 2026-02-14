@@ -23,11 +23,14 @@ from agentic_coder_prototype.skills.registry import (
 )
 from agentic_coder_prototype.plugins.loader import discover_plugin_manifests, plugin_snapshot
 from agentic_coder_prototype.policy_pack import PolicyPack
+from agentic_coder_prototype.guardrail_coordinator import GuardrailCoordinator
 from agentic_coder_prototype.permission_rules_store import (
     build_permission_overrides,
     load_permission_rules,
     upsert_permission_rule,
 )
+from agentic_coder_prototype.todo import TodoStore
+from agentic_coder_prototype.todo.projection import project_store_snapshot_to_tui_envelope
 
 from .events import EventType, SessionEvent
 from .models import SessionCreateRequest, SessionStatus
@@ -446,6 +449,19 @@ class SessionRunner:
             workspace_dir.mkdir(parents=True, exist_ok=True)
             self._workspace_path = workspace_dir
             try:
+                todo_cfg = GuardrailCoordinator(base_cfg).todo_config()
+            except Exception:
+                todo_cfg = {"enabled": False}
+            if todo_cfg.get("enabled"):
+                envelope = self._load_todo_envelope_from_disk(workspace_dir)
+                if envelope is not None:
+                    self.session.metadata["todo_last_update"] = envelope
+                    self._persist_metadata_snapshot_threadsafe()
+                    await self.publish_event_async(
+                        EventType.TOOL_RESULT,
+                        {"call_id": "todo:snapshot:init", "todo": envelope},
+                    )
+            try:
                 self._checkpoint_manager = CheckpointManager(workspace_dir)
                 self._checkpoint_manager.create_checkpoint("Session start")
             except Exception:
@@ -498,6 +514,14 @@ class SessionRunner:
         finally:
             self._closed = True
             await self._enqueue_termination()
+
+    def _load_todo_envelope_from_disk(self, workspace_dir: Path) -> Optional[Dict[str, Any]]:
+        try:
+            store = TodoStore(str(workspace_dir), load_existing=True)
+            snapshot = store.snapshot()
+            return project_store_snapshot_to_tui_envelope(snapshot, scope_key="main", scope_label="main")
+        except Exception:
+            return None
 
     async def _enqueue_termination(self) -> None:
         queue = self.session.event_queue
@@ -1285,6 +1309,7 @@ class SessionRunner:
             "user_message": EventType.USER_MESSAGE,
             "tool_call": EventType.TOOL_CALL,
             "tool_result": EventType.TOOL_RESULT,
+            "todo_event": EventType.TOOL_RESULT,
             "permission_request": EventType.PERMISSION_REQUEST,
             "permission_response": EventType.PERMISSION_RESPONSE,
             "checkpoint_list": EventType.CHECKPOINT_LIST,
@@ -1306,6 +1331,14 @@ class SessionRunner:
             return None
 
         normalized_payload: Dict[str, Any] = dict(payload or {})
+        if event_type == "todo_event":
+            try:
+                todo_update = normalized_payload.get("todo")
+                if isinstance(todo_update, dict):
+                    self.session.metadata["todo_last_update"] = dict(todo_update)
+                    self._persist_metadata_snapshot_threadsafe()
+            except Exception:
+                pass
         if evt is EventType.TURN_START:
             if "mode" not in normalized_payload and self._mode:
                 normalized_payload["mode"] = self._mode

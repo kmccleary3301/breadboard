@@ -18,6 +18,7 @@ from ..provider_ir import (
     IRFinish,
     convert_legacy_messages,
 )
+from ..todo.projection import project_store_snapshot_to_tui_envelope
 
 
 class SessionState:
@@ -136,13 +137,30 @@ class SessionState:
         return self.todo_manager
 
     def emit_todo_event(self, payload: Dict[str, Any]) -> None:
+        envelope = None
+        revision = None
         try:
             if self.todo_manager:
                 snapshot = self.todo_manager.snapshot()
                 self.provider_metadata["todo_snapshot"] = snapshot
+                envelope = project_store_snapshot_to_tui_envelope(snapshot, scope_key="main", scope_label="main")
+                if isinstance(envelope, dict):
+                    rev = envelope.get("revision")
+                    if isinstance(rev, int):
+                        revision = rev
         except Exception:
-            pass
-        self._emit_event("todo_event", payload, turn=self._active_turn_index)
+            envelope = None
+        # Emit a normalized payload that the CLI bridge can translate into a tool_result
+        # event with `payload.todo`, allowing the Ink TUI to converge from any point.
+        enriched: Dict[str, Any] = {
+            "todo": envelope,
+            "event": dict(payload or {}),
+        }
+        if revision is not None:
+            enriched["call_id"] = f"todo:{revision}"
+        else:
+            enriched["call_id"] = f"todo:{int(time.time() * 1000)}"
+        self._emit_event("todo_event", enriched, turn=self._active_turn_index)
 
     def emit_task_event(self, payload: Dict[str, Any]) -> None:
         """Emit a multi-agent/task lifecycle event to observers."""

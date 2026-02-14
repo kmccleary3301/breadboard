@@ -11,7 +11,7 @@ from typing import Any, AsyncIterator, Optional, Sequence
 
 from fastapi import HTTPException, UploadFile, status
 
-from .events import SessionEvent
+from .events import EventType, SessionEvent
 from .models import (
     AttachmentHandle,
     AttachmentUploadResponse,
@@ -161,6 +161,31 @@ class SessionService:
                     events = events[-limit:]
                 for event in events:
                     queue.put_nowait(event)
+            else:
+                # Snapshot-on-reconnect: if the client connects without replay/from_id,
+                # push the most recent todo snapshot into its queue so the TUI can
+                # converge even when history is missing (resume window exceeded, etc).
+                envelope = record.metadata.get("todo_last_update") if isinstance(record.metadata, dict) else None
+                if not isinstance(envelope, dict):
+                    runner = getattr(record, "runner", None)
+                    workspace_dir = runner.get_workspace_dir() if runner else None
+                    if workspace_dir:
+                        try:
+                            from agentic_coder_prototype.todo import TodoStore
+                            from agentic_coder_prototype.todo.projection import project_store_snapshot_to_tui_envelope
+
+                            store = TodoStore(str(workspace_dir), load_existing=True)
+                            envelope = project_store_snapshot_to_tui_envelope(store.snapshot(), scope_key="main", scope_label="main")
+                        except Exception:
+                            envelope = None
+                if isinstance(envelope, dict):
+                    queue.put_nowait(
+                        SessionEvent(
+                            EventType.TOOL_RESULT,
+                            record.session_id,
+                            {"call_id": f"todo:snapshot:connect:{uuid.uuid4().hex[:8]}", "todo": envelope},
+                        )
+                    )
             record.subscribers.add(queue)
 
     async def _unregister_subscriber(
@@ -230,6 +255,23 @@ class SessionService:
             runner=payload.get("runner"),
             last_node=payload.get("last_node"),
         )
+
+    async def get_limits_status(self, session_id: str) -> dict[str, Any] | None:
+        from .events import EventType
+
+        record = await self.ensure_session(session_id)
+        # Best-effort: scan the in-memory event log for the most recent limits_update.
+        try:
+            for event in reversed(list(record.event_log)):
+                event_type = getattr(event, "type", None)
+                if event_type == EventType.LIMITS_UPDATE or getattr(event_type, "value", None) == EventType.LIMITS_UPDATE.value:
+                    payload = getattr(event, "payload", None)
+                    if isinstance(payload, dict):
+                        return dict(payload)
+                    return None
+        except Exception:
+            return None
+        return None
 
     async def validate_event_stream(
         self,

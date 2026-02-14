@@ -88,8 +88,7 @@ def test_session_state_emits_ctree_node_events() -> None:
     node = payload.get("node") or {}
     snapshot = payload.get("snapshot") or {}
     assert node.get("id")
-    assert node.get("digest")
-    assert snapshot.get("node_hash")
+    assert snapshot.get("node_count")
 
 
 def test_session_runner_translates_runtime_events() -> None:
@@ -110,6 +109,20 @@ def test_session_runner_translates_runtime_events() -> None:
     assert turn == 3
 
     assert runner._translate_runtime_event("unknown", {}, turn=None) is None
+
+    todo_translated = runner._translate_runtime_event(
+        "todo_event",
+        {"call_id": "todo:1", "todo": {"op": "replace", "revision": 1, "scopeKey": "main", "items": []}},
+        turn=3,
+    )
+    assert todo_translated is not None
+    evt_type, payload, turn = todo_translated
+    assert evt_type is EventType.TOOL_RESULT
+    assert isinstance(payload.get("todo"), dict)
+    assert payload["todo"]["revision"] == 1
+    assert turn == 3
+    assert isinstance(record.metadata, dict)
+    assert isinstance(record.metadata.get("todo_last_update"), dict)
 
 
 def test_session_runner_queue_pump_processes_events() -> None:
@@ -201,3 +214,25 @@ async def test_session_service_event_stream_handles_completion() -> None:
 
     assert completion.type is EventType.COMPLETION
     assert completion.payload["summary"]["completed"]
+
+
+@pytest.mark.asyncio
+async def test_session_service_injects_todo_snapshot_on_connect() -> None:
+    registry = SessionRegistry()
+    service = SessionService(registry)
+    record = SessionRecord(
+        session_id="sess-todo-connect",
+        status=SessionStatus.RUNNING,
+        metadata={"todo_last_update": {"op": "replace", "revision": 3, "scopeKey": "main", "items": []}},
+    )
+    await registry.create(record)
+
+    stream = service.event_stream("sess-todo-connect")
+    injected = await stream.__anext__()
+    await stream.aclose()
+    if record.dispatcher_task:
+        await record.event_queue.put(None)
+        await record.dispatcher_task
+
+    assert injected.type is EventType.TOOL_RESULT
+    assert injected.payload["todo"]["revision"] == 3

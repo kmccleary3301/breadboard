@@ -43,11 +43,23 @@ class TodoManager:
         self.store = store
         self.event_callback = event_callback
 
+    def _emit_snapshot_event(self, reason: str) -> None:
+        """
+        Emit a single best-effort "snapshot" signal after mutating operations.
+
+        SessionState.emit_todo_event() will project the current store snapshot into
+        a `payload.todo` replace envelope for the TUI.
+        """
+        try:
+            self.event_callback({"type": "todo.snapshot", "todo_id": "_all_", "payload": {"reason": reason}})
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------ tool handlers
     def handle_create(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         drafts = _as_todo_drafts(payload.get("items") or payload.get("drafts") or payload)
         todos = self.store.create(drafts)
-        self._emit_latest_events(len(drafts))
+        self._emit_snapshot_event("todo.create")
         return {"todos": [todo.to_dict() for todo in todos]}
 
     def handle_update(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -62,21 +74,21 @@ class TodoManager:
             version=payload.get("version"),
         )
         todo = self.store.update(todo_id, patch)
-        self._emit_latest_events(1)
+        self._emit_snapshot_event("todo.update")
         return {"todo": todo.to_dict()}
 
     def handle_complete(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         todo_id = _require_id(payload)
         summary = payload.get("summary")
         todo = self.store.complete(todo_id, summary)
-        self._emit_latest_events(2)
+        self._emit_snapshot_event("todo.complete")
         return {"todo": todo.to_dict()}
 
     def handle_cancel(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         todo_id = _require_id(payload)
         reason = payload.get("reason")
         todo = self.store.cancel(todo_id, reason)
-        self._emit_latest_events(2)
+        self._emit_snapshot_event("todo.cancel")
         return {"todo": todo.to_dict()}
 
     def handle_reorder(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -85,7 +97,7 @@ class TodoManager:
             raise ValueError("todo.reorder requires 'order' as a list of todo ids.")
         order_ids = [str(item) for item in order]
         updated = self.store.reorder(order_ids)
-        self._emit_latest_events(1)
+        self._emit_snapshot_event("todo.reorder")
         return {"order": updated}
 
     def handle_attach(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -94,7 +106,7 @@ class TodoManager:
         if not isinstance(refs, Sequence):
             raise ValueError("todo.attach requires 'refs' list.")
         todo = self.store.attach(todo_id, refs)
-        self._emit_latest_events(1)
+        self._emit_snapshot_event("todo.attach")
         return {"todo": todo.to_dict()}
 
     def handle_note(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -104,7 +116,7 @@ class TodoManager:
             raise ValueError("todo.note requires 'text'.")
         author = str(payload.get("author") or "assistant")
         todo = self.store.note(todo_id, author, text)
-        self._emit_latest_events(1)
+        self._emit_snapshot_event("todo.note")
         return {"todo": todo.to_dict()}
 
     def handle_list(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -161,6 +173,7 @@ class TodoManager:
 
         self.store.reorder(new_order)
         self.store.prune_to_ids(new_order, reason="todo.write_board")
+        self._emit_snapshot_event("todo.write_board")
         return {"todos": [todo.to_dict() for todo in self.store.list_items()]}
 
     # ------------------------------------------------------------------ helpers
