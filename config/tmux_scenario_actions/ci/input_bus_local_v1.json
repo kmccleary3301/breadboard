@@ -1,0 +1,6 @@
+[
+  {"type": "send", "text": "echo submit-enter-ok", "input_mode": "submit_enter", "must_contain": ["submit-enter-ok"]},
+  {"type": "send", "text": "echo multiline-first \\", "input_mode": "literal_newline"},
+  {"type": "send", "text": "multiline-second", "input_mode": "submit_enter", "must_contain": ["multiline-first multiline-second"]}
+]
+
