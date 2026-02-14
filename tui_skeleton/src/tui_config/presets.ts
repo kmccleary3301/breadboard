@@ -37,6 +37,8 @@ export const BUILTIN_TUI_PRESETS: Record<TuiPresetId, TuiConfigInput> = {
       ruleCharacter: "─",
       showTopRule: true,
       showBottomRule: true,
+      todoPreviewAboveInput: true,
+      todoPreviewMaxItems: 7,
     },
     statusLine: {
       position: "above_input",
@@ -228,6 +230,8 @@ export const DEFAULT_RESOLVED_TUI_CONFIG: ResolvedTuiConfig = {
     ruleCharacter: "─",
     showTopRule: true,
     showBottomRule: true,
+    todoPreviewAboveInput: false,
+    todoPreviewMaxItems: 7,
   },
   statusLine: {
     position: "above_input",

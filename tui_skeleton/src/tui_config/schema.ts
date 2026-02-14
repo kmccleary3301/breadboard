@@ -251,7 +251,16 @@ export const validateTuiConfigInput = (input: unknown, options: ValidationOption
   if (composerRaw) {
     detectUnknownKeys(
       composerRaw,
-      ["promptPrefix", "placeholderClassic", "placeholderClaude", "ruleCharacter", "showTopRule", "showBottomRule"],
+      [
+        "promptPrefix",
+        "placeholderClassic",
+        "placeholderClaude",
+        "ruleCharacter",
+        "showTopRule",
+        "showBottomRule",
+        "todoPreviewAboveInput",
+        "todoPreviewMaxItems",
+      ],
       ["composer"],
       issues,
       options.strictUnknownKeys,
@@ -269,6 +278,10 @@ export const validateTuiConfigInput = (input: unknown, options: ValidationOption
     if (showTopRule != null) composer.showTopRule = showTopRule
     const showBottomRule = readBoolean(composerRaw, "showBottomRule", ["composer"], issues)
     if (showBottomRule != null) composer.showBottomRule = showBottomRule
+    const todoPreviewAboveInput = readBoolean(composerRaw, "todoPreviewAboveInput", ["composer"], issues)
+    if (todoPreviewAboveInput != null) composer.todoPreviewAboveInput = todoPreviewAboveInput
+    const todoPreviewMaxItems = readPositiveInt(composerRaw, "todoPreviewMaxItems", ["composer"], issues)
+    if (todoPreviewMaxItems != null) composer.todoPreviewMaxItems = todoPreviewMaxItems
     config.composer = composer
   }
 
