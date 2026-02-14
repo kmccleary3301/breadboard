@@ -13,6 +13,7 @@ import type {
   TranscriptPreferences,
   ToolLogEntry,
   TodoItem,
+  TodoStoreSnapshot,
   TaskEntry,
   WorkGraphState,
   PermissionRequest,
@@ -43,6 +44,7 @@ export interface ReplViewProps {
   readonly guardrailNotice?: GuardrailNotice | null
   readonly viewClearAt?: number | null
   readonly viewPrefs: TranscriptPreferences
+  readonly todoStore: TodoStoreSnapshot
   readonly todos: TodoItem[]
   readonly tasks: TaskEntry[]
   readonly workGraph: WorkGraphState

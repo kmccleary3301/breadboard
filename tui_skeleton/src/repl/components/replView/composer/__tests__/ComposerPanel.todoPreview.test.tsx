@@ -8,7 +8,10 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe("ComposerPanel todo preview", () => {
   it("renders todo preview above the input when enabled (claudeChrome)", async () => {
-    const preview = buildTodoPreviewModel([{ id: "t1", title: "Write tests", status: "todo" }], { maxItems: 7 })
+    const preview = buildTodoPreviewModel(
+      { revision: 1, updatedAt: 0, itemsById: { t1: { id: "t1", title: "Write tests", status: "todo" } }, order: ["t1"] },
+      { maxItems: 7 },
+    )
     const { lastFrame } = render(
       <ComposerPanel
         context={{
@@ -65,4 +68,3 @@ describe("ComposerPanel todo preview", () => {
     expect(frame).toContain("[ ] Write tests")
   })
 })
-

@@ -6,6 +6,7 @@ import type {
 } from "../../api/types.js"
 import { reduceCTreeModel } from "../../repl/ctrees/reducer.js"
 import { BRAND_COLORS, SEMANTIC_COLORS } from "../../repl/designSystem.js"
+import { reduceTodoStore } from "../../repl/todos/todoStore.js"
 import { stripAnsi } from "../../repl/stringUtils.js"
 import { INLINE_THINKING_MARKER } from "../../repl/transcriptUtils.js"
 import type {
@@ -16,6 +17,7 @@ import type {
   SkillSelection,
   SkillCatalogSources,
   ThinkingMode,
+  TodoUpdate,
 } from "../../repl/types.js"
 import {
   appendThinkingArtifact,
@@ -355,6 +357,39 @@ const formatCompletion = (payload: unknown): CompletionView => {
   return { completed, status, toolLine, hint, conversationLine, warningSlot }
 }
 
+const extractProjectedTodoUpdate = (controller: any, payload: Record<string, unknown>, at: number): TodoUpdate | null => {
+  const todo = payload.todo
+  if (!todo) return null
+  if (Array.isArray(todo)) {
+    // Allow engine/projection to attach a direct array snapshot.
+    const items = controller.extractTodosFromPayload(todo)
+    return items ? { op: "replace", at, scopeKey: "main", items } : null
+  }
+  if (!isRecord(todo)) return null
+  const opRaw = String(todo.op ?? todo.operation ?? "").trim().toLowerCase()
+  if (opRaw === "clear") return { op: "clear", at, scopeKey: "main" }
+  if (opRaw === "replace" || opRaw === "snapshot") {
+    const items = controller.extractTodosFromPayload((todo as Record<string, unknown>).items ?? (todo as Record<string, unknown>).todos ?? todo)
+    return items ? { op: "replace", at, scopeKey: "main", items } : null
+  }
+  return null
+}
+
+const maybeApplyTodoUpdateFromPayload = (controller: any, payload: Record<string, unknown>): number | null => {
+  const at = Date.now()
+  const projected = extractProjectedTodoUpdate(controller, payload, at)
+  const update = projected ?? (() => {
+    const items = controller.extractTodosFromPayload(payload)
+    return items ? ({ op: "replace", at, scopeKey: "main", items } as TodoUpdate) : null
+  })()
+  if (!update) return null
+  const next = reduceTodoStore(controller.todoStore, update)
+  if (next === controller.todoStore) return null
+  controller.todoStore = next
+  if (update.op === "replace") return update.items.length
+  return 0
+}
+
 export function handleToolCall(
   this: any,
   payload: Record<string, unknown>,
@@ -397,10 +432,9 @@ export function handleToolCall(
   if (this.viewPrefs.toolInline) {
     this.addConversation("system", `[tool] ${slot.text}`)
   }
-  const todos = this.extractTodosFromPayload(payload)
-  if (todos) {
-    this.todos = todos
-    this.pushHint(`Todos updated (${todos.length}).`)
+  const todoCount = maybeApplyTodoUpdateFromPayload(this, payload)
+  if (todoCount != null) {
+    this.pushHint(`Todos updated (${todoCount}).`)
   }
   return callId
 }
@@ -476,10 +510,9 @@ export function handleToolResult(this: any, payload: Record<string, unknown>, ca
     this.toolCallArgsById.delete(callId)
     this.toolExecOutputByCallId.delete(callId)
   }
-  const todos = this.extractTodosFromPayload(payload)
-  if (todos) {
-    this.todos = todos
-    this.pushHint(`Todos updated (${todos.length}).`)
+  const todoCount = maybeApplyTodoUpdateFromPayload(this, payload)
+  if (todoCount != null) {
+    this.pushHint(`Todos updated (${todoCount}).`)
   }
 }
 

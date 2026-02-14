@@ -5,7 +5,7 @@ import { SelectPanel, type SelectPanelLine, type SelectPanelRow } from "../../Se
 import { CHALK, COLORS, GLYPHS, uiText, ASCII_ONLY, DASH_GLYPH } from "../theme.js"
 import { formatBytes, formatCell } from "../utils/format.js"
 import { highlightFuzzyLabel } from "../utils/text.js"
-import type { TodoPreviewModel } from "./todoPreview.js"
+import { RuntimePreviewStack } from "./RuntimePreviewStack.js"
 
 // Intentionally broad while the controller continues to own most state.
 type ComposerPanelContext = Record<string, any>
@@ -59,24 +59,6 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
 
   if (claudeChrome && modelMenu.status !== "hidden") return null
 
-  const previewModel = todoPreviewModel as TodoPreviewModel | null
-  const previewItems = previewModel?.items ?? []
-  const previewHeader = previewModel?.header ?? ""
-  const previewColorForStatus = (status: string): string => {
-    switch (status) {
-      case "done":
-        return "dim"
-      case "blocked":
-        return COLORS.error
-      case "in_progress":
-        return COLORS.warning
-      case "canceled":
-        return COLORS.textMuted
-      default:
-        return COLORS.textBright
-    }
-  }
-
   const ruleWidth = Number.isFinite(columnWidth)
     ? Math.max(1, Math.floor(columnWidth) - (claudeChrome ? 0 : 1))
     : Math.max(1, promptRule.length - (claudeChrome ? 0 : 1))
@@ -88,22 +70,13 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
 
   return (
     <Box marginTop={claudeChrome ? 0 : 1} flexDirection="column" width={ruleWidth}>
-      {claudeChrome && pendingClaudeStatus && <Text color="dim">{pendingClaudeStatus}</Text>}
-      {claudeChrome && !overlayActive && previewItems.length > 0 && (
-        <Box flexDirection="column">
-          {previewHeader ? <Text color={COLORS.textMuted} wrap="truncate">{uiText(previewHeader)}</Text> : null}
-          {previewItems.map((item) => (
-            <Text key={item.id} color={previewColorForStatus(item.status)} wrap="truncate">
-              {uiText(item.label)}
-            </Text>
-          ))}
-        </Box>
-      )}
-      {!overlayActive && claudeChrome && hintNodes.length > 0 && (
-        <Box flexDirection="column">
-          {hintNodes}
-        </Box>
-      )}
+      <RuntimePreviewStack
+        claudeChrome={claudeChrome}
+        overlayActive={overlayActive}
+        pendingClaudeStatus={pendingClaudeStatus ?? null}
+        todoPreviewModel={todoPreviewModel ?? null}
+        hintNodes={!overlayActive ? hintNodes : []}
+      />
       {claudeChrome && (
         composerShowTopRule ? (
           <Text color={COLORS.textMuted} wrap="truncate">

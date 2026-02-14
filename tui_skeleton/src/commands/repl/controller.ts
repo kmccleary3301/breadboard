@@ -30,6 +30,7 @@ import type {
   SkillsMenuState,
   InspectMenuState,
   CTreeSnapshot,
+  TodoStoreSnapshot,
   PermissionRequest,
   PermissionDecision,
   PermissionRuleScope,
@@ -50,6 +51,7 @@ import { createEmptyCTreeModel, type CTreeModel } from "../../repl/ctrees/reduce
 import { DEFAULT_MODEL_ID } from "../../config/appConfig.js"
 import { getModelCatalog } from "../../providers/modelCatalog.js"
 import { CliProviders } from "../../providers/cliProviders.js"
+import { createEmptyTodoStore, todoStoreToList } from "../../repl/todos/todoStore.js"
 import {
   applySkillsSelection,
   closeInspectMenu,
@@ -141,6 +143,7 @@ export interface ReplState {
   readonly permissionError?: string | null
   readonly permissionQueueDepth?: number
   readonly rewindMenu: RewindMenuState
+  readonly todoStore: TodoStoreSnapshot
   readonly todos: TodoItem[]
   readonly tasks: TaskEntry[]
   readonly workGraph: WorkGraphState
@@ -259,7 +262,7 @@ export class ReplSessionController extends EventEmitter {
   private permissionError: string | null = null
   private permissionQueue: PermissionRequest[] = []
   private rewindMenu: RewindMenuState = { status: "hidden" }
-  private todos: TodoItem[] = []
+  private todoStore: TodoStoreSnapshot = createEmptyTodoStore()
   private tasks: TaskEntry[] = []
   private lastEventId: string | null = null
   private eventClock = 0
@@ -306,6 +309,7 @@ export class ReplSessionController extends EventEmitter {
 
   getState(): ReplState {
     const liveSlotList = Array.from(this.liveSlots.values()).sort((a, b) => a.updatedAt - b.updatedAt)
+    const todos = todoStoreToList(this.todoStore)
     return {
       configPath: this.config.configPath,
       sessionId: this.sessionId,
@@ -339,7 +343,8 @@ export class ReplSessionController extends EventEmitter {
       permissionError: this.permissionError,
       permissionQueueDepth: this.permissionQueue.length,
       rewindMenu: this.rewindMenu,
-      todos: [...this.todos],
+      todoStore: this.todoStore,
+      todos,
       tasks: [...this.tasks],
       workGraph: this.workGraph,
       ctreeSnapshot: this.ctreeSnapshot,
@@ -383,6 +388,7 @@ export class ReplSessionController extends EventEmitter {
     this.lastEventId = null
     this.hasStreamedOnce = false
     this.resetTransientRuntimeState()
+    this.todoStore = createEmptyTodoStore()
     this.activity = createActivitySnapshot("session")
     const requestedModel = this.config.model?.trim()
     const modelLabel = requestedModel ?? this.stats.model

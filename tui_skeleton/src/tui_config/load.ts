@@ -286,6 +286,10 @@ export const resolveTuiConfig = async (options: ResolvedTuiConfigOptions): Promi
         merged.composer?.todoPreviewAboveInput ?? DEFAULT_RESOLVED_TUI_CONFIG.composer.todoPreviewAboveInput,
       todoPreviewMaxItems:
         merged.composer?.todoPreviewMaxItems ?? DEFAULT_RESOLVED_TUI_CONFIG.composer.todoPreviewMaxItems,
+      todoPreviewSelection:
+        merged.composer?.todoPreviewSelection ?? DEFAULT_RESOLVED_TUI_CONFIG.composer.todoPreviewSelection,
+      todoPreviewShowHiddenCount:
+        merged.composer?.todoPreviewShowHiddenCount ?? DEFAULT_RESOLVED_TUI_CONFIG.composer.todoPreviewShowHiddenCount,
     },
     statusLine: {
       position: merged.statusLine?.position ?? DEFAULT_RESOLVED_TUI_CONFIG.statusLine.position,

@@ -4,6 +4,7 @@ import type { ConversationEntry, LiveSlotEntry, GuardrailNotice, ToolLogEntry, T
 import type { ReplState } from "./controller.js"
 import { ASCII_HEADER, HEADER_COLOR, speakerColor, TOOL_EVENT_COLOR } from "../../repl/viewUtils.js"
 import type { Block, DiffBlock as StreamDiffBlock, DiffKind, InlineNode, TokenLineV1 } from "@stream-mdx/core/types"
+import { selectTodoPreviewItems, todoStoreCounts } from "../../repl/todos/todoStore.js"
 import {
   BRAND_COLORS,
   NEUTRAL_COLORS,
@@ -40,6 +41,11 @@ export interface RenderTextOptions {
   readonly includeHeader?: boolean
   readonly includeStatus?: boolean
   readonly includeStreamingTail?: boolean
+  readonly includeComposer?: boolean
+  readonly includeTodoPreview?: boolean
+  readonly todoPreviewMaxItems?: number
+  readonly todoPreviewStrategy?: "first_n" | "incomplete_first" | "active_first"
+  readonly todoPreviewShowHiddenCount?: boolean
   readonly maxWidth?: number
 }
 
@@ -1436,6 +1442,48 @@ const formatModelMenu = (
   return lines
 }
 
+const todoStatusMark = (status: string): string => {
+  switch (status) {
+    case "done":
+      return "x"
+    case "in_progress":
+      return "~"
+    case "blocked":
+      return "!"
+    case "canceled":
+      return "-"
+    default:
+      return " "
+  }
+}
+
+const formatComposerRegion = (
+  state: ReplState,
+  options: {
+    readonly includeTodoPreview: boolean
+    readonly maxItems: number
+    readonly strategy: "first_n" | "incomplete_first" | "active_first"
+    readonly showHiddenCount: boolean
+    readonly asciiOnly: boolean
+  },
+): string[] => {
+  const lines: string[] = []
+  if (options.includeTodoPreview && state.todoStore?.order?.length > 0) {
+    const { done, total } = todoStoreCounts(state.todoStore)
+    const selection = selectTodoPreviewItems(state.todoStore, { maxItems: options.maxItems, strategy: options.strategy })
+    const separator = options.asciiOnly ? " . " : " · "
+    const hiddenSuffix =
+      options.showHiddenCount && selection.hiddenCount > 0 ? `${separator}+${selection.hiddenCount}` : ""
+    lines.push(`TODOs: ${done}/${total}${hiddenSuffix}`)
+    for (const item of selection.visible) {
+      lines.push(`[${todoStatusMark(item.status)}] ${item.title}`)
+    }
+  }
+  // Minimal prompt affordance to make baselines include the "above input" region.
+  lines.push(options.asciiOnly ? "> " : "❯ ")
+  return lines
+}
+
 export const renderStateToText = (state: ReplState, options: RenderTextOptions = {}): string => {
   const useColors = options.colors === true
   const colorMode = resolveColorMode(options.colorMode, useColors)
@@ -1581,6 +1629,18 @@ export const renderStateToText = (state: ReplState, options: RenderTextOptions =
     if (menu.length > 0) {
       lines.push(...menu)
     }
+  }
+  if (options.includeComposer === true) {
+    lines.push("")
+    lines.push(
+      ...formatComposerRegion(state, {
+        includeTodoPreview: options.includeTodoPreview === true,
+        maxItems: Math.max(1, Math.floor(options.todoPreviewMaxItems ?? 7)),
+        strategy: options.todoPreviewStrategy ?? "first_n",
+        showHiddenCount: options.todoPreviewShowHiddenCount === true,
+        asciiOnly,
+      }),
+    )
   }
   return lines.join("\n")
 }

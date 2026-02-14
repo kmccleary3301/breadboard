@@ -236,6 +236,54 @@ export interface TodoItem {
   readonly metadata?: Record<string, unknown> | null
 }
 
+export type TodoPreviewSelectionStrategy = "first_n" | "incomplete_first" | "active_first"
+
+export type TodoUpdateOp = "replace" | "patch" | "upsert" | "delete" | "clear"
+
+export type TodoUpdatePatch = {
+  readonly id: string
+  readonly patch: Partial<Omit<TodoItem, "id">>
+}
+
+export type TodoUpdate =
+  | {
+      readonly op: "replace"
+      readonly at: number
+      readonly scopeKey?: string
+      readonly items: ReadonlyArray<TodoItem>
+    }
+  | {
+      readonly op: "patch"
+      readonly at: number
+      readonly scopeKey?: string
+      readonly patches: ReadonlyArray<TodoUpdatePatch>
+    }
+  | {
+      readonly op: "upsert"
+      readonly at: number
+      readonly scopeKey?: string
+      readonly item: TodoItem
+      readonly position?: number | null
+    }
+  | {
+      readonly op: "delete"
+      readonly at: number
+      readonly scopeKey?: string
+      readonly ids: ReadonlyArray<string>
+    }
+  | {
+      readonly op: "clear"
+      readonly at: number
+      readonly scopeKey?: string
+    }
+
+export interface TodoStoreSnapshot {
+  readonly revision: number
+  readonly updatedAt: number
+  readonly itemsById: Record<string, TodoItem>
+  readonly order: ReadonlyArray<string>
+}
+
 export type WorkStatus = "pending" | "running" | "blocked" | "completed" | "failed" | "cancelled"
 
 export type WorkMode = "sync" | "async" | "unknown"
