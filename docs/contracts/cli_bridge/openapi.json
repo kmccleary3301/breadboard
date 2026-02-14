@@ -146,6 +146,35 @@
         "title": "CTreeSnapshotResponse",
         "type": "object"
       },
+      "EmulationProfileRequirement": {
+        "description": "Sealed-profile requirement used to gate compliance-sensitive auth sources.",
+        "properties": {
+          "conformance_hash": {
+            "description": "sha256 hash over locked JSON pointers.",
+            "title": "Conformance Hash",
+            "type": "string"
+          },
+          "locked_json_pointers": {
+            "description": "RFC6901 JSON pointers used for the hash.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Locked Json Pointers",
+            "type": "array"
+          },
+          "profile_id": {
+            "description": "Stable sealed profile identifier.",
+            "title": "Profile Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile_id",
+          "conformance_hash"
+        ],
+        "title": "EmulationProfileRequirement",
+        "type": "object"
+      },
       "ErrorResponse": {
         "properties": {
           "detail": {
@@ -313,6 +342,340 @@
           "models"
         ],
         "title": "ModelCatalogResponse",
+        "type": "object"
+      },
+      "ProviderAuthAttachRequest": {
+        "properties": {
+          "config_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Config path used for sealed-profile enforcement.",
+            "title": "Config Path"
+          },
+          "material": {
+            "$ref": "#/components/schemas/ProviderAuthMaterial"
+          },
+          "overrides": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional dotted-key override map for hashing.",
+            "title": "Overrides"
+          },
+          "required_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmulationProfileRequirement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "material"
+        ],
+        "title": "ProviderAuthAttachRequest",
+        "type": "object"
+      },
+      "ProviderAuthAttachResponse": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "title": "ProviderAuthAttachResponse",
+        "type": "object"
+      },
+      "ProviderAuthDetachRequest": {
+        "properties": {
+          "alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          },
+          "provider_id": {
+            "title": "Provider Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider_id"
+        ],
+        "title": "ProviderAuthDetachRequest",
+        "type": "object"
+      },
+      "ProviderAuthDetachResponse": {
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "title": "ProviderAuthDetachResponse",
+        "type": "object"
+      },
+      "ProviderAuthMaterial": {
+        "description": "Short-lived auth material that the Engine can apply to provider calls.",
+        "properties": {
+          "alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional alias for multi-account support (MVP: unused).",
+            "title": "Alias"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Provider API key or bearer token material.",
+            "title": "Api Key"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional base URL override.",
+            "title": "Base Url"
+          },
+          "expires_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional expiry time in ms since epoch.",
+            "title": "Expires At Ms"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Additional request headers (no refresh tokens).",
+            "title": "Headers",
+            "type": "object"
+          },
+          "is_subscription_plan": {
+            "default": false,
+            "description": "Marks compliance-sensitive plan auth (defaults to false).",
+            "title": "Is Subscription Plan",
+            "type": "boolean"
+          },
+          "issued_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional issue time in ms since epoch.",
+            "title": "Issued At Ms"
+          },
+          "provider_id": {
+            "description": "Provider id (e.g. openai, openrouter, anthropic).",
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional routing metadata (provider-specific).",
+            "title": "Routing"
+          },
+          "ttl_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional TTL applied if expires_at_ms is absent.",
+            "title": "Ttl Seconds"
+          }
+        },
+        "required": [
+          "provider_id"
+        ],
+        "title": "ProviderAuthMaterial",
+        "type": "object"
+      },
+      "ProviderAuthStatusItem": {
+        "properties": {
+          "alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "expires_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At Ms"
+          },
+          "expires_in_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Ms"
+          },
+          "has_api_key": {
+            "default": false,
+            "title": "Has Api Key",
+            "type": "boolean"
+          },
+          "header_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Header Keys",
+            "type": "array"
+          },
+          "is_subscription_plan": {
+            "default": false,
+            "title": "Is Subscription Plan",
+            "type": "boolean"
+          },
+          "issued_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued At Ms"
+          },
+          "provider_id": {
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "required_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmulationProfileRequirement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "routing_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Routing Keys",
+            "type": "array"
+          }
+        },
+        "required": [
+          "provider_id"
+        ],
+        "title": "ProviderAuthStatusItem",
+        "type": "object"
+      },
+      "ProviderAuthStatusResponse": {
+        "properties": {
+          "attached": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderAuthStatusItem"
+            },
+            "title": "Attached",
+            "type": "array"
+          }
+        },
+        "title": "ProviderAuthStatusResponse",
         "type": "object"
       },
       "SessionCommandRequest": {
@@ -1607,6 +1970,141 @@
           }
         },
         "summary": "Engine Status"
+      }
+    },
+    "/v1/provider-auth/attach": {
+      "post": {
+        "description": "Attach short-lived provider auth material to the in-memory engine store.",
+        "operationId": "attach_provider_auth_v1_provider_auth_attach_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderAuthAttachRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderAuthAttachResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Attach Provider Auth"
+      }
+    },
+    "/v1/provider-auth/detach": {
+      "post": {
+        "operationId": "detach_provider_auth_v1_provider_auth_detach_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderAuthDetachRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderAuthDetachResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Detach Provider Auth"
+      }
+    },
+    "/v1/provider-auth/status": {
+      "get": {
+        "operationId": "provider_auth_status_v1_provider_auth_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderAuthStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Provider Auth Status"
       }
     }
   }

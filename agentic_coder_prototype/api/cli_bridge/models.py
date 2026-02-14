@@ -170,3 +170,77 @@ class CTreeSnapshotResponse(BaseModel):
     collapse: Dict[str, Any] | None = None
     runner: Dict[str, Any] | None = None
     last_node: Dict[str, Any] | None = None
+
+
+class EmulationProfileRequirement(BaseModel):
+    """Sealed-profile requirement used to gate compliance-sensitive auth sources."""
+
+    profile_id: str = Field(..., description="Stable sealed profile identifier.")
+    conformance_hash: str = Field(..., description="sha256 hash over locked JSON pointers.")
+    locked_json_pointers: List[str] = Field(
+        default_factory=list,
+        description="RFC6901 JSON pointers used for the hash.",
+    )
+
+
+class ProviderAuthMaterial(BaseModel):
+    """Short-lived auth material that the Engine can apply to provider calls."""
+
+    provider_id: str = Field(..., description="Provider id (e.g. openai, openrouter, anthropic).")
+    alias: Optional[str] = Field(default=None, description="Optional alias for multi-account support (MVP: unused).")
+    api_key: Optional[str] = Field(default=None, description="Provider API key or bearer token material.")
+    headers: Dict[str, str] = Field(default_factory=dict, description="Additional request headers (no refresh tokens).")
+    base_url: Optional[str] = Field(default=None, description="Optional base URL override.")
+    routing: Dict[str, Any] | None = Field(default=None, description="Optional routing metadata (provider-specific).")
+    issued_at_ms: Optional[int] = Field(default=None, description="Optional issue time in ms since epoch.")
+    expires_at_ms: Optional[int] = Field(default=None, description="Optional expiry time in ms since epoch.")
+    ttl_seconds: Optional[int] = Field(default=None, description="Optional TTL applied if expires_at_ms is absent.")
+    is_subscription_plan: bool = Field(
+        default=False,
+        description="Marks compliance-sensitive plan auth (defaults to false).",
+    )
+
+    @validator("provider_id")
+    def _validate_provider_id(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("provider_id must not be empty")
+        return value.strip()
+
+
+class ProviderAuthAttachRequest(BaseModel):
+    material: ProviderAuthMaterial
+    required_profile: Optional[EmulationProfileRequirement] = None
+    config_path: Optional[str] = Field(default=None, description="Config path used for sealed-profile enforcement.")
+    overrides: Dict[str, Any] | None = Field(default=None, description="Optional dotted-key override map for hashing.")
+
+
+class ProviderAuthAttachResponse(BaseModel):
+    ok: bool = True
+    detail: Dict[str, Any] | None = None
+
+
+class ProviderAuthDetachRequest(BaseModel):
+    provider_id: str
+    alias: Optional[str] = None
+
+
+class ProviderAuthDetachResponse(BaseModel):
+    ok: bool = True
+
+
+class ProviderAuthStatusItem(BaseModel):
+    provider_id: str
+    alias: Optional[str] = None
+    has_api_key: bool = False
+    header_keys: List[str] = Field(default_factory=list)
+    base_url: Optional[str] = None
+    routing_keys: List[str] = Field(default_factory=list)
+    issued_at_ms: Optional[int] = None
+    expires_at_ms: Optional[int] = None
+    expires_in_ms: Optional[int] = None
+    is_subscription_plan: bool = False
+    required_profile: Optional[EmulationProfileRequirement] = None
+
+
+class ProviderAuthStatusResponse(BaseModel):
+    attached: List[ProviderAuthStatusItem] = Field(default_factory=list)

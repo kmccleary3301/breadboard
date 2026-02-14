@@ -34,10 +34,16 @@ def test_cli_bridge_contract_files_present() -> None:
         "session_event_payload_ctree_snapshot.schema.json",
         "session_event_payload_task_event.schema.json",
         "session_event_payload_reward_update.schema.json",
+        "session_event_payload_limits_update.schema.json",
         "session_event_payload_completion.schema.json",
         "session_event_payload_log_link.schema.json",
         "session_event_payload_error.schema.json",
         "session_event_payload_run_finished.schema.json",
+        "provider_auth_attach_request.schema.json",
+        "provider_auth_attach_response.schema.json",
+        "provider_auth_detach_request.schema.json",
+        "provider_auth_detach_response.schema.json",
+        "provider_auth_status_response.schema.json",
     ]
 
     missing = [name for name in expected_schemas if not (schema_dir / name).is_file()]
@@ -73,6 +79,7 @@ def test_session_event_schema_variants_cover_all_event_types() -> None:
         "ctree_snapshot",
         "task_event",
         "reward_update",
+        "limits_update",
         "completion",
         "log_link",
         "error",
@@ -108,6 +115,7 @@ def test_session_event_payloads_validate_minimal_samples() -> None:
         "ctree_snapshot": {},
         "task_event": {"kind": "step"},
         "reward_update": {"summary": {}},
+        "limits_update": {"provider": "openai", "observed_at_ms": 0, "buckets": []},
         "completion": {"summary": {}},
         "log_link": {"url": "https://example.com/log"},
         "error": {"message": "error"},

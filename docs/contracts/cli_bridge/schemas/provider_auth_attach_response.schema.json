@@ -1,0 +1,24 @@
+{
+  "properties": {
+    "detail": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Detail"
+    },
+    "ok": {
+      "default": true,
+      "title": "Ok",
+      "type": "boolean"
+    }
+  },
+  "title": "ProviderAuthAttachResponse",
+  "type": "object"
+}

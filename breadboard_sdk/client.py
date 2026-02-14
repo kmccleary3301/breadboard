@@ -234,3 +234,41 @@ class BreadboardClient:
             if line.startswith("data:"):
                 data_lines.append(line[len("data:") :].lstrip())
 
+    # --- Provider auth material (in-memory engine store) --------------------
+    def attach_provider_auth(
+        self,
+        *,
+        provider_id: str,
+        api_key: str | None = None,
+        headers: Dict[str, str] | None = None,
+        base_url: str | None = None,
+        routing: Dict[str, Any] | None = None,
+        ttl_seconds: int | None = None,
+        is_subscription_plan: bool = False,
+        required_profile: Dict[str, Any] | None = None,
+        config_path: str | None = None,
+        overrides: Dict[str, Any] | None = None,
+        alias: str | None = None,
+    ) -> Dict[str, Any]:
+        body: Dict[str, Any] = {
+            "material": {
+                "provider_id": provider_id,
+                "alias": alias,
+                "api_key": api_key,
+                "headers": headers or {},
+                "base_url": base_url,
+                "routing": routing,
+                "ttl_seconds": ttl_seconds,
+                "is_subscription_plan": bool(is_subscription_plan),
+            },
+            "required_profile": required_profile,
+            "config_path": config_path,
+            "overrides": overrides,
+        }
+        return self._request("POST", "/v1/provider-auth/attach", body=body)
+
+    def detach_provider_auth(self, *, provider_id: str, alias: str | None = None) -> Dict[str, Any]:
+        return self._request("POST", "/v1/provider-auth/detach", body={"provider_id": provider_id, "alias": alias})
+
+    def provider_auth_status(self) -> Dict[str, Any]:
+        return self._request("GET", "/v1/provider-auth/status")

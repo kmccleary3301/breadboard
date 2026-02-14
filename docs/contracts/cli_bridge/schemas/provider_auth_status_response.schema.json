@@ -1,0 +1,152 @@
+{
+  "$defs": {
+    "EmulationProfileRequirement": {
+      "description": "Sealed-profile requirement used to gate compliance-sensitive auth sources.",
+      "properties": {
+        "conformance_hash": {
+          "description": "sha256 hash over locked JSON pointers.",
+          "title": "Conformance Hash",
+          "type": "string"
+        },
+        "locked_json_pointers": {
+          "description": "RFC6901 JSON pointers used for the hash.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Locked Json Pointers",
+          "type": "array"
+        },
+        "profile_id": {
+          "description": "Stable sealed profile identifier.",
+          "title": "Profile Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile_id",
+        "conformance_hash"
+      ],
+      "title": "EmulationProfileRequirement",
+      "type": "object"
+    },
+    "ProviderAuthStatusItem": {
+      "properties": {
+        "alias": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alias"
+        },
+        "base_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Url"
+        },
+        "expires_at_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires At Ms"
+        },
+        "expires_in_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires In Ms"
+        },
+        "has_api_key": {
+          "default": false,
+          "title": "Has Api Key",
+          "type": "boolean"
+        },
+        "header_keys": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Header Keys",
+          "type": "array"
+        },
+        "is_subscription_plan": {
+          "default": false,
+          "title": "Is Subscription Plan",
+          "type": "boolean"
+        },
+        "issued_at_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Issued At Ms"
+        },
+        "provider_id": {
+          "title": "Provider Id",
+          "type": "string"
+        },
+        "required_profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EmulationProfileRequirement"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "routing_keys": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Routing Keys",
+          "type": "array"
+        }
+      },
+      "required": [
+        "provider_id"
+      ],
+      "title": "ProviderAuthStatusItem",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "attached": {
+      "items": {
+        "$ref": "#/$defs/ProviderAuthStatusItem"
+      },
+      "title": "Attached",
+      "type": "array"
+    }
+  },
+  "title": "ProviderAuthStatusResponse",
+  "type": "object"
+}

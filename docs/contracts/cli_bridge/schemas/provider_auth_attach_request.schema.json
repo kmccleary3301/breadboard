@@ -1,0 +1,202 @@
+{
+  "$defs": {
+    "EmulationProfileRequirement": {
+      "description": "Sealed-profile requirement used to gate compliance-sensitive auth sources.",
+      "properties": {
+        "conformance_hash": {
+          "description": "sha256 hash over locked JSON pointers.",
+          "title": "Conformance Hash",
+          "type": "string"
+        },
+        "locked_json_pointers": {
+          "description": "RFC6901 JSON pointers used for the hash.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Locked Json Pointers",
+          "type": "array"
+        },
+        "profile_id": {
+          "description": "Stable sealed profile identifier.",
+          "title": "Profile Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile_id",
+        "conformance_hash"
+      ],
+      "title": "EmulationProfileRequirement",
+      "type": "object"
+    },
+    "ProviderAuthMaterial": {
+      "description": "Short-lived auth material that the Engine can apply to provider calls.",
+      "properties": {
+        "alias": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional alias for multi-account support (MVP: unused).",
+          "title": "Alias"
+        },
+        "api_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Provider API key or bearer token material.",
+          "title": "Api Key"
+        },
+        "base_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional base URL override.",
+          "title": "Base Url"
+        },
+        "expires_at_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional expiry time in ms since epoch.",
+          "title": "Expires At Ms"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Additional request headers (no refresh tokens).",
+          "title": "Headers",
+          "type": "object"
+        },
+        "is_subscription_plan": {
+          "default": false,
+          "description": "Marks compliance-sensitive plan auth (defaults to false).",
+          "title": "Is Subscription Plan",
+          "type": "boolean"
+        },
+        "issued_at_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional issue time in ms since epoch.",
+          "title": "Issued At Ms"
+        },
+        "provider_id": {
+          "description": "Provider id (e.g. openai, openrouter, anthropic).",
+          "title": "Provider Id",
+          "type": "string"
+        },
+        "routing": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional routing metadata (provider-specific).",
+          "title": "Routing"
+        },
+        "ttl_seconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional TTL applied if expires_at_ms is absent.",
+          "title": "Ttl Seconds"
+        }
+      },
+      "required": [
+        "provider_id"
+      ],
+      "title": "ProviderAuthMaterial",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "config_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Config path used for sealed-profile enforcement.",
+      "title": "Config Path"
+    },
+    "material": {
+      "$ref": "#/$defs/ProviderAuthMaterial"
+    },
+    "overrides": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional dotted-key override map for hashing.",
+      "title": "Overrides"
+    },
+    "required_profile": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EmulationProfileRequirement"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "material"
+  ],
+  "title": "ProviderAuthAttachRequest",
+  "type": "object"
+}
