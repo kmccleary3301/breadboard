@@ -186,3 +186,61 @@ jobs:
           path: |
             artifacts/runtime_triage_nightly/**
           if-no-files-found: ignore
+
+  todo_preview_churn_gate:
+    name: "Todo preview churn gate"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install deps (tui_skeleton)
+        working-directory: tui_skeleton
+        run: npm ci
+
+      - name: Compute churn metrics (preview-only)
+        working-directory: tui_skeleton
+        run: |
+          node --import tsx scripts/todo_preview_churn_gate.ts \
+            --input ui_baselines/u1/scenarios/todo_preview_churn_gate/input/events.jsonl \
+            --config ../agent_configs/codex_cli_gpt51mini_e4_live.yaml \
+            --out ../artifacts/todo_preview_churn_nightly/summary.json \
+            --strict
+
+      - name: Append summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os, pathlib
+          p = pathlib.Path("artifacts/todo_preview_churn_nightly/summary.json")
+          if not p.exists():
+              raise SystemExit(0)
+          d = json.loads(p.read_text(encoding="utf-8"))
+          lines = [
+              "### Todo preview churn gate",
+              f"- churn events: `{d.get('churn')}`",
+              f"- todo events: `{d.get('todoEvents')}`",
+              f"- input: `{d.get('input')}`",
+              "",
+          ]
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as out:
+                  out.write("\\n".join(lines))
+          print("\\n".join(lines))
+          PY
+
+      - name: Upload churn artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: todo-preview-churn-nightly
+          path: |
+            artifacts/todo_preview_churn_nightly/**
+          if-no-files-found: ignore
