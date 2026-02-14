@@ -982,7 +982,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install minimal test dependencies
-        run: python -m pip install pytest jsonschema
+        run: python -m pip install pytest jsonschema requests
 
       - name: Contract schema smoke
         run: |
