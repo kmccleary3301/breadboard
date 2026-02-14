@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 
 from agentic_coder_prototype.auth.material import EngineAuthMaterial, EmulationProfileRequirement
@@ -11,7 +12,7 @@ def test_provider_auth_store_attach_detach_and_status_sanitizes() -> None:
     store = ProviderAuthStore()
     mat = EngineAuthMaterial(
         provider_id="openai",
-        alias="",
+        alias="alpha",
         api_key="secret",
         headers={"Authorization": "Bearer secret", "X-Other": "ok"},
         base_url="https://example.com",
@@ -24,13 +25,31 @@ def test_provider_auth_store_attach_detach_and_status_sanitizes() -> None:
     assert status[0]["provider_id"] == "openai"
     assert status[0]["has_api_key"] is True
     assert "Authorization" in status[0]["header_keys"]
+    assert status[0]["alias"] == "alpha"
+    assert status[0]["api_key_fingerprint"].startswith("sha256:")
+    assert status[0]["secret_fingerprints"]["api_key"] == status[0]["api_key_fingerprint"]
+    assert "Authorization" in status[0]["secret_fingerprints"]
     # Values are never returned, only keys.
-    assert "secret" not in str(status)
+    serialized = json.dumps(status, sort_keys=True)
+    assert "Bearer secret" not in serialized
+    assert '"secret"' not in serialized
 
-    got = store.get("openai")
+    got = store.get("openai", alias="alpha")
     assert got is not None
-    assert store.detach("openai") is True
-    assert store.get("openai") is None
+    assert store.detach("openai", alias="alpha") is True
+    assert store.get("openai", alias="alpha") is None
+
+
+def test_provider_auth_store_alias_isolation() -> None:
+    store = ProviderAuthStore()
+    store.attach(EngineAuthMaterial(provider_id="openai", alias="a", api_key="k1"))
+    store.attach(EngineAuthMaterial(provider_id="openai", alias="b", api_key="k2"))
+
+    assert store.get("openai", alias="a") is not None
+    assert store.get("openai", alias="b") is not None
+    assert store.detach("openai", alias="a") is True
+    assert store.get("openai", alias="a") is None
+    assert store.get("openai", alias="b") is not None
 
 
 def test_provider_auth_store_ttl_expires() -> None:
@@ -52,4 +71,3 @@ def test_sealed_profile_conformance_hash_and_mismatch() -> None:
     cfg2["dialect"] = "other"
     bad = check_conformance(config=cfg2, locked_json_pointers=pointers, expected_hash=expected)
     assert bad.ok is False
-

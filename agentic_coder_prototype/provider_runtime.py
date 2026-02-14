@@ -474,6 +474,27 @@ class OpenAIBaseRuntime(ProviderRuntime):
                 return headers[key]
         return None
 
+    def _maybe_emit_limits_update(self, context: "ProviderRuntimeContext", headers: Dict[str, str]) -> None:
+        """Best-effort emit a normalized limits_update event from response headers."""
+
+        if not headers:
+            return
+        session_state = getattr(context, "session_state", None)
+        if not session_state:
+            return
+        emit = getattr(session_state, "_emit_event", None)
+        if not callable(emit):
+            return
+        try:
+            from .limits.parse_headers import parse_rate_limit_headers
+
+            provider_id = getattr(getattr(self, "descriptor", None), "provider_id", None) or "unknown"
+            parsed = parse_rate_limit_headers(headers, provider=str(provider_id))
+            if parsed:
+                emit("limits_update", parsed, turn=getattr(session_state, "_active_turn_index", None))
+        except Exception:
+            return
+
     def _classify_html_response(self, snippet: str) -> Optional[Dict[str, str]]:
         """Identify common HTML payloads so callers can surface better hints."""
 
@@ -738,6 +759,7 @@ class OpenAIBaseRuntime(ProviderRuntime):
 
             try:
                 parsed_payload = raw.parse()
+                self._maybe_emit_limits_update(context, response_headers)
                 provider_dump_logger.log_response(
                     provider=self.descriptor.provider_id,
                     model=kwargs.get("model"),

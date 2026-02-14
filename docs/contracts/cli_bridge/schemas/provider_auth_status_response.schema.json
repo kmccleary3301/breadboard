@@ -43,6 +43,18 @@
           "default": null,
           "title": "Alias"
         },
+        "api_key_fingerprint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Api Key Fingerprint"
+        },
         "base_url": {
           "anyOf": [
             {
@@ -129,6 +141,13 @@
           },
           "title": "Routing Keys",
           "type": "array"
+        },
+        "secret_fingerprints": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Secret Fingerprints",
+          "type": "object"
         }
       },
       "required": [

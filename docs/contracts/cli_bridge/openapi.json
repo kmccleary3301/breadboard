@@ -213,6 +213,24 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "LimitsStatusResponse": {
+        "properties": {
+          "snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot"
+          }
+        },
+        "title": "LimitsStatusResponse",
+        "type": "object"
+      },
       "ModelCatalogEntry": {
         "properties": {
           "adapter": {
@@ -449,6 +467,32 @@
         "title": "ProviderAuthDetachResponse",
         "type": "object"
       },
+      "ProviderAuthEnablementSnapshot": {
+        "description": "Snapshot of server-side enablement toggles (best-effort).",
+        "properties": {
+          "per_provider_enabled": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Per Provider Enabled",
+            "type": "object"
+          },
+          "raw_env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Raw Env",
+            "type": "object"
+          },
+          "subscription_auth_enabled": {
+            "default": false,
+            "title": "Subscription Auth Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "ProviderAuthEnablementSnapshot",
+        "type": "object"
+      },
       "ProviderAuthMaterial": {
         "description": "Short-lived auth material that the Engine can apply to provider calls.",
         "properties": {
@@ -563,6 +607,22 @@
         "title": "ProviderAuthMaterial",
         "type": "object"
       },
+      "ProviderAuthPoliciesResponse": {
+        "properties": {
+          "enablement": {
+            "$ref": "#/components/schemas/ProviderAuthEnablementSnapshot"
+          },
+          "policies": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderPolicyManifestV1"
+            },
+            "title": "Policies",
+            "type": "array"
+          }
+        },
+        "title": "ProviderAuthPoliciesResponse",
+        "type": "object"
+      },
       "ProviderAuthStatusItem": {
         "properties": {
           "alias": {
@@ -575,6 +635,17 @@
               }
             ],
             "title": "Alias"
+          },
+          "api_key_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Fingerprint"
           },
           "base_url": {
             "anyOf": [
@@ -657,6 +728,13 @@
             },
             "title": "Routing Keys",
             "type": "array"
+          },
+          "secret_fingerprints": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Secret Fingerprints",
+            "type": "object"
           }
         },
         "required": [
@@ -676,6 +754,65 @@
           }
         },
         "title": "ProviderAuthStatusResponse",
+        "type": "object"
+      },
+      "ProviderPolicyManifestV1": {
+        "additionalProperties": true,
+        "description": "Provider plan adapter policy manifest (compliance + support stance).",
+        "properties": {
+          "local_only": {
+            "default": true,
+            "title": "Local Only",
+            "type": "boolean"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "provider_id": {
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "requires_explicit_enable": {
+            "default": true,
+            "title": "Requires Explicit Enable",
+            "type": "boolean"
+          },
+          "requires_sealed_profile": {
+            "default": false,
+            "title": "Requires Sealed Profile",
+            "type": "boolean"
+          },
+          "schema": {
+            "description": "Schema id (breadboard.provider_policy_manifest.v1).",
+            "title": "Schema",
+            "type": "string"
+          },
+          "support_mode": {
+            "description": "supported|harness_backed_only|unsupported",
+            "title": "Support Mode",
+            "type": "string"
+          },
+          "supported": {
+            "default": false,
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schema",
+          "provider_id",
+          "plan_id",
+          "support_mode"
+        ],
+        "title": "ProviderPolicyManifestV1",
         "type": "object"
       },
       "SessionCommandRequest": {
@@ -1903,6 +2040,55 @@
         "summary": "Post Input"
       }
     },
+    "/sessions/{session_id}/limits": {
+      "get": {
+        "operationId": "get_session_limits_sessions__session_id__limits_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitsStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session Limits"
+      }
+    },
     "/sessions/{session_id}/skills": {
       "get": {
         "operationId": "session_skills_sessions__session_id__skills_get",
@@ -2087,6 +2273,25 @@
           }
         },
         "summary": "Detach Provider Auth"
+      }
+    },
+    "/v1/provider-auth/policies": {
+      "get": {
+        "description": "Return provider plan policy manifests and server-side enablement snapshot.",
+        "operationId": "provider_auth_policies_v1_provider_auth_policies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderAuthPoliciesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Provider Auth Policies"
       }
     },
     "/v1/provider-auth/status": {

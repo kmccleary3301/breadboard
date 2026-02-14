@@ -16,6 +16,7 @@ from agentic_coder_prototype.api.cli_bridge.models import (  # noqa: E402
     ProviderAuthAttachResponse,
     ProviderAuthDetachRequest,
     ProviderAuthDetachResponse,
+    ProviderAuthPoliciesResponse,
     ProviderAuthStatusResponse,
     SessionCommandRequest,
     SessionCreateRequest,
@@ -1068,6 +1069,7 @@ def main() -> None:
     _write_json(SCHEMA_DIR / "provider_auth_attach_response.schema.json", _model_schema(ProviderAuthAttachResponse))
     _write_json(SCHEMA_DIR / "provider_auth_detach_request.schema.json", _model_schema(ProviderAuthDetachRequest))
     _write_json(SCHEMA_DIR / "provider_auth_detach_response.schema.json", _model_schema(ProviderAuthDetachResponse))
+    _write_json(SCHEMA_DIR / "provider_auth_policies_response.schema.json", _model_schema(ProviderAuthPoliciesResponse))
     _write_json(SCHEMA_DIR / "provider_auth_status_response.schema.json", _model_schema(ProviderAuthStatusResponse))
 
     print(f"Wrote OpenAPI contract to {CONTRACT_DIR / 'openapi.json'}")

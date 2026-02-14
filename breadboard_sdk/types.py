@@ -128,11 +128,37 @@ class CTreeSnapshotResponse(TypedDict, total=False):
     last_node: Optional[Dict[str, Any]]
 
 
+class LimitsStatusResponse(TypedDict, total=False):
+    snapshot: Optional[Dict[str, Any]]
+
+
 class ErrorResponse(TypedDict, total=False):
     message: str
     detail: Dict[str, Any]
 
 
+class ProviderPolicyManifestV1(TypedDict, total=False):
+    schema: str
+    provider_id: str
+    plan_id: str
+    supported: bool
+    support_mode: str
+    requires_explicit_enable: bool
+    local_only: bool
+    requires_sealed_profile: bool
+    notes: List[str]
+
+
+class ProviderAuthEnablementSnapshot(TypedDict, total=False):
+    subscription_auth_enabled: bool
+    per_provider_enabled: Dict[str, bool]
+    raw_env: Dict[str, str]
+
+
+class ProviderAuthPoliciesResponse(TypedDict, total=False):
+    policies: List[ProviderPolicyManifestV1]
+    enablement: ProviderAuthEnablementSnapshot
+
+
 AttachmentFileTuple = tuple[str, bytes, str | None]
 AttachmentFileIterable = Iterable[AttachmentFileTuple]
-

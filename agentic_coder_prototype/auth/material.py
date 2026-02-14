@@ -7,6 +7,7 @@ outgoing provider calls. The Engine must not persist this material to disk.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 
@@ -66,6 +67,11 @@ class EngineAuthMaterial:
             return []
         return sorted(str(k) for k in self.headers.keys())
 
+    @staticmethod
+    def _fingerprint(value: str) -> str:
+        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+        return f"sha256:{digest[:12]}"
+
     def to_sanitized_status(self, now_ms: int) -> Dict[str, Any]:
         expires_in_ms: Optional[int] = None
         if self.expires_at_ms is not None:
@@ -73,11 +79,29 @@ class EngineAuthMaterial:
                 expires_in_ms = max(0, int(self.expires_at_ms) - int(now_ms))
             except Exception:
                 expires_in_ms = None
+
+        secret_fingerprints: Dict[str, str] = {}
+        api_key_fp: Optional[str] = None
+        if self.api_key:
+            api_key_fp = self._fingerprint(str(self.api_key))
+            secret_fingerprints["api_key"] = api_key_fp
+        for key, val in (self.headers or {}).items():
+            if not key or val is None:
+                continue
+            k = str(key)
+            lk = k.lower()
+            # Only fingerprint likely-secret headers. This avoids emitting fingerprints for arbitrary
+            # headers that might contain sensitive-but-unexpected data.
+            if lk not in {"authorization", "x-api-key", "api-key", "cookie", "set-cookie"}:
+                continue
+            secret_fingerprints[k] = self._fingerprint(str(val))
         return {
             "provider_id": self.provider_id,
             "alias": self.alias or None,
             "has_api_key": bool(self.api_key),
+            "api_key_fingerprint": api_key_fp,
             "header_keys": list(self.header_keys()),
+            "secret_fingerprints": secret_fingerprints,
             "base_url": self.base_url,
             "routing_keys": sorted(list((self.routing or {}).keys())),
             "issued_at_ms": self.issued_at_ms,
@@ -94,4 +118,3 @@ class EngineAuthMaterial:
                 else None
             ),
         }
-

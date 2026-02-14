@@ -12,7 +12,9 @@ from .types import (
     AttachmentUploadResponse,
     CTreeSnapshotResponse,
     HealthResponse,
+    LimitsStatusResponse,
     ModelCatalogResponse,
+    ProviderAuthPoliciesResponse,
     SessionCreateResponse,
     SessionEvent,
     SessionFileContent,
@@ -137,6 +139,9 @@ class BreadboardClient:
 
     def get_ctree_snapshot(self, session_id: str) -> CTreeSnapshotResponse:
         return self._request("GET", f"/sessions/{session_id}/ctrees")
+
+    def get_session_limits(self, session_id: str) -> LimitsStatusResponse:
+        return self._request("GET", f"/sessions/{session_id}/limits")
 
     def list_session_files(self, session_id: str, *, path_prefix: str | None = None) -> List[SessionFileInfo]:
         return self._request("GET", f"/sessions/{session_id}/files", query={"path": path_prefix} if path_prefix else None)
@@ -272,3 +277,6 @@ class BreadboardClient:
 
     def provider_auth_status(self) -> Dict[str, Any]:
         return self._request("GET", "/v1/provider-auth/status")
+
+    def provider_auth_policies(self) -> ProviderAuthPoliciesResponse:
+        return self._request("GET", "/v1/provider-auth/policies")

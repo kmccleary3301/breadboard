@@ -24,8 +24,10 @@ if load_dotenv is not None:
 from .events import SessionEvent, PROTOCOL_VERSION
 from .models import (
     AttachmentUploadResponse,
+    LimitsStatusResponse,
     ErrorResponse,
     ModelCatalogResponse,
+    ProviderAuthPoliciesResponse,
     ProviderAuthAttachRequest,
     ProviderAuthAttachResponse,
     ProviderAuthDetachRequest,
@@ -197,7 +199,8 @@ def create_app(service: SessionService | None = None) -> FastAPI:
         from ...compilation.v2_loader import load_agent_config
 
         client_host = getattr(getattr(request, "client", None), "host", None)
-        if payload.material.is_subscription_plan and not _is_loopback_host(client_host):
+        allow_remote = _env_truthy("BREADBOARD_ALLOW_SUBSCRIPTION_AUTH_REMOTE", "0")
+        if payload.material.is_subscription_plan and not _is_loopback_host(client_host) and not allow_remote:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={"message": "subscription-plan auth is local-only by default"},
@@ -290,6 +293,69 @@ def create_app(service: SessionService | None = None) -> FastAPI:
         items = DEFAULT_PROVIDER_AUTH_STORE.status()
         return ProviderAuthStatusResponse(attached=items)
 
+    def _env_truthy(name: str, default: str = "") -> bool:
+        raw = os.getenv(name, default)
+        if raw is None:
+            return False
+        return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+    @app.get(
+        "/v1/provider-auth/policies",
+        response_model=ProviderAuthPoliciesResponse,
+    )
+    async def provider_auth_policies():
+        """Return provider plan policy manifests and server-side enablement snapshot."""
+
+        import json
+        from pathlib import Path
+
+        from jsonschema import Draft202012Validator
+
+        root = Path(__file__).resolve().parents[3]
+        schema_path = root / "docs" / "contracts" / "provider_plans" / "provider_policy_manifest_v1.schema.json"
+        manifest_dir = root / "docs" / "provider_plans" / "policy_manifests"
+
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        Draft202012Validator.check_schema(schema)
+        validator = Draft202012Validator(schema)
+
+        policies: list[dict[str, Any]] = []
+        if manifest_dir.is_dir():
+            for path in sorted(manifest_dir.glob("*.json")):
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                errors = list(validator.iter_errors(payload))
+                if errors:
+                    continue
+                policies.append(payload)
+
+        subscription_enabled = _env_truthy("BREADBOARD_ENABLE_SUBSCRIPTION_AUTH", "0")
+        per_provider: dict[str, bool] = {}
+        raw_env: dict[str, str] = {
+            "BREADBOARD_ENABLE_SUBSCRIPTION_AUTH": os.getenv("BREADBOARD_ENABLE_SUBSCRIPTION_AUTH", ""),
+            "BREADBOARD_ALLOW_SUBSCRIPTION_AUTH_REMOTE": os.getenv("BREADBOARD_ALLOW_SUBSCRIPTION_AUTH_REMOTE", ""),
+        }
+        for policy in policies:
+            provider_id = str(policy.get("provider_id") or "").strip()
+            if not provider_id:
+                continue
+            env_name = f"BREADBOARD_ENABLE_SUBSCRIPTION_AUTH_{provider_id.upper()}"
+            raw_env[env_name] = os.getenv(env_name, "")
+            per_provider[provider_id] = _env_truthy(env_name, "0")
+
+        return ProviderAuthPoliciesResponse(
+            policies=policies,
+            enablement={
+                "subscription_auth_enabled": subscription_enabled,
+                "per_provider_enabled": per_provider,
+                "raw_env": raw_env,
+            },
+        )
+
     @app.get(
         "/models",
         response_model=ModelCatalogResponse,
@@ -325,6 +391,15 @@ def create_app(service: SessionService | None = None) -> FastAPI:
     async def get_session(session_id: str, svc: SessionService = Depends(get_service)):
         record = await svc.ensure_session(session_id)
         return record.to_summary()
+
+    @app.get(
+        "/sessions/{session_id}/limits",
+        response_model=LimitsStatusResponse,
+        responses={404: {"model": ErrorResponse}},
+    )
+    async def get_session_limits(session_id: str, svc: SessionService = Depends(get_service)):
+        payload = await svc.get_limits_status(session_id)
+        return LimitsStatusResponse(snapshot=payload)
 
     @app.post(
         "/sessions/{session_id}/input",

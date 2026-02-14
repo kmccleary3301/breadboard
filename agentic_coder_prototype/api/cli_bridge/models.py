@@ -8,6 +8,11 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, validator
 
+try:  # Pydantic v2
+    from pydantic import ConfigDict  # type: ignore
+except Exception:  # pragma: no cover - pydantic v1 fallback
+    ConfigDict = None  # type: ignore
+
 
 class SessionStatus(str, enum.Enum):
     """Lifecycle marker for a session."""
@@ -172,6 +177,10 @@ class CTreeSnapshotResponse(BaseModel):
     last_node: Dict[str, Any] | None = None
 
 
+class LimitsStatusResponse(BaseModel):
+    snapshot: Dict[str, Any] | None = None
+
+
 class EmulationProfileRequirement(BaseModel):
     """Sealed-profile requirement used to gate compliance-sensitive auth sources."""
 
@@ -232,7 +241,9 @@ class ProviderAuthStatusItem(BaseModel):
     provider_id: str
     alias: Optional[str] = None
     has_api_key: bool = False
+    api_key_fingerprint: Optional[str] = None
     header_keys: List[str] = Field(default_factory=list)
+    secret_fingerprints: Dict[str, str] = Field(default_factory=dict)
     base_url: Optional[str] = None
     routing_keys: List[str] = Field(default_factory=list)
     issued_at_ms: Optional[int] = None
@@ -244,3 +255,37 @@ class ProviderAuthStatusItem(BaseModel):
 
 class ProviderAuthStatusResponse(BaseModel):
     attached: List[ProviderAuthStatusItem] = Field(default_factory=list)
+
+
+class ProviderPolicyManifestV1(BaseModel):
+    """Provider plan adapter policy manifest (compliance + support stance)."""
+
+    schema_id: str = Field(..., alias="schema", description="Schema id (breadboard.provider_policy_manifest.v1).")
+    provider_id: str
+    plan_id: str
+    supported: bool = False
+    support_mode: str = Field(..., description="supported|harness_backed_only|unsupported")
+    requires_explicit_enable: bool = True
+    local_only: bool = True
+    requires_sealed_profile: bool = False
+    notes: List[str] = Field(default_factory=list)
+
+    if ConfigDict is not None:  # pragma: no cover - config container
+        model_config = ConfigDict(extra="allow", populate_by_name=True)
+    else:  # pragma: no cover - pydantic v1 fallback
+        class Config:
+            extra = "allow"
+            allow_population_by_field_name = True
+
+
+class ProviderAuthEnablementSnapshot(BaseModel):
+    """Snapshot of server-side enablement toggles (best-effort)."""
+
+    subscription_auth_enabled: bool = False
+    per_provider_enabled: Dict[str, bool] = Field(default_factory=dict)
+    raw_env: Dict[str, str] = Field(default_factory=dict)
+
+
+class ProviderAuthPoliciesResponse(BaseModel):
+    policies: List[ProviderPolicyManifestV1] = Field(default_factory=list)
+    enablement: ProviderAuthEnablementSnapshot = Field(default_factory=ProviderAuthEnablementSnapshot)

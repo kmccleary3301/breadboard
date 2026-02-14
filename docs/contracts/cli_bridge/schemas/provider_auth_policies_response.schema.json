@@ -1,0 +1,103 @@
+{
+  "$defs": {
+    "ProviderAuthEnablementSnapshot": {
+      "description": "Snapshot of server-side enablement toggles (best-effort).",
+      "properties": {
+        "per_provider_enabled": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "title": "Per Provider Enabled",
+          "type": "object"
+        },
+        "raw_env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Raw Env",
+          "type": "object"
+        },
+        "subscription_auth_enabled": {
+          "default": false,
+          "title": "Subscription Auth Enabled",
+          "type": "boolean"
+        }
+      },
+      "title": "ProviderAuthEnablementSnapshot",
+      "type": "object"
+    },
+    "ProviderPolicyManifestV1": {
+      "additionalProperties": true,
+      "description": "Provider plan adapter policy manifest (compliance + support stance).",
+      "properties": {
+        "local_only": {
+          "default": true,
+          "title": "Local Only",
+          "type": "boolean"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "plan_id": {
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "provider_id": {
+          "title": "Provider Id",
+          "type": "string"
+        },
+        "requires_explicit_enable": {
+          "default": true,
+          "title": "Requires Explicit Enable",
+          "type": "boolean"
+        },
+        "requires_sealed_profile": {
+          "default": false,
+          "title": "Requires Sealed Profile",
+          "type": "boolean"
+        },
+        "schema": {
+          "description": "Schema id (breadboard.provider_policy_manifest.v1).",
+          "title": "Schema",
+          "type": "string"
+        },
+        "support_mode": {
+          "description": "supported|harness_backed_only|unsupported",
+          "title": "Support Mode",
+          "type": "string"
+        },
+        "supported": {
+          "default": false,
+          "title": "Supported",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema",
+        "provider_id",
+        "plan_id",
+        "support_mode"
+      ],
+      "title": "ProviderPolicyManifestV1",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "enablement": {
+      "$ref": "#/$defs/ProviderAuthEnablementSnapshot"
+    },
+    "policies": {
+      "items": {
+        "$ref": "#/$defs/ProviderPolicyManifestV1"
+      },
+      "title": "Policies",
+      "type": "array"
+    }
+  },
+  "title": "ProviderAuthPoliciesResponse",
+  "type": "object"
+}

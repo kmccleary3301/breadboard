@@ -43,6 +43,7 @@ def test_cli_bridge_contract_files_present() -> None:
         "provider_auth_attach_response.schema.json",
         "provider_auth_detach_request.schema.json",
         "provider_auth_detach_response.schema.json",
+        "provider_auth_policies_response.schema.json",
         "provider_auth_status_response.schema.json",
     ]
 
