@@ -23,6 +23,7 @@ def test_cli_bridge_contract_files_present() -> None:
         "session_event_payload_user_message.schema.json",
         "session_event_payload_tool_call.schema.json",
         "session_event_payload_tool_result.schema.json",
+        "session_event_payload_todo_update.schema.json",
         "session_event_payload_permission_request.schema.json",
         "session_event_payload_permission_response.schema.json",
         "session_event_payload_checkpoint_list.schema.json",
@@ -127,4 +128,3 @@ def test_session_event_payloads_validate_minimal_samples() -> None:
         sample["payload"] = payload
         errors = list(validator.iter_errors(sample))
         assert not errors, f"Schema validation failed for {event_type}: {errors}"
-

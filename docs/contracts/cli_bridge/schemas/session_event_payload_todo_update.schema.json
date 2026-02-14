@@ -1,0 +1,421 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {},
+          "priority": {},
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "todoId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "todo_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "item": {
+          "additionalProperties": true,
+          "properties": {
+            "content": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "metadata": {},
+            "priority": {},
+            "state": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "todoId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "todo_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "items": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "content": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "metadata": {},
+              "priority": {},
+              "state": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "text": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "todoId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "todo_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "enum": [
+            "replace",
+            "snapshot",
+            "clear",
+            "reset",
+            "patch",
+            "update",
+            "upsert",
+            "add",
+            "delete",
+            "remove"
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "patch": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "patches": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "position": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rev": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "revision": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scopeKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scopeLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "seq": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "todo": {
+          "additionalProperties": true,
+          "properties": {
+            "content": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "metadata": {},
+            "priority": {},
+            "state": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "todoId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "todo_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "todoId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "todo_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "todos": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "content": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "metadata": {},
+              "priority": {},
+              "state": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "text": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "todoId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "todo_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  ],
+  "title": "TodoUpdatePayload"
+}
