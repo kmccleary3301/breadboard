@@ -262,6 +262,9 @@ export const validateTuiConfigInput = (input: unknown, options: ValidationOption
         "todoPreviewMaxItems",
         "todoPreviewSelection",
         "todoPreviewShowHiddenCount",
+        "todoPreviewStyle",
+        "todoPreviewMinRowsToShow",
+        "todoPreviewSmallRowsMaxItems",
       ],
       ["composer"],
       issues,
@@ -294,6 +297,18 @@ export const validateTuiConfigInput = (input: unknown, options: ValidationOption
     if (todoPreviewSelection != null) composer.todoPreviewSelection = todoPreviewSelection
     const todoPreviewShowHiddenCount = readBoolean(composerRaw, "todoPreviewShowHiddenCount", ["composer"], issues)
     if (todoPreviewShowHiddenCount != null) composer.todoPreviewShowHiddenCount = todoPreviewShowHiddenCount
+    const todoPreviewStyle = readEnum(
+      composerRaw,
+      "todoPreviewStyle",
+      ["minimal", "nice", "dense"] as const,
+      ["composer"],
+      issues,
+    )
+    if (todoPreviewStyle != null) composer.todoPreviewStyle = todoPreviewStyle
+    const todoPreviewMinRowsToShow = readPositiveInt(composerRaw, "todoPreviewMinRowsToShow", ["composer"], issues)
+    if (todoPreviewMinRowsToShow != null) composer.todoPreviewMinRowsToShow = todoPreviewMinRowsToShow
+    const todoPreviewSmallRowsMaxItems = readPositiveInt(composerRaw, "todoPreviewSmallRowsMaxItems", ["composer"], issues)
+    if (todoPreviewSmallRowsMaxItems != null) composer.todoPreviewSmallRowsMaxItems = todoPreviewSmallRowsMaxItems
     config.composer = composer
   }
 

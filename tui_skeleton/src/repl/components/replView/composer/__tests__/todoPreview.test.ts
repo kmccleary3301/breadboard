@@ -35,9 +35,10 @@ describe("buildTodoPreviewModel", () => {
   it("marks header as stale when requested", () => {
     const model = buildTodoPreviewModel(
       storeFromTodos([{ id: "1", title: "Only", status: "todo" }]),
-      { stale: true },
+      { stale: true, style: "dense" },
     )
     expect(model?.header).toBe("TODOs: 0/1 (stale)")
+    expect(model?.headerLine).toContain("TODOs: 0/1 (stale)")
   })
 
   it("truncates to maxItems and preserves order", () => {
@@ -56,5 +57,15 @@ describe("buildTodoPreviewModel", () => {
     const model = buildTodoPreviewModel(storeFromTodos([{ id: "1", title: "Only", status: "todo" }]), { showHeader: false })
     expect(model?.header).toBe("")
     expect(getTodoPreviewRowCount(model)).toBe(1)
+  })
+
+  it("aligns hint on the right when width allows", () => {
+    const model = buildTodoPreviewModel(
+      storeFromTodos([{ id: "1", title: "Only", status: "todo" }]),
+      { style: "nice", cols: 60 },
+    )
+    expect(model?.header).toBe("TODOs: 0/1")
+    expect(model?.headerLine).toContain("Ctrl+T")
+    expect(model?.frameWidth).toBeLessThan(60)
   })
 })

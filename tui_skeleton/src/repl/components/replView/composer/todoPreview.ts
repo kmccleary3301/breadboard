@@ -9,9 +9,13 @@ export type TodoPreviewItem = {
 
 export type TodoPreviewModel = {
   readonly header: string
+  readonly headerLine: string
   readonly doneCount: number
   readonly totalCount: number
   readonly items: readonly TodoPreviewItem[]
+  readonly style: "minimal" | "nice" | "dense"
+  readonly hint: string | null
+  readonly frameWidth: number | null
 }
 
 export const DEFAULT_TODO_PREVIEW_MAX_ITEMS = 7
@@ -24,6 +28,8 @@ type BuildTodoPreviewOptions = {
   readonly scopeKey?: string | null
   readonly scopeLabel?: string | null
   readonly stale?: boolean
+  readonly style?: "minimal" | "nice" | "dense"
+  readonly cols?: number | null
 }
 
 const statusMark = (status: string): string => {
@@ -41,6 +47,20 @@ const statusMark = (status: string): string => {
   }
 }
 
+const formatHeaderWithHint = (header: string, hint: string, cols: number | null): string => {
+  const safeCols = cols != null && Number.isFinite(cols) ? Math.max(10, Math.floor(cols) - 2) : null
+  const suffix = `· ${hint}`
+  if (!safeCols) return `${header} ${suffix}`
+  const headerLen = header.length
+  const suffixLen = suffix.length
+  const minSpacer = 1
+  const remaining = safeCols - headerLen - suffixLen
+  if (remaining >= minSpacer) {
+    return `${header}${" ".repeat(Math.max(minSpacer, remaining))}${suffix}`
+  }
+  return `${header} ${suffix}`
+}
+
 export const buildTodoPreviewModel = (
   store: TodoStoreSnapshot,
   options: BuildTodoPreviewOptions = {},
@@ -53,6 +73,8 @@ export const buildTodoPreviewModel = (
   const scopeKey = options.scopeKey?.trim() || null
   const scopeLabel = options.scopeLabel?.trim() || null
   const stale = Boolean(options.stale)
+  const style = options.style ?? "minimal"
+  const cols = options.cols ?? null
 
   const { done: doneCount, total: totalCount } = todoStoreCounts(store)
   const selection = selectTodoPreviewItems(store, { maxItems, strategy })
@@ -66,9 +88,13 @@ export const buildTodoPreviewModel = (
   const scopeName = scopeLabel ?? scopeKey
   const showScope = Boolean(scopeName && scopeName !== "main")
   const scopePrefix = showScope ? ` (${scopeName})` : ""
-  const staleSuffix = stale ? " (stale)" : ""
+  const staleSuffix = stale && style === "dense" ? " (stale)" : ""
   const header = showHeader ? `TODOs${scopePrefix}: ${doneCount}/${totalCount}${hiddenSuffix}${staleSuffix}` : ""
-  return { header, doneCount, totalCount, items }
+  const hint = style !== "minimal" && cols != null && cols >= 28 ? "Ctrl+T" : null
+  const headerLine = header && hint ? formatHeaderWithHint(header, hint, cols) : header
+  const frameWidth =
+    style === "minimal" || cols == null || !Number.isFinite(cols) ? null : Math.max(10, Math.floor(cols) - 2)
+  return { header, headerLine, doneCount, totalCount, items, style, hint, frameWidth }
 }
 
 export const getTodoPreviewRowCount = (model: TodoPreviewModel | null): number => {

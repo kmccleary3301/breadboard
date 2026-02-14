@@ -20,15 +20,35 @@ const previewColorForStatus = (status: string): string => {
 
 export const TodoPreviewWidget: React.FC<{ model: TodoPreviewModel }> = ({ model }) => {
   if (!model.items || model.items.length === 0) return null
-  return (
-    <Box flexDirection="column">
-      {model.header ? <Text color={COLORS.textMuted} wrap="truncate">{uiText(model.header)}</Text> : null}
+  const headerLine = model.headerLine
+
+  const body = (
+    <>
+      {headerLine ? (
+        <Text color={COLORS.textMuted} wrap="truncate">
+          {uiText(headerLine)}
+        </Text>
+      ) : null}
       {model.items.map((item) => (
         <Text key={item.id} color={previewColorForStatus(item.status)} wrap="truncate">
           {uiText(item.label)}
         </Text>
       ))}
+    </>
+  )
+
+  if (model.style === "minimal") {
+    return <Box flexDirection="column">{body}</Box>
+  }
+  return (
+    <Box
+      flexDirection="column"
+      borderStyle="round"
+      borderColor={COLORS.textMuted}
+      paddingX={1}
+      width={model.frameWidth ?? undefined}
+    >
+      {body}
     </Box>
   )
 }
-
