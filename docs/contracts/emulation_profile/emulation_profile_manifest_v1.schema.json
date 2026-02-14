@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "breadboard.emulation_profile_manifest.v1",
+  "title": "EmulationProfileManifestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "profile_id",
+    "locked_json_pointers",
+    "conformance_hash"
+  ],
+  "properties": {
+    "schema": {
+      "const": "breadboard.emulation_profile_manifest.v1"
+    },
+    "profile_id": {
+      "type": "string"
+    },
+    "display_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "locked_json_pointers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "conformance_hash": {
+      "type": "string"
+    },
+    "compat": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
+

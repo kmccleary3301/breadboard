@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "breadboard.provider_policy_manifest.v1",
+  "title": "ProviderPolicyManifestV1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "provider_id",
+    "plan_id",
+    "supported",
+    "support_mode",
+    "requires_explicit_enable",
+    "local_only",
+    "requires_sealed_profile",
+    "notes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "breadboard.provider_policy_manifest.v1"
+    },
+    "provider_id": {
+      "type": "string"
+    },
+    "plan_id": {
+      "type": "string"
+    },
+    "supported": {
+      "type": "boolean"
+    },
+    "support_mode": {
+      "enum": [
+        "supported",
+        "harness_backed_only",
+        "unsupported"
+      ]
+    },
+    "requires_explicit_enable": {
+      "type": "boolean"
+    },
+    "local_only": {
+      "type": "boolean"
+    },
+    "requires_sealed_profile": {
+      "type": "boolean"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
+

@@ -1,0 +1,9 @@
+{
+  "schema": "breadboard.import_run_manifest.v1",
+  "run_id": "run-1",
+  "input_ir_path": "input.json",
+  "output_events_path": "events.jsonl",
+  "created_at_ms": 0,
+  "notes": "fixture"
+}
+

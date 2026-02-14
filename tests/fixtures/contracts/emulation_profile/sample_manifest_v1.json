@@ -1,0 +1,12 @@
+{
+  "schema": "breadboard.emulation_profile_manifest.v1",
+  "profile_id": "bbprof_fixture",
+  "display_name": "Fixture Profile",
+  "description": "Test-only profile manifest fixture.",
+  "locked_json_pointers": [
+    "/provider",
+    "/dialect"
+  ],
+  "conformance_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+}
+
