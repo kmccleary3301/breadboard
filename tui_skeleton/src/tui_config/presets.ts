@@ -44,6 +44,9 @@ export const BUILTIN_TUI_PRESETS: Record<TuiPresetId, TuiConfigInput> = {
       todoPreviewStyle: "nice",
       todoPreviewMinRowsToShow: 10,
       todoPreviewSmallRowsMaxItems: 3,
+      todoAutoFollowScope: "on",
+      todoAutoFollowHysteresisMs: 1200,
+      todoAutoFollowManualOverrideMs: 15000,
     },
     statusLine: {
       position: "above_input",
@@ -242,6 +245,9 @@ export const DEFAULT_RESOLVED_TUI_CONFIG: ResolvedTuiConfig = {
     todoPreviewStyle: "minimal",
     todoPreviewMinRowsToShow: 10,
     todoPreviewSmallRowsMaxItems: 3,
+    todoAutoFollowScope: "off",
+    todoAutoFollowHysteresisMs: 1200,
+    todoAutoFollowManualOverrideMs: 15000,
   },
   statusLine: {
     position: "above_input",

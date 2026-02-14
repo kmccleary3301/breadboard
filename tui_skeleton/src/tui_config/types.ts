@@ -15,6 +15,7 @@ export type StatusLinePosition = "above_input" | "below_input"
 export type StatusLineAlign = "left" | "right"
 export type SubagentFocusMode = "lane" | "swap"
 export type TodoPreviewStyle = "minimal" | "nice" | "dense"
+export type TodoAutoFollowScopeMode = "off" | "on"
 
 export type TuiDiffColorPaletteInput = {
   addLineBg?: string
@@ -53,6 +54,9 @@ export type TuiConfigInput = {
     todoPreviewStyle?: TodoPreviewStyle
     todoPreviewMinRowsToShow?: number
     todoPreviewSmallRowsMaxItems?: number
+    todoAutoFollowScope?: TodoAutoFollowScopeMode
+    todoAutoFollowHysteresisMs?: number
+    todoAutoFollowManualOverrideMs?: number
   }
   statusLine?: {
     position?: StatusLinePosition
@@ -108,6 +112,9 @@ export type ResolvedTuiConfig = {
     readonly todoPreviewStyle: TodoPreviewStyle
     readonly todoPreviewMinRowsToShow: number
     readonly todoPreviewSmallRowsMaxItems: number
+    readonly todoAutoFollowScope: TodoAutoFollowScopeMode
+    readonly todoAutoFollowHysteresisMs: number
+    readonly todoAutoFollowManualOverrideMs: number
   }
   readonly statusLine: {
     readonly position: StatusLinePosition

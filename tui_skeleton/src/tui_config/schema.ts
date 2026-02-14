@@ -265,6 +265,9 @@ export const validateTuiConfigInput = (input: unknown, options: ValidationOption
         "todoPreviewStyle",
         "todoPreviewMinRowsToShow",
         "todoPreviewSmallRowsMaxItems",
+        "todoAutoFollowScope",
+        "todoAutoFollowHysteresisMs",
+        "todoAutoFollowManualOverrideMs",
       ],
       ["composer"],
       issues,
@@ -309,6 +312,12 @@ export const validateTuiConfigInput = (input: unknown, options: ValidationOption
     if (todoPreviewMinRowsToShow != null) composer.todoPreviewMinRowsToShow = todoPreviewMinRowsToShow
     const todoPreviewSmallRowsMaxItems = readPositiveInt(composerRaw, "todoPreviewSmallRowsMaxItems", ["composer"], issues)
     if (todoPreviewSmallRowsMaxItems != null) composer.todoPreviewSmallRowsMaxItems = todoPreviewSmallRowsMaxItems
+    const todoAutoFollowScope = readEnum(composerRaw, "todoAutoFollowScope", ["off", "on"] as const, ["composer"], issues)
+    if (todoAutoFollowScope != null) composer.todoAutoFollowScope = todoAutoFollowScope
+    const todoAutoFollowHysteresisMs = readNonNegativeInt(composerRaw, "todoAutoFollowHysteresisMs", ["composer"], issues)
+    if (todoAutoFollowHysteresisMs != null) composer.todoAutoFollowHysteresisMs = todoAutoFollowHysteresisMs
+    const todoAutoFollowManualOverrideMs = readNonNegativeInt(composerRaw, "todoAutoFollowManualOverrideMs", ["composer"], issues)
+    if (todoAutoFollowManualOverrideMs != null) composer.todoAutoFollowManualOverrideMs = todoAutoFollowManualOverrideMs
     config.composer = composer
   }
 

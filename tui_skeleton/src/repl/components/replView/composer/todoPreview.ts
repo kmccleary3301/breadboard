@@ -32,6 +32,22 @@ type BuildTodoPreviewOptions = {
   readonly cols?: number | null
 }
 
+const extractCtreeNodeId = (metadata: Record<string, unknown> | null | undefined): string | null => {
+  if (!metadata) return null
+  const raw =
+    typeof metadata.ctree_node_id === "string"
+      ? metadata.ctree_node_id
+      : typeof metadata.ctreeNodeId === "string"
+        ? metadata.ctreeNodeId
+        : typeof metadata.node_id === "string"
+          ? metadata.node_id
+          : typeof metadata.nodeId === "string"
+            ? metadata.nodeId
+            : null
+  const cleaned = raw?.trim() || ""
+  return cleaned ? cleaned : null
+}
+
 const statusMark = (status: string): string => {
   switch (status) {
     case "done":
@@ -83,13 +99,17 @@ export const buildTodoPreviewModel = (
     status: todo.status,
     label: `[${statusMark(todo.status)}] ${todo.title}`,
   }))
+  const anyCtreeLink = selection.visible.some((todo) => extractCtreeNodeId(todo.metadata ?? null) != null)
 
   const hiddenSuffix = showHiddenCount && selection.hiddenCount > 0 ? ` · +${selection.hiddenCount}` : ""
   const scopeName = scopeLabel ?? scopeKey
   const showScope = Boolean(scopeName && scopeName !== "main")
   const scopePrefix = showScope ? ` (${scopeName})` : ""
+  const treeSuffix = style === "dense" && anyCtreeLink ? " · tree" : ""
   const staleSuffix = stale && style === "dense" ? " (stale)" : ""
-  const header = showHeader ? `TODOs${scopePrefix}: ${doneCount}/${totalCount}${hiddenSuffix}${staleSuffix}` : ""
+  const header = showHeader
+    ? `TODOs${scopePrefix}: ${doneCount}/${totalCount}${hiddenSuffix}${treeSuffix}${staleSuffix}`
+    : ""
   const hint = style !== "minimal" && cols != null && cols >= 28 ? "Ctrl+T" : null
   const headerLine = header && hint ? formatHeaderWithHint(header, hint, cols) : header
   const frameWidth =

@@ -99,6 +99,9 @@ export interface ReplControllerOptions {
   readonly model?: string | null
   readonly remotePreference?: boolean | null
   readonly permissionMode?: string | null
+  readonly todoAutoFollowScope?: "off" | "on"
+  readonly todoAutoFollowHysteresisMs?: number
+  readonly todoAutoFollowManualOverrideMs?: number
 }
 
 export interface CompletionView {
@@ -281,6 +284,11 @@ export class ReplSessionController extends EventEmitter {
   private todoStoresCoalesceTimersByScope = new Map<string, NodeJS.Timeout>()
   private todoScopeLastUpdateKey: string | null = null
   private todoScopeLastUpdateAt: number | null = null
+  private todoAutoFollowScope: "off" | "on" = "off"
+  private todoAutoFollowHysteresisMs = 1200
+  private todoAutoFollowManualOverrideMs = 15000
+  private todoAutoFollowManualOverrideUntilAt = 0
+  private todoAutoFollowLastSwitchAt = 0
   private tasks: TaskEntry[] = []
   private lastEventId: string | null = null
   private eventClock = 0
@@ -319,10 +327,54 @@ export class ReplSessionController extends EventEmitter {
   constructor(options: ReplControllerOptions) {
     super()
     this.config = options
+    this.todoAutoFollowScope = options.todoAutoFollowScope ?? "off"
+    const hysteresis = options.todoAutoFollowHysteresisMs
+    this.todoAutoFollowHysteresisMs =
+      typeof hysteresis === "number" && Number.isFinite(hysteresis) ? Math.max(0, Math.floor(hysteresis)) : 1200
+    const manualOverride = options.todoAutoFollowManualOverrideMs
+    this.todoAutoFollowManualOverrideMs =
+      typeof manualOverride === "number" && Number.isFinite(manualOverride) ? Math.max(0, Math.floor(manualOverride)) : 15000
   }
 
   private api() {
     return this.providers.sdk.api()
+  }
+
+  noteTodoScopeManualSelection(): void {
+    if (this.todoAutoFollowScope !== "on") return
+    const windowMs = this.todoAutoFollowManualOverrideMs
+    if (!Number.isFinite(windowMs) || windowMs <= 0) return
+    this.todoAutoFollowManualOverrideUntilAt = Date.now() + windowMs
+  }
+
+  private shouldAutoFollowTodoStore(scopeKey: string): boolean {
+    const store = this.todoStoresByScope[scopeKey]
+    if (!store || store.order.length === 0) return false
+    for (const id of store.order) {
+      const status = store.itemsById[id]?.status
+      if (!status) continue
+      if (status !== "done" && status !== "canceled") return true
+    }
+    return false
+  }
+
+  private maybeAutoFollowTodoScope(scopeKey: string, now = Date.now()): boolean {
+    if (this.todoAutoFollowScope !== "on") return false
+    const key = scopeKey?.trim() || "main"
+    if (!key) return false
+    if (key === this.activeTodoScopeKey) return false
+    if (this.todoAutoFollowManualOverrideUntilAt && now < this.todoAutoFollowManualOverrideUntilAt) return false
+    const hysteresisMs = this.todoAutoFollowHysteresisMs
+    if (Number.isFinite(hysteresisMs) && hysteresisMs > 0 && now - this.todoAutoFollowLastSwitchAt < hysteresisMs) {
+      return false
+    }
+    if (!this.shouldAutoFollowTodoStore(key)) return false
+
+    this.activeTodoScopeKey = key
+    this.todoAutoFollowLastSwitchAt = now
+    const label = this.todoScopeLabelsByKey[key] ?? key
+    this.pushHint(`Todo scope: ${key}${label && label !== key ? ` (${label})` : ""} (auto)`)
+    return true
   }
 
   flushTodoCoalescedUpdates(options?: { readonly scopeKey?: string; readonly emit?: boolean }): void {
@@ -342,6 +394,9 @@ export class ReplSessionController extends EventEmitter {
       if (this.todoStoresPendingClearStaleByScope[key]) {
         this.todoScopeStaleByKey[key] = false
         delete this.todoStoresPendingClearStaleByScope[key]
+      }
+      if (this.maybeAutoFollowTodoScope(key)) {
+        changed = true
       }
       const hintCount = this.todoStoresPendingHintByScope[key]
       if (typeof hintCount === "number" && hintCount > 0) {
@@ -469,6 +524,8 @@ export class ReplSessionController extends EventEmitter {
     this.activeTodoScopeKey = "main"
     this.todoScopeLabelsByKey = { main: "main" }
     this.todoScopeStaleByKey = { main: false }
+    this.todoAutoFollowManualOverrideUntilAt = 0
+    this.todoAutoFollowLastSwitchAt = 0
     this.todoSourceRevisionByScope = {}
     this.todoScopeLastUpdateKey = null
     this.todoScopeLastUpdateAt = null
