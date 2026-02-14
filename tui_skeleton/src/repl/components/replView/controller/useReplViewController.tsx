@@ -93,6 +93,7 @@ import {
 } from "./replViewControllerUtils.js"
 import { useReplViewModalStack } from "./useReplViewModalStack.js"
 import { ReplViewBaseContent } from "./ReplViewBaseContent.js"
+import { buildTodoPreviewModel } from "../composer/todoPreview.js"
 import { useTuiConfig } from "../../../../tui_config/context.js"
 import { formatConfiguredCompletionLine } from "../../../../tui_config/load.js"
 import {
@@ -576,6 +577,14 @@ export const useReplViewController = ({
     formatCTreeNodeFlags,
     requestTaskTail,
   } = panels
+
+  const todoPreviewModel = useMemo(() => {
+    if (!claudeChrome) return null
+    if (overlayActive) return null
+    if (!tuiConfig.composer.todoPreviewAboveInput) return null
+    return buildTodoPreviewModel(todos, { maxItems: tuiConfig.composer.todoPreviewMaxItems })
+  }, [claudeChrome, overlayActive, tuiConfig.composer.todoPreviewAboveInput, tuiConfig.composer.todoPreviewMaxItems, todos])
+
   useEffect(() => {
     const liveKeys = new Set(
       Array.isArray(taskGroups)
@@ -1045,6 +1054,7 @@ export const useReplViewController = ({
     suggestions,
     suggestionWindow,
     hints,
+    todoPreviewModel,
     attachments,
     fileMentions,
     workGraph,
@@ -1158,7 +1168,7 @@ export const useReplViewController = ({
     toolEvents.length === 0
 
   const composerPanelContext = {
-    claudeChrome, modelMenu, pendingClaudeStatus, promptRule, input, cursor, inputLocked,
+    claudeChrome, modelMenu, pendingClaudeStatus, todoPreviewModel, promptRule, input, cursor, inputLocked,
     attachments, fileMentions, inputMaxVisibleLines, handleLineEditGuarded, handleLineSubmit, handleAttachment,
     overlayActive, filePickerActive, fileIndexMeta, fileMenuMode, filePicker, fileMenuRows, fileMenuHasLarge,
     fileMenuWindow, fileMenuIndex, fileMenuNeedlePending, filePickerQueryParts, filePickerConfig, fileMentionConfig,

@@ -282,6 +282,10 @@ export const resolveTuiConfig = async (options: ResolvedTuiConfigOptions): Promi
       ruleCharacter: normalizeRuleCharacter(merged.composer?.ruleCharacter, displayAsciiOnly),
       showTopRule: merged.composer?.showTopRule ?? DEFAULT_RESOLVED_TUI_CONFIG.composer.showTopRule,
       showBottomRule: merged.composer?.showBottomRule ?? DEFAULT_RESOLVED_TUI_CONFIG.composer.showBottomRule,
+      todoPreviewAboveInput:
+        merged.composer?.todoPreviewAboveInput ?? DEFAULT_RESOLVED_TUI_CONFIG.composer.todoPreviewAboveInput,
+      todoPreviewMaxItems:
+        merged.composer?.todoPreviewMaxItems ?? DEFAULT_RESOLVED_TUI_CONFIG.composer.todoPreviewMaxItems,
     },
     statusLine: {
       position: merged.statusLine?.position ?? DEFAULT_RESOLVED_TUI_CONFIG.statusLine.position,

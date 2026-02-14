@@ -44,6 +44,8 @@ export type TuiConfigInput = {
     ruleCharacter?: string
     showTopRule?: boolean
     showBottomRule?: boolean
+    todoPreviewAboveInput?: boolean
+    todoPreviewMaxItems?: number
   }
   statusLine?: {
     position?: StatusLinePosition
@@ -92,6 +94,8 @@ export type ResolvedTuiConfig = {
     readonly ruleCharacter: string
     readonly showTopRule: boolean
     readonly showBottomRule: boolean
+    readonly todoPreviewAboveInput: boolean
+    readonly todoPreviewMaxItems: number
   }
   readonly statusLine: {
     readonly position: StatusLinePosition

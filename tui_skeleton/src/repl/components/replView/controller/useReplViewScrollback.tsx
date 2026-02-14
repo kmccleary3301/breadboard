@@ -11,6 +11,7 @@ import { sliceTailByLineBudget, trimTailByLineCount } from "../layout/windowing.
 import { isInlineThinkingBlockText } from "../../../transcriptUtils.js"
 import { CHALK, COLORS } from "../theme.js"
 import { formatCostUsd, formatLatency } from "../utils/format.js"
+import { getTodoPreviewRowCount, type TodoPreviewModel } from "../composer/todoPreview.js"
 import { useReplViewRenderNodes } from "./useReplViewRenderNodes.js"
 import { buildLandingContext, buildScrollbackLanding } from "../landing/scrollbackLanding.js"
 import {
@@ -76,6 +77,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     suggestions,
     suggestionWindow,
     hints,
+    todoPreviewModel,
     attachments,
     fileMentions,
     workGraph,
@@ -280,11 +282,14 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
         : hintCount > 0
           ? 1 + hintCount
           : 0
+    const todoPreviewRows =
+      overlayActive ? 0 : getTodoPreviewRowCount(todoPreviewModel as TodoPreviewModel | null)
     const attachmentRows = overlayActive ? 0 : attachments.length > 0 ? attachments.length + 3 : 0
     const fileMentionRows = overlayActive ? 0 : fileMentions.length > 0 ? fileMentions.length + 3 : 0
     return (
       outerMargin +
       pendingStatusRows +
+      todoPreviewRows +
       promptRuleRows +
       promptLine +
       suggestionRows +
@@ -307,6 +312,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     filePicker.status,
     filePickerActive,
     hints.length,
+    todoPreviewModel,
     overlayActive,
     pendingClaudeStatus,
     suggestions.length,
