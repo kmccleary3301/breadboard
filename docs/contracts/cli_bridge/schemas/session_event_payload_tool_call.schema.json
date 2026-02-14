@@ -19,6 +19,9 @@
     },
     "diff_preview": {},
     "progress": {},
+    "todo": {
+      "$ref": "session_event_payload_todo_update.schema.json"
+    },
     "tool": {
       "type": [
         "string",

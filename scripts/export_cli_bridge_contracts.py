@@ -107,7 +107,80 @@ def _payload_schema_tool_call() -> Dict[str, Any]:
             "action": {"type": ["string", "null"]},
             "diff_preview": {},
             "progress": {},
+            "todo": {"$ref": "session_event_payload_todo_update.schema.json"},
         },
+    }
+
+def _payload_schema_todo_update() -> Dict[str, Any]:
+    # Additive projected field consumed by the TUI. This is intentionally permissive:
+    # the engine/projection adapter may include extra fields without breaking older clients.
+    todo_item = {
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "id": {"type": ["string", "null"]},
+            "todo_id": {"type": ["string", "null"]},
+            "todoId": {"type": ["string", "null"]},
+            "title": {"type": ["string", "null"]},
+            "content": {"type": ["string", "null"]},
+            "text": {"type": ["string", "null"]},
+            "status": {"type": ["string", "null"]},
+            "state": {"type": ["string", "null"]},
+            "priority": {},
+            "metadata": {},
+        },
+    }
+
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "TodoUpdatePayload",
+        "oneOf": [
+            # Back-compat: allow a direct list snapshot.
+            {"type": "array", "items": todo_item},
+            # Preferred: an operation envelope.
+            {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "op": {
+                        "type": ["string", "null"],
+                        "enum": [
+                            "replace",
+                            "snapshot",
+                            "clear",
+                            "reset",
+                            "patch",
+                            "update",
+                            "upsert",
+                            "add",
+                            "delete",
+                            "remove",
+                        ],
+                    },
+                    "revision": {"type": ["integer", "null"]},
+                    "rev": {"type": ["integer", "null"]},
+                    "seq": {"type": ["integer", "null"]},
+                    "version": {"type": ["integer", "null"]},
+                    "scope_key": {"type": ["string", "null"]},
+                    "scopeKey": {"type": ["string", "null"]},
+                    "scope": {"type": ["string", "null"]},
+                    "scope_label": {"type": ["string", "null"]},
+                    "scopeLabel": {"type": ["string", "null"]},
+                    "label": {"type": ["string", "null"]},
+                    "items": {"type": "array", "items": todo_item},
+                    "todos": {"type": "array", "items": todo_item},
+                    "item": todo_item,
+                    "todo": todo_item,
+                    "ids": {"type": "array", "items": {"type": "string"}},
+                    "id": {"type": ["string", "null"]},
+                    "todo_id": {"type": ["string", "null"]},
+                    "todoId": {"type": ["string", "null"]},
+                    "patches": {"type": "array", "items": {"type": "object"}},
+                    "patch": {"type": ["object", "null"]},
+                    "position": {"type": ["integer", "null"]},
+                },
+            },
+        ],
     }
 
 
@@ -128,6 +201,7 @@ def _payload_schema_tool_result() -> Dict[str, Any]:
             "error": {"type": "boolean"},
             "result": {},
             "message": {},
+            "todo": {"$ref": "session_event_payload_todo_update.schema.json"},
         },
     }
 
@@ -924,6 +998,7 @@ def main() -> None:
     _write_json(SCHEMA_DIR / "session_event_payload_user_message.schema.json", _payload_schema_user_message())
     _write_json(SCHEMA_DIR / "session_event_payload_tool_call.schema.json", _payload_schema_tool_call())
     _write_json(SCHEMA_DIR / "session_event_payload_tool_result.schema.json", _payload_schema_tool_result())
+    _write_json(SCHEMA_DIR / "session_event_payload_todo_update.schema.json", _payload_schema_todo_update())
     _write_json(
         SCHEMA_DIR / "session_event_payload_permission_request.schema.json",
         _payload_schema_permission_request(),

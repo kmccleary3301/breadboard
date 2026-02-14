@@ -143,6 +143,8 @@ export interface ReplState {
   readonly todoScopeLabel: string
   readonly todoScopeStale: boolean
   readonly todoScopeOrder: ReadonlyArray<string>
+  readonly todoScopeLastUpdateKey?: string | null
+  readonly todoScopeLastUpdateAt?: number | null
   readonly permissionRequest?: PermissionRequest | null
   readonly permissionError?: string | null
   readonly permissionQueueDepth?: number
@@ -272,6 +274,13 @@ export class ReplSessionController extends EventEmitter {
   private todoScopeLabelsByKey: Record<string, string> = { main: "main" }
   private todoScopeStaleByKey: Record<string, boolean> = { main: false }
   private todoSourceRevisionByScope: Record<string, number> = {}
+  private todoStoresPendingByScope: Record<string, TodoStoreSnapshot> = {}
+  private todoStoresPendingDirtyByScope: Record<string, boolean> = {}
+  private todoStoresPendingClearStaleByScope: Record<string, boolean> = {}
+  private todoStoresPendingHintByScope: Record<string, number> = {}
+  private todoStoresCoalesceTimersByScope = new Map<string, NodeJS.Timeout>()
+  private todoScopeLastUpdateKey: string | null = null
+  private todoScopeLastUpdateAt: number | null = null
   private tasks: TaskEntry[] = []
   private lastEventId: string | null = null
   private eventClock = 0
@@ -316,7 +325,46 @@ export class ReplSessionController extends EventEmitter {
     return this.providers.sdk.api()
   }
 
+  flushTodoCoalescedUpdates(options?: { readonly scopeKey?: string; readonly emit?: boolean }): void {
+    const emit = options?.emit === true
+    const scopeKey = options?.scopeKey ?? null
+    const keys = scopeKey ? [scopeKey] : Object.keys(this.todoStoresPendingDirtyByScope)
+    let changed = false
+
+    for (const key of keys) {
+      if (!this.todoStoresPendingDirtyByScope[key]) continue
+      const pending = this.todoStoresPendingByScope[key]
+      if (pending) {
+        this.todoStoresByScope[key] = pending
+        changed = true
+      }
+      delete this.todoStoresPendingDirtyByScope[key]
+      if (this.todoStoresPendingClearStaleByScope[key]) {
+        this.todoScopeStaleByKey[key] = false
+        delete this.todoStoresPendingClearStaleByScope[key]
+      }
+      const hintCount = this.todoStoresPendingHintByScope[key]
+      if (typeof hintCount === "number" && hintCount > 0) {
+        delete this.todoStoresPendingHintByScope[key]
+        this.todoScopeLastUpdateKey = key
+        this.todoScopeLastUpdateAt = Date.now()
+        this.pushHint(`Todos updated (${hintCount}).`)
+      } else {
+        delete this.todoStoresPendingHintByScope[key]
+      }
+    }
+
+    if (emit && changed) {
+      this.emitChange()
+    }
+  }
+
   getState(): ReplState {
+    // Goldens/tests call getState() without attaching listeners. Flush any pending todo coalescing so
+    // deterministic renderers see the committed state.
+    if (this.listenerCount("change") === 0) {
+      this.flushTodoCoalescedUpdates({ emit: false })
+    }
     const liveSlotList = Array.from(this.liveSlots.values()).sort((a, b) => a.updatedAt - b.updatedAt)
     const activeScopeKey = this.activeTodoScopeKey || "main"
     const todoStore =
@@ -357,6 +405,8 @@ export class ReplSessionController extends EventEmitter {
       todoScopeLabel,
       todoScopeStale,
       todoScopeOrder: [...this.todoScopeOrder],
+      todoScopeLastUpdateKey: this.todoScopeLastUpdateKey,
+      todoScopeLastUpdateAt: this.todoScopeLastUpdateAt,
       permissionRequest: this.permissionActive,
       permissionError: this.permissionError,
       permissionQueueDepth: this.permissionQueue.length,
@@ -407,11 +457,21 @@ export class ReplSessionController extends EventEmitter {
     this.hasStreamedOnce = false
     this.resetTransientRuntimeState()
     this.todoStoresByScope = { main: createEmptyTodoStore() }
+    this.todoStoresPendingByScope = {}
+    this.todoStoresPendingDirtyByScope = {}
+    this.todoStoresPendingClearStaleByScope = {}
+    this.todoStoresPendingHintByScope = {}
+    for (const timer of this.todoStoresCoalesceTimersByScope.values()) {
+      clearTimeout(timer)
+    }
+    this.todoStoresCoalesceTimersByScope.clear()
     this.todoScopeOrder = ["main"]
     this.activeTodoScopeKey = "main"
     this.todoScopeLabelsByKey = { main: "main" }
     this.todoScopeStaleByKey = { main: false }
     this.todoSourceRevisionByScope = {}
+    this.todoScopeLastUpdateKey = null
+    this.todoScopeLastUpdateAt = null
     this.activity = createActivitySnapshot("session")
     const requestedModel = this.config.model?.trim()
     const modelLabel = requestedModel ?? this.stats.model

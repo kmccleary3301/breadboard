@@ -359,6 +359,21 @@ const formatCompletion = (payload: unknown): CompletionView => {
 }
 
 const DEFAULT_TODO_SCOPE_KEY = "main"
+const resolveTodoCoalesceMs = (): number => {
+  const raw = (process.env.BREADBOARD_TODO_COALESCE_MS ?? "").trim()
+  if (!raw) return 0
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.max(0, Math.min(1000, Math.floor(parsed)))
+}
+
+export const markTodoScopesStale = (controller: any): void => {
+  const stale = controller.todoScopeStaleByKey
+  if (!stale || typeof stale !== "object") return
+  for (const key of Object.keys(stale)) {
+    stale[key] = true
+  }
+}
 
 const normalizeScopeKey = (value: string): string => {
   const trimmed = value.trim()
@@ -405,6 +420,21 @@ const ensureTodoScope = (controller: any, scopeKey: string, scopeLabel: string |
   if (!controller.todoStoresByScope) {
     controller.todoStoresByScope = { [DEFAULT_TODO_SCOPE_KEY]: createEmptyTodoStore() }
   }
+  if (!controller.todoStoresPendingByScope) {
+    controller.todoStoresPendingByScope = {}
+  }
+  if (!controller.todoStoresPendingDirtyByScope) {
+    controller.todoStoresPendingDirtyByScope = {}
+  }
+  if (!controller.todoStoresPendingClearStaleByScope) {
+    controller.todoStoresPendingClearStaleByScope = {}
+  }
+  if (!controller.todoStoresPendingHintByScope) {
+    controller.todoStoresPendingHintByScope = {}
+  }
+  if (!controller.todoStoresCoalesceTimersByScope) {
+    controller.todoStoresCoalesceTimersByScope = new Map()
+  }
   if (!controller.todoScopeOrder) {
     controller.todoScopeOrder = [DEFAULT_TODO_SCOPE_KEY]
   }
@@ -425,6 +455,9 @@ const ensureTodoScope = (controller: any, scopeKey: string, scopeLabel: string |
     if (controller.todoScopeStaleByKey) {
       controller.todoScopeStaleByKey[key] = false
     }
+  }
+  if (!controller.todoStoresPendingByScope[key]) {
+    controller.todoStoresPendingByScope[key] = controller.todoStoresByScope[key]
   }
   if (scopeLabel && controller.todoScopeLabelsByKey) {
     controller.todoScopeLabelsByKey[key] = scopeLabel
@@ -519,9 +552,11 @@ const extractProjectedTodoUpdate = (
 const maybeApplyTodoUpdateFromPayload = (controller: any, payload: Record<string, unknown>): number | null => {
   const at = Date.now()
   const projected = extractProjectedTodoUpdate(controller, payload, at)
+  const hasExplicitTodo = Object.prototype.hasOwnProperty.call(payload, "todo") && payload.todo != null
   const fallback: { update: TodoUpdate; sourceRevision: number | null; scopeKey: string; scopeLabel: string | null } | null =
     projected ??
     (() => {
+      if (hasExplicitTodo) return null
       const items = controller.extractTodosFromPayload(payload)
       if (!items) return null
       const { scopeKey, scopeLabel } = resolveTodoScope(payload, null)
@@ -533,21 +568,51 @@ const maybeApplyTodoUpdateFromPayload = (controller: any, payload: Record<string
   const { update, sourceRevision, scopeKey, scopeLabel } = fallback
   ensureTodoScope(controller, scopeKey, scopeLabel)
 
+  const prevKnown = controller.todoSourceRevisionByScope?.[scopeKey]
+  const hasKnownRevision = typeof prevKnown === "number" && Number.isFinite(prevKnown)
+  if (sourceRevision == null && hasKnownRevision) {
+    // Once the engine starts emitting revisioned updates, ignore unversioned fallbacks so they
+    // cannot override newer authoritative state.
+    return null
+  }
+
   if (sourceRevision != null) {
-    const prev = controller.todoSourceRevisionByScope?.[scopeKey]
-    if (typeof prev === "number" && Number.isFinite(prev) && sourceRevision <= prev) {
+    if (hasKnownRevision && sourceRevision <= prevKnown) {
       return null
     }
     controller.todoSourceRevisionByScope[scopeKey] = sourceRevision
   }
 
-  const currentStore = controller.todoStoresByScope?.[scopeKey] ?? createEmptyTodoStore()
-  const next = reduceTodoStore(currentStore, update)
-  if (next === currentStore) return null
-  controller.todoStoresByScope[scopeKey] = next
-  if (controller.todoScopeStaleByKey) controller.todoScopeStaleByKey[scopeKey] = false
+  const committed = controller.todoStoresByScope?.[scopeKey] ?? createEmptyTodoStore()
+  const pending = controller.todoStoresPendingByScope?.[scopeKey] ?? committed
+  const nextPending = reduceTodoStore(pending, update)
+  if (nextPending === pending) return null
 
-  if (update.op === "replace") return update.items.length
+  controller.todoStoresPendingByScope[scopeKey] = nextPending
+  controller.todoStoresPendingDirtyByScope[scopeKey] = true
+  controller.todoStoresPendingClearStaleByScope[scopeKey] = true
+  if (update.op === "replace") {
+    controller.todoStoresPendingHintByScope[scopeKey] = update.items.length
+  } else {
+    delete controller.todoStoresPendingHintByScope[scopeKey]
+  }
+
+  const coalesceMs = resolveTodoCoalesceMs()
+  const hasListeners = typeof controller.listenerCount === "function" ? controller.listenerCount("change") > 0 : true
+  if (coalesceMs <= 0 || !hasListeners) {
+    controller.flushTodoCoalescedUpdates?.({ scopeKey, emit: false })
+    return 0
+  }
+
+  const existing = controller.todoStoresCoalesceTimersByScope.get(scopeKey) ?? null
+  if (existing) {
+    clearTimeout(existing)
+  }
+  const timer = setTimeout(() => {
+    controller.todoStoresCoalesceTimersByScope.delete(scopeKey)
+    controller.flushTodoCoalescedUpdates?.({ scopeKey, emit: true })
+  }, coalesceMs)
+  controller.todoStoresCoalesceTimersByScope.set(scopeKey, timer)
   return 0
 }
 
@@ -593,10 +658,7 @@ export function handleToolCall(
   if (this.viewPrefs.toolInline) {
     this.addConversation("system", `[tool] ${slot.text}`)
   }
-  const todoCount = maybeApplyTodoUpdateFromPayload(this, payload)
-  if (todoCount != null) {
-    this.pushHint(`Todos updated (${todoCount}).`)
-  }
+  maybeApplyTodoUpdateFromPayload(this, payload)
   return callId
 }
 
@@ -671,10 +733,7 @@ export function handleToolResult(this: any, payload: Record<string, unknown>, ca
     this.toolCallArgsById.delete(callId)
     this.toolExecOutputByCallId.delete(callId)
   }
-  const todoCount = maybeApplyTodoUpdateFromPayload(this, payload)
-  if (todoCount != null) {
-    this.pushHint(`Todos updated (${todoCount}).`)
-  }
+  maybeApplyTodoUpdateFromPayload(this, payload)
 }
 
 export async function streamLoop(this: any): Promise<void> {
@@ -692,11 +751,7 @@ export async function streamLoop(this: any): Promise<void> {
       })) {
         if (warnOnReconnect && !warned) {
           this.pushHint("Reconnected to stream; some history may be missing.")
-          if (this.todoScopeStaleByKey && typeof this.todoScopeStaleByKey === "object") {
-            for (const key of Object.keys(this.todoScopeStaleByKey)) {
-              this.todoScopeStaleByKey[key] = true
-            }
-          }
+          markTodoScopesStale(this)
           warned = true
         }
         this.hasStreamedOnce = true
@@ -748,11 +803,7 @@ export async function streamLoop(this: any): Promise<void> {
       if (error instanceof ApiError && error.status === 409) {
         this.pendingResponse = false
         this.pushHint("Stream resume window exceeded; reconnecting without history.")
-        if (this.todoScopeStaleByKey && typeof this.todoScopeStaleByKey === "object") {
-          for (const key of Object.keys(this.todoScopeStaleByKey)) {
-            this.todoScopeStaleByKey[key] = true
-          }
-        }
+        markTodoScopesStale(this)
         if (this.ctreeTreeRequested && this.ctreeSource !== "disk") {
           this.pushHint("CTree resume window exceeded; switching to disk tree view.")
           void this.refreshCtreeTree({ source: "disk" })
