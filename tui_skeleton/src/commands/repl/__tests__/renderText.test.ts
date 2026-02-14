@@ -30,6 +30,7 @@ const baseState = (): ReplState => ({
   disconnected: false,
   viewPrefs: { collapseMode: "auto", virtualization: "auto", richMarkdown: false },
   rewindMenu: { status: "hidden" },
+  todoStore: { revision: 0, updatedAt: 0, itemsById: {}, order: [] },
   todos: [],
   tasks: [],
   workGraph: {

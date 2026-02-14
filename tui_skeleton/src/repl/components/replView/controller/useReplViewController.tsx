@@ -163,6 +163,7 @@ export const useReplViewController = ({
   guardrailNotice,
   viewClearAt,
   viewPrefs,
+  todoStore,
   todos,
   tasks,
   workGraph,
@@ -467,6 +468,7 @@ export const useReplViewController = ({
     permissionFileIndex,
     setPermissionScroll,
     rewindIndex,
+    todoStore,
     todos,
     tasks,
     workGraph,
@@ -582,8 +584,20 @@ export const useReplViewController = ({
     if (!claudeChrome) return null
     if (overlayActive) return null
     if (!tuiConfig.composer.todoPreviewAboveInput) return null
-    return buildTodoPreviewModel(todos, { maxItems: tuiConfig.composer.todoPreviewMaxItems })
-  }, [claudeChrome, overlayActive, tuiConfig.composer.todoPreviewAboveInput, tuiConfig.composer.todoPreviewMaxItems, todos])
+    return buildTodoPreviewModel(todoStore, {
+      maxItems: tuiConfig.composer.todoPreviewMaxItems,
+      strategy: tuiConfig.composer.todoPreviewSelection,
+      showHiddenCount: tuiConfig.composer.todoPreviewShowHiddenCount,
+    })
+  }, [
+    claudeChrome,
+    overlayActive,
+    todoStore,
+    tuiConfig.composer.todoPreviewAboveInput,
+    tuiConfig.composer.todoPreviewMaxItems,
+    tuiConfig.composer.todoPreviewSelection,
+    tuiConfig.composer.todoPreviewShowHiddenCount,
+  ])
 
   useEffect(() => {
     const liveKeys = new Set(

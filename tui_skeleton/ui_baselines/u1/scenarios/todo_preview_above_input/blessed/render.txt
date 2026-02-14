@@ -1,0 +1,9 @@
+Slash commands: /help, /quit, /clear, /status, /remote on|off, /retry, /plan, /mode <plan|build|auto>, /model <id>, /test [suite], /files [path], /models, /skills
+! for bash • / for commands • @ for files • Tab to complete • Esc closes menus
+No conversation yet. Type a prompt to get started.
+
+TODOs: 2/5 . +2
+[~] Render todo preview above input
+[ ] Add reducer tests
+[!] Fix flaky CI
+> 

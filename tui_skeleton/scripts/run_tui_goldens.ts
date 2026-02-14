@@ -9,6 +9,11 @@ type RenderOptions = {
   include_status?: boolean
   include_hints?: boolean
   include_model_menu?: boolean
+  include_composer?: boolean
+  include_todo_preview?: boolean
+  todo_preview_max_items?: number
+  todo_preview_strategy?: string
+  todo_preview_show_hidden_count?: boolean
   colors?: boolean
   ascii_only?: boolean
   max_width?: number
@@ -188,6 +193,11 @@ const renderScenario = async (
     includeStatus: render.include_status !== false,
     includeHints: render.include_hints !== false,
     includeModelMenu: render.include_model_menu !== false,
+    includeComposer: render.include_composer === true,
+    includeTodoPreview: render.include_todo_preview === true,
+    todoPreviewMaxItems: typeof render.todo_preview_max_items === "number" ? render.todo_preview_max_items : undefined,
+    todoPreviewStrategy: typeof render.todo_preview_strategy === "string" ? render.todo_preview_strategy : undefined,
+    todoPreviewShowHiddenCount: render.todo_preview_show_hidden_count === true,
     colors: render.colors === true,
     asciiOnly: render.ascii_only !== false,
     maxWidth: options.maxWidth ?? (typeof render.max_width === "number" ? render.max_width : undefined),

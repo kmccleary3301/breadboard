@@ -20,3 +20,13 @@ scenarios:
     input: ../scenarios/streaming_pending_basic/input/events.jsonl
   - id: ascii_only_pending
     input: ../scenarios/ascii_only_pending/input/events.jsonl
+  - id: todo_preview_above_input
+    input: ../scenarios/todo_preview_above_input/input/events.jsonl
+    render:
+      include_composer: true
+      include_todo_preview: true
+      todo_preview_max_items: 3
+      todo_preview_strategy: active_first
+      todo_preview_show_hidden_count: true
+      view_prefs:
+        toolRail: false

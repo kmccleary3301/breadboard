@@ -1,4 +1,5 @@
 import type { ColorMode } from "../repl/designSystem.js"
+import type { TodoPreviewSelectionStrategy } from "../repl/types.js"
 
 export type TuiPresetId =
   | "breadboard_default"
@@ -46,6 +47,8 @@ export type TuiConfigInput = {
     showBottomRule?: boolean
     todoPreviewAboveInput?: boolean
     todoPreviewMaxItems?: number
+    todoPreviewSelection?: TodoPreviewSelectionStrategy
+    todoPreviewShowHiddenCount?: boolean
   }
   statusLine?: {
     position?: StatusLinePosition
@@ -96,6 +99,8 @@ export type ResolvedTuiConfig = {
     readonly showBottomRule: boolean
     readonly todoPreviewAboveInput: boolean
     readonly todoPreviewMaxItems: number
+    readonly todoPreviewSelection: TodoPreviewSelectionStrategy
+    readonly todoPreviewShowHiddenCount: boolean
   }
   readonly statusLine: {
     readonly position: StatusLinePosition

@@ -25,6 +25,7 @@ import {
 } from "./taskboardStatus.js"
 import { loadTaskFocusTail } from "./taskFocusLoader.js"
 import { buildLaneDiagnosticsHeatmap } from "./diagnosticsHeatmap.js"
+import { todoStoreToList } from "../../../todos/todoStore.js"
 
 type PanelsContext = Record<string, any>
 
@@ -83,6 +84,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
     permissionFileIndex,
     setPermissionScroll,
     rewindIndex,
+    todoStore,
     todos,
     tasks,
     workGraph,
@@ -530,6 +532,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
     [rewindCheckpoints, rewindOffset, rewindVisibleLimit],
   )
   const todoGroups = useMemo(() => {
+    const todoList = todoStore ? todoStoreToList(todoStore) : todos
     const groups: Record<string, any[]> = {
       in_progress: [],
       todo: [],
@@ -537,7 +540,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
       done: [],
       canceled: [],
     }
-    for (const item of todos) {
+    for (const item of todoList) {
       const status = String(item.status || "todo").toLowerCase()
       if (status in groups) {
         groups[status].push(item)
@@ -546,7 +549,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
       }
     }
     return groups
-  }, [todos])
+  }, [todoStore, todos])
   const todoRows = useMemo(() => {
     const rows: Array<{ kind: "header" | "item"; label: string; status?: string }> = []
     const pushGroup = (label: string, items: any[], status: string) => {
