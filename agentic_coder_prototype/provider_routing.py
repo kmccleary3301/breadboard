@@ -341,24 +341,53 @@ class ProviderRouter:
     def create_client_config(self, model_id: str) -> Dict[str, Any]:
         """Create client configuration for the given model"""
         config, actual_model, _ = self.get_provider_config(model_id)
-        
+
         api_key = os.getenv(config.api_key_env)
         if config.provider_id == "mock":
             api_key = api_key or "mock"
+
+        # In-memory auth material overlay (never persisted). This allows the CLI bridge
+        # (and eventually the TUI) to attach short-lived auth material without writing
+        # secrets to disk.
+        try:
+            from .auth.store import DEFAULT_PROVIDER_AUTH_STORE  # local import to avoid import cycles
+
+            alias_env = f"BREADBOARD_PROVIDER_AUTH_ALIAS_{config.provider_id.upper()}"
+            overlay_alias = (os.getenv(alias_env) or "").strip()
+            overlay = DEFAULT_PROVIDER_AUTH_STORE.get(config.provider_id, alias=overlay_alias)
+        except Exception:
+            overlay = None
+
+        base_url = config.base_url
+        headers: Dict[str, str] = {}
+        if config.default_headers:
+            headers.update({k: v for k, v in config.default_headers.items() if v})
+        if overlay is not None:
+            if overlay.api_key:
+                api_key = overlay.api_key
+            if overlay.base_url:
+                base_url = overlay.base_url
+            if overlay.headers:
+                for k, v in (overlay.headers or {}).items():
+                    if not k:
+                        continue
+                    if v is None:
+                        continue
+                    headers[str(k)] = str(v)
 
         client_config = {
             "model": actual_model,
             "api_key": api_key,
         }
         
-        if config.base_url:
-            client_config["base_url"] = config.base_url
+        if base_url:
+            client_config["base_url"] = base_url
         
-        if config.default_headers:
-            # Filter out empty headers
-            headers = {k: v for k, v in config.default_headers.items() if v}
-            if headers:
-                client_config["default_headers"] = headers
+        if headers:
+            client_config["default_headers"] = headers
+
+        if overlay is not None and overlay.routing:
+            client_config["routing"] = dict(overlay.routing)
         
         return client_config
 
