@@ -26,6 +26,11 @@ from .models import (
     AttachmentUploadResponse,
     ErrorResponse,
     ModelCatalogResponse,
+    ProviderAuthAttachRequest,
+    ProviderAuthAttachResponse,
+    ProviderAuthDetachRequest,
+    ProviderAuthDetachResponse,
+    ProviderAuthStatusResponse,
     SessionCommandRequest,
     SessionCommandResponse,
     SessionCreateRequest,
@@ -42,6 +47,13 @@ from .service import SessionService
 
 logger = logging.getLogger(__name__)
 ENGINE_STARTED_AT = time.time()
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    if not host:
+        return False
+    host = str(host).strip().lower()
+    return host in {"127.0.0.1", "localhost", "::1"}
 
 
 def _load_chaos_config() -> Dict[str, float] | None:
@@ -166,6 +178,117 @@ def create_app(service: SessionService | None = None) -> FastAPI:
                 "initialized": ray_initialized,
             },
         }
+
+    @app.post(
+        "/v1/provider-auth/attach",
+        response_model=ProviderAuthAttachResponse,
+        responses={
+            400: {"model": ErrorResponse},
+            403: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
+        },
+    )
+    async def attach_provider_auth(payload: ProviderAuthAttachRequest, request: Request):
+        """Attach short-lived provider auth material to the in-memory engine store."""
+
+        from ...auth.enforcer import apply_dotted_overrides, check_conformance
+        from ...auth.material import EngineAuthMaterial, EmulationProfileRequirement
+        from ...auth.store import DEFAULT_PROVIDER_AUTH_STORE
+        from ...compilation.v2_loader import load_agent_config
+
+        client_host = getattr(getattr(request, "client", None), "host", None)
+        if payload.material.is_subscription_plan and not _is_loopback_host(client_host):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "subscription-plan auth is local-only by default"},
+            )
+
+        required_profile = None
+        if payload.required_profile is not None:
+            locked = list(payload.required_profile.locked_json_pointers or [])
+            if not locked:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"message": "required_profile.locked_json_pointers must be provided"},
+                )
+            if not payload.config_path:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"message": "config_path is required when required_profile is provided"},
+                )
+            cfg = load_agent_config(payload.config_path)
+            if not isinstance(cfg, dict):
+                cfg = {}
+            cfg = apply_dotted_overrides(cfg, payload.overrides)
+            expected = payload.required_profile.conformance_hash
+            result = check_conformance(config=cfg, locked_json_pointers=locked, expected_hash=expected)
+            if not result.ok:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "message": "sealed profile conformance mismatch",
+                        "expected_hash": result.expected_hash,
+                        "actual_hash": result.actual_hash,
+                        "details": result.details,
+                    },
+                )
+            required_profile = EmulationProfileRequirement(
+                profile_id=payload.required_profile.profile_id,
+                conformance_hash=payload.required_profile.conformance_hash,
+                locked_json_pointers=tuple(locked),
+            )
+
+        api_key = payload.material.api_key
+        if not api_key:
+            # Allow callers to provide the bearer token in headers (common in plan adapters).
+            auth = (payload.material.headers or {}).get("Authorization") or (payload.material.headers or {}).get("authorization")
+            if isinstance(auth, str) and auth.strip():
+                value = auth.strip()
+                if value.lower().startswith("bearer "):
+                    api_key = value[7:].strip()
+                else:
+                    api_key = value
+
+        material = EngineAuthMaterial(
+            provider_id=payload.material.provider_id,
+            alias=(payload.material.alias or "").strip(),
+            api_key=api_key,
+            headers=dict(payload.material.headers or {}),
+            base_url=payload.material.base_url,
+            routing=dict(payload.material.routing or {}) if isinstance(payload.material.routing, dict) else None,
+            issued_at_ms=payload.material.issued_at_ms,
+            expires_at_ms=payload.material.expires_at_ms,
+            is_subscription_plan=bool(payload.material.is_subscription_plan),
+            required_profile=required_profile,
+        )
+
+        DEFAULT_PROVIDER_AUTH_STORE.attach(
+            material,
+            ttl_seconds=payload.material.ttl_seconds,
+            required_profile=required_profile,
+        )
+        return ProviderAuthAttachResponse(ok=True, detail={"attached": True})
+
+    @app.post(
+        "/v1/provider-auth/detach",
+        response_model=ProviderAuthDetachResponse,
+        responses={400: {"model": ErrorResponse}},
+    )
+    async def detach_provider_auth(payload: ProviderAuthDetachRequest):
+        from ...auth.store import DEFAULT_PROVIDER_AUTH_STORE
+
+        ok = DEFAULT_PROVIDER_AUTH_STORE.detach(payload.provider_id, alias=(payload.alias or "").strip())
+        return ProviderAuthDetachResponse(ok=ok)
+
+    @app.get(
+        "/v1/provider-auth/status",
+        response_model=ProviderAuthStatusResponse,
+    )
+    async def provider_auth_status():
+        from ...auth.store import DEFAULT_PROVIDER_AUTH_STORE
+
+        items = DEFAULT_PROVIDER_AUTH_STORE.status()
+        return ProviderAuthStatusResponse(attached=items)
 
     @app.get(
         "/models",

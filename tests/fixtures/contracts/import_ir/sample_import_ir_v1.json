@@ -1,0 +1,42 @@
+{
+  "schema": "breadboard.import_ir.v1",
+  "created_at_ms": 0,
+  "meta": {
+    "source": "fixture"
+  },
+  "conversation": {
+    "id": "conv-1",
+    "ir_version": "1",
+    "messages": [
+      {
+        "id": "msg-1",
+        "role": "user",
+        "parts": [
+          {
+            "type": "text",
+            "text": "hello"
+          }
+        ]
+      },
+      {
+        "id": "msg-2",
+        "role": "assistant",
+        "parts": [
+          {
+            "type": "text",
+            "text": "hi"
+          }
+        ]
+      }
+    ],
+    "events": [],
+    "finish": {
+      "reason": "stop",
+      "usage": {
+        "input_tokens": 1,
+        "output_tokens": 1
+      }
+    }
+  }
+}
+

@@ -261,6 +261,22 @@
     {
       "properties": {
         "payload": {
+          "$ref": "session_event_payload_limits_update.schema.json"
+        },
+        "type": {
+          "const": "limits_update"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "limits_updateEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
           "$ref": "session_event_payload_completion.schema.json"
         },
         "type": {

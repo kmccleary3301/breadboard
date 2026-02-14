@@ -1295,6 +1295,7 @@ class SessionRunner:
             "ctree_snapshot": EventType.CTREE_SNAPSHOT,
             "task_event": EventType.TASK_EVENT,
             "reward_update": EventType.REWARD_UPDATE,
+            "limits_update": EventType.LIMITS_UPDATE,
             "completion": EventType.COMPLETION,
             "log_link": EventType.LOG_LINK,
             "error": EventType.ERROR,

@@ -982,7 +982,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install minimal test dependencies
-        run: python -m pip install pytest jsonschema
+        run: python -m pip install pytest jsonschema requests
 
       - name: Contract schema smoke
-        run: python -m pytest -q tests/test_cli_bridge_contract_exports.py
+        run: python -m pytest -q tests/test_cli_bridge_contract_exports.py tests/test_import_and_profile_contracts.py tests/test_import_ir_converter.py tests/test_provider_auth_store.py

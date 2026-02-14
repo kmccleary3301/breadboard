@@ -12,6 +12,11 @@ sys.path.insert(0, str(ROOT))
 
 from agentic_coder_prototype.api.cli_bridge.app import create_app  # noqa: E402
 from agentic_coder_prototype.api.cli_bridge.models import (  # noqa: E402
+    ProviderAuthAttachRequest,
+    ProviderAuthAttachResponse,
+    ProviderAuthDetachRequest,
+    ProviderAuthDetachResponse,
+    ProviderAuthStatusResponse,
     SessionCommandRequest,
     SessionCreateRequest,
     SessionInputRequest,
@@ -43,6 +48,7 @@ def _event_schema() -> Dict[str, Any]:
         ("ctree_snapshot", "session_event_payload_ctree_snapshot.schema.json"),
         ("task_event", "session_event_payload_task_event.schema.json"),
         ("reward_update", "session_event_payload_reward_update.schema.json"),
+        ("limits_update", "session_event_payload_limits_update.schema.json"),
         ("completion", "session_event_payload_completion.schema.json"),
         ("log_link", "session_event_payload_log_link.schema.json"),
         ("error", "session_event_payload_error.schema.json"),
@@ -378,6 +384,37 @@ def _payload_schema_reward_update() -> Dict[str, Any]:
         "additionalProperties": True,
         "required": ["summary"],
         "properties": {"summary": {"type": "object"}},
+    }
+
+def _payload_schema_limits_update() -> Dict[str, Any]:
+    # Best-effort snapshot parsed from provider headers. Intentionally permissive to
+    # allow provider-specific extensions without breaking older clients.
+    bucket = {
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "name": {"type": "string"},
+            "limit": {"type": ["number", "null"]},
+            "remaining": {"type": ["number", "null"]},
+            "reset_at_ms": {"type": ["integer", "null"]},
+            "window_seconds": {"type": ["number", "null"]},
+            "scope": {"type": ["string", "null"]},
+            "raw": {"type": ["object", "null"], "additionalProperties": True},
+        },
+    }
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "LimitsUpdatePayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["provider", "observed_at_ms", "buckets"],
+        "properties": {
+            "provider": {"type": "string"},
+            "observed_at_ms": {"type": "integer"},
+            "buckets": {"type": "array", "items": bucket},
+            "retry_after_ms": {"type": ["integer", "null"]},
+            "raw_headers": {"type": ["object", "null"], "additionalProperties": True},
+        },
     }
 
 
@@ -1022,10 +1059,16 @@ def main() -> None:
     _write_json(SCHEMA_DIR / "session_event_payload_ctree_snapshot.schema.json", _payload_schema_ctree_snapshot())
     _write_json(SCHEMA_DIR / "session_event_payload_task_event.schema.json", _payload_schema_task_event())
     _write_json(SCHEMA_DIR / "session_event_payload_reward_update.schema.json", _payload_schema_reward_update())
+    _write_json(SCHEMA_DIR / "session_event_payload_limits_update.schema.json", _payload_schema_limits_update())
     _write_json(SCHEMA_DIR / "session_event_payload_completion.schema.json", _payload_schema_completion())
     _write_json(SCHEMA_DIR / "session_event_payload_log_link.schema.json", _payload_schema_log_link())
     _write_json(SCHEMA_DIR / "session_event_payload_error.schema.json", _payload_schema_error())
     _write_json(SCHEMA_DIR / "session_event_payload_run_finished.schema.json", _payload_schema_run_finished())
+    _write_json(SCHEMA_DIR / "provider_auth_attach_request.schema.json", _model_schema(ProviderAuthAttachRequest))
+    _write_json(SCHEMA_DIR / "provider_auth_attach_response.schema.json", _model_schema(ProviderAuthAttachResponse))
+    _write_json(SCHEMA_DIR / "provider_auth_detach_request.schema.json", _model_schema(ProviderAuthDetachRequest))
+    _write_json(SCHEMA_DIR / "provider_auth_detach_response.schema.json", _model_schema(ProviderAuthDetachResponse))
+    _write_json(SCHEMA_DIR / "provider_auth_status_response.schema.json", _model_schema(ProviderAuthStatusResponse))
 
     print(f"Wrote OpenAPI contract to {CONTRACT_DIR / 'openapi.json'}")
     print(f"Wrote schemas to {SCHEMA_DIR}")

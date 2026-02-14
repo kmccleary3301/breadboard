@@ -1,0 +1,15 @@
+{
+  "schema": "breadboard.provider_policy_manifest.v1",
+  "provider_id": "anthropic",
+  "plan_id": "consumer_subscription",
+  "supported": false,
+  "support_mode": "unsupported",
+  "requires_explicit_enable": true,
+  "local_only": true,
+  "requires_sealed_profile": false,
+  "notes": [
+    "Unsupported by default: consumer subscription tokens are compliance-sensitive.",
+    "Use API keys / enterprise auth instead."
+  ]
+}
+

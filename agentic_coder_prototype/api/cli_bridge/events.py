@@ -28,6 +28,7 @@ class EventType(str, enum.Enum):
     CTREE_SNAPSHOT = "ctree_snapshot"
     TASK_EVENT = "task_event"
     REWARD_UPDATE = "reward_update"
+    LIMITS_UPDATE = "limits_update"
     COMPLETION = "completion"
     LOG_LINK = "log_link"
     ERROR = "error"

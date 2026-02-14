@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "breadboard.import_ir.v1",
+  "title": "ImportIRv1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "conversation"
+  ],
+  "properties": {
+    "schema": {
+      "const": "breadboard.import_ir.v1"
+    },
+    "created_at_ms": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "meta": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    },
+    "conversation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "ir_version",
+        "messages"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ir_version": {
+          "type": "string"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "role"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "role": {
+                "enum": [
+                  "system",
+                  "user",
+                  "assistant",
+                  "tool"
+                ]
+              },
+              "parts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "type"
+                  ],
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "text",
+                        "json",
+                        "media"
+                      ]
+                    },
+                    "text": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "value": {},
+                    "kind": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "uri": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "mime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                },
+                "default": []
+              },
+              "tool_calls": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "id",
+                    "name",
+                    "args"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "args": {},
+                    "group": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                },
+                "default": []
+              },
+              "tool_results": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "tool_call_id",
+                    "ok"
+                  ],
+                  "properties": {
+                    "tool_call_id": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "result": {},
+                    "error": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "default": []
+              },
+              "corr_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "time": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "cursor",
+              "type",
+              "payload"
+            ],
+            "properties": {
+              "cursor": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "text",
+                  "tool_call",
+                  "reasoning_meta",
+                  "logprob",
+                  "finish"
+                ]
+              },
+              "payload": {}
+            }
+          },
+          "default": []
+        },
+        "finish": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
+          "required": [
+            "reason",
+            "usage"
+          ],
+          "properties": {
+            "reason": {
+              "enum": [
+                "stop",
+                "tool_call",
+                "length",
+                "error"
+              ]
+            },
+            "usage": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "provider_meta": {},
+            "agent_summary": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

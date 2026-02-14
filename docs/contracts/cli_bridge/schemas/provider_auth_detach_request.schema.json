@@ -1,0 +1,25 @@
+{
+  "properties": {
+    "alias": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Alias"
+    },
+    "provider_id": {
+      "title": "Provider Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "provider_id"
+  ],
+  "title": "ProviderAuthDetachRequest",
+  "type": "object"
+}

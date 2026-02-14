@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "breadboard.import_run_manifest.v1",
+  "title": "ImportRunManifestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "run_id",
+    "input_ir_path",
+    "output_events_path"
+  ],
+  "properties": {
+    "schema": {
+      "const": "breadboard.import_run_manifest.v1"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "input_ir_path": {
+      "type": "string"
+    },
+    "output_events_path": {
+      "type": "string"
+    },
+    "created_at_ms": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "meta": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
+
