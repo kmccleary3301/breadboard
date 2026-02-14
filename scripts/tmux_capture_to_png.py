@@ -309,9 +309,16 @@ def render_ansi_to_png(
     img.save(out_path)
 
 
-def tmux_pane_size(target: str) -> Tuple[int, int]:
+def tmux_base_args(socket_name: str) -> list[str]:
+    socket_name = (socket_name or "").strip()
+    if not socket_name:
+        return ["tmux"]
+    return ["tmux", "-L", socket_name]
+
+
+def tmux_pane_size(target: str, socket_name: str = "") -> Tuple[int, int]:
     out = subprocess.check_output(
-        ["tmux", "display-message", "-p", "-t", target, "#{pane_width} #{pane_height}"],
+        [*tmux_base_args(socket_name), "display-message", "-p", "-t", target, "#{pane_width} #{pane_height}"],
         text=True,
     ).strip()
     parts = out.split()
@@ -320,35 +327,87 @@ def tmux_pane_size(target: str) -> Tuple[int, int]:
     return int(parts[0]), int(parts[1])
 
 
-def tmux_capture(target: str, out_ansi: Path, out_txt: Path) -> None:
+def tmux_capture(target: str, out_ansi: Path, out_txt: Path, socket_name: str = "") -> None:
     out_ansi.parent.mkdir(parents=True, exist_ok=True)
     out_txt.parent.mkdir(parents=True, exist_ok=True)
     # -e: include escape sequences; -p: print to stdout
-    ansi = subprocess.check_output(["tmux", "capture-pane", "-ep", "-t", target], text=False)
+    ansi = subprocess.check_output([*tmux_base_args(socket_name), "capture-pane", "-ep", "-t", target], text=False)
     out_ansi.write_bytes(ansi)
-    txt = subprocess.check_output(["tmux", "capture-pane", "-p", "-t", target], text=True)
+    txt = subprocess.check_output([*tmux_base_args(socket_name), "capture-pane", "-p", "-t", target], text=True)
     out_txt.write_text(txt)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--target", required=True, help="tmux pane target (e.g. session:window.pane or session:window)")
-    parser.add_argument("--out", default="", help="output PNG path (default: docs_tmp/tmux_captures/<ts>_<target>.png)")
+    parser.add_argument(
+        "--target",
+        default="",
+        help="tmux pane target (e.g. session:window.pane or session:window). Required unless --ansi is provided.",
+    )
+    parser.add_argument(
+        "--tmux-socket",
+        default="",
+        help="tmux socket name (tmux -L <name>). Use this for isolated capture servers.",
+    )
+    parser.add_argument(
+        "--ansi",
+        default="",
+        help="render from an existing ANSI capture file instead of capturing from tmux",
+    )
+    parser.add_argument("--cols", type=int, default=0, help="required with --ansi: terminal columns")
+    parser.add_argument("--rows", type=int, default=0, help="required with --ansi: terminal rows")
+    parser.add_argument(
+        "--out",
+        default="",
+        help="output PNG path (default: docs_tmp/tmux_captures/<ts>_<target>.png). Required with --ansi.",
+    )
     parser.add_argument("--bg", default="262626", help="default background hex (e.g. 262626)")
     parser.add_argument("--fg", default="EBEBEB", help="default foreground hex (e.g. EBEBEB)")
     parser.add_argument("--font-size", type=int, default=18, help="font size for rendering")
     parser.add_argument("--keep", action="store_true", help="keep alongside .ansi and .txt (default keeps)")
     args = parser.parse_args()
 
-    cols, rows = tmux_pane_size(args.target)
+    ansi_path = Path(args.ansi).expanduser().resolve() if args.ansi else None
+    target = str(args.target or "").strip()
+    tmux_socket = str(args.tmux_socket or "").strip()
+
+    if ansi_path is None and not target:
+        raise SystemExit("must provide either --target or --ansi")
+
+    if ansi_path is not None:
+        if not ansi_path.exists():
+            raise SystemExit(f"ansi file not found: {ansi_path}")
+        cols = int(args.cols)
+        rows = int(args.rows)
+        if cols <= 0 or rows <= 0:
+            raise SystemExit("--cols and --rows are required and must be >0 when using --ansi")
+        if not args.out:
+            raise SystemExit("--out is required when using --ansi")
+        out_png = Path(args.out).expanduser().resolve()
+        ansi_text = ansi_path.read_text(errors="replace")
+        render_ansi_to_png(
+            ansi_text=ansi_text,
+            cols=cols,
+            rows=rows,
+            out_path=out_png,
+            fg_default=parse_rgb(args.fg),
+            bg_default=parse_rgb(args.bg),
+            font_size=args.font_size,
+        )
+        print(f"ansi: {ansi_path}")
+        print(f"size: {cols}x{rows}")
+        print(f"png:  {out_png}")
+        return
+
+    cols, rows = tmux_pane_size(target, socket_name=tmux_socket)
     ts = time.strftime("%Y%m%d-%H%M%S")
-    safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", args.target)
+    safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", target)
     default_dir = Path("docs_tmp") / "tmux_captures"
     out_png = Path(args.out) if args.out else (default_dir / f"{ts}_{safe_target}.png")
     out_ansi = out_png.with_suffix(".ansi")
     out_txt = out_png.with_suffix(".txt")
 
-    tmux_capture(args.target, out_ansi, out_txt)
+    tmux_capture(target, out_ansi, out_txt, socket_name=tmux_socket)
     ansi_text = out_ansi.read_text(errors="replace")
     render_ansi_to_png(
         ansi_text=ansi_text,
@@ -360,7 +419,7 @@ def main() -> None:
         font_size=args.font_size,
     )
 
-    print(f"target: {args.target}")
+    print(f"target: {target}")
     print(f"size:   {cols}x{rows}")
     print(f"ansi:   {out_ansi}")
     print(f"text:   {out_txt}")
@@ -376,4 +435,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

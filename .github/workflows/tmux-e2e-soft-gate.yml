@@ -1,0 +1,150 @@
+name: tmux-e2e-soft-gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 7 * * *"
+
+jobs:
+  tmux-harness-selfcheck:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install minimal dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pillow pytest
+
+      - name: Start synthetic tmux target
+        run: |
+          tmux new-session -d -s breadboard_test_ci_soft_gate "cd $GITHUB_WORKSPACE && exec bash"
+          tmux new-session -d -s breadboard_test_ci_inputbus "cd $GITHUB_WORKSPACE && exec bash"
+
+      - name: Build local scenario actions
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenario_actions"
+          cat > "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenario_actions/ci_soft_gate_actions.json" <<'JSON'
+          [
+            {"type":"send","text":"echo semantic-ready","submit":true,"must_contain":["semantic-ready"]},
+            {"type":"wait_until","contains":["semantic-ready"],"timeout":5}
+          ]
+          JSON
+          cat > "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenario_actions/ci_input_bus_actions.json" <<'JSON'
+          [
+            {"type":"send","text":"echo submit-enter-ok","input_mode":"submit_enter","must_contain":["submit-enter-ok"]},
+            {"type":"send","text":"echo multiline-first \u005c","input_mode":"literal_newline"},
+            {"type":"send","text":"multiline-second","input_mode":"submit_enter","must_contain":["multiline-first multiline-second"]}
+          ]
+          JSON
+
+      - name: Run tmux capture scenario (deterministic local)
+        run: |
+          python scripts/run_tmux_capture_scenario.py \
+            --target breadboard_test_ci_soft_gate:0.0 \
+            --scenario ci/soft_gate_local \
+            --actions "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenario_actions/ci_soft_gate_actions.json" \
+            --out-root "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios" \
+            --duration 6 \
+            --interval 0.5 \
+            --pre-sleep 0.1 \
+            --post-sleep 0.1 \
+            --must-contain semantic-ready \
+            --semantic-timeout 3 \
+            --capture-label ci_soft_gate_local
+
+      - name: Resolve latest run dir
+        run: |
+          RUN_DIR="$(find "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/ci/soft_gate_local" -name scenario_manifest.json -print | sort | tail -n1 | xargs dirname)"
+          test -f "$RUN_DIR/scenario_manifest.json"
+          test -d "$RUN_DIR/frames"
+          echo "RUN_DIR=$RUN_DIR" >> "$GITHUB_ENV"
+
+      - name: Create synthetic golden baseline (copy run)
+        run: |
+          GOLDEN_DIR="$GITHUB_WORKSPACE/docs_tmp/tmux_captures/goldens/ci_soft_gate_local/baseline"
+          rm -rf "$GOLDEN_DIR"
+          mkdir -p "$(dirname "$GOLDEN_DIR")"
+          cp -R "$RUN_DIR" "$GOLDEN_DIR"
+          echo "GOLDEN_DIR=$GOLDEN_DIR" >> "$GITHUB_ENV"
+
+      - name: Compare run to golden (warn mode)
+        run: |
+          python scripts/compare_tmux_run_to_golden.py \
+            --run-dir "$RUN_DIR" \
+            --golden-dir "$GOLDEN_DIR" \
+            --scenario ci/soft_gate_local \
+            --provider unknown \
+            --thresholds "$GITHUB_WORKSPACE/config/tmux_golden_thresholds.yaml" \
+            --fail-mode warn \
+            --redact \
+            --output-json "$RUN_DIR/comparison_report.json" \
+            --output-md "$RUN_DIR/comparison_report.md"
+
+      - name: Add summary to PR
+        run: |
+          echo "## tmux harness self-check" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUN_DIR/comparison_report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run input-bus local semantics self-check
+        run: |
+          python scripts/run_tmux_capture_scenario.py \
+            --target breadboard_test_ci_inputbus:0.0 \
+            --scenario ci/input_bus_local_v1 \
+            --actions "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenario_actions/ci_input_bus_actions.json" \
+            --out-root "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios" \
+            --duration 8 \
+            --interval 0.5 \
+            --pre-sleep 0.1 \
+            --post-sleep 0.1 \
+            --semantic-timeout 3 \
+            --capture-label ci_input_bus_local_v1
+
+      - name: Validate latest input-bus run
+        run: |
+          INPUT_RUN_DIR="$(find "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/ci/input_bus_local_v1" -name scenario_manifest.json -print | sort | tail -n1 | xargs dirname)"
+          test -f "$INPUT_RUN_DIR/scenario_manifest.json"
+          test -d "$INPUT_RUN_DIR/frames"
+          python scripts/validate_tmux_capture_run.py --run-dir "$INPUT_RUN_DIR" --strict
+          echo "INPUT_RUN_DIR=$INPUT_RUN_DIR" >> "$GITHUB_ENV"
+
+      - name: Append input-bus summary to PR
+        run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### tmux input-bus local self-check" >> "$GITHUB_STEP_SUMMARY"
+          echo "- run: \`$INPUT_RUN_DIR\`" >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY'
+          import json, os
+          p = os.path.join(os.environ["INPUT_RUN_DIR"], "run_summary.json")
+          with open(p, "r", encoding="utf-8") as f:
+              d = json.load(f)
+          lines = [
+              f"- scenario_result: `{d.get('scenario_result')}`",
+              f"- poller_exit_code: `{d.get('poller_exit_code')}`",
+              f"- action_error: `{d.get('action_error')}`",
+          ]
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as out:
+                  out.write("\n".join(lines) + "\n")
+          print("\n".join(lines))
+          PY
+
+      - name: Upload tmux artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tmux-e2e-soft-gate-artifacts
+          path: |
+            docs_tmp/tmux_captures/scenarios/ci/soft_gate_local
+            docs_tmp/tmux_captures/scenarios/ci/input_bus_local_v1
+            docs_tmp/tmux_captures/goldens/ci_soft_gate_local
