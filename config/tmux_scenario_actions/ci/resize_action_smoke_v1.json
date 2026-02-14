@@ -1,0 +1,8 @@
+[
+  {"type": "send", "text": "stty size", "submit": true, "must_contain": ["45 160"]},
+  {"type": "resize", "cols": 120, "rows": 30, "target": "window", "assert_size": true, "wait_after": 0.15},
+  {"type": "send", "text": "stty size", "submit": true, "must_contain": ["30 120"]},
+  {"type": "resize", "cols": 160, "rows": 45, "target": "window", "assert_size": true, "wait_after": 0.15},
+  {"type": "send", "text": "stty size", "submit": true, "must_contain": ["45 160"]}
+]
+

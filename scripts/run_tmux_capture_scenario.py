@@ -103,6 +103,50 @@ def tmux_capture_text(target: str) -> str:
     return result.stdout
 
 
+def split_tmux_target(target: str) -> tuple[str, str]:
+    """
+    Split a tmux target like 'session:window.pane' into:
+    - window target: 'session:window'
+    - pane target:   'session:window.pane'
+    """
+    raw = target.strip()
+    if "." not in raw:
+        raise ValueError(f"tmux target is missing pane selector (expected session:window.pane): {target!r}")
+    window_target, pane_suffix = raw.rsplit(".", 1)
+    if not window_target or not pane_suffix:
+        raise ValueError(f"invalid tmux target: {target!r}")
+    return window_target, raw
+
+
+def tmux_display_pane_size(target: str) -> tuple[int, int]:
+    result = subprocess.run(
+        [*tmux_base_args(), "display-message", "-p", "-t", target, "#{pane_width} #{pane_height}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    parts = (result.stdout or "").strip().split()
+    if len(parts) != 2:
+        raise ValueError(f"unexpected pane size output: {result.stdout!r}")
+    return int(parts[0]), int(parts[1])
+
+
+def tmux_resize_target(target: str, *, cols: int, rows: int, scope: str) -> tuple[int, int]:
+    cols = int(cols)
+    rows = int(rows)
+    if cols <= 0 or rows <= 0:
+        raise ValueError(f"resize requires positive cols/rows, got cols={cols} rows={rows}")
+    window_target, pane_target = split_tmux_target(target)
+    normalized_scope = (scope or "window").strip().lower()
+    if normalized_scope in {"window", "win"}:
+        run_tmux(["resize-window", "-t", window_target, "-x", str(cols), "-y", str(rows)])
+    elif normalized_scope in {"pane"}:
+        run_tmux(["resize-pane", "-t", pane_target, "-x", str(cols), "-y", str(rows)])
+    else:
+        raise ValueError(f"resize scope must be 'window' or 'pane', got: {scope!r}")
+    return tmux_display_pane_size(pane_target)
+
+
 def normalize_captured_text(text: str) -> str:
     if not text:
         return ""
@@ -1024,6 +1068,29 @@ def execute_actions(
                             f"Pane tail:\n{tail}"
                         )
                     time.sleep(interval)
+            elif action_type == "resize":
+                cols = action.get("cols")
+                rows = action.get("rows")
+                if cols is None or rows is None:
+                    raise ValueError("resize action requires 'cols' and 'rows'")
+                scope = str(action.get("target", action.get("scope", "window")))
+                before = tmux_display_pane_size(config.target)
+                after = tmux_resize_target(config.target, cols=int(cols), rows=int(rows), scope=scope)
+                record["resize"] = {
+                    "scope": scope,
+                    "requested": {"cols": int(cols), "rows": int(rows)},
+                    "before": {"cols": before[0], "rows": before[1]},
+                    "after": {"cols": after[0], "rows": after[1]},
+                }
+                assert_size = action.get("assert_size")
+                if isinstance(assert_size, bool) and assert_size:
+                    if after != (int(cols), int(rows)):
+                        raise AssertionError(
+                            f"resize assert_size failed: got {after[0]}x{after[1]}, expected {cols}x{rows}"
+                        )
+                wait_after = float(action.get("wait_after", action.get("wait", 0)))
+                if wait_after > 0:
+                    time.sleep(wait_after)
             elif action_type == "key":
                 key = str(action.get("key", "")).strip()
                 if not key:

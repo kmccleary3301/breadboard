@@ -26,32 +26,16 @@ jobs:
 
       - name: Start synthetic tmux target
         run: |
-          tmux new-session -d -s breadboard_test_ci_soft_gate "cd $GITHUB_WORKSPACE && exec bash"
-          tmux new-session -d -s breadboard_test_ci_inputbus "cd $GITHUB_WORKSPACE && exec bash"
-
-      - name: Build local scenario actions
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenario_actions"
-          cat > "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenario_actions/ci_soft_gate_actions.json" <<'JSON'
-          [
-            {"type":"send","text":"echo semantic-ready","submit":true,"must_contain":["semantic-ready"]},
-            {"type":"wait_until","contains":["semantic-ready"],"timeout":5}
-          ]
-          JSON
-          cat > "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenario_actions/ci_input_bus_actions.json" <<'JSON'
-          [
-            {"type":"send","text":"echo submit-enter-ok","input_mode":"submit_enter","must_contain":["submit-enter-ok"]},
-            {"type":"send","text":"echo multiline-first \u005c","input_mode":"literal_newline"},
-            {"type":"send","text":"multiline-second","input_mode":"submit_enter","must_contain":["multiline-first multiline-second"]}
-          ]
-          JSON
+          tmux new-session -d -x 160 -y 45 -s breadboard_test_ci_soft_gate "cd $GITHUB_WORKSPACE && exec bash"
+          tmux new-session -d -x 160 -y 45 -s breadboard_test_ci_inputbus "cd $GITHUB_WORKSPACE && exec bash"
+          tmux new-session -d -x 160 -y 45 -s breadboard_test_ci_resize "cd $GITHUB_WORKSPACE && exec bash"
 
       - name: Run tmux capture scenario (deterministic local)
         run: |
           python scripts/run_tmux_capture_scenario.py \
             --target breadboard_test_ci_soft_gate:0.0 \
             --scenario ci/soft_gate_local \
-            --actions "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenario_actions/ci_soft_gate_actions.json" \
+            --actions "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/soft_gate_local.json" \
             --out-root "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios" \
             --duration 6 \
             --interval 0.5 \
@@ -66,6 +50,7 @@ jobs:
           RUN_DIR="$(find "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/ci/soft_gate_local" -name scenario_manifest.json -print | sort | tail -n1 | xargs dirname)"
           test -f "$RUN_DIR/scenario_manifest.json"
           test -d "$RUN_DIR/frames"
+          python scripts/validate_tmux_capture_run.py --run-dir "$RUN_DIR" --strict
           echo "RUN_DIR=$RUN_DIR" >> "$GITHUB_ENV"
 
       - name: Create synthetic golden baseline (copy run)
@@ -100,7 +85,7 @@ jobs:
           python scripts/run_tmux_capture_scenario.py \
             --target breadboard_test_ci_inputbus:0.0 \
             --scenario ci/input_bus_local_v1 \
-            --actions "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenario_actions/ci_input_bus_actions.json" \
+            --actions "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/input_bus_local_v1.json" \
             --out-root "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios" \
             --duration 8 \
             --interval 0.5 \
@@ -109,6 +94,20 @@ jobs:
             --semantic-timeout 3 \
             --capture-label ci_input_bus_local_v1
 
+      - name: Run resize action smoke self-check
+        run: |
+          python scripts/run_tmux_capture_scenario.py \
+            --target breadboard_test_ci_resize:0.0 \
+            --scenario ci/resize_action_smoke_v1 \
+            --actions "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/resize_action_smoke_v1.json" \
+            --out-root "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios" \
+            --duration 8 \
+            --interval 0.5 \
+            --pre-sleep 0.1 \
+            --post-sleep 0.1 \
+            --semantic-timeout 3 \
+            --capture-label ci_resize_action_smoke_v1
+
       - name: Validate latest input-bus run
         run: |
           INPUT_RUN_DIR="$(find "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/ci/input_bus_local_v1" -name scenario_manifest.json -print | sort | tail -n1 | xargs dirname)"
@@ -116,6 +115,14 @@ jobs:
           test -d "$INPUT_RUN_DIR/frames"
           python scripts/validate_tmux_capture_run.py --run-dir "$INPUT_RUN_DIR" --strict
           echo "INPUT_RUN_DIR=$INPUT_RUN_DIR" >> "$GITHUB_ENV"
+
+      - name: Validate latest resize smoke run
+        run: |
+          RESIZE_RUN_DIR="$(find "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/ci/resize_action_smoke_v1" -name scenario_manifest.json -print | sort | tail -n1 | xargs dirname)"
+          test -f "$RESIZE_RUN_DIR/scenario_manifest.json"
+          test -d "$RESIZE_RUN_DIR/frames"
+          python scripts/validate_tmux_capture_run.py --run-dir "$RESIZE_RUN_DIR" --strict
+          echo "RESIZE_RUN_DIR=$RESIZE_RUN_DIR" >> "$GITHUB_ENV"
 
       - name: Append input-bus summary to PR
         run: |
@@ -139,6 +146,17 @@ jobs:
           print("\n".join(lines))
           PY
 
+      - name: Append resize smoke summary to PR
+        if: ${{ always() }}
+        run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### tmux resize action smoke self-check" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${RESIZE_RUN_DIR:-}" ]; then
+            echo "- run: \`$RESIZE_RUN_DIR\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- run: `(missing)`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload tmux artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -147,4 +165,5 @@ jobs:
           path: |
             docs_tmp/tmux_captures/scenarios/ci/soft_gate_local
             docs_tmp/tmux_captures/scenarios/ci/input_bus_local_v1
+            docs_tmp/tmux_captures/scenarios/ci/resize_action_smoke_v1
             docs_tmp/tmux_captures/goldens/ci_soft_gate_local

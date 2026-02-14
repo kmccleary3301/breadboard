@@ -1,0 +1,5 @@
+[
+  {"type": "send", "text": "echo semantic-ready", "submit": true, "must_contain": ["semantic-ready"]},
+  {"type": "wait_until", "contains": ["semantic-ready"], "timeout": 5}
+]
+
