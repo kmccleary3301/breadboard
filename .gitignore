@@ -16,6 +16,10 @@ cursor_*
 cm_edits/
 AGENTS.md
 @AGENTS.md
+.claude/
+.claude.json
+.claude.json.backup
+.ray_tmp/
 .beads/
 $script
 $SCRIPT
