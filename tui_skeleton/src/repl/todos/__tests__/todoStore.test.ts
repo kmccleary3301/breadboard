@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { createEmptyTodoStore, reduceTodoStore, selectTodoPreviewItems, todoStoreToList } from "../todoStore.js"
+import {
+  createEmptyTodoStore,
+  reduceTodoStore,
+  selectTodoPreviewItems,
+  todoStoreCounts,
+  todoStoreToList,
+} from "../todoStore.js"
 
 describe("reduceTodoStore", () => {
   it("replace assigns stable ids when incoming items have fallback ids and preserves ids across replace", () => {
@@ -96,5 +102,37 @@ describe("selectTodoPreviewItems", () => {
     expect(selection.visible.map((t) => t.id)).toEqual(["3", "2", "4"])
     expect(selection.hiddenCount).toBe(1)
   })
+
+  it("never returns more than maxItems and reports hidden count correctly", () => {
+    const store = reduceTodoStore(createEmptyTodoStore(), {
+      op: "replace",
+      at: 1,
+      items: Array.from({ length: 11 }).map((_, idx) => ({
+        id: String(idx + 1),
+        title: `T${idx + 1}`,
+        status: idx % 3 === 0 ? "in_progress" : idx % 3 === 1 ? "todo" : "done",
+      })),
+    })
+    for (const strategy of ["first_n", "incomplete_first", "active_first"] as const) {
+      const selection = selectTodoPreviewItems(store, { maxItems: 7, strategy })
+      expect(selection.visible.length).toBeLessThanOrEqual(7)
+      expect(selection.hiddenCount).toBe(store.order.length - selection.visible.length)
+    }
+  })
 })
 
+describe("todoStoreCounts", () => {
+  it("counts done items across the whole store", () => {
+    const store = reduceTodoStore(createEmptyTodoStore(), {
+      op: "replace",
+      at: 1,
+      items: [
+        { id: "1", title: "A", status: "todo" },
+        { id: "2", title: "B", status: "done" },
+        { id: "3", title: "C", status: "in_progress" },
+        { id: "4", title: "D", status: "done" },
+      ],
+    })
+    expect(todoStoreCounts(store)).toEqual({ done: 2, total: 4 })
+  })
+})

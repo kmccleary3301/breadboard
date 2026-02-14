@@ -122,6 +122,7 @@ export function slashHandlers(this: any): Record<string, SlashHandler> {
         if (this.todoScopeLabelsByKey && !this.todoScopeLabelsByKey[next]) {
           this.todoScopeLabelsByKey[next] = next
         }
+        this.noteTodoScopeManualSelection?.()
         this.emitChange()
       }
 

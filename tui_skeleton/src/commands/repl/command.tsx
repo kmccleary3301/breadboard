@@ -588,6 +588,9 @@ const buildReplCommand = (name: string) =>
           model: modelValue ?? undefined,
           remotePreference,
           permissionMode: permissionValue ?? undefined,
+          todoAutoFollowScope: resolvedTuiConfig.composer.todoAutoFollowScope,
+          todoAutoFollowHysteresisMs: resolvedTuiConfig.composer.todoAutoFollowHysteresisMs,
+          todoAutoFollowManualOverrideMs: resolvedTuiConfig.composer.todoAutoFollowManualOverrideMs,
         })
 
         await controller.start()

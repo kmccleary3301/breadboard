@@ -587,17 +587,26 @@ export const useReplViewController = ({
     if (!claudeChrome) return null
     if (overlayActive) return null
     if (!tuiConfig.composer.todoPreviewAboveInput) return null
+    if (rowCount < tuiConfig.composer.todoPreviewMinRowsToShow) return null
+    const maxItems =
+      rowCount < 14
+        ? Math.min(tuiConfig.composer.todoPreviewMaxItems, tuiConfig.composer.todoPreviewSmallRowsMaxItems)
+        : tuiConfig.composer.todoPreviewMaxItems
     return buildTodoPreviewModel(todoStore, {
-      maxItems: tuiConfig.composer.todoPreviewMaxItems,
+      maxItems,
       strategy: tuiConfig.composer.todoPreviewSelection,
       showHiddenCount: tuiConfig.composer.todoPreviewShowHiddenCount,
       scopeKey: todoScopeKey,
       scopeLabel: todoScopeLabel,
       stale: todoScopeStale,
+      style: tuiConfig.composer.todoPreviewStyle,
+      cols: contentWidth,
     })
   }, [
     claudeChrome,
     overlayActive,
+    rowCount,
+    contentWidth,
     todoStore,
     todoScopeKey,
     todoScopeLabel,
@@ -606,6 +615,9 @@ export const useReplViewController = ({
     tuiConfig.composer.todoPreviewMaxItems,
     tuiConfig.composer.todoPreviewSelection,
     tuiConfig.composer.todoPreviewShowHiddenCount,
+    tuiConfig.composer.todoPreviewStyle,
+    tuiConfig.composer.todoPreviewMinRowsToShow,
+    tuiConfig.composer.todoPreviewSmallRowsMaxItems,
   ])
 
   useEffect(() => {

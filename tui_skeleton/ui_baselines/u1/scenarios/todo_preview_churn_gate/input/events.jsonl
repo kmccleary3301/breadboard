@@ -1,0 +1,4 @@
+{"type":"tool_result","id":"1","seq":1,"timestamp":1,"payload":{"tool_name":"TodoWrite","todos":[{"content":"Ship U1 baseline","status":"done"},{"content":"Render todo preview above input","status":"in_progress"},{"content":"Add reducer tests","status":"todo"},{"content":"Fix flaky CI","status":"blocked"},{"content":"Refactor preview widget","status":"done"}]}}
+{"type":"assistant.message.delta","id":"2","seq":2,"timestamp":2,"payload":{"delta":"Working on it... "}}
+{"type":"assistant.message.delta","id":"3","seq":3,"timestamp":3,"payload":{"delta":"still streaming "}}
+{"type":"assistant_message","id":"4","seq":4,"timestamp":4,"payload":{"text":"final answer"}}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { buildTodoPreviewModel, DEFAULT_TODO_PREVIEW_MAX_ITEMS, getTodoPreviewRowCount } from "../todoPreview.js"
 
-const storeFromTodos = (todos: Array<{ id: string; title: string; status: string }>) => ({
+const storeFromTodos = (todos: Array<{ id: string; title: string; status: string; metadata?: Record<string, unknown> | null }>) => ({
   revision: 1,
   updatedAt: 0,
   itemsById: Object.fromEntries(todos.map((t) => [t.id, t])),
@@ -35,9 +35,18 @@ describe("buildTodoPreviewModel", () => {
   it("marks header as stale when requested", () => {
     const model = buildTodoPreviewModel(
       storeFromTodos([{ id: "1", title: "Only", status: "todo" }]),
-      { stale: true },
+      { stale: true, style: "dense" },
     )
     expect(model?.header).toBe("TODOs: 0/1 (stale)")
+    expect(model?.headerLine).toContain("TODOs: 0/1 (stale)")
+  })
+
+  it("adds a tree indicator when dense items are linked to ctree nodes", () => {
+    const model = buildTodoPreviewModel(
+      storeFromTodos([{ id: "1", title: "Only", status: "todo", metadata: { ctree_node_id: "node-1" } }]),
+      { style: "dense" },
+    )
+    expect(model?.header).toBe("TODOs: 0/1 · tree")
   })
 
   it("truncates to maxItems and preserves order", () => {
@@ -56,5 +65,15 @@ describe("buildTodoPreviewModel", () => {
     const model = buildTodoPreviewModel(storeFromTodos([{ id: "1", title: "Only", status: "todo" }]), { showHeader: false })
     expect(model?.header).toBe("")
     expect(getTodoPreviewRowCount(model)).toBe(1)
+  })
+
+  it("aligns hint on the right when width allows", () => {
+    const model = buildTodoPreviewModel(
+      storeFromTodos([{ id: "1", title: "Only", status: "todo" }]),
+      { style: "nice", cols: 60 },
+    )
+    expect(model?.header).toBe("TODOs: 0/1")
+    expect(model?.headerLine).toContain("Ctrl+T")
+    expect(model?.frameWidth).toBeLessThan(60)
   })
 })

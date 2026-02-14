@@ -262,6 +262,12 @@ export const validateTuiConfigInput = (input: unknown, options: ValidationOption
         "todoPreviewMaxItems",
         "todoPreviewSelection",
         "todoPreviewShowHiddenCount",
+        "todoPreviewStyle",
+        "todoPreviewMinRowsToShow",
+        "todoPreviewSmallRowsMaxItems",
+        "todoAutoFollowScope",
+        "todoAutoFollowHysteresisMs",
+        "todoAutoFollowManualOverrideMs",
       ],
       ["composer"],
       issues,
@@ -294,6 +300,24 @@ export const validateTuiConfigInput = (input: unknown, options: ValidationOption
     if (todoPreviewSelection != null) composer.todoPreviewSelection = todoPreviewSelection
     const todoPreviewShowHiddenCount = readBoolean(composerRaw, "todoPreviewShowHiddenCount", ["composer"], issues)
     if (todoPreviewShowHiddenCount != null) composer.todoPreviewShowHiddenCount = todoPreviewShowHiddenCount
+    const todoPreviewStyle = readEnum(
+      composerRaw,
+      "todoPreviewStyle",
+      ["minimal", "nice", "dense"] as const,
+      ["composer"],
+      issues,
+    )
+    if (todoPreviewStyle != null) composer.todoPreviewStyle = todoPreviewStyle
+    const todoPreviewMinRowsToShow = readPositiveInt(composerRaw, "todoPreviewMinRowsToShow", ["composer"], issues)
+    if (todoPreviewMinRowsToShow != null) composer.todoPreviewMinRowsToShow = todoPreviewMinRowsToShow
+    const todoPreviewSmallRowsMaxItems = readPositiveInt(composerRaw, "todoPreviewSmallRowsMaxItems", ["composer"], issues)
+    if (todoPreviewSmallRowsMaxItems != null) composer.todoPreviewSmallRowsMaxItems = todoPreviewSmallRowsMaxItems
+    const todoAutoFollowScope = readEnum(composerRaw, "todoAutoFollowScope", ["off", "on"] as const, ["composer"], issues)
+    if (todoAutoFollowScope != null) composer.todoAutoFollowScope = todoAutoFollowScope
+    const todoAutoFollowHysteresisMs = readNonNegativeInt(composerRaw, "todoAutoFollowHysteresisMs", ["composer"], issues)
+    if (todoAutoFollowHysteresisMs != null) composer.todoAutoFollowHysteresisMs = todoAutoFollowHysteresisMs
+    const todoAutoFollowManualOverrideMs = readNonNegativeInt(composerRaw, "todoAutoFollowManualOverrideMs", ["composer"], issues)
+    if (todoAutoFollowManualOverrideMs != null) composer.todoAutoFollowManualOverrideMs = todoAutoFollowManualOverrideMs
     config.composer = composer
   }
 
