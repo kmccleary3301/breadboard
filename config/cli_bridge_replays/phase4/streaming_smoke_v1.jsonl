@@ -1,0 +1,10 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): streaming smoke
+#
+# Goal: exercise assistant_delta streaming + finalization.
+
+{"type":"assistant_delta","payload":{"message_id":"m-stream-1","text":"# Streaming smoke\\n\\n"},"delay_ms":30}
+{"type":"assistant_delta","payload":{"message_id":"m-stream-1","text":"- line 1 (delta)\\n"},"delay_ms":30}
+{"type":"assistant_delta","payload":{"message_id":"m-stream-1","text":"- line 2 (delta)\\n"},"delay_ms":30}
+{"type":"assistant_delta","payload":{"message_id":"m-stream-1","text":"\\n**end**\\n"},"delay_ms":30}
+{"type":"assistant_message","payload":{"message_id":"m-stream-1","text":"# Streaming smoke\\n\\n- line 1 (delta)\\n- line 2 (delta)\\n\\n**end**\\n"}}
+{"type":"run_finished","payload":{"eventCount":6,"completed":true,"reason":"replay","logging_dir":null},"delay_ms":2000}

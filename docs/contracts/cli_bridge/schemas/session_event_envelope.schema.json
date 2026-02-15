@@ -37,6 +37,22 @@
     {
       "properties": {
         "payload": {
+          "$ref": "session_event_payload_assistant_delta.schema.json"
+        },
+        "type": {
+          "const": "assistant_delta"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "title": "assistant_deltaEvent",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "payload": {
           "$ref": "session_event_payload_user_message.schema.json"
         },
         "type": {

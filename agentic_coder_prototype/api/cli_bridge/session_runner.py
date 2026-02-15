@@ -73,6 +73,8 @@ class SessionRunner:
         self._skills_catalog_cache: Optional[Dict[str, Any]] = None
         self._ctree_snapshot_cache: Optional[Dict[str, Any]] = None
         self._ctree_last_node: Optional[Dict[str, Any]] = None
+        self._base_config_cache: Optional[Dict[str, Any]] = None
+        self._todo_enabled: bool = False
 
         # Live overrides updated via commands
         initial_metadata = dict(request.metadata or {})
@@ -384,6 +386,180 @@ class SessionRunner:
             case _:
                 raise ValueError(f"Unsupported command: {command}")
 
+    def _load_base_config(self) -> Dict[str, Any]:
+        if isinstance(self._base_config_cache, dict):
+            return dict(self._base_config_cache)
+        try:
+            cfg = load_agent_config(self.request.config_path)
+        except Exception:
+            cfg = {}
+        if not isinstance(cfg, dict):
+            cfg = {}
+        self._base_config_cache = dict(cfg)
+        return dict(self._base_config_cache)
+
+    def _resolve_workspace_guess(self, base_cfg: Dict[str, Any]) -> Optional[Path]:
+        candidate: Any = self.request.workspace
+        if not candidate and isinstance(base_cfg, dict):
+            ws_cfg = base_cfg.get("workspace")
+            if isinstance(ws_cfg, dict):
+                candidate = ws_cfg.get("root") or ws_cfg.get("path")
+        if not candidate:
+            return None
+        try:
+            return Path(str(candidate)).expanduser().resolve()
+        except Exception:
+            return None
+
+    def _parse_replay_path(self, task_text: str) -> Optional[Path]:
+        text = (task_text or "").strip()
+        if not text:
+            return None
+        path_text: Optional[str] = None
+        if text.startswith("replay:"):
+            path_text = text[len("replay:") :].strip()
+        elif text.startswith("@replay") or text.startswith("/replay"):
+            parts = text.split(maxsplit=1)
+            if len(parts) == 2:
+                path_text = parts[1].strip()
+        if not path_text:
+            return None
+        path = Path(path_text).expanduser()
+        if not path.is_absolute():
+            path = (Path.cwd() / path).resolve()
+        else:
+            path = path.resolve()
+        return path
+
+    async def _maybe_publish_todo_snapshot(self, workspace_dir: Optional[Path], *, call_id: str) -> None:
+        if not self._todo_enabled or not workspace_dir:
+            return
+        envelope = self._load_todo_envelope_from_disk(workspace_dir)
+        if envelope is None:
+            return
+        self.session.metadata["todo_last_update"] = envelope
+        self._persist_metadata_snapshot_threadsafe()
+        await self.publish_event_async(
+            EventType.TOOL_RESULT,
+            {"call_id": call_id, "todo": envelope},
+        )
+
+    async def _ensure_agent_initialized(self) -> None:
+        if self._agent is not None:
+            return
+        self._agent = self.agent_factory(
+            self.request.config_path,
+            self.request.workspace,
+            self.request.overrides,
+        )
+        await asyncio.to_thread(self._agent.initialize)
+        workspace_dir = Path(self._agent.workspace_dir).resolve()
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+        self._workspace_path = workspace_dir
+        if self._model_override:
+            self._apply_model_override()
+        if self._todo_enabled:
+            meta = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+            if not isinstance(meta.get("todo_last_update"), dict):
+                await self._maybe_publish_todo_snapshot(workspace_dir, call_id="todo:snapshot:init")
+        try:
+            if self._checkpoint_manager is None:
+                self._checkpoint_manager = CheckpointManager(workspace_dir)
+                self._checkpoint_manager.create_checkpoint("Session start")
+        except Exception:
+            self._checkpoint_manager = None
+
+    async def _execute_replay_task(self, task_text: str) -> Dict[str, Any]:
+        replay_path = self._parse_replay_path(task_text)
+        if replay_path is None:
+            raise ValueError("replay task missing path (expected replay:<path>)")
+        if not replay_path.exists():
+            raise FileNotFoundError(f"replay fixture not found: {replay_path}")
+
+        try:
+            meta = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+            meta = dict(meta)
+            meta["replay_fixture"] = {"path": str(replay_path)}
+            self.session.metadata = meta
+            self._persist_metadata_snapshot_threadsafe()
+        except Exception:
+            pass
+
+        published_completion = False
+        published_run_finished = False
+        published_events = 0
+
+        with replay_path.open("r", encoding="utf-8") as f:
+            for raw_line in f:
+                if self._stop_event.is_set():
+                    break
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                entry = json.loads(line)
+                if not isinstance(entry, dict):
+                    continue
+
+                delay_ms = entry.get("delay_ms", entry.get("delayMs", 0))
+                try:
+                    delay_ms_val = max(0, int(delay_ms))
+                except Exception:
+                    delay_ms_val = 0
+                if delay_ms_val:
+                    await asyncio.sleep(delay_ms_val / 1000.0)
+
+                type_raw = entry.get("type") or entry.get("event_type") or entry.get("eventType")
+                if not isinstance(type_raw, str) or not type_raw.strip():
+                    continue
+                evt_type = EventType(type_raw.strip())
+
+                payload_raw = entry.get("payload")
+                if payload_raw is None:
+                    payload_raw = entry.get("data")
+                if isinstance(payload_raw, dict):
+                    payload: Dict[str, Any] = dict(payload_raw)
+                else:
+                    payload = {"value": payload_raw}
+
+                turn_raw = entry.get("turn")
+                try:
+                    turn = int(turn_raw) if isinstance(turn_raw, (int, float, str)) and str(turn_raw).strip() else None
+                except Exception:
+                    turn = None
+
+                if evt_type is EventType.TOOL_RESULT:
+                    todo_update = payload.get("todo")
+                    if isinstance(todo_update, dict):
+                        try:
+                            self.session.metadata["todo_last_update"] = dict(todo_update)
+                            self._persist_metadata_snapshot_threadsafe()
+                        except Exception:
+                            pass
+
+                await self.publish_event_async(evt_type, payload, turn=turn)
+                published_events += 1
+
+                if evt_type is EventType.COMPLETION:
+                    published_completion = True
+                elif evt_type is EventType.RUN_FINISHED:
+                    published_run_finished = True
+
+        completion_summary: Dict[str, Any] = {"completed": True, "reason": "replay"}
+        if not published_completion:
+            await self.publish_event_async(EventType.COMPLETION, {"summary": completion_summary, "mode": self._mode})
+            published_events += 1
+        if not published_run_finished:
+            await self.publish_event_async(
+                EventType.RUN_FINISHED,
+                {"eventCount": published_events, "completed": True, "reason": "replay", "logging_dir": None},
+            )
+
+        return {
+            "completion_summary": completion_summary,
+            "reward_metrics": None,
+            "logging_dir": None,
+        }
+
     async def _run(self) -> None:
         await self.registry.update_status(self.session.session_id, SessionStatus.RUNNING)
         try:
@@ -405,19 +581,14 @@ class SessionRunner:
                 self.session.metadata["permission_mode"] = permission_mode
 
             # Merge persisted project-scoped permission rules (allow/deny) into overrides.
-            try:
-                base_cfg = load_agent_config(self.request.config_path)
-            except Exception:
-                base_cfg = {}
-            workspace_guess = self.request.workspace
-            if not workspace_guess:
+            base_cfg = self._load_base_config()
+            workspace_guess_path = self._resolve_workspace_guess(base_cfg)
+            if workspace_guess_path:
+                self._workspace_path = workspace_guess_path
+
+            if workspace_guess_path:
                 try:
-                    workspace_guess = (base_cfg.get("workspace", {}) or {}).get("root")
-                except Exception:
-                    workspace_guess = None
-            if workspace_guess:
-                try:
-                    rules = load_permission_rules(Path(str(workspace_guess)).resolve())
+                    rules = load_permission_rules(workspace_guess_path)
                 except Exception:
                     rules = []
                 if rules:
@@ -439,31 +610,17 @@ class SessionRunner:
                             overrides[key] = value
 
             self.request.overrides = overrides
-            self._agent = self.agent_factory(
-                self.request.config_path,
-                self.request.workspace,
-                self.request.overrides,
-            )
-            await asyncio.to_thread(self._agent.initialize)
-            workspace_dir = Path(self._agent.workspace_dir).resolve()
-            workspace_dir.mkdir(parents=True, exist_ok=True)
-            self._workspace_path = workspace_dir
+
             try:
                 todo_cfg = GuardrailCoordinator(base_cfg).todo_config()
             except Exception:
                 todo_cfg = {"enabled": False}
-            if todo_cfg.get("enabled"):
-                envelope = self._load_todo_envelope_from_disk(workspace_dir)
-                if envelope is not None:
-                    self.session.metadata["todo_last_update"] = envelope
-                    self._persist_metadata_snapshot_threadsafe()
-                    await self.publish_event_async(
-                        EventType.TOOL_RESULT,
-                        {"call_id": "todo:snapshot:init", "todo": envelope},
-                    )
+            self._todo_enabled = bool(todo_cfg.get("enabled"))
+            await self._maybe_publish_todo_snapshot(self._workspace_path, call_id="todo:snapshot:init")
             try:
-                self._checkpoint_manager = CheckpointManager(workspace_dir)
-                self._checkpoint_manager.create_checkpoint("Session start")
+                if self._workspace_path and self._checkpoint_manager is None:
+                    self._checkpoint_manager = CheckpointManager(self._workspace_path)
+                    self._checkpoint_manager.create_checkpoint("Session start")
             except Exception:
                 # Best-effort: checkpointing should not block starting a session.
                 self._checkpoint_manager = None
@@ -490,11 +647,23 @@ class SessionRunner:
 
                 task_payload = dict(next_input)
                 task_text = str(task_payload.get("content", ""))
+                if self._parse_replay_path(task_text) is not None:
+                    result = await self._execute_replay_task(task_text)
+                    await self.registry.update_metadata(
+                        self.session.session_id,
+                        completion_summary=result.get("completion_summary"),
+                        reward_summary=result.get("reward_metrics"),
+                        logging_dir=result.get("logging_dir"),
+                        metadata=self.session.metadata,
+                    )
+                    self._input_queue.task_done()
+                    continue
                 attachment_ids = task_payload.get("attachments") or []
                 attachment_text = self._format_attachment_helper(attachment_ids)
                 if attachment_text:
                     task_text = f"{task_text.rstrip()}\n\n{attachment_text}"
 
+                await self._ensure_agent_initialized()
                 result = await asyncio.to_thread(self._execute_task, task_text)
                 await self.registry.update_metadata(
                     self.session.session_id,
@@ -1306,6 +1475,7 @@ class SessionRunner:
         mapping = {
             "turn_start": EventType.TURN_START,
             "assistant_message": EventType.ASSISTANT_MESSAGE,
+            "assistant_delta": EventType.ASSISTANT_DELTA,
             "user_message": EventType.USER_MESSAGE,
             "tool_call": EventType.TOOL_CALL,
             "tool_result": EventType.TOOL_RESULT,
@@ -1350,6 +1520,12 @@ class SessionRunner:
             if not text and isinstance(message, dict):
                 text = str(message.get("content", ""))
             normalized_payload = {"text": text, "message": message}
+        elif evt is EventType.ASSISTANT_DELTA:
+            text = normalized_payload.get("text")
+            if not isinstance(text, str):
+                text = ""
+            message_id = normalized_payload.get("message_id") or normalized_payload.get("messageId") or normalized_payload.get("id")
+            normalized_payload = {"text": text, "message_id": message_id}
         elif evt is EventType.USER_MESSAGE:
             message = normalized_payload.get("message")
             text = normalized_payload.get("text")

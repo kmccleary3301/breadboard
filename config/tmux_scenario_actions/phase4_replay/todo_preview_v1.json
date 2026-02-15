@@ -1,0 +1,20 @@
+[
+  {"type": "key", "key": "Escape", "wait": 0.1},
+  {"type": "key", "key": "Escape", "wait": 0.1},
+  {"type": "sleep", "seconds": 1.5},
+  {"type": "wait_until", "contains": ["for shortcuts"], "timeout": 60},
+  {
+    "type": "send",
+    "text": "replay:config/cli_bridge_replays/phase4/todo_preview_smoke_v1.jsonl",
+    "submit": true,
+    "clear_first": true,
+    "clear_mode": "ctrl_u"
+  },
+  {"type": "wait_until", "contains": ["TODOs:"], "timeout": 20},
+  {"type": "wait_for_quiet", "quiet_seconds": 1.5, "timeout": 30},
+  {"type": "key", "key": "C-t", "wait": 0.2},
+  {"type": "wait_for_quiet", "quiet_seconds": 1.5, "timeout": 30},
+  {"type": "key", "key": "Escape", "wait": 0.2},
+  {"type": "wait_for_quiet", "quiet_seconds": 0.8, "timeout": 30}
+]
+
