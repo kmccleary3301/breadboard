@@ -101,6 +101,8 @@ cleanup() { kill \"\$server_pid\" >/dev/null 2>&1 || true; }; \
 trap cleanup EXIT INT TERM; \
 for i in {1..60}; do curl -fsS \"http://127.0.0.1:$port/health\" >/dev/null 2>&1 && break; sleep 0.1; done; \
 cd tui_skeleton && \
+# Keep transcript content in the live Ink pane; scrollback mode prints transcript
+# entries as static feed lines that often scroll out of the visible tmux viewport.
 BREADBOARD_API_URL=\"http://127.0.0.1:$port\" \
 BREADBOARD_STREAM_SCHEMA=2 \
 BREADBOARD_STREAM_INCLUDE_LEGACY=0 \
