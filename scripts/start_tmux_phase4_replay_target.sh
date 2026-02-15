@@ -6,6 +6,7 @@ usage() {
 Usage: start_tmux_phase4_replay_target.sh --session <breadboard_test_*> [--cols N] [--rows N]
                                          [--tmux-socket NAME] [--port N]
                                          [--tui-preset PRESET] [--config PATH] [--workspace PATH]
+                                         [--use-dist]
                                          [--attach]
 
 Starts a fixed-size tmux session running the classic Ink TUI plus a local
@@ -17,6 +18,8 @@ Safety:
 
 Examples:
   scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_phase4_todo --port 9101 --tui-preset claude_code_like
+  # CI-friendly (assumes tui_skeleton/dist has been built already):
+  scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_phase4_todo --port 9101 --use-dist
   python scripts/run_tmux_capture_scenario.py --target breadboard_test_phase4_todo:0.0 --scenario phase4_replay/todo_preview_v1 --actions config/tmux_scenario_actions/phase4_replay/todo_preview_v1.json
 EOF
   exit 1
@@ -31,6 +34,7 @@ port=""
 tui_preset="claude_code_like"
 config_path="agent_configs/opencode_openrouter_grok4fast_cli_default.yaml"
 workspace=""
+use_dist=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -43,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     --tui-preset) shift; tui_preset="${1:-}";;
     --config) shift; config_path="${1:-}";;
     --workspace) shift; workspace="${1:-}";;
+    --use-dist) use_dist=1;;
     --help|-h) usage;;
     *) echo "Unknown arg: $1" >&2; usage;;
   esac
@@ -67,6 +72,9 @@ if ! command -v tmux >/dev/null; then
   exit 1
 fi
 
+log_root="${BREADBOARD_PHASE4_REPLAY_LOG_ROOT:-$repo_root/docs_tmp/tmux_phase4_replay_targets}"
+mkdir -p "$log_root/$session"
+
 tmux_base=(tmux)
 if [[ -n "$tmux_socket" ]]; then
   tmux_base=(tmux -L "$tmux_socket")
@@ -87,32 +95,44 @@ if [[ -z "$port" ]]; then
   port=$((9100 + (sum % 200)))
 fi
 
-cmd="cd \"$repo_root\" && \
-export BREADBOARD_TUI_SUPPRESS_MAINTENANCE=1 && \
-RAY_SCE_LOCAL_MODE=1 \
-BREADBOARD_CLI_HOST=127.0.0.1 \
-BREADBOARD_CLI_PORT=\"$port\" \
-BREADBOARD_API_URL=\"http://127.0.0.1:$port\" \
-BREADBOARD_STREAM_SCHEMA=2 \
-BREADBOARD_STREAM_INCLUDE_LEGACY=0 \
-python -m agentic_coder_prototype.api.cli_bridge.server >\"/tmp/breadboard_cli_bridge_${session}.log\" 2>&1 & \
-server_pid=\$!; \
-cleanup() { kill \"\$server_pid\" >/dev/null 2>&1 || true; }; \
-trap cleanup EXIT INT TERM; \
-for i in {1..60}; do curl -fsS \"http://127.0.0.1:$port/health\" >/dev/null 2>&1 && break; sleep 0.1; done; \
-cd tui_skeleton && \
-# Keep transcript content in the live Ink pane; scrollback mode prints transcript
-# entries as static feed lines that often scroll out of the visible tmux viewport.
-BREADBOARD_API_URL=\"http://127.0.0.1:$port\" \
-BREADBOARD_STREAM_SCHEMA=2 \
-BREADBOARD_STREAM_INCLUDE_LEGACY=0 \
-BREADBOARD_TUI_SCROLLBACK=0 \
-npm run dev -- repl --tui classic --tui-preset \"$tui_preset\" --config \"$config_path\" --workspace \"$workspace\"; \
-printf \"\\n[phase4 replay target exited]\\n\"; \
-exec bash"
+# Choose a TUI entrypoint. In CI we prefer `dist/` so we don't depend on tsx/dev tooling.
+if [[ $use_dist -eq 1 ]]; then
+  if [[ ! -f "$repo_root/tui_skeleton/dist/main.js" ]]; then
+    echo "missing tui_skeleton/dist/main.js (run: cd tui_skeleton && npm run build)" >&2
+    exit 2
+  fi
+  entrypoint_use_dist=(--use-dist)
+else
+  entrypoint_use_dist=()
+fi
 
-"${tmux_base[@]}" new-session -d -x "$cols" -y "$rows" -s "$session" "bash -lc 'set +e; set +u; set +o pipefail; stty -ixon 2>/dev/null || true; $cmd'"
+pane_cmd=(
+  bash
+  --noprofile
+  --norc
+  "$repo_root/scripts/phase4_replay_target_entrypoint.sh"
+  --session "$session"
+  --port "$port"
+  --tui-preset "$tui_preset"
+  --config "$config_path"
+  --workspace "$workspace"
+  --cols "$cols"
+  --rows "$rows"
+  "${entrypoint_use_dist[@]}"
+)
+
+pane_cmd_str="$(printf '%q ' "${pane_cmd[@]}")"
+
+"${tmux_base[@]}" new-session -d -x "$cols" -y "$rows" -s "$session" "$pane_cmd_str"
 "${tmux_base[@]}" set-option -t "$session" history-limit 200000
+
+# Mirror pane output to a file without breaking TTY semantics (critical for Ink TUIs).
+# pipe-pane copies output; it does not redirect the process stdout.
+pane_target="${session}:0.0"
+pane_log="$log_root/$session/pane.log"
+pipe_cmd=(bash --noprofile --norc -c "cat >> $(printf '%q' "$pane_log")")
+pipe_cmd_str="$(printf '%q ' "${pipe_cmd[@]}")"
+("${tmux_base[@]}" pipe-pane -o -t "$pane_target" "$pipe_cmd_str" >/dev/null 2>&1) || true
 
 echo "Started tmux session '$session' ($cols×$rows) on port $port."
 if [[ -n "$tmux_socket" ]]; then

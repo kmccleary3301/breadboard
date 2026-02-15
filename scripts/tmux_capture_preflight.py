@@ -45,6 +45,11 @@ def capture_pane_text(target: str, socket_name: str) -> str:
     code, out, err = run_tmux_socket(["capture-pane", "-p", "-t", target], socket_name)
     if code != 0:
         raise RuntimeError(f"tmux capture-pane failed for {target}: {err.strip()}")
+    # Many TUIs render on tmux's alternate screen; include it so readiness checks
+    # work reliably across environments.
+    code_a, out_a, _ = run_tmux_socket(["capture-pane", "-a", "-p", "-t", target], socket_name)
+    if code_a == 0 and out_a and out_a.strip() and out_a != out:
+        return out + "\n\n[tmux:alternate_screen]\n" + out_a
     return out
 
 
