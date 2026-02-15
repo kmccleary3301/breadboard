@@ -72,6 +72,9 @@ if ! command -v tmux >/dev/null; then
   exit 1
 fi
 
+log_root="${BREADBOARD_PHASE4_REPLAY_LOG_ROOT:-$repo_root/docs_tmp/tmux_phase4_replay_targets}"
+mkdir -p "$log_root/$session"
+
 tmux_base=(tmux)
 if [[ -n "$tmux_socket" ]]; then
   tmux_base=(tmux -L "$tmux_socket")
@@ -120,6 +123,14 @@ pane_cmd_str="$(printf '%q ' "${pane_cmd[@]}")"
 
 "${tmux_base[@]}" new-session -d -x "$cols" -y "$rows" -s "$session" "$pane_cmd_str"
 "${tmux_base[@]}" set-option -t "$session" history-limit 200000
+
+# Mirror pane output to a file without breaking TTY semantics (critical for Ink TUIs).
+# pipe-pane copies output; it does not redirect the process stdout.
+pane_target="${session}:0.0"
+pane_log="$log_root/$session/pane.log"
+pipe_cmd=(bash --noprofile --norc -c "cat >> $(printf '%q' "$pane_log")")
+pipe_cmd_str="$(printf '%q ' "${pipe_cmd[@]}")"
+("${tmux_base[@]}" pipe-pane -o -t "$pane_target" "$pipe_cmd_str" >/dev/null 2>&1) || true
 
 echo "Started tmux session '$session' ($cols×$rows) on port $port."
 if [[ -n "$tmux_socket" ]]; then

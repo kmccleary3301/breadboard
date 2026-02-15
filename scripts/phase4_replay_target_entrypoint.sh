@@ -56,9 +56,6 @@ log_root="${BREADBOARD_PHASE4_REPLAY_LOG_ROOT:-$repo_root/docs_tmp/tmux_phase4_r
 log_dir="$log_root/$session"
 mkdir -p "$log_dir"
 
-# Ensure pane captures are never blank: everything is echoed and also tee'd to a file.
-exec > >(tee -a "$log_dir/pane.log") 2>&1
-
 echo "[phase4 replay target] starting"
 echo "[phase4 replay target] session=$session port=$port preset=$tui_preset use_dist=$use_dist"
 echo "[phase4 replay target] repo_root=$repo_root"
@@ -130,4 +127,3 @@ echo "[phase4 replay target exited]"
 
 # Keep the pane open for post-mortem capture.
 exec bash
-

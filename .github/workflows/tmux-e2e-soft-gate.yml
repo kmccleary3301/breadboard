@@ -220,7 +220,10 @@ jobs:
           for t in breadboard_test_ci_phase4_todo:0.0 breadboard_test_ci_phase4_streaming:0.0 breadboard_test_ci_phase4_subagents:0.0; do
             echo ""
             echo "### pane: $t"
+            echo "- normal:"
             tmux capture-pane -pt "$t" | tail -n 40 || true
+            echo "- alternate:"
+            tmux capture-pane -apt "$t" | tail -n 40 || true
           done
           echo ""
           echo "### targets logs"
@@ -236,6 +239,8 @@ jobs:
 
       - name: Run phase4 replay scenarios
         run: |
+          set +e
+          rc=0
           python scripts/run_tmux_capture_scenario.py \
             --target breadboard_test_ci_phase4_todo:0.0 \
             --scenario phase4_replay/todo_preview_v1 \
@@ -247,6 +252,7 @@ jobs:
             --post-sleep 0.2 \
             --semantic-timeout 10 \
             --capture-label phase4_replay_todo_preview_v1
+          rc=$((rc | $?))
 
           python scripts/run_tmux_capture_scenario.py \
             --target breadboard_test_ci_phase4_streaming:0.0 \
@@ -259,6 +265,7 @@ jobs:
             --post-sleep 0.2 \
             --semantic-timeout 10 \
             --capture-label phase4_replay_streaming_v1
+          rc=$((rc | $?))
 
           python scripts/run_tmux_capture_scenario.py \
             --target breadboard_test_ci_phase4_subagents:0.0 \
@@ -271,6 +278,8 @@ jobs:
             --post-sleep 0.2 \
             --semantic-timeout 10 \
             --capture-label phase4_replay_subagents_v1
+          rc=$((rc | $?))
+          exit "$rc"
 
       - name: Validate phase4 replay runs (strict bundle integrity)
         if: ${{ always() }}

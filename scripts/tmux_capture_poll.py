@@ -121,22 +121,60 @@ def session_from_target(target: str) -> str:
 
 
 def capture_raw(target: str, capture_mode: str, socket_name: str, buffer_suffix: str) -> tuple[str, str]:
-    if capture_mode == "scrollback":
-        # Full scrollback
-        safe = "".join(ch if ch.isalnum() else "_" for ch in (buffer_suffix or "capture"))
-        buf_ansi = f"capture_{safe}"
-        buf_txt = f"capture_txt_{safe}"
-        run_tmux(["capture-pane", "-ep", "-S", "-", "-t", target, "-b", buf_ansi], socket_name)
-        ansi = run_tmux(["save-buffer", "-b", buf_ansi, "-"], socket_name)
-        run_tmux(["delete-buffer", "-b", buf_ansi], socket_name)
-        run_tmux(["capture-pane", "-p", "-S", "-", "-t", target, "-b", buf_txt], socket_name)
-        txt = run_tmux(["save-buffer", "-b", buf_txt, "-"], socket_name)
-        run_tmux(["delete-buffer", "-b", buf_txt], socket_name)
-    else:
-        # Visible pane only (full panel): top-to-bottom pane contents.
-        ansi = run_tmux(["capture-pane", "-ep", "-t", target], socket_name)
-        txt = run_tmux(["capture-pane", "-p", "-t", target], socket_name)
-    return ansi, txt
+    def _non_ws_count(s: str) -> int:
+        return sum(1 for ch in s if not ch.isspace())
+
+    def _looks_like_prompt(text: str) -> bool:
+        # Heuristic only: use stable prompt/ready tokens that tend to appear in the visible UI.
+        tokens = ("for shortcuts", "context left", "OpenAI Codex", "❯")
+        return any(tok in text for tok in tokens)
+
+    def _capture_one(alternate: bool) -> tuple[str, str]:
+        a = "-a" if alternate else ""
+        if capture_mode == "scrollback":
+            safe = "".join(ch if ch.isalnum() else "_" for ch in (buffer_suffix or "capture"))
+            suffix = "alt" if alternate else "norm"
+            buf_ansi = f"capture_{safe}_{suffix}"
+            buf_txt = f"capture_txt_{safe}_{suffix}"
+            args_ansi = ["capture-pane"]
+            if a:
+                args_ansi.append(a)
+            args_ansi += ["-e", "-p", "-S", "-", "-t", target, "-b", buf_ansi]
+            run_tmux(args_ansi, socket_name)
+            ansi_out = run_tmux(["save-buffer", "-b", buf_ansi, "-"], socket_name)
+            run_tmux(["delete-buffer", "-b", buf_ansi], socket_name)
+
+            args_txt = ["capture-pane"]
+            if a:
+                args_txt.append(a)
+            args_txt += ["-p", "-S", "-", "-t", target, "-b", buf_txt]
+            run_tmux(args_txt, socket_name)
+            txt_out = run_tmux(["save-buffer", "-b", buf_txt, "-"], socket_name)
+            run_tmux(["delete-buffer", "-b", buf_txt], socket_name)
+            return ansi_out, txt_out
+
+        args_ansi = ["capture-pane"]
+        if a:
+            args_ansi.append(a)
+        args_ansi += ["-e", "-p", "-t", target]
+        ansi_out = run_tmux(args_ansi, socket_name)
+
+        args_txt = ["capture-pane"]
+        if a:
+            args_txt.append(a)
+        args_txt += ["-p", "-t", target]
+        txt_out = run_tmux(args_txt, socket_name)
+        return ansi_out, txt_out
+
+    ansi_norm, txt_norm = _capture_one(alternate=False)
+    ansi_alt, txt_alt = _capture_one(alternate=True)
+
+    # Prefer whichever buffer looks like an interactive prompt/ready UI; otherwise prefer the
+    # buffer with more content. This makes Ink/alternate-screen TUIs capturable while keeping
+    # classic shell panes unchanged.
+    if txt_alt.strip() and (_looks_like_prompt(txt_alt) or (_non_ws_count(txt_alt) > _non_ws_count(txt_norm))):
+        return ansi_alt, txt_alt
+    return ansi_norm, txt_norm
 
 
 def capture_pane(

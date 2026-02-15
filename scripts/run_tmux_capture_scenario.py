@@ -94,13 +94,33 @@ def tmux_send_key(target: str, key: str) -> None:
 
 
 def tmux_capture_text(target: str) -> str:
-    result = subprocess.run(
+    """
+    Capture pane text for semantic assertions.
+
+    Important: many TUIs render on tmux's alternate screen. If we only capture the
+    normal screen, semantic checks can fail while the UI is visibly present.
+    We capture both when possible and concatenate, so "ready markers" like
+    "for shortcuts" can be found reliably across environments.
+    """
+    normal = subprocess.run(
         [*tmux_base_args(), "capture-pane", "-pt", target],
         check=True,
         capture_output=True,
         text=True,
-    )
-    return result.stdout
+    ).stdout
+    alt = ""
+    try:
+        alt = subprocess.run(
+            [*tmux_base_args(), "capture-pane", "-apt", target],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    except subprocess.CalledProcessError:
+        alt = ""
+    if alt and alt.strip() and alt != normal:
+        return normal + "\n\n[tmux:alternate_screen]\n" + alt
+    return normal
 
 
 def split_tmux_target(target: str) -> tuple[str, str]:
