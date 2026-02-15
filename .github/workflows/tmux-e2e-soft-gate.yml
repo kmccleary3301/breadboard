@@ -187,7 +187,7 @@ jobs:
         run: |
           python -m pip install -r requirements.txt
           # Needed for PNG render in tmux capture artifacts.
-          python -m pip install pillow
+          python -m pip install pillow wcwidth
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -200,20 +200,25 @@ jobs:
         working-directory: tui_skeleton
         run: npm ci
 
-      - name: Build TUI (for --use-dist entrypoint)
-        working-directory: tui_skeleton
-        env:
-          BREADBOARD_SKIP_LOCAL_BIN_INSTALL: "1"
-          BREADBOARD_INSTALL_QUIET: "1"
-        run: npm run build
-
       - name: Start phase4 replay tmux targets
         env:
           RAY_SCE_LOCAL_MODE: "1"
         run: |
-          bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_todo --cols 160 --rows 45 --port 9103 --use-dist
-          bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_streaming --cols 160 --rows 45 --port 9101 --use-dist
-          bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_subagents --cols 160 --rows 45 --port 9102 --use-dist
+          # Prefer the dev entrypoint in CI: it has historically been the most reliable
+          # for Ink rendering under tmux capture on GitHub runners.
+          bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_todo --cols 160 --rows 45 --port 9103
+          bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_streaming --cols 160 --rows 45 --port 9101
+          bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_subagents --cols 160 --rows 45 --port 9102
+
+      - name: Debug capture (tmux panes)
+        if: ${{ always() }}
+        run: |
+          sleep 1
+          for t in breadboard_test_ci_phase4_todo:0.0 breadboard_test_ci_phase4_streaming:0.0 breadboard_test_ci_phase4_subagents:0.0; do
+            echo ""
+            echo "### pane: $t"
+            tmux capture-pane -pt "$t" | tail -n 40 || true
+          done
 
       - name: Run phase4 replay scenarios
         run: |
