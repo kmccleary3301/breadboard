@@ -15,6 +15,7 @@ class EventType(str, enum.Enum):
 
     TURN_START = "turn_start"
     ASSISTANT_MESSAGE = "assistant_message"
+    ASSISTANT_DELTA = "assistant_delta"
     USER_MESSAGE = "user_message"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"

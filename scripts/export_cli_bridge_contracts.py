@@ -34,6 +34,7 @@ def _event_schema() -> Dict[str, Any]:
     payload_schemas = [
         ("turn_start", "session_event_payload_turn_start.schema.json"),
         ("assistant_message", "session_event_payload_assistant_message.schema.json"),
+        ("assistant_delta", "session_event_payload_assistant_delta.schema.json"),
         ("user_message", "session_event_payload_user_message.schema.json"),
         ("tool_call", "session_event_payload_tool_call.schema.json"),
         ("tool_result", "session_event_payload_tool_result.schema.json"),
@@ -236,6 +237,21 @@ def _payload_schema_assistant_message() -> Dict[str, Any]:
             "text": {"type": "string"},
             "message": {},
             "source": {"type": ["string", "null"]},
+        },
+    }
+
+def _payload_schema_assistant_delta() -> Dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AssistantDeltaPayload",
+        "type": "object",
+        "additionalProperties": True,
+        "required": ["text"],
+        "properties": {
+            "text": {"type": "string"},
+            "message_id": {"type": ["string", "null"]},
+            "messageId": {"type": ["string", "null"]},
+            "id": {"type": ["string", "null"]},
         },
     }
 
@@ -1031,6 +1047,10 @@ def main() -> None:
     _write_json(
         SCHEMA_DIR / "session_event_payload_assistant_message.schema.json",
         _payload_schema_assistant_message(),
+    )
+    _write_json(
+        SCHEMA_DIR / "session_event_payload_assistant_delta.schema.json",
+        _payload_schema_assistant_delta(),
     )
     _write_json(SCHEMA_DIR / "session_event_payload_user_message.schema.json", _payload_schema_user_message())
     _write_json(SCHEMA_DIR / "session_event_payload_tool_call.schema.json", _payload_schema_tool_call())
