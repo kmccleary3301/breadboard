@@ -6,6 +6,7 @@ usage() {
 Usage: start_tmux_phase4_replay_target.sh --session <breadboard_test_*> [--cols N] [--rows N]
                                          [--tmux-socket NAME] [--port N]
                                          [--tui-preset PRESET] [--config PATH] [--workspace PATH]
+                                         [--use-dist]
                                          [--attach]
 
 Starts a fixed-size tmux session running the classic Ink TUI plus a local
@@ -17,6 +18,8 @@ Safety:
 
 Examples:
   scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_phase4_todo --port 9101 --tui-preset claude_code_like
+  # CI-friendly (assumes tui_skeleton/dist has been built already):
+  scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_phase4_todo --port 9101 --use-dist
   python scripts/run_tmux_capture_scenario.py --target breadboard_test_phase4_todo:0.0 --scenario phase4_replay/todo_preview_v1 --actions config/tmux_scenario_actions/phase4_replay/todo_preview_v1.json
 EOF
   exit 1
@@ -31,6 +34,7 @@ port=""
 tui_preset="claude_code_like"
 config_path="agent_configs/opencode_openrouter_grok4fast_cli_default.yaml"
 workspace=""
+use_dist=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -43,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     --tui-preset) shift; tui_preset="${1:-}";;
     --config) shift; config_path="${1:-}";;
     --workspace) shift; workspace="${1:-}";;
+    --use-dist) use_dist=1;;
     --help|-h) usage;;
     *) echo "Unknown arg: $1" >&2; usage;;
   esac
@@ -107,7 +112,11 @@ BREADBOARD_API_URL=\"http://127.0.0.1:$port\" \
 BREADBOARD_STREAM_SCHEMA=2 \
 BREADBOARD_STREAM_INCLUDE_LEGACY=0 \
 BREADBOARD_TUI_SCROLLBACK=0 \
-npm run dev -- repl --tui classic --tui-preset \"$tui_preset\" --config \"$config_path\" --workspace \"$workspace\"; \
+$(if [[ $use_dist -eq 1 ]]; then
+  echo "test -f dist/main.js || { echo \"missing tui_skeleton/dist/main.js (run: npm run build)\" >&2; exit 2; }; node dist/main.js repl"
+else
+  echo "npm run dev -- repl"
+fi) --tui classic --tui-preset \"$tui_preset\" --config \"$config_path\" --workspace \"$workspace\"; \
 printf \"\\n[phase4 replay target exited]\\n\"; \
 exec bash"
 
