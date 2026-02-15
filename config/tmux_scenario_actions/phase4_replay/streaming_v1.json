@@ -1,0 +1,16 @@
+[
+  {"type": "key", "key": "Escape", "wait": 0.1},
+  {"type": "key", "key": "Escape", "wait": 0.1},
+  {"type": "sleep", "seconds": 1.5},
+  {"type": "wait_until", "contains": ["for shortcuts"], "timeout": 60},
+  {
+    "type": "send",
+    "text": "replay:config/cli_bridge_replays/phase4/streaming_smoke_v1.jsonl",
+    "submit": true,
+    "clear_first": true,
+    "clear_mode": "ctrl_u"
+  },
+  {"type": "wait_until", "contains": ["Streaming smoke", "line 1", "line 2"], "timeout": 20},
+  {"type": "wait_for_quiet", "quiet_seconds": 1.5, "timeout": 30}
+]
+
