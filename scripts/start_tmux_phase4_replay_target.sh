@@ -92,6 +92,17 @@ if [[ -z "$port" ]]; then
   port=$((9100 + (sum % 200)))
 fi
 
+# Choose a TUI entrypoint. In CI we prefer `dist/` so we don't depend on tsx/dev tooling.
+if [[ $use_dist -eq 1 ]]; then
+  if [[ ! -f "$repo_root/tui_skeleton/dist/main.js" ]]; then
+    echo "missing tui_skeleton/dist/main.js (run: cd tui_skeleton && npm run build)" >&2
+    exit 2
+  fi
+  tui_invocation="node dist/main.js repl"
+else
+  tui_invocation="npm run dev -- repl"
+fi
+
 cmd="cd \"$repo_root\" && \
 export BREADBOARD_TUI_SUPPRESS_MAINTENANCE=1 && \
 RAY_SCE_LOCAL_MODE=1 \
@@ -112,11 +123,7 @@ BREADBOARD_API_URL=\"http://127.0.0.1:$port\" \
 BREADBOARD_STREAM_SCHEMA=2 \
 BREADBOARD_STREAM_INCLUDE_LEGACY=0 \
 BREADBOARD_TUI_SCROLLBACK=0 \
-$(if [[ $use_dist -eq 1 ]]; then
-  echo "test -f dist/main.js || { echo \"missing tui_skeleton/dist/main.js (run: npm run build)\" >&2; exit 2; }; node dist/main.js repl"
-else
-  echo "npm run dev -- repl"
-fi) --tui classic --tui-preset \"$tui_preset\" --config \"$config_path\" --workspace \"$workspace\"; \
+$tui_invocation --tui classic --tui-preset \"$tui_preset\" --config \"$config_path\" --workspace \"$workspace\"; \
 printf \"\\n[phase4 replay target exited]\\n\"; \
 exec bash"
 
