@@ -104,6 +104,9 @@ else
 fi
 
 cmd="cd \"$repo_root\" && \
+# tmux sessions are started via a login shell; explicitly pin PATH from the caller
+# (CI uses setup-node/setup-python which primarily work by exporting PATH).
+export PATH=\"$PATH\" && \
 export BREADBOARD_TUI_SUPPRESS_MAINTENANCE=1 && \
 RAY_SCE_LOCAL_MODE=1 \
 BREADBOARD_CLI_HOST=127.0.0.1 \
