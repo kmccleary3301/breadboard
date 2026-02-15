@@ -172,6 +172,9 @@ jobs:
     name: tmux phase4 replay (warn)
     runs-on: ubuntu-latest
     continue-on-error: true
+    env:
+      # Keep pane + engine logs under the workspace so they can be uploaded as artifacts.
+      BREADBOARD_PHASE4_REPLAY_LOG_ROOT: ${{ github.workspace }}/docs_tmp/tmux_captures/targets_logs
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -219,6 +222,17 @@ jobs:
             echo "### pane: $t"
             tmux capture-pane -pt "$t" | tail -n 40 || true
           done
+          echo ""
+          echo "### targets logs"
+          find "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/targets_logs" -maxdepth 3 -type f -name '*.log' -print 2>/dev/null | sort || true
+          for s in breadboard_test_ci_phase4_todo breadboard_test_ci_phase4_streaming breadboard_test_ci_phase4_subagents; do
+            echo ""
+            echo "### log tail: $s/pane.log"
+            tail -n 80 "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/targets_logs/$s/pane.log" 2>/dev/null || true
+            echo ""
+            echo "### log tail: $s/cli_bridge.log"
+            tail -n 80 "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/targets_logs/$s/cli_bridge.log" 2>/dev/null || true
+          done
 
       - name: Run phase4 replay scenarios
         run: |
@@ -261,12 +275,25 @@ jobs:
       - name: Validate phase4 replay runs (strict bundle integrity)
         if: ${{ always() }}
         run: |
-          TODO_RUN_DIR="$(find "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/todo_preview_v1" -name scenario_manifest.json -print | sort | tail -n1 | xargs dirname)"
-          STREAM_RUN_DIR="$(find "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/streaming_v1" -name scenario_manifest.json -print | sort | tail -n1 | xargs dirname)"
-          SUBAGENTS_RUN_DIR="$(find "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/subagents_v1" -name scenario_manifest.json -print | sort | tail -n1 | xargs dirname)"
-          python scripts/validate_tmux_capture_run.py --run-dir "$TODO_RUN_DIR" --strict
-          python scripts/validate_tmux_capture_run.py --run-dir "$STREAM_RUN_DIR" --strict
-          python scripts/validate_tmux_capture_run.py --run-dir "$SUBAGENTS_RUN_DIR" --strict
+          find_latest_run_dir() {
+            local base="$1"
+            local manifest
+            manifest="$(find "$base" -name scenario_manifest.json -print 2>/dev/null | sort | tail -n1 || true)"
+            if [[ -z "$manifest" ]]; then
+              echo ""
+              return 0
+            fi
+            dirname "$manifest"
+          }
+
+          TODO_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/todo_preview_v1")"
+          STREAM_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/streaming_v1")"
+          SUBAGENTS_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/subagents_v1")"
+
+          if [[ -n "$TODO_RUN_DIR" ]]; then python scripts/validate_tmux_capture_run.py --run-dir "$TODO_RUN_DIR" --strict; else echo "missing TODO_RUN_DIR"; fi
+          if [[ -n "$STREAM_RUN_DIR" ]]; then python scripts/validate_tmux_capture_run.py --run-dir "$STREAM_RUN_DIR" --strict; else echo "missing STREAM_RUN_DIR"; fi
+          if [[ -n "$SUBAGENTS_RUN_DIR" ]]; then python scripts/validate_tmux_capture_run.py --run-dir "$SUBAGENTS_RUN_DIR" --strict; else echo "missing SUBAGENTS_RUN_DIR"; fi
+
           echo "TODO_RUN_DIR=$TODO_RUN_DIR" >> "$GITHUB_ENV"
           echo "STREAM_RUN_DIR=$STREAM_RUN_DIR" >> "$GITHUB_ENV"
           echo "SUBAGENTS_RUN_DIR=$SUBAGENTS_RUN_DIR" >> "$GITHUB_ENV"
@@ -289,3 +316,4 @@ jobs:
             docs_tmp/tmux_captures/scenarios/phase4_replay/todo_preview_v1
             docs_tmp/tmux_captures/scenarios/phase4_replay/streaming_v1
             docs_tmp/tmux_captures/scenarios/phase4_replay/subagents_v1
+            docs_tmp/tmux_captures/targets_logs

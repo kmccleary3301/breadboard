@@ -98,39 +98,27 @@ if [[ $use_dist -eq 1 ]]; then
     echo "missing tui_skeleton/dist/main.js (run: cd tui_skeleton && npm run build)" >&2
     exit 2
   fi
-  tui_invocation="node dist/main.js repl"
+  entrypoint_use_dist=(--use-dist)
 else
-  tui_invocation="npm run dev -- repl"
+  entrypoint_use_dist=()
 fi
 
-cmd="cd \"$repo_root\" && \
-# tmux sessions are started via a login shell; explicitly pin PATH from the caller
-# (CI uses setup-node/setup-python which primarily work by exporting PATH).
-export PATH=\"$PATH\" && \
-export BREADBOARD_TUI_SUPPRESS_MAINTENANCE=1 && \
-RAY_SCE_LOCAL_MODE=1 \
-BREADBOARD_CLI_HOST=127.0.0.1 \
-BREADBOARD_CLI_PORT=\"$port\" \
-BREADBOARD_API_URL=\"http://127.0.0.1:$port\" \
-BREADBOARD_STREAM_SCHEMA=2 \
-BREADBOARD_STREAM_INCLUDE_LEGACY=0 \
-python -m agentic_coder_prototype.api.cli_bridge.server >\"/tmp/breadboard_cli_bridge_${session}.log\" 2>&1 & \
-server_pid=\$!; \
-cleanup() { kill \"\$server_pid\" >/dev/null 2>&1 || true; }; \
-trap cleanup EXIT INT TERM; \
-for i in {1..60}; do curl -fsS \"http://127.0.0.1:$port/health\" >/dev/null 2>&1 && break; sleep 0.1; done; \
-cd tui_skeleton && \
-# Keep transcript content in the live Ink pane; scrollback mode prints transcript
-# entries as static feed lines that often scroll out of the visible tmux viewport.
-BREADBOARD_API_URL=\"http://127.0.0.1:$port\" \
-BREADBOARD_STREAM_SCHEMA=2 \
-BREADBOARD_STREAM_INCLUDE_LEGACY=0 \
-BREADBOARD_TUI_SCROLLBACK=0 \
-$tui_invocation --tui classic --tui-preset \"$tui_preset\" --config \"$config_path\" --workspace \"$workspace\"; \
-printf \"\\n[phase4 replay target exited]\\n\"; \
-exec bash"
+pane_cmd=(
+  bash
+  --noprofile
+  --norc
+  "$repo_root/scripts/phase4_replay_target_entrypoint.sh"
+  --session "$session"
+  --port "$port"
+  --tui-preset "$tui_preset"
+  --config "$config_path"
+  --workspace "$workspace"
+  "${entrypoint_use_dist[@]}"
+)
 
-"${tmux_base[@]}" new-session -d -x "$cols" -y "$rows" -s "$session" "bash -lc 'set +e; set +u; set +o pipefail; stty -ixon 2>/dev/null || true; $cmd'"
+pane_cmd_str="$(printf '%q ' "${pane_cmd[@]}")"
+
+"${tmux_base[@]}" new-session -d -x "$cols" -y "$rows" -s "$session" "$pane_cmd_str"
 "${tmux_base[@]}" set-option -t "$session" history-limit 200000
 
 echo "Started tmux session '$session' ($cols×$rows) on port $port."
