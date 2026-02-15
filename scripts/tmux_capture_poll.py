@@ -131,40 +131,47 @@ def capture_raw(target: str, capture_mode: str, socket_name: str, buffer_suffix:
 
     def _capture_one(alternate: bool) -> tuple[str, str]:
         a = "-a" if alternate else ""
-        if capture_mode == "scrollback":
-            safe = "".join(ch if ch.isalnum() else "_" for ch in (buffer_suffix or "capture"))
-            suffix = "alt" if alternate else "norm"
-            buf_ansi = f"capture_{safe}_{suffix}"
-            buf_txt = f"capture_txt_{safe}_{suffix}"
+        try:
+            if capture_mode == "scrollback":
+                safe = "".join(ch if ch.isalnum() else "_" for ch in (buffer_suffix or "capture"))
+                suffix = "alt" if alternate else "norm"
+                buf_ansi = f"capture_{safe}_{suffix}"
+                buf_txt = f"capture_txt_{safe}_{suffix}"
+                args_ansi = ["capture-pane"]
+                if a:
+                    args_ansi.append(a)
+                args_ansi += ["-e", "-p", "-S", "-", "-t", target, "-b", buf_ansi]
+                run_tmux(args_ansi, socket_name)
+                ansi_out = run_tmux(["save-buffer", "-b", buf_ansi, "-"], socket_name)
+                run_tmux(["delete-buffer", "-b", buf_ansi], socket_name)
+
+                args_txt = ["capture-pane"]
+                if a:
+                    args_txt.append(a)
+                args_txt += ["-p", "-S", "-", "-t", target, "-b", buf_txt]
+                run_tmux(args_txt, socket_name)
+                txt_out = run_tmux(["save-buffer", "-b", buf_txt, "-"], socket_name)
+                run_tmux(["delete-buffer", "-b", buf_txt], socket_name)
+                return ansi_out, txt_out
+
             args_ansi = ["capture-pane"]
             if a:
                 args_ansi.append(a)
-            args_ansi += ["-e", "-p", "-S", "-", "-t", target, "-b", buf_ansi]
-            run_tmux(args_ansi, socket_name)
-            ansi_out = run_tmux(["save-buffer", "-b", buf_ansi, "-"], socket_name)
-            run_tmux(["delete-buffer", "-b", buf_ansi], socket_name)
+            args_ansi += ["-e", "-p", "-t", target]
+            ansi_out = run_tmux(args_ansi, socket_name)
 
             args_txt = ["capture-pane"]
             if a:
                 args_txt.append(a)
-            args_txt += ["-p", "-S", "-", "-t", target, "-b", buf_txt]
-            run_tmux(args_txt, socket_name)
-            txt_out = run_tmux(["save-buffer", "-b", buf_txt, "-"], socket_name)
-            run_tmux(["delete-buffer", "-b", buf_txt], socket_name)
+            args_txt += ["-p", "-t", target]
+            txt_out = run_tmux(args_txt, socket_name)
             return ansi_out, txt_out
-
-        args_ansi = ["capture-pane"]
-        if a:
-            args_ansi.append(a)
-        args_ansi += ["-e", "-p", "-t", target]
-        ansi_out = run_tmux(args_ansi, socket_name)
-
-        args_txt = ["capture-pane"]
-        if a:
-            args_txt.append(a)
-        args_txt += ["-p", "-t", target]
-        txt_out = run_tmux(args_txt, socket_name)
-        return ansi_out, txt_out
+        except subprocess.CalledProcessError as exc:
+            # `capture-pane -a` returns non-zero with "no alternate screen" when there
+            # is no alternate buffer. Treat that as empty alt capture and fall back.
+            if alternate and "no alternate screen" in (exc.stderr or "").lower():
+                return "", ""
+            raise
 
     ansi_norm, txt_norm = _capture_one(alternate=False)
     ansi_alt, txt_alt = _capture_one(alternate=True)
