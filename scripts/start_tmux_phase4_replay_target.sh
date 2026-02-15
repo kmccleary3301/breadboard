@@ -116,6 +116,8 @@ pane_cmd=(
   --tui-preset "$tui_preset"
   --config "$config_path"
   --workspace "$workspace"
+  --cols "$cols"
+  --rows "$rows"
   "${entrypoint_use_dist[@]}"
 )
 
