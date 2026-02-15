@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import queue
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
@@ -108,6 +110,18 @@ def test_session_runner_translates_runtime_events() -> None:
     assert payload["text"] == "hi"
     assert turn == 3
 
+    delta_translated = runner._translate_runtime_event(
+        "assistant_delta",
+        {"text": "chunk", "message_id": "m1"},
+        turn=3,
+    )
+    assert delta_translated is not None
+    evt_type, payload, turn = delta_translated
+    assert evt_type is EventType.ASSISTANT_DELTA
+    assert payload["text"] == "chunk"
+    assert payload["message_id"] == "m1"
+    assert turn == 3
+
     assert runner._translate_runtime_event("unknown", {}, turn=None) is None
 
     todo_translated = runner._translate_runtime_event(
@@ -123,6 +137,101 @@ def test_session_runner_translates_runtime_events() -> None:
     assert turn == 3
     assert isinstance(record.metadata, dict)
     assert isinstance(record.metadata.get("todo_last_update"), dict)
+
+
+@pytest.mark.asyncio
+async def test_session_runner_replay_task_skips_agent_init(tmp_path) -> None:
+    registry = SessionRegistry()
+    record = SessionRecord(session_id="sess-replay", status=SessionStatus.STARTING)
+
+    fixture = tmp_path / "fixture.jsonl"
+    fixture.write_text(
+        "\n".join(
+            [
+                "# replay fixture",
+                json.dumps({"type": "assistant_delta", "payload": {"message_id": "m1", "text": "hello"}}),
+                json.dumps({"type": "tool_result", "payload": {"call_id": "todo:1", "todo": {"op": "replace", "revision": 1, "items": []}}}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    request = SessionCreateRequest(config_path="cfg.yaml", task=f"replay:{fixture}", stream=False)
+
+    called = {"count": 0}
+
+    def agent_factory(config_path: str, workspace_dir: Optional[str], overrides: Optional[Dict[str, Any]]) -> Any:
+        called["count"] += 1
+        raise AssertionError("agent_factory should not be called for replay tasks")
+
+    runner = SessionRunner(session=record, registry=registry, request=request, agent_factory=agent_factory)
+    await runner.start()
+
+    seen_types: List[str] = []
+    for _ in range(30):
+        evt = await asyncio.wait_for(record.event_queue.get(), timeout=2.0)
+        if evt is None:
+            break
+        seen_types.append(evt.type.value)
+        if evt.type is EventType.RUN_FINISHED:
+            break
+
+    await runner.stop()
+    assert called["count"] == 0
+    assert runner._agent is None
+    assert "assistant_delta" in seen_types
+    assert "run_finished" in seen_types
+    assert isinstance(record.metadata.get("todo_last_update"), dict)
+
+
+@pytest.mark.asyncio
+async def test_session_runner_lazy_init_initializes_agent_for_non_replay(tmp_path, monkeypatch) -> None:
+    registry = SessionRegistry()
+    record = SessionRecord(session_id="sess-nonreplay", status=SessionStatus.STARTING)
+    request = SessionCreateRequest(config_path="cfg.yaml", task="hello", stream=False)
+    monkeypatch.delenv("BREADBOARD_ENABLE_REMOTE_STREAM", raising=False)
+
+    called = {"count": 0}
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self._local_mode = True
+            self.workspace_dir = str(tmp_path / "ws")
+            self.config = {"providers": {}}
+
+        def initialize(self) -> None:
+            Path(self.workspace_dir).mkdir(parents=True, exist_ok=True)
+
+        def run_task(self, task_text: str, **kwargs) -> Dict[str, Any]:
+            return {
+                "completion_summary": {"completed": True, "reason": "test"},
+                "reward_metrics_payload": {},
+                "messages": [{"role": "assistant", "content": "ok"}],
+                "logging_dir": None,
+            }
+
+    def agent_factory(config_path: str, workspace_dir: Optional[str], overrides: Optional[Dict[str, Any]]) -> Any:
+        called["count"] += 1
+        return FakeAgent()
+
+    runner = SessionRunner(session=record, registry=registry, request=request, agent_factory=agent_factory)
+    await runner.start()
+
+    # Expect the runner to publish at least completion + run_finished.
+    seen_finished = False
+    for _ in range(20):
+        evt = await asyncio.wait_for(record.event_queue.get(), timeout=2.0)
+        if evt is None:
+            break
+        if evt.type is EventType.RUN_FINISHED:
+            seen_finished = True
+            break
+
+    await runner.stop()
+    assert called["count"] == 1
+    assert runner._agent is not None
+    assert seen_finished
 
 
 def test_session_runner_queue_pump_processes_events() -> None:

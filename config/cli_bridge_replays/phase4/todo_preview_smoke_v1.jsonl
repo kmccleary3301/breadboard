@@ -1,0 +1,8 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): TODO preview smoke
+#
+# Goal: exercise projected todo envelope updates over tool_result without
+# requiring agent initialization.
+
+{"type":"tool_result","payload":{"call_id":"todo:smoke","todo":{"op":"replace","revision":1,"scopeKey":"main","scopeLabel":"main","items":[{"id":"t-1","title":"Implement replay mode","status":"open"},{"id":"t-2","title":"Add tmux phase4 scenarios","status":"open"},{"id":"t-3","title":"Wire warn-only CI","status":"open"},{"id":"t-4","title":"Document drift triage","status":"open"},{"id":"t-5","title":"Perf telemetry export","status":"open"},{"id":"t-6","title":"Bless stable goldens","status":"open"},{"id":"t-7","title":"Cut release notes","status":"open"},{"id":"t-8","title":"Ship Phase 4 closeout","status":"open"}]}},"delay_ms":30}
+{"type":"run_finished","payload":{"eventCount":2,"completed":true,"reason":"replay","logging_dir":null}}
+

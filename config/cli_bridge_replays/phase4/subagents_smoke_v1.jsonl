@@ -1,0 +1,11 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): subagents/taskboard smoke
+#
+# Goal: exercise task_event ingestion + overlay keypaths (Ctrl-B) without
+# requiring agent initialization.
+
+{"type":"task_event","payload":{"task_id":"task-1","status":"running","description":"Index workspace files","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":30}
+{"type":"task_event","payload":{"task_id":"task-2","status":"running","description":"Compute TODO preview metrics","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":30}
+{"type":"task_event","payload":{"task_id":"task-1","status":"complete","description":"Index workspace files","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":30}
+{"type":"task_event","payload":{"task_id":"task-2","status":"complete","description":"Compute TODO preview metrics","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":30}
+{"type":"assistant_message","payload":{"message_id":"m-subagents-1","text":"Subagent taskboard smoke complete"}}
+{"type":"run_finished","payload":{"eventCount":6,"completed":true,"reason":"replay","logging_dir":null},"delay_ms":1500}
