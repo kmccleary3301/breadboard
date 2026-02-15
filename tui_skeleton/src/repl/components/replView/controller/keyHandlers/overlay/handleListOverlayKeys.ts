@@ -75,11 +75,15 @@ export const handleListOverlayKeys = (
 
   if (todosOpen) {
     if (key.escape || char === "\u001b") {
-      setTodosOpen(false)
+      if (typeof setTodosOpen === "function") {
+        setTodosOpen(false)
+      }
       return true
     }
     if (isCtrlT && keymap === "claude") {
-      setTodosOpen(false)
+      if (typeof setTodosOpen === "function") {
+        setTodosOpen(false)
+      }
       return true
     }
     const clampScroll = (value: number) => Math.max(0, Math.min(todoMaxScroll, value))
@@ -224,7 +228,9 @@ export const handleListOverlayKeys = (
       }
       if (isCtrlB) {
         setTaskFocusViewOpen(false)
-        setTasksOpen(false)
+        if (typeof setTasksOpen === "function") {
+          setTasksOpen(false)
+        }
         return true
       }
       if (laneDelta !== 0 && laneOrder.length > 0) {
@@ -299,11 +305,15 @@ export const handleListOverlayKeys = (
     }
 
     if (key.escape || char === "\u001b") {
-      setTasksOpen(false)
+      if (typeof setTasksOpen === "function") {
+        setTasksOpen(false)
+      }
       return true
     }
     if (isCtrlB) {
-      setTasksOpen(false)
+      if (typeof setTasksOpen === "function") {
+        setTasksOpen(false)
+      }
       return true
     }
     if (!key.ctrl && !key.meta && lowerChar === "f") {
