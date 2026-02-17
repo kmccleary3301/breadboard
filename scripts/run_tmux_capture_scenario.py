@@ -19,6 +19,11 @@ from pathlib import Path
 from typing import Any
 
 from tmux_capture_time import run_timestamp
+from tmux_capture_render_profile import (
+    DEFAULT_RENDER_PROFILE_ID,
+    SUPPORTED_RENDER_PROFILES,
+    resolve_render_profile,
+)
 
 ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
@@ -47,6 +52,13 @@ class ScenarioConfig:
     provider_fail_on_permission_error: bool
     provider_forbid_model_aliases: tuple[str, ...]
     no_png: bool
+    capture_mode: str
+    tail_lines: int
+    final_tail_lines: int
+    fullpane_start_markers: tuple[str, ...]
+    fullpane_max_lines: int
+    fullpane_render_max_rows: int
+    render_profile: str
     clear_before_send: bool
     wait_idle_accept_active_timeout: bool
     wait_idle_accept_stable_active_after: float
@@ -102,25 +114,56 @@ def tmux_capture_text(target: str) -> str:
     We capture both when possible and concatenate, so "ready markers" like
     "for shortcuts" can be found reliably across environments.
     """
-    normal = subprocess.run(
-        [*tmux_base_args(), "capture-pane", "-pt", target],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    alt = ""
-    try:
-        alt = subprocess.run(
-            [*tmux_base_args(), "capture-pane", "-apt", target],
-            check=True,
+    def _non_ws_count(value: str) -> int:
+        return sum(1 for ch in value if not ch.isspace())
+
+    def _looks_like_ready_ui(value: str) -> bool:
+        tokens = ("for shortcuts", "Try \"", "Try '", "No conversation yet", "❯")
+        return any(token in value for token in tokens)
+
+    def _capture(args: list[str], *, allow_no_alt_screen: bool = False) -> str:
+        result = subprocess.run(
+            [*tmux_base_args(), *args],
+            check=False,
             capture_output=True,
             text=True,
-        ).stdout
-    except subprocess.CalledProcessError:
-        alt = ""
-    if alt and alt.strip() and alt != normal:
-        return normal + "\n\n[tmux:alternate_screen]\n" + alt
-    return normal
+        )
+        if result.returncode == 0:
+            return result.stdout
+        stderr = (result.stderr or "").lower()
+        if allow_no_alt_screen and "no alternate screen" in stderr:
+            return ""
+        raise subprocess.CalledProcessError(
+            result.returncode,
+            [*tmux_base_args(), *args],
+            output=result.stdout,
+            stderr=result.stderr,
+        )
+
+    normal = _capture(["capture-pane", "-pt", target])
+    alt = _capture(["capture-pane", "-apt", target], allow_no_alt_screen=True)
+
+    selected = normal
+    if alt and alt.strip() and (_looks_like_ready_ui(alt) or _non_ws_count(alt) > _non_ws_count(normal)):
+        selected = alt
+    elif alt and alt.strip() and alt != normal:
+        selected = normal + "\n\n[tmux:alternate_screen]\n" + alt
+
+    # Include bounded recent history in semantic reads so short-lived replay output
+    # is still detectable even when the visible pane collapses back to a prompt.
+    history_normal = _capture(["capture-pane", "-p", "-S", "-160", "-t", target])
+    history_alt = _capture(
+        ["capture-pane", "-a", "-p", "-S", "-160", "-t", target],
+        allow_no_alt_screen=True,
+    )
+    history_best = history_normal
+    if history_alt and history_alt.strip() and (
+        _looks_like_ready_ui(history_alt) or _non_ws_count(history_alt) > _non_ws_count(history_normal)
+    ):
+        history_best = history_alt
+    if history_best.strip() and history_best != selected:
+        return selected + "\n\n[tmux:scrollback_recent]\n" + history_best
+    return selected
 
 
 def split_tmux_target(target: str) -> tuple[str, str]:
@@ -633,6 +676,51 @@ def parse_args() -> ScenarioConfig:
     parser.add_argument("--out-root", default="", help="capture root (default: ../docs_tmp/tmux_captures/scenarios)")
     parser.add_argument("--no-png", action="store_true", help="disable PNG output")
     parser.add_argument(
+        "--capture-mode",
+        default="pane",
+        choices=("pane", "pane-auto", "tail", "scrollback", "fullpane"),
+        help=(
+            "frame capture mode passed to tmux_capture_poll "
+            "(pane=full visible pane top->bottom, tail=sliding tail window, "
+            "fullpane=landing->bottom stitched buffer window)"
+        ),
+    )
+    parser.add_argument(
+        "--tail-lines",
+        type=int,
+        default=120,
+        help="line count for tail captures (capture-mode=tail and pane-auto fallback)",
+    )
+    parser.add_argument(
+        "--final-tail-lines",
+        type=int,
+        default=0,
+        help="optional final tailed snapshot line count (0 disables)",
+    )
+    parser.add_argument(
+        "--fullpane-start-markers",
+        default="BreadBoard v,No conversation yet",
+        help="comma-separated start markers for fullpane capture mode",
+    )
+    parser.add_argument(
+        "--fullpane-max-lines",
+        type=int,
+        default=0,
+        help="optional max lines for fullpane mode (0 = unlimited)",
+    )
+    parser.add_argument(
+        "--fullpane-render-max-rows",
+        type=int,
+        default=0,
+        help="optional max PNG rows for fullpane mode (0 = unlimited)",
+    )
+    parser.add_argument(
+        "--render-profile",
+        default=DEFAULT_RENDER_PROFILE_ID,
+        choices=SUPPORTED_RENDER_PROFILES,
+        help=f"ANSI->PNG render profile lock (default: {DEFAULT_RENDER_PROFILE_ID})",
+    )
+    parser.add_argument(
         "--must-contain",
         action="append",
         default=[],
@@ -730,6 +818,9 @@ def parse_args() -> ScenarioConfig:
     must_not_contain = tuple(token.strip() for token in args.must_not_contain if str(token).strip())
     must_match_regex = tuple(token.strip() for token in args.must_match_regex if str(token).strip())
     protected_sessions = parse_csv_tokens(args.protected_sessions)
+    fullpane_start_markers = parse_csv_tokens(args.fullpane_start_markers)
+    resolved_profile = resolve_render_profile(args.render_profile)
+    render_profile = resolved_profile.id if resolved_profile is not None else args.render_profile
 
     default_submit_key, default_newline_key, default_newline_prefix = infer_target_key_defaults(args.target)
     submit_key = normalize_tmux_key(
@@ -776,6 +867,13 @@ def parse_args() -> ScenarioConfig:
         provider_fail_on_permission_error=bool(args.provider_fail_on_permission_error),
         provider_forbid_model_aliases=explicit_aliases or default_forbidden_aliases,
         no_png=bool(args.no_png),
+        capture_mode=str(args.capture_mode),
+        tail_lines=max(1, int(args.tail_lines)),
+        final_tail_lines=max(0, int(args.final_tail_lines)),
+        fullpane_start_markers=fullpane_start_markers,
+        fullpane_max_lines=max(0, int(args.fullpane_max_lines)),
+        fullpane_render_max_rows=max(0, int(args.fullpane_render_max_rows)),
+        render_profile=str(render_profile),
         clear_before_send=bool(args.clear_before_send),
         clear_mode=clear_mode,
         wait_idle_accept_active_timeout=bool(args.wait_idle_accept_active_timeout),
@@ -1442,6 +1540,13 @@ def main() -> None:
             "semantic_timeout": config.semantic_timeout,
             "semantic_fail_fast": config.semantic_fail_fast,
             "require_final_idle": config.require_final_idle,
+            "capture_mode": config.capture_mode,
+            "tail_lines": config.tail_lines,
+            "final_tail_lines": config.final_tail_lines,
+            "fullpane_start_markers": list(config.fullpane_start_markers),
+            "fullpane_max_lines": config.fullpane_max_lines,
+            "fullpane_render_max_rows": config.fullpane_render_max_rows,
+            "render_profile": config.render_profile,
             "wait_idle_accept_active_timeout": config.wait_idle_accept_active_timeout,
             "wait_idle_accept_stable_active_after": config.wait_idle_accept_stable_active_after,
             "max_stall_seconds": config.max_stall_seconds,
@@ -1481,6 +1586,20 @@ def main() -> None:
         run_id,
         "--out-root",
         str(config.out_root),
+        "--capture-mode",
+        config.capture_mode,
+        "--tail-lines",
+        str(config.tail_lines),
+        "--final-tail-lines",
+        str(config.final_tail_lines),
+        "--fullpane-start-markers",
+        ",".join(config.fullpane_start_markers),
+        "--fullpane-max-lines",
+        str(config.fullpane_max_lines),
+        "--fullpane-render-max-rows",
+        str(config.fullpane_render_max_rows),
+        "--render-profile",
+        config.render_profile,
         "--settle-ms",
         str(config.settle_ms),
         "--settle-attempts",
@@ -1685,6 +1804,13 @@ def main() -> None:
         "provider_new_files": provider_new,
         "provider_analysis": provider_analysis,
         "provider_forbid_model_aliases": list(config.provider_forbid_model_aliases),
+        "capture_mode": config.capture_mode,
+        "tail_lines": config.tail_lines,
+        "final_tail_lines": config.final_tail_lines,
+        "fullpane_start_markers": list(config.fullpane_start_markers),
+        "fullpane_max_lines": config.fullpane_max_lines,
+        "fullpane_render_max_rows": config.fullpane_render_max_rows,
+        "render_profile": config.render_profile,
         "submit_key": config.submit_key,
         "newline_key": config.newline_key,
         "newline_prefix": config.newline_prefix,

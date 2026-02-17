@@ -20,29 +20,29 @@
   },
   {
     "type": "send",
-    "text": "replay:config/cli_bridge_replays/phase4/streaming_smoke_v1.jsonl",
+    "text": "replay:config/cli_bridge_replays/phase4/everything_showcase_v1.jsonl",
     "submit": true,
     "clear_first": true,
     "clear_mode": "ctrl_u"
   },
   {
     "type": "wait_until",
-    "contains": ["Streaming smoke", "line 1", "line 2"],
-    "absent": ["Cannot read properties of undefined (reading 'length')", "buildModalStack.tsx:1084", "\\n", "(delta)"],
-    "timeout": 30
+    "contains": ["Markdown Showcase", "Patched.", "Feature", "ls -la"],
+    "timeout": 45
   },
   {
     "type": "wait_for_quiet",
-    "quiet_seconds": 1.5,
-    "timeout": 30,
+    "quiet_seconds": 2.5,
+    "timeout": 45,
+    "semantic_timeout": 8,
+    "semantic_fail_fast": true,
     "must_not_contain": [
+      "[error] replay fixture not found",
       "Cannot read properties of undefined (reading 'length')",
       "buildModalStack.tsx:1084",
       "UnhandledPromiseRejection",
       "[phase4 replay target exited]",
       "[phase4 replay target] cli_bridge health check failed"
-    ],
-    "semantic_timeout": 5,
-    "semantic_fail_fast": true
+    ]
   }
 ]

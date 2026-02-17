@@ -6,12 +6,18 @@ usage() {
 Usage: start_tmux_phase4_replay_target.sh --session <breadboard_test_*> [--cols N] [--rows N]
                                          [--tmux-socket NAME] [--port N]
                                          [--tui-preset PRESET] [--config PATH] [--workspace PATH]
+                                         [--scrollback-mode <window|scrollback>]
+                                         [--landing-always <0|1>]
                                          [--use-dist]
                                          [--attach]
 
 Starts a fixed-size tmux session running the classic Ink TUI plus a local
 CLI-bridge engine (uvicorn), suitable as a target for deterministic replay
 fixtures driven by tmux capture scenarios.
+
+Defaults are locked for visual replay stability:
+- --scrollback-mode scrollback
+- --landing-always 1
 
 Safety:
 - Refuses to create/kill any session not starting with "breadboard_test_".
@@ -35,6 +41,8 @@ tui_preset="claude_code_like"
 config_path="agent_configs/opencode_openrouter_grok4fast_cli_default.yaml"
 workspace=""
 use_dist=0
+scrollback_mode="scrollback"
+landing_always="1"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,12 +55,23 @@ while [[ $# -gt 0 ]]; do
     --tui-preset) shift; tui_preset="${1:-}";;
     --config) shift; config_path="${1:-}";;
     --workspace) shift; workspace="${1:-}";;
+    --scrollback-mode) shift; scrollback_mode="${1:-}";;
+    --landing-always) shift; landing_always="${1:-}";;
     --use-dist) use_dist=1;;
     --help|-h) usage;;
     *) echo "Unknown arg: $1" >&2; usage;;
   esac
   shift
 done
+
+if [[ -n "$scrollback_mode" && "$scrollback_mode" != "window" && "$scrollback_mode" != "scrollback" ]]; then
+  echo "Invalid --scrollback-mode '$scrollback_mode' (expected window|scrollback)." >&2
+  exit 2
+fi
+if [[ -n "$landing_always" && "$landing_always" != "0" && "$landing_always" != "1" ]]; then
+  echo "Invalid --landing-always '$landing_always' (expected 0|1)." >&2
+  exit 2
+fi
 
 if [[ -z "$session" ]]; then
   echo "Missing --session" >&2
@@ -118,6 +137,8 @@ pane_cmd=(
   --workspace "$workspace"
   --cols "$cols"
   --rows "$rows"
+  --scrollback-mode "$scrollback_mode"
+  --landing-always "$landing_always"
   "${entrypoint_use_dist[@]}"
 )
 

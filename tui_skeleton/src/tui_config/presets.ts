@@ -49,8 +49,8 @@ export const BUILTIN_TUI_PRESETS: Record<TuiPresetId, TuiConfigInput> = {
       todoAutoFollowManualOverrideMs: 15000,
     },
     statusLine: {
-      position: "above_input",
-      align: "left",
+      position: "below_input",
+      align: "right",
       showWhenPending: true,
       showOnComplete: true,
       activeText: "· Deciphering… (esc to interrupt · thinking)",

@@ -37,6 +37,8 @@ export interface SelectPanelProps {
   readonly hintLines?: ReadonlyArray<SelectPanelLine>
   readonly rows: ReadonlyArray<SelectPanelRow>
   readonly footerLines?: ReadonlyArray<SelectPanelLine>
+  readonly rowsMarginTop?: number
+  readonly footerMarginTop?: number
 }
 
 const renderLine = (line: SelectPanelLine, index: number) => (
@@ -58,6 +60,8 @@ export const SelectPanel = ({
   hintLines = [],
   rows,
   footerLines = [],
+  rowsMarginTop = 1,
+  footerMarginTop = 1,
 }: SelectPanelProps) => {
   const borderProps = showBorder ? { borderStyle, borderColor } : {}
   return (
@@ -73,7 +77,7 @@ export const SelectPanel = ({
       {titleLines.map(renderLine)}
       {titleLines.length > 0 && hintLines.length > 0 && <Text wrap="truncate-end"> </Text>}
       {hintLines.map(renderLine)}
-      <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="column" marginTop={rowsMarginTop}>
         {rows.map((row, idx) => {
           if (row.kind === "header" || row.kind === "empty") {
             return (
@@ -110,7 +114,7 @@ export const SelectPanel = ({
         })}
       </Box>
       {footerLines.length > 0 && (
-        <Box flexDirection="column" marginTop={1}>
+        <Box flexDirection="column" marginTop={footerMarginTop}>
           {footerLines.map(renderLine)}
         </Box>
       )}

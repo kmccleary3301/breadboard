@@ -273,7 +273,13 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
       return 1 + suggestionWindow.lineCount + hiddenRows
     })()
     const hintCount = overlayActive ? 0 : Math.min(4, hints.length)
-    const claudeStatusRows = claudeChrome ? 1 : 0
+    const claudeStatusRows = claudeChrome
+      ? statusLinePosition === "below_input"
+        ? context.shortcutsOpen
+          ? 1
+          : 0
+        : 1
+      : 0
     const claudeShortcutRows = claudeChrome ? (context.shortcutsOpen ? 6 : 1) : 0
     const hintRows = overlayActive
       ? 0
@@ -315,6 +321,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     todoPreviewModel,
     overlayActive,
     pendingClaudeStatus,
+    statusLinePosition,
     suggestions.length,
     suggestionWindow.hiddenAbove,
     suggestionWindow.hiddenBelow,

@@ -152,6 +152,11 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
   } = context
 
   const modalStack: ModalDescriptor[] = []
+  const normalizedTaskTailLines: string[] = Array.isArray(taskTailLines)
+    ? taskTailLines
+        .map((line: unknown) => (typeof line === "string" ? line : String(line ?? "")))
+        .filter((line: string) => line.length > 0)
+    : []
 
   const confirmModal = buildConfirmModal(confirmState, PANEL_WIDTH)
   if (confirmModal) modalStack.push(confirmModal)
@@ -514,13 +519,12 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     })
   }
 
-  if (todosOpen) {
+  if (todosOpen && !claudeChrome) {
     modalStack.push({
       id: "todos",
-      layout: isBreadboardProfile ? "sheet" : undefined,
+      layout: undefined,
       render: () => {
-        const sheetMode = isBreadboardProfile
-        const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
+        const panelWidth = PANEL_WIDTH
         const scroll = Math.max(0, Math.min(todoScroll, todoMaxScroll))
         const visible = todoRows.slice(scroll, scroll + todoViewportRows)
         const colorForStatus = (status?: string) => {
@@ -572,8 +576,8 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             borderColor={COLORS.info}
             paddingX={2}
             paddingY={1}
-            alignSelf={sheetMode ? "flex-start" : "center"}
-            marginTop={sheetMode ? 0 : 2}
+            alignSelf="center"
+            marginTop={2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={panelRows}
@@ -1081,9 +1085,9 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             footerLines.push({ text: safeTaskNotice, color: "dim" })
           }
         }
-        if (taskTailLines.length > 0) {
+        if (normalizedTaskTailLines.length > 0) {
           footerLines.push({ text: taskTailPath ? `Tail: ${taskTailPath}` : "Tail output", color: "dim" })
-          taskTailLines.forEach((line: any) => footerLines.push({ text: line, color: "dim" }))
+          normalizedTaskTailLines.forEach((line: string) => footerLines.push({ text: line, color: "dim" }))
         }
         return (
           <SelectPanel
@@ -1203,9 +1207,9 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           footerLines.push({ text: "Enter: load output tail.", color: "dim" })
         }
         if (taskNotice) footerLines.push({ text: taskNotice, color: "dim" })
-        if (taskTailLines.length > 0) {
+        if (normalizedTaskTailLines.length > 0) {
           footerLines.push({ text: taskTailPath ? `Tail: ${taskTailPath}` : "Tail output", color: "dim" })
-          taskTailLines.forEach((line: string) => footerLines.push({ text: line, color: "dim" }))
+          normalizedTaskTailLines.forEach((line: string) => footerLines.push({ text: line, color: "dim" }))
         }
 
         return (

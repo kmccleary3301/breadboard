@@ -137,7 +137,7 @@ const renderAsciiLines = (width: number) =>
 
 const buildBoardLines = (context: LandingContext) => {
   const BOX = resolveBoxChars(context.borderStyle)
-  const width = Math.max(1, context.contentWidth - 1)
+  const width = Math.max(1, context.contentWidth)
   const leftPad = 0
   const inner = width - 2
   const leftWidth = Math.floor((inner - 1) * 0.55)
@@ -195,7 +195,7 @@ const buildBoardLines = (context: LandingContext) => {
 }
 
 const buildSplitLines = (context: LandingContext) => {
-  const width = Math.max(1, context.contentWidth - 1)
+  const width = Math.max(1, context.contentWidth)
   const asciiWidth = Math.max(...ASCII_HEADER.map((line) => line.length))
   const leftWidth = Math.min(width - 20, asciiWidth + 2)
   const gap = 3
@@ -219,7 +219,7 @@ const buildSplitLines = (context: LandingContext) => {
 
 const buildCompactLines = (context: LandingContext) => {
   const BOX = resolveBoxChars(context.borderStyle)
-  const width = Math.max(1, context.contentWidth - 1)
+  const width = Math.max(1, context.contentWidth)
   const leftPad = 0
   const inner = width - 2
   const contentWidth = Math.max(1, inner - 2)

@@ -1,8 +1,12 @@
 [
-  {"type": "key", "key": "Escape", "wait": 0.1},
-  {"type": "key", "key": "Escape", "wait": 0.1},
-  {"type": "sleep", "seconds": 1.5},
-  {"type": "wait_until", "contains": ["for shortcuts"], "timeout": 60},
+  {
+    "type": "startup_preflight",
+    "timeout": 20,
+    "interval": 0.3,
+    "ready_tokens": ["for shortcuts"],
+    "kick_keys": ["Escape"],
+    "kick_every_polls": 1
+  },
   {
     "type": "send",
     "text": "replay:config/cli_bridge_replays/phase4/todo_preview_smoke_v1.jsonl",
@@ -10,11 +14,54 @@
     "clear_first": true,
     "clear_mode": "ctrl_u"
   },
-  {"type": "wait_until", "contains": ["TODOs:"], "timeout": 20},
-  {"type": "wait_for_quiet", "quiet_seconds": 1.5, "timeout": 30},
+  {
+    "type": "wait_until",
+    "contains": ["TODOs:"],
+    "absent": ["Cannot read properties of undefined (reading 'length')", "buildModalStack.tsx:1084"],
+    "timeout": 20
+  },
+  {
+    "type": "wait_for_quiet",
+    "quiet_seconds": 1.5,
+    "timeout": 30,
+    "must_not_contain": [
+      "Cannot read properties of undefined (reading 'length')",
+      "buildModalStack.tsx:1084",
+      "UnhandledPromiseRejection",
+      "[phase4 replay target exited]",
+      "[phase4 replay target] cli_bridge health check failed"
+    ],
+    "semantic_timeout": 5,
+    "semantic_fail_fast": true
+  },
   {"type": "key", "key": "C-t", "wait": 0.2},
-  {"type": "wait_for_quiet", "quiet_seconds": 1.5, "timeout": 30},
+  {
+    "type": "wait_for_quiet",
+    "quiet_seconds": 1.5,
+    "timeout": 30,
+    "must_not_contain": [
+      "Cannot read properties of undefined (reading 'length')",
+      "buildModalStack.tsx:1084",
+      "UnhandledPromiseRejection",
+      "[phase4 replay target exited]",
+      "[phase4 replay target] cli_bridge health check failed"
+    ],
+    "semantic_timeout": 5,
+    "semantic_fail_fast": true
+  },
   {"type": "key", "key": "Escape", "wait": 0.2},
-  {"type": "wait_for_quiet", "quiet_seconds": 0.8, "timeout": 30}
+  {
+    "type": "wait_for_quiet",
+    "quiet_seconds": 0.8,
+    "timeout": 30,
+    "must_not_contain": [
+      "Cannot read properties of undefined (reading 'length')",
+      "buildModalStack.tsx:1084",
+      "UnhandledPromiseRejection",
+      "[phase4 replay target exited]",
+      "[phase4 replay target] cli_bridge health check failed"
+    ],
+    "semantic_timeout": 5,
+    "semantic_fail_fast": true
+  }
 ]
-

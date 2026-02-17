@@ -11,6 +11,8 @@ export const RuntimePreviewStack: React.FC<{
   readonly hintNodes: React.ReactNode[]
 }> = ({ claudeChrome, overlayActive, pendingClaudeStatus, todoPreviewModel, hintNodes }) => {
   if (!claudeChrome) return null
+  const hasContent = Boolean(pendingClaudeStatus) || Boolean(todoPreviewModel) || (!overlayActive && hintNodes.length > 0)
+  if (!hasContent) return null
 
   return (
     <Box flexDirection="column">

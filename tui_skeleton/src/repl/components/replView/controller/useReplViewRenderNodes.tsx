@@ -257,6 +257,21 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
       ))
       return [...belowStatusLine, ...lines]
     }
+    if (statusLinePosition === "below_input" && statusText) {
+      const left = "  ? for shortcuts"
+      const width = Math.max(1, contentWidth)
+      let combined = `${left} ${statusText}`
+      if (left.length + statusText.length < width) {
+        combined = `${left}${" ".repeat(Math.max(1, width - left.length - statusText.length))}${statusText}`
+      } else if (combined.length > width) {
+        combined = combined.slice(0, width)
+      }
+      return [
+        <Text key="hint-claude-shortcuts-status" color={COLORS.textMuted}>
+          {combined}
+        </Text>,
+      ]
+    }
     return [
       ...belowStatusLine,
       <Text key="hint-claude-shortcuts" color={COLORS.textMuted}>

@@ -13,6 +13,12 @@ type ComposerPanelContext = Record<string, any>
 export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ context }) => {
   const {
     claudeChrome,
+    todosOpen,
+    todos,
+    todoRows,
+    todoScroll,
+    todoMaxScroll,
+    todoViewportRows,
     modelMenu,
     pendingClaudeStatus,
     todoPreviewModel,
@@ -67,6 +73,81 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
 
   const showClaudePlaceholder =
     claudeChrome && input.length === 0 && attachments.length === 0 && fileMentions.length === 0
+
+  if (claudeChrome && todosOpen) {
+    const scroll = Math.max(0, Math.min(todoScroll ?? 0, todoMaxScroll ?? 0))
+    const visibleRows = Array.isArray(todoRows) ? todoRows.slice(scroll, scroll + (todoViewportRows ?? 0)) : []
+    const colorForStatus = (status?: string) => {
+      switch (status) {
+        case "in_progress":
+          return COLORS.info
+        case "done":
+          return COLORS.success
+        case "blocked":
+          return COLORS.error
+        case "canceled":
+          return COLORS.muted
+        default:
+          return COLORS.warning
+      }
+    }
+    const titleLines: SelectPanelLine[] = [{ text: CHALK.bold("Todos"), color: COLORS.info }]
+    const hintLines: SelectPanelLine[] = [
+      {
+        text:
+          (Array.isArray(todos) ? todos.length : 0) === 0
+            ? "No todos yet."
+            : `${Array.isArray(todos) ? todos.length : 0} item${Array.isArray(todos) && todos.length === 1 ? "" : "s"} • ↑/↓ scroll • PgUp/PgDn page • Esc close`,
+        color: "gray",
+      },
+    ]
+    const panelRows: SelectPanelRow[] = []
+    if (!Array.isArray(todoRows) || todoRows.length === 0) {
+      panelRows.push({ kind: "empty", text: "TodoWrite output will appear here once the agent updates the board.", color: "dim" })
+    } else {
+      visibleRows.forEach((row: any) => {
+        if (row.kind === "header") {
+          panelRows.push({ kind: "header", text: row.label, color: colorForStatus(row.status) })
+        } else {
+          panelRows.push({ kind: "item", text: `  • ${row.label}`, wrap: "truncate-end" })
+        }
+      })
+      if (todoRows.length > (todoViewportRows ?? 0)) {
+        panelRows.push({
+          kind: "header",
+          text: `${scroll + 1}-${Math.min(scroll + (todoViewportRows ?? 0), todoRows.length)} of ${todoRows.length}`,
+          color: "dim",
+        })
+      }
+    }
+
+    return (
+      <Box marginTop={0} flexDirection="column" width={ruleWidth}>
+        {composerShowTopRule ? (
+          <Text color={COLORS.textMuted} wrap="truncate">
+            {promptRuleLine}
+          </Text>
+        ) : null}
+        <SelectPanel
+          width={ruleWidth}
+          showBorder={false}
+          paddingX={0}
+          paddingY={0}
+          marginTop={0}
+          alignSelf="flex-start"
+          rowsMarginTop={0}
+          titleLines={titleLines}
+          hintLines={hintLines}
+          rows={panelRows}
+        />
+        {composerShowBottomRule ? (
+          <Text color={COLORS.textMuted} wrap="truncate">
+            {promptRuleLine}
+          </Text>
+        ) : null}
+      </Box>
+    )
+  }
 
   return (
     <Box marginTop={claudeChrome ? 0 : 1} flexDirection="column" width={ruleWidth}>

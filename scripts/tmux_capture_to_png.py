@@ -9,11 +9,13 @@ Why:
 Usage:
   python scripts/tmux_capture_to_png.py --target crush_color_demo:0
   python scripts/tmux_capture_to_png.py --target cc_transcript_viewer_manual:0 --out docs_tmp/captures/cc.png
+  python scripts/tmux_capture_to_png.py --target crush_color_demo:0 --scale 0.75
 
 Notes:
 - Requires: tmux, Python Pillow (PIL), wcwidth.
 - This renders xterm-256 and truecolor SGR sequences (38/48;5 and 38/48;2).
 - Default background/foreground are approximations; adjust with --bg/--fg to match your terminal theme.
+- Optional renderer: --renderer xterm-xvfb uses a real xterm + Xvfb + xwd + ImageMagick convert.
 """
 
 from __future__ import annotations
@@ -21,6 +23,8 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -29,10 +33,16 @@ from typing import Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 from wcwidth import wcwidth
+from tmux_capture_render_profile import (
+    DEFAULT_RENDER_PROFILE_ID,
+    SUPPORTED_RENDER_PROFILES,
+    append_profile_cli_args,
+    resolve_render_profile,
+)
 
 
-DEFAULT_FG = (235, 235, 235)
-DEFAULT_BG = (38, 38, 38)
+DEFAULT_FG = (241, 245, 249)
+DEFAULT_BG = (31, 36, 48)
 
 
 XTERM_16 = {
@@ -116,7 +126,74 @@ class Cell:
     style: Style = field(default_factory=Style)
 
 
-CSI_RE = re.compile(r"\x1b\[([0-9;?]*)([@-~])")
+CSI_RE = re.compile(r"\x1b\[([0-9;?$>< ]*)([@-~])")
+OSC_START = "\x1b]"
+OSC_END = "\x1b\\"
+
+FONT_CANDIDATES = [
+    {
+        "regular": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "bold": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+        "italic": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Oblique.ttf",
+        "bold_italic": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-BoldOblique.ttf",
+    },
+    {
+        "regular": "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
+        "bold": "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
+        "italic": "/usr/share/fonts/truetype/liberation/LiberationMono-Italic.ttf",
+        "bold_italic": "/usr/share/fonts/truetype/liberation/LiberationMono-BoldItalic.ttf",
+    },
+    {
+        "regular": "/usr/share/fonts/truetype/ubuntu/UbuntuMono-R.ttf",
+        "bold": "/usr/share/fonts/truetype/ubuntu/UbuntuMono-B.ttf",
+        "italic": "/usr/share/fonts/truetype/ubuntu/UbuntuMono-RI.ttf",
+        "bold_italic": "/usr/share/fonts/truetype/ubuntu/UbuntuMono-BI.ttf",
+    },
+    {
+        "regular": "/usr/share/fonts/truetype/noto/NotoSansMono-Regular.ttf",
+        "bold": "/usr/share/fonts/truetype/noto/NotoSansMono-Bold.ttf",
+        "italic": "/usr/share/fonts/truetype/noto/NotoSansMono-Italic.ttf",
+        "bold_italic": "/usr/share/fonts/truetype/noto/NotoSansMono-BoldItalic.ttf",
+    },
+    {
+        "regular": "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
+        "bold": "/usr/share/fonts/truetype/freefont/FreeMonoBold.ttf",
+        "italic": "/usr/share/fonts/truetype/freefont/FreeMonoOblique.ttf",
+        "bold_italic": "/usr/share/fonts/truetype/freefont/FreeMonoBoldOblique.ttf",
+    },
+]
+
+
+PROFILE_CONTROLLED_FLAGS: tuple[str, ...] = (
+    "--bg",
+    "--fg",
+    "--font-size",
+    "--font-path",
+    "--font-bold-path",
+    "--font-italic-path",
+    "--font-bold-italic-path",
+    "--renderer",
+    "--xterm-font",
+    "--xterm-sleep",
+    "--scale",
+    "--cell-width",
+    "--cell-height",
+    "--line-gap",
+    "--pad-x",
+    "--pad-y",
+)
+
+
+def argv_contains_flag(argv: list[str], flag: str) -> bool:
+    return any(arg == flag or arg.startswith(f"{flag}=") for arg in argv)
+
+
+@dataclass
+class FontPack:
+    regular: ImageFont.ImageFont
+    bold: ImageFont.ImageFont | None = None
+    italic: ImageFont.ImageFont | None = None
+    bold_italic: ImageFont.ImageFont | None = None
 
 
 def render_ansi_to_png(
@@ -126,7 +203,14 @@ def render_ansi_to_png(
     out_path: Path,
     fg_default: Tuple[int, int, int],
     bg_default: Tuple[int, int, int],
-    font_size: int,
+    scale: float,
+    fonts: FontPack,
+    cell_width: int,
+    cell_height: int,
+    line_gap: int,
+    pad_x: int,
+    pad_y: int,
+    snapshot_mode: bool = True,
 ) -> None:
     cols = max(1, int(cols))
     rows = max(1, int(rows))
@@ -136,16 +220,53 @@ def render_ansi_to_png(
     DEFAULT_FG = fg_default
     DEFAULT_BG = bg_default
 
-    grid = [[Cell(" ", Style()) for _ in range(cols)] for _ in range(rows)]
+    def blank_row() -> list[Cell]:
+        return [Cell(" ", Style()) for _ in range(cols)]
+
+    grid = [blank_row() for _ in range(rows)]
+    last_nonempty_grid = None
+
+    def clone_grid(source):
+        return [[Cell(cell.ch, cell.style.copy()) for cell in row_cells] for row_cells in source]
+
+    def grid_has_content(source):
+        for row_cells in source:
+            for cell in row_cells:
+                if cell.ch != " ":
+                    return True
+        return False
 
     style = Style()
     row = 0
     col = 0
     idx = 0
 
-    while idx < len(ansi_text) and row < rows:
+    def scroll_up(lines: int = 1) -> None:
+        nonlocal grid, row, col
+        if lines <= 0:
+            return
+        for _ in range(lines):
+            if grid:
+                grid.pop(0)
+            grid.append(blank_row())
+        row = max(0, rows - 1)
+        col = 0
+
+    while idx < len(ansi_text):
         ch = ansi_text[idx]
         if ch == "\x1b":
+            if idx + 1 < len(ansi_text) and ansi_text[idx + 1] == "]":
+                # OSC sequence, skip until BEL or ST (ESC \)
+                osc_end = ansi_text.find("\x07", idx + 2)
+                st_end = ansi_text.find("\x1b\\", idx + 2)
+                if st_end != -1 and (osc_end == -1 or st_end < osc_end):
+                    idx = st_end + 2
+                    continue
+                if osc_end != -1:
+                    idx = osc_end + 1
+                    continue
+                idx += 1
+                continue
             m = CSI_RE.match(ansi_text, idx)
             if m:
                 params_raw, final = m.group(1), m.group(2)
@@ -224,12 +345,58 @@ def render_ansi_to_png(
                                         style.bg = color
                                     i += 4
                         i += 1
+                elif final in ("H", "f"):
+                    row_val = nums[0] if len(nums) >= 1 and nums[0] > 0 else 1
+                    col_val = nums[1] if len(nums) >= 2 and nums[1] > 0 else 1
+                    row = max(0, min(rows - 1, row_val - 1))
+                    col = max(0, min(cols - 1, col_val - 1))
+                elif final == "A":
+                    n = nums[0] if nums else 1
+                    row = max(0, row - n)
+                elif final == "B":
+                    n = nums[0] if nums else 1
+                    row = min(rows - 1, row + n)
+                elif final == "C":
+                    n = nums[0] if nums else 1
+                    col = min(cols - 1, col + n)
+                elif final == "D":
+                    n = nums[0] if nums else 1
+                    col = max(0, col - n)
+                elif final == "J":
+                    mode = nums[0] if nums else 0
+                    if mode == 2 or mode == 3 or (mode == 0 and row == 0 and col == 0):
+                        if grid_has_content(grid):
+                            last_nonempty_grid = clone_grid(grid)
+                        grid = [blank_row() for _ in range(rows)]
+                        row = 0
+                        col = 0
+                    elif mode == 1:
+                        for r in range(0, row + 1):
+                            start = 0
+                            end = cols if r < row else col + 1
+                            for c in range(start, end):
+                                grid[r][c] = Cell(" ", style.copy())
+                    else:
+                        for r in range(row, rows):
+                            start = col if r == row else 0
+                            for c in range(start, cols):
+                                grid[r][c] = Cell(" ", style.copy())
                 elif final == "K":
-                    # erase to end of line
+                    mode = nums[0] if nums else 0
                     if 0 <= row < rows:
-                        for c in range(col, cols):
-                            grid[row][c] = Cell(" ", style.copy())
+                        if mode == 1:
+                            for c in range(0, col + 1):
+                                grid[row][c] = Cell(" ", style.copy())
+                        elif mode == 2:
+                            for c in range(cols):
+                                grid[row][c] = Cell(" ", style.copy())
+                        else:
+                            for c in range(col, cols):
+                                grid[row][c] = Cell(" ", style.copy())
                 # ignore other CSI
+                continue
+            if idx + 1 < len(ansi_text):
+                idx += 2
                 continue
             idx += 1
             continue
@@ -237,6 +404,10 @@ def render_ansi_to_png(
         if ch == "\n":
             row += 1
             col = 0
+            if row >= rows:
+                if snapshot_mode:
+                    break
+                scroll_up(row - rows + 1)
             idx += 1
             continue
         if ch == "\r":
@@ -270,55 +441,192 @@ def render_ansi_to_png(
             col += 1
 
         if col >= cols:
-            row += 1
-            col = 0
+            if snapshot_mode:
+                col = cols - 1
+            else:
+                row += 1
+                col = 0
+                if row >= rows:
+                    scroll_up(row - rows + 1)
 
         idx += 1
 
-    font_paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
-    ]
-    font_path = next((p for p in font_paths if Path(p).exists()), None)
-    font = ImageFont.truetype(font_path, font_size) if font_path else ImageFont.load_default()
+    font_regular = fonts.regular
+    font_bold = fonts.bold
+    font_italic = fonts.italic
+    font_bold_italic = fonts.bold_italic
 
-    bbox = font.getbbox("M")
+    bbox = font_regular.getbbox("M")
     cell_w = max(8, bbox[2] - bbox[0])
-    ascent, descent = font.getmetrics()
-    cell_h = max(16, ascent + descent + 4)
+    ascent, descent = font_regular.getmetrics()
+    cell_h = max(1, ascent + descent + line_gap)
+    if cell_width > 0:
+        cell_w = cell_width
+    if cell_height > 0:
+        cell_h = cell_height
 
-    img = Image.new("RGB", (cols * cell_w, rows * cell_h), bg_default)
+    if last_nonempty_grid is not None and not grid_has_content(grid):
+        grid = last_nonempty_grid
+
+    img = Image.new("RGB", (cols * cell_w + pad_x * 2, rows * cell_h + pad_y * 2), bg_default)
     draw = ImageDraw.Draw(img)
 
     for r in range(rows):
-        y0 = r * cell_h
+        y0 = pad_y + r * cell_h
         for c in range(cols):
-            x0 = c * cell_w
+            x0 = pad_x + c * cell_w
             cell = grid[r][c]
             draw.rectangle([x0, y0, x0 + cell_w, y0 + cell_h], fill=cell.style.bg)
             if cell.ch != " ":
-                draw.text((x0, y0 + 1), cell.ch, font=font, fill=cell.style.fg)
-                if cell.style.bold:
-                    draw.text((x0 + 1, y0 + 1), cell.ch, font=font, fill=cell.style.fg)
+                text_y = y0 + max(0, (cell_h - (ascent + descent)) // 2)
+                cell_font = font_regular
+                if cell.style.bold and cell.style.italic and font_bold_italic is not None:
+                    cell_font = font_bold_italic
+                elif cell.style.bold and font_bold is not None:
+                    cell_font = font_bold
+                elif cell.style.italic and font_italic is not None:
+                    cell_font = font_italic
+                draw.text((x0, text_y), cell.ch, font=cell_font, fill=cell.style.fg)
+                if cell.style.bold and cell_font == font_regular and font_bold is None:
+                    draw.text((x0 + 1, text_y), cell.ch, font=cell_font, fill=cell.style.fg)
             if cell.style.underline:
                 underline_y = y0 + cell_h - 3
                 draw.line([x0, underline_y, x0 + cell_w - 1, underline_y], fill=cell.style.fg)
+
+    if scale and abs(scale - 1.0) > 1e-3:
+        new_w = max(1, int(img.width * scale))
+        new_h = max(1, int(img.height * scale))
+        img = img.resize((new_w, new_h), resample=Image.NEAREST)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path)
 
 
-def tmux_base_args(socket_name: str) -> list[str]:
-    socket_name = (socket_name or "").strip()
-    if not socket_name:
-        return ["tmux"]
-    return ["tmux", "-L", socket_name]
+def render_ansi_with_xterm(
+    ansi_path: Path,
+    cols: int,
+    rows: int,
+    out_path: Path,
+    bg_hex: str,
+    fg_hex: str,
+    font_name: str,
+    font_size: int,
+    sleep_seconds: float,
+) -> None:
+    for cmd in ("Xvfb", "xterm", "xwd", "convert", "xwininfo"):
+        if not shutil.which(cmd):
+            raise RuntimeError(f"Missing required command for xterm renderer: {cmd}")
+
+    # Pick an unused display number.
+    display_num = 90 + (int(time.time()) % 50)
+    for _ in range(50):
+        candidate = f"/tmp/.X11-unix/X{display_num}"
+        if not Path(candidate).exists():
+            break
+        display_num += 1
+    display = f":{display_num}"
+    screen_w = max(640, cols * 12 + 40)
+    screen_h = max(480, rows * 24 + 40)
+    xvfb = subprocess.Popen(
+        ["Xvfb", display, "-screen", "0", f"{screen_w}x{screen_h}x24", "-nolisten", "tcp"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        env = os.environ.copy()
+        env["DISPLAY"] = display
+        time.sleep(0.1)
+        title = f"tmux-ansi-render-{int(time.time() * 1000)}"
+        render_cmd = (
+            "printf '\\033[?1049h\\033[H\\033[2J'; "
+            f"cat {shlex.quote(str(ansi_path))}; "
+            f"sleep {sleep_seconds}"
+        )
+        xterm = subprocess.Popen(
+            [
+                "xterm",
+                "-T",
+                title,
+                "-fa",
+                font_name,
+                "-fs",
+                str(font_size),
+                "-geometry",
+                f"{cols}x{rows}",
+                "+sb",
+                "-b",
+                "0",
+                "-xrm",
+                "XTerm*internalBorder:0",
+                "-xrm",
+                "XTerm*scrollBar:false",
+                "-xrm",
+                "XTerm*borderWidth:0",
+                "-xrm",
+                "XTerm*cursorBlink:false",
+                "-bg",
+                f"#{bg_hex}",
+                "-fg",
+                f"#{fg_hex}",
+                "-e",
+                "bash",
+                "-lc",
+                render_cmd,
+            ],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            window_id = ""
+            for _ in range(80):
+                try:
+                    info = subprocess.check_output(
+                        ["xwininfo", "-root", "-tree"],
+                        env=env,
+                        text=True,
+                        errors="ignore",
+                    )
+                except subprocess.CalledProcessError:
+                    time.sleep(0.05)
+                    continue
+                for line in info.splitlines():
+                    if title in line:
+                        window_id = line.strip().split()[0]
+                        break
+                if window_id:
+                    break
+                time.sleep(0.05)
+            if not window_id:
+                raise RuntimeError("xterm window not found for screenshot.")
+            xwd = None
+            for _ in range(20):
+                try:
+                    xwd = subprocess.check_output(["xwd", "-silent", "-id", window_id], env=env)
+                    break
+                except subprocess.CalledProcessError:
+                    time.sleep(0.05)
+            if xwd is None:
+                raise RuntimeError("xwd failed to capture xterm window.")
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["convert", "xwd:-", str(out_path)], input=xwd, check=True)
+        finally:
+            xterm.terminate()
+            try:
+                xterm.wait(timeout=1)
+            except Exception:
+                xterm.kill()
+    finally:
+        xvfb.terminate()
+        try:
+            xvfb.wait(timeout=1)
+        except Exception:
+            xvfb.kill()
 
 
-def tmux_pane_size(target: str, socket_name: str = "") -> Tuple[int, int]:
+def tmux_pane_size(target: str) -> Tuple[int, int]:
     out = subprocess.check_output(
-        [*tmux_base_args(socket_name), "display-message", "-p", "-t", target, "#{pane_width} #{pane_height}"],
+        ["tmux", "display-message", "-p", "-t", target, "#{pane_width} #{pane_height}"],
         text=True,
     ).strip()
     parts = out.split()
@@ -327,64 +635,498 @@ def tmux_pane_size(target: str, socket_name: str = "") -> Tuple[int, int]:
     return int(parts[0]), int(parts[1])
 
 
-def tmux_capture(target: str, out_ansi: Path, out_txt: Path, socket_name: str = "") -> None:
+def tmux_target_format(target: str, fmt: str) -> str:
+    return subprocess.check_output(
+        ["tmux", "display-message", "-p", "-t", target, fmt],
+        text=True,
+    ).strip()
+
+
+def tmux_session_name(target: str) -> str:
+    return tmux_target_format(target, "#{session_name}")
+
+
+def tmux_window_size(target: str) -> Tuple[int, int]:
+    out = tmux_target_format(target, "#{window_width} #{window_height}")
+    parts = out.split()
+    if len(parts) != 2:
+        raise RuntimeError(f"Unexpected tmux window size output: {out!r}")
+    return int(parts[0]), int(parts[1])
+
+
+def tmux_focus_target(target: str) -> None:
+    subprocess.run(["tmux", "select-window", "-t", target], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["tmux", "select-pane", "-t", target], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _terminate_process(proc: subprocess.Popen | None) -> None:
+    if not proc:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=1)
+    except Exception:
+        proc.kill()
+
+
+def attach_tmux_client_headless(
+    target: str,
+    cols: int,
+    rows: int,
+    bg_hex: str,
+    fg_hex: str,
+    font_name: str,
+    font_size: int,
+    sleep_seconds: float,
+) -> tuple[subprocess.Popen, subprocess.Popen, dict]:
+    for cmd in ("Xvfb", "xterm"):
+        if not shutil.which(cmd):
+            raise RuntimeError(f"Missing required command for attach: {cmd}")
+
+    session_name = tmux_session_name(target)
+    tmux_focus_target(target)
+
+    display_num = 90 + (int(time.time()) % 50)
+    for _ in range(50):
+        candidate = f"/tmp/.X11-unix/X{display_num}"
+        if not Path(candidate).exists():
+            break
+        display_num += 1
+    display = f":{display_num}"
+    screen_w = max(640, cols * 12 + 40)
+    screen_h = max(480, rows * 24 + 40)
+    xvfb = subprocess.Popen(
+        ["Xvfb", display, "-screen", "0", f"{screen_w}x{screen_h}x24", "-nolisten", "tcp"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    env = os.environ.copy()
+    env["DISPLAY"] = display
+    time.sleep(0.1)
+    title = f"tmux-attach-{int(time.time() * 1000)}"
+    attach_cmd = f"tmux attach -t {shlex.quote(session_name)} -r"
+    xterm = subprocess.Popen(
+        [
+            "xterm",
+            "-T",
+            title,
+            "-fa",
+            font_name,
+            "-fs",
+            str(font_size),
+            "-geometry",
+            f"{cols}x{rows}",
+            "+sb",
+            "-b",
+            "0",
+            "-xrm",
+            "XTerm*internalBorder:0",
+            "-xrm",
+            "XTerm*scrollBar:false",
+            "-xrm",
+            "XTerm*borderWidth:0",
+            "-xrm",
+            "XTerm*cursorBlink:false",
+            "-bg",
+            f"#{bg_hex}",
+            "-fg",
+            f"#{fg_hex}",
+            "-e",
+            "bash",
+            "-lc",
+            attach_cmd,
+        ],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    time.sleep(max(0.0, sleep_seconds))
+    return xvfb, xterm, env
+
+
+def tmux_capture(
+    target: str,
+    out_ansi: Path,
+    out_txt: Path,
+    out_scrollback_ansi: Path | None = None,
+    out_scrollback_txt: Path | None = None,
+) -> None:
     out_ansi.parent.mkdir(parents=True, exist_ok=True)
     out_txt.parent.mkdir(parents=True, exist_ok=True)
     # -e: include escape sequences; -p: print to stdout
-    ansi = subprocess.check_output([*tmux_base_args(socket_name), "capture-pane", "-ep", "-t", target], text=False)
+    ansi = subprocess.check_output(["tmux", "capture-pane", "-ep", "-t", target], text=False)
     out_ansi.write_bytes(ansi)
-    txt = subprocess.check_output([*tmux_base_args(socket_name), "capture-pane", "-p", "-t", target], text=True)
+    txt = subprocess.check_output(["tmux", "capture-pane", "-pJ", "-t", target], text=True)
     out_txt.write_text(txt)
+    if out_scrollback_ansi is not None:
+        ansi_full = subprocess.check_output(["tmux", "capture-pane", "-ep", "-t", target, "-S", "-"], text=False)
+        out_scrollback_ansi.write_bytes(ansi_full)
+    if out_scrollback_txt is not None:
+        txt_full = subprocess.check_output(["tmux", "capture-pane", "-pJ", "-t", target, "-S", "-"], text=True)
+        out_scrollback_txt.write_text(txt_full)
+
+
+def resolve_font_paths(
+    regular: str,
+    bold: str,
+    italic: str,
+    bold_italic: str,
+) -> dict:
+    if regular:
+        base = {
+            "regular": regular,
+            "bold": bold,
+            "italic": italic,
+            "bold_italic": bold_italic,
+        }
+    else:
+        base = {}
+        for cand in FONT_CANDIDATES:
+            if Path(cand["regular"]).exists():
+                base = cand
+                break
+    resolved = {}
+    for key in ("regular", "bold", "italic", "bold_italic"):
+        override = {"regular": regular, "bold": bold, "italic": italic, "bold_italic": bold_italic}[key]
+        candidate = base.get(key)
+        chosen = override or candidate or ""
+        resolved[key] = chosen if chosen and Path(chosen).exists() else ""
+    return resolved
+
+
+def strip_ansi(payload: str) -> str:
+    payload = CSI_RE.sub("", payload)
+    while True:
+        start = payload.find(OSC_START)
+        if start == -1:
+            break
+        end = payload.find("\x07", start + 2)
+        esc_end = payload.find(OSC_END, start + 2)
+        if esc_end != -1 and (end == -1 or esc_end < end):
+            end = esc_end + len(OSC_END)
+        elif end != -1:
+            end = end + 1
+        if end == -1:
+            payload = payload[:start]
+            break
+        payload = payload[:start] + payload[end:]
+    return payload
+
+
+def _display_width(text: str) -> int:
+    width = 0
+    for ch in text:
+        w = wcwidth(ch)
+        if w > 0:
+            width += w
+    return width
+
+
+def count_rows_from_text(text: str, cols: int) -> int:
+    cols = max(1, int(cols))
+    total = 0
+    for line in text.splitlines():
+        width = _display_width(line)
+        if width <= 0:
+            total += 1
+        else:
+            total += (width + cols - 1) // cols
+    return max(1, total)
+
+
+def count_ansi_rows(ansi_text: str, cols: int) -> int:
+    cols = max(1, int(cols))
+    row = 0
+    col = 0
+    idx = 0
+    max_row = 0
+
+    while idx < len(ansi_text):
+        ch = ansi_text[idx]
+        if ch == "\x1b":
+            if idx + 1 < len(ansi_text) and ansi_text[idx + 1] == "]":
+                osc_end = ansi_text.find("\x07", idx + 2)
+                st_end = ansi_text.find("\x1b\\", idx + 2)
+                if st_end != -1 and (osc_end == -1 or st_end < osc_end):
+                    idx = st_end + 2
+                    continue
+                if osc_end != -1:
+                    idx = osc_end + 1
+                    continue
+                idx += 1
+                continue
+            m = CSI_RE.match(ansi_text, idx)
+            if m:
+                params_raw, final = m.group(1), m.group(2)
+                idx = m.end()
+                params = [p for p in (params_raw[1:] if params_raw.startswith("?") else params_raw).split(";") if p]
+                nums = []
+                for p in params:
+                    try:
+                        nums.append(int(p))
+                    except ValueError:
+                        pass
+                if final in ("H", "f"):
+                    row_val = nums[0] if len(nums) >= 1 and nums[0] > 0 else 1
+                    col_val = nums[1] if len(nums) >= 2 and nums[1] > 0 else 1
+                    row = max(0, row_val - 1)
+                    col = max(0, col_val - 1)
+                elif final == "A":
+                    n = nums[0] if nums else 1
+                    row = max(0, row - n)
+                elif final == "B":
+                    n = nums[0] if nums else 1
+                    row = row + n
+                elif final == "C":
+                    n = nums[0] if nums else 1
+                    col = col + n
+                elif final == "D":
+                    n = nums[0] if nums else 1
+                    col = max(0, col - n)
+                max_row = max(max_row, row)
+                continue
+            idx += 1
+            continue
+
+        if ch == "\n":
+            row += 1
+            col = 0
+            max_row = max(max_row, row)
+            idx += 1
+            continue
+        if ch == "\r":
+            col = 0
+            idx += 1
+            continue
+        if ch == "\t":
+            next_tab = ((col // 8) + 1) * 8
+            if next_tab >= cols:
+                row += next_tab // cols
+                col = next_tab % cols
+            else:
+                col = next_tab
+            max_row = max(max_row, row)
+            idx += 1
+            continue
+        if ord(ch) < 32:
+            idx += 1
+            continue
+
+        w = wcwidth(ch)
+        if w <= 0:
+            idx += 1
+            continue
+        col += w
+        if col >= cols:
+            row += col // cols
+            col = col % cols
+        max_row = max(max_row, row)
+        idx += 1
+
+    return max_row + 1
 
 
 def main() -> None:
+    argv_raw = list(os.sys.argv[1:])
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--target",
-        default="",
-        help="tmux pane target (e.g. session:window.pane or session:window). Required unless --ansi is provided.",
-    )
-    parser.add_argument(
-        "--tmux-socket",
-        default="",
-        help="tmux socket name (tmux -L <name>). Use this for isolated capture servers.",
-    )
-    parser.add_argument(
-        "--ansi",
-        default="",
-        help="render from an existing ANSI capture file instead of capturing from tmux",
-    )
-    parser.add_argument("--cols", type=int, default=0, help="required with --ansi: terminal columns")
-    parser.add_argument("--rows", type=int, default=0, help="required with --ansi: terminal rows")
-    parser.add_argument(
-        "--out",
-        default="",
-        help="output PNG path (default: docs_tmp/tmux_captures/<ts>_<target>.png). Required with --ansi.",
-    )
-    parser.add_argument("--bg", default="262626", help="default background hex (e.g. 262626)")
-    parser.add_argument("--fg", default="EBEBEB", help="default foreground hex (e.g. EBEBEB)")
+    parser.add_argument("--target", help="tmux pane target (e.g. session:window.pane or session:window)")
+    parser.add_argument("--ansi", help="path to ANSI capture file (skips tmux)")
+    parser.add_argument("--cols", type=int, default=0, help="columns when rendering --ansi capture")
+    parser.add_argument("--rows", type=int, default=0, help="rows when rendering --ansi capture")
+    parser.add_argument("--out", default="", help="output PNG path (default: docs_tmp/tmux_captures/<ts>_<target>.png)")
+    env_bg = os.environ.get("BREADBOARD_TERMINAL_BG", "").strip().lstrip("#") or "1f2430"
+    env_line_gap_raw = os.environ.get("BREADBOARD_TERMINAL_LINE_GAP", "").strip()
+    env_line_gap = int(env_line_gap_raw) if env_line_gap_raw else 0
+    env_font = os.environ.get("BREADBOARD_TERMINAL_FONT", "").strip()
+    parser.add_argument("--bg", default=env_bg, help="default background hex (e.g. 1f2430)")
+    parser.add_argument("--fg", default="f1f5f9", help="default foreground hex (e.g. f1f5f9)")
     parser.add_argument("--font-size", type=int, default=18, help="font size for rendering")
+    parser.add_argument("--font-path", default=env_font, help="path to regular font (ttf/otf)")
+    parser.add_argument("--font-bold-path", default="", help="path to bold font (ttf/otf)")
+    parser.add_argument("--font-italic-path", default="", help="path to italic font (ttf/otf)")
+    parser.add_argument("--font-bold-italic-path", default="", help="path to bold-italic font (ttf/otf)")
+    parser.add_argument(
+        "--renderer",
+        choices=["pillow", "xterm-xvfb"],
+        default="pillow",
+        help="render backend (pillow draws cells; xterm-xvfb screenshots real xterm)",
+    )
+    parser.add_argument("--xterm-font", default="DejaVu Sans Mono", help="xterm font name (Xft)")
+    parser.add_argument("--xterm-sleep", type=float, default=0.2, help="seconds to wait for xterm render")
+    parser.add_argument("--scale", type=float, default=1.0, help="scale output image (e.g. 0.75)")
+    parser.add_argument("--cell-width", type=int, default=0, help="override cell width in pixels")
+    parser.add_argument("--cell-height", type=int, default=0, help="override cell height in pixels")
+    parser.add_argument("--line-gap", type=int, default=env_line_gap, help="extra vertical pixels between rows")
+    parser.add_argument("--pad-x", type=int, default=0, help="horizontal padding in pixels")
+    parser.add_argument("--pad-y", type=int, default=0, help="vertical padding in pixels")
+    parser.add_argument("--scrollback", action="store_true", help="also capture full scrollback to .scrollback.txt/.ansi")
+    parser.add_argument(
+        "--scrollback-render",
+        action="store_true",
+        help="render the full scrollback into a single tall PNG",
+    )
     parser.add_argument("--keep", action="store_true", help="keep alongside .ansi and .txt (default keeps)")
+    parser.add_argument(
+        "--snapshot",
+        action="store_true",
+        help="render ANSI as a top-of-buffer snapshot (do not scroll; stop when rows are filled)",
+    )
+    parser.add_argument(
+        "--attach",
+        action="store_true",
+        help="attach a headless tmux client before capture (helps render input bars)",
+    )
+    parser.add_argument(
+        "--attach-sleep",
+        type=float,
+        default=0.4,
+        help="seconds to wait after attaching before capture",
+    )
+    parser.add_argument(
+        "--render-profile",
+        default=DEFAULT_RENDER_PROFILE_ID,
+        choices=SUPPORTED_RENDER_PROFILES,
+        help=(
+            "render profile lock. "
+            f"default={DEFAULT_RENDER_PROFILE_ID}; use '{SUPPORTED_RENDER_PROFILES[1]}' for legacy ad-hoc overrides."
+        ),
+    )
     args = parser.parse_args()
 
-    ansi_path = Path(args.ansi).expanduser().resolve() if args.ansi else None
-    target = str(args.target or "").strip()
-    tmux_socket = str(args.tmux_socket or "").strip()
+    profile = resolve_render_profile(args.render_profile)
+    if profile is not None:
+        forbidden = sorted(
+            flag for flag in PROFILE_CONTROLLED_FLAGS if argv_contains_flag(argv_raw, flag)
+        )
+        if forbidden:
+            raise SystemExit(
+                "render profile lock is enabled; remove profile-controlled overrides "
+                f"or pass --render-profile {SUPPORTED_RENDER_PROFILES[1]}: {', '.join(forbidden)}"
+            )
+        locked_overrides = append_profile_cli_args([], profile)
+        # Apply deterministic renderer settings after argparse resolution.
+        for i in range(0, len(locked_overrides), 2):
+            key = locked_overrides[i].lstrip("-").replace("-", "_")
+            value = locked_overrides[i + 1]
+            if key in {"font_size", "cell_width", "cell_height", "line_gap", "pad_x", "pad_y"}:
+                setattr(args, key, int(value))
+            elif key == "scale":
+                setattr(args, key, float(value))
+            else:
+                setattr(args, key, value)
 
-    if ansi_path is None and not target:
-        raise SystemExit("must provide either --target or --ansi")
+    if not args.target and not args.ansi:
+        raise SystemExit("Provide --target (tmux) or --ansi (file) to render.")
 
-    if ansi_path is not None:
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    if args.ansi:
+        ansi_path = Path(args.ansi).expanduser().resolve()
         if not ansi_path.exists():
-            raise SystemExit(f"ansi file not found: {ansi_path}")
-        cols = int(args.cols)
-        rows = int(args.rows)
+            raise SystemExit(f"ANSI capture not found: {ansi_path}")
+        safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", ansi_path.stem)
+        default_dir = Path("docs_tmp") / "ansi_captures"
+        out_png = Path(args.out) if args.out else (default_dir / f"{ts}_{safe_target}.png")
+        out_ansi = ansi_path
+        out_txt = out_png.with_suffix(".txt")
+        cols = args.cols
+        rows = args.rows
         if cols <= 0 or rows <= 0:
-            raise SystemExit("--cols and --rows are required and must be >0 when using --ansi")
-        if not args.out:
-            raise SystemExit("--out is required when using --ansi")
-        out_png = Path(args.out).expanduser().resolve()
-        ansi_text = ansi_path.read_text(errors="replace")
+            raise SystemExit("When using --ansi, please provide --cols and --rows.")
+        ansi_text = out_ansi.read_text(errors="replace")
+        out_txt.write_text(strip_ansi(ansi_text))
+    else:
+        cols, rows = tmux_pane_size(args.target)
+        attach_cols, attach_rows = cols, rows
+        if args.attach:
+            try:
+                attach_cols, attach_rows = tmux_window_size(args.target)
+            except Exception:
+                attach_cols, attach_rows = cols, rows
+        safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", args.target)
+        default_dir = Path("docs_tmp") / "tmux_captures"
+        out_png = Path(args.out) if args.out else (default_dir / f"{ts}_{safe_target}.png")
+        out_ansi = out_png.with_suffix(".ansi")
+        out_txt = out_png.with_suffix(".txt")
+        want_scrollback = args.scrollback or args.scrollback_render
+        scroll_ansi = out_png.with_suffix(".scrollback.ansi") if want_scrollback else None
+        scroll_txt = out_png.with_suffix(".scrollback.txt") if want_scrollback else None
+        xvfb_proc = None
+        xterm_proc = None
+        if args.attach:
+            xvfb_proc, xterm_proc, _ = attach_tmux_client_headless(
+                target=args.target,
+                cols=attach_cols,
+                rows=attach_rows,
+                bg_hex=args.bg,
+                fg_hex=args.fg,
+                font_name=args.xterm_font,
+                font_size=args.font_size,
+                sleep_seconds=args.attach_sleep,
+            )
+        try:
+            tmux_capture(args.target, out_ansi, out_txt, scroll_ansi, scroll_txt)
+        finally:
+            _terminate_process(xterm_proc)
+            _terminate_process(xvfb_proc)
+        if args.scrollback_render and scroll_ansi and scroll_txt:
+            ansi_text = scroll_ansi.read_text(errors="replace")
+            try:
+                rows = count_rows_from_text(scroll_txt.read_text(errors="replace"), cols)
+            except Exception:
+                rows = count_ansi_rows(ansi_text, cols)
+        else:
+            ansi_text = out_ansi.read_text(errors="replace")
+    font_paths = resolve_font_paths(
+        args.font_path,
+        args.font_bold_path,
+        args.font_italic_path,
+        args.font_bold_italic_path,
+    )
+    font_regular = (
+        ImageFont.truetype(font_paths["regular"], args.font_size)
+        if font_paths.get("regular")
+        else ImageFont.load_default()
+    )
+    font_bold = (
+        ImageFont.truetype(font_paths["bold"], args.font_size)
+        if font_paths.get("bold")
+        else None
+    )
+    font_italic = (
+        ImageFont.truetype(font_paths["italic"], args.font_size)
+        if font_paths.get("italic")
+        else None
+    )
+    font_bold_italic = (
+        ImageFont.truetype(font_paths["bold_italic"], args.font_size)
+        if font_paths.get("bold_italic")
+        else None
+    )
+    fonts = FontPack(
+        regular=font_regular,
+        bold=font_bold,
+        italic=font_italic,
+        bold_italic=font_bold_italic,
+    )
+    if args.renderer == "xterm-xvfb" and args.scrollback_render:
+        print("warning: --scrollback-render not supported by xterm-xvfb; falling back to pillow renderer")
+        args.renderer = "pillow"
+
+    if args.renderer == "xterm-xvfb":
+        if not out_ansi.exists():
+            out_ansi.write_text(ansi_text)
+        render_ansi_with_xterm(
+            ansi_path=out_ansi,
+            cols=cols,
+            rows=rows,
+            out_path=out_png,
+            bg_hex=args.bg,
+            fg_hex=args.fg,
+            font_name=args.xterm_font,
+            font_size=args.font_size,
+            sleep_seconds=args.xterm_sleep,
+        )
+    else:
         render_ansi_to_png(
             ansi_text=ansi_text,
             cols=cols,
@@ -392,40 +1134,28 @@ def main() -> None:
             out_path=out_png,
             fg_default=parse_rgb(args.fg),
             bg_default=parse_rgb(args.bg),
-            font_size=args.font_size,
+            scale=args.scale,
+            fonts=fonts,
+            cell_width=args.cell_width,
+            cell_height=args.cell_height,
+            line_gap=args.line_gap,
+            pad_x=args.pad_x,
+            pad_y=args.pad_y,
+            snapshot_mode=bool(args.target) or args.snapshot,
         )
-        print(f"ansi: {ansi_path}")
-        print(f"size: {cols}x{rows}")
-        print(f"png:  {out_png}")
-        return
 
-    cols, rows = tmux_pane_size(target, socket_name=tmux_socket)
-    ts = time.strftime("%Y%m%d-%H%M%S")
-    safe_target = re.sub(r"[^A-Za-z0-9_.-]+", "_", target)
-    default_dir = Path("docs_tmp") / "tmux_captures"
-    out_png = Path(args.out) if args.out else (default_dir / f"{ts}_{safe_target}.png")
-    out_ansi = out_png.with_suffix(".ansi")
-    out_txt = out_png.with_suffix(".txt")
-
-    tmux_capture(target, out_ansi, out_txt, socket_name=tmux_socket)
-    ansi_text = out_ansi.read_text(errors="replace")
-    render_ansi_to_png(
-        ansi_text=ansi_text,
-        cols=cols,
-        rows=rows,
-        out_path=out_png,
-        fg_default=parse_rgb(args.fg),
-        bg_default=parse_rgb(args.bg),
-        font_size=args.font_size,
-    )
-
-    print(f"target: {target}")
+    if args.target:
+        print(f"target: {args.target}")
+    if args.ansi:
+        print(f"ansi:   {out_ansi}")
+    if (args.scrollback or args.scrollback_render) and not args.ansi:
+        print(f"scroll: {scroll_txt}")
+    print(f"profile:{args.render_profile}")
     print(f"size:   {cols}x{rows}")
-    print(f"ansi:   {out_ansi}")
     print(f"text:   {out_txt}")
     print(f"png:    {out_png}")
 
-    if not args.keep:
+    if not args.keep and not args.ansi:
         try:
             out_ansi.unlink(missing_ok=True)
             out_txt.unlink(missing_ok=True)

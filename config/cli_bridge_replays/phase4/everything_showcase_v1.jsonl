@@ -1,0 +1,19 @@
+# Deterministic CLI-bridge replay fixture: file write + patch + markdown showcase
+#
+# Goal: recreate docs_tmp/tui_design/everything_showcase_v2.png flow.
+
+{"type": "turn_start", "payload": {"summary": "hello world + markdown"}, "delay_ms": 0}
+{"type": "user_message", "payload": {"text": "Create a hello world in C."}, "delay_ms": 150}
+{"type": "assistant_message", "payload": {"text": "Sure - I'll write a simple C hello world program."}, "delay_ms": 150}
+{"type": "tool_call", "payload": {"tool": {"name": "write_file", "args": {"path": "hello.c", "content": "#include <stdio.h>\n\nint main(void) {\n    printf(\"hello world\\n\");\n    return 0;\n}\n"}}, "display": {"title": "Write(hello.c)"}}, "delay_ms": 250}
+{"type": "tool_result", "payload": {"tool": {"name": "write_file", "status": "success", "output": "Wrote hello.c"}, "display": {"title": "Write(hello.c)", "summary": "Wrote 6 lines", "detail": ["#include <stdio.h>", "", "int main(void) {", "    printf(\"hello world\\n\");", "    return 0;", "}"], "detail_truncated": {"hidden": 0}}}, "delay_ms": 350}
+{"type": "assistant_message", "payload": {"text": "Done."}, "delay_ms": 200}
+{"type": "user_message", "payload": {"text": "Now patch it to say goodbye world."}, "delay_ms": 250}
+{"type": "assistant_message", "payload": {"text": "Applying patch to update the string."}, "delay_ms": 150}
+{"type": "tool_call", "payload": {"tool": {"name": "apply_patch", "args": {"path": "hello.c", "diff": "@@ -2,5 +2,5 @@\n-    printf(\"hello world\\n\");\n+    printf(\"goodbye world\\n\");\n"}}, "display": {"title": "Patch(hello.c)"}}, "delay_ms": 200}
+{"type": "tool_result", "payload": {"tool": {"name": "apply_patch", "status": "success", "output": "Patched hello.c"}, "display": {"title": "Patch(hello.c)", "summary": "Updated hello.c", "diff_blocks": [{"kind": "diff", "filePath": "hello.c", "unified": "diff --git a/hello.c b/hello.c\nindex 1111111..2222222 100644\n--- a/hello.c\n+++ b/hello.c\n@@ -2,5 +2,5 @@\n-    printf(\"hello world\\n\");\n+    printf(\"goodbye world\\n\");\n"}]}}, "delay_ms": 300}
+{"type": "assistant_message", "payload": {"text": "Patched."}, "delay_ms": 200}
+{"type": "user_message", "payload": {"text": "Show a long markdown response demonstrating all formatting features."}, "delay_ms": 200}
+{"type": "assistant_message", "payload": {"text": "# Markdown Showcase\nHere is **bold**, *italic*, ***both***, and `inline()` in one line.\n> Blockquote with **bold** and `code`.\n1. Ordered item\n2. Second item\n- Bullet one\n  - Nested bullet\n    - Nested bullet deep with `code`\n- [x] Task done\n- [ ] Task todo\n```ts\nconst x: number = 1\n```\n| Feature | Example |\n|---|---|\n| Bold | **bold** |\n| Italic | *italic* |\nInline link [BreadBoard](https://example.com) and `code`.\n```bash\nls -la\n```"}, "delay_ms": 200}
+{"type": "completion", "payload": {"summary": {"completed": true, "reason": "hello+patch+markdown"}}, "delay_ms": 200}
+{"type": "run_finished", "payload": {"eventCount": 15, "completed": true, "reason": "replay", "logging_dir": null}, "delay_ms": 2500}

@@ -4,6 +4,7 @@ Poll a tmux pane and capture frames to .txt/.ansi/.png at a fixed interval.
 
 Default behavior captures the *visible pane* (top to bottom) so landing headers
 and input bars are consistently included.
+PNG rendering is profile-locked by default for deterministic visuals.
 
 Examples:
   python scripts/tmux_capture_poll.py --target breadboard_test_ci_soft_gate:0.0
@@ -34,6 +35,11 @@ from pathlib import Path
 from typing import Optional, TextIO
 
 from tmux_capture_time import run_timestamp
+from tmux_capture_render_profile import (
+    DEFAULT_RENDER_PROFILE_ID,
+    SUPPORTED_RENDER_PROFILES,
+    resolve_render_profile,
+)
 
 
 @dataclass
@@ -44,6 +50,8 @@ class CaptureConfig:
     duration: float
     frames: int
     capture_mode: str
+    tail_lines: int
+    final_tail_lines: int
     render_png: bool
     cols: Optional[int]
     rows: Optional[int]
@@ -56,6 +64,10 @@ class CaptureConfig:
     session_prefix_guard: str
     protected_sessions: str
     allow_any_session: bool
+    fullpane_start_markers: tuple[str, ...]
+    fullpane_max_lines: int
+    fullpane_render_max_rows: int
+    render_profile: str
 
 
 _stop_requested = False
@@ -120,38 +132,86 @@ def session_from_target(target: str) -> str:
     return target.split(":", 1)[0].strip()
 
 
-def capture_raw(target: str, capture_mode: str, socket_name: str, buffer_suffix: str) -> tuple[str, str]:
+def capture_raw(
+    target: str,
+    capture_mode: str,
+    socket_name: str,
+    buffer_suffix: str,
+    tail_lines: int,
+    fullpane_start_markers: tuple[str, ...],
+    fullpane_max_lines: int,
+) -> tuple[str, str]:
     def _non_ws_count(s: str) -> int:
         return sum(1 for ch in s if not ch.isspace())
+
+    def _line_score(text: str) -> int:
+        return sum(1 for line in text.splitlines() if line.strip())
 
     def _looks_like_prompt(text: str) -> bool:
         # Heuristic only: use stable prompt/ready tokens that tend to appear in the visible UI.
         tokens = ("for shortcuts", "context left", "OpenAI Codex", "❯")
         return any(tok in text for tok in tokens)
 
-    def _capture_one(alternate: bool) -> tuple[str, str]:
+    def _contains_fullpane_marker(text: str) -> bool:
+        lowered = text.lower()
+        return any(marker.lower() in lowered for marker in fullpane_start_markers if marker)
+
+    def _trim_fullpane(ansi: str, txt: str) -> tuple[str, str]:
+        txt_lines = txt.splitlines()
+        ansi_lines = ansi.splitlines()
+        start_idx = 0
+        for i, line in enumerate(txt_lines):
+            lowered = line.lower()
+            if any(marker.lower() in lowered for marker in fullpane_start_markers if marker):
+                start_idx = i
+                break
+        txt_lines = txt_lines[start_idx:]
+        if start_idx < len(ansi_lines):
+            ansi_lines = ansi_lines[start_idx:]
+        if fullpane_max_lines > 0:
+            txt_lines = txt_lines[-fullpane_max_lines:]
+            ansi_lines = ansi_lines[-fullpane_max_lines:]
+        trimmed_txt = "\n".join(txt_lines)
+        trimmed_ansi = "\n".join(ansi_lines)
+        return trimmed_ansi, trimmed_txt
+
+    def _capture_one(
+        alternate: bool,
+        *,
+        start_line: str | None = None,
+        end_line: str | None = None,
+    ) -> tuple[str, str]:
         a = "-a" if alternate else ""
         try:
-            if capture_mode == "scrollback":
-                safe = "".join(ch if ch.isalnum() else "_" for ch in (buffer_suffix or "capture"))
-                suffix = "alt" if alternate else "norm"
-                buf_ansi = f"capture_{safe}_{suffix}"
-                buf_txt = f"capture_txt_{safe}_{suffix}"
+            if capture_mode in {"scrollback", "tail"} or start_line is not None or end_line is not None:
+                capture_start = start_line
+                capture_end = end_line
+                if capture_mode == "scrollback" and capture_start is None:
+                    capture_start = "-"
+                if capture_mode == "tail":
+                    if capture_start is None:
+                        capture_start = f"-{max(1, int(tail_lines))}"
                 args_ansi = ["capture-pane"]
                 if a:
                     args_ansi.append(a)
-                args_ansi += ["-e", "-p", "-S", "-", "-t", target, "-b", buf_ansi]
-                run_tmux(args_ansi, socket_name)
-                ansi_out = run_tmux(["save-buffer", "-b", buf_ansi, "-"], socket_name)
-                run_tmux(["delete-buffer", "-b", buf_ansi], socket_name)
+                args_ansi += ["-e", "-p"]
+                if capture_start is not None:
+                    args_ansi += ["-S", capture_start]
+                if capture_end is not None:
+                    args_ansi += ["-E", capture_end]
+                args_ansi += ["-t", target]
+                ansi_out = run_tmux(args_ansi, socket_name)
 
                 args_txt = ["capture-pane"]
                 if a:
                     args_txt.append(a)
-                args_txt += ["-p", "-S", "-", "-t", target, "-b", buf_txt]
-                run_tmux(args_txt, socket_name)
-                txt_out = run_tmux(["save-buffer", "-b", buf_txt, "-"], socket_name)
-                run_tmux(["delete-buffer", "-b", buf_txt], socket_name)
+                args_txt += ["-p"]
+                if capture_start is not None:
+                    args_txt += ["-S", capture_start]
+                if capture_end is not None:
+                    args_txt += ["-E", capture_end]
+                args_txt += ["-t", target]
+                txt_out = run_tmux(args_txt, socket_name)
                 return ansi_out, txt_out
 
             args_ansi = ["capture-pane"]
@@ -173,31 +233,92 @@ def capture_raw(target: str, capture_mode: str, socket_name: str, buffer_suffix:
                 return "", ""
             raise
 
+    def _capture_tail_window(alternate: bool) -> tuple[str, str]:
+        # Capture only a bounded trailing window ending at the most recent line.
+        return _capture_one(
+            alternate,
+            start_line=f"-{max(1, int(tail_lines))}",
+        )
+
     ansi_norm, txt_norm = _capture_one(alternate=False)
     ansi_alt, txt_alt = _capture_one(alternate=True)
+
+    if capture_mode == "fullpane":
+        # Full-pane mode captures the full backing buffer and trims from a stable
+        # start marker (typically the landing card) through the current bottom.
+        full_ansi_norm, full_txt_norm = _capture_one(alternate=False, start_line="-")
+        full_ansi_alt, full_txt_alt = _capture_one(alternate=True, start_line="-")
+        selected_ansi = full_ansi_norm
+        selected_txt = full_txt_norm
+        if full_txt_alt.strip():
+            alt_has_marker = _contains_fullpane_marker(full_txt_alt)
+            norm_has_marker = _contains_fullpane_marker(full_txt_norm)
+            if alt_has_marker and not norm_has_marker:
+                selected_ansi, selected_txt = full_ansi_alt, full_txt_alt
+            elif _looks_like_prompt(full_txt_alt) and not _looks_like_prompt(full_txt_norm):
+                selected_ansi, selected_txt = full_ansi_alt, full_txt_alt
+            elif _non_ws_count(full_txt_alt) > _non_ws_count(full_txt_norm):
+                selected_ansi, selected_txt = full_ansi_alt, full_txt_alt
+        return _trim_fullpane(selected_ansi, selected_txt)
 
     # Prefer whichever buffer looks like an interactive prompt/ready UI; otherwise prefer the
     # buffer with more content. This makes Ink/alternate-screen TUIs capturable while keeping
     # classic shell panes unchanged.
+    selected_ansi = ansi_norm
+    selected_txt = txt_norm
     if txt_alt.strip() and (_looks_like_prompt(txt_alt) or (_non_ws_count(txt_alt) > _non_ws_count(txt_norm))):
-        return ansi_alt, txt_alt
-    return ansi_norm, txt_norm
+        selected_ansi = ansi_alt
+        selected_txt = txt_alt
+
+    # Legacy adaptive mode: when visible-pane content is too sparse, swap in a
+    # bounded trailing history window for better replay observability.
+    if capture_mode == "pane-auto":
+        hist_ansi_norm, hist_txt_norm = _capture_tail_window(alternate=False)
+        hist_ansi_alt, hist_txt_alt = _capture_tail_window(alternate=True)
+        hist_ansi = hist_ansi_norm
+        hist_txt = hist_txt_norm
+        if hist_txt_alt.strip() and (
+            _looks_like_prompt(hist_txt_alt) or (_non_ws_count(hist_txt_alt) > _non_ws_count(hist_txt_norm))
+        ):
+            hist_ansi = hist_ansi_alt
+            hist_txt = hist_txt_alt
+        selected_non_ws = _non_ws_count(selected_txt)
+        history_non_ws = _non_ws_count(hist_txt)
+        selected_lines = _line_score(selected_txt)
+        history_lines = _line_score(hist_txt)
+        # Prefer bounded history when it is materially richer than the visible
+        # viewport (common when replay output briefly renders then collapses).
+        if history_non_ws >= (selected_non_ws + 20) or history_lines >= (selected_lines + 3):
+            return hist_ansi, hist_txt
+
+    return selected_ansi, selected_txt
 
 
 def capture_pane(
     target: str,
     socket_name: str,
     capture_mode: str,
+    tail_lines: int,
     ansi_path: Path,
     txt_path: Path,
     settle_ms: int,
     settle_attempts: int,
     buffer_suffix: str,
+    fullpane_start_markers: tuple[str, ...],
+    fullpane_max_lines: int,
 ) -> None:
     last_ansi = ""
     last_txt = ""
     for attempt in range(max(settle_attempts, 1)):
-        ansi, txt = capture_raw(target, capture_mode, socket_name, buffer_suffix)
+        ansi, txt = capture_raw(
+            target,
+            capture_mode,
+            socket_name,
+            buffer_suffix,
+            tail_lines,
+            fullpane_start_markers,
+            fullpane_max_lines,
+        )
         if attempt > 0 and ansi == last_ansi and txt == last_txt:
             break
         last_ansi = ansi
@@ -208,22 +329,30 @@ def capture_pane(
     txt_path.write_text(last_txt, encoding="utf-8")
 
 
-def render_png(ansi_path: Path, png_path: Path, cols: int, rows: int, script_dir: Path) -> None:
-    subprocess.run(
-        [
-            sys.executable,
-            str(script_dir / "tmux_capture_to_png.py"),
-            "--ansi",
-            str(ansi_path),
-            "--cols",
-            str(cols),
-            "--rows",
-            str(rows),
-            "--out",
-            str(png_path),
-        ],
-        check=True,
-    )
+def render_png(
+    ansi_path: Path,
+    png_path: Path,
+    cols: int,
+    rows: int,
+    script_dir: Path,
+    render_profile: str,
+) -> None:
+    cmd = [
+        sys.executable,
+        str(script_dir / "tmux_capture_to_png.py"),
+        "--ansi",
+        str(ansi_path),
+        "--cols",
+        str(cols),
+        "--rows",
+        str(rows),
+        "--snapshot",
+        "--render-profile",
+        render_profile,
+        "--out",
+        str(png_path),
+    ]
+    subprocess.run(cmd, check=True)
 
 
 def parse_args() -> CaptureConfig:
@@ -239,9 +368,15 @@ def parse_args() -> CaptureConfig:
     parser.add_argument("--frames", type=int, default=0, help="number of frames (overrides duration if >0)")
     parser.add_argument(
         "--capture-mode",
-        choices=("pane", "scrollback"),
+        choices=("pane", "pane-auto", "tail", "scrollback", "fullpane"),
         default="pane",
-        help="pane=full visible panel (default); scrollback=entire pane history",
+        help=(
+            "pane=full visible pane top->bottom (default); "
+            "pane-auto=visible pane with bounded-history fallback; "
+            "tail=sliding tail window; "
+            "scrollback=entire pane history; "
+            "fullpane=trimmed full buffer from landing marker to current bottom"
+        ),
     )
     parser.add_argument(
         "--scrollback",
@@ -251,6 +386,44 @@ def parse_args() -> CaptureConfig:
     parser.add_argument("--png", dest="render_png", action="store_true", help="render PNG for each frame")
     parser.add_argument("--no-png", dest="render_png", action="store_false", help="skip PNG render")
     parser.set_defaults(render_png=True)
+    parser.add_argument(
+        "--tail-lines",
+        type=int,
+        default=120,
+        help="line count for tail captures (capture-mode=tail and pane-auto fallback)",
+    )
+    parser.add_argument(
+        "--final-tail-lines",
+        type=int,
+        default=0,
+        help="optional: additionally capture a final tail snapshot with this many lines",
+    )
+    parser.add_argument(
+        "--fullpane-start-markers",
+        default="BreadBoard v,No conversation yet",
+        help=(
+            "comma-separated start markers for --capture-mode fullpane; capture starts "
+            "at first matching line and includes everything through current bottom"
+        ),
+    )
+    parser.add_argument(
+        "--fullpane-max-lines",
+        type=int,
+        default=0,
+        help="optional max line count for fullpane captures (0 = unlimited)",
+    )
+    parser.add_argument(
+        "--fullpane-render-max-rows",
+        type=int,
+        default=0,
+        help="optional max rendered PNG rows for fullpane captures (0 = unlimited)",
+    )
+    parser.add_argument(
+        "--render-profile",
+        default=DEFAULT_RENDER_PROFILE_ID,
+        choices=SUPPORTED_RENDER_PROFILES,
+        help=f"ANSI->PNG render profile lock (default: {DEFAULT_RENDER_PROFILE_ID})",
+    )
     parser.add_argument("--cols", type=int, default=0, help="override columns (default: tmux pane width)")
     parser.add_argument("--rows", type=int, default=0, help="override rows (default: tmux pane height)")
     parser.add_argument(
@@ -301,6 +474,8 @@ def parse_args() -> CaptureConfig:
     out_root = Path(args.out_root).expanduser() if args.out_root else default_out
 
     capture_mode = "scrollback" if args.scrollback else args.capture_mode
+    resolved_profile = resolve_render_profile(args.render_profile)
+    render_profile = resolved_profile.id if resolved_profile is not None else args.render_profile
 
     return CaptureConfig(
         target=args.target,
@@ -309,6 +484,8 @@ def parse_args() -> CaptureConfig:
         duration=max(args.duration, 0.0),
         frames=max(args.frames, 0),
         capture_mode=capture_mode,
+        tail_lines=max(1, int(args.tail_lines)),
+        final_tail_lines=max(0, int(args.final_tail_lines)),
         render_png=bool(args.render_png),
         cols=args.cols if args.cols > 0 else None,
         rows=args.rows if args.rows > 0 else None,
@@ -321,6 +498,10 @@ def parse_args() -> CaptureConfig:
         session_prefix_guard=str(args.session_prefix_guard or "").strip(),
         protected_sessions=str(args.protected_sessions or "").strip(),
         allow_any_session=bool(args.allow_any_session),
+        fullpane_start_markers=tuple(token.strip() for token in str(args.fullpane_start_markers).split(",") if token.strip()),
+        fullpane_max_lines=max(0, int(args.fullpane_max_lines)),
+        fullpane_render_max_rows=max(0, int(args.fullpane_render_max_rows)),
+        render_profile=str(render_profile),
     )
 
 
@@ -402,6 +583,8 @@ def main() -> None:
         "duration": config.duration,
         "frames": config.frames,
         "capture_mode": config.capture_mode,
+        "tail_lines": config.tail_lines,
+        "final_tail_lines": config.final_tail_lines,
         "render_png": config.render_png,
         "cols": cols,
         "rows": rows,
@@ -416,6 +599,10 @@ def main() -> None:
         "session_prefix_guard": config.session_prefix_guard,
         "protected_sessions": config.protected_sessions,
         "allow_any_session": config.allow_any_session,
+        "fullpane_start_markers": list(config.fullpane_start_markers),
+        "fullpane_max_lines": config.fullpane_max_lines,
+        "fullpane_render_max_rows": config.fullpane_render_max_rows,
+        "render_profile": config.render_profile,
         "started_at": ts,
     }
     (run_dir / "meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
@@ -424,11 +611,14 @@ def main() -> None:
         config.target,
         config.tmux_socket,
         config.capture_mode,
+        config.tail_lines,
         run_dir / "initial.ansi",
         run_dir / "initial.txt",
         config.settle_ms,
         config.settle_attempts,
         buffer_suffix=run_folder,
+        fullpane_start_markers=config.fullpane_start_markers,
+        fullpane_max_lines=config.fullpane_max_lines,
     )
 
     index_path = run_dir / "index.jsonl"
@@ -463,14 +653,23 @@ def main() -> None:
             config.target,
             config.tmux_socket,
             config.capture_mode,
+            config.tail_lines,
             ansi_path,
             txt_path,
             config.settle_ms,
             config.settle_attempts,
             buffer_suffix=f"{run_folder}_{frame_id}",
+            fullpane_start_markers=config.fullpane_start_markers,
+            fullpane_max_lines=config.fullpane_max_lines,
         )
         if config.render_png:
-            render_png(ansi_path, png_path, cols, rows, script_dir)
+            rows_for_render = rows
+            if config.capture_mode == "fullpane":
+                frame_line_count = max(1, len(txt_path.read_text(encoding="utf-8", errors="replace").splitlines()))
+                rows_for_render = max(rows, frame_line_count)
+                if config.fullpane_render_max_rows > 0:
+                    rows_for_render = min(rows_for_render, config.fullpane_render_max_rows)
+            render_png(ansi_path, png_path, cols, rows_for_render, script_dir, config.render_profile)
 
         record = {
             "frame": i,
@@ -488,6 +687,27 @@ def main() -> None:
         if stop_after_this_frame:
             break
     index_file.close()
+
+    if config.final_tail_lines > 0:
+        final_tail_ansi = run_dir / "final_tail.ansi"
+        final_tail_txt = run_dir / "final_tail.txt"
+        final_tail_png = run_dir / "final_tail.png"
+        capture_pane(
+            config.target,
+            config.tmux_socket,
+            "tail",
+            config.final_tail_lines,
+            final_tail_ansi,
+            final_tail_txt,
+            config.settle_ms,
+            config.settle_attempts,
+            buffer_suffix=f"{run_folder}_final_tail",
+            fullpane_start_markers=config.fullpane_start_markers,
+            fullpane_max_lines=config.fullpane_max_lines,
+        )
+        if config.render_png:
+            # Keep final-tail PNG at viewport dimensions for quick visual review.
+            render_png(final_tail_ansi, final_tail_png, cols, rows, script_dir, config.render_profile)
 
     print(f"[tmux-capture] wrote {i} frames -> {run_dir}")
 

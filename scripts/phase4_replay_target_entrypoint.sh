@@ -8,11 +8,17 @@ Usage: phase4_replay_target_entrypoint.sh --session NAME --port N
                                          [--config PATH]
                                          [--workspace PATH]
                                          [--cols N] [--rows N]
+                                         [--scrollback-mode <window|scrollback>]
+                                         [--landing-always <0|1>]
                                          [--use-dist]
 
 Runs inside a tmux pane. Starts the local CLI-bridge engine and then launches
 the Ink TUI in "classic" mode, emitting clear markers into the pane so CI
 captures are never blank when something goes wrong.
+
+Defaults are locked for replay visual stability:
+- --scrollback-mode scrollback
+- --landing-always 1
 
 Logs:
 - Writes a combined pane transcript to:
@@ -31,6 +37,8 @@ workspace=""
 cols=""
 rows=""
 use_dist=0
+scrollback_mode="scrollback"
+landing_always="1"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -41,12 +49,23 @@ while [[ $# -gt 0 ]]; do
     --workspace) shift; workspace="${1:-}";;
     --cols) shift; cols="${1:-}";;
     --rows) shift; rows="${1:-}";;
+    --scrollback-mode) shift; scrollback_mode="${1:-}";;
+    --landing-always) shift; landing_always="${1:-}";;
     --use-dist) use_dist=1;;
     --help|-h) usage;;
     *) echo "Unknown arg: $1" >&2; usage;;
   esac
   shift
 done
+
+if [[ -n "$scrollback_mode" && "$scrollback_mode" != "window" && "$scrollback_mode" != "scrollback" ]]; then
+  echo "Invalid --scrollback-mode '$scrollback_mode' (expected window|scrollback)." >&2
+  exit 2
+fi
+if [[ -n "$landing_always" && "$landing_always" != "0" && "$landing_always" != "1" ]]; then
+  echo "Invalid --landing-always '$landing_always' (expected 0|1)." >&2
+  exit 2
+fi
 
 if [[ -z "$session" || -z "$port" ]]; then
   echo "Missing --session or --port" >&2
@@ -106,6 +125,12 @@ export BREADBOARD_CLI_PORT="$port"
 export BREADBOARD_API_URL="http://127.0.0.1:$port"
 export BREADBOARD_STREAM_SCHEMA=2
 export BREADBOARD_STREAM_INCLUDE_LEGACY=0
+if [[ -n "$scrollback_mode" ]]; then
+  export BREADBOARD_TUI_MODE="$scrollback_mode"
+fi
+if [[ -n "$landing_always" ]]; then
+  export BREADBOARD_TUI_LANDING_ALWAYS="$landing_always"
+fi
 
 echo "[phase4 replay target] launching cli_bridge"
 cd "$repo_root"
@@ -143,18 +168,25 @@ else
   tui_cmd=(npm run dev -- repl)
 fi
 
-# Keep transcript content in the live Ink pane; scrollback mode tends to scroll out
-# of the visible viewport and makes debugging harder.
-export BREADBOARD_TUI_SCROLLBACK=0
+# Keep transcript content in the live Ink pane by default; explicit mode override
+# (BREADBOARD_TUI_MODE or --scrollback-mode) wins when requested.
+if [[ -z "${BREADBOARD_TUI_MODE:-}" ]]; then
+  export BREADBOARD_TUI_SCROLLBACK="${BREADBOARD_TUI_SCROLLBACK:-0}"
+fi
 
 echo "[phase4 replay target] launching TUI"
 echo "[phase4 replay target] cmd=${tui_cmd[*]} --tui classic --tui-preset $tui_preset --config $config_path --workspace $workspace"
+echo "[phase4 replay target] tui_mode=${BREADBOARD_TUI_MODE:-<unset>} tui_scrollback=${BREADBOARD_TUI_SCROLLBACK:-<unset>} landing_always=${BREADBOARD_TUI_LANDING_ALWAYS:-<unset>}"
 
 # Many terminal UI libraries (including Ink) intentionally degrade or disable
 # dynamic rendering when they detect CI, even if stdout is a tty (tmux pane).
 # For tmux capture scenarios we want full interactive rendering.
 unset CI
 unset GITHUB_ACTIONS
+unset NO_COLOR
+export FORCE_COLOR="${FORCE_COLOR:-3}"
+export CLICOLOR_FORCE="${CLICOLOR_FORCE:-1}"
+export COLORTERM="${COLORTERM:-truecolor}"
 export BREADBOARD_TMUX_E2E=1
 
 "${tui_cmd[@]}" --tui classic --tui-preset "$tui_preset" --config "$config_path" --workspace "$workspace"
