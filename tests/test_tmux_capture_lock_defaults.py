@@ -89,3 +89,11 @@ def test_run_health_schema_defaults_are_locked():
     )
     assert module.SCHEMA_VERSION == "phase4_run_health_v1"
     assert module.LANES == ("streaming", "todo", "subagents", "everything")
+
+
+def test_release_preflight_default_workflow_is_locked():
+    module = _load_module(
+        "verify_phase4_gate_run_for_sha",
+        "scripts/verify_phase4_gate_run_for_sha.py",
+    )
+    assert module.DEFAULT_WORKFLOW_FILE == "tmux-phase4-fullpane-gate.yml"
