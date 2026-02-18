@@ -180,6 +180,22 @@ jobs:
             echo "- pack dir: \`${PACK_DIR:-missing}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Emit nightly run health JSON
+        if: ${{ always() }}
+        run: |
+          python scripts/export_phase4_run_health.py \
+            --mode nightly \
+            --stream-run-dir "${STREAM_RUN_DIR:-}" \
+            --todo-run-dir "${TODO_RUN_DIR:-}" \
+            --subagents-run-dir "${SUBAGENTS_RUN_DIR:-}" \
+            --everything-run-dir "${EVERYTHING_RUN_DIR:-}" \
+            --pack-dir "${PACK_DIR:-}" \
+            --scenario-rc "${SCENARIO_RC:-}" \
+            --validation-rc "${VALIDATION_RC:-}" \
+            --pack-rc "${PACK_RC:-}" \
+            --pack-schema-rc "${PACK_SCHEMA_RC:-}" \
+            --output-json "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/phase4_run_health_nightly.json"
+
       - name: Upload nightly phase4 fullpane artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -192,4 +208,5 @@ jobs:
             docs_tmp/tmux_captures/scenarios/phase4_replay/everything_showcase_v1_fullpane_v1
             docs_tmp/tmux_captures/targets_logs
             docs_tmp/tmux_captures/visual_review_pack_nightly_phase4_fullpane_*
+            docs_tmp/tmux_captures/phase4_run_health_nightly.json
           if-no-files-found: ignore

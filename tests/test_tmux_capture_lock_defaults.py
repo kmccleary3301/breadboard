@@ -80,3 +80,12 @@ def test_visual_pack_schema_defaults_are_locked():
         "everything": "phase4_replay/everything_showcase_v1_fullpane_v1",
     }
     assert "Locked render profile: `phase4_locked_v1`" in module.DEFAULT_INDEX_ANCHORS
+
+
+def test_run_health_schema_defaults_are_locked():
+    module = _load_module(
+        "export_phase4_run_health",
+        "scripts/export_phase4_run_health.py",
+    )
+    assert module.SCHEMA_VERSION == "phase4_run_health_v1"
+    assert module.LANES == ("streaming", "todo", "subagents", "everything")

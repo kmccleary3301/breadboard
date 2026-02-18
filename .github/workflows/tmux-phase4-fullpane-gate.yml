@@ -110,6 +110,7 @@ jobs:
           echo "TODO_RUN_DIR=$TODO_RUN_DIR" >> "$GITHUB_ENV"
           echo "SUBAGENTS_RUN_DIR=$SUBAGENTS_RUN_DIR" >> "$GITHUB_ENV"
           echo "EVERYTHING_RUN_DIR=$EVERYTHING_RUN_DIR" >> "$GITHUB_ENV"
+          echo "SCENARIO_RC=0" >> "$GITHUB_ENV"
 
       - name: Validate runs and showcase regression (strict)
         run: |
@@ -119,6 +120,7 @@ jobs:
           python scripts/validate_tmux_capture_run.py --run-dir "$SUBAGENTS_RUN_DIR" --strict
           python scripts/validate_tmux_capture_run.py --run-dir "$EVERYTHING_RUN_DIR" --strict
           python scripts/validate_phase4_showcase_regression.py --run-dir "$EVERYTHING_RUN_DIR" --min-frames 12
+          echo "VALIDATION_RC=0" >> "$GITHUB_ENV"
 
       - name: Curate and validate visual review pack (strict)
         run: |
@@ -128,6 +130,8 @@ jobs:
           python scripts/curate_phase4_fullpane_visual_pack.py --out-dir "$pack_dir"
           python scripts/validate_phase4_visual_pack.py --pack-dir "$pack_dir"
           echo "PACK_DIR=$pack_dir" >> "$GITHUB_ENV"
+          echo "PACK_RC=0" >> "$GITHUB_ENV"
+          echo "PACK_SCHEMA_RC=0" >> "$GITHUB_ENV"
 
       - name: Add gate summary
         if: ${{ always() }}
@@ -135,12 +139,33 @@ jobs:
           {
             echo "## tmux phase4 fullpane gate (strict)"
             echo ""
+            echo "- scenario_rc: \`${SCENARIO_RC:-unknown}\`"
+            echo "- validation_rc: \`${VALIDATION_RC:-unknown}\`"
+            echo "- pack_rc: \`${PACK_RC:-unknown}\`"
+            echo "- pack_schema_rc: \`${PACK_SCHEMA_RC:-unknown}\`"
+            echo ""
             echo "- streaming run: \`${STREAM_RUN_DIR:-missing}\`"
             echo "- todo run: \`${TODO_RUN_DIR:-missing}\`"
             echo "- subagents run: \`${SUBAGENTS_RUN_DIR:-missing}\`"
             echo "- everything run: \`${EVERYTHING_RUN_DIR:-missing}\`"
             echo "- pack dir: \`${PACK_DIR:-missing}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Emit gate run health JSON
+        if: ${{ always() }}
+        run: |
+          python scripts/export_phase4_run_health.py \
+            --mode gate \
+            --stream-run-dir "${STREAM_RUN_DIR:-}" \
+            --todo-run-dir "${TODO_RUN_DIR:-}" \
+            --subagents-run-dir "${SUBAGENTS_RUN_DIR:-}" \
+            --everything-run-dir "${EVERYTHING_RUN_DIR:-}" \
+            --pack-dir "${PACK_DIR:-}" \
+            --scenario-rc "${SCENARIO_RC:-}" \
+            --validation-rc "${VALIDATION_RC:-}" \
+            --pack-rc "${PACK_RC:-}" \
+            --pack-schema-rc "${PACK_SCHEMA_RC:-}" \
+            --output-json "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/phase4_run_health_gate.json"
 
       - name: Upload gate artifacts
         uses: actions/upload-artifact@v4
@@ -154,4 +179,5 @@ jobs:
             docs_tmp/tmux_captures/scenarios/phase4_replay/everything_showcase_v1_fullpane_v1
             docs_tmp/tmux_captures/targets_logs
             docs_tmp/tmux_captures/visual_review_pack_gate_phase4_fullpane_*
+            docs_tmp/tmux_captures/phase4_run_health_gate.json
           if-no-files-found: ignore
