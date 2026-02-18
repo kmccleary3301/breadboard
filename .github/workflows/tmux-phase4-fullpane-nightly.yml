@@ -1,0 +1,186 @@
+name: tmux-phase4-fullpane-nightly
+
+on:
+  schedule:
+    - cron: "20 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  phase4-fullpane-nightly-warn:
+    name: phase4 fullpane nightly (warn-only)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      BREADBOARD_PHASE4_REPLAY_LOG_ROOT: ${{ github.workspace }}/docs_tmp/tmux_captures/targets_logs
+      TMUX_SOCKET_NAME: bbcap_fullpane_nightly
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install engine dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pillow wcwidth
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: tui_skeleton/package-lock.json
+
+      - name: Install and build TUI dist
+        working-directory: tui_skeleton
+        run: |
+          npm ci
+          npm run build
+
+      - name: Start phase4 replay tmux targets
+        env:
+          RAY_SCE_LOCAL_MODE: "1"
+        run: |
+          bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_streaming_fullpane --tmux-socket "$TMUX_SOCKET_NAME" --cols 160 --rows 45 --port 9101 --scrollback-mode scrollback --landing-always 1 --use-dist
+          bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_todo_fullpane --tmux-socket "$TMUX_SOCKET_NAME" --cols 160 --rows 45 --port 9103 --scrollback-mode scrollback --landing-always 1 --use-dist
+          bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_subagents_fullpane --tmux-socket "$TMUX_SOCKET_NAME" --cols 160 --rows 45 --port 9102 --scrollback-mode scrollback --landing-always 1 --use-dist
+          bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_everything_fullpane --tmux-socket "$TMUX_SOCKET_NAME" --cols 160 --rows 45 --port 9104 --scrollback-mode scrollback --landing-always 1 --use-dist
+
+      - name: Run phase4 fullpane scenarios (warn-only)
+        run: |
+          set +e
+          rc=0
+
+          run_scenario() {
+            local target="$1"
+            local scenario="$2"
+            local actions="$3"
+            local label="$4"
+            python scripts/run_tmux_capture_scenario.py \
+              --target "$target" \
+              --tmux-socket "$TMUX_SOCKET_NAME" \
+              --scenario "$scenario" \
+              --actions "$actions" \
+              --out-root "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios" \
+              --duration 45 \
+              --interval 0.4 \
+              --capture-mode fullpane \
+              --tail-lines 120 \
+              --final-tail-lines 0 \
+              --fullpane-start-markers "BreadBoard v,No conversation yet" \
+              --fullpane-max-lines 0 \
+              --fullpane-render-max-rows 0 \
+              --render-profile phase4_locked_v1 \
+              --settle-ms 140 \
+              --settle-attempts 5 \
+              --session-prefix-guard breadboard_test_ \
+              --protected-sessions bb_tui_codex_dev,bb_engine_codex_dev,bb_atp \
+              --capture-label "$label"
+            if [[ $? -ne 0 ]]; then
+              rc=1
+            fi
+          }
+
+          run_scenario "breadboard_test_ci_phase4_streaming_fullpane:0.0" "phase4_replay/streaming_v1_fullpane_v8" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/streaming_v1.json" "phase4_streaming_fullpane_v8"
+          run_scenario "breadboard_test_ci_phase4_todo_fullpane:0.0" "phase4_replay/todo_preview_v1_fullpane_v7" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/todo_preview_v1.json" "phase4_todo_fullpane_v7"
+          run_scenario "breadboard_test_ci_phase4_subagents_fullpane:0.0" "phase4_replay/subagents_v1_fullpane_v7" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/subagents_v1.json" "phase4_subagents_fullpane_v7"
+          run_scenario "breadboard_test_ci_phase4_everything_fullpane:0.0" "phase4_replay/everything_showcase_v1_fullpane_v1" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/everything_showcase_v1.json" "phase4_everything_fullpane_v1"
+
+          find_latest_run_dir() {
+            local base="$1"
+            local manifest
+            manifest="$(find "$base" -name scenario_manifest.json -print 2>/dev/null | sort | tail -n1 || true)"
+            if [[ -z "$manifest" ]]; then
+              echo ""
+              return 0
+            fi
+            dirname "$manifest"
+          }
+
+          STREAM_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/streaming_v1_fullpane_v8")"
+          TODO_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/todo_preview_v1_fullpane_v7")"
+          SUBAGENTS_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/subagents_v1_fullpane_v7")"
+          EVERYTHING_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/everything_showcase_v1_fullpane_v1")"
+
+          echo "STREAM_RUN_DIR=$STREAM_RUN_DIR" >> "$GITHUB_ENV"
+          echo "TODO_RUN_DIR=$TODO_RUN_DIR" >> "$GITHUB_ENV"
+          echo "SUBAGENTS_RUN_DIR=$SUBAGENTS_RUN_DIR" >> "$GITHUB_ENV"
+          echo "EVERYTHING_RUN_DIR=$EVERYTHING_RUN_DIR" >> "$GITHUB_ENV"
+          echo "SCENARIO_RC=$rc" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Validate runs and showcase regression (warn-only)
+        if: ${{ always() }}
+        run: |
+          set +e
+          rc=0
+          for run_dir in "$STREAM_RUN_DIR" "$TODO_RUN_DIR" "$SUBAGENTS_RUN_DIR" "$EVERYTHING_RUN_DIR"; do
+            if [[ -n "$run_dir" ]]; then
+              python scripts/validate_tmux_capture_run.py --run-dir "$run_dir" --strict
+              if [[ $? -ne 0 ]]; then
+                rc=1
+              fi
+            fi
+          done
+
+          if [[ -n "$EVERYTHING_RUN_DIR" ]]; then
+            python scripts/validate_phase4_showcase_regression.py \
+              --run-dir "$EVERYTHING_RUN_DIR" \
+              --min-frames 12
+            if [[ $? -ne 0 ]]; then
+              rc=1
+            fi
+          fi
+
+          echo "VALIDATION_RC=$rc" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Curate phase4 visual review pack (warn-only)
+        if: ${{ always() }}
+        run: |
+          set +e
+          stamp="$(date -u +%Y%m%d-%H%M%S)"
+          pack_dir="$GITHUB_WORKSPACE/docs_tmp/tmux_captures/visual_review_pack_nightly_phase4_fullpane_${stamp}"
+          python scripts/curate_phase4_fullpane_visual_pack.py \
+            --out-dir "$pack_dir" \
+            --allow-missing
+          rc=$?
+          echo "PACK_DIR=$pack_dir" >> "$GITHUB_ENV"
+          echo "PACK_RC=$rc" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Add nightly summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## tmux phase4 fullpane nightly (warn-only)"
+            echo ""
+            echo "- scenario_rc: \`${SCENARIO_RC:-unknown}\`"
+            echo "- validation_rc: \`${VALIDATION_RC:-unknown}\`"
+            echo "- pack_rc: \`${PACK_RC:-unknown}\`"
+            echo ""
+            echo "- streaming run: \`${STREAM_RUN_DIR:-missing}\`"
+            echo "- todo run: \`${TODO_RUN_DIR:-missing}\`"
+            echo "- subagents run: \`${SUBAGENTS_RUN_DIR:-missing}\`"
+            echo "- everything run: \`${EVERYTHING_RUN_DIR:-missing}\`"
+            echo "- pack dir: \`${PACK_DIR:-missing}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload nightly phase4 fullpane artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tmux-phase4-fullpane-nightly-artifacts
+          path: |
+            docs_tmp/tmux_captures/scenarios/phase4_replay/streaming_v1_fullpane_v8
+            docs_tmp/tmux_captures/scenarios/phase4_replay/todo_preview_v1_fullpane_v7
+            docs_tmp/tmux_captures/scenarios/phase4_replay/subagents_v1_fullpane_v7
+            docs_tmp/tmux_captures/scenarios/phase4_replay/everything_showcase_v1_fullpane_v1
+            docs_tmp/tmux_captures/targets_logs
+            docs_tmp/tmux_captures/visual_review_pack_nightly_phase4_fullpane_*
+          if-no-files-found: ignore
