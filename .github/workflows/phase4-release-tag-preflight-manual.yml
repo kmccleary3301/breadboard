@@ -1,9 +1,11 @@
-name: phase4-release-tag-preflight
+name: phase4-release-tag-preflight-manual
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: "Commit SHA to validate (default: workflow SHA)"
+        required: false
 
 permissions:
   actions: read
@@ -15,9 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Resolve target SHA
+        env:
+          INPUT_TARGET_SHA: ${{ github.event.inputs.target_sha }}
         run: |
           set -euo pipefail
-          target_sha="$GITHUB_SHA"
+          target_sha="${INPUT_TARGET_SHA:-}"
+          if [[ -z "$target_sha" ]]; then
+            target_sha="$GITHUB_SHA"
+          fi
           echo "TARGET_SHA=$target_sha" >> "$GITHUB_ENV"
 
       - name: Verify successful strict gate run on target SHA
@@ -50,7 +57,7 @@ req = urllib.request.Request(
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "phase4-release-tag-preflight",
+        "User-Agent": "phase4-release-tag-preflight-manual",
     },
 )
 with urllib.request.urlopen(req, timeout=30) as resp:
@@ -78,7 +85,7 @@ PY
         if: ${{ always() }}
         run: |
           {
-            echo "## Phase4 Release Tag Preflight"
+            echo "## Phase4 Release Tag Preflight (Manual)"
             echo ""
             echo "- target_sha: \`${TARGET_SHA:-missing}\`"
             echo "- strict_gate_run_id: \`${GATE_RUN_ID:-missing}\`"
