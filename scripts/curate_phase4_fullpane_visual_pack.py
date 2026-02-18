@@ -71,6 +71,34 @@ DEFAULT_SPECS: tuple[LaneSpec, ...] = (
 )
 
 
+def _pick_workspace_root(repo_root: Path) -> Path:
+    candidates = (repo_root, repo_root.parent)
+    for base in candidates:
+        if (base / "docs_tmp").exists() and (base / "config").exists():
+            return base
+    for base in candidates:
+        if (base / "docs_tmp").exists():
+            return base
+    return repo_root.parent
+
+
+def _resolve_workspace_path(path: Path, workspace_root: Path, repo_root: Path) -> Path:
+    if path.is_absolute():
+        return path.resolve()
+    for base in (workspace_root, repo_root, repo_root.parent):
+        candidate = (base / path).resolve()
+        if candidate.exists():
+            return candidate
+    return (workspace_root / path).resolve()
+
+
+def _display_path(path: Path, workspace_root: Path) -> str:
+    try:
+        return str(path.relative_to(workspace_root))
+    except ValueError:
+        return str(path)
+
+
 def _list_runs(base: Path) -> list[Path]:
     return [p for p in sorted(base.glob("*")) if p.is_dir()]
 
@@ -147,15 +175,11 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     repo_root = Path(__file__).resolve().parents[1]
-    workspace_root = repo_root.parent
+    workspace_root = _pick_workspace_root(repo_root)
 
     out_dir = Path(args.out_dir).expanduser().resolve()
-    scenarios_root = Path(args.scenarios_root).expanduser()
-    if not scenarios_root.is_absolute():
-        scenarios_root = (workspace_root / scenarios_root).resolve()
-    reference = Path(args.reference).expanduser()
-    if not reference.is_absolute():
-        reference = (workspace_root / reference).resolve()
+    scenarios_root = _resolve_workspace_path(Path(args.scenarios_root).expanduser(), workspace_root, repo_root)
+    reference = _resolve_workspace_path(Path(args.reference).expanduser(), workspace_root, repo_root)
 
     if out_dir.exists():
         shutil.rmtree(out_dir)
@@ -200,11 +224,9 @@ def main() -> int:
             prev_frames = _frame_count(prev_run)
             prev_idx = max(1, prev_frames)
             prev_final = _copy_frame_triplet(prev_run, prev_idx, lane_dir, "04_prev_final", out_dir)
-            prev_source = str(prev_run.relative_to(workspace_root))
+            prev_source = _display_path(prev_run, workspace_root)
         else:
-            fallback = Path(spec.fallback_prev_png)
-            if not fallback.is_absolute():
-                fallback = (workspace_root / fallback).resolve()
+            fallback = _resolve_workspace_path(Path(spec.fallback_prev_png), workspace_root, repo_root)
             if not fallback.exists():
                 if args.allow_missing:
                     continue
@@ -219,7 +241,7 @@ def main() -> int:
                 "txt": None,
                 "ansi": None,
             }
-            prev_source = str(fallback.relative_to(workspace_root))
+            prev_source = _display_path(fallback, workspace_root)
 
         new_final_png = lane_dir / "03_final.png"
         prev_final_png = lane_dir / "04_prev_final.png"
@@ -239,7 +261,7 @@ def main() -> int:
         metrics.update(
             {
                 "scenario": spec.scenario_id,
-                "new_run": str(new_run.relative_to(workspace_root)),
+                "new_run": _display_path(new_run, workspace_root),
                 "prev_source": prev_source,
                 "active_hint_text": spec.active_hint_text,
                 "selected_frame_indices": {
@@ -255,7 +277,7 @@ def main() -> int:
 
         manifest[spec.key] = {
             "scenario": spec.scenario_id,
-            "new_run": str(new_run.relative_to(workspace_root)),
+            "new_run": _display_path(new_run, workspace_root),
             "prev_source": prev_source,
             "new_frame_count": new_frames,
             "selected": {
@@ -273,7 +295,7 @@ def main() -> int:
             (
                 spec.key,
                 spec.scenario_id,
-                str(new_run.relative_to(workspace_root)),
+                _display_path(new_run, workspace_root),
                 prev_source,
                 metrics,
             )
@@ -291,12 +313,12 @@ def main() -> int:
     lines.append("")
     lines.append("- Date: 2026-02-18")
     lines.append("- Purpose: curated frame set from latest locked-profile fullpane replay runs (landing/active/final), plus previous-vs-new visual diffs.")
-    lines.append(f"- Pack path: `{out_dir.relative_to(workspace_root)}`")
+    lines.append(f"- Pack path: `{_display_path(out_dir, workspace_root)}`")
     lines.append("- Locked render profile: `phase4_locked_v1`")
     lines.append("- Source manifest: `manifest.json`")
     lines.append("")
     lines.append("## Reference Screenshot Provenance")
-    lines.append(f"- `{reference.relative_to(workspace_root)}` SHA256: `{ref_hash}`")
+    lines.append(f"- `{_display_path(reference, workspace_root)}` SHA256: `{ref_hash}`")
     lines.append("- Same hash copy included as `everything_showcase_ref_v2.png`.")
     lines.append("")
     lines.append("## Scenario Summary")

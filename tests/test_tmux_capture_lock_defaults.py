@@ -66,3 +66,17 @@ def test_showcase_regression_defaults_are_locked():
     assert module.DEFAULT_MIN_FRAMES == 12
     assert "Markdown Showcase" in module.DEFAULT_REQUIRED_ANCHORS
     assert "Inline link BreadBoard" in module.DEFAULT_REQUIRED_ANCHORS
+
+
+def test_visual_pack_schema_defaults_are_locked():
+    module = _load_module(
+        "validate_phase4_visual_pack",
+        "scripts/validate_phase4_visual_pack.py",
+    )
+    assert module.DEFAULT_LANE_SCENARIOS == {
+        "streaming": "phase4_replay/streaming_v1_fullpane_v8",
+        "todo": "phase4_replay/todo_preview_v1_fullpane_v7",
+        "subagents": "phase4_replay/subagents_v1_fullpane_v7",
+        "everything": "phase4_replay/everything_showcase_v1_fullpane_v1",
+    }
+    assert "Locked render profile: `phase4_locked_v1`" in module.DEFAULT_INDEX_ANCHORS
