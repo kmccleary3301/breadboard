@@ -20,9 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Resolve target SHA
+        env:
+          INPUT_TARGET_SHA: ${{ inputs.target_sha }}
         run: |
           set -euo pipefail
-          target_sha="${{ github.event.inputs.target_sha || '' }}"
+          target_sha="${INPUT_TARGET_SHA:-}"
           if [[ -z "$target_sha" ]]; then
             target_sha="$GITHUB_SHA"
           fi
