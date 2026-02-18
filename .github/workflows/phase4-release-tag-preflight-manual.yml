@@ -2,10 +2,6 @@ name: phase4-release-tag-preflight-manual
 
 on:
   workflow_dispatch:
-    inputs:
-      target_sha:
-        description: "Commit SHA to validate (default: workflow SHA)"
-        required: false
 
 permissions:
   actions: read
@@ -17,14 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Resolve target SHA
-        env:
-          INPUT_TARGET_SHA: ${{ github.event.inputs.target_sha }}
         run: |
           set -euo pipefail
-          target_sha="${INPUT_TARGET_SHA:-}"
-          if [[ -z "$target_sha" ]]; then
-            target_sha="$GITHUB_SHA"
-          fi
+          target_sha="$GITHUB_SHA"
           echo "TARGET_SHA=$target_sha" >> "$GITHUB_ENV"
 
       - name: Verify successful strict gate run on target SHA
