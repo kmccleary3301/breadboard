@@ -9,7 +9,6 @@ on:
       target_sha:
         description: "Commit SHA to validate (default: workflow SHA)"
         required: false
-        type: string
 
 permissions:
   actions: read
