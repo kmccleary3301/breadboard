@@ -1,0 +1,254 @@
+{
+  "scenario": "codex/e2e_compact_semantic_v1",
+  "run_id": "20260210-131357",
+  "target": "breadboard_test_refcap_codex_20260210_125126:0.0",
+  "started_at": 1770750837.320821,
+  "ended_at": 1770750860.942856,
+  "duration_seconds": 23.622035026550293,
+  "poller_cmd": [
+    "/home/querylake_manager/miniconda3/bin/python",
+    "/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/scripts/tmux_capture_poll.py",
+    "--target",
+    "breadboard_test_refcap_codex_20260210_125126:0.0",
+    "--duration",
+    "360.0",
+    "--interval",
+    "0.5",
+    "--scenario",
+    "codex/e2e_compact_semantic_v1",
+    "--run-id",
+    "20260210-131357",
+    "--out-root",
+    "/shared_folders/querylake_server/ray_testing/ray_SCE/docs_tmp/tmux_captures/scenarios",
+    "--settle-ms",
+    "140",
+    "--settle-attempts",
+    "5"
+  ],
+  "poller_log": "/shared_folders/querylake_server/ray_testing/ray_SCE/docs_tmp/tmux_captures/scenarios/codex/e2e_compact_semantic_v1/20260210-131357/poller.log",
+  "poller_exit_code": -15,
+  "poller_terminated_by_runner": true,
+  "actions_path": "/shared_folders/querylake_server/ray_testing/ray_SCE/docs_tmp/tmux_captures/scenario_actions/codex_e2e_compact_semantic_v1.json",
+  "actions_count": 11,
+  "executed_actions": [
+    {
+      "index": 1,
+      "action": {
+        "type": "startup_preflight",
+        "timeout": 240
+      },
+      "started_at": 1770750838.3210974,
+      "status": "ok",
+      "ended_at": 1770750838.3232818
+    },
+    {
+      "index": 2,
+      "action": {
+        "type": "wait_until",
+        "require_contains_any": [
+          "gpt-5-codex",
+          "for shortcuts",
+          "context left"
+        ],
+        "require_timeout": 60,
+        "timeout": 90
+      },
+      "started_at": 1770750838.323283,
+      "status": "ok",
+      "ended_at": 1770750838.3285575
+    },
+    {
+      "index": 3,
+      "action": {
+        "type": "send",
+        "text": "Reply exactly with: OK",
+        "clear_first": false,
+        "submit": true,
+        "must_match_regex": [
+          "(?m)^[\u2022*]\\s*OK\\s*$"
+        ],
+        "semantic_timeout": 60
+      },
+      "started_at": 1770750838.328559,
+      "status": "ok",
+      "ended_at": 1770750840.4259918
+    },
+    {
+      "index": 4,
+      "action": {
+        "type": "send",
+        "text": "Reply exactly with: compact-precheck",
+        "clear_first": false,
+        "submit": true,
+        "must_match_regex": [
+          "(?m)^[\u2022*]\\s*compact-precheck\\s*$"
+        ],
+        "semantic_timeout": 90
+      },
+      "started_at": 1770750840.425993,
+      "status": "ok",
+      "ended_at": 1770750843.5349262
+    },
+    {
+      "index": 5,
+      "action": {
+        "type": "wait_for_idle",
+        "timeout": 180,
+        "quiet_seconds": 2.0,
+        "accept_active_timeout": true,
+        "accept_stable_active_after": 8.0
+      },
+      "started_at": 1770750843.5349276,
+      "status": "ok",
+      "ended_at": 1770750845.5472305
+    },
+    {
+      "index": 6,
+      "action": {
+        "type": "send",
+        "text": "/compact",
+        "clear_first": false,
+        "submit": true
+      },
+      "started_at": 1770750845.547232,
+      "status": "ok",
+      "ended_at": 1770750845.6324697
+    },
+    {
+      "index": 7,
+      "action": {
+        "type": "wait_until",
+        "require_contains_any": [
+          "compact",
+          "compacted",
+          "Conversation compacted"
+        ],
+        "require_timeout": 120,
+        "timeout": 180,
+        "must_not_contain": [
+          "Conversation interrupted"
+        ]
+      },
+      "started_at": 1770750845.6324706,
+      "status": "ok",
+      "ended_at": 1770750845.6398983
+    },
+    {
+      "index": 8,
+      "action": {
+        "type": "wait_for_idle",
+        "timeout": 300,
+        "quiet_seconds": 2.0,
+        "accept_active_timeout": true,
+        "accept_stable_active_after": 8.0
+      },
+      "started_at": 1770750845.6398995,
+      "status": "ok",
+      "ended_at": 1770750851.1910088
+    },
+    {
+      "index": 9,
+      "action": {
+        "type": "send",
+        "text": "Continue after compaction and reply exactly with: compact-ready",
+        "clear_first": false,
+        "submit": true,
+        "must_match_regex": [
+          "(?m)^[\u2022*]\\s*compact-ready\\s*$"
+        ],
+        "must_not_contain": [
+          "Conversation interrupted"
+        ],
+        "semantic_timeout": 240
+      },
+      "started_at": 1770750851.19101,
+      "status": "ok",
+      "ended_at": 1770750855.819311
+    },
+    {
+      "index": 10,
+      "action": {
+        "type": "wait_for_idle",
+        "timeout": 360,
+        "quiet_seconds": 2.0,
+        "accept_active_timeout": true,
+        "accept_stable_active_after": 8.0
+      },
+      "started_at": 1770750855.819312,
+      "status": "ok",
+      "ended_at": 1770750857.8342276
+    },
+    {
+      "index": 11,
+      "action": {
+        "type": "send",
+        "text": "Show a markdown showcase with headings, bold/italic, inline code, fenced ts code block, table, and nested lists.",
+        "clear_first": false,
+        "submit": true,
+        "must_match_regex_any": [
+          "(?m)^\\s*#\\s+",
+          "(?m)^\\s*\\|.+\\|",
+          "(?m)^\\s*```",
+          "(?m)^\\s*[-*]\\s+",
+          "(?m)^\\s*\\d+\\.\\s+"
+        ],
+        "semantic_timeout": 420
+      },
+      "started_at": 1770750857.8342288,
+      "status": "ok",
+      "ended_at": 1770750859.9392204
+    }
+  ],
+  "action_error": null,
+  "execution_error": null,
+  "semantic_failures": [],
+  "global_semantic": null,
+  "final_idle_error": null,
+  "provider_error": null,
+  "provider_error_kind": null,
+  "frame_stall_error": null,
+  "scenario_result": "pass",
+  "provider_dump_dir": null,
+  "provider_before_count": 0,
+  "provider_after_count": 0,
+  "provider_new_count": 0,
+  "provider_new_files": [],
+  "provider_analysis": {
+    "http_error_files": [],
+    "model_not_found_files": [],
+    "forbidden_model_alias_hits": [],
+    "permission_error_files": [],
+    "scope_error_files": []
+  },
+  "provider_forbid_model_aliases": [],
+  "submit_key": "C-m",
+  "newline_key": "C-j",
+  "newline_prefix": "",
+  "wait_idle_accept_active_timeout": true,
+  "wait_idle_accept_stable_active_after": 8.0,
+  "must_contain": [],
+  "must_not_contain": [
+    "Conversation interrupted"
+  ],
+  "must_match_regex": [],
+  "semantic_timeout": 180.0,
+  "semantic_fail_fast": false,
+  "require_final_idle": false,
+  "capture_label": "codex_e2e_compact_semantic_v1",
+  "session_prefix_guard": "breadboard_test_",
+  "protected_sessions": [
+    "bb_tui_codex_dev",
+    "bb_engine_codex_dev",
+    "bb_atp"
+  ],
+  "max_stall_seconds": 0.0,
+  "dry_run_actions": false,
+  "frame_validation": {
+    "frames_dir_exists": true,
+    "frame_count": 45,
+    "missing_frame_indices": [],
+    "missing_artifacts": [],
+    "max_unchanged_streak_frames": 6,
+    "max_unchanged_streak_seconds_estimate": 3.0
+  }
+}

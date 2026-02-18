@@ -34,9 +34,9 @@ export const resolveBreadboardPath = (value: string): string => {
   return cwdCandidate
 }
 
-export const resolveBreadboardWorkspace = (value?: string | null): string => {
+export const resolveBreadboardWorkspace = (value?: string | null): string | undefined => {
   if (!value || !value.trim()) {
-    return process.cwd()
+    return undefined
   }
   return resolveBreadboardPath(value)
 }

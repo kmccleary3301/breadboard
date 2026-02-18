@@ -11,6 +11,7 @@ import os
 import shutil
 import logging
 import threading
+import tempfile
 from typing import Any, Dict, List, Optional, Tuple, Callable
 from pathlib import Path
 
@@ -39,6 +40,7 @@ from .compilation.system_prompt_compiler import get_compiler
 
 
 logger = logging.getLogger(__name__)
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class AgenticCoder:
@@ -199,9 +201,67 @@ class AgenticCoder:
             pass
         return None
 
+    @staticmethod
+    def _is_within(base: Path, candidate: Path) -> bool:
+        try:
+            candidate.relative_to(base)
+            return True
+        except ValueError:
+            return False
+
+    def _resolve_workspace_path(self) -> Path:
+        """Resolve and validate workspace path before any destructive operations.
+
+        Safety rails:
+        - refuse `/`, repo root, repo ancestors, `$HOME`, and temp root,
+        - refuse paths containing `.git`,
+        - refuse paths outside repo/tmp unless explicitly overridden.
+        """
+        workspace_path = Path(self.workspace_dir).expanduser()
+        if not workspace_path.is_absolute():
+            workspace_path = (_REPO_ROOT / workspace_path)
+        resolved = workspace_path.resolve()
+
+        home = Path.home().resolve()
+        tmp_root = Path(tempfile.gettempdir()).resolve()
+
+        if resolved == Path("/"):
+            raise RuntimeError(f"[safety] Refusing workspace root: '{resolved}'")
+        if resolved == _REPO_ROOT:
+            raise RuntimeError(f"[safety] Refusing workspace root: '{resolved}' (repo root)")
+        if resolved in _REPO_ROOT.parents:
+            raise RuntimeError(
+                f"[safety] Refusing workspace root: '{resolved}' (ancestor of repo root '{_REPO_ROOT}')"
+            )
+        if resolved == home:
+            raise RuntimeError(f"[safety] Refusing workspace root: '{resolved}' (home dir)")
+        if resolved == tmp_root:
+            raise RuntimeError(f"[safety] Refusing workspace root: '{resolved}' (tmp dir root)")
+        if (resolved / ".git").exists():
+            raise RuntimeError(
+                f"[safety] Refusing workspace root: '{resolved}' (contains .git)"
+            )
+
+        if not (self._is_within(_REPO_ROOT, resolved) or self._is_within(tmp_root, resolved)):
+            if os.environ.get("BREADBOARD_ALLOW_UNSAFE_WORKSPACE") != "1":
+                raise RuntimeError(
+                    f"[safety] Refusing workspace root: '{resolved}' (outside repo/tmp). "
+                    "Set BREADBOARD_ALLOW_UNSAFE_WORKSPACE=1 to override."
+                )
+        return resolved
+
     def initialize(self) -> None:
         """Initialize the agent with the loaded configuration."""
-        workspace_path = Path(self.workspace_dir)
+        workspace_path = self._resolve_workspace_path()
+        self.workspace_dir = str(workspace_path)
+        try:
+            ws_cfg = self.config.get("workspace")
+            if not isinstance(ws_cfg, dict):
+                ws_cfg = {}
+            ws_cfg["root"] = self.workspace_dir
+            self.config["workspace"] = ws_cfg
+        except Exception:
+            pass
         preserve_seeded = os.environ.get("PRESERVE_SEEDED_WORKSPACE") in {"1", "true", "True"}
         if workspace_path.exists() and not preserve_seeded:
             # Ensure each run starts from a clean clone workspace

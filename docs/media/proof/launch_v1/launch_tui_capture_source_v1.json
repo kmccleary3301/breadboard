@@ -1,0 +1,24 @@
+{
+  "version": "v1",
+  "source_run_dir": "/shared_folders/querylake_server/ray_testing/ray_SCE/docs_tmp/tmux_captures/scenarios/codex/e2e_compact_semantic_v1/20260210-131357",
+  "source_frames_dir": "/shared_folders/querylake_server/ray_testing/ray_SCE/docs_tmp/tmux_captures/scenarios/codex/e2e_compact_semantic_v1/20260210-131357/frames",
+  "screenshot_frame": 44,
+  "clip_start_frame": 36,
+  "clip_end_frame": 45,
+  "fps": 4,
+  "outputs": {
+    "screenshot_png": "docs/media/proof/launch_v1/launch_tui_screenshot_v1.png",
+    "clip_mp4": "docs/media/proof/launch_v1/launch_tui_clip_v1.mp4",
+    "clip_gif": "docs/media/proof/launch_v1/launch_tui_clip_v1.gif",
+    "bundle_zip": "docs/media/proof/bundles/launch_proof_bundle_v1.zip"
+  },
+  "copied_metadata_files": [
+    "scenario_manifest.json",
+    "run_summary.json",
+    "comparison_report.md",
+    "comparison_report.json",
+    "actions.json",
+    "meta.json",
+    "initial.txt"
+  ]
+}

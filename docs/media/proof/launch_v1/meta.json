@@ -1,0 +1,16 @@
+{
+  "target": "breadboard_test_refcap_codex_20260210_125126:0.0",
+  "interval": 0.5,
+  "duration": 360.0,
+  "frames": 0,
+  "capture_mode": "pane",
+  "render_png": true,
+  "cols": 120,
+  "rows": 30,
+  "dynamic_size": true,
+  "scenario": "codex/e2e_compact_semantic_v1",
+  "run_id": "20260210-131357",
+  "settle_ms": 140,
+  "settle_attempts": 5,
+  "started_at": "20260210-131357"
+}

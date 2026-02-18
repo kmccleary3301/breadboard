@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">BreadBoard bb Icon v1</title>
+  <desc id="desc">Pixel bb icon with BreadBoard gradient.</desc>
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff4d6d"/>
+      <stop offset="50%" stop-color="#d94dff"/>
+      <stop offset="100%" stop-color="#4da3ff"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#g)" shape-rendering="crispEdges" transform="translate(8,8) scale(3)">
+    <rect x="2" y="2" width="1" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="2" y="7" width="1" height="1"/><rect x="2" y="8" width="1" height="1"/>
+    <rect x="3" y="4" width="1" height="1"/><rect x="4" y="4" width="1" height="1"/><rect x="5" y="5" width="1" height="1"/><rect x="5" y="6" width="1" height="1"/><rect x="5" y="7" width="1" height="1"/><rect x="3" y="8" width="1" height="1"/><rect x="4" y="8" width="1" height="1"/>
+    <rect x="8" y="2" width="1" height="1"/><rect x="8" y="3" width="1" height="1"/><rect x="8" y="4" width="1" height="1"/><rect x="8" y="5" width="1" height="1"/><rect x="8" y="6" width="1" height="1"/><rect x="8" y="7" width="1" height="1"/><rect x="8" y="8" width="1" height="1"/>
+    <rect x="9" y="4" width="1" height="1"/><rect x="10" y="4" width="1" height="1"/><rect x="11" y="5" width="1" height="1"/><rect x="11" y="6" width="1" height="1"/><rect x="11" y="7" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="10" y="8" width="1" height="1"/>
+    <rect x="14" y="1" width="1" height="1"/><rect x="15" y="2" width="1" height="1"/><rect x="14" y="3" width="1" height="1"/><rect x="15" y="4" width="1" height="1"/>
+  </g>
+</svg>

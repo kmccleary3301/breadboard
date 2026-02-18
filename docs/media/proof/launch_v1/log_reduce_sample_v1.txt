@@ -1,0 +1,35 @@
+== Directory Tree ==
+/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/logging/20260218-001713_agent_ws_smoke_local
+├── conversation/
+│   └── conversation.md (2.5KB)
+├── final_container_dir/
+│   ├── .breadboard/
+│   ├── Makefile (177.0B)
+│   ├── protofilesystem.c (65.0B)
+│   ├── protofilesystem.h (79.0B)
+│   └── test_filesystem.c (196.0B)
+├── meta/
+│   ├── requests/
+│   ├── conversation_ir.json (16.0KB)
+│   ├── env_fingerprint.json (537.0B)
+│   ├── guard_histogram.json (2.0B)
+│   ├── provider_metrics.json (1.2KB)
+│   ├── run_summary.json (33.1KB)
+│   ├── telemetry.jsonl (851.0B)
+│   ├── tool_usage.json (1.0KB)
+│   └── workspace.manifest.json (7.5KB)
+├── prompts/
+│   ├── per_turn/
+│   └── system_compiled.md (869.0B)
+└── provider_native/
+    ├── tool_calls/
+    └── tool_results/
+== Conversation Summary ==
+[no raw/requests directory found]
+
+== Guardrail Signals ==
+- validation errors: 0
+- zero tool warnings: 0
+- zero tool abort: 0
+- patch policy violations: 0
+- shell write blocked: 0

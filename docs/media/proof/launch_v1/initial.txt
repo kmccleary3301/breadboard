@@ -1,0 +1,30 @@
+• Showcase Primer
+
+  Here's a quick markdown sampler with bold, italic, and inline code sprinkled throughout.
+
+  // TypeScript sample: simple typed function with generics
+  function wrapValue<T>(value: T): { value: T; timestamp: number } {
+    return {
+      value,
+      timestamp: Date.now(),
+    };
+  }
+
+  | Element      | Description                      |
+  |--------------|----------------------------------|
+  | Heading      | Organizes content into sections   |
+  | Emphasis     | Uses bold or italic styles |
+  | Code blocks  | Display multi-line examples       |
+
+  - Feature Highlights
+      - Rendering
+          - Supports nested lists for structured thoughts
+      - Styling
+          - Mixes bold, italic, and inline code easily
+
+
+› Implement {feature}
+
+  ? for shortcuts                                                                                     99% context left
+
+
