@@ -224,8 +224,13 @@ def main() -> int:
             prev_final = _copy_frame_triplet(prev_run, prev_idx, lane_dir, "04_prev_final", out_dir)
             prev_source = _display_path(prev_run, workspace_root)
         else:
-            fallback = _resolve_workspace_path(Path(spec.fallback_prev_png), workspace_root, repo_root)
-            if not fallback.exists():
+            fallback_spec = str(spec.fallback_prev_png or "").strip()
+            fallback = (
+                _resolve_workspace_path(Path(fallback_spec), workspace_root, repo_root)
+                if fallback_spec
+                else None
+            )
+            if fallback is None or (not fallback.exists()) or (not fallback.is_file()):
                 # Deterministic fallback: use the current final frame as synthetic previous baseline.
                 if not new_final_png.exists():
                     if args.allow_missing:
