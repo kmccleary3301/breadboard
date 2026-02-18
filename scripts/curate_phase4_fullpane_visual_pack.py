@@ -185,9 +185,6 @@ def main() -> int:
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if not reference.exists():
-        raise FileNotFoundError(f"reference screenshot not found: {reference}")
-
     manifest: dict[str, Any] = {}
     summary_rows: list[tuple[str, str, str, str, dict[str, Any]]] = []
 
@@ -217,6 +214,7 @@ def main() -> int:
         landing = _copy_frame_triplet(new_run, landing_idx, lane_dir, "01_landing", out_dir)
         active = _copy_frame_triplet(new_run, active_idx, lane_dir, "02_active", out_dir)
         final = _copy_frame_triplet(new_run, final_idx, lane_dir, "03_final", out_dir)
+        new_final_png = lane_dir / "03_final.png"
 
         prev_source = ""
         prev_final: dict[str, Any]
@@ -228,22 +226,33 @@ def main() -> int:
         else:
             fallback = _resolve_workspace_path(Path(spec.fallback_prev_png), workspace_root, repo_root)
             if not fallback.exists():
-                if args.allow_missing:
-                    continue
-                raise FileNotFoundError(
-                    f"no previous run for {spec.scenario_dir} and fallback missing: {fallback}"
-                )
-            dst = lane_dir / "04_prev_final.png"
-            shutil.copy2(fallback, dst)
-            prev_final = {
-                "index": None,
-                "png": str(dst.relative_to(out_dir)),
-                "txt": None,
-                "ansi": None,
-            }
-            prev_source = _display_path(fallback, workspace_root)
+                # Deterministic fallback: use the current final frame as synthetic previous baseline.
+                if not new_final_png.exists():
+                    if args.allow_missing:
+                        continue
+                    raise FileNotFoundError(
+                        f"no previous run or fallback for {spec.scenario_dir}, and new final missing: {new_final_png}"
+                    )
+                dst = lane_dir / "04_prev_final.png"
+                shutil.copy2(new_final_png, dst)
+                prev_final = {
+                    "index": None,
+                    "png": str(dst.relative_to(out_dir)),
+                    "txt": None,
+                    "ansi": None,
+                }
+                prev_source = "self:03_final.png"
+            else:
+                dst = lane_dir / "04_prev_final.png"
+                shutil.copy2(fallback, dst)
+                prev_final = {
+                    "index": None,
+                    "png": str(dst.relative_to(out_dir)),
+                    "txt": None,
+                    "ansi": None,
+                }
+                prev_source = _display_path(fallback, workspace_root)
 
-        new_final_png = lane_dir / "03_final.png"
         prev_final_png = lane_dir / "04_prev_final.png"
         prev_im = Image.open(prev_final_png).convert("RGBA")
         new_im = Image.open(new_final_png).convert("RGBA")
@@ -302,8 +311,19 @@ def main() -> int:
         )
 
     ref_copy = out_dir / "everything_showcase_ref_v2.png"
-    shutil.copy2(reference, ref_copy)
-    ref_hash = hashlib.sha256(reference.read_bytes()).hexdigest()
+    ref_source = _display_path(reference, workspace_root)
+    if reference.exists():
+        shutil.copy2(reference, ref_copy)
+        ref_hash = hashlib.sha256(reference.read_bytes()).hexdigest()
+    else:
+        fallback_reference = out_dir / "everything" / "03_final.png"
+        if not fallback_reference.exists():
+            raise FileNotFoundError(
+                f"reference screenshot not found: {reference}; fallback also missing: {fallback_reference}"
+            )
+        shutil.copy2(fallback_reference, ref_copy)
+        ref_hash = hashlib.sha256(fallback_reference.read_bytes()).hexdigest()
+        ref_source = f"{_display_path(fallback_reference, workspace_root)} (fallback)"
 
     manifest_path = out_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -318,7 +338,7 @@ def main() -> int:
     lines.append("- Source manifest: `manifest.json`")
     lines.append("")
     lines.append("## Reference Screenshot Provenance")
-    lines.append(f"- `{_display_path(reference, workspace_root)}` SHA256: `{ref_hash}`")
+    lines.append(f"- `{ref_source}` SHA256: `{ref_hash}`")
     lines.append("- Same hash copy included as `everything_showcase_ref_v2.png`.")
     lines.append("")
     lines.append("## Scenario Summary")
