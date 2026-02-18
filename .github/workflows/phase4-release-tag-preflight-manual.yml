@@ -12,6 +12,9 @@ jobs:
     name: require phase4 fullpane gate before release tag
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Resolve target SHA
         run: |
           set -euo pipefail
