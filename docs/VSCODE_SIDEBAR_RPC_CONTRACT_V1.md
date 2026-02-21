@@ -49,32 +49,28 @@ type RpcEvt = {
 
 Invalid messages must be rejected and logged as protocol violations.
 
-## Required Request Methods
+## Implemented Request Methods (Current V1)
 
 ## Session lifecycle
 
-- `bb.init()`
-- `bb.createSession({ configPath?: string; task?: string; model?: string; permissionMode?: string })`
+- `bb.checkConnection()`
 - `bb.listSessions()`
-- `bb.selectSession({ sessionId: string })`
-- `bb.deleteSession({ sessionId: string })`
+- `bb.attachSession({ sessionId: string })`
 
 ## Run controls
 
-- `bb.sendMessage({ sessionId: string; text: string; attachmentIds?: string[] })`
-- `bb.stop({ sessionId: string })`
-- `bb.command({ sessionId: string; command: string; args?: Record<string, unknown> })`
+- `bb.sendMessage({ sessionId: string; text: string })`
+- `bb.stopSession({ sessionId: string })`
 
-## Permissions
+## Session management
 
-- `bb.approvePermission({ sessionId: string; requestId: string; decision: "allow_once"|"deny"|"allow_rule"; ruleUpdate?: Record<string, unknown> })`
+- `bb.deleteSession({ sessionId: string })`
 
-## Files and artifacts
+## Planned-but-not-implemented V1 extensions
 
-- `bb.listFiles({ sessionId: string; path: string })`
-- `bb.readFileSnippet({ sessionId: string; path: string; maxBytes?: number; headLines?: number; tailLines?: number })`
-- `bb.openDiff({ sessionId: string; filePath: string; beforeRef?: string; afterRef?: string })`
-- `bb.downloadArtifact({ sessionId: string; artifactPath: string })`
+- Permission lifecycle RPC methods.
+- Files/diff/artifact browsing RPC methods.
+- Full runtime schema validators on host and webview boundaries.
 
 ## Event Topics
 
@@ -120,6 +116,11 @@ Payload is a batch from host reducer queue:
     ts?: number;
     payload: Record<string, unknown>;
   }>;
+  render?: {
+    totalEvents: number;
+    lastEventType: string | null;
+    lines: string[];   // bounded transcript preview, deterministic reducer output
+  };
 }
 ```
 
@@ -128,6 +129,7 @@ Rules:
 1. Preserve order exactly as received from engine SSE.
 2. Do not mutate event ids.
 3. Unknown event types must be forwarded/rendered safely.
+4. `render` is additive in `v1`; consumers may ignore it and still process `events`.
 
 ## Resume and Replay
 
@@ -168,9 +170,9 @@ Webview behavior:
 
 ## Verification Checklist
 
+- [x] Deterministic reducer unit tests for transcript summary + bounded tail retention.
 - [ ] Runtime schema tests for all request/response envelopes.
 - [ ] Unknown method rejection tests.
 - [ ] Resume with Last-Event-ID integration test.
 - [ ] Gap detection and UI event emission test.
 - [ ] Token isolation test (webview cannot access secret material).
-
