@@ -11,6 +11,8 @@
     "typecheck": "npm run sync:sdk && tsc -b --pretty false",
     "test": "vitest run",
     "gate:p0": "npm run test && npm run typecheck && npm run build",
+    "gate:p1p2": "vitest run src/replayDeterminism.test.ts src/diffParser.test.ts src/taskGraph.test.ts src/projection.test.ts src/checkpointFlow.test.ts src/sessionCommands.test.ts src/contractsParity.test.ts && npm run typecheck && npm run build",
+    "gate:full": "npm run gate:p0 && npm run gate:p1p2",
     "preview": "vite preview"
   },
   "dependencies": {

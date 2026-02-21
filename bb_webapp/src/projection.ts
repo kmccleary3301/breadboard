@@ -1,4 +1,7 @@
 import type { SessionEvent } from "@breadboard/sdk"
+import { parseCheckpointListEvent, parseCheckpointRestoreEvent, type CheckpointRestoreResult, type CheckpointRow } from "./checkpoints"
+import { extractDiffPayload } from "./diffParser"
+import { applyTaskGraphEvent, initialTaskGraphState, type TaskGraphState } from "./taskGraph"
 
 export type TranscriptRow = {
   id: string
@@ -13,6 +16,8 @@ export type ToolRow = {
   label: string
   summary: string
   timestamp: number
+  diffText: string | null
+  diffFilePath: string | null
 }
 
 export type PermissionScope = "session" | "project"
@@ -29,11 +34,37 @@ export type PermissionRequestRow = {
   createdAt: number
 }
 
+export type PermissionLedgerDecision =
+  | "allow-once"
+  | "allow-always"
+  | "deny-once"
+  | "deny-always"
+  | "deny-stop"
+  | "revoke"
+  | "unknown"
+
+export type PermissionLedgerRow = {
+  requestId: string
+  tool: string
+  scope: PermissionScope
+  decision: PermissionLedgerDecision
+  rule: string | null
+  note: string | null
+  timestamp: number
+  revoked: boolean
+}
+
 export type ProjectionState = {
   transcript: TranscriptRow[]
   toolRows: ToolRow[]
   events: SessionEvent[]
   pendingPermissions: PermissionRequestRow[]
+  permissionLedger: PermissionLedgerRow[]
+  checkpoints: CheckpointRow[]
+  activeCheckpointId: string | null
+  checkpointRestoreInFlight: boolean
+  lastCheckpointRestore: CheckpointRestoreResult | null
+  taskGraph: TaskGraphState
   activeAssistantRowId: string | null
 }
 
@@ -42,6 +73,9 @@ export const PROJECTION_LIMITS = {
   transcript: 800,
   toolRows: 400,
   pendingPermissions: 64,
+  permissionLedger: 256,
+  checkpoints: 256,
+  taskNodes: 512,
 } as const
 
 export const initialProjectionState: ProjectionState = {
@@ -49,6 +83,12 @@ export const initialProjectionState: ProjectionState = {
   toolRows: [],
   events: [],
   pendingPermissions: [],
+  permissionLedger: [],
+  checkpoints: [],
+  activeCheckpointId: null,
+  checkpointRestoreInFlight: false,
+  lastCheckpointRestore: null,
+  taskGraph: initialTaskGraphState,
   activeAssistantRowId: null,
 }
 
@@ -152,6 +192,90 @@ const normalizePermissionRequest = (payload: unknown, fallbackRequestId: string)
   }
 }
 
+const normalizePermissionDecision = (value: unknown): PermissionLedgerDecision => {
+  const text = readString(value)?.toLowerCase()
+  if (!text) return "unknown"
+  if (text.includes("allow") && text.includes("always")) return "allow-always"
+  if (text.includes("allow")) return "allow-once"
+  if (text.includes("deny") && text.includes("always")) return "deny-always"
+  if (text.includes("deny") && text.includes("stop")) return "deny-stop"
+  if (text.includes("deny")) return "deny-once"
+  if (text.includes("revoke")) return "revoke"
+  return "unknown"
+}
+
+const upsertPermissionLedger = (rows: readonly PermissionLedgerRow[], next: PermissionLedgerRow): PermissionLedgerRow[] => {
+  const index = rows.findIndex((row) => row.requestId === next.requestId)
+  if (index < 0) return appendBounded(rows, next, PROJECTION_LIMITS.permissionLedger)
+  const out = [...rows]
+  out[index] = { ...rows[index], ...next }
+  return out
+}
+
+const normalizePermissionResponseLedger = (payload: unknown, pending: readonly PermissionRequestRow[], timestamp: number): PermissionLedgerRow | null => {
+  const record = isRecord(payload) ? payload : {}
+  const requestId =
+    readString(record.request_id) ??
+    readString(record.requestId) ??
+    readString(record.permission_id) ??
+    readString(record.permissionId) ??
+    readString(record.id)
+  if (!requestId) return null
+
+  const fromPending = pending.find((entry) => entry.requestId === requestId)
+  const tool =
+    readString(record.tool) ??
+    readString(record.tool_name) ??
+    readString(record.name) ??
+    fromPending?.tool ??
+    "tool"
+  const scope = normalizePermissionScope(record.scope ?? record.default_scope ?? fromPending?.defaultScope)
+  const decision = normalizePermissionDecision(record.decision ?? record.response ?? record.action)
+  const rule = readString(record.rule) ?? readString(record.rule_suggestion) ?? fromPending?.ruleSuggestion ?? null
+  const note = readString(record.note) ?? null
+  const revoked = decision === "revoke"
+
+  return {
+    requestId,
+    tool,
+    scope,
+    decision,
+    rule,
+    note,
+    timestamp,
+    revoked,
+  }
+}
+
+const boundedTaskGraph = (graph: TaskGraphState, maxNodes: number): TaskGraphState => {
+  const ids = Object.keys(graph.nodesById)
+  if (ids.length <= maxNodes) return graph
+  const sorted = ids.sort((a, b) => {
+    const nodeA = graph.nodesById[a]
+    const nodeB = graph.nodesById[b]
+    if (nodeA.updatedAt !== nodeB.updatedAt) return nodeA.updatedAt - nodeB.updatedAt
+    return a.localeCompare(b)
+  })
+  const keep = new Set(sorted.slice(-maxNodes))
+  const nodesById: TaskGraphState["nodesById"] = {}
+  for (const id of keep) {
+    nodesById[id] = graph.nodesById[id]
+  }
+  const childrenByParent: TaskGraphState["childrenByParent"] = {}
+  for (const [parentId, children] of Object.entries(graph.childrenByParent)) {
+    if (!keep.has(parentId)) continue
+    const filtered = children.filter((id) => keep.has(id))
+    if (filtered.length > 0) childrenByParent[parentId] = filtered
+  }
+  return {
+    ...graph,
+    nodesById,
+    childrenByParent,
+    rootIds: graph.rootIds.filter((id) => keep.has(id)),
+    activeNodeId: graph.activeNodeId && keep.has(graph.activeNodeId) ? graph.activeNodeId : null,
+  }
+}
+
 export const dismissPermissionRequest = (state: ProjectionState, requestId: string): ProjectionState => ({
   ...state,
   pendingPermissions: state.pendingPermissions.filter((entry) => entry.requestId !== requestId),
@@ -247,6 +371,8 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
           label,
           summary: safeJson(event.payload),
           timestamp: event.timestamp,
+          diffText: null,
+          diffFilePath: null,
         },
         PROJECTION_LIMITS.toolRows,
       ),
@@ -255,6 +381,7 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
 
   if (event.type === "tool.result" || event.type === "tool_result") {
     const label = extractToolName(event.payload)
+    const diff = extractDiffPayload(event.payload)
     return {
       ...state,
       events: nextEvents,
@@ -266,6 +393,8 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
           label,
           summary: safeJson(event.payload),
           timestamp: event.timestamp,
+          diffText: diff?.diffText ?? null,
+          diffFilePath: diff?.filePath ?? null,
         },
         PROJECTION_LIMITS.toolRows,
       ),
@@ -299,16 +428,47 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
       readString(record.permission_id) ??
       readString(record.permissionId) ??
       readString(record.id)
-    if (!requestId) {
-      return {
-        ...state,
-        events: nextEvents,
-      }
-    }
+    const ledgerRow = normalizePermissionResponseLedger(event.payload, state.pendingPermissions, event.timestamp)
     return {
       ...state,
       events: nextEvents,
-      pendingPermissions: state.pendingPermissions.filter((entry) => entry.requestId !== requestId),
+      pendingPermissions: requestId ? state.pendingPermissions.filter((entry) => entry.requestId !== requestId) : state.pendingPermissions,
+      permissionLedger: ledgerRow ? upsertPermissionLedger(state.permissionLedger, ledgerRow) : state.permissionLedger,
+    }
+  }
+
+  if (event.type === "checkpoint_list") {
+    const checkpoints = parseCheckpointListEvent(event).slice(0, PROJECTION_LIMITS.checkpoints)
+    const activeCheckpointId =
+      state.activeCheckpointId && checkpoints.some((row) => row.id === state.activeCheckpointId)
+        ? state.activeCheckpointId
+        : checkpoints[0]?.id ?? null
+    return {
+      ...state,
+      events: nextEvents,
+      checkpoints,
+      activeCheckpointId,
+      checkpointRestoreInFlight: false,
+    }
+  }
+
+  if (event.type === "checkpoint_restored") {
+    const restore = parseCheckpointRestoreEvent(event)
+    return {
+      ...state,
+      events: nextEvents,
+      checkpointRestoreInFlight: false,
+      lastCheckpointRestore: restore,
+      activeCheckpointId: restore.checkpointId ?? state.activeCheckpointId,
+    }
+  }
+
+  if (event.type === "task_event" || event.type === "ctree_node" || event.type === "ctree_snapshot") {
+    const nextGraph = boundedTaskGraph(applyTaskGraphEvent(state.taskGraph, event), PROJECTION_LIMITS.taskNodes)
+    return {
+      ...state,
+      events: nextEvents,
+      taskGraph: nextGraph,
     }
   }
 

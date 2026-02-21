@@ -1,25 +1,30 @@
-# BreadBoard Webapp (P0 Scaffold)
+# BreadBoard Webapp (P0/P1/P2 Incremental Surface)
 
-This package is the initial browser client for BreadBoard.
+This package is the browser operator surface for BreadBoard sessions.
 
-Current scope:
+## Implemented Surface
 
-- Engine health check (`GET /health`)
-- Session list/create
-- Session attach + SSE event streaming (`GET /sessions/{id}/events`)
-- Resume with `Last-Event-ID`, replay catch-up, and explicit 409 gap handling
-- Input send and stop command
-- Permission queue + decisions (`permission_decision`: allow/deny once/always + deny-stop)
-- Session file browser + snippet preview (`GET /sessions/{id}/files`)
-- Artifact download (`GET /sessions/{id}/download?artifact=...`)
-- stream-mdx transcript rendering (`StreamingMarkdown`)
-- Deterministic local projection into transcript/tool/raw-event panes
-- IndexedDB event cache with bounded compaction + schema migration guard
-- Projection snapshot + tail replay hydration on session attach
-- Debug replay package export/import (deterministic ordering + validation)
-- Coalesced delta rendering pipeline with queue/latency metrics
-- Projection hash display and replay determinism tests
-- Markdown security fail-closed path for unsafe HTML/script/link patterns
+- Session list/create/attach/stop.
+- SSE stream with `Last-Event-ID`, replay catch-up, heartbeat timeout retry, and 409 resume-window handling.
+- Deterministic event projection with memory bounds and IndexedDB compaction.
+- Snapshot + tail replay hydration on attach.
+- Transcript rendering via `stream-mdx` with stable-prefix handling and unsafe-content plaintext fallback.
+- Tool/event projection with diff detection and interactive diff viewer (unified/side-by-side, hunk copy, open file path).
+- Checkpoint list + restore controls with reconnect-safe restore flow.
+- Permission queue decisions + permission ledger filters + revoke attempts (with fallback behavior if unsupported).
+- Files browser/snippet preview and artifact download.
+- Local transcript/tool/artifact search with jump-to-result navigation.
+- Task/subagent tree projection (`task_event`, `ctree_node`, `ctree_snapshot`) with status rollup and event jumps.
+- Replay package export/import with deterministic ordering and projection hash display.
+- Client telemetry counters (queue depth/latency, flush counts, stale drops) and audit log panel.
+- Connection mode strategy (`local`/`sandbox`/`remote`) with mode-scoped token policy.
+
+## Security & Trust Notes
+
+- Markdown/assistant content is treated as untrusted; unsafe patterns degrade to plaintext rendering.
+- Replay export and raw event debug views redact sensitive keys.
+- Remote mode only attaches Authorization headers; local/sandbox modes do not by default.
+- A baseline CSP is set in `index.html`.
 
 ## Development
 
@@ -29,27 +34,44 @@ npm install
 npm run dev
 ```
 
-The app uses the local TypeScript SDK at `../sdk/ts` (`npm run sync:sdk` is wired into build/dev scripts).
-The stream-mdx hosted worker is synced automatically to `public/workers/markdown-worker.js`.
-
-Default engine base URL: `http://127.0.0.1:9099`
+The app uses the local TypeScript SDK at `../sdk/ts` (`sync:sdk` is built into dev/build/typecheck).
+The stream worker is synced to `public/workers/markdown-worker.js`.
 
 ## Quality Gates
 
-Run all P0 checks:
+- Full baseline gate:
 
 ```bash
 npm run gate:p0
 ```
 
-This runs:
-- `npm run test`
-- `npm run typecheck`
-- `npm run build`
+- P1/P2 hardening gate (replay determinism + diff/task/checkpoint/parity suites):
 
-## Operator Notes
+```bash
+npm run gate:p1p2
+```
 
-- If streaming enters `gap`, use `Recover Stream` to clear local cursor and re-attach.
-- `Export Replay` writes a validated JSON replay package for the active session.
-- `Import Replay` hydrates local projection/cache from a replay package (for diagnostics/review).
-- Raw events panel includes projection hash and client queue telemetry to debug stream health.
+- Combined gate:
+
+```bash
+npm run gate:full
+```
+
+## Data Retention and Cache Policy
+
+- Event cache is compacted per session (`maxEventsPerSession=2000`).
+- Projection memory bounds are enforced for transcript/tools/events/permissions/task nodes.
+- Projection snapshots are written periodically and replayed with tail events on attach.
+
+## Operator Workflows
+
+- Stream recovery: use `Recover Stream` when state enters `gap`.
+- Checkpoint restore: refresh list, select checkpoint, restore, and wait for automatic reattach.
+- Permission governance: resolve pending requests, inspect ledger, re-apply rules, and attempt revokes.
+- Diff/file triage: open tool diffs and jump directly into file preview.
+- Diagnostics: run health/status/model checks from the diagnostics button.
+
+## Additional Docs
+
+- `bb_webapp/RUNBOOK.md` for remote-safe setup and troubleshooting.
+- `bb_webapp/RELEASE_CHECKLIST.md` for release verification steps.

@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
 import {
+  ApiError,
   createBreadboardClient,
   streamSessionEvents,
   type SessionEvent,
@@ -11,6 +12,7 @@ import {
   dismissPermissionRequest,
   initialProjectionState,
   PROJECTION_LIMITS,
+  type PermissionLedgerRow,
   type PermissionRequestRow,
   type PermissionScope,
   type ProjectionState,
@@ -28,6 +30,20 @@ import { buildPermissionDecisionPayload, type PermissionDecision, type Permissio
 import { computeProjectionHash } from "./projectionHash"
 import { buildReplayPackage, parseReplayPackage, serializeReplayPackage } from "./replayPackage"
 import { buildSessionDownloadPath } from "./bridgeContracts"
+import {
+  DEFAULT_BASE_URLS,
+  resolveClientAuthToken,
+  sanitizeTokenForStorage,
+  shouldSendAuthorizationHeader,
+  type ConnectionMode,
+  type ConnectionSettingsByMode,
+  type TokenStoragePolicy,
+} from "./connectionPolicy"
+import { redactSensitiveValue } from "./redaction"
+import { requestCheckpointList, requestCheckpointRestore, requestPermissionRevoke } from "./sessionCommands"
+import DiffViewer from "./DiffViewer"
+import TaskTreePanel from "./TaskTreePanel"
+import { buildSearchEntries, searchEntries, type SearchEntryType } from "./searchIndex"
 
 const MarkdownMessage = lazy(async () => await import("./MarkdownMessage"))
 
@@ -43,10 +59,11 @@ type ClientMetrics = {
   maxQueueLatencyMs: number
 }
 
-const STORAGE_BASE_URL_KEY = "bb.webapp.baseUrl"
-const STORAGE_TOKEN_KEY = "bb.webapp.token"
+const STORAGE_CONNECTION_MODE_KEY = "bb.webapp.connectionMode"
+const STORAGE_TOKEN_POLICY_KEY = "bb.webapp.tokenPolicy"
+const STORAGE_CONNECTION_SETTINGS_KEY = "bb.webapp.connectionSettings"
 const STORAGE_LAST_EVENT_IDS_KEY = "bb.webapp.lastEventIds"
-const DEFAULT_BASE_URL = "http://127.0.0.1:9099"
+const SESSION_TOKEN_SETTINGS_KEY = "bb.webapp.sessionConnectionSettings"
 const DEFAULT_CONFIG_PATH = "agent_configs/base_v2.yaml"
 const STREAM_HEARTBEAT_TIMEOUT_MS = 30_000
 const SNAPSHOT_INTERVAL_EVENTS = 25
@@ -81,6 +98,10 @@ const isProjectionState = (value: unknown): value is ProjectionState =>
   Array.isArray(value.transcript) &&
   Array.isArray(value.toolRows) &&
   Array.isArray(value.pendingPermissions) &&
+  Array.isArray(value.permissionLedger) &&
+  Array.isArray(value.checkpoints) &&
+  isRecord(value.taskGraph) &&
+  Array.isArray((value.taskGraph as Record<string, unknown>).rootIds) &&
   (typeof value.activeAssistantRowId === "string" || value.activeAssistantRowId === null)
 
 const loadLastEventIds = (): Record<string, string> => {
@@ -111,9 +132,73 @@ const formatTimestampForFile = (value: Date): string => value.toISOString().repl
 const nowMs = (): number =>
   typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now()
 
+const appendBoundedAudit = <T,>(rows: readonly T[], next: T, max: number): T[] => {
+  if (max <= 0) return []
+  if (rows.length + 1 <= max) return [...rows, next]
+  const drop = rows.length + 1 - max
+  return [...rows.slice(drop), next]
+}
+
+const formatRuntimeError = (error: unknown): string => {
+  if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+    return `authorization failed (HTTP ${error.status}). verify remote token, mode, and policy.`
+  }
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
+const loadConnectionMode = (): ConnectionMode => {
+  const raw = localStorage.getItem(STORAGE_CONNECTION_MODE_KEY)
+  if (raw === "local" || raw === "sandbox" || raw === "remote") return raw
+  return "local"
+}
+
+const loadTokenPolicy = (): TokenStoragePolicy => {
+  const raw = localStorage.getItem(STORAGE_TOKEN_POLICY_KEY)
+  return raw === "session" ? "session" : "persisted"
+}
+
+const loadConnectionSettings = (policy: TokenStoragePolicy): ConnectionSettingsByMode => {
+  const fallback: ConnectionSettingsByMode = {
+    local: { baseUrl: DEFAULT_BASE_URLS.local, token: "" },
+    sandbox: { baseUrl: DEFAULT_BASE_URLS.sandbox, token: "" },
+    remote: { baseUrl: DEFAULT_BASE_URLS.remote, token: "" },
+  }
+  const store = policy === "session" ? sessionStorage : localStorage
+  const raw = store.getItem(policy === "session" ? SESSION_TOKEN_SETTINGS_KEY : STORAGE_CONNECTION_SETTINGS_KEY)
+  if (!raw) return fallback
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!isRecord(parsed)) return fallback
+    for (const mode of ["local", "sandbox", "remote"] as const) {
+      const row = isRecord(parsed[mode]) ? parsed[mode] : {}
+      const baseUrl = readString(row.baseUrl) ?? DEFAULT_BASE_URLS[mode]
+      const token = readString(row.token) ?? ""
+      fallback[mode] = { baseUrl, token }
+    }
+    return fallback
+  } catch {
+    return fallback
+  }
+}
+
+const makeSyntheticEvent = (sessionId: string, type: SessionEvent["type"], payload: Record<string, unknown>): SessionEvent => ({
+  id: `synthetic-${type}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  type,
+  session_id: sessionId,
+  turn: null,
+  timestamp: Date.now(),
+  payload,
+})
+
 export function App() {
-  const [baseUrl, setBaseUrl] = useState<string>(() => localStorage.getItem(STORAGE_BASE_URL_KEY) ?? DEFAULT_BASE_URL)
-  const [token, setToken] = useState<string>(() => localStorage.getItem(STORAGE_TOKEN_KEY) ?? "")
+  const [connectionMode, setConnectionMode] = useState<ConnectionMode>(() => loadConnectionMode())
+  const [tokenStoragePolicy, setTokenStoragePolicy] = useState<TokenStoragePolicy>(() => loadTokenPolicy())
+  const [connectionSettings, setConnectionSettings] = useState<ConnectionSettingsByMode>(() =>
+    loadConnectionSettings(loadTokenPolicy()),
+  )
+  const baseUrl = connectionSettings[connectionMode].baseUrl
+  const token = connectionSettings[connectionMode].token
   const [configPath, setConfigPath] = useState<string>(DEFAULT_CONFIG_PATH)
   const [task, setTask] = useState<string>("")
   const [message, setMessage] = useState<string>("")
@@ -130,10 +215,25 @@ export function App() {
   const [lastEventIds, setLastEventIds] = useState<Record<string, string>>(() => loadLastEventIds())
   const [busy, setBusy] = useState<boolean>(false)
   const [permissionDrafts, setPermissionDrafts] = useState<Record<string, PermissionDraft>>({})
+  const [permissionRulePresets, setPermissionRulePresets] = useState<Record<string, string>>({})
   const [permissionBusyId, setPermissionBusyId] = useState<string | null>(null)
   const [permissionError, setPermissionError] = useState<string>("")
   const [projectionHash, setProjectionHash] = useState<string>("pending")
   const [metrics, setMetrics] = useState<ClientMetrics>(INITIAL_CLIENT_METRICS)
+  const [diffViewMode, setDiffViewMode] = useState<"unified" | "side-by-side">("unified")
+  const [taskFilters, setTaskFilters] = useState<{ failedOnly: boolean; activeOnly: boolean }>({ failedOnly: false, activeOnly: false })
+  const [taskExpanded, setTaskExpanded] = useState<Record<string, boolean>>({})
+  const [searchQuery, setSearchQuery] = useState<string>("")
+  const [searchType, setSearchType] = useState<SearchEntryType | "all">("all")
+  const [searchIndexPosition, setSearchIndexPosition] = useState<number>(-1)
+  const [diagnostics, setDiagnostics] = useState<{ status: string; details: string }>({ status: "idle", details: "" })
+  const [auditLog, setAuditLog] = useState<Array<{ id: string; at: number; action: string; detail: string }>>([])
+  const [permissionLedgerFilter, setPermissionLedgerFilter] = useState<{ tool: string; scope: PermissionScope | "all"; decision: string }>({
+    tool: "",
+    scope: "all",
+    decision: "all",
+  })
+  const [revokeError, setRevokeError] = useState<string>("")
   const streamAbortRef = useRef<AbortController | null>(null)
   const streamRunIdRef = useRef<number>(0)
   const lastEventIdsRef = useRef<Record<string, string>>(lastEventIds)
@@ -148,9 +248,9 @@ export function App() {
     () =>
       createBreadboardClient({
         baseUrl,
-        authToken: token.trim().length > 0 ? token.trim() : undefined,
+        authToken: resolveClientAuthToken(connectionMode, token),
       }),
-    [baseUrl, token],
+    [baseUrl, connectionMode, token],
   )
 
   const transitionRuntime = useCallback((state: ConnectionState, message: string): void => {
@@ -158,18 +258,55 @@ export function App() {
     setConnectionMessage(message)
   }, [])
 
+  const appendAudit = useCallback((action: string, detail: string) => {
+    setAuditLog((prev) => {
+      const next = appendBoundedAudit(prev, { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, at: Date.now(), action, detail }, 300)
+      return next
+    })
+  }, [])
+
+  const setModeBaseUrl = useCallback((value: string) => {
+    setConnectionSettings((prev) => ({
+      ...prev,
+      [connectionMode]: { ...prev[connectionMode], baseUrl: value },
+    }))
+  }, [connectionMode])
+
+  const setModeToken = useCallback((value: string) => {
+    setConnectionSettings((prev) => ({
+      ...prev,
+      [connectionMode]: { ...prev[connectionMode], token: value },
+    }))
+  }, [connectionMode])
+
   useEffect(() => {
     lastEventIdsRef.current = lastEventIds
     saveLastEventIds(lastEventIds)
   }, [lastEventIds])
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_BASE_URL_KEY, baseUrl)
-  }, [baseUrl])
+    localStorage.setItem(STORAGE_CONNECTION_MODE_KEY, connectionMode)
+  }, [connectionMode])
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_TOKEN_KEY, token)
-  }, [token])
+    localStorage.setItem(STORAGE_TOKEN_POLICY_KEY, tokenStoragePolicy)
+    if (tokenStoragePolicy === "persisted") {
+      const persistedSettings: ConnectionSettingsByMode = {
+        local: { baseUrl: connectionSettings.local.baseUrl, token: sanitizeTokenForStorage("persisted", connectionSettings.local.token) },
+        sandbox: { baseUrl: connectionSettings.sandbox.baseUrl, token: sanitizeTokenForStorage("persisted", connectionSettings.sandbox.token) },
+        remote: { baseUrl: connectionSettings.remote.baseUrl, token: sanitizeTokenForStorage("persisted", connectionSettings.remote.token) },
+      }
+      localStorage.setItem(STORAGE_CONNECTION_SETTINGS_KEY, JSON.stringify(persistedSettings))
+      sessionStorage.removeItem(SESSION_TOKEN_SETTINGS_KEY)
+      return
+    }
+    const sessionSettings: ConnectionSettingsByMode = {
+      local: { baseUrl: connectionSettings.local.baseUrl, token: sanitizeTokenForStorage("session", connectionSettings.local.token) },
+      sandbox: { baseUrl: connectionSettings.sandbox.baseUrl, token: sanitizeTokenForStorage("session", connectionSettings.sandbox.token) },
+      remote: { baseUrl: connectionSettings.remote.baseUrl, token: connectionSettings.remote.token },
+    }
+    sessionStorage.setItem(SESSION_TOKEN_SETTINGS_KEY, JSON.stringify(sessionSettings))
+  }, [connectionSettings, tokenStoragePolicy])
 
   useEffect(() => {
     let cancelled = false
@@ -265,7 +402,7 @@ export function App() {
       const rows = await client.listSessions()
       setSessions(rows)
     } catch (error) {
-      transitionRuntime("error", error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", formatRuntimeError(error))
     } finally {
       setBusy(false)
     }
@@ -280,9 +417,31 @@ export function App() {
         `connected: protocol=${health.protocol_version ?? "?"}, engine=${health.engine_version ?? health.version ?? "?"}`,
       )
     } catch (error) {
-      transitionRuntime("error", error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", formatRuntimeError(error))
     }
   }, [activeSessionId, client, transitionRuntime])
+
+  const runDiagnostics = useCallback(async () => {
+    setDiagnostics({ status: "running", details: "collecting diagnostics…" })
+    try {
+      const health = await client.health()
+      const statusResponse = await fetch(buildApiUrl(baseUrl, "/status")).then(async (response) => {
+        const text = await response.text()
+        return { code: response.status, body: text }
+      })
+      const models = await client.getModelCatalog(configPath)
+      const details = [
+        `health=${health.status}`,
+        `protocol=${health.protocol_version ?? "?"}`,
+        `engine=${health.engine_version ?? health.version ?? "?"}`,
+        `status_http=${statusResponse.code}`,
+        `models=${models.models.length}`,
+      ].join(" | ")
+      setDiagnostics({ status: "ok", details })
+    } catch (error) {
+      setDiagnostics({ status: "error", details: formatRuntimeError(error) })
+    }
+  }, [baseUrl, client, configPath])
 
   const listFiles = useCallback(
     async (sessionId: string, path: string) => {
@@ -306,6 +465,31 @@ export function App() {
     [client],
   )
 
+  const copyText = useCallback(async (text: string) => {
+    if (!text) return
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text)
+        transitionRuntime(connectionState, "copied to clipboard")
+        return
+      }
+    } catch {
+      // fallback path below
+    }
+    const input = document.createElement("textarea")
+    input.value = text
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand("copy")
+    document.body.removeChild(input)
+  }, [connectionState, transitionRuntime])
+
+  const jumpToEvent = useCallback((eventId: string) => {
+    const element = document.getElementById(`event-${eventId}`)
+    if (!element) return
+    element.scrollIntoView({ behavior: "smooth", block: "center" })
+  }, [])
+
   const parentDir = useMemo(() => {
     if (!currentDir) return ""
     const normalized = currentDir.replace(/\/+$/, "")
@@ -313,6 +497,32 @@ export function App() {
     if (idx <= 0) return ""
     return normalized.slice(0, idx)
   }, [currentDir])
+
+  const searchIndex = useMemo(
+    () =>
+      buildSearchEntries({
+        transcript: projection.transcript,
+        toolRows: projection.toolRows,
+        events: projection.events,
+        limits: {
+          transcript: PROJECTION_LIMITS.transcript,
+          toolRows: PROJECTION_LIMITS.toolRows,
+          events: PROJECTION_LIMITS.events,
+        },
+      }),
+    [projection.events, projection.toolRows, projection.transcript],
+  )
+
+  const searchResults = useMemo(() => searchEntries(searchIndex, searchQuery, { type: searchType }), [searchIndex, searchQuery, searchType])
+
+  const filteredLedger = useMemo(() => {
+    return projection.permissionLedger.filter((row) => {
+      if (permissionLedgerFilter.tool && !row.tool.toLowerCase().includes(permissionLedgerFilter.tool.toLowerCase())) return false
+      if (permissionLedgerFilter.scope !== "all" && row.scope !== permissionLedgerFilter.scope) return false
+      if (permissionLedgerFilter.decision !== "all" && row.decision !== permissionLedgerFilter.decision) return false
+      return true
+    })
+  }, [permissionLedgerFilter.decision, permissionLedgerFilter.scope, permissionLedgerFilter.tool, projection.permissionLedger])
 
   useEffect(() => {
     void checkConnection()
@@ -331,7 +541,7 @@ export function App() {
         getLastEventId: () => lastEventIdsRef.current[sessionId],
         stream: ({ lastEventId, replay, fromId }) =>
           streamSessionEvents(sessionId, {
-            config: { baseUrl, authToken: token.trim().length > 0 ? token.trim() : undefined },
+            config: { baseUrl, authToken: resolveClientAuthToken(connectionMode, token) },
             signal,
             lastEventId,
             query: replay && fromId ? { replay: true, from_id: fromId } : undefined,
@@ -387,7 +597,7 @@ export function App() {
       }
       flushPendingProjectionEvents()
     },
-    [baseUrl, token, transitionRuntime, queueProjectionEvent, flushPendingProjectionEvents],
+    [baseUrl, connectionMode, token, transitionRuntime, queueProjectionEvent, flushPendingProjectionEvents],
   )
 
   const attachSession = useCallback(
@@ -442,6 +652,19 @@ export function App() {
       } catch {
         // File listing is optional in early bootstrap; stream attach should still proceed.
       }
+      try {
+        const ctree = await client.getCtreeSnapshot(sessionId)
+        if (ctree && typeof ctree === "object") {
+          setProjection((prev) => applyEventToProjection(prev, makeSyntheticEvent(sessionId, "ctree_snapshot", ctree as Record<string, unknown>)))
+        }
+      } catch {
+        // ctree is best-effort in early attach.
+      }
+      try {
+        await requestCheckpointList(async (command, payload) => await client.postCommand(sessionId, { command, payload }))
+      } catch {
+        // checkpoint list is optional; real updates can still arrive via events.
+      }
       const abort = new AbortController()
       streamAbortRef.current = abort
       streamRunIdRef.current += 1
@@ -449,7 +672,7 @@ export function App() {
       transitionRuntime("connecting", `stream connecting: ${sessionId}`)
       void streamLoop(sessionId, abort.signal, runId)
     },
-    [listFiles, stopStreaming, streamLoop, transitionRuntime],
+    [client, listFiles, stopStreaming, streamLoop, transitionRuntime],
   )
 
   const createSession = useCallback(async () => {
@@ -464,7 +687,7 @@ export function App() {
       await refreshSessions()
       await attachSession(created.session_id)
     } catch (error) {
-      transitionRuntime("error", error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", formatRuntimeError(error))
     } finally {
       setBusy(false)
     }
@@ -477,7 +700,7 @@ export function App() {
       await client.postInput(activeSessionId, { content: message.trim() })
       setMessage("")
     } catch (error) {
-      transitionRuntime("error", error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", formatRuntimeError(error))
     } finally {
       setBusy(false)
     }
@@ -488,13 +711,52 @@ export function App() {
     setBusy(true)
     try {
       await client.postCommand(activeSessionId, { command: "stop" })
+      appendAudit("stop", `session=${activeSessionId}`)
       transitionRuntime("stopped", `stop requested: ${activeSessionId}`)
     } catch (error) {
-      transitionRuntime("error", error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", formatRuntimeError(error))
     } finally {
       setBusy(false)
     }
-  }, [activeSessionId, client, transitionRuntime])
+  }, [activeSessionId, appendAudit, client, transitionRuntime])
+
+  const refreshCheckpoints = useCallback(async () => {
+    if (!activeSessionId) return
+    setBusy(true)
+    try {
+      await requestCheckpointList(async (command, payload) => await client.postCommand(activeSessionId, { command, payload }))
+      appendAudit("checkpoint.list", `session=${activeSessionId}`)
+      transitionRuntime(connectionState, `requested checkpoints for ${activeSessionId}`)
+    } catch (error) {
+      transitionRuntime("error", `checkpoint list failed: ${formatRuntimeError(error)}`)
+    } finally {
+      setBusy(false)
+    }
+  }, [activeSessionId, appendAudit, client, connectionState, transitionRuntime])
+
+  const restoreCheckpoint = useCallback(async () => {
+    if (!activeSessionId || !projection.activeCheckpointId) return
+    const confirmed = window.confirm(
+      `Restore checkpoint '${projection.activeCheckpointId}'?\n\nThis rewinds session state and will reconnect the stream.`,
+    )
+    if (!confirmed) return
+    setBusy(true)
+    setProjection((prev) => ({ ...prev, checkpointRestoreInFlight: true }))
+    try {
+      await requestCheckpointRestore(
+        async (command, payload) => await client.postCommand(activeSessionId, { command, payload }),
+        projection.activeCheckpointId,
+      )
+      appendAudit("checkpoint.restore", `session=${activeSessionId} checkpoint=${projection.activeCheckpointId}`)
+      transitionRuntime("connecting", `checkpoint restore requested: ${projection.activeCheckpointId}`)
+      await attachSession(activeSessionId)
+    } catch (error) {
+      setProjection((prev) => ({ ...prev, checkpointRestoreInFlight: false }))
+      transitionRuntime("error", `checkpoint restore failed: ${formatRuntimeError(error)}`)
+    } finally {
+      setBusy(false)
+    }
+  }, [activeSessionId, appendAudit, attachSession, client, projection.activeCheckpointId, transitionRuntime])
 
   const updatePermissionDraft = useCallback((requestId: string, patch: Partial<PermissionDraft>) => {
     setPermissionDrafts((prev) => {
@@ -512,11 +774,11 @@ export function App() {
       if (existing) return existing
       return {
         note: "",
-        rule: request.ruleSuggestion ?? "",
+        rule: request.ruleSuggestion ?? permissionRulePresets[request.tool] ?? "",
         scope: request.defaultScope,
       }
     },
-    [permissionDrafts],
+    [permissionDrafts, permissionRulePresets],
   )
 
   const submitPermissionDecision = useCallback(
@@ -532,6 +794,10 @@ export function App() {
           command: "permission_decision",
           payload,
         })
+        appendAudit("permission.decision", `${request.requestId} -> ${decision}`)
+        if ((decision === "allow-always" || decision === "deny-always") && draft.rule.trim().length > 0) {
+          setPermissionRulePresets((prev) => ({ ...prev, [request.tool]: draft.rule.trim() }))
+        }
         setProjection((prev) => dismissPermissionRequest(prev, request.requestId))
         setPermissionDrafts((prev) => {
           const next = { ...prev }
@@ -539,12 +805,12 @@ export function App() {
           return next
         })
       } catch (error) {
-        setPermissionError(error instanceof Error ? error.message : String(error))
+        setPermissionError(formatRuntimeError(error))
       } finally {
         setPermissionBusyId(null)
       }
     },
-    [activeSessionId, client, resolvePermissionDraft],
+    [activeSessionId, appendAudit, client, resolvePermissionDraft],
   )
 
   const onFileClick = useCallback(
@@ -559,13 +825,44 @@ export function App() {
     [activeSessionId, listFiles, openFile],
   )
 
+  const revokePermission = useCallback(
+    async (entry: PermissionLedgerRow) => {
+      if (!activeSessionId) return
+      setRevokeError("")
+      setBusy(true)
+      try {
+        await requestPermissionRevoke(
+          async (command, payload) => await client.postCommand(activeSessionId, { command, payload }),
+          {
+            requestId: entry.requestId,
+            tool: entry.tool,
+            scope: entry.scope,
+            rule: entry.rule,
+          },
+        )
+        appendAudit("permission.revoke", `${entry.requestId} (${entry.tool})`)
+        setProjection((prev) => ({
+          ...prev,
+          permissionLedger: prev.permissionLedger.map((row) =>
+            row.requestId === entry.requestId ? { ...row, revoked: true, decision: "revoke", timestamp: Date.now() } : row,
+          ),
+        }))
+      } catch (error) {
+        setRevokeError(`revoke unavailable or failed: ${formatRuntimeError(error)}`)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [activeSessionId, appendAudit, client],
+  )
+
   const refreshCurrentDir = useCallback(async () => {
     if (!activeSessionId) return
     setBusy(true)
     try {
       await listFiles(activeSessionId, currentDir)
     } catch (error) {
-      transitionRuntime("error", error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", formatRuntimeError(error))
     } finally {
       setBusy(false)
     }
@@ -579,7 +876,10 @@ export function App() {
       const url = buildApiUrl(baseUrl, path)
       url.searchParams.set("artifact", artifactId.trim())
       const response = await fetch(url, {
-        headers: token.trim().length > 0 ? { Authorization: `Bearer ${token.trim()}` } : undefined,
+        headers:
+          shouldSendAuthorizationHeader(connectionMode) && token.trim().length > 0
+            ? { Authorization: `Bearer ${token.trim()}` }
+            : undefined,
       })
       if (!response.ok) {
         throw new Error(`artifact download failed: HTTP ${response.status}`)
@@ -591,12 +891,13 @@ export function App() {
       link.download = artifactId.trim()
       link.click()
       URL.revokeObjectURL(objectUrl)
+      appendAudit("artifact.download", `session=${activeSessionId} artifact=${artifactId.trim()}`)
     } catch (error) {
-      transitionRuntime("error", error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", formatRuntimeError(error))
     } finally {
       setBusy(false)
     }
-  }, [activeSessionId, artifactId, baseUrl, token, transitionRuntime])
+  }, [activeSessionId, appendAudit, artifactId, baseUrl, connectionMode, token, transitionRuntime])
 
   const exportReplay = useCallback(async () => {
     if (!activeSessionId) return
@@ -608,10 +909,14 @@ export function App() {
       if (sourceEvents.length === 0) {
         throw new Error("no local events to export for this session")
       }
-      const hash = await computeProjectionHash(sourceEvents)
+      const redactedEvents = sourceEvents.map((event) => ({
+        ...event,
+        payload: redactSensitiveValue(event.payload) as SessionEvent["payload"],
+      }))
+      const hash = await computeProjectionHash(redactedEvents)
       const replay = buildReplayPackage({
         sessionId: activeSessionId,
-        events: sourceEvents,
+        events: redactedEvents,
         projectionHash: hash,
       })
       const blob = new Blob([serializeReplayPackage(replay)], { type: "application/json" })
@@ -621,13 +926,14 @@ export function App() {
       link.download = `bb-replay-${activeSessionId}-${formatTimestampForFile(new Date())}.json`
       link.click()
       URL.revokeObjectURL(objectUrl)
+      appendAudit("replay.export", `session=${activeSessionId} events=${replay.events.length}`)
       transitionRuntime("idle", `replay exported: ${replay.events.length} events for ${activeSessionId}`)
     } catch (error) {
-      transitionRuntime("error", error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", formatRuntimeError(error))
     } finally {
       setBusy(false)
     }
-  }, [activeSessionId, projection.events, transitionRuntime])
+  }, [activeSessionId, appendAudit, projection.events, transitionRuntime])
 
   const onImportReplayFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -678,14 +984,15 @@ export function App() {
           ]
         })
 
+        appendAudit("replay.import", `session=${replay.session_id} events=${replay.events.length}`)
         transitionRuntime("stopped", `replay imported: ${replay.events.length} events for ${replay.session_id}`)
       } catch (error) {
-        transitionRuntime("error", error instanceof Error ? error.message : String(error))
+        transitionRuntime("error", formatRuntimeError(error))
       } finally {
         setBusy(false)
       }
     },
-    [stopStreaming, applyEventToProjection, transitionRuntime],
+    [stopStreaming, applyEventToProjection, appendAudit, transitionRuntime],
   )
 
   const triggerReplayImport = useCallback(() => {
@@ -699,9 +1006,41 @@ export function App() {
       delete next[activeSessionId]
       return next
     })
+    appendAudit("stream.recover", `session=${activeSessionId}`)
     transitionRuntime("connecting", `recovering stream: ${activeSessionId}`)
     await attachSession(activeSessionId)
-  }, [activeSessionId, attachSession, transitionRuntime])
+  }, [activeSessionId, appendAudit, attachSession, transitionRuntime])
+
+  const jumpToSearchResult = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= searchResults.length) return
+      const row = searchResults[index]
+      setSearchIndexPosition(index)
+      const direct = document.getElementById(`entry-${row.id}`)
+      const artifactId = row.id.startsWith("artifact-") ? row.id.slice("artifact-".length) : ""
+      const fallback = artifactId ? document.getElementById(`event-${artifactId}`) : null
+      const element = direct ?? fallback
+      if (!element) return
+      element.scrollIntoView({ behavior: "smooth", block: "center" })
+    },
+    [searchResults],
+  )
+
+  const nextSearchResult = useCallback(() => {
+    if (searchResults.length === 0) return
+    const next = searchIndexPosition < 0 ? 0 : (searchIndexPosition + 1) % searchResults.length
+    jumpToSearchResult(next)
+  }, [jumpToSearchResult, searchIndexPosition, searchResults.length])
+
+  const prevSearchResult = useCallback(() => {
+    if (searchResults.length === 0) return
+    const next = searchIndexPosition <= 0 ? searchResults.length - 1 : searchIndexPosition - 1
+    jumpToSearchResult(next)
+  }, [jumpToSearchResult, searchIndexPosition, searchResults.length])
+
+  const toggleTaskExpand = useCallback((id: string) => {
+    setTaskExpanded((prev) => ({ ...prev, [id]: !(prev[id] ?? true) }))
+  }, [])
 
   return (
     <div className="app">
@@ -714,20 +1053,44 @@ export function App() {
       <section className="panel">
         <div className="row">
           <label>
+            Mode
+            <select value={connectionMode} onChange={(event) => setConnectionMode(event.target.value as ConnectionMode)}>
+              <option value="local">local</option>
+              <option value="sandbox">sandbox</option>
+              <option value="remote">remote</option>
+            </select>
+          </label>
+          <label>
+            Token Storage
+            <select value={tokenStoragePolicy} onChange={(event) => setTokenStoragePolicy(event.target.value as TokenStoragePolicy)}>
+              <option value="persisted">persisted</option>
+              <option value="session">session-only</option>
+            </select>
+          </label>
+          <label>
             Engine Base URL
-            <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder={DEFAULT_BASE_URL} />
+            <input value={baseUrl} onChange={(event) => setModeBaseUrl(event.target.value)} placeholder={DEFAULT_BASE_URLS[connectionMode]} />
           </label>
           <label>
             API Token (optional)
-            <input value={token} onChange={(event) => setToken(event.target.value)} placeholder="Bearer token" />
+            <input value={token} onChange={(event) => setModeToken(event.target.value)} placeholder="Bearer token" />
           </label>
           <button onClick={() => void checkConnection()} disabled={busy}>
             Check
+          </button>
+          <button onClick={() => void runDiagnostics()} disabled={busy}>
+            Diagnostics
           </button>
           <button onClick={() => void recoverStream()} disabled={busy || !activeSessionId || connectionState !== "gap"}>
             Recover Stream
           </button>
         </div>
+        {connectionMode === "remote" ? (
+          <p className="errorText">Remote mode trust boundary: treat server/workspace as external and keep a valid token posture.</p>
+        ) : null}
+        <p className="subtle">
+          diagnostics: <strong>{diagnostics.status}</strong> {diagnostics.details}
+        </p>
       </section>
 
       <main className="layout">
@@ -760,7 +1123,7 @@ export function App() {
               rows={4}
             />
           </label>
-          <button onClick={() => void createSession()} disabled={busy || !task.trim()}>
+          <button onClick={() => void createSession()} disabled={busy || projection.checkpointRestoreInFlight || !task.trim()}>
             Create + Attach
           </button>
         </section>
@@ -774,17 +1137,17 @@ export function App() {
               placeholder={activeSessionId ? "Send message..." : "Attach a session first"}
               disabled={!activeSessionId}
             />
-            <button onClick={() => void sendMessage()} disabled={busy || !activeSessionId || !message.trim()}>
+            <button onClick={() => void sendMessage()} disabled={busy || projection.checkpointRestoreInFlight || !activeSessionId || !message.trim()}>
               Send
             </button>
-            <button onClick={() => void stopSession()} disabled={busy || !activeSessionId}>
+            <button onClick={() => void stopSession()} disabled={busy || projection.checkpointRestoreInFlight || !activeSessionId}>
               Stop
             </button>
           </div>
           <div className="transcript">
             {projection.transcript.length === 0 ? <p className="subtle">No transcript events yet.</p> : null}
             {projection.transcript.map((row) => (
-              <article key={row.id} className={`bubble ${row.role}`}>
+              <article key={row.id} id={`entry-${row.id}`} className={`bubble ${row.role}`}>
                 <header>
                   <strong>{row.role}</strong>
                   <span>{row.final ? "final" : "streaming"}</span>
@@ -802,6 +1165,83 @@ export function App() {
         </section>
 
         <section className="panel">
+          <h2>Checkpoints</h2>
+          <div className="row">
+            <button onClick={() => void refreshCheckpoints()} disabled={busy || !activeSessionId || projection.checkpointRestoreInFlight}>
+              Refresh Checkpoints
+            </button>
+            <select
+              value={projection.activeCheckpointId ?? ""}
+              onChange={(event) =>
+                setProjection((prev) => ({
+                  ...prev,
+                  activeCheckpointId: event.target.value || null,
+                }))
+              }
+              disabled={!activeSessionId || projection.checkpoints.length === 0 || projection.checkpointRestoreInFlight}
+            >
+              <option value="">select checkpoint</option>
+              {projection.checkpoints.map((checkpoint) => (
+                <option key={checkpoint.id} value={checkpoint.id}>
+                  {checkpoint.id}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => void restoreCheckpoint()}
+              disabled={busy || !activeSessionId || !projection.activeCheckpointId || projection.checkpointRestoreInFlight}
+            >
+              {projection.checkpointRestoreInFlight ? "Restoring…" : "Restore"}
+            </button>
+          </div>
+          <div className="checkpointList">
+            {projection.checkpoints.length === 0 ? <p className="subtle">No checkpoint data yet.</p> : null}
+            {projection.checkpoints.map((row) => (
+              <article key={row.id} className={`checkpointRow ${projection.activeCheckpointId === row.id ? "active" : ""}`}>
+                <strong>{row.label}</strong>
+                <code>{row.id}</code>
+                <span className="subtle">{new Date(row.createdAt).toLocaleString()}</span>
+              </article>
+            ))}
+          </div>
+          {projection.lastCheckpointRestore ? (
+            <p className={projection.lastCheckpointRestore.status === "ok" ? "subtle" : "errorText"}>
+              last restore: {projection.lastCheckpointRestore.message}
+            </p>
+          ) : null}
+
+          <h2>Search</h2>
+          <div className="row">
+            <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="search transcript/tools/artifacts" />
+            <select value={searchType} onChange={(event) => setSearchType(event.target.value as SearchEntryType | "all")}>
+              <option value="all">all</option>
+              <option value="transcript">transcript</option>
+              <option value="tool">tool</option>
+              <option value="artifact">artifact</option>
+            </select>
+            <button onClick={() => void prevSearchResult()} disabled={searchResults.length === 0}>
+              Prev
+            </button>
+            <button onClick={() => void nextSearchResult()} disabled={searchResults.length === 0}>
+              Next
+            </button>
+          </div>
+          <div className="searchResults">
+            {searchQuery.trim().length === 0 ? <p className="subtle">Enter a query to search.</p> : null}
+            {searchQuery.trim().length > 0 && searchResults.length === 0 ? <p className="subtle">No search matches.</p> : null}
+            {searchResults.slice(0, 80).map((row, index) => (
+              <button
+                key={`${row.type}:${row.id}`}
+                className={`searchResult ${searchIndexPosition === index ? "active" : ""}`}
+                onClick={() => jumpToSearchResult(index)}
+              >
+                <span>{row.type}</span>
+                <code>{row.path ?? row.id}</code>
+                <small>{row.text.slice(0, 120)}</small>
+              </button>
+            ))}
+          </div>
+
           <h2>Permissions</h2>
           {permissionError ? <p className="errorText">{permissionError}</p> : null}
           <div className="permissionList">
@@ -870,20 +1310,141 @@ export function App() {
               )
             })}
           </div>
+          <h3>Permission Ledger</h3>
+          {revokeError ? <p className="errorText">{revokeError}</p> : null}
+          <div className="row">
+            <input
+              value={permissionLedgerFilter.tool}
+              onChange={(event) => setPermissionLedgerFilter((prev) => ({ ...prev, tool: event.target.value }))}
+              placeholder="filter tool"
+            />
+            <select
+              value={permissionLedgerFilter.scope}
+              onChange={(event) =>
+                setPermissionLedgerFilter((prev) => ({ ...prev, scope: event.target.value as PermissionScope | "all" }))
+              }
+            >
+              <option value="all">all scopes</option>
+              <option value="project">project</option>
+              <option value="session">session</option>
+            </select>
+            <select
+              value={permissionLedgerFilter.decision}
+              onChange={(event) => setPermissionLedgerFilter((prev) => ({ ...prev, decision: event.target.value }))}
+            >
+              <option value="all">all decisions</option>
+              <option value="allow-once">allow-once</option>
+              <option value="allow-always">allow-always</option>
+              <option value="deny-once">deny-once</option>
+              <option value="deny-always">deny-always</option>
+              <option value="deny-stop">deny-stop</option>
+              <option value="revoke">revoke</option>
+            </select>
+          </div>
+          <div className="ledgerList">
+            {filteredLedger.length === 0 ? <p className="subtle">No permission ledger rows.</p> : null}
+            {filteredLedger.map((entry) => (
+              <article key={entry.requestId} className="ledgerRow">
+                <header>
+                  <strong>{entry.tool}</strong>
+                  <span>{entry.decision}</span>
+                </header>
+                <p className="subtle">
+                  {entry.scope} · {new Date(entry.timestamp).toLocaleString()} · {entry.requestId}
+                </p>
+                <div className="row">
+                  <button onClick={() => void copyText(entry.rule ?? "")} disabled={!entry.rule}>
+                    Copy Rule
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!entry.rule) return
+                      setPermissionRulePresets((prev) => ({ ...prev, [entry.tool]: entry.rule as string }))
+                    }}
+                    disabled={!entry.rule}
+                  >
+                    Re-Apply Rule
+                  </button>
+                  <button onClick={() => void revokePermission(entry)} disabled={busy || !activeSessionId || entry.revoked}>
+                    {entry.revoked ? "Revoked" : "Revoke"}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
 
           <h2>Tools</h2>
           <div className="toolRows">
             {projection.toolRows.length === 0 ? <p className="subtle">No tool events yet.</p> : null}
             {projection.toolRows.map((row) => (
-              <article key={row.id} className={`tool ${row.type}`}>
+              <article key={row.id} id={`entry-${row.id}`} className={`tool ${row.type}`}>
                 <header>
                   <strong>{row.label}</strong>
                   <span>{row.type}</span>
                 </header>
                 <pre>{row.summary}</pre>
+                {row.diffText ? (
+                  <div className="toolDiff">
+                    <div className="row">
+                      <span className="subtle">Diff Viewer</span>
+                      <button onClick={() => setDiffViewMode((prev) => (prev === "unified" ? "side-by-side" : "unified"))}>
+                        {diffViewMode === "unified" ? "Side-by-side" : "Unified"}
+                      </button>
+                      {row.diffFilePath ? (
+                        <button
+                          onClick={() => {
+                            if (!activeSessionId) return
+                            void openFile(activeSessionId, row.diffFilePath as string)
+                          }}
+                        >
+                          Open In File Preview
+                        </button>
+                      ) : null}
+                    </div>
+                    <DiffViewer
+                      text={row.diffText}
+                      mode={diffViewMode}
+                      onCopyHunk={(text) => void copyText(text)}
+                      onCopyPath={(path) => void copyText(path)}
+                      onOpenPath={(path) => {
+                        if (!activeSessionId) return
+                        void openFile(activeSessionId, path)
+                      }}
+                    />
+                  </div>
+                ) : null}
               </article>
             ))}
           </div>
+          <h2>Task Tree</h2>
+          <div className="row">
+            <button onClick={() => setTaskFilters((prev) => ({ ...prev, failedOnly: !prev.failedOnly }))}>
+              {taskFilters.failedOnly ? "Show All" : "Failed Only"}
+            </button>
+            <button onClick={() => setTaskFilters((prev) => ({ ...prev, activeOnly: !prev.activeOnly }))}>
+              {taskFilters.activeOnly ? "Show All" : "Active Only"}
+            </button>
+            <button
+              onClick={() => {
+                if (!projection.taskGraph.activeNodeId) return
+                const node = projection.taskGraph.nodesById[projection.taskGraph.activeNodeId]
+                if (!node) return
+                jumpToEvent(node.eventId)
+              }}
+              disabled={!projection.taskGraph.activeNodeId}
+            >
+              Focus Active
+            </button>
+          </div>
+          <TaskTreePanel
+            graph={projection.taskGraph}
+            expanded={taskExpanded}
+            onToggleExpand={toggleTaskExpand}
+            onJumpToEvent={jumpToEvent}
+            failedOnly={taskFilters.failedOnly}
+            activeOnly={taskFilters.activeOnly}
+          />
+
           <h2>Files</h2>
           <div className="row">
             <button onClick={() => void refreshCurrentDir()} disabled={!activeSessionId || busy}>
@@ -948,10 +1509,24 @@ export function App() {
             {metrics.maxQueueDepth} stale_drops={metrics.staleDrops} last_latency_ms={metrics.lastQueueLatencyMs.toFixed(1)}
           </p>
           <div className="events">
-            {projection.events
-              .slice(-120)
-              .map((event) => `${event.id} ${event.type} ${safeJson(event.payload)}`)
-              .join("\n")}
+            {projection.events.slice(-120).map((event) => (
+              <div key={event.id} id={`event-${event.id}`}>
+                {event.id} {event.type} {safeJson(redactSensitiveValue(event.payload))}
+              </div>
+            ))}
+          </div>
+          <h3>Audit Log</h3>
+          <div className="events">
+            {auditLog.length === 0 ? <span className="subtle">No audit actions yet.</span> : null}
+            {auditLog
+              .slice()
+              .reverse()
+              .slice(0, 80)
+              .map((row) => (
+                <div key={row.id}>
+                  {new Date(row.at).toLocaleTimeString()} {row.action} {row.detail}
+                </div>
+              ))}
           </div>
         </section>
       </main>

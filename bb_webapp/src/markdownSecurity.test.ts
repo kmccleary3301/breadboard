@@ -14,6 +14,10 @@ describe("hasUnsafeMarkdownContent", () => {
     expect(hasUnsafeMarkdownContent("[click me](javascript:alert(1))")).toBe(true)
   })
 
+  it("flags iframe tags", () => {
+    expect(hasUnsafeMarkdownContent("<iframe src=\"https://example.com\"></iframe>")).toBe(true)
+  })
+
   it("flags html event handler attributes", () => {
     expect(hasUnsafeMarkdownContent('<img src="x" onerror="alert(1)" />')).toBe(true)
   })

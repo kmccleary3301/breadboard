@@ -116,6 +116,8 @@ describe("projection reducer", () => {
       }),
     )
     expect(responseState.pendingPermissions).toHaveLength(0)
+    expect(responseState.permissionLedger).toHaveLength(1)
+    expect(responseState.permissionLedger[0].requestId).toBe("permission_1")
   })
 
   it("enforces deterministic memory bounds for events, transcript, tools, and permissions", () => {
@@ -163,5 +165,55 @@ describe("projection reducer", () => {
       )
     }
     expect(state.pendingPermissions.length).toBe(PROJECTION_LIMITS.pendingPermissions)
+  })
+
+  it("applies checkpoint list deterministically and tracks restore result", () => {
+    const listed = applyEventToProjection(
+      initialProjectionState,
+      makeEvent({
+        id: "cp-list",
+        type: "checkpoint_list",
+        payload: {
+          checkpoints: [
+            { checkpoint_id: "cp-a", created_at_ms: 1000, label: "A" },
+            { checkpoint_id: "cp-b", created_at_ms: 2000, label: "B" },
+          ],
+        },
+      }),
+    )
+    expect(listed.checkpoints.map((row) => row.id)).toEqual(["cp-b", "cp-a"])
+    expect(listed.activeCheckpointId).toBe("cp-b")
+
+    const restored = applyEventToProjection(
+      listed,
+      makeEvent({
+        id: "cp-restore",
+        type: "checkpoint_restored",
+        payload: { checkpoint_id: "cp-a", status: "ok", message: "restored" },
+      }),
+    )
+    expect(restored.lastCheckpointRestore?.status).toBe("ok")
+    expect(restored.activeCheckpointId).toBe("cp-a")
+  })
+
+  it("merges out-of-order task graph events and snapshots", () => {
+    let state = applyEventToProjection(
+      initialProjectionState,
+      makeEvent({
+        id: "snapshot",
+        type: "ctree_snapshot",
+        payload: { nodes: [{ node_id: "node-1", title: "Node 1", status: "queued" }] },
+      }),
+    )
+    state = applyEventToProjection(
+      state,
+      makeEvent({
+        id: "event",
+        type: "task_event",
+        payload: { task_id: "node-1", status: "failed" },
+      }),
+    )
+    expect(state.taskGraph.nodesById["node-1"]?.status).toBe("failed")
+    expect(state.taskGraph.nodesById["node-1"]?.statusRollup).toBe("failed")
   })
 })
