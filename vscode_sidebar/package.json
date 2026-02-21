@@ -1,0 +1,107 @@
+{
+  "name": "breadboard-sidebar",
+  "displayName": "BreadBoard Sidebar",
+  "description": "VSCode/Cursor sidebar client for the BreadBoard engine (HTTP + SSE).",
+  "version": "0.0.1",
+  "publisher": "breadboard-dev",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onView:breadboard.sidebar",
+    "onCommand:breadboard.sidebar.focus",
+    "onCommand:breadboard.sidebar.newSession",
+    "onCommand:breadboard.sidebar.attachSession",
+    "onCommand:breadboard.sidebar.sendMessage",
+    "onCommand:breadboard.sidebar.stopActiveSession",
+    "onCommand:breadboard.sidebar.deleteSession",
+    "onCommand:breadboard.sidebar.checkConnection",
+    "onCommand:breadboard.sidebar.setEngineToken",
+    "onCommand:breadboard.sidebar.clearEngineToken"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "breadboard",
+          "title": "BreadBoard",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "breadboard": [
+        {
+          "id": "breadboard.sidebar",
+          "name": "BreadBoard"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "breadboard.sidebar.focus",
+        "title": "BreadBoard: Focus Sidebar"
+      },
+      {
+        "command": "breadboard.sidebar.newSession",
+        "title": "BreadBoard: New Session"
+      },
+      {
+        "command": "breadboard.sidebar.attachSession",
+        "title": "BreadBoard: Attach to Session Stream"
+      },
+      {
+        "command": "breadboard.sidebar.sendMessage",
+        "title": "BreadBoard: Send Message to Active Session"
+      },
+      {
+        "command": "breadboard.sidebar.stopActiveSession",
+        "title": "BreadBoard: Stop Active Session"
+      },
+      {
+        "command": "breadboard.sidebar.deleteSession",
+        "title": "BreadBoard: Delete Session"
+      },
+      {
+        "command": "breadboard.sidebar.checkConnection",
+        "title": "BreadBoard: Check Engine Connection"
+      },
+      {
+        "command": "breadboard.sidebar.setEngineToken",
+        "title": "BreadBoard: Set Engine Token"
+      },
+      {
+        "command": "breadboard.sidebar.clearEngineToken",
+        "title": "BreadBoard: Clear Engine Token"
+      }
+    ],
+    "configuration": {
+      "title": "BreadBoard Sidebar",
+      "properties": {
+        "breadboardSidebar.engineBaseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:9099",
+          "description": "Base URL for BreadBoard CLI bridge API."
+        },
+        "breadboardSidebar.defaultConfigPath": {
+          "type": "string",
+          "default": "agent_configs/base_v2.yaml",
+          "description": "Default BreadBoard config path used when creating sessions."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.5",
+    "@types/vscode": "^1.95.0",
+    "typescript": "^5.5.4"
+  }
+}
