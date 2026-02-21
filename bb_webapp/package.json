@@ -10,6 +10,7 @@
     "build": "npm run sync:sdk && npm run sync:worker && tsc -b && vite build",
     "typecheck": "npm run sync:sdk && tsc -b --pretty false",
     "test": "vitest run",
+    "gate:p0": "npm run test && npm run typecheck && npm run build",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
 import {
   createBreadboardClient,
   streamSessionEvents,
@@ -10,22 +10,57 @@ import {
   applyEventToProjection,
   dismissPermissionRequest,
   initialProjectionState,
+  PROJECTION_LIMITS,
   type PermissionRequestRow,
   type PermissionScope,
+  type ProjectionState,
 } from "./projection"
-import { appendSessionEvent, loadSessionEvents } from "./eventStore"
-import { runSessionStreamLoop } from "./sessionStream"
+import {
+  appendSessionEvent,
+  EVENT_STORE_LIMITS,
+  loadSessionEvents,
+  loadSessionSnapshot,
+  loadSessionTailEvents,
+  saveSessionSnapshot,
+} from "./eventStore"
+import { runSessionStreamLoop, StaleStreamTimeoutError } from "./sessionStream"
 import { buildPermissionDecisionPayload, type PermissionDecision, type PermissionDraft } from "./permissions"
+import { computeProjectionHash } from "./projectionHash"
+import { buildReplayPackage, parseReplayPackage, serializeReplayPackage } from "./replayPackage"
+import { buildSessionDownloadPath } from "./bridgeContracts"
 
 const MarkdownMessage = lazy(async () => await import("./MarkdownMessage"))
 
-type ConnectionState = "idle" | "connecting" | "connected" | "error"
+type ConnectionState = "idle" | "connecting" | "streaming" | "retrying" | "gap" | "stopped" | "error"
+type ClientMetrics = {
+  eventsReceived: number
+  eventsApplied: number
+  flushCount: number
+  maxQueueDepth: number
+  staleDrops: number
+  lastFlushSize: number
+  lastQueueLatencyMs: number
+  maxQueueLatencyMs: number
+}
 
 const STORAGE_BASE_URL_KEY = "bb.webapp.baseUrl"
 const STORAGE_TOKEN_KEY = "bb.webapp.token"
 const STORAGE_LAST_EVENT_IDS_KEY = "bb.webapp.lastEventIds"
 const DEFAULT_BASE_URL = "http://127.0.0.1:9099"
 const DEFAULT_CONFIG_PATH = "agent_configs/base_v2.yaml"
+const STREAM_HEARTBEAT_TIMEOUT_MS = 30_000
+const SNAPSHOT_INTERVAL_EVENTS = 25
+const EVENT_COALESCE_WINDOW_MS = 40
+const INITIAL_CLIENT_METRICS: ClientMetrics = {
+  eventsReceived: 0,
+  eventsApplied: 0,
+  flushCount: 0,
+  maxQueueDepth: 0,
+  staleDrops: 0,
+  lastFlushSize: 0,
+  lastQueueLatencyMs: 0,
+  maxQueueLatencyMs: 0,
+}
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
@@ -39,6 +74,14 @@ const safeJson = (value: unknown): string => {
     return String(value)
   }
 }
+
+const isProjectionState = (value: unknown): value is ProjectionState =>
+  isRecord(value) &&
+  Array.isArray(value.events) &&
+  Array.isArray(value.transcript) &&
+  Array.isArray(value.toolRows) &&
+  Array.isArray(value.pendingPermissions) &&
+  (typeof value.activeAssistantRowId === "string" || value.activeAssistantRowId === null)
 
 const loadLastEventIds = (): Record<string, string> => {
   const raw = localStorage.getItem(STORAGE_LAST_EVENT_IDS_KEY)
@@ -64,6 +107,10 @@ const saveLastEventIds = (value: Record<string, string>): void => {
 const buildApiUrl = (baseUrl: string, path: string): URL =>
   new URL(path, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`)
 
+const formatTimestampForFile = (value: Date): string => value.toISOString().replace(/[:.]/g, "-")
+const nowMs = (): number =>
+  typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now()
+
 export function App() {
   const [baseUrl, setBaseUrl] = useState<string>(() => localStorage.getItem(STORAGE_BASE_URL_KEY) ?? DEFAULT_BASE_URL)
   const [token, setToken] = useState<string>(() => localStorage.getItem(STORAGE_TOKEN_KEY) ?? "")
@@ -85,8 +132,17 @@ export function App() {
   const [permissionDrafts, setPermissionDrafts] = useState<Record<string, PermissionDraft>>({})
   const [permissionBusyId, setPermissionBusyId] = useState<string | null>(null)
   const [permissionError, setPermissionError] = useState<string>("")
+  const [projectionHash, setProjectionHash] = useState<string>("pending")
+  const [metrics, setMetrics] = useState<ClientMetrics>(INITIAL_CLIENT_METRICS)
   const streamAbortRef = useRef<AbortController | null>(null)
+  const streamRunIdRef = useRef<number>(0)
   const lastEventIdsRef = useRef<Record<string, string>>(lastEventIds)
+  const replayFileInputRef = useRef<HTMLInputElement | null>(null)
+  const snapshotEventCountersRef = useRef<Record<string, number>>({})
+  const pendingProjectionEventsRef = useRef<SessionEvent[]>([])
+  const pendingProjectionFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingQueueStartedAtRef = useRef<number | null>(null)
+  const metricsRef = useRef<ClientMetrics>(INITIAL_CLIENT_METRICS)
 
   const client = useMemo(
     () =>
@@ -96,6 +152,11 @@ export function App() {
       }),
     [baseUrl, token],
   )
+
+  const transitionRuntime = useCallback((state: ConnectionState, message: string): void => {
+    setConnectionState(state)
+    setConnectionMessage(message)
+  }, [])
 
   useEffect(() => {
     lastEventIdsRef.current = lastEventIds
@@ -110,12 +171,93 @@ export function App() {
     localStorage.setItem(STORAGE_TOKEN_KEY, token)
   }, [token])
 
+  useEffect(() => {
+    let cancelled = false
+    void computeProjectionHash(projection.events)
+      .then((hash) => {
+        if (!cancelled) setProjectionHash(hash)
+      })
+      .catch(() => {
+        if (!cancelled) setProjectionHash("unavailable")
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projection.events])
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setMetrics({ ...metricsRef.current })
+    }, 500)
+    return () => {
+      clearInterval(id)
+    }
+  }, [])
+
+  const flushPendingProjectionEvents = useCallback(() => {
+    const batch = pendingProjectionEventsRef.current
+    if (batch.length === 0) return
+    pendingProjectionEventsRef.current = []
+    const startedAt = pendingQueueStartedAtRef.current
+    pendingQueueStartedAtRef.current = null
+    const queueLatencyMs = startedAt != null ? Math.max(0, nowMs() - startedAt) : 0
+    setProjection((prev) => {
+      let next = prev
+      for (const event of batch) {
+        next = applyEventToProjection(next, event)
+        const sessionCounter = (snapshotEventCountersRef.current[event.session_id] ?? 0) + 1
+        snapshotEventCountersRef.current[event.session_id] = sessionCounter
+        if (sessionCounter >= SNAPSHOT_INTERVAL_EVENTS) {
+          snapshotEventCountersRef.current[event.session_id] = 0
+          void saveSessionSnapshot(event.session_id, {
+            projection: next,
+            event_count: next.events.length,
+            last_event_id: event.id,
+          })
+        }
+      }
+      return next
+    })
+    for (const event of batch) {
+      void appendSessionEvent(event.session_id, event)
+    }
+    metricsRef.current.eventsApplied += batch.length
+    metricsRef.current.flushCount += 1
+    metricsRef.current.lastFlushSize = batch.length
+    metricsRef.current.lastQueueLatencyMs = queueLatencyMs
+    metricsRef.current.maxQueueLatencyMs = Math.max(metricsRef.current.maxQueueLatencyMs, queueLatencyMs)
+    setMetrics({ ...metricsRef.current })
+  }, [])
+
+  const queueProjectionEvent = useCallback(
+    (event: SessionEvent) => {
+      pendingProjectionEventsRef.current.push(event)
+      if (pendingProjectionEventsRef.current.length === 1) {
+        pendingQueueStartedAtRef.current = nowMs()
+      }
+      metricsRef.current.eventsReceived += 1
+      metricsRef.current.maxQueueDepth = Math.max(metricsRef.current.maxQueueDepth, pendingProjectionEventsRef.current.length)
+      if (pendingProjectionFlushTimerRef.current != null) return
+      pendingProjectionFlushTimerRef.current = setTimeout(() => {
+        pendingProjectionFlushTimerRef.current = null
+        flushPendingProjectionEvents()
+      }, EVENT_COALESCE_WINDOW_MS)
+    },
+    [flushPendingProjectionEvents],
+  )
+
   const stopStreaming = useCallback(() => {
+    streamRunIdRef.current += 1
+    if (pendingProjectionFlushTimerRef.current != null) {
+      clearTimeout(pendingProjectionFlushTimerRef.current)
+      pendingProjectionFlushTimerRef.current = null
+    }
+    flushPendingProjectionEvents()
     if (streamAbortRef.current) {
       streamAbortRef.current.abort()
       streamAbortRef.current = null
     }
-  }, [])
+  }, [flushPendingProjectionEvents])
 
   const refreshSessions = useCallback(async () => {
     setBusy(true)
@@ -123,27 +265,24 @@ export function App() {
       const rows = await client.listSessions()
       setSessions(rows)
     } catch (error) {
-      setConnectionState("error")
-      setConnectionMessage(error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
     }
-  }, [client])
+  }, [client, transitionRuntime])
 
   const checkConnection = useCallback(async () => {
-    setConnectionState("connecting")
-    setConnectionMessage("")
+    transitionRuntime("connecting", "checking engine health…")
     try {
       const health = await client.health()
-      setConnectionState("connected")
-      setConnectionMessage(
+      transitionRuntime(
+        activeSessionId ? "streaming" : "idle",
         `connected: protocol=${health.protocol_version ?? "?"}, engine=${health.engine_version ?? health.version ?? "?"}`,
       )
     } catch (error) {
-      setConnectionState("error")
-      setConnectionMessage(error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", error instanceof Error ? error.message : String(error))
     }
-  }, [client])
+  }, [activeSessionId, client, transitionRuntime])
 
   const listFiles = useCallback(
     async (sessionId: string, path: string) => {
@@ -183,48 +322,72 @@ export function App() {
     }
   }, [checkConnection, refreshSessions, stopStreaming])
 
-  const applyEvent = useCallback((event: SessionEvent) => {
-    setProjection((prev) => applyEventToProjection(prev, event))
-    void appendSessionEvent(event.session_id, event)
-  }, [])
-
   const streamLoop = useCallback(
-    async (sessionId: string, signal: AbortSignal) => {
+    async (sessionId: string, signal: AbortSignal, runId: number) => {
+      const isActiveRun = (): boolean => streamRunIdRef.current === runId && !signal.aborted
       await runSessionStreamLoop({
         sessionId,
         signal,
         getLastEventId: () => lastEventIdsRef.current[sessionId],
-        stream: ({ lastEventId }) =>
+        stream: ({ lastEventId, replay, fromId }) =>
           streamSessionEvents(sessionId, {
             config: { baseUrl, authToken: token.trim().length > 0 ? token.trim() : undefined },
             signal,
             lastEventId,
+            query: replay && fromId ? { replay: true, from_id: fromId } : undefined,
           }),
         onConnecting: () => {
-          setConnectionState("connecting")
-          setConnectionMessage(`stream connecting: ${sessionId}`)
+          if (!isActiveRun()) return
+          transitionRuntime("connecting", `stream connecting: ${sessionId}`)
         },
         onEvent: (event) => {
-          applyEvent(event)
+          if (!isActiveRun()) {
+            metricsRef.current.staleDrops += 1
+            return
+          }
+          queueProjectionEvent(event)
           setLastEventIds((prev) => ({ ...prev, [sessionId]: event.id }))
         },
         onConnected: () => {
-          setConnectionState("connected")
-          setConnectionMessage(`stream connected: ${sessionId}`)
+          if (!isActiveRun()) return
+          transitionRuntime("streaming", `stream connected: ${sessionId}`)
         },
         onRetryError: (error, waitMs) => {
-          setConnectionState("error")
-          setConnectionMessage(
-            `stream error (${error instanceof Error ? error.message : String(error)}), retrying in ${waitMs}ms`,
+          if (!isActiveRun()) return
+          const reason =
+            error instanceof StaleStreamTimeoutError
+              ? `stream heartbeat timeout (${error.timeoutMs}ms)`
+              : error instanceof Error
+                ? error.message
+                : String(error)
+          transitionRuntime(
+            "retrying",
+            `stream error (${reason}), retrying in ${waitMs}ms`,
+          )
+        },
+        onReplayCatchupStart: ({ fromId, expectedSeq, actualSeq }) => {
+          if (!isActiveRun()) return
+          transitionRuntime(
+            "retrying",
+            `sequence gap (${expectedSeq}->${actualSeq}); attempting replay catch-up from ${fromId}`,
           )
         },
         onResumeWindowGap: () => {
-          setConnectionState("error")
-          setConnectionMessage("resume window exceeded (HTTP 409). refresh session state and re-attach.")
+          if (!isActiveRun()) return
+          transitionRuntime("gap", "resume window exceeded (HTTP 409). refresh session state and re-attach.")
         },
+        onSequenceGap: ({ expectedSeq, actualSeq }) => {
+          if (!isActiveRun()) return
+          transitionRuntime("gap", `event sequence gap detected: expected seq ${expectedSeq}, got ${actualSeq}`)
+        },
+        heartbeatTimeoutMs: STREAM_HEARTBEAT_TIMEOUT_MS,
       })
+      if (streamRunIdRef.current === runId && streamAbortRef.current?.signal === signal) {
+        streamAbortRef.current = null
+      }
+      flushPendingProjectionEvents()
     },
-    [applyEvent, baseUrl, token],
+    [baseUrl, token, transitionRuntime, queueProjectionEvent, flushPendingProjectionEvents],
   )
 
   const attachSession = useCallback(
@@ -241,10 +404,35 @@ export function App() {
       setSelectedFileContent("")
       setArtifactId("")
       try {
-        const cachedEvents = await loadSessionEvents(sessionId, 1000)
+        let seeded = initialProjectionState
+        let seededLastEventId: string | undefined
+
+        const snapshot = await loadSessionSnapshot<ProjectionState>(sessionId)
+        if (snapshot && isProjectionState(snapshot.projection)) {
+          seeded = snapshot.projection
+          seededLastEventId = snapshot.last_event_id ?? seeded.events.at(-1)?.id
+        }
+
+        const cachedEvents =
+          seededLastEventId != null
+            ? await loadSessionTailEvents(sessionId, seededLastEventId, PROJECTION_LIMITS.events)
+            : await loadSessionEvents(sessionId, PROJECTION_LIMITS.events)
+
         if (cachedEvents.length > 0) {
-          const seeded = cachedEvents.reduce(applyEventToProjection, initialProjectionState)
+          seeded = cachedEvents.reduce(applyEventToProjection, seeded)
+          seededLastEventId = cachedEvents.at(-1)?.id
+        }
+
+        if (seeded.events.length > 0) {
           setProjection(seeded)
+          if (seededLastEventId) {
+            setLastEventIds((prev) => ({ ...prev, [sessionId]: seededLastEventId }))
+          }
+          void saveSessionSnapshot(sessionId, {
+            projection: seeded,
+            event_count: seeded.events.length,
+            last_event_id: seededLastEventId ?? null,
+          })
         }
       } catch {
         // Cache hydration is best-effort.
@@ -256,9 +444,12 @@ export function App() {
       }
       const abort = new AbortController()
       streamAbortRef.current = abort
-      void streamLoop(sessionId, abort.signal)
+      streamRunIdRef.current += 1
+      const runId = streamRunIdRef.current
+      transitionRuntime("connecting", `stream connecting: ${sessionId}`)
+      void streamLoop(sessionId, abort.signal, runId)
     },
-    [listFiles, stopStreaming, streamLoop],
+    [listFiles, stopStreaming, streamLoop, transitionRuntime],
   )
 
   const createSession = useCallback(async () => {
@@ -273,12 +464,11 @@ export function App() {
       await refreshSessions()
       await attachSession(created.session_id)
     } catch (error) {
-      setConnectionState("error")
-      setConnectionMessage(error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
     }
-  }, [attachSession, client, configPath, refreshSessions, task])
+  }, [attachSession, client, configPath, refreshSessions, task, transitionRuntime])
 
   const sendMessage = useCallback(async () => {
     if (!activeSessionId || !message.trim()) return
@@ -287,25 +477,24 @@ export function App() {
       await client.postInput(activeSessionId, { content: message.trim() })
       setMessage("")
     } catch (error) {
-      setConnectionState("error")
-      setConnectionMessage(error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
     }
-  }, [activeSessionId, client, message])
+  }, [activeSessionId, client, message, transitionRuntime])
 
   const stopSession = useCallback(async () => {
     if (!activeSessionId) return
     setBusy(true)
     try {
       await client.postCommand(activeSessionId, { command: "stop" })
+      transitionRuntime("stopped", `stop requested: ${activeSessionId}`)
     } catch (error) {
-      setConnectionState("error")
-      setConnectionMessage(error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
     }
-  }, [activeSessionId, client])
+  }, [activeSessionId, client, transitionRuntime])
 
   const updatePermissionDraft = useCallback((requestId: string, patch: Partial<PermissionDraft>) => {
     setPermissionDrafts((prev) => {
@@ -376,18 +565,18 @@ export function App() {
     try {
       await listFiles(activeSessionId, currentDir)
     } catch (error) {
-      setConnectionState("error")
-      setConnectionMessage(error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
     }
-  }, [activeSessionId, currentDir, listFiles])
+  }, [activeSessionId, currentDir, listFiles, transitionRuntime])
 
   const openArtifact = useCallback(async () => {
     if (!activeSessionId || !artifactId.trim()) return
     setBusy(true)
     try {
-      const url = buildApiUrl(baseUrl, `/sessions/${activeSessionId}/download`)
+      const path = buildSessionDownloadPath(activeSessionId)
+      const url = buildApiUrl(baseUrl, path)
       url.searchParams.set("artifact", artifactId.trim())
       const response = await fetch(url, {
         headers: token.trim().length > 0 ? { Authorization: `Bearer ${token.trim()}` } : undefined,
@@ -403,12 +592,116 @@ export function App() {
       link.click()
       URL.revokeObjectURL(objectUrl)
     } catch (error) {
-      setConnectionState("error")
-      setConnectionMessage(error instanceof Error ? error.message : String(error))
+      transitionRuntime("error", error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
     }
-  }, [activeSessionId, artifactId, baseUrl, token])
+  }, [activeSessionId, artifactId, baseUrl, token, transitionRuntime])
+
+  const exportReplay = useCallback(async () => {
+    if (!activeSessionId) return
+    setBusy(true)
+    try {
+      const cachedEvents = await loadSessionEvents(activeSessionId, EVENT_STORE_LIMITS.maxEventsPerSession)
+      const liveEvents = projection.events.filter((event) => event.session_id === activeSessionId)
+      const sourceEvents = cachedEvents.length > 0 ? cachedEvents : liveEvents
+      if (sourceEvents.length === 0) {
+        throw new Error("no local events to export for this session")
+      }
+      const hash = await computeProjectionHash(sourceEvents)
+      const replay = buildReplayPackage({
+        sessionId: activeSessionId,
+        events: sourceEvents,
+        projectionHash: hash,
+      })
+      const blob = new Blob([serializeReplayPackage(replay)], { type: "application/json" })
+      const objectUrl = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = objectUrl
+      link.download = `bb-replay-${activeSessionId}-${formatTimestampForFile(new Date())}.json`
+      link.click()
+      URL.revokeObjectURL(objectUrl)
+      transitionRuntime("idle", `replay exported: ${replay.events.length} events for ${activeSessionId}`)
+    } catch (error) {
+      transitionRuntime("error", error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }, [activeSessionId, projection.events, transitionRuntime])
+
+  const onImportReplayFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0]
+      event.target.value = ""
+      if (!file) return
+
+      setBusy(true)
+      try {
+        const replay = parseReplayPackage(await file.text())
+        stopStreaming()
+        setActiveSessionId(replay.session_id)
+        const seeded = replay.events.reduce(applyEventToProjection, initialProjectionState)
+        setProjection(seeded)
+        setPermissionDrafts({})
+        setPermissionBusyId(null)
+        setPermissionError("")
+        setCurrentDir("")
+        setFiles([])
+        setSelectedFilePath("")
+        setSelectedFileContent("")
+        setArtifactId("")
+
+        for (const row of replay.events) {
+          await appendSessionEvent(replay.session_id, row)
+        }
+
+        const lastEventId = replay.events.at(-1)?.id
+        if (lastEventId) {
+          setLastEventIds((prev) => ({ ...prev, [replay.session_id]: lastEventId }))
+        }
+        void saveSessionSnapshot(replay.session_id, {
+          projection: seeded,
+          event_count: seeded.events.length,
+          last_event_id: lastEventId ?? null,
+        })
+
+        setSessions((prev) => {
+          if (prev.some((row) => row.session_id === replay.session_id)) return prev
+          return [
+            {
+              session_id: replay.session_id,
+              status: "replay-imported",
+              created_at: replay.exported_at,
+              last_activity_at: replay.exported_at,
+            },
+            ...prev,
+          ]
+        })
+
+        transitionRuntime("stopped", `replay imported: ${replay.events.length} events for ${replay.session_id}`)
+      } catch (error) {
+        transitionRuntime("error", error instanceof Error ? error.message : String(error))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [stopStreaming, applyEventToProjection, transitionRuntime],
+  )
+
+  const triggerReplayImport = useCallback(() => {
+    replayFileInputRef.current?.click()
+  }, [])
+
+  const recoverStream = useCallback(async () => {
+    if (!activeSessionId) return
+    setLastEventIds((prev) => {
+      const next = { ...prev }
+      delete next[activeSessionId]
+      return next
+    })
+    transitionRuntime("connecting", `recovering stream: ${activeSessionId}`)
+    await attachSession(activeSessionId)
+  }, [activeSessionId, attachSession, transitionRuntime])
 
   return (
     <div className="app">
@@ -430,6 +723,9 @@ export function App() {
           </label>
           <button onClick={() => void checkConnection()} disabled={busy}>
             Check
+          </button>
+          <button onClick={() => void recoverStream()} disabled={busy || !activeSessionId || connectionState !== "gap"}>
+            Recover Stream
           </button>
         </div>
       </section>
@@ -629,6 +925,28 @@ export function App() {
             </button>
           </div>
           <h2>Raw Events</h2>
+          <div className="row">
+            <button onClick={() => void exportReplay()} disabled={busy || !activeSessionId}>
+              Export Replay
+            </button>
+            <button onClick={() => void triggerReplayImport()} disabled={busy}>
+              Import Replay
+            </button>
+            <input
+              ref={replayFileInputRef}
+              type="file"
+              accept="application/json,.json"
+              onChange={(event) => void onImportReplayFile(event)}
+              style={{ display: "none" }}
+            />
+          </div>
+          <p className="subtle">
+            Projection hash: <code>{projectionHash}</code> · events: {projection.events.length}
+          </p>
+          <p className="subtle">
+            metrics: received={metrics.eventsReceived} applied={metrics.eventsApplied} flushes={metrics.flushCount} max_queue=
+            {metrics.maxQueueDepth} stale_drops={metrics.staleDrops} last_latency_ms={metrics.lastQueueLatencyMs.toFixed(1)}
+          </p>
           <div className="events">
             {projection.events
               .slice(-120)

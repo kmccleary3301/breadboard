@@ -59,6 +59,30 @@ body {
   border-color: #86cf98;
 }
 
+.pill.streaming {
+  color: #0f5932;
+  background: #d8f3df;
+  border-color: #86cf98;
+}
+
+.pill.retrying {
+  color: #6b4d00;
+  background: #ffefc6;
+  border-color: #e5c46a;
+}
+
+.pill.gap {
+  color: #7c2f00;
+  background: #ffe2cf;
+  border-color: #f0a477;
+}
+
+.pill.stopped {
+  color: #3d4450;
+  background: #e8edf2;
+  border-color: #b7c5d2;
+}
+
 .pill.error {
   color: #7e1d24;
   background: #ffdfe1;

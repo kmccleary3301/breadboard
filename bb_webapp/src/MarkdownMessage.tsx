@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { StreamingMarkdown } from "stream-mdx"
 import { splitStableMarkdownForStreaming } from "./markdownStability"
+import { hasUnsafeMarkdownContent } from "./markdownSecurity"
 
 type MarkdownMessageProps = {
   text: string
@@ -9,9 +10,10 @@ type MarkdownMessageProps = {
 
 export default function MarkdownMessage({ text, final }: MarkdownMessageProps) {
   const [errored, setErrored] = useState(false)
+  const unsafe = useMemo(() => hasUnsafeMarkdownContent(text), [text])
   const split = useMemo(() => (final ? { stablePrefix: text, unstableTail: "" } : splitStableMarkdownForStreaming(text)), [final, text])
 
-  if (errored) {
+  if (errored || unsafe) {
     return <pre>{text}</pre>
   }
 

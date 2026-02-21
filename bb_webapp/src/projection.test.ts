@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { SessionEvent } from "@breadboard/sdk"
-import { applyEventToProjection, initialProjectionState } from "./projection"
+import { applyEventToProjection, initialProjectionState, PROJECTION_LIMITS } from "./projection"
 
 const makeEvent = (partial: Partial<SessionEvent> & Pick<SessionEvent, "id" | "type">): SessionEvent => ({
   id: partial.id,
@@ -116,5 +116,52 @@ describe("projection reducer", () => {
       }),
     )
     expect(responseState.pendingPermissions).toHaveLength(0)
+  })
+
+  it("enforces deterministic memory bounds for events, transcript, tools, and permissions", () => {
+    let state = initialProjectionState
+
+    for (let index = 0; index < PROJECTION_LIMITS.events + 50; index += 1) {
+      state = applyEventToProjection(
+        state,
+        makeEvent({
+          id: `u-${index}`,
+          type: "user_message",
+          payload: { text: `message-${index}` },
+          seq: index + 1,
+        }),
+      )
+    }
+    expect(state.events.length).toBe(PROJECTION_LIMITS.events)
+    expect(state.transcript.length).toBe(PROJECTION_LIMITS.transcript)
+
+    for (let index = 0; index < PROJECTION_LIMITS.toolRows + 20; index += 1) {
+      state = applyEventToProjection(
+        state,
+        makeEvent({
+          id: `t-${index}`,
+          type: "tool_call",
+          payload: { tool_name: "exec_command", index },
+        }),
+      )
+    }
+    expect(state.toolRows.length).toBe(PROJECTION_LIMITS.toolRows)
+
+    for (let index = 0; index < PROJECTION_LIMITS.pendingPermissions + 20; index += 1) {
+      state = applyEventToProjection(
+        state,
+        makeEvent({
+          id: `p-${index}`,
+          type: "permission_request",
+          payload: {
+            request_id: `permission-${index}`,
+            tool: "bash",
+            kind: "shell",
+            summary: "permission",
+          },
+        }),
+      )
+    }
+    expect(state.pendingPermissions.length).toBe(PROJECTION_LIMITS.pendingPermissions)
   })
 })

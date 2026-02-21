@@ -37,6 +37,13 @@ export type ProjectionState = {
   activeAssistantRowId: string | null
 }
 
+export const PROJECTION_LIMITS = {
+  events: 1000,
+  transcript: 800,
+  toolRows: 400,
+  pendingPermissions: 64,
+} as const
+
 export const initialProjectionState: ProjectionState = {
   transcript: [],
   toolRows: [],
@@ -79,6 +86,13 @@ const safeJson = (value: unknown): string => {
   } catch {
     return String(value)
   }
+}
+
+const appendBounded = <T>(rows: readonly T[], next: T, max: number): T[] => {
+  if (max <= 0) return []
+  if (rows.length + 1 <= max) return [...rows, next]
+  const dropCount = rows.length + 1 - max
+  return [...rows.slice(dropCount), next]
 }
 
 const normalizePermissionScope = (value: unknown): PermissionScope =>
@@ -149,8 +163,8 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
   }
 
   const nextEvents = [...state.events, event]
-  if (nextEvents.length > 1000) {
-    nextEvents.splice(0, nextEvents.length - 1000)
+  if (nextEvents.length > PROJECTION_LIMITS.events) {
+    nextEvents.splice(0, nextEvents.length - PROJECTION_LIMITS.events)
   }
 
   if (event.type === "user_message") {
@@ -159,7 +173,7 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
     return {
       ...state,
       events: nextEvents,
-      transcript: [...state.transcript, { id: event.id, role: "user", text, final: true }],
+      transcript: appendBounded(state.transcript, { id: event.id, role: "user", text, final: true }, PROJECTION_LIMITS.transcript),
     }
   }
 
@@ -170,7 +184,11 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
       ...state,
       events: nextEvents,
       activeAssistantRowId: null,
-      transcript: [...state.transcript, { id: event.id, role: "assistant", text, final: true }],
+      transcript: appendBounded(
+        state.transcript,
+        { id: event.id, role: "assistant", text, final: true },
+        PROJECTION_LIMITS.transcript,
+      ),
     }
   }
 
@@ -194,7 +212,11 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
       ...state,
       events: nextEvents,
       activeAssistantRowId: rowId,
-      transcript: [...state.transcript, { id: rowId, role: "assistant", text: delta, final: false }],
+      transcript: appendBounded(
+        state.transcript,
+        { id: rowId, role: "assistant", text: delta, final: false },
+        PROJECTION_LIMITS.transcript,
+      ),
     }
   }
 
@@ -217,8 +239,8 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
     return {
       ...state,
       events: nextEvents,
-      toolRows: [
-        ...state.toolRows,
+      toolRows: appendBounded(
+        state.toolRows,
         {
           id: event.id,
           type: "tool_call",
@@ -226,7 +248,8 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
           summary: safeJson(event.payload),
           timestamp: event.timestamp,
         },
-      ],
+        PROJECTION_LIMITS.toolRows,
+      ),
     }
   }
 
@@ -235,8 +258,8 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
     return {
       ...state,
       events: nextEvents,
-      toolRows: [
-        ...state.toolRows,
+      toolRows: appendBounded(
+        state.toolRows,
         {
           id: event.id,
           type: "tool_result",
@@ -244,7 +267,8 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
           summary: safeJson(event.payload),
           timestamp: event.timestamp,
         },
-      ],
+        PROJECTION_LIMITS.toolRows,
+      ),
     }
   }
 
@@ -253,7 +277,7 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
     return {
       ...state,
       events: nextEvents,
-      transcript: [...state.transcript, { id: event.id, role: "system", text, final: true }],
+      transcript: appendBounded(state.transcript, { id: event.id, role: "system", text, final: true }, PROJECTION_LIMITS.transcript),
     }
   }
 
@@ -263,7 +287,7 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
     return {
       ...state,
       events: nextEvents,
-      pendingPermissions: [...filtered, request],
+      pendingPermissions: appendBounded(filtered, request, PROJECTION_LIMITS.pendingPermissions),
     }
   }
 
