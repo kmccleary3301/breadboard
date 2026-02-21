@@ -1,6 +1,6 @@
 import * as vscode from "vscode"
 import { HostController } from "./hostController"
-import { ENGINE_TOKEN_SECRET_KEY } from "./config"
+import { ENGINE_TOKEN_SECRET_KEY, readSidebarConfig } from "./config"
 import { reduceTranscriptEvents, type TranscriptRenderState } from "./transcriptReducer"
 import { parseRpcReq } from "./rpcContract"
 import { sanitizeConnectionState, sanitizeEventsPayload, sanitizeStatePayload } from "./rpcEvents"
@@ -784,7 +784,7 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  const controller = new HostController()
+  const controller = new HostController({ configProvider: readSidebarConfig })
   const provider = new BreadboardSidebarViewProvider(context.extensionUri, controller, context)
   context.subscriptions.push(vscode.window.registerWebviewViewProvider(SIDEBAR_VIEW_ID, provider))
 

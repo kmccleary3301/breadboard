@@ -1,5 +1,4 @@
-import * as vscode from "vscode"
-import { ENGINE_TOKEN_SECRET_KEY, readSidebarConfig } from "./config"
+import type * as vscode from "vscode"
 
 export type ConnectionState =
   | { status: "connecting" }
@@ -38,6 +37,42 @@ const toMessage = (error: unknown): string => {
 
 const LAST_EVENT_ID_KEY_PREFIX = "breadboardSidebar.lastEventId."
 const RETRY_BACKOFF_MS = [250, 1000, 2000, 5000]
+const RECENT_EVENT_WINDOW = 512
+const ENGINE_TOKEN_SECRET_KEY = "breadboardSidebar.engineToken"
+
+type SidebarConfigLike = {
+  engineBaseUrl: string
+  defaultConfigPath: string
+}
+
+type ExtensionContextLike = Pick<vscode.ExtensionContext, "secrets" | "globalState">
+
+type VSCodeRuntimeLike = {
+  workspace: {
+    workspaceFolders?: Array<{ uri: unknown }>
+    openTextDocument: (arg: { content: string; language?: string }) => Promise<{ uri: unknown }>
+  }
+  Uri: {
+    joinPath: (base: unknown, path: string) => unknown
+    file: (path: string) => unknown
+  }
+  commands: {
+    executeCommand: (
+      command: string,
+      ...args: unknown[]
+    ) => Promise<unknown>
+  }
+}
+
+type HostControllerDeps = {
+  fetchFn?: typeof fetch
+  setTimeoutFn?: typeof setTimeout
+  clearTimeoutFn?: typeof clearTimeout
+  retryBackoffMs?: number[]
+  batchDelayMs?: number
+  configProvider?: () => SidebarConfigLike
+  runtimeProvider?: () => VSCodeRuntimeLike
+}
 
 type ParsedSseEvent = {
   id?: string
@@ -89,32 +124,60 @@ const readNumber = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null
 
 export class HostController {
+  private readonly fetchFn: typeof fetch
+  private readonly setTimeoutFn: typeof setTimeout
+  private readonly clearTimeoutFn: typeof clearTimeout
+  private readonly retryBackoffMs: number[]
+  private readonly batchDelayMs: number
+  private readonly configProvider: () => SidebarConfigLike
+  private readonly runtimeProvider: () => VSCodeRuntimeLike
   private connectionState: ConnectionState = { status: "connecting" }
   private sink: HostSink | null = null
   private activeSessionId: string | null = null
   private streamAbortBySession = new Map<string, AbortController>()
   private eventBatchBySession = new Map<string, StreamEventEnvelope[]>()
   private flushTimerBySession = new Map<string, ReturnType<typeof setTimeout>>()
+  private recentEventIdsBySession = new Map<string, string[]>()
 
-  private async authHeaders(context: vscode.ExtensionContext): Promise<Record<string, string> | undefined> {
+  constructor(deps: HostControllerDeps = {}) {
+    this.fetchFn = deps.fetchFn ?? fetch
+    this.setTimeoutFn = deps.setTimeoutFn ?? setTimeout
+    this.clearTimeoutFn = deps.clearTimeoutFn ?? clearTimeout
+    this.retryBackoffMs = deps.retryBackoffMs ?? RETRY_BACKOFF_MS
+    this.batchDelayMs = deps.batchDelayMs ?? 40
+    this.configProvider =
+      deps.configProvider ??
+      (() => ({
+        engineBaseUrl: "http://127.0.0.1:9099",
+        defaultConfigPath: "agent_configs/base_v2.yaml",
+      }))
+    this.runtimeProvider =
+      deps.runtimeProvider ??
+      (() => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        return require("vscode") as VSCodeRuntimeLike
+      })
+  }
+
+  private async authHeaders(context: ExtensionContextLike): Promise<Record<string, string> | undefined> {
     const token = await context.secrets.get(ENGINE_TOKEN_SECRET_KEY)
     if (!token) return undefined
     return { Authorization: `Bearer ${token}` }
   }
 
   private async requestJson<T>(
-    context: vscode.ExtensionContext,
+    context: ExtensionContextLike,
     path: string,
     init: RequestInit = {},
   ): Promise<T> {
-    const cfg = readSidebarConfig()
+    const cfg = this.configProvider()
     const url = new URL(path, cfg.engineBaseUrl.endsWith("/") ? cfg.engineBaseUrl : `${cfg.engineBaseUrl}/`)
     const headers = {
       ...(await this.authHeaders(context)),
       ...(init.body ? { "Content-Type": "application/json" } : {}),
       ...(init.headers ?? {}),
     }
-    const res = await fetch(url, { ...init, headers })
+    const res = await this.fetchFn(url, { ...init, headers })
     if (!res.ok) {
       const text = await res.text().catch(() => "")
       throw new Error(`Request failed: ${res.status} ${text}`.trim())
@@ -135,12 +198,12 @@ export class HostController {
     return this.activeSessionId
   }
 
-  public async checkConnection(context: vscode.ExtensionContext): Promise<ConnectionState> {
+  public async checkConnection(context: ExtensionContextLike): Promise<ConnectionState> {
     this.connectionState = { status: "connecting" }
-    const cfg = readSidebarConfig()
+    const cfg = this.configProvider()
     try {
       const url = new URL("/health", cfg.engineBaseUrl.endsWith("/") ? cfg.engineBaseUrl : `${cfg.engineBaseUrl}/`)
-      const res = await fetch(url, {
+      const res = await this.fetchFn(url, {
         headers: await this.authHeaders(context),
       })
       if (!res.ok) {
@@ -171,7 +234,7 @@ export class HostController {
     await this.sink?.onConnection?.(state)
   }
 
-  private async emitState(context: vscode.ExtensionContext): Promise<void> {
+  private async emitState(context: ExtensionContextLike): Promise<void> {
     const sessions = await this.listSessions(context)
     await this.sink?.onState?.({
       sessions: sessions.map((session) => ({
@@ -184,20 +247,33 @@ export class HostController {
   }
 
   private queueEvent(sessionId: string, event: StreamEventEnvelope): void {
+    if (this.isDuplicateEvent(sessionId, event.id)) return
     const batch = this.eventBatchBySession.get(sessionId) ?? []
     batch.push(event)
     this.eventBatchBySession.set(sessionId, batch)
     if (this.flushTimerBySession.has(sessionId)) return
-    const timer = setTimeout(() => {
+    const timer = this.setTimeoutFn(() => {
       void this.flushEvents(sessionId)
-    }, 40)
+    }, this.batchDelayMs)
     this.flushTimerBySession.set(sessionId, timer)
+  }
+
+  private isDuplicateEvent(sessionId: string, eventId: string): boolean {
+    if (!eventId) return false
+    const recent = this.recentEventIdsBySession.get(sessionId) ?? []
+    if (recent.includes(eventId)) return true
+    recent.push(eventId)
+    if (recent.length > RECENT_EVENT_WINDOW) {
+      recent.splice(0, recent.length - RECENT_EVENT_WINDOW)
+    }
+    this.recentEventIdsBySession.set(sessionId, recent)
+    return false
   }
 
   private async flushEvents(sessionId: string): Promise<void> {
     const timer = this.flushTimerBySession.get(sessionId)
     if (timer) {
-      clearTimeout(timer)
+      this.clearTimeoutFn(timer)
       this.flushTimerBySession.delete(sessionId)
     }
     const batch = this.eventBatchBySession.get(sessionId)
@@ -240,19 +316,19 @@ export class HostController {
     }
   }
 
-  private async readLastEventId(context: vscode.ExtensionContext, sessionId: string): Promise<string | null> {
+  private async readLastEventId(context: ExtensionContextLike, sessionId: string): Promise<string | null> {
     const key = `${LAST_EVENT_ID_KEY_PREFIX}${sessionId}`
     const value = context.globalState.get<string>(key)
     return value ?? null
   }
 
-  private async writeLastEventId(context: vscode.ExtensionContext, sessionId: string, eventId: string): Promise<void> {
+  private async writeLastEventId(context: ExtensionContextLike, sessionId: string, eventId: string): Promise<void> {
     const key = `${LAST_EVENT_ID_KEY_PREFIX}${sessionId}`
     await context.globalState.update(key, eventId)
   }
 
   public async listSessions(
-    context: vscode.ExtensionContext,
+    context: ExtensionContextLike,
   ): Promise<Array<{ sessionId: string; status?: string; updatedAt?: number }>> {
     const rows = await this.requestJson<unknown[]>(context, "/sessions")
     const out: Array<{ sessionId: string; status?: string; updatedAt?: number }> = []
@@ -272,8 +348,8 @@ export class HostController {
     return out
   }
 
-  public async createSession(context: vscode.ExtensionContext, task: string): Promise<Record<string, unknown>> {
-    const cfg = readSidebarConfig()
+  public async createSession(context: ExtensionContextLike, task: string): Promise<Record<string, unknown>> {
+    const cfg = this.configProvider()
     return await this.requestJson<Record<string, unknown>>(context, "/sessions", {
       method: "POST",
       body: JSON.stringify({
@@ -283,7 +359,7 @@ export class HostController {
     })
   }
 
-  public async deleteSession(context: vscode.ExtensionContext, sessionId: string): Promise<void> {
+  public async deleteSession(context: ExtensionContextLike, sessionId: string): Promise<void> {
     await this.requestJson<void>(context, `/sessions/${sessionId}`, {
       method: "DELETE",
     })
@@ -295,7 +371,7 @@ export class HostController {
   }
 
   public async sendInput(
-    context: vscode.ExtensionContext,
+    context: ExtensionContextLike,
     sessionId: string,
     text: string,
   ): Promise<void> {
@@ -306,7 +382,7 @@ export class HostController {
   }
 
   public async sendCommand(
-    context: vscode.ExtensionContext,
+    context: ExtensionContextLike,
     sessionId: string,
     command: string,
     args: Record<string, unknown> = {},
@@ -318,7 +394,7 @@ export class HostController {
   }
 
   public async listFiles(
-    context: vscode.ExtensionContext,
+    context: ExtensionContextLike,
     sessionId: string,
     path: string = ".",
   ): Promise<Array<{ path: string; type: string; size?: number }>> {
@@ -341,7 +417,7 @@ export class HostController {
   }
 
   public async readFileSnippet(
-    context: vscode.ExtensionContext,
+    context: ExtensionContextLike,
     sessionId: string,
     path: string,
     options: { headLines?: number; tailLines?: number; maxBytes?: number } = {},
@@ -363,21 +439,22 @@ export class HostController {
   }
 
   public async openDiff(
-    context: vscode.ExtensionContext,
+    context: ExtensionContextLike,
     sessionId: string,
     filePath: string,
     artifactPath?: string,
   ): Promise<void> {
-    const ws = vscode.workspace.workspaceFolders?.[0]?.uri
-    const rightUri = ws ? vscode.Uri.joinPath(ws, filePath) : vscode.Uri.file(filePath)
-    let leftUri: vscode.Uri
+    const runtime = this.runtimeProvider()
+    const ws = runtime.workspace.workspaceFolders?.[0]?.uri
+    const rightUri = ws ? runtime.Uri.joinPath(ws, filePath) : runtime.Uri.file(filePath)
+    let leftUri: unknown
 
     if (artifactPath && artifactPath.trim().length > 0) {
-      const cfg = readSidebarConfig()
+      const cfg = this.configProvider()
       const base = cfg.engineBaseUrl.endsWith("/") ? cfg.engineBaseUrl : `${cfg.engineBaseUrl}/`
       const url = new URL(`/sessions/${sessionId}/download`, base)
       url.searchParams.set("artifact", artifactPath)
-      const response = await fetch(url, {
+      const response = await this.fetchFn(url, {
         method: "GET",
         headers: await this.authHeaders(context),
       })
@@ -386,17 +463,17 @@ export class HostController {
         throw new Error(`Failed to download artifact: HTTP ${response.status} ${text}`.trim())
       }
       const content = await response.text()
-      const doc = await vscode.workspace.openTextDocument({
+      const doc = await runtime.workspace.openTextDocument({
         content,
         language: undefined,
       })
       leftUri = doc.uri
     } else {
-      const emptyDoc = await vscode.workspace.openTextDocument({ content: "" })
+      const emptyDoc = await runtime.workspace.openTextDocument({ content: "" })
       leftUri = emptyDoc.uri
     }
 
-    await vscode.commands.executeCommand(
+    await runtime.commands.executeCommand(
       "vscode.diff",
       leftUri,
       rightUri,
@@ -410,23 +487,24 @@ export class HostController {
       abort.abort()
     }
     this.streamAbortBySession.clear()
+    this.recentEventIdsBySession.clear()
   }
 
-  public async attachToSession(context: vscode.ExtensionContext, sessionId: string): Promise<void> {
+  public async attachToSession(context: ExtensionContextLike, sessionId: string): Promise<void> {
     this.activeSessionId = sessionId
     this.stopAllStreams()
     await this.emitState(context)
-    await this.startSessionStream(context, sessionId)
+    void this.startSessionStream(context, sessionId)
   }
 
-  private async startSessionStream(context: vscode.ExtensionContext, sessionId: string): Promise<void> {
+  private async startSessionStream(context: ExtensionContextLike, sessionId: string): Promise<void> {
     const streamAbort = new AbortController()
     this.streamAbortBySession.set(sessionId, streamAbort)
     let retryCount = 0
     let syntheticIdCounter = 0
     while (!streamAbort.signal.aborted) {
       try {
-        const cfg = readSidebarConfig()
+        const cfg = this.configProvider()
         const url = new URL(`/sessions/${sessionId}/events`, cfg.engineBaseUrl.endsWith("/") ? cfg.engineBaseUrl : `${cfg.engineBaseUrl}/`)
         const lastEventId = await this.readLastEventId(context, sessionId)
         await this.emitConnection({
@@ -436,7 +514,7 @@ export class HostController {
           ...(await this.authHeaders(context)),
           ...(lastEventId ? { "Last-Event-ID": lastEventId } : {}),
         }
-        const response = await fetch(url, {
+        const response = await this.fetchFn(url, {
           method: "GET",
           headers,
           signal: streamAbort.signal,
@@ -505,9 +583,9 @@ export class HostController {
           message: `SSE stream error: ${toMessage(error)}`,
           retryCount,
         })
-        const waitMs = RETRY_BACKOFF_MS[Math.min(retryCount, RETRY_BACKOFF_MS.length - 1)]
+        const waitMs = this.retryBackoffMs[Math.min(retryCount, this.retryBackoffMs.length - 1)]
         retryCount += 1
-        await new Promise<void>((resolve) => setTimeout(resolve, waitMs))
+        await new Promise<void>((resolve) => this.setTimeoutFn(resolve, waitMs))
       }
     }
   }

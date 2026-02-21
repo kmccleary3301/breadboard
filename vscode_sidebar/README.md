@@ -31,6 +31,7 @@ Then open VSCode extension development host against this package.
 - `docs/VSCODE_SIDEBAR_COMPATIBILITY_MATRIX.md`
 - `docs/VSCODE_SIDEBAR_TROUBLESHOOTING.md`
 - `docs/VSCODE_SIDEBAR_FEATURE_STATUS.md`
+- `docs/VSCODE_SIDEBAR_DOCS_INDEX.md`
 
 ## Settings
 
