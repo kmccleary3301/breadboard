@@ -1,0 +1,103 @@
+name: LongRun Phase2 Quality Trend (Warn Lane)
+
+on:
+  workflow_dispatch:
+    inputs:
+      strict_mode:
+        description: "When true, fail workflow on trend-lane failures"
+        type: boolean
+        required: false
+        default: false
+  schedule:
+    - cron: "30 9 * * *"
+  pull_request:
+    paths:
+      - "agentic_coder_prototype/longrun/**"
+      - "scripts/run_longrun_phase1_pilot.py"
+      - "scripts/audit_longrun_parity_disabled.py"
+      - "scripts/evaluate_longrun_phase2_go_no_go.py"
+      - "scripts/update_longrun_phase2_trend_history.py"
+      - "scripts/render_longrun_phase2_trend_summary.py"
+      - "scripts/validate_longrun_phase1_scenario_contract.py"
+      - "tests/test_evaluate_longrun_phase2_go_no_go.py"
+      - "tests/test_update_longrun_phase2_trend_history.py"
+      - "tests/test_render_longrun_phase2_trend_summary.py"
+      - "tests/test_validate_longrun_phase1_scenario_contract.py"
+      - ".github/workflows/longrun-phase2-trend-warn.yml"
+
+jobs:
+  longrun_quality_trend_warn:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest pyyaml
+
+      - name: Validate trend-lane scripts/tests (warn-only)
+        continue-on-error: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.strict_mode != 'true' }}
+        run: |
+          pytest -q \
+            tests/test_evaluate_longrun_phase2_go_no_go.py \
+            tests/test_update_longrun_phase2_trend_history.py \
+            tests/test_render_longrun_phase2_trend_summary.py \
+            tests/test_validate_longrun_phase1_scenario_contract.py
+
+      - name: Run parity disable audit (warn-only)
+        continue-on-error: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.strict_mode != 'true' }}
+        run: |
+          python scripts/audit_longrun_parity_disabled.py \
+            --repo-root . \
+            --json-out artifacts/longrun/trend_warn/longrun_parity_audit.json
+
+      - name: Generate deterministic pilot matrix (warn-only)
+        continue-on-error: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.strict_mode != 'true' }}
+        run: |
+          python scripts/run_longrun_phase1_pilot.py \
+            --json-out artifacts/longrun/trend_warn/longrun_phase1_pilot_v1.json \
+            --markdown-out artifacts/longrun/trend_warn/longrun_phase1_pilot_summary.md
+
+      - name: Validate scenario contract (warn-only)
+        continue-on-error: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.strict_mode != 'true' }}
+        run: |
+          python scripts/validate_longrun_phase1_scenario_contract.py \
+            --pilot-json artifacts/longrun/trend_warn/longrun_phase1_pilot_v1.json \
+            --contract-json config/longrun/phase1_scenario_contract_v1.json \
+            --report-json artifacts/longrun/trend_warn/longrun_phase1_scenario_contract_report.json
+
+      - name: Evaluate go/no-go (warn-only)
+        continue-on-error: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.strict_mode != 'true' }}
+        run: |
+          python scripts/evaluate_longrun_phase2_go_no_go.py \
+            --pilot-json artifacts/longrun/trend_warn/longrun_phase1_pilot_v1.json \
+            --parity-json artifacts/longrun/trend_warn/longrun_parity_audit.json \
+            --report-json artifacts/longrun/trend_warn/longrun_phase2_go_no_go_report.json
+
+      - name: Update trend history (warn-only)
+        continue-on-error: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.strict_mode != 'true' }}
+        run: |
+          python scripts/update_longrun_phase2_trend_history.py \
+            --report-json artifacts/longrun/trend_warn/longrun_phase2_go_no_go_report.json \
+            --parity-json artifacts/longrun/trend_warn/longrun_parity_audit.json \
+            --history-json artifacts/longrun/trend_warn/longrun_phase2_trend_history.json
+
+      - name: Render trend summary (warn-only)
+        continue-on-error: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.strict_mode != 'true' }}
+        run: |
+          python scripts/render_longrun_phase2_trend_summary.py \
+            --history-json artifacts/longrun/trend_warn/longrun_phase2_trend_history.json \
+            --markdown-out artifacts/longrun/trend_warn/longrun_phase2_trend_summary.md
+
+      - name: Upload trend-warn artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: longrun-phase2-trend-warn-artifacts
+          path: artifacts/longrun/trend_warn/**
+          if-no-files-found: warn

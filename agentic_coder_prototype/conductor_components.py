@@ -20,6 +20,7 @@ from .provider_ir import IRDeltaEvent
 from .streaming_policy import StreamingPolicy
 from .guardrails import build_guardrail_manager
 from .core.core import ToolDefinition, ToolParameter
+from .rlm import RLM_TOOL_NAMES, is_rlm_enabled
 
 
 # ----------------------------
@@ -436,6 +437,13 @@ def initialize_yaml_tools(conductor: Any) -> None:
             filtered_tools = [
                 tool for tool in filtered_tools
                 if str(getattr(tool, "name", "")).strip().lower() != "task"
+            ]
+        # Keep RLM tools behind explicit feature gate to protect parity profiles.
+        if not is_rlm_enabled(getattr(conductor, "config", None)):
+            filtered_tools = [
+                tool
+                for tool in filtered_tools
+                if str(getattr(tool, "name", "")).strip() not in RLM_TOOL_NAMES
             ]
         # Preserve include-list ordering when provided (OpenCode/OmO parity).
         if include_list and not include_has_wildcard:

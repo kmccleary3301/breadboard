@@ -1,0 +1,54 @@
+extends: base_v2.yaml
+version: 2
+
+profile:
+  name: longrun-aggressive-v1
+
+prompts:
+  packs:
+    base:
+      builder: implementations/system_prompts/longrun/policy_aggressive.md
+
+long_running:
+  enabled: true
+  policy_profile: aggressive
+  controller: longrun_v1
+  reset_policy: fresh
+  episode:
+    max_steps_override: 40
+  queue:
+    backend: feature_file
+  reviewer:
+    enabled: false
+    mode: read_only
+  resume:
+    enabled: true
+    state_path: meta/longrun_state.json
+  verification:
+    tiers:
+      - name: smoke
+        commands:
+          - pytest -q tests/test_longrun_controller.py
+        timeout_seconds: 120
+        hard_fail: false
+      - name: full
+        commands:
+          - pytest -q
+        timeout_seconds: 1500
+        hard_fail: true
+  recovery:
+    no_progress_max_episodes: 4
+    no_progress_signature_repeats: 4
+    rollback_enabled: true
+    checkpoint_every_episodes: 1
+    backoff_base_seconds: 1.0
+    backoff_max_seconds: 20.0
+    backoff_disable_jitter: false
+  observability:
+    emit_macro_events: true
+  budgets:
+    max_episodes: 12
+    max_wall_clock_seconds: 3600
+    max_retries_per_item: 3
+    total_tokens: 1200000
+    total_cost_usd: 20.0

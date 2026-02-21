@@ -1,0 +1,29 @@
+{
+  "schema_version": "longrun_phase2_live_tasks_v2",
+  "tasks": [
+    {
+      "id": "quick_hello",
+      "prompt": "Create hello.py with greet(name) that returns 'Hello, <name>!'.",
+      "max_steps": 1,
+      "context": {
+        "task_type": "function"
+      }
+    },
+    {
+      "id": "quick_json_normalize",
+      "prompt": "Create json_norm.py with normalize_keys(payload: dict) returning dict with sorted string keys.",
+      "max_steps": 1,
+      "context": {
+        "task_type": "function"
+      }
+    },
+    {
+      "id": "quick_math_helpers",
+      "prompt": "Create math_helpers.py with add(a,b) and sub(a,b) and brief docstrings.",
+      "max_steps": 1,
+      "context": {
+        "task_type": "function"
+      }
+    }
+  ]
+}

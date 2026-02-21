@@ -1,0 +1,94 @@
+name: LongRun Phase 1 Gate
+
+on:
+  pull_request:
+    paths:
+      - "agentic_coder_prototype/longrun/**"
+      - "agentic_coder_prototype/agent_llm_openai.py"
+      - "agentic_coder_prototype/compilation/v2_loader.py"
+      - "agent_configs/**"
+      - "docs/LONGRUN_*.md"
+      - "scripts/audit_longrun_parity_disabled.py"
+      - "scripts/check_longrun_run_summary_parity_audit.py"
+      - "scripts/validate_longrun_phase2_warn_artifacts.py"
+      - "scripts/evaluate_longrun_phase2_go_no_go.py"
+      - "scripts/run_longrun_phase2_live_pilot.py"
+      - "scripts/validate_longrun_phase2_live_artifacts.py"
+      - "tests/test_longrun_*"
+      - "tests/test_audit_longrun_parity_disabled.py"
+      - "tests/test_check_longrun_run_summary_parity_audit.py"
+      - "tests/test_validate_longrun_phase2_warn_artifacts.py"
+      - "tests/test_evaluate_longrun_phase2_go_no_go.py"
+      - "tests/test_run_longrun_phase2_live_pilot.py"
+      - "tests/test_validate_longrun_phase2_live_artifacts.py"
+      - "tests/test_schema_v2_loader.py"
+      - ".github/workflows/longrun-phase1-gate.yml"
+  push:
+    paths:
+      - "agentic_coder_prototype/longrun/**"
+      - "agentic_coder_prototype/agent_llm_openai.py"
+      - "agentic_coder_prototype/compilation/v2_loader.py"
+      - "agent_configs/**"
+      - "docs/LONGRUN_*.md"
+      - "scripts/audit_longrun_parity_disabled.py"
+      - "scripts/check_longrun_run_summary_parity_audit.py"
+      - "scripts/validate_longrun_phase2_warn_artifacts.py"
+      - "scripts/evaluate_longrun_phase2_go_no_go.py"
+      - "scripts/run_longrun_phase2_live_pilot.py"
+      - "scripts/validate_longrun_phase2_live_artifacts.py"
+      - "tests/test_longrun_*"
+      - "tests/test_audit_longrun_parity_disabled.py"
+      - "tests/test_check_longrun_run_summary_parity_audit.py"
+      - "tests/test_validate_longrun_phase2_warn_artifacts.py"
+      - "tests/test_evaluate_longrun_phase2_go_no_go.py"
+      - "tests/test_run_longrun_phase2_live_pilot.py"
+      - "tests/test_validate_longrun_phase2_live_artifacts.py"
+      - "tests/test_schema_v2_loader.py"
+      - ".github/workflows/longrun-phase1-gate.yml"
+
+jobs:
+  longrun_phase1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install minimal test deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest pyyaml
+
+      - name: Run longrun-focused test suite
+        run: |
+          pytest -q \
+            tests/test_longrun_flags.py \
+            tests/test_longrun_controller.py \
+            tests/test_longrun_queue.py \
+            tests/test_longrun_verification.py \
+            tests/test_longrun_recovery.py \
+            tests/test_longrun_run_summary.py \
+            tests/test_longrun_profile_configs.py \
+            tests/test_audit_longrun_parity_disabled.py \
+            tests/test_check_longrun_run_summary_parity_audit.py \
+            tests/test_validate_longrun_phase2_warn_artifacts.py \
+            tests/test_evaluate_longrun_phase2_go_no_go.py \
+            tests/test_run_longrun_phase2_live_pilot.py \
+            tests/test_validate_longrun_phase2_live_artifacts.py \
+            tests/test_schema_v2_loader.py
+
+      - name: Audit parity configs keep longrun disabled
+        run: |
+          python scripts/audit_longrun_parity_disabled.py \
+            --repo-root . \
+            --json-out artifacts/longrun/longrun_parity_audit.json
+
+      - name: Upload longrun audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: longrun-phase1-audit
+          path: artifacts/longrun/longrun_parity_audit.json
+          if-no-files-found: error

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
@@ -19,6 +21,88 @@ from .ctrees.runner import TreeRunner
 from .reward import aggregate_reward_v1, validate_reward_v1
 from .policy_pack import PolicyPack
 from .policy_pack import PolicyPack
+
+
+def _canonical_hash(payload: Any) -> str:
+    try:
+        blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    except Exception:
+        blob = json.dumps({"fallback": str(payload)}, sort_keys=True)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def build_longrun_parity_audit(
+    config: Dict[str, Any] | None,
+    provider_metadata: Dict[str, Any] | None,
+    run_dir: str | None,
+) -> Dict[str, Any]:
+    cfg = config if isinstance(config, dict) else {}
+    longrun_cfg = cfg.get("long_running")
+    longrun_cfg = longrun_cfg if isinstance(longrun_cfg, dict) else {}
+    enabled = bool(longrun_cfg.get("enabled", False))
+    metadata = provider_metadata if isinstance(provider_metadata, dict) else {}
+    summary = metadata.get("longrun_summary")
+    summary = summary if isinstance(summary, dict) else {}
+    episodes_run = int(summary.get("episodes_run") or 0)
+
+    artifacts: List[str] = []
+    candidates = [
+        "meta/longrun_state.json",
+        "meta/longrun_summary.json",
+        "meta/longrun_queue_snapshot.json",
+        "meta/checkpoints/latest_checkpoint.json",
+    ]
+    for rel in candidates:
+        if not run_dir:
+            continue
+        if os.path.exists(os.path.join(run_dir, rel)):
+            artifacts.append(rel)
+    return {
+        "schema_version": "longrun_parity_audit_v1",
+        "enabled": enabled,
+        "effective_config_hash": _canonical_hash(longrun_cfg),
+        "episodes_run": episodes_run,
+        "artifact_list": artifacts,
+    }
+
+
+def build_rlm_summary(provider_metadata: Dict[str, Any] | None) -> Optional[Dict[str, Any]]:
+    metadata = provider_metadata if isinstance(provider_metadata, dict) else {}
+    budget = metadata.get("rlm_budget_state")
+    ledger = metadata.get("rlm_branch_ledger")
+    batch = metadata.get("rlm_batch_summary")
+    hybrid = metadata.get("rlm_hybrid_summary")
+    router = metadata.get("rlm_router_summary")
+    projection = metadata.get("rlm_ctree_projection_summary")
+    longrun_delta = metadata.get("rlm_last_episode_delta")
+    payload: Dict[str, Any] = {}
+    if isinstance(budget, dict):
+        payload["budget_state"] = budget
+        payload["subcall_count"] = int(budget.get("subcalls") or 0)
+        payload["total_tokens"] = int(budget.get("total_tokens") or 0)
+        payload["total_cost_usd"] = float(budget.get("total_cost_usd") or 0.0)
+    if isinstance(ledger, dict):
+        payload["branch_ledger"] = ledger
+        branches = ledger.get("branches")
+        events = ledger.get("events")
+        if isinstance(branches, dict):
+            payload["branch_count"] = len(branches)
+        if isinstance(events, list):
+            payload["branch_event_count"] = len(events)
+    if isinstance(batch, dict):
+        payload["batch"] = batch
+        payload["batch_count"] = int(batch.get("batch_count") or 0)
+        payload["batch_item_count"] = int(batch.get("batch_item_count") or 0)
+        payload["batch_failures"] = int(batch.get("batch_failures") or 0)
+    if isinstance(hybrid, dict):
+        payload["hybrid"] = hybrid
+    if isinstance(router, dict):
+        payload["router"] = router
+    if isinstance(projection, dict):
+        payload["ctree_projection"] = projection
+    if isinstance(longrun_delta, dict):
+        payload["last_episode_delta"] = longrun_delta
+    return payload or None
 
 
 def run_main_loop(
@@ -234,6 +318,39 @@ def run_main_loop(
                     run_summary_payload["todo_metrics"] = todo_metrics
                 if payload:
                     run_summary_payload["extra_payload"] = payload
+                try:
+                    provider_metadata = getattr(session_state, "_provider_metadata", None)
+                    longrun_summary = (
+                        session_state.get_provider_metadata("longrun_summary")
+                        if hasattr(session_state, "get_provider_metadata")
+                        else None
+                    )
+                    longrun_state = (
+                        session_state.get_provider_metadata("longrun_state")
+                        if hasattr(session_state, "get_provider_metadata")
+                        else None
+                    )
+                    parity_audit = build_longrun_parity_audit(
+                        getattr(self, "config", None),
+                        provider_metadata if isinstance(provider_metadata, dict) else {},
+                        getattr(self.logger_v2, "run_dir", None),
+                    )
+                    run_summary_payload["longrun"] = {
+                        "parity_audit": parity_audit,
+                    }
+                    if isinstance(longrun_summary, dict):
+                        run_summary_payload["longrun"]["summary"] = longrun_summary
+                    if isinstance(longrun_state, dict):
+                        run_summary_payload["longrun"]["state"] = longrun_state
+                except Exception:
+                    pass
+                try:
+                    provider_metadata = getattr(session_state, "_provider_metadata", None)
+                    rlm_payload = build_rlm_summary(provider_metadata if isinstance(provider_metadata, dict) else {})
+                    if isinstance(rlm_payload, dict):
+                        run_summary_payload["rlm"] = rlm_payload
+                except Exception:
+                    pass
                 prompt_summary = self._build_prompt_summary()
                 if prompt_summary:
                     run_summary_payload["prompts"] = prompt_summary

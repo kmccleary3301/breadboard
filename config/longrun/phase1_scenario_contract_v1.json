@@ -1,0 +1,92 @@
+{
+  "contract_version": "longrun_phase1_scenario_contract_v1",
+  "pilot_schema_version": "longrun_phase1_pilot_v1",
+  "allowed_stop_classes": [
+    "episode_completed",
+    "max_episodes_reached",
+    "no_progress_threshold_reached",
+    "no_progress_signature_repeated",
+    "retry_budget_reached",
+    "verification_failed_hard",
+    "total_tokens_budget_reached",
+    "total_cost_budget_reached",
+    "max_wall_clock_seconds_reached"
+  ],
+  "required_assertions": [
+    "scenario_count_matches_contract",
+    "required_scenarios_present",
+    "summary_fields_present",
+    "stop_reasons_classified"
+  ],
+  "required_scenarios": [
+    {
+      "id": "single_success",
+      "expected_stop_classes": {
+        "baseline": [
+          "episode_completed"
+        ],
+        "longrun": [
+          "episode_completed"
+        ]
+      }
+    },
+    {
+      "id": "flaky_then_success",
+      "expected_stop_classes": {
+        "baseline": [
+          "episode_completed"
+        ],
+        "longrun": [
+          "episode_completed"
+        ]
+      }
+    },
+    {
+      "id": "persistent_no_progress",
+      "expected_stop_classes": {
+        "baseline": [
+          "max_episodes_reached"
+        ],
+        "longrun": [
+          "no_progress_threshold_reached",
+          "retry_budget_reached"
+        ]
+      }
+    },
+    {
+      "id": "retry_then_rollback",
+      "expected_stop_classes": {
+        "baseline": [
+          "max_episodes_reached"
+        ],
+        "longrun": [
+          "retry_budget_reached"
+        ]
+      }
+    },
+    {
+      "id": "signature_repeat_stop",
+      "expected_stop_classes": {
+        "baseline": [
+          "max_episodes_reached"
+        ],
+        "longrun": [
+          "no_progress_signature_repeated",
+          "no_progress_threshold_reached"
+        ]
+      }
+    },
+    {
+      "id": "alternating_failure_signatures",
+      "expected_stop_classes": {
+        "baseline": [
+          "max_episodes_reached"
+        ],
+        "longrun": [
+          "max_episodes_reached",
+          "retry_budget_reached"
+        ]
+      }
+    }
+  ]
+}

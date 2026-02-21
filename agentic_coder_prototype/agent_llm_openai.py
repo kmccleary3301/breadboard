@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import copy
+import concurrent.futures
+import hashlib
 from datetime import datetime
 import json
 import os
 import random
 import shutil
+import subprocess
 import sys
 import time
 import uuid
 import traceback
 import re
 import threading
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from pathlib import Path
 from types import SimpleNamespace
 from dataclasses import asdict, dataclass, field
@@ -179,6 +182,17 @@ from .tool_prompt_planner import ToolPromptPlanner
 from .turn_relayer import TurnRelayer
 from .turn_context import TurnContext
 from .orchestration import TeamConfig, MultiAgentOrchestrator
+from .longrun import LongRunController, build_work_queue, is_longrun_enabled, resolve_episode_max_steps
+from .rlm import (
+    BlobStore,
+    build_budget_limits,
+    can_start_subcall,
+    consume_subcall,
+    extract_usage_metrics,
+    get_rlm_config,
+    init_budget_state,
+    is_rlm_enabled,
+)
 
 ZERO_TOOL_WARN_TURNS = 2
 ZERO_TOOL_ABORT_TURNS = 4
@@ -892,6 +906,10 @@ class OpenAIConductor:
         return recorded_path
 
     def _emit_task_event(self, payload: Dict[str, Any]) -> None:
+        try:
+            self._rlm_project_task_event(payload)
+        except Exception:
+            pass
         session_state = getattr(self, "_active_session_state", None)
         if session_state is None:
             return
@@ -2490,6 +2508,1598 @@ class OpenAIConductor:
     def _write_env_fingerprint(self) -> None:
         write_env_fingerprint(self)
 
+    def _run_longrun_verification_command(
+        self,
+        *,
+        command: str,
+        timeout_seconds: float,
+        context: Mapping[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        started = time.time()
+        timeout = max(1.0, float(timeout_seconds or 0.0))
+        workspace = str(getattr(self, "workspace", "") or ".")
+        try:
+            completed = subprocess.run(
+                command,
+                shell=True,
+                cwd=workspace,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+            )
+            duration_ms = int(max(0.0, time.time() - started) * 1000)
+            return {
+                "status": "pass" if completed.returncode == 0 else "fail",
+                "duration_ms": duration_ms,
+                "signal": "hard",
+                "details": {
+                    "returncode": int(completed.returncode),
+                    "stdout_tail": (completed.stdout or "")[-2000:],
+                    "stderr_tail": (completed.stderr or "")[-2000:],
+                },
+            }
+        except subprocess.TimeoutExpired as exc:
+            duration_ms = int(max(0.0, time.time() - started) * 1000)
+            return {
+                "status": "timeout",
+                "duration_ms": duration_ms,
+                "signal": "soft",
+                "details": {
+                    "timeout_seconds": timeout,
+                    "stdout_tail": (exc.stdout or "")[-2000:] if isinstance(exc.stdout, str) else "",
+                    "stderr_tail": (exc.stderr or "")[-2000:] if isinstance(exc.stderr, str) else "",
+                },
+            }
+        except Exception as exc:
+            duration_ms = int(max(0.0, time.time() - started) * 1000)
+            return {
+                "status": "error",
+                "duration_ms": duration_ms,
+                "signal": "hard",
+                "details": {
+                    "error_type": exc.__class__.__name__,
+                    "message": str(exc),
+                },
+            }
+
+    def _rlm_cfg(self) -> Dict[str, Any]:
+        return get_rlm_config(self.config if isinstance(getattr(self, "config", None), dict) else {})
+
+    def _rlm_enabled(self) -> bool:
+        return is_rlm_enabled(self.config if isinstance(getattr(self, "config", None), dict) else {})
+
+    def _rlm_blob_store(self) -> BlobStore:
+        store = getattr(self, "_rlm_blob_store_instance", None)
+        if isinstance(store, BlobStore):
+            return store
+        store = BlobStore(str(getattr(self, "workspace", ".")), self.config)
+        self._rlm_blob_store_instance = store
+        return store
+
+    def _rlm_mvi_error(self, reason: str, detail: str) -> Dict[str, Any]:
+        text = f"RLM {reason}: {detail}"
+        return {"error": text, "__mvi_text_output": text, "status": "failed", "reason": reason}
+
+    def _rlm_ordering_lock(self) -> threading.RLock:
+        lock = getattr(self, "_rlm_ordering_lock_obj", None)
+        if lock is not None and hasattr(lock, "acquire") and hasattr(lock, "release"):
+            return lock
+        lock = threading.RLock()
+        self._rlm_ordering_lock_obj = lock
+        return lock
+
+    def _rlm_next_event_seq(self) -> int:
+        lock = self._rlm_ordering_lock()
+        with lock:
+            seq = 0
+            session_state = getattr(self, "_active_session_state", None)
+            if session_state is not None:
+                try:
+                    current = session_state.get_provider_metadata("rlm_ordering_seq")
+                    seq = int(current or 0)
+                except Exception:
+                    seq = 0
+            else:
+                seq = int(getattr(self, "_rlm_ordering_seq_cache", 0) or 0)
+            seq += 1
+            if session_state is not None:
+                try:
+                    session_state.set_provider_metadata("rlm_ordering_seq", seq)
+                except Exception:
+                    pass
+            self._rlm_ordering_seq_cache = seq
+            return seq
+
+    def _rlm_current_episode_index(self) -> Optional[int]:
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is None:
+            return None
+        try:
+            value = session_state.get_provider_metadata("longrun_episode_index")
+            if value is None:
+                return None
+            return int(value)
+        except Exception:
+            return None
+
+    def _rlm_resolve_branch_id(
+        self,
+        requested: Any,
+        *,
+        task_id: Optional[str] = None,
+        default_root: str = "root",
+    ) -> str:
+        raw = str(requested or "").strip()
+        base = raw or (f"task.{str(task_id).strip()}" if task_id else default_root)
+        base = re.sub(r"[^A-Za-z0-9._:-]+", "_", base).strip("._")
+        if not base:
+            base = default_root
+        if base.startswith("ep."):
+            return base
+        episode_index = self._rlm_current_episode_index()
+        if episode_index is None:
+            return base
+        return f"ep.{int(episode_index)}.{base}"
+
+    def _rlm_route_lane(
+        self,
+        *,
+        prompt: str,
+        args: Dict[str, Any],
+        blob_refs: List[str],
+    ) -> Tuple[str, str]:
+        cfg = self._rlm_cfg()
+        routing = cfg.get("routing")
+        routing = dict(routing) if isinstance(routing, dict) else {}
+        explicit = str(args.get("lane") or args.get("routing_lane") or "").strip().lower()
+        if explicit in {"long_context", "tool_heavy", "balanced"}:
+            return explicit, "explicit"
+        long_context_threshold = int(routing.get("long_context_prompt_chars") or 2400)
+        blob_threshold = int(routing.get("long_context_blob_refs") or 3)
+        if len(blob_refs) >= max(1, blob_threshold):
+            return "long_context", "blob_ref_threshold"
+        if len(prompt or "") >= max(1, long_context_threshold):
+            return "long_context", "prompt_length_threshold"
+        default_lane = str(routing.get("default_lane") or "tool_heavy").strip().lower()
+        if default_lane not in {"tool_heavy", "long_context", "balanced"}:
+            default_lane = "tool_heavy"
+        return default_lane, "default"
+
+    def _rlm_record_router_decision(self, *, lane: str, reason: str) -> None:
+        session_state = getattr(self, "_active_session_state", None)
+        payload: Dict[str, Any] = {
+            "lane_counts": {},
+            "decision_count": 0,
+            "last_lane": lane,
+            "last_reason": reason,
+        }
+        if session_state is not None:
+            try:
+                existing = session_state.get_provider_metadata("rlm_router_summary")
+                if isinstance(existing, dict):
+                    payload = dict(existing)
+            except Exception:
+                pass
+        lane_counts = payload.get("lane_counts")
+        lane_counts = dict(lane_counts) if isinstance(lane_counts, dict) else {}
+        lane_counts[lane] = int(lane_counts.get(lane) or 0) + 1
+        payload["lane_counts"] = lane_counts
+        payload["decision_count"] = int(payload.get("decision_count") or 0) + 1
+        payload["last_lane"] = lane
+        payload["last_reason"] = reason
+        payload["last_ts"] = time.time()
+        if session_state is not None:
+            try:
+                session_state.set_provider_metadata("rlm_router_summary", payload)
+            except Exception:
+                pass
+        self._rlm_append_jsonl(
+            "meta/rlm_router_decisions.jsonl",
+            {
+                "seq": self._rlm_next_event_seq(),
+                "ts": time.time(),
+                "lane": lane,
+                "reason": reason,
+                "episode_index": self._rlm_current_episode_index(),
+            },
+        )
+
+    def _rlm_project_ctree(self, *, event: str, branch_id: str, depth: int, metadata: Optional[Dict[str, Any]] = None) -> None:
+        row = {
+            "seq": self._rlm_next_event_seq(),
+            "ts": time.time(),
+            "event": event,
+            "branch_id": branch_id,
+            "depth": int(depth),
+            "episode_index": self._rlm_current_episode_index(),
+            "metadata": metadata or {},
+        }
+        self._rlm_append_jsonl("meta/ctrees/rlm_projection.jsonl", row)
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is not None:
+            summary: Dict[str, Any] = {"event_counts": {}, "last_event": None}
+            try:
+                existing = session_state.get_provider_metadata("rlm_ctree_projection_summary")
+                if isinstance(existing, dict):
+                    summary = dict(existing)
+            except Exception:
+                pass
+            counts = summary.get("event_counts")
+            counts = dict(counts) if isinstance(counts, dict) else {}
+            counts[event] = int(counts.get(event) or 0) + 1
+            summary["event_counts"] = counts
+            summary["last_event"] = row
+            try:
+                session_state.set_provider_metadata("rlm_ctree_projection_summary", summary)
+            except Exception:
+                pass
+
+    def _rlm_record_hybrid_event(
+        self,
+        *,
+        kind: str,
+        status: str,
+        branch_id: str,
+        depth: int,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        row = {
+            "seq": self._rlm_next_event_seq(),
+            "ts": time.time(),
+            "kind": kind,
+            "status": status,
+            "branch_id": branch_id,
+            "depth": int(depth),
+            "episode_index": self._rlm_current_episode_index(),
+            "metadata": metadata or {},
+        }
+        self._rlm_append_jsonl("meta/rlm_hybrid_events.jsonl", row)
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is not None:
+            summary: Dict[str, Any] = {"event_counts": {}, "status_counts": {}, "total_events": 0}
+            try:
+                existing = session_state.get_provider_metadata("rlm_hybrid_summary")
+                if isinstance(existing, dict):
+                    summary = dict(existing)
+            except Exception:
+                pass
+            event_counts = summary.get("event_counts")
+            event_counts = dict(event_counts) if isinstance(event_counts, dict) else {}
+            event_counts[kind] = int(event_counts.get(kind) or 0) + 1
+            status_counts = summary.get("status_counts")
+            status_counts = dict(status_counts) if isinstance(status_counts, dict) else {}
+            status_counts[status] = int(status_counts.get(status) or 0) + 1
+            summary["event_counts"] = event_counts
+            summary["status_counts"] = status_counts
+            summary["total_events"] = int(summary.get("total_events") or 0) + 1
+            summary["last_event"] = row
+            try:
+                session_state.set_provider_metadata("rlm_hybrid_summary", summary)
+            except Exception:
+                pass
+
+    def _rlm_project_task_event(self, payload: Dict[str, Any]) -> None:
+        if not self._rlm_enabled():
+            return
+        if not isinstance(payload, dict):
+            return
+        kind = str(payload.get("kind") or "").strip()
+        if kind not in {
+            "subagent_spawned",
+            "subagent_completed",
+            "subagent_failed",
+            "background_task_spawned",
+            "background_task_completed",
+            "background_task_failed",
+            "background_task_cancelled",
+        }:
+            return
+        task_id = str(payload.get("task_id") or payload.get("sessionId") or "").strip()
+        branch_id = self._rlm_resolve_branch_id(None, task_id=task_id or "anonymous")
+        depth_value = payload.get("depth")
+        try:
+            depth = int(depth_value) if depth_value is not None else 1
+        except Exception:
+            depth = 1
+        status_map = {
+            "subagent_spawned": "running",
+            "background_task_spawned": "running",
+            "subagent_completed": "completed",
+            "background_task_completed": "completed",
+            "subagent_failed": "failed",
+            "background_task_failed": "failed",
+            "background_task_cancelled": "cancelled",
+        }
+        status = status_map.get(kind, "running")
+        metadata = {
+            "task_id": task_id,
+            "session_id": str(payload.get("sessionId") or ""),
+            "subagent_type": str(payload.get("subagent_type") or ""),
+            "description": str(payload.get("description") or ""),
+            "parent_task_id": str(payload.get("parent_task_id") or ""),
+            "tree_path": str(payload.get("tree_path") or ""),
+            "source_kind": kind,
+        }
+        self._rlm_record_branch_event(
+            branch_id=branch_id,
+            depth=max(0, depth),
+            status=status,
+            reason=None,
+            metadata=metadata,
+        )
+        self._rlm_record_hybrid_event(
+            kind="task_event",
+            status=status,
+            branch_id=branch_id,
+            depth=max(0, depth),
+            metadata=metadata,
+        )
+        if status == "completed":
+            root_branch = self._rlm_resolve_branch_id("root")
+            self._rlm_record_branch_event(
+                branch_id=branch_id,
+                depth=max(0, depth),
+                status="merged",
+                reason="task_event_completed",
+                metadata={"merge_target": root_branch, "task_id": task_id, "source_kind": kind},
+            )
+
+    def _rlm_capture_rollup_snapshot(self, session_state: Optional[SessionState]) -> Dict[str, Any]:
+        if session_state is None:
+            return {"subcalls": 0, "total_tokens": 0, "total_cost_usd": 0.0, "lane_counts": {}, "branch_event_count": 0}
+        budget = session_state.get_provider_metadata("rlm_budget_state")
+        budget = budget if isinstance(budget, dict) else {}
+        router = session_state.get_provider_metadata("rlm_router_summary")
+        router = router if isinstance(router, dict) else {}
+        lane_counts = router.get("lane_counts")
+        lane_counts = dict(lane_counts) if isinstance(lane_counts, dict) else {}
+        ledger = session_state.get_provider_metadata("rlm_branch_ledger")
+        ledger = ledger if isinstance(ledger, dict) else {}
+        events = ledger.get("events")
+        branch_event_count = len(events) if isinstance(events, list) else 0
+        return {
+            "subcalls": int(budget.get("subcalls") or 0),
+            "total_tokens": int(budget.get("total_tokens") or 0),
+            "total_cost_usd": float(budget.get("total_cost_usd") or 0.0),
+            "lane_counts": lane_counts,
+            "branch_event_count": int(branch_event_count),
+        }
+
+    def _rlm_batch_summary_state(self) -> Dict[str, Any]:
+        session_state = getattr(self, "_active_session_state", None)
+        summary: Dict[str, Any] = {
+            "batch_count": 0,
+            "batch_item_count": 0,
+            "batch_failures": 0,
+            "batch_blocked": 0,
+            "batch_timeouts": 0,
+            "status_counts": {},
+        }
+        if session_state is not None:
+            try:
+                existing = session_state.get_provider_metadata("rlm_batch_summary")
+                if isinstance(existing, dict):
+                    summary.update(existing)
+            except Exception:
+                pass
+        return summary
+
+    def _set_rlm_batch_summary_state(self, payload: Dict[str, Any]) -> None:
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is not None:
+            try:
+                session_state.set_provider_metadata("rlm_batch_summary", payload)
+            except Exception:
+                pass
+        self._rlm_write_json("meta/rlm_batch_summary.json", payload)
+
+    def _rlm_update_batch_summary_state(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        summary = self._rlm_batch_summary_state()
+        status_counts = summary.get("status_counts")
+        status_counts = dict(status_counts) if isinstance(status_counts, dict) else {}
+        summary["batch_count"] = int(summary.get("batch_count") or 0) + 1
+        summary["batch_item_count"] = int(summary.get("batch_item_count") or 0) + len(results)
+        for row in results:
+            status = str(row.get("status") or "unknown")
+            status_counts[status] = int(status_counts.get(status) or 0) + 1
+            if status in {"failed", "error"}:
+                summary["batch_failures"] = int(summary.get("batch_failures") or 0) + 1
+            if status == "blocked":
+                summary["batch_blocked"] = int(summary.get("batch_blocked") or 0) + 1
+            if status == "timeout":
+                summary["batch_timeouts"] = int(summary.get("batch_timeouts") or 0) + 1
+        summary["status_counts"] = status_counts
+        summary["updated_at"] = time.time()
+        self._set_rlm_batch_summary_state(summary)
+        return summary
+
+    @staticmethod
+    def _rlm_rollup_delta(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
+        b_sub = int(before.get("subcalls") or 0)
+        a_sub = int(after.get("subcalls") or 0)
+        b_tok = int(before.get("total_tokens") or 0)
+        a_tok = int(after.get("total_tokens") or 0)
+        b_cost = float(before.get("total_cost_usd") or 0.0)
+        a_cost = float(after.get("total_cost_usd") or 0.0)
+        b_events = int(before.get("branch_event_count") or 0)
+        a_events = int(after.get("branch_event_count") or 0)
+        b_lanes = before.get("lane_counts")
+        b_lanes = dict(b_lanes) if isinstance(b_lanes, dict) else {}
+        a_lanes = after.get("lane_counts")
+        a_lanes = dict(a_lanes) if isinstance(a_lanes, dict) else {}
+        lane_delta: Dict[str, int] = {}
+        for lane in sorted(set(list(b_lanes.keys()) + list(a_lanes.keys()))):
+            diff = int(a_lanes.get(lane) or 0) - int(b_lanes.get(lane) or 0)
+            if diff:
+                lane_delta[lane] = diff
+        return {
+            "subcall_count": max(0, a_sub - b_sub),
+            "total_tokens": max(0, a_tok - b_tok),
+            "total_cost_usd": max(0.0, a_cost - b_cost),
+            "branch_event_count": max(0, a_events - b_events),
+            "lane_counts": lane_delta,
+        }
+
+    def _rlm_append_jsonl(self, rel_path: str, payload: Dict[str, Any]) -> None:
+        safe_payload = self._rlm_json_safe(payload)
+        try:
+            logger = getattr(self, "logger_v2", None)
+            if logger is not None and hasattr(logger, "append_jsonl"):
+                logger.append_jsonl(rel_path, safe_payload)
+        except Exception:
+            pass
+        try:
+            workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
+            if workspace_root.exists():
+                dest = workspace_root / ".breadboard" / rel_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                with dest.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(safe_payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+        except Exception:
+            pass
+
+    def _rlm_write_json(self, rel_path: str, payload: Dict[str, Any]) -> None:
+        safe_payload = self._rlm_json_safe(payload)
+        try:
+            logger = getattr(self, "logger_v2", None)
+            if logger is not None and hasattr(logger, "write_json"):
+                logger.write_json(rel_path, safe_payload)
+        except Exception:
+            pass
+        try:
+            workspace_root = Path(str(getattr(self, "workspace", ""))).resolve()
+            if workspace_root.exists():
+                dest = workspace_root / ".breadboard" / rel_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(json.dumps(safe_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _rlm_json_safe(self, value: Any) -> Any:
+        if value is None or isinstance(value, (str, bool, int)):
+            return value
+        if isinstance(value, float):
+            if not (value == value) or value in (float("inf"), float("-inf")):
+                return str(value)
+            return value
+        if isinstance(value, dict):
+            return {str(k): self._rlm_json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [self._rlm_json_safe(v) for v in value]
+        if hasattr(value, "model_dump"):
+            try:
+                return self._rlm_json_safe(value.model_dump())
+            except Exception:
+                return str(value)
+        if hasattr(value, "dict"):
+            try:
+                return self._rlm_json_safe(value.dict())  # type: ignore[call-arg]
+            except Exception:
+                return str(value)
+        if hasattr(value, "to_dict"):
+            try:
+                return self._rlm_json_safe(value.to_dict())  # type: ignore[call-arg]
+            except Exception:
+                return str(value)
+        return str(value)
+
+    def _rlm_branch_ledger(self) -> Dict[str, Any]:
+        session_state = getattr(self, "_active_session_state", None)
+        ledger: Dict[str, Any] = {}
+        if session_state is not None:
+            try:
+                existing = session_state.get_provider_metadata("rlm_branch_ledger")
+                if isinstance(existing, dict):
+                    ledger = copy.deepcopy(existing)
+            except Exception:
+                ledger = {}
+        if not ledger:
+            ledger = {"schema_version": "rlm_branch_ledger_v1", "branches": {}, "events": []}
+        ledger.setdefault("branches", {})
+        ledger.setdefault("events", [])
+        return ledger
+
+    def _set_rlm_branch_ledger(self, ledger: Dict[str, Any]) -> None:
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is not None:
+            try:
+                session_state.set_provider_metadata("rlm_branch_ledger", ledger)
+            except Exception:
+                pass
+        self._rlm_write_json("meta/rlm_branches.json", ledger)
+
+    def _rlm_record_branch_event(
+        self,
+        *,
+        branch_id: str,
+        depth: int,
+        status: str,
+        reason: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        with self._rlm_ordering_lock():
+            now = time.time()
+            ledger = self._rlm_branch_ledger()
+            branches = ledger.get("branches")
+            if not isinstance(branches, dict):
+                branches = {}
+                ledger["branches"] = branches
+            row = branches.get(branch_id)
+            if not isinstance(row, dict):
+                row = {
+                    "branch_id": branch_id,
+                    "depth": int(depth),
+                    "status": status,
+                    "created_at": now,
+                    "updated_at": now,
+                    "reason": reason,
+                    "metadata": metadata or {},
+                }
+                branches[branch_id] = row
+            else:
+                row["status"] = status
+                row["depth"] = int(depth)
+                row["updated_at"] = now
+                if reason:
+                    row["reason"] = reason
+                if metadata:
+                    merged = row.get("metadata")
+                    merged = dict(merged) if isinstance(merged, dict) else {}
+                    merged.update(metadata)
+                    row["metadata"] = merged
+            events = ledger.get("events")
+            if not isinstance(events, list):
+                events = []
+                ledger["events"] = events
+            event = {
+                "seq": self._rlm_next_event_seq(),
+                "ts": now,
+                "branch_id": branch_id,
+                "depth": int(depth),
+                "status": status,
+                "reason": reason,
+                "metadata": metadata or {},
+            }
+            events.append(event)
+            if len(events) > 2000:
+                ledger["events"] = events[-2000:]
+            self._set_rlm_branch_ledger(ledger)
+        projection_event = "branch_update"
+        if status == "running":
+            projection_event = "branch_start"
+        elif status == "completed":
+            projection_event = "branch_complete"
+        elif status in {"failed", "blocked", "cancelled"}:
+            projection_event = "branch_fail"
+        elif status == "merged":
+            projection_event = "branch_merge"
+        self._rlm_project_ctree(event=projection_event, branch_id=branch_id, depth=int(depth), metadata=metadata or {})
+
+    def _rlm_budget_state(self) -> Dict[str, Any]:
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is not None:
+            try:
+                existing = session_state.get_provider_metadata("rlm_budget_state")
+            except Exception:
+                existing = None
+        else:
+            existing = getattr(self, "_rlm_budget_state_cache", None)
+        return init_budget_state(existing if isinstance(existing, dict) else None)
+
+    def _set_rlm_budget_state(self, payload: Dict[str, Any]) -> None:
+        session_state = getattr(self, "_active_session_state", None)
+        if session_state is not None:
+            try:
+                session_state.set_provider_metadata("rlm_budget_state", payload)
+            except Exception:
+                pass
+        self._rlm_budget_state_cache = payload
+
+    def _rlm_build_subcall_prompt(self, prompt: str, blob_refs: List[str], inline_limit: int) -> str:
+        if not blob_refs:
+            return str(prompt or "")
+        store = self._rlm_blob_store()
+        chunks: List[str] = [str(prompt or "").strip()]
+        for blob_id in blob_refs:
+            try:
+                entry = store.get(str(blob_id), preview_bytes=inline_limit)
+                raw = str(entry.get("content") or "")
+                if inline_limit > 0:
+                    raw = raw[:inline_limit]
+                chunks.append(f"<blob id=\"{blob_id}\">\n{raw}\n</blob>")
+            except Exception:
+                continue
+        return "\n\n".join([chunk for chunk in chunks if chunk])
+
+    def _handle_blob_put_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if expected_output is not None:
+            if str(expected_status or "").lower() == "error":
+                text = str(expected_output)
+                return {"error": text, "__mvi_text_output": text}
+            if isinstance(expected_output, dict):
+                payload = dict(expected_output)
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or payload.get("blob_id") or "blob.put replay"))
+                return payload
+            text = str(expected_output)
+            return {"output": text, "__mvi_text_output": text}
+        if not self._rlm_enabled():
+            return self._rlm_mvi_error("rlm_disabled", "Enable features.rlm.enabled to use blob tools.")
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            return self._rlm_mvi_error("invalid_arguments", "blob.put requires object arguments.")
+        content = str(args.get("content") or "")
+        if not content:
+            return self._rlm_mvi_error("invalid_arguments", "blob.put requires non-empty content.")
+        content_type = str(args.get("content_type") or "text/plain")
+        metadata = args.get("metadata")
+        if metadata is not None and not isinstance(metadata, dict):
+            metadata = {}
+        try:
+            stored = self._rlm_blob_store().put_content(content=content, content_type=content_type, metadata=metadata)
+        except ValueError as exc:
+            return self._rlm_mvi_error(str(exc), "Failed to store blob.")
+        payload = {
+            "blob_id": stored["blob_id"],
+            "size_bytes": int(stored.get("size_bytes") or 0),
+            "content_type": stored.get("content_type") or "text/plain",
+            "metadata": stored.get("metadata") or {},
+            "__mvi_text_output": (
+                f"Stored blob {stored['blob_id']} ({int(stored.get('size_bytes') or 0)} bytes)."
+            ),
+        }
+        self._rlm_append_jsonl(
+            "meta/rlm_blobs_manifest.jsonl",
+            {
+                "event": "blob.put",
+                "call_id": str(tool_call.get("id") or ""),
+                "parent_call_id": str((args.get("parent_call_id") if isinstance(args, dict) else "") or ""),
+                "blob_id": stored["blob_id"],
+                "size_bytes": int(stored.get("size_bytes") or 0),
+                "consumed_blobs": [],
+                "created_blobs": [stored["blob_id"]],
+                "metadata": stored.get("metadata") or {},
+            },
+        )
+        return payload
+
+    def _handle_blob_put_file_slice_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if expected_output is not None:
+            if str(expected_status or "").lower() == "error":
+                text = str(expected_output)
+                return {"error": text, "__mvi_text_output": text}
+            if isinstance(expected_output, dict):
+                payload = dict(expected_output)
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or payload.get("blob_id") or "blob.put_file_slice replay"))
+                return payload
+            text = str(expected_output)
+            return {"output": text, "__mvi_text_output": text}
+        if not self._rlm_enabled():
+            return self._rlm_mvi_error("rlm_disabled", "Enable features.rlm.enabled to use blob tools.")
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            return self._rlm_mvi_error("invalid_arguments", "blob.put_file_slice requires object arguments.")
+        path = str(args.get("path") or "").strip()
+        if not path:
+            return self._rlm_mvi_error("invalid_arguments", "blob.put_file_slice requires path.")
+        start_line = args.get("start_line")
+        end_line = args.get("end_line")
+        branch_id = self._rlm_resolve_branch_id(args.get("branch_id") or "root")
+        try:
+            stored = self._rlm_blob_store().put_file_slice(
+                path=path,
+                start_line=int(start_line) if start_line is not None else None,
+                end_line=int(end_line) if end_line is not None else None,
+                branch_id=branch_id,
+            )
+        except ValueError as exc:
+            return self._rlm_mvi_error(str(exc), "Failed to store file slice.")
+        payload = {
+            "blob_id": stored["blob_id"],
+            "path": stored.get("path"),
+            "start_line": stored.get("start_line"),
+            "end_line": stored.get("end_line"),
+            "size_bytes": int(stored.get("size_bytes") or 0),
+            "__mvi_text_output": (
+                f"Stored file slice {stored.get('path')}:{stored.get('start_line')}-{stored.get('end_line')} "
+                f"as {stored['blob_id']} ({int(stored.get('size_bytes') or 0)} bytes)."
+            ),
+        }
+        self._rlm_append_jsonl(
+            "meta/rlm_blobs_manifest.jsonl",
+            {
+                "event": "blob.put_file_slice",
+                "call_id": str(tool_call.get("id") or ""),
+                "parent_call_id": str((args.get("parent_call_id") if isinstance(args, dict) else "") or ""),
+                "blob_id": stored["blob_id"],
+                "path": stored.get("path"),
+                "start_line": stored.get("start_line"),
+                "end_line": stored.get("end_line"),
+                "size_bytes": int(stored.get("size_bytes") or 0),
+                "branch_id": branch_id,
+                "consumed_blobs": [],
+                "created_blobs": [stored["blob_id"]],
+            },
+        )
+        return payload
+
+    def _handle_blob_get_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if expected_output is not None:
+            if str(expected_status or "").lower() == "error":
+                text = str(expected_output)
+                return {"error": text, "__mvi_text_output": text}
+            if isinstance(expected_output, dict):
+                payload = dict(expected_output)
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or payload.get("blob_id") or "blob.get replay"))
+                return payload
+            text = str(expected_output)
+            return {"output": text, "__mvi_text_output": text}
+        if not self._rlm_enabled():
+            return self._rlm_mvi_error("rlm_disabled", "Enable features.rlm.enabled to use blob tools.")
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            return self._rlm_mvi_error("invalid_arguments", "blob.get requires object arguments.")
+        blob_id = str(args.get("blob_id") or "").strip()
+        if not blob_id:
+            return self._rlm_mvi_error("invalid_arguments", "blob.get requires blob_id.")
+        preview_bytes = args.get("preview_bytes")
+        try:
+            entry = self._rlm_blob_store().get(blob_id, preview_bytes=int(preview_bytes) if preview_bytes is not None else None)
+        except ValueError as exc:
+            return self._rlm_mvi_error(str(exc), "Failed to read blob.")
+        preview = str(entry.get("preview") or "")
+        size_bytes = int(entry.get("size_bytes") or 0)
+        output = {
+            "blob_id": blob_id,
+            "size_bytes": size_bytes,
+            "content_type": entry.get("content_type") or "text/plain",
+            "preview": preview,
+            "truncated": bool(entry.get("truncated")),
+            "metadata": entry.get("metadata") or {},
+            "__mvi_text_output": (
+                f"Blob {blob_id} preview ({len(preview.encode('utf-8', errors='ignore'))}/{size_bytes} bytes): {preview}"
+            ),
+        }
+        return output
+
+    def _handle_blob_search_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if expected_output is not None:
+            if str(expected_status or "").lower() == "error":
+                text = str(expected_output)
+                return {"error": text, "__mvi_text_output": text}
+            if isinstance(expected_output, dict):
+                payload = dict(expected_output)
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or "blob.search replay"))
+                return payload
+            text = str(expected_output)
+            return {"output": text, "__mvi_text_output": text}
+        if not self._rlm_enabled():
+            return self._rlm_mvi_error("rlm_disabled", "Enable features.rlm.enabled to use blob tools.")
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            return self._rlm_mvi_error("invalid_arguments", "blob.search requires object arguments.")
+        query = str(args.get("query") or "")
+        if not query:
+            return self._rlm_mvi_error("invalid_arguments", "blob.search requires query.")
+        blob_ids_raw = args.get("blob_ids")
+        blob_ids: List[str] = []
+        if isinstance(blob_ids_raw, list):
+            blob_ids = [str(x) for x in blob_ids_raw if x is not None]
+        max_results = args.get("max_results")
+        try:
+            result = self._rlm_blob_store().search(
+                blob_ids=blob_ids or None,
+                query=query,
+                max_results=int(max_results) if max_results is not None else 20,
+            )
+        except ValueError as exc:
+            return self._rlm_mvi_error(str(exc), "Failed to search blobs.")
+        result["__mvi_text_output"] = (
+            f"Found {len(result.get('results') or [])} matches for \"{result.get('query')}\" "
+            f"across {len(blob_ids) if blob_ids else 'all'} blob(s)."
+        )
+        return result
+
+    def _handle_llm_query_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if expected_output is not None:
+            if str(expected_status or "").lower() == "error":
+                text = str(expected_output)
+                return {"error": text, "__mvi_text_output": text}
+            if isinstance(expected_output, dict):
+                payload = dict(expected_output)
+                payload.setdefault("__mvi_text_output", str(payload.get("text") or payload.get("output") or "Subcall replay result"))
+                return payload
+            text = str(expected_output)
+            return {"text": text, "__mvi_text_output": text}
+
+        if not self._rlm_enabled():
+            return self._rlm_mvi_error("rlm_disabled", "Enable features.rlm.enabled to use llm.query.")
+
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            return self._rlm_mvi_error("invalid_arguments", "llm.query requires object arguments.")
+
+        prompt = str(args.get("prompt") or "").strip()
+        if not prompt:
+            return self._rlm_mvi_error("invalid_arguments", "llm.query requires prompt.")
+
+        branch_id = self._rlm_resolve_branch_id(args.get("branch_id") or "root")
+        call_id = str(tool_call.get("id") or uuid.uuid4().hex[:12])
+        parent_call_id = str(args.get("parent_call_id") or "")
+        depth = int(args.get("depth") or 0) if str(args.get("depth") or "").strip() else 0
+        blob_refs_raw = args.get("blob_refs")
+        blob_refs = [str(x) for x in blob_refs_raw if x is not None] if isinstance(blob_refs_raw, list) else []
+        lane, lane_reason = self._rlm_route_lane(prompt=prompt, args=args, blob_refs=blob_refs)
+        self._rlm_record_router_decision(lane=lane, reason=lane_reason)
+        branch_id = self._rlm_resolve_branch_id(branch_id or "root", task_id=str(args.get("task_id") or ""))
+        limits = build_budget_limits(self.config if isinstance(getattr(self, "config", None), dict) else {})
+        state = self._rlm_budget_state()
+        allowed, reason = can_start_subcall(state=state, limits=limits, branch_id=branch_id, depth=depth)
+        if not allowed:
+            self._rlm_record_branch_event(
+                branch_id=branch_id,
+                depth=depth,
+                status="blocked",
+                reason=reason or "budget_blocked",
+                metadata={"lane": lane, "lane_reason": lane_reason},
+            )
+            return self._rlm_mvi_error(reason or "budget_blocked", "Subcall blocked by RLM budget policy.")
+
+        cfg = self._rlm_cfg()
+        subcall_cfg = cfg.get("subcall")
+        subcall_cfg = dict(subcall_cfg) if isinstance(subcall_cfg, dict) else {}
+        model_route = str(
+            args.get("model")
+            or subcall_cfg.get("model")
+            or getattr(self, "_current_route_id", "")
+            or ((self.config.get("providers") or {}).get("default_model") if isinstance(getattr(self, "config", None), dict) else "")
+            or ""
+        ).strip()
+        if not model_route:
+            return self._rlm_mvi_error("model_unresolved", "Could not resolve a route/model for llm.query.")
+
+        inline_limit = int(subcall_cfg.get("max_inline_blob_bytes") or 12000)
+        user_prompt = self._rlm_build_subcall_prompt(prompt, blob_refs, max(0, inline_limit))
+        system_hint = str(args.get("system_hint") or "").strip()
+        messages: List[Dict[str, Any]] = []
+        if system_hint:
+            messages.append({"role": "system", "content": system_hint})
+        messages.append({"role": "user", "content": user_prompt})
+        self._rlm_record_branch_event(
+            branch_id=branch_id,
+            depth=depth,
+            status="running",
+            metadata={
+                "blob_refs": list(blob_refs),
+                "route_id": model_route,
+                "call_id": call_id,
+                "parent_call_id": parent_call_id,
+                "lane": lane,
+                "lane_reason": lane_reason,
+            },
+        )
+        self._rlm_record_hybrid_event(
+            kind="llm.query",
+            status="running",
+            branch_id=branch_id,
+            depth=depth,
+            metadata={"call_id": call_id, "lane": lane},
+        )
+
+        try:
+            runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(model_route)
+            client_cfg = provider_router.create_client_config(model_route)
+            if not client_cfg.get("api_key") and runtime_descriptor.provider_id != "replay":
+                return self._rlm_mvi_error("api_key_missing", f"{runtime_descriptor.api_key_env} missing in environment.")
+            runtime = provider_registry.create_runtime(runtime_descriptor)
+            client = runtime.create_client(
+                client_cfg.get("api_key"),
+                base_url=client_cfg.get("base_url"),
+                default_headers=client_cfg.get("default_headers"),
+            )
+            runtime_context = ProviderRuntimeContext(
+                session_state=getattr(self, "_active_session_state", None),
+                agent_config=self.config if isinstance(getattr(self, "config", None), dict) else {},
+                stream=False,
+                extra={
+                    "rlm_subcall": True,
+                    "branch_id": branch_id,
+                    "max_completion_tokens": args.get("max_completion_tokens") or subcall_cfg.get("max_completion_tokens"),
+                    "temperature": args.get("temperature", subcall_cfg.get("temperature")),
+                },
+            )
+            result = runtime.invoke(
+                client=client,
+                model=runtime_model,
+                messages=messages,
+                tools=None,
+                stream=False,
+                context=runtime_context,
+            )
+            text_parts: List[str] = []
+            for msg in result.messages or []:
+                if isinstance(msg, ProviderMessage) and isinstance(msg.content, str) and msg.content.strip():
+                    text_parts.append(msg.content.strip())
+            text = "\n\n".join(text_parts).strip()
+            usage = dict(result.usage or {})
+            usage_tokens, usage_cost_usd = extract_usage_metrics(usage)
+            next_state = consume_subcall(
+                state=state,
+                branch_id=branch_id,
+                depth=depth,
+                usage_tokens=usage_tokens,
+                usage_cost_usd=usage_cost_usd,
+            )
+            self._set_rlm_budget_state(next_state)
+
+            prompt_hash = hashlib.sha256(user_prompt.encode("utf-8", errors="ignore")).hexdigest()
+            row = {
+                "event": "llm.query",
+                "call_id": call_id,
+                "parent_call_id": parent_call_id or None,
+                "branch_id": branch_id,
+                "depth": depth,
+                "lane": lane,
+                "route_id": model_route,
+                "resolved_model": runtime_model,
+                "provider_id": runtime_descriptor.provider_id,
+                "prompt_hash": prompt_hash,
+                "blob_refs": blob_refs,
+                "consumed_blobs": list(blob_refs),
+                "created_blobs": [],
+                "usage": usage,
+                "usage_tokens": usage_tokens,
+                "estimated_cost_usd": usage_cost_usd,
+                "cached": False,
+            }
+            self._rlm_append_jsonl("meta/rlm_subcalls.jsonl", row)
+            self._rlm_record_branch_event(
+                branch_id=branch_id,
+                depth=depth,
+                status="completed",
+                metadata={
+                    "usage_tokens": usage_tokens,
+                    "estimated_cost_usd": usage_cost_usd,
+                    "call_id": call_id,
+                    "parent_call_id": parent_call_id,
+                    "lane": lane,
+                },
+            )
+            self._rlm_record_hybrid_event(
+                kind="llm.query",
+                status="completed",
+                branch_id=branch_id,
+                depth=depth,
+                metadata={"call_id": call_id, "lane": lane, "usage_tokens": usage_tokens},
+            )
+            mvi = (
+                f"Subcall complete (model={runtime_model}, tokens={usage_tokens}, cost=${usage_cost_usd:.4f})."
+            )
+            return {
+                "text": text,
+                "usage": usage,
+                "usage_tokens": usage_tokens,
+                "estimated_cost_usd": usage_cost_usd,
+                "model": runtime_model,
+                "route_id": model_route,
+                "provider_id": runtime_descriptor.provider_id,
+                "branch_id": branch_id,
+                "lane": lane,
+                "cached": False,
+                "__mvi_text_output": mvi,
+            }
+        except ProviderRuntimeError as exc:
+            self._rlm_record_branch_event(
+                branch_id=branch_id,
+                depth=depth,
+                status="failed",
+                reason="subcall_provider_error",
+                metadata={"error": str(exc), "lane": lane},
+            )
+            self._rlm_record_hybrid_event(
+                kind="llm.query",
+                status="failed",
+                branch_id=branch_id,
+                depth=depth,
+                metadata={"call_id": call_id, "lane": lane, "error": str(exc)},
+            )
+            return self._rlm_mvi_error("subcall_provider_error", str(exc))
+        except Exception as exc:
+            self._rlm_record_branch_event(
+                branch_id=branch_id,
+                depth=depth,
+                status="failed",
+                reason="subcall_exception",
+                metadata={"error": str(exc), "lane": lane},
+            )
+            self._rlm_record_hybrid_event(
+                kind="llm.query",
+                status="failed",
+                branch_id=branch_id,
+                depth=depth,
+                metadata={"call_id": call_id, "lane": lane, "error": str(exc)},
+            )
+            return self._rlm_mvi_error("subcall_exception", str(exc))
+
+    def _handle_llm_batch_query_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        expected_output = tool_call.get("expected_output")
+        expected_status = tool_call.get("expected_status")
+        if expected_output is not None:
+            if str(expected_status or "").lower() == "error":
+                text = str(expected_output)
+                return {"error": text, "__mvi_text_output": text}
+            if isinstance(expected_output, dict):
+                payload = dict(expected_output)
+                payload.setdefault("__mvi_text_output", str(payload.get("output") or "Batch replay result"))
+                return payload
+            if isinstance(expected_output, list):
+                rows: List[Dict[str, Any]] = []
+                for idx, row in enumerate(expected_output):
+                    if isinstance(row, dict):
+                        out = dict(row)
+                    else:
+                        out = {"text": str(row)}
+                    out.setdefault("request_index", idx)
+                    out.setdefault("status", "completed")
+                    rows.append(out)
+                return {
+                    "batch_id": str(tool_call.get("id") or uuid.uuid4().hex[:12]),
+                    "results": rows,
+                    "item_count": len(rows),
+                    "__mvi_text_output": f"Batch replay returned {len(rows)} item(s).",
+                }
+            text = str(expected_output)
+            return {"output": text, "__mvi_text_output": text}
+
+        if not self._rlm_enabled():
+            return self._rlm_mvi_error("rlm_disabled", "Enable features.rlm.enabled to use llm.batch_query.")
+
+        args = tool_call.get("arguments") or {}
+        if not isinstance(args, dict):
+            return self._rlm_mvi_error("invalid_arguments", "llm.batch_query requires object arguments.")
+
+        raw_queries = args.get("queries")
+        if not isinstance(raw_queries, list) or not raw_queries:
+            return self._rlm_mvi_error("invalid_arguments", "llm.batch_query requires non-empty queries[].")
+        if len(raw_queries) > 64:
+            return self._rlm_mvi_error("invalid_arguments", "llm.batch_query currently supports at most 64 queries per batch.")
+
+        cfg = self._rlm_cfg()
+        scheduling = cfg.get("scheduling")
+        scheduling = dict(scheduling) if isinstance(scheduling, dict) else {}
+        batch_cfg = scheduling.get("batch")
+        batch_cfg = dict(batch_cfg) if isinstance(batch_cfg, dict) else {}
+        mode = str(scheduling.get("mode") or "sync").strip().lower()
+        batch_enabled = bool(batch_cfg.get("enabled", mode == "batch"))
+        if not batch_enabled and mode != "batch":
+            return self._rlm_mvi_error("batch_disabled", "Enable features.rlm.scheduling.mode=batch or scheduling.batch.enabled=true.")
+
+        max_concurrency_cfg = int(batch_cfg.get("max_concurrency") or 4)
+        max_concurrency = max(1, min(16, max_concurrency_cfg))
+        per_branch_cap_cfg = batch_cfg.get("max_concurrency_per_branch")
+        if per_branch_cap_cfg is None:
+            per_branch_cap_cfg = batch_cfg.get("per_branch_max_concurrency")
+        per_branch_cap = max(1, int(per_branch_cap_cfg)) if per_branch_cap_cfg is not None else 0
+        retries_default = int(batch_cfg.get("retries") or 0)
+        timeout_default = float(batch_cfg.get("timeout_seconds") or 45.0)
+        fail_fast_default = bool(batch_cfg.get("fail_fast", False))
+        fail_fast = bool(args.get("fail_fast", fail_fast_default))
+
+        root_branch_id = self._rlm_resolve_branch_id(args.get("branch_id") or "root")
+        batch_id = str(tool_call.get("id") or uuid.uuid4().hex[:12])
+
+        limits = build_budget_limits(self.config if isinstance(getattr(self, "config", None), dict) else {})
+        budget_state = self._rlm_budget_state()
+        reservation_state = dict(budget_state)
+        prepared: List[Dict[str, Any]] = []
+        blocked_rows: List[Dict[str, Any]] = []
+        user_model_override = args.get("model")
+        parent_call_id = str(args.get("parent_call_id") or "")
+        default_depth = int(args.get("depth") or 0) if str(args.get("depth") or "").strip() else 0
+
+        # Preflight + reservation pass in deterministic request-index order.
+        for request_index, raw in enumerate(raw_queries):
+            if not isinstance(raw, dict):
+                blocked_rows.append(
+                    {
+                        "request_index": request_index,
+                        "status": "blocked",
+                        "reason": "invalid_query_item",
+                        "error": "queries[] entries must be objects.",
+                    }
+                )
+                continue
+            prompt = str(raw.get("prompt") or "").strip()
+            if not prompt:
+                blocked_rows.append(
+                    {
+                        "request_index": request_index,
+                        "status": "blocked",
+                        "reason": "invalid_prompt",
+                        "error": "query.prompt is required and must be non-empty.",
+                    }
+                )
+                continue
+            depth = int(raw.get("depth") or default_depth) if str(raw.get("depth") or default_depth).strip() else 0
+            task_id = str(raw.get("task_id") or f"batch_{request_index}")
+            branch_id = self._rlm_resolve_branch_id(raw.get("branch_id") or root_branch_id, task_id=task_id)
+            blob_refs_raw = raw.get("blob_refs")
+            blob_refs = [str(x) for x in blob_refs_raw if x is not None] if isinstance(blob_refs_raw, list) else []
+            lane, lane_reason = self._rlm_route_lane(prompt=prompt, args=raw, blob_refs=blob_refs)
+            self._rlm_record_router_decision(lane=lane, reason=f"batch:{lane_reason}")
+            can_start, block_reason = can_start_subcall(
+                state=reservation_state,
+                limits=limits,
+                branch_id=branch_id,
+                depth=depth,
+            )
+            if not can_start:
+                self._rlm_record_branch_event(
+                    branch_id=branch_id,
+                    depth=depth,
+                    status="blocked",
+                    reason=block_reason or "budget_blocked",
+                    metadata={"batch_id": batch_id, "request_index": request_index, "lane": lane},
+                )
+                blocked_rows.append(
+                    {
+                        "request_index": request_index,
+                        "status": "blocked",
+                        "reason": block_reason or "budget_blocked",
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": lane,
+                    }
+                )
+                continue
+            reservation_state = consume_subcall(
+                state=reservation_state,
+                branch_id=branch_id,
+                depth=depth,
+                usage_tokens=0,
+                usage_cost_usd=0.0,
+            )
+            prepared.append(
+                {
+                    "request_index": request_index,
+                    "prompt": prompt,
+                    "branch_id": branch_id,
+                    "depth": depth,
+                    "blob_refs": blob_refs,
+                    "lane": lane,
+                    "lane_reason": lane_reason,
+                    "system_hint": str(raw.get("system_hint") or ""),
+                    "max_completion_tokens": raw.get("max_completion_tokens"),
+                    "temperature": raw.get("temperature"),
+                    "model": raw.get("model") or user_model_override,
+                    "task_id": task_id,
+                    "timeout_seconds": float(raw.get("timeout_seconds") or timeout_default),
+                    "retries": int(raw.get("retries") if raw.get("retries") is not None else retries_default),
+                    "parent_call_id": str(raw.get("parent_call_id") or parent_call_id),
+                }
+            )
+
+        prepared_by_index: Dict[int, Dict[str, Any]] = {int(row["request_index"]): dict(row) for row in prepared}
+
+        def _with_item_defaults(item: Dict[str, Any], row: Dict[str, Any]) -> Dict[str, Any]:
+            out = dict(row)
+            out.setdefault("request_index", int(item.get("request_index") or 0))
+            out.setdefault("branch_id", str(item.get("branch_id") or root_branch_id))
+            out.setdefault("depth", int(item.get("depth") or 0))
+            out.setdefault("lane", item.get("lane"))
+            out.setdefault("parent_call_id", str(item.get("parent_call_id") or ""))
+            blob_refs = item.get("blob_refs")
+            out.setdefault("blob_refs", list(blob_refs) if isinstance(blob_refs, list) else [])
+            return out
+
+        def _invoke_prepared(item: Dict[str, Any]) -> Dict[str, Any]:
+            request_index = int(item["request_index"])
+            prompt = str(item["prompt"])
+            branch_id = str(item["branch_id"])
+            depth = int(item["depth"])
+            model_route = str(
+                item.get("model")
+                or (cfg.get("subcall", {}) or {}).get("model")
+                or getattr(self, "_current_route_id", "")
+                or ((self.config.get("providers") or {}).get("default_model") if isinstance(getattr(self, "config", None), dict) else "")
+                or ""
+            ).strip()
+            if not model_route:
+                return {
+                    "request_index": request_index,
+                    "status": "failed",
+                    "reason": "model_unresolved",
+                    "error": "Could not resolve route/model.",
+                    "branch_id": branch_id,
+                    "depth": depth,
+                    "lane": item.get("lane"),
+                    "attempt_count": 0,
+                }
+            inline_limit = int((cfg.get("subcall", {}) or {}).get("max_inline_blob_bytes") or 12000)
+            user_prompt = self._rlm_build_subcall_prompt(prompt, list(item.get("blob_refs") or []), max(0, inline_limit))
+            messages: List[Dict[str, Any]] = []
+            if str(item.get("system_hint") or "").strip():
+                messages.append({"role": "system", "content": str(item["system_hint"])})
+            messages.append({"role": "user", "content": user_prompt})
+
+            retries = max(0, int(item.get("retries") or 0))
+            timeout_seconds = max(0.0, float(item.get("timeout_seconds") or 0.0))
+            attempts: List[Dict[str, Any]] = []
+            for attempt in range(retries + 1):
+                started = time.time()
+                try:
+                    runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(model_route)
+                    client_cfg = provider_router.create_client_config(model_route)
+                    if not client_cfg.get("api_key") and runtime_descriptor.provider_id != "replay":
+                        return {
+                            "request_index": request_index,
+                            "status": "failed",
+                            "reason": "api_key_missing",
+                            "error": f"{runtime_descriptor.api_key_env} missing in environment.",
+                            "branch_id": branch_id,
+                            "depth": depth,
+                            "lane": item.get("lane"),
+                            "attempt_count": attempt + 1,
+                        }
+                    runtime = provider_registry.create_runtime(runtime_descriptor)
+                    client = runtime.create_client(
+                        client_cfg.get("api_key"),
+                        base_url=client_cfg.get("base_url"),
+                        default_headers=client_cfg.get("default_headers"),
+                    )
+                    runtime_context = ProviderRuntimeContext(
+                        session_state=getattr(self, "_active_session_state", None),
+                        agent_config=self.config if isinstance(getattr(self, "config", None), dict) else {},
+                        stream=False,
+                        extra={
+                            "rlm_subcall": True,
+                            "rlm_batch_subcall": True,
+                            "branch_id": branch_id,
+                            "batch_id": batch_id,
+                            "request_index": request_index,
+                            "max_completion_tokens": item.get("max_completion_tokens"),
+                            "temperature": item.get("temperature"),
+                        },
+                    )
+                    result = runtime.invoke(
+                        client=client,
+                        model=runtime_model,
+                        messages=messages,
+                        tools=None,
+                        stream=False,
+                        context=runtime_context,
+                    )
+                    elapsed = max(0.0, time.time() - started)
+                    if timeout_seconds > 0.0 and elapsed > timeout_seconds:
+                        attempts.append({"attempt": attempt + 1, "status": "timeout", "duration_seconds": elapsed})
+                        if attempt < retries:
+                            continue
+                        return {
+                            "request_index": request_index,
+                            "status": "timeout",
+                            "reason": "timeout",
+                            "error": f"subcall exceeded timeout_seconds={timeout_seconds}",
+                            "branch_id": branch_id,
+                            "depth": depth,
+                            "lane": item.get("lane"),
+                            "attempt_count": attempt + 1,
+                            "attempts": attempts,
+                        }
+                    text_parts: List[str] = []
+                    for msg in result.messages or []:
+                        if isinstance(msg, ProviderMessage) and isinstance(msg.content, str) and msg.content.strip():
+                            text_parts.append(msg.content.strip())
+                    text = "\n\n".join(text_parts).strip()
+                    usage = dict(result.usage or {})
+                    usage_tokens, usage_cost_usd = extract_usage_metrics(usage)
+                    return {
+                        "request_index": request_index,
+                        "status": "completed",
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": item.get("lane"),
+                        "text": text,
+                        "usage": usage,
+                        "usage_tokens": usage_tokens,
+                        "estimated_cost_usd": usage_cost_usd,
+                        "route_id": model_route,
+                        "resolved_model": runtime_model,
+                        "provider_id": runtime_descriptor.provider_id,
+                        "prompt_hash": hashlib.sha256(user_prompt.encode("utf-8", errors="ignore")).hexdigest(),
+                        "attempt_count": attempt + 1,
+                        "attempts": attempts + [{"attempt": attempt + 1, "status": "completed", "duration_seconds": elapsed}],
+                    }
+                except ProviderRuntimeError as exc:
+                    attempts.append({"attempt": attempt + 1, "status": "provider_error", "error": str(exc)})
+                    if attempt < retries:
+                        continue
+                    return {
+                        "request_index": request_index,
+                        "status": "failed",
+                        "reason": "subcall_provider_error",
+                        "error": str(exc),
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": item.get("lane"),
+                        "attempt_count": attempt + 1,
+                        "attempts": attempts,
+                    }
+                except Exception as exc:
+                    attempts.append({"attempt": attempt + 1, "status": "exception", "error": str(exc)})
+                    if attempt < retries:
+                        continue
+                    return {
+                        "request_index": request_index,
+                        "status": "failed",
+                        "reason": "subcall_exception",
+                        "error": str(exc),
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": item.get("lane"),
+                        "attempt_count": attempt + 1,
+                        "attempts": attempts,
+                    }
+            return {
+                "request_index": request_index,
+                "status": "failed",
+                "reason": "retry_exhausted",
+                "error": "exhausted retries",
+                "branch_id": branch_id,
+                "depth": depth,
+                "lane": item.get("lane"),
+                "attempt_count": retries + 1,
+                "attempts": attempts,
+            }
+
+        results_by_index: Dict[int, Dict[str, Any]] = {int(row["request_index"]): dict(row) for row in blocked_rows}
+        if prepared:
+            if fail_fast:
+                halted = False
+                for item in sorted(prepared, key=lambda row: int(row.get("request_index") or 0)):
+                    idx = int(item["request_index"])
+                    if halted:
+                        results_by_index[idx] = _with_item_defaults(
+                            item,
+                            {
+                                "request_index": idx,
+                                "status": "blocked",
+                                "reason": "fail_fast_short_circuit",
+                                "error": "batch halted after first failed item due to fail_fast=true",
+                                "attempt_count": 0,
+                            },
+                        )
+                        continue
+                    try:
+                        row = _invoke_prepared(item)
+                    except Exception as exc:  # defensive
+                        row = {
+                            "request_index": idx,
+                            "status": "failed",
+                            "reason": "executor_exception",
+                            "error": str(exc),
+                            "attempt_count": 1,
+                        }
+                    row = _with_item_defaults(item, row)
+                    results_by_index[idx] = row
+                    if str(row.get("status") or "").lower() != "completed":
+                        halted = True
+            else:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrency) as pool:
+                    pending = sorted(prepared, key=lambda row: int(row.get("request_index") or 0))
+                    inflight: Dict[concurrent.futures.Future, Dict[str, Any]] = {}
+                    branch_inflight: Dict[str, int] = {}
+                    while pending or inflight:
+                        submitted_any = False
+                        while pending and len(inflight) < max_concurrency:
+                            pick_index: Optional[int] = None
+                            for i, candidate in enumerate(pending):
+                                branch_key = str(candidate.get("branch_id") or root_branch_id)
+                                if per_branch_cap <= 0 or int(branch_inflight.get(branch_key) or 0) < per_branch_cap:
+                                    pick_index = i
+                                    break
+                            if pick_index is None:
+                                break
+                            item = pending.pop(pick_index)
+                            future = pool.submit(_invoke_prepared, item)
+                            inflight[future] = item
+                            branch_key = str(item.get("branch_id") or root_branch_id)
+                            branch_inflight[branch_key] = int(branch_inflight.get(branch_key) or 0) + 1
+                            submitted_any = True
+                        if not inflight:
+                            if pending and not submitted_any:
+                                item = pending.pop(0)
+                                future = pool.submit(_invoke_prepared, item)
+                                inflight[future] = item
+                                branch_key = str(item.get("branch_id") or root_branch_id)
+                                branch_inflight[branch_key] = int(branch_inflight.get(branch_key) or 0) + 1
+                            continue
+                        done, _ = concurrent.futures.wait(
+                            list(inflight.keys()),
+                            return_when=concurrent.futures.FIRST_COMPLETED,
+                        )
+                        for future in done:
+                            item = inflight.pop(future, {})
+                            idx = int(item.get("request_index") or 0)
+                            branch_key = str(item.get("branch_id") or root_branch_id)
+                            branch_inflight[branch_key] = max(0, int(branch_inflight.get(branch_key) or 0) - 1)
+                            if int(branch_inflight.get(branch_key) or 0) == 0:
+                                branch_inflight.pop(branch_key, None)
+                            try:
+                                row = future.result()
+                            except Exception as exc:  # defensive
+                                row = {
+                                    "request_index": idx,
+                                    "status": "failed",
+                                    "reason": "executor_exception",
+                                    "error": str(exc),
+                                    "attempt_count": 1,
+                                }
+                            results_by_index[idx] = _with_item_defaults(item, row)
+
+        # Commit outputs and artifacts strictly in request index order.
+        ordered_results: List[Dict[str, Any]] = []
+        budget_state_live = self._rlm_budget_state()
+        for idx in sorted(results_by_index.keys()):
+            row = dict(results_by_index[idx])
+            branch_id = self._rlm_resolve_branch_id(row.get("branch_id") or root_branch_id)
+            depth = int(row.get("depth") or 0)
+            status = str(row.get("status") or "failed")
+            lane = str(row.get("lane") or "tool_heavy")
+            call_id = f"{batch_id}:{idx}"
+            if status in {"completed", "failed", "timeout"}:
+                self._rlm_record_branch_event(
+                    branch_id=branch_id,
+                    depth=depth,
+                    status="running",
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "call_id": call_id},
+                )
+            if status == "completed":
+                usage_tokens = int(row.get("usage_tokens") or 0)
+                usage_cost_usd = float(row.get("estimated_cost_usd") or 0.0)
+                budget_state_live = consume_subcall(
+                    state=budget_state_live,
+                    branch_id=branch_id,
+                    depth=depth,
+                    usage_tokens=usage_tokens,
+                    usage_cost_usd=usage_cost_usd,
+                )
+                self._set_rlm_budget_state(budget_state_live)
+                self._rlm_record_branch_event(
+                    branch_id=branch_id,
+                    depth=depth,
+                    status="completed",
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "usage_tokens": usage_tokens},
+                )
+            elif status == "blocked":
+                self._rlm_record_branch_event(
+                    branch_id=branch_id,
+                    depth=depth,
+                    status="blocked",
+                    reason=str(row.get("reason") or "budget_blocked"),
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane},
+                )
+            elif status == "timeout":
+                self._rlm_record_branch_event(
+                    branch_id=branch_id,
+                    depth=depth,
+                    status="failed",
+                    reason="timeout",
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "error": row.get("error")},
+                )
+            else:
+                self._rlm_record_branch_event(
+                    branch_id=branch_id,
+                    depth=depth,
+                    status="failed",
+                    reason=str(row.get("reason") or "failed"),
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "error": row.get("error")},
+                )
+            if status == "completed":
+                self._rlm_record_hybrid_event(
+                    kind="llm.batch_query_item",
+                    status="completed",
+                    branch_id=branch_id,
+                    depth=depth,
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane},
+                )
+            elif status == "blocked":
+                self._rlm_record_hybrid_event(
+                    kind="llm.batch_query_item",
+                    status="blocked",
+                    branch_id=branch_id,
+                    depth=depth,
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "reason": row.get("reason")},
+                )
+            else:
+                self._rlm_record_hybrid_event(
+                    kind="llm.batch_query_item",
+                    status="failed" if status != "timeout" else "timeout",
+                    branch_id=branch_id,
+                    depth=depth,
+                    metadata={"batch_id": batch_id, "request_index": idx, "lane": lane, "reason": row.get("reason")},
+                )
+            artifact_row = {
+                "event": "llm.batch_query",
+                "batch_id": batch_id,
+                "request_index": idx,
+                "call_id": call_id,
+                "parent_call_id": row.get("parent_call_id"),
+                "branch_id": branch_id,
+                "depth": depth,
+                "lane": lane,
+                "status": status,
+                "reason": row.get("reason"),
+                "route_id": row.get("route_id"),
+                "resolved_model": row.get("resolved_model"),
+                "provider_id": row.get("provider_id"),
+                "prompt_hash": row.get("prompt_hash"),
+                "consumed_blobs": list(row.get("blob_refs") or []),
+                "created_blobs": [],
+                "usage": row.get("usage") or {},
+                "usage_tokens": int(row.get("usage_tokens") or 0),
+                "estimated_cost_usd": float(row.get("estimated_cost_usd") or 0.0),
+                "attempt_count": int(row.get("attempt_count") or 0),
+            }
+            self._rlm_append_jsonl("meta/rlm_batch_subcalls.jsonl", artifact_row)
+            row["branch_id"] = branch_id
+            row["call_id"] = call_id
+            ordered_results.append(row)
+
+        batch_summary = self._rlm_update_batch_summary_state(ordered_results)
+        completed_n = len([row for row in ordered_results if str(row.get("status")) == "completed"])
+        blocked_n = len([row for row in ordered_results if str(row.get("status")) == "blocked"])
+        failed_n = len([row for row in ordered_results if str(row.get("status")) in {"failed", "error"}])
+        timeout_n = len([row for row in ordered_results if str(row.get("status")) == "timeout"])
+        mvi = (
+            f"Batch complete: {completed_n} completed, {blocked_n} blocked, "
+            f"{failed_n} failed, {timeout_n} timeout (n={len(ordered_results)})."
+        )
+        return {
+            "batch_id": batch_id,
+            "item_count": len(ordered_results),
+            "results": ordered_results,
+            "summary": {
+                "completed": completed_n,
+                "blocked": blocked_n,
+                "failed": failed_n,
+                "timeout": timeout_n,
+                "max_concurrency": max_concurrency,
+                "max_concurrency_per_branch": per_branch_cap if per_branch_cap > 0 else None,
+                "fail_fast": bool(fail_fast),
+            },
+            "batch_rollup": batch_summary,
+            "__mvi_text_output": mvi,
+        }
+
     def _append_environment_prompt(self, system_prompt: str) -> str:
         prompts_cfg = self.config.get("prompts") or {}
         env_cfg = prompts_cfg.get("environment") or {}
@@ -3009,6 +4619,19 @@ class OpenAIConductor:
 
         if normalized == "taskoutput":
             return self._handle_taskoutput_tool(tool_call)
+
+        if normalized == "blob.put":
+            return self._handle_blob_put_tool(tool_call)
+        if normalized == "blob.put_file_slice":
+            return self._handle_blob_put_file_slice_tool(tool_call)
+        if normalized == "blob.get":
+            return self._handle_blob_get_tool(tool_call)
+        if normalized == "blob.search":
+            return self._handle_blob_search_tool(tool_call)
+        if normalized == "llm.query":
+            return self._handle_llm_query_tool(tool_call)
+        if normalized == "llm.batch_query":
+            return self._handle_llm_batch_query_tool(tool_call)
 
         if normalized == "create_file":
             target = self._normalize_workspace_path(str(args.get("path", "")))
@@ -3818,24 +5441,117 @@ class OpenAIConductor:
         run_result = None
         run_loop_error: Optional[Dict[str, Any]] = None
         try:
-            run_result = self._run_main_loop(
-                runtime,
-                client,
-                model,
-                max_steps,
-                output_json_path,
-                tool_prompt_mode,
-                tool_defs,
-                active_dialect_names,
-                caller,
-                session_state,
-                completion_detector,
-                markdown_logger,
-                error_handler,
-                stream_responses,
-                local_tools_prompt,
-                client_config,
-            )
+            if is_longrun_enabled(getattr(self, "config", None)):
+                work_queue = build_work_queue(
+                    getattr(self, "config", None),
+                    workspace=str(getattr(self, "workspace", "")),
+                    todo_manager=getattr(self, "todo_manager", None),
+                )
+                controller = LongRunController(
+                    getattr(self, "config", None),
+                    logger_v2=getattr(self, "logger_v2", None),
+                    work_queue=work_queue,
+                    macro_event_emitter=lambda event_type, payload: session_state.record_lifecycle_event(
+                        event_type,
+                        payload,
+                        turn=session_state.get_provider_metadata("current_turn_index"),
+                    ),
+                    verification_executor=lambda command, timeout_seconds, context: self._run_longrun_verification_command(
+                        command=command,
+                        timeout_seconds=timeout_seconds,
+                        context=context,
+                    ),
+                )
+
+                def _episode_runner(episode_index: int) -> Dict[str, Any]:
+                    try:
+                        session_state.set_provider_metadata("longrun_episode_index", int(episode_index))
+                    except Exception:
+                        pass
+                    rlm_before = self._rlm_capture_rollup_snapshot(session_state)
+                    episode_max_steps = resolve_episode_max_steps(
+                        getattr(self, "config", None),
+                        max_steps,
+                    )
+                    try:
+                        session_state.set_provider_metadata("longrun_episode_max_steps", int(episode_max_steps))
+                    except Exception:
+                        pass
+                    episode_result = self._run_main_loop(
+                        runtime,
+                        client,
+                        model,
+                        int(episode_max_steps),
+                        output_json_path,
+                        tool_prompt_mode,
+                        tool_defs,
+                        active_dialect_names,
+                        caller,
+                        session_state,
+                        completion_detector,
+                        markdown_logger,
+                        error_handler,
+                        stream_responses,
+                        local_tools_prompt,
+                        client_config,
+                    )
+                    rlm_after = self._rlm_capture_rollup_snapshot(session_state)
+                    rlm_delta = self._rlm_rollup_delta(rlm_before, rlm_after)
+                    if isinstance(episode_result, dict):
+                        if any(
+                            bool(rlm_delta.get(key))
+                            for key in ("subcall_count", "total_tokens", "total_cost_usd", "branch_event_count")
+                        ) or bool(rlm_delta.get("lane_counts")):
+                            episode_result["rlm"] = rlm_delta
+                            try:
+                                session_state.set_provider_metadata("rlm_last_episode_delta", rlm_delta)
+                            except Exception:
+                                pass
+                    return episode_result
+
+                controller_out = controller.run(_episode_runner)
+                run_result = controller_out.get("result") if isinstance(controller_out, dict) else None
+                if not isinstance(run_result, dict):
+                    run_result = {
+                        "completed": False,
+                        "completion_reason": "longrun_invalid_result",
+                        "messages": session_state.messages,
+                        "transcript": session_state.transcript,
+                    }
+                if isinstance(controller_out, dict):
+                    macro_state = controller_out.get("macro_state")
+                    macro_summary = controller_out.get("macro_summary")
+                    if isinstance(macro_state, dict):
+                        run_result["longrun_state"] = macro_state
+                        try:
+                            session_state.set_provider_metadata("longrun_state", macro_state)
+                        except Exception:
+                            pass
+                    if isinstance(macro_summary, dict):
+                        run_result["longrun"] = macro_summary
+                        try:
+                            session_state.set_provider_metadata("longrun_summary", macro_summary)
+                        except Exception:
+                            pass
+            else:
+                run_result = self._run_main_loop(
+                    runtime,
+                    client,
+                    model,
+                    max_steps,
+                    output_json_path,
+                    tool_prompt_mode,
+                    tool_defs,
+                    active_dialect_names,
+                    caller,
+                    session_state,
+                    completion_detector,
+                    markdown_logger,
+                    error_handler,
+                    stream_responses,
+                    local_tools_prompt,
+                    client_config,
+                )
         except Exception as exc:
             run_loop_error = {
                 "type": exc.__class__.__name__,

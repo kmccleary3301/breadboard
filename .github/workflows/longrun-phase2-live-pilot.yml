@@ -1,0 +1,93 @@
+name: LongRun Phase2 Live Pilot (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run synthetic no-spend mode"
+        type: boolean
+        required: false
+        default: true
+      max_pairs:
+        description: "Max paired tasks (baseline+longrun)"
+        type: number
+        required: false
+        default: 2
+      max_total_tokens:
+        description: "Hard cap on aggregate tokens"
+        type: number
+        required: false
+        default: 40000
+      max_total_estimated_cost_usd:
+        description: "Hard cap on aggregate estimated cost (USD)"
+        type: number
+        required: false
+        default: 2.0
+      model_override:
+        description: "Optional providers.default_model override"
+        type: string
+        required: false
+        default: ""
+
+jobs:
+  longrun_phase2_live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install minimal deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest pyyaml
+
+      - name: Validate live pilot scripts/tests
+        run: |
+          pytest -q \
+            tests/test_run_longrun_phase2_live_pilot.py \
+            tests/test_validate_longrun_phase2_live_artifacts.py
+
+      - name: Run live pilot (manual caps)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          DRY_RUN_FLAG=""
+          ALLOW_MISSING_FLAG=""
+          MODEL_FLAG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+            ALLOW_MISSING_FLAG="--allow-missing-keys"
+          fi
+          if [ -n "${{ github.event.inputs.model_override }}" ]; then
+            MODEL_FLAG="--model-override ${{ github.event.inputs.model_override }}"
+          fi
+          python scripts/run_longrun_phase2_live_pilot.py \
+            --baseline-config agent_configs/base_v2.yaml \
+            --longrun-config agent_configs/longrun_conservative_v1.yaml \
+            --tasks-json config/longrun/phase2_live_tasks_v1.json \
+            --out-json artifacts/longrun/live/longrun_phase2_live_pilot_v1.json \
+            --out-markdown artifacts/longrun/live/longrun_phase2_live_pilot_v1.md \
+            --workspace-root tmp/longrun_phase2_live_runs \
+            --max-pairs ${{ github.event.inputs.max_pairs }} \
+            --max-total-tokens ${{ github.event.inputs.max_total_tokens }} \
+            --max-total-estimated-cost-usd ${{ github.event.inputs.max_total_estimated_cost_usd }} \
+            ${DRY_RUN_FLAG} \
+            ${ALLOW_MISSING_FLAG} \
+            ${MODEL_FLAG}
+
+      - name: Validate live pilot artifact
+        run: |
+          python scripts/validate_longrun_phase2_live_artifacts.py \
+            --json artifacts/longrun/live/longrun_phase2_live_pilot_v1.json
+
+      - name: Upload live-pilot artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: longrun-phase2-live-pilot-artifacts
+          path: artifacts/longrun/live/**
+          if-no-files-found: error

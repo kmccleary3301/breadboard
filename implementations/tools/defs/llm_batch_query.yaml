@@ -1,0 +1,45 @@
+id: llm.batch_query
+name: llm.batch_query
+description: Execute a bounded batch of recursive subcalls with deterministic ordering and per-item lineage.
+type_id: python
+manipulations:
+  - rlm.llm.batch_query
+syntax_formats_supported: [native_function_calling, json_block]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: queries
+    type: array
+    description: Ordered list of query items. Each item requires prompt and can override model/depth/branch_id/blob_refs/system_hint.
+    required: true
+    items:
+      type: object
+  - name: branch_id
+    type: string
+    description: Optional batch-level branch prefix for provenance.
+    required: false
+  - name: model
+    type: string
+    description: Optional default model route for all items.
+    required: false
+  - name: depth
+    type: integer
+    description: Optional default depth for all items.
+    required: false
+  - name: parent_call_id
+    type: string
+    description: Optional parent call id for provenance chaining.
+    required: false
+  - name: fail_fast
+    type: boolean
+    description: Optional per-call override; when true, stop scheduling after first non-completed item.
+    required: false
+execution:
+  blocking: true
+  max_per_turn: 4
+provider_routing:
+  openai:
+    native_primary: true
+    fallback_formats: [json_block]
+  anthropic:
+    native_primary: true
+    fallback_formats: [json_block]

@@ -107,6 +107,40 @@ loop:
     flow: assistant_continuation
     allow_multiple_per_turn: true
 
+long_running:
+  enabled: false
+  controller: longrun_v1
+  reset_policy: fresh
+  episode:
+    max_steps_override: null
+  queue:
+    backend: todo_store
+  reviewer:
+    enabled: false
+    mode: read_only
+  resume:
+    enabled: false
+    state_path: meta/longrun_state.json
+  verification:
+    tiers:
+      - name: smoke
+        commands:
+          - pytest -q tests/test_longrun_controller.py
+        timeout_seconds: 120
+        hard_fail: false
+      - name: full
+        commands:
+          - pytest -q
+        timeout_seconds: 1200
+        hard_fail: true
+  recovery:
+    no_progress_signature_repeats: 0
+  budgets:
+    wall_clock_s: 0
+    total_episodes: 0
+    total_tokens: 0
+    total_cost_usd: 0.0
+
 features:
   plan: true
   todos:

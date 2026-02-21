@@ -1,9 +1,18 @@
 export type EventType =
   | "turn_start"
+  | "stream.gap"
+  | "conversation.compaction.start"
+  | "conversation.compaction.end"
+  | "assistant.message.start"
+  | "assistant.message.delta"
+  | "assistant.message.end"
+  | "assistant.reasoning.delta"
+  | "assistant.thought_summary.delta"
   | "assistant_delta"
   | "assistant_message"
   | "user_message"
   | "tool_call"
+  | "tool.result"
   | "tool_result"
   | "permission_request"
   | "permission_response"
@@ -32,6 +41,24 @@ export interface SessionEvent<TPayload = Record<string, unknown>> {
   readonly thread_id?: string | null
   readonly turn_id?: string | number | null
   readonly payload: TPayload
+}
+
+export interface ArtifactRefPreview {
+  readonly lines?: string[] | null
+  readonly omitted_lines?: number | null
+  readonly note?: string | null
+}
+
+export interface ArtifactRefV1 {
+  readonly schema_version: "artifact_ref_v1"
+  readonly id: string
+  readonly kind: "tool_output" | "tool_diff" | "tool_result"
+  readonly mime: string
+  readonly size_bytes: number
+  readonly sha256: string
+  readonly storage: "workspace_file"
+  readonly path: string
+  readonly preview?: ArtifactRefPreview | null
 }
 
 export interface SessionFileInfo {
@@ -164,4 +191,3 @@ export interface ErrorResponse {
   readonly message: string
   readonly detail?: Record<string, unknown>
 }
-

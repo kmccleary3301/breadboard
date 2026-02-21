@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "dedicated_rlm_configs": [
+    {
+      "config_path": "agent_configs/rlm_base_v1.yaml",
+      "profile_name": "rlm-base-v1",
+      "tool_count": 26,
+      "schema_hash": "18ee8091c69266cb13a1cfe6fd1b9ae98418f4880bce478877ff13e68c889670",
+      "schema_hash_ordered": "0f74f2a735cf1c4228047b3cb36736c9ab39dd8643c9224d988538cab15bf805",
+      "required_rlm_tools": [
+        "blob.get",
+        "blob.put",
+        "blob.put_file_slice",
+        "blob.search",
+        "llm.query",
+        "llm.batch_query"
+      ]
+    }
+  ]
+}

@@ -150,6 +150,7 @@ async def test_session_runner_replay_task_skips_agent_init(tmp_path) -> None:
             [
                 "# replay fixture",
                 json.dumps({"type": "assistant_delta", "payload": {"message_id": "m1", "text": "hello"}}),
+                json.dumps({"type": "warning", "payload": {"message": "resize 160x45 -> 140x40"}}),
                 json.dumps({"type": "tool_result", "payload": {"call_id": "todo:1", "todo": {"op": "replace", "revision": 1, "items": []}}}),
             ]
         )
@@ -181,6 +182,7 @@ async def test_session_runner_replay_task_skips_agent_init(tmp_path) -> None:
     assert called["count"] == 0
     assert runner._agent is None
     assert "assistant_delta" in seen_types
+    assert "warning" in seen_types
     assert "run_finished" in seen_types
     assert isinstance(record.metadata.get("todo_last_update"), dict)
 

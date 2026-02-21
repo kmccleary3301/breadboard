@@ -5,10 +5,19 @@ from typing import Any, Dict, Iterable, List, Literal, Optional, TypedDict, NotR
 
 EventType = Literal[
     "turn_start",
+    "stream.gap",
+    "conversation.compaction.start",
+    "conversation.compaction.end",
+    "assistant.message.start",
+    "assistant.message.delta",
+    "assistant.message.end",
+    "assistant.reasoning.delta",
+    "assistant.thought_summary.delta",
     "assistant_delta",
     "assistant_message",
     "user_message",
     "tool_call",
+    "tool.result",
     "tool_result",
     "permission_request",
     "permission_response",
@@ -39,6 +48,24 @@ class SessionEvent(TypedDict):
     run_id: NotRequired[Optional[str]]
     thread_id: NotRequired[Optional[str]]
     turn_id: NotRequired[Optional[str | int]]
+
+
+class ArtifactRefPreview(TypedDict, total=False):
+    lines: List[str]
+    omitted_lines: Optional[int]
+    note: Optional[str]
+
+
+class ArtifactRefV1(TypedDict):
+    schema_version: Literal["artifact_ref_v1"]
+    id: str
+    kind: Literal["tool_output", "tool_diff", "tool_result"]
+    mime: str
+    size_bytes: int
+    sha256: str
+    storage: Literal["workspace_file"]
+    path: str
+    preview: NotRequired[Optional[ArtifactRefPreview]]
 
 
 class HealthResponse(TypedDict, total=False):
@@ -135,4 +162,3 @@ class ErrorResponse(TypedDict, total=False):
 
 AttachmentFileTuple = tuple[str, bytes, str | None]
 AttachmentFileIterable = Iterable[AttachmentFileTuple]
-

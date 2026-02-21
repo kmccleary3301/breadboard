@@ -329,6 +329,48 @@ class SessionRunner:
                 self._mode = mode_value.strip()
                 self.session.metadata["mode"] = self._mode
                 return {"status": "ok", "mode": self._mode}
+            case "session_child_next" | "session_child_previous" | "session_parent":
+                child_session_id = payload.get("child_session_id") or payload.get("childSessionId")
+                parent_session_id = payload.get("parent_session_id") or payload.get("parentSessionId")
+                target_session_id = payload.get("target_session_id") or payload.get("targetSessionId")
+
+                def _norm(value: Any) -> Optional[str]:
+                    if not isinstance(value, str):
+                        return None
+                    trimmed = value.strip()
+                    return trimmed or None
+
+                child_session_id = _norm(child_session_id)
+                parent_session_id = _norm(parent_session_id)
+                target_session_id = _norm(target_session_id)
+
+                if command == "session_parent":
+                    resolved_target = target_session_id or parent_session_id or child_session_id
+                else:
+                    resolved_target = target_session_id or child_session_id or parent_session_id
+
+                if not resolved_target:
+                    return {"status": "ok", "command": command, "switched": False, "reason": "target_missing"}
+
+                target_record = await self.registry.get(resolved_target)
+                if target_record is None:
+                    return {
+                        "status": "ok",
+                        "command": command,
+                        "switched": False,
+                        "reason": "target_not_found",
+                        "target_session_id": resolved_target,
+                    }
+
+                return {
+                    "status": "ok",
+                    "command": command,
+                    "switched": True,
+                    "target_session_id": resolved_target,
+                    "active_session_id": resolved_target,
+                    "child_session_id": child_session_id,
+                    "parent_session_id": parent_session_id,
+                }
             case "run_tests":
                 if self._debug_permissions_enabled():
                     event_payload = await self._emit_debug_permission_request(payload)
@@ -527,7 +569,7 @@ class SessionRunner:
                 except Exception:
                     turn = None
 
-                if evt_type is EventType.TOOL_RESULT:
+                if evt_type in {EventType.TOOL_RESULT, EventType.TOOL_RESULT_DOT}:
                     todo_update = payload.get("todo")
                     if isinstance(todo_update, dict):
                         try:
@@ -1363,6 +1405,65 @@ class SessionRunner:
             normalized.setdefault("error", bool(message.get("error")))
         if "result" not in normalized and "content" in normalized:
             normalized["result"] = normalized.get("content")
+        artifact_ref = self._extract_artifact_ref(normalized)
+        if artifact_ref is not None:
+            normalized["artifact_ref"] = artifact_ref
+        return normalized
+
+    def _extract_artifact_ref(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        candidate = payload.get("artifact_ref")
+        if isinstance(candidate, dict):
+            normalized = self._normalize_artifact_ref(candidate)
+            if normalized:
+                return normalized
+        artifact = payload.get("artifact")
+        if isinstance(artifact, dict):
+            normalized = self._normalize_artifact_ref(artifact)
+            if normalized:
+                return normalized
+        display = payload.get("display")
+        if isinstance(display, dict):
+            detail_artifact = display.get("detail_artifact")
+            if isinstance(detail_artifact, dict):
+                normalized = self._normalize_artifact_ref(detail_artifact)
+                if normalized:
+                    return normalized
+        return None
+
+    def _normalize_artifact_ref(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        path = payload.get("path")
+        sha256 = payload.get("sha256")
+        schema_version = payload.get("schema_version") or "artifact_ref_v1"
+        if not isinstance(path, str) or not path.strip():
+            return None
+        if not isinstance(sha256, str) or not sha256.strip():
+            return None
+        size_bytes = payload.get("size_bytes")
+        size_int = int(size_bytes) if isinstance(size_bytes, (int, float)) else None
+        if size_int is None or size_int < 0:
+            return None
+        kind = payload.get("kind")
+        if not isinstance(kind, str) or not kind.strip():
+            kind = "tool_result"
+        mime = payload.get("mime")
+        if not isinstance(mime, str) or not mime.strip():
+            mime = "text/plain"
+        storage = payload.get("storage")
+        if not isinstance(storage, str) or not storage.strip():
+            storage = "workspace_file"
+        normalized: Dict[str, Any] = {
+            "schema_version": str(schema_version),
+            "id": str(payload.get("id") or f"artifact:{sha256[:16]}"),
+            "kind": str(kind),
+            "mime": str(mime),
+            "size_bytes": int(size_int),
+            "sha256": str(sha256),
+            "storage": str(storage),
+            "path": str(path).strip(),
+        }
+        preview = payload.get("preview")
+        if isinstance(preview, dict):
+            normalized["preview"] = preview
         return normalized
 
     def _normalize_permission_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -1413,6 +1514,12 @@ class SessionRunner:
 
     def _normalize_task_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         normalized = dict(payload or {})
+        kind = str(normalized.get("kind") or "").strip().lower()
+        is_subagent_event = bool(
+            str(normalized.get("subagent_type") or normalized.get("subagentType") or "").strip()
+            or kind.startswith("subagent_")
+            or kind.startswith("background_task")
+        )
         if "taskId" in normalized and "task_id" not in normalized:
             normalized["task_id"] = normalized.get("taskId")
         if "subagentType" in normalized and "subagent_type" not in normalized:
@@ -1424,6 +1531,9 @@ class SessionRunner:
             path = artifact.get("path") or artifact.get("artifact_path")
             if path:
                 normalized["artifact_path"] = path
+        artifact_ref = self._extract_artifact_ref(normalized)
+        if artifact_ref is not None:
+            normalized["artifact_ref"] = artifact_ref
         if "description" not in normalized:
             for key in ("description", "title", "summary"):
                 value = normalized.get(key)
@@ -1459,6 +1569,66 @@ class SessionRunner:
             normalized["priority"] = normalized.get("taskPriority")
         if "sessionId" in normalized and "task_session_id" not in normalized:
             normalized["task_session_id"] = normalized.get("sessionId")
+
+        child_session_id = (
+            normalized.get("child_session_id")
+            or normalized.get("childSessionId")
+            or normalized.get("subagent_session_id")
+            or normalized.get("subagentSessionId")
+            or normalized.get("task_session_id")
+            or normalized.get("sessionId")
+        )
+        child_session_id_str = str(child_session_id).strip() if child_session_id is not None else ""
+        if child_session_id_str and (is_subagent_event or "child_session_id" in normalized or "childSessionId" in normalized):
+            normalized.setdefault("child_session_id", child_session_id_str)
+            normalized.setdefault("subagent_session_id", child_session_id_str)
+
+        parent_session_id = normalized.get("parent_session_id") or normalized.get("parentSessionId")
+        parent_session_id_str = str(parent_session_id).strip() if parent_session_id is not None else ""
+        if not parent_session_id_str and is_subagent_event:
+            parent_session_id_str = str(getattr(self.session, "session_id", "") or "").strip()
+        if parent_session_id_str:
+            normalized.setdefault("parent_session_id", parent_session_id_str)
+
+        child_label = (
+            normalized.get("child_session_label")
+            or normalized.get("childSessionLabel")
+            or normalized.get("subagent_label")
+            or normalized.get("subagentLabel")
+            or normalized.get("lane_label")
+            or normalized.get("laneLabel")
+            or normalized.get("subagent_type")
+            or normalized.get("description")
+        )
+        child_label_str = str(child_label).strip() if child_label is not None else ""
+        if child_label_str and (is_subagent_event or child_session_id_str):
+            normalized.setdefault("child_session_label", child_label_str)
+            normalized.setdefault("subagent_label", child_label_str)
+
+        lane_id = normalized.get("lane_id") or normalized.get("laneId")
+        lane_id_str = str(lane_id).strip() if lane_id is not None else ""
+        if not lane_id_str:
+            lane_id_str = str(
+                normalized.get("subagent_type")
+                or normalized.get("task_id")
+                or normalized.get("child_session_id")
+                or ""
+            ).strip()
+        if lane_id_str:
+            normalized.setdefault("lane_id", lane_id_str)
+
+        lane_label = normalized.get("lane_label") or normalized.get("laneLabel")
+        lane_label_str = str(lane_label).strip() if lane_label is not None else ""
+        if not lane_label_str:
+            lane_label_str = str(
+                normalized.get("subagent_type")
+                or normalized.get("child_session_label")
+                or normalized.get("description")
+                or ""
+            ).strip()
+        if lane_label_str:
+            normalized.setdefault("lane_label", lane_label_str)
+
         task_id = normalized.get("task_id") or normalized.get("id")
         if task_id and "tree_path" not in normalized:
             normalized["tree_path"] = f"task/{task_id}"
@@ -1474,10 +1644,19 @@ class SessionRunner:
     ) -> Optional[tuple[EventType, Dict[str, Any], Optional[int]]]:
         mapping = {
             "turn_start": EventType.TURN_START,
+            "stream.gap": EventType.STREAM_GAP,
+            "conversation.compaction.start": EventType.CONVERSATION_COMPACTION_START,
+            "conversation.compaction.end": EventType.CONVERSATION_COMPACTION_END,
+            "assistant.message.start": EventType.ASSISTANT_MESSAGE_START,
+            "assistant.message.delta": EventType.ASSISTANT_MESSAGE_DELTA,
+            "assistant.message.end": EventType.ASSISTANT_MESSAGE_END,
+            "assistant.reasoning.delta": EventType.ASSISTANT_REASONING_DELTA,
+            "assistant.thought_summary.delta": EventType.ASSISTANT_THOUGHT_SUMMARY_DELTA,
             "assistant_message": EventType.ASSISTANT_MESSAGE,
             "assistant_delta": EventType.ASSISTANT_DELTA,
             "user_message": EventType.USER_MESSAGE,
             "tool_call": EventType.TOOL_CALL,
+            "tool.result": EventType.TOOL_RESULT_DOT,
             "tool_result": EventType.TOOL_RESULT,
             "todo_event": EventType.TOOL_RESULT,
             "permission_request": EventType.PERMISSION_REQUEST,
@@ -1489,6 +1668,7 @@ class SessionRunner:
             "ctree_node": EventType.CTREE_NODE,
             "ctree_snapshot": EventType.CTREE_SNAPSHOT,
             "task_event": EventType.TASK_EVENT,
+            "warning": EventType.WARNING,
             "reward_update": EventType.REWARD_UPDATE,
             "limits_update": EventType.LIMITS_UPDATE,
             "completion": EventType.COMPLETION,
@@ -1536,7 +1716,7 @@ class SessionRunner:
             normalized_payload = {"text": text, "message": message}
         elif evt is EventType.TOOL_CALL:
             normalized_payload = self._normalize_tool_call_payload(normalized_payload)
-        elif evt is EventType.TOOL_RESULT:
+        elif evt in {EventType.TOOL_RESULT, EventType.TOOL_RESULT_DOT}:
             normalized_payload = self._normalize_tool_result_payload(normalized_payload)
         elif evt is EventType.PERMISSION_REQUEST:
             normalized_payload = self._normalize_permission_request(normalized_payload)

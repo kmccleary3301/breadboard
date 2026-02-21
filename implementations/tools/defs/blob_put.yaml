@@ -1,0 +1,32 @@
+id: blob.put
+name: blob.put
+description: Store text content into the RLM blob store and return a content-addressed blob ID.
+type_id: python
+manipulations:
+  - rlm.blob.put
+syntax_formats_supported: [native_function_calling, json_block]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: content
+    type: string
+    description: Text content to store.
+    required: true
+  - name: content_type
+    type: string
+    description: Optional content type (default text/plain).
+    required: false
+    default: text/plain
+  - name: metadata
+    type: object
+    description: Optional metadata map.
+    required: false
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    fallback_formats: [json_block]
+  anthropic:
+    native_primary: true
+    fallback_formats: [json_block]
+

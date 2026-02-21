@@ -1,0 +1,29 @@
+{
+  "schema_version": "longrun_phase2_live_tasks_v1",
+  "tasks": [
+    {
+      "id": "hello_py_function",
+      "prompt": "Create hello.py with a function greet(name: str) -> str that returns \"Hello, <name>!\" and include a short docstring.",
+      "max_steps": 4,
+      "context": {
+        "task_type": "function"
+      }
+    },
+    {
+      "id": "json_helper",
+      "prompt": "Create json_utils.py with a function normalize_payload(payload: dict) that returns a new dict with string keys sorted alphabetically.",
+      "max_steps": 4,
+      "context": {
+        "task_type": "function"
+      }
+    },
+    {
+      "id": "small_refactor",
+      "prompt": "Create math_tools.py with add(a,b) and sub(a,b), then refactor to include type hints and concise docstrings.",
+      "max_steps": 5,
+      "context": {
+        "task_type": "refactor"
+      }
+    }
+  ]
+}

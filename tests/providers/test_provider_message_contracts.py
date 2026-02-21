@@ -130,6 +130,29 @@ def test_openai_chat_runtime_produces_string_content_and_tool_call_arguments(mon
         assert call.arguments.startswith("{") and call.arguments.endswith("}")
 
 
+def test_openai_chat_runtime_converts_null_content_to_empty_string() -> None:
+    descriptor, _model = provider_router.get_runtime_descriptor("openai/gpt-4o-mini")
+    runtime = provider_registry.create_runtime(descriptor)
+    converted = runtime._convert_messages_to_chat(
+        [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "tool_a", "arguments": "{}"},
+                    }
+                ],
+            }
+        ]
+    )
+    assert isinstance(converted, list) and converted
+    assert converted[0]["role"] == "assistant"
+    assert converted[0]["content"] == ""
+
+
 def test_responses_runtime_produces_string_content(monkeypatch):
     """
     ProviderMessage invariants for OpenAIResponsesRuntime:
@@ -189,4 +212,3 @@ def test_responses_runtime_produces_string_content(monkeypatch):
     assert result.messages, "Expected at least one ProviderMessage"
     msg = result.messages[0]
     assert isinstance(msg.content, str)
-

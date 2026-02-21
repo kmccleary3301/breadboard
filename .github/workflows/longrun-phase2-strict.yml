@@ -1,0 +1,91 @@
+name: LongRun Phase2 Strict Gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "agentic_coder_prototype/longrun/**"
+      - "scripts/run_longrun_phase1_pilot.py"
+      - "scripts/validate_longrun_phase2_warn_artifacts.py"
+      - "scripts/evaluate_longrun_phase2_go_no_go.py"
+      - "scripts/validate_longrun_phase1_scenario_contract.py"
+      - "tests/test_run_longrun_phase1_pilot.py"
+      - "tests/test_validate_longrun_phase2_warn_artifacts.py"
+      - "tests/test_validate_longrun_phase1_scenario_contract.py"
+      - "tests/test_evaluate_longrun_phase2_go_no_go.py"
+      - ".github/workflows/longrun-phase2-strict.yml"
+
+jobs:
+  longrun_strict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest pyyaml
+
+      - name: Validate longrun scripts/tests
+        run: |
+          pytest -q \
+            tests/test_run_longrun_phase1_pilot.py \
+            tests/test_validate_longrun_phase2_warn_artifacts.py \
+            tests/test_validate_longrun_phase1_scenario_contract.py \
+            tests/test_evaluate_longrun_phase2_go_no_go.py
+
+      - name: Run parity disable audit
+        run: |
+          python scripts/audit_longrun_parity_disabled.py \
+            --repo-root . \
+            --json-out artifacts/longrun/longrun_parity_audit.json
+
+      - name: Generate deterministic pilot artifacts
+        run: |
+          python scripts/run_longrun_phase1_pilot.py \
+            --json-out artifacts/longrun/pilot/longrun_phase1_pilot_v1.json \
+            --markdown-out artifacts/longrun/pilot/longrun_phase1_pilot_summary.md
+
+      - name: Validate pilot artifact shape
+        run: |
+          python scripts/validate_longrun_phase2_warn_artifacts.py \
+            --json artifacts/longrun/pilot/longrun_phase1_pilot_v1.json
+
+      - name: Validate pilot scenario contract
+        run: |
+          python scripts/validate_longrun_phase1_scenario_contract.py \
+            --pilot-json artifacts/longrun/pilot/longrun_phase1_pilot_v1.json \
+            --contract-json config/longrun/phase1_scenario_contract_v1.json \
+            --report-json artifacts/longrun/pilot/longrun_phase1_scenario_contract_report.json
+
+      - name: Enforce go/no-go criteria
+        run: |
+          python scripts/evaluate_longrun_phase2_go_no_go.py \
+            --pilot-json artifacts/longrun/pilot/longrun_phase1_pilot_v1.json \
+            --parity-json artifacts/longrun/longrun_parity_audit.json \
+            --report-json artifacts/longrun/longrun_phase2_go_no_go_report.json
+
+      - name: Update strict-gate trend history
+        run: |
+          python scripts/update_longrun_phase2_trend_history.py \
+            --report-json artifacts/longrun/longrun_phase2_go_no_go_report.json \
+            --parity-json artifacts/longrun/longrun_parity_audit.json \
+            --history-json artifacts/longrun/longrun_phase2_trend_history.json
+
+      - name: Render strict-gate trend summary
+        run: |
+          python scripts/render_longrun_phase2_trend_summary.py \
+            --history-json artifacts/longrun/longrun_phase2_trend_history.json \
+            --markdown-out artifacts/longrun/longrun_phase2_trend_summary.md
+
+      - name: Upload strict-gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: longrun-phase2-strict-artifacts
+          path: artifacts/longrun/**
+          if-no-files-found: error

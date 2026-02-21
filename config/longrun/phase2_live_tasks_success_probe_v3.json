@@ -1,0 +1,29 @@
+{
+  "schema_version": "longrun_phase2_live_tasks_success_probe_v3",
+  "tasks": [
+    {
+      "id": "probe_hello_simple_v3",
+      "prompt": "Create hello_probe.py with greet(name) that returns 'Hello, <name>!' and add a short docstring.",
+      "max_steps": 2,
+      "context": {
+        "task_type": "function"
+      }
+    },
+    {
+      "id": "probe_clamp_simple_v3",
+      "prompt": "Create math_probe.py with clamp(x, low, high) that returns low/high bounds when x is outside range.",
+      "max_steps": 2,
+      "context": {
+        "task_type": "function"
+      }
+    },
+    {
+      "id": "probe_keys_simple_v3",
+      "prompt": "Create key_probe.py with sorted_keys(payload) that returns sorted string keys from a dict payload.",
+      "max_steps": 2,
+      "context": {
+        "task_type": "function"
+      }
+    }
+  ]
+}

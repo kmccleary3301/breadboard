@@ -842,10 +842,11 @@ class OpenAIBaseRuntime(ProviderRuntime):
         for message in messages:
             role = message.get("role", "user")
             content = message.get("content")
-            if isinstance(content, list):
-                converted.append({"role": role, "content": content})
-            else:
-                converted.append({"role": role, "content": content})
+            if content is None and role in {"assistant", "tool", "user", "system"}:
+                # Some OpenAI-compatible routes reject null `content` values.
+                # Normalize to empty string to preserve turn shape while staying valid.
+                content = ""
+            converted.append({"role": role, "content": content})
         return converted
 
     def _convert_tools_to_openai(self, tools: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:

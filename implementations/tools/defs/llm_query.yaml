@@ -1,0 +1,50 @@
+id: llm.query
+name: llm.query
+description: Execute a bounded subcall against the configured provider/model for RLM-style recursive querying.
+type_id: python
+manipulations:
+  - rlm.llm.query
+syntax_formats_supported: [native_function_calling, json_block]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: prompt
+    type: string
+    description: Subcall prompt text.
+    required: true
+  - name: blob_refs
+    type: array
+    description: Optional blob IDs to inline in subcall context.
+    required: false
+    items:
+      type: string
+  - name: system_hint
+    type: string
+    description: Optional system instruction for this subcall.
+    required: false
+  - name: model
+    type: string
+    description: Optional model route override.
+    required: false
+  - name: max_completion_tokens
+    type: integer
+    description: Optional completion cap override.
+    required: false
+  - name: temperature
+    type: number
+    description: Optional temperature override.
+    required: false
+  - name: branch_id
+    type: string
+    description: Optional logical branch id for provenance/budget accounting.
+    required: false
+execution:
+  blocking: true
+  max_per_turn: 16
+provider_routing:
+  openai:
+    native_primary: true
+    fallback_formats: [json_block]
+  anthropic:
+    native_primary: true
+    fallback_formats: [json_block]
+

@@ -1,0 +1,21 @@
+{
+  "schema_version": "longrun_phase2_live_tasks_success_probe_safe_v1",
+  "tasks": [
+    {
+      "id": "quick_hello_safe_v1",
+      "prompt": "Create hello.py with greet(name) that returns 'Hello, <name>!'.",
+      "max_steps": 3,
+      "context": {
+        "task_type": "function"
+      }
+    },
+    {
+      "id": "quick_json_normalize_safe_v1",
+      "prompt": "Create json_norm.py with normalize_keys(payload: dict) returning dict with sorted string keys.",
+      "max_steps": 3,
+      "context": {
+        "task_type": "function"
+      }
+    }
+  ]
+}

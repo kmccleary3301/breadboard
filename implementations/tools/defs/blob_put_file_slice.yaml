@@ -1,0 +1,35 @@
+id: blob.put_file_slice
+name: blob.put_file_slice
+description: Store a deterministic line-range slice from a workspace file into the RLM blob store.
+type_id: python
+manipulations:
+  - rlm.blob.put_file_slice
+syntax_formats_supported: [native_function_calling, json_block]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: path
+    type: string
+    description: Workspace-relative file path.
+    required: true
+  - name: start_line
+    type: integer
+    description: Inclusive starting line number (1-based).
+    required: false
+  - name: end_line
+    type: integer
+    description: Inclusive ending line number (1-based).
+    required: false
+  - name: branch_id
+    type: string
+    description: Optional logical branch identifier for provenance.
+    required: false
+execution:
+  blocking: false
+provider_routing:
+  openai:
+    native_primary: true
+    fallback_formats: [json_block]
+  anthropic:
+    native_primary: true
+    fallback_formats: [json_block]
+
