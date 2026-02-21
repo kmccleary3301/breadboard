@@ -1,0 +1,25 @@
+{
+  "schema": "breadboard.atp.threshold_policy.v1",
+  "bench": {
+    "p95_ms_max": 200.0,
+    "consecutive_fail_incident": 2
+  },
+  "load": {
+    "p95_ms_max": 200.0,
+    "consecutive_fail_incident": 2
+  },
+  "state_ref": {
+    "max_regression_pct": 10.0,
+    "required_consecutive_pass": 2
+  },
+  "pool_stability": {
+    "require_concurrency": 4,
+    "min_runs": 3,
+    "max_p95_ms": 200.0,
+    "max_failures": 0
+  },
+  "seven_day": {
+    "min_days": 7,
+    "require_all_days_green": true
+  }
+}

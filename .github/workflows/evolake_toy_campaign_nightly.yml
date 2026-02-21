@@ -1,0 +1,41 @@
+name: EvoLake Toy Campaign (nightly)
+
+on:
+  schedule:
+    - cron: "45 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  evolake_toy_campaign:
+    name: EvoLake toy campaign replay (3x)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run EvoLake toy campaign nightly pass
+        run: |
+          python scripts/evolake_toy_campaign_nightly.py \
+            --runs 3 \
+            --rounds 2 \
+            --strict \
+            --base-dir artifacts/evolake_toy_campaign_nightly \
+            --out artifacts/evolake_toy_campaign_nightly.json
+
+      - name: Upload EvoLake nightly artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evolake-toy-campaign-nightly
+          path: |
+            artifacts/evolake_toy_campaign_nightly.json
+            artifacts/evolake_toy_campaign_nightly/
+          if-no-files-found: ignore
