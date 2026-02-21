@@ -1,0 +1,152 @@
+{
+  "profile_id": "phase4_text_contract_v1",
+  "common_anchors": [
+    "BreadBoard v0.2.0",
+    "? for shortcuts",
+    "Cooked for"
+  ],
+  "footer": {
+    "prompt_anchor": "Try \"fix typecheck errors\"",
+    "shortcuts_anchor": "? for shortcuts",
+    "status_anchor": "Cooked for"
+  },
+  "lanes": {
+    "streaming": {
+      "primary_scenarios": [
+        "phase4_replay/streaming_v1_fullpane_v8"
+      ],
+      "scenario_aliases": [
+        "phase4_replay/renderlock_probe_streaming",
+        "phase4_replay/streaming_v1",
+        "phase4_replay/streaming_v1_fullpane",
+        "phase4_replay/streaming_v1_fullpane_v7",
+        "phase4_replay/streaming_v1_fullpane_v9",
+        "phase4_replay/streaming_v1_fullpane_v10_nosem",
+        "phase4_replay/streaming_v1_fullpane_v11_scrollbackfix",
+        "phase4_replay/streaming_v1_fullpane_v10",
+        "phase4_replay/streaming_v1_fullpane_v11_nosem",
+        "phase4_replay/streaming_v1_fullpane_v12_nosem",
+        "phase4_replay/streaming_v1_view_auto_probe",
+        "phase4_replay/streaming_v1_fullpane_lockv1"
+      ],
+      "anchors": [
+        "Streaming smoke",
+        "- line 1",
+        "- line 2"
+      ],
+      "footer_mode": "classic_input"
+    },
+    "todo": {
+      "primary_scenarios": [
+        "phase4_replay/todo_preview_v1_fullpane_v7"
+      ],
+      "scenario_aliases": [
+        "phase4_replay/todo_preview_v1",
+        "phase4_replay/todo_preview_v1_fullpane",
+        "phase4_replay/todo_preview_v1_fullpane_v8",
+        "phase4_replay/todo_preview_v1_fullpane_v9",
+        "phase4_replay/todo_preview_v1_fullpane_v10_scrollbackfix",
+        "phase4_replay/todo_preview_v1_fullpane_lockv1"
+      ],
+      "anchors": [
+        "Todos",
+        "8 items",
+        "☐ Implement replay mode"
+      ],
+      "footer_mode": "overlay_replacement"
+    },
+    "subagents": {
+      "primary_scenarios": [
+        "phase4_replay/subagents_v1_fullpane_v7"
+      ],
+      "scenario_aliases": [
+        "phase4_replay/subagents_smoke_v1_fullpane_v7",
+        "phase4_replay/subagents_v1",
+        "phase4_replay/subagents_v1_fullpane",
+        "phase4_replay/subagents_v1_fullpane_v8",
+        "phase4_replay/subagents_v1_fullpane_v9",
+        "phase4_replay/subagents_v1_fullpane_v10_scrollbackfix",
+        "phase4_replay/subagents_v1_fullpane_lockv1"
+      ],
+      "anchors": [
+        "Background tasks",
+        "✔ completed",
+        "☐ running"
+      ],
+      "footer_mode": "overlay_replacement"
+    },
+    "everything": {
+      "primary_scenarios": [
+        "phase4_replay/everything_showcase_v1_fullpane_v1"
+      ],
+      "scenario_aliases": [
+        "phase4_replay/everything_showcase_v1",
+        "phase4_replay/everything_showcase_v1_landing",
+        "phase4_replay/everything_showcase_v1_scrollback",
+        "phase4_replay/everything_showcase_v1_scrollback_v9",
+        "phase4_replay/everything_showcase_v1_scrollback_120x80",
+        "phase4_replay/everything_showcase_v1_fullpane_lockv1"
+      ],
+      "anchors": [
+        "Write(hello.c)",
+        "Patch(hello.c)",
+        "Markdown Showcase",
+        "Inline link BreadBoard"
+      ],
+      "footer_mode": "classic_input"
+    },
+    "thinking": {
+      "primary_scenarios": [
+        "phase4_replay/thinking_preview_v1"
+      ],
+      "scenario_aliases": [
+        "phase4_replay/thinking_reasoning_only_v1",
+        "phase4_replay/thinking_tool_interleaved_v1",
+        "phase4_replay/thinking_multiturn_lifecycle_v1",
+        "phase4_replay/thinking_lifecycle_expiration_v1"
+      ],
+      "anchors": [
+        "BreadBoard v0.2.0"
+      ],
+      "footer_mode": "classic_input"
+    },
+    "stress": {
+      "primary_scenarios": [
+        "phase4_replay/resize_overlay_interaction_v1"
+      ],
+      "scenario_aliases": [
+        "phase4_replay/resize_storm_overlay_v1",
+        "phase4_replay/alt_buffer_enter_exit_v1",
+        "phase4_replay/large_output_artifact_v1",
+        "phase4_replay/large_diff_artifact_v1",
+        "phase4_replay/subagents_strip_churn_v1",
+        "phase4_replay/subagents_concurrency_20_v1"
+      ],
+      "anchors": [
+        "BreadBoard v0.2.0"
+      ],
+      "footer_mode": "classic_input"
+    }
+  },
+  "scenario_sets": {
+    "hard_gate": [
+      "phase4_replay/streaming_v1_fullpane_v8",
+      "phase4_replay/todo_preview_v1_fullpane_v7",
+      "phase4_replay/subagents_v1_fullpane_v7",
+      "phase4_replay/everything_showcase_v1_fullpane_v1"
+    ],
+    "nightly": [
+      "phase4_replay/subagents_strip_churn_v1",
+      "phase4_replay/resize_overlay_interaction_v1",
+      "phase4_replay/thinking_lifecycle_expiration_v1",
+      "phase4_replay/alt_buffer_enter_exit_v1",
+      "phase4_replay/thinking_preview_v1",
+      "phase4_replay/thinking_reasoning_only_v1",
+      "phase4_replay/thinking_tool_interleaved_v1",
+      "phase4_replay/thinking_multiturn_lifecycle_v1",
+      "phase4_replay/large_output_artifact_v1",
+      "phase4_replay/large_diff_artifact_v1",
+      "phase4_replay/subagents_concurrency_20_v1"
+    ]
+  }
+}

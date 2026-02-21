@@ -21,6 +21,7 @@ from typing import Any
 from tmux_capture_time import run_timestamp
 from tmux_capture_render_profile import (
     DEFAULT_RENDER_PROFILE_ID,
+    PREVIOUS_LOCKED_PHASE4_PROFILE_ID,
     SUPPORTED_RENDER_PROFILES,
     resolve_render_profile,
 )
@@ -623,6 +624,7 @@ def find_new_run_dir(parent: Path, before: set[str]) -> Path:
 
 
 def parse_args() -> ScenarioConfig:
+    argv_raw = list(sys.argv[1:])
     parser = argparse.ArgumentParser(description="Run tmux scenario + polling capture.")
     parser.add_argument("--target", required=True, help="tmux target, e.g. session:window.pane")
     parser.add_argument(
@@ -673,11 +675,11 @@ def parse_args() -> ScenarioConfig:
         default="",
         help="comma-separated model aliases that must not appear in provider request payloads",
     )
-    parser.add_argument("--out-root", default="", help="capture root (default: ../docs_tmp/tmux_captures/scenarios)")
+    parser.add_argument("--out-root", default="", help="capture root (default: docs_tmp/tmux_captures/scenarios)")
     parser.add_argument("--no-png", action="store_true", help="disable PNG output")
     parser.add_argument(
         "--capture-mode",
-        default="pane",
+        default="fullpane",
         choices=("pane", "pane-auto", "tail", "scrollback", "fullpane"),
         help=(
             "frame capture mode passed to tmux_capture_poll "
@@ -802,7 +804,7 @@ def parse_args() -> ScenarioConfig:
 
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent
-    default_out = repo_root.parent / "docs_tmp" / "tmux_captures" / "scenarios"
+    default_out = repo_root / "docs_tmp" / "tmux_captures" / "scenarios"
     out_root = Path(args.out_root).expanduser().resolve() if args.out_root else default_out
 
     actions_path = Path(args.actions).expanduser().resolve() if args.actions else None
@@ -819,6 +821,14 @@ def parse_args() -> ScenarioConfig:
     must_match_regex = tuple(token.strip() for token in args.must_match_regex if str(token).strip())
     protected_sessions = parse_csv_tokens(args.protected_sessions)
     fullpane_start_markers = parse_csv_tokens(args.fullpane_start_markers)
+    render_profile_explicit = any(
+        token == "--render-profile" or token.startswith("--render-profile=")
+        for token in argv_raw
+    )
+    if not render_profile_explicit and scenario_lower.startswith("phase4_replay/"):
+        # Phase4 replay lanes run in a taller 45-row pane and need denser line packing.
+        # Keep these captures on the v2 lock unless explicitly overridden.
+        args.render_profile = PREVIOUS_LOCKED_PHASE4_PROFILE_ID
     resolved_profile = resolve_render_profile(args.render_profile)
     render_profile = resolved_profile.id if resolved_profile is not None else args.render_profile
 

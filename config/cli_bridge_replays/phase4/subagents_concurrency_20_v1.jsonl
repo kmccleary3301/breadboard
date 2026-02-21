@@ -1,0 +1,48 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): subagents concurrency 20
+#
+# Goal: stress taskboard/state churn with 20 background tasks across 4 lanes.
+
+{"type":"task_event","payload":{"task_id":"task-01","status":"running","description":"Index shard 01","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-02","status":"running","description":"Index shard 02","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-03","status":"running","description":"Index shard 03","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-04","status":"running","description":"Index shard 04","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-05","status":"running","description":"Parse symbols 05","lane_id":"lane-2","lane_label":"Symbols"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-06","status":"running","description":"Parse symbols 06","lane_id":"lane-2","lane_label":"Symbols"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-07","status":"running","description":"Parse symbols 07","lane_id":"lane-2","lane_label":"Symbols"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-08","status":"running","description":"Parse symbols 08","lane_id":"lane-2","lane_label":"Symbols"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-09","status":"running","description":"Run checks 09","lane_id":"lane-3","lane_label":"Checks"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-10","status":"running","description":"Run checks 10","lane_id":"lane-3","lane_label":"Checks"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-11","status":"running","description":"Run checks 11","lane_id":"lane-3","lane_label":"Checks"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-12","status":"running","description":"Run checks 12","lane_id":"lane-3","lane_label":"Checks"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-13","status":"running","description":"Patch files 13","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-14","status":"running","description":"Patch files 14","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-15","status":"running","description":"Patch files 15","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-16","status":"running","description":"Patch files 16","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-17","status":"running","description":"Finalize report 17","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-18","status":"running","description":"Finalize report 18","lane_id":"lane-2","lane_label":"Symbols"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-19","status":"running","description":"Finalize report 19","lane_id":"lane-3","lane_label":"Checks"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-20","status":"running","description":"Finalize report 20","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+
+{"type":"task_event","payload":{"task_id":"task-01","status":"complete","description":"Index shard 01","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-02","status":"complete","description":"Index shard 02","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-03","status":"complete","description":"Index shard 03","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-04","status":"complete","description":"Index shard 04","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-05","status":"complete","description":"Parse symbols 05","lane_id":"lane-2","lane_label":"Symbols"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-06","status":"complete","description":"Parse symbols 06","lane_id":"lane-2","lane_label":"Symbols"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-07","status":"complete","description":"Parse symbols 07","lane_id":"lane-2","lane_label":"Symbols"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-08","status":"complete","description":"Parse symbols 08","lane_id":"lane-2","lane_label":"Symbols"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-09","status":"complete","description":"Run checks 09","lane_id":"lane-3","lane_label":"Checks"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-10","status":"complete","description":"Run checks 10","lane_id":"lane-3","lane_label":"Checks"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-11","status":"complete","description":"Run checks 11","lane_id":"lane-3","lane_label":"Checks"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-12","status":"complete","description":"Run checks 12","lane_id":"lane-3","lane_label":"Checks"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-13","status":"complete","description":"Patch files 13","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-14","status":"complete","description":"Patch files 14","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-15","status":"complete","description":"Patch files 15","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-16","status":"complete","description":"Patch files 16","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-17","status":"complete","description":"Finalize report 17","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-18","status":"complete","description":"Finalize report 18","lane_id":"lane-2","lane_label":"Symbols"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-19","status":"complete","description":"Finalize report 19","lane_id":"lane-3","lane_label":"Checks"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"task-20","status":"complete","description":"Finalize report 20","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+
+{"type":"assistant_message","payload":{"message_id":"m-subagents-concurrency-20","text":"Subagent concurrency 20 replay complete"}}
+{"type":"run_finished","payload":{"eventCount":42,"completed":true,"reason":"replay","logging_dir":null},"delay_ms":1600}

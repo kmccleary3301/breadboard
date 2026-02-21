@@ -1,0 +1,15 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): resize + overlay interaction smoke
+
+{"type":"turn_start","payload":{}}
+{"type":"assistant.message.start","payload":{}}
+{"type":"assistant.message.delta","payload":{"delta":"Starting resize+overlay interaction flow."},"delay_ms":40}
+{"type":"warning","payload":{"message":"resize 160x45 -> 140x40"},"delay_ms":30}
+{"type":"task_event","payload":{"task_id":"overlay-1","status":"running","description":"Overlay open","lane_id":"lane-1","lane_label":"Overlay"},"delay_ms":30}
+{"type":"warning","payload":{"message":"resize 140x40 -> 120x34"},"delay_ms":30}
+{"type":"task_event","payload":{"task_id":"overlay-1","status":"complete","description":"Overlay stable","lane_id":"lane-1","lane_label":"Overlay"},"delay_ms":30}
+{"type":"tool_call","payload":{"tool":{"name":"apply_patch","args":{"path":"src/layout.tsx","diff":"@@ -1 +1 @@\n- old\n+ new\n"}},"display":{"title":"Patch(layout.tsx)"}},"delay_ms":40}
+{"type":"tool_result","payload":{"tool":{"name":"apply_patch","status":"success","output":"Patched src/layout.tsx"},"display":{"title":"Patch(layout.tsx)","summary":"layout stabilized"}},"delay_ms":40}
+{"type":"assistant.message.delta","payload":{"delta":"Resize and overlay interaction settled."},"delay_ms":20}
+{"type":"assistant.message.end","payload":{}}
+{"type":"completion","payload":{"summary":{"completed":true,"reason":"resize-overlay-smoke"}}}
+{"type":"run_finished","payload":{"eventCount":13,"completed":true,"reason":"replay","logging_dir":null},"delay_ms":1200}

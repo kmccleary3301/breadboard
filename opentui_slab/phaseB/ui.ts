@@ -16,6 +16,7 @@ import {
   IPC_PROTOCOL_VERSION,
 } from "./protocol.ts"
 import { formatBridgeEventForStdout } from "./format.ts"
+import { createOverlayAdapterState, reduceOverlayAdapterState } from "./overlay_adapter.ts"
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -62,7 +63,7 @@ const input = new TextareaRenderable(renderer, {
   left: 0,
   top: 0,
   width: "100%",
-  height: splitHeight - 1,
+  height: splitHeight - 3,
   placeholder: "Enter submit · Shift+Enter newline · Ctrl+D exits",
   wrapMode: "word",
   cursorStyle: { style: "block", blinking: false },
@@ -84,6 +85,12 @@ type PermissionOverlayState = {
 }
 
 let permissionOverlay: PermissionOverlayState | null = null
+
+type TaskOverlayState = {
+  query: string
+}
+
+let taskOverlay: TaskOverlayState | null = null
 
 const overlay = new BoxRenderable(renderer, {
   id: "overlay",
@@ -157,8 +164,32 @@ const footer = new TextRenderable(renderer, {
   fg: "#999999",
 })
 
+const subagentStrip = new TextRenderable(renderer, {
+  id: "subagent_strip",
+  position: "absolute",
+  left: 0,
+  top: splitHeight - 2,
+  width: "100%",
+  height: 1,
+  content: "Subagents · none detected · ctrl+←/→ cycle · ctrl+↑ parent",
+  fg: "#7dd3fc",
+})
+
+const contextStrip = new TextRenderable(renderer, {
+  id: "context_strip",
+  position: "absolute",
+  left: 0,
+  top: splitHeight - 3,
+  width: "100%",
+  height: 1,
+  content: "Context burst · none · ctrl+g toggle",
+  fg: "#93c5fd",
+})
+
 renderer.root.add(input)
 renderer.root.add(overlay)
+renderer.root.add(contextStrip)
+renderer.root.add(subagentStrip)
 renderer.root.add(footer)
 input.focus()
 
@@ -166,25 +197,127 @@ let activeSessionId: string | null = null
 let baseUrl: string | null = null
 let pendingPermissionId: string | null = null
 let currentModelId: string | null = null
+let lastEventBadge: string | null = null
+let lastEventSummary: string | null = null
+let lastToolRenderMode: "compact" | "expanded" | null = null
+let lastToolRenderReason: string | null = null
+let overlayState = createOverlayAdapterState()
+let selectedSubagentIndex = 0
+let contextBurstExpanded = false
+let contextBurstSummary: string | null = null
+let contextBurstDetails: string | null = null
 const composerHistory: string[] = []
 let composerHistoryIndex: number | null = null
 let composerHistoryDraft = ""
 
+const truncateInline = (text: string, max = 52): string => {
+  const compact = text.replace(/\s+/g, " ").trim()
+  if (compact.length <= max) return compact
+  return `${compact.slice(0, Math.max(0, max - 1)).trimEnd()}…`
+}
+
 const refreshFooter = () => {
-  const perm =
-    pendingPermissionId ? ` · perm=${pendingPermissionId} (a allow once, r reject)` : ""
-  const model = currentModelId ? ` · model=${currentModelId}` : ""
+  const perm = pendingPermissionId
+    ? `perm=${pendingPermissionId} (a allow once, r reject)`
+    : ""
+  const model = currentModelId ? `model=${currentModelId}` : ""
   const overlayHint = overlay.visible
-    ? " · esc close overlay"
-    : " · ctrl+k commands · alt+p models · @ files · ctrl+o search"
-  footer.content = `OpenTUI slab (Phase C) · session=${activeSessionId ?? "none"} · bridge=${baseUrl ?? "?"}${model}${perm}${overlayHint}`
+    ? "esc close overlay"
+    : "ctrl+k commands · alt+p models · @ files · ctrl+o search · ctrl+t tasks · ctrl+g context · ctrl+←/→ child · ctrl+↑ parent"
+  const liveHint =
+    lastEventSummary && lastEventSummary.trim()
+      ? `${lastEventBadge ?? "event"}: ${truncateInline(lastEventSummary)}`
+      : ""
+  const taskHint =
+    overlayState.taskTotalCount > 0
+      ? `tasks ${overlayState.taskCompletedCount}/${overlayState.taskTotalCount} done` +
+        (overlayState.taskRunningCount > 0 ? ` (${overlayState.taskRunningCount} running)` : "")
+      : ""
+  const laneHint =
+    overlayState.subagentOrder.length > 0
+      ? `subagents ${overlayState.subagentOrder.length}`
+      : ""
+  const toolHint = lastToolRenderMode
+    ? `tool=${lastToolRenderMode}${lastToolRenderReason ? `(${truncateInline(lastToolRenderReason, 24)})` : ""}`
+    : ""
+  const primaryBits = [toolHint, taskHint, laneHint, liveHint].filter(Boolean)
+  const contextBits = [
+    `session=${activeSessionId ?? "none"}`,
+    model,
+    perm,
+    baseUrl ? `bridge=${baseUrl}` : "",
+  ].filter(Boolean)
+  footer.content = `OpenTUI slab (Phase C) · ${primaryBits.join(" · ") || "idle"} · ${contextBits.join(" · ")} · ${overlayHint}`
+
+  const subagentIds = overlayState.subagentOrder
+  if (subagentIds.length > 0) {
+    if (selectedSubagentIndex >= subagentIds.length) selectedSubagentIndex = subagentIds.length - 1
+    if (selectedSubagentIndex < 0) selectedSubagentIndex = 0
+    const activeId = subagentIds[selectedSubagentIndex]!
+    const active = overlayState.subagentById[activeId]
+    const preview = subagentIds.slice(0, 4).map((id, idx) => {
+      const item = overlayState.subagentById[id]
+      const label = item?.label ?? id
+      const running = item?.runningCount ?? 0
+      const taskCount = item?.taskCount ?? 0
+      const bit = `${label} ${running}/${taskCount}`
+      return idx === selectedSubagentIndex ? `[${bit}]` : bit
+    })
+    const activeLabel = active?.label ?? activeId
+    const activeRunning = active?.runningCount ?? 0
+    const activeTaskCount = active?.taskCount ?? 0
+    subagentStrip.content = `Subagents [${selectedSubagentIndex + 1}/${subagentIds.length}] active=${activeLabel} ${activeRunning}/${activeTaskCount} · ${preview.join(" · ")} · ctrl+←/→ cycle · ctrl+↑ parent`
+  } else {
+    selectedSubagentIndex = 0
+    subagentStrip.content = "Subagents · none detected · ctrl+←/→ cycle · ctrl+↑ parent"
+  }
+
+  if (!contextBurstSummary) {
+    contextStrip.content = "Context burst · none · ctrl+g toggle"
+  } else if (contextBurstExpanded && contextBurstDetails) {
+    contextStrip.content = `Context burst [expanded] · ${truncateInline(contextBurstDetails, 180)} · ctrl+g collapse`
+  } else {
+    contextStrip.content = `Context burst [collapsed] · ${truncateInline(contextBurstSummary, 180)} · ctrl+g expand`
+  }
+}
+
+const buildTaskOverlayOptions = (query: string) => {
+  const needle = query.trim().toLowerCase()
+  const entries = Object.entries(overlayState.taskById)
+  const rows = entries
+    .map(([taskId, row]) => ({
+      taskId,
+      status: row?.status ?? "unknown",
+      description: row?.description ?? "",
+      subagentLabel: row?.subagentLabel ?? row?.laneLabel ?? "",
+      subagentId: row?.subagentId ?? row?.laneId ?? "",
+    }))
+    .filter((row) => {
+      if (!needle) return true
+      return `${row.taskId} ${row.status} ${row.description} ${row.subagentLabel} ${row.subagentId}`
+        .toLowerCase()
+        .includes(needle)
+    })
+    .sort((a, b) => `${a.subagentLabel}:${a.taskId}`.localeCompare(`${b.subagentLabel}:${b.taskId}`))
+
+  return rows.map((row) => ({
+    name: `${row.status.toUpperCase()} · ${row.subagentLabel || "main"} · ${row.taskId}`,
+    description: row.description || row.subagentLabel || row.subagentId || "",
+    value: row,
+  }))
 }
 
 const closeOverlay = () => {
   if (!overlay.visible) return
+  if (taskOverlay) {
+    overlayState = reduceOverlayAdapterState(overlayState, { type: "ui.task.close" })
+  } else {
+    overlayState = reduceOverlayAdapterState(overlayState, { type: "ui.palette.close" })
+  }
   overlay.visible = false
   palette = null
   permissionOverlay = null
+  taskOverlay = null
   overlayTitle.content = ""
   overlayQuery.placeholder = "Type to filter…"
   overlayQuery.value = ""
@@ -195,8 +328,10 @@ const closeOverlay = () => {
 }
 
 const openOverlay = (kind: PaletteKind, query = "") => {
+  overlayState = reduceOverlayAdapterState(overlayState, { type: "ui.palette.open", kind })
   palette = { kind, query, items: [], status: "loading", statusMessage: null }
   permissionOverlay = null
+  taskOverlay = null
   overlay.visible = true
   overlayTitle.content =
     kind === "commands"
@@ -215,6 +350,26 @@ const openOverlay = (kind: PaletteKind, query = "") => {
   refreshFooter()
 }
 
+const openTaskOverlay = (query = "") => {
+  overlayState = reduceOverlayAdapterState(overlayState, { type: "ui.task.open" })
+  palette = null
+  permissionOverlay = null
+  taskOverlay = { query }
+  overlay.visible = true
+  overlayTitle.content = "Tasks"
+  overlayQuery.placeholder = "Filter tasks…"
+  overlayQuery.value = query
+  const options = buildTaskOverlayOptions(query)
+  overlayList.options = options
+  overlayList.setSelectedIndex(0)
+  overlayStatus.content =
+    options.length > 0
+      ? `${overlayState.taskCompletedCount}/${overlayState.taskTotalCount} complete · ${overlayState.taskRunningCount} running`
+      : "No tasks"
+  overlayQuery.focus()
+  refreshFooter()
+}
+
 type PermissionChoice = {
   readonly title: string
   readonly detail: string
@@ -225,8 +380,10 @@ type PermissionChoice = {
 }
 
 const openPermissionOverlay = (requestId: string, context: Record<string, unknown>) => {
+  overlayState = reduceOverlayAdapterState(overlayState, { type: "ui.permission.open", requestId })
   permissionOverlay = { requestId, context }
   palette = null
+  taskOverlay = null
   overlay.visible = true
   overlayTitle.content = "Permission request"
   overlayQuery.placeholder = "Optional note (sent with decision)…"
@@ -273,7 +430,20 @@ const applyPaletteItems = (items: ReadonlyArray<PaletteItem>) => {
 }
 
 const onOverlayQueryUpdate = () => {
-  if (!overlay.visible || !palette) return
+  if (!overlay.visible) return
+  if (taskOverlay) {
+    const query = overlayQuery.value ?? ""
+    taskOverlay = { query }
+    const options = buildTaskOverlayOptions(query)
+    overlayList.options = options
+    overlayList.setSelectedIndex(0)
+    overlayStatus.content =
+      options.length > 0
+        ? `${overlayState.taskCompletedCount}/${overlayState.taskTotalCount} complete · ${overlayState.taskRunningCount} running`
+        : "No matches"
+    return
+  }
+  if (!palette) return
   const query = overlayQuery.value ?? ""
   palette = { ...palette, query, status: "loading", statusMessage: null }
   overlayStatus.content = "Loading…"
@@ -299,7 +469,19 @@ overlayList.on("itemSelected", (_index: number, opt: any) => {
       }),
     )
     pendingPermissionId = null
+    overlayState = reduceOverlayAdapterState(overlayState, {
+      type: "ui.permission.close",
+      requestId: permissionOverlay.requestId,
+    })
     closeOverlay()
+    return
+  }
+
+  if (taskOverlay) {
+    const row = opt?.value as { taskId: string; status: string; description?: string } | undefined
+    overlayStatus.content = row
+      ? `Selected ${row.taskId} · ${row.status}${row.description ? ` · ${truncateInline(row.description, 42)}` : ""}`
+      : overlayStatus.content
     return
   }
 
@@ -367,6 +549,10 @@ renderer.keyInput.on("keypress", (key: KeyEvent) => {
           }),
         )
         pendingPermissionId = null
+        overlayState = reduceOverlayAdapterState(overlayState, {
+          type: "ui.permission.close",
+          requestId: permissionOverlay.requestId,
+        })
       }
       closeOverlay()
       return
@@ -440,6 +626,74 @@ renderer.keyInput.on("keypress", (key: KeyEvent) => {
     openOverlay("transcript_search", "")
     return
   }
+  if (key.ctrl && key.name === "t") {
+    key.preventDefault()
+    openTaskOverlay("")
+    return
+  }
+  if (key.ctrl && key.name === "g") {
+    key.preventDefault()
+    if (contextBurstSummary) {
+      contextBurstExpanded = !contextBurstExpanded
+      refreshFooter()
+    }
+    return
+  }
+  if (key.ctrl && key.name === "left") {
+    key.preventDefault()
+    const subagentCount = overlayState.subagentOrder.length
+    if (subagentCount > 0) {
+      selectedSubagentIndex = (selectedSubagentIndex - 1 + subagentCount) % subagentCount
+      refreshFooter()
+    }
+    const activeId = overlayState.subagentOrder[selectedSubagentIndex] ?? null
+    const active = activeId ? overlayState.subagentById[activeId] : null
+    conn?.send(
+      nowEnvelope("ui.command", {
+        name: "session_child_previous",
+        args: {
+          child_session_id: active?.childSessionId ?? activeId,
+          parent_session_id: active?.parentSessionId ?? null,
+        },
+      }),
+    )
+    return
+  }
+  if (key.ctrl && key.name === "right") {
+    key.preventDefault()
+    const subagentCount = overlayState.subagentOrder.length
+    if (subagentCount > 0) {
+      selectedSubagentIndex = (selectedSubagentIndex + 1) % subagentCount
+      refreshFooter()
+    }
+    const activeId = overlayState.subagentOrder[selectedSubagentIndex] ?? null
+    const active = activeId ? overlayState.subagentById[activeId] : null
+    conn?.send(
+      nowEnvelope("ui.command", {
+        name: "session_child_next",
+        args: {
+          child_session_id: active?.childSessionId ?? activeId,
+          parent_session_id: active?.parentSessionId ?? null,
+        },
+      }),
+    )
+    return
+  }
+  if (key.ctrl && key.name === "up") {
+    key.preventDefault()
+    const activeId = overlayState.subagentOrder[selectedSubagentIndex] ?? null
+    const active = activeId ? overlayState.subagentById[activeId] : null
+    conn?.send(
+      nowEnvelope("ui.command", {
+        name: "session_parent",
+        args: {
+          parent_session_id: active?.parentSessionId ?? null,
+          child_session_id: active?.childSessionId ?? activeId,
+        },
+      }),
+    )
+    return
+  }
   if (key.option && key.name === "p") {
     key.preventDefault()
     openOverlay("models", "")
@@ -509,6 +763,7 @@ conn.onMessage((msg) => {
       pendingPermissionId = requestId.trim() ? requestId.trim() : null
     } else if (pendingPermissionId) {
       pendingPermissionId = null
+      overlayState = reduceOverlayAdapterState(overlayState, { type: "ui.permission.close" })
     }
     refreshFooter()
     return
@@ -521,7 +776,79 @@ conn.onMessage((msg) => {
   }
 
   if (msg.type === "ctrl.event") {
-    const event = isRecord(msg.payload) && isRecord(msg.payload.event) ? (msg.payload.event as Record<string, unknown>) : null
+    const payload = isRecord(msg.payload) ? msg.payload : {}
+    const adapterOutput = isRecord((payload as any).adapter_output)
+      ? ((payload as any).adapter_output as Record<string, unknown>)
+      : null
+    const hints = adapterOutput && isRecord(adapterOutput.hints) ? (adapterOutput.hints as Record<string, unknown>) : null
+    const adapterText = adapterOutput && typeof adapterOutput.stdout_text === "string" ? adapterOutput.stdout_text : ""
+    const summaryText = adapterOutput && typeof adapterOutput.summary_text === "string" ? adapterOutput.summary_text : ""
+    const toolRender = adapterOutput && isRecord(adapterOutput.tool_render) ? (adapterOutput.tool_render as Record<string, unknown>) : null
+    const contextBlock =
+      adapterOutput && isRecord(adapterOutput.context_block)
+        ? (adapterOutput.context_block as Record<string, unknown>)
+        : null
+    const overlayIntent = adapterOutput && isRecord(adapterOutput.overlay_intent) ? (adapterOutput.overlay_intent as Record<string, unknown>) : null
+    const normalizedEvent = adapterOutput && isRecord(adapterOutput.normalized_event)
+      ? (adapterOutput.normalized_event as Record<string, unknown>)
+      : null
+    const badgeText = hints && typeof hints.badge === "string" ? hints.badge.trim() : ""
+    const normalizedType = normalizedEvent && typeof normalizedEvent.type === "string" ? normalizedEvent.type : ""
+    if (normalizedType === "context.burst") {
+      const summary =
+        (contextBlock && typeof contextBlock.summary === "string" ? contextBlock.summary : "") ||
+        (normalizedEvent && typeof normalizedEvent.summary === "string" ? normalizedEvent.summary : "") ||
+        summaryText ||
+        "context burst"
+      const detail =
+        (contextBlock && typeof contextBlock.detail === "string" ? contextBlock.detail : "") ||
+        normalizedEvent && typeof normalizedEvent.detail === "string" ? normalizedEvent.detail : summary
+      contextBurstSummary = summary
+      contextBurstDetails = detail
+      contextBurstExpanded = false
+      lastEventSummary = summary
+      lastEventBadge = badgeText || "context"
+      refreshFooter()
+      if (adapterText) {
+        process.stdout.write(adapterText)
+      }
+      return
+    }
+    if (toolRender) {
+      const mode = typeof toolRender.mode === "string" ? toolRender.mode : ""
+      const reason = typeof toolRender.reason === "string" ? toolRender.reason : ""
+      lastToolRenderMode = mode === "expanded" ? "expanded" : mode === "compact" ? "compact" : null
+      lastToolRenderReason = reason || null
+    }
+    overlayState = reduceOverlayAdapterState(overlayState, {
+      type: "event.normalized",
+      normalizedEvent,
+      overlayIntent,
+      summaryText: summaryText || null,
+    })
+    if (taskOverlay && overlay.visible) {
+      const query = overlayQuery.value ?? taskOverlay.query
+      taskOverlay = { query }
+      const options = buildTaskOverlayOptions(query)
+      overlayList.options = options
+      overlayList.setSelectedIndex(0)
+      overlayStatus.content =
+        options.length > 0
+          ? `${overlayState.taskCompletedCount}/${overlayState.taskTotalCount} complete · ${overlayState.taskRunningCount} running`
+          : "No tasks"
+    }
+    if (summaryText) {
+      lastEventSummary = summaryText
+      lastEventBadge = badgeText || null
+      refreshFooter()
+    } else if (toolRender || overlayIntent || normalizedEvent) {
+      refreshFooter()
+    }
+    const event = isRecord(payload.event) ? (payload.event as Record<string, unknown>) : null
+    if (adapterText) {
+      process.stdout.write(adapterText)
+      return
+    }
     if (!event) return
     const rendered = formatBridgeEventForStdout(event)
     if (rendered) process.stdout.write(rendered)
@@ -560,6 +887,7 @@ conn.onMessage((msg) => {
     const ctx = isRecord(msg.payload) && isRecord((msg.payload as any).context) ? ((msg.payload as any).context as Record<string, unknown>) : {}
     if (requestId) {
       pendingPermissionId = requestId
+      overlayState = reduceOverlayAdapterState(overlayState, { type: "ui.permission.open", requestId })
       refreshFooter()
       process.stdout.write(`\n[permission] request_id=${requestId}\n`)
       if (!overlay.visible) {
@@ -593,4 +921,3 @@ refreshFooter()
 
 process.on("SIGINT", () => shutdown())
 process.on("SIGTERM", () => shutdown())
-

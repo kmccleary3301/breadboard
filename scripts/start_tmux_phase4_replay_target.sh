@@ -26,7 +26,7 @@ Examples:
   scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_phase4_todo --port 9101 --tui-preset claude_code_like
   # CI-friendly (assumes tui_skeleton/dist has been built already):
   scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_phase4_todo --port 9101 --use-dist
-  python scripts/run_tmux_capture_scenario.py --target breadboard_test_phase4_todo:0.0 --scenario phase4_replay/todo_preview_v1 --actions config/tmux_scenario_actions/phase4_replay/todo_preview_v1.json
+  python scripts/run_tmux_capture_scenario.py --target breadboard_test_phase4_todo:0.0 --scenario phase4_replay/todo_preview_v1 --actions config/tmux_scenario_actions/ci/phase4_replay/todo_preview_v1.json
 EOF
   exit 1
 }
@@ -147,13 +147,43 @@ pane_cmd_str="$(printf '%q ' "${pane_cmd[@]}")"
 "${tmux_base[@]}" new-session -d -x "$cols" -y "$rows" -s "$session" "$pane_cmd_str"
 "${tmux_base[@]}" set-option -t "$session" history-limit 200000
 
+# Hard-lock window geometry for deterministic replay captures. In some tmux
+# environments a detached new-session can inherit ambient client size (e.g. 153x16)
+# even when -x/-y are provided; force manual sizing and verify.
+window_target="${session}:0"
+pane_target="${session}:0.0"
+"${tmux_base[@]}" set-window-option -t "$window_target" window-size manual >/dev/null
+"${tmux_base[@]}" set-window-option -t "$window_target" aggressive-resize off >/dev/null
+"${tmux_base[@]}" resize-window -t "$window_target" -x "$cols" -y "$rows"
+"${tmux_base[@]}" resize-pane -t "$pane_target" -x "$cols" -y "$rows"
+actual_size="$("${tmux_base[@]}" display-message -p -t "$pane_target" '#{pane_width} #{pane_height}')"
+actual_cols="${actual_size%% *}"
+actual_rows="${actual_size##* }"
+if [[ "$actual_cols" != "$cols" || "$actual_rows" != "$rows" ]]; then
+  echo "Failed to lock tmux pane size for '$session': expected ${cols}x${rows}, got ${actual_cols}x${actual_rows}" >&2
+  exit 3
+fi
+
 # Mirror pane output to a file without breaking TTY semantics (critical for Ink TUIs).
 # pipe-pane copies output; it does not redirect the process stdout.
-pane_target="${session}:0.0"
 pane_log="$log_root/$session/pane.log"
 pipe_cmd=(bash --noprofile --norc -c "cat >> $(printf '%q' "$pane_log")")
 pipe_cmd_str="$(printf '%q ' "${pipe_cmd[@]}")"
 ("${tmux_base[@]}" pipe-pane -o -t "$pane_target" "$pipe_cmd_str" >/dev/null 2>&1) || true
+
+# Early liveness check: if the entrypoint aborts immediately (for example
+# preflight failure), surface that as a start-script failure instead of a
+# misleading "started" message.
+sleep 0.7
+if ! "${tmux_base[@]}" has-session -t "$session" &>/dev/null; then
+  echo "Replay target session '$session' exited during startup." >&2
+  if [[ -f "$pane_log" ]]; then
+    echo "--- pane log tail ($pane_log) ---" >&2
+    tail -n 80 "$pane_log" >&2 || true
+    echo "--- end pane log tail ---" >&2
+  fi
+  exit 4
+fi
 
 echo "Started tmux session '$session' ($cols×$rows) on port $port."
 if [[ -n "$tmux_socket" ]]; then

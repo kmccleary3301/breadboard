@@ -689,9 +689,10 @@ def render_ansi_to_png(
     col = 0
     idx = 0
     line_clipped = False
+    wrapped_by_overflow = False
 
     def scroll_up(lines: int = 1) -> None:
-        nonlocal grid, row, col, line_clipped
+        nonlocal grid, row, col, line_clipped, wrapped_by_overflow
         if lines <= 0:
             return
         for _ in range(lines):
@@ -701,6 +702,7 @@ def render_ansi_to_png(
         row = max(0, rows - 1)
         col = 0
         line_clipped = False
+        wrapped_by_overflow = False
 
     while idx < len(ansi_text):
         ch = ansi_text[idx]
@@ -858,6 +860,15 @@ def render_ansi_to_png(
             continue
 
         if ch == "\n":
+            # Avoid double row-advance for fixed-width ANSI lines:
+            # if we already wrapped when col reached terminal width, a following
+            # newline should finalize that wrapped line, not skip an extra row.
+            if wrapped_by_overflow:
+                wrapped_by_overflow = False
+                col = 0
+                line_clipped = False
+                idx += 1
+                continue
             row += 1
             col = 0
             line_clipped = False
@@ -870,9 +881,11 @@ def render_ansi_to_png(
         if ch == "\r":
             col = 0
             line_clipped = False
+            wrapped_by_overflow = False
             idx += 1
             continue
         if ch == "\t":
+            wrapped_by_overflow = False
             if line_clipped:
                 idx += 1
                 continue
@@ -883,12 +896,14 @@ def render_ansi_to_png(
             idx += 1
             continue
         if ord(ch) < 32:
+            wrapped_by_overflow = False
             idx += 1
             continue
         if line_clipped:
             idx += 1
             continue
 
+        wrapped_by_overflow = False
         w = wcwidth(ch)
         if w <= 0:
             idx += 1
@@ -921,6 +936,7 @@ def render_ansi_to_png(
                 row += 1
                 col = 0
                 line_clipped = False
+                wrapped_by_overflow = True
                 if row >= rows:
                     scroll_up(row - rows + 1)
 

@@ -116,6 +116,39 @@ export type CtrlEvent = IpcEnvelope<
   "ctrl.event",
   {
     readonly event: Record<string, unknown>
+    readonly adapter_output?: {
+      readonly stdout_text?: string | null
+      readonly summary_text?: string | null
+      readonly normalized_event?: Record<string, unknown> | null
+      readonly hints?: {
+        readonly lane?: string | null
+        readonly badge?: string | null
+        readonly tone?: string | null
+        readonly priority?: string | null
+        readonly stream?: boolean | null
+      } | null
+      readonly tool_render?: {
+        readonly mode?: "compact" | "expanded" | null
+        readonly reason?: string | null
+      } | null
+      readonly context_block?: {
+        readonly summary?: string | null
+        readonly detail?: string | null
+        readonly block_text?: string | null
+        readonly entries?: ReadonlyArray<{
+          readonly kind?: string | null
+          readonly toolName?: string | null
+          readonly ok?: boolean | null
+          readonly summary?: string | null
+        }> | null
+      } | null
+      readonly overlay_intent?: {
+        readonly kind?: string | null
+        readonly action?: string | null
+        readonly requestId?: string | null
+        readonly taskId?: string | null
+      } | null
+    } | null
   }
 >
 
@@ -182,4 +215,3 @@ export const nowEnvelope = <TType extends string, TPayload>(
   timestamp_ms: Date.now(),
   payload,
 })
-

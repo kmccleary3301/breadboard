@@ -1,0 +1,8 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): alternate-buffer transcript viewer smoke
+
+{"type":"turn_start","payload":{"turn":1},"delay_ms":20}
+{"type":"assistant.message.start","payload":{"message_id":"m-altbuf-1"},"delay_ms":40}
+{"type":"assistant.message.delta","payload":{"message_id":"m-altbuf-1","delta":"Alt buffer replay ready.\n"},"delay_ms":30}
+{"type":"tool_result","payload":{"tool":"read_file","status":"ok","error":false,"display":{"title":"Read(src/layout.tsx)","summary":"Read 3 lines","detail":"line-1\nline-2\nline-3"}},"delay_ms":35}
+{"type":"assistant.message.end","payload":{"message_id":"m-altbuf-1"},"delay_ms":20}
+{"type":"completion","payload":{"completed":true,"summary":{"completed":true,"reason":"replay"}},"delay_ms":100}

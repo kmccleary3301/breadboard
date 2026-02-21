@@ -70,7 +70,8 @@ if [[ -z "${SCENARIO}" || -z "${PROMPT}" ]]; then
 fi
 
 OPENCODE_REPO_ROOT="${ROOT_DIR}/industry_refs/opencode"
-OPENCODE_ENTRYPOINT="${OPENCODE_REPO_ROOT}/packages/opencode/src/index.ts"
+OPENCODE_PACKAGE_DIR="${OPENCODE_REPO_ROOT}/packages/opencode"
+OPENCODE_ENTRYPOINT="${OPENCODE_PACKAGE_DIR}/src/index.ts"
 OPENCODE_PACKAGE_JSON="${OPENCODE_REPO_ROOT}/packages/opencode/package.json"
 OPENCODE_TSCONFIG="${OPENCODE_REPO_ROOT}/packages/opencode/tsconfig.json"
 OPENCODE_BUNFIG="${OPENCODE_REPO_ROOT}/packages/opencode/bunfig.toml"
@@ -151,6 +152,11 @@ if [[ -f "${ROOT_DIR}/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
   source "${ROOT_DIR}/.env"
+  set +a
+elif [[ -f "${ROOT_DIR}/../backup.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "${ROOT_DIR}/../backup.env"
   set +a
 fi
 
@@ -241,18 +247,20 @@ EOF
 pushd "${RUN_DIR}/workspace" >/dev/null
 set +e
 if [[ -n "${AGENT}" ]]; then
-  printf "%s" "${PROMPT}" | bun run --config="${OPENCODE_BUNFIG}" --conditions=browser "${OPENCODE_ENTRYPOINT}" run \
+  printf "%s" "${PROMPT}" | bun run --cwd "${OPENCODE_PACKAGE_DIR}" --conditions=browser src/index.ts run \
     --format json \
     --model "${MODEL}" \
+    --dir "${RUN_DIR}/workspace" \
     --agent "${AGENT}" \
     --title "${SCENARIO}_${RUN_ID}" \
     "${EXTRA_ARGS[@]}" \
     >"${RUN_DIR}/stdout.jsonl" \
     2>"${RUN_DIR}/stderr.txt"
 else
-  printf "%s" "${PROMPT}" | bun run --config="${OPENCODE_BUNFIG}" --conditions=browser "${OPENCODE_ENTRYPOINT}" run \
+  printf "%s" "${PROMPT}" | bun run --cwd "${OPENCODE_PACKAGE_DIR}" --conditions=browser src/index.ts run \
     --format json \
     --model "${MODEL}" \
+    --dir "${RUN_DIR}/workspace" \
     --title "${SCENARIO}_${RUN_ID}" \
     "${EXTRA_ARGS[@]}" \
     >"${RUN_DIR}/stdout.jsonl" \
@@ -298,7 +306,7 @@ echo "${SESSION_ID}" >"${RUN_DIR}/session_id.txt"
 if [[ -n "${SESSION_ID}" ]]; then
   pushd "${RUN_DIR}/workspace" >/dev/null
   set +e
-  bun run --config="${OPENCODE_BUNFIG}" --conditions=browser "${OPENCODE_ENTRYPOINT}" export "${SESSION_ID}" \
+  bun run --cwd "${OPENCODE_PACKAGE_DIR}" --conditions=browser src/index.ts export "${SESSION_ID}" \
     >"${RUN_DIR}/exports/opencode_export.json" \
     2>>"${RUN_DIR}/stderr.txt"
   EXPORT_EXIT_CODE="$?"

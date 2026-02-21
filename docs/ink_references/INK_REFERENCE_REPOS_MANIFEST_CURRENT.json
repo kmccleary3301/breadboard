@@ -1,0 +1,48 @@
+{
+  "schema_version": "ink_reference_manifest_v2",
+  "generated_basis_utc": "2026-02-18T20:09:59Z",
+  "repositories": [
+    {
+      "name": "dev3000",
+      "source_url": "https://github.com/vercel-labs/dev3000.git",
+      "branch": "main",
+      "remote_url": "https://github.com/vercel-labs/dev3000.git",
+      "sha": "e2f6861a38e726cefc90b042c2df13445828785a",
+      "short_sha": "e2f6861",
+      "commit_date": "2026-02-18T10:59:19-08:00",
+      "workspace_relative_path": "other_harness_refs/dev3000",
+      "capture_date_utc": "2026-02-18T18:59:19Z",
+      "license_spdx": "MIT",
+      "license_note": "Pattern-reference only; do not copy code.",
+      "license_file": "LICENSE"
+    },
+    {
+      "name": "gemini-cli",
+      "source_url": "https://github.com/google-gemini/gemini-cli.git",
+      "branch": "main",
+      "remote_url": "https://github.com/google-gemini/gemini-cli.git",
+      "sha": "8f6a711a3a5b49f6715ab5e1d8c99814c20b6838",
+      "short_sha": "8f6a711",
+      "commit_date": "2026-02-18T20:09:59+00:00",
+      "workspace_relative_path": "other_harness_refs/gemini-cli",
+      "capture_date_utc": "2026-02-18T20:09:59Z",
+      "license_spdx": "Apache-2.0",
+      "license_note": "Pattern-reference only; do not copy code.",
+      "license_file": "LICENSE"
+    },
+    {
+      "name": "qwen-code",
+      "source_url": "https://github.com/QwenLM/qwen-code.git",
+      "branch": "main",
+      "remote_url": "https://github.com/QwenLM/qwen-code.git",
+      "sha": "c6a723efef70875233dfbc3e9b2002211081561c",
+      "short_sha": "c6a723e",
+      "commit_date": "2026-02-18T20:46:33+08:00",
+      "workspace_relative_path": "other_harness_refs/qwen-code",
+      "capture_date_utc": "2026-02-18T12:46:33Z",
+      "license_spdx": "Apache-2.0",
+      "license_note": "Pattern-reference only; do not copy code.",
+      "license_file": "LICENSE"
+    }
+  ]
+}

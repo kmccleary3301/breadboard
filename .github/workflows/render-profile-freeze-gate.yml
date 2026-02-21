@@ -1,0 +1,70 @@
+name: render-profile-freeze-gate
+
+on:
+  pull_request:
+    paths:
+      - "scripts/tmux_capture_render_profile.py"
+      - "scripts/check_render_profile_freeze.py"
+      - "config/render_profile_freeze_manifest.json"
+      - "scripts/TMUX_CAPTURE_RENDER_LOCK.md"
+      - "tests/test_tmux_capture_render_profile.py"
+      - "tests/test_check_render_profile_freeze.py"
+      - ".github/workflows/render-profile-freeze-gate.yml"
+  workflow_dispatch:
+
+jobs:
+  render-profile-freeze-gate:
+    name: render profile freeze gate (strict)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+
+      - name: Validate render profile freeze manifest
+        run: |
+          python scripts/check_render_profile_freeze.py \
+            --manifest config/render_profile_freeze_manifest.json \
+            --output-json docs_tmp/cli_phase_5/render_profile_freeze_ci_check.json \
+            --write-current-snapshot docs_tmp/cli_phase_5/render_profile_freeze_ci_current_snapshot.json
+
+      - name: Run freeze/lock regression tests
+        run: |
+          pytest -q \
+            tests/test_tmux_capture_render_profile.py \
+            tests/test_check_render_profile_freeze.py
+
+      - name: Add gate summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## Render Profile Freeze Gate"
+            echo ""
+            echo "- manifest: \`config/render_profile_freeze_manifest.json\`"
+            echo "- checker: \`scripts/check_render_profile_freeze.py\`"
+            echo "- job: \`render profile freeze gate (strict)\`"
+            echo ""
+            echo "### Artifacts"
+            echo "- \`docs_tmp/cli_phase_5/render_profile_freeze_ci_check.json\`"
+            echo "- \`docs_tmp/cli_phase_5/render_profile_freeze_ci_current_snapshot.json\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload freeze gate artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: render-profile-freeze-gate-artifacts
+          path: |
+            docs_tmp/cli_phase_5/render_profile_freeze_ci_check.json
+            docs_tmp/cli_phase_5/render_profile_freeze_ci_current_snapshot.json
+          if-no-files-found: ignore

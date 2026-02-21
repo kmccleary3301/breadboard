@@ -1,0 +1,8 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): large output artifact smoke
+
+{"type":"turn_start","payload":{"turn":1},"delay_ms":20}
+{"type":"tool_result","payload":{"tool":"write_file","status":"ok","error":false,"display":{"title":"Write(big-output.txt)","summary":"Wrote 12 lines (artifact)","detail_artifact":{"schema_version":"artifact_ref_v1","id":"artifact-sample-output","kind":"tool_output","mime":"text/plain","size_bytes":399,"sha256":"2cca815ece33bb72a29364e75e3b0dbbc35f13c02240537b38e442679b54dfc4","storage":"workspace_file","path":"docs_tmp/tui_tool_artifacts/tool_output/artifact-sample-output.txt","preview":{"lines":["line-1: generated output preview","line-2: generated output preview","line-3: generated output preview"],"omitted_lines":9,"note":"Inline output truncated to artifact reference."}}}},"delay_ms":50}
+{"type":"assistant.message.start","payload":{"message_id":"m-large-output-artifact-1"},"delay_ms":80}
+{"type":"assistant.message.delta","payload":{"message_id":"m-large-output-artifact-1","delta":"Wrote file and exported oversized output to artifact.\n"},"delay_ms":30}
+{"type":"assistant.message.end","payload":{"message_id":"m-large-output-artifact-1"},"delay_ms":20}
+{"type":"completion","payload":{"completed":true,"summary":{"completed":true,"reason":"replay"}},"delay_ms":120}

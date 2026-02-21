@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from tmux_capture_render_profile import DEFAULT_RENDER_PROFILE_ID
+
 
 DEFAULT_LANE_SCENARIOS: dict[str, str] = {
     "streaming": "phase4_replay/streaming_v1_fullpane_v8",
@@ -27,8 +29,8 @@ DEFAULT_LANE_SCENARIOS: dict[str, str] = {
 }
 
 DEFAULT_INDEX_ANCHORS: tuple[str, ...] = (
-    "# Visual Review Pack (Phase4 Fullpane Lock V1)",
-    "Locked render profile: `phase4_locked_v1`",
+    "# Visual Review Pack (Phase4 Fullpane Lock V2)",
+    f"Locked render profile: `{DEFAULT_RENDER_PROFILE_ID}`",
     "## Scenario Summary",
     "### streaming",
     "### todo",
@@ -75,6 +77,12 @@ def _check_rel_file(pack_dir: Path, rel: str, errors: list[str], label: str) -> 
         return
     path = (pack_dir / rel_clean).resolve()
     _must_exist(path, errors, label)
+
+
+def _is_diagnostic_rel(rel: str) -> bool:
+    rel_norm = rel.replace("\\", "/")
+    filename = Path(rel_norm).name
+    return "/diagnostics/" in f"/{rel_norm}" and filename.startswith("DIAGNOSTIC_")
 
 
 def validate_pack(
@@ -126,21 +134,54 @@ def validate_pack(
                 errors.append(f"lane {lane} selected.{triplet_name} missing/not object")
                 continue
             for ext in ("png", "txt", "ansi"):
-                _check_rel_file(pack_dir, str(triplet.get(ext) or ""), errors, f"{lane}.{triplet_name}.{ext}")
+                rel = str(triplet.get(ext) or "")
+                _check_rel_file(pack_dir, rel, errors, f"{lane}.{triplet_name}.{ext}")
+                if _is_diagnostic_rel(rel):
+                    errors.append(
+                        f"diagnostic artifact leaked into review triplet path for {lane}.{triplet_name}.{ext}: {rel}"
+                    )
 
         prev_triplet = selected.get("prev_final")
         if not isinstance(prev_triplet, dict):
             errors.append(f"lane {lane} selected.prev_final missing/not object")
         else:
-            _check_rel_file(pack_dir, str(prev_triplet.get("png") or ""), errors, f"{lane}.prev_final.png")
+            prev_png_rel = str(prev_triplet.get("png") or "")
+            _check_rel_file(pack_dir, prev_png_rel, errors, f"{lane}.prev_final.png")
+            if _is_diagnostic_rel(prev_png_rel):
+                errors.append(
+                    f"diagnostic artifact leaked into review triplet path for {lane}.prev_final.png: {prev_png_rel}"
+                )
 
         for file_key in (
             "final_fit_to_prev_png",
             "compare_side_by_side_png",
-            "compare_heat_x3_png",
             "compare_metrics_json",
         ):
             _check_rel_file(pack_dir, str(selected.get(file_key) or ""), errors, f"{lane}.{file_key}")
+
+        heat_rel = str(selected.get("compare_heat_x3_png") or "")
+        _check_rel_file(pack_dir, heat_rel, errors, f"{lane}.compare_heat_x3_png")
+        if heat_rel:
+            heat_norm = heat_rel.replace("\\", "/")
+            heat_name = Path(heat_norm).name
+            if not _is_diagnostic_rel(heat_norm):
+                errors.append(
+                    f"lane {lane} compare_heat_x3_png must be under diagnostics/ and start with DIAGNOSTIC_: {heat_rel}"
+                )
+            if not heat_name.endswith(".png"):
+                errors.append(f"lane {lane} compare_heat_x3_png must be a .png: {heat_rel}")
+
+        lane_dir = (pack_dir / lane).resolve()
+        if lane_dir.exists():
+            leaked_diagnostics = [
+                p
+                for p in lane_dir.glob("*.png")
+                if p.name.startswith("DIAGNOSTIC_")
+            ]
+            for leak in leaked_diagnostics:
+                errors.append(
+                    f"diagnostic PNG must not live in lane root for {lane}: {leak.relative_to(pack_dir)}"
+                )
 
         metrics_rel = str(selected.get("compare_metrics_json") or "")
         if metrics_rel:

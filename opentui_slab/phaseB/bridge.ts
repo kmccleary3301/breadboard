@@ -31,6 +31,11 @@ export type SessionCommandRequest = {
   readonly payload?: Record<string, unknown> | null
 }
 
+export type SessionCommandResponse = {
+  readonly status?: string
+  readonly detail?: Record<string, unknown> | null
+}
+
 export type SessionInputRequest = {
   readonly content: string
   readonly attachments?: string[] | null
@@ -202,7 +207,11 @@ export const postInput = async (baseUrl: string, sessionId: string, payload: Ses
   }
 }
 
-export const postCommand = async (baseUrl: string, sessionId: string, payload: SessionCommandRequest): Promise<void> => {
+export const postCommand = async (
+  baseUrl: string,
+  sessionId: string,
+  payload: SessionCommandRequest,
+): Promise<SessionCommandResponse> => {
   const response = await fetch(buildUrl(baseUrl, `/sessions/${sessionId}/command`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -212,6 +221,17 @@ export const postCommand = async (baseUrl: string, sessionId: string, payload: S
     const text = await response.text().catch(() => "")
     throw new Error(`Post command failed: HTTP ${response.status} ${text}`)
   }
+  const text = await response.text().catch(() => "")
+  if (!text.trim()) return { status: "accepted", detail: null }
+  try {
+    const parsed = JSON.parse(text) as SessionCommandResponse
+    if (parsed && typeof parsed === "object") {
+      return parsed
+    }
+  } catch {
+    // ignore parse failure; return opaque success marker
+  }
+  return { status: "accepted", detail: null }
 }
 
 export const getModelCatalog = async (baseUrl: string, configPath: string): Promise<ModelCatalogResponse> => {
@@ -304,4 +324,3 @@ export const streamSessionEvents = async function* (
     }
   }
 }
-

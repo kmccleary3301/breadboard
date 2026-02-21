@@ -1,0 +1,84 @@
+name: render-profile-bless
+
+on:
+  workflow_dispatch:
+    inputs:
+      new_profile_id:
+        description: "New profile id (e.g. phase4_locked_v5)"
+        required: true
+        type: string
+      source_profile_id:
+        description: "Source profile id to clone"
+        required: false
+        default: "phase4_locked_v4"
+        type: string
+      apply_manifest:
+        description: "Apply manifest mutation in runner workspace"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  bless-render-profile:
+    name: bless render profile version (manual)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+
+      - name: Run bless script
+        run: |
+          set -euo pipefail
+          apply_flag=""
+          if [[ "${{ inputs.apply_manifest }}" == "true" ]]; then
+            apply_flag="--apply"
+          fi
+          python scripts/bless_render_profile_version.py \
+            --manifest config/render_profile_freeze_manifest.json \
+            --new-profile-id "${{ inputs.new_profile_id }}" \
+            --source-profile-id "${{ inputs.source_profile_id }}" \
+            $apply_flag \
+            --output-json docs_tmp/cli_phase_5/render_profile_bless_result.json
+
+      - name: Validate freeze manifest after bless
+        run: |
+          python scripts/check_render_profile_freeze.py \
+            --manifest config/render_profile_freeze_manifest.json \
+            --output-json docs_tmp/cli_phase_5/render_profile_freeze_post_bless_check.json
+
+      - name: Add bless summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## Render Profile Bless"
+            echo ""
+            echo "- new_profile_id: \`${{ inputs.new_profile_id }}\`"
+            echo "- source_profile_id: \`${{ inputs.source_profile_id }}\`"
+            echo "- apply_manifest: \`${{ inputs.apply_manifest }}\`"
+            echo ""
+            echo "### Artifacts"
+            echo "- \`docs_tmp/cli_phase_5/render_profile_bless_result.json\`"
+            echo "- \`docs_tmp/cli_phase_5/render_profile_freeze_post_bless_check.json\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bless artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: render-profile-bless-artifacts
+          path: |
+            docs_tmp/cli_phase_5/render_profile_bless_result.json
+            docs_tmp/cli_phase_5/render_profile_freeze_post_bless_check.json
+            docs_tmp/cli_phase_5/render_profile_bless_*.md
+          if-no-files-found: ignore

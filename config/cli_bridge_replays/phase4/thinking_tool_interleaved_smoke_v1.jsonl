@@ -1,0 +1,12 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): interleaved reasoning + tool events
+# Goal: verify preview remains coherent while tool rows are optimistically reconciled.
+
+{"type":"turn_start","payload":{"turn":1},"delay_ms":20}
+{"type":"assistant.thought_summary.delta","payload":{"delta":"identify file to patch"},"delay_ms":25}
+{"type":"tool_call","payload":{"call_id":"call-write-1","tool_name":"Write","tool":"Write","path":"src/main.ts","summary":"Writing src/main.ts"},"delay_ms":30}
+{"type":"assistant.thought_summary.delta","payload":{"delta":"apply minimal patch and verify"},"delay_ms":25}
+{"type":"tool.result","payload":{"call_id":"call-write-1","tool_name":"Write","status":"success","display":{"title":"Write(src/main.ts)","summary":"Patched 1 file","diff_blocks":[{"kind":"diff","lines":[{"kind":"add","raw":"+console.log('ok')"}]}]}},"delay_ms":30}
+{"type":"assistant.message.start","payload":{"message_id":"m-interleave-1"},"delay_ms":700}
+{"type":"assistant.message.delta","payload":{"message_id":"m-interleave-1","delta":"Patched src/main.ts and validated the output path.\n"},"delay_ms":40}
+{"type":"assistant.message.end","payload":{"message_id":"m-interleave-1"},"delay_ms":20}
+{"type":"completion","payload":{"completed":true,"summary":{"completed":true,"reason":"replay"}},"delay_ms":2400}

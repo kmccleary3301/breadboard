@@ -5,7 +5,7 @@ Deterministic regression checks for phase4 everything_showcase fullpane runs.
 Checks:
 - scenario_manifest reports the expected scenario id
 - capture_mode is fullpane
-- render_profile is phase4_locked_v1
+- render_profile is one of the locked phase4 profiles
 - frame count meets a minimum floor
 - final captured text includes required anchors
 """
@@ -14,9 +14,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from tmux_capture_render_profile import (
+    DEFAULT_RENDER_PROFILE_ID,
+    LEGACY_LOCKED_PHASE4_PROFILE_ID,
+)
 
 
 DEFAULT_SCENARIO_ID = "phase4_replay/everything_showcase_v1_fullpane_v1"
@@ -30,6 +36,14 @@ DEFAULT_REQUIRED_ANCHORS: tuple[str, ...] = (
     "ls -la",
     "Cooked for",
 )
+DEFAULT_ALLOWED_RENDER_PROFILES: tuple[str, ...] = (
+    DEFAULT_RENDER_PROFILE_ID,
+    LEGACY_LOCKED_PHASE4_PROFILE_ID,
+)
+DEFAULT_REPLAY_COMMAND_PATTERN = re.compile(
+    r"^\s*[❯>]\s*replay:.*everything.*showcase.*v1\.jsonl\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 @dataclass
@@ -41,6 +55,7 @@ class ValidationResult:
     frame_count: int
     final_text_path: str
     missing_anchors: list[str]
+    replay_command_occurrences: int
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -51,6 +66,7 @@ class ValidationResult:
             "frame_count": self.frame_count,
             "final_text_path": self.final_text_path,
             "missing_anchors": self.missing_anchors,
+            "replay_command_occurrences": self.replay_command_occurrences,
         }
 
 
@@ -126,9 +142,10 @@ def validate_showcase_run(
         )
     if capture_mode != "fullpane":
         errors.append(f"capture_mode mismatch: expected 'fullpane', got {capture_mode!r}")
-    if render_profile != "phase4_locked_v1":
+    if render_profile not in DEFAULT_ALLOWED_RENDER_PROFILES:
         errors.append(
-            f"render_profile mismatch: expected 'phase4_locked_v1', got {render_profile!r}"
+            "render_profile mismatch: "
+            f"expected one of {DEFAULT_ALLOWED_RENDER_PROFILES}, got {render_profile!r}"
         )
 
     final_text_path, frame_count = _last_frame_text_path(run_dir)
@@ -139,6 +156,12 @@ def validate_showcase_run(
     missing_anchors = [anchor for anchor in required_anchors if anchor not in text]
     if missing_anchors:
         errors.append(f"missing required anchors: {missing_anchors}")
+    replay_command_occurrences = len(DEFAULT_REPLAY_COMMAND_PATTERN.findall(text))
+    if replay_command_occurrences != 1:
+        errors.append(
+            "replay command occurrence mismatch: "
+            f"expected exactly 1 everything_showcase replay command line, got {replay_command_occurrences}"
+        )
 
     return ValidationResult(
         ok=(len(errors) == 0),
@@ -148,6 +171,7 @@ def validate_showcase_run(
         frame_count=frame_count,
         final_text_path=str(final_text_path),
         missing_anchors=missing_anchors,
+        replay_command_occurrences=replay_command_occurrences,
     )
 
 

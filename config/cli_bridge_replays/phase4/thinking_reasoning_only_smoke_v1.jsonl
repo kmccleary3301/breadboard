@@ -1,0 +1,10 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): reasoning-only burst then late assistant response
+# Goal: keep preview active through reasoning burst, then close + expire once assistant response starts.
+
+{"type":"turn_start","payload":{"turn":1},"delay_ms":20}
+{"type":"assistant.thought_summary.delta","payload":{"delta":"survey files\nrank likely edit targets\nprepare exact patch"},"delay_ms":30}
+{"type":"assistant.thought_summary.delta","payload":{"delta":"confirm tool strategy\nwrite final answer"},"delay_ms":30}
+{"type":"assistant.message.start","payload":{"message_id":"m-reason-only-1"},"delay_ms":700}
+{"type":"assistant.message.delta","payload":{"message_id":"m-reason-only-1","delta":"Implemented. I updated the target module and added tests.\n"},"delay_ms":40}
+{"type":"assistant.message.end","payload":{"message_id":"m-reason-only-1"},"delay_ms":20}
+{"type":"completion","payload":{"completed":true,"summary":{"completed":true,"reason":"replay"}},"delay_ms":2400}

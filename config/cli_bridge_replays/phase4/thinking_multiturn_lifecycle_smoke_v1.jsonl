@@ -1,0 +1,17 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): multi-turn lifecycle with reconnect/compaction markers
+# Goal: ensure preview lifecycle remains deterministic across auxiliary system events.
+
+{"type":"turn_start","payload":{"turn":1},"delay_ms":20}
+{"type":"assistant.thought_summary.delta","payload":{"delta":"turn1 planning summary"},"delay_ms":25}
+{"type":"stream.gap","payload":{"reason":"network jitter"},"delay_ms":30}
+{"type":"conversation.compaction.start","payload":{"reason":"window compaction"},"delay_ms":30}
+{"type":"conversation.compaction.end","payload":{"reason":"window compaction complete"},"delay_ms":30}
+{"type":"assistant.message.start","payload":{"message_id":"m-multi-1"},"delay_ms":120}
+{"type":"assistant.message.delta","payload":{"message_id":"m-multi-1","delta":"Turn one complete.\n"},"delay_ms":40}
+{"type":"assistant.message.end","payload":{"message_id":"m-multi-1"},"delay_ms":20}
+{"type":"turn_start","payload":{"turn":2},"delay_ms":80}
+{"type":"assistant.thought_summary.delta","payload":{"delta":"turn2 planning summary"},"delay_ms":30}
+{"type":"assistant.message.start","payload":{"message_id":"m-multi-2"},"delay_ms":120}
+{"type":"assistant.message.delta","payload":{"message_id":"m-multi-2","delta":"Turn two complete and stable.\n"},"delay_ms":40}
+{"type":"assistant.message.end","payload":{"message_id":"m-multi-2"},"delay_ms":20}
+{"type":"completion","payload":{"completed":true,"summary":{"completed":true,"reason":"replay"}},"delay_ms":2600}

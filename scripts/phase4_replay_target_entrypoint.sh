@@ -132,6 +132,15 @@ if [[ -n "$landing_always" ]]; then
   export BREADBOARD_TUI_LANDING_ALWAYS="$landing_always"
 fi
 
+# Fail fast if requested port is already occupied. Without this guard, a stale
+# local cli_bridge process can satisfy health checks and mask a failed launch.
+if command -v ss >/dev/null 2>&1; then
+  if ss -ltn "( sport = :$port )" | awk 'NR>1 {found=1} END {exit(found?0:1)}'; then
+    echo "[phase4 replay target] requested port $port is already in use; aborting to avoid stale-server bind confusion."
+    exit 4
+  fi
+fi
+
 echo "[phase4 replay target] launching cli_bridge"
 cd "$repo_root"
 python -m agentic_coder_prototype.api.cli_bridge.server >"$log_dir/cli_bridge.log" 2>&1 &

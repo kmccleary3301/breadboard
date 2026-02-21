@@ -1,0 +1,41 @@
+name: Ink Reference Manifest Check
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/sync_ink_references.sh"
+      - "scripts/check_ink_references_manifest.sh"
+      - "scripts/validate_ink_references_manifest.py"
+      - "docs/ink_references/INK_REFERENCE_REPOS_MANIFEST_CURRENT.json"
+      - "docs/ink_references/INK_REFERENCE_REPOS_MANIFEST_CURRENT.md"
+
+jobs:
+  manifest-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify canonical sync output (fail on drift)
+        env:
+          INK_MANIFEST_REPORT_JSON: ${{ github.workspace }}/docs_tmp/ink_references/sync_verify_report.json
+          INK_VERIFY_ALLOW_MISSING: "1"
+        run: bash scripts/sync_ink_references.sh --verify
+
+      - name: Validate manifest + verify repo refs (clean-skip when refs are absent in CI)
+        env:
+          INK_MANIFEST_VALIDATION_REPORT_JSON: ${{ github.workspace }}/docs_tmp/ink_references/manifest_validation_report.json
+        run: bash scripts/check_ink_references_manifest.sh
+
+      - name: Upload manifest-check artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ink-reference-manifest-check
+          path: |
+            docs/ink_references/INK_REFERENCE_REPOS_MANIFEST_CURRENT.json
+            docs/ink_references/INK_REFERENCE_REPOS_MANIFEST_CURRENT.md
+            docs_tmp/ink_references/sync_verify_report.json
+            docs_tmp/ink_references/manifest_validation_report.json
+          if-no-files-found: ignore

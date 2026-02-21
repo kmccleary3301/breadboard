@@ -1,0 +1,125 @@
+{
+  "version": "v1",
+  "generated_for": "opentui_phaseb_text_parity",
+  "scenarios": [
+    {
+      "id": "context_burst_flush_v1",
+      "class": "context_compaction",
+      "replay_path": "config/cli_bridge_replays/phase4/context_burst_flush_smoke_v1.jsonl",
+      "required_tokens": [
+        "[context] 4 ops",
+        "read_file×2",
+        "context burst smoke complete"
+      ]
+    },
+    {
+      "id": "large_output_artifact_v1",
+      "class": "artifact_output_compaction",
+      "replay_path": "config/cli_bridge_replays/phase4/large_output_artifact_smoke_v1.jsonl",
+      "required_tokens": [
+        "artifact-sample-output.txt",
+        "Inline output truncated to artifact reference."
+      ]
+    },
+    {
+      "id": "large_diff_artifact_v1",
+      "class": "diff_artifact_preview",
+      "replay_path": "config/cli_bridge_replays/phase4/large_diff_artifact_smoke_v1.jsonl",
+      "required_tokens": [
+        "artifact-sample-diff.diff",
+        "Large unified diff exported to artifact."
+      ]
+    },
+    {
+      "id": "subagents_strip_churn_v1",
+      "class": "subagent_lifecycle_surface",
+      "replay_path": "config/cli_bridge_replays/phase4/subagents_strip_churn_smoke_v1.jsonl",
+      "required_tokens": [
+        "Subagent strip churn smoke complete",
+        "Subagents ["
+      ]
+    },
+    {
+      "id": "subagents_concurrency_20_v1",
+      "class": "subagent_lifecycle_surface",
+      "replay_path": "config/cli_bridge_replays/phase4/subagents_concurrency_20_v1.jsonl",
+      "required_tokens": [
+        "Subagent concurrency 20 replay complete",
+        "Subagents ["
+      ]
+    },
+    {
+      "id": "background_cancel_semantics_v1",
+      "class": "background_cancel_semantics",
+      "replay_path": "config/cli_bridge_replays/phase4/background_cancel_semantics_smoke_v1.jsonl",
+      "required_tokens": [
+        "cancel",
+        "Background cancel semantics smoke complete"
+      ]
+    },
+    {
+      "id": "permission_flow_v1",
+      "class": "permission_flow_surface",
+      "replay_path": "config/cli_bridge_replays/phase4/permission_flow_smoke_v1.jsonl",
+      "required_tokens": [
+        "permission",
+        "approved",
+        "Permission flow smoke complete"
+      ]
+    },
+    {
+      "id": "tool_error_retry_v1",
+      "class": "retry_and_error_recovery",
+      "replay_path": "config/cli_bridge_replays/phase4/tool_error_retry_smoke_v1.jsonl",
+      "required_tokens": [
+        "error",
+        "retry",
+        "Tool retry smoke complete"
+      ]
+    }
+  ],
+  "axes": [
+    {
+      "axis": "context_compaction",
+      "reference_signal_key": "ref_has_context_tools",
+      "slab_signal_key": "slab_has_context_group",
+      "comparable": true,
+      "notes": "Reference has read/list/grep/glob activity and slab emits grouped [context] ops blocks."
+    },
+    {
+      "axis": "subagent_lifecycle_surface",
+      "reference_signal_key": "ref_has_subagent_tooling_or_spawn",
+      "slab_signal_key": "slab_has_subagent_strip_and_task_surface",
+      "comparable": true,
+      "notes": "Reference shows task/background flows; slab shows strip + task counters."
+    },
+    {
+      "axis": "background_cancel_semantics",
+      "reference_signal_key": "ref_has_background_cancel_flow",
+      "slab_signal_key": "slab_has_subagent_strip",
+      "comparable": true,
+      "notes": "Behavioral match for cancel lifecycle presence."
+    },
+    {
+      "axis": "artifact_output_compaction",
+      "reference_signal_key": "ref_has_artifact_output",
+      "slab_signal_key": "slab_has_artifact_ref",
+      "comparable_key": "ref_has_artifact_output_fixture",
+      "notes": "Matched via OpenCode artifact fixture rows."
+    },
+    {
+      "axis": "diff_artifact_preview",
+      "reference_signal_key": "ref_has_diff_preview",
+      "slab_signal_key": "slab_has_artifact_diff_and_preview",
+      "comparable_key": "ref_has_artifact_diff_fixture",
+      "notes": "Matched via OpenCode diff fixture rows."
+    },
+    {
+      "axis": "capture_hygiene",
+      "reference_signal_key": "const_true",
+      "slab_signal_key": "slab_capture_hygiene_ok",
+      "comparable": true,
+      "notes": "Latest selected panes should be free of bridge-missing contamination."
+    }
+  ]
+}

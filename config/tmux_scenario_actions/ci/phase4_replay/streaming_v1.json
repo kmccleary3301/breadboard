@@ -1,0 +1,48 @@
+[
+  {
+    "type": "startup_preflight",
+    "timeout": 20,
+    "interval": 0.3,
+    "ready_tokens": ["for shortcuts"],
+    "kick_keys": ["Escape"],
+    "kick_every_polls": 1
+  },
+  {
+    "type": "send",
+    "text": "/view scroll auto",
+    "submit": true,
+    "clear_first": true,
+    "clear_mode": "ctrl_u"
+  },
+  {
+    "type": "sleep",
+    "seconds": 0.8
+  },
+  {
+    "type": "send",
+    "text": "replay:config/cli_bridge_replays/phase4/streaming_smoke_v1.jsonl",
+    "submit": true,
+    "clear_first": true,
+    "clear_mode": "ctrl_u"
+  },
+  {
+    "type": "wait_until",
+    "contains": ["Streaming smoke", "line 1", "line 2"],
+    "absent": ["Cannot read properties of undefined (reading 'length')", "buildModalStack.tsx:1084", "\\n", "(delta)"],
+    "timeout": 30
+  },
+  {
+    "type": "wait_for_quiet",
+    "quiet_seconds": 1.5,
+    "timeout": 30,
+    "must_not_contain": [
+      "Cannot read properties of undefined (reading 'length')",
+      "buildModalStack.tsx:1084",
+      "UnhandledPromiseRejection",
+      "[phase4 replay target exited]",
+      "[phase4 replay target] cli_bridge health check failed"
+    ],
+    "semantic_timeout": 5,
+    "semantic_fail_fast": true
+  }
+]

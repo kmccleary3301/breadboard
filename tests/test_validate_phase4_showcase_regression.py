@@ -45,6 +45,7 @@ def _make_run_dir(tmp_path: Path, *, frame_count: int, final_text: str, scenario
 def test_validate_showcase_run_passes_with_expected_anchors(tmp_path: Path):
     module = _load_module()
     final_text = (
+        "❯ replay:config/clibridgereplays/phase4/everythingshowcasev1.jsonl\n"
         "BreadBoard v0.2.0\n"
         "Write(hello.c)\n"
         "Patch(hello.c)\n"
@@ -64,6 +65,7 @@ def test_validate_showcase_run_passes_with_expected_anchors(tmp_path: Path):
     assert result.errors == []
     assert result.frame_count == 12
     assert result.missing_anchors == []
+    assert result.replay_command_occurrences == 1
 
 
 def test_validate_showcase_run_fails_on_frame_floor_and_missing_anchor(tmp_path: Path):
@@ -78,3 +80,28 @@ def test_validate_showcase_run_fails_on_frame_floor_and_missing_anchor(tmp_path:
     assert result.ok is False
     assert any("frame_count below minimum" in err for err in result.errors)
     assert any("missing required anchors" in err for err in result.errors)
+
+
+def test_validate_showcase_run_fails_on_duplicate_replay_command(tmp_path: Path):
+    module = _load_module()
+    final_text = (
+        "❯ replay:config/clibridgereplays/phase4/everythingshowcasev1.jsonl\n"
+        "BreadBoard v0.2.0\n"
+        "Write(hello.c)\n"
+        "Patch(hello.c)\n"
+        "Markdown Showcase\n"
+        "Inline link BreadBoard\n"
+        "ls -la\n"
+        "Cooked for 3s\n"
+        "❯ replay:config/clibridgereplays/phase4/everythingshowcasev1.jsonl\n"
+    )
+    run_dir = _make_run_dir(
+        tmp_path,
+        frame_count=12,
+        final_text=final_text,
+        scenario=module.DEFAULT_SCENARIO_ID,
+    )
+    result = module.validate_showcase_run(run_dir)
+    assert result.ok is False
+    assert result.replay_command_occurrences == 2
+    assert any("replay command occurrence mismatch" in err for err in result.errors)

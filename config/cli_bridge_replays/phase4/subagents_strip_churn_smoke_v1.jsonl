@@ -1,0 +1,17 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): subagents strip churn smoke
+
+{"type":"turn_start","payload":{}}
+{"type":"task_event","payload":{"task_id":"strip-01","status":"running","description":"Index shard 01","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"strip-02","status":"running","description":"Index shard 02","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"strip-03","status":"running","description":"Parse symbols 03","lane_id":"lane-2","lane_label":"Symbols"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"strip-04","status":"running","description":"Run checks 04","lane_id":"lane-3","lane_label":"Checks"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"strip-05","status":"running","description":"Patch file 05","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"strip-06","status":"running","description":"Patch file 06","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"strip-01","status":"complete","description":"Index shard 01","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"strip-02","status":"complete","description":"Index shard 02","lane_id":"lane-1","lane_label":"Indexer"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"strip-03","status":"complete","description":"Parse symbols 03","lane_id":"lane-2","lane_label":"Symbols"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"strip-04","status":"complete","description":"Run checks 04","lane_id":"lane-3","lane_label":"Checks"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"strip-05","status":"complete","description":"Patch file 05","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+{"type":"task_event","payload":{"task_id":"strip-06","status":"complete","description":"Patch file 06","lane_id":"lane-4","lane_label":"Patch"},"delay_ms":20}
+{"type":"assistant_message","payload":{"message_id":"m-strip-churn","text":"Subagent strip churn smoke complete"}}
+{"type":"run_finished","payload":{"eventCount":15,"completed":true,"reason":"replay","logging_dir":null},"delay_ms":1300}

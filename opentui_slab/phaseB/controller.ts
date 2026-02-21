@@ -25,6 +25,16 @@ import {
   healthCheck,
 } from "./bridge.ts"
 import { formatBridgeEventForStdout } from "./format.ts"
+import { formatNormalizedEventForStdout, normalizeBridgeEvent } from "./event_adapter.ts"
+import { resolveCommandTargetSessionId, type SessionNavCommand } from "./session_switch.ts"
+import {
+  appendContextBurstEvent,
+  formatContextBurstBlock,
+  formatContextBurstDetail,
+  formatContextBurstSummary,
+  isContextCollectionEvent,
+  type ContextBurstState,
+} from "./context_burst.ts"
 
 type ParsedArgs = {
   readonly configPath?: string
@@ -283,6 +293,21 @@ const main = async () => {
     { id: "stop_run", title: "Stop run", detail: "Interrupt current run (stop)" },
     { id: "retry_last", title: "Retry", detail: "Restart stream (retry)" },
     { id: "status", title: "Status", detail: "Fetch session status summary" },
+    {
+      id: "session_child_previous",
+      title: "Previous subagent",
+      detail: "Cycle to previous child session (OpenCode parity scaffold)",
+    },
+    {
+      id: "session_child_next",
+      title: "Next subagent",
+      detail: "Cycle to next child session (OpenCode parity scaffold)",
+    },
+    {
+      id: "session_parent",
+      title: "Parent session",
+      detail: "Jump to parent session (OpenCode parity scaffold)",
+    },
     { id: "save_transcript", title: "Save transcript", detail: "Write buffered transcript to artifacts" },
     ...(debugFakePermission
       ? ([{ id: "debug_permission", title: "Debug permission", detail: "Inject a fake permission request" }] satisfies ReadonlyArray<PaletteItem>)
@@ -648,7 +673,58 @@ const main = async () => {
   }
 
   let sseAbort: AbortController | null = null
+  let contextBurst: ContextBurstState | null = null
   let stopResolve: (() => void) | null = null
+  const flushContextBurst = () => {
+    if (!contextBurst) return
+    const summaryLine = formatContextBurstSummary(contextBurst)
+    const detail = formatContextBurstDetail(contextBurst)
+    const groupedBlock = formatContextBurstBlock(contextBurst)
+    appendTranscriptChunk(groupedBlock)
+    sendToUi(
+      nowEnvelope("ctrl.event", {
+        event: {
+          type: "context_burst",
+          count: contextBurst.count,
+          tool_counts: contextBurst.toolCounts,
+          failed_count: contextBurst.failedCount,
+        },
+        adapter_output: {
+          stdout_text: groupedBlock,
+          summary_text: summaryLine.replace(/\n/g, " ").trim(),
+          normalized_event: {
+            type: "context.burst",
+            count: contextBurst.count,
+            toolCounts: contextBurst.toolCounts,
+            failedCount: contextBurst.failedCount,
+            summary: summaryLine.replace(/\n/g, " ").trim(),
+            detail,
+            entries: contextBurst.entries,
+          },
+          context_block: {
+            summary: summaryLine.replace(/\n/g, " ").trim(),
+            detail,
+            block_text: groupedBlock.trim(),
+            entries: contextBurst.entries,
+          },
+          hints: {
+            lane: "tool",
+            badge: "context",
+            tone: contextBurst.failedCount > 0 ? "warning" : "info",
+            priority: "normal",
+            stream: false,
+          },
+          tool_render: {
+            mode: "compact",
+            reason: "context-burst-grouped",
+          },
+          overlay_intent: null,
+        },
+      }),
+    )
+    contextBurst = null
+  }
+
   const startSse = async (sessionId: string) => {
     if (!bridge) return
     if (sseAbort) {
@@ -670,8 +746,50 @@ const main = async () => {
   }
 
   const handleBridgeEvent = (evt: BridgeEvent) => {
-    sendToUi(nowEnvelope("ctrl.event", { event: evt as unknown as Record<string, unknown> }))
-    const rendered = formatBridgeEventForStdout(evt as unknown as Record<string, unknown>)
+    const rawEvent = evt as unknown as Record<string, unknown>
+    const normalized = normalizeBridgeEvent(evt)
+    const isContextEvent = isContextCollectionEvent(normalized)
+
+    if (isContextEvent) {
+      contextBurst = appendContextBurstEvent(contextBurst, normalized)
+    } else if (contextBurst) {
+      flushContextBurst()
+    }
+
+    const rendered = isContextEvent
+      ? null
+      : formatNormalizedEventForStdout(normalized) ?? formatBridgeEventForStdout(rawEvent)
+    sendToUi(
+      nowEnvelope("ctrl.event", {
+        event: rawEvent,
+        adapter_output: {
+          stdout_text: rendered ?? null,
+          summary_text: normalized.summary.short,
+          normalized_event: normalized as unknown as Record<string, unknown>,
+          hints: {
+            lane: normalized.hints.lane,
+            badge: normalized.hints.badge,
+            tone: normalized.hints.tone,
+            priority: normalized.hints.priority,
+            stream: normalized.hints.stream,
+          },
+          tool_render: normalized.toolRenderPolicy
+            ? {
+                mode: normalized.toolRenderPolicy.mode,
+                reason: normalized.toolRenderPolicy.reason,
+              }
+            : null,
+          overlay_intent: normalized.overlayIntent
+            ? {
+                kind: normalized.overlayIntent.kind,
+                action: normalized.overlayIntent.action,
+                requestId: normalized.overlayIntent.requestId ?? null,
+                taskId: normalized.overlayIntent.taskId ?? null,
+              }
+            : null,
+        },
+      }),
+    )
     if (rendered) appendTranscriptChunk(rendered)
     if (evt.type === "permission_request") {
       const requestId =
@@ -699,6 +817,7 @@ const main = async () => {
       }
     }
     if (evt.type === "run_finished") {
+      flushContextBurst()
       state.status = "idle"
       sendState()
     }
@@ -857,6 +976,46 @@ const main = async () => {
         state.currentModel = model
         sendState()
         sendTranscript(`\n[command] set_model ${model}\n`)
+        return
+      }
+      if (name === "session_child_next" || name === "session_child_previous" || name === "session_parent") {
+        if (!bridge) throw new Error("bridge missing")
+        if (!state.activeSessionId) throw new Error("no active session")
+        const bridgeCommand: SessionNavCommand =
+          name === "session_child_next"
+            ? "session_child_next"
+            : name === "session_child_previous"
+              ? "session_child_previous"
+              : "session_parent"
+        const maybeChild = String((msg.payload as any).args?.child_session_id ?? "").trim()
+        const maybeParent = String((msg.payload as any).args?.parent_session_id ?? "").trim()
+        const payload =
+          maybeChild || maybeParent
+            ? ({
+                child_session_id: maybeChild || null,
+                parent_session_id: maybeParent || null,
+              } satisfies Record<string, unknown>)
+            : null
+        try {
+          const response = await postCommand(bridge.baseUrl, state.activeSessionId, {
+            command: bridgeCommand,
+            payload,
+          })
+          const targetSessionId = resolveCommandTargetSessionId(bridgeCommand, response.detail ?? null)
+          const previousSessionId = state.activeSessionId
+          if (targetSessionId && targetSessionId !== previousSessionId) {
+            state.activeSessionId = targetSessionId
+            sendState()
+            await startSse(targetSessionId)
+            sendTranscript(`\n[session] switched ${previousSessionId} -> ${targetSessionId}\n`)
+          }
+          sendTranscript(
+            `\n[command] ${bridgeCommand}${payload ? ` child=${maybeChild || "-"} parent=${maybeParent || "-"}` : ""}\n`,
+          )
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error)
+          sendTranscript(`\n[command] ${bridgeCommand} unavailable (${detail})\n`)
+        }
       }
       return
     }
@@ -864,6 +1023,9 @@ const main = async () => {
 
   const shutdown = async (reason: string) => {
     shuttingDown = true
+    if (contextBurst) {
+      flushContextBurst()
+    }
     state.status = "stopped"
     sendToUi(nowEnvelope("ctrl.shutdown", { reason }))
     sendState()
@@ -915,4 +1077,3 @@ const main = async () => {
 }
 
 await main()
-

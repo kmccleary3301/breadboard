@@ -32,7 +32,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, TextIO
+from typing import Any, Optional, TextIO
 
 from tmux_capture_time import run_timestamp
 from tmux_capture_render_profile import (
@@ -67,6 +67,7 @@ class CaptureConfig:
     fullpane_start_markers: tuple[str, ...]
     fullpane_max_lines: int
     fullpane_render_max_rows: int
+    fullpane_png_source: str
     render_profile: str
 
 
@@ -84,6 +85,31 @@ def tmux_base_args(socket_name: str) -> list[str]:
     if not socket_name:
         return ["tmux"]
     return ["tmux", "-L", socket_name]
+
+
+def trim_fullpane_from_markers(
+    ansi: str,
+    txt: str,
+    start_markers: tuple[str, ...],
+    max_lines: int,
+) -> tuple[str, str]:
+    txt_lines = txt.splitlines()
+    ansi_lines = ansi.splitlines()
+    start_idx = 0
+    # Prefer the last marker to avoid duplicate transcript windows after full-screen redraws.
+    for i, line in enumerate(txt_lines):
+        lowered = line.lower()
+        if any(marker.lower() in lowered for marker in start_markers if marker):
+            start_idx = i
+    txt_lines = txt_lines[start_idx:]
+    if start_idx < len(ansi_lines):
+        ansi_lines = ansi_lines[start_idx:]
+    if max_lines > 0:
+        txt_lines = txt_lines[-max_lines:]
+        ansi_lines = ansi_lines[-max_lines:]
+    trimmed_txt = "\n".join(txt_lines)
+    trimmed_ansi = "\n".join(ansi_lines)
+    return trimmed_ansi, trimmed_txt
 
 
 def run_tmux(cmd: list[str], socket_name: str) -> str:
@@ -156,25 +182,6 @@ def capture_raw(
         lowered = text.lower()
         return any(marker.lower() in lowered for marker in fullpane_start_markers if marker)
 
-    def _trim_fullpane(ansi: str, txt: str) -> tuple[str, str]:
-        txt_lines = txt.splitlines()
-        ansi_lines = ansi.splitlines()
-        start_idx = 0
-        for i, line in enumerate(txt_lines):
-            lowered = line.lower()
-            if any(marker.lower() in lowered for marker in fullpane_start_markers if marker):
-                start_idx = i
-                break
-        txt_lines = txt_lines[start_idx:]
-        if start_idx < len(ansi_lines):
-            ansi_lines = ansi_lines[start_idx:]
-        if fullpane_max_lines > 0:
-            txt_lines = txt_lines[-fullpane_max_lines:]
-            ansi_lines = ansi_lines[-fullpane_max_lines:]
-        trimmed_txt = "\n".join(txt_lines)
-        trimmed_ansi = "\n".join(ansi_lines)
-        return trimmed_ansi, trimmed_txt
-
     def _capture_one(
         alternate: bool,
         *,
@@ -194,7 +201,7 @@ def capture_raw(
                 args_ansi = ["capture-pane"]
                 if a:
                     args_ansi.append(a)
-                args_ansi += ["-e", "-p"]
+                args_ansi += ["-e", "-N", "-p"]
                 if capture_start is not None:
                     args_ansi += ["-S", capture_start]
                 if capture_end is not None:
@@ -205,7 +212,7 @@ def capture_raw(
                 args_txt = ["capture-pane"]
                 if a:
                     args_txt.append(a)
-                args_txt += ["-p"]
+                args_txt += ["-N", "-p"]
                 if capture_start is not None:
                     args_txt += ["-S", capture_start]
                 if capture_end is not None:
@@ -217,13 +224,13 @@ def capture_raw(
             args_ansi = ["capture-pane"]
             if a:
                 args_ansi.append(a)
-            args_ansi += ["-e", "-p", "-t", target]
+            args_ansi += ["-e", "-N", "-p", "-t", target]
             ansi_out = run_tmux(args_ansi, socket_name)
 
             args_txt = ["capture-pane"]
             if a:
                 args_txt.append(a)
-            args_txt += ["-p", "-t", target]
+            args_txt += ["-N", "-p", "-t", target]
             txt_out = run_tmux(args_txt, socket_name)
             return ansi_out, txt_out
         except subprocess.CalledProcessError as exc:
@@ -259,7 +266,12 @@ def capture_raw(
                 selected_ansi, selected_txt = full_ansi_alt, full_txt_alt
             elif _non_ws_count(full_txt_alt) > _non_ws_count(full_txt_norm):
                 selected_ansi, selected_txt = full_ansi_alt, full_txt_alt
-        return _trim_fullpane(selected_ansi, selected_txt)
+        return trim_fullpane_from_markers(
+            selected_ansi,
+            selected_txt,
+            fullpane_start_markers,
+            fullpane_max_lines,
+        )
 
     # Prefer whichever buffer looks like an interactive prompt/ready UI; otherwise prefer the
     # buffer with more content. This makes Ink/alternate-screen TUIs capturable while keeping
@@ -336,6 +348,8 @@ def render_png(
     rows: int,
     script_dir: Path,
     render_profile: str,
+    *,
+    snapshot: bool,
 ) -> None:
     cmd = [
         sys.executable,
@@ -346,13 +360,84 @@ def render_png(
         str(cols),
         "--rows",
         str(rows),
-        "--snapshot",
         "--render-profile",
         render_profile,
         "--out",
         str(png_path),
     ]
+    if snapshot:
+        cmd.append("--snapshot")
     subprocess.run(cmd, check=True)
+
+
+def load_render_lock_quick_metrics(render_lock_path: Path) -> dict[str, int] | None:
+    if not render_lock_path.exists():
+        return None
+    try:
+        payload = json.loads(render_lock_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    row_occupancy = payload.get("row_occupancy")
+    if not isinstance(row_occupancy, dict):
+        return None
+    try:
+        return {
+            "missing_count": int(row_occupancy.get("missing_count", 0)),
+            "extra_count": int(row_occupancy.get("extra_count", 0)),
+            "row_span_delta": int(row_occupancy.get("row_span_delta", 0)),
+        }
+    except Exception:
+        return None
+
+
+def load_row_parity_summary_quick_metrics(row_parity_summary_path: Path) -> dict[str, int] | None:
+    if not row_parity_summary_path.exists():
+        return None
+    try:
+        payload = json.loads(row_parity_summary_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    parity = payload.get("parity")
+    if not isinstance(parity, dict):
+        return None
+    try:
+        return {
+            "missing_count": int(parity.get("missing_count", 0)),
+            "extra_count": int(parity.get("extra_count", 0)),
+            "row_span_delta": int(parity.get("row_span_delta", 0)),
+        }
+    except Exception:
+        return None
+
+
+def resolve_png_render_geometry(
+    *,
+    capture_mode: str,
+    viewport_rows: int,
+    frame_line_count: int,
+    fullpane_render_max_rows: int,
+) -> tuple[int, bool]:
+    """
+    Decide PNG render rows + snapshot mode.
+
+    For fullpane captures, default PNGs should reflect terminal viewport behavior
+    (fixed height, latest rows), not an ever-growing transcript canvas.
+    """
+    rows_for_render = max(1, int(viewport_rows))
+    snapshot = True
+
+    if capture_mode == "fullpane":
+        # Render latest window for fullpane by default; avoid giant blank canvases.
+        snapshot = False
+        if fullpane_render_max_rows > 0:
+            expanded_rows = max(rows_for_render, max(1, int(frame_line_count)))
+            rows_for_render = min(expanded_rows, max(1, int(fullpane_render_max_rows)))
+
+    return rows_for_render, snapshot
 
 
 def parse_args() -> CaptureConfig:
@@ -403,7 +488,7 @@ def parse_args() -> CaptureConfig:
         default="BreadBoard v,No conversation yet",
         help=(
             "comma-separated start markers for --capture-mode fullpane; capture starts "
-            "at first matching line and includes everything through current bottom"
+            "at the last matching line and includes everything through current bottom"
         ),
     )
     parser.add_argument(
@@ -416,7 +501,16 @@ def parse_args() -> CaptureConfig:
         "--fullpane-render-max-rows",
         type=int,
         default=0,
-        help="optional max rendered PNG rows for fullpane captures (0 = unlimited)",
+        help="optional max rendered PNG rows for fullpane captures (0 = viewport rows)",
+    )
+    parser.add_argument(
+        "--fullpane-png-source",
+        choices=("fullpane", "pane"),
+        default="pane",
+        help=(
+            "for --capture-mode fullpane, select PNG source buffer: "
+            "pane=live visible pane (recommended), fullpane=trimmed full-buffer frame"
+        ),
     )
     parser.add_argument(
         "--render-profile",
@@ -470,7 +564,7 @@ def parse_args() -> CaptureConfig:
 
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent
-    default_out = repo_root.parent / "docs_tmp" / "tmux_captures"
+    default_out = repo_root / "docs_tmp" / "tmux_captures"
     out_root = Path(args.out_root).expanduser() if args.out_root else default_out
 
     capture_mode = "scrollback" if args.scrollback else args.capture_mode
@@ -501,6 +595,7 @@ def parse_args() -> CaptureConfig:
         fullpane_start_markers=tuple(token.strip() for token in str(args.fullpane_start_markers).split(",") if token.strip()),
         fullpane_max_lines=max(0, int(args.fullpane_max_lines)),
         fullpane_render_max_rows=max(0, int(args.fullpane_render_max_rows)),
+        fullpane_png_source=str(args.fullpane_png_source),
         render_profile=str(render_profile),
     )
 
@@ -602,6 +697,7 @@ def main() -> None:
         "fullpane_start_markers": list(config.fullpane_start_markers),
         "fullpane_max_lines": config.fullpane_max_lines,
         "fullpane_render_max_rows": config.fullpane_render_max_rows,
+        "fullpane_png_source": config.fullpane_png_source,
         "render_profile": config.render_profile,
         "started_at": ts,
     }
@@ -663,15 +759,60 @@ def main() -> None:
             fullpane_max_lines=config.fullpane_max_lines,
         )
         if config.render_png:
-            rows_for_render = rows
-            if config.capture_mode == "fullpane":
-                frame_line_count = max(1, len(txt_path.read_text(encoding="utf-8", errors="replace").splitlines()))
-                rows_for_render = max(rows, frame_line_count)
-                if config.fullpane_render_max_rows > 0:
-                    rows_for_render = min(rows_for_render, config.fullpane_render_max_rows)
-            render_png(ansi_path, png_path, cols, rows_for_render, script_dir, config.render_profile)
+            png_source_mode = config.capture_mode
+            png_ansi_path = ansi_path
+            png_txt_path = txt_path
+            if config.capture_mode == "fullpane" and config.fullpane_png_source == "pane":
+                # Render from the live visible pane to avoid full-buffer history deadspace.
+                png_source_mode = "pane"
+                png_ansi_path = frames_dir / f"{frame_id}.render_pane.ansi"
+                png_txt_path = frames_dir / f"{frame_id}.render_pane.txt"
+                capture_pane(
+                    config.target,
+                    config.tmux_socket,
+                    "pane",
+                    config.tail_lines,
+                    png_ansi_path,
+                    png_txt_path,
+                    config.settle_ms,
+                    config.settle_attempts,
+                    buffer_suffix=f"{run_folder}_{frame_id}_render_pane",
+                    fullpane_start_markers=config.fullpane_start_markers,
+                    fullpane_max_lines=config.fullpane_max_lines,
+                )
 
-        record = {
+            frame_line_count = max(1, len(png_txt_path.read_text(encoding="utf-8", errors="replace").splitlines()))
+            rows_for_render, snapshot_mode = resolve_png_render_geometry(
+                capture_mode=png_source_mode,
+                viewport_rows=rows,
+                frame_line_count=frame_line_count,
+                fullpane_render_max_rows=config.fullpane_render_max_rows,
+            )
+            render_png(
+                png_ansi_path,
+                png_path,
+                cols,
+                rows_for_render,
+                script_dir,
+                config.render_profile,
+                snapshot=snapshot_mode,
+            )
+
+        render_lock_rel: str | None = None
+        render_parity_summary_rel: str | None = None
+        render_parity_quick: dict[str, int] | None = None
+        if config.render_png:
+            render_lock_path = png_path.with_suffix(".render_lock.json")
+            if render_lock_path.exists():
+                render_lock_rel = str(render_lock_path.relative_to(run_dir))
+            row_parity_summary_path = png_path.with_suffix(".row_parity.json")
+            if row_parity_summary_path.exists():
+                render_parity_summary_rel = str(row_parity_summary_path.relative_to(run_dir))
+                render_parity_quick = load_row_parity_summary_quick_metrics(row_parity_summary_path)
+            if render_parity_quick is None and render_lock_path.exists():
+                render_parity_quick = load_render_lock_quick_metrics(render_lock_path)
+
+        record: dict[str, Any] = {
             "frame": i,
             "timestamp": time.time(),
             "cols": cols,
@@ -679,6 +820,9 @@ def main() -> None:
             "ansi": str(ansi_path.relative_to(run_dir)),
             "text": str(txt_path.relative_to(run_dir)),
             "png": str(png_path.relative_to(run_dir)) if config.render_png else None,
+            "render_lock": render_lock_rel,
+            "render_parity_summary": render_parity_summary_rel,
+            "render_parity": render_parity_quick,
         }
         index_file.write(json.dumps(record) + "\n")
         index_file.flush()
@@ -707,7 +851,15 @@ def main() -> None:
         )
         if config.render_png:
             # Keep final-tail PNG at viewport dimensions for quick visual review.
-            render_png(final_tail_ansi, final_tail_png, cols, rows, script_dir, config.render_profile)
+            render_png(
+                final_tail_ansi,
+                final_tail_png,
+                cols,
+                rows,
+                script_dir,
+                config.render_profile,
+                snapshot=True,
+            )
 
     print(f"[tmux-capture] wrote {i} frames -> {run_dir}")
 

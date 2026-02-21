@@ -1,0 +1,9 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): permission flow smoke
+
+{"type":"turn_start","payload":{}}
+{"type":"assistant_message","payload":{"message_id":"m-perm-01","text":"permission request: allow bash ls -la?"},"delay_ms":40}
+{"type":"assistant_message","payload":{"message_id":"m-perm-02","text":"permission approved by operator"},"delay_ms":40}
+{"type":"tool_call","payload":{"call":{"id":"perm-tool-01","name":"bash","arguments":{"command":"ls -la"}}},"delay_ms":25}
+{"type":"tool_result","payload":{"result":{"id":"perm-tool-01","name":"bash","ok":true,"summary":"command completed after permission approval"}},"delay_ms":25}
+{"type":"assistant_message","payload":{"message_id":"m-perm-03","text":"Permission flow smoke complete"}}
+{"type":"run_finished","payload":{"eventCount":7,"completed":true,"reason":"replay","logging_dir":null},"delay_ms":1400}

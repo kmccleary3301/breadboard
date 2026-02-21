@@ -1,0 +1,10 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): thinking preview smoke
+#
+# Goal: exercise thinking preview open -> close -> expire lifecycle around a streamed response.
+
+{"type":"turn_start","payload":{"turn":1},"delay_ms":20}
+{"type":"assistant.thought_summary.delta","payload":{"delta":"scan project layout\nidentify target file\nprepare patch plan"},"delay_ms":40}
+{"type":"assistant.message.start","payload":{"message_id":"m-thinking-1"},"delay_ms":700}
+{"type":"assistant.message.delta","payload":{"message_id":"m-thinking-1","delta":"Done. I implemented the requested update.\n"},"delay_ms":50}
+{"type":"assistant.message.end","payload":{"message_id":"m-thinking-1"},"delay_ms":20}
+{"type":"completion","payload":{"completed":true,"summary":{"completed":true,"reason":"replay"}},"delay_ms":2200}

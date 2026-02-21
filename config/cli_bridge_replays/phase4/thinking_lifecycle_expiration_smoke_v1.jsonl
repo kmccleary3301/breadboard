@@ -1,0 +1,11 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): thinking lifecycle expiration smoke
+#
+# Goal: ensure thinking preview opens from summary signal, closes on response start, and expires cleanly.
+
+{"type":"turn_start","payload":{}}
+{"type":"assistant.thought_summary.delta","payload":{"delta":"Plan: update module, run checks, report."},"delay_ms":50}
+{"type":"assistant.message.start","payload":{},"delay_ms":700}
+{"type":"assistant.message.delta","payload":{"delta":"Update completed and validated."},"delay_ms":40}
+{"type":"assistant.message.end","payload":{}}
+{"type":"completion","payload":{"summary":{"completed":true,"reason":"thinking-lifecycle-expiration"}}}
+{"type":"run_finished","payload":{"eventCount":7,"completed":true,"reason":"replay","logging_dir":null},"delay_ms":1400}

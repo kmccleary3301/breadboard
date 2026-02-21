@@ -1,0 +1,9 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): background cancel semantics smoke
+
+{"type":"turn_start","payload":{}}
+{"type":"task_event","payload":{"task_id":"bg-01","status":"running","description":"Background compile run","lane_id":"lane-bg","lane_label":"Background"},"delay_ms":30}
+{"type":"assistant_message","payload":{"message_id":"m-bg-01","text":"background task started"},"delay_ms":30}
+{"type":"task_event","payload":{"task_id":"bg-01","status":"cancelled","description":"Background compile run cancelled","lane_id":"lane-bg","lane_label":"Background"},"delay_ms":30}
+{"type":"assistant_message","payload":{"message_id":"m-bg-02","text":"cancel acknowledged"},"delay_ms":30}
+{"type":"assistant_message","payload":{"message_id":"m-bg-03","text":"Background cancel semantics smoke complete"}}
+{"type":"run_finished","payload":{"eventCount":7,"completed":true,"reason":"replay","logging_dir":null},"delay_ms":1400}

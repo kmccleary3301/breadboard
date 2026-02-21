@@ -1,0 +1,102 @@
+[
+  {
+    "type": "startup_preflight",
+    "timeout": 30,
+    "interval": 0.3,
+    "ready_tokens": ["for shortcuts"],
+    "kick_keys": ["Escape"],
+    "kick_every_polls": 1
+  },
+  {
+    "type": "send",
+    "text": "replay:config/cli_bridge_replays/phase4/everything_showcase_v1.jsonl",
+    "submit": true,
+    "clear_first": true,
+    "clear_mode": "ctrl_u"
+  },
+  {
+    "type": "wait_until",
+    "contains": ["Markdown Showcase"],
+    "timeout": 35
+  },
+  {
+    "type": "resize",
+    "scope": "window",
+    "cols": 140,
+    "rows": 40,
+    "assert_size": true,
+    "wait_after": 0.2
+  },
+  {
+    "type": "resize",
+    "scope": "window",
+    "cols": 120,
+    "rows": 34,
+    "assert_size": true,
+    "wait_after": 0.2
+  },
+  {
+    "type": "resize",
+    "scope": "window",
+    "cols": 160,
+    "rows": 45,
+    "assert_size": true,
+    "wait_after": 0.2
+  },
+  {
+    "type": "resize",
+    "scope": "window",
+    "cols": 132,
+    "rows": 38,
+    "assert_size": true,
+    "wait_after": 0.2
+  },
+  {
+    "type": "resize",
+    "scope": "window",
+    "cols": 160,
+    "rows": 45,
+    "assert_size": true,
+    "wait_after": 0.2
+  },
+  {
+    "type": "resize",
+    "scope": "window",
+    "cols": 110,
+    "rows": 30,
+    "assert_size": true,
+    "wait_after": 0.2
+  },
+  {
+    "type": "resize",
+    "scope": "window",
+    "cols": 150,
+    "rows": 42,
+    "assert_size": true,
+    "wait_after": 0.2
+  },
+  {
+    "type": "resize",
+    "scope": "window",
+    "cols": 160,
+    "rows": 45,
+    "assert_size": true,
+    "wait_after": 0.2
+  },
+  {
+    "type": "wait_for_quiet",
+    "quiet_seconds": 1.5,
+    "timeout": 60,
+    "must_contain": ["Markdown Showcase", "Patched.", "Try \"fix typecheck errors\"", "? for shortcuts"],
+    "must_not_contain": [
+      "[error] replay fixture not found",
+      "Cannot read properties of undefined (reading 'length')",
+      "buildModalStack.tsx:1084",
+      "UnhandledPromiseRejection",
+      "[phase4 replay target exited]",
+      "[phase4 replay target] cli_bridge health check failed"
+    ],
+    "semantic_timeout": 10,
+    "semantic_fail_fast": true
+  }
+]

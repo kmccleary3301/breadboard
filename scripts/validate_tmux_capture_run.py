@@ -78,6 +78,8 @@ class ValidationResult:
     run_dir: str
     frame_count: int
     missing_files_count: int
+    render_lock_missing_count: int
+    render_parity_violation_count: int
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -88,6 +90,8 @@ class ValidationResult:
             "run_dir": self.run_dir,
             "frame_count": self.frame_count,
             "missing_files_count": self.missing_files_count,
+            "render_lock_missing_count": self.render_lock_missing_count,
+            "render_parity_violation_count": self.render_parity_violation_count,
         }
 
 
@@ -98,6 +102,10 @@ def validate_run_dir(
     expect_png: bool | None,
     max_missing_frames: int,
 ) -> ValidationResult:
+    max_missing_text_rows = 0
+    max_extra_render_rows = 0
+    max_row_span_delta = 2
+
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -172,6 +180,8 @@ def validate_run_dir(
             expect_png = any(rec.get("png") for rec in index_records)
 
     missing_files = 0
+    render_lock_missing = 0
+    render_parity_violations = 0
     frames: list[int] = []
     last_frame = 0
     for rec in index_records:
@@ -204,6 +214,137 @@ def validate_run_dir(
                 if not png_path.exists():
                     missing_files += 1
                     err(f"missing png file for frame {frame}: {png_path}")
+                render_lock_rel = rec.get("render_lock")
+                if not isinstance(render_lock_rel, str) or not render_lock_rel:
+                    render_lock_rel = str(Path(png_rel).with_suffix(".render_lock.json"))
+                render_lock_path = run_dir / render_lock_rel
+                lock_row_occupancy: dict[str, Any] | None = None
+                if not render_lock_path.exists():
+                    render_lock_missing += 1
+                    (err if strict else warn)(
+                        f"missing render_lock sidecar for frame {frame}: {render_lock_path}"
+                    )
+                else:
+                    try:
+                        payload = _load_json(render_lock_path, f"render_lock[{frame}]")
+                    except Exception as exc:
+                        render_parity_violations += 1
+                        (err if strict else warn)(str(exc))
+                        payload = {}
+                    schema_version = payload.get("schema_version")
+                    if schema_version != "tmux_render_lock_frame_v1":
+                        render_parity_violations += 1
+                        (err if strict else warn)(
+                            f"unexpected render_lock schema for frame {frame}: {schema_version!r}"
+                        )
+                    row_occupancy = payload.get("row_occupancy")
+                    if not isinstance(row_occupancy, dict):
+                        render_parity_violations += 1
+                        (err if strict else warn)(
+                            f"render_lock missing row_occupancy object for frame {frame}: {render_lock_path}"
+                        )
+                    else:
+                        lock_row_occupancy = row_occupancy
+                        if not isinstance(row_occupancy.get("text_sha256_normalized"), str) or not row_occupancy.get("text_sha256_normalized"):
+                            render_parity_violations += 1
+                            (err if strict else warn)(
+                                f"render_lock missing text_sha256_normalized for frame {frame}: {render_lock_path}"
+                            )
+                        try:
+                            missing_count = int(row_occupancy.get("missing_count", 0))
+                            extra_count = int(row_occupancy.get("extra_count", 0))
+                            row_span_delta = int(row_occupancy.get("row_span_delta", 0))
+                        except Exception:
+                            render_parity_violations += 1
+                            (err if strict else warn)(
+                                f"render_lock has non-integer parity fields for frame {frame}: {render_lock_path}"
+                            )
+                        else:
+                            exceeds = (
+                                missing_count > max_missing_text_rows
+                                or extra_count > max_extra_render_rows
+                                or row_span_delta > max_row_span_delta
+                            )
+                            if exceeds:
+                                render_parity_violations += 1
+                                (err if strict else warn)(
+                                    "render parity out of bounds for frame "
+                                    f"{frame}: missing={missing_count} extra={extra_count} "
+                                    f"row_span_delta={row_span_delta} (limits missing<={max_missing_text_rows}, "
+                                    f"extra<={max_extra_render_rows}, row_span_delta<={max_row_span_delta})"
+                                )
+
+                row_parity_rel = rec.get("render_parity_summary")
+                if not isinstance(row_parity_rel, str) or not row_parity_rel:
+                    row_parity_rel = str(Path(png_rel).with_suffix(".row_parity.json"))
+                row_parity_path = run_dir / row_parity_rel
+                if row_parity_path.exists():
+                    try:
+                        row_parity_payload = _load_json(row_parity_path, f"row_parity[{frame}]")
+                    except Exception as exc:
+                        render_parity_violations += 1
+                        (err if strict else warn)(str(exc))
+                        row_parity_payload = {}
+                    row_schema = row_parity_payload.get("schema_version")
+                    if row_schema != "tmux_row_parity_summary_v1":
+                        render_parity_violations += 1
+                        (err if strict else warn)(
+                            f"unexpected row parity schema for frame {frame}: {row_schema!r}"
+                        )
+                    parity = row_parity_payload.get("parity")
+                    if not isinstance(parity, dict):
+                        render_parity_violations += 1
+                        (err if strict else warn)(
+                            f"row parity summary missing parity object for frame {frame}: {row_parity_path}"
+                        )
+                    else:
+                        try:
+                            missing_count = int(parity.get("missing_count", 0))
+                            extra_count = int(parity.get("extra_count", 0))
+                            row_span_delta = int(parity.get("row_span_delta", 0))
+                        except Exception:
+                            render_parity_violations += 1
+                            (err if strict else warn)(
+                                f"row parity summary has non-integer fields for frame {frame}: {row_parity_path}"
+                            )
+                        else:
+                            exceeds = (
+                                missing_count > max_missing_text_rows
+                                or extra_count > max_extra_render_rows
+                                or row_span_delta > max_row_span_delta
+                            )
+                            if exceeds:
+                                render_parity_violations += 1
+                                (err if strict else warn)(
+                                    "row parity summary out of bounds for frame "
+                                    f"{frame}: missing={missing_count} extra={extra_count} "
+                                    f"row_span_delta={row_span_delta} (limits missing<={max_missing_text_rows}, "
+                                    f"extra<={max_extra_render_rows}, row_span_delta<={max_row_span_delta})"
+                                )
+                            quick = rec.get("render_parity")
+                            if isinstance(quick, dict):
+                                q_missing = int(quick.get("missing_count", 0) or 0)
+                                q_extra = int(quick.get("extra_count", 0) or 0)
+                                q_span = int(quick.get("row_span_delta", 0) or 0)
+                                if (
+                                    q_missing != missing_count
+                                    or q_extra != extra_count
+                                    or q_span != row_span_delta
+                                ):
+                                    render_parity_violations += 1
+                                    (err if strict else warn)(
+                                        "index render_parity mismatch vs row parity summary for frame "
+                                        f"{frame}: index=({q_missing},{q_extra},{q_span}) "
+                                        f"summary=({missing_count},{extra_count},{row_span_delta})"
+                                    )
+
+                        if lock_row_occupancy is not None:
+                            for key in ("missing_count", "extra_count", "row_span_delta", "text_sha256_normalized"):
+                                if key in parity and lock_row_occupancy.get(key) != parity.get(key):
+                                    render_parity_violations += 1
+                                    (err if strict else warn)(
+                                        f"render_lock vs row parity summary mismatch for frame {frame}: key={key}"
+                                    )
 
     # Detect "holes" in the index frame range.
     if frames:
@@ -224,6 +365,8 @@ def validate_run_dir(
         run_dir=str(run_dir),
         frame_count=len(frames),
         missing_files_count=missing_files,
+        render_lock_missing_count=render_lock_missing,
+        render_parity_violation_count=render_parity_violations,
     )
 
 
@@ -248,6 +391,8 @@ def write_md(path: Path, result: ValidationResult) -> None:
     lines.append(f"- run_dir: `{result.run_dir}`")
     lines.append(f"- frame_count: `{result.frame_count}`")
     lines.append(f"- missing_files_count: `{result.missing_files_count}`")
+    lines.append(f"- render_lock_missing_count: `{result.render_lock_missing_count}`")
+    lines.append(f"- render_parity_violation_count: `{result.render_parity_violation_count}`")
     if result.errors:
         lines.append("")
         lines.append("## Errors")
@@ -299,4 +444,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

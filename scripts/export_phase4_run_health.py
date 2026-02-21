@@ -114,9 +114,12 @@ def _is_zero_or_none(value: int | None) -> bool:
 
 
 def build_health(args: argparse.Namespace) -> dict[str, Any]:
+    text_contract_rc_raw = getattr(args, "text_contract_rc", "")
+    text_contract_report_raw = str(getattr(args, "text_contract_report", "") or "").strip()
     rc = {
         "scenario_rc": _coerce_int(args.scenario_rc),
         "validation_rc": _coerce_int(args.validation_rc),
+        "text_contract_rc": _coerce_int(text_contract_rc_raw),
         "pack_rc": _coerce_int(args.pack_rc),
         "pack_schema_rc": _coerce_int(args.pack_schema_rc),
     }
@@ -129,14 +132,16 @@ def build_health(args: argparse.Namespace) -> dict[str, Any]:
     }
 
     pack = _pack_health(args.pack_dir)
+    text_contract_report = _load_json(Path(text_contract_report_raw).expanduser().resolve()) if text_contract_report_raw else None
 
     lane_presence_ok = all(bool(lanes[name]["present"]) for name in LANES)
     rc_ok = all(_is_zero_or_none(v) for v in rc.values())
     pack_ok = (pack["schema_ok"] is not False) and (
         not pack["present"] or (pack["index_exists"] and pack["manifest_exists"])
     )
+    text_contract_ok = (text_contract_report is None) or bool(text_contract_report.get("overall_ok"))
 
-    overall_ok = bool(lane_presence_ok and rc_ok and pack_ok)
+    overall_ok = bool(lane_presence_ok and rc_ok and pack_ok and text_contract_ok)
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -146,6 +151,13 @@ def build_health(args: argparse.Namespace) -> dict[str, Any]:
         "rc": rc,
         "lanes": lanes,
         "pack": pack,
+        "text_contract": {
+            "report_path": text_contract_report_raw,
+            "present": text_contract_report is not None,
+            "overall_ok": (None if text_contract_report is None else bool(text_contract_report.get("overall_ok"))),
+            "total_runs": (None if text_contract_report is None else text_contract_report.get("total_runs")),
+            "unmapped_count": (None if text_contract_report is None else text_contract_report.get("unmapped_count")),
+        },
     }
 
 
@@ -159,8 +171,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--pack-dir", default="")
     p.add_argument("--scenario-rc", default="")
     p.add_argument("--validation-rc", default="")
+    p.add_argument("--text-contract-rc", default="")
     p.add_argument("--pack-rc", default="")
     p.add_argument("--pack-schema-rc", default="")
+    p.add_argument("--text-contract-report", default="")
     p.add_argument("--output-json", required=True)
     p.add_argument("--strict", action="store_true", help="exit non-zero when overall_ok is false")
     return p.parse_args()

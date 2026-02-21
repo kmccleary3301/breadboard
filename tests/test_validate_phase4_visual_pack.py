@@ -27,6 +27,7 @@ def _touch(p: Path, text: str = "x\n"):
 
 def _make_lane(pack_dir: Path, key: str, scenario: str):
     lane = pack_dir / key
+    diagnostics = lane / "diagnostics"
     _touch(lane / "01_landing.png")
     _touch(lane / "01_landing.txt")
     _touch(lane / "01_landing.ansi")
@@ -39,7 +40,7 @@ def _make_lane(pack_dir: Path, key: str, scenario: str):
     _touch(lane / "04_prev_final.png")
     _touch(lane / "03_final_fit_to_prev.png")
     _touch(lane / "compare_prev_vs_new_side_by_side.png")
-    _touch(lane / "compare_prev_vs_new_diff_heat_x3.png")
+    _touch(diagnostics / "DIAGNOSTIC_compare_prev_vs_new_diff_heat_x3.png")
 
     metrics_path = lane / "compare_prev_vs_new_metrics.json"
     metrics_path.write_text(
@@ -70,7 +71,7 @@ def _make_lane(pack_dir: Path, key: str, scenario: str):
             "prev_final": {"index": 3, "png": f"{key}/04_prev_final.png", "txt": None, "ansi": None},
             "final_fit_to_prev_png": f"{key}/03_final_fit_to_prev.png",
             "compare_side_by_side_png": f"{key}/compare_prev_vs_new_side_by_side.png",
-            "compare_heat_x3_png": f"{key}/compare_prev_vs_new_diff_heat_x3.png",
+            "compare_heat_x3_png": f"{key}/diagnostics/DIAGNOSTIC_compare_prev_vs_new_diff_heat_x3.png",
             "compare_metrics_json": f"{key}/compare_prev_vs_new_metrics.json",
         },
     }
@@ -111,3 +112,30 @@ def test_validate_visual_pack_fails_on_missing_anchor_and_missing_file(tmp_path:
     assert result.ok is False
     assert any("INDEX.md missing required anchor" in err for err in result.errors)
     assert any("todo.active.png" in err for err in result.errors)
+
+
+def test_validate_visual_pack_fails_when_heatmap_not_in_diagnostics(tmp_path: Path):
+    module, pack_dir = _make_pack(tmp_path)
+    manifest_path = pack_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["todo"]["selected"]["compare_heat_x3_png"] = "todo/compare_prev_vs_new_diff_heat_x3.png"
+    _touch(pack_dir / "todo" / "compare_prev_vs_new_diff_heat_x3.png")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    result = module.validate_pack(pack_dir)
+    assert result.ok is False
+    assert any("compare_heat_x3_png must be under diagnostics/" in err for err in result.errors)
+
+
+def test_validate_visual_pack_fails_when_diagnostic_leaks_into_triplet(tmp_path: Path):
+    module, pack_dir = _make_pack(tmp_path)
+    manifest_path = pack_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["subagents"]["selected"]["final"]["png"] = (
+        "subagents/diagnostics/DIAGNOSTIC_compare_prev_vs_new_diff_heat_x3.png"
+    )
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    result = module.validate_pack(pack_dir)
+    assert result.ok is False
+    assert any("diagnostic artifact leaked into review triplet path" in err for err in result.errors)

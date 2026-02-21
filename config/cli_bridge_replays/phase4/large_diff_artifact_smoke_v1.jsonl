@@ -1,0 +1,8 @@
+# Deterministic CLI-bridge replay fixture (Phase 4): large diff artifact smoke
+
+{"type":"turn_start","payload":{"turn":1},"delay_ms":20}
+{"type":"tool_result","payload":{"tool":"apply_patch","status":"ok","error":false,"display":{"title":"Patch(src/main.c)","summary":"Patch 8 lines (artifact)","detail_artifact":{"schema_version":"artifact_ref_v1","id":"artifact-sample-diff","kind":"tool_diff","mime":"text/x-diff","size_bytes":186,"sha256":"b38c95fc829142aab96f8443ab245b9b0c1c7de0f6545b538c0c6bd8f4334f92","storage":"workspace_file","path":"docs_tmp/tui_tool_artifacts/tool_diff/artifact-sample-diff.diff","preview":{"lines":["diff --git a/src/main.c b/src/main.c","@@ -1,3 +1,4 @@","+  printf(\"hello\\\\n\");"],"omitted_lines":5,"note":"Large unified diff exported to artifact."}}}},"delay_ms":50}
+{"type":"assistant.message.start","payload":{"message_id":"m-large-diff-artifact-1"},"delay_ms":80}
+{"type":"assistant.message.delta","payload":{"message_id":"m-large-diff-artifact-1","delta":"Applied patch via artifact-backed diff preview.\n"},"delay_ms":30}
+{"type":"assistant.message.end","payload":{"message_id":"m-large-diff-artifact-1"},"delay_ms":20}
+{"type":"completion","payload":{"completed":true,"summary":{"completed":true,"reason":"replay"}},"delay_ms":120}

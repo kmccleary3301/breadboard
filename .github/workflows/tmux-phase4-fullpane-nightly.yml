@@ -29,6 +29,12 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pillow wcwidth
 
+      - name: Validate tmux scenario action alias parity
+        run: |
+          python scripts/validate_tmux_scenario_action_aliases.py \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --output-json "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/tmux_action_alias_parity_phase4_nightly.json"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -86,10 +92,10 @@ jobs:
             fi
           }
 
-          run_scenario "breadboard_test_ci_phase4_streaming_fullpane:0.0" "phase4_replay/streaming_v1_fullpane_v8" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/streaming_v1.json" "phase4_streaming_fullpane_v8"
-          run_scenario "breadboard_test_ci_phase4_todo_fullpane:0.0" "phase4_replay/todo_preview_v1_fullpane_v7" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/todo_preview_v1.json" "phase4_todo_fullpane_v7"
-          run_scenario "breadboard_test_ci_phase4_subagents_fullpane:0.0" "phase4_replay/subagents_v1_fullpane_v7" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/subagents_v1.json" "phase4_subagents_fullpane_v7"
-          run_scenario "breadboard_test_ci_phase4_everything_fullpane:0.0" "phase4_replay/everything_showcase_v1_fullpane_v1" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/everything_showcase_v1.json" "phase4_everything_fullpane_v1"
+          run_scenario "breadboard_test_ci_phase4_streaming_fullpane:0.0" "phase4_replay/streaming_v1_fullpane_v8" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/streaming_v1.json" "phase4_streaming_fullpane_v8"
+          run_scenario "breadboard_test_ci_phase4_todo_fullpane:0.0" "phase4_replay/todo_preview_v1_fullpane_v7" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/todo_preview_v1.json" "phase4_todo_fullpane_v7"
+          run_scenario "breadboard_test_ci_phase4_subagents_fullpane:0.0" "phase4_replay/subagents_v1_fullpane_v7" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/subagents_v1.json" "phase4_subagents_fullpane_v7"
+          run_scenario "breadboard_test_ci_phase4_everything_fullpane:0.0" "phase4_replay/everything_showcase_v1_fullpane_v1" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/everything_showcase_v1.json" "phase4_everything_fullpane_v1"
 
           find_latest_run_dir() {
             local base="$1"
@@ -137,7 +143,22 @@ jobs:
             fi
           fi
 
+          (
+            cd tui_skeleton
+            PHASE4_TEXT_CONTRACT_REPORT="$GITHUB_WORKSPACE/docs_tmp/tmux_captures/phase4_text_contract_nightly.json" \
+            STREAM_RUN_DIR="$STREAM_RUN_DIR" \
+            TODO_RUN_DIR="$TODO_RUN_DIR" \
+            SUBAGENTS_RUN_DIR="$SUBAGENTS_RUN_DIR" \
+            EVERYTHING_RUN_DIR="$EVERYTHING_RUN_DIR" \
+            npm run -s runtime:gate:text-contract:warn
+          )
+          text_rc=$?
+          if [[ $text_rc -ne 0 ]]; then
+            rc=1
+          fi
+
           echo "VALIDATION_RC=$rc" >> "$GITHUB_ENV"
+          echo "TEXT_CONTRACT_RC=$text_rc" >> "$GITHUB_ENV"
           exit 0
 
       - name: Curate phase4 visual review pack (warn-only)
@@ -170,6 +191,7 @@ jobs:
             echo ""
             echo "- scenario_rc: \`${SCENARIO_RC:-unknown}\`"
             echo "- validation_rc: \`${VALIDATION_RC:-unknown}\`"
+            echo "- text_contract_rc: \`${TEXT_CONTRACT_RC:-unknown}\`"
             echo "- pack_rc: \`${PACK_RC:-unknown}\`"
             echo "- pack_schema_rc: \`${PACK_SCHEMA_RC:-unknown}\`"
             echo ""
@@ -192,8 +214,10 @@ jobs:
             --pack-dir "${PACK_DIR:-}" \
             --scenario-rc "${SCENARIO_RC:-}" \
             --validation-rc "${VALIDATION_RC:-}" \
+            --text-contract-rc "${TEXT_CONTRACT_RC:-}" \
             --pack-rc "${PACK_RC:-}" \
             --pack-schema-rc "${PACK_SCHEMA_RC:-}" \
+            --text-contract-report "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/phase4_text_contract_nightly.json" \
             --output-json "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/phase4_run_health_nightly.json"
 
       - name: Upload nightly phase4 fullpane artifacts
@@ -209,4 +233,5 @@ jobs:
             docs_tmp/tmux_captures/targets_logs
             docs_tmp/tmux_captures/visual_review_pack_nightly_phase4_fullpane_*
             docs_tmp/tmux_captures/phase4_run_health_nightly.json
+            docs_tmp/tmux_captures/phase4_text_contract_nightly.json
           if-no-files-found: ignore

@@ -1,0 +1,48 @@
+[
+  {
+    "type": "startup_preflight",
+    "timeout": 20,
+    "interval": 0.3,
+    "ready_tokens": ["for shortcuts"],
+    "kick_keys": ["Escape"],
+    "kick_every_polls": 1
+  },
+  {
+    "type": "send",
+    "text": "/view scroll auto",
+    "submit": true,
+    "clear_first": true,
+    "clear_mode": "ctrl_u"
+  },
+  {
+    "type": "sleep",
+    "seconds": 0.8
+  },
+  {
+    "type": "send",
+    "text": "replay:config/cli_bridge_replays/phase4/everything_showcase_v1.jsonl",
+    "submit": true,
+    "clear_first": true,
+    "clear_mode": "ctrl_u"
+  },
+  {
+    "type": "wait_until",
+    "contains": ["Markdown Showcase", "Patched.", "Feature", "ls -la"],
+    "timeout": 45
+  },
+  {
+    "type": "wait_for_quiet",
+    "quiet_seconds": 2.5,
+    "timeout": 45,
+    "semantic_timeout": 8,
+    "semantic_fail_fast": true,
+    "must_not_contain": [
+      "[error] replay fixture not found",
+      "Cannot read properties of undefined (reading 'length')",
+      "buildModalStack.tsx:1084",
+      "UnhandledPromiseRejection",
+      "[phase4 replay target exited]",
+      "[phase4 replay target] cli_bridge health check failed"
+    ]
+  }
+]

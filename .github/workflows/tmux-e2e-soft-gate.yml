@@ -24,6 +24,12 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pillow pytest
 
+      - name: Validate tmux scenario action alias parity
+        run: |
+          python scripts/validate_tmux_scenario_action_aliases.py \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --output-json "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/tmux_action_alias_parity_soft_gate.json"
+
       - name: Start synthetic tmux target
         run: |
           tmux new-session -d -x 160 -y 45 -s breadboard_test_ci_soft_gate "cd $GITHUB_WORKSPACE && exec bash"
@@ -192,6 +198,12 @@ jobs:
           # Needed for PNG render in tmux capture artifacts.
           python -m pip install pillow wcwidth
 
+      - name: Validate tmux scenario action alias parity
+        run: |
+          python scripts/validate_tmux_scenario_action_aliases.py \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --output-json "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/tmux_action_alias_parity_phase4_replay.json"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -209,7 +221,7 @@ jobs:
         run: |
           # Prefer the dev entrypoint in CI: it has historically been the most reliable
           # for Ink rendering under tmux capture on GitHub runners.
-          bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_todo --cols 160 --rows 45 --port 9103
+          BREADBOARD_TUI_ALT_BUFFER_VIEWER=1 bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_todo --cols 160 --rows 45 --port 9103
           bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_streaming --cols 160 --rows 45 --port 9101
           bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_subagents --cols 160 --rows 45 --port 9102
 
@@ -244,7 +256,7 @@ jobs:
           python scripts/run_tmux_capture_scenario.py \
             --target breadboard_test_ci_phase4_todo:0.0 \
             --scenario phase4_replay/todo_preview_v1 \
-            --actions "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/todo_preview_v1.json" \
+            --actions "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/todo_preview_v1.json" \
             --out-root "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios" \
             --duration 35 \
             --interval 0.5 \
@@ -257,7 +269,7 @@ jobs:
           python scripts/run_tmux_capture_scenario.py \
             --target breadboard_test_ci_phase4_streaming:0.0 \
             --scenario phase4_replay/streaming_v1 \
-            --actions "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/streaming_v1.json" \
+            --actions "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/streaming_v1.json" \
             --out-root "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios" \
             --duration 40 \
             --interval 0.5 \
@@ -270,7 +282,7 @@ jobs:
           python scripts/run_tmux_capture_scenario.py \
             --target breadboard_test_ci_phase4_subagents:0.0 \
             --scenario phase4_replay/subagents_v1 \
-            --actions "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/subagents_v1.json" \
+            --actions "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/subagents_v1.json" \
             --out-root "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios" \
             --duration 40 \
             --interval 0.5 \
@@ -278,6 +290,19 @@ jobs:
             --post-sleep 0.2 \
             --semantic-timeout 10 \
             --capture-label phase4_replay_subagents_v1
+          rc=$((rc | $?))
+
+          python scripts/run_tmux_capture_scenario.py \
+            --target breadboard_test_ci_phase4_todo:0.0 \
+            --scenario phase4_replay/alt_buffer_enter_exit_v1 \
+            --actions "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/alt_buffer_enter_exit_v1.json" \
+            --out-root "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios" \
+            --duration 35 \
+            --interval 0.5 \
+            --pre-sleep 0.2 \
+            --post-sleep 0.2 \
+            --semantic-timeout 10 \
+            --capture-label phase4_replay_alt_buffer_enter_exit_v1
           rc=$((rc | $?))
           exit "$rc"
 
@@ -298,14 +323,17 @@ jobs:
           TODO_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/todo_preview_v1")"
           STREAM_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/streaming_v1")"
           SUBAGENTS_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/subagents_v1")"
+          ALT_BUFFER_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/alt_buffer_enter_exit_v1")"
 
           if [[ -n "$TODO_RUN_DIR" ]]; then python scripts/validate_tmux_capture_run.py --run-dir "$TODO_RUN_DIR" --strict; else echo "missing TODO_RUN_DIR"; fi
           if [[ -n "$STREAM_RUN_DIR" ]]; then python scripts/validate_tmux_capture_run.py --run-dir "$STREAM_RUN_DIR" --strict; else echo "missing STREAM_RUN_DIR"; fi
           if [[ -n "$SUBAGENTS_RUN_DIR" ]]; then python scripts/validate_tmux_capture_run.py --run-dir "$SUBAGENTS_RUN_DIR" --strict; else echo "missing SUBAGENTS_RUN_DIR"; fi
+          if [[ -n "$ALT_BUFFER_RUN_DIR" ]]; then python scripts/validate_tmux_capture_run.py --run-dir "$ALT_BUFFER_RUN_DIR" --strict; else echo "missing ALT_BUFFER_RUN_DIR"; fi
 
           echo "TODO_RUN_DIR=$TODO_RUN_DIR" >> "$GITHUB_ENV"
           echo "STREAM_RUN_DIR=$STREAM_RUN_DIR" >> "$GITHUB_ENV"
           echo "SUBAGENTS_RUN_DIR=$SUBAGENTS_RUN_DIR" >> "$GITHUB_ENV"
+          echo "ALT_BUFFER_RUN_DIR=$ALT_BUFFER_RUN_DIR" >> "$GITHUB_ENV"
 
       - name: Add summary to PR
         if: ${{ always() }}
@@ -315,6 +343,7 @@ jobs:
           echo "- todo: \`$TODO_RUN_DIR\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- streaming: \`$STREAM_RUN_DIR\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- subagents: \`$SUBAGENTS_RUN_DIR\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- alt-buffer: \`$ALT_BUFFER_RUN_DIR\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload phase4 replay artifacts
         uses: actions/upload-artifact@v4
@@ -325,4 +354,5 @@ jobs:
             docs_tmp/tmux_captures/scenarios/phase4_replay/todo_preview_v1
             docs_tmp/tmux_captures/scenarios/phase4_replay/streaming_v1
             docs_tmp/tmux_captures/scenarios/phase4_replay/subagents_v1
+            docs_tmp/tmux_captures/scenarios/phase4_replay/alt_buffer_enter_exit_v1
             docs_tmp/tmux_captures/targets_logs

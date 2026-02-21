@@ -25,7 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageDraw, ImageFont
+from tmux_capture_render_profile import DEFAULT_RENDER_PROFILE_ID
 
 
 @dataclass(frozen=True)
@@ -151,6 +152,25 @@ def _diff_heat_and_metrics(prev_img: Image.Image, new_img: Image.Image) -> tuple
     return new_fit, heat, metrics
 
 
+def _annotate_diagnostic_heatmap(img: Image.Image, repo_root: Path) -> Image.Image:
+    out = img.copy().convert("RGBA")
+    draw = ImageDraw.Draw(out)
+    label = "DIAGNOSTIC DIFF HEATMAP (NOT A SCREENSHOT)"
+    try:
+        font = ImageFont.truetype(
+            str(repo_root / "renderer_assets" / "fonts" / "DejaVuSansMono-Bold.ttf"),
+            16,
+        )
+    except Exception:
+        font = ImageFont.load_default()
+    bbox = draw.textbbox((0, 0), label, font=font)
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+    draw.rectangle((8, 8, 8 + w + 12, 8 + h + 12), fill=(0, 0, 0, 235))
+    draw.text((14, 14), label, fill=(255, 80, 160, 255), font=font)
+    return out
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Curate phase4 fullpane visual review pack.")
     p.add_argument("--out-dir", required=True, help="output pack directory")
@@ -206,6 +226,8 @@ def main() -> int:
 
         lane_dir = out_dir / spec.key
         lane_dir.mkdir(parents=True, exist_ok=True)
+        lane_diag_dir = lane_dir / "diagnostics"
+        lane_diag_dir.mkdir(parents=True, exist_ok=True)
 
         landing_idx = 1
         active_idx = min(max(1, int(spec.active_hint_index)), new_frames)
@@ -268,9 +290,9 @@ def main() -> int:
 
         new_fit, heat, metrics = _diff_heat_and_metrics(prev_im, new_im)
         fit_path = lane_dir / "03_final_fit_to_prev.png"
-        heat_path = lane_dir / "compare_prev_vs_new_diff_heat_x3.png"
+        heat_path = lane_diag_dir / "DIAGNOSTIC_compare_prev_vs_new_diff_heat_x3.png"
         new_fit.save(fit_path)
-        heat.save(heat_path)
+        _annotate_diagnostic_heatmap(heat, repo_root=repo_root).save(heat_path)
 
         metrics.update(
             {
@@ -334,12 +356,12 @@ def main() -> int:
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     lines: list[str] = []
-    lines.append("# Visual Review Pack (Phase4 Fullpane Lock V1)")
+    lines.append("# Visual Review Pack (Phase4 Fullpane Lock V2)")
     lines.append("")
     lines.append("- Date: 2026-02-18")
     lines.append("- Purpose: curated frame set from latest locked-profile fullpane replay runs (landing/active/final), plus previous-vs-new visual diffs.")
     lines.append(f"- Pack path: `{_display_path(out_dir, workspace_root)}`")
-    lines.append("- Locked render profile: `phase4_locked_v1`")
+    lines.append(f"- Locked render profile: `{DEFAULT_RENDER_PROFILE_ID}`")
     lines.append("- Source manifest: `manifest.json`")
     lines.append("")
     lines.append("## Reference Screenshot Provenance")
@@ -364,7 +386,7 @@ def main() -> int:
     lines.append("- `03_final_fit_to_prev.png`")
     lines.append("- `04_prev_final.png` (+ txt/ansi when baseline is a prior scenario run)")
     lines.append("- `compare_prev_vs_new_side_by_side.png`")
-    lines.append("- `compare_prev_vs_new_diff_heat_x3.png`")
+    lines.append("- `diagnostics/DIAGNOSTIC_compare_prev_vs_new_diff_heat_x3.png`")
     lines.append("- `compare_prev_vs_new_metrics.json`")
     lines.append("")
     lines.append("## Notes")

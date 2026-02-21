@@ -37,18 +37,76 @@ def test_run_scenario_default_render_profile_is_locked():
     finally:
         sys.argv = old_argv
 
-    assert config.render_profile == "phase4_locked_v1"
+    assert config.render_profile == "phase4_locked_v2"
+    assert config.capture_mode == "fullpane"
     assert config.fullpane_start_markers == ("BreadBoard v", "No conversation yet")
+    assert str(config.out_root).endswith("/breadboard_repo/docs_tmp/tmux_captures/scenarios")
     assert config.settle_ms == 140
     assert config.settle_attempts == 5
     assert config.session_prefix_guard == "breadboard_test_"
     assert config.protected_sessions == ("bb_tui_codex_dev", "bb_engine_codex_dev", "bb_atp")
 
 
+def test_run_scenario_default_render_profile_non_phase4_is_latest_locked():
+    runner = _load_module("run_tmux_capture_scenario", "scripts/run_tmux_capture_scenario.py")
+    old_argv = sys.argv[:]
+    try:
+        sys.argv = [
+            "run_tmux_capture_scenario.py",
+            "--target",
+            "breadboard_test_lockcheck:0.0",
+            "--scenario",
+            "smoke/general_lockcheck",
+        ]
+        config = runner.parse_args()
+    finally:
+        sys.argv = old_argv
+
+    assert config.render_profile == "phase4_locked_v5"
+
+
+def test_run_scenario_explicit_render_profile_is_honored_for_phase4():
+    runner = _load_module("run_tmux_capture_scenario", "scripts/run_tmux_capture_scenario.py")
+    old_argv = sys.argv[:]
+    try:
+        sys.argv = [
+            "run_tmux_capture_scenario.py",
+            "--target",
+            "breadboard_test_lockcheck:0.0",
+            "--scenario",
+            "phase4_replay/lockcheck",
+            "--render-profile",
+            "phase4_locked_v5",
+        ]
+        config = runner.parse_args()
+    finally:
+        sys.argv = old_argv
+
+    assert config.render_profile == "phase4_locked_v5"
+
+
+def test_tmux_capture_poll_default_out_root_is_repo_local_docs_tmp():
+    poller = _load_module("tmux_capture_poll", "scripts/tmux_capture_poll.py")
+    old_argv = sys.argv[:]
+    try:
+        sys.argv = [
+            "tmux_capture_poll.py",
+            "--target",
+            "breadboard_test_lockcheck:0.0",
+        ]
+        config = poller.parse_args()
+    finally:
+        sys.argv = old_argv
+    assert str(config.out_root).endswith("/breadboard_repo/docs_tmp/tmux_captures")
+
+
 def test_phase4_start_script_defaults_are_locked():
     script = (_repo_root() / "scripts" / "start_tmux_phase4_replay_target.sh").read_text(encoding="utf-8")
     assert 'scrollback_mode="scrollback"' in script
     assert 'landing_always="1"' in script
+    assert "window-size manual" in script
+    assert "aggressive-resize off" in script
+    assert "Failed to lock tmux pane size" in script
 
 
 def test_phase4_entrypoint_defaults_are_locked():
@@ -79,7 +137,7 @@ def test_visual_pack_schema_defaults_are_locked():
         "subagents": "phase4_replay/subagents_v1_fullpane_v7",
         "everything": "phase4_replay/everything_showcase_v1_fullpane_v1",
     }
-    assert "Locked render profile: `phase4_locked_v1`" in module.DEFAULT_INDEX_ANCHORS
+    assert "Locked render profile: `phase4_locked_v5`" in module.DEFAULT_INDEX_ANCHORS
 
 
 def test_run_health_schema_defaults_are_locked():
@@ -97,3 +155,11 @@ def test_release_preflight_default_workflow_is_locked():
         "scripts/verify_phase4_gate_run_for_sha.py",
     )
     assert module.DEFAULT_WORKFLOW_FILE == "tmux-phase4-fullpane-gate.yml"
+
+
+def test_modal_overlay_layout_lock_is_centered():
+    stack_file = (_repo_root() / "tui_skeleton" / "src" / "repl" / "components" / "replView" / "overlays" / "buildModalStack.tsx").read_text(
+        encoding="utf-8",
+    )
+    assert "const useSheetModalLayout = true" in stack_file
+    assert 'layout: useSheetModalLayout ? "sheet" : undefined' in stack_file

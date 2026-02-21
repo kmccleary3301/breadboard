@@ -26,6 +26,18 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pillow wcwidth
 
+      - name: Validate tmux scenario action alias parity
+        run: |
+          python scripts/validate_tmux_scenario_action_aliases.py \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --output-json "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/tmux_action_alias_parity_phase4_gate.json"
+
+      - name: Validate replay artifact_ref contract
+        run: |
+          python scripts/validate_replay_artifact_refs.py \
+            --glob "$GITHUB_WORKSPACE/config/cli_bridge_replays/**/*.jsonl" \
+            --output-json "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/replay_artifact_ref_validation_phase4_gate.json"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -45,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_streaming_fullpane --tmux-socket "$TMUX_SOCKET_NAME" --cols 160 --rows 45 --port 9101 --scrollback-mode scrollback --landing-always 1 --use-dist
-          bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_todo_fullpane --tmux-socket "$TMUX_SOCKET_NAME" --cols 160 --rows 45 --port 9103 --scrollback-mode scrollback --landing-always 1 --use-dist
+          BREADBOARD_TUI_ALT_BUFFER_VIEWER=1 bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_todo_fullpane --tmux-socket "$TMUX_SOCKET_NAME" --cols 160 --rows 45 --port 9103 --scrollback-mode scrollback --landing-always 1 --use-dist
           bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_subagents_fullpane --tmux-socket "$TMUX_SOCKET_NAME" --cols 160 --rows 45 --port 9102 --scrollback-mode scrollback --landing-always 1 --use-dist
           bash scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_ci_phase4_everything_fullpane --tmux-socket "$TMUX_SOCKET_NAME" --cols 160 --rows 45 --port 9104 --scrollback-mode scrollback --landing-always 1 --use-dist
 
@@ -80,10 +92,14 @@ jobs:
               --capture-label "$label"
           }
 
-          run_scenario "breadboard_test_ci_phase4_streaming_fullpane:0.0" "phase4_replay/streaming_v1_fullpane_v8" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/streaming_v1.json" "phase4_streaming_fullpane_v8"
-          run_scenario "breadboard_test_ci_phase4_todo_fullpane:0.0" "phase4_replay/todo_preview_v1_fullpane_v7" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/todo_preview_v1.json" "phase4_todo_fullpane_v7"
-          run_scenario "breadboard_test_ci_phase4_subagents_fullpane:0.0" "phase4_replay/subagents_v1_fullpane_v7" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/subagents_v1.json" "phase4_subagents_fullpane_v7"
-          run_scenario "breadboard_test_ci_phase4_everything_fullpane:0.0" "phase4_replay/everything_showcase_v1_fullpane_v1" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/phase4_replay/everything_showcase_v1.json" "phase4_everything_fullpane_v1"
+          run_scenario "breadboard_test_ci_phase4_streaming_fullpane:0.0" "phase4_replay/streaming_v1_fullpane_v8" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/streaming_v1.json" "phase4_streaming_fullpane_v8"
+          run_scenario "breadboard_test_ci_phase4_todo_fullpane:0.0" "phase4_replay/todo_preview_v1_fullpane_v7" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/todo_preview_v1.json" "phase4_todo_fullpane_v7"
+          run_scenario "breadboard_test_ci_phase4_subagents_fullpane:0.0" "phase4_replay/subagents_v1_fullpane_v7" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/subagents_v1.json" "phase4_subagents_fullpane_v7"
+          run_scenario "breadboard_test_ci_phase4_everything_fullpane:0.0" "phase4_replay/everything_showcase_v1_fullpane_v1" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/everything_showcase_v1.json" "phase4_everything_fullpane_v1"
+          run_scenario "breadboard_test_ci_phase4_subagents_fullpane:0.0" "phase4_replay/subagents_strip_churn_v1" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/subagents_strip_churn_v1.json" "phase4_subagents_strip_churn_v1"
+          run_scenario "breadboard_test_ci_phase4_everything_fullpane:0.0" "phase4_replay/resize_overlay_interaction_v1" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/resize_overlay_interaction_v1.json" "phase4_resize_overlay_interaction_v1"
+          run_scenario "breadboard_test_ci_phase4_streaming_fullpane:0.0" "phase4_replay/thinking_lifecycle_expiration_v1" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/thinking_lifecycle_expiration_v1.json" "phase4_thinking_lifecycle_expiration_v1"
+          run_scenario "breadboard_test_ci_phase4_todo_fullpane:0.0" "phase4_replay/alt_buffer_enter_exit_v1" "$GITHUB_WORKSPACE/config/tmux_scenario_actions/ci/phase4_replay/alt_buffer_enter_exit_v1.json" "phase4_alt_buffer_enter_exit_v1"
 
           find_latest_run_dir() {
             local base="$1"
@@ -100,16 +116,28 @@ jobs:
           TODO_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/todo_preview_v1_fullpane_v7")"
           SUBAGENTS_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/subagents_v1_fullpane_v7")"
           EVERYTHING_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/everything_showcase_v1_fullpane_v1")"
+          SUBAGENTS_STRIP_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/subagents_strip_churn_v1")"
+          RESIZE_OVERLAY_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/resize_overlay_interaction_v1")"
+          THINKING_EXPIRATION_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/thinking_lifecycle_expiration_v1")"
+          ALT_BUFFER_RUN_DIR="$(find_latest_run_dir "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/scenarios/phase4_replay/alt_buffer_enter_exit_v1")"
 
           test -n "$STREAM_RUN_DIR"
           test -n "$TODO_RUN_DIR"
           test -n "$SUBAGENTS_RUN_DIR"
           test -n "$EVERYTHING_RUN_DIR"
+          test -n "$SUBAGENTS_STRIP_RUN_DIR"
+          test -n "$RESIZE_OVERLAY_RUN_DIR"
+          test -n "$THINKING_EXPIRATION_RUN_DIR"
+          test -n "$ALT_BUFFER_RUN_DIR"
 
           echo "STREAM_RUN_DIR=$STREAM_RUN_DIR" >> "$GITHUB_ENV"
           echo "TODO_RUN_DIR=$TODO_RUN_DIR" >> "$GITHUB_ENV"
           echo "SUBAGENTS_RUN_DIR=$SUBAGENTS_RUN_DIR" >> "$GITHUB_ENV"
           echo "EVERYTHING_RUN_DIR=$EVERYTHING_RUN_DIR" >> "$GITHUB_ENV"
+          echo "SUBAGENTS_STRIP_RUN_DIR=$SUBAGENTS_STRIP_RUN_DIR" >> "$GITHUB_ENV"
+          echo "RESIZE_OVERLAY_RUN_DIR=$RESIZE_OVERLAY_RUN_DIR" >> "$GITHUB_ENV"
+          echo "THINKING_EXPIRATION_RUN_DIR=$THINKING_EXPIRATION_RUN_DIR" >> "$GITHUB_ENV"
+          echo "ALT_BUFFER_RUN_DIR=$ALT_BUFFER_RUN_DIR" >> "$GITHUB_ENV"
           echo "SCENARIO_RC=0" >> "$GITHUB_ENV"
 
       - name: Validate runs and showcase regression (strict)
@@ -119,8 +147,22 @@ jobs:
           python scripts/validate_tmux_capture_run.py --run-dir "$TODO_RUN_DIR" --strict
           python scripts/validate_tmux_capture_run.py --run-dir "$SUBAGENTS_RUN_DIR" --strict
           python scripts/validate_tmux_capture_run.py --run-dir "$EVERYTHING_RUN_DIR" --strict
+          python scripts/validate_tmux_capture_run.py --run-dir "$SUBAGENTS_STRIP_RUN_DIR" --strict
+          python scripts/validate_tmux_capture_run.py --run-dir "$RESIZE_OVERLAY_RUN_DIR" --strict
+          python scripts/validate_tmux_capture_run.py --run-dir "$THINKING_EXPIRATION_RUN_DIR" --strict
+          python scripts/validate_tmux_capture_run.py --run-dir "$ALT_BUFFER_RUN_DIR" --strict
+          (
+            cd tui_skeleton
+            PHASE4_TEXT_CONTRACT_REPORT="$GITHUB_WORKSPACE/docs_tmp/tmux_captures/phase4_text_contract_gate.json" \
+            STREAM_RUN_DIR="$STREAM_RUN_DIR" \
+            TODO_RUN_DIR="$TODO_RUN_DIR" \
+            SUBAGENTS_RUN_DIR="$SUBAGENTS_RUN_DIR" \
+            EVERYTHING_RUN_DIR="$EVERYTHING_RUN_DIR" \
+            npm run -s runtime:gate:text-contract
+          )
           python scripts/validate_phase4_showcase_regression.py --run-dir "$EVERYTHING_RUN_DIR" --min-frames 12
           echo "VALIDATION_RC=0" >> "$GITHUB_ENV"
+          echo "TEXT_CONTRACT_RC=0" >> "$GITHUB_ENV"
 
       - name: Curate and validate visual review pack (strict)
         run: |
@@ -141,6 +183,7 @@ jobs:
             echo ""
             echo "- scenario_rc: \`${SCENARIO_RC:-unknown}\`"
             echo "- validation_rc: \`${VALIDATION_RC:-unknown}\`"
+            echo "- text_contract_rc: \`${TEXT_CONTRACT_RC:-unknown}\`"
             echo "- pack_rc: \`${PACK_RC:-unknown}\`"
             echo "- pack_schema_rc: \`${PACK_SCHEMA_RC:-unknown}\`"
             echo ""
@@ -148,6 +191,10 @@ jobs:
             echo "- todo run: \`${TODO_RUN_DIR:-missing}\`"
             echo "- subagents run: \`${SUBAGENTS_RUN_DIR:-missing}\`"
             echo "- everything run: \`${EVERYTHING_RUN_DIR:-missing}\`"
+            echo "- subagents strip run: \`${SUBAGENTS_STRIP_RUN_DIR:-missing}\`"
+            echo "- resize overlay run: \`${RESIZE_OVERLAY_RUN_DIR:-missing}\`"
+            echo "- thinking expiration run: \`${THINKING_EXPIRATION_RUN_DIR:-missing}\`"
+            echo "- alt buffer run: \`${ALT_BUFFER_RUN_DIR:-missing}\`"
             echo "- pack dir: \`${PACK_DIR:-missing}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -163,8 +210,10 @@ jobs:
             --pack-dir "${PACK_DIR:-}" \
             --scenario-rc "${SCENARIO_RC:-}" \
             --validation-rc "${VALIDATION_RC:-}" \
+            --text-contract-rc "${TEXT_CONTRACT_RC:-}" \
             --pack-rc "${PACK_RC:-}" \
             --pack-schema-rc "${PACK_SCHEMA_RC:-}" \
+            --text-contract-report "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/phase4_text_contract_gate.json" \
             --output-json "$GITHUB_WORKSPACE/docs_tmp/tmux_captures/phase4_run_health_gate.json"
 
       - name: Upload gate artifacts
@@ -177,7 +226,13 @@ jobs:
             docs_tmp/tmux_captures/scenarios/phase4_replay/todo_preview_v1_fullpane_v7
             docs_tmp/tmux_captures/scenarios/phase4_replay/subagents_v1_fullpane_v7
             docs_tmp/tmux_captures/scenarios/phase4_replay/everything_showcase_v1_fullpane_v1
+            docs_tmp/tmux_captures/scenarios/phase4_replay/subagents_strip_churn_v1
+            docs_tmp/tmux_captures/scenarios/phase4_replay/resize_overlay_interaction_v1
+            docs_tmp/tmux_captures/scenarios/phase4_replay/thinking_lifecycle_expiration_v1
+            docs_tmp/tmux_captures/scenarios/phase4_replay/alt_buffer_enter_exit_v1
             docs_tmp/tmux_captures/targets_logs
             docs_tmp/tmux_captures/visual_review_pack_gate_phase4_fullpane_*
             docs_tmp/tmux_captures/phase4_run_health_gate.json
+            docs_tmp/tmux_captures/phase4_text_contract_gate.json
+            docs_tmp/tmux_captures/replay_artifact_ref_validation_phase4_gate.json
           if-no-files-found: ignore

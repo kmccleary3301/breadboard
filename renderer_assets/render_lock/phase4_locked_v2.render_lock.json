@@ -1,0 +1,44 @@
+{
+  "profile_id": "phase4_locked_v2",
+  "renderer": {
+    "name": "tmux_capture_to_png.py",
+    "backend": "pillow"
+  },
+  "colors": {
+    "bg": "1f2430",
+    "fg": "f1f5f9"
+  },
+  "geometry": {
+    "font_size": 18,
+    "scale": 1.0,
+    "cell_width": 11,
+    "cell_height": 22,
+    "line_gap": 0,
+    "pad_x": 0,
+    "pad_y": 0,
+    "baseline_offset": 17,
+    "underline_offset": 2
+  },
+  "fonts": [
+    {
+      "role": "regular",
+      "path": "renderer_assets/fonts/DejaVuSansMono.ttf",
+      "sha256": "39c29931201f08dd89fdba4129c76288e6baeecf7c94fe4f6a757f2b50718b1b"
+    },
+    {
+      "role": "bold",
+      "path": "renderer_assets/fonts/DejaVuSansMono-Bold.ttf",
+      "sha256": "f8aa70b5d4210d77624f5b5b5cf094fadf9fd019caf5b528fa5af42fc4ac43a5"
+    },
+    {
+      "role": "italic",
+      "path": "renderer_assets/fonts/DejaVuSansMono-Oblique.ttf",
+      "sha256": "6df35684aa7ed7060354c946464d6e047a957d307c3aef4c7bc87aee9e33d729"
+    },
+    {
+      "role": "bold_italic",
+      "path": "renderer_assets/fonts/DejaVuSansMono-BoldOblique.ttf",
+      "sha256": "166f485cb39da15fb04de913e7572a76739ba9580a78ef876f97b593e42fd376"
+    }
+  ]
+}

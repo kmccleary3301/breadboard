@@ -1,0 +1,74 @@
+[
+  {
+    "type": "startup_preflight",
+    "timeout": 30,
+    "interval": 0.3,
+    "ready_tokens": ["for shortcuts"],
+    "kick_keys": ["Escape"],
+    "kick_every_polls": 1
+  },
+  {
+    "type": "key",
+    "key": "Escape",
+    "wait": 0.2
+  },
+  {
+    "type": "wait_for_quiet",
+    "quiet_seconds": 0.6,
+    "timeout": 20,
+    "must_contain": ["? for shortcuts"]
+  },
+  {
+    "type": "send",
+    "text": "replay:config/cli_bridge_replays/phase4/subagents_concurrency_20_v1.jsonl",
+    "submit": true,
+    "clear_first": true,
+    "clear_mode": "ctrl_u"
+  },
+  {
+    "type": "wait_until",
+    "contains": ["Subagent concurrency 20 replay complete"],
+    "absent": ["Cannot read properties of undefined (reading 'length')", "buildModalStack.tsx:1084"],
+    "timeout": 45
+  },
+  {
+    "type": "key",
+    "key": "C-b",
+    "wait": 0.2
+  },
+  {
+    "type": "wait_for_quiet",
+    "quiet_seconds": 1.2,
+    "timeout": 60,
+    "must_contain": ["Background tasks", "? for shortcuts"],
+    "must_not_contain": [
+      "Cannot read properties of undefined (reading 'length')",
+      "buildModalStack.tsx:1084",
+      "UnhandledPromiseRejection",
+      "[phase4 replay target exited]",
+      "[phase4 replay target] cli_bridge health check failed"
+    ],
+    "semantic_timeout": 8,
+    "semantic_fail_fast": true
+  },
+  {
+    "type": "key",
+    "key": "Escape",
+    "wait": 0.2
+  },
+  {
+    "type": "wait_for_quiet",
+    "quiet_seconds": 1.2,
+    "timeout": 60,
+    "must_contain": ["Subagent concurrency 20 replay complete", "? for shortcuts"],
+    "must_not_contain": [
+      "Cannot read properties of undefined (reading 'length')",
+      "buildModalStack.tsx:1084",
+      "UnhandledPromiseRejection",
+      "[phase4 replay target exited]",
+      "[phase4 replay target] cli_bridge health check failed"
+    ],
+    "semantic_timeout": 8,
+    "semantic_fail_fast": true
+  }
+]
