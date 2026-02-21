@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest"
 import {
   activityPriority,
   appendThinkingArtifact,
+  appendThinkingPreviewState,
+  closeThinkingPreviewState,
   createActivitySnapshot,
   createRuntimeTelemetry,
   createThinkingArtifact,
+  createThinkingPreviewState,
   finalizeThinkingArtifact,
   isLegalActivityTransition,
   normalizeThinkingSignal,
+  pruneThinkingPreviewState,
   reduceActivityTransition,
   resolveRuntimeBehaviorFlags,
 } from "../controllerActivityRuntime.js"
@@ -18,6 +22,7 @@ describe("controllerActivityRuntime", () => {
     expect(flags.activityEnabled).toBe(true)
     expect(flags.lifecycleToastsEnabled).toBe(false)
     expect(flags.thinkingEnabled).toBe(true)
+    expect(flags.thinkingPreviewEnabled).toBe(true)
     expect(flags.allowFullThinking).toBe(false)
     expect(flags.allowRawThinkingPeek).toBe(false)
     expect(flags.inlineThinkingBlockEnabled).toBe(false)
@@ -31,8 +36,13 @@ describe("controllerActivityRuntime", () => {
     expect(flags.subagentCoalesceMs).toBeGreaterThanOrEqual(0)
     expect(flags.subagentMaxWorkItems).toBeGreaterThanOrEqual(1)
     expect(flags.subagentMaxStepsPerTask).toBeGreaterThanOrEqual(1)
-    expect(flags.minDisplayMs).toBeGreaterThanOrEqual(0)
-    expect(flags.statusUpdateMs).toBeGreaterThanOrEqual(0)
+    // Locked phase4/phase5 cadence defaults used by replay/stress gates.
+    expect(flags.minDisplayMs).toBe(200)
+    expect(flags.statusUpdateMs).toBe(120)
+    expect(flags.eventCoalesceMs).toBe(80)
+    expect(flags.eventCoalesceMaxBatch).toBe(128)
+    expect(flags.thinkingPreviewMaxLines).toBe(5)
+    expect(flags.thinkingPreviewTtlMs).toBe(1400)
   })
 
   it("applies env overrides for runtime flags", () => {
@@ -40,6 +50,7 @@ describe("controllerActivityRuntime", () => {
       BREADBOARD_ACTIVITY_ENABLED: "0",
       BREADBOARD_ACTIVITY_LIFECYCLE_TOASTS: "1",
       BREADBOARD_THINKING_ENABLED: "false",
+      BREADBOARD_THINKING_PREVIEW_ENABLED: "1",
       BREADBOARD_THINKING_FULL_OPT_IN: "1",
       BREADBOARD_THINKING_PEEK_RAW_ALLOWED: "1",
       BREADBOARD_THINKING_INLINE_COLLAPSIBLE: "1",
@@ -48,8 +59,12 @@ describe("controllerActivityRuntime", () => {
       BREADBOARD_ACTIVITY_TRANSITION_DEBUG: "1",
       BREADBOARD_ACTIVITY_MIN_DISPLAY_MS: "333",
       BREADBOARD_STATUS_UPDATE_MS: "77",
+      BREADBOARD_EVENT_COALESCE_MS: "45",
+      BREADBOARD_EVENT_COALESCE_MAX_BATCH: "64",
       BREADBOARD_THINKING_MAX_CHARS: "1234",
       BREADBOARD_THINKING_MAX_LINES: "9",
+      BREADBOARD_THINKING_PREVIEW_MAX_LINES: "4",
+      BREADBOARD_THINKING_PREVIEW_TTL_MS: "2200",
       BREADBOARD_MARKDOWN_ADAPTIVE_MIN_CHUNK_CHARS: "5",
       BREADBOARD_MARKDOWN_ADAPTIVE_MIN_COALESCE_MS: "11",
       BREADBOARD_MARKDOWN_ADAPTIVE_BURST_CHARS: "42",
@@ -65,6 +80,7 @@ describe("controllerActivityRuntime", () => {
     expect(flags.activityEnabled).toBe(false)
     expect(flags.lifecycleToastsEnabled).toBe(true)
     expect(flags.thinkingEnabled).toBe(false)
+    expect(flags.thinkingPreviewEnabled).toBe(true)
     expect(flags.allowFullThinking).toBe(true)
     expect(flags.allowRawThinkingPeek).toBe(true)
     expect(flags.inlineThinkingBlockEnabled).toBe(true)
@@ -73,8 +89,12 @@ describe("controllerActivityRuntime", () => {
     expect(flags.transitionDebug).toBe(true)
     expect(flags.minDisplayMs).toBe(333)
     expect(flags.statusUpdateMs).toBe(77)
+    expect(flags.eventCoalesceMs).toBe(45)
+    expect(flags.eventCoalesceMaxBatch).toBe(64)
     expect(flags.thinkingMaxChars).toBe(1234)
     expect(flags.thinkingMaxLines).toBe(9)
+    expect(flags.thinkingPreviewMaxLines).toBe(4)
+    expect(flags.thinkingPreviewTtlMs).toBe(2200)
     expect(flags.adaptiveMarkdownMinChunkChars).toBe(5)
     expect(flags.adaptiveMarkdownMinCoalesceMs).toBe(11)
     expect(flags.adaptiveMarkdownBurstChars).toBe(42)
@@ -152,6 +172,21 @@ describe("controllerActivityRuntime", () => {
     expect(summary?.text).toContain("Plan")
   })
 
+  it("normalizes provider-shaped thinking payloads", () => {
+    const openai = normalizeThinkingSignal(
+      "assistant.reasoning.delta",
+      { summary: [{ text: "openai summary line" }] },
+      { provider: "openai" },
+    )
+    const anthropic = normalizeThinkingSignal(
+      "assistant.reasoning.delta",
+      { content_block: { thinking: "anthropic thought block" } },
+      { provider: "anthropic" },
+    )
+    expect(openai?.text).toContain("openai summary")
+    expect(anthropic?.text).toContain("anthropic thought")
+  })
+
   it("builds and finalizes bounded thinking artifacts", () => {
     const flags = resolveRuntimeBehaviorFlags({
       BREADBOARD_THINKING_MAX_CHARS: "20",
@@ -170,14 +205,45 @@ describe("controllerActivityRuntime", () => {
     expect(done.finalizedAt).toBe(1300)
   })
 
+  it("builds, closes, and expires bounded thinking previews", () => {
+    const flags = resolveRuntimeBehaviorFlags({
+      BREADBOARD_THINKING_PREVIEW_MAX_LINES: "2",
+      BREADBOARD_THINKING_PREVIEW_TTL_MS: "100",
+    })
+    let preview = createThinkingPreviewState("summary", 1000, "preview-1")
+    preview = appendThinkingPreviewState(
+      preview,
+      { kind: "summary", text: "line1\nline2\nline3", eventType: "assistant.thought_summary.delta", provider: "openai" },
+      flags,
+      1100,
+    )
+    expect(preview.lines).toHaveLength(2)
+    const closed = closeThinkingPreviewState(preview, 1200)
+    expect(closed.lifecycle).toBe("closed")
+    expect(pruneThinkingPreviewState(closed, flags, 1250)).not.toBeNull()
+    expect(pruneThinkingPreviewState(closed, flags, 1401)).toBeNull()
+  })
+
   it("initializes telemetry counters at zero", () => {
     const telemetry = createRuntimeTelemetry()
     expect(telemetry.statusTransitions).toBe(0)
     expect(telemetry.suppressedTransitions).toBe(0)
     expect(telemetry.illegalTransitions).toBe(0)
+    expect(telemetry.statusCommits).toBe(0)
+    expect(telemetry.statusCoalesced).toBe(0)
     expect(telemetry.markdownFlushes).toBe(0)
     expect(telemetry.thinkingUpdates).toBe(0)
+    expect(telemetry.thinkingPreviewOpened).toBe(0)
+    expect(telemetry.thinkingPreviewClosed).toBe(0)
+    expect(telemetry.thinkingPreviewExpired).toBe(0)
     expect(telemetry.adaptiveCadenceAdjustments).toBe(0)
+    expect(telemetry.eventFlushes).toBe(0)
+    expect(telemetry.eventCoalesced).toBe(0)
+    expect(telemetry.eventMaxQueueDepth).toBe(0)
+    expect(telemetry.optimisticToolRows).toBe(0)
+    expect(telemetry.optimisticToolReconciled).toBe(0)
+    expect(telemetry.optimisticDiffRows).toBe(0)
+    expect(telemetry.optimisticDiffReconciled).toBe(0)
     expect(telemetry.workgraphFlushes).toBe(0)
     expect(telemetry.workgraphEvents).toBe(0)
     expect(telemetry.workgraphMaxQueueDepth).toBe(0)

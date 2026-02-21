@@ -12,7 +12,9 @@ import { isInlineThinkingBlockText } from "../../../transcriptUtils.js"
 import { CHALK, COLORS } from "../theme.js"
 import { formatCostUsd, formatLatency } from "../utils/format.js"
 import { getTodoPreviewRowCount, type TodoPreviewModel } from "../composer/todoPreview.js"
+import { getThinkingPreviewRowCount, type ThinkingPreviewModel } from "../composer/thinkingPreview.js"
 import { useReplViewRenderNodes } from "./useReplViewRenderNodes.js"
+import { applyTranscriptMemoryBounds } from "./transcriptMemoryBounds.js"
 import { buildLandingContext, buildScrollbackLanding } from "../landing/scrollbackLanding.js"
 import {
   buildSubagentStripSummary,
@@ -32,6 +34,14 @@ const parseBoundedIntEnv = (value: string | undefined, fallback: number, min: nu
   return parsed
 }
 
+const parseBooleanEnv = (value: string | undefined, fallback: boolean): boolean => {
+  if (!value?.trim()) return fallback
+  const normalized = value.trim().toLowerCase()
+  if (["1", "true", "yes", "on"].includes(normalized)) return true
+  if (["0", "false", "no", "off"].includes(normalized)) return false
+  return fallback
+}
+
 const SUBAGENT_STRIP_IDLE_COOLDOWN_MS = parseBoundedIntEnv(
   process.env.BREADBOARD_SUBAGENTS_STRIP_IDLE_COOLDOWN_MS,
   1500,
@@ -43,6 +53,23 @@ const SUBAGENT_STRIP_MIN_UPDATE_MS = parseBoundedIntEnv(
   120,
   0,
   5_000,
+)
+const TRANSCRIPT_MEMORY_BOUNDS_ENABLED = parseBooleanEnv(process.env.BREADBOARD_TRANSCRIPT_MEMORY_BOUNDS_V1, false)
+const TRANSCRIPT_MEMORY_BOUNDS_MAX_ITEMS = parseBoundedIntEnv(
+  process.env.BREADBOARD_TRANSCRIPT_MEMORY_BOUNDS_MAX_ITEMS,
+  1_200,
+  50,
+  100_000,
+)
+const TRANSCRIPT_MEMORY_BOUNDS_MAX_BYTES = parseBoundedIntEnv(
+  process.env.BREADBOARD_TRANSCRIPT_MEMORY_BOUNDS_MAX_BYTES,
+  2_000_000,
+  1_024,
+  50_000_000,
+)
+const TRANSCRIPT_MEMORY_BOUNDS_MARKER = parseBooleanEnv(
+  process.env.BREADBOARD_TRANSCRIPT_MEMORY_BOUNDS_MARKER,
+  true,
 )
 
 export const useReplViewScrollback = (context: ScrollbackContext) => {
@@ -78,6 +105,8 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     suggestionWindow,
     hints,
     todoPreviewModel,
+    thinkingPreviewModel,
+    runtimeStatusChips,
     attachments,
     fileMentions,
     workGraph,
@@ -94,6 +123,8 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     conversation,
     toolEvents,
     SCROLLBACK_MODE,
+    screenReaderMode,
+    screenReaderProfile,
     ASCII_HEADER,
     setCollapsedVersion,
     collapsedEntriesRef,
@@ -135,10 +166,10 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     return rows
   }, [filteredModels, modelMenu.status, modelOffset, modelProviderCounts, normalizeProviderKey, visibleModels, formatProviderLabel])
 
-  const headerLines = useMemo(
-    () => ["", ...ASCII_HEADER.map((line: string) => CHALK.hex(HEADER_COLOR)(line))],
-    [ASCII_HEADER],
-  )
+  const headerLines = useMemo(() => {
+    if (screenReaderMode) return []
+    return ["", ...ASCII_HEADER.map((line: string) => CHALK.hex(HEADER_COLOR)(line))]
+  }, [ASCII_HEADER, screenReaderMode])
 
   const usageSummary = useMemo(() => {
     const usage = stats.usage
@@ -173,6 +204,18 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     return CHALK.hex(color)(`[${label}]`)
   }, [permissionMode, context])
   const headerSubtitleLines = useMemo(() => {
+    if (screenReaderMode) {
+      const modeLabel = mode ? `mode ${String(mode).trim()}` : "mode unknown"
+      const permsLabel = permissionMode ? `perms ${String(permissionMode).trim()}` : "perms default"
+      if (screenReaderProfile === "concise") {
+        return [CHALK.cyan("breadboard accessibility mode")]
+      }
+      if (screenReaderProfile === "verbose") {
+        const modelLabel = stats.model ? `model ${stats.model}` : "model unknown"
+        return [CHALK.cyan("breadboard accessibility mode"), CHALK.dim(`${modeLabel} · ${permsLabel}`), CHALK.dim(modelLabel)]
+      }
+      return [CHALK.cyan("breadboard accessibility mode"), CHALK.dim(`${modeLabel} · ${permsLabel}`)]
+    }
     if (!claudeChrome) {
       return [CHALK.cyan("breadboard — interactive session")]
     }
@@ -184,7 +227,17 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
       CHALK.dim(`mode ${modeBadge}  perms ${permissionBadge}`),
       CHALK.dim(cwdLine),
     ]
-  }, [claudeChrome, modeBadge, permissionBadge, stats.model, context])
+  }, [
+    claudeChrome,
+    mode,
+    modeBadge,
+    permissionMode,
+    permissionBadge,
+    screenReaderMode,
+    screenReaderProfile,
+    stats.model,
+    context,
+  ])
   const promptRule = useMemo(() => {
     const glyph = tuiConfig.composer.ruleCharacter || "─"
     return glyph.repeat(contentWidth)
@@ -228,8 +281,9 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
 
   const headerReserveRows = useMemo(() => {
     if (SCROLLBACK_MODE) return 0
+    if (screenReaderMode) return 0
     return claudeChrome ? 0 : 3
-  }, [SCROLLBACK_MODE, claudeChrome])
+  }, [SCROLLBACK_MODE, claudeChrome, screenReaderMode])
   const guardrailReserveRows = useMemo(() => {
     if (!guardrailNotice) return 0
     const expanded = Boolean(guardrailNotice.detail && guardrailNotice.expanded)
@@ -240,6 +294,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     const promptLine = 1
     const promptRuleRows = claudeChrome ? 2 : 0
     const pendingStatusRows = claudeChrome && pendingClaudeStatus ? 1 : 0
+    const statusChipRows = claudeChrome && Array.isArray(runtimeStatusChips) && runtimeStatusChips.length > 0 ? 1 : 0
     const suggestionRows = (() => {
       if (overlayActive) return 1
       if (filePickerActive) {
@@ -290,11 +345,15 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
           : 0
     const todoPreviewRows =
       overlayActive ? 0 : getTodoPreviewRowCount(todoPreviewModel as TodoPreviewModel | null)
+    const thinkingPreviewRows =
+      overlayActive ? 0 : getThinkingPreviewRowCount(thinkingPreviewModel as ThinkingPreviewModel | null)
     const attachmentRows = overlayActive ? 0 : attachments.length > 0 ? attachments.length + 3 : 0
     const fileMentionRows = overlayActive ? 0 : fileMentions.length > 0 ? fileMentions.length + 3 : 0
     return (
       outerMargin +
+      statusChipRows +
       pendingStatusRows +
+      thinkingPreviewRows +
       todoPreviewRows +
       promptRuleRows +
       promptLine +
@@ -318,6 +377,8 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     filePicker.status,
     filePickerActive,
     hints.length,
+    runtimeStatusChips,
+    thinkingPreviewModel,
     todoPreviewModel,
     overlayActive,
     pendingClaudeStatus,
@@ -331,8 +392,9 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
 
   const overlayReserveRows = useMemo(() => {
     if (!overlayActive) return 0
-    return Math.min(Math.max(10, Math.floor(rowCount * 0.55)), Math.max(0, rowCount - 8))
-  }, [overlayActive, rowCount])
+    // Overlays are rendered inline at composer level; do not reserve extra terminal space.
+    return 0
+  }, [overlayActive])
 
   const bodyTopMarginRows = 1
   const bodyBudgetRows = useMemo(() => {
@@ -502,10 +564,21 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     return transcriptTail.length > 0 ? [...unprintedTranscriptEntries, ...transcriptTail] : unprintedTranscriptEntries
   }, [transcriptCommitted, transcriptTail, transcriptNudge, measureTranscriptEntryLines, unprintedTranscriptEntries, SCROLLBACK_MODE])
 
+  const boundedTranscript = useMemo(
+    () =>
+      applyTranscriptMemoryBounds(transcriptEntriesForWindow, {
+        enabled: TRANSCRIPT_MEMORY_BOUNDS_ENABLED,
+        maxItems: TRANSCRIPT_MEMORY_BOUNDS_MAX_ITEMS,
+        maxBytes: TRANSCRIPT_MEMORY_BOUNDS_MAX_BYTES,
+        includeCompactionMarker: TRANSCRIPT_MEMORY_BOUNDS_MARKER,
+      }),
+    [transcriptEntriesForWindow],
+  )
+
   const transcriptLineBudget = overlayActive ? Math.min(10, bodyBudgetRows) : bodyBudgetRows
   const conversationWindow = useMemo(
-    () => sliceTailByLineBudget(transcriptEntriesForWindow, transcriptLineBudget, measureTranscriptEntryLines),
-    [transcriptEntriesForWindow, measureTranscriptEntryLines, transcriptLineBudget],
+    () => sliceTailByLineBudget(boundedTranscript.items, transcriptLineBudget, measureTranscriptEntryLines),
+    [boundedTranscript.items, measureTranscriptEntryLines, transcriptLineBudget],
   )
 
   const collapsibleEntries = useMemo(
@@ -697,6 +770,8 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
 
   const renderNodes = useReplViewRenderNodes({
     claudeChrome,
+    screenReaderMode,
+    screenReaderProfile,
     keymap,
     contentWidth,
     hints,
@@ -743,6 +818,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     toolsGlyph,
     eventsGlyph,
     turnGlyph,
+    transcriptMemoryBoundsSummary: boundedTranscript.summary,
     staticFeed,
     conversationWindow,
     collapsibleEntries,

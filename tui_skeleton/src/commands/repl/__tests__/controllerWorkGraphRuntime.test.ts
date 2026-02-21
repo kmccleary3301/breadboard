@@ -309,4 +309,64 @@ describe("controllerWorkGraphRuntime", () => {
       expect(reduced.itemsById[workId]?.status).toBe("running")
     }
   })
+
+  it("drops illegal completed->running transition and records telemetry", () => {
+    const initial = createWorkGraphState()
+    const reduced = reduceWorkGraphEvents(initial, [
+      {
+        eventType: "task_event",
+        seq: 1,
+        eventId: "evt-final-1",
+        payload: {
+          task_id: "task-final",
+          status: "completed",
+          kind: "tool_call",
+          tool: "worker",
+          call_id: "call-final",
+        },
+      },
+      {
+        eventType: "task_event",
+        seq: 2,
+        eventId: "evt-final-2",
+        payload: {
+          task_id: "task-final",
+          status: "running",
+          kind: "tool_call",
+          tool: "worker",
+          call_id: "call-final",
+        },
+      },
+    ])
+    expect(reduced.itemsById["task-final"]?.status).toBe("completed")
+    expect(reduced.telemetry?.droppedTransitions).toBeGreaterThanOrEqual(1)
+  })
+
+  it("tracks lane churn when a task moves between lanes", () => {
+    const initial = createWorkGraphState()
+    const reduced = reduceWorkGraphEvents(initial, [
+      {
+        eventType: "task_event",
+        seq: 1,
+        eventId: "evt-lane-1",
+        payload: {
+          task_id: "task-lane",
+          status: "running",
+          lane_id: "lane-a",
+        },
+      },
+      {
+        eventType: "task_event",
+        seq: 2,
+        eventId: "evt-lane-2",
+        payload: {
+          task_id: "task-lane",
+          status: "running",
+          lane_id: "lane-b",
+        },
+      },
+    ])
+    expect(reduced.itemsById["task-lane"]?.laneId).toBe("lane-b")
+    expect(reduced.telemetry?.laneChurn).toBeGreaterThanOrEqual(1)
+  })
 })

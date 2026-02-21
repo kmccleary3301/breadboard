@@ -9,6 +9,10 @@ import type {
   SkillSelection,
   CTreeSnapshot,
   GuardrailNotice,
+  ActivitySnapshot,
+  RuntimeBehaviorFlags,
+  ThinkingArtifact,
+  ThinkingPreviewState,
   QueuedAttachment,
   TranscriptPreferences,
   ToolLogEntry,
@@ -42,6 +46,10 @@ export interface ReplViewProps {
   readonly skillsMenu: SkillsMenuState
   readonly inspectMenu: InspectMenuState
   readonly guardrailNotice?: GuardrailNotice | null
+  readonly activity?: ActivitySnapshot
+  readonly runtimeFlags?: RuntimeBehaviorFlags
+  readonly thinkingArtifact?: ThinkingArtifact | null
+  readonly thinkingPreview?: ThinkingPreviewState | null
   readonly viewClearAt?: number | null
   readonly viewPrefs: TranscriptPreferences
   readonly todoScopeKey: string

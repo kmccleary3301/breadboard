@@ -141,4 +141,70 @@ describe("ReplSessionController thinking policy modes", () => {
     expect(state.thinkingArtifact?.finalizedAt).not.toBeNull()
     expect(state.activity?.primary).toBe("error")
   })
+
+  it("tracks thinking preview lifecycle from open to closed when response starts", () => {
+    const controller = createController()
+    controller.viewPrefs = { ...controller.viewPrefs, showReasoning: false }
+    controller.runtimeFlags = {
+      ...controller.runtimeFlags,
+      thinkingEnabled: true,
+      thinkingPreviewEnabled: true,
+      thinkingPreviewMaxLines: 3,
+      thinkingPreviewTtlMs: 1200,
+      statusUpdateMs: 0,
+    }
+
+    controller.applyEvent(event(1, "turn_start"))
+    controller.applyEvent(event(2, "assistant.thought_summary.delta", { delta: "plan one" }))
+    let state = controller.getState()
+    expect(state.thinkingPreview?.lifecycle).toBe("open")
+    expect(state.thinkingPreview?.lines.some((line: string) => line.includes("plan one"))).toBe(true)
+
+    controller.applyEvent(event(3, "assistant.message.start"))
+    state = controller.getState()
+    expect(state.thinkingPreview?.lifecycle).toBe("closed")
+    expect((state.runtimeTelemetry?.thinkingPreviewOpened ?? 0)).toBeGreaterThanOrEqual(1)
+    expect((state.runtimeTelemetry?.thinkingPreviewClosed ?? 0)).toBeGreaterThanOrEqual(1)
+  })
+
+  it("expires closed thinking previews when ttl is zero", () => {
+    const controller = createController()
+    controller.viewPrefs = { ...controller.viewPrefs, showReasoning: false }
+    controller.runtimeFlags = {
+      ...controller.runtimeFlags,
+      thinkingEnabled: true,
+      thinkingPreviewEnabled: true,
+      thinkingPreviewTtlMs: 0,
+      statusUpdateMs: 0,
+    }
+
+    controller.applyEvent(event(1, "turn_start"))
+    controller.applyEvent(event(2, "assistant.thought_summary.delta", { delta: "compact summary" }))
+    controller.applyEvent(event(3, "assistant.message.start"))
+    const state = controller.getState()
+    expect(state.thinkingPreview).toBeNull()
+    expect((state.runtimeTelemetry?.thinkingPreviewExpired ?? 0)).toBeGreaterThanOrEqual(1)
+  })
+
+  it("closes preview/finalizes thinking on run.end when no assistant message start arrives", () => {
+    const controller = createController()
+    controller.viewPrefs = { ...controller.viewPrefs, showReasoning: false }
+    controller.runtimeFlags = {
+      ...controller.runtimeFlags,
+      thinkingEnabled: true,
+      thinkingPreviewEnabled: true,
+      thinkingPreviewTtlMs: 1200,
+      statusUpdateMs: 0,
+    }
+
+    controller.applyEvent(event(1, "turn_start"))
+    controller.applyEvent(event(2, "assistant.thought_summary.delta", { delta: "still thinking" }))
+    controller.applyEvent(event(3, "run.end", { completed: true }))
+    const state = controller.getState()
+
+    expect(state.pendingResponse).toBe(false)
+    expect(state.thinkingPreview?.lifecycle).toBe("closed")
+    expect(state.thinkingArtifact?.finalizedAt).not.toBeNull()
+    expect(state.activity?.primary).toBe("completed")
+  })
 })

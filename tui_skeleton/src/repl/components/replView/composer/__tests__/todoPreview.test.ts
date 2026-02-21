@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { buildTodoPreviewModel, DEFAULT_TODO_PREVIEW_MAX_ITEMS, getTodoPreviewRowCount } from "../todoPreview.js"
+import { ASCII_ONLY } from "../../theme.js"
+
+const OPEN_TOKEN = ASCII_ONLY ? "[ ]" : "☐"
+const DONE_TOKEN = ASCII_ONLY ? "[x]" : "🗹"
 
 const storeFromTodos = (todos: Array<{ id: string; title: string; status: string; metadata?: Record<string, unknown> | null }>) => ({
   revision: 1,
@@ -20,7 +24,7 @@ describe("buildTodoPreviewModel", () => {
       { id: "3", title: "Third", status: "in_progress" },
     ]))
     expect(model?.header).toBe("TODOs: 1/3")
-    expect(model?.items.map((item) => item.label)).toEqual(["[ ] First", "[x] Second", "[~] Third"])
+    expect(model?.items.map((item) => item.label)).toEqual([`${OPEN_TOKEN} First`, `${DONE_TOKEN} Second`, `${OPEN_TOKEN} Third`])
     expect(getTodoPreviewRowCount(model)).toBe(1 + 3)
   })
 
@@ -57,8 +61,8 @@ describe("buildTodoPreviewModel", () => {
     }))
     const model = buildTodoPreviewModel(storeFromTodos(todos), { maxItems: DEFAULT_TODO_PREVIEW_MAX_ITEMS })
     expect(model?.items).toHaveLength(DEFAULT_TODO_PREVIEW_MAX_ITEMS)
-    expect(model?.items[0]?.label).toBe("[ ] Item 1")
-    expect(model?.items[DEFAULT_TODO_PREVIEW_MAX_ITEMS - 1]?.label).toBe(`[ ] Item ${DEFAULT_TODO_PREVIEW_MAX_ITEMS}`)
+    expect(model?.items[0]?.label).toBe(`${OPEN_TOKEN} Item 1`)
+    expect(model?.items[DEFAULT_TODO_PREVIEW_MAX_ITEMS - 1]?.label).toBe(`${OPEN_TOKEN} Item ${DEFAULT_TODO_PREVIEW_MAX_ITEMS}`)
   })
 
   it("omits header when disabled", () => {

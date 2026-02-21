@@ -102,15 +102,46 @@ export interface RuntimeTelemetry {
   readonly statusTransitions: number
   readonly suppressedTransitions: number
   readonly illegalTransitions: number
+  readonly statusCommits: number
+  readonly statusCoalesced: number
   readonly markdownFlushes: number
   readonly thinkingUpdates: number
+  readonly thinkingPreviewOpened: number
+  readonly thinkingPreviewClosed: number
+  readonly thinkingPreviewExpired: number
   readonly adaptiveCadenceAdjustments: number
+  readonly eventFlushes: number
+  readonly eventCoalesced: number
+  readonly eventMaxQueueDepth: number
+  readonly optimisticToolRows: number
+  readonly optimisticToolReconciled: number
+  readonly optimisticDiffRows: number
+  readonly optimisticDiffReconciled: number
   readonly workgraphFlushes: number
   readonly workgraphEvents: number
   readonly workgraphMaxQueueDepth: number
+  readonly workgraphLaneTransitions: number
+  readonly workgraphDroppedTransitions: number
+  readonly workgraphLaneChurn: number
+  readonly workgraphDroppedEvents: number
 }
 
 export type ThinkingMode = "off" | "summary" | "full"
+
+export type ThinkingPreviewLifecycle = "open" | "updating" | "closed"
+
+export interface ThinkingPreviewState {
+  readonly id: string
+  readonly mode: ThinkingMode
+  readonly lifecycle: ThinkingPreviewLifecycle
+  readonly startedAt: number
+  readonly updatedAt: number
+  readonly closedAt?: number | null
+  readonly eventCount: number
+  readonly lines: ReadonlyArray<string>
+  readonly truncated: boolean
+  readonly sourceEventTypes?: ReadonlyArray<string>
+}
 
 export interface ThinkingArtifact {
   readonly id: string
@@ -129,6 +160,7 @@ export interface RuntimeBehaviorFlags {
   readonly activityEnabled: boolean
   readonly lifecycleToastsEnabled: boolean
   readonly thinkingEnabled: boolean
+  readonly thinkingPreviewEnabled: boolean
   readonly allowFullThinking: boolean
   readonly allowRawThinkingPeek: boolean
   readonly inlineThinkingBlockEnabled: boolean
@@ -137,8 +169,12 @@ export interface RuntimeBehaviorFlags {
   readonly transitionDebug: boolean
   readonly minDisplayMs: number
   readonly statusUpdateMs: number
+  readonly eventCoalesceMs: number
+  readonly eventCoalesceMaxBatch: number
   readonly thinkingMaxChars: number
   readonly thinkingMaxLines: number
+  readonly thinkingPreviewMaxLines: number
+  readonly thinkingPreviewTtlMs: number
   readonly adaptiveMarkdownMinChunkChars: number
   readonly adaptiveMarkdownMinCoalesceMs: number
   readonly adaptiveMarkdownBurstChars: number
@@ -175,6 +211,24 @@ export interface DiffBlock {
   readonly language?: string | null
   readonly toolCallId?: string | null
   readonly title?: string | null
+}
+
+export interface ToolArtifactRefPreview {
+  readonly lines?: ReadonlyArray<string> | null
+  readonly omitted_lines?: number | null
+  readonly note?: string | null
+}
+
+export interface ToolArtifactRef {
+  readonly schema_version: "artifact_ref_v1"
+  readonly id: string
+  readonly kind: "tool_output" | "tool_diff" | "tool_result"
+  readonly mime: string
+  readonly size_bytes: number
+  readonly sha256: string
+  readonly storage: "workspace_file"
+  readonly path: string
+  readonly preview?: ToolArtifactRefPreview | null
 }
 
 export interface TuiToken {
@@ -216,6 +270,7 @@ export interface ToolDisplayPayload {
   } | null
   readonly category?: string | null
   readonly diff_blocks?: DiffBlock[] | null
+  readonly detail_artifact?: ToolArtifactRef | null
 }
 
 export interface ToolLogEntry {
@@ -339,10 +394,20 @@ export interface Lane {
   readonly label: string
   readonly kind: LaneKind
   readonly statusSummary: LaneStatusSummary
+  readonly updatedAt?: number
+  readonly activeCount?: number
+  readonly recentTool?: string | null
   readonly artifact?: {
     readonly jsonl?: string | null
     readonly metaJson?: string | null
   } | null
+}
+
+export interface WorkGraphTelemetry {
+  readonly laneTransitions: number
+  readonly droppedTransitions: number
+  readonly laneChurn: number
+  readonly droppedEvents: number
 }
 
 export interface WorkGraphState {
@@ -352,6 +417,7 @@ export interface WorkGraphState {
   readonly laneOrder: ReadonlyArray<string>
   readonly processedEventKeys: ReadonlyArray<string>
   readonly lastSeq: number
+  readonly telemetry?: WorkGraphTelemetry
 }
 
 export interface TaskEntry {

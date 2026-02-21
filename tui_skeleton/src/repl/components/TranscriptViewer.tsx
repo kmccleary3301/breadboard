@@ -2,6 +2,7 @@ import React from "react"
 import { Box, Text } from "ink"
 import chalk from "chalk"
 import { NEUTRAL_COLORS, SEMANTIC_COLORS, resolveAsciiOnly, resolveColorMode, resolveIcons } from "../designSystem.js"
+import { createScrollWindow, formatScrollRange } from "./replView/utils/scrollWindow.js"
 
 const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 40
@@ -101,10 +102,8 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
         ? 5
         : 4
   const bodyRows = Math.max(1, height - chromeRows)
-  const maxScroll = Math.max(0, lines.length - bodyRows)
-  const start = Math.max(0, Math.min(scroll, maxScroll))
-  const end = Math.min(lines.length, start + bodyRows)
-  const visible = lines.slice(start, end)
+  const window = createScrollWindow(lines, scroll, bodyRows)
+  const { start, end, visible, maxScroll } = window
   const padded = visible.length < bodyRows ? [...visible, ...Array(bodyRows - visible.length).fill("")] : visible
   const matchLineSet = new Set(matchLines ?? [])
 
@@ -203,9 +202,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
       <Text color="dim" wrap="truncate-end">
         {lines.length === 0
           ? "No transcript entries."
-          : uiText(
-              `Lines ${start + 1}-${end} of ${lines.length}${maxScroll > 0 ? ` • scroll ${start}/${maxScroll}` : ""}`,
-            )}
+          : uiText(`Lines ${formatScrollRange(window, { includeScrollOffset: true })}`)}
       </Text>
     </Box>
   )

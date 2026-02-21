@@ -1,5 +1,6 @@
 import { useCallback } from "react"
 import type { KeyHandler } from "../../../../hooks/useKeyRouter.js"
+import { matchesActionBinding, normalizeKeyProfile } from "../../keybindings/actionKeymap.js"
 
 type GlobalKeyHandlerContext = Record<string, any>
 
@@ -53,12 +54,13 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
   return useCallback<KeyHandler>(
     (char, key) => {
       const lowerChar = char?.toLowerCase()
+      const profile = normalizeKeyProfile(keymap)
       const isEscapeKey = key.escape || char === "\u001b"
-      const isCtrlT = key.ctrl && lowerChar === "t"
-      const isCtrlShiftT = key.ctrl && key.shift && lowerChar === "t"
-      const isCtrlB = key.ctrl && lowerChar === "b"
-      const isCtrlY = (key.ctrl && lowerChar === "y") || char === "\u0019"
-      const isCtrlG = (key.ctrl && lowerChar === "g") || char === "\u0007"
+      const isCtrlT = matchesActionBinding(profile, "toggle_todos_panel", char, key)
+      const isCtrlShiftT = matchesActionBinding(profile, "toggle_transcript_viewer", char, key)
+      const isCtrlB = matchesActionBinding(profile, "toggle_tasks_panel", char, key)
+      const isCtrlY = matchesActionBinding(profile, "toggle_ctree_panel", char, key) || char === "\u0019"
+      const isCtrlG = matchesActionBinding(profile, "toggle_skills_panel", char, key) || char === "\u0007"
       const isCtrlU = (key.ctrl && lowerChar === "u") || char === "\u0015"
       if (isCtrlShiftT) {
         setCtreeOpen(false)
@@ -115,7 +117,7 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
         }
         return true
       }
-      if (key.ctrl && lowerChar === "l") {
+      if (matchesActionBinding(profile, "clear_screen", char, key)) {
         clearScreen()
         return true
       }
@@ -237,7 +239,7 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
         void onSubmit("/todo-scope next")
         return true
       }
-      if (key.ctrl && lowerChar === "i") {
+      if (matchesActionBinding(profile, "inspect_panel", char, key)) {
         void onSubmit("/inspect")
         return true
       }
@@ -247,7 +249,7 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
         })
         return true
       }
-      if (key.ctrl && lowerChar === "p") {
+      if (matchesActionBinding(profile, "toggle_palette", char, key)) {
         if (paletteState.status === "open") closePalette()
         else openPalette()
         return true

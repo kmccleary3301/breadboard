@@ -256,4 +256,15 @@ describe("renderStateToText", () => {
     const snapshot = renderStateToText(state, { includeHeader: false, includeStatus: false, colors: false })
     expect(snapshot).toContain("rich markdown disabled: worker failed")
   })
+
+  it("renders task status rows with explicit status glyphs instead of Task prefix", () => {
+    const state: ReplState = {
+      ...baseState(),
+      toolEvents: [{ id: "task-1", kind: "status", text: "[task] complete · Index workspace files · task-1", status: "success", createdAt: 0 }],
+      hints: [],
+    }
+    const snapshot = renderStateToText(state, { includeHeader: false, includeStatus: false, colors: false })
+    expect(snapshot).toContain("✓ completed · Index workspace files · task-1")
+    expect(snapshot).not.toContain("Task · complete")
+  })
 })

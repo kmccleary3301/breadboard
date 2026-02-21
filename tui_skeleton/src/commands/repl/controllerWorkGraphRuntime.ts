@@ -15,11 +15,15 @@ import { extractString, isRecord, numberOrUndefined } from "./controllerUtils.js
 const DEFAULT_MAX_WORK_ITEMS = 200
 const DEFAULT_MAX_STEPS_PER_TASK = 50
 const DEFAULT_MAX_PROCESSED_EVENT_KEYS = 512
+const DEFAULT_LANE_RETENTION_MS = 30 * 60 * 1000
+const DEFAULT_MAX_LANES = 128
 
 export interface WorkGraphLimits {
   readonly maxWorkItems: number
   readonly maxStepsPerTask: number
   readonly maxProcessedEventKeys: number
+  readonly laneRetentionMs: number
+  readonly maxLanes: number
 }
 
 export interface WorkGraphReduceInput {
@@ -37,12 +41,20 @@ export const createWorkGraphState = (): WorkGraphState => ({
   laneOrder: [],
   processedEventKeys: [],
   lastSeq: 0,
+  telemetry: {
+    laneTransitions: 0,
+    droppedTransitions: 0,
+    laneChurn: 0,
+    droppedEvents: 0,
+  },
 })
 
 export const resolveWorkGraphLimits = (input?: Partial<WorkGraphLimits>): WorkGraphLimits => ({
   maxWorkItems: Math.max(1, Math.floor(input?.maxWorkItems ?? DEFAULT_MAX_WORK_ITEMS)),
   maxStepsPerTask: Math.max(1, Math.floor(input?.maxStepsPerTask ?? DEFAULT_MAX_STEPS_PER_TASK)),
   maxProcessedEventKeys: Math.max(16, Math.floor(input?.maxProcessedEventKeys ?? DEFAULT_MAX_PROCESSED_EVENT_KEYS)),
+  laneRetentionMs: Math.max(1_000, Math.floor(input?.laneRetentionMs ?? DEFAULT_LANE_RETENTION_MS)),
+  maxLanes: Math.max(1, Math.floor(input?.maxLanes ?? DEFAULT_MAX_LANES)),
 })
 
 const normalizeWorkStatus = (value: string | undefined, kind?: string): WorkStatus => {
@@ -65,6 +77,32 @@ const normalizeWorkStatus = (value: string | undefined, kind?: string): WorkStat
     return "running"
   }
   return "pending"
+}
+
+const ALLOWED_STATUS_TRANSITIONS: Record<WorkStatus, ReadonlySet<WorkStatus>> = {
+  pending: new Set(["pending", "running", "blocked", "cancelled", "failed"]),
+  running: new Set(["running", "blocked", "completed", "failed", "cancelled"]),
+  blocked: new Set(["blocked", "running", "completed", "failed", "cancelled"]),
+  completed: new Set(["completed"]),
+  failed: new Set(["failed", "running"]),
+  cancelled: new Set(["cancelled", "running"]),
+}
+
+const resolveTransitionedStatus = (
+  previousStatus: WorkStatus | undefined,
+  nextStatus: WorkStatus,
+): { status: WorkStatus; droppedTransition: boolean; transitioned: boolean } => {
+  if (!previousStatus) {
+    return { status: nextStatus, droppedTransition: false, transitioned: true }
+  }
+  if (previousStatus === nextStatus) {
+    return { status: nextStatus, droppedTransition: false, transitioned: false }
+  }
+  const allowed = ALLOWED_STATUS_TRANSITIONS[previousStatus]
+  if (allowed && allowed.has(nextStatus)) {
+    return { status: nextStatus, droppedTransition: false, transitioned: true }
+  }
+  return { status: previousStatus, droppedTransition: true, transitioned: false }
 }
 
 const normalizeWorkMode = (payload: Record<string, unknown>, eventType: string): WorkMode => {
@@ -198,13 +236,25 @@ const rebuildLaneSummaries = (
     blocked: number
   }
   const summaries: Record<string, MutableLaneSummary> = {}
+  const laneUpdatedAt: Record<string, number> = {}
+  const laneActiveCount: Record<string, number> = {}
+  const laneRecentTool: Record<string, string | null> = {}
   for (const laneId of laneOrder) {
     summaries[laneId] = { running: 0, failed: 0, blocked: 0 }
+    laneUpdatedAt[laneId] = 0
+    laneActiveCount[laneId] = 0
+    laneRecentTool[laneId] = null
   }
   for (const workId of itemOrder) {
     const item = itemsById[workId]
     if (!item) continue
     if (!summaries[item.laneId]) summaries[item.laneId] = { running: 0, failed: 0, blocked: 0 }
+    laneUpdatedAt[item.laneId] = Math.max(laneUpdatedAt[item.laneId] ?? 0, item.updatedAt)
+    laneActiveCount[item.laneId] = (laneActiveCount[item.laneId] ?? 0) + 1
+    const latestStep = item.steps[item.steps.length - 1]
+    if (latestStep?.label) {
+      laneRecentTool[item.laneId] = latestStep.label
+    }
     if (item.status === "running") summaries[item.laneId].running += 1
     else if (item.status === "failed") summaries[item.laneId].failed += 1
     else if (item.status === "blocked") summaries[item.laneId].blocked += 1
@@ -216,6 +266,9 @@ const rebuildLaneSummaries = (
     nextLanes[laneId] = {
       ...lane,
       statusSummary: (summaries[laneId] ?? { running: 0, failed: 0, blocked: 0 }) as LaneStatusSummary,
+      updatedAt: laneUpdatedAt[laneId] ?? lane.updatedAt ?? 0,
+      activeCount: laneActiveCount[laneId] ?? lane.activeCount ?? 0,
+      recentTool: laneRecentTool[laneId] ?? lane.recentTool ?? null,
     }
   }
   return nextLanes
@@ -231,7 +284,10 @@ export const reduceWorkGraphEvent = (
   if (!taskId) return previous
   const updatedAt = parseEventTime(input)
   const kind = extractString(input.payload, ["kind", "event", "type"])
-  const status = normalizeWorkStatus(extractString(input.payload, ["status", "state"]), kind)
+  const nextStatusCandidate = normalizeWorkStatus(extractString(input.payload, ["status", "state"]), kind)
+  const existing = previous.itemsById[taskId]
+  const transition = resolveTransitionedStatus(existing?.status, nextStatusCandidate)
+  const status = transition.status
   const eventKey = resolveEventKey(input, taskId, status, updatedAt)
   if (previous.processedEventKeys.includes(eventKey)) return previous
 
@@ -246,7 +302,6 @@ export const reduceWorkGraphEvent = (
       ? extractString(input.payload.artifact, ["path", "file"])
       : undefined)
   const excerpt = sanitizeExcerpt(input.payload)
-  const existing = previous.itemsById[taskId]
   const currentSteps = existing?.steps ?? []
   const nextSteps = upsertStep(currentSteps, input.payload, status, updatedAt, limits.maxStepsPerTask)
   const nextItem: WorkItem = {
@@ -296,20 +351,44 @@ export const reduceWorkGraphEvent = (
   }
 
   let nextItemOrder = Object.keys(nextItemsById).sort(compareIdsByUpdatedAt(nextItemsById))
+  let droppedEvents = previous.telemetry?.droppedEvents ?? 0
   if (nextItemOrder.length > limits.maxWorkItems) {
     const keep = new Set(nextItemOrder.slice(0, limits.maxWorkItems))
     for (const workId of Object.keys(nextItemsById)) {
-      if (!keep.has(workId)) delete nextItemsById[workId]
+      if (!keep.has(workId)) {
+        delete nextItemsById[workId]
+        droppedEvents += 1
+      }
     }
     nextItemOrder = nextItemOrder.slice(0, limits.maxWorkItems)
   }
 
-  const nextLaneOrder = Object.keys(nextLanesById).sort((a, b) => {
+  const liveLaneIds = new Set(nextItemOrder.map((workId) => nextItemsById[workId]?.laneId).filter(Boolean))
+  for (const laneId of Object.keys(nextLanesById)) {
+    if (!liveLaneIds.has(laneId)) {
+      const laneUpdatedAt = nextLanesById[laneId]?.updatedAt ?? 0
+      if (updatedAt - laneUpdatedAt > limits.laneRetentionMs) {
+        delete nextLanesById[laneId]
+      }
+    }
+  }
+
+  let nextLaneOrder = Object.keys(nextLanesById).sort((a, b) => {
     const left = nextLanesById[a]
     const right = nextLanesById[b]
     if (!left || !right) return a.localeCompare(b)
+    if ((left.updatedAt ?? 0) !== (right.updatedAt ?? 0)) {
+      return (right.updatedAt ?? 0) - (left.updatedAt ?? 0)
+    }
     return left.label.localeCompare(right.label) || a.localeCompare(b)
   })
+  if (nextLaneOrder.length > limits.maxLanes) {
+    const keep = new Set(nextLaneOrder.slice(0, limits.maxLanes))
+    for (const laneId of Object.keys(nextLanesById)) {
+      if (!keep.has(laneId)) delete nextLanesById[laneId]
+    }
+    nextLaneOrder = nextLaneOrder.slice(0, limits.maxLanes)
+  }
 
   const processedEventKeys = [...previous.processedEventKeys, eventKey]
   const clampedProcessedEventKeys =
@@ -317,6 +396,8 @@ export const reduceWorkGraphEvent = (
       ? processedEventKeys
       : processedEventKeys.slice(processedEventKeys.length - limits.maxProcessedEventKeys)
 
+  const previousLaneForItem = existing?.laneId ?? null
+  const laneChurn = previousLaneForItem && previousLaneForItem !== laneId ? 1 : 0
   return {
     itemsById: nextItemsById,
     itemOrder: nextItemOrder,
@@ -327,6 +408,12 @@ export const reduceWorkGraphEvent = (
       typeof input.seq === "number" && Number.isFinite(input.seq)
         ? Math.max(previous.lastSeq, input.seq)
         : previous.lastSeq,
+    telemetry: {
+      laneTransitions: (previous.telemetry?.laneTransitions ?? 0) + (transition.transitioned ? 1 : 0),
+      droppedTransitions: (previous.telemetry?.droppedTransitions ?? 0) + (transition.droppedTransition ? 1 : 0),
+      laneChurn: (previous.telemetry?.laneChurn ?? 0) + laneChurn,
+      droppedEvents,
+    },
   }
 }
 
@@ -374,5 +461,8 @@ export const formatWorkGraphReducerTrace = (
     `lanes=${previous.laneOrder.length}->${next.laneOrder.length}`,
     `keysApplied=${keyDelta}`,
     `lastSeq=${previous.lastSeq}->${next.lastSeq}`,
+    `laneTransitions=${previous.telemetry?.laneTransitions ?? 0}->${next.telemetry?.laneTransitions ?? 0}`,
+    `droppedTransitions=${previous.telemetry?.droppedTransitions ?? 0}->${next.telemetry?.droppedTransitions ?? 0}`,
+    `laneChurn=${previous.telemetry?.laneChurn ?? 0}->${next.telemetry?.laneChurn ?? 0}`,
   ].join(" ")
 }

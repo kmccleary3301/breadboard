@@ -18,6 +18,17 @@ export const ModalHost: React.FC<ModalHostProps> = ({ stack, children }) => {
   const width = stdout?.columns && Number.isFinite(stdout.columns) ? stdout.columns : 80
   const height = stdout?.rows && Number.isFinite(stdout.rows) ? stdout.rows : 40
   const layout = topModal?.layout ?? "center"
+
+  if (topModal && layout === "sheet") {
+    // Sheet overlays should occupy composer space in-flow, not float at terminal bottom.
+    return (
+      <Box flexDirection="column" width={width}>
+        {children}
+        {topModal.render()}
+      </Box>
+    )
+  }
+
   const modalAlign = layout === "sheet" ? "stretch" : "center"
   const modalPaddingBottom = layout === "sheet" ? 0 : 1
 

@@ -22,7 +22,10 @@ import type {
 } from "../../repl/types.js"
 import {
   appendThinkingArtifact,
+  appendThinkingPreviewState,
+  closeThinkingPreviewState,
   createThinkingArtifact,
+  createThinkingPreviewState,
   finalizeThinkingArtifact,
   normalizeThinkingSignal,
 } from "./controllerActivityRuntime.js"
@@ -130,6 +133,47 @@ const resolveThinkingMode = (controller: {
   controller.viewPrefs?.showReasoning && controller.runtimeFlags?.allowFullThinking === true
     ? "full"
     : "summary"
+
+const maybeStartThinkingPreview = (controller: any, mode: ThinkingMode, now = Date.now()): void => {
+  if (controller.runtimeFlags?.thinkingPreviewEnabled === false) {
+    controller.thinkingPreview = null
+    return
+  }
+  if (controller.thinkingPreview && controller.thinkingPreview.lifecycle !== "closed") {
+    controller.thinkingPreview = closeThinkingPreviewState(controller.thinkingPreview, now)
+    controller.bumpRuntimeTelemetry?.("thinkingPreviewClosed")
+  }
+  controller.thinkingPreview = createThinkingPreviewState(mode, now)
+  controller.bumpRuntimeTelemetry?.("thinkingPreviewOpened")
+}
+
+const appendThinkingPreview = (
+  controller: any,
+  signal: { kind: "delta" | "summary"; text: string; eventType: string },
+  now = Date.now(),
+): void => {
+  if (controller.runtimeFlags?.thinkingPreviewEnabled === false) return
+  const mode: ThinkingMode = resolveThinkingMode(controller)
+  const rawAllowed =
+    controller.runtimeFlags?.allowFullThinking === true &&
+    controller.runtimeFlags?.allowRawThinkingPeek === true &&
+    controller.viewPrefs?.showReasoning === true
+  const allowedText = signal.kind === "summary" || rawAllowed || DEBUG_EVENTS ? signal.text : ""
+  if (!allowedText.trim()) return
+  const seed = controller.thinkingPreview ?? createThinkingPreviewState(mode, now)
+  const opened = !controller.thinkingPreview
+  controller.thinkingPreview = appendThinkingPreviewState(seed, { ...signal, text: allowedText }, controller.runtimeFlags, now)
+  if (opened) {
+    controller.bumpRuntimeTelemetry?.("thinkingPreviewOpened")
+  }
+}
+
+const closeThinkingPreview = (controller: any, now = Date.now()): void => {
+  const current = controller.thinkingPreview
+  if (!current || current.lifecycle === "closed") return
+  controller.thinkingPreview = closeThinkingPreviewState(current, now)
+  controller.bumpRuntimeTelemetry?.("thinkingPreviewClosed")
+}
 
 const markThinkingActive = (controller: any, eventType: string): void => {
   controller.setActivityStatus?.("Assistant thinking…", {
@@ -636,12 +680,14 @@ export function handleToolCall(
   const toolText = this.formatToolDisplayText(display ? { ...payload, display } : payload)
   const cleanedToolText = stripAnsi(toolText).trim()
   const shouldLog = logEntry && Boolean(cleanedToolText && cleanedToolText !== "Tool")
+  const hasDiffBlocks = Array.isArray(display?.diff_blocks) && display.diff_blocks.length > 0
   let callEntry = callId ? this.toolLogEntryByCallId.get(callId) ?? null : null
   if (shouldLog) {
     if (callEntry) {
       this.updateToolEntry(callEntry, { text: toolText, status: "pending", ...(display ? { display } : {}) })
     } else {
       callEntry = this.addTool("call", toolText, "pending", { callId, display }).id
+      this.bumpRuntimeTelemetry?.(hasDiffBlocks ? "optimisticDiffRows" : "optimisticToolRows")
     }
   }
   const slotId = createSlotId()
@@ -675,12 +721,15 @@ export function handleToolResult(this: any, payload: Record<string, unknown>, ca
   const toolText = this.formatToolDisplayText(display ? { ...payload, display } : payload)
   const cleanedToolText = stripAnsi(toolText).trim()
   const shouldLog = Boolean(cleanedToolText && cleanedToolText !== "Tool")
+  const hasDiffBlocks = Array.isArray(display?.diff_blocks) && display.diff_blocks.length > 0
+  let reconciledExistingRow = false
   if (callEntryId) {
     this.updateToolEntry(callEntryId, {
       ...(shouldLog ? { text: toolText } : {}),
       status: resultWasError ? "error" : "success",
       ...(display ? { display } : {}),
     })
+    reconciledExistingRow = true
   } else if (shouldLog) {
     const header = toolText.split(/\r?\n/)[0]?.trim()
     let fallbackId: string | null = null
@@ -701,6 +750,7 @@ export function handleToolResult(this: any, payload: Record<string, unknown>, ca
         status: resultWasError ? "error" : "success",
         ...(display ? { display } : {}),
       })
+      reconciledExistingRow = true
     } else {
       this.addTool("result", toolText, resultWasError ? "error" : "success", { callId, display })
     }
@@ -717,6 +767,9 @@ export function handleToolResult(this: any, payload: Record<string, unknown>, ca
   } else {
     const slotId = this.toolSlotFallback.pop()
     if (slotId) this.finalizeLiveSlot(slotId, resultWasError ? "error" : "success")
+  }
+  if (reconciledExistingRow) {
+    this.bumpRuntimeTelemetry?.(hasDiffBlocks ? "optimisticDiffReconciled" : "optimisticToolReconciled")
   }
   if (this.viewPrefs.toolInline) {
     const summary =
@@ -889,17 +942,47 @@ export function enqueueEvent(this: any, event: SessionEvent): void {
     }
   }
   this.pendingEvents.push(event)
+  this.runtimeTelemetry = {
+    ...this.runtimeTelemetry,
+    eventMaxQueueDepth: Math.max(this.runtimeTelemetry.eventMaxQueueDepth ?? 0, this.pendingEvents.length),
+  }
+  const maxBatch = Math.max(1, Number(this.runtimeFlags?.eventCoalesceMaxBatch ?? 128))
+  if (this.pendingEvents.length >= maxBatch) {
+    this.flushPendingEvents()
+    return
+  }
   if (this.eventsScheduled) return
   this.eventsScheduled = true
-  queueMicrotask(() => {
-    this.eventsScheduled = false
-    const queue = this.pendingEvents
-    this.pendingEvents = []
-    for (const item of queue) {
-      this.applyEvent(item)
-    }
-    this.emitChange()
-  })
+  const coalesceMs = Math.max(0, Number(this.runtimeFlags?.eventCoalesceMs ?? 0))
+  if (coalesceMs <= 0) {
+    queueMicrotask(() => {
+      if (!this.eventsScheduled) return
+      this.flushPendingEvents()
+    })
+    return
+  }
+  this.eventFlushTimer = setTimeout(() => {
+    this.flushPendingEvents()
+  }, coalesceMs)
+}
+
+export function flushPendingEvents(this: any): void {
+  if (this.eventFlushTimer) {
+    clearTimeout(this.eventFlushTimer)
+    this.eventFlushTimer = null
+  }
+  this.eventsScheduled = false
+  const queue = this.pendingEvents
+  if (!Array.isArray(queue) || queue.length === 0) return
+  this.pendingEvents = []
+  if (queue.length > 1) {
+    this.bumpRuntimeTelemetry?.("eventCoalesced", queue.length - 1)
+  }
+  this.bumpRuntimeTelemetry?.("eventFlushes")
+  for (const item of queue) {
+    this.applyEvent(item)
+  }
+  this.emitChange()
 }
 
 export function applyEvent(this: any, event: SessionEvent): void {
@@ -993,8 +1076,10 @@ export function applyEvent(this: any, event: SessionEvent): void {
       if (this.runtimeFlags?.thinkingEnabled !== false) {
         const mode: ThinkingMode = resolveThinkingMode(this)
         this.thinkingArtifact = createThinkingArtifact(mode, Date.now())
+        maybeStartThinkingPreview(this, mode, Date.now())
       } else {
         this.thinkingArtifact = null
+        this.thinkingPreview = null
       }
       const payload = isRecord(event.payload) ? event.payload : {}
       const mode = normalizeModeValue(extractString(payload, ["mode", "agent_mode", "phase"]))
@@ -1010,6 +1095,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
     case "assistant.message.start": {
       this.finalizeStreamingEntry()
       markAssistantResponding(this, event.type)
+      closeThinkingPreview(this, Date.now())
       this.setStreamingConversation("assistant", "")
       break
     }
@@ -1028,6 +1114,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
     }
     case "assistant_message": {
       markAssistantResponding(this, event.type)
+      closeThinkingPreview(this, Date.now())
       const raw = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
       const text = typeof raw === "string" ? raw : ""
       const normalizedText = this.normalizeAssistantText(text)
@@ -1048,7 +1135,9 @@ export function applyEvent(this: any, event: SessionEvent): void {
     }
     case "assistant.reasoning.delta":
     case "assistant.thought_summary.delta": {
-      const signal = normalizeThinkingSignal(event.type, event.payload)
+      const signal = normalizeThinkingSignal(event.type, event.payload, {
+        provider: this.providerCapabilities?.provider ?? null,
+      })
       const delta = signal?.text ?? ""
       const capabilities = this.providerCapabilities ?? {
         reasoningEvents: true,
@@ -1064,6 +1153,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
         const seed = this.thinkingArtifact ?? createThinkingArtifact(mode, Date.now())
         this.thinkingArtifact = appendThinkingArtifact(seed, signal, this.runtimeFlags, Date.now())
         this.bumpRuntimeTelemetry?.("thinkingUpdates")
+        appendThinkingPreview(this, signal, Date.now())
       }
       if (signal) {
         appendInlineThinkingBlock(this, signal)
@@ -1594,6 +1684,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.pendingResponse = false
       this.pendingStartedAt = null
       this.thinkingInlineEntryId = null
+      closeThinkingPreview(this, Date.now())
       if (this.thinkingArtifact) {
         this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
       }
@@ -1613,6 +1704,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.pendingResponse = false
       this.pendingStartedAt = null
       this.thinkingInlineEntryId = null
+      closeThinkingPreview(this, Date.now())
       if (this.thinkingArtifact) {
         this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
       }
@@ -1643,6 +1735,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       }
       this.pendingResponse = false
       this.thinkingInlineEntryId = null
+      closeThinkingPreview(this, Date.now())
       this.setActivityStatus?.(view.status, {
         to: view.completed ? "completed" : "halted",
         eventType: event.type,
@@ -1680,6 +1773,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.pendingResponse = false
       this.pendingStartedAt = null
       this.thinkingInlineEntryId = null
+      closeThinkingPreview(this, Date.now())
       this.setActivityStatus?.(completed ? "Finished" : "Halted", {
         to: completed ? "completed" : "halted",
         eventType: event.type,
@@ -1707,6 +1801,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.pendingResponse = false
       this.pendingStartedAt = null
       this.thinkingInlineEntryId = null
+      closeThinkingPreview(this, Date.now())
       this.setActivityStatus?.(completed ? "Finished" : "Halted", {
         to: completed ? "completed" : "halted",
         eventType: event.type,

@@ -5,14 +5,19 @@ import type {
   RuntimeBehaviorFlags,
   RuntimeTelemetry,
   ThinkingArtifact,
+  ThinkingPreviewState,
   ThinkingMode,
 } from "../../repl/types.js"
 import { extractRawString, isRecord, parseNumberish } from "./controllerUtils.js"
 
 const DEFAULT_MIN_DISPLAY_MS = 200
 const DEFAULT_STATUS_UPDATE_MS = 120
+const DEFAULT_EVENT_COALESCE_MS = 80
+const DEFAULT_EVENT_COALESCE_MAX_BATCH = 128
 const DEFAULT_THINKING_MAX_CHARS = 600
 const DEFAULT_THINKING_MAX_LINES = 6
+const DEFAULT_THINKING_PREVIEW_MAX_LINES = 5
+const DEFAULT_THINKING_PREVIEW_TTL_MS = 1400
 const DEFAULT_ADAPTIVE_MIN_CHUNK_CHARS = 8
 const DEFAULT_ADAPTIVE_MIN_COALESCE_MS = 12
 const DEFAULT_ADAPTIVE_BURST_CHARS = 48
@@ -193,12 +198,14 @@ export interface ThinkingSignal {
   readonly kind: "delta" | "summary"
   readonly text: string
   readonly eventType: string
+  readonly provider?: string | null
 }
 
 export const resolveRuntimeBehaviorFlags = (env: NodeJS.ProcessEnv): RuntimeBehaviorFlags => ({
   activityEnabled: parseBoolEnv(env.BREADBOARD_ACTIVITY_ENABLED, true),
   lifecycleToastsEnabled: parseBoolEnv(env.BREADBOARD_ACTIVITY_LIFECYCLE_TOASTS, false),
   thinkingEnabled: parseBoolEnv(env.BREADBOARD_THINKING_ENABLED, true),
+  thinkingPreviewEnabled: parseBoolEnv(env.BREADBOARD_THINKING_PREVIEW_ENABLED, true),
   allowFullThinking: parseBoolEnv(env.BREADBOARD_THINKING_FULL_OPT_IN, false),
   allowRawThinkingPeek: parseBoolEnv(env.BREADBOARD_THINKING_PEEK_RAW_ALLOWED, false),
   inlineThinkingBlockEnabled: parseBoolEnv(env.BREADBOARD_THINKING_INLINE_COLLAPSIBLE, false),
@@ -207,8 +214,32 @@ export const resolveRuntimeBehaviorFlags = (env: NodeJS.ProcessEnv): RuntimeBeha
   transitionDebug: parseBoolEnv(env.BREADBOARD_ACTIVITY_TRANSITION_DEBUG, false),
   minDisplayMs: parseBoundedIntEnv(env.BREADBOARD_ACTIVITY_MIN_DISPLAY_MS, DEFAULT_MIN_DISPLAY_MS, 0, 60_000),
   statusUpdateMs: parseBoundedIntEnv(env.BREADBOARD_STATUS_UPDATE_MS, DEFAULT_STATUS_UPDATE_MS, 0, 10_000),
+  eventCoalesceMs: parseBoundedIntEnv(
+    env.BREADBOARD_EVENT_COALESCE_MS,
+    DEFAULT_EVENT_COALESCE_MS,
+    0,
+    5000,
+  ),
+  eventCoalesceMaxBatch: parseBoundedIntEnv(
+    env.BREADBOARD_EVENT_COALESCE_MAX_BATCH,
+    DEFAULT_EVENT_COALESCE_MAX_BATCH,
+    1,
+    10_000,
+  ),
   thinkingMaxChars: parseBoundedIntEnv(env.BREADBOARD_THINKING_MAX_CHARS, DEFAULT_THINKING_MAX_CHARS, 16, 20_000),
   thinkingMaxLines: parseBoundedIntEnv(env.BREADBOARD_THINKING_MAX_LINES, DEFAULT_THINKING_MAX_LINES, 1, 200),
+  thinkingPreviewMaxLines: parseBoundedIntEnv(
+    env.BREADBOARD_THINKING_PREVIEW_MAX_LINES,
+    DEFAULT_THINKING_PREVIEW_MAX_LINES,
+    1,
+    24,
+  ),
+  thinkingPreviewTtlMs: parseBoundedIntEnv(
+    env.BREADBOARD_THINKING_PREVIEW_TTL_MS,
+    DEFAULT_THINKING_PREVIEW_TTL_MS,
+    0,
+    60_000,
+  ),
   adaptiveMarkdownMinChunkChars: parseBoundedIntEnv(
     env.BREADBOARD_MARKDOWN_ADAPTIVE_MIN_CHUNK_CHARS,
     DEFAULT_ADAPTIVE_MIN_CHUNK_CHARS,
@@ -256,12 +287,28 @@ export const createRuntimeTelemetry = (): RuntimeTelemetry => ({
   statusTransitions: 0,
   suppressedTransitions: 0,
   illegalTransitions: 0,
+  statusCommits: 0,
+  statusCoalesced: 0,
   markdownFlushes: 0,
   thinkingUpdates: 0,
+  thinkingPreviewOpened: 0,
+  thinkingPreviewClosed: 0,
+  thinkingPreviewExpired: 0,
   adaptiveCadenceAdjustments: 0,
+  eventFlushes: 0,
+  eventCoalesced: 0,
+  eventMaxQueueDepth: 0,
+  optimisticToolRows: 0,
+  optimisticToolReconciled: 0,
+  optimisticDiffRows: 0,
+  optimisticDiffReconciled: 0,
   workgraphFlushes: 0,
   workgraphEvents: 0,
   workgraphMaxQueueDepth: 0,
+  workgraphLaneTransitions: 0,
+  workgraphDroppedTransitions: 0,
+  workgraphLaneChurn: 0,
+  workgraphDroppedEvents: 0,
 })
 
 export const bumpTelemetry = (
@@ -420,16 +467,154 @@ export const finalizeThinkingArtifact = (artifact: ThinkingArtifact, now = Date.
   finalizedAt: now,
 })
 
-export const normalizeThinkingSignal = (eventType: string, payload: unknown): ThinkingSignal | null => {
+const normalizeThinkingText = (value: unknown): string | null => {
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((entry) => {
+        if (typeof entry === "string") return entry
+        const obj = isRecord(entry) ? entry : {}
+        return (
+          extractRawString(obj, ["text", "summary", "value", "content"]) ??
+          extractRawString(obj, ["output_text", "reasoning"])
+        )
+      })
+      .filter((entry): entry is string => Boolean(entry && entry.trim().length > 0))
+    if (parts.length === 0) return null
+    return parts.join("\n")
+  }
+  return null
+}
+
+const extractOpenAiThinkingText = (payload: Record<string, unknown>): string | null =>
+  normalizeThinkingText(payload.summary) ??
+  normalizeThinkingText(payload.reasoning) ??
+  normalizeThinkingText(payload.reasoning_summary) ??
+  normalizeThinkingText(payload.output_text) ??
+  normalizeThinkingText(payload.output)
+
+const extractAnthropicThinkingText = (payload: Record<string, unknown>): string | null =>
+  normalizeThinkingText(payload.thinking_delta) ??
+  normalizeThinkingText(payload.thinking) ??
+  (() => {
+    const block = isRecord(payload.content_block) ? payload.content_block : {}
+    return normalizeThinkingText(block.thinking ?? block.text ?? block.summary)
+  })() ??
+  normalizeThinkingText(payload.delta) ??
+  normalizeThinkingText(payload.text)
+
+const truncateThinkingPreviewLine = (line: string, maxChars: number): string => {
+  if (line.length <= maxChars) return line
+  const safe = Math.max(1, maxChars - 1)
+  return `${line.slice(0, safe)}…`
+}
+
+const splitThinkingPreviewLines = (text: string, maxChars = 240): string[] =>
+  text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => truncateThinkingPreviewLine(line, maxChars))
+
+const normalizeReasoningEventType = (
+  eventType: string,
+  payload: Record<string, unknown>,
+): "summary" | "delta" => {
+  if (eventType.includes("thought_summary")) return "summary"
+  const hasSummaryShape =
+    payload.summary != null || payload.thought_summary != null || payload.reasoning_summary != null
+  return hasSummaryShape ? "summary" : "delta"
+}
+
+export const createThinkingPreviewState = (
+  mode: ThinkingMode,
+  now = Date.now(),
+  id?: string,
+): ThinkingPreviewState => ({
+  id: id ?? `thinking-preview-${now.toString(36)}`,
+  mode,
+  lifecycle: "open",
+  startedAt: now,
+  updatedAt: now,
+  closedAt: null,
+  eventCount: 0,
+  lines: [],
+  truncated: false,
+  sourceEventTypes: [],
+})
+
+export const appendThinkingPreviewState = (
+  state: ThinkingPreviewState,
+  signal: ThinkingSignal,
+  flags: RuntimeBehaviorFlags,
+  now = Date.now(),
+): ThinkingPreviewState => {
+  const maxLines = Math.max(1, Number(flags.thinkingPreviewMaxLines ?? DEFAULT_THINKING_PREVIEW_MAX_LINES))
+  const nextLines = [...state.lines, ...splitThinkingPreviewLines(signal.text)]
+  const normalizedLines = nextLines.slice(-maxLines)
+  return {
+    ...state,
+    lifecycle: state.eventCount === 0 ? "open" : "updating",
+    updatedAt: now,
+    eventCount: state.eventCount + 1,
+    lines: normalizedLines,
+    truncated: state.truncated || nextLines.length > normalizedLines.length,
+    sourceEventTypes: [...(state.sourceEventTypes ?? []), signal.eventType].slice(-20),
+  }
+}
+
+export const closeThinkingPreviewState = (
+  state: ThinkingPreviewState,
+  now = Date.now(),
+): ThinkingPreviewState => ({
+  ...state,
+  lifecycle: "closed",
+  updatedAt: now,
+  closedAt: now,
+})
+
+export const pruneThinkingPreviewState = (
+  state: ThinkingPreviewState | null,
+  flags: RuntimeBehaviorFlags,
+  now = Date.now(),
+): ThinkingPreviewState | null => {
+  if (!state) return null
+  if (state.lifecycle !== "closed") return state
+  const ttlMs = Math.max(0, Number(flags.thinkingPreviewTtlMs ?? DEFAULT_THINKING_PREVIEW_TTL_MS))
+  if (ttlMs <= 0) return null
+  const closedAt = Number(state.closedAt ?? state.updatedAt)
+  if (!Number.isFinite(closedAt)) return null
+  return now - closedAt >= ttlMs ? null : state
+}
+
+export const normalizeThinkingSignal = (
+  eventType: string,
+  payload: unknown,
+  options?: { provider?: string | null },
+): ThinkingSignal | null => {
   const obj = isRecord(payload) ? payload : {}
+  const provider = (options?.provider ?? "").trim().toLowerCase() || null
+  const providerDelta =
+    provider === "openai"
+      ? extractOpenAiThinkingText(obj)
+      : provider === "anthropic"
+        ? extractAnthropicThinkingText(obj)
+        : null
   const delta =
-    extractRawString(obj, ["delta", "text", "summary", "thought_summary"]) ??
-    (typeof obj.reasoning === "string" ? obj.reasoning : undefined)
+    providerDelta ??
+    extractRawString(obj, ["delta", "text", "summary", "thought_summary", "thinking", "thinking_delta"]) ??
+    normalizeThinkingText(obj.reasoning) ??
+    normalizeThinkingText(obj.content)
   if (!delta || !delta.trim()) return null
-  const kind = eventType.includes("thought_summary") ? "summary" : "delta"
+  const kind = normalizeReasoningEventType(eventType, obj)
   return {
     kind,
     text: delta,
     eventType,
+    provider,
   }
 }

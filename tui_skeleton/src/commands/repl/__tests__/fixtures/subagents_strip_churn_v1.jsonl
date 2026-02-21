@@ -1,0 +1,18 @@
+{"event":{"id":"sc-1","seq":1,"turn":1,"type":"run.start","payload":{}}}
+{"event":{"id":"sc-2","seq":2,"turn":1,"type":"turn_start","payload":{}}}
+{"event":{"id":"sc-3","seq":3,"turn":1,"type":"task_event","payload":{"task_id":"task-01","status":"running","description":"Index shard 01","lane_id":"lane-1","lane_label":"Indexer"}}}
+{"event":{"id":"sc-4","seq":4,"turn":1,"type":"task_event","payload":{"task_id":"task-02","status":"running","description":"Index shard 02","lane_id":"lane-1","lane_label":"Indexer"}}}
+{"event":{"id":"sc-5","seq":5,"turn":1,"type":"task_event","payload":{"task_id":"task-03","status":"running","description":"Parse symbols 03","lane_id":"lane-2","lane_label":"Symbols"}}}
+{"event":{"id":"sc-6","seq":6,"turn":1,"type":"task_event","payload":{"task_id":"task-04","status":"running","description":"Run checks 04","lane_id":"lane-3","lane_label":"Checks"}}}
+{"event":{"id":"sc-7","seq":7,"turn":1,"type":"task_event","payload":{"task_id":"task-05","status":"running","description":"Patch file 05","lane_id":"lane-4","lane_label":"Patch"}}}
+{"event":{"id":"sc-8","seq":8,"turn":1,"type":"task_event","payload":{"task_id":"task-06","status":"running","description":"Patch file 06","lane_id":"lane-4","lane_label":"Patch"}}}
+{"event":{"id":"sc-9","seq":9,"turn":1,"type":"task_event","payload":{"task_id":"task-01","status":"complete","description":"Index shard 01","lane_id":"lane-1","lane_label":"Indexer"}}}
+{"event":{"id":"sc-10","seq":10,"turn":1,"type":"task_event","payload":{"task_id":"task-02","status":"complete","description":"Index shard 02","lane_id":"lane-1","lane_label":"Indexer"}}}
+{"event":{"id":"sc-11","seq":11,"turn":1,"type":"task_event","payload":{"task_id":"task-03","status":"complete","description":"Parse symbols 03","lane_id":"lane-2","lane_label":"Symbols"}}}
+{"event":{"id":"sc-12","seq":12,"turn":1,"type":"task_event","payload":{"task_id":"task-04","status":"complete","description":"Run checks 04","lane_id":"lane-3","lane_label":"Checks"}}}
+{"event":{"id":"sc-13","seq":13,"turn":1,"type":"task_event","payload":{"task_id":"task-05","status":"complete","description":"Patch file 05","lane_id":"lane-4","lane_label":"Patch"}}}
+{"event":{"id":"sc-14","seq":14,"turn":1,"type":"task_event","payload":{"task_id":"task-06","status":"complete","description":"Patch file 06","lane_id":"lane-4","lane_label":"Patch"}}}
+{"event":{"id":"sc-15","seq":15,"turn":1,"type":"assistant.message.start","payload":{}}}
+{"event":{"id":"sc-16","seq":16,"turn":1,"type":"assistant.message.delta","payload":{"delta":"Subagent strip churn fixture complete."}}}
+{"event":{"id":"sc-17","seq":17,"turn":1,"type":"assistant.message.end","payload":{}}}
+{"event":{"id":"sc-18","seq":18,"turn":1,"type":"completion","payload":{"completed":true}}}

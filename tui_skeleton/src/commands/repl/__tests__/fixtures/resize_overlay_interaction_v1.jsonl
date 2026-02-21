@@ -1,0 +1,13 @@
+{"event":{"id":"ro-1","seq":1,"turn":1,"type":"run.start","payload":{}}}
+{"event":{"id":"ro-2","seq":2,"turn":1,"type":"turn_start","payload":{}}}
+{"event":{"id":"ro-3","seq":3,"turn":1,"type":"assistant.message.start","payload":{}}}
+{"event":{"id":"ro-4","seq":4,"turn":1,"type":"assistant.message.delta","payload":{"delta":"Starting render-sensitive flow."}}}
+{"event":{"id":"ro-5","seq":5,"turn":1,"type":"warning","payload":{"message":"resize 160x45 -> 140x40"}}}
+{"event":{"id":"ro-6","seq":6,"turn":1,"type":"task_event","payload":{"task_id":"overlay-1","status":"running","description":"Overlay open","lane_id":"lane-1","lane_label":"Overlay"}}}
+{"event":{"id":"ro-7","seq":7,"turn":1,"type":"warning","payload":{"message":"resize 140x40 -> 120x34"}}}
+{"event":{"id":"ro-8","seq":8,"turn":1,"type":"task_event","payload":{"task_id":"overlay-1","status":"complete","description":"Overlay stable","lane_id":"lane-1","lane_label":"Overlay"}}}
+{"event":{"id":"ro-9","seq":9,"turn":1,"type":"tool_call","payload":{"call_id":"call-resize","tool_name":"apply_patch","display":{"title":"Patch(layout.tsx)"}}}}
+{"event":{"id":"ro-10","seq":10,"turn":1,"type":"tool.result","payload":{"call_id":"call-resize","tool_name":"apply_patch","display":{"title":"Patch(layout.tsx)","summary":"layout stabilized"}}}}
+{"event":{"id":"ro-11","seq":11,"turn":1,"type":"assistant.message.delta","payload":{"delta":"Resize and overlay interaction settled."}}}
+{"event":{"id":"ro-12","seq":12,"turn":1,"type":"assistant.message.end","payload":{}}}
+{"event":{"id":"ro-13","seq":13,"turn":1,"type":"completion","payload":{"completed":true}}}

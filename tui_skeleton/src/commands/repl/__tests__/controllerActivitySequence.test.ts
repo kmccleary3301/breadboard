@@ -263,6 +263,36 @@ describe("ReplSessionController activity sequencing", () => {
     expect(state.runtimeTelemetry?.statusTransitions ?? 0).toBeLessThanOrEqual(12)
   })
 
+  it("tracks event batching telemetry when queued events are flushed together", () => {
+    const controller = new ReplSessionController({
+      configPath: "agent_configs/test_simple_native.yaml",
+      workspace: ".",
+    }) as unknown as {
+      enqueueEvent: (evt: any) => void
+      flushPendingEvents: () => void
+      getState: () => any
+      runtimeFlags: Record<string, unknown>
+      pendingEvents: any[]
+    }
+
+    controller.runtimeFlags = {
+      ...controller.runtimeFlags,
+      eventCoalesceMs: 500,
+      eventCoalesceMaxBatch: 128,
+    }
+    controller.enqueueEvent(event(1, "run.start"))
+    controller.enqueueEvent(event(2, "assistant.message.start"))
+    controller.enqueueEvent(event(3, "completion", { completed: true }))
+    expect(controller.pendingEvents.length).toBe(3)
+    controller.flushPendingEvents()
+
+    const state = controller.getState()
+    expect(state.runtimeTelemetry?.eventFlushes).toBe(1)
+    expect(state.runtimeTelemetry?.eventCoalesced).toBe(2)
+    expect(state.runtimeTelemetry?.eventMaxQueueDepth).toBeGreaterThanOrEqual(3)
+    expect(state.activity?.primary).toBe("completed")
+  })
+
   it("keeps inline thinking block disabled by default and avoids transcript leakage", () => {
     const controller = new ReplSessionController({
       configPath: "agent_configs/test_simple_native.yaml",
@@ -325,5 +355,33 @@ describe("ReplSessionController activity sequencing", () => {
     expect(thinkingEntry).toBeTruthy()
     expect(String(thinkingEntry.text)).toContain("summary: plan draft")
     expect(String(thinkingEntry.text)).not.toContain("raw hidden")
+  })
+
+  it("tracks optimistic tool/diff reconciliation counters", () => {
+    const controller = new ReplSessionController({
+      configPath: "agent_configs/test_simple_native.yaml",
+      workspace: ".",
+    }) as unknown as {
+      applyEvent: (evt: any) => void
+      getState: () => any
+    }
+
+    controller.applyEvent(event(1, "tool_call", { call_id: "c1", tool_name: "Write", path: "main.ts" }))
+    controller.applyEvent(
+      event(2, "tool.result", {
+        call_id: "c1",
+        tool_name: "Write",
+        status: "success",
+        display: {
+          title: "Write(main.ts)",
+          summary: "patched",
+          diff_blocks: [{ kind: "diff", lines: [{ kind: "add", raw: "+ok" }] }],
+        },
+      }),
+    )
+
+    const state = controller.getState()
+    expect((state.runtimeTelemetry?.optimisticToolRows ?? 0) + (state.runtimeTelemetry?.optimisticDiffRows ?? 0)).toBeGreaterThan(0)
+    expect((state.runtimeTelemetry?.optimisticToolReconciled ?? 0) + (state.runtimeTelemetry?.optimisticDiffReconciled ?? 0)).toBeGreaterThan(0)
   })
 })

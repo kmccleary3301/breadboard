@@ -5,9 +5,11 @@ import { CHALK, COLORS, DOT_SEPARATOR, GLYPHS, DASH_GLYPH, ASCII_ONLY, uiText } 
 import { formatCell, formatCostUsd, formatDuration, formatLatency } from "../utils/format.js"
 import { formatIsoTimestamp } from "../utils/diff.js"
 import { stripAnsiCodes } from "../utils/ansi.js"
+import { createScrollWindow, formatScrollRange } from "../utils/scrollWindow.js"
 import type { SlashCommandInfo } from "../../../slashCommands.js"
 import type { PermissionRuleScope } from "../../../types.js"
 import { buildConfirmModal, buildShortcutsModal } from "./modalBasics.js"
+import { formatTodoModalRowLabel } from "./todoCheckbox.js"
 import {
   countTaskRowsByStatusGroup,
   formatTaskModeBadge,
@@ -31,7 +33,6 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     confirmState,
     shortcutsOpen,
     claudeChrome,
-    isBreadboardProfile,
     columnWidth,
     PANEL_WIDTH,
     shortcutLines,
@@ -157,6 +158,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         .map((line: unknown) => (typeof line === "string" ? line : String(line ?? "")))
         .filter((line: string) => line.length > 0)
     : []
+  const useSheetModalLayout = true
 
   const confirmModal = buildConfirmModal(confirmState, PANEL_WIDTH)
   if (confirmModal) modalStack.push(confirmModal)
@@ -164,7 +166,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
   const shortcutsModal = buildShortcutsModal({
     shortcutsOpen,
     claudeChrome,
-    isBreadboardProfile,
+    isBreadboardProfile: useSheetModalLayout,
     columnWidth,
     panelWidth: PANEL_WIDTH,
     shortcutLines,
@@ -174,9 +176,9 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
   if (paletteState.status === "open") {
     modalStack.push({
       id: "palette",
-      layout: isBreadboardProfile ? "sheet" : undefined,
+      layout: useSheetModalLayout ? "sheet" : undefined,
       render: () => {
-        const sheetMode = isBreadboardProfile
+        const sheetMode = useSheetModalLayout
         const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
         const titleLines: SelectPanelLine[] = [{ text: "Command palette", color: COLORS.info }]
         const hintLines: SelectPanelLine[] = [
@@ -221,9 +223,9 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
   if (modelMenu.status !== "hidden") {
     modalStack.push({
       id: "model-picker",
-      layout: isBreadboardProfile ? "sheet" : undefined,
+      layout: useSheetModalLayout ? "sheet" : undefined,
       render: () => {
-        const sheetMode = isBreadboardProfile
+        const sheetMode = useSheetModalLayout
         const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
         const panelInnerWidth = Math.max(0, panelWidth - 4)
         const titleLines: SelectPanelLine[] = []
@@ -338,13 +340,13 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
   if (skillsMenu.status !== "hidden") {
     modalStack.push({
       id: "skills-picker",
-      layout: isBreadboardProfile ? "sheet" : undefined,
+      layout: useSheetModalLayout ? "sheet" : undefined,
       render: () => {
         const titleLines: SelectPanelLine[] = [{ text: CHALK.bold("Skills"), color: COLORS.info }]
         const hintLines: SelectPanelLine[] = []
         const rows: SelectPanelRow[] = []
         const footerLines: SelectPanelLine[] = []
-        const sheetMode = isBreadboardProfile
+        const sheetMode = useSheetModalLayout
         const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
 
         if (skillsMenu.status === "loading") {
@@ -436,9 +438,9 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
   if (rewindMenu.status !== "hidden") {
     modalStack.push({
       id: "rewind",
-      layout: isBreadboardProfile ? "sheet" : undefined,
+      layout: useSheetModalLayout ? "sheet" : undefined,
       render: () => {
-        const sheetMode = isBreadboardProfile
+        const sheetMode = useSheetModalLayout
         const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
         const isLoading = rewindMenu.status === "loading"
         const isError = rewindMenu.status === "error"
@@ -519,14 +521,15 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     })
   }
 
-  if (todosOpen && !claudeChrome) {
+  if (todosOpen) {
     modalStack.push({
       id: "todos",
-      layout: undefined,
+      layout: useSheetModalLayout ? "sheet" : undefined,
       render: () => {
-        const panelWidth = PANEL_WIDTH
-        const scroll = Math.max(0, Math.min(todoScroll, todoMaxScroll))
-        const visible = todoRows.slice(scroll, scroll + todoViewportRows)
+        const sheetMode = useSheetModalLayout
+        const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
+        const todoWindow = createScrollWindow(todoRows, todoScroll, todoViewportRows)
+        const visible = todoWindow.visible
         const colorForStatus = (status?: string) => {
           switch (status) {
             case "in_progress":
@@ -559,13 +562,13 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             if (row.kind === "header") {
               panelRows.push({ kind: "header", text: row.label, color: colorForStatus(row.status) })
             } else {
-              panelRows.push({ kind: "item", text: `  • ${row.label}`, wrap: "truncate-end" })
+              panelRows.push({ kind: "item", text: formatTodoModalRowLabel(row.label, row.status), wrap: "truncate-end" })
             }
           })
           if (todoRows.length > todoViewportRows) {
             panelRows.push({
               kind: "header",
-              text: `${scroll + 1}-${Math.min(scroll + todoViewportRows, todoRows.length)} of ${todoRows.length}`,
+              text: formatScrollRange(todoWindow),
               color: "dim",
             })
           }
@@ -575,12 +578,14 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             width={panelWidth}
             borderColor={COLORS.info}
             paddingX={2}
-            paddingY={1}
-            alignSelf="center"
-            marginTop={2}
+            paddingY={0}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={panelRows}
+            rowsMarginTop={0}
+            titleHintSpacer={false}
           />
         )
       },
@@ -590,9 +595,9 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
   if (usageOpen) {
     modalStack.push({
       id: "usage",
-      layout: isBreadboardProfile ? "sheet" : undefined,
+      layout: useSheetModalLayout ? "sheet" : undefined,
       render: () => {
-        const sheetMode = isBreadboardProfile
+        const sheetMode = useSheetModalLayout
         const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
         const usage = stats.usage
         const rows: Array<{ label: string; value: string }> = []
@@ -639,9 +644,9 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
   if (inspectMenu.status !== "hidden") {
     modalStack.push({
       id: "inspect",
-      layout: isBreadboardProfile ? "sheet" : undefined,
+      layout: useSheetModalLayout ? "sheet" : undefined,
       render: () => {
-        const sheetMode = isBreadboardProfile
+        const sheetMode = useSheetModalLayout
         const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
         const titleLines: SelectPanelLine[] = [{ text: CHALK.bold("Inspect"), color: COLORS.accent }]
         const hintLines: SelectPanelLine[] = [
@@ -668,14 +673,14 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         } else if (inspectMenu.status === "ready") {
           if (inspectRawOpen) {
             rows.push({ kind: "header", text: "Raw JSON", color: "dim" })
-            const scroll = Math.max(0, Math.min(inspectRawScroll, inspectRawMaxScroll))
-            const visible = inspectRawLines.slice(scroll, scroll + inspectRawViewportRows)
+            const inspectWindow = createScrollWindow(inspectRawLines, inspectRawScroll, inspectRawViewportRows)
+            const visible = inspectWindow.visible
             visible.forEach((line: any) => {
               rows.push({ kind: "item", text: line, color: "gray" })
             })
             if (inspectRawLines.length > inspectRawViewportRows) {
               footerLines.push({
-                text: `${scroll + 1}-${Math.min(scroll + inspectRawViewportRows, inspectRawLines.length)} of ${inspectRawLines.length}`,
+                text: formatScrollRange(inspectWindow),
                 color: "dim",
               })
             }
@@ -789,12 +794,12 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
   if (ctreeOpen) {
     modalStack.push({
       id: "ctree",
-      layout: isBreadboardProfile ? "sheet" : undefined,
+      layout: useSheetModalLayout ? "sheet" : undefined,
       render: () => {
-        const sheetMode = isBreadboardProfile
+        const sheetMode = useSheetModalLayout
         const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
-        const scroll = Math.max(0, Math.min(ctreeScroll, ctreeMaxScroll))
-        const visible = ctreeRows.slice(scroll, scroll + ctreeViewportRows)
+        const ctreeWindow = createScrollWindow(ctreeRows, ctreeScroll, ctreeViewportRows)
+        const visible = ctreeWindow.visible
         const lineWidth = Math.max(12, panelWidth - 6)
 
         const titleLines: SelectPanelLine[] = [{ text: CHALK.bold("C-Tree"), color: COLORS.info }]
@@ -821,7 +826,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           panelRows.push({ kind: "empty", text: "No C-Tree nodes loaded.", color: "dim" })
         } else {
           visible.forEach((row: any, idx: number) => {
-            const globalIndex = scroll + idx
+            const globalIndex = ctreeWindow.start + idx
             const isActive = globalIndex === selectedCTreeIndex
             const indent = "  ".repeat(row.depth ?? 0)
             const hasChildren = Boolean(row.hasChildren)
@@ -846,7 +851,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           if (ctreeRows.length > ctreeViewportRows) {
             panelRows.push({
               kind: "header",
-              text: `${scroll + 1}-${Math.min(scroll + ctreeViewportRows, ctreeRows.length)} of ${ctreeRows.length}`,
+              text: formatScrollRange(ctreeWindow),
               color: "dim",
             })
           }
@@ -864,13 +869,16 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             width={panelWidth}
             borderColor={COLORS.info}
             paddingX={2}
-            paddingY={1}
+            paddingY={0}
             alignSelf={sheetMode ? "flex-start" : "center"}
             marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={panelRows}
             footerLines={footerLines}
+            rowsMarginTop={0}
+            footerMarginTop={0}
+            titleHintSpacer={false}
           />
         )
       },
@@ -880,12 +888,12 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
   if (tasksOpen) {
     modalStack.push({
       id: "tasks",
-      layout: isBreadboardProfile ? "sheet" : undefined,
+      layout: useSheetModalLayout ? "sheet" : undefined,
       render: () => {
-        const sheetMode = isBreadboardProfile
+        const sheetMode = useSheetModalLayout
         const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
-        const scroll = Math.max(0, Math.min(taskScroll, taskMaxScroll))
-        const visible = taskRows.slice(scroll, scroll + taskViewportRows)
+        const taskWindow = createScrollWindow(taskRows, taskScroll, taskViewportRows)
+        const visible = taskWindow.visible
         const colorForStatus = (status?: string) => {
           switch (normalizeTaskStatusGroup(status)) {
             case "running":
@@ -971,9 +979,9 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
               })
             }
           }
-          let previousGroup = scroll > 0 ? taskRows[scroll - 1]?.groupKey ?? null : null
+          let previousGroup = taskWindow.start > 0 ? taskRows[taskWindow.start - 1]?.groupKey ?? null : null
           visible.forEach((row: any, idx: number) => {
-            const globalIndex = scroll + idx
+            const globalIndex = taskWindow.start + idx
             const isActive = globalIndex === selectedTaskIndex
             const normalizedStatus = normalizeTaskStatusGroup(row.status)
             if (idx === 0 || previousGroup !== row.groupKey) {
@@ -1009,7 +1017,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           if (taskRows.length > taskViewportRows) {
             panelRows.push({
               kind: "header",
-              text: `${scroll + 1}-${Math.min(scroll + taskViewportRows, taskRows.length)} of ${taskRows.length}`,
+              text: formatScrollRange(taskWindow),
               color: "dim",
             })
           }
@@ -1094,13 +1102,16 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             width={panelWidth}
             borderColor={COLORS.info}
             paddingX={2}
-            paddingY={1}
+            paddingY={0}
             alignSelf={sheetMode ? "flex-start" : "center"}
             marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={panelRows}
             footerLines={footerLines}
+            rowsMarginTop={0}
+            footerMarginTop={0}
+            titleHintSpacer={false}
           />
         )
       },
@@ -1110,12 +1121,12 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
   if (tasksOpen && taskFocusViewOpen && taskFocusMode !== "swap") {
     modalStack.push({
       id: "task-focus",
-      layout: isBreadboardProfile ? "sheet" : undefined,
+      layout: useSheetModalLayout ? "sheet" : undefined,
       render: () => {
-        const sheetMode = isBreadboardProfile
+        const sheetMode = useSheetModalLayout
         const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
-        const scroll = Math.max(0, Math.min(taskScroll, taskMaxScroll))
-        const visible = taskRows.slice(scroll, scroll + taskViewportRows)
+        const taskFocusWindow = createScrollWindow(taskRows, taskScroll, taskViewportRows)
+        const visible = taskFocusWindow.visible
         const lineWidth = Math.max(12, panelWidth - 6)
         const focusStatus = String(selectedTask?.status ?? "pending")
           .replace(/[_-]+/g, " ")
@@ -1174,7 +1185,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           panelRows.push({ kind: "empty", text: "No tasks in this lane.", color: "dim" })
         } else {
           visible.forEach((row: any, idx: number) => {
-            const globalIndex = scroll + idx
+            const globalIndex = taskFocusWindow.start + idx
             const isActive = globalIndex === selectedTaskIndex
             const statusLabel = (row.status || "update").replace(/[_-]+/g, " ")
             const idLabel = row.id.slice(0, 8)
@@ -1207,6 +1218,9 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           footerLines.push({ text: "Enter: load output tail.", color: "dim" })
         }
         if (taskNotice) footerLines.push({ text: taskNotice, color: "dim" })
+        if (taskRows.length > taskViewportRows) {
+          footerLines.push({ text: formatScrollRange(taskFocusWindow), color: "dim" })
+        }
         if (normalizedTaskTailLines.length > 0) {
           footerLines.push({ text: taskTailPath ? `Tail: ${taskTailPath}` : "Tail output", color: "dim" })
           normalizedTaskTailLines.forEach((line: string) => footerLines.push({ text: line, color: "dim" }))
@@ -1247,9 +1261,8 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           activeTabLabel("note", "Feedback"),
         ].join(CHALK.gray("  |  "))
 
-        const diffScrollMax = Math.max(0, permissionDiffLines.length - permissionViewportRows)
-        const diffScroll = Math.max(0, Math.min(permissionScroll, diffScrollMax))
-        const visibleDiff = permissionDiffLines.slice(diffScroll, diffScroll + permissionViewportRows)
+        const permissionDiffWindow = createScrollWindow(permissionDiffLines, permissionScroll, permissionViewportRows)
+        const visibleDiff = permissionDiffWindow.visible
 
         const scopeLabel = (scope: PermissionRuleScope, label: string) =>
           permissionScope === scope ? CHALK.bold.cyan(label) : CHALK.gray(label)
@@ -1294,7 +1307,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             })
             rows.push({
               kind: "header",
-              text: `${permissionDiffSections.length > 1 ? "←/→ files • " : ""}↑/↓ scroll • PgUp/PgDn page.${permissionDiffLines.length > 0 ? ` Lines ${diffScroll + 1}-${Math.min(diffScroll + permissionViewportRows, permissionDiffLines.length)} of ${permissionDiffLines.length}.` : ""}`,
+              text: `${permissionDiffSections.length > 1 ? "←/→ files • " : ""}↑/↓ scroll • PgUp/PgDn page.${permissionDiffLines.length > 0 ? ` Lines ${formatScrollRange(permissionDiffWindow)}.` : ""}`,
               color: "dim",
             })
             if (visibleDiff.length === 0) {

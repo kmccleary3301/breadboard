@@ -4,6 +4,11 @@ import type { SessionFileInfo } from "../../api/types.js"
 import { BRAND_COLORS, resolveIcons } from "../../repl/designSystem.js"
 import { SLASH_COMMANDS } from "../../repl/slashCommands.js"
 import { computeDiffPreview } from "../../repl/transcriptUtils.js"
+import {
+  materializeToolArtifactRef,
+  normalizeArtifactRef,
+  shouldMaterializeToolArtifact,
+} from "./toolArtifactRef.js"
 import type {
   CheckpointSummary,
   ConversationEntry,
@@ -449,9 +454,12 @@ export function slashHandlers(this: any): Record<string, SlashHandler> {
       const timeline = formatActivityTransitionTimeline(this.activityTransitionTrace ?? [], 10)
       const lines = [
         `[runtime] activity=${activity} thinking=${thinkingMode}`,
-        `flags inlineThinkingBlock=${this.runtimeFlags?.inlineThinkingBlockEnabled === true ? "on" : "off"} adaptiveCadence=${this.runtimeFlags?.adaptiveMarkdownCadenceEnabled === true ? "on" : "off"}`,
+        `flags inlineThinkingBlock=${this.runtimeFlags?.inlineThinkingBlockEnabled === true ? "on" : "off"} thinkingPreview=${this.runtimeFlags?.thinkingPreviewEnabled === true ? "on" : "off"} previewLines=${this.runtimeFlags?.thinkingPreviewMaxLines ?? 0} previewTtlMs=${this.runtimeFlags?.thinkingPreviewTtlMs ?? 0} adaptiveCadence=${this.runtimeFlags?.adaptiveMarkdownCadenceEnabled === true ? "on" : "off"} eventCoalesceMs=${this.runtimeFlags?.eventCoalesceMs ?? 0} eventBatch=${this.runtimeFlags?.eventCoalesceMaxBatch ?? 0}`,
         `statusTransitions=${telemetry.statusTransitions ?? 0} suppressedTransitions=${telemetry.suppressedTransitions ?? 0} illegalTransitions=${telemetry.illegalTransitions ?? 0}`,
-        `markdownFlushes=${telemetry.markdownFlushes ?? 0} thinkingUpdates=${telemetry.thinkingUpdates ?? 0} adaptiveCadenceAdjustments=${telemetry.adaptiveCadenceAdjustments ?? 0}`,
+        `statusCommits=${telemetry.statusCommits ?? 0} statusCoalesced=${telemetry.statusCoalesced ?? 0}`,
+        `markdownFlushes=${telemetry.markdownFlushes ?? 0} thinkingUpdates=${telemetry.thinkingUpdates ?? 0} thinkingPreviewOpened=${telemetry.thinkingPreviewOpened ?? 0} thinkingPreviewClosed=${telemetry.thinkingPreviewClosed ?? 0} thinkingPreviewExpired=${telemetry.thinkingPreviewExpired ?? 0} adaptiveCadenceAdjustments=${telemetry.adaptiveCadenceAdjustments ?? 0}`,
+        `eventFlushes=${telemetry.eventFlushes ?? 0} eventCoalesced=${telemetry.eventCoalesced ?? 0} eventMaxQueueDepth=${telemetry.eventMaxQueueDepth ?? 0}`,
+        `optimisticToolRows=${telemetry.optimisticToolRows ?? 0} optimisticToolReconciled=${telemetry.optimisticToolReconciled ?? 0} optimisticDiffRows=${telemetry.optimisticDiffRows ?? 0} optimisticDiffReconciled=${telemetry.optimisticDiffReconciled ?? 0}`,
         "[timeline]",
         timeline,
       ]
@@ -953,6 +961,13 @@ export function resolveToolDisplayPayload(this: any, payload: Record<string, unk
   const { name, args } = normalizeToolArgs(payload)
   const normalizedName = (name ?? "").toLowerCase()
   const pathValue = typeof args?.path === "string" ? args.path.trim() : null
+  const payloadArtifactRef =
+    normalizeArtifactRef((payload as Record<string, unknown>).artifact_ref) ??
+    normalizeArtifactRef((payload as Record<string, unknown>).result_artifact) ??
+    normalizeArtifactRef(base.detail_artifact)
+  if (payloadArtifactRef) {
+    base.detail_artifact = payloadArtifactRef
+  }
 
   const ensureTitle = (prefix: string) => {
     if (!base.title && pathValue) {
@@ -973,13 +988,33 @@ export function resolveToolDisplayPayload(this: any, payload: Record<string, unk
     const content = typeof args?.content === "string" ? args.content : null
     if (!base.detail && content) {
       const rawLines = normalizePreviewLines(content)
-      const { lines, hidden } = truncatePreviewLines(rawLines, TOOL_PREVIEW_MAX_LINES)
-      base.detail = lines
-      if (hidden > 0 && !isRecord(base.detail_truncated)) {
-        base.detail_truncated = { hidden }
+      if (shouldMaterializeToolArtifact(content, "tool_output")) {
+        const artifactRef = materializeToolArtifactRef({
+          kind: "tool_output",
+          mime: "text/plain",
+          content,
+          previewMaxLines: TOOL_PREVIEW_MAX_LINES,
+          note: "Inline output truncated to artifact reference.",
+        })
+        base.detail_artifact = artifactRef
+        const previewLines = Array.isArray(artifactRef.preview?.lines) ? artifactRef.preview?.lines : []
+        const omitted = Math.max(0, Number(artifactRef.preview?.omitted_lines ?? rawLines.length - previewLines.length))
+        base.detail_truncated = {
+          hidden: omitted,
+          mode: "head_tail",
+          tail: previewLines.length,
+          hint: `see ${artifactRef.path}`,
+        }
+      } else {
+        const { lines, hidden } = truncatePreviewLines(rawLines, TOOL_PREVIEW_MAX_LINES)
+        base.detail = lines
+        if (hidden > 0 && !isRecord(base.detail_truncated)) {
+          base.detail_truncated = { hidden }
+        }
       }
       if (!base.summary) {
-        base.summary = `Wrote ${rawLines.length} ${rawLines.length === 1 ? "line" : "lines"}`
+        const hasArtifact = Boolean(base.detail_artifact)
+        base.summary = `Wrote ${rawLines.length} ${rawLines.length === 1 ? "line" : "lines"}${hasArtifact ? " (artifact)" : ""}`
       }
     }
   }
@@ -999,15 +1034,37 @@ export function resolveToolDisplayPayload(this: any, payload: Record<string, unk
     if (!Array.isArray(base.diff_blocks) || base.diff_blocks.length === 0) {
       if (diff) {
         const normalized = diff.replace(/(?:\r?\n)+$/, "")
-        base.diff_blocks = [
-          {
-            kind: "diff",
-            filePath: pathValue,
-            unified: normalized,
-          },
-        ]
+        if (shouldMaterializeToolArtifact(normalized, "tool_diff")) {
+          const artifactRef = materializeToolArtifactRef({
+            kind: "tool_diff",
+            mime: "text/x-diff",
+            content: normalized,
+            previewMaxLines: TOOL_PREVIEW_MAX_LINES,
+            note: "Large unified diff exported to artifact.",
+          })
+          base.detail_artifact = artifactRef
+          if (!base.summary) {
+            const lineCount = normalizePreviewLines(normalized).length
+            base.summary = `Patch ${lineCount} ${lineCount === 1 ? "line" : "lines"} (artifact)`
+          }
+        } else {
+          base.diff_blocks = [
+            {
+              kind: "diff",
+              filePath: pathValue,
+              unified: normalized,
+            },
+          ]
+        }
       }
     }
+  }
+
+  // Enforce non-ambiguous contract: tool display payload should carry either
+  // large inline detail/diff payloads OR a valid artifact_ref, not both.
+  if (base.detail_artifact) {
+    delete base.detail
+    delete base.diff_blocks
   }
 
   return Object.keys(base).length > 0 ? base : null

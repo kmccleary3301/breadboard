@@ -39,6 +39,7 @@ export interface SelectPanelProps {
   readonly footerLines?: ReadonlyArray<SelectPanelLine>
   readonly rowsMarginTop?: number
   readonly footerMarginTop?: number
+  readonly titleHintSpacer?: boolean
 }
 
 const renderLine = (line: SelectPanelLine, index: number) => (
@@ -62,6 +63,7 @@ export const SelectPanel = ({
   footerLines = [],
   rowsMarginTop = 1,
   footerMarginTop = 1,
+  titleHintSpacer = true,
 }: SelectPanelProps) => {
   const borderProps = showBorder ? { borderStyle, borderColor } : {}
   return (
@@ -75,7 +77,7 @@ export const SelectPanel = ({
       marginTop={marginTop}
     >
       {titleLines.map(renderLine)}
-      {titleLines.length > 0 && hintLines.length > 0 && <Text wrap="truncate-end"> </Text>}
+      {titleHintSpacer && titleLines.length > 0 && hintLines.length > 0 && <Text wrap="truncate-end"> </Text>}
       {hintLines.map(renderLine)}
       <Box flexDirection="column" marginTop={rowsMarginTop}>
         {rows.map((row, idx) => {

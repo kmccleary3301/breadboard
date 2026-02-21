@@ -8,6 +8,8 @@ import { stripAnsiCodes } from "../utils/ansi.js"
 
 type RenderNodesContext = {
   claudeChrome: boolean
+  screenReaderMode?: boolean
+  screenReaderProfile?: "concise" | "balanced" | "verbose"
   keymap: string
   contentWidth: number
   hints: string[]
@@ -33,6 +35,8 @@ type RenderNodesContext = {
 export const useReplViewRenderNodes = (context: RenderNodesContext) => {
   const {
     claudeChrome,
+    screenReaderMode = false,
+    screenReaderProfile = "balanced",
     keymap,
     contentWidth,
     hints,
@@ -90,6 +94,30 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
   }, [])
 
   const metaNodes = useMemo(() => {
+    if (screenReaderMode) {
+      if (screenReaderProfile === "concise") {
+        return [
+          <Text key="meta-a11y-concise" color="dim">
+            Accessibility mode active. Enter submit, Esc interrupt.
+          </Text>,
+        ]
+      }
+      if (screenReaderProfile === "verbose") {
+        return [
+          <Text key="meta-a11y-verbose-1" color="dim">
+            Accessibility mode active. Core shortcuts: Enter submit, Shift+Enter newline, Esc interrupt, Ctrl+C ×2 exit.
+          </Text>,
+          <Text key="meta-a11y-verbose-2" color="dim">
+            Extended shortcuts: Ctrl+O transcript, Ctrl+B tasks, Ctrl+T todos/transcript, Ctrl+K model, Ctrl+G skills.
+          </Text>,
+        ]
+      }
+      return [
+        <Text key="meta-a11y" color="dim">
+          Accessibility mode active. Core shortcuts: Enter submit, Shift+Enter newline, Esc interrupt, Ctrl+C ×2 exit.
+        </Text>,
+      ]
+    }
     if (claudeChrome) return []
     const codexPreface = keymap === "codex" ? "Try edit <file> to..." : null
     const hintParts = [
@@ -130,9 +158,31 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
       </Text>,
     )
     return nodes
-  }, [claudeChrome, keymap])
+  }, [claudeChrome, keymap, screenReaderMode, screenReaderProfile])
 
   const shortcutLines = useMemo(() => {
+    if (screenReaderMode) {
+      if (screenReaderProfile === "concise") {
+        return [
+          "Enter submit  ·  Shift+Enter newline  ·  Esc interrupt",
+          "Ctrl+O transcript  ·  Ctrl+T todos/transcript",
+        ]
+      }
+      if (screenReaderProfile === "verbose") {
+        return [
+          "Enter submit  ·  Shift+Enter newline  ·  Esc interrupt",
+          "Ctrl+O transcript  ·  Ctrl+B tasks  ·  Ctrl+T todos/transcript",
+          "Ctrl+K model  ·  Ctrl+G skills  ·  Ctrl+C ×2 exit",
+          "/ for commands  ·  @ for files  ·  Tab complete",
+          "s save transcript  ·  n/p match nav  ·  ? shortcuts",
+        ]
+      }
+      return [
+        "Enter submit  ·  Shift+Enter newline  ·  Esc interrupt",
+        "Ctrl+O transcript  ·  Ctrl+B tasks  ·  Ctrl+T todos/transcript",
+        "Ctrl+K model  ·  Ctrl+G skills  ·  Ctrl+C ×2 exit",
+      ]
+    }
     if (claudeChrome) {
       const rows: Array<[string, string, string?]> = [
         ["! for bash mode", "double tap esc to clear input", "ctrl + _ to undo"],
@@ -186,9 +236,20 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     }
     const pad = 14
     return rows.map(([key, desc]) => `${CHALK.cyan(key.padEnd(pad))} ${desc}`)
-  }, [claudeChrome, contentWidth, keymap])
+  }, [claudeChrome, contentWidth, keymap, screenReaderMode, screenReaderProfile])
 
   const hintNodes = useMemo(() => {
+    if (screenReaderMode) {
+      const filtered = hints.filter((hint) => !hint.startsWith("Session "))
+      const keepCount = screenReaderProfile === "concise" ? 1 : screenReaderProfile === "verbose" ? 4 : 2
+      const latest = filtered.slice(-keepCount)
+      const lines = latest.length > 0 ? latest : [pendingResponse ? "Assistant is thinking…" : "Ready."]
+      return lines.map((line, index) => (
+        <Text key={`hint-a11y-${index}`} color={COLORS.textMuted}>
+          {line}
+        </Text>
+      ))
+    }
     const filtered = claudeChrome ? hints.filter((hint) => !hint.startsWith("Session ")) : hints
     if (claudeChrome) {
       let statusText = completionHint ?? filtered.slice(-1)[0] ?? ""
@@ -234,6 +295,8 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     escPrimedAt,
     hints,
     pendingResponse,
+    screenReaderMode,
+    screenReaderProfile,
     statusLineAlign,
     statusLinePosition,
   ])

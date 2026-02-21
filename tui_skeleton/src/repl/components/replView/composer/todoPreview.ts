@@ -1,5 +1,6 @@
 import type { TodoPreviewSelectionStrategy, TodoStoreSnapshot } from "../../../types.js"
 import { selectTodoPreviewItems, todoStoreCounts } from "../../../todos/todoStore.js"
+import { ASCII_ONLY } from "../theme.js"
 
 export type TodoPreviewItem = {
   readonly id: string
@@ -48,18 +49,18 @@ const extractCtreeNodeId = (metadata: Record<string, unknown> | null | undefined
   return cleaned ? cleaned : null
 }
 
-const statusMark = (status: string): string => {
+const statusToken = (status: string): string => {
   switch (status) {
     case "done":
-      return "x"
+      return ASCII_ONLY ? "[x]" : "🗹"
     case "in_progress":
-      return "~"
+      return ASCII_ONLY ? "[ ]" : "☐"
     case "blocked":
-      return "!"
+      return ASCII_ONLY ? "[!]" : "☒"
     case "canceled":
-      return "-"
+      return ASCII_ONLY ? "[!]" : "☒"
     default:
-      return " "
+      return ASCII_ONLY ? "[ ]" : "☐"
   }
 }
 
@@ -97,7 +98,7 @@ export const buildTodoPreviewModel = (
   const items: TodoPreviewItem[] = selection.visible.map((todo) => ({
     id: todo.id,
     status: todo.status,
-    label: `[${statusMark(todo.status)}] ${todo.title}`,
+    label: `${statusToken(todo.status)} ${todo.title}`,
   }))
   const anyCtreeLink = selection.visible.some((todo) => extractCtreeNodeId(todo.metadata ?? null) != null)
 

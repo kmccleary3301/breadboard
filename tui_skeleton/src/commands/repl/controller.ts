@@ -8,6 +8,7 @@ import type {
   RuntimeTelemetry,
   RuntimeBehaviorFlags,
   ThinkingArtifact,
+  ThinkingPreviewState,
   ProviderCapabilitiesSnapshot,
   ModelMenuItem,
   ModelMenuState,
@@ -79,9 +80,11 @@ import {
   bumpTelemetry,
   createActivitySnapshot,
   createRuntimeTelemetry,
+  pruneThinkingPreviewState,
   reduceActivityTransition,
   resolveRuntimeBehaviorFlags,
   type ActivityTransitionInput,
+  type ActivityTransitionResult,
 } from "./controllerActivityRuntime.js"
 import {
   createWorkGraphState,
@@ -136,6 +139,7 @@ export interface ReplState {
   readonly runtimeTelemetry?: RuntimeTelemetry
   readonly runtimeFlags?: RuntimeBehaviorFlags
   readonly thinkingArtifact?: ThinkingArtifact | null
+  readonly thinkingPreview?: ThinkingPreviewState | null
   readonly providerCapabilities?: ProviderCapabilitiesSnapshot
   readonly activityTransitionTrace?: ReadonlyArray<ActivityTransitionTrace>
   readonly disconnected: boolean
@@ -252,6 +256,7 @@ export class ReplSessionController extends EventEmitter {
   private streamTask: Promise<void> | null = null
   private pendingEvents: SessionEvent[] = []
   private eventsScheduled = false
+  private eventFlushTimer: NodeJS.Timeout | null = null
   private readonly providers = CliProviders
   private readonly markdownStreams = new Map<string, { streamer: MarkdownStreamer; lastText: string }>()
   private readonly markdownStableState = new Map<
@@ -310,6 +315,7 @@ export class ReplSessionController extends EventEmitter {
   private lastLifecycleToastAt = 0
   private lastLifecycleToastMessage: string | null = null
   private thinkingArtifact: ThinkingArtifact | null = null
+  private thinkingPreview: ThinkingPreviewState | null = null
   private thinkingInlineEntryId: string | null = null
   private lastThinkingPeekAt = 0
   private providerCapabilities: ProviderCapabilitiesSnapshot = {
@@ -418,6 +424,7 @@ export class ReplSessionController extends EventEmitter {
     // Goldens/tests call getState() without attaching listeners. Flush any pending todo coalescing so
     // deterministic renderers see the committed state.
     if (this.listenerCount("change") === 0) {
+      this.flushPendingEvents()
       this.flushTodoCoalescedUpdates({ emit: false })
     }
     const liveSlotList = Array.from(this.liveSlots.values()).sort((a, b) => a.updatedAt - b.updatedAt)
@@ -427,6 +434,11 @@ export class ReplSessionController extends EventEmitter {
     const todos = todoStoreToList(todoStore)
     const todoScopeLabel = this.todoScopeLabelsByKey[activeScopeKey] ?? activeScopeKey
     const todoScopeStale = Boolean(this.todoScopeStaleByKey[activeScopeKey])
+    const prunedThinkingPreview = pruneThinkingPreviewState(this.thinkingPreview, this.runtimeFlags, Date.now())
+    if (this.thinkingPreview && !prunedThinkingPreview) {
+      this.runtimeTelemetry = bumpTelemetry(this.runtimeTelemetry, "thinkingPreviewExpired")
+    }
+    this.thinkingPreview = prunedThinkingPreview
     return {
       configPath: this.config.configPath,
       sessionId: this.sessionId,
@@ -450,6 +462,7 @@ export class ReplSessionController extends EventEmitter {
       runtimeTelemetry: this.runtimeTelemetry,
       runtimeFlags: this.runtimeFlags,
       thinkingArtifact: this.thinkingArtifact,
+      thinkingPreview: this.thinkingPreview,
       providerCapabilities: this.providerCapabilities,
       activityTransitionTrace: [...this.activityTransitionTrace],
       disconnected: this.disconnected,
@@ -510,6 +523,12 @@ export class ReplSessionController extends EventEmitter {
     }
     this.lastEventId = null
     this.hasStreamedOnce = false
+    this.pendingEvents = []
+    this.eventsScheduled = false
+    if (this.eventFlushTimer) {
+      clearTimeout(this.eventFlushTimer)
+      this.eventFlushTimer = null
+    }
     this.resetTransientRuntimeState()
     this.todoStoresByScope = { main: createEmptyTodoStore() }
     this.todoStoresPendingByScope = {}
@@ -617,6 +636,7 @@ export class ReplSessionController extends EventEmitter {
     if (this.streamTask) {
       await this.streamTask.catch(() => undefined)
     }
+    this.flushPendingEvents()
     if (this.ctreeRefreshTimer) {
       clearTimeout(this.ctreeRefreshTimer)
       this.ctreeRefreshTimer = null
@@ -764,6 +784,7 @@ export class ReplSessionController extends EventEmitter {
     this.lastLifecycleToastAt = 0
     this.lastLifecycleToastMessage = null
     this.thinkingArtifact = null
+    this.thinkingPreview = null
     this.thinkingInlineEntryId = null
     this.lastThinkingPeekAt = 0
     this.workGraph = createWorkGraphState()
@@ -825,7 +846,14 @@ export class ReplSessionController extends EventEmitter {
       console.debug(formatWorkGraphReducerTrace(this.workGraph, next, queue))
     }
     this.workGraph = next
-    this.runtimeTelemetry = bumpTelemetry(this.runtimeTelemetry, "workgraphFlushes")
+    const afterFlush = bumpTelemetry(this.runtimeTelemetry, "workgraphFlushes")
+    this.runtimeTelemetry = {
+      ...afterFlush,
+      workgraphLaneTransitions: next.telemetry?.laneTransitions ?? afterFlush.workgraphLaneTransitions,
+      workgraphDroppedTransitions: next.telemetry?.droppedTransitions ?? afterFlush.workgraphDroppedTransitions,
+      workgraphLaneChurn: next.telemetry?.laneChurn ?? afterFlush.workgraphLaneChurn,
+      workgraphDroppedEvents: next.telemetry?.droppedEvents ?? afterFlush.workgraphDroppedEvents,
+    }
   }
 
   private resolveProviderCapabilitiesSnapshot(modelId: string | null): void {
@@ -873,7 +901,7 @@ export class ReplSessionController extends EventEmitter {
     }
   }
 
-  private transitionActivity(input: ActivityTransitionInput): void {
+  private transitionActivity(input: ActivityTransitionInput): ActivityTransitionResult {
     const previous = this.activity
     const result = reduceActivityTransition(this.activity, input, this.runtimeFlags)
     this.activityTransitionTrace.push({
@@ -896,13 +924,17 @@ export class ReplSessionController extends EventEmitter {
     if (result.applied) {
       this.runtimeTelemetry = bumpTelemetry(this.runtimeTelemetry, "statusTransitions")
       this.activity = result.snapshot
-      return
+      return result
+    }
+    if (result.reason === "same") {
+      return result
     }
     if (result.reason === "illegal") {
       this.runtimeTelemetry = bumpTelemetry(this.runtimeTelemetry, "illegalTransitions")
     } else {
       this.runtimeTelemetry = bumpTelemetry(this.runtimeTelemetry, "suppressedTransitions")
     }
+    return result
   }
 
   private setActivityStatus(
@@ -910,18 +942,32 @@ export class ReplSessionController extends EventEmitter {
     transition?: Omit<ActivityTransitionInput, "label">,
   ): void {
     const now = Date.now()
+    if (transition) {
+      const result = this.transitionActivity({ ...transition, label: status, now })
+      if (!result.applied && result.reason !== "same") {
+        this.bumpRuntimeTelemetry("statusCoalesced")
+        return
+      }
+      if (status === this.status) {
+        return
+      }
+      this.status = status
+      this.statusUpdatedAt = now
+      this.bumpRuntimeTelemetry("statusCommits")
+      return
+    }
     const withinCoalesceWindow =
       this.runtimeFlags.statusUpdateMs > 0 && now - this.statusUpdatedAt < this.runtimeFlags.statusUpdateMs
-    const sameStatus = status === this.status
-    const samePrimary = transition ? transition.to === this.activity.primary : true
-    if (withinCoalesceWindow && sameStatus && samePrimary) {
+    if (status === this.status) {
+      return
+    }
+    if (withinCoalesceWindow) {
+      this.bumpRuntimeTelemetry("statusCoalesced")
       return
     }
     this.status = status
     this.statusUpdatedAt = now
-    if (transition) {
-      this.transitionActivity({ ...transition, label: status, now })
-    }
+    this.bumpRuntimeTelemetry("statusCommits")
   }
 
   private bumpRuntimeTelemetry(
@@ -1276,6 +1322,10 @@ export class ReplSessionController extends EventEmitter {
 
   private enqueueEvent(event: SessionEvent): void {
     return eventMethods.enqueueEvent.call(this, event)
+  }
+
+  private flushPendingEvents(): void {
+    return eventMethods.flushPendingEvents.call(this)
   }
 
   private applyEvent(event: SessionEvent): void {

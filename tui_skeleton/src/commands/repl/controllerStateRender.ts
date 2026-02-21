@@ -19,8 +19,10 @@ const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => 
 
 const STREAM_MARKDOWN = parseBoolEnv(process.env.BREADBOARD_MARKDOWN_STREAM, true)
 const DEFAULT_MARKDOWN_MIN_CHUNK_CHARS = 24
+const DEFAULT_STABLE_TAIL_FLUSH_CHARS = 96
 const ENV_MARKDOWN_COALESCE_MS = Number(process.env.BREADBOARD_MARKDOWN_COALESCE_MS ?? "")
 const ENV_MARKDOWN_MIN_CHUNK = Number(process.env.BREADBOARD_MARKDOWN_MIN_CHUNK_CHARS ?? "")
+const ENV_STABLE_TAIL_FLUSH = Number(process.env.BREADBOARD_MARKDOWN_STABLE_TAIL_FLUSH_CHARS ?? "")
 
 export function shouldStreamMarkdown(this: any): boolean {
   const coalescingEnabled =
@@ -41,6 +43,46 @@ const resolveCadence = (controller: any): { coalesceMs: number; minChunkChars: n
     ? Math.max(1, Math.round(ENV_MARKDOWN_MIN_CHUNK))
     : DEFAULT_MARKDOWN_MIN_CHUNK_CHARS
   return { coalesceMs, minChunkChars }
+}
+
+const resolveStableTailFlushChars = (controller: any): number => {
+  const runtimeOverride = Number(controller?.runtimeFlags?.stableTailFlushChars)
+  if (Number.isFinite(runtimeOverride)) {
+    return Math.max(0, Math.round(runtimeOverride))
+  }
+  if (!Number.isFinite(ENV_STABLE_TAIL_FLUSH)) return DEFAULT_STABLE_TAIL_FLUSH_CHARS
+  return Math.max(0, Math.round(ENV_STABLE_TAIL_FLUSH))
+}
+
+const SOFT_BOUNDARY_PUNCTUATION = [". ", "! ", "? ", "; ", ": ", ", "]
+
+const hasMarkdownControlMarkers = (text: string): boolean => {
+  if (!text) return false
+  if (text.includes("```") || text.includes("~~~")) return true
+  if (text.includes("|")) return true
+  if (/\n\s*[-*+]\s/.test(text)) return true
+  return false
+}
+
+const resolveSoftBoundary = (
+  pending: string,
+  threshold: number,
+): number | null => {
+  if (pending.length < threshold) return null
+  const search = pending.slice(0, Math.min(pending.length, threshold + 64))
+  let best = -1
+  for (const token of SOFT_BOUNDARY_PUNCTUATION) {
+    const idx = search.lastIndexOf(token)
+    if (idx > best) {
+      best = idx + token.length
+    }
+  }
+  if (best < Math.floor(threshold * 0.66)) {
+    const whitespace = Math.max(search.lastIndexOf(" "), search.lastIndexOf("\t"))
+    if (whitespace > best) best = whitespace + 1
+  }
+  if (best >= Math.floor(threshold * 0.5)) return best
+  return threshold
 }
 
 const hasMarkdownBoundary = (delta: string): boolean => {
@@ -178,7 +220,24 @@ export function appendMarkdownDelta(this: any, delta: string): void {
     } as const)
   const fullText = `${stableSeed.fullText}${delta}`
   const scan = scanStableBoundary(fullText, stableSeed.state)
-  const emitTarget = Math.max(stableSeed.emittedLen, scan.stableBoundaryLen)
+  let emitTarget = Math.max(stableSeed.emittedLen, scan.stableBoundaryLen)
+  if (emitTarget === stableSeed.emittedLen) {
+    const softThreshold = resolveStableTailFlushChars(this)
+    const pending = fullText.slice(stableSeed.emittedLen)
+    const allowSoftBoundary =
+      softThreshold > 0 &&
+      pending.length >= softThreshold &&
+      !scan.state.inFence &&
+      !scan.state.inTable &&
+      !scan.state.inList &&
+      !hasMarkdownControlMarkers(pending)
+    if (allowSoftBoundary) {
+      const softBoundary = resolveSoftBoundary(pending, softThreshold)
+      if (softBoundary && softBoundary > 0) {
+        emitTarget = stableSeed.emittedLen + softBoundary
+      }
+    }
+  }
   const stableDelta = emitTarget > stableSeed.emittedLen ? fullText.slice(stableSeed.emittedLen, emitTarget) : ""
   this.markdownStableState.set(entryId, {
     fullText,

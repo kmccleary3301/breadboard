@@ -1,13 +1,20 @@
 import path from "node:path"
+import { existsSync } from "node:fs"
 import React, { useCallback } from "react"
 import { Box, Text } from "ink"
 import type { ToolLogEntry } from "../../../types.js"
 import { TOOL_EVENT_COLOR } from "../../../viewUtils.js"
-import { CHALK, COLORS, DASH_SEPARATOR, DELTA_GLYPH, GLYPHS } from "../theme.js"
+import { ASCII_ONLY, CHALK, COLORS, DASH_SEPARATOR, DELTA_GLYPH, GLYPHS } from "../theme.js"
 import { computeDiffPreview } from "../../../transcriptUtils.js"
 import { maybeHighlightCode } from "../../../shikiHighlighter.js"
 import { computeInlineDiffSpans, shiftSpans, type InlineSpan } from "../../../diff/inlineDiff.js"
 import { DEFAULT_DIFF_RENDER_STYLE, type DiffRenderStyle } from "./diffStyles.js"
+import { DEFAULT_TOOL_RENDERER_REGISTRY, type ToolRendererRegistry } from "./toolRendererRegistry.js"
+import {
+  DEFAULT_TOOL_RENDER_POLICY_PROVIDER,
+  resolveToolRenderPolicy,
+  type ToolRenderPolicyProvider,
+} from "./toolRenderPolicy.js"
 
 interface ToolRendererOptions {
   readonly claudeChrome: boolean
@@ -20,6 +27,8 @@ interface ToolRendererOptions {
   readonly contentWidth: number
   readonly diffLineNumbers?: boolean
   readonly diffStyle?: DiffRenderStyle
+  readonly registry?: ToolRendererRegistry
+  readonly policyProvider?: ToolRenderPolicyProvider
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null
@@ -234,19 +243,24 @@ const formatStatusTag = (value: string): string => {
   return value.replace(/[_-]+/g, " ").trim().replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-const formatStatusLines = (text: string): string[] => {
+const formatStatusLines = (text: string): { lines: string[]; tag: string | null } => {
   const rawLines = text.split(/\r?\n/)
-  if (rawLines.length === 0) return [text]
+  if (rawLines.length === 0) return { lines: [text], tag: null }
   let header = rawLines[0] ?? ""
   const rest = rawLines.slice(1)
+  let tag: string | null = null
   const match = header.match(/^\[([^\]]+)\]\s*(.*)$/)
   if (match) {
     const rawTag = match[1]
     const remainder = match[2] ?? ""
     const tagLabel = rawTag.replace(/[_-]+/g, " ").trim()
     const tagLower = tagLabel.toLowerCase()
+    tag = tagLower
     const remainderTrimmed = remainder.trim()
     if (tagLower === "status") {
+      header = remainderTrimmed || rest.shift() || ""
+    } else if (tagLower === "task") {
+      // Task entries receive explicit status markers downstream.
       header = remainderTrimmed || rest.shift() || ""
     } else if (!remainderTrimmed) {
       header = formatStatusTag(tagLabel)
@@ -257,7 +271,51 @@ const formatStatusLines = (text: string): string[] => {
     }
   }
   const lines = [header, ...rest]
-  return lines.filter((line, index) => index === 0 || line.trim().length > 0)
+  return { lines: lines.filter((line, index) => index === 0 || line.trim().length > 0), tag }
+}
+
+const normalizeTaskStatusLabel = (raw: string): "completed" | "running" | "failed" | "blocked" | "cancelled" | "pending" => {
+  const seed = raw.trim().toLowerCase()
+  if (!seed || seed === "update") return "pending"
+  if (seed.includes("complete") || seed.includes("done") || seed.includes("success")) return "completed"
+  if (seed.includes("fail") || seed.includes("error")) return "failed"
+  if (seed.includes("block")) return "blocked"
+  if (seed.includes("cancel")) return "cancelled"
+  if (seed.includes("run") || seed.includes("progress") || seed.includes("start") || seed.includes("pending")) return "running"
+  return "pending"
+}
+
+const taskStatusSymbol = (normalized: ReturnType<typeof normalizeTaskStatusLabel>): string => {
+  if (ASCII_ONLY) {
+    if (normalized === "completed") return "v"
+    if (normalized === "failed" || normalized === "cancelled" || normalized === "blocked") return "x"
+    return "-"
+  }
+  if (normalized === "completed") return "✔"
+  if (normalized === "failed" || normalized === "cancelled" || normalized === "blocked") return "☒"
+  return "☐"
+}
+
+const formatTaskStatusHeader = (line: string): string => {
+  const parts = line
+    .split(" · ")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+  const hasTaskPrefix = (parts[0] ?? "").toLowerCase() === "task"
+  const rawStatus = hasTaskPrefix ? (parts[1] ?? "pending") : (parts[0] ?? "pending")
+  const normalized = normalizeTaskStatusLabel(rawStatus)
+  const details = hasTaskPrefix ? parts.slice(2) : parts.slice(1)
+  const glyphColor =
+    normalized === "completed"
+      ? COLORS.success
+      : normalized === "failed" || normalized === "cancelled"
+        ? COLORS.error
+        : normalized === "blocked"
+          ? COLORS.warning
+        : COLORS.muted
+  const glyphRaw = taskStatusSymbol(normalized)
+  const glyph = CHALK.hex(glyphColor)(glyphRaw)
+  return `${glyph} ${[normalized, ...details].join(" · ")}`
 }
 
 const formatToolArgsSummary = (args?: Record<string, unknown>): string | null => {
@@ -431,12 +489,17 @@ const countDisplayLines = (
 ): number => {
   const summaryLines = toLineArray(display.summary)
   const detailLines = toLineArray(display.detail)
+  const artifactRef = isRecord(display.detail_artifact) ? (display.detail_artifact as Record<string, unknown>) : null
+  const artifactPreviewLines = artifactRef && isRecord(artifactRef.preview) ? toLineArray(artifactRef.preview.lines) : []
   const truncated = isRecord(display.detail_truncated) ? (display.detail_truncated as Record<string, unknown>) : null
   const hidden = truncated && typeof truncated.hidden === "number" ? truncated.hidden : null
   const mode = truncated && typeof truncated.mode === "string" ? truncated.mode : null
   const tailCount = truncated && typeof truncated.tail === "number" ? truncated.tail : null
   const diffBlocks = Array.isArray(display.diff_blocks) ? (display.diff_blocks as Array<Record<string, unknown>>) : []
   let outputCount = summaryLines.length + detailLines.length
+  if (artifactRef) {
+    outputCount += 1 + artifactPreviewLines.length
+  }
   diffBlocks.forEach((block) => {
     const unified = typeof block.unified === "string" ? block.unified : ""
     const diffLines = unified ? unified.replace(/\r\n?/g, "\n").split("\n").length : 0
@@ -467,6 +530,8 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
     diffLineNumbers,
     contentWidth,
     diffStyle = DEFAULT_DIFF_RENDER_STYLE,
+    registry = DEFAULT_TOOL_RENDERER_REGISTRY,
+    policyProvider = DEFAULT_TOOL_RENDER_POLICY_PROVIDER,
   } = options
   const wrapWidth = Math.max(1, Math.floor(contentWidth - 2))
 
@@ -483,8 +548,19 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
     [wrapWidth],
   )
 
-  const measureToolEntryLines = useCallback(
+  const measureToolEntryLinesLegacy = useCallback(
     (entry: ToolLogEntry): number => {
+      const policy = resolveToolRenderPolicy(
+        entry,
+        {
+          collapseThreshold,
+          collapseHead,
+          collapseTail,
+        },
+        policyProvider,
+      )
+      const entryVerbose =
+        policy.mode === "expanded" ? true : policy.mode === "compact" ? false : verboseOutput
       const displayPayload = entry.display && isRecord(entry.display) ? entry.display : null
       if (displayPayload && (entry.kind === "call" || entry.kind === "result")) {
         const title =
@@ -495,10 +571,10 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         const baseCount = countDisplayLines(
           displayPayload,
           entry.kind,
-          collapseThreshold,
-          collapseHead,
-          collapseTail,
-          verboseOutput,
+          policy.collapseThreshold,
+          policy.collapseHead,
+          policy.collapseTail,
+          entryVerbose,
         )
         return baseCount + Math.max(0, wrappedHeader - 1)
       }
@@ -507,22 +583,36 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         const first = lines[0] ?? ""
         const wrappedFirst = Math.max(1, Math.ceil(first.length / wrapWidth))
         const total = lines.length - 1 + wrappedFirst
-        if (total <= collapseThreshold) return total
-      } else if (lines.length <= collapseThreshold) {
+        if (total <= policy.collapseThreshold) return total
+      } else if (lines.length <= policy.collapseThreshold) {
         return lines.length
       }
-      const head = lines.slice(0, collapseHead)
-      const tail = lines.slice(-collapseTail)
+      const head = lines.slice(0, policy.collapseHead)
+      const tail = lines.slice(-policy.collapseTail)
       return head.length + 1 + tail.length
     },
-    [collapseHead, collapseTail, collapseThreshold, verboseOutput, wrapWidth],
+    [collapseHead, collapseTail, collapseThreshold, policyProvider, verboseOutput, wrapWidth],
   )
 
-  const renderToolEntry = useCallback(
+  const renderToolEntryLegacy = useCallback(
     (entry: ToolLogEntry, key?: string) => {
+      const policy = resolveToolRenderPolicy(
+        entry,
+        {
+          collapseThreshold,
+          collapseHead,
+          collapseTail,
+        },
+        policyProvider,
+      )
+      const entryVerbose =
+        policy.mode === "expanded" ? true : policy.mode === "compact" ? false : verboseOutput
       if (entry.kind === "status") {
-        const lines = formatStatusLines(entry.text)
-        const safeLines = lines.length > 0 ? lines : [entry.text]
+        const { lines, tag } = formatStatusLines(entry.text)
+        const safeLines = lines.length > 0 ? [...lines] : [entry.text]
+        if (tag === "task" && safeLines.length > 0) {
+          safeLines[0] = formatTaskStatusHeader(safeLines[0])
+        }
         const statusTone =
           entry.status === "error"
             ? { bullet: COLORS.error, text: COLORS.error }
@@ -534,6 +624,7 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         const glyph = CHALK.hex(statusTone.bullet)(GLYPHS.bullet)
         const colorizeStatusLine = (line: string) => {
           if (!line) return line
+          if (tag === "task") return line
           if (line.includes("\u001b")) return line
           const normalized = line
           if (entry.status === "error") return CHALK.hex(COLORS.error)(normalized)
@@ -543,18 +634,20 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         }
         const renderStatusLine = (line: string, index: number) => (
           <Text key={`${entry.id}-status-${index}`}>
-            {index === 0 ? `${glyph} ${colorizeStatusLine(line)}` : `${" ".repeat(2)}${colorizeStatusLine(line)}`}
+            {index === 0
+              ? `${tag === "task" ? "" : `${glyph} `}${colorizeStatusLine(line)}`
+              : `${" ".repeat(2)}${colorizeStatusLine(line)}`}
           </Text>
         )
-        if (verboseOutput || safeLines.length <= collapseThreshold) {
+        if (entryVerbose || safeLines.length <= policy.collapseThreshold) {
           return (
             <Box key={key ?? entry.id} flexDirection="column">
               {safeLines.map((line, idx) => renderStatusLine(line, idx))}
             </Box>
           )
         }
-        const head = safeLines.slice(0, collapseHead)
-        const tail = safeLines.slice(-collapseTail)
+        const head = safeLines.slice(0, policy.collapseHead)
+        const tail = safeLines.slice(-policy.collapseTail)
         const hiddenCount = safeLines.length - head.length - tail.length
         const summary = `${GLYPHS.ellipsis} ${hiddenCount} ${hiddenCount === 1 ? "line" : "lines"} hidden (ctrl+o to expand)`
         return (
@@ -616,6 +709,7 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         const title = typeof display.title === "string" ? display.title : null
         let summaryLines = toLineArray(display.summary)
         const detailLines = toLineArray(display.detail)
+        const artifactRef = isRecord(display.detail_artifact) ? (display.detail_artifact as Record<string, unknown>) : null
         const truncated = isRecord(display.detail_truncated) ? (display.detail_truncated as Record<string, unknown>) : null
         const hidden = truncated && typeof truncated.hidden === "number" ? truncated.hidden : null
         const hint = truncated && typeof truncated.hint === "string" ? truncated.hint : null
@@ -625,6 +719,23 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         const debugSuffixRaw = debugId ? ` ⟪${debugId}⟫` : ""
         const debugSuffixColored = debugId ? CHALK.hex(COLORS.muted)(` ⟪${debugId}⟫`) : ""
         const outputLines = summaryLines.length || detailLines.length ? [...summaryLines, ...detailLines] : []
+        if (artifactRef) {
+          const artifactPathRaw = typeof artifactRef.path === "string" ? artifactRef.path : ""
+          const artifactPath = artifactPathRaw.trim()
+          const artifactSize = typeof artifactRef.size_bytes === "number" ? artifactRef.size_bytes : null
+          const artifactSizeLabel = artifactSize != null ? `${artifactSize} bytes` : "unknown size"
+          const artifactAbsolute = artifactPath ? path.resolve(process.cwd(), artifactPath) : ""
+          const artifactMissing = artifactAbsolute ? !existsSync(artifactAbsolute) : true
+          outputLines.push(
+            `${GLYPHS.ellipsis} artifact ${artifactMissing ? "missing" : "stored"}: ${artifactPath || "(unknown)"} (${artifactSizeLabel})`,
+          )
+          const preview = isRecord(artifactRef.preview) ? (artifactRef.preview as Record<string, unknown>) : null
+          const previewLines = preview ? toLineArray(preview.lines) : []
+          outputLines.push(...previewLines)
+          if (preview && typeof preview.note === "string" && preview.note.trim().length > 0) {
+            outputLines.push(`note: ${preview.note}`)
+          }
+        }
         const colorizeLine = (line: string) => {
           if (!line) return line
           if (line.includes("\u001b")) return line
@@ -688,9 +799,9 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
           )
         }
         const shouldCollapse =
-          !verboseOutput && !hidden && outputLines.length > collapseThreshold
-        const collapseHeadLines = shouldCollapse ? outputLines.slice(0, collapseHead) : outputLines
-        const collapseTailLines = shouldCollapse ? outputLines.slice(-collapseTail) : []
+          !entryVerbose && !hidden && outputLines.length > policy.collapseThreshold
+        const collapseHeadLines = shouldCollapse ? outputLines.slice(0, policy.collapseHead) : outputLines
+        const collapseTailLines = shouldCollapse ? outputLines.slice(-policy.collapseTail) : []
         const hiddenCount = shouldCollapse ? outputLines.length - collapseHeadLines.length - collapseTailLines.length : 0
         let head = collapseHeadLines
         let tail = collapseTailLines
@@ -794,15 +905,15 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
           )
         }
       }
-      if (verboseOutput || lines.length <= collapseThreshold) {
+      if (entryVerbose || lines.length <= policy.collapseThreshold) {
         return (
           <Box key={key ?? entry.id} flexDirection="column">
             {lines.flatMap((line, idx) => renderLine(line, idx))}
           </Box>
         )
       }
-      const head = lines.slice(0, collapseHead)
-      const tail = lines.slice(-collapseTail)
+      const head = lines.slice(0, policy.collapseHead)
+      const tail = lines.slice(-policy.collapseTail)
       const hiddenCount = lines.length - head.length - tail.length
       const diffPreview = computeDiffPreview(lines)
       const filesPart = diffPreview && diffPreview.files.length > 0 ? ` in ${diffPreview.files.join(", ")}` : ""
@@ -828,9 +939,41 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
       diffLineNumbers,
       diffStyle,
       labelWidth,
+      policyProvider,
       splitToWidth,
       verboseOutput,
     ],
+  )
+
+  const measureToolEntryLines = useCallback(
+    (entry: ToolLogEntry): number => {
+      const handler = registry?.resolve(entry)
+      if (handler?.measure) {
+        return handler.measure({
+          entry,
+          fallbackMeasure: measureToolEntryLinesLegacy,
+          fallbackRender: renderToolEntryLegacy,
+        })
+      }
+      return measureToolEntryLinesLegacy(entry)
+    },
+    [measureToolEntryLinesLegacy, registry, renderToolEntryLegacy],
+  )
+
+  const renderToolEntry = useCallback(
+    (entry: ToolLogEntry, key?: string) => {
+      const handler = registry?.resolve(entry)
+      if (handler?.render) {
+        return handler.render({
+          entry,
+          key,
+          fallbackMeasure: measureToolEntryLinesLegacy,
+          fallbackRender: renderToolEntryLegacy,
+        })
+      }
+      return renderToolEntryLegacy(entry, key)
+    },
+    [measureToolEntryLinesLegacy, registry, renderToolEntryLegacy],
   )
 
   return { renderToolEntry, measureToolEntryLines }

@@ -1,5 +1,6 @@
 import chalk from "chalk"
 import path from "node:path"
+import { existsSync } from "node:fs"
 import type { ConversationEntry, LiveSlotEntry, GuardrailNotice, ToolLogEntry, ToolLogKind } from "../../repl/types.js"
 import type { ReplState } from "./controller.js"
 import { ASCII_HEADER, HEADER_COLOR, speakerColor, TOOL_EVENT_COLOR } from "../../repl/viewUtils.js"
@@ -804,20 +805,25 @@ const TOOL_COLLAPSE_THRESHOLD = 24
 const TOOL_COLLAPSE_HEAD = 6
 const TOOL_COLLAPSE_TAIL = 6
 
-const formatStatusLines = (text: string): string[] => {
+const formatStatusLines = (text: string): { lines: string[]; tag: string | null } => {
   const rawLines = text.split(/\r?\n/)
-  if (rawLines.length === 0) return [text]
+  if (rawLines.length === 0) return { lines: [text], tag: null }
   let header = rawLines[0] ?? ""
   const rest = rawLines.slice(1)
+  let tag: string | null = null
   const match = header.match(/^\[([^\]]+)\]\s*(.*)$/)
   if (match) {
     const rawTag = match[1]
     const remainder = match[2] ?? ""
     const tagLabel = rawTag.replace(/[_-]+/g, " ").trim()
     const tagLower = tagLabel.toLowerCase()
+    tag = tagLower
     const remainderTrimmed = remainder.trim()
     const titleTag = tagLabel.replace(/\b\w/g, (char) => char.toUpperCase())
     if (tagLower === "status") {
+      header = remainderTrimmed || rest.shift() || ""
+    } else if (tagLower === "task") {
+      // Task entries get status markers downstream; skip "Task ·" prefix here.
       header = remainderTrimmed || rest.shift() || ""
     } else if (!remainderTrimmed) {
       header = titleTag
@@ -828,7 +834,52 @@ const formatStatusLines = (text: string): string[] => {
     }
   }
   const lines = [header, ...rest]
-  return lines.filter((line, index) => index === 0 || line.trim().length > 0)
+  return { lines: lines.filter((line, index) => index === 0 || line.trim().length > 0), tag }
+}
+
+const normalizeTaskStatusLabel = (raw: string): "completed" | "running" | "failed" | "blocked" | "cancelled" | "pending" => {
+  const seed = raw.trim().toLowerCase()
+  if (!seed || seed === "update") return "pending"
+  if (seed.includes("complete") || seed.includes("done") || seed.includes("success")) return "completed"
+  if (seed.includes("fail") || seed.includes("error")) return "failed"
+  if (seed.includes("block")) return "blocked"
+  if (seed.includes("cancel")) return "cancelled"
+  if (seed.includes("run") || seed.includes("progress") || seed.includes("start") || seed.includes("pending")) return "running"
+  return "pending"
+}
+
+const formatTaskStatusLine = (
+  line: string,
+  entryStatus: LiveSlotEntry["status"] | undefined,
+  useColors: boolean,
+  colorMode: ColorMode,
+  icons: ReturnType<typeof resolveIcons>,
+): string => {
+  const parts = line
+    .split(" · ")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+  const rawStatus = parts[0] ?? (entryStatus === "success" ? "completed" : entryStatus === "error" ? "failed" : "running")
+  const normalized = normalizeTaskStatusLabel(rawStatus)
+  const detailParts = parts.slice(1)
+  const glyphRaw =
+    normalized === "completed"
+      ? icons.success
+      : normalized === "failed" || normalized === "cancelled"
+        ? icons.error
+        : normalized === "blocked"
+          ? icons.warning
+          : icons.ellipsis
+  const glyphColor =
+    normalized === "completed"
+      ? SEMANTIC_COLORS.success
+      : normalized === "failed" || normalized === "cancelled"
+        ? SEMANTIC_COLORS.error
+        : normalized === "blocked"
+          ? SEMANTIC_COLORS.warning
+          : NEUTRAL_COLORS.midGray
+  const glyph = useColors ? applyColor(glyphRaw, glyphColor, useColors, colorMode) : glyphRaw
+  return `${glyph} ${[normalized, ...detailParts].join(" · ")}`
 }
 
 const formatStatusEntry = (
@@ -839,8 +890,11 @@ const formatStatusEntry = (
   deltaGlyph: string,
   maxWidth: number,
 ): string[] => {
-  const lines = formatStatusLines(entry.text)
-  const safeLines = lines.length > 0 ? lines : [entry.text]
+  const { lines, tag } = formatStatusLines(entry.text)
+  const safeLines = lines.length > 0 ? [...lines] : [entry.text]
+  if (tag === "task" && safeLines.length > 0) {
+    safeLines[0] = formatTaskStatusLine(safeLines[0], entry.status, useColors, colorMode, icons)
+  }
   const isToolHeader = (line: string): boolean => {
     const plain = stripAnsi(line).trim().replace(/^[●•o]\s*/, "")
     if (plain.startsWith("[")) return false
@@ -869,6 +923,7 @@ const formatStatusEntry = (
             ? applyColor(bullet, NEUTRAL_COLORS.midGray, useColors, colorMode)
             : bullet
   const colorizeStatusLine = (line: string): string => {
+    if (tag === "task") return line
     if (!useColors || colorMode === "none") return line
     if (line.includes("\u001b")) return line
     if (isToolHeader(line)) return applyColor(line, "#ffffff", useColors, colorMode)
@@ -877,7 +932,7 @@ const formatStatusEntry = (
     if (entry.status === "success") return applyDim(line, useColors, colorMode)
     return applyDim(line, useColors, colorMode)
   }
-  const prefixFirst = `${glyph} `
+  const prefixFirst = tag === "task" ? "" : `${glyph} `
   const prefixNext = "  "
   const headerIndex = safeLines.findIndex((line) => line.trim().length > 0)
   const renderLine = (line: string, index: number) => {
@@ -1093,6 +1148,7 @@ const buildToolDisplayLines = (
   const hint = truncated && typeof truncated.hint === "string" ? truncated.hint : null
   const mode = truncated && typeof truncated.mode === "string" ? truncated.mode : null
   const tailCount = truncated && typeof truncated.tail === "number" ? truncated.tail : null
+  const artifactRef = isRecord(display.detail_artifact) ? display.detail_artifact : null
   const diffBlocks = Array.isArray(display.diff_blocks)
     ? (display.diff_blocks as Array<Record<string, unknown>>)
     : []
@@ -1136,6 +1192,24 @@ const buildToolDisplayLines = (
     diffBlocks.forEach((block) => {
       contentLines.push(...buildDiffBlockLines(block, useColors, colorMode, diffLineNumbers, renderProfile))
     })
+  }
+  if (artifactRef) {
+    const artifactPathRaw = typeof artifactRef.path === "string" ? artifactRef.path : ""
+    const artifactPath = artifactPathRaw.trim()
+    const artifactSize = typeof artifactRef.size_bytes === "number" ? artifactRef.size_bytes : null
+    const artifactAbsolute = artifactPath ? path.resolve(process.cwd(), artifactPath) : ""
+    const artifactMissing = artifactAbsolute ? !existsSync(artifactAbsolute) : true
+    contentLines.push(
+      `${icons.ellipsis} artifact ${artifactMissing ? "missing" : "stored"}: ${artifactPath || "(unknown)"}${
+        artifactSize != null ? ` (${artifactSize} bytes)` : ""
+      }`,
+    )
+    const preview = isRecord(artifactRef.preview) ? artifactRef.preview : null
+    const previewLines = preview ? normalizeDisplayLines(preview.lines, false) : []
+    contentLines.push(...previewLines)
+    if (preview && typeof preview.note === "string" && preview.note.trim().length > 0) {
+      contentLines.push(`note: ${preview.note}`)
+    }
   }
   const lines: string[] = [titleWithDebug]
   if (contentLines.length > 0) {

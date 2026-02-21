@@ -1,0 +1,7 @@
+{"event":{"id":"te-1","seq":1,"turn":1,"type":"run.start","payload":{}}}
+{"event":{"id":"te-2","seq":2,"turn":1,"type":"turn_start","payload":{}}}
+{"event":{"id":"te-3","seq":3,"turn":1,"type":"assistant.thought_summary.delta","payload":{"delta":"Plan: update module, run checks, report."}}}
+{"event":{"id":"te-4","seq":4,"turn":1,"type":"assistant.message.start","payload":{}}}
+{"event":{"id":"te-5","seq":5,"turn":1,"type":"assistant.message.delta","payload":{"delta":"Update completed and validated."}}}
+{"event":{"id":"te-6","seq":6,"turn":1,"type":"assistant.message.end","payload":{}}}
+{"event":{"id":"te-7","seq":7,"turn":1,"type":"completion","payload":{"completed":true}}}
