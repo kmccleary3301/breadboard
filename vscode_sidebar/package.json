@@ -98,7 +98,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test dist/__tests__/transcriptReducer.test.js"
+    "test": "npm run build && node --test dist/__tests__/*.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.16.5",

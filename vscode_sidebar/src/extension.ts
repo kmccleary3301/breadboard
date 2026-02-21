@@ -2,6 +2,7 @@ import * as vscode from "vscode"
 import { HostController } from "./hostController"
 import { ENGINE_TOKEN_SECRET_KEY } from "./config"
 import { reduceTranscriptEvents, type TranscriptRenderState } from "./transcriptReducer"
+import { parseRpcReq } from "./rpcContract"
 
 const SIDEBAR_VIEW_ID = "breadboard.sidebar"
 
@@ -77,9 +78,8 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async handleWebviewRequest(message: unknown): Promise<void> {
-    if (!message || typeof message !== "object") return
-    const req = message as { v?: unknown; kind?: unknown; id?: unknown; method?: unknown; params?: unknown }
-    if (req.v !== 1 || req.kind !== "req" || typeof req.id !== "string" || typeof req.method !== "string") return
+    const req = parseRpcReq(message)
+    if (!req) return
 
     try {
       if (req.method === "bb.checkConnection") {
