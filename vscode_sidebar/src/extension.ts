@@ -3,6 +3,17 @@ import { HostController } from "./hostController"
 import { ENGINE_TOKEN_SECRET_KEY } from "./config"
 import { reduceTranscriptEvents, type TranscriptRenderState } from "./transcriptReducer"
 import { parseRpcReq } from "./rpcContract"
+import { sanitizeConnectionState, sanitizeEventsPayload, sanitizeStatePayload } from "./rpcEvents"
+import {
+  parseApprovePermissionParams,
+  parseAttachSessionParams,
+  parseDeleteSessionParams,
+  parseListFilesParams,
+  parseOpenDiffParams,
+  parseReadSnippetParams,
+  parseSendMessageParams,
+  parseStopSessionParams,
+} from "./rpcParams"
 
 const SIDEBAR_VIEW_ID = "breadboard.sidebar"
 
@@ -17,19 +28,21 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
   ) {
     this.controller.setSink({
       onConnection: async (state) => {
+        const payload = sanitizeConnectionState(state)
         await this.post({
           v: 1,
           kind: "evt",
           topic: "bb/connection",
-          payload: state,
+          payload,
         })
       },
       onState: async (payload) => {
+        const normalized = sanitizeStatePayload(payload)
         await this.post({
           v: 1,
           kind: "evt",
           topic: "bb/state",
-          payload,
+          payload: normalized,
         })
       },
       onEvents: async (payload) => {
@@ -37,14 +50,17 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
           totalEvents: 0,
           lastEventType: null,
           lines: [],
+          entries: [],
         }
         const reduced = reduceTranscriptEvents(previous, payload.events, { maxLines: 200 })
         this.transcriptBySession.set(payload.sessionId, reduced)
+        const normalized = sanitizeEventsPayload({ ...payload, render: reduced })
+        if (!normalized) return
         await this.post({
           v: 1,
           kind: "evt",
           topic: "bb/events",
-          payload: { ...payload, render: reduced },
+          payload: normalized,
         })
       },
     })
@@ -93,35 +109,45 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
         return
       }
       if (req.method === "bb.attachSession") {
-        const params = (req.params ?? {}) as Record<string, unknown>
-        const sessionId = typeof params.sessionId === "string" ? params.sessionId : null
-        if (!sessionId) {
+        const params = parseAttachSessionParams(req.params)
+        if (!params) {
           await this.respond(req.id, false, {
             error: { code: "bad_request", message: "sessionId is required" },
           })
           return
         }
-        await this.controller.attachToSession(this.context, sessionId)
-        await this.respond(req.id, true, { result: { attached: true, sessionId } })
+        await this.controller.attachToSession(this.context, params.sessionId)
+        await this.respond(req.id, true, { result: { attached: true, sessionId: params.sessionId } })
         return
       }
       if (req.method === "bb.sendMessage") {
-        const params = (req.params ?? {}) as Record<string, unknown>
-        const sessionId = typeof params.sessionId === "string" ? params.sessionId : this.controller.getActiveSessionId()
-        const text = typeof params.text === "string" ? params.text : ""
-        if (!sessionId || text.trim().length === 0) {
+        if (!vscode.workspace.isTrusted) {
+          await this.respond(req.id, false, {
+            error: { code: "workspace_untrusted", message: "Workspace trust is required for sendMessage." },
+          })
+          return
+        }
+        const params = parseSendMessageParams(req.params)
+        const sessionId = params?.sessionId ?? this.controller.getActiveSessionId()
+        if (!sessionId || !params) {
           await this.respond(req.id, false, {
             error: { code: "bad_request", message: "sessionId and text are required" },
           })
           return
         }
-        await this.controller.sendInput(this.context, sessionId, text)
+        await this.controller.sendInput(this.context, sessionId, params.text)
         await this.respond(req.id, true, { result: { sent: true, sessionId } })
         return
       }
       if (req.method === "bb.stopSession") {
-        const params = (req.params ?? {}) as Record<string, unknown>
-        const sessionId = typeof params.sessionId === "string" ? params.sessionId : this.controller.getActiveSessionId()
+        if (!vscode.workspace.isTrusted) {
+          await this.respond(req.id, false, {
+            error: { code: "workspace_untrusted", message: "Workspace trust is required for stopSession." },
+          })
+          return
+        }
+        const params = parseStopSessionParams(req.params)
+        const sessionId = params.sessionId ?? this.controller.getActiveSessionId()
         if (!sessionId) {
           await this.respond(req.id, false, {
             error: { code: "bad_request", message: "sessionId is required" },
@@ -132,7 +158,88 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
         await this.respond(req.id, true, { result: { stopped: true, sessionId } })
         return
       }
+      if (req.method === "bb.listFiles") {
+        const params = parseListFilesParams(req.params)
+        if (!params) {
+          await this.respond(req.id, false, {
+            error: { code: "bad_request", message: "sessionId is required" },
+          })
+          return
+        }
+        const files = await this.controller.listFiles(this.context, params.sessionId, params.path ?? ".")
+        await this.respond(req.id, true, { result: files })
+        return
+      }
+      if (req.method === "bb.readFileSnippet") {
+        const params = parseReadSnippetParams(req.params)
+        if (!params) {
+          await this.respond(req.id, false, {
+            error: { code: "bad_request", message: "sessionId and path are required" },
+          })
+          return
+        }
+        const snippet = await this.controller.readFileSnippet(this.context, params.sessionId, params.path, {
+          headLines: params.headLines,
+          tailLines: params.tailLines,
+          maxBytes: params.maxBytes,
+        })
+        await this.respond(req.id, true, { result: snippet })
+        return
+      }
+      if (req.method === "bb.openDiff") {
+        const params = parseOpenDiffParams(req.params)
+        if (!params) {
+          await this.respond(req.id, false, {
+            error: { code: "bad_request", message: "sessionId and filePath are required" },
+          })
+          return
+        }
+        await this.controller.openDiff(this.context, params.sessionId, params.filePath, params.artifactPath)
+        await this.respond(req.id, true, { result: { opened: true } })
+        return
+      }
+      if (req.method === "bb.approvePermission") {
+        if (!vscode.workspace.isTrusted) {
+          await this.respond(req.id, false, {
+            error: { code: "workspace_untrusted", message: "Workspace trust is required for permission decisions." },
+          })
+          return
+        }
+        const params = parseApprovePermissionParams(req.params)
+        if (!params) {
+          await this.respond(req.id, false, {
+            error: { code: "bad_request", message: "sessionId, requestId, and decision are required" },
+          })
+          return
+        }
+        await this.controller.sendCommand(this.context, params.sessionId, "permission_decision", {
+          request_id: params.requestId,
+          decision: params.decision,
+          persist: params.decision === "allow_rule",
+        })
+        await this.respond(req.id, true, { result: { accepted: true } })
+        return
+      }
+      if (req.method === "bb.deleteSession") {
+        if (!vscode.workspace.isTrusted) {
+          await this.respond(req.id, false, {
+            error: { code: "workspace_untrusted", message: "Workspace trust is required for deleteSession." },
+          })
+          return
+        }
+        const params = parseDeleteSessionParams(req.params)
+        if (!params) {
+          await this.respond(req.id, false, {
+            error: { code: "bad_request", message: "sessionId is required" },
+          })
+          return
+        }
+        await this.controller.deleteSession(this.context, params.sessionId)
+        await this.respond(req.id, true, { result: { deleted: true, sessionId: params.sessionId } })
+        return
+      }
 
+      console.warn(`[breadboard.sidebar] Unknown RPC method: ${req.method}`)
       await this.respond(req.id, false, {
         error: { code: "method_not_found", message: `Unknown method: ${req.method}` },
       })
@@ -169,70 +276,175 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BreadBoard Sidebar</title>
   <style>
-    body { font-family: var(--vscode-font-family); padding: 12px; }
+    body { font-family: var(--vscode-font-family); padding: 10px; }
     .muted { opacity: 0.8; }
-    .status { margin-top: 8px; padding: 8px; border: 1px solid var(--vscode-panel-border); }
-    .events { margin-top: 8px; white-space: pre-wrap; font-size: 12px; opacity: 0.9; }
-    .transcript { margin-top: 8px; border: 1px solid var(--vscode-panel-border); padding: 8px; max-height: 260px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
-    .row { margin-top: 8px; display: flex; gap: 8px; }
-    input, button, select { font: inherit; }
-    input { flex: 1; }
+    .status { margin-top: 8px; padding: 8px; border: 1px solid var(--vscode-panel-border); white-space: pre-wrap; font-size: 12px; }
+    .row { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+    .col { display: flex; flex-direction: column; gap: 8px; }
+    .grow { flex: 1; min-width: 0; }
+    input, textarea, button, select { font: inherit; }
+    textarea { width: 100%; min-height: 56px; resize: vertical; }
+    .tabs { margin-top: 10px; display: flex; gap: 6px; border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 6px; }
+    .tab-btn { border: 1px solid var(--vscode-panel-border); background: transparent; padding: 4px 8px; cursor: pointer; }
+    .tab-btn.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+    .pane { display: none; margin-top: 8px; }
+    .pane.active { display: block; }
+    .transcript { border: 1px solid var(--vscode-panel-border); padding: 8px; max-height: 360px; overflow: auto; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .card { border: 1px solid var(--vscode-panel-border); padding: 6px; border-radius: 4px; }
+    .card .title { font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+    .card .detail { opacity: 0.92; white-space: pre-wrap; word-break: break-word; }
+    .card.user { border-color: var(--vscode-focusBorder); }
+    .card.assistant, .card.assistant_delta { border-color: var(--vscode-textSeparator-foreground); }
+    .card.tool_call { border-color: var(--vscode-testing-iconQueued); }
+    .card.tool_result { border-color: var(--vscode-testing-iconPassed); }
+    .card.permission_request { border-color: var(--vscode-editorWarning-foreground); }
+    .card.permission_response { border-color: var(--vscode-editorInfo-foreground); }
+    .card.error { border-color: var(--vscode-editorError-foreground); }
+    .card.warning { border-color: var(--vscode-editorWarning-foreground); }
+    .pill { display: inline-block; font-size: 11px; border: 1px solid var(--vscode-panel-border); padding: 0 6px; margin-right: 6px; border-radius: 10px; }
+    .listbox { border: 1px solid var(--vscode-panel-border); max-height: 240px; overflow: auto; padding: 4px; font-size: 12px; }
+    .list-item { padding: 4px; cursor: pointer; }
+    .list-item:hover { background: var(--vscode-list-hoverBackground); }
+    .snippet { border: 1px solid var(--vscode-panel-border); padding: 8px; max-height: 240px; overflow: auto; white-space: pre-wrap; font-family: var(--vscode-editor-font-family); font-size: 12px; }
+    .tasks { border: 1px solid var(--vscode-panel-border); padding: 8px; max-height: 260px; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+    .task { border: 1px solid var(--vscode-panel-border); padding: 6px; border-radius: 4px; }
+    .small { font-size: 11px; opacity: 0.85; }
+    .actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
   </style>
 </head>
 <body>
   <h3>BreadBoard Sidebar</h3>
-  <div class="muted">V1 scaffold: host/controller wiring in progress.</div>
+  <div class="muted">V1 operator client over BreadBoard engine contracts.</div>
   <div class="status" id="status">Checking engine connection...</div>
   <div class="row">
     <button id="refresh">Refresh sessions</button>
     <button id="recheck">Check connection</button>
+    <button id="newSession">New session</button>
   </div>
   <div class="row">
-    <select id="sessions"></select>
+    <select id="sessions" class="grow"></select>
     <button id="attach">Attach</button>
+    <button id="deleteSession">Delete</button>
   </div>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="chat">Chat</button>
+    <button class="tab-btn" data-tab="tasks">Tasks</button>
+    <button class="tab-btn" data-tab="files">Files</button>
+    <button class="tab-btn" data-tab="run">Run</button>
+  </div>
+
+  <div id="pane-chat" class="pane active">
+    <div class="transcript" id="transcript"></div>
+    <div class="row">
+      <textarea id="message" class="grow" placeholder="Send message to active session..."></textarea>
+    </div>
+    <div class="row">
+      <button id="send">Send</button>
+      <button id="stop">Stop</button>
+      <span class="small" id="composerMeta"></span>
+    </div>
+  </div>
+
+  <div id="pane-tasks" class="pane">
+    <div class="small" id="taskSummary">No task events yet.</div>
+    <div class="tasks" id="taskList"></div>
+  </div>
+
+  <div id="pane-files" class="pane">
+    <div class="row">
+      <input id="filePath" class="grow" value="." />
+      <button id="refreshFiles">List</button>
+    </div>
+    <div class="row">
+      <div class="listbox grow" id="fileList"></div>
+    </div>
+    <div class="snippet" id="snippet"></div>
+    <div class="actions">
+      <button id="insertRef">Insert @ref</button>
+      <button id="openDiff">Open Diff</button>
+    </div>
+  </div>
+
+  <div id="pane-run" class="pane">
+    <div class="status" id="runSummary">No run data yet.</div>
+  </div>
+
   <div class="row">
-    <input id="message" placeholder="Send message to active session..." />
-    <button id="send">Send</button>
-    <button id="stop">Stop</button>
+    <div class="status grow" id="events">No events yet.</div>
   </div>
-  <div class="events" id="events">No events yet.</div>
-  <div class="transcript" id="transcript">Transcript stream will appear here...</div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const statusEl = document.getElementById("status");
     const eventsEl = document.getElementById("events");
+    const runSummaryEl = document.getElementById("runSummary");
     const sessionsEl = document.getElementById("sessions");
     const msgEl = document.getElementById("message");
+    const composerMetaEl = document.getElementById("composerMeta");
     const refreshBtn = document.getElementById("refresh");
     const recheckBtn = document.getElementById("recheck");
+    const newSessionBtn = document.getElementById("newSession");
+    const deleteSessionBtn = document.getElementById("deleteSession");
     const attachBtn = document.getElementById("attach");
     const sendBtn = document.getElementById("send");
     const stopBtn = document.getElementById("stop");
     const transcriptEl = document.getElementById("transcript");
+    const taskListEl = document.getElementById("taskList");
+    const taskSummaryEl = document.getElementById("taskSummary");
+    const filePathEl = document.getElementById("filePath");
+    const refreshFilesBtn = document.getElementById("refreshFiles");
+    const fileListEl = document.getElementById("fileList");
+    const snippetEl = document.getElementById("snippet");
+    const insertRefBtn = document.getElementById("insertRef");
+    const openDiffBtn = document.getElementById("openDiff");
+    const tabButtons = Array.from(document.querySelectorAll(".tab-btn"));
+    const panes = {
+      chat: document.getElementById("pane-chat"),
+      tasks: document.getElementById("pane-tasks"),
+      files: document.getElementById("pane-files"),
+      run: document.getElementById("pane-run"),
+    };
+
     let totalEvents = 0;
     let activeSessionId = null;
+    let activeTab = "chat";
+    let runningState = "idle";
+    let selectedFilePath = null;
+    let selectedArtifactPath = null;
+    let followTranscript = true;
     let reqCounter = 0;
     const pending = new Map();
-    const lines = [];
+    let transcriptEntries = [];
+    let taskEntries = [];
+    let pendingPermissions = [];
+    let renderTimer = null;
 
-    function extractSummary(evt) {
-      if (!evt || typeof evt !== "object") return "";
-      const payload = evt.payload && typeof evt.payload === "object" ? evt.payload : {};
-      if (typeof payload.text === "string") return payload.text.slice(0, 180);
-      if (typeof payload.message === "string") return payload.message.slice(0, 180);
-      if (typeof payload.error === "string") return payload.error.slice(0, 180);
-      if (typeof payload.tool_name === "string") return payload.tool_name;
-      if (typeof payload.tool === "string") return payload.tool;
-      return "";
+    function setActiveTab(tab) {
+      activeTab = tab;
+      for (const btn of tabButtons) {
+        btn.classList.toggle("active", btn.dataset.tab === tab);
+      }
+      Object.keys(panes).forEach((key) => {
+        const pane = panes[key];
+        if (pane) pane.classList.toggle("active", key === tab);
+      });
     }
 
-    function appendLine(line) {
-      lines.push(line);
-      while (lines.length > 200) lines.shift();
-      transcriptEl.textContent = lines.join("\\n");
-      transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    tabButtons.forEach((btn) => {
+      btn.addEventListener("click", () => setActiveTab(btn.dataset.tab));
+    });
+
+    function scheduleRender() {
+      if (renderTimer) return;
+      renderTimer = setTimeout(() => {
+        renderTimer = null;
+        renderAll();
+      }, 75);
     }
+
+    transcriptEl.addEventListener("scroll", () => {
+      const gap = transcriptEl.scrollHeight - (transcriptEl.scrollTop + transcriptEl.clientHeight);
+      followTranscript = gap < 16;
+    });
 
     function rpc(method, params) {
       const id = "req-" + (++reqCounter);
@@ -240,6 +452,111 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
       return new Promise((resolve, reject) => {
         pending.set(id, { resolve, reject });
       });
+    }
+
+    function card(entry) {
+      const root = document.createElement("div");
+      root.className = "card " + (entry.kind || "event");
+      const title = document.createElement("div");
+      title.className = "title";
+      const kind = entry.kind || entry.type || "event";
+      const status = entry.status ? (" [" + entry.status + "]") : "";
+      title.textContent = kind + status;
+      root.appendChild(title);
+
+      const detail = document.createElement("div");
+      detail.className = "detail";
+      detail.textContent = entry.summary || entry.detail || "";
+      root.appendChild(detail);
+
+      if (entry.payloadPreview) {
+        const pre = document.createElement("div");
+        pre.className = "small";
+        pre.textContent = entry.payloadPreview;
+        root.appendChild(pre);
+      }
+
+      if (entry.kind === "permission_request" && entry.requestId) {
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        const mk = (label, decision) => {
+          const b = document.createElement("button");
+          b.textContent = label;
+          b.addEventListener("click", () => {
+            if (!activeSessionId) return;
+            rpc("bb.approvePermission", { sessionId: activeSessionId, requestId: entry.requestId, decision })
+              .catch((err) => statusEl.textContent = "Permission decision failed: " + String(err));
+          });
+          return b;
+        };
+        actions.appendChild(mk("Allow once", "allow_once"));
+        actions.appendChild(mk("Deny", "deny"));
+        actions.appendChild(mk("Allow rule", "allow_rule"));
+        root.appendChild(actions);
+      }
+
+      if ((entry.kind === "tool_result" || entry.kind === "tool_call") && entry.filePath) {
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        const open = document.createElement("button");
+        open.textContent = "Open diff";
+        open.addEventListener("click", () => {
+          if (!activeSessionId) return;
+          rpc("bb.openDiff", {
+            sessionId: activeSessionId,
+            filePath: entry.filePath,
+            artifactPath: entry.artifactPath || undefined,
+          }).catch((err) => {
+            statusEl.textContent = "Open diff failed: " + String(err);
+          });
+        });
+        actions.appendChild(open);
+        root.appendChild(actions);
+      }
+
+      return root;
+    }
+
+    function renderTranscript() {
+      transcriptEl.innerHTML = "";
+      const tail = transcriptEntries.slice(-120);
+      for (const entry of tail) {
+        transcriptEl.appendChild(card(entry));
+      }
+      if (followTranscript) {
+        transcriptEl.scrollTop = transcriptEl.scrollHeight;
+      }
+    }
+
+    function renderTasks() {
+      taskListEl.innerHTML = "";
+      const tail = taskEntries.slice(-120);
+      taskSummaryEl.textContent = tail.length > 0 ? (tail.length + " task events") : "No task events yet.";
+      for (const t of tail.reverse()) {
+        const row = document.createElement("div");
+        row.className = "task";
+        row.textContent = (t.status ? ("[" + t.status + "] ") : "") + (t.summary || t.detail || "task event");
+        taskListEl.appendChild(row);
+      }
+    }
+
+    function renderRunSummary() {
+      const active = activeSessionId ? activeSessionId : "(none)";
+      runSummaryEl.textContent =
+        "Active session: " + active + "\\n" +
+        "Events received: " + totalEvents + "\\n" +
+        "Pending permissions: " + pendingPermissions.length + "\\n" +
+        "Run state: " + runningState;
+      composerMetaEl.textContent = "state=" + runningState + " · pending_permissions=" + pendingPermissions.length;
+      sendBtn.disabled = !activeSessionId || !msgEl.value.trim();
+      stopBtn.disabled = !activeSessionId;
+      stopBtn.textContent = runningState === "running" ? "Stop" : "Stop (idle)";
+    }
+
+    function renderAll() {
+      renderTranscript();
+      renderTasks();
+      renderRunSummary();
     }
 
     async function refreshSessions() {
@@ -255,6 +572,40 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
       if (activeSessionId) sessionsEl.value = activeSessionId;
     }
 
+    async function refreshFiles() {
+      if (!activeSessionId) return;
+      const path = filePathEl.value || ".";
+      const files = await rpc("bb.listFiles", { sessionId: activeSessionId, path });
+      fileListEl.innerHTML = "";
+      for (const f of files || []) {
+        const pathValue = f && typeof f.path === "string" ? f.path : null;
+        if (!pathValue) continue;
+        const item = document.createElement("div");
+        item.className = "list-item";
+        const label = (f.type === "directory" ? "📁 " : "📄 ") + pathValue;
+        item.textContent = label;
+        item.addEventListener("click", async () => {
+          selectedFilePath = pathValue;
+          selectedArtifactPath = null;
+          if (f.type === "directory") {
+            filePathEl.value = pathValue;
+            await refreshFiles();
+            return;
+          }
+          const snippet = await rpc("bb.readFileSnippet", {
+            sessionId: activeSessionId,
+            path: pathValue,
+            headLines: 120,
+            tailLines: 50,
+            maxBytes: 120000,
+          });
+          snippetEl.textContent = (snippet && snippet.content ? snippet.content : "") +
+            (snippet && snippet.truncated ? "\\n\\n...[truncated]..." : "");
+        });
+        fileListEl.appendChild(item);
+      }
+    }
+
     refreshBtn.addEventListener("click", () => {
       refreshSessions().catch((err) => {
         statusEl.textContent = "Session refresh failed: " + String(err);
@@ -266,30 +617,84 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
         statusEl.textContent = "Connection check failed: " + String(err);
       });
     });
+    newSessionBtn.addEventListener("click", () => {
+      statusEl.textContent = "Use command palette: BreadBoard: New Session";
+    });
+    deleteSessionBtn.addEventListener("click", () => {
+      const sessionId = sessionsEl.value;
+      if (!sessionId) return;
+      rpc("bb.deleteSession", { sessionId }).then(() => {
+        if (activeSessionId === sessionId) activeSessionId = null;
+        return refreshSessions();
+      }).catch((err) => {
+        statusEl.textContent = "Delete failed: " + String(err);
+      });
+    });
 
     attachBtn.addEventListener("click", () => {
       const sessionId = sessionsEl.value;
       if (!sessionId) return;
-      rpc("bb.attachSession", { sessionId }).catch((err) => {
+      rpc("bb.attachSession", { sessionId }).then(() => {
+        activeSessionId = sessionId;
+        return Promise.all([refreshSessions(), refreshFiles().catch(() => {})]);
+      }).catch((err) => {
         statusEl.textContent = "Attach failed: " + String(err);
       });
     });
 
-    sendBtn.addEventListener("click", () => {
+    function sendCurrentMessage() {
       const text = msgEl.value;
       if (!text || !activeSessionId) return;
+      runningState = "running";
+      renderRunSummary();
       rpc("bb.sendMessage", { sessionId: activeSessionId, text }).then(() => {
         msgEl.value = "";
+        renderRunSummary();
       }).catch((err) => {
+        runningState = "error";
         statusEl.textContent = "Send failed: " + String(err);
+        renderRunSummary();
       });
+    }
+    sendBtn.addEventListener("click", sendCurrentMessage);
+
+    msgEl.addEventListener("input", () => renderRunSummary());
+    msgEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendCurrentMessage();
+      }
     });
 
     stopBtn.addEventListener("click", () => {
       if (!activeSessionId) return;
+      runningState = "stopping";
+      renderRunSummary();
       rpc("bb.stopSession", { sessionId: activeSessionId }).catch((err) => {
+        runningState = "error";
         statusEl.textContent = "Stop failed: " + String(err);
+        renderRunSummary();
       });
+    });
+
+    refreshFilesBtn.addEventListener("click", () => {
+      refreshFiles().catch((err) => statusEl.textContent = "List files failed: " + String(err));
+    });
+    insertRefBtn.addEventListener("click", () => {
+      if (!selectedFilePath) return;
+      const value = msgEl.value;
+      const sep = value.length > 0 && !value.endsWith(" ") ? " " : "";
+      msgEl.value = value + sep + "@" + selectedFilePath;
+      setActiveTab("chat");
+      renderRunSummary();
+    });
+    openDiffBtn.addEventListener("click", () => {
+      if (!activeSessionId || !selectedFilePath) return;
+      rpc("bb.openDiff", {
+        sessionId: activeSessionId,
+        filePath: selectedFilePath,
+        artifactPath: selectedArtifactPath || undefined,
+      }).catch((err) => statusEl.textContent = "Open diff failed: " + String(err));
     });
 
     window.addEventListener("message", (event) => {
@@ -316,15 +721,21 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
           statusEl.textContent = "Connected to engine" + suffix;
         } else if (payload.status === "error") {
           statusEl.textContent = "Engine connection failed: " + (payload.message || "unknown error");
+          if (payload.gapDetected) {
+            statusEl.textContent += "\\nContinuity gap detected. Re-attach or restart session stream.";
+          }
+          runningState = "error";
         } else {
           statusEl.textContent = "Connecting...";
         }
+        scheduleRender();
       } else if (message.topic === "bb/state") {
         const payload = message.payload || {};
         if (payload.activeSessionId && typeof payload.activeSessionId === "string") {
           activeSessionId = payload.activeSessionId;
           sessionsEl.value = activeSessionId;
         }
+        scheduleRender();
       } else if (message.topic === "bb/events") {
         const payload = message.payload || {};
         const events = Array.isArray(payload.events) ? payload.events : [];
@@ -346,24 +757,26 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
         }
         const active = activeSessionId ? activeSessionId : "(none)";
         eventsEl.textContent = "Active session: " + active + "\\nEvents received: " + totalEvents + "\\nLast event: " + lastType;
-        if (render && Array.isArray(render.lines)) {
-          lines.splice(0, lines.length);
-          for (const line of render.lines) {
-            lines.push(typeof line === "string" ? line : String(line));
-          }
-          transcriptEl.textContent = lines.join("\\n");
-          transcriptEl.scrollTop = transcriptEl.scrollHeight;
-        } else {
-          for (const evt of events) {
-            const type = evt && typeof evt.type === "string" ? evt.type : "unknown";
-            const summary = extractSummary(evt);
-            appendLine(summary ? ("[" + type + "] " + summary) : ("[" + type + "]"));
-          }
+        if (render && Array.isArray(render.entries)) {
+          transcriptEntries = render.entries.map((entry) => (entry && typeof entry === "object" ? entry : {}));
         }
+        pendingPermissions = transcriptEntries.filter((entry) => entry && entry.kind === "permission_request");
+        taskEntries = transcriptEntries.filter((entry) => entry && entry.kind === "task_event");
+        if (["turn_start", "assistant_message_start", "assistant_delta", "tool_call"].includes(lastType)) {
+          runningState = "running";
+        } else if (["run_finished", "completion", "assistant_message_end"].includes(lastType)) {
+          runningState = "idle";
+        }
+        const tail = transcriptEntries[transcriptEntries.length - 1];
+        if (tail && tail.filePath) {
+          selectedFilePath = tail.filePath;
+          selectedArtifactPath = tail.artifactPath || null;
+        }
+        scheduleRender();
       }
     });
 
-    refreshSessions().catch(() => {});
+    refreshSessions().then(() => scheduleRender()).catch(() => {});
   </script>
 </body>
 </html>`

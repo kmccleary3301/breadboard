@@ -317,6 +317,94 @@ export class HostController {
     })
   }
 
+  public async listFiles(
+    context: vscode.ExtensionContext,
+    sessionId: string,
+    path: string = ".",
+  ): Promise<Array<{ path: string; type: string; size?: number }>> {
+    const encoded = encodeURIComponent(path || ".")
+    const rows = await this.requestJson<unknown[]>(
+      context,
+      `/sessions/${sessionId}/files?path=${encoded}`,
+    )
+    const out: Array<{ path: string; type: string; size?: number }> = []
+    for (const row of rows) {
+      const rec = toRecord(row)
+      if (!rec) continue
+      const itemPath = readString(rec.path)
+      const itemType = readString(rec.type)
+      const itemSize = readNumber(rec.size) ?? undefined
+      if (!itemPath || !itemType) continue
+      out.push({ path: itemPath, type: itemType, ...(itemSize !== undefined ? { size: itemSize } : {}) })
+    }
+    return out
+  }
+
+  public async readFileSnippet(
+    context: vscode.ExtensionContext,
+    sessionId: string,
+    path: string,
+    options: { headLines?: number; tailLines?: number; maxBytes?: number } = {},
+  ): Promise<{ path: string; content: string; truncated: boolean; totalBytes?: number }> {
+    const q = new URLSearchParams()
+    q.set("path", path)
+    q.set("mode", "snippet")
+    if (typeof options.headLines === "number") q.set("head_lines", String(options.headLines))
+    if (typeof options.tailLines === "number") q.set("tail_lines", String(options.tailLines))
+    if (typeof options.maxBytes === "number") q.set("max_bytes", String(options.maxBytes))
+    const rec = await this.requestJson<unknown>(context, `/sessions/${sessionId}/files?${q.toString()}`)
+    const row = toRecord(rec) ?? {}
+    return {
+      path: readString(row.path) ?? path,
+      content: readString(row.content) ?? "",
+      truncated: Boolean(row.truncated),
+      ...(readNumber(row.total_bytes) !== null ? { totalBytes: readNumber(row.total_bytes) ?? undefined } : {}),
+    }
+  }
+
+  public async openDiff(
+    context: vscode.ExtensionContext,
+    sessionId: string,
+    filePath: string,
+    artifactPath?: string,
+  ): Promise<void> {
+    const ws = vscode.workspace.workspaceFolders?.[0]?.uri
+    const rightUri = ws ? vscode.Uri.joinPath(ws, filePath) : vscode.Uri.file(filePath)
+    let leftUri: vscode.Uri
+
+    if (artifactPath && artifactPath.trim().length > 0) {
+      const cfg = readSidebarConfig()
+      const base = cfg.engineBaseUrl.endsWith("/") ? cfg.engineBaseUrl : `${cfg.engineBaseUrl}/`
+      const url = new URL(`/sessions/${sessionId}/download`, base)
+      url.searchParams.set("artifact", artifactPath)
+      const response = await fetch(url, {
+        method: "GET",
+        headers: await this.authHeaders(context),
+      })
+      if (!response.ok) {
+        const text = await response.text().catch(() => "")
+        throw new Error(`Failed to download artifact: HTTP ${response.status} ${text}`.trim())
+      }
+      const content = await response.text()
+      const doc = await vscode.workspace.openTextDocument({
+        content,
+        language: undefined,
+      })
+      leftUri = doc.uri
+    } else {
+      const emptyDoc = await vscode.workspace.openTextDocument({ content: "" })
+      leftUri = emptyDoc.uri
+    }
+
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      leftUri,
+      rightUri,
+      `BreadBoard Diff: ${filePath}`,
+      { preview: true },
+    )
+  }
+
   public stopAllStreams(): void {
     for (const abort of this.streamAbortBySession.values()) {
       abort.abort()

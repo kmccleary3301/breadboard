@@ -21,6 +21,7 @@ test("reduceTranscriptEvents normalizes event names and summarizes payload", () 
     totalEvents: 0,
     lastEventType: null,
     lines: [],
+    entries: [],
   }
   const next = reduceTranscriptEvents(initial, [
     mkEvent("1", "assistant.message.delta", { delta: { text: "building patch" } }),
@@ -32,6 +33,9 @@ test("reduceTranscriptEvents normalizes event names and summarizes payload", () 
     "[assistant_delta] building patch",
     "[tool_result] ok",
   ])
+  assert.equal(next.entries.length, 2)
+  assert.equal(next.entries[0].kind, "assistant_delta")
+  assert.equal(next.entries[1].kind, "tool_result")
 })
 
 test("reduceTranscriptEvents enforces maxLines tail retention", () => {
@@ -39,14 +43,16 @@ test("reduceTranscriptEvents enforces maxLines tail retention", () => {
     totalEvents: 0,
     lastEventType: null,
     lines: [],
+    entries: [],
   }
   const events: StreamEventEnvelope[] = []
   for (let i = 0; i < 50; i += 1) {
     events.push(mkEvent(String(i), "assistant.message.delta", { text: `line-${i}` }))
   }
-  const next = reduceTranscriptEvents(initial, events, { maxLines: 20 })
+  const next = reduceTranscriptEvents(initial, events, { maxLines: 20, maxEntries: 20 })
   assert.equal(next.totalEvents, 50)
   assert.equal(next.lines.length, 20)
+  assert.equal(next.entries.length, 20)
   assert.equal(next.lines[0], "[assistant_delta] line-30")
   assert.equal(next.lines[19], "[assistant_delta] line-49")
 })
@@ -56,15 +62,25 @@ test("reduceTranscriptEvents does not mutate input state", () => {
     totalEvents: 1,
     lastEventType: "assistant_delta",
     lines: ["[assistant_delta] prior"],
+    entries: [
+      {
+        id: "1",
+        type: "assistant_delta",
+        kind: "assistant_delta",
+        summary: "prior",
+      },
+    ],
   }
   const snapshot = {
     totalEvents: initial.totalEvents,
     lastEventType: initial.lastEventType,
     lines: initial.lines.slice(),
+    entries: initial.entries.slice(),
   }
   const next = reduceTranscriptEvents(initial, [mkEvent("2", "assistant.message.end", {})], { maxLines: 200 })
   assert.equal(next.totalEvents, 2)
   assert.equal(initial.totalEvents, snapshot.totalEvents)
   assert.equal(initial.lastEventType, snapshot.lastEventType)
   assert.deepEqual(initial.lines, snapshot.lines)
+  assert.deepEqual(initial.entries, snapshot.entries)
 })

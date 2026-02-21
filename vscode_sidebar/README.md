@@ -9,6 +9,8 @@ Current status:
 - Session create/list/attach/send/stop/delete flows implemented.
 - SSE resume (`Last-Event-ID`) with reconnect and continuity-gap detection implemented.
 - Deterministic transcript reducer + bounded tail preview implemented.
+- Tabbed operator UI (`Chat`, `Tasks`, `Files`, `Run`) implemented.
+- Structured cards for tool/permission/task events implemented.
 - Reducer unit tests implemented.
 
 ## Development
@@ -22,6 +24,13 @@ npm run test
 ```
 
 Then open VSCode extension development host against this package.
+
+## V1 Docs
+
+- `docs/VSCODE_SIDEBAR_QUICKSTART.md`
+- `docs/VSCODE_SIDEBAR_COMPATIBILITY_MATRIX.md`
+- `docs/VSCODE_SIDEBAR_TROUBLESHOOTING.md`
+- `docs/VSCODE_SIDEBAR_FEATURE_STATUS.md`
 
 ## Settings
 
