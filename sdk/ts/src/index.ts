@@ -18,7 +18,10 @@ export type {
   SessionArtifactInfo,
   SessionCreateRequest,
   SessionCreateResponse,
+  SessionInputRequest,
+  SessionInputResponse,
+  SessionCommandRequest,
+  SessionCommandResponse,
   SessionSummary,
   ErrorResponse,
 } from "./types.js"
-

@@ -174,6 +174,25 @@ export interface SessionCreateResponse {
   readonly logging_dir?: string | null
 }
 
+export interface SessionInputRequest {
+  readonly content: string
+  readonly attachments?: string[]
+}
+
+export interface SessionInputResponse {
+  readonly status: string
+}
+
+export interface SessionCommandRequest {
+  readonly command: string
+  readonly payload?: Record<string, unknown>
+}
+
+export interface SessionCommandResponse {
+  readonly status: string
+  readonly detail?: Record<string, unknown>
+}
+
 export interface SessionSummary {
   readonly session_id: string
   readonly status: string

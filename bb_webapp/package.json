@@ -1,0 +1,25 @@
+{
+  "name": "@breadboard/webapp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync:sdk": "npm --prefix ../sdk/ts run build",
+    "dev": "npm run sync:sdk && vite",
+    "build": "npm run sync:sdk && tsc -b && vite build",
+    "typecheck": "npm run sync:sdk && tsc -b --pretty false",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@breadboard/sdk": "file:../sdk/ts",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.2"
+  }
+}

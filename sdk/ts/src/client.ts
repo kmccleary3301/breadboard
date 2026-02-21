@@ -2,10 +2,14 @@ import type {
   CTreeSnapshotResponse,
   HealthResponse,
   ModelCatalogResponse,
+  SessionCommandRequest,
+  SessionCommandResponse,
   SessionCreateRequest,
   SessionCreateResponse,
   SessionFileContent,
   SessionFileInfo,
+  SessionInputRequest,
+  SessionInputResponse,
   SessionSummary,
   SkillCatalogResponse,
 } from "./types.js"
@@ -104,10 +108,10 @@ export const createBreadboardClient = (config: BreadboardClientConfig) => ({
     requestWithConfig<SessionCreateResponse>(config, "/sessions", "POST", { body: payload }),
   listSessions: () => requestWithConfig<SessionSummary[]>(config, "/sessions", "GET"),
   getSession: (sessionId: string) => requestWithConfig<SessionSummary>(config, `/sessions/${sessionId}`, "GET"),
-  postInput: (sessionId: string, body: { content: string; attachments?: ReadonlyArray<string> }) =>
-    requestWithConfig<void>(config, `/sessions/${sessionId}/input`, "POST", { body }),
-  postCommand: (sessionId: string, body: Record<string, unknown>) =>
-    requestWithConfig<void>(config, `/sessions/${sessionId}/command`, "POST", { body }),
+  postInput: (sessionId: string, body: SessionInputRequest) =>
+    requestWithConfig<SessionInputResponse>(config, `/sessions/${sessionId}/input`, "POST", { body }),
+  postCommand: (sessionId: string, body: SessionCommandRequest) =>
+    requestWithConfig<SessionCommandResponse>(config, `/sessions/${sessionId}/command`, "POST", { body }),
   deleteSession: (sessionId: string) => requestWithConfig<void>(config, `/sessions/${sessionId}`, "DELETE"),
   listSessionFiles: (sessionId: string, path?: string) =>
     requestWithConfig<SessionFileInfo[]>(config, `/sessions/${sessionId}/files`, "GET", {
@@ -128,4 +132,3 @@ export const createBreadboardClient = (config: BreadboardClientConfig) => ({
   getSkillsCatalog: (sessionId: string) => requestWithConfig<SkillCatalogResponse>(config, `/sessions/${sessionId}/skills`, "GET"),
   getCtreeSnapshot: (sessionId: string) => requestWithConfig<CTreeSnapshotResponse>(config, `/sessions/${sessionId}/ctrees`, "GET"),
 })
-
