@@ -66,6 +66,10 @@ const safeJson = (value: unknown): string => {
 }
 
 export const applyEventToProjection = (state: ProjectionState, event: SessionEvent): ProjectionState => {
+  if (state.events.some((row) => row.id === event.id && row.type === event.type && row.session_id === event.session_id)) {
+    return state
+  }
+
   const nextEvents = [...state.events, event]
   if (nextEvents.length > 1000) {
     nextEvents.splice(0, nextEvents.length - 1000)

@@ -4,22 +4,26 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "sync:worker": "node ./scripts/sync-stream-mdx-worker.mjs",
     "sync:sdk": "npm --prefix ../sdk/ts run build",
-    "dev": "npm run sync:sdk && vite",
-    "build": "npm run sync:sdk && tsc -b && vite build",
+    "dev": "npm run sync:sdk && npm run sync:worker && vite",
+    "build": "npm run sync:sdk && npm run sync:worker && tsc -b && vite build",
     "typecheck": "npm run sync:sdk && tsc -b --pretty false",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
     "@breadboard/sdk": "file:../sdk/ts",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "stream-mdx": "^0.4.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "typescript": "^5.5.4",
-    "vite": "^5.4.2"
+    "vite": "^5.4.2",
+    "vitest": "^2.1.8"
   }
 }

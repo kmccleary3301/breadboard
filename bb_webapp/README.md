@@ -11,7 +11,9 @@ Current scope:
 - Input send and stop command
 - Session file browser + snippet preview (`GET /sessions/{id}/files`)
 - Artifact download (`GET /sessions/{id}/download?artifact=...`)
+- stream-mdx transcript rendering (`StreamingMarkdown`)
 - Deterministic local projection into transcript/tool/raw-event panes
+- IndexedDB event cache for reconnect/reload hydration
 
 ## Development
 
@@ -22,5 +24,6 @@ npm run dev
 ```
 
 The app uses the local TypeScript SDK at `../sdk/ts` (`npm run sync:sdk` is wired into build/dev scripts).
+The stream-mdx hosted worker is synced automatically to `public/workers/markdown-worker.js`.
 
 Default engine base URL: `http://127.0.0.1:9099`

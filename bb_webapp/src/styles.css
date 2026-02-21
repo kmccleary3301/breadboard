@@ -205,6 +205,30 @@ button:disabled {
   font-size: 0.8rem;
 }
 
+.bbMarkdown {
+  font-size: 0.9rem;
+}
+
+.bbMarkdown p {
+  margin: 0 0 0.6rem;
+}
+
+.bbMarkdown p:last-child {
+  margin-bottom: 0;
+}
+
+.bbMarkdown pre {
+  background: #edf2f7;
+  border: 1px solid #d8e2ea;
+  border-radius: 6px;
+  padding: 8px;
+  overflow: auto;
+}
+
+.bbMarkdown code {
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+}
+
 .toolRows {
   display: flex;
   flex-direction: column;

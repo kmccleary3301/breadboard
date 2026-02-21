@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ApiError,
   createBreadboardClient,
@@ -8,6 +8,9 @@ import {
   type SessionSummary,
 } from "@breadboard/sdk"
 import { applyEventToProjection, initialProjectionState } from "./projection"
+import { appendSessionEvent, loadSessionEvents } from "./eventStore"
+
+const MarkdownMessage = lazy(async () => await import("./MarkdownMessage"))
 
 type ConnectionState = "idle" | "connecting" | "connected" | "error"
 
@@ -174,6 +177,7 @@ export function App() {
 
   const applyEvent = useCallback((event: SessionEvent) => {
     setProjection((prev) => applyEventToProjection(prev, event))
+    void appendSessionEvent(event.session_id, event)
   }, [])
 
   const streamLoop = useCallback(
@@ -227,6 +231,15 @@ export function App() {
       setSelectedFilePath("")
       setSelectedFileContent("")
       setArtifactId("")
+      try {
+        const cachedEvents = await loadSessionEvents(sessionId, 1000)
+        if (cachedEvents.length > 0) {
+          const seeded = cachedEvents.reduce(applyEventToProjection, initialProjectionState)
+          setProjection(seeded)
+        }
+      } catch {
+        // Cache hydration is best-effort.
+      }
       try {
         await listFiles(sessionId, "")
       } catch {
@@ -420,7 +433,13 @@ export function App() {
                   <strong>{row.role}</strong>
                   <span>{row.final ? "final" : "streaming"}</span>
                 </header>
-                <pre>{row.text}</pre>
+                {row.role === "assistant" ? (
+                  <Suspense fallback={<pre>{row.text}</pre>}>
+                    <MarkdownMessage text={row.text} />
+                  </Suspense>
+                ) : (
+                  <pre>{row.text}</pre>
+                )}
               </article>
             ))}
           </div>

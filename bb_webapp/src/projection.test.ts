@@ -1,0 +1,86 @@
+import { describe, expect, it } from "vitest"
+import type { SessionEvent } from "@breadboard/sdk"
+import { applyEventToProjection, initialProjectionState } from "./projection"
+
+const makeEvent = (partial: Partial<SessionEvent> & Pick<SessionEvent, "id" | "type">): SessionEvent => ({
+  id: partial.id,
+  type: partial.type,
+  session_id: partial.session_id ?? "session-1",
+  turn: partial.turn ?? null,
+  timestamp: partial.timestamp ?? Date.now(),
+  payload: partial.payload ?? {},
+  seq: partial.seq,
+  timestamp_ms: partial.timestamp_ms,
+  run_id: partial.run_id,
+  thread_id: partial.thread_id,
+  turn_id: partial.turn_id,
+})
+
+describe("projection reducer", () => {
+  it("builds assistant streaming rows from deltas and finalizes on end", () => {
+    const start = applyEventToProjection(
+      initialProjectionState,
+      makeEvent({
+        id: "e1",
+        type: "assistant.message.delta",
+        payload: { delta: "Hello " },
+      }),
+    )
+    const next = applyEventToProjection(
+      start,
+      makeEvent({
+        id: "e2",
+        type: "assistant.message.delta",
+        payload: { delta: "world" },
+      }),
+    )
+    const done = applyEventToProjection(
+      next,
+      makeEvent({
+        id: "e3",
+        type: "assistant.message.end",
+      }),
+    )
+
+    expect(done.transcript).toHaveLength(1)
+    expect(done.transcript[0].role).toBe("assistant")
+    expect(done.transcript[0].text).toBe("Hello world")
+    expect(done.transcript[0].final).toBe(true)
+  })
+
+  it("records tool calls and tool results as structured rows", () => {
+    const called = applyEventToProjection(
+      initialProjectionState,
+      makeEvent({
+        id: "tool-1",
+        type: "tool_call",
+        payload: { tool_name: "exec_command", cmd: "pwd" },
+      }),
+    )
+    const done = applyEventToProjection(
+      called,
+      makeEvent({
+        id: "tool-2",
+        type: "tool_result",
+        payload: { tool_name: "exec_command", output: "/tmp" },
+      }),
+    )
+
+    expect(done.toolRows).toHaveLength(2)
+    expect(done.toolRows[0].type).toBe("tool_call")
+    expect(done.toolRows[1].type).toBe("tool_result")
+  })
+
+  it("deduplicates duplicate events by (session_id, type, id)", () => {
+    const event = makeEvent({
+      id: "dup-1",
+      type: "user_message",
+      payload: { text: "hello" },
+    })
+    const once = applyEventToProjection(initialProjectionState, event)
+    const twice = applyEventToProjection(once, event)
+
+    expect(twice.events).toHaveLength(1)
+    expect(twice.transcript).toHaveLength(1)
+  })
+})
