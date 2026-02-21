@@ -9,6 +9,7 @@ Current scope:
 - Session attach + SSE event streaming (`GET /sessions/{id}/events`)
 - Resume with `Last-Event-ID` and explicit 409 handling
 - Input send and stop command
+- Permission queue + decisions (`permission_decision`: allow/deny once/always + deny-stop)
 - Session file browser + snippet preview (`GET /sessions/{id}/files`)
 - Artifact download (`GET /sessions/{id}/download?artifact=...`)
 - stream-mdx transcript rendering (`StreamingMarkdown`)

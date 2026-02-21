@@ -15,10 +15,25 @@ export type ToolRow = {
   timestamp: number
 }
 
+export type PermissionScope = "session" | "project"
+
+export type PermissionRequestRow = {
+  requestId: string
+  tool: string
+  kind: string
+  summary: string
+  diffText: string | null
+  ruleSuggestion: string | null
+  defaultScope: PermissionScope
+  rewindable: boolean
+  createdAt: number
+}
+
 export type ProjectionState = {
   transcript: TranscriptRow[]
   toolRows: ToolRow[]
   events: SessionEvent[]
+  pendingPermissions: PermissionRequestRow[]
   activeAssistantRowId: string | null
 }
 
@@ -26,6 +41,7 @@ export const initialProjectionState: ProjectionState = {
   transcript: [],
   toolRows: [],
   events: [],
+  pendingPermissions: [],
   activeAssistantRowId: null,
 }
 
@@ -64,6 +80,68 @@ const safeJson = (value: unknown): string => {
     return String(value)
   }
 }
+
+const normalizePermissionScope = (value: unknown): PermissionScope =>
+  typeof value === "string" && value.trim().toLowerCase() === "session" ? "session" : "project"
+
+const normalizePermissionRequest = (payload: unknown, fallbackRequestId: string): PermissionRequestRow => {
+  const record = isRecord(payload) ? payload : {}
+  const metadata = isRecord(record.metadata) ? record.metadata : {}
+  const requestId =
+    readString(record.request_id) ??
+    readString(record.requestId) ??
+    readString(record.permission_id) ??
+    readString(record.permissionId) ??
+    readString(record.id) ??
+    fallbackRequestId
+  const tool =
+    readString(record.tool) ??
+    readString(record.tool_name) ??
+    readString(record.name) ??
+    readString(metadata.function) ??
+    "tool"
+  const kind =
+    readString(record.kind) ??
+    readString(record.category) ??
+    readString(record.type) ??
+    readString(metadata.kind) ??
+    tool
+  const summary =
+    readString(record.summary) ??
+    readString(record.message) ??
+    readString(record.prompt) ??
+    readString(metadata.summary) ??
+    `Permission required for ${tool}`
+  const diffText =
+    readString(record.diff) ??
+    readString(record.diff_text) ??
+    readString(metadata.diff) ??
+    null
+  const ruleSuggestion =
+    readString(record.rule_suggestion) ??
+    readString(record.ruleSuggestion) ??
+    readString(record.rule) ??
+    readString(metadata.rule_suggestion) ??
+    readString(metadata.approval_pattern) ??
+    null
+
+  return {
+    requestId,
+    tool,
+    kind,
+    summary,
+    diffText,
+    ruleSuggestion,
+    defaultScope: normalizePermissionScope(record.default_scope ?? metadata.default_scope),
+    rewindable: record.rewindable === false ? false : true,
+    createdAt: Date.now(),
+  }
+}
+
+export const dismissPermissionRequest = (state: ProjectionState, requestId: string): ProjectionState => ({
+  ...state,
+  pendingPermissions: state.pendingPermissions.filter((entry) => entry.requestId !== requestId),
+})
 
 export const applyEventToProjection = (state: ProjectionState, event: SessionEvent): ProjectionState => {
   if (state.events.some((row) => row.id === event.id && row.type === event.type && row.session_id === event.session_id)) {
@@ -176,6 +254,37 @@ export const applyEventToProjection = (state: ProjectionState, event: SessionEve
       ...state,
       events: nextEvents,
       transcript: [...state.transcript, { id: event.id, role: "system", text, final: true }],
+    }
+  }
+
+  if (event.type === "permission_request") {
+    const request = normalizePermissionRequest(event.payload, event.id)
+    const filtered = state.pendingPermissions.filter((entry) => entry.requestId !== request.requestId)
+    return {
+      ...state,
+      events: nextEvents,
+      pendingPermissions: [...filtered, request],
+    }
+  }
+
+  if (event.type === "permission_response") {
+    const record = isRecord(event.payload) ? event.payload : {}
+    const requestId =
+      readString(record.request_id) ??
+      readString(record.requestId) ??
+      readString(record.permission_id) ??
+      readString(record.permissionId) ??
+      readString(record.id)
+    if (!requestId) {
+      return {
+        ...state,
+        events: nextEvents,
+      }
+    }
+    return {
+      ...state,
+      events: nextEvents,
+      pendingPermissions: state.pendingPermissions.filter((entry) => entry.requestId !== requestId),
     }
   }
 

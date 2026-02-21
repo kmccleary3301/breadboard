@@ -101,12 +101,14 @@ label {
 
 input,
 textarea,
+select,
 button {
   font: inherit;
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid #c3d0db;
@@ -229,6 +231,14 @@ button:disabled {
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
 }
 
+.bbMarkdownTail {
+  margin-top: 6px;
+  border-left: 2px solid #d4dde6;
+  padding-left: 8px;
+  color: #5f6f7d;
+  background: transparent;
+}
+
 .toolRows {
   display: flex;
   flex-direction: column;
@@ -270,6 +280,50 @@ button:disabled {
   word-break: break-word;
   max-height: 320px;
   overflow: auto;
+}
+
+.permissionList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.permissionCard {
+  border: 1px solid #d3dce4;
+  border-radius: 8px;
+  background: #fff7ee;
+  padding: 8px;
+}
+
+.permissionCard > header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: #445568;
+}
+
+.permissionActions {
+  flex-wrap: wrap;
+}
+
+.permissionDiff {
+  margin: 6px 0;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #d8e2ea;
+  background: #fbfcfd;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.75rem;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.errorText {
+  color: #8e1f2b;
+  margin: 0 0 8px;
 }
 
 .files {

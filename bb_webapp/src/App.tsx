@@ -1,14 +1,21 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
-  ApiError,
   createBreadboardClient,
   streamSessionEvents,
   type SessionEvent,
   type SessionFileInfo,
   type SessionSummary,
 } from "@breadboard/sdk"
-import { applyEventToProjection, initialProjectionState } from "./projection"
+import {
+  applyEventToProjection,
+  dismissPermissionRequest,
+  initialProjectionState,
+  type PermissionRequestRow,
+  type PermissionScope,
+} from "./projection"
 import { appendSessionEvent, loadSessionEvents } from "./eventStore"
+import { runSessionStreamLoop } from "./sessionStream"
+import { buildPermissionDecisionPayload, type PermissionDecision, type PermissionDraft } from "./permissions"
 
 const MarkdownMessage = lazy(async () => await import("./MarkdownMessage"))
 
@@ -19,8 +26,6 @@ const STORAGE_TOKEN_KEY = "bb.webapp.token"
 const STORAGE_LAST_EVENT_IDS_KEY = "bb.webapp.lastEventIds"
 const DEFAULT_BASE_URL = "http://127.0.0.1:9099"
 const DEFAULT_CONFIG_PATH = "agent_configs/base_v2.yaml"
-const RETRY_BACKOFF_MS = [250, 1000, 2000, 5000]
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
@@ -77,6 +82,9 @@ export function App() {
   const [artifactId, setArtifactId] = useState<string>("")
   const [lastEventIds, setLastEventIds] = useState<Record<string, string>>(() => loadLastEventIds())
   const [busy, setBusy] = useState<boolean>(false)
+  const [permissionDrafts, setPermissionDrafts] = useState<Record<string, PermissionDraft>>({})
+  const [permissionBusyId, setPermissionBusyId] = useState<string | null>(null)
+  const [permissionError, setPermissionError] = useState<string>("")
   const streamAbortRef = useRef<AbortController | null>(null)
   const lastEventIdsRef = useRef<Record<string, string>>(lastEventIds)
 
@@ -182,41 +190,39 @@ export function App() {
 
   const streamLoop = useCallback(
     async (sessionId: string, signal: AbortSignal) => {
-      let retry = 0
-      while (!signal.aborted) {
-        try {
-          setConnectionState("connecting")
-          setConnectionMessage(`stream connecting: ${sessionId}`)
-          const lastEventId = lastEventIdsRef.current[sessionId]
-          for await (const event of streamSessionEvents(sessionId, {
+      await runSessionStreamLoop({
+        sessionId,
+        signal,
+        getLastEventId: () => lastEventIdsRef.current[sessionId],
+        stream: ({ lastEventId }) =>
+          streamSessionEvents(sessionId, {
             config: { baseUrl, authToken: token.trim().length > 0 ? token.trim() : undefined },
             signal,
             lastEventId,
-          })) {
-            if (signal.aborted) break
-            applyEvent(event)
-            setLastEventIds((prev) => ({ ...prev, [sessionId]: event.id }))
-            setConnectionState("connected")
-            setConnectionMessage(`stream connected: ${sessionId}`)
-          }
-          if (signal.aborted) break
-          retry = 0
-        } catch (error) {
-          if (signal.aborted) return
-          if (error instanceof ApiError && error.status === 409) {
-            setConnectionState("error")
-            setConnectionMessage("resume window exceeded (HTTP 409). refresh session state and re-attach.")
-            return
-          }
-          const waitMs = RETRY_BACKOFF_MS[Math.min(retry, RETRY_BACKOFF_MS.length - 1)]
-          retry += 1
+          }),
+        onConnecting: () => {
+          setConnectionState("connecting")
+          setConnectionMessage(`stream connecting: ${sessionId}`)
+        },
+        onEvent: (event) => {
+          applyEvent(event)
+          setLastEventIds((prev) => ({ ...prev, [sessionId]: event.id }))
+        },
+        onConnected: () => {
+          setConnectionState("connected")
+          setConnectionMessage(`stream connected: ${sessionId}`)
+        },
+        onRetryError: (error, waitMs) => {
           setConnectionState("error")
           setConnectionMessage(
             `stream error (${error instanceof Error ? error.message : String(error)}), retrying in ${waitMs}ms`,
           )
-          await new Promise<void>((resolve) => setTimeout(resolve, waitMs))
-        }
-      }
+        },
+        onResumeWindowGap: () => {
+          setConnectionState("error")
+          setConnectionMessage("resume window exceeded (HTTP 409). refresh session state and re-attach.")
+        },
+      })
     },
     [applyEvent, baseUrl, token],
   )
@@ -226,6 +232,9 @@ export function App() {
       stopStreaming()
       setActiveSessionId(sessionId)
       setProjection(initialProjectionState)
+      setPermissionDrafts({})
+      setPermissionBusyId(null)
+      setPermissionError("")
       setCurrentDir("")
       setFiles([])
       setSelectedFilePath("")
@@ -297,6 +306,57 @@ export function App() {
       setBusy(false)
     }
   }, [activeSessionId, client])
+
+  const updatePermissionDraft = useCallback((requestId: string, patch: Partial<PermissionDraft>) => {
+    setPermissionDrafts((prev) => {
+      const base = prev[requestId] ?? { note: "", rule: "", scope: "project" as PermissionScope }
+      return {
+        ...prev,
+        [requestId]: { ...base, ...patch },
+      }
+    })
+  }, [])
+
+  const resolvePermissionDraft = useCallback(
+    (request: PermissionRequestRow): PermissionDraft => {
+      const existing = permissionDrafts[request.requestId]
+      if (existing) return existing
+      return {
+        note: "",
+        rule: request.ruleSuggestion ?? "",
+        scope: request.defaultScope,
+      }
+    },
+    [permissionDrafts],
+  )
+
+  const submitPermissionDecision = useCallback(
+    async (request: PermissionRequestRow, decision: PermissionDecision) => {
+      if (!activeSessionId) return
+      const draft = resolvePermissionDraft(request)
+      const payload = buildPermissionDecisionPayload(request, draft, decision)
+
+      setPermissionBusyId(request.requestId)
+      setPermissionError("")
+      try {
+        await client.postCommand(activeSessionId, {
+          command: "permission_decision",
+          payload,
+        })
+        setProjection((prev) => dismissPermissionRequest(prev, request.requestId))
+        setPermissionDrafts((prev) => {
+          const next = { ...prev }
+          delete next[request.requestId]
+          return next
+        })
+      } catch (error) {
+        setPermissionError(error instanceof Error ? error.message : String(error))
+      } finally {
+        setPermissionBusyId(null)
+      }
+    },
+    [activeSessionId, client, resolvePermissionDraft],
+  )
 
   const onFileClick = useCallback(
     async (entry: SessionFileInfo) => {
@@ -435,7 +495,7 @@ export function App() {
                 </header>
                 {row.role === "assistant" ? (
                   <Suspense fallback={<pre>{row.text}</pre>}>
-                    <MarkdownMessage text={row.text} />
+                    <MarkdownMessage text={row.text} final={row.final} />
                   </Suspense>
                 ) : (
                   <pre>{row.text}</pre>
@@ -446,6 +506,75 @@ export function App() {
         </section>
 
         <section className="panel">
+          <h2>Permissions</h2>
+          {permissionError ? <p className="errorText">{permissionError}</p> : null}
+          <div className="permissionList">
+            {projection.pendingPermissions.length === 0 ? <p className="subtle">No pending permission requests.</p> : null}
+            {projection.pendingPermissions.map((request) => {
+              const draft = resolvePermissionDraft(request)
+              const isBusy = permissionBusyId === request.requestId
+              return (
+                <article key={request.requestId} className="permissionCard">
+                  <header>
+                    <strong>{request.tool}</strong>
+                    <span>{request.kind}</span>
+                  </header>
+                  <p className="subtle">{request.summary}</p>
+                  {request.diffText ? <pre className="permissionDiff">{request.diffText}</pre> : null}
+                  <label>
+                    Note
+                    <input
+                      value={draft.note}
+                      onChange={(event) => updatePermissionDraft(request.requestId, { note: event.target.value })}
+                      placeholder="optional note"
+                    />
+                  </label>
+                  <div className="row">
+                    <label>
+                      Scope
+                      <select
+                        value={draft.scope}
+                        onChange={(event) =>
+                          updatePermissionDraft(request.requestId, {
+                            scope: (event.target.value === "session" ? "session" : "project") as PermissionScope,
+                          })
+                        }
+                      >
+                        <option value="project">project</option>
+                        <option value="session">session</option>
+                      </select>
+                    </label>
+                    <label>
+                      Rule
+                      <input
+                        value={draft.rule}
+                        onChange={(event) => updatePermissionDraft(request.requestId, { rule: event.target.value })}
+                        placeholder={request.ruleSuggestion ?? "optional pattern"}
+                      />
+                    </label>
+                  </div>
+                  <div className="row permissionActions">
+                    <button disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "allow-once")}>
+                      Allow Once
+                    </button>
+                    <button disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "allow-always")}>
+                      Allow Always
+                    </button>
+                    <button disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "deny-once")}>
+                      Deny Once
+                    </button>
+                    <button disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "deny-always")}>
+                      Deny Always
+                    </button>
+                    <button disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "deny-stop")}>
+                      Deny + Stop
+                    </button>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+
           <h2>Tools</h2>
           <div className="toolRows">
             {projection.toolRows.length === 0 ? <p className="subtle">No tool events yet.</p> : null}

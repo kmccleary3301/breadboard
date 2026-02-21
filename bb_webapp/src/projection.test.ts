@@ -83,4 +83,38 @@ describe("projection reducer", () => {
     expect(twice.events).toHaveLength(1)
     expect(twice.transcript).toHaveLength(1)
   })
+
+  it("tracks permission requests and clears them on response", () => {
+    const requestState = applyEventToProjection(
+      initialProjectionState,
+      makeEvent({
+        id: "p1",
+        type: "permission_request",
+        payload: {
+          request_id: "permission_1",
+          tool: "bash",
+          kind: "shell",
+          summary: "Permission needed",
+          rule_suggestion: "npm install *",
+          default_scope: "project",
+        },
+      }),
+    )
+    expect(requestState.pendingPermissions).toHaveLength(1)
+    expect(requestState.pendingPermissions[0].requestId).toBe("permission_1")
+    expect(requestState.pendingPermissions[0].tool).toBe("bash")
+
+    const responseState = applyEventToProjection(
+      requestState,
+      makeEvent({
+        id: "p2",
+        type: "permission_response",
+        payload: {
+          request_id: "permission_1",
+          response: "once",
+        },
+      }),
+    )
+    expect(responseState.pendingPermissions).toHaveLength(0)
+  })
 })
