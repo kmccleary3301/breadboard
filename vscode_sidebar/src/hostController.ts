@@ -313,7 +313,7 @@ export class HostController {
   ): Promise<void> {
     await this.requestJson<void>(context, `/sessions/${sessionId}/command`, {
       method: "POST",
-      body: JSON.stringify({ command, args }),
+      body: JSON.stringify({ command, payload: args }),
     })
   }
 

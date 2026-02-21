@@ -1,11 +1,13 @@
 import * as vscode from "vscode"
 import { HostController } from "./hostController"
 import { ENGINE_TOKEN_SECRET_KEY } from "./config"
+import { reduceTranscriptEvents, type TranscriptRenderState } from "./transcriptReducer"
 
 const SIDEBAR_VIEW_ID = "breadboard.sidebar"
 
 class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
   private webviewView: vscode.WebviewView | null = null
+  private transcriptBySession = new Map<string, TranscriptRenderState>()
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -30,11 +32,18 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
         })
       },
       onEvents: async (payload) => {
+        const previous = this.transcriptBySession.get(payload.sessionId) ?? {
+          totalEvents: 0,
+          lastEventType: null,
+          lines: [],
+        }
+        const reduced = reduceTranscriptEvents(previous, payload.events, { maxLines: 200 })
+        this.transcriptBySession.set(payload.sessionId, reduced)
         await this.post({
           v: 1,
           kind: "evt",
           topic: "bb/events",
-          payload,
+          payload: { ...payload, render: reduced },
         })
       },
     })
@@ -319,18 +328,37 @@ class BreadboardSidebarViewProvider implements vscode.WebviewViewProvider {
       } else if (message.topic === "bb/events") {
         const payload = message.payload || {};
         const events = Array.isArray(payload.events) ? payload.events : [];
-        totalEvents += events.length;
-        const last = events.length > 0 ? events[events.length - 1] : null;
-        const lastType = last && typeof last.type === "string" ? last.type : "(none)";
+        const render = payload.render && typeof payload.render === "object" ? payload.render : null;
+        if (render && typeof render.totalEvents === "number") {
+          totalEvents = render.totalEvents;
+        } else {
+          totalEvents += events.length;
+        }
+        let lastType = "(none)";
+        if (render && typeof render.lastEventType === "string" && render.lastEventType.length > 0) {
+          lastType = render.lastEventType;
+        } else {
+          const last = events.length > 0 ? events[events.length - 1] : null;
+          lastType = last && typeof last.type === "string" ? last.type : "(none)";
+        }
         if (payload.sessionId && typeof payload.sessionId === "string") {
           activeSessionId = payload.sessionId;
         }
         const active = activeSessionId ? activeSessionId : "(none)";
         eventsEl.textContent = "Active session: " + active + "\\nEvents received: " + totalEvents + "\\nLast event: " + lastType;
-        for (const evt of events) {
-          const type = evt && typeof evt.type === "string" ? evt.type : "unknown";
-          const summary = extractSummary(evt);
-          appendLine(summary ? ("[" + type + "] " + summary) : ("[" + type + "]"));
+        if (render && Array.isArray(render.lines)) {
+          lines.splice(0, lines.length);
+          for (const line of render.lines) {
+            lines.push(typeof line === "string" ? line : String(line));
+          }
+          transcriptEl.textContent = lines.join("\\n");
+          transcriptEl.scrollTop = transcriptEl.scrollHeight;
+        } else {
+          for (const evt of events) {
+            const type = evt && typeof evt.type === "string" ? evt.type : "unknown";
+            const summary = extractSummary(evt);
+            appendLine(summary ? ("[" + type + "] " + summary) : ("[" + type + "]"));
+          }
         }
       }
     });
