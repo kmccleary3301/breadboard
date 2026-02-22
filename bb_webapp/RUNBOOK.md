@@ -64,4 +64,5 @@ When reporting incident/regression, capture:
 - last 120 raw events (redacted view),
 - diagnostics output,
 - replay export package,
-- runtime state transitions from audit log.
+- runtime state transitions from audit log,
+- CI run URL + job id for `webapp_gate` and `Python (ubuntu)` checks.

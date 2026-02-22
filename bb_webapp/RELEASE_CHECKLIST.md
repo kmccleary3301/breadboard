@@ -3,7 +3,7 @@
 ## Build and Test Gates
 
 - [x] `npm --prefix bb_webapp run gate:full` passes.
-- [ ] CI `webapp_gate` job passes.
+- [x] CI `webapp_gate` job passes.
 - [x] Typecheck/build outputs are clean.
 
 ## Feature Verification
