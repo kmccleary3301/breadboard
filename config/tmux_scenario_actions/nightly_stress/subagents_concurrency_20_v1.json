@@ -3,8 +3,12 @@
     "type": "startup_preflight",
     "timeout": 30,
     "interval": 0.3,
-    "ready_tokens": ["for shortcuts"],
-    "kick_keys": ["Escape"],
+    "ready_tokens": [
+      "shortcuts"
+    ],
+    "kick_keys": [
+      "Escape"
+    ],
     "kick_every_polls": 1
   },
   {
@@ -16,7 +20,11 @@
     "type": "wait_for_quiet",
     "quiet_seconds": 0.6,
     "timeout": 20,
-    "must_contain": ["? for shortcuts"]
+    "must_contain": [],
+    "must_contain_any": [
+      "? shortcuts",
+      "? for shortcuts"
+    ]
   },
   {
     "type": "send",
@@ -27,8 +35,13 @@
   },
   {
     "type": "wait_until",
-    "contains": ["Subagent concurrency 20 replay complete"],
-    "absent": ["Cannot read properties of undefined (reading 'length')", "buildModalStack.tsx:1084"],
+    "contains": [
+      "Subagent concurrency 20 replay complete"
+    ],
+    "absent": [
+      "Cannot read properties of undefined (reading 'length')",
+      "buildModalStack.tsx:1084"
+    ],
     "timeout": 45
   },
   {
@@ -40,7 +53,9 @@
     "type": "wait_for_quiet",
     "quiet_seconds": 1.2,
     "timeout": 60,
-    "must_contain": ["Background tasks", "? for shortcuts"],
+    "must_contain": [
+      "Background tasks"
+    ],
     "must_not_contain": [
       "Cannot read properties of undefined (reading 'length')",
       "buildModalStack.tsx:1084",
@@ -49,7 +64,11 @@
       "[phase4 replay target] cli_bridge health check failed"
     ],
     "semantic_timeout": 8,
-    "semantic_fail_fast": true
+    "semantic_fail_fast": true,
+    "must_contain_any": [
+      "? shortcuts",
+      "? for shortcuts"
+    ]
   },
   {
     "type": "key",
@@ -60,7 +79,9 @@
     "type": "wait_for_quiet",
     "quiet_seconds": 1.2,
     "timeout": 60,
-    "must_contain": ["Subagent concurrency 20 replay complete", "? for shortcuts"],
+    "must_contain": [
+      "Subagent concurrency 20 replay complete"
+    ],
     "must_not_contain": [
       "Cannot read properties of undefined (reading 'length')",
       "buildModalStack.tsx:1084",
@@ -69,6 +90,10 @@
       "[phase4 replay target] cli_bridge health check failed"
     ],
     "semantic_timeout": 8,
-    "semantic_fail_fast": true
+    "semantic_fail_fast": true,
+    "must_contain_any": [
+      "? shortcuts",
+      "? for shortcuts"
+    ]
   }
 ]

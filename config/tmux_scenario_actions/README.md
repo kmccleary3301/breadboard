@@ -26,5 +26,5 @@ Compatibility (legacy paths kept temporarily):
 ## Conventions
 
 - Always target `breadboard_test_*` sessions in automation (default safety posture of the runner).
-- Include an initial `wait_until` ready marker (for example `for shortcuts`) before sending input.
+- Include an initial `wait_until` ready marker (for example `shortcuts`) before sending input.
 - Prefer `must_contain`/`must_match_regex` semantic assertions over brittle full-screen text matching.

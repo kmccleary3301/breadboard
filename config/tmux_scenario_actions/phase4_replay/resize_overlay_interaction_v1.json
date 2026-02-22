@@ -3,8 +3,12 @@
     "type": "startup_preflight",
     "timeout": 20,
     "interval": 0.3,
-    "ready_tokens": ["for shortcuts"],
-    "kick_keys": ["Escape"],
+    "ready_tokens": [
+      "shortcuts"
+    ],
+    "kick_keys": [
+      "Escape"
+    ],
     "kick_every_polls": 1
   },
   {
@@ -15,22 +19,39 @@
     "clear_mode": "ctrl_u"
   },
   {
+    "type": "wait_until",
+    "contains": [
+      "Patch(layout.tsx)",
+      "Resize and overlay interaction settled."
+    ],
+    "absent": [
+      "Cannot read properties of undefined (reading 'length')",
+      "buildModalStack.tsx:1084"
+    ],
+    "timeout": 45
+  },
+  {
     "type": "wait_for_quiet",
     "quiet_seconds": 2.4,
     "timeout": 55,
     "semantic_timeout": 8,
     "semantic_fail_fast": true,
     "must_contain": [
-      "Try \"fix typecheck errors\"",
-      "? for shortcuts"
+      "Try \"fix typecheck errors\""
     ],
     "must_not_contain": [
+      "Todos",
+      "Background tasks",
       "[error] replay fixture not found",
       "Cannot read properties of undefined (reading 'length')",
       "buildModalStack.tsx:1084",
       "UnhandledPromiseRejection",
       "[phase4 replay target exited]",
       "[phase4 replay target] cli_bridge health check failed"
+    ],
+    "must_contain_any": [
+      "? shortcuts",
+      "? for shortcuts"
     ]
   }
 ]

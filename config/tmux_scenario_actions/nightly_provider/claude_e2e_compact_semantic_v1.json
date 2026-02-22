@@ -1,6 +1,6 @@
 [
   {"type":"startup_preflight","timeout":240},
-  {"type":"wait_until","require_contains_any":["Haiku 4.5","haiku-4-5","for shortcuts","bypass permissions on"],"require_timeout":60,"timeout":90},
+  {"type":"wait_until","require_contains_any":["Haiku 4.5","haiku-4-5","shortcuts","bypass permissions on"],"require_timeout":60,"timeout":90},
   {"type":"send","text":"Reply exactly with: OK","submit":true,"must_match_regex":["(?m)^[●•*]\\s*OK\\s*$"],"semantic_timeout":60},
   {"type":"send","text":"Reply exactly with: compact-precheck","submit":true,"must_match_regex":["(?m)^[●•*]\\s*compact-precheck\\s*$"],"semantic_timeout":90},
   {"type":"wait_for_idle","timeout":180,"quiet_seconds":2.0,"accept_active_timeout":true,"accept_stable_active_after":8.0},

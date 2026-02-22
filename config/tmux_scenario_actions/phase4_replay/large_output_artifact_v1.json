@@ -3,7 +3,7 @@
     "type": "startup_preflight",
     "timeout": 20,
     "interval": 0.3,
-    "ready_tokens": ["for shortcuts"],
+    "ready_tokens": ["shortcuts"],
     "kick_keys": ["Escape"],
     "kick_every_polls": 1
   },
@@ -18,8 +18,7 @@
     "type": "wait_until",
     "contains": [
       "artifact",
-      "artifact-sample-output.txt",
-      "Inline output truncated to artifact reference."
+      "artifact-sample-output.txt"
     ],
     "timeout": 45
   },

@@ -1,6 +1,6 @@
 [
   {"type":"startup_preflight","timeout":240,"interval":0.4,"ready_tokens":["OpenAI Codex","context left","model:"],"kick_keys":["q","Escape"],"kick_every_polls":1},
-  {"type":"wait_until","require_contains_any":["gpt-5-codex","OpenAI Codex","for shortcuts","context left"],"require_timeout":60,"timeout":90},
+  {"type":"wait_until","require_contains_any":["gpt-5-codex","OpenAI Codex","shortcuts","context left"],"require_timeout":60,"timeout":90},
   {"type":"send","text":"Reply exactly with: OK","clear_first":true,"clear_mode":"ctrl_u","submit":true,"must_match_regex":["(?m)^[•*]\\s*OK\\s*$"],"semantic_timeout":60},
   {"type":"send","text":"Reply exactly with: compact-precheck","clear_first":false,"submit":true,"must_match_regex":["(?m)^[•*]\\s*compact-precheck\\s*$"],"semantic_timeout":90},
   {"type":"wait_for_idle","timeout":180,"quiet_seconds":2.0,"accept_active_timeout":true,"accept_stable_active_after":8.0},
