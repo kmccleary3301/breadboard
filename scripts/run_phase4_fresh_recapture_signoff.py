@@ -37,6 +37,10 @@ RUN_SCENARIO_SCRIPT = REPO_ROOT / "scripts" / "run_tmux_capture_scenario.py"
 TMUX_SOCKET = "bbcap_phase4_fresh_signoff"
 PROTECTED = "bb_tui_codex_dev,bb_engine_codex_dev,bb_atp"
 RETRY_SCENARIOS = {"phase4_replay/subagents_concurrency_20_v1"}
+# Optional targeted pre-run restarts. Keep empty by default and rely on generic
+# preflight recovery retry logic below.
+RESTART_TARGET_BEFORE_SCENARIO: set[str] = set()
+PREFLIGHT_STUCK_MARKER = "startup_preflight could not dismiss overlays/modals"
 
 
 @dataclass(frozen=True)
@@ -177,46 +181,50 @@ def _latest_run_dir_for_scenario(scenario: str) -> Path | None:
     return manifests[-1].parent
 
 
+def _start_target(name: str, cfg: TargetConfig) -> None:
+    env = None
+    if cfg.alt_buffer_viewer:
+        env = {"BREADBOARD_TUI_ALT_BUFFER_VIEWER": "1"}
+    started = False
+    last_proc: subprocess.CompletedProcess[str] | None = None
+    for attempt in range(0, 25):
+        port = int(cfg.port) + attempt
+        cmd = [
+            "bash",
+            str(START_TARGET_SCRIPT),
+            "--session",
+            cfg.session,
+            "--tmux-socket",
+            TMUX_SOCKET,
+            "--cols",
+            "160",
+            "--rows",
+            "45",
+            "--port",
+            str(port),
+            "--scrollback-mode",
+            "scrollback",
+            "--landing-always",
+            "1",
+            "--use-dist",
+        ]
+        proc = _run(cmd, env=env)
+        if proc.returncode == 0:
+            started = True
+            break
+        last_proc = proc
+        stderr = (proc.stderr or "").lower()
+        if "already in use" not in stderr:
+            break
+    if not started:
+        if last_proc is None:
+            raise RuntimeError(f"start target {name} failed before invocation")
+        _assert_ok(last_proc, f"start target {name}")
+
+
 def _start_targets() -> None:
     for name, cfg in TARGETS.items():
-        env = None
-        if cfg.alt_buffer_viewer:
-            env = {"BREADBOARD_TUI_ALT_BUFFER_VIEWER": "1"}
-        started = False
-        last_proc: subprocess.CompletedProcess[str] | None = None
-        for attempt in range(0, 25):
-            port = int(cfg.port) + attempt
-            cmd = [
-                "bash",
-                str(START_TARGET_SCRIPT),
-                "--session",
-                cfg.session,
-                "--tmux-socket",
-                TMUX_SOCKET,
-                "--cols",
-                "160",
-                "--rows",
-                "45",
-                "--port",
-                str(port),
-                "--scrollback-mode",
-                "scrollback",
-                "--landing-always",
-                "1",
-                "--use-dist",
-            ]
-            proc = _run(cmd, env=env)
-            if proc.returncode == 0:
-                started = True
-                break
-            last_proc = proc
-            stderr = (proc.stderr or "").lower()
-            if "already in use" not in stderr:
-                break
-        if not started:
-            if last_proc is None:
-                raise RuntimeError(f"start target {name} failed before invocation")
-            _assert_ok(last_proc, f"start target {name}")
+        _start_target(name, cfg)
 
 
 def _stop_targets() -> None:
@@ -227,6 +235,8 @@ def _run_scenario(plan_row: dict[str, str], *, iteration: int, lane: str, durati
     target_key = plan_row["target"]
     cfg = TARGETS[target_key]
     scenario = plan_row["scenario"]
+    if scenario in RESTART_TARGET_BEFORE_SCENARIO:
+        _start_target(target_key, cfg)
     action = REPO_ROOT / plan_row["action"]
     label = f"fresh_{lane}_iter{iteration}_{scenario.split('/')[-1]}"
     cmd = [
@@ -271,13 +281,22 @@ def _run_scenario(plan_row: dict[str, str], *, iteration: int, lane: str, durati
         "--capture-label",
         label,
     ]
-    attempts = 3 if scenario in RETRY_SCENARIOS else 1
+    base_attempts = 3 if scenario in RETRY_SCENARIOS else 1
+    max_attempts = base_attempts + 1  # +1 reserved for preflight-recovery rerun.
+    preflight_recovery_attempted = False
     proc: subprocess.CompletedProcess[str] | None = None
-    for attempt in range(1, attempts + 1):
+    for attempt in range(1, max_attempts + 1):
         proc = _run(cmd)
         if proc.returncode == 0:
             break
-        if attempt < attempts:
+        combined_log = f"{proc.stdout or ''}\n{proc.stderr or ''}"
+        if (not preflight_recovery_attempted) and (PREFLIGHT_STUCK_MARKER in combined_log):
+            _start_target(target_key, cfg)
+            preflight_recovery_attempted = True
+            continue
+        allow_standard_retry = attempt < base_attempts
+        allow_post_recovery_retry = preflight_recovery_attempted and attempt < max_attempts
+        if allow_standard_retry or allow_post_recovery_retry:
             time.sleep(0.8)
             continue
     if proc is None:

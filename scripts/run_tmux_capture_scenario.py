@@ -665,15 +665,35 @@ def normalize_preflight_focus_state(
         if attempts % close_every == 0:
             for key in close_keys:
                 tmux_send_key(target, key)
-            if "Esc close" in last_text:
+            time.sleep(interval)
+            after_close_text = normalize_captured_text(tmux_capture_visible_text(target))
+            if after_close_text != before_attempt_text:
+                observed_change_after_close_attempt = True
+
+            # Only use fallback overlay toggles if close keys did not dismiss modal.
+            # Sending Escape and toggle in the same poll can close+reopen and look "stuck".
+            overlay_after_close = next((token for token in overlay_markers if token in after_close_text), None)
+            if overlay_after_close is not None and "Esc close" in after_close_text:
+                used_fallback = False
                 for marker, toggle_key in toggle_fallbacks:
-                    if marker in last_text:
+                    if marker in after_close_text:
                         tmux_send_key(target, toggle_key)
                         fallback_keys_used.append(toggle_key)
-        time.sleep(interval)
-        last_text = normalize_captured_text(tmux_capture_visible_text(target))
-        if last_text != before_attempt_text:
-            observed_change_after_close_attempt = True
+                        used_fallback = True
+                if used_fallback:
+                    time.sleep(interval)
+                    last_text = normalize_captured_text(tmux_capture_visible_text(target))
+                    if last_text != after_close_text:
+                        observed_change_after_close_attempt = True
+                else:
+                    last_text = after_close_text
+            else:
+                last_text = after_close_text
+        else:
+            time.sleep(interval)
+            last_text = normalize_captured_text(tmux_capture_visible_text(target))
+            if last_text != before_attempt_text:
+                observed_change_after_close_attempt = True
 
     final_overlay_hit = next((token for token in overlay_markers if token in last_text), None)
     if final_overlay_hit is not None and require_no_overlay:

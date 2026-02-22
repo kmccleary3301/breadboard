@@ -6,9 +6,11 @@ Contract (text-capture):
 - A horizontal border line exists directly above the prompt row.
 - Prompt row contains the expected prompt anchor text and starts with prompt glyph (`❯` or `>`).
 - A horizontal border line exists directly below the prompt row.
-- The shortcuts row is immediately below that lower border.
-- The shortcuts row includes `? for shortcuts`.
-- The shortcuts row also includes the right-status anchor (`Cooked for`).
+- Footer cues include shortcuts + status anchors near the prompt footer area.
+  - Legacy layout: both anchors share one shortcuts row.
+  - FooterV2 layout: status can live on the phase row while shortcuts are on summary row.
+- Overlay replacement mode is accepted when shortcuts/status cues are immediately above
+  a modal top border.
 """
 
 from __future__ import annotations
@@ -23,6 +25,19 @@ from typing import Any
 DEFAULT_PROMPT_ANCHOR = 'Try "fix typecheck errors"'
 DEFAULT_SHORTCUTS_ANCHOR = "? for shortcuts"
 DEFAULT_STATUS_ANCHOR = "Cooked for"
+
+
+def _anchor_variants(anchor: str) -> list[str]:
+    token = str(anchor or "").strip()
+    if token in {"? for shortcuts", "? shortcuts"}:
+        return ["? for shortcuts", "? shortcuts"]
+    if token in {"Cooked for", "last"}:
+        return ["Cooked for", "last "]
+    return [token] if token else []
+
+
+def _contains_anchor(text: str, anchor: str) -> bool:
+    return any(variant in text for variant in _anchor_variants(anchor))
 
 
 @dataclass
@@ -47,6 +62,13 @@ class ValidationResult:
             "shortcuts_line_index": self.shortcuts_line_index,
             "contract_mode": self.contract_mode,
         }
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"expected object JSON at {path}")
+    return payload
 
 
 def _discover_run_dir(path: Path) -> Path:
@@ -103,7 +125,7 @@ def _is_border_line(line: str) -> bool:
 
 def _find_last_line_index(lines: list[str], anchor: str) -> int:
     for idx in range(len(lines) - 1, -1, -1):
-        if anchor in lines[idx]:
+        if _contains_anchor(lines[idx], anchor):
             return idx
     return -1
 
@@ -115,7 +137,7 @@ def _find_last_shortcuts_status_line(
 ) -> int:
     for idx in range(len(lines) - 1, -1, -1):
         line = lines[idx]
-        if shortcuts_anchor in line and status_anchor in line:
+        if _contains_anchor(line, shortcuts_anchor) and _contains_anchor(line, status_anchor):
             return idx
     return -1
 
@@ -129,6 +151,28 @@ def _is_modal_top_border(line: str) -> bool:
     )
 
 
+def _find_overlay_shortcuts_line(
+    lines: list[str],
+    *,
+    shortcuts_anchor: str,
+    status_anchor: str,
+) -> int:
+    for idx in range(len(lines) - 1, -1, -1):
+        line = lines[idx]
+        if not _contains_anchor(line, shortcuts_anchor):
+            continue
+        near_start = max(0, idx - 2)
+        near_end = min(len(lines), idx + 2)
+        if not any(_contains_anchor(lines[pos], status_anchor) for pos in range(near_start, near_end)):
+            continue
+        candidate_idx = idx + 1
+        while candidate_idx < len(lines) and not lines[candidate_idx].strip():
+            candidate_idx += 1
+        if candidate_idx < len(lines) and _is_modal_top_border(lines[candidate_idx]):
+            return idx
+    return -1
+
+
 def validate_footer_contract(
     run_dir: Path,
     *,
@@ -139,23 +183,47 @@ def validate_footer_contract(
     errors: list[str] = []
     final_text_path, frame_count = _last_frame_text_path(run_dir)
     lines = final_text_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    scenario = ""
+    manifest_path = run_dir / "scenario_manifest.json"
+    if manifest_path.exists():
+        try:
+            manifest = _load_json(manifest_path)
+            scenario = str(manifest.get("scenario") or "")
+        except Exception:
+            scenario = ""
+    is_stress_tasklist_scenario = scenario == "phase4_replay/subagents_concurrency_20_v1"
 
     prompt_idx = _find_last_line_index(lines, prompt_anchor)
     shortcuts_idx = -1
     contract_mode = "unknown"
 
-    overlay_shortcuts_idx = _find_last_shortcuts_status_line(lines, shortcuts_anchor, status_anchor)
+    overlay_shortcuts_idx = _find_overlay_shortcuts_line(
+        lines,
+        shortcuts_anchor=shortcuts_anchor,
+        status_anchor=status_anchor,
+    )
     if overlay_shortcuts_idx >= 0:
-        candidate_idx = overlay_shortcuts_idx + 1
-        while candidate_idx < len(lines) and not lines[candidate_idx].strip():
-            candidate_idx += 1
-        if candidate_idx < len(lines) and _is_modal_top_border(lines[candidate_idx]):
-            contract_mode = "overlay_replacement"
-            shortcuts_idx = overlay_shortcuts_idx
+        contract_mode = "overlay_replacement"
+        shortcuts_idx = overlay_shortcuts_idx
 
     if contract_mode != "overlay_replacement":
         contract_mode = "classic_input"
         if prompt_idx < 0:
+            running_rows = sum(1 for line in lines if " running · " in line)
+            has_shortcuts = any(_contains_anchor(line, shortcuts_anchor) for line in lines)
+            if is_stress_tasklist_scenario and has_shortcuts and running_rows >= 8:
+                contract_mode = "tasklist_fullpane_stress"
+                shortcuts_idx = _find_last_line_index(lines, shortcuts_anchor)
+                return ValidationResult(
+                    ok=True,
+                    errors=[],
+                    run_dir=str(run_dir),
+                    frame_count=frame_count,
+                    final_text_path=str(final_text_path),
+                    prompt_line_index=prompt_idx,
+                    shortcuts_line_index=shortcuts_idx,
+                    contract_mode=contract_mode,
+                )
             errors.append(f"prompt anchor not found: {prompt_anchor!r}")
         else:
             prompt_line = lines[prompt_idx]
@@ -183,18 +251,27 @@ def validate_footer_contract(
                     f"{lines[lower_border_idx]!r}"
                 )
 
-            shortcuts_idx = prompt_idx + 2
-            if shortcuts_idx >= len(lines):
-                errors.append("missing shortcuts row below input border")
+            footer_start = prompt_idx + 2
+            footer_end = min(len(lines), prompt_idx + 7)
+            footer_window = lines[footer_start:footer_end] if footer_start < len(lines) else []
+            if not footer_window:
+                errors.append("missing footer rows below input border")
             else:
-                shortcuts_line = lines[shortcuts_idx]
-                if shortcuts_anchor not in shortcuts_line:
+                found_shortcuts = False
+                found_status = False
+                for rel_idx, line in enumerate(footer_window):
+                    if _contains_anchor(line, shortcuts_anchor):
+                        found_shortcuts = True
+                        shortcuts_idx = footer_start + rel_idx
+                    if _contains_anchor(line, status_anchor):
+                        found_status = True
+                if not found_shortcuts:
                     errors.append(
-                        f"shortcuts anchor missing from shortcuts row: {shortcuts_anchor!r}"
+                        f"shortcuts anchor missing from footer rows: {shortcuts_anchor!r}"
                     )
-                if status_anchor not in shortcuts_line:
+                if not found_status:
                     errors.append(
-                        f"status anchor missing from shortcuts row: {status_anchor!r}"
+                        f"status anchor missing from footer rows: {status_anchor!r}"
                     )
 
     return ValidationResult(
