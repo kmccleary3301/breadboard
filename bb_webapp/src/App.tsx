@@ -44,6 +44,8 @@ import { requestCheckpointList, requestCheckpointRestore, requestPermissionRevok
 import DiffViewer from "./DiffViewer"
 import TaskTreePanel from "./TaskTreePanel"
 import { buildSearchEntries, searchEntries, type SearchEntryType } from "./searchIndex"
+import { applyPermissionLedgerFilters, type PermissionLedgerFilterState } from "./permissionLedgerFilter"
+import { nextSearchResultIndex, prevSearchResultIndex, resolveSearchResultAnchors } from "./searchNavigation"
 
 const MarkdownMessage = lazy(async () => await import("./MarkdownMessage"))
 
@@ -228,7 +230,7 @@ export function App() {
   const [searchIndexPosition, setSearchIndexPosition] = useState<number>(-1)
   const [diagnostics, setDiagnostics] = useState<{ status: string; details: string }>({ status: "idle", details: "" })
   const [auditLog, setAuditLog] = useState<Array<{ id: string; at: number; action: string; detail: string }>>([])
-  const [permissionLedgerFilter, setPermissionLedgerFilter] = useState<{ tool: string; scope: PermissionScope | "all"; decision: string }>({
+  const [permissionLedgerFilter, setPermissionLedgerFilter] = useState<PermissionLedgerFilterState>({
     tool: "",
     scope: "all",
     decision: "all",
@@ -515,14 +517,10 @@ export function App() {
 
   const searchResults = useMemo(() => searchEntries(searchIndex, searchQuery, { type: searchType }), [searchIndex, searchQuery, searchType])
 
-  const filteredLedger = useMemo(() => {
-    return projection.permissionLedger.filter((row) => {
-      if (permissionLedgerFilter.tool && !row.tool.toLowerCase().includes(permissionLedgerFilter.tool.toLowerCase())) return false
-      if (permissionLedgerFilter.scope !== "all" && row.scope !== permissionLedgerFilter.scope) return false
-      if (permissionLedgerFilter.decision !== "all" && row.decision !== permissionLedgerFilter.decision) return false
-      return true
-    })
-  }, [permissionLedgerFilter.decision, permissionLedgerFilter.scope, permissionLedgerFilter.tool, projection.permissionLedger])
+  const filteredLedger = useMemo(
+    () => applyPermissionLedgerFilters(projection.permissionLedger, permissionLedgerFilter),
+    [permissionLedgerFilter, projection.permissionLedger],
+  )
 
   useEffect(() => {
     void checkConnection()
@@ -1016,9 +1014,9 @@ export function App() {
       if (index < 0 || index >= searchResults.length) return
       const row = searchResults[index]
       setSearchIndexPosition(index)
-      const direct = document.getElementById(`entry-${row.id}`)
-      const artifactId = row.id.startsWith("artifact-") ? row.id.slice("artifact-".length) : ""
-      const fallback = artifactId ? document.getElementById(`event-${artifactId}`) : null
+      const anchors = resolveSearchResultAnchors(row.id)
+      const direct = document.getElementById(anchors.primary)
+      const fallback = anchors.fallback ? document.getElementById(anchors.fallback) : null
       const element = direct ?? fallback
       if (!element) return
       element.scrollIntoView({ behavior: "smooth", block: "center" })
@@ -1027,14 +1025,14 @@ export function App() {
   )
 
   const nextSearchResult = useCallback(() => {
-    if (searchResults.length === 0) return
-    const next = searchIndexPosition < 0 ? 0 : (searchIndexPosition + 1) % searchResults.length
+    const next = nextSearchResultIndex(searchResults.length, searchIndexPosition)
+    if (next < 0) return
     jumpToSearchResult(next)
   }, [jumpToSearchResult, searchIndexPosition, searchResults.length])
 
   const prevSearchResult = useCallback(() => {
-    if (searchResults.length === 0) return
-    const next = searchIndexPosition <= 0 ? searchResults.length - 1 : searchIndexPosition - 1
+    const next = prevSearchResultIndex(searchResults.length, searchIndexPosition)
+    if (next < 0) return
     jumpToSearchResult(next)
   }, [jumpToSearchResult, searchIndexPosition, searchResults.length])
 
@@ -1330,7 +1328,7 @@ export function App() {
             </select>
             <select
               value={permissionLedgerFilter.decision}
-              onChange={(event) => setPermissionLedgerFilter((prev) => ({ ...prev, decision: event.target.value }))}
+              onChange={(event) => setPermissionLedgerFilter((prev) => ({ ...prev, decision: event.target.value as PermissionLedgerFilterState["decision"] }))}
             >
               <option value="all">all decisions</option>
               <option value="allow-once">allow-once</option>

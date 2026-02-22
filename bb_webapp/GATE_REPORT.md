@@ -11,8 +11,8 @@ Branch: `bb-webapp-v1-p0`
 
 ## Test Summary
 
-- Full suite: `17` test files, `53` tests passing.
-- Targeted P1/P2 suite: `7` test files, `21` tests passing.
+- Full suite: `20` test files, `63` tests passing.
+- Targeted P1/P2 suite: `7` test files, `24` tests passing.
 
 ## Build Summary
 
@@ -20,13 +20,17 @@ Branch: `bb-webapp-v1-p0`
 - Vite production build: passed.
 - Latest emitted assets:
   - `dist/index.html` (gzip ~0.41 kB)
-  - `dist/assets/index-_x9EIu1h.js` (gzip ~64.89 kB)
-  - `dist/assets/MarkdownMessage-DjBH_rO_.js` (gzip ~144.07 kB)
+  - `dist/assets/index-BqOhvz8e.js` (gzip ~64.93 kB)
+  - `dist/assets/MarkdownMessage-Clf3v-l5.js` (gzip ~144.07 kB)
 
 ## Coverage Highlights
 
 - Checkpoint flow smoke (`checkpointFlow.test.ts`).
+- Checkpoint restore payload normalization against bridge event shape (`checkpoints.test.ts`).
 - Task graph merge/index/rollup behavior (`taskGraph.test.ts`, `projection.test.ts`).
 - Diff parser malformed/truncation safety (`diffParser.test.ts`).
-- Permission command fallback behavior (`sessionCommands.test.ts`).
+- Search navigation index/fallback anchor resolution (`searchNavigation.test.ts`).
+- Canonical command parity and fallback behavior (`sessionCommands.test.ts`, `contractsParity.test.ts`).
+- Permission ledger filter semantics (`permissionLedgerFilter.test.ts`).
+- CSP presence/hardening directives in entry HTML (`csp.test.ts`).
 - Replay determinism and parity contract guards (`replayDeterminism.test.ts`, `contractsParity.test.ts`).

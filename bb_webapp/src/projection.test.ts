@@ -189,7 +189,7 @@ describe("projection reducer", () => {
       makeEvent({
         id: "cp-restore",
         type: "checkpoint_restored",
-        payload: { checkpoint_id: "cp-a", status: "ok", message: "restored" },
+        payload: { checkpoint_id: "cp-a", mode: "code", prune: true, message: "restored" },
       }),
     )
     expect(restored.lastCheckpointRestore?.status).toBe("ok")

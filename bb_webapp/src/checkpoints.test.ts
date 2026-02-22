@@ -28,12 +28,12 @@ describe("checkpoints", () => {
     expect(rows.map((row) => row.id)).toEqual(["cp-2", "cp-1"])
   })
 
-  it("normalizes restore success/failure payloads", () => {
+  it("normalizes restore payloads when status is omitted by bridge events", () => {
     const ok = parseCheckpointRestoreEvent(
-      event({ id: "r1", type: "checkpoint_restored", payload: { checkpoint_id: "cp-2", status: "ok" } }),
+      event({ id: "r1", type: "checkpoint_restored", payload: { checkpoint_id: "cp-2", mode: "code", prune: true } }),
     )
     const bad = parseCheckpointRestoreEvent(
-      event({ id: "r2", type: "checkpoint_restored", payload: { checkpoint_id: "cp-1", status: "error" } }),
+      event({ id: "r2", type: "checkpoint_restored", payload: { checkpoint_id: "cp-1", error: true } }),
     )
     expect(ok.status).toBe("ok")
     expect(bad.status).toBe("error")

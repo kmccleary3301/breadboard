@@ -74,11 +74,10 @@ export const parseCheckpointRestoreEvent = (event: SessionEvent): CheckpointRest
     readString(payload.checkpointId) ??
     readString(payload.id) ??
     null
-  const statusRaw =
-    readString(payload.status) ??
-    readString(payload.result) ??
-    (payload.ok === true ? "ok" : payload.ok === false ? "error" : null)
-  const status: "ok" | "error" = statusRaw === "ok" || statusRaw === "success" ? "ok" : "error"
+  const statusRaw = readString(payload.status) ?? readString(payload.result)
+  const hasFailureSignal = payload.ok === false || payload.error === true
+  const hasSuccessSignal = payload.ok === true || statusRaw === "ok" || statusRaw === "success"
+  const status: "ok" | "error" = hasFailureSignal ? "error" : hasSuccessSignal || !statusRaw ? "ok" : "error"
   const message =
     readString(payload.message) ??
     (status === "ok"

@@ -29,7 +29,7 @@ describe("checkpoint flow smoke", () => {
       event({
         id: "restored",
         type: "checkpoint_restored",
-        payload: { checkpoint_id: "cp-1", status: "ok" },
+        payload: { checkpoint_id: "cp-1", mode: "code", prune: true },
       }),
     )
     expect(state.lastCheckpointRestore?.status).toBe("ok")

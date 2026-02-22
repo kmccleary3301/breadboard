@@ -46,7 +46,8 @@ Always validate mode before operating on live sessions.
 
 - Resolve pending permission requests with explicit scope/rule.
 - Inspect ledger by tool/scope/decision filters.
-- Use revoke action where supported; fallback warning indicates bridge limitation.
+- Revoke action uses `permission_decision` (`decision: revoke`) and only falls back to legacy revoke command compatibility.
+- If revoke still fails, treat it as bridge limitation and record the error in incident capture.
 
 ## 7. CSRF/CORS Posture (Operator Guidance)
 
