@@ -1,0 +1,131 @@
+{
+  "format": "breadboard.webapp.replay",
+  "version": 1,
+  "session_id": "sess-replay-1",
+  "exported_at": "2026-02-22T01:00:00.000Z",
+  "event_count": 9,
+  "projection_hash": "mock-hash-replay-import",
+  "events": [
+    {
+      "id": "evt-001",
+      "type": "user_message",
+      "session_id": "sess-replay-1",
+      "turn": 1,
+      "timestamp": 1708563600000,
+      "seq": 1,
+      "payload": {
+        "text": "Summarize release readiness."
+      }
+    },
+    {
+      "id": "evt-002",
+      "type": "assistant_message",
+      "session_id": "sess-replay-1",
+      "turn": 1,
+      "timestamp": 1708563601000,
+      "seq": 2,
+      "payload": {
+        "text": "Working through release checks now."
+      }
+    },
+    {
+      "id": "evt-003",
+      "type": "tool_call",
+      "session_id": "sess-replay-1",
+      "turn": 1,
+      "timestamp": 1708563602000,
+      "seq": 3,
+      "payload": {
+        "tool_name": "read_file",
+        "path": "README.md"
+      }
+    },
+    {
+      "id": "evt-004",
+      "type": "tool.result",
+      "session_id": "sess-replay-1",
+      "turn": 1,
+      "timestamp": 1708563603000,
+      "seq": 4,
+      "payload": {
+        "tool_name": "write_file",
+        "path": "docs/plan.md",
+        "diff": "--- a/docs/plan.md\n+++ b/docs/plan.md\n@@ -1 +1 @@\n-old plan\n+release plan"
+      }
+    },
+    {
+      "id": "evt-005",
+      "type": "permission_request",
+      "session_id": "sess-replay-1",
+      "turn": 1,
+      "timestamp": 1708563603500,
+      "seq": 5,
+      "payload": {
+        "request_id": "perm-1",
+        "tool": "run_command",
+        "kind": "shell",
+        "summary": "Need to run test command",
+        "rule_suggestion": "^npm test$",
+        "default_scope": "project"
+      }
+    },
+    {
+      "id": "evt-006",
+      "type": "permission_response",
+      "session_id": "sess-replay-1",
+      "turn": 1,
+      "timestamp": 1708563604000,
+      "seq": 6,
+      "payload": {
+        "request_id": "perm-1",
+        "tool": "run_command",
+        "decision": "allow always",
+        "scope": "project",
+        "rule": "^npm test$"
+      }
+    },
+    {
+      "id": "evt-007",
+      "type": "checkpoint_list",
+      "session_id": "sess-replay-1",
+      "turn": 1,
+      "timestamp": 1708563605000,
+      "seq": 7,
+      "payload": {
+        "checkpoints": [
+          {
+            "checkpoint_id": "cp-001",
+            "label": "Before release",
+            "created_at_ms": 1708563605000,
+            "summary": "Baseline checkpoint"
+          }
+        ]
+      }
+    },
+    {
+      "id": "evt-008",
+      "type": "task_event",
+      "session_id": "sess-replay-1",
+      "turn": 1,
+      "timestamp": 1708563606000,
+      "seq": 8,
+      "payload": {
+        "task_id": "task-42",
+        "title": "Run verification",
+        "status": "running",
+        "updated_at_ms": 1708563606000
+      }
+    },
+    {
+      "id": "evt-009",
+      "type": "assistant_message",
+      "session_id": "sess-replay-1",
+      "turn": 1,
+      "timestamp": 1708563607000,
+      "seq": 9,
+      "payload": {
+        "text": "Verification complete."
+      }
+    }
+  ]
+}

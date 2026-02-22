@@ -68,6 +68,18 @@ Includes:
 npm run gate:full
 ```
 
+- Deterministic E2E scenario pack (mocked bridge API + replay import path):
+
+```bash
+npm run e2e:spec
+```
+
+- Debug E2E run with full trace/video artifacts:
+
+```bash
+npm run e2e:debug
+```
+
 ## Data Retention and Cache Policy
 
 - Event cache is compacted per session (`maxEventsPerSession=2000`).

@@ -1142,7 +1142,7 @@ export function App() {
               Stop
             </button>
           </div>
-          <div className="transcript">
+          <div className="transcript" data-testid="transcript-list">
             {projection.transcript.length === 0 ? <p className="subtle">No transcript events yet.</p> : null}
             {projection.transcript.map((row) => (
               <article key={row.id} id={`entry-${row.id}`} className={`bubble ${row.role}`}>
@@ -1192,7 +1192,7 @@ export function App() {
               {projection.checkpointRestoreInFlight ? "Restoring…" : "Restore"}
             </button>
           </div>
-          <div className="checkpointList">
+          <div className="checkpointList" data-testid="checkpoint-list">
             {projection.checkpoints.length === 0 ? <p className="subtle">No checkpoint data yet.</p> : null}
             {projection.checkpoints.map((row) => (
               <article key={row.id} className={`checkpointRow ${projection.activeCheckpointId === row.id ? "active" : ""}`}>
@@ -1339,7 +1339,7 @@ export function App() {
               <option value="revoke">revoke</option>
             </select>
           </div>
-          <div className="ledgerList">
+          <div className="ledgerList" data-testid="permission-ledger">
             {filteredLedger.length === 0 ? <p className="subtle">No permission ledger rows.</p> : null}
             {filteredLedger.map((entry) => (
               <article key={entry.requestId} className="ledgerRow">
@@ -1372,7 +1372,7 @@ export function App() {
           </div>
 
           <h2>Tools</h2>
-          <div className="toolRows">
+          <div className="toolRows" data-testid="tool-rows">
             {projection.toolRows.length === 0 ? <p className="subtle">No tool events yet.</p> : null}
             {projection.toolRows.map((row) => (
               <article key={row.id} id={`entry-${row.id}`} className={`tool ${row.type}`}>
@@ -1495,6 +1495,7 @@ export function App() {
               ref={replayFileInputRef}
               type="file"
               accept="application/json,.json"
+              data-testid="replay-import-input"
               onChange={(event) => void onImportReplayFile(event)}
               style={{ display: "none" }}
             />

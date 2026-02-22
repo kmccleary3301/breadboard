@@ -15,7 +15,9 @@
     "gate:p0": "npm run test && npm run typecheck && npm run build && npm run verify:csp-dist",
     "gate:p1p2": "npm run check:backend-commands && vitest run src/replayDeterminism.test.ts src/diffParser.test.ts src/taskGraph.test.ts src/projection.test.ts src/checkpointFlow.test.ts src/sessionCommands.test.ts src/contractsParity.test.ts && npm run typecheck && npm run build && npm run verify:csp-dist",
     "gate:full": "npm run gate:p0 && npm run gate:p1p2",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "e2e:spec": "playwright test --config=playwright.config.ts",
+    "e2e:debug": "PLAYWRIGHT_E2E_DEBUG=1 playwright test --config=playwright.config.ts --headed --workers=1"
   },
   "dependencies": {
     "@breadboard/sdk": "file:../sdk/ts",
@@ -24,6 +26,7 @@
     "stream-mdx": "^0.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

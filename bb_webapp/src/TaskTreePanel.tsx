@@ -61,5 +61,9 @@ export default function TaskTreePanel({ graph, expanded, onToggleExpand, onJumpT
     return <p className="subtle">No task graph nodes yet.</p>
   }
 
-  return <div className="taskTree">{visibleRoots.sort(byUpdatedThenId).map((row) => renderNode(row, 0))}</div>
+  return (
+    <div className="taskTree" data-testid="task-tree">
+      {visibleRoots.sort(byUpdatedThenId).map((row) => renderNode(row, 0))}
+    </div>
+  )
 }
