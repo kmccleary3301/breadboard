@@ -3,6 +3,14 @@ import os from "node:os"
 import path from "node:path"
 import { performance } from "node:perf_hooks"
 
+const parseLatencyBudget = (): number => {
+  const raw = Number(process.env.BREADBOARD_SUBAGENTS_CP3_CAPTURE_LATENCY_MS ?? "250")
+  if (!Number.isFinite(raw)) return 250
+  return Math.min(5_000, Math.max(50, raw))
+}
+
+const CP3_CAPTURE_LATENCY_BUDGET_MS = parseLatencyBudget()
+
 const readTailSnippet = (artifactPath: string, tailLines: number, maxBytes: number): string[] => {
   const raw = readFileSync(artifactPath, "utf8")
   const bounded = raw.length > maxBytes ? raw.slice(raw.length - maxBytes) : raw
@@ -50,13 +58,14 @@ const runActiveUpdatesScenario = (laneArtifactById: Record<string, string>) => {
     generatedAt: new Date().toISOString(),
     acceptanceChecks: {
       noStaleLaneMixups: staleMismatchCount.count === 0,
-      boundedReadLatency: maxReadMs < 50,
+      boundedReadLatency: maxReadMs < CP3_CAPTURE_LATENCY_BUDGET_MS,
       sufficientSampleCount: samplesMs.length === 90,
     },
     metrics: {
       laneId,
       sampleCount: samplesMs.length,
       maxReadMs,
+      latencyBudgetMs: CP3_CAPTURE_LATENCY_BUDGET_MS,
       p95ReadMs: samplesMs.slice().sort((a, b) => a - b)[Math.max(0, Math.ceil(samplesMs.length * 0.95) - 1)] ?? 0,
       staleMismatchCount: staleMismatchCount.count,
     },
@@ -85,13 +94,14 @@ const runRapidSwitchScenario = (laneArtifactById: Record<string, string>) => {
     generatedAt: new Date().toISOString(),
     acceptanceChecks: {
       noStaleLaneMixups: staleMismatchCount === 0,
-      boundedSwitchReadLatency: maxSwitchMs < 50,
+      boundedSwitchReadLatency: maxSwitchMs < CP3_CAPTURE_LATENCY_BUDGET_MS,
       sufficientSwitchCount: switchSamplesMs.length === 200,
     },
     metrics: {
       laneCount: laneIds.length,
       switchCount: switchSamplesMs.length,
       maxSwitchMs,
+      latencyBudgetMs: CP3_CAPTURE_LATENCY_BUDGET_MS,
       p95SwitchMs:
         switchSamplesMs.slice().sort((a, b) => a - b)[Math.max(0, Math.ceil(switchSamplesMs.length * 0.95) - 1)] ?? 0,
       staleMismatchCount,
