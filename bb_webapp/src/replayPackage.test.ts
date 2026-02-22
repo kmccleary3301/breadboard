@@ -26,6 +26,25 @@ describe("replayPackage", () => {
     expect(pkg.projection_hash).toBe("abc123")
   })
 
+  it("redacts sensitive payload values during replay export", () => {
+    const pkg = buildReplayPackage({
+      sessionId: "session-1",
+      events: [
+        baseEvent({
+          id: "evt-secure",
+          payload: {
+            token: "abc123",
+            nested: { Authorization: "Bearer very-secret", safe: "ok" },
+          },
+        }),
+      ],
+    })
+    const payload = pkg.events[0].payload as Record<string, unknown>
+    expect(payload.token).toBe("[REDACTED]")
+    expect((payload.nested as Record<string, unknown>).Authorization).toBe("[REDACTED]")
+    expect((payload.nested as Record<string, unknown>).safe).toBe("ok")
+  })
+
   it("parses serialized package and normalizes event_count", () => {
     const pkg = buildReplayPackage({
       sessionId: "session-1",

@@ -6,12 +6,14 @@
   "scripts": {
     "sync:worker": "node ./scripts/sync-stream-mdx-worker.mjs",
     "sync:sdk": "npm --prefix ../sdk/ts run build",
+    "check:backend-commands": "node ./scripts/verify-backend-command-inventory.mjs",
+    "verify:csp-dist": "node ./scripts/verify-dist-csp.mjs",
     "dev": "npm run sync:sdk && npm run sync:worker && vite",
     "build": "npm run sync:sdk && npm run sync:worker && tsc -b && vite build",
     "typecheck": "npm run sync:sdk && tsc -b --pretty false",
     "test": "vitest run",
-    "gate:p0": "npm run test && npm run typecheck && npm run build",
-    "gate:p1p2": "vitest run src/replayDeterminism.test.ts src/diffParser.test.ts src/taskGraph.test.ts src/projection.test.ts src/checkpointFlow.test.ts src/sessionCommands.test.ts src/contractsParity.test.ts && npm run typecheck && npm run build",
+    "gate:p0": "npm run test && npm run typecheck && npm run build && npm run verify:csp-dist",
+    "gate:p1p2": "npm run check:backend-commands && vitest run src/replayDeterminism.test.ts src/diffParser.test.ts src/taskGraph.test.ts src/projection.test.ts src/checkpointFlow.test.ts src/sessionCommands.test.ts src/contractsParity.test.ts && npm run typecheck && npm run build && npm run verify:csp-dist",
     "gate:full": "npm run gate:p0 && npm run gate:p1p2",
     "preview": "vite preview"
   },

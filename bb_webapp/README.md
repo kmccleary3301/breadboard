@@ -45,11 +45,22 @@ The stream worker is synced to `public/workers/markdown-worker.js`.
 npm run gate:p0
 ```
 
+Includes:
+- full vitest suite,
+- typecheck/build,
+- dist CSP verification (`verify:csp-dist`).
+
 - P1/P2 hardening gate (replay determinism + diff/task/checkpoint/parity suites):
 
 ```bash
 npm run gate:p1p2
 ```
+
+Includes:
+- backend command inventory parity check (`check:backend-commands`),
+- targeted P1/P2 vitest suite,
+- typecheck/build,
+- dist CSP verification.
 
 - Combined gate:
 

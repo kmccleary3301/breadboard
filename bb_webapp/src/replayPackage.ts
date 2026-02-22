@@ -1,4 +1,5 @@
 import type { SessionEvent } from "@breadboard/sdk"
+import { redactSensitiveValue } from "./redaction"
 
 const REPLAY_FORMAT = "breadboard.webapp.replay"
 const REPLAY_VERSION = 1
@@ -103,7 +104,11 @@ export const buildReplayPackage = (input: ReplayPackageInput): ReplayPackageV1 =
   const sessionId = input.sessionId.trim()
   if (!sessionId) throw new Error("session id is required")
   const onlySessionEvents = input.events.filter((event) => event.session_id === sessionId)
-  const events = sortEvents(dedupeEvents(onlySessionEvents))
+  const redactedEvents = onlySessionEvents.map((event) => ({
+    ...event,
+    payload: redactSensitiveValue(event.payload) as SessionEvent["payload"],
+  }))
+  const events = sortEvents(dedupeEvents(redactedEvents))
   const projectionHash = readString(input.projectionHash) ?? undefined
   return {
     format: REPLAY_FORMAT,

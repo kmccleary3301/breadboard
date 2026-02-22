@@ -196,6 +196,30 @@ describe("projection reducer", () => {
     expect(restored.activeCheckpointId).toBe("cp-a")
   })
 
+  it("marks checkpoint restore as failed when explicit failure signal is present", () => {
+    const listed = applyEventToProjection(
+      initialProjectionState,
+      makeEvent({
+        id: "cp-list",
+        type: "checkpoint_list",
+        payload: {
+          checkpoints: [{ checkpoint_id: "cp-a", created_at_ms: 1000, label: "A" }],
+        },
+      }),
+    )
+    const restored = applyEventToProjection(
+      listed,
+      makeEvent({
+        id: "cp-restore-error",
+        type: "checkpoint_restored",
+        payload: { checkpoint_id: "cp-a", error: true, message: "failed to restore" },
+      }),
+    )
+    expect(restored.lastCheckpointRestore?.status).toBe("error")
+    expect(restored.lastCheckpointRestore?.message).toContain("failed")
+    expect(restored.activeCheckpointId).toBe("cp-a")
+  })
+
   it("merges out-of-order task graph events and snapshots", () => {
     let state = applyEventToProjection(
       initialProjectionState,
