@@ -47,6 +47,7 @@ class ScenarioConfig:
     poller_terminate_timeout: float
     pre_sleep: float
     post_sleep: float
+    post_actions_capture_seconds: float
     provider_dump_dir: Path | None
     provider_fail_on_http_error: bool
     provider_fail_on_model_not_found: bool
@@ -119,7 +120,7 @@ def tmux_capture_text(target: str) -> str:
         return sum(1 for ch in value if not ch.isspace())
 
     def _looks_like_ready_ui(value: str) -> bool:
-        tokens = ("for shortcuts", "Try \"", "Try '", "No conversation yet", "❯")
+        tokens = ("shortcuts", "for shortcuts", "Try \"", "Try '", "No conversation yet", "❯")
         return any(token in value for token in tokens)
 
     def _capture(args: list[str], *, allow_no_alt_screen: bool = False) -> str:
@@ -165,6 +166,50 @@ def tmux_capture_text(target: str) -> str:
     if history_best.strip() and history_best != selected:
         return selected + "\n\n[tmux:scrollback_recent]\n" + history_best
     return selected
+
+
+def tmux_capture_visible_text(target: str) -> str:
+    """
+    Capture only currently visible pane text (normal/alternate screen selection),
+    without appending recent scrollback history.
+    """
+    def _non_ws_count(value: str) -> int:
+        return sum(1 for ch in value if not ch.isspace())
+
+    def _looks_like_ready_ui(value: str) -> bool:
+        tokens = ("shortcuts", "for shortcuts", "Try \"", "Try '", "No conversation yet", "❯")
+        return any(token in value for token in tokens)
+
+    def _capture(args: list[str], *, allow_no_alt_screen: bool = False) -> str:
+        result = subprocess.run(
+            [*tmux_base_args(), *args],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return result.stdout
+        stderr = (result.stderr or "").lower()
+        if allow_no_alt_screen and "no alternate screen" in stderr:
+            return ""
+        raise subprocess.CalledProcessError(
+            result.returncode,
+            [*tmux_base_args(), *args],
+            output=result.stdout,
+            stderr=result.stderr,
+        )
+
+    normal = _capture(["capture-pane", "-pt", target])
+    alt = _capture(["capture-pane", "-apt", target], allow_no_alt_screen=True)
+
+    if alt and alt.strip() and (_looks_like_ready_ui(alt) or _non_ws_count(alt) > _non_ws_count(normal)):
+        return alt
+    # For visible-state control flow (preflight, idle checks), return one
+    # screen only. Concatenating normal+alternate can leak stale overlay text
+    # from an inactive buffer and create false positive modal persistence.
+    if alt and alt.strip() and alt != normal:
+        return normal
+    return normal
 
 
 def split_tmux_target(target: str) -> tuple[str, str]:
@@ -510,7 +555,8 @@ def default_ready_tokens(target: str) -> list[str]:
     lower = target.lower()
     if "claude" in lower:
         return [
-            'Try "',
+            "Try \"",
+            "shortcuts",
             "for shortcuts",
             "bypass permissions on",
             "Reply exactly with:",
@@ -518,11 +564,12 @@ def default_ready_tokens(target: str) -> list[str]:
     if "codex" in lower:
         return [
             "Try \"",
+            "shortcuts",
             "for shortcuts",
             "Reply exactly with:",
             "Continue after compaction",
         ]
-    return ['Try "', "for shortcuts"]
+    return ["Try \"", "shortcuts", "for shortcuts"]
 
 
 def default_active_tokens(target: str) -> list[str]:
@@ -557,6 +604,159 @@ def default_fail_tokens(target: str) -> list[str]:
     if "codex" in lower:
         return ["MCP startup incomplete (failed: oracle)"]
     return []
+
+
+def default_overlay_markers(target: str) -> list[str]:
+    # Overlay/modal signatures that indicate focus is not in the main composer.
+    # Keep these conservative and cross-provider so preflight can normalize pane state.
+    _ = target  # target-specific variants can be added later.
+    return [
+        "Esc close",
+        "Search: <type to filter>",
+        "Enter: load output tail.",
+        "Group: status (G toggle)",
+        "Group: lane (G toggle)",
+        "Background tasks",
+    ]
+
+
+def default_overlay_toggle_fallbacks(target: str) -> list[tuple[str, str]]:
+    _ = target
+    # Fallback overlay toggles used when Escape-based close does not dismiss modal focus.
+    return [
+        ("Background tasks", "C-b"),
+        ("Todos", "C-t"),
+    ]
+
+
+def normalize_preflight_focus_state(
+    target: str,
+    *,
+    interval: float,
+    ready_tokens: list[str],
+    overlay_markers: list[str],
+    close_keys: list[str],
+    close_every_polls: int,
+    max_close_attempts: int,
+    require_no_overlay: bool,
+    clear_mode: str,
+    verify_editable_composer: bool,
+) -> dict[str, Any]:
+    """
+    Normalize interactive pane focus before scripted sends:
+    - dismiss open overlays/modals
+    - clear/refocus composer
+    - ensure ready tokens are still present afterwards
+    """
+    attempts = 0
+    last_text = normalize_captured_text(tmux_capture_visible_text(target))
+    close_every = max(1, int(close_every_polls))
+    max_attempts = max(1, int(max_close_attempts))
+    toggle_fallbacks = default_overlay_toggle_fallbacks(target)
+    fallback_keys_used: list[str] = []
+    observed_change_after_close_attempt = False
+
+    while attempts < max_attempts:
+        overlay_hit = next((token for token in overlay_markers if token in last_text), None)
+        if overlay_hit is None:
+            break
+        before_attempt_text = last_text
+        attempts += 1
+        if attempts % close_every == 0:
+            for key in close_keys:
+                tmux_send_key(target, key)
+            if "Esc close" in last_text:
+                for marker, toggle_key in toggle_fallbacks:
+                    if marker in last_text:
+                        tmux_send_key(target, toggle_key)
+                        fallback_keys_used.append(toggle_key)
+        time.sleep(interval)
+        last_text = normalize_captured_text(tmux_capture_visible_text(target))
+        if last_text != before_attempt_text:
+            observed_change_after_close_attempt = True
+
+    final_overlay_hit = next((token for token in overlay_markers if token in last_text), None)
+    if final_overlay_hit is not None and require_no_overlay:
+        tail = "\n".join(last_text.splitlines()[-30:])
+        if not observed_change_after_close_attempt:
+            raise RuntimeError(
+                "startup_preflight could not dismiss overlays/modals and pane did not react to close keys; "
+                "target may be static/non-interactive (e.g., replay target exited). "
+                f"Persistent marker: {final_overlay_hit!r}. Pane tail:\n{tail}"
+            )
+        raise RuntimeError(
+            "startup_preflight could not dismiss overlays/modals before send actions. "
+            f"Persistent marker: {final_overlay_hit!r}. Pane tail:\n{tail}"
+        )
+
+    if clear_mode and clear_mode != "none":
+        clear_composer(target, clear_mode)
+        time.sleep(min(0.2, interval))
+        last_text = normalize_captured_text(tmux_capture_visible_text(target))
+        final_overlay_hit = next((token for token in overlay_markers if token in last_text), None)
+        if final_overlay_hit is not None and require_no_overlay:
+            tail = "\n".join(last_text.splitlines()[-30:])
+            raise RuntimeError(
+                "startup_preflight composer clear left pane in overlay/modal state. "
+                f"Persistent marker: {final_overlay_hit!r}. Pane tail:\n{tail}"
+            )
+
+    composer_probe: dict[str, Any] = {
+        "enabled": bool(verify_editable_composer),
+        "token_visible": None,
+        "token_cleared": None,
+        "ready_after_probe": None,
+    }
+    if verify_editable_composer:
+        probe_token = f"__bb_preflight_probe_{int(time.time() * 1000)}__"
+        before_probe = last_text
+        tmux_send_text(target, probe_token)
+        time.sleep(min(0.25, interval))
+        probe_text = normalize_captured_text(tmux_capture_visible_text(target))
+        probe_visible = probe_token in probe_text
+
+        clear_after_probe_mode = clear_mode if clear_mode and clear_mode != "none" else "ctrl_u"
+        clear_composer(target, clear_after_probe_mode)
+        time.sleep(min(0.25, interval))
+        post_probe_text = normalize_captured_text(tmux_capture_visible_text(target))
+        probe_cleared = probe_token not in post_probe_text
+
+        composer_probe.update(
+            {
+                "probe_token": probe_token,
+                "token_visible": probe_visible,
+                "token_cleared": probe_cleared,
+                "capture_changed": probe_text != before_probe or post_probe_text != before_probe,
+            }
+        )
+        if not probe_visible or not probe_cleared:
+            tail = "\n".join(post_probe_text.splitlines()[-30:])
+            raise RuntimeError(
+                "startup_preflight composer probe failed (pane may be static or non-interactive). "
+                f"probe_visible={probe_visible} probe_cleared={probe_cleared}. Pane tail:\n{tail}"
+            )
+        last_text = post_probe_text
+
+    ready_ok = any(token in last_text for token in ready_tokens) if ready_tokens else True
+    if not ready_ok:
+        tail = "\n".join(last_text.splitlines()[-30:])
+        raise RuntimeError(
+            "startup_preflight lost ready state after focus normalization. "
+            f"Expected one of ready_tokens={ready_tokens}. Pane tail:\n{tail}"
+        )
+    composer_probe["ready_after_probe"] = ready_ok
+
+    return {
+        "overlay_close_attempts": attempts,
+        "overlay_markers_checked": overlay_markers,
+        "overlay_persisted": bool(final_overlay_hit),
+        "overlay_persistent_marker": final_overlay_hit,
+        "overlay_fallback_keys_used": fallback_keys_used,
+        "overlay_close_attempt_observed_change": observed_change_after_close_attempt,
+        "ready_ok_after_normalize": ready_ok,
+        "clear_mode": clear_mode,
+        "composer_probe": composer_probe,
+    }
 
 
 def infer_target_key_defaults(target: str) -> tuple[str, str, str]:
@@ -654,6 +854,15 @@ def parse_args() -> ScenarioConfig:
     )
     parser.add_argument("--pre-sleep", type=float, default=1.0, help="sleep before action execution")
     parser.add_argument("--post-sleep", type=float, default=1.0, help="sleep after action execution")
+    parser.add_argument(
+        "--post-actions-capture-seconds",
+        type=float,
+        default=0.0,
+        help=(
+            "additional capture window after actions/checks before poller shutdown "
+            "(0 disables; helps preserve transition/detail frames)"
+        ),
+    )
     parser.add_argument("--provider-dump-dir", default="", help="optional provider dumps dir")
     parser.add_argument(
         "--provider-fail-on-http-error",
@@ -821,14 +1030,19 @@ def parse_args() -> ScenarioConfig:
     must_match_regex = tuple(token.strip() for token in args.must_match_regex if str(token).strip())
     protected_sessions = parse_csv_tokens(args.protected_sessions)
     fullpane_start_markers = parse_csv_tokens(args.fullpane_start_markers)
-    render_profile_explicit = any(
-        token == "--render-profile" or token.startswith("--render-profile=")
-        for token in argv_raw
-    )
+    def _flag_explicit(flag: str) -> bool:
+        return any(token == flag or token.startswith(f"{flag}=") for token in argv_raw)
+
+    render_profile_explicit = _flag_explicit("--render-profile")
+    post_actions_capture_explicit = _flag_explicit("--post-actions-capture-seconds")
     if not render_profile_explicit and scenario_lower.startswith("phase4_replay/"):
         # Phase4 replay lanes run in a taller 45-row pane and need denser line packing.
         # Keep these captures on the v2 lock unless explicitly overridden.
         args.render_profile = PREVIOUS_LOCKED_PHASE4_PROFILE_ID
+    if not post_actions_capture_explicit and scenario_lower.startswith("phase4_replay/"):
+        # Preserve transition detail for phase4 review lanes; avoids active/final collapse
+        # when actions finish quickly and poller is terminated immediately.
+        args.post_actions_capture_seconds = max(float(args.post_actions_capture_seconds), 4.0)
     resolved_profile = resolve_render_profile(args.render_profile)
     render_profile = resolved_profile.id if resolved_profile is not None else args.render_profile
 
@@ -871,6 +1085,7 @@ def parse_args() -> ScenarioConfig:
         poller_terminate_timeout=max(0.0, float(args.poller_terminate_timeout)),
         pre_sleep=max(0.0, args.pre_sleep),
         post_sleep=max(0.0, args.post_sleep),
+        post_actions_capture_seconds=max(0.0, float(args.post_actions_capture_seconds)),
         provider_dump_dir=provider_dump_dir,
         provider_fail_on_http_error=bool(args.provider_fail_on_http_error),
         provider_fail_on_model_not_found=bool(args.provider_fail_on_model_not_found),
@@ -1040,6 +1255,30 @@ def execute_actions(
                     for key in action.get("kick_keys", ["Escape"])
                     if isinstance(key, str) and key
                 ]
+                normalize_focus = bool(action.get("normalize_focus", True))
+                normalize_overlay_markers = [
+                    token
+                    for token in (
+                        action.get("overlay_markers")
+                        if isinstance(action.get("overlay_markers"), list)
+                        else default_overlay_markers(config.target)
+                    )
+                    if isinstance(token, str) and token
+                ]
+                normalize_close_keys = [
+                    key
+                    for key in (
+                        action.get("overlay_close_keys")
+                        if isinstance(action.get("overlay_close_keys"), list)
+                        else ["Escape"]
+                    )
+                    if isinstance(key, str) and key
+                ] or ["Escape"]
+                normalize_close_every_polls = max(1, int(action.get("overlay_close_every_polls", 1)))
+                normalize_max_close_attempts = max(1, int(action.get("overlay_close_max_attempts", 8)))
+                normalize_require_no_overlay = bool(action.get("require_no_overlay", True))
+                normalize_clear_mode = str(action.get("preflight_clear_mode", config.clear_mode)).strip().lower()
+                normalize_verify_editable_composer = bool(action.get("verify_editable_composer", True))
                 kick_every = max(0, int(action.get("kick_every_polls", 4)))
                 deadline = time.time() + timeout
                 poll_count = 0
@@ -1047,7 +1286,7 @@ def execute_actions(
 
                 while True:
                     poll_count += 1
-                    last_text = normalize_captured_text(tmux_capture_text(config.target))
+                    last_text = normalize_captured_text(tmux_capture_visible_text(config.target))
 
                     # Claude can enter a bad "custom model" state (e.g. haiku-4-5) where requests fail.
                     # When this happens, proactively switch to the real Haiku 4.5 entry via /model.
@@ -1063,7 +1302,7 @@ def execute_actions(
                         menu_deadline = time.time() + max(8.0, interval * 6)
                         menu_text = ""
                         while time.time() < menu_deadline:
-                            menu_text = normalize_captured_text(tmux_capture_text(config.target))
+                            menu_text = normalize_captured_text(tmux_capture_visible_text(config.target))
                             if "Select model" in menu_text and "Enter to confirm" in menu_text:
                                 break
                             time.sleep(interval)
@@ -1119,6 +1358,19 @@ def execute_actions(
                         )
 
                     if any(token in last_text for token in ready_tokens):
+                        if normalize_focus:
+                            record["preflight_normalization"] = normalize_preflight_focus_state(
+                                config.target,
+                                interval=interval,
+                                ready_tokens=ready_tokens,
+                                overlay_markers=normalize_overlay_markers,
+                                close_keys=normalize_close_keys,
+                                close_every_polls=normalize_close_every_polls,
+                                max_close_attempts=normalize_max_close_attempts,
+                                require_no_overlay=normalize_require_no_overlay,
+                                clear_mode=normalize_clear_mode,
+                                verify_editable_composer=normalize_verify_editable_composer,
+                            )
                         break
 
                     if kick_every > 0 and kick_keys and (poll_count % kick_every == 0):
@@ -1686,6 +1938,18 @@ def main() -> None:
         except Exception as exc:
             final_idle_error = str(exc)
 
+    post_actions_capture_applied_seconds = 0.0
+    if (
+        execution_error is None
+        and poller.poll() is None
+        and config.post_actions_capture_seconds > 0
+    ):
+        capture_start = time.monotonic()
+        capture_deadline = capture_start + max(0.0, config.post_actions_capture_seconds)
+        while time.monotonic() < capture_deadline and poller.poll() is None:
+            time.sleep(0.1)
+        post_actions_capture_applied_seconds = max(0.0, min(config.post_actions_capture_seconds, time.monotonic() - capture_start))
+
     poller_exit: int | None = poller.poll()
     poller_terminated_by_runner = False
     if poller_exit is None:
@@ -1795,6 +2059,8 @@ def main() -> None:
         "poller_exit_code": poller_exit,
         "poller_terminated_by_runner": poller_terminated_by_runner,
         "poller_terminate_timeout_seconds": config.poller_terminate_timeout,
+        "post_actions_capture_seconds": config.post_actions_capture_seconds,
+        "post_actions_capture_applied_seconds": post_actions_capture_applied_seconds,
         "actions_path": str(config.actions_path) if config.actions_path else None,
         "actions_count": len(actions),
         "executed_actions": executed_actions,
@@ -1849,6 +2115,8 @@ def main() -> None:
         "poller_exit_code": poller_exit,
         "poller_terminated_by_runner": poller_terminated_by_runner,
         "poller_terminate_timeout_seconds": config.poller_terminate_timeout,
+        "post_actions_capture_seconds": config.post_actions_capture_seconds,
+        "post_actions_capture_applied_seconds": post_actions_capture_applied_seconds,
         "actions_count": len(actions),
         "executed_actions_count": len(executed_actions),
         "semantic_failures_count": len(semantic_failures),
