@@ -9,6 +9,7 @@ import { createScrollWindow, formatScrollRange } from "../utils/scrollWindow.js"
 import type { SlashCommandInfo } from "../../../slashCommands.js"
 import type { PermissionRuleScope } from "../../../types.js"
 import { buildConfirmModal, buildShortcutsModal } from "./modalBasics.js"
+import { SheetModal } from "./SheetModal.js"
 import { formatTodoModalRowLabel } from "./todoCheckbox.js"
 import {
   countTaskRowsByStatusGroup,
@@ -17,16 +18,148 @@ import {
   normalizeTaskStatusGroup,
   sanitizeTaskPreview,
   taskStatusGroupLabel,
+  type TaskStatusGroup,
 } from "../controller/taskboardStatus.js"
 
 // Intentionally broad to keep modal composition decoupled from controller internals.
 type ModalStackContext = Record<string, any>
+
+export type TodoOverlayContract = {
+  readonly titleLines: ReadonlyArray<SelectPanelLine>
+  readonly hintLines: ReadonlyArray<SelectPanelLine>
+}
+
+export type TasksOverlayContract = {
+  readonly titleLines: ReadonlyArray<SelectPanelLine>
+  readonly hintLines: ReadonlyArray<SelectPanelLine>
+}
 
 const SUBAGENT_DIAGNOSTIC_HEATMAP_ENABLED = ["1", "true", "yes", "on"].includes(
   String(process.env.BREADBOARD_SUBAGENTS_DIAGNOSTIC_HEATMAP ?? "")
     .trim()
     .toLowerCase(),
 )
+
+const summarizeTodoStatuses = (todos: ReadonlyArray<{ status?: string }>): string => {
+  const counts = {
+    in_progress: 0,
+    todo: 0,
+    blocked: 0,
+    done: 0,
+    canceled: 0,
+  }
+  for (const todo of todos) {
+    const raw = String(todo.status ?? "").trim().toLowerCase()
+    if (raw.includes("progress") || raw.includes("run")) {
+      counts.in_progress += 1
+      continue
+    }
+    if (raw.includes("block") || raw.includes("wait")) {
+      counts.blocked += 1
+      continue
+    }
+    if (raw.includes("done") || raw.includes("complete")) {
+      counts.done += 1
+      continue
+    }
+    if (raw.includes("cancel") || raw.includes("stop")) {
+      counts.canceled += 1
+      continue
+    }
+    counts.todo += 1
+  }
+  const parts = [
+    `run ${counts.in_progress}`,
+    `todo ${counts.todo}`,
+    `blocked ${counts.blocked}`,
+    `done ${counts.done}`,
+  ]
+  if (counts.canceled > 0) {
+    parts.push(`cancelled ${counts.canceled}`)
+  }
+  return uiText(`Status: ${parts.join(" • ")}`)
+}
+
+const summarizeTaskStatuses = (counts: Record<TaskStatusGroup, number>): string =>
+  uiText(
+    `Status: run ${counts.running} • done ${counts.completed} • failed ${counts.failed} • blocked ${counts.blocked} • pending ${counts.pending}${counts.cancelled > 0 ? ` • cancelled ${counts.cancelled}` : ""}`,
+  )
+
+const buildFocusedOverlayTitleLines = (title: string, focusLabel: string, color: string): SelectPanelLine[] => [
+  { text: CHALK.bold(title), color },
+  { text: uiText(`FOCUS ${focusLabel}`), color: "dim" },
+]
+
+export const buildTodoOverlayContract = (todos: ReadonlyArray<{ status?: string }>): TodoOverlayContract => {
+  const titleLines = buildFocusedOverlayTitleLines("Todos", "Todos", COLORS.info)
+  const hintLines: SelectPanelLine[] =
+    todos.length === 0
+      ? [{ text: "No todos yet.", color: "gray" }]
+      : [
+          {
+            text: uiText(
+              `${todos.length} item${todos.length === 1 ? "" : "s"} • ↑/↓ scroll • PgUp/PgDn page • Esc close`,
+            ),
+            color: "gray",
+          },
+          {
+            text: summarizeTodoStatuses(todos),
+            color: "dim",
+          },
+        ]
+  return { titleLines, hintLines }
+}
+
+export const buildTasksOverlayContract = (input: {
+  readonly tasksCount: number
+  readonly selectedSummary: string
+  readonly swapActive: boolean
+  readonly taskFocusLaneLabel: string | null
+  readonly taskFocusLaneId: string | null
+  readonly taskFocusRawMode: boolean
+  readonly taskFocusFollowTail: boolean
+  readonly taskFocusTailLines: number
+  readonly taskSearchQuery: string
+  readonly taskStatusFilter: string
+  readonly taskGroupMode: string
+  readonly taskLaneFilter: string
+  readonly statusSummary: string
+  readonly taskFocusMode: string
+}): TasksOverlayContract => {
+  const titleLines = buildFocusedOverlayTitleLines("Background tasks", "Tasks", COLORS.info)
+  const hintLines: SelectPanelLine[] = [
+    {
+      text:
+        input.tasksCount === 0
+          ? "No background tasks yet."
+          : input.swapActive
+            ? uiText(
+                `${input.tasksCount} task${input.tasksCount === 1 ? "" : "s"} • lane ${input.taskFocusLaneLabel ?? input.taskFocusLaneId ?? "unknown"} • selected ${input.selectedSummary} • Enter tail • Tab ${input.taskFocusRawMode ? "snippet" : "raw"} • L load more • P ${input.taskFocusFollowTail ? "pause" : "follow"} • F/Esc return`,
+              )
+            : uiText(
+                `${input.tasksCount} task${input.tasksCount === 1 ? "" : "s"} • selected ${input.selectedSummary} • ↑/↓ select • PgUp/PgDn page • F ${input.taskFocusMode === "swap" ? "swap lane" : "focus lane"} • Enter tail • Esc close`,
+              ),
+      color: "gray",
+    },
+    {
+      text: input.swapActive
+        ? uiText(
+            `${input.statusSummary} • view ${input.taskFocusRawMode ? "raw" : "snippet"}${input.taskFocusRawMode ? "" : ` • tail lines ${input.taskFocusTailLines}`} • Ctrl+B close`,
+          )
+        : uiText(
+            `${input.statusSummary} • search ${input.taskSearchQuery.length > 0 ? input.taskSearchQuery : "<type to filter>"} • filter ${input.taskStatusFilter} (0 all • 1 run • 2 done • 3 fail • 4 blocked • 5 cancelled • 6 pending)`,
+          ),
+      color: "dim",
+    },
+    {
+      text: input.swapActive
+        ? uiText("Lane switch: ←/→ or [/] • R refresh tail • Ctrl+U clear search")
+        : uiText(`Group: ${input.taskGroupMode} (G toggle) • Lane: ${input.taskLaneFilter} (L cycle) • C collapse selected group • E expand all`),
+      color: "dim",
+    },
+  ]
+  return { titleLines, hintLines }
+}
 
 export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] => {
   const {
@@ -544,16 +677,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
               return COLORS.warning
           }
         }
-        const titleLines: SelectPanelLine[] = [{ text: CHALK.bold("Todos"), color: COLORS.info }]
-        const hintLines: SelectPanelLine[] = [
-          {
-            text:
-              todos.length === 0
-                ? "No todos yet."
-                : `${todos.length} item${todos.length === 1 ? "" : "s"} • ↑/↓ scroll • PgUp/PgDn page • Esc close`,
-            color: "gray",
-          },
-        ]
+        const { titleLines, hintLines } = buildTodoOverlayContract(todos)
         const panelRows: SelectPanelRow[] = []
         if (todoRows.length === 0) {
           panelRows.push({ kind: "empty", text: "TodoWrite output will appear here once the agent updates the board.", color: "dim" })
@@ -574,13 +698,12 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           }
         }
         return (
-          <SelectPanel
+          <SheetModal
+            sheetMode={sheetMode}
             width={panelWidth}
             borderColor={COLORS.info}
             paddingX={2}
             paddingY={0}
-            alignSelf={sheetMode ? "flex-start" : "center"}
-            marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={panelRows}
@@ -912,32 +1035,27 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         }
         const lineWidth = Math.max(12, panelWidth - 6)
         const swapActive = taskFocusMode === "swap" && taskFocusViewOpen
-        const titleLines: SelectPanelLine[] = [{ text: CHALK.bold("Background tasks"), color: COLORS.info }]
-        const hintLines: SelectPanelLine[] = [
-          {
-            text:
-              tasks.length === 0
-                ? "No background tasks yet."
-                : swapActive
-                  ? `${tasks.length} task${tasks.length === 1 ? "" : "s"} • swap lane: ${taskFocusLaneLabel ?? taskFocusLaneId ?? "unknown"} • ↑/↓ select • ←/→ or [/] lane • Enter tail • Tab ${taskFocusRawMode ? "snippet" : "raw"} • L load more • P ${taskFocusFollowTail ? "pause" : "follow"} • F/Esc return`
-                  : `${tasks.length} task${tasks.length === 1 ? "" : "s"} • ↑/↓ select • PgUp/PgDn page • F ${taskFocusMode === "swap" ? "swap lane" : "focus lane"} • Enter tail • Esc close`,
-            color: "gray",
-          },
-          {
-            text: swapActive
-              ? `View: ${taskFocusRawMode ? "raw" : "snippet"}${taskFocusRawMode ? "" : ` · tail lines ${taskFocusTailLines}`} • Ctrl+B close tasks`
-              : `Search: ${taskSearchQuery.length > 0 ? taskSearchQuery : CHALK.dim("<type to filter>")} • Filter: ${taskStatusFilter} (0 all · 1 run · 2 done · 3 fail · 4 blocked · 5 cancelled · 6 pending)`,
-            color: "dim",
-          },
-          {
-            text: swapActive
-              ? "Experimental swap mode isolates a single lane in-taskboard."
-              : `Group: ${taskGroupMode} (G toggle) • Lane: ${taskLaneFilter} (L cycle) • C collapse selected group • E expand all`,
-            color: "dim",
-          },
-        ]
-        const panelRows: SelectPanelRow[] = []
         const statusCounts = countTaskRowsByStatusGroup(taskRows)
+        const statusSummary = summarizeTaskStatuses(statusCounts)
+        const selectedCount = taskRows.length > 0 ? Math.min(taskRows.length, Math.max(1, selectedTaskIndex + 1)) : 0
+        const selectedSummary = taskRows.length > 0 ? `${selectedCount}/${taskRows.length}` : "0/0"
+        const { titleLines, hintLines } = buildTasksOverlayContract({
+          tasksCount: tasks.length,
+          selectedSummary,
+          swapActive,
+          taskFocusLaneLabel: taskFocusLaneLabel ?? null,
+          taskFocusLaneId: taskFocusLaneId ?? null,
+          taskFocusRawMode,
+          taskFocusFollowTail,
+          taskFocusTailLines,
+          taskSearchQuery,
+          taskStatusFilter,
+          taskGroupMode,
+          taskLaneFilter,
+          statusSummary,
+          taskFocusMode,
+        })
+        const panelRows: SelectPanelRow[] = []
         const collapsedGroupSet =
           taskCollapsedGroupKeys instanceof Set ? taskCollapsedGroupKeys : new Set<string>()
         if (taskRows.length === 0) {
@@ -1098,13 +1216,12 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           normalizedTaskTailLines.forEach((line: string) => footerLines.push({ text: line, color: "dim" }))
         }
         return (
-          <SelectPanel
+          <SheetModal
+            sheetMode={sheetMode}
             width={panelWidth}
             borderColor={COLORS.info}
             paddingX={2}
             paddingY={0}
-            alignSelf={sheetMode ? "flex-start" : "center"}
-            marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={panelRows}

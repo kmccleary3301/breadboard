@@ -56,7 +56,9 @@ const baseContext = () => ({
   transcriptViewerOpen: false,
   enterTranscriptViewer: vi.fn(),
   exitTranscriptViewer: vi.fn(),
+  todosOpen: false,
   setTodosOpen: undefined,
+  tasksOpen: false,
   setTasksOpen: undefined,
   setTaskFocusViewOpen: undefined,
   ctreeOpen: false,
@@ -71,6 +73,26 @@ const baseContext = () => ({
 })
 
 describe("handleGlobalOverlayKeys", () => {
+  it("closes shortcuts overlay on escape", () => {
+    const context = baseContext()
+    const handled = handleGlobalOverlayKeys(
+      { ...context, shortcutsOpen: true },
+      makeInfo({ key: { escape: true } }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setShortcutsOpen).toHaveBeenCalledWith(false)
+  })
+
+  it("closes usage overlay on escape", () => {
+    const context = baseContext()
+    const handled = handleGlobalOverlayKeys(
+      { ...context, usageOpen: true },
+      makeInfo({ key: { escape: true } }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setUsageOpen).toHaveBeenCalledWith(false)
+  })
+
   it("does not crash when todo setter is missing in claude ctrl+t path", () => {
     const context = baseContext()
     const handled = handleGlobalOverlayKeys(
@@ -99,5 +121,61 @@ describe("handleGlobalOverlayKeys", () => {
     )
     expect(handled).toBe(true)
     expect(context.setCtreeOpen).toHaveBeenCalledWith(expect.any(Function))
+  })
+
+  it("handles raw Ctrl+T control char for todos toggle", () => {
+    const context = {
+      ...baseContext(),
+      setTodosOpen: vi.fn(),
+    }
+    const handled = handleGlobalOverlayKeys(
+      context,
+      makeInfo({ char: "\u0014" }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTodosOpen).toHaveBeenCalledWith(true)
+  })
+
+  it("handles key.name fallback for Ctrl+B tasks toggle", () => {
+    const context = {
+      ...baseContext(),
+      setTasksOpen: vi.fn(),
+      setTaskFocusViewOpen: vi.fn(),
+    }
+    const handled = handleGlobalOverlayKeys(
+      context,
+      makeInfo({ key: { ctrl: true, name: "b" } }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTasksOpen).toHaveBeenCalledWith(true)
+  })
+
+  it("closes todos panel when already open on ctrl+t", () => {
+    const context = {
+      ...baseContext(),
+      todosOpen: true,
+      setTodosOpen: vi.fn(),
+    }
+    const handled = handleGlobalOverlayKeys(
+      context,
+      makeInfo({ key: { ctrl: true, name: "t" } }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTodosOpen).toHaveBeenCalledWith(false)
+  })
+
+  it("closes tasks panel when already open on ctrl+b", () => {
+    const context = {
+      ...baseContext(),
+      tasksOpen: true,
+      setTasksOpen: vi.fn(),
+      setTaskFocusViewOpen: vi.fn(),
+    }
+    const handled = handleGlobalOverlayKeys(
+      context,
+      makeInfo({ key: { ctrl: true, name: "b" } }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTasksOpen).toHaveBeenCalledWith(false)
   })
 })

@@ -165,17 +165,23 @@ const buildBoardLines = (context: LandingContext) => {
   const tipHeader = CHALK.hex(BRAND_COLORS.jamRed).bold(truncatePlain("Tips for getting started", rightInnerWidth))
   const tipLine = CHALK.hex(COLORS.text)(truncatePlain("Run /init to create an AGENTS.md", rightInnerWidth))
   const tipLine2 = CHALK.hex(COLORS.text)(truncatePlain("Use @ to attach files", rightInnerWidth))
+  const tipLine3 = CHALK.hex(COLORS.textSoft)(
+    truncatePlain("Try: \"Summarize this repo in 5 bullets.\"", rightInnerWidth),
+  )
   const divider = dividerColor(BOX.h.repeat(rightInnerWidth))
   const recentHeader = CHALK.hex(BRAND_COLORS.jamRed).bold(truncatePlain("Recent activity", rightInnerWidth))
-  const recentLine = CHALK.hex(COLORS.textMuted)(truncatePlain("No recent activity", rightInnerWidth))
+  const recentLine = CHALK.hex(COLORS.textSoft)(truncatePlain("No recent activity yet", rightInnerWidth))
+  const recentLine2 = CHALK.hex(COLORS.textMuted)(truncatePlain("Run /replay <scenario> to populate history", rightInnerWidth))
 
   const rightLines = [
     tipHeader,
     tipLine,
     tipLine2,
+    tipLine3,
     divider,
     recentHeader,
     recentLine,
+    recentLine2,
   ]
 
   const totalRows = Math.max(leftLines.length, rightLines.length)

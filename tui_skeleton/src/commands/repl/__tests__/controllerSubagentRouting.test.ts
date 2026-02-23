@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ReplSessionController } from "../controller.js"
+import { ControlledClock } from "../../../repl/clock/controlledClock.js"
 
 const event = (seq: number, type: string, payload: Record<string, unknown> = {}) => ({
   id: String(seq),
@@ -204,6 +205,30 @@ describe("ReplSessionController subagent routing", () => {
     expect(controller.getState().liveSlots.some((slot: any) => String(slot.text).includes("[subagent] failed"))).toBe(true)
 
     vi.advanceTimersByTime(2_300)
+    expect(controller.getState().liveSlots.some((slot: any) => String(slot.text).includes("[subagent] failed"))).toBe(false)
+  })
+
+  it("expires subagent toast deterministically with controlled clock", () => {
+    const clock = new ControlledClock(10_000)
+    const controller = new ReplSessionController({
+      configPath: "agent_configs/test_simple_native.yaml",
+      workspace: ".",
+      clock,
+    }) as any
+    controller.runtimeFlags = {
+      ...controller.runtimeFlags,
+      subagentWorkGraphEnabled: true,
+      subagentCoalesceMs: 0,
+      subagentToastsEnabled: true,
+    }
+
+    controller.applyEvent(event(1, "task_event", { task_id: "task-10", status: "failed", description: "Parse logs" }))
+    expect(controller.getState().liveSlots.some((slot: any) => String(slot.text).includes("[subagent] failed"))).toBe(true)
+
+    clock.advance(2_000)
+    expect(controller.getState().liveSlots.some((slot: any) => String(slot.text).includes("[subagent] failed"))).toBe(true)
+
+    clock.advance(2_300)
     expect(controller.getState().liveSlots.some((slot: any) => String(slot.text).includes("[subagent] failed"))).toBe(false)
   })
 

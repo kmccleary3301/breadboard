@@ -110,9 +110,11 @@ const extractDurationMs = (payload: Record<string, unknown>): number | null => {
   return null
 }
 
+const clockNow = (controller: any): number => controller?.clock?.now?.() ?? Date.now()
+
 const notePendingStart = (controller: { pendingStartedAt: number | null }): void => {
   if (controller.pendingStartedAt == null) {
-    controller.pendingStartedAt = Date.now()
+    controller.pendingStartedAt = clockNow(controller)
   }
 }
 
@@ -120,7 +122,7 @@ const takePendingDurationMs = (controller: { pendingStartedAt: number | null }):
   const startedAt = controller.pendingStartedAt
   controller.pendingStartedAt = null
   if (typeof startedAt === "number" && Number.isFinite(startedAt)) {
-    const elapsed = Date.now() - startedAt
+    const elapsed = clockNow(controller) - startedAt
     return elapsed >= 0 ? elapsed : 0
   }
   return null
@@ -134,7 +136,7 @@ const resolveThinkingMode = (controller: {
     ? "full"
     : "summary"
 
-const maybeStartThinkingPreview = (controller: any, mode: ThinkingMode, now = Date.now()): void => {
+const maybeStartThinkingPreview = (controller: any, mode: ThinkingMode, now = clockNow(controller)): void => {
   if (controller.runtimeFlags?.thinkingPreviewEnabled === false) {
     controller.thinkingPreview = null
     return
@@ -150,7 +152,7 @@ const maybeStartThinkingPreview = (controller: any, mode: ThinkingMode, now = Da
 const appendThinkingPreview = (
   controller: any,
   signal: { kind: "delta" | "summary"; text: string; eventType: string },
-  now = Date.now(),
+  now = clockNow(controller),
 ): void => {
   if (controller.runtimeFlags?.thinkingPreviewEnabled === false) return
   const mode: ThinkingMode = resolveThinkingMode(controller)
@@ -168,7 +170,7 @@ const appendThinkingPreview = (
   }
 }
 
-const closeThinkingPreview = (controller: any, now = Date.now()): void => {
+const closeThinkingPreview = (controller: any, now = clockNow(controller)): void => {
   const current = controller.thinkingPreview
   if (!current || current.lifecycle === "closed") return
   controller.thinkingPreview = closeThinkingPreviewState(current, now)
@@ -194,7 +196,7 @@ const markAssistantResponding = (controller: any, eventType: string): void => {
 
 const maybeLifecycleToast = (controller: any, message: string, eventType: string): void => {
   if (controller.runtimeFlags?.lifecycleToastsEnabled !== true) return
-  const now = Date.now()
+  const now = clockNow(controller)
   const cooldownMs = Math.max(300, Number(controller.runtimeFlags?.statusUpdateMs ?? 120))
   if (
     controller.lastLifecycleToastMessage === message &&
@@ -255,7 +257,7 @@ const emitSubagentToast = (
   const rawDescription =
     extractString(payload, ["description", "title", "summary", "prompt", "subagent_type", "subagentType"]) ?? taskId
   const description = sanitizeSubagentPreview(rawDescription, 120)
-  const now = Date.now()
+  const now = clockNow(controller)
   const key = `subagent:${taskId}`
   const ledger = controller.subagentToastLedger as Map<string, { status: string; at: number }>
   const last = ledger.get(key)
@@ -306,7 +308,7 @@ const shouldThrottleReasoningPeek = (controller: any, now: number): boolean => {
 
 const resolveEventTimestamp = (controller: any): number => {
   const seq = controller.currentEventSeq
-  return typeof seq === "number" && Number.isFinite(seq) ? seq : Date.now()
+  return typeof seq === "number" && Number.isFinite(seq) ? seq : clockNow(controller)
 }
 
 const isInlineThinkingBlockEnabled = (controller: any): boolean => {
@@ -360,7 +362,7 @@ const appendInlineThinkingBlock = (
     }
   }
   const entry = {
-    id: controller.nextConversationId?.() ?? `conv-thinking-${Date.now().toString(36)}`,
+    id: controller.nextConversationId?.() ?? `conv-thinking-${clockNow(controller).toString(36)}`,
     speaker: "assistant" as const,
     text: `${marker}\n${line}`,
     phase: "final" as const,
@@ -594,7 +596,7 @@ const extractProjectedTodoUpdate = (
 }
 
 const maybeApplyTodoUpdateFromPayload = (controller: any, payload: Record<string, unknown>): number | null => {
-  const at = Date.now()
+  const at = clockNow(controller)
   const projected = extractProjectedTodoUpdate(controller, payload, at)
   const hasExplicitTodo = Object.prototype.hasOwnProperty.call(payload, "todo") && payload.todo != null
   const fallback: { update: TodoUpdate; sourceRevision: number | null; scopeKey: string; scopeLabel: string | null } | null =
@@ -1071,12 +1073,12 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.lastThinkingPeekAt = 0
       this.thinkingInlineEntryId = null
       if (this.thinkingArtifact) {
-        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
+        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, clockNow(this))
       }
       if (this.runtimeFlags?.thinkingEnabled !== false) {
         const mode: ThinkingMode = resolveThinkingMode(this)
-        this.thinkingArtifact = createThinkingArtifact(mode, Date.now())
-        maybeStartThinkingPreview(this, mode, Date.now())
+        this.thinkingArtifact = createThinkingArtifact(mode, clockNow(this))
+        maybeStartThinkingPreview(this, mode, clockNow(this))
       } else {
         this.thinkingArtifact = null
         this.thinkingPreview = null
@@ -1095,7 +1097,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
     case "assistant.message.start": {
       this.finalizeStreamingEntry()
       markAssistantResponding(this, event.type)
-      closeThinkingPreview(this, Date.now())
+      closeThinkingPreview(this, clockNow(this))
       this.setStreamingConversation("assistant", "")
       break
     }
@@ -1114,7 +1116,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
     }
     case "assistant_message": {
       markAssistantResponding(this, event.type)
-      closeThinkingPreview(this, Date.now())
+      closeThinkingPreview(this, clockNow(this))
       const raw = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
       const text = typeof raw === "string" ? raw : ""
       const normalizedText = this.normalizeAssistantText(text)
@@ -1150,10 +1152,10 @@ export function applyEvent(this: any, event: SessionEvent): void {
         (signal.kind === "summary" ? capabilities.thoughtSummaryEvents !== false : capabilities.reasoningEvents !== false)
       if (signal && signalAllowed && this.runtimeFlags?.thinkingEnabled !== false) {
         const mode: ThinkingMode = resolveThinkingMode(this)
-        const seed = this.thinkingArtifact ?? createThinkingArtifact(mode, Date.now())
-        this.thinkingArtifact = appendThinkingArtifact(seed, signal, this.runtimeFlags, Date.now())
+        const seed = this.thinkingArtifact ?? createThinkingArtifact(mode, clockNow(this))
+        this.thinkingArtifact = appendThinkingArtifact(seed, signal, this.runtimeFlags, clockNow(this))
         this.bumpRuntimeTelemetry?.("thinkingUpdates")
-        appendThinkingPreview(this, signal, Date.now())
+        appendThinkingPreview(this, signal, clockNow(this))
       }
       if (signal) {
         appendInlineThinkingBlock(this, signal)
@@ -1163,7 +1165,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
           this.runtimeFlags?.allowRawThinkingPeek === true || capabilities.rawThinkingPeek === true
         const peekText = signal?.kind === "summary" || rawPeekAllowed ? delta : ""
         if (!peekText.trim()) break
-        const now = Date.now()
+        const now = clockNow(this)
         if (!shouldThrottleReasoningPeek(this, now)) {
           this.addTool("status", `[reasoning] ${peekText}`, "pending")
           this.lastThinkingPeekAt = now
@@ -1238,7 +1240,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
         diffText,
         ruleSuggestion,
         defaultScope,
-        createdAt: Date.now(),
+        createdAt: clockNow(this),
       }
       if (this.permissionActive) {
         this.permissionQueue.push(request)
@@ -1274,7 +1276,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
         diffText: diffText ?? null,
         ruleSuggestion: extractString(payload, ["rule", "rule_suggestion"]) ?? null,
         defaultScope: this.normalizeScope(payload.default_scope),
-        createdAt: Date.now(),
+        createdAt: clockNow(this),
       }
       if (this.permissionActive) {
         this.permissionQueue.push(request)
@@ -1684,9 +1686,9 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.pendingResponse = false
       this.pendingStartedAt = null
       this.thinkingInlineEntryId = null
-      closeThinkingPreview(this, Date.now())
+      closeThinkingPreview(this, clockNow(this))
       if (this.thinkingArtifact) {
-        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
+        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, clockNow(this))
       }
       this.setActivityStatus?.("Cancelled", { to: "cancelled", eventType: event.type, source: "event" })
       this.addTool("status", "[cancel] acknowledged", "success")
@@ -1704,9 +1706,9 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.pendingResponse = false
       this.pendingStartedAt = null
       this.thinkingInlineEntryId = null
-      closeThinkingPreview(this, Date.now())
+      closeThinkingPreview(this, clockNow(this))
       if (this.thinkingArtifact) {
-        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
+        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, clockNow(this))
       }
       this.setActivityStatus?.("Error received", { to: "error", eventType: event.type, source: "event" })
       break
@@ -1735,14 +1737,14 @@ export function applyEvent(this: any, event: SessionEvent): void {
       }
       this.pendingResponse = false
       this.thinkingInlineEntryId = null
-      closeThinkingPreview(this, Date.now())
+      closeThinkingPreview(this, clockNow(this))
       this.setActivityStatus?.(view.status, {
         to: view.completed ? "completed" : "halted",
         eventType: event.type,
         source: "event",
       })
       if (this.thinkingArtifact) {
-        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
+        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, clockNow(this))
       }
       if (view.conversationLine) {
         const lastEntry = this.conversation.length > 0 ? this.conversation[this.conversation.length - 1] : undefined
@@ -1773,14 +1775,14 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.pendingResponse = false
       this.pendingStartedAt = null
       this.thinkingInlineEntryId = null
-      closeThinkingPreview(this, Date.now())
+      closeThinkingPreview(this, clockNow(this))
       this.setActivityStatus?.(completed ? "Finished" : "Halted", {
         to: completed ? "completed" : "halted",
         eventType: event.type,
         source: "event",
       })
       if (this.thinkingArtifact) {
-        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
+        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, clockNow(this))
       }
       if (!this.completionSeen) {
         this.completionSeen = true
@@ -1801,14 +1803,14 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.pendingResponse = false
       this.pendingStartedAt = null
       this.thinkingInlineEntryId = null
-      closeThinkingPreview(this, Date.now())
+      closeThinkingPreview(this, clockNow(this))
       this.setActivityStatus?.(completed ? "Finished" : "Halted", {
         to: completed ? "completed" : "halted",
         eventType: event.type,
         source: "event",
       })
       if (this.thinkingArtifact) {
-        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, Date.now())
+        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, clockNow(this))
       }
       if (!this.completionSeen) {
         this.completionSeen = true
@@ -1852,9 +1854,13 @@ export function appendAssistantDelta(this: any, delta: string): void {
 }
 
 export function noteStopRequested(this: any): void {
-  this.stopRequestedAt = Date.now()
-  if (this.stopTimer) clearTimeout(this.stopTimer)
-  this.stopTimer = setTimeout(() => {
+  this.stopRequestedAt = clockNow(this)
+  if (this.stopTimer) {
+    const clear = this.clock?.clearTimeout?.bind(this.clock) ?? clearTimeout
+    clear(this.stopTimer)
+  }
+  const schedule = this.clock?.setTimeout?.bind(this.clock) ?? setTimeout
+  this.stopTimer = schedule(() => {
     if (this.stopRequestedAt && !this.completionSeen && !this.disconnected) {
       this.pushHint("Still stopping…")
       this.setActivityStatus?.("Still stopping…", { to: "cancelled", eventType: "stop.timeout", source: "runtime" })
@@ -1865,7 +1871,8 @@ export function noteStopRequested(this: any): void {
 
 export function clearStopRequest(this: any): void {
   if (this.stopTimer) {
-    clearTimeout(this.stopTimer)
+    const clear = this.clock?.clearTimeout?.bind(this.clock) ?? clearTimeout
+    clear(this.stopTimer)
     this.stopTimer = null
   }
   this.stopRequestedAt = null

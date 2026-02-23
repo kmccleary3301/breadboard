@@ -24,7 +24,9 @@ export const handleGlobalOverlayKeys = (
     transcriptViewerOpen,
     enterTranscriptViewer,
     exitTranscriptViewer,
+    todosOpen,
     setTodosOpen,
+    tasksOpen,
     setTasksOpen,
     setTaskFocusViewOpen,
     ctreeOpen,
@@ -38,15 +40,32 @@ export const handleGlobalOverlayKeys = (
     inputValueRef,
   } = context
   const { char, key, lowerChar, isCtrlT, isCtrlShiftT, isCtrlB, isCtrlY, isCtrlG } = info
+  const keyName = typeof (key as Record<string, unknown>).name === "string"
+    ? String((key as Record<string, unknown>).name).toLowerCase()
+    : ""
+  const isCtrlTKey = isCtrlT || char === "\u0014" || (key.ctrl && (lowerChar === "t" || keyName === "t"))
+  const isCtrlShiftTKey =
+    isCtrlShiftT || (key.ctrl && key.shift && (lowerChar === "t" || keyName === "t"))
+  const isCtrlBKey = isCtrlB || char === "\u0002" || (key.ctrl && (lowerChar === "b" || keyName === "b"))
+  const isCtrlYKey = isCtrlY || char === "\u0019" || (key.ctrl && (lowerChar === "y" || keyName === "y"))
+  const isCtrlGKey = isCtrlG || char === "\u0007" || (key.ctrl && (lowerChar === "g" || keyName === "g"))
   const profile = normalizeKeyProfile(keymap)
   const toggleTodosOpen = () => {
     if (typeof setTodosOpen === "function") {
-      setTodosOpen((prev: boolean) => !prev)
+      if (typeof todosOpen === "boolean") {
+        setTodosOpen(!todosOpen)
+      } else {
+        setTodosOpen((prev: boolean) => !prev)
+      }
     }
   }
   const toggleTasksOpen = () => {
     if (typeof setTasksOpen === "function") {
-      setTasksOpen((prev: boolean) => !prev)
+      if (typeof tasksOpen === "boolean") {
+        setTasksOpen(!tasksOpen)
+      } else {
+        setTasksOpen((prev: boolean) => !prev)
+      }
     }
   }
   const closeTasks = () => {
@@ -138,7 +157,7 @@ export const handleGlobalOverlayKeys = (
       }
     }
   }
-  if ((matchesActionBinding(profile, "toggle_transcript_viewer", char, key) || isCtrlShiftT) && keymap !== "claude") {
+  if ((matchesActionBinding(profile, "toggle_transcript_viewer", char, key) || isCtrlShiftTKey) && keymap !== "claude") {
     setCtreeOpen(false)
     if (transcriptViewerOpen) {
       exitTranscriptViewer()
@@ -147,7 +166,7 @@ export const handleGlobalOverlayKeys = (
     }
     return true
   }
-  if (matchesActionBinding(profile, "toggle_todos_panel", char, key) || isCtrlT) {
+  if (matchesActionBinding(profile, "toggle_todos_panel", char, key) || isCtrlTKey) {
     setCtreeOpen(false)
     if (keymap === "claude") {
       toggleTodosOpen()
@@ -158,13 +177,13 @@ export const handleGlobalOverlayKeys = (
     }
     return true
   }
-  if (matchesActionBinding(profile, "toggle_tasks_panel", char, key) || isCtrlB) {
+  if (matchesActionBinding(profile, "toggle_tasks_panel", char, key) || isCtrlBKey) {
     setCtreeOpen(false)
     closeTaskFocus()
     toggleTasksOpen()
     return true
   }
-  if (matchesActionBinding(profile, "toggle_ctree_panel", char, key) || isCtrlY) {
+  if (matchesActionBinding(profile, "toggle_ctree_panel", char, key) || isCtrlYKey) {
     if (!ctreeOpen) {
       closeTodos()
       closeTaskFocus()
@@ -173,7 +192,7 @@ export const handleGlobalOverlayKeys = (
     setCtreeOpen((prev: boolean) => !prev)
     return true
   }
-  if (matchesActionBinding(profile, "toggle_skills_panel", char, key) || isCtrlG) {
+  if (matchesActionBinding(profile, "toggle_skills_panel", char, key) || isCtrlGKey) {
     if (skillsMenu.status === "hidden") {
       void onSkillsMenuOpen()
     } else {

@@ -4,6 +4,7 @@ import { useReplViewController } from "./replView/controller/useReplViewControll
 import type { ReplViewProps } from "./replView/replViewTypes.js"
 import { DEFAULT_RESOLVED_TUI_CONFIG } from "../../tui_config/presets.js"
 import { TuiConfigProvider } from "../../tui_config/context.js"
+import { UIClockProvider } from "../clock/context.js"
 
 const ReplViewInner: React.FC<ReplViewProps> = (props) => {
   const controller = useReplViewController(props)
@@ -12,8 +13,10 @@ const ReplViewInner: React.FC<ReplViewProps> = (props) => {
 
 export const ReplView: React.FC<ReplViewProps> = (props) => {
   return (
-    <TuiConfigProvider value={props.tuiConfig ?? DEFAULT_RESOLVED_TUI_CONFIG}>
-      <ReplViewInner {...props} />
-    </TuiConfigProvider>
+    <UIClockProvider>
+      <TuiConfigProvider value={props.tuiConfig ?? DEFAULT_RESOLVED_TUI_CONFIG}>
+        <ReplViewInner {...props} />
+      </TuiConfigProvider>
+    </UIClockProvider>
   )
 }

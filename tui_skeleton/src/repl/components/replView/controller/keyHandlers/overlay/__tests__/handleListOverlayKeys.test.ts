@@ -109,6 +109,34 @@ const baseContext = () => ({
 })
 
 describe("handleListOverlayKeys task focus mode", () => {
+  it("closes todos overlay from raw Ctrl+T control char in claude keymap", () => {
+    const context = { ...baseContext(), todosOpen: true, tasksOpen: false, keymap: "claude" }
+    const handled = handleListOverlayKeys(context, makeInfo({ char: "\u0014" }))
+    expect(handled).toBe(true)
+    expect(context.setTodosOpen).toHaveBeenCalledWith(false)
+  })
+
+  it("closes tasks overlay from raw Ctrl+B control char", () => {
+    const context = { ...baseContext(), todosOpen: false, tasksOpen: true }
+    const handled = handleListOverlayKeys(context, makeInfo({ char: "\u0002" }))
+    expect(handled).toBe(true)
+    expect(context.setTasksOpen).toHaveBeenCalledWith(false)
+  })
+
+  it("closes todos overlay when ctrl key uses key.name without char payload", () => {
+    const context = { ...baseContext(), todosOpen: true, tasksOpen: false, keymap: "claude" }
+    const handled = handleListOverlayKeys(context, makeInfo({ key: { ctrl: true, name: "t" } }))
+    expect(handled).toBe(true)
+    expect(context.setTodosOpen).toHaveBeenCalledWith(false)
+  })
+
+  it("closes tasks overlay when ctrl key uses key.name without char payload", () => {
+    const context = { ...baseContext(), todosOpen: false, tasksOpen: true }
+    const handled = handleListOverlayKeys(context, makeInfo({ key: { ctrl: true, name: "b" } }))
+    expect(handled).toBe(true)
+    expect(context.setTasksOpen).toHaveBeenCalledWith(false)
+  })
+
   it("enters focus lane mode on `f` from selected task", () => {
     const context = baseContext()
     const handled = handleListOverlayKeys(

@@ -67,3 +67,20 @@ export const getTopLayer = (flags: OverlayFlags): LayerName => {
   if (flags.paletteOpen) return "palette"
   return "editor"
 }
+
+export const getOverlayFocusLabel = (flags: OverlayFlags): string | null => {
+  if (flags.confirmOpen) return "Confirm"
+  if (flags.permissionOpen) return "Permission"
+  if (flags.modelMenuOpen) return "Models"
+  if (flags.skillsMenuOpen) return "Skills"
+  if (flags.inspectMenuOpen) return "Inspect"
+  if (flags.usageOpen) return "Usage"
+  if (flags.rewindOpen) return "Rewind"
+  if (flags.todosOpen) return "Todos"
+  if (flags.tasksOpen) return "Tasks"
+  if (flags.ctreeOpen) return "Context Tree"
+  if (flags.transcriptViewerOpen) return "Transcript"
+  if (flags.paletteOpen) return "Palette"
+  if (flags.shortcutsOpen && !flags.claudeChrome) return "Shortcuts"
+  return null
+}

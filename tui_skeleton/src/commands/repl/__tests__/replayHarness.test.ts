@@ -55,7 +55,7 @@ const renderFixture = (name: string): string => {
   const controller = buildControllerFromFixture(name)
   try {
     ;(controller as any).liveSlots?.clear?.()
-    ;(controller as any).liveSlotTimers?.forEach?.((timer: NodeJS.Timeout) => clearTimeout(timer))
+    ;(controller as any).liveSlotTimers?.forEach?.((timer: ReturnType<typeof setTimeout>) => clearTimeout(timer))
     ;(controller as any).liveSlotTimers?.clear?.()
   } catch {
     // ignore

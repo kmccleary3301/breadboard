@@ -95,6 +95,8 @@ import {
 } from "./controllerWorkGraphRuntime.js"
 import type { ActivityTransitionTrace } from "./controllerTransitionTimeline.js"
 import { resolveProviderCapabilities } from "./providerCapabilityResolution.js"
+import type { UIClock, UIClockTimeoutHandle } from "../../repl/clock/UIClock.js"
+import { resolveUIClockFromEnv } from "../../repl/clock/resolveClock.js"
 
 export interface ReplControllerOptions {
   readonly configPath: string
@@ -105,6 +107,7 @@ export interface ReplControllerOptions {
   readonly todoAutoFollowScope?: "off" | "on"
   readonly todoAutoFollowHysteresisMs?: number
   readonly todoAutoFollowManualOverrideMs?: number
+  readonly clock?: UIClock
 }
 
 export interface CompletionView {
@@ -182,10 +185,11 @@ interface SubmissionPayload {
 
 export class ReplSessionController extends EventEmitter {
   private readonly config: ReplControllerOptions
+  readonly clock: UIClock
   private readonly conversation: ConversationEntry[] = []
   private readonly toolEvents: ToolLogEntry[] = []
   private readonly liveSlots = new Map<string, LiveSlotEntry>()
-  private readonly liveSlotTimers = new Map<string, NodeJS.Timeout>()
+  private readonly liveSlotTimers = new Map<string, UIClockTimeoutHandle>()
   private guardrailNotice: GuardrailNotice | null = null
   private readonly toolSlotsByCallId = new Map<string, string>()
   private readonly toolSlotFallback: string[] = []
@@ -222,7 +226,7 @@ export class ReplSessionController extends EventEmitter {
   }
   private emitScheduled = false
   private status = "Starting session…"
-  private statusUpdatedAt = Date.now()
+  private statusUpdatedAt = 0
   private pendingResponse = false
   private pendingStartedAt: number | null = null
   private modelMenu: ModelMenuState = { status: "hidden" }
@@ -300,7 +304,7 @@ export class ReplSessionController extends EventEmitter {
   private currentEventSeq: number | null = null
   private hasStreamedOnce = false
   private stopRequestedAt: number | null = null
-  private stopTimer: NodeJS.Timeout | null = null
+  private stopTimer: UIClockTimeoutHandle | null = null
   private readonly taskMap = new Map<string, TaskEntry>()
   private readonly subagentToastLedger = new Map<string, { status: string; at: number }>()
   private workGraph: WorkGraphState = createWorkGraphState()
@@ -333,6 +337,8 @@ export class ReplSessionController extends EventEmitter {
   constructor(options: ReplControllerOptions) {
     super()
     this.config = options
+    this.clock = options.clock ?? resolveUIClockFromEnv()
+    this.statusUpdatedAt = this.clock.now()
     this.todoAutoFollowScope = options.todoAutoFollowScope ?? "off"
     const hysteresis = options.todoAutoFollowHysteresisMs
     this.todoAutoFollowHysteresisMs =
@@ -350,7 +356,7 @@ export class ReplSessionController extends EventEmitter {
     if (this.todoAutoFollowScope !== "on") return
     const windowMs = this.todoAutoFollowManualOverrideMs
     if (!Number.isFinite(windowMs) || windowMs <= 0) return
-    this.todoAutoFollowManualOverrideUntilAt = Date.now() + windowMs
+    this.todoAutoFollowManualOverrideUntilAt = this.clock.now() + windowMs
   }
 
   private shouldAutoFollowTodoStore(scopeKey: string): boolean {
@@ -364,7 +370,7 @@ export class ReplSessionController extends EventEmitter {
     return false
   }
 
-  private maybeAutoFollowTodoScope(scopeKey: string, now = Date.now()): boolean {
+  private maybeAutoFollowTodoScope(scopeKey: string, now = this.clock.now()): boolean {
     if (this.todoAutoFollowScope !== "on") return false
     const key = scopeKey?.trim() || "main"
     if (!key) return false
@@ -408,7 +414,7 @@ export class ReplSessionController extends EventEmitter {
       if (typeof hintCount === "number" && hintCount > 0) {
         delete this.todoStoresPendingHintByScope[key]
         this.todoScopeLastUpdateKey = key
-        this.todoScopeLastUpdateAt = Date.now()
+        this.todoScopeLastUpdateAt = this.clock.now()
         this.pushHint(`Todos updated (${hintCount}).`)
       } else {
         delete this.todoStoresPendingHintByScope[key]
@@ -434,7 +440,7 @@ export class ReplSessionController extends EventEmitter {
     const todos = todoStoreToList(todoStore)
     const todoScopeLabel = this.todoScopeLabelsByKey[activeScopeKey] ?? activeScopeKey
     const todoScopeStale = Boolean(this.todoScopeStaleByKey[activeScopeKey])
-    const prunedThinkingPreview = pruneThinkingPreviewState(this.thinkingPreview, this.runtimeFlags, Date.now())
+    const prunedThinkingPreview = pruneThinkingPreviewState(this.thinkingPreview, this.runtimeFlags, this.clock.now())
     if (this.thinkingPreview && !prunedThinkingPreview) {
       this.runtimeTelemetry = bumpTelemetry(this.runtimeTelemetry, "thinkingPreviewExpired")
     }
@@ -759,7 +765,7 @@ export class ReplSessionController extends EventEmitter {
     this.pendingResponse = true
     this.setActivityStatus(statusLabel, { to: "run", eventType: "input.submit", source: "user" })
     if (this.pendingStartedAt == null) {
-      this.pendingStartedAt = Date.now()
+      this.pendingStartedAt = this.clock.now()
     }
     this.emitChange()
     try {
@@ -811,7 +817,7 @@ export class ReplSessionController extends EventEmitter {
       payload,
       eventId: options?.eventId ?? null,
       seq: options?.seq ?? this.currentEventSeq ?? null,
-      timestamp: options?.timestamp ?? numberOrUndefined(payload.timestamp) ?? Date.now(),
+      timestamp: options?.timestamp ?? numberOrUndefined(payload.timestamp) ?? this.clock.now(),
     }
     this.workGraphQueue.push(event)
     this.runtimeTelemetry = {
@@ -905,7 +911,7 @@ export class ReplSessionController extends EventEmitter {
     const previous = this.activity
     const result = reduceActivityTransition(this.activity, input, this.runtimeFlags)
     this.activityTransitionTrace.push({
-      at: Number.isFinite(input.now as number) ? (input.now as number) : Date.now(),
+      at: Number.isFinite(input.now as number) ? (input.now as number) : this.clock.now(),
       from: previous.primary,
       to: input.to,
       eventType: input.eventType ?? null,
@@ -941,7 +947,7 @@ export class ReplSessionController extends EventEmitter {
     status: string,
     transition?: Omit<ActivityTransitionInput, "label">,
   ): void {
-    const now = Date.now()
+    const now = this.clock.now()
     if (transition) {
       const result = this.transitionActivity({ ...transition, label: status, now })
       if (!result.applied && result.reason !== "same") {

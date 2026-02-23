@@ -2,6 +2,7 @@ import React from "react"
 import { SelectPanel, type SelectPanelLine, type SelectPanelRow } from "../../SelectPanel.js"
 import type { ModalDescriptor } from "../../ModalHost.js"
 import { CHALK, COLORS } from "../theme.js"
+import { SheetModal } from "./SheetModal.js"
 
 export const buildConfirmModal = (confirmState: any, panelWidth: number): ModalDescriptor | null => {
   if (confirmState.status !== "prompt") return null
@@ -58,13 +59,12 @@ export const buildShortcutsModal = ({
         text: line,
       }))
       return (
-        <SelectPanel
+        <SheetModal
+          sheetMode={sheetMode}
           width={width}
           borderColor={COLORS.info}
           paddingX={2}
           paddingY={claudeChrome ? 0 : 1}
-          alignSelf={sheetMode ? "flex-start" : "center"}
-          marginTop={sheetMode ? 0 : 2}
           titleLines={titleLines}
           hintLines={hintLines}
           rows={rows}

@@ -5,12 +5,10 @@ describe("buildFooterV2Model", () => {
   it("includes elapsed + interrupt cues while pending", () => {
     const model = buildFooterV2Model({
       pendingResponse: true,
-      disconnected: false,
       overlayActive: false,
       overlayLabel: null,
       keymap: "claude",
-      status: "Assistant thinking…",
-      runtimeStatusChips: [{ id: "thinking", label: "thinking", tone: "info" }],
+      phaseLineState: { id: "thinking", label: "thinking", tone: "info" },
       spinner: "*",
       pendingStartedAtMs: 1_000,
       lastDurationMs: null,
@@ -41,12 +39,10 @@ describe("buildFooterV2Model", () => {
   it("surfaces disconnected state with overlay controls", () => {
     const model = buildFooterV2Model({
       pendingResponse: false,
-      disconnected: true,
       overlayActive: true,
       overlayLabel: "Todos",
       keymap: "codex",
-      status: "Reconnecting",
-      runtimeStatusChips: [],
+      phaseLineState: { id: "disconnected", label: "disconnected", tone: "error" },
       spinner: "*",
       pendingStartedAtMs: null,
       lastDurationMs: 2_200,
@@ -73,12 +69,10 @@ describe("buildFooterV2Model", () => {
   it("keeps overlay focus cues visible under narrow widths", () => {
     const model = buildFooterV2Model({
       pendingResponse: false,
-      disconnected: false,
       overlayActive: true,
       overlayLabel: "Tasks",
       keymap: "codex",
-      status: "Ready",
-      runtimeStatusChips: [],
+      phaseLineState: { id: "ready", label: "ready", tone: "muted" },
       spinner: "*",
       pendingStartedAtMs: null,
       lastDurationMs: null,
@@ -102,12 +96,10 @@ describe("buildFooterV2Model", () => {
   it("normalizes startup/fallback phase labels to canonical values", () => {
     const model = buildFooterV2Model({
       pendingResponse: false,
-      disconnected: false,
       overlayActive: false,
       overlayLabel: null,
       keymap: "claude",
-      status: "Starting session...",
-      runtimeStatusChips: [],
+      phaseLineState: { id: "starting", label: "starting", tone: "info" },
       spinner: "*",
       pendingStartedAtMs: null,
       lastDurationMs: null,
@@ -131,12 +123,10 @@ describe("buildFooterV2Model", () => {
   it("prefers canonical chip-id labels over freeform chip label text", () => {
     const model = buildFooterV2Model({
       pendingResponse: false,
-      disconnected: false,
       overlayActive: false,
       overlayLabel: null,
       keymap: "claude",
-      status: "Ready",
-      runtimeStatusChips: [{ id: "responding", label: "Responding session...", tone: "info" }],
+      phaseLineState: { id: "responding", label: "responding", tone: "info" },
       spinner: "*",
       pendingStartedAtMs: null,
       lastDurationMs: null,
@@ -160,12 +150,10 @@ describe("buildFooterV2Model", () => {
   it("uses overlay close copy in phase line when overlay is open even if pending", () => {
     const model = buildFooterV2Model({
       pendingResponse: true,
-      disconnected: false,
       overlayActive: true,
       overlayLabel: "Tasks",
       keymap: "claude",
-      status: "Assistant thinking…",
-      runtimeStatusChips: [{ id: "thinking", label: "thinking", tone: "info" }],
+      phaseLineState: { id: "thinking", label: "thinking", tone: "info" },
       spinner: "*",
       pendingStartedAtMs: 1_000,
       lastDurationMs: null,
@@ -185,5 +173,177 @@ describe("buildFooterV2Model", () => {
     expect(model.phaseLine).toContain("esc close tasks")
     expect(model.summaryLine).toContain("esc close tasks")
     expect(model.summaryLine).toContain("FOCUS Tasks")
+  })
+
+  it("keeps command rail ordering deterministic in idle mode", () => {
+    const model = buildFooterV2Model({
+      pendingResponse: false,
+      overlayActive: false,
+      overlayLabel: null,
+      keymap: "claude",
+      phaseLineState: { id: "ready", label: "ready", tone: "muted" },
+      spinner: "*",
+      pendingStartedAtMs: null,
+      lastDurationMs: null,
+      nowMs: 2_000,
+      todos: [],
+      tasks: [],
+      stats: {
+        eventCount: 5,
+        toolCount: 0,
+        lastTurn: null,
+        remote: false,
+        model: "gpt-5-codex",
+      },
+      width: 220,
+    })
+    const order = ["/ commands", "@ files", "ctrl+b tasks", "ctrl+t todos", "ctrl+k model", "? shortcuts"]
+    let cursor = -1
+    for (const token of order) {
+      const index = model.summaryLine.indexOf(token)
+      expect(index).toBeGreaterThan(cursor)
+      cursor = index
+    }
+  })
+
+  it("switches ctrl shortcut labels to cmd when shortcut platform is mac", () => {
+    const previous = process.env.BREADBOARD_TUI_SHORTCUT_PLATFORM
+    process.env.BREADBOARD_TUI_SHORTCUT_PLATFORM = "darwin"
+    try {
+      const model = buildFooterV2Model({
+        pendingResponse: false,
+        overlayActive: false,
+        overlayLabel: null,
+        keymap: "claude",
+        phaseLineState: { id: "ready", label: "ready", tone: "muted" },
+        spinner: "*",
+        pendingStartedAtMs: null,
+        lastDurationMs: null,
+        nowMs: 2_000,
+        todos: [],
+        tasks: [],
+        stats: {
+          eventCount: 5,
+          toolCount: 0,
+          lastTurn: null,
+          remote: false,
+          model: "gpt-5-codex",
+        },
+        width: 120,
+      })
+      expect(model.summaryLine).toContain("cmd+b tasks")
+      expect(model.summaryLine).toContain("cmd+t todos")
+      expect(model.summaryLine).toContain("cmd+k model")
+    } finally {
+      if (previous == null) delete process.env.BREADBOARD_TUI_SHORTCUT_PLATFORM
+      else process.env.BREADBOARD_TUI_SHORTCUT_PLATFORM = previous
+    }
+  })
+
+  it("collapses non-critical idle hints under narrow widths", () => {
+    const model = buildFooterV2Model({
+      pendingResponse: false,
+      overlayActive: false,
+      overlayLabel: null,
+      keymap: "claude",
+      phaseLineState: { id: "ready", label: "ready", tone: "muted" },
+      spinner: "*",
+      pendingStartedAtMs: null,
+      lastDurationMs: null,
+      nowMs: 2_000,
+      todos: [],
+      tasks: [],
+      stats: {
+        eventCount: 5,
+        toolCount: 0,
+        lastTurn: null,
+        remote: false,
+        model: "gpt-5-codex",
+      },
+      width: 90,
+    })
+    expect(model.summaryLine).toContain("ctrl+b tasks")
+    expect(model.summaryLine).toContain("ctrl+t todos")
+    expect(model.summaryLine).toContain("ctrl+k model")
+    expect(model.summaryLine).toContain("?")
+    expect(model.summaryLine).not.toContain("/ commands")
+    expect(model.summaryLine).not.toContain("@ files")
+  })
+
+  it("drops overlay focus hints after overlay closes", () => {
+    const openModel = buildFooterV2Model({
+      pendingResponse: false,
+      overlayActive: true,
+      overlayLabel: "Tasks",
+      keymap: "claude",
+      phaseLineState: { id: "ready", label: "ready", tone: "muted" },
+      spinner: "*",
+      pendingStartedAtMs: null,
+      lastDurationMs: null,
+      nowMs: 2_000,
+      todos: [],
+      tasks: [],
+      stats: {
+        eventCount: 5,
+        toolCount: 0,
+        lastTurn: null,
+        remote: false,
+        model: "gpt-5-codex",
+      },
+      width: 120,
+    })
+    const closedModel = buildFooterV2Model({
+      pendingResponse: false,
+      overlayActive: false,
+      overlayLabel: "Tasks",
+      keymap: "claude",
+      phaseLineState: { id: "ready", label: "ready", tone: "muted" },
+      spinner: "*",
+      pendingStartedAtMs: null,
+      lastDurationMs: null,
+      nowMs: 2_000,
+      todos: [],
+      tasks: [],
+      stats: {
+        eventCount: 5,
+        toolCount: 0,
+        lastTurn: null,
+        remote: false,
+        model: "gpt-5-codex",
+      },
+      width: 120,
+    })
+
+    expect(openModel.summaryLine).toContain("FOCUS Tasks")
+    expect(openModel.summaryLine).toContain("esc close tasks")
+    expect(closedModel.summaryLine).not.toContain("FOCUS Tasks")
+    expect(closedModel.summaryLine).not.toContain("esc close tasks")
+  })
+
+  it("renders interrupted phase as error-severity runtime state", () => {
+    const model = buildFooterV2Model({
+      pendingResponse: false,
+      overlayActive: false,
+      overlayLabel: null,
+      keymap: "claude",
+      phaseLineState: { id: "interrupted", label: "interrupted", tone: "error" },
+      spinner: "*",
+      pendingStartedAtMs: null,
+      lastDurationMs: 1_900,
+      nowMs: 2_000,
+      todos: [],
+      tasks: [],
+      stats: {
+        eventCount: 5,
+        toolCount: 0,
+        lastTurn: null,
+        remote: false,
+        model: "gpt-5-codex",
+      },
+      width: 120,
+    })
+    expect(model.tone).toBe("error")
+    expect(model.phaseLine).toContain("[interrupted]")
+    expect(model.phaseLine).toContain("last 2s")
   })
 })

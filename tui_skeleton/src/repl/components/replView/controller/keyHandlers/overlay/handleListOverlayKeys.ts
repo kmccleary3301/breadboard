@@ -72,6 +72,11 @@ export const handleListOverlayKeys = (
     runConfirmAction,
   } = context
   const { char, key, lowerChar, isReturnKey, isTabKey, isCtrlT, isCtrlB, isCtrlY, isHomeKey, isEndKey } = info
+  const keyName = typeof (key as Record<string, unknown>).name === "string"
+    ? String((key as Record<string, unknown>).name).toLowerCase()
+    : ""
+  const isCtrlTKey = isCtrlT || char === "\u0014" || (key.ctrl && (lowerChar === "t" || keyName === "t"))
+  const isCtrlBKey = isCtrlB || char === "\u0002" || (key.ctrl && (lowerChar === "b" || keyName === "b"))
 
   if (todosOpen) {
     if (key.escape || char === "\u001b") {
@@ -80,7 +85,7 @@ export const handleListOverlayKeys = (
       }
       return true
     }
-    if (isCtrlT && keymap === "claude") {
+    if (isCtrlTKey && keymap === "claude") {
       if (typeof setTodosOpen === "function") {
         setTodosOpen(false)
       }
@@ -226,7 +231,7 @@ export const handleListOverlayKeys = (
         }
         return true
       }
-      if (isCtrlB) {
+      if (isCtrlBKey) {
         setTaskFocusViewOpen(false)
         if (typeof setTasksOpen === "function") {
           setTasksOpen(false)
@@ -310,7 +315,7 @@ export const handleListOverlayKeys = (
       }
       return true
     }
-    if (isCtrlB) {
+    if (isCtrlBKey) {
       if (typeof setTasksOpen === "function") {
         setTasksOpen(false)
       }

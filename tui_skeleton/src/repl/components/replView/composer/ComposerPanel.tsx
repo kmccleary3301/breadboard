@@ -6,6 +6,7 @@ import { CHALK, COLORS, GLYPHS, uiText, ASCII_ONLY, DASH_GLYPH } from "../theme.
 import { formatBytes, formatCell } from "../utils/format.js"
 import { highlightFuzzyLabel } from "../utils/text.js"
 import { RuntimePreviewStack } from "./RuntimePreviewStack.js"
+import { FooterV2 } from "./FooterV2.js"
 
 // Intentionally broad while the controller continues to own most state.
 type ComposerPanelContext = Record<string, any>
@@ -19,6 +20,7 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     pendingClaudeStatus,
     thinkingPreviewModel,
     runtimeStatusChips,
+    phaseLineState,
     todoPreviewModel,
     promptRule,
     composerPromptPrefix,
@@ -59,6 +61,17 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     activeSlashQuery,
     hintNodes,
     shortcutHintNodes,
+    footerV2Enabled,
+    keymap,
+    pendingResponse,
+    overlayLabel,
+    spinner,
+    pendingStartedAtMs,
+    lastDurationMs,
+    clockNowMs,
+    todos,
+    tasks,
+    stats,
   } = context
 
   if (claudeChrome && modelMenu.status !== "hidden") return null
@@ -73,7 +86,7 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     claudeChrome && input.length === 0 && attachments.length === 0 && fileMentions.length === 0
 
   const showClaudeShortcutHints =
-    claudeChrome && shortcutHintNodes.length > 0 && (!overlayActive || todosOpen || tasksOpen)
+    !footerV2Enabled && claudeChrome && shortcutHintNodes.length > 0 && (!overlayActive || todosOpen || tasksOpen)
 
   const replaceInputWithOverlay = claudeChrome && overlayActive
 
@@ -82,11 +95,11 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
       <RuntimePreviewStack
         claudeChrome={claudeChrome}
         overlayActive={overlayActive}
-        pendingClaudeStatus={pendingClaudeStatus ?? null}
+        pendingClaudeStatus={footerV2Enabled ? null : (pendingClaudeStatus ?? null)}
         thinkingPreviewModel={thinkingPreviewModel ?? null}
-        statusChips={runtimeStatusChips ?? []}
+        statusChips={footerV2Enabled ? [] : (runtimeStatusChips ?? [])}
         todoPreviewModel={todoPreviewModel ?? null}
-        hintNodes={!overlayActive ? hintNodes : []}
+        hintNodes={!overlayActive && !footerV2Enabled ? hintNodes : []}
       />
       {!replaceInputWithOverlay && claudeChrome && (
         composerShowTopRule ? (
@@ -313,7 +326,7 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
           {shortcutHintNodes}
         </Box>
       )}
-      {!overlayActive && !claudeChrome && hintNodes.length > 0 && (
+      {!overlayActive && !claudeChrome && !footerV2Enabled && hintNodes.length > 0 && (
         <Box marginTop={claudeChrome ? 0 : 1} flexDirection="column">
           {hintNodes}
         </Box>
@@ -345,6 +358,24 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
           <Text color={COLORS.warning}>Files are attached as context on submit; oversized files are truncated.</Text>
         </Box>
       )}
+      <FooterV2
+        enabled={Boolean(footerV2Enabled)}
+        input={{
+          pendingResponse: Boolean(pendingResponse),
+          overlayActive: Boolean(overlayActive),
+          keymap: String(keymap ?? ""),
+          phaseLineState: phaseLineState ?? null,
+          overlayLabel: typeof overlayLabel === "string" && overlayLabel.length > 0 ? overlayLabel : null,
+          spinner: String(spinner ?? ""),
+          pendingStartedAtMs: Number.isFinite(pendingStartedAtMs) ? Number(pendingStartedAtMs) : null,
+          lastDurationMs: Number.isFinite(lastDurationMs) ? Number(lastDurationMs) : null,
+          nowMs: Number.isFinite(clockNowMs) ? Number(clockNowMs) : Date.now(),
+          todos: Array.isArray(todos) ? todos : [],
+          tasks: Array.isArray(tasks) ? tasks : [],
+          stats,
+          width: ruleWidth,
+        }}
+      />
     </Box>
   )
 }

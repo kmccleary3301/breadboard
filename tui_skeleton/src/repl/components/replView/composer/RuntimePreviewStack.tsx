@@ -4,7 +4,7 @@ import type { TodoPreviewModel } from "./todoPreview.js"
 import { TodoPreviewWidget } from "./TodoPreviewWidget.js"
 import type { ThinkingPreviewModel } from "./thinkingPreview.js"
 import { ThinkingPreviewWidget } from "./ThinkingPreviewWidget.js"
-import { COLORS } from "../theme.js"
+import { CHALK, COLORS } from "../theme.js"
 
 export const RuntimePreviewStack: React.FC<{
   readonly claudeChrome: boolean
@@ -37,12 +37,12 @@ export const RuntimePreviewStack: React.FC<{
         <Box flexDirection="row">
           {statusChips.map((chip, index) => (
             <Text key={chip.id} color={colorForTone(chip.tone)} wrap="truncate">
-              {`${index > 0 ? " " : ""}[${chip.label}]`}
+              {`${index > 0 ? " " : ""}${CHALK.bold(`[${chip.label}]`)}`}
             </Text>
           ))}
         </Box>
       ) : null}
-      {pendingClaudeStatus ? <Text color="dim">{pendingClaudeStatus}</Text> : null}
+      {pendingClaudeStatus ? <Text color={COLORS.footerHint}>{pendingClaudeStatus}</Text> : null}
       {!overlayActive && thinkingPreviewModel ? <ThinkingPreviewWidget model={thinkingPreviewModel} /> : null}
       {!overlayActive && todoPreviewModel ? <TodoPreviewWidget model={todoPreviewModel} /> : null}
       {!overlayActive && hintNodes.length > 0 ? <Box flexDirection="column">{hintNodes}</Box> : null}

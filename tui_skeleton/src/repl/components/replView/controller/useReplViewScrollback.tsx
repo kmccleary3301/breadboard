@@ -135,6 +135,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     spinner,
     liveSlots,
     keymap,
+    footerV2Enabled,
     tuiConfig,
   } = context
   const subagentStripLifecycleRef = useRef(createSubagentStripLifecycleState())
@@ -243,8 +244,11 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     return glyph.repeat(contentWidth)
   }, [contentWidth, tuiConfig.composer.ruleCharacter])
   const pendingClaudeStatus = useMemo(
-    () => (claudeChrome && pendingResponse && tuiConfig.statusLine.showWhenPending ? tuiConfig.statusLine.activeText : null),
-    [claudeChrome, pendingResponse, tuiConfig.statusLine.activeText, tuiConfig.statusLine.showWhenPending],
+    () =>
+      !footerV2Enabled && claudeChrome && pendingResponse && tuiConfig.statusLine.showWhenPending
+        ? tuiConfig.statusLine.activeText
+        : null,
+    [claudeChrome, footerV2Enabled, pendingResponse, tuiConfig.statusLine.activeText, tuiConfig.statusLine.showWhenPending],
   )
   const networkBanner = useMemo(() => {
     if (disconnected) {
@@ -282,8 +286,9 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
   const headerReserveRows = useMemo(() => {
     if (SCROLLBACK_MODE) return 0
     if (screenReaderMode) return 0
+    if (footerV2Enabled) return 0
     return claudeChrome ? 0 : 3
-  }, [SCROLLBACK_MODE, claudeChrome, screenReaderMode])
+  }, [SCROLLBACK_MODE, claudeChrome, footerV2Enabled, screenReaderMode])
   const guardrailReserveRows = useMemo(() => {
     if (!guardrailNotice) return 0
     const expanded = Boolean(guardrailNotice.detail && guardrailNotice.expanded)
@@ -293,8 +298,9 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     const outerMargin = 1
     const promptLine = 1
     const promptRuleRows = claudeChrome ? 2 : 0
-    const pendingStatusRows = claudeChrome && pendingClaudeStatus ? 1 : 0
-    const statusChipRows = claudeChrome && Array.isArray(runtimeStatusChips) && runtimeStatusChips.length > 0 ? 1 : 0
+    const pendingStatusRows = !footerV2Enabled && claudeChrome && pendingClaudeStatus ? 1 : 0
+    const statusChipRows =
+      !footerV2Enabled && claudeChrome && Array.isArray(runtimeStatusChips) && runtimeStatusChips.length > 0 ? 1 : 0
     const suggestionRows = (() => {
       if (overlayActive) return 1
       if (filePickerActive) {
@@ -336,13 +342,16 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
         : 1
       : 0
     const claudeShortcutRows = claudeChrome ? (context.shortcutsOpen ? 6 : 1) : 0
-    const hintRows = overlayActive
+    const hintRows = footerV2Enabled
       ? 0
-      : claudeChrome
-        ? claudeStatusRows + claudeShortcutRows
-        : hintCount > 0
-          ? 1 + hintCount
-          : 0
+      : overlayActive
+        ? 0
+        : claudeChrome
+          ? claudeStatusRows + claudeShortcutRows
+          : hintCount > 0
+            ? 1 + hintCount
+            : 0
+    const footerRows = footerV2Enabled ? 3 : 0
     const todoPreviewRows =
       overlayActive ? 0 : getTodoPreviewRowCount(todoPreviewModel as TodoPreviewModel | null)
     const thinkingPreviewRows =
@@ -360,11 +369,13 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
       suggestionRows +
       hintRows +
       attachmentRows +
-      fileMentionRows
+      fileMentionRows +
+      footerRows
     )
   }, [
     attachments.length,
     claudeChrome,
+    footerV2Enabled,
     fileMentions.length,
     fileIndexMeta.status,
     fileIndexMeta.truncated,
@@ -772,6 +783,7 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     claudeChrome,
     screenReaderMode,
     screenReaderProfile,
+    footerV2Enabled,
     keymap,
     contentWidth,
     hints,

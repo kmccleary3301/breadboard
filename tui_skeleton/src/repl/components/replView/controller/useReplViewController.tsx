@@ -61,7 +61,7 @@ import type { TranscriptMatch } from "../types.js"
 import { useReplLayout } from "../layout/useReplLayout.js"
 import { formatIsoTimestamp } from "../utils/diff.js"
 import { stripAnsiCodes } from "../utils/ansi.js"
-import { computeInputLocked, computeOverlayActive } from "../keybindings/overlayState.js"
+import { getOverlayFocusLabel } from "../keybindings/overlayState.js"
 import { useReplKeyRouter } from "../keybindings/useReplKeyRouter.js"
 import { matchCtrl, runKeymap } from "../keybindings/keymaps.js"
 import { useModalController } from "../features/modals/useModalController.js"
@@ -100,11 +100,19 @@ import { buildTodoPreviewModel } from "../composer/todoPreview.js"
 import { buildThinkingPreviewModel } from "../composer/thinkingPreview.js"
 import { useTuiConfig } from "../../../../tui_config/context.js"
 import { formatConfiguredCompletionLine } from "../../../../tui_config/load.js"
+import { useUIClock } from "../../../clock/context.js"
 import {
   buildTaskFocusCadenceRequest,
   deriveTaskFocusCadencePlan,
   type TaskFocusCadenceState,
 } from "./taskFocusCadence.js"
+import {
+  DEFAULT_STATUS_CHIP_HYSTERESIS_MS,
+  mapRuntimePhaseLineState,
+  mapActivityToRuntimeChip,
+  resolveRuntimeStatusChipTransition,
+  type RuntimeStatusChip,
+} from "./runtimeStatusChip.js"
 
 const META_LINE_COUNT = 2
 const COMPOSER_MIN_ROWS = 6
@@ -115,8 +123,6 @@ const TOOL_LABEL_WIDTH = 12
 const LABEL_WIDTH = 9
 const DEFAULT_TASK_FOCUS_TAIL_LINES = 24
 const DEFAULT_TASK_FOCUS_REFRESH_MS = 1500
-const DEFAULT_STATUS_CHIP_HYSTERESIS_MS = 240
-
 type TaskboardSessionPrefs = {
   readonly statusFilter: "all" | "running" | "blocked" | "completed" | "failed" | "cancelled" | "pending"
   readonly groupMode: "status" | "lane"
@@ -162,47 +168,6 @@ const resolveScreenReaderProfile = (): ScreenReaderProfile => {
   if (raw === "concise" || raw === "minimal" || raw === "compact") return "concise"
   if (raw === "verbose" || raw === "detailed" || raw === "full") return "verbose"
   return "balanced"
-}
-
-type RuntimeStatusChip = {
-  readonly id: string
-  readonly label: string
-  readonly tone: "info" | "success" | "warning" | "error"
-  readonly priority: number
-  readonly updatedAt: number
-}
-
-const mapActivityToRuntimeChip = (
-  activity: ActivitySnapshot | undefined,
-  pendingResponse: boolean,
-  disconnected: boolean,
-): RuntimeStatusChip | null => {
-  if (disconnected) {
-    return { id: "disconnected", label: "disconnected", tone: "error", priority: 100, updatedAt: Date.now() }
-  }
-  const primary = activity?.primary ?? (pendingResponse ? "thinking" : "idle")
-  switch (primary) {
-    case "tool_call":
-      return { id: "tool", label: "tool", tone: "warning", priority: 70, updatedAt: Date.now() }
-    case "permission_required":
-      return { id: "permission", label: "permission", tone: "warning", priority: 80, updatedAt: Date.now() }
-    case "error":
-      return { id: "error", label: "error", tone: "error", priority: 95, updatedAt: Date.now() }
-    case "completed":
-      return { id: "done", label: "done", tone: "success", priority: 90, updatedAt: Date.now() }
-    case "responding":
-      return { id: "responding", label: "responding", tone: "info", priority: 65, updatedAt: Date.now() }
-    case "thinking":
-      return { id: "thinking", label: "thinking", tone: "info", priority: 60, updatedAt: Date.now() }
-    case "run":
-      return { id: "run", label: "run", tone: "info", priority: 55, updatedAt: Date.now() }
-    case "reconnecting":
-      return { id: "reconnecting", label: "reconnecting", tone: "warning", priority: 85, updatedAt: Date.now() }
-    default:
-      return pendingResponse
-        ? { id: "thinking", label: "thinking", tone: "info", priority: 60, updatedAt: Date.now() }
-        : null
-  }
 }
 
 export const useReplViewController = ({
@@ -265,10 +230,12 @@ export const useReplViewController = ({
   onCtreeRequest,
   onCtreeRefresh,
 }: ReplViewProps) => {
+  const clock = useUIClock()
   const tuiConfig = useTuiConfig()
   const SCROLLBACK_MODE = useMemo(() => resolveScrollbackMode(), [])
   const SCREEN_READER_MODE = useMemo(() => resolveScreenReaderMode(), [])
   const SCREEN_READER_PROFILE = useMemo(() => resolveScreenReaderProfile(), [])
+  const FOOTER_V2_ENABLED = useMemo(() => parseBoolEnv(process.env.BREADBOARD_TUI_FOOTER_V2, true), [])
   const collapsedEntriesRef = useRef(new Map<string, boolean>())
   const [collapsedVersion, setCollapsedVersion] = useState(0)
   const [selectedCollapsibleEntryId, setSelectedCollapsibleEntryId] = useState<string | null>(null)
@@ -483,17 +450,20 @@ export const useReplViewController = ({
   }, [inspectMenu.status])
   useEffect(() => {
     if (pendingResponse) {
-      if (pendingStartedAtRef.current == null) {
-        pendingStartedAtRef.current = Date.now()
-      }
+      const startedAt = pendingStartedAtRef.current ?? clock.now()
+      pendingStartedAtRef.current = startedAt
+      setPendingStartedAt(startedAt)
       return
     }
     if (pendingStartedAtRef.current != null) {
-      const duration = Date.now() - pendingStartedAtRef.current
+      const duration = clock.now() - pendingStartedAtRef.current
       pendingStartedAtRef.current = null
+      setPendingStartedAt(null)
       setLastDurationMs(duration)
+      return
     }
-  }, [pendingResponse])
+    setPendingStartedAt(null)
+  }, [clock, pendingResponse])
   const inspectRawViewportRows = useMemo(() => Math.max(10, Math.min(24, Math.floor(rowCount * 0.6))), [rowCount])
   const panels = useReplViewPanels({
     inspectRawOpen,
@@ -652,6 +622,7 @@ export const useReplViewController = ({
     formatCTreeNodeFlags,
     requestTaskTail,
   } = panels
+  const overlayFocusLabel = useMemo(() => getOverlayFocusLabel(overlayFlags), [overlayFlags])
 
   const todoPreviewModel = useMemo(() => {
     if (!claudeChrome) return null
@@ -702,13 +673,13 @@ export const useReplViewController = ({
   }, [claudeChrome, contentWidth, overlayActive, runtimeFlags, thinkingArtifact, thinkingPreview])
 
   const runtimeStatusChipTarget = useMemo(
-    () => mapActivityToRuntimeChip(activity as ActivitySnapshot | undefined, pendingResponse, disconnected),
-    [activity, pendingResponse, disconnected],
+    () => mapActivityToRuntimeChip(activity as ActivitySnapshot | undefined, pendingResponse, disconnected, clock.now()),
+    [activity, clock, pendingResponse, disconnected],
   )
 
   useEffect(() => {
     if (runtimeStatusChipTimerRef.current) {
-      clearTimeout(runtimeStatusChipTimerRef.current)
+      clock.clearTimeout(runtimeStatusChipTimerRef.current)
       runtimeStatusChipTimerRef.current = null
     }
     if (!runtimeStatusChipTarget) {
@@ -735,27 +706,31 @@ export const useReplViewController = ({
       DEFAULT_STATUS_CHIP_HYSTERESIS_MS,
       Number(runtimeFlags?.statusUpdateMs ?? DEFAULT_STATUS_CHIP_HYSTERESIS_MS),
     )
-    const elapsed = Math.max(0, Date.now() - runtimeStatusChip.updatedAt)
-    const sameOrHigherPriority = runtimeStatusChipTarget.priority >= runtimeStatusChip.priority
-    if (elapsed >= hysteresisMs || sameOrHigherPriority) {
-      setRuntimeStatusChip(runtimeStatusChipTarget)
+    const transition = resolveRuntimeStatusChipTransition({
+      current: runtimeStatusChip,
+      target: runtimeStatusChipTarget,
+      nowMs: clock.now(),
+      hysteresisMs,
+    })
+    if (transition.kind === "noop") return
+    if (transition.kind === "set") {
+      setRuntimeStatusChip(transition.chip)
       return
     }
-    const remaining = Math.max(0, hysteresisMs - elapsed)
-    runtimeStatusChipTimerRef.current = setTimeout(() => {
-      setRuntimeStatusChip(runtimeStatusChipTarget)
+    runtimeStatusChipTimerRef.current = clock.setTimeout(() => {
+      setRuntimeStatusChip(transition.chip)
       runtimeStatusChipTimerRef.current = null
-    }, remaining)
-  }, [runtimeFlags?.statusUpdateMs, runtimeStatusChip, runtimeStatusChipTarget])
+    }, transition.delayMs)
+  }, [clock, runtimeFlags?.statusUpdateMs, runtimeStatusChip, runtimeStatusChipTarget])
 
   useEffect(() => {
     return () => {
       if (runtimeStatusChipTimerRef.current) {
-        clearTimeout(runtimeStatusChipTimerRef.current)
+        clock.clearTimeout(runtimeStatusChipTimerRef.current)
         runtimeStatusChipTimerRef.current = null
       }
     }
-  }, [])
+  }, [clock])
 
   const runtimeStatusChips = useMemo(
     () =>
@@ -763,6 +738,17 @@ export const useReplViewController = ({
         ? [{ id: runtimeStatusChip.id, label: runtimeStatusChip.label, tone: runtimeStatusChip.tone }]
         : [],
     [runtimeStatusChip],
+  )
+
+  const phaseLineState = useMemo(
+    () =>
+      mapRuntimePhaseLineState({
+        disconnected,
+        pendingResponse,
+        status,
+        runtimeStatusChip,
+      }),
+    [disconnected, pendingResponse, runtimeStatusChip, status],
   )
 
   useEffect(() => {
@@ -1268,6 +1254,7 @@ export const useReplViewController = ({
     spinner,
     liveSlots,
     keymap,
+    footerV2Enabled: FOOTER_V2_ENABLED,
     sessionId,
     viewClearAt,
     verboseOutput,
@@ -1360,15 +1347,29 @@ export const useReplViewController = ({
     suggestions, suggestionWindow, suggestionPrefix, suggestionLayout,
     buildSuggestionLines, suggestIndex, activeSlashQuery, hintNodes, shortcutHintNodes,
     runtimeStatusChips,
+    phaseLineState,
     composerPromptPrefix: tuiConfig.composer.promptPrefix,
     composerPlaceholderClassic: tuiConfig.composer.placeholderClassic,
     composerPlaceholderClaude: tuiConfig.composer.placeholderClaude,
     composerShowTopRule: tuiConfig.composer.showTopRule,
     composerShowBottomRule: tuiConfig.composer.showBottomRule,
+    footerV2Enabled: FOOTER_V2_ENABLED,
+    keymap,
+    pendingResponse,
+    disconnected,
+    status,
+    overlayLabel: overlayFocusLabel,
+    spinner,
+    pendingStartedAtMs: pendingStartedAt,
+    lastDurationMs,
+    clockNowMs: clock.now(),
+    tasks,
+    stats,
   }
   const baseContent = (
     <ReplViewBaseContent
       claudeChrome={claudeChrome}
+      footerV2Enabled={FOOTER_V2_ENABLED}
       scrollbackMode={SCROLLBACK_MODE}
       sessionId={sessionId}
       statusGlyph={statusGlyph}
@@ -1425,11 +1426,11 @@ export const useReplViewController = ({
     if (cadencePlan.immediate) {
       void requestTaskTail(buildTaskFocusCadenceRequest(nextCadence))
     }
-    const interval = setInterval(() => {
+    const interval = clock.setInterval(() => {
       void requestTaskTail(buildTaskFocusCadenceRequest(nextCadence))
     }, taskFocusRefreshMs)
-    return () => clearInterval(interval)
-  }, [requestTaskTail, selectedTask, taskFocusFollowTail, taskFocusRawMode, taskFocusTailLines, taskFocusViewOpen, taskFocusRefreshMs, tasksOpen])
+    return () => clock.clearInterval(interval)
+  }, [clock, requestTaskTail, selectedTask, taskFocusFollowTail, taskFocusRawMode, taskFocusTailLines, taskFocusViewOpen, taskFocusRefreshMs, tasksOpen])
 
   const modalStack = useReplViewModalStack({
     confirmState,

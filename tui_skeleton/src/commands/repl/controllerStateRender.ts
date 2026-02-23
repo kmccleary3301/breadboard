@@ -355,10 +355,12 @@ export function upsertLiveSlot(
     existing.summary === summary
   )
     return
-  const entry: LiveSlotEntry = { id, text, color, status, updatedAt: Date.now(), summary }
+  const now = this.clock?.now?.() ?? Date.now()
+  const entry: LiveSlotEntry = { id, text, color, status, updatedAt: now, summary }
   this.liveSlots.set(id, entry)
   if (stickyMs && stickyMs > 0) {
-    const timer = setTimeout(() => {
+    const schedule = this.clock?.setTimeout?.bind(this.clock) ?? setTimeout
+    const timer = schedule(() => {
       const current = this.liveSlots.get(id)
       if (current && current.updatedAt === entry.updatedAt) {
         this.removeLiveSlot(id)
@@ -386,7 +388,8 @@ export function finalizeLiveSlot(
 export function clearLiveSlotTimer(this: any, id: string): void {
   const timer = this.liveSlotTimers.get(id)
   if (timer) {
-    clearTimeout(timer)
+    const clear = this.clock?.clearTimeout?.bind(this.clock) ?? clearTimeout
+    clear(timer)
     this.liveSlotTimers.delete(id)
   }
 }
@@ -399,11 +402,12 @@ export function removeLiveSlot(this: any, id: string): void {
 }
 
 export function setGuardrailNotice(this: any, summary: string, detail?: string): void {
+  const now = this.clock?.now?.() ?? Date.now()
   this.guardrailNotice = {
-    id: `guard-${Date.now().toString(36)}`,
+    id: `guard-${now.toString(36)}`,
     summary,
     detail,
-    timestamp: Date.now(),
+    timestamp: now,
     expanded: false,
   }
   if (!this.eventsScheduled) this.emitChange()

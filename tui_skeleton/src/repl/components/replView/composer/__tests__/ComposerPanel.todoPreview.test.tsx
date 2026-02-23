@@ -57,6 +57,7 @@ const buildContext = (overrides: Record<string, unknown> = {}) => ({
   footerV2Enabled: false,
   keymap: "claude",
   pendingResponse: false,
+  phaseLineState: { id: "ready", label: "ready", tone: "muted" },
   disconnected: false,
   status: "ready",
   overlayLabel: null,
@@ -118,7 +119,7 @@ describe("ComposerPanel todo preview", () => {
     await flush()
     const frame = lastFrame() ?? ""
     expect(frame).toContain("[thinking]")
-    expect(frame).toContain("[task tree] thinking")
+    expect(frame).toContain("[task tree] starting")
     expect(frame).toContain("map tasks")
   })
 
@@ -128,6 +129,7 @@ describe("ComposerPanel todo preview", () => {
         context={buildContext({
           footerV2Enabled: true,
           runtimeStatusChips: [{ id: "responding", label: "responding", tone: "info" }],
+          phaseLineState: { id: "responding", label: "responding", tone: "info" },
         })}
       />,
     )

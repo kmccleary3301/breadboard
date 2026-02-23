@@ -4,6 +4,7 @@ export type ThinkingPreviewModel = {
   readonly headerLine: string
   readonly lines: ReadonlyArray<string>
   readonly lifecycle: "open" | "updating" | "closed"
+  readonly phase: "starting" | "responding" | "done"
   readonly frameWidth: number | null
 }
 
@@ -42,12 +43,18 @@ export const buildThinkingPreviewModel = (
       return null
     }
     if (!preview.lines || preview.lines.length === 0) return null
-    const status = preview.lifecycle === "closed" ? "done" : "thinking"
-    const headerLine = `[task tree] ${status} · ${preview.eventCount} update${preview.eventCount === 1 ? "" : "s"}`
+    const phase =
+      preview.lifecycle === "closed"
+        ? "done"
+        : preview.lifecycle === "updating"
+          ? "responding"
+          : "starting"
+    const headerLine = `[task tree] ${phase} · ${preview.eventCount} update${preview.eventCount === 1 ? "" : "s"}`
     return {
       headerLine,
       lines: preview.lines.slice(-maxLines),
       lifecycle: preview.lifecycle,
+      phase,
       frameWidth,
     }
   }
@@ -57,11 +64,12 @@ export const buildThinkingPreviewModel = (
   }
   const lines = linesFromText(artifact.summary, maxLines)
   if (lines.length === 0) return null
-  const status = artifact.finalizedAt ? "done" : "thinking"
+  const phase = artifact.finalizedAt ? "done" : "responding"
   return {
-    headerLine: `[task tree] ${status}`,
+    headerLine: `[task tree] ${phase}`,
     lines,
     lifecycle: artifact.finalizedAt ? "closed" : "open",
+    phase,
     frameWidth,
   }
 }

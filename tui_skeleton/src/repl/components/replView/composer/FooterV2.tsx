@@ -4,12 +4,7 @@ import type { StreamStats, TaskEntry, TodoItem } from "../../../types.js"
 import { CHALK, COLORS, DOT_SEPARATOR, uiText } from "../theme.js"
 import { formatDuration, formatTokenCount, truncateLine } from "../utils/format.js"
 import { stripAnsiCodes } from "../utils/ansi.js"
-
-type RuntimeStatusChip = {
-  readonly id: string
-  readonly label: string
-  readonly tone: "info" | "success" | "warning" | "error"
-}
+import type { PhaseLineState } from "../controller/runtimeStatusChip.js"
 
 type FooterV2Tone = "info" | "success" | "warning" | "error" | "muted"
 
@@ -19,14 +14,23 @@ export type FooterV2Model = {
   readonly tone: FooterV2Tone
 }
 
+type ControlDeckItem = {
+  readonly id: string
+  readonly label: string
+}
+
+type ControlDeckState = {
+  readonly hints: ReadonlyArray<ControlDeckItem>
+  readonly stats: ReadonlyArray<ControlDeckItem>
+  readonly focusLabel: string | null
+}
+
 type FooterV2Input = {
   readonly pendingResponse: boolean
-  readonly disconnected: boolean
   readonly overlayActive: boolean
   readonly overlayLabel: string | null
   readonly keymap: string
-  readonly status: string
-  readonly runtimeStatusChips: ReadonlyArray<RuntimeStatusChip>
+  readonly phaseLineState: PhaseLineState | null
   readonly spinner: string
   readonly pendingStartedAtMs: number | null
   readonly lastDurationMs: number | null
@@ -35,28 +39,6 @@ type FooterV2Input = {
   readonly tasks: ReadonlyArray<TaskEntry>
   readonly stats: StreamStats
   readonly width: number
-}
-
-const CANONICAL_CHIP_LABELS: Record<string, { label: string; tone: FooterV2Tone }> = {
-  disconnected: { label: "disconnected", tone: "error" },
-  error: { label: "error", tone: "error" },
-  halted: { label: "halted", tone: "error" },
-  permission: { label: "permission", tone: "warning" },
-  reconnecting: { label: "reconnecting", tone: "warning" },
-  tool: { label: "tool", tone: "warning" },
-  done: { label: "done", tone: "success" },
-  responding: { label: "responding", tone: "info" },
-  thinking: { label: "thinking", tone: "info" },
-  run: { label: "run", tone: "info" },
-}
-
-const normalizePhaseLabel = (raw: string): string => {
-  const normalized = raw
-    .trim()
-    .toLowerCase()
-    .replace(/[.\u2026]+$/g, "")
-    .replace(/\s+/g, " ")
-  return normalized
 }
 
 const normalizeTaskStatus = (raw: string | null | undefined): "running" | "failed" | "blocked" | "completed" | "pending" => {
@@ -75,38 +57,51 @@ const isTodoIncomplete = (status: string | null | undefined): boolean => {
   return !["done", "completed", "complete", "canceled", "cancelled", "closed"].includes(normalized)
 }
 
-const phaseLabelFromState = (input: FooterV2Input): { label: string; tone: FooterV2Tone } => {
-  if (input.disconnected) return { label: "disconnected", tone: "error" }
-  const chip = input.runtimeStatusChips[0]
-  if (chip) {
-    const byId = CANONICAL_CHIP_LABELS[String(chip.id ?? "").trim().toLowerCase()]
-    if (byId) return byId
-    const normalized = normalizePhaseLabel(String(chip.label ?? ""))
-    if (normalized) return { label: normalized, tone: chip.tone }
-  }
-  if (input.pendingResponse) return { label: "thinking", tone: "info" }
-  const status = normalizePhaseLabel(input.status)
-  if (!status || status === "ready" || status === "idle") return { label: "ready", tone: "muted" }
-  if (status.includes("reconnect")) return { label: "reconnecting", tone: "warning" }
-  if (status.includes("error") || status.includes("fail")) return { label: "error", tone: "error" }
-  if (status.includes("halt") || status.includes("interrupt")) return { label: "halted", tone: "error" }
-  if (status.includes("finish") || status.includes("complete") || status.includes("done")) return { label: "done", tone: "success" }
-  if (status.includes("respond")) return { label: "responding", tone: "info" }
-  if (status.includes("think")) return { label: "thinking", tone: "info" }
-  if (status.includes("start") || status.includes("launch") || status.includes("init")) return { label: "starting", tone: "info" }
-  return { label: status, tone: "info" }
+const resolveShortcutControlPrefix = (): "ctrl" | "cmd" => {
+  const raw = String(process.env.BREADBOARD_TUI_SHORTCUT_PLATFORM ?? process.platform).trim().toLowerCase()
+  if (["darwin", "mac", "macos", "osx"].includes(raw)) return "cmd"
+  return "ctrl"
 }
 
-const buildKeyHints = (input: FooterV2Input): string => {
+const normalizeShortcutLabel = (value: string): string =>
+  value.replace(/\bctrl\+/g, `${resolveShortcutControlPrefix()}+`)
+
+const buildKeyHintItems = (input: FooterV2Input): ReadonlyArray<ControlDeckItem> => {
+  const compactShortcuts = Math.max(24, Math.floor(input.width)) < 120
   const todoHint = input.keymap === "claude" ? "ctrl+t todos" : "ctrl+t transcript"
   if (input.overlayActive) {
     const closeTarget = String(input.overlayLabel ?? "overlay").trim().toLowerCase()
-    return uiText([`esc close ${closeTarget}`, "↑/↓ navigate", "enter select", "? shortcuts"].join(DOT_SEPARATOR))
+    return [
+      { id: "close", label: uiText(`esc close ${closeTarget}`) },
+      { id: "navigate", label: "↑/↓ navigate" },
+      { id: "select", label: "enter select" },
+      { id: "shortcuts", label: "? shortcuts" },
+    ]
   }
   if (input.pendingResponse) {
-    return uiText(["esc interrupt", "ctrl+b tasks", todoHint, "? shortcuts"].join(DOT_SEPARATOR))
+    return [
+      { id: "interrupt", label: "esc interrupt" },
+      { id: "tasks", label: normalizeShortcutLabel("ctrl+b tasks") },
+      { id: "todo", label: normalizeShortcutLabel(todoHint) },
+      { id: "shortcuts", label: "? shortcuts" },
+    ]
   }
-  return uiText(["/ commands", "@ files", "ctrl+b tasks", todoHint, "ctrl+k model", "? shortcuts"].join(DOT_SEPARATOR))
+  if (compactShortcuts) {
+    return [
+      { id: "tasks", label: normalizeShortcutLabel("ctrl+b tasks") },
+      { id: "todo", label: normalizeShortcutLabel(todoHint) },
+      { id: "model", label: normalizeShortcutLabel("ctrl+k model") },
+      { id: "shortcuts", label: "? shortcuts" },
+    ]
+  }
+  return [
+    { id: "commands", label: "/ commands" },
+    { id: "files", label: "@ files" },
+    { id: "tasks", label: normalizeShortcutLabel("ctrl+b tasks") },
+    { id: "todo", label: normalizeShortcutLabel(todoHint) },
+    { id: "model", label: normalizeShortcutLabel("ctrl+k model") },
+    { id: "shortcuts", label: "? shortcuts" },
+  ]
 }
 
 const toneToColor = (tone: FooterV2Tone): string => {
@@ -150,19 +145,24 @@ const compactModelLabel = (rawModel: string): string => {
   return tail.length <= 18 ? tail : `${tail.slice(0, 15)}...`
 }
 
-const buildStatsParts = (input: FooterV2Input, todoPending: number, runningTasks: number, failedTasks: number): string[] => {
+const buildStatsItems = (
+  input: FooterV2Input,
+  todoPending: number,
+  runningTasks: number,
+  failedTasks: number,
+): ReadonlyArray<ControlDeckItem> => {
   const safeWidth = Math.max(24, Math.floor(input.width))
   const modelLabel = compactModelLabel(input.stats.model)
   const networkLabel = input.stats.remote ? "remote" : "local"
   const opsParts = [`r${runningTasks}`, `f${failedTasks}`, `e${formatTokenCount(input.stats.eventCount)}`]
   if (input.stats.toolCount > 0) opsParts.push(`t${formatTokenCount(input.stats.toolCount)}`)
-  const statsParts: string[] = []
+  const statsItems: ControlDeckItem[] = []
 
   // Keep a compact but always-present session identity.
-  statsParts.push(`mdl ${modelLabel}`)
-  if (safeWidth >= 120) statsParts.push(`net ${networkLabel}`)
-  statsParts.push(`todo ${todoPending}/${input.todos.length}`)
-  statsParts.push(`ops ${opsParts.join("/")}`)
+  statsItems.push({ id: "model", label: `mdl ${modelLabel}` })
+  if (safeWidth >= 120) statsItems.push({ id: "network", label: `net ${networkLabel}` })
+  statsItems.push({ id: "todo", label: `todo ${todoPending}/${input.todos.length}` })
+  statsItems.push({ id: "ops", label: `ops ${opsParts.join("/")}` })
 
   if (
     input.pendingResponse &&
@@ -170,18 +170,37 @@ const buildStatsParts = (input: FooterV2Input, todoPending: number, runningTasks
     Number.isFinite(input.stats.usage.totalTokens) &&
     safeWidth >= 136
   ) {
-    statsParts.push(`tok ${formatTokenCount(input.stats.usage.totalTokens)}`)
+    statsItems.push({ id: "tokens", label: `tok ${formatTokenCount(input.stats.usage.totalTokens)}` })
   }
 
   // Aggressively compact under narrow widths to reduce low-value noise.
   if (safeWidth < 96) {
-    return [`mdl ${modelLabel}`, `todo ${todoPending}/${input.todos.length}`, `ops ${opsParts.join("/")}`]
+    return [
+      { id: "model", label: `mdl ${modelLabel}` },
+      { id: "todo", label: `todo ${todoPending}/${input.todos.length}` },
+      { id: "ops", label: `ops ${opsParts.join("/")}` },
+    ]
   }
-  return statsParts
+  return statsItems
+}
+
+const buildControlDeckState = (
+  input: FooterV2Input,
+  todoPending: number,
+  runningTasks: number,
+  failedTasks: number,
+): ControlDeckState => {
+  const focusLabel =
+    input.overlayActive ? String(input.overlayLabel ?? "Overlay").trim() || "Overlay" : null
+  return {
+    hints: buildKeyHintItems(input),
+    stats: buildStatsItems(input, todoPending, runningTasks, failedTasks),
+    focusLabel,
+  }
 }
 
 export const buildFooterV2Model = (input: FooterV2Input): FooterV2Model => {
-  const phase = phaseLabelFromState(input)
+  const phase = input.phaseLineState ?? { id: "ready", label: "ready", tone: "muted" as const }
   const elapsedLabel = (() => {
     if (input.pendingResponse && Number.isFinite(input.pendingStartedAtMs as number)) {
       const startedAt = Number(input.pendingStartedAtMs)
@@ -215,14 +234,11 @@ export const buildFooterV2Model = (input: FooterV2Input): FooterV2Model => {
     if (status === "running") runningTasks += 1
     if (status === "failed") failedTasks += 1
   }
-  const statsParts = buildStatsParts(input, todoPending, runningTasks, failedTasks)
-  const hintLine = buildKeyHints(input)
-  const focusBadge =
-    input.overlayActive
-      ? CHALK.hex(COLORS.info)(`FOCUS ${String(input.overlayLabel ?? "Overlay").trim() || "Overlay"}`)
-      : null
+  const controlDeck = buildControlDeckState(input, todoPending, runningTasks, failedTasks)
+  const hintLine = uiText(controlDeck.hints.map((item) => item.label).join(DOT_SEPARATOR))
+  const focusBadge = controlDeck.focusLabel ? CHALK.hex(COLORS.info)(`FOCUS ${controlDeck.focusLabel}`) : null
   const hintWithFocus = CHALK.hex(COLORS.footerHint)(focusBadge ? `${focusBadge}${DOT_SEPARATOR}${hintLine}` : hintLine)
-  const statsLine = CHALK.hex(COLORS.footerMeta)(statsParts.join(DOT_SEPARATOR))
+  const statsLine = CHALK.hex(COLORS.footerMeta)(controlDeck.stats.map((item) => item.label).join(DOT_SEPARATOR))
   const summaryLine = alignSummaryLine(hintWithFocus, statsLine, input.width, {
     prioritizeLeft: input.overlayActive,
   })

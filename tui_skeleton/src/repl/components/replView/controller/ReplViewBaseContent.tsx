@@ -13,6 +13,7 @@ type NetworkBanner = {
 
 type ReplViewBaseContentProps = {
   claudeChrome: boolean
+  footerV2Enabled: boolean
   scrollbackMode: boolean
   sessionId: string
   statusGlyph: string
@@ -43,6 +44,7 @@ type ReplViewBaseContentProps = {
 
 export const ReplViewBaseContent: React.FC<ReplViewBaseContentProps> = ({
   claudeChrome,
+  footerV2Enabled,
   scrollbackMode,
   sessionId,
   statusGlyph,
@@ -69,38 +71,40 @@ export const ReplViewBaseContent: React.FC<ReplViewBaseContentProps> = ({
   collapsedHintNode,
   virtualizationHintNode,
   composerPanelContext,
-}) => (
-  <Box flexDirection="column" paddingX={claudeChrome ? 0 : 1} marginTop={scrollbackMode ? 0 : 1}>
-    {!claudeChrome && (
-      <Text>
-        {CHALK.dim(sessionId.slice(0, 12))} {statusGlyph} {status} {modelGlyph} model {CHALK.bold(stats.model)}{" "}
-        {remoteGlyph} {stats.remote ? "remote" : "local"} {eventsGlyph} events {stats.eventCount} {toolsGlyph} tools{" "}
-        {stats.toolCount} {modeBadge} {permissionBadge}
-        {stats.lastTurn != null ? ` ${turnGlyph} turn ${stats.lastTurn}` : ""}
-        {usageSummary ? ` ${CHALK.dim(usageSummary)}` : ""}
-      </Text>
-    )}
-    {metaNodes.length > 0 && (
-      <Box flexDirection="column" marginTop={1}>
-        {metaNodes}
-      </Box>
-    )}
-    {guardrailNotice && <GuardrailBanner notice={guardrailNotice} />}
-    {networkBanner && (
-      <Box
-        flexDirection="column"
-        borderStyle="round"
-        borderColor={networkBanner.tone === "error" ? COLORS.error : COLORS.warning}
-        paddingX={2}
-        paddingY={1}
-        marginTop={1}
-      >
-        <Text color={networkBanner.tone === "error" ? COLORS.error : COLORS.warning}>
-          {CHALK.bold(`${networkBanner.label}:`)} {networkBanner.message}
+}) => {
+  const bodyMarginTop = scrollbackMode ? 0 : claudeChrome || footerV2Enabled ? 0 : 1
+  return (
+    <Box flexDirection="column" paddingX={claudeChrome ? 0 : 1} marginTop={bodyMarginTop}>
+      {!claudeChrome && !footerV2Enabled && (
+        <Text>
+          {CHALK.dim(sessionId.slice(0, 12))} {statusGlyph} {status} {modelGlyph} model {CHALK.bold(stats.model)}{" "}
+          {remoteGlyph} {stats.remote ? "remote" : "local"} {eventsGlyph} events {stats.eventCount} {toolsGlyph} tools{" "}
+          {stats.toolCount} {modeBadge} {permissionBadge}
+          {stats.lastTurn != null ? ` ${turnGlyph} turn ${stats.lastTurn}` : ""}
+          {usageSummary ? ` ${CHALK.dim(usageSummary)}` : ""}
         </Text>
-        <Text color="gray">If this persists, retry the command or restart the session.</Text>
-      </Box>
-    )}
+      )}
+      {metaNodes.length > 0 && (
+        <Box flexDirection="column" marginTop={1}>
+          {metaNodes}
+        </Box>
+      )}
+      {guardrailNotice && <GuardrailBanner notice={guardrailNotice} />}
+      {networkBanner && (
+        <Box
+          flexDirection="column"
+          borderStyle="round"
+          borderColor={networkBanner.tone === "error" ? COLORS.error : COLORS.warning}
+          paddingX={2}
+          paddingY={1}
+          marginTop={1}
+        >
+          <Text color={networkBanner.tone === "error" ? COLORS.error : COLORS.warning}>
+            {CHALK.bold(`${networkBanner.label}:`)} {networkBanner.message}
+          </Text>
+          <Text color="gray">If this persists, retry the command or restart the session.</Text>
+        </Box>
+      )}
 
     <Box flexDirection="column" marginTop={claudeChrome ? 0 : 1}>
       {showLandingInline && landingNode}
@@ -126,6 +130,7 @@ export const ReplViewBaseContent: React.FC<ReplViewBaseContentProps> = ({
       )}
     </Box>
 
-    <ComposerPanel context={composerPanelContext} />
-  </Box>
-)
+      <ComposerPanel context={composerPanelContext} />
+    </Box>
+  )
+}

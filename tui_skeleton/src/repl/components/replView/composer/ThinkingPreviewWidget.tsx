@@ -5,9 +5,9 @@ import type { ThinkingPreviewModel } from "./thinkingPreview.js"
 
 export const ThinkingPreviewWidget: React.FC<{ model: ThinkingPreviewModel }> = ({ model }) => {
   if (!model.lines || model.lines.length === 0) return null
-  const borderColor =
-    model.lifecycle === "closed" ? COLORS.textMuted : COLORS.info
-  const lineColor = model.lifecycle === "closed" ? COLORS.textMuted : COLORS.textBright
+  const borderColor = model.phase === "done" ? COLORS.success : model.phase === "starting" ? COLORS.warning : COLORS.info
+  const headerColor = model.phase === "done" ? COLORS.success : COLORS.textMuted
+  const lineColor = model.phase === "done" ? COLORS.textMuted : COLORS.textBright
   return (
     <Box
       flexDirection="column"
@@ -16,7 +16,7 @@ export const ThinkingPreviewWidget: React.FC<{ model: ThinkingPreviewModel }> = 
       paddingX={1}
       width={model.frameWidth ?? undefined}
     >
-      <Text color={COLORS.textMuted} wrap="truncate">
+      <Text color={headerColor} wrap="truncate">
         {model.headerLine}
       </Text>
       {model.lines.map((line, index) => (
@@ -27,4 +27,3 @@ export const ThinkingPreviewWidget: React.FC<{ model: ThinkingPreviewModel }> = 
     </Box>
   )
 }
-

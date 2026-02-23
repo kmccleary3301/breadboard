@@ -8,6 +8,7 @@ import { stripAnsiCodes } from "../utils/ansi.js"
 
 type RenderNodesContext = {
   claudeChrome: boolean
+  footerV2Enabled?: boolean
   screenReaderMode?: boolean
   screenReaderProfile?: "concise" | "balanced" | "verbose"
   keymap: string
@@ -35,6 +36,7 @@ type RenderNodesContext = {
 export const useReplViewRenderNodes = (context: RenderNodesContext) => {
   const {
     claudeChrome,
+    footerV2Enabled = false,
     screenReaderMode = false,
     screenReaderProfile = "balanced",
     keymap,
@@ -72,7 +74,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     return (
       <Box flexDirection="column">
         <Text color={toneColor}>{subagentStrip.headline}</Text>
-        {subagentStrip.detail ? <Text color={COLORS.textMuted}>{subagentStrip.detail}</Text> : null}
+        {subagentStrip.detail ? <Text color={COLORS.textSoft}>{subagentStrip.detail}</Text> : null}
       </Box>
     )
   }, [scrollbackMode, subagentStrip])
@@ -119,6 +121,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
       ]
     }
     if (claudeChrome) return []
+    if (footerV2Enabled) return []
     const codexPreface = keymap === "codex" ? "Try edit <file> to..." : null
     const hintParts = [
       "! for bash",
@@ -158,7 +161,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
       </Text>,
     )
     return nodes
-  }, [claudeChrome, keymap, screenReaderMode, screenReaderProfile])
+  }, [claudeChrome, footerV2Enabled, keymap, screenReaderMode, screenReaderProfile])
 
   const shortcutLines = useMemo(() => {
     if (screenReaderMode) {
@@ -245,7 +248,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
       const latest = filtered.slice(-keepCount)
       const lines = latest.length > 0 ? latest : [pendingResponse ? "Assistant is thinking…" : "Ready."]
       return lines.map((line, index) => (
-        <Text key={`hint-a11y-${index}`} color={COLORS.textMuted}>
+        <Text key={`hint-a11y-${index}`} color={COLORS.footerHint}>
           {line}
         </Text>
       ))
@@ -261,7 +264,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
       if (!statusText || statusLinePosition === "below_input") return []
       const line = formatCell(statusText, Math.max(1, contentWidth), statusLineAlign)
       return [
-        <Text key="hint-claude-status" color={COLORS.textMuted}>
+        <Text key="hint-claude-status" color={COLORS.footerHint}>
           {line}
         </Text>,
       ]
@@ -307,7 +310,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     const belowStatusLine =
       statusLinePosition === "below_input" && statusText
         ? [
-            <Text key="hint-claude-status-below" color={COLORS.textMuted}>
+            <Text key="hint-claude-status-below" color={COLORS.footerHint}>
               {formatCell(statusText, Math.max(1, contentWidth), statusLineAlign)}
             </Text>,
           ]
@@ -330,14 +333,14 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
         combined = combined.slice(0, width)
       }
       return [
-        <Text key="hint-claude-shortcuts-status" color={COLORS.textMuted}>
+        <Text key="hint-claude-shortcuts-status" color={COLORS.footerHint}>
           {combined}
         </Text>,
       ]
     }
     return [
       ...belowStatusLine,
-      <Text key="hint-claude-shortcuts" color={COLORS.textMuted}>
+      <Text key="hint-claude-shortcuts" color={COLORS.footerHint}>
         {"  ? for shortcuts"}
       </Text>,
     ]
@@ -373,8 +376,13 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
         return []
       }
       return [
-        <Text key="transcript-empty" color="gray">
-          {pendingResponse ? "Assistant is thinking…" : "No conversation yet. Type a prompt to get started."}
+        <Text key="transcript-empty-primary" color={COLORS.textSoft}>
+          {pendingResponse ? "Assistant is thinking…" : "No conversation yet."}
+        </Text>,
+        <Text key="transcript-empty-secondary" color={COLORS.textMuted}>
+          {pendingResponse
+            ? "Press Esc to interrupt the current response."
+            : "Try / commands, @ files, or ask for a brief repo summary."}
         </Text>,
       ]
     }

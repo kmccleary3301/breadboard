@@ -10,6 +10,14 @@ export type RuntimeStatusChip = {
   readonly updatedAt: number
 }
 
+export type PhaseLineTone = RuntimeStatusChip["tone"] | "muted"
+
+export type PhaseLineState = {
+  readonly id: string
+  readonly label: string
+  readonly tone: PhaseLineTone
+}
+
 export type RuntimeStatusTransitionDecision =
   | { readonly kind: "noop" }
   | { readonly kind: "set"; readonly chip: RuntimeStatusChip }
@@ -17,7 +25,68 @@ export type RuntimeStatusTransitionDecision =
 
 const isCriticalRuntimeStatus = (chip: RuntimeStatusChip): boolean => {
   if (chip.tone === "error") return true
-  return ["disconnected", "error", "halted", "permission", "reconnecting"].includes(chip.id)
+  return ["disconnected", "error", "halted", "interrupted", "permission", "reconnecting"].includes(chip.id)
+}
+
+const CANONICAL_PHASE_LABELS: Record<string, PhaseLineState> = {
+  disconnected: { id: "disconnected", label: "disconnected", tone: "error" },
+  error: { id: "error", label: "error", tone: "error" },
+  halted: { id: "halted", label: "halted", tone: "error" },
+  interrupted: { id: "interrupted", label: "interrupted", tone: "error" },
+  permission: { id: "permission", label: "permission", tone: "warning" },
+  reconnecting: { id: "reconnecting", label: "reconnecting", tone: "warning" },
+  tool: { id: "tool", label: "tool", tone: "warning" },
+  done: { id: "done", label: "done", tone: "success" },
+  responding: { id: "responding", label: "responding", tone: "info" },
+  thinking: { id: "thinking", label: "thinking", tone: "info" },
+  run: { id: "run", label: "run", tone: "info" },
+  ready: { id: "ready", label: "ready", tone: "muted" },
+  starting: { id: "starting", label: "starting", tone: "info" },
+}
+
+const normalizePhaseLabel = (raw: string): string =>
+  raw
+    .trim()
+    .toLowerCase()
+    .replace(/[.\u2026]+$/g, "")
+    .replace(/\s+/g, " ")
+
+const canonicalFromStatus = (status: string): PhaseLineState => {
+  const normalized = normalizePhaseLabel(status)
+  if (!normalized || normalized === "ready" || normalized === "idle") return CANONICAL_PHASE_LABELS.ready
+  if (normalized.includes("reconnect")) return CANONICAL_PHASE_LABELS.reconnecting
+  if (normalized.includes("error") || normalized.includes("fail")) return CANONICAL_PHASE_LABELS.error
+  if (normalized.includes("interrupt")) return CANONICAL_PHASE_LABELS.interrupted
+  if (normalized.includes("halt")) return CANONICAL_PHASE_LABELS.halted
+  if (normalized.includes("finish") || normalized.includes("complete") || normalized.includes("done")) {
+    return CANONICAL_PHASE_LABELS.done
+  }
+  if (normalized.includes("respond")) return CANONICAL_PHASE_LABELS.responding
+  if (normalized.includes("think")) return CANONICAL_PHASE_LABELS.thinking
+  if (normalized.includes("start") || normalized.includes("launch") || normalized.includes("init")) {
+    return CANONICAL_PHASE_LABELS.starting
+  }
+  return { id: normalized, label: normalized, tone: "info" }
+}
+
+export const mapRuntimePhaseLineState = (input: {
+  readonly disconnected: boolean
+  readonly pendingResponse: boolean
+  readonly status: string
+  readonly runtimeStatusChip: RuntimeStatusChip | null
+}): PhaseLineState => {
+  if (input.disconnected) return CANONICAL_PHASE_LABELS.disconnected
+
+  const chip = input.runtimeStatusChip
+  if (chip) {
+    const byId = CANONICAL_PHASE_LABELS[String(chip.id ?? "").trim().toLowerCase()]
+    if (byId) return byId
+    const normalized = normalizePhaseLabel(String(chip.label ?? ""))
+    if (normalized) return { id: normalized, label: normalized, tone: chip.tone }
+  }
+
+  if (input.pendingResponse) return CANONICAL_PHASE_LABELS.thinking
+  return canonicalFromStatus(input.status)
 }
 
 export const mapActivityToRuntimeChip = (
@@ -41,6 +110,8 @@ export const mapActivityToRuntimeChip = (
       return { id: "done", label: "done", tone: "success", priority: 90, updatedAt: nowMs }
     case "halted":
       return { id: "halted", label: "halted", tone: "error", priority: 96, updatedAt: nowMs }
+    case "cancelled":
+      return { id: "interrupted", label: "interrupted", tone: "error", priority: 94, updatedAt: nowMs }
     case "responding":
       return { id: "responding", label: "responding", tone: "info", priority: 65, updatedAt: nowMs }
     case "thinking":
