@@ -1044,7 +1044,9 @@ export function App() {
     <div className="app">
       <header className="header">
         <h1>BreadBoard Webapp V1 (P0 Scaffold)</h1>
-        <div className={`pill ${connectionState}`}>{connectionState}</div>
+        <div className={`pill ${connectionState}`} data-testid="connection-state-pill">
+          {connectionState}
+        </div>
       </header>
       <p className="subtle">{connectionMessage || "No connection status yet."}</p>
 
@@ -1242,7 +1244,7 @@ export function App() {
 
           <h2>Permissions</h2>
           {permissionError ? <p className="errorText">{permissionError}</p> : null}
-          <div className="permissionList">
+          <div className="permissionList" data-testid="permission-list">
             {projection.pendingPermissions.length === 0 ? <p className="subtle">No pending permission requests.</p> : null}
             {projection.pendingPermissions.map((request) => {
               const draft = resolvePermissionDraft(request)

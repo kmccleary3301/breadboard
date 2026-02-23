@@ -80,6 +80,12 @@ npm run e2e:spec
 npm run e2e:debug
 ```
 
+- CI-style deterministic E2E run with summary artifacts:
+
+```bash
+npm run e2e:ci
+```
+
 ## Data Retention and Cache Policy
 
 - Event cache is compacted per session (`maxEventsPerSession=2000`).

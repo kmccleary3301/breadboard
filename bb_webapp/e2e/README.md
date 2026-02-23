@@ -8,6 +8,8 @@ Deterministic Playwright scenarios for baseline webapp QC and regression checks.
   - shell rendering + diagnostics health path
   - replay import hydration path
   - connection mode/token policy persistence
+  - create/attach/send/permissions/checkpoint/files/artifact live flow
+  - sequence-gap recovery flow
 
 ## Run
 
@@ -23,7 +25,17 @@ cd bb_webapp
 npm run e2e:debug
 ```
 
+CI-style run with summary artifact:
+
+```bash
+cd bb_webapp
+npm run e2e:ci
+```
+
 ## Artifacts
 
-- test output: `e2e/artifacts/test-results/`
-- html report: `e2e/artifacts/html-report/`
+- report root: `artifacts/webapp_e2e/`
+- test output: `artifacts/webapp_e2e/test-results/`
+- html report: `artifacts/webapp_e2e/html-report/`
+- report json: `artifacts/webapp_e2e/report.json`
+- summary json: `artifacts/webapp_e2e/summary.json`

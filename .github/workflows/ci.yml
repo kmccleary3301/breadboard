@@ -1009,3 +1009,29 @@ jobs:
 
       - name: Webapp gate:p1p2
         run: npm --prefix bb_webapp run gate:p1p2
+
+      - name: Install Playwright Chromium (webapp e2e report-only)
+        run: npx --prefix bb_webapp playwright install chromium
+
+      - name: Webapp e2e (report-only)
+        continue-on-error: true
+        run: npm --prefix bb_webapp run e2e:ci
+
+      - name: Webapp e2e summary (report-only)
+        if: always()
+        run: |
+          if [ -f artifacts/webapp_e2e/summary.md ]; then
+            cat artifacts/webapp_e2e/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Webapp E2E Summary" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "missing artifacts/webapp_e2e/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload webapp e2e artifacts (report-only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webapp-e2e-report-only
+          path: artifacts/webapp_e2e/**
+          if-no-files-found: warn
