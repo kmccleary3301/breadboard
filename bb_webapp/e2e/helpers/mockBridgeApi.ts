@@ -15,7 +15,12 @@ type SessionState = {
 const json = async (route: Route, body: unknown, status = 200): Promise<void> => {
   await route.fulfill({
     status,
-    contentType: "application/json",
+    headers: {
+      "content-type": "application/json",
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
+      "access-control-allow-headers": "content-type,authorization,last-event-id",
+    },
     body: JSON.stringify(body),
   })
 }
@@ -23,7 +28,12 @@ const json = async (route: Route, body: unknown, status = 200): Promise<void> =>
 const text = async (route: Route, body: string, status = 200): Promise<void> => {
   await route.fulfill({
     status,
-    contentType: "text/plain",
+    headers: {
+      "content-type": "text/plain",
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
+      "access-control-allow-headers": "content-type,authorization,last-event-id",
+    },
     body,
   })
 }
@@ -43,6 +53,9 @@ const sse = async (route: Route, events: unknown[]): Promise<void> => {
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
       connection: "keep-alive",
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
+      "access-control-allow-headers": "content-type,authorization,last-event-id",
     },
     body: `${lines.join("\n")}\n`,
   })
@@ -196,6 +209,19 @@ export const installMockBridgeApi = async (page: Page): Promise<void> => {
     const sessionId = extractSessionId(path)
     const session = sessionId ? ensureSession(sessionId) : null
 
+    if (method === "OPTIONS") {
+      await route.fulfill({
+        status: 204,
+        headers: {
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
+          "access-control-allow-headers": "content-type,authorization,last-event-id",
+          "access-control-max-age": "86400",
+        },
+      })
+      return
+    }
+
     if (method === "GET" && path === "/health") {
       await json(route, {
         status: "ok",
@@ -303,7 +329,12 @@ export const installMockBridgeApi = async (page: Page): Promise<void> => {
     if (method === "GET" && /^\/sessions\/[^/]+\/download$/.test(path)) {
       await route.fulfill({
         status: 200,
-        contentType: "application/octet-stream",
+        headers: {
+          "content-type": "application/octet-stream",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
+          "access-control-allow-headers": "content-type,authorization,last-event-id",
+        },
         body: `mock artifact bytes for ${url.searchParams.get("artifact") ?? "artifact"}`,
       })
       return

@@ -1,6 +1,6 @@
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { expect, test, type Page, type TestInfo } from "@playwright/test"
+import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { installMockBridgeApi } from "../helpers/mockBridgeApi"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -16,6 +16,16 @@ const captureCheckpoint = async (page: Page, testInfo: TestInfo, name: string): 
   const sanitized = name.toLowerCase().replace(/[^a-z0-9]+/g, "-")
   const screenshotPath = testInfo.outputPath(`${sanitized}.png`)
   await page.screenshot({ path: screenshotPath, fullPage: true })
+  await testInfo.attach(name, {
+    path: screenshotPath,
+    contentType: "image/png",
+  })
+}
+
+const capturePanel = async (target: Locator, testInfo: TestInfo, name: string): Promise<void> => {
+  const sanitized = name.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+  const screenshotPath = testInfo.outputPath(`${sanitized}.png`)
+  await target.screenshot({ path: screenshotPath })
   await testInfo.attach(name, {
     path: screenshotPath,
     contentType: "image/png",
@@ -70,18 +80,25 @@ test("replay import hydrates transcript, tools, permissions, checkpoints, and ta
   await expect(page.getByText("No search matches.")).toBeHidden()
   await expect(page.getByRole("button", { name: /verification/i }).first()).toBeVisible()
   await captureCheckpoint(page, testInfo, "replay-import-hydrated")
+  await capturePanel(tools, testInfo, "replay-import-tools-panel")
+  await capturePanel(taskTree, testInfo, "replay-import-task-tree-panel")
 })
 
 test("connection mode and token policy persist across reload", async ({ page }, testInfo) => {
   await page.getByLabel("Mode").selectOption("remote")
   await page.getByLabel("Token Storage").selectOption("session")
+  await page.getByLabel("Engine Base URL").fill("http://127.0.0.1:5000")
   await expect(page.getByText(/Remote mode trust boundary/i)).toBeVisible()
 
   await page.reload()
 
   await expect(page.getByLabel("Mode")).toHaveValue("remote")
   await expect(page.getByLabel("Token Storage")).toHaveValue("session")
+  await expect(page.getByLabel("Engine Base URL")).toHaveValue("http://127.0.0.1:5000")
   await expect(page.getByText(/Remote mode trust boundary/i)).toBeVisible()
+  await page.getByRole("button", { name: "Check", exact: true }).click()
+  await expect(page.getByText(/connected:\s*protocol=/i)).toBeVisible()
+  await expect(page.getByText(/Failed to fetch/i)).toBeHidden()
   await captureCheckpoint(page, testInfo, "connection-mode-persistence")
 })
 
@@ -92,6 +109,7 @@ test("live workflow: create attach send permissions checkpoints files and artifa
   await expect(page.getByRole("button", { name: "mock-session-1" })).toBeVisible()
   await expect(page.getByTestId("transcript-list").getByText("bootstrap stream event")).toBeVisible()
   await captureCheckpoint(page, testInfo, "live-workflow-attached")
+  await capturePanel(page.getByTestId("transcript-list"), testInfo, "live-workflow-transcript-panel")
 
   const messageInput = page.getByPlaceholder("Send message...")
   const permissionList = page.getByTestId("permission-list")
@@ -115,6 +133,9 @@ test("live workflow: create attach send permissions checkpoints files and artifa
   await page.getByRole("button", { name: "Download" }).click()
   await expect(page.getByText(/artifact\.download/)).toBeVisible()
   await captureCheckpoint(page, testInfo, "live-workflow-complete")
+  await capturePanel(permissionList, testInfo, "live-workflow-permissions-panel")
+  await capturePanel(page.getByTestId("tool-rows"), testInfo, "live-workflow-tools-panel")
+  await capturePanel(page.getByTestId("task-tree"), testInfo, "live-workflow-task-tree-panel")
 })
 
 test("gap workflow: sequence gap surfaces recover flow and returns to active stream", async ({ page }, testInfo) => {

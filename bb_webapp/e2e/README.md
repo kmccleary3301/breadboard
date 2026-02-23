@@ -40,3 +40,4 @@ npm run e2e:ci
 - report json: `artifacts/webapp_e2e/report.json`
 - summary json: `artifacts/webapp_e2e/summary.json`
 - curated scenario screenshots are attached on pass/fail for key checkpoints
+- focused panel captures are also attached (transcript/permissions/tools/task tree) for faster visual QC
