@@ -39,3 +39,4 @@ npm run e2e:ci
 - html report: `artifacts/webapp_e2e/html-report/`
 - report json: `artifacts/webapp_e2e/report.json`
 - summary json: `artifacts/webapp_e2e/summary.json`
+- curated scenario screenshots are attached on pass/fail for key checkpoints

@@ -1,6 +1,6 @@
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page, type TestInfo } from "@playwright/test"
 import { installMockBridgeApi } from "../helpers/mockBridgeApi"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -12,13 +12,23 @@ const createAndAttachSession = async (task: string, page: Page): Promise<void> =
   await page.getByRole("button", { name: "Create + Attach" }).click()
 }
 
+const captureCheckpoint = async (page: Page, testInfo: TestInfo, name: string): Promise<void> => {
+  const sanitized = name.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+  const screenshotPath = testInfo.outputPath(`${sanitized}.png`)
+  await page.screenshot({ path: screenshotPath, fullPage: true })
+  await testInfo.attach(name, {
+    path: screenshotPath,
+    contentType: "image/png",
+  })
+}
+
 test.beforeEach(async ({ page }) => {
   await installMockBridgeApi(page)
   await page.goto("/")
   await expect(page.getByRole("heading", { name: "BreadBoard Webapp V1 (P0 Scaffold)" })).toBeVisible()
 })
 
-test("shell renders with deterministic diagnostics status", async ({ page }) => {
+test("shell renders with deterministic diagnostics status", async ({ page }, testInfo) => {
   await expect(page.getByRole("heading", { name: "Sessions" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Transcript" })).toBeVisible()
   await expect(page.getByRole("button", { name: "Diagnostics" })).toBeVisible()
@@ -26,9 +36,10 @@ test("shell renders with deterministic diagnostics status", async ({ page }) => 
   await page.getByRole("button", { name: "Diagnostics" }).click()
   await expect(page.getByText(/diagnostics:\s*ok/i)).toBeVisible()
   await expect(page.getByText(/models=1/)).toBeVisible()
+  await captureCheckpoint(page, testInfo, "shell-diagnostics-ok")
 })
 
-test("replay import hydrates transcript, tools, permissions, checkpoints, and task tree", async ({ page }) => {
+test("replay import hydrates transcript, tools, permissions, checkpoints, and task tree", async ({ page }, testInfo) => {
   await page.getByTestId("replay-import-input").setInputFiles(replayFixturePath)
 
   const transcript = page.getByTestId("transcript-list")
@@ -58,9 +69,10 @@ test("replay import hydrates transcript, tools, permissions, checkpoints, and ta
   await page.getByPlaceholder("search transcript/tools/artifacts").fill("verification")
   await expect(page.getByText("No search matches.")).toBeHidden()
   await expect(page.getByRole("button", { name: /verification/i }).first()).toBeVisible()
+  await captureCheckpoint(page, testInfo, "replay-import-hydrated")
 })
 
-test("connection mode and token policy persist across reload", async ({ page }) => {
+test("connection mode and token policy persist across reload", async ({ page }, testInfo) => {
   await page.getByLabel("Mode").selectOption("remote")
   await page.getByLabel("Token Storage").selectOption("session")
   await expect(page.getByText(/Remote mode trust boundary/i)).toBeVisible()
@@ -70,14 +82,16 @@ test("connection mode and token policy persist across reload", async ({ page }) 
   await expect(page.getByLabel("Mode")).toHaveValue("remote")
   await expect(page.getByLabel("Token Storage")).toHaveValue("session")
   await expect(page.getByText(/Remote mode trust boundary/i)).toBeVisible()
+  await captureCheckpoint(page, testInfo, "connection-mode-persistence")
 })
 
-test("live workflow: create attach send permissions checkpoints files and artifacts", async ({ page }) => {
+test("live workflow: create attach send permissions checkpoints files and artifacts", async ({ page }, testInfo) => {
   await createAndAttachSession("run standard workflow", page)
 
   await expect(page.getByTestId("connection-state-pill")).toContainText(/streaming|connecting/)
   await expect(page.getByRole("button", { name: "mock-session-1" })).toBeVisible()
   await expect(page.getByTestId("transcript-list").getByText("bootstrap stream event")).toBeVisible()
+  await captureCheckpoint(page, testInfo, "live-workflow-attached")
 
   const messageInput = page.getByPlaceholder("Send message...")
   const permissionList = page.getByTestId("permission-list")
@@ -100,11 +114,13 @@ test("live workflow: create attach send permissions checkpoints files and artifa
   await page.getByPlaceholder("artifact id/path").fill("artifact-1.log")
   await page.getByRole("button", { name: "Download" }).click()
   await expect(page.getByText(/artifact\.download/)).toBeVisible()
+  await captureCheckpoint(page, testInfo, "live-workflow-complete")
 })
 
-test("gap workflow: sequence gap surfaces recover flow and returns to active stream", async ({ page }) => {
+test("gap workflow: sequence gap surfaces recover flow and returns to active stream", async ({ page }, testInfo) => {
   await createAndAttachSession("run gap workflow", page)
   await expect(page.getByTestId("connection-state-pill")).toContainText("gap")
+  await captureCheckpoint(page, testInfo, "gap-workflow-gap-state")
 
   const recover = page.getByRole("button", { name: "Recover Stream" })
   await expect(recover).toBeEnabled()
@@ -112,4 +128,5 @@ test("gap workflow: sequence gap surfaces recover flow and returns to active str
 
   await expect(page.getByTestId("connection-state-pill")).toContainText(/streaming|connecting/)
   await expect(page.getByText("gap bootstrap event")).toBeVisible()
+  await captureCheckpoint(page, testInfo, "gap-workflow-recovered")
 })
