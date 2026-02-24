@@ -1239,7 +1239,7 @@ export function App() {
             </button>
           </div>
           <div className="checkpointList" data-testid="checkpoint-list">
-            {projection.checkpoints.length === 0 ? <p className="subtle">No checkpoint data yet.</p> : null}
+            {projection.checkpoints.length === 0 ? <p className="subtle emptyState">No checkpoint data yet.</p> : null}
             {projection.checkpoints.map((row) => (
               <article key={row.id} className={`checkpointRow ${projection.activeCheckpointId === row.id ? "active" : ""}`}>
                 <strong>{row.label}</strong>
@@ -1271,8 +1271,8 @@ export function App() {
             </button>
           </div>
           <div className="searchResults">
-            {searchQuery.trim().length === 0 ? <p className="subtle">Enter a query to search.</p> : null}
-            {searchQuery.trim().length > 0 && searchResults.length === 0 ? <p className="subtle">No search matches.</p> : null}
+            {searchQuery.trim().length === 0 ? <p className="subtle emptyState">Enter a query to search.</p> : null}
+            {searchQuery.trim().length > 0 && searchResults.length === 0 ? <p className="subtle emptyState">No search matches.</p> : null}
             {searchResults.slice(0, 80).map((row, index) => (
               <button
                 key={`${row.type}:${row.id}`}
@@ -1289,7 +1289,7 @@ export function App() {
           <h2>Permissions</h2>
           {permissionError ? <p className="errorText">{permissionError}</p> : null}
           <div className="permissionList" data-testid="permission-list">
-            {projection.pendingPermissions.length === 0 ? <p className="subtle">No pending permission requests.</p> : null}
+            {projection.pendingPermissions.length === 0 ? <p className="subtle emptyState">No pending permission requests.</p> : null}
             {projection.pendingPermissions.map((request) => {
               const draft = resolvePermissionDraft(request)
               const isBusy = permissionBusyId === request.requestId
@@ -1390,7 +1390,7 @@ export function App() {
             </div>
           ) : null}
           <div className="ledgerList" data-testid="permission-ledger">
-            {filteredLedger.length === 0 ? <p className="subtle">No permission ledger rows.</p> : null}
+            {filteredLedger.length === 0 ? <p className="subtle emptyState">No permission ledger rows.</p> : null}
             {filteredLedger.map((entry) => (
               <article key={entry.requestId} className="ledgerRow">
                 <header>
@@ -1424,7 +1424,7 @@ export function App() {
 
           <h2>Tools</h2>
           <div className="toolRows" data-testid="tool-rows">
-            {projection.toolRows.length === 0 ? <p className="subtle">No tool events yet.</p> : null}
+            {projection.toolRows.length === 0 ? <p className="subtle emptyState">No tool events yet.</p> : null}
             {projection.toolRows.map((row) => (
               <article key={row.id} id={`entry-${row.id}`} className={`tool ${row.type}`}>
                 <header>
@@ -1516,7 +1516,7 @@ export function App() {
             <span className="subtle">{currentDir || "/"}</span>
           </div>
           <div className="files">
-            {files.length === 0 ? <p className="subtle">No file entries loaded.</p> : null}
+            {files.length === 0 ? <p className="subtle emptyState">No file entries loaded.</p> : null}
             {files.map((entry) => (
               <button key={`${entry.type}:${entry.path}`} className="fileRow" onClick={() => void onFileClick(entry)}>
                 <span>{entry.type === "directory" ? "dir" : "file"}</span>
@@ -1525,7 +1525,7 @@ export function App() {
             ))}
           </div>
           <h3>File Preview</h3>
-          <p className="subtle">{selectedFilePath || "No file selected."}</p>
+          <p className={`subtle ${selectedFilePath ? "" : "emptyState"}`}>{selectedFilePath || "No file selected."}</p>
           <div className="filePreview">{selectedFileContent || "Select a file to preview snippet content."}</div>
           <h2>Artifacts</h2>
           <div className="row">
@@ -1581,7 +1581,7 @@ export function App() {
               <span className="disclosureMeta">{hasAuditEntries ? `${auditLog.length} actions` : "hidden until actions occur"}</span>
             </summary>
             <div className="events">
-              {auditLog.length === 0 ? <span className="subtle">No audit actions yet.</span> : null}
+              {auditLog.length === 0 ? <span className="subtle emptyState">No audit actions yet.</span> : null}
               {auditLog
                 .slice()
                 .reverse()

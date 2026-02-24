@@ -58,7 +58,7 @@ export default function TaskTreePanel({ graph, expanded, onToggleExpand, onJumpT
   }
 
   if (visibleRoots.length === 0) {
-    return <p className="subtle">No task graph nodes yet.</p>
+    return <p className="subtle emptyState">No task graph nodes yet.</p>
   }
 
   return (

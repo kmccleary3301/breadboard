@@ -67,7 +67,7 @@ body::before {
 
 .header h1 {
   margin: 0;
-  font-size: 1.62rem;
+  font-size: 1.68rem;
   line-height: 1.2;
   color: var(--text-strong);
   letter-spacing: 0.005em;
@@ -76,7 +76,17 @@ body::before {
 .subtle {
   margin: 6px 0 0;
   color: var(--text-muted);
-  font-size: 0.83rem;
+  font-size: 0.86rem;
+}
+
+.emptyState {
+  display: block;
+  margin-top: 6px;
+  border: 1px dashed #cbdae8;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: linear-gradient(180deg, #f9fcff 0%, #f2f7fc 100%);
+  color: #61788d;
 }
 
 .runtimeMessage {
@@ -213,7 +223,7 @@ body::before {
 }
 
 .panel h2 {
-  font-size: 1.04rem;
+  font-size: 1.08rem;
   letter-spacing: 0.008em;
   font-weight: 700;
 }
@@ -225,7 +235,7 @@ body::before {
 }
 
 .panel h3 {
-  font-size: 0.92rem;
+  font-size: 0.96rem;
   font-weight: 700;
   margin-top: 14px;
   margin-bottom: 8px;
@@ -337,7 +347,7 @@ label {
   flex-direction: column;
   gap: 5px;
   flex: 1;
-  font-size: 0.79rem;
+  font-size: 0.82rem;
   font-weight: 600;
   color: #2f4b64;
 }
@@ -355,8 +365,8 @@ select {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid #c4d4e2;
-  border-radius: 8px;
-  padding: 8px 9px;
+  border-radius: 9px;
+  padding: 9px 10px;
   background: #fbfdff;
   color: var(--text);
   transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
@@ -372,9 +382,9 @@ select:focus-visible {
 }
 
 button {
-  border: 1px solid #92b0ca;
-  background: linear-gradient(180deg, #f3f8fd 0%, #d7e6f5 100%);
-  color: #1f4261;
+  border: 1px solid #8facc7;
+  background: linear-gradient(180deg, #f0f6fc 0%, #d2e1f1 100%);
+  color: #1d405f;
   border-radius: 9px;
   padding: 8px 12px;
   font-weight: 600;
@@ -399,8 +409,8 @@ button {
 }
 
 button:hover:enabled {
-  border-color: #7f9fbc;
-  background: linear-gradient(180deg, #f7fbff 0%, #dbe9f8 100%);
+  border-color: #7897b3;
+  background: linear-gradient(180deg, #f5faff 0%, #d8e6f5 100%);
   transform: translateY(-1px);
 }
 
@@ -414,26 +424,36 @@ button:focus-visible {
 }
 
 .btnPrimary {
-  border-color: var(--brand-700);
-  background: linear-gradient(180deg, #377cbf 0%, var(--brand-600) 100%);
+  border-color: #184e81;
+  background: linear-gradient(180deg, #3175b7 0%, #1f5d99 100%);
   color: #ffffff;
 }
 
 .btnPrimary:hover:enabled {
-  border-color: #17497b;
-  background: linear-gradient(180deg, #3e84c8 0%, var(--brand-700) 100%);
+  border-color: #154472;
+  background: linear-gradient(180deg, #377ec2 0%, #1b538a 100%);
 }
 
 .btnSecondary {
-  border-color: #84a5c4;
-  background: linear-gradient(180deg, #edf5fc 0%, #cddff1 100%);
-  color: #1f4464;
+  border-color: #829fbb;
+  background: linear-gradient(180deg, #eaf2fa 0%, #c6d8eb 100%);
+  color: #214463;
+}
+
+.btnSecondary:hover:enabled {
+  border-color: #6d8dad;
+  background: linear-gradient(180deg, #f0f6fd 0%, #d0e1f2 100%);
 }
 
 .btnGhost {
-  border-color: #aac3da;
-  background: rgba(238, 246, 253, 0.92);
-  color: #2d4f6d;
+  border-color: #a9bfd2;
+  background: rgba(242, 248, 253, 0.94);
+  color: #395874;
+}
+
+.btnGhost:hover:enabled {
+  border-color: #95afc6;
+  background: rgba(237, 245, 252, 0.98);
 }
 
 .btnApprove {
@@ -670,6 +690,10 @@ button:disabled {
 .panelOps > .subtle {
   margin-top: 6px;
   margin-bottom: 0;
+}
+
+.panelOps .emptyState {
+  margin-top: 4px;
 }
 
 .permissionList {
