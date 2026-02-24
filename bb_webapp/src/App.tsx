@@ -1087,7 +1087,7 @@ export function App() {
         {runtimeMessage}
       </p>
 
-      <section className="panel">
+      <section className="panel controlPanel">
         <div className="row runtimeControls">
           <label>
             Mode
@@ -1112,13 +1112,13 @@ export function App() {
             API Token (optional)
             <input value={token} onChange={(event) => setModeToken(event.target.value)} placeholder="Bearer token" />
           </label>
-          <button onClick={() => void checkConnection()} disabled={busy}>
+          <button className="btnPrimary" onClick={() => void checkConnection()} disabled={busy}>
             Check
           </button>
-          <button onClick={() => void runDiagnostics()} disabled={busy}>
+          <button className="btnSecondary" onClick={() => void runDiagnostics()} disabled={busy}>
             Diagnostics
           </button>
-          <button onClick={() => void recoverStream()} disabled={busy || !activeSessionId || connectionState !== "gap"}>
+          <button className="btnGhost" onClick={() => void recoverStream()} disabled={busy || !activeSessionId || connectionState !== "gap"}>
             Recover Stream
           </button>
         </div>
@@ -1131,10 +1131,10 @@ export function App() {
       </section>
 
       <main className="layout">
-        <section className="panel">
+        <section className="panel panelSessions">
           <h2>Sessions</h2>
           <div className="row">
-            <button onClick={() => void refreshSessions()} disabled={busy}>
+            <button className="btnSecondary" onClick={() => void refreshSessions()} disabled={busy}>
               Refresh
             </button>
           </div>
@@ -1160,12 +1160,12 @@ export function App() {
               rows={4}
             />
           </label>
-          <button onClick={() => void createSession()} disabled={busy || projection.checkpointRestoreInFlight || !task.trim()}>
+          <button className="btnPrimary" onClick={() => void createSession()} disabled={busy || projection.checkpointRestoreInFlight || !task.trim()}>
             Create + Attach
           </button>
         </section>
 
-        <section className="panel">
+        <section className="panel panelTranscript">
           <h2>Transcript</h2>
           <div className="row">
             <input
@@ -1174,10 +1174,10 @@ export function App() {
               placeholder={activeSessionId ? "Send message..." : "Attach a session first"}
               disabled={!activeSessionId}
             />
-            <button onClick={() => void sendMessage()} disabled={busy || projection.checkpointRestoreInFlight || !activeSessionId || !message.trim()}>
+            <button className="btnPrimary" onClick={() => void sendMessage()} disabled={busy || projection.checkpointRestoreInFlight || !activeSessionId || !message.trim()}>
               Send
             </button>
-            <button onClick={() => void stopSession()} disabled={busy || projection.checkpointRestoreInFlight || !activeSessionId}>
+            <button className="btnDanger" onClick={() => void stopSession()} disabled={busy || projection.checkpointRestoreInFlight || !activeSessionId}>
               Stop
             </button>
           </div>
@@ -1201,10 +1201,10 @@ export function App() {
           </div>
         </section>
 
-        <section className="panel">
+        <section className="panel panelOps">
           <h2>Checkpoints</h2>
           <div className="row">
-            <button onClick={() => void refreshCheckpoints()} disabled={busy || !activeSessionId || projection.checkpointRestoreInFlight}>
+            <button className="btnSecondary" onClick={() => void refreshCheckpoints()} disabled={busy || !activeSessionId || projection.checkpointRestoreInFlight}>
               Refresh Checkpoints
             </button>
             <select
@@ -1225,6 +1225,7 @@ export function App() {
               ))}
             </select>
             <button
+              className="btnPrimary"
               onClick={() => void restoreCheckpoint()}
               disabled={busy || !activeSessionId || !projection.activeCheckpointId || projection.checkpointRestoreInFlight}
             >
@@ -1256,10 +1257,10 @@ export function App() {
               <option value="tool">tool</option>
               <option value="artifact">artifact</option>
             </select>
-            <button onClick={() => void prevSearchResult()} disabled={searchResults.length === 0}>
+            <button className="btnSecondary" onClick={() => void prevSearchResult()} disabled={searchResults.length === 0}>
               Prev
             </button>
-            <button onClick={() => void nextSearchResult()} disabled={searchResults.length === 0}>
+            <button className="btnSecondary" onClick={() => void nextSearchResult()} disabled={searchResults.length === 0}>
               Next
             </button>
           </div>
@@ -1327,19 +1328,19 @@ export function App() {
                     </label>
                   </div>
                   <div className="row permissionActions">
-                    <button disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "allow-once")}>
+                    <button className="btnApprove" disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "allow-once")}>
                       Allow Once
                     </button>
-                    <button disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "allow-always")}>
+                    <button className="btnApprove" disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "allow-always")}>
                       Allow Always
                     </button>
-                    <button disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "deny-once")}>
+                    <button className="btnWarn" disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "deny-once")}>
                       Deny Once
                     </button>
-                    <button disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "deny-always")}>
+                    <button className="btnWarn" disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "deny-always")}>
                       Deny Always
                     </button>
-                    <button disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "deny-stop")}>
+                    <button className="btnDanger" disabled={isBusy || !activeSessionId} onClick={() => void submitPermissionDecision(request, "deny-stop")}>
                       Deny + Stop
                     </button>
                   </div>
@@ -1390,10 +1391,11 @@ export function App() {
                   {entry.scope} · {new Date(entry.timestamp).toLocaleString()} · {entry.requestId}
                 </p>
                 <div className="row">
-                  <button onClick={() => void copyText(entry.rule ?? "")} disabled={!entry.rule}>
+                  <button className="btnSecondary" onClick={() => void copyText(entry.rule ?? "")} disabled={!entry.rule}>
                     Copy Rule
                   </button>
                   <button
+                    className="btnSecondary"
                     onClick={() => {
                       if (!entry.rule) return
                       setPermissionRulePresets((prev) => ({ ...prev, [entry.tool]: entry.rule as string }))
@@ -1402,7 +1404,7 @@ export function App() {
                   >
                     Re-Apply Rule
                   </button>
-                  <button onClick={() => void revokePermission(entry)} disabled={busy || !activeSessionId || entry.revoked}>
+                  <button className="btnDanger" onClick={() => void revokePermission(entry)} disabled={busy || !activeSessionId || entry.revoked}>
                     {entry.revoked ? "Revoked" : "Revoke"}
                   </button>
                 </div>
@@ -1424,11 +1426,12 @@ export function App() {
                   <div className="toolDiff">
                     <div className="row">
                       <span className="subtle">Diff Viewer</span>
-                      <button onClick={() => setDiffViewMode((prev) => (prev === "unified" ? "side-by-side" : "unified"))}>
+                      <button className="btnSecondary" onClick={() => setDiffViewMode((prev) => (prev === "unified" ? "side-by-side" : "unified"))}>
                         {diffViewMode === "unified" ? "Side-by-side" : "Unified"}
                       </button>
                       {row.diffFilePath ? (
                         <button
+                          className="btnSecondary"
                           onClick={() => {
                             if (!activeSessionId) return
                             void openFile(activeSessionId, row.diffFilePath as string)
@@ -1455,13 +1458,14 @@ export function App() {
           </div>
           <h2>Task Tree</h2>
           <div className="row">
-            <button onClick={() => setTaskFilters((prev) => ({ ...prev, failedOnly: !prev.failedOnly }))}>
+            <button className={`chipButton ${taskFilters.failedOnly ? "active" : ""}`} onClick={() => setTaskFilters((prev) => ({ ...prev, failedOnly: !prev.failedOnly }))}>
               {taskFilters.failedOnly ? "Show All" : "Failed Only"}
             </button>
-            <button onClick={() => setTaskFilters((prev) => ({ ...prev, activeOnly: !prev.activeOnly }))}>
+            <button className={`chipButton ${taskFilters.activeOnly ? "active" : ""}`} onClick={() => setTaskFilters((prev) => ({ ...prev, activeOnly: !prev.activeOnly }))}>
               {taskFilters.activeOnly ? "Show All" : "Active Only"}
             </button>
             <button
+              className={`chipButton ${projection.taskGraph.activeNodeId ? "active" : ""}`}
               onClick={() => {
                 if (!projection.taskGraph.activeNodeId) return
                 const node = projection.taskGraph.nodesById[projection.taskGraph.activeNodeId]
@@ -1484,10 +1488,11 @@ export function App() {
 
           <h2>Files</h2>
           <div className="row">
-            <button onClick={() => void refreshCurrentDir()} disabled={!activeSessionId || busy}>
+            <button className="btnSecondary" onClick={() => void refreshCurrentDir()} disabled={!activeSessionId || busy}>
               Refresh
             </button>
             <button
+              className="btnSecondary"
               onClick={() => {
                 if (!activeSessionId) return
                 void listFiles(activeSessionId, parentDir)
@@ -1518,16 +1523,16 @@ export function App() {
               placeholder={activeSessionId ? "artifact id/path" : "attach a session first"}
               disabled={!activeSessionId}
             />
-            <button onClick={() => void openArtifact()} disabled={!activeSessionId || !artifactId.trim() || busy}>
+            <button className="btnSecondary" onClick={() => void openArtifact()} disabled={!activeSessionId || !artifactId.trim() || busy}>
               Download
             </button>
           </div>
           <h2>Raw Events</h2>
           <div className="row">
-            <button onClick={() => void exportReplay()} disabled={busy || !activeSessionId}>
+            <button className="btnSecondary" onClick={() => void exportReplay()} disabled={busy || !activeSessionId}>
               Export Replay
             </button>
-            <button onClick={() => void triggerReplayImport()} disabled={busy}>
+            <button className="btnSecondary" onClick={() => void triggerReplayImport()} disabled={busy}>
               Import Replay
             </button>
             <input

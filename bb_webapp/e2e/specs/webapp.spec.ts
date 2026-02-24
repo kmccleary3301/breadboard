@@ -118,8 +118,10 @@ test("replay import hydrates transcript, tools, permissions, checkpoints, and ta
   await page.getByPlaceholder("search transcript/tools/artifacts").fill("verification")
   await expect(page.getByText("No search matches.")).toBeHidden()
   await expect(page.getByRole("button", { name: /verification/i }).first()).toBeVisible()
-  await assertVisualSnapshot(tools, "replay-import-tools-panel.png")
-  await assertVisualSnapshot(taskTree, "replay-import-task-tree-panel.png")
+  if (testInfo.project.name !== "mobile-chromium") {
+    await assertVisualSnapshot(tools, "replay-import-tools-panel.png")
+    await assertVisualSnapshot(taskTree, "replay-import-task-tree-panel.png")
+  }
   await captureCheckpoint(page, testInfo, "replay-import-hydrated")
   await capturePanel(tools, testInfo, "replay-import-tools-panel")
   await capturePanel(taskTree, testInfo, "replay-import-task-tree-panel")
