@@ -50,6 +50,7 @@ import { nextSearchResultIndex, prevSearchResultIndex, resolveSearchResultAnchor
 const MarkdownMessage = lazy(async () => await import("./MarkdownMessage"))
 
 type ConnectionState = "idle" | "connecting" | "streaming" | "retrying" | "gap" | "stopped" | "error"
+type RuntimeCode = "info" | "invalid_url" | "auth_401" | "server_error" | "network_unreachable" | "gap_detected"
 type ClientMetrics = {
   eventsReceived: number
   eventsApplied: number
@@ -155,6 +156,16 @@ const formatRuntimeError = (error: unknown): string => {
   }
   if (error instanceof Error) return error.message
   return String(error)
+}
+
+const classifyRuntimeCode = (state: ConnectionState, message: string): RuntimeCode => {
+  const text = message.toLowerCase()
+  if (/invalid.+url/.test(text)) return "invalid_url"
+  if (/authorization failed \(http 401\)/.test(text) || /http 401/.test(text)) return "auth_401"
+  if (/request failed with status 5\d\d/.test(text) || /http 5\d\d/.test(text)) return "server_error"
+  if (/failed to fetch|network ?error|econnrefused|enotfound|connection refused/.test(text)) return "network_unreachable"
+  if (state === "gap" || /resume window exceeded|sequence gap/.test(text)) return "gap_detected"
+  return "info"
 }
 
 const loadConnectionMode = (): ConnectionMode => {
@@ -1061,21 +1072,23 @@ export function App() {
   }, [])
 
   const runtimeMessage = connectionMessage || "No connection status yet."
+  const runtimeCode = classifyRuntimeCode(connectionState, runtimeMessage)
+  const runtimeRole = runtimeCode === "info" && connectionState !== "error" ? "status" : "alert"
 
   return (
     <div className="app">
       <header className="header">
         <h1>BreadBoard Webapp V1 (P0 Scaffold)</h1>
-        <div className={`pill ${connectionState}`} data-testid="connection-state-pill">
+        <div className={`pill ${connectionState}`} data-testid="connection-state-pill" role="status" aria-live="polite" aria-atomic="true">
           {connectionState}
         </div>
       </header>
-      <p className={`runtimeMessage ${connectionState}`} data-testid="runtime-message">
+      <p className={`runtimeMessage ${connectionState}`} data-testid="runtime-message" data-runtime-code={runtimeCode} role={runtimeRole}>
         {runtimeMessage}
       </p>
 
       <section className="panel">
-        <div className="row">
+        <div className="row runtimeControls">
           <label>
             Mode
             <select value={connectionMode} onChange={(event) => setConnectionMode(event.target.value as ConnectionMode)}>

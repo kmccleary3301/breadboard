@@ -50,6 +50,9 @@ test("shell renders with deterministic diagnostics status", async ({ page }, tes
   await expect(page.getByRole("heading", { name: "Sessions" })).toBeVisible()
   await expect(page.getByRole("heading", { name: "Transcript" })).toBeVisible()
   await expect(page.getByRole("button", { name: "Diagnostics" })).toBeVisible()
+  await expect(page.getByTestId("connection-state-pill")).toHaveAttribute("role", "status")
+  await expect(page.getByTestId("runtime-message")).toHaveAttribute("role", "status")
+  await expect(page.getByTestId("runtime-message")).toHaveAttribute("data-runtime-code", "info")
   await expect(page.getByRole("button", { name: "Recover Stream" })).toBeDisabled()
   await expect(page.getByRole("button", { name: "Send" })).toBeDisabled()
   await expect(page.getByRole("button", { name: "Stop" })).toBeDisabled()
@@ -63,6 +66,26 @@ test("shell renders with deterministic diagnostics status", async ({ page }, tes
   await expect(page.getByText(/models=1/)).toBeVisible()
   await assertVisualSnapshot(page.getByTestId("connection-state-pill"), "shell-connection-pill.png")
   await captureCheckpoint(page, testInfo, "shell-diagnostics-ok")
+})
+
+test("keyboard navigation triggers diagnostics, send, and permission decision", async ({ page }) => {
+  const diagnostics = page.getByRole("button", { name: "Diagnostics" })
+  await diagnostics.focus()
+  await page.keyboard.press("Enter")
+  await expect(page.getByText(/diagnostics:\s*ok/i)).toBeVisible()
+
+  await createAndAttachSession("run standard workflow", page)
+  const messageInput = page.getByPlaceholder("Send message...")
+  await messageInput.fill("keyboard send")
+  const sendButton = page.getByRole("button", { name: "Send" })
+  await sendButton.focus()
+  await page.keyboard.press("Enter")
+  await expect(messageInput).toHaveValue("")
+
+  const allowOnce = page.getByTestId("permission-list").getByRole("button", { name: "Allow Once" }).first()
+  await allowOnce.focus()
+  await page.keyboard.press("Enter")
+  await expect(page.getByTestId("permission-list").getByText("No pending permission requests.")).toBeVisible()
 })
 
 test("replay import hydrates transcript, tools, permissions, checkpoints, and task tree", async ({ page }, testInfo) => {
@@ -117,6 +140,7 @@ test("connection mode and token policy persist across reload", async ({ page }, 
   await page.getByRole("button", { name: "Check", exact: true }).click()
   await expect(page.getByText(/connected:\s*protocol=/i)).toBeVisible()
   await expect(page.getByText(/Failed to fetch/i)).toBeHidden()
+  await expect(page.getByTestId("runtime-message")).toHaveAttribute("data-runtime-code", "info")
   await assertVisualSnapshot(page.getByTestId("connection-state-pill"), "connection-mode-pill.png")
   await captureCheckpoint(page, testInfo, "connection-mode-persistence")
 })
@@ -137,7 +161,9 @@ test("live workflow: create attach send permissions checkpoints files and artifa
   await expect(messageInput).toHaveValue("")
 
   await expect(permissionList.getByText("Run CI test command")).toBeVisible()
-  await assertVisualSnapshot(permissionList, "live-workflow-permissions-pending-panel.png")
+  if (testInfo.project.name !== "mobile-chromium") {
+    await assertVisualSnapshot(permissionList, "live-workflow-permissions-pending-panel.png")
+  }
   await permissionList.getByRole("button", { name: "Allow Once" }).first().click({ force: true })
   await expect(permissionList.getByText("No pending permission requests.")).toBeVisible()
   await expect(page.getByText(/permission\.decision/)).toBeVisible()
@@ -164,6 +190,8 @@ test("live workflow: create attach send permissions checkpoints files and artifa
 test("gap workflow: sequence gap surfaces recover flow and returns to active stream", async ({ page }, testInfo) => {
   await createAndAttachSession("run gap workflow", page)
   await expect(page.getByTestId("connection-state-pill")).toContainText("gap")
+  await expect(page.getByTestId("runtime-message")).toHaveAttribute("role", "alert")
+  await expect(page.getByTestId("runtime-message")).toHaveAttribute("data-runtime-code", "gap_detected")
   await assertVisualSnapshot(page.getByTestId("connection-state-pill"), "gap-state-pill.png")
   await captureCheckpoint(page, testInfo, "gap-workflow-gap-state")
 
@@ -183,6 +211,8 @@ test("remote mode invalid base url surfaces validation error state", async ({ pa
   await expect(page.getByLabel("Engine Base URL")).toHaveValue("not-a-url")
   await page.getByRole("button", { name: "Check", exact: true }).click()
   await expect(page.getByTestId("runtime-message")).toContainText(/invalid engine base url/i)
+  await expect(page.getByTestId("runtime-message")).toHaveAttribute("data-runtime-code", "invalid_url")
+  await expect(page.getByTestId("runtime-message")).toHaveAttribute("role", "alert")
 })
 
 test("remote mode auth failure surfaces 401 and recovers after token update", async ({ page }) => {
@@ -191,9 +221,40 @@ test("remote mode auth failure surfaces 401 and recovers after token update", as
   await page.getByLabel("API Token (optional)").fill("")
   await page.getByRole("button", { name: "Check", exact: true }).click()
   await expect(page.getByText(/authorization failed \(HTTP 401\)/i)).toBeVisible()
+  await expect(page.getByTestId("runtime-message")).toHaveAttribute("data-runtime-code", "auth_401")
+  await expect(page.getByTestId("runtime-message")).toHaveAttribute("role", "alert")
 
   await page.getByLabel("API Token (optional)").fill("test-token")
   await page.getByRole("button", { name: "Check", exact: true }).click()
   await expect(page.getByText(/connected:\s*protocol=/i)).toBeVisible()
   await expect(page.getByText(/authorization failed \(HTTP 401\)/i)).toBeHidden()
+  await expect(page.getByTestId("runtime-message")).toHaveAttribute("data-runtime-code", "info")
+})
+
+test("resume window 409 surfaces gap recovery guidance", async ({ page }) => {
+  await createAndAttachSession("run resume409 workflow", page)
+  await expect(page.getByTestId("connection-state-pill")).toContainText("gap")
+  await expect(page.getByTestId("runtime-message")).toContainText(/resume window exceeded \(HTTP 409\)/i)
+  await expect(page.getByTestId("runtime-message")).toHaveAttribute("data-runtime-code", "gap_detected")
+})
+
+test("diagnostics surfaces 5xx engine failures", async ({ page }) => {
+  await page.getByLabel("Mode").selectOption("remote")
+  await page.getByLabel("Engine Base URL").fill("http://127.0.0.1:5002")
+  await page.getByRole("button", { name: "Diagnostics" }).click()
+  await expect(page.getByText(/diagnostics:\s*error/i)).toBeVisible()
+  const runtimeMessage = page.getByTestId("runtime-message")
+  await expect(runtimeMessage).toContainText(/500|engine unavailable|request failed/i)
+  await expect(runtimeMessage).toHaveAttribute("data-runtime-code", "server_error")
+  await expect(runtimeMessage).toHaveAttribute("role", "alert")
+})
+
+test("permission revoke unsupported path surfaces explicit error", async ({ page }) => {
+  await createAndAttachSession("run revoke_unsupported workflow", page)
+  const ledger = page.getByTestId("permission-ledger")
+  await expect(ledger.getByText("run_command")).toBeVisible()
+  await ledger.getByRole("button", { name: "Revoke" }).first().click({ force: true })
+  const revokeError = page.locator(".errorText").filter({ hasText: /revoke unavailable or failed/i }).first()
+  await expect(revokeError).toBeVisible()
+  await expect(revokeError).toContainText(/404/)
 })

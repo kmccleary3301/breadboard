@@ -152,6 +152,7 @@ body {
   display: flex;
   gap: 8px;
   align-items: end;
+  flex-wrap: wrap;
 }
 
 label {
@@ -187,6 +188,15 @@ button {
   border-radius: 7px;
   padding: 8px 12px;
   cursor: pointer;
+}
+
+.runtimeControls > label {
+  min-width: 170px;
+  flex: 1 1 200px;
+}
+
+.runtimeControls > button {
+  white-space: nowrap;
 }
 
 button:disabled {
@@ -621,5 +631,34 @@ button:disabled {
 @media (max-width: 1280px) {
   .layout {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .app {
+    padding: 12px;
+  }
+
+  .header {
+    align-items: flex-start;
+  }
+
+  .header h1 {
+    font-size: 1.2rem;
+    line-height: 1.2;
+  }
+
+  .panel {
+    padding: 10px;
+  }
+
+  .runtimeControls > label {
+    min-width: 130px;
+    flex: 1 1 130px;
+  }
+
+  .runtimeControls > button {
+    flex: 1 1 130px;
+    min-height: 36px;
   }
 }

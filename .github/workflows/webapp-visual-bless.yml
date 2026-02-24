@@ -1,0 +1,79 @@
+name: webapp-visual-bless
+
+on:
+  workflow_dispatch:
+    inputs:
+      update_snapshots:
+        description: "Run Playwright with --update-snapshots"
+        required: false
+        default: true
+        type: boolean
+      upload_diff:
+        description: "Upload snapshot diff and artifact bundle"
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  webapp-visual-bless:
+    name: webapp visual bless (manual)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            sdk/ts/package-lock.json
+            bb_webapp/package-lock.json
+
+      - name: Install SDK dependencies
+        run: npm --prefix sdk/ts ci
+
+      - name: Install webapp dependencies
+        run: npm --prefix bb_webapp ci
+
+      - name: Install Playwright Chromium
+        run: npx --prefix bb_webapp playwright install chromium
+
+      - name: Run visual suite
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.update_snapshots }}" == "true" ]]; then
+            npm --prefix bb_webapp run e2e:spec -- --update-snapshots
+          else
+            npm --prefix bb_webapp run e2e:spec
+          fi
+          npm --prefix bb_webapp run e2e:summary
+          npm --prefix bb_webapp run e2e:validate
+
+      - name: Summarize snapshot changes
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## Webapp Visual Bless"
+            echo ""
+            echo "- update_snapshots: \`${{ inputs.update_snapshots }}\`"
+            echo "- upload_diff: \`${{ inputs.upload_diff }}\`"
+            echo ""
+            echo "### Snapshot Diff"
+            echo ""
+            git diff --name-only -- bb_webapp/e2e/specs/webapp.spec.ts-snapshots || true
+            echo ""
+            if [ -f artifacts/webapp_e2e/summary.md ]; then
+              cat artifacts/webapp_e2e/summary.md
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload visual bless artifacts
+        if: ${{ always() && inputs.upload_diff == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: webapp-visual-bless
+          path: |
+            artifacts/webapp_e2e/**
+            bb_webapp/e2e/specs/webapp.spec.ts-snapshots/**
+          if-no-files-found: warn

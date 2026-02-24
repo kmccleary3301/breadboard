@@ -1,6 +1,6 @@
 import type { Page, Route } from "@playwright/test"
 
-type SessionProfile = "standard" | "gap"
+type SessionProfile = "standard" | "gap" | "resume409" | "revoke_unsupported"
 
 type SessionState = {
   sessionId: string
@@ -65,7 +65,11 @@ const FIXED_EPOCH_MS = Date.UTC(2026, 1, 23, 19, 0, 0)
 const at = (offsetMs: number): number => FIXED_EPOCH_MS + offsetMs
 const nowIso = (): string => new Date(FIXED_EPOCH_MS).toISOString()
 
-const buildStandardSessionEvents = (sessionId: string, includeRestoreEvent: boolean): unknown[] => {
+const buildStandardSessionEvents = (
+  sessionId: string,
+  includeRestoreEvent: boolean,
+  includePermissionResponse: boolean,
+): unknown[] => {
   const events: unknown[] = [
     {
       id: `${sessionId}-evt-001`,
@@ -175,6 +179,25 @@ const buildStandardSessionEvents = (sessionId: string, includeRestoreEvent: bool
     })
   }
 
+  if (includePermissionResponse) {
+    const seq = includeRestoreEvent ? 9 : 8
+    events.push({
+      id: `${sessionId}-evt-${String(seq).padStart(3, "0")}`,
+      type: "permission_response",
+      session_id: sessionId,
+      turn: 1,
+      timestamp: at(seq),
+      seq,
+      payload: {
+        request_id: "perm-live-1",
+        tool: "run_command",
+        scope: "project",
+        decision: "allow_always",
+        rule: "^npm run test$",
+      },
+    })
+  }
+
   return events
 }
 
@@ -212,6 +235,7 @@ export const installMockBridgeApi = async (page: Page): Promise<void> => {
     const session = sessionId ? ensureSession(sessionId) : null
     const authProtectedPath = /^\/(health|status|models|sessions)(\/|$)/.test(path)
     const requiresAuthHost = url.host === "127.0.0.1:5001"
+    const requiresServerErrorHost = url.host === "127.0.0.1:5002"
     const authHeader = (await request.headerValue("authorization")) ?? ""
     const hasValidAuth = authHeader.trim() === "Bearer test-token"
 
@@ -225,6 +249,15 @@ export const installMockBridgeApi = async (page: Page): Promise<void> => {
           "access-control-max-age": "86400",
         },
       })
+      return
+    }
+
+    if (requiresServerErrorHost && authProtectedPath) {
+      if (path === "/status") {
+        await text(route, "engine unavailable", 500)
+        return
+      }
+      await json(route, { detail: "engine unavailable" }, 500)
       return
     }
 
@@ -273,7 +306,14 @@ export const installMockBridgeApi = async (page: Page): Promise<void> => {
     if (method === "POST" && path === "/sessions") {
       const body = (request.postDataJSON?.() ?? {}) as { task?: string }
       const task = String(body.task ?? "")
-      const profile: SessionProfile = /\bgap\b/i.test(task) ? "gap" : "standard"
+      const profile: SessionProfile =
+        /\bresume409\b/i.test(task)
+          ? "resume409"
+          : /\brevoke[-\s_]unsupported\b/i.test(task)
+            ? "revoke_unsupported"
+            : /\bgap\b/i.test(task)
+              ? "gap"
+              : "standard"
       sessionCounter += 1
       const created = ensureSession(`mock-session-${sessionCounter}`, profile)
       await json(route, {
@@ -328,7 +368,15 @@ export const installMockBridgeApi = async (page: Page): Promise<void> => {
     }
 
     if (method === "POST" && /^\/sessions\/[^/]+\/command$/.test(path) && session) {
-      const body = (request.postDataJSON?.() ?? {}) as { command?: string }
+      const body = (request.postDataJSON?.() ?? {}) as { command?: string; payload?: Record<string, unknown> }
+      const decision = typeof body.payload?.decision === "string" ? body.payload.decision : null
+      if (
+        session.profile === "revoke_unsupported" &&
+        ((body.command === "permission_decision" && decision === "revoke") || body.command === "permission_revoke")
+      ) {
+        await json(route, { detail: "permission revoke unsupported" }, 404)
+        return
+      }
       if (body.command === "restore_checkpoint") {
         session.pendingRestoreEvent = true
       }
@@ -401,12 +449,46 @@ export const installMockBridgeApi = async (page: Page): Promise<void> => {
         }
       }
 
+      if (session.profile === "resume409") {
+        if (session.streamCalls === 1 && !replay && !fromId && !lastEventId) {
+          await sse(route, [
+            {
+              id: `${sessionId}-resume-1`,
+              type: "assistant_message",
+              session_id: sessionId,
+              turn: 1,
+              timestamp: at(30),
+              seq: 1,
+              payload: { text: "resume window bootstrap event" },
+            },
+            {
+              id: `${sessionId}-resume-3`,
+              type: "assistant_message",
+              session_id: sessionId,
+              turn: 1,
+              timestamp: at(31),
+              seq: 3,
+              payload: { text: "resume window skipped seq event" },
+            },
+          ])
+          return
+        }
+        if (replay) {
+          await json(route, { detail: "resume window exceeded" }, 409)
+          return
+        }
+      }
+
       if (lastEventId || fromId) {
         await sse(route, [])
         return
       }
 
-      const events = buildStandardSessionEvents(sessionId, session.pendingRestoreEvent)
+      const events = buildStandardSessionEvents(
+        sessionId,
+        session.pendingRestoreEvent,
+        session.profile === "revoke_unsupported",
+      )
       session.pendingRestoreEvent = false
       await sse(route, events)
       return

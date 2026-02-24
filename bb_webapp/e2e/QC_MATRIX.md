@@ -4,29 +4,31 @@ This matrix defines the minimum QC surface for operator-facing regressions.
 
 ## Dimensions
 
-- Platforms:
-  - `desktop-chromium` (1366x920)
-  - `mobile-chromium` (Pixel 7 profile)
-- Connection modes:
-  - `local`
-  - `remote`
-- Stream states:
-  - `idle`
-  - `streaming`
-  - `gap` + recovery
+- Platforms: `desktop-chromium` (1366x920), `mobile-chromium` (Pixel 7 profile)
+- Connection modes: `local`, `remote`
+- Stream states: `idle`, `streaming`, `gap` + recovery
+- Runtime taxonomy classes: `info`, `invalid_url`, `auth_401`, `server_error`, `network_unreachable`, `gap_detected`
 - Failure classes:
   - unreachable endpoint (`Failed to fetch`)
+  - invalid base URL validation
   - auth failure (`HTTP 401`)
+  - diagnostics server failure (`HTTP 500`)
+  - replay resume-window failure (`HTTP 409`)
+  - permission revoke unsupported (`HTTP 404`)
 
 ## Scenario Coverage
 
 - `shell renders with deterministic diagnostics status`
+- `keyboard navigation triggers diagnostics, send, and permission decision`
 - `replay import hydrates transcript, tools, permissions, checkpoints, and task tree`
 - `connection mode and token policy persist across reload`
 - `live workflow: create attach send permissions checkpoints files and artifacts`
 - `gap workflow: sequence gap surfaces recover flow and returns to active stream`
 - `remote mode invalid base url surfaces validation error state`
 - `remote mode auth failure surfaces 401 and recovers after token update`
+- `resume window 409 surfaces gap recovery guidance`
+- `diagnostics surfaces 5xx engine failures`
+- `permission revoke unsupported path surfaces explicit error`
 
 ## Visual QC Targets
 

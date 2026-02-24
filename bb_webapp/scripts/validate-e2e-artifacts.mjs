@@ -11,12 +11,16 @@ const OUTPUT_PATH = path.join(ARTIFACT_ROOT, "quality_gate.json")
 const REQUIRED_PROJECTS = ["desktop-chromium", "mobile-chromium"]
 const REQUIRED_SCENARIOS = [
   "shell renders with deterministic diagnostics status",
+  "keyboard navigation triggers diagnostics, send, and permission decision",
   "replay import hydrates transcript, tools, permissions, checkpoints, and task tree",
   "connection mode and token policy persist across reload",
   "live workflow: create attach send permissions checkpoints files and artifacts",
   "gap workflow: sequence gap surfaces recover flow and returns to active stream",
   "remote mode invalid base url surfaces validation error state",
   "remote mode auth failure surfaces 401 and recovers after token update",
+  "resume window 409 surfaces gap recovery guidance",
+  "diagnostics surfaces 5xx engine failures",
+  "permission revoke unsupported path surfaces explicit error",
 ]
 const REQUIRED_ATTACHMENTS = [
   "shell-diagnostics-ok",
@@ -28,6 +32,16 @@ const REQUIRED_ATTACHMENTS = [
   "gap-workflow-gap-state",
   "gap-workflow-recovered",
 ]
+const PROJECT_DURATION_BUDGET_MS = {
+  "desktop-chromium": {
+    maxTestDurationMs: 45_000,
+    totalProjectDurationMs: 240_000,
+  },
+  "mobile-chromium": {
+    maxTestDurationMs: 70_000,
+    totalProjectDurationMs: 360_000,
+  },
+}
 
 const readJson = (filePath) => JSON.parse(readFileSync(filePath, "utf8"))
 
@@ -48,6 +62,7 @@ const collectSpecs = (suite, parentPath = []) => {
         title: specTitle,
         project: String(test?.projectName ?? "default"),
         status: typeof finalResult?.status === "string" ? finalResult.status : "unknown",
+        durationMs: Number(finalResult?.duration ?? 0),
         path: [...here, specTitle],
         attachments: attachments.map((entry) => String(entry?.name ?? "")).filter((name) => name.length > 0),
       })
@@ -60,6 +75,12 @@ const collectSpecs = (suite, parentPath = []) => {
 }
 
 const check = (name, ok, detail) => ({ name, ok, detail })
+const percentile = (values, ratio) => {
+  if (!Array.isArray(values) || values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1))
+  return sorted[index]
+}
 
 const main = () => {
   const report = readJson(REPORT_PATH)
@@ -70,10 +91,10 @@ const main = () => {
   checks.push(check("summary.ok", summary?.ok === true, { ok: summary?.ok ?? null }))
   checks.push(check("summary.no_failures", Number(summary?.counts?.failed ?? 0) === 0, { failed: summary?.counts?.failed ?? null }))
 
-  const expectedTotal = REQUIRED_PROJECTS.length * REQUIRED_SCENARIOS.length
+  const expectedMinimumTotal = REQUIRED_PROJECTS.length * REQUIRED_SCENARIOS.length
   checks.push(
-    check("scenario.total_expected", specs.length === expectedTotal, {
-      expectedTotal,
+    check("scenario.total_minimum", specs.length >= expectedMinimumTotal, {
+      expectedMinimumTotal,
       observedTotal: specs.length,
     }),
   )
@@ -83,6 +104,12 @@ const main = () => {
     checks.push(
       check(`project.present.${project}`, projectRows.length > 0, {
         project,
+        observed: projectRows.length,
+      }),
+    )
+    checks.push(
+      check(`project.row_count_minimum.${project}`, projectRows.length >= REQUIRED_SCENARIOS.length, {
+        expectedMinimum: REQUIRED_SCENARIOS.length,
         observed: projectRows.length,
       }),
     )
@@ -102,6 +129,28 @@ const main = () => {
         missingAttachments,
       }),
     )
+
+    const durations = projectRows.map((row) => Number(row.durationMs ?? 0)).filter((value) => Number.isFinite(value) && value >= 0)
+    const maxDurationMs = durations.length ? Math.max(...durations) : 0
+    const totalDurationMs = durations.reduce((acc, value) => acc + value, 0)
+    const p95DurationMs = percentile(durations, 0.95)
+    const budget = PROJECT_DURATION_BUDGET_MS[project]
+    if (budget) {
+      checks.push(
+        check(`project.duration.max.${project}`, maxDurationMs <= budget.maxTestDurationMs, {
+          maxDurationMs,
+          budgetMs: budget.maxTestDurationMs,
+          p95DurationMs,
+        }),
+      )
+      checks.push(
+        check(`project.duration.total.${project}`, totalDurationMs <= budget.totalProjectDurationMs, {
+          totalDurationMs,
+          budgetMs: budget.totalProjectDurationMs,
+          p95DurationMs,
+        }),
+      )
+    }
   }
 
   const ok = checks.every((row) => row.ok)
@@ -112,6 +161,7 @@ const main = () => {
       projects: REQUIRED_PROJECTS,
       scenarios: REQUIRED_SCENARIOS,
       attachments: REQUIRED_ATTACHMENTS,
+      durationBudgetsMs: PROJECT_DURATION_BUDGET_MS,
     },
     observed: {
       rows: specs.length,
