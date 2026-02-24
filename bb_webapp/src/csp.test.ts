@@ -9,6 +9,7 @@ describe("index CSP", () => {
   it("includes baseline hardening directives", () => {
     expect(indexHtml).toContain("default-src 'self'")
     expect(indexHtml).toContain("script-src 'self'")
+    expect(indexHtml).toContain("connect-src 'self' %VITE_CSP_CONNECT_SRC%")
     expect(indexHtml).toContain("object-src 'none'")
     expect(indexHtml).toContain("frame-ancestors 'none'")
   })

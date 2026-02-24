@@ -56,7 +56,13 @@ Always validate mode before operating on live sessions.
 - Do not expose broad CORS wildcard policies for credentialed routes.
 - Keep bearer tokens out of URL/query parameters; use Authorization headers only.
 
-## 8. Incident Capture
+## 8. CSP Mode Policy
+
+- Dev/test builds permit remote QC endpoints through `connect-src 'self' http: https:`.
+- Production builds are strict: `connect-src 'self' https:`.
+- If remote localhost testing is needed outside dev/test, use a non-production build mode explicitly.
+
+## 9. Incident Capture
 
 When reporting incident/regression, capture:
 

@@ -133,6 +133,14 @@ const buildApiUrl = (baseUrl: string, path: string): URL =>
 const formatTimestampForFile = (value: Date): string => value.toISOString().replace(/[:.]/g, "-")
 const nowMs = (): number =>
   typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now()
+const isValidBaseUrl = (value: string): boolean => {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+  } catch {
+    return false
+  }
+}
 
 const appendBoundedAudit = <T,>(rows: readonly T[], next: T, max: number): T[] => {
   if (max <= 0) return []
@@ -399,6 +407,10 @@ export function App() {
   }, [flushPendingProjectionEvents])
 
   const refreshSessions = useCallback(async () => {
+    if (!isValidBaseUrl(baseUrl)) {
+      transitionRuntime("error", "invalid engine base URL")
+      return
+    }
     setBusy(true)
     try {
       const rows = await client.listSessions()
@@ -408,9 +420,13 @@ export function App() {
     } finally {
       setBusy(false)
     }
-  }, [client, transitionRuntime])
+  }, [baseUrl, client, transitionRuntime])
 
   const checkConnection = useCallback(async () => {
+    if (!isValidBaseUrl(baseUrl)) {
+      transitionRuntime("error", "invalid engine base URL")
+      return
+    }
     transitionRuntime("connecting", "checking engine health…")
     try {
       const health = await client.health()
@@ -421,9 +437,13 @@ export function App() {
     } catch (error) {
       transitionRuntime("error", formatRuntimeError(error))
     }
-  }, [activeSessionId, client, transitionRuntime])
+  }, [activeSessionId, baseUrl, client, transitionRuntime])
 
   const runDiagnostics = useCallback(async () => {
+    if (!isValidBaseUrl(baseUrl)) {
+      setDiagnostics({ status: "error", details: "invalid engine base URL" })
+      return
+    }
     setDiagnostics({ status: "running", details: "collecting diagnostics…" })
     try {
       const health = await client.health()
@@ -1040,6 +1060,8 @@ export function App() {
     setTaskExpanded((prev) => ({ ...prev, [id]: !(prev[id] ?? true) }))
   }, [])
 
+  const runtimeMessage = connectionMessage || "No connection status yet."
+
   return (
     <div className="app">
       <header className="header">
@@ -1048,7 +1070,9 @@ export function App() {
           {connectionState}
         </div>
       </header>
-      <p className="subtle">{connectionMessage || "No connection status yet."}</p>
+      <p className={`runtimeMessage ${connectionState}`} data-testid="runtime-message">
+        {runtimeMessage}
+      </p>
 
       <section className="panel">
         <div className="row">
@@ -1105,7 +1129,7 @@ export function App() {
             {sessions.map((session) => (
               <li key={session.session_id} className={session.session_id === activeSessionId ? "active" : ""}>
                 <button onClick={() => void attachSession(session.session_id)}>{session.session_id}</button>
-                <span>{session.status}</span>
+                <span className={`sessionStatus ${session.status}`}>{session.status}</span>
               </li>
             ))}
           </ul>

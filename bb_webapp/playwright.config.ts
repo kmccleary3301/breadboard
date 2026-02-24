@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test"
+import { defineConfig, devices } from "@playwright/test"
 
 const DEBUG_MODE = process.env.PLAYWRIGHT_E2E_DEBUG === "1"
 const SKIP_WEBSERVER = process.env.PWTEST_SKIP_WEBSERVER === "1"
@@ -23,6 +23,21 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: DEBUG_MODE ? "on" : "retain-on-failure",
   },
+  projects: [
+    {
+      name: "desktop-chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 920 },
+      },
+    },
+    {
+      name: "mobile-chromium",
+      use: {
+        ...devices["Pixel 7"],
+      },
+    },
+  ],
   webServer: SKIP_WEBSERVER
     ? undefined
     : {

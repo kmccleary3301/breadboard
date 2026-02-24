@@ -8,7 +8,11 @@ const run = (command, args) =>
   })
 
 const testResult = run("npx", ["playwright", "test", "--config=playwright.config.ts"])
-run("node", ["./scripts/summarize-e2e-report.mjs"])
+const summaryResult = run("node", ["./scripts/summarize-e2e-report.mjs"])
+const validationResult = run("node", ["./scripts/validate-e2e-artifacts.mjs"])
 
-const code = typeof testResult.status === "number" ? testResult.status : 1
+const resultCodes = [testResult.status, summaryResult.status, validationResult.status].map((value) =>
+  typeof value === "number" ? value : 1,
+)
+const code = resultCodes.find((value) => value !== 0) ?? 0
 process.exit(code)

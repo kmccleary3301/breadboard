@@ -37,6 +37,36 @@ body {
   color: #4d6070;
 }
 
+.runtimeMessage {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.runtimeMessage.idle,
+.runtimeMessage.streaming,
+.runtimeMessage.stopped,
+.runtimeMessage.connecting {
+  color: #324a5c;
+  background: #f6f9fc;
+  border-color: #d8e3ec;
+}
+
+.runtimeMessage.retrying {
+  color: #6b4d00;
+  background: #fff3d7;
+  border-color: #ecd089;
+}
+
+.runtimeMessage.gap,
+.runtimeMessage.error {
+  color: #8e1f2b;
+  background: #fff0f2;
+  border-color: #f0b5bc;
+}
+
 .pill {
   padding: 4px 10px;
   border-radius: 999px;
@@ -106,7 +136,16 @@ body {
 
 .panel h2,
 .panel h3 {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
+}
+
+.panel h2 {
+  font-size: 1.03rem;
+  letter-spacing: 0.01em;
+}
+
+.panel h3 {
+  font-size: 0.95rem;
 }
 
 .row {
@@ -185,6 +224,23 @@ button:disabled {
 .sessionList li button {
   text-align: left;
   width: 100%;
+}
+
+.sessionStatus {
+  justify-self: end;
+  border-radius: 999px;
+  border: 1px solid #c9d6e2;
+  background: #f3f7fb;
+  color: #415668;
+  padding: 1px 8px;
+  font-size: 0.72rem;
+  text-transform: lowercase;
+}
+
+.sessionStatus.running {
+  border-color: #8fd0a2;
+  background: #e7f9ec;
+  color: #135c37;
 }
 
 .transcript {

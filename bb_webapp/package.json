@@ -19,6 +19,7 @@
     "e2e:spec": "playwright test --config=playwright.config.ts",
     "e2e:debug": "PLAYWRIGHT_E2E_DEBUG=1 playwright test --config=playwright.config.ts --headed --workers=1",
     "e2e:summary": "node ./scripts/summarize-e2e-report.mjs",
+    "e2e:validate": "node ./scripts/validate-e2e-artifacts.mjs",
     "e2e:ci": "node ./scripts/run-e2e-ci.mjs"
   },
   "dependencies": {

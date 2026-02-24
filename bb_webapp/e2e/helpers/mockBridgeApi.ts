@@ -61,7 +61,9 @@ const sse = async (route: Route, events: unknown[]): Promise<void> => {
   })
 }
 
-const nowIso = (): string => new Date().toISOString()
+const FIXED_EPOCH_MS = Date.UTC(2026, 1, 23, 19, 0, 0)
+const at = (offsetMs: number): number => FIXED_EPOCH_MS + offsetMs
+const nowIso = (): string => new Date(FIXED_EPOCH_MS).toISOString()
 
 const buildStandardSessionEvents = (sessionId: string, includeRestoreEvent: boolean): unknown[] => {
   const events: unknown[] = [
@@ -70,7 +72,7 @@ const buildStandardSessionEvents = (sessionId: string, includeRestoreEvent: bool
       type: "assistant_message",
       session_id: sessionId,
       turn: 1,
-      timestamp: Date.now(),
+      timestamp: at(0),
       seq: 1,
       payload: { text: "bootstrap stream event" },
     },
@@ -79,14 +81,14 @@ const buildStandardSessionEvents = (sessionId: string, includeRestoreEvent: bool
       type: "checkpoint_list",
       session_id: sessionId,
       turn: 1,
-      timestamp: Date.now() + 1,
+      timestamp: at(1),
       seq: 2,
       payload: {
         checkpoints: [
           {
             checkpoint_id: "cp-001",
             label: "Bootstrap checkpoint",
-            created_at_ms: Date.now(),
+            created_at_ms: at(0),
             summary: "Initial mocked checkpoint",
           },
         ],
@@ -97,7 +99,7 @@ const buildStandardSessionEvents = (sessionId: string, includeRestoreEvent: bool
       type: "permission_request",
       session_id: sessionId,
       turn: 1,
-      timestamp: Date.now() + 2,
+      timestamp: at(2),
       seq: 3,
       payload: {
         request_id: "perm-live-1",
@@ -113,7 +115,7 @@ const buildStandardSessionEvents = (sessionId: string, includeRestoreEvent: bool
       type: "task_event",
       session_id: sessionId,
       turn: 1,
-      timestamp: Date.now() + 3,
+      timestamp: at(3),
       seq: 4,
       payload: {
         task_id: "task-live-1",
@@ -126,7 +128,7 @@ const buildStandardSessionEvents = (sessionId: string, includeRestoreEvent: bool
       type: "tool_call",
       session_id: sessionId,
       turn: 1,
-      timestamp: Date.now() + 4,
+      timestamp: at(4),
       seq: 5,
       payload: {
         tool_name: "read_file",
@@ -138,7 +140,7 @@ const buildStandardSessionEvents = (sessionId: string, includeRestoreEvent: bool
       type: "tool.result",
       session_id: sessionId,
       turn: 1,
-      timestamp: Date.now() + 5,
+      timestamp: at(5),
       seq: 6,
       payload: {
         tool_name: "write_file",
@@ -151,7 +153,7 @@ const buildStandardSessionEvents = (sessionId: string, includeRestoreEvent: bool
       type: "assistant_message",
       session_id: sessionId,
       turn: 1,
-      timestamp: Date.now() + 6,
+      timestamp: at(6),
       seq: 7,
       payload: { text: "Ready for the next operation." },
     },
@@ -163,7 +165,7 @@ const buildStandardSessionEvents = (sessionId: string, includeRestoreEvent: bool
       type: "checkpoint_restored",
       session_id: sessionId,
       turn: 1,
-      timestamp: Date.now() + 7,
+      timestamp: at(7),
       seq: 8,
       payload: {
         checkpoint_id: "cp-001",
@@ -208,6 +210,10 @@ export const installMockBridgeApi = async (page: Page): Promise<void> => {
     const path = url.pathname
     const sessionId = extractSessionId(path)
     const session = sessionId ? ensureSession(sessionId) : null
+    const authProtectedPath = /^\/(health|status|models|sessions)(\/|$)/.test(path)
+    const requiresAuthHost = url.host === "127.0.0.1:5001"
+    const authHeader = (await request.headerValue("authorization")) ?? ""
+    const hasValidAuth = authHeader.trim() === "Bearer test-token"
 
     if (method === "OPTIONS") {
       await route.fulfill({
@@ -219,6 +225,15 @@ export const installMockBridgeApi = async (page: Page): Promise<void> => {
           "access-control-max-age": "86400",
         },
       })
+      return
+    }
+
+    if (requiresAuthHost && authProtectedPath && !hasValidAuth) {
+      if (path === "/status") {
+        await text(route, "unauthorized", 401)
+        return
+      }
+      await json(route, { detail: "unauthorized" }, 401)
       return
     }
 
@@ -354,7 +369,7 @@ export const installMockBridgeApi = async (page: Page): Promise<void> => {
               type: "assistant_message",
               session_id: sessionId,
               turn: 1,
-              timestamp: Date.now(),
+              timestamp: at(20),
               seq: 1,
               payload: { text: "gap bootstrap event" },
             },
@@ -363,7 +378,7 @@ export const installMockBridgeApi = async (page: Page): Promise<void> => {
               type: "assistant_message",
               session_id: sessionId,
               turn: 1,
-              timestamp: Date.now() + 1,
+              timestamp: at(21),
               seq: 3,
               payload: { text: "gap event with skipped seq" },
             },
@@ -377,7 +392,7 @@ export const installMockBridgeApi = async (page: Page): Promise<void> => {
               type: "assistant_message",
               session_id: sessionId,
               turn: 1,
-              timestamp: Date.now() + 2,
+              timestamp: at(22),
               seq: 3,
               payload: { text: "gap replay still out of sequence" },
             },

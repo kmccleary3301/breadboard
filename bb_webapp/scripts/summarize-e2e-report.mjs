@@ -31,7 +31,9 @@ const collectSpecs = (suite, parentPath = []) => {
       const status = typeof finalResult?.status === "string" ? finalResult.status : "unknown"
       const attachments = Array.isArray(finalResult?.attachments) ? finalResult.attachments : []
       rows.push({
+        title: specTitle,
         path: [...here, specTitle],
+        project: String(test?.projectName ?? "default"),
         status,
         durationMs: Number(finalResult?.duration ?? 0),
         attachments: attachments
@@ -79,12 +81,33 @@ const buildSummary = () => {
     timedOut: specs.filter((row) => row.status === "timedOut").length,
     interrupted: specs.filter((row) => row.status === "interrupted").length,
   }
+  const projectBreakdown = {}
+  for (const row of specs) {
+    if (!projectBreakdown[row.project]) {
+      projectBreakdown[row.project] = {
+        total: 0,
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+        timedOut: 0,
+        interrupted: 0,
+      }
+    }
+    const bucket = projectBreakdown[row.project]
+    bucket.total += 1
+    if (row.status === "passed") bucket.passed += 1
+    if (row.status === "failed") bucket.failed += 1
+    if (row.status === "skipped") bucket.skipped += 1
+    if (row.status === "timedOut") bucket.timedOut += 1
+    if (row.status === "interrupted") bucket.interrupted += 1
+  }
   const failedTests = specs.filter((row) => row.status !== "passed" && row.status !== "skipped")
   return {
     ok: failedTests.length === 0,
     generatedAt: new Date().toISOString(),
     reportPath: path.relative(WEBAPP_ROOT, REPORT_PATH),
     counts,
+    projectBreakdown,
     failedTests,
   }
 }
@@ -100,6 +123,13 @@ const toMarkdown = (summary) => {
   lines.push(`- failed: \`${summary.counts.failed}\``)
   lines.push(`- skipped: \`${summary.counts.skipped}\``)
   lines.push(`- timedOut: \`${summary.counts.timedOut}\``)
+  lines.push(`- projects: \`${Object.keys(summary.projectBreakdown).length}\``)
+  lines.push("")
+  lines.push("## Project Breakdown")
+  lines.push("")
+  for (const [project, counts] of Object.entries(summary.projectBreakdown)) {
+    lines.push(`- ${project}: total=\`${counts.total}\` passed=\`${counts.passed}\` failed=\`${counts.failed}\` skipped=\`${counts.skipped}\``)
+  }
   lines.push("")
   if (summary.failedTests.length > 0) {
     lines.push("## Failures")

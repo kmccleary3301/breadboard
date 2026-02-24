@@ -24,7 +24,9 @@ This package is the browser operator surface for BreadBoard sessions.
 - Markdown/assistant content is treated as untrusted; unsafe patterns degrade to plaintext rendering.
 - Replay export and raw event debug views redact sensitive keys.
 - Remote mode only attaches Authorization headers; local/sandbox modes do not by default.
-- A baseline CSP is set in `index.html`.
+- CSP is environment-scoped via Vite env vars:
+  - development/test: `connect-src 'self' http: https:`
+  - production build: `connect-src 'self' https:`
 
 ## Development
 
@@ -84,6 +86,12 @@ npm run e2e:debug
 
 ```bash
 npm run e2e:ci
+```
+
+- E2E artifact quality gate (scenario/project/attachment checks):
+
+```bash
+npm run e2e:validate
 ```
 
 ## Data Retention and Cache Policy
