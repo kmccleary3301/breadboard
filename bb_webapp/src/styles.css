@@ -12,6 +12,7 @@
   --panel-border: #bfd0de;
   --panel-border-strong: #b9cddd;
   --panel-divider: #dde7f0;
+  --panel-accent: #dbe7f2;
   --panel-shadow: 0 14px 34px rgba(16, 39, 62, 0.09);
   --brand-700: #1c4f85;
   --brand-600: #235f9c;
@@ -54,7 +55,7 @@ body::before {
 .app {
   max-width: 1640px;
   margin: 0 auto;
-  padding: 22px;
+  padding: 20px 22px 24px;
 }
 
 .header {
@@ -66,7 +67,7 @@ body::before {
 
 .header h1 {
   margin: 0;
-  font-size: 1.55rem;
+  font-size: 1.62rem;
   line-height: 1.2;
   color: var(--text-strong);
   letter-spacing: 0.005em;
@@ -80,10 +81,11 @@ body::before {
 
 .runtimeMessage {
   margin: 8px 0 0;
-  padding: 8px 10px;
+  padding: 9px 11px;
   border: 1px solid transparent;
-  border-radius: 10px;
-  font-size: 0.9rem;
+  border-radius: 11px;
+  font-size: 0.88rem;
+  line-height: 1.35;
 }
 
 .runtimeMessage.idle,
@@ -172,8 +174,8 @@ body::before {
 .panel {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, var(--panel-bg) 100%);
   border: 1px solid var(--panel-border);
-  border-radius: 14px;
-  padding: 14px;
+  border-radius: 16px;
+  padding: 15px;
   box-shadow: var(--panel-shadow);
   backdrop-filter: blur(1px);
   transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease;
@@ -199,10 +201,9 @@ body::before {
 
 .panelOps {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(247, 251, 255, 0.9) 100%);
-  position: sticky;
-  top: 16px;
-  max-height: calc(100vh - 34px);
-  overflow: auto;
+  position: static;
+  max-height: none;
+  overflow: visible;
 }
 
 .panel h2,
@@ -212,8 +213,8 @@ body::before {
 }
 
 .panel h2 {
-  font-size: 1.02rem;
-  letter-spacing: 0.01em;
+  font-size: 1.04rem;
+  letter-spacing: 0.008em;
   font-weight: 700;
 }
 
@@ -228,6 +229,25 @@ body::before {
   font-weight: 700;
   margin-top: 14px;
   margin-bottom: 8px;
+}
+
+.panelOps > h2 {
+  position: relative;
+  padding-bottom: 7px;
+}
+
+.panelOps > h2::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--panel-accent) 0%, transparent 82%);
+}
+
+.panelOps > h2:not(:first-child) {
+  border-top: 0;
 }
 
 .disclosure {
@@ -307,7 +327,7 @@ body::before {
 
 .row {
   display: flex;
-  gap: 8px;
+  gap: 9px;
   align-items: end;
   flex-wrap: wrap;
 }
@@ -317,7 +337,7 @@ label {
   flex-direction: column;
   gap: 5px;
   flex: 1;
-  font-size: 0.8rem;
+  font-size: 0.79rem;
   font-weight: 600;
   color: #2f4b64;
 }
@@ -355,7 +375,7 @@ button {
   border: 1px solid #92b0ca;
   background: linear-gradient(180deg, #f3f8fd 0%, #d7e6f5 100%);
   color: #1f4261;
-  border-radius: 8px;
+  border-radius: 9px;
   padding: 8px 12px;
   font-weight: 600;
   cursor: pointer;
@@ -519,6 +539,23 @@ button:disabled {
   gap: 9px;
 }
 
+.transcript.empty {
+  min-height: 340px;
+  justify-content: center;
+  align-items: center;
+  border: 1px dashed #c9d9e7;
+  border-radius: 12px;
+  padding: 16px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f2f7fc 100%);
+  overflow: hidden;
+}
+
+.transcriptEmpty {
+  max-width: 320px;
+  text-align: center;
+  margin: 0 auto;
+}
+
 .bubble {
   border: 1px solid #d5e1eb;
   border-radius: 10px;
@@ -628,6 +665,11 @@ button:disabled {
   word-break: break-word;
   max-height: 320px;
   overflow: auto;
+}
+
+.panelOps > .subtle {
+  margin-top: 6px;
+  margin-bottom: 0;
 }
 
 .permissionList {
@@ -891,7 +933,20 @@ button:disabled {
   border-color: #ced9e3;
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1360px) {
+  .layout {
+    grid-template-columns: minmax(260px, 1fr) minmax(420px, 1.4fr);
+  }
+
+  .panelOps {
+    grid-column: 1 / -1;
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 920px) {
   .layout {
     grid-template-columns: 1fr;
   }
@@ -918,22 +973,32 @@ button:disabled {
   }
 
   .panel {
-    padding: 10px;
+    padding: 11px;
   }
 
   .runtimeControls > label {
-    min-width: 130px;
-    flex: 1 1 130px;
+    min-width: 100%;
+    flex: 1 1 100%;
   }
 
   .runtimeActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
     margin-left: 0;
   }
 
   .runtimeActions > button {
-    flex: 1 1 130px;
+    flex: initial;
     min-height: 36px;
+  }
+
+  .runtimeActions > button:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .transcript.empty {
+    min-height: 210px;
   }
 }
 

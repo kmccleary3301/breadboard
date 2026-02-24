@@ -1187,8 +1187,8 @@ export function App() {
               Stop
             </button>
           </div>
-          <div className="transcript" data-testid="transcript-list">
-            {projection.transcript.length === 0 ? <p className="subtle">No transcript events yet.</p> : null}
+          <div className={`transcript ${projection.transcript.length === 0 ? "empty" : ""}`} data-testid="transcript-list">
+            {projection.transcript.length === 0 ? <p className="subtle transcriptEmpty">No transcript events yet.</p> : null}
             {projection.transcript.map((row) => (
               <article key={row.id} id={`entry-${row.id}`} className={`bubble ${row.role}`}>
                 <header>
