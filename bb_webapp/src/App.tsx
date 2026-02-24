@@ -1116,15 +1116,17 @@ export function App() {
             API Token (optional)
             <input value={token} onChange={(event) => setModeToken(event.target.value)} placeholder="Bearer token" />
           </label>
-          <button className="btnPrimary" onClick={() => void checkConnection()} disabled={busy}>
-            Check
-          </button>
-          <button className="btnSecondary" onClick={() => void runDiagnostics()} disabled={busy}>
-            Diagnostics
-          </button>
-          <button className="btnGhost" onClick={() => void recoverStream()} disabled={busy || !activeSessionId || connectionState !== "gap"}>
-            Recover Stream
-          </button>
+          <div className="runtimeActions">
+            <button className="btnPrimary" onClick={() => void checkConnection()} disabled={busy}>
+              Check
+            </button>
+            <button className="btnSecondary" onClick={() => void runDiagnostics()} disabled={busy}>
+              Diagnostics
+            </button>
+            <button className="btnGhost" onClick={() => void recoverStream()} disabled={busy || !activeSessionId || connectionState !== "gap"}>
+              Recover Stream
+            </button>
+          </div>
         </div>
         {connectionMode === "remote" ? (
           <p className="errorText">Remote mode trust boundary: treat server/workspace as external and keep a valid token posture.</p>
