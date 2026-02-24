@@ -1,0 +1,65 @@
+{
+  "schema_version": "phase5_expected_wait_actions_v1",
+  "scenarios": {
+    "phase4_replay/subagents_concurrency_20_v1": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Concurrency stress replay includes intentional quiet/wait settling."
+    },
+    "phase4_replay/subagents_strip_churn_v1": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Strip churn replay intentionally uses quiet waits to capture deterministic transitions."
+    },
+    "phase4_replay/subagents_v1_fullpane_v7": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Fullpane subagent replay includes deterministic quiet windows."
+    },
+    "phase4_replay/thinking_preview_v1": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Thinking preview includes intentional waits for state progression snapshots."
+    },
+    "phase4_replay/thinking_tool_interleaved_v1": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Interleaved thinking/tool scenario uses settle waits to avoid capture races."
+    },
+    "phase4_replay/thinking_multiturn_lifecycle_v1": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Lifecycle replay includes phase-boundary waits by design."
+    },
+    "phase4_replay/thinking_reasoning_only_v1": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Reasoning-only replay uses deterministic wait windows for stable captures."
+    },
+    "phase4_replay/everything_showcase_v1_fullpane_v1": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Showcase replay intentionally stages waits across mixed UI states."
+    },
+    "phase4_replay/streaming_v1_fullpane_v8": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Streaming replay includes quiet waits to lock frame order under deterministic capture."
+    },
+    "phase4_replay/alt_buffer_enter_exit_v1": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Alt-buffer replay uses settle waits around enter/exit transitions."
+    },
+    "phase4_replay/large_diff_artifact_v1": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Large diff artifact scenario intentionally pauses for deterministic artifact snapshots."
+    },
+    "phase4_replay/large_output_artifact_v1": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Large output artifact scenario includes deliberate settle waits."
+    },
+    "phase4_replay/resize_overlay_interaction_v1": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Resize/overlay interaction replay uses waits to stabilize post-resize rendering."
+    },
+    "phase4_replay/thinking_lifecycle_expiration_v1": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Lifecycle expiration replay includes intentional timing waits."
+    },
+    "phase4_replay/todo_preview_v1_fullpane_v7": {
+      "expected_wait_actions": ["wait_for_quiet", "wait_until", "sleep"],
+      "note": "Todo preview replay uses settle waits to capture deterministic footer/modal states."
+    }
+  }
+}

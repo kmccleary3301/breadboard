@@ -1,0 +1,20 @@
+{
+  "schema_version": "phase5_discrepancy_allowlist_v1",
+  "items": [
+    {
+      "key": "ground-truth:screenshot_ground_truth_3",
+      "max_risk_score": 0.97,
+      "note": "Known frozen GT headroom target pending dedicated screenshot polish sweep."
+    },
+    {
+      "key": "ground-truth:screenshot_ground_truth_1",
+      "max_risk_score": 0.93,
+      "note": "Known frozen GT headroom target pending dedicated screenshot polish sweep."
+    },
+    {
+      "key": "ground-truth:screenshot_ground_truth_2",
+      "max_risk_score": 0.76,
+      "note": "Known frozen GT headroom target pending dedicated screenshot polish sweep."
+    }
+  ]
+}

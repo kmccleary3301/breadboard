@@ -165,6 +165,44 @@ def _diff_metrics(a: Image.Image, b: Image.Image) -> tuple[list[float], list[flo
     return mean, rms
 
 
+def _footer_contrast_metrics(img: Image.Image) -> dict[str, Any]:
+    """
+    Estimate footer legibility by comparing pixel deltas from dominant background.
+    """
+    px = list(img.getdata())
+    if not px:
+        return {
+            "background_rgb": [0, 0, 0],
+            "max_channel_delta": 0.0,
+            "p99_channel_delta": 0.0,
+            "p995_channel_delta": 0.0,
+            "ratio_delta_gt_20": 0.0,
+            "ratio_delta_gt_40": 0.0,
+        }
+
+    # Dominant footer background is stable in this corpus; median is robust to text spikes.
+    chans = [[rgb[i] for rgb in px] for i in range(3)]
+    bg = [sorted(ch)[len(ch) // 2] for ch in chans]
+    deltas = [max(abs(rgb[0] - bg[0]), abs(rgb[1] - bg[1]), abs(rgb[2] - bg[2])) for rgb in px]
+    deltas_sorted = sorted(deltas)
+
+    def _pct(p: float) -> float:
+        if not deltas_sorted:
+            return 0.0
+        idx = int(round((len(deltas_sorted) - 1) * p))
+        return float(deltas_sorted[max(0, min(len(deltas_sorted) - 1, idx))])
+
+    total = max(1, len(deltas))
+    return {
+        "background_rgb": [int(x) for x in bg],
+        "max_channel_delta": float(max(deltas)),
+        "p99_channel_delta": _pct(0.99),
+        "p995_channel_delta": _pct(0.995),
+        "ratio_delta_gt_20": float(sum(1 for d in deltas if d > 20) / total),
+        "ratio_delta_gt_40": float(sum(1 for d in deltas if d > 40) / total),
+    }
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--hard-signoff-json", required=True)
@@ -183,7 +221,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary: dict[str, Any] = {
-        "schema_version": "phase5_footer_qc_pack_v1",
+        "schema_version": "phase5_footer_qc_pack_v2",
         "hard_signoff_json": str(Path(args.hard_signoff_json).expanduser().resolve()),
         "nightly_signoff_json": str(Path(args.nightly_signoff_json).expanduser().resolve()),
         "flat_bundle_dir": str(flat_bundle),
@@ -216,6 +254,8 @@ def main() -> None:
             "active_frame": _frame_name(active_row),
             "final_frame": _frame_name(final_row),
             "active_hint": t.hint,
+            "active_footer_contrast": _footer_contrast_metrics(_active_crop_img),
+            "final_footer_contrast": _footer_contrast_metrics(final_crop_img),
             "outputs": {
                 "active_crop": str(active_crop.relative_to(out_dir)),
                 "active_crop_x3": str(active_crop_x3.relative_to(out_dir)),
@@ -243,6 +283,7 @@ def main() -> None:
                 "mean_abs_diff_rgb": mean_abs,
                 "rms_diff_rgb": rms,
             }
+            target_summary["prev_final_footer_contrast"] = _footer_contrast_metrics(prev_crop)
 
         summary["targets"][t.key] = target_summary
 
@@ -270,6 +311,14 @@ def main() -> None:
             diff = item["prev_vs_new_final_footer_diff"]
             lines.append(f"- prev_vs_new_final_footer_diff mean_abs_rgb: `{diff['mean_abs_diff_rgb']}`")
             lines.append(f"- prev_vs_new_final_footer_diff rms_rgb: `{diff['rms_diff_rgb']}`")
+        final_contrast = item.get("final_footer_contrast", {})
+        if isinstance(final_contrast, dict):
+            lines.append(
+                "- final_footer_contrast: "
+                f"p99={final_contrast.get('p99_channel_delta')} "
+                f"p995={final_contrast.get('p995_channel_delta')} "
+                f"gt20={final_contrast.get('ratio_delta_gt_20')}"
+            )
         lines.append("")
     (out_dir / "README.md").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     print(f"footer_qc_pack={out_json}")
