@@ -219,6 +219,54 @@ body::before {
   margin-bottom: 8px;
 }
 
+.disclosure {
+  margin-top: 16px;
+  border-top: 1px solid var(--panel-divider);
+  padding-top: 10px;
+}
+
+.disclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-strong);
+}
+
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosureTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.disclosureMeta {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  text-transform: lowercase;
+}
+
+.disclosure > summary::after {
+  content: "▸";
+  font-size: 0.76rem;
+  color: #5e7387;
+  transform: translateY(-1px);
+  transition: transform 140ms ease;
+}
+
+.disclosure[open] > summary::after {
+  transform: rotate(90deg) translateY(-1px);
+}
+
+.disclosure[open] > summary {
+  margin-bottom: 8px;
+}
+
 .row {
   display: flex;
   gap: 8px;

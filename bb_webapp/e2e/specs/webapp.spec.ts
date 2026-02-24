@@ -59,6 +59,10 @@ test("shell renders with deterministic diagnostics status", async ({ page }, tes
   await expect(page.getByRole("button", { name: "Refresh Checkpoints" })).toBeDisabled()
   await expect(page.getByRole("button", { name: "Restore" })).toBeDisabled()
   await expect(page.getByRole("button", { name: "Download" })).toBeDisabled()
+
+  const rawEventsDisclosure = page.getByTestId("raw-events-disclosure")
+  await expect(rawEventsDisclosure).toHaveJSProperty("open", false)
+  await rawEventsDisclosure.locator("summary").click()
   await expect(page.getByRole("button", { name: "Export Replay" })).toBeDisabled()
 
   await page.getByRole("button", { name: "Diagnostics" }).click()

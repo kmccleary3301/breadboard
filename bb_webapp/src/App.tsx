@@ -1074,6 +1074,10 @@ export function App() {
   const runtimeMessage = connectionMessage || "No connection status yet."
   const runtimeCode = classifyRuntimeCode(connectionState, runtimeMessage)
   const runtimeRole = runtimeCode === "info" && connectionState !== "error" ? "status" : "alert"
+  const hasLedgerRows = projection.permissionLedger.length > 0
+  const hasTaskNodes = Object.keys(projection.taskGraph.nodesById).length > 0
+  const hasEvents = projection.events.length > 0
+  const hasAuditEntries = auditLog.length > 0
 
   return (
     <div className="app">
@@ -1350,35 +1354,39 @@ export function App() {
           </div>
           <h3>Permission Ledger</h3>
           {revokeError ? <p className="errorText">{revokeError}</p> : null}
-          <div className="row">
-            <input
-              value={permissionLedgerFilter.tool}
-              onChange={(event) => setPermissionLedgerFilter((prev) => ({ ...prev, tool: event.target.value }))}
-              placeholder="filter tool"
-            />
-            <select
-              value={permissionLedgerFilter.scope}
-              onChange={(event) =>
-                setPermissionLedgerFilter((prev) => ({ ...prev, scope: event.target.value as PermissionScope | "all" }))
-              }
-            >
-              <option value="all">all scopes</option>
-              <option value="project">project</option>
-              <option value="session">session</option>
-            </select>
-            <select
-              value={permissionLedgerFilter.decision}
-              onChange={(event) => setPermissionLedgerFilter((prev) => ({ ...prev, decision: event.target.value as PermissionLedgerFilterState["decision"] }))}
-            >
-              <option value="all">all decisions</option>
-              <option value="allow-once">allow-once</option>
-              <option value="allow-always">allow-always</option>
-              <option value="deny-once">deny-once</option>
-              <option value="deny-always">deny-always</option>
-              <option value="deny-stop">deny-stop</option>
-              <option value="revoke">revoke</option>
-            </select>
-          </div>
+          {hasLedgerRows ? (
+            <div className="row">
+              <input
+                value={permissionLedgerFilter.tool}
+                onChange={(event) => setPermissionLedgerFilter((prev) => ({ ...prev, tool: event.target.value }))}
+                placeholder="filter tool"
+              />
+              <select
+                value={permissionLedgerFilter.scope}
+                onChange={(event) =>
+                  setPermissionLedgerFilter((prev) => ({ ...prev, scope: event.target.value as PermissionScope | "all" }))
+                }
+              >
+                <option value="all">all scopes</option>
+                <option value="project">project</option>
+                <option value="session">session</option>
+              </select>
+              <select
+                value={permissionLedgerFilter.decision}
+                onChange={(event) =>
+                  setPermissionLedgerFilter((prev) => ({ ...prev, decision: event.target.value as PermissionLedgerFilterState["decision"] }))
+                }
+              >
+                <option value="all">all decisions</option>
+                <option value="allow-once">allow-once</option>
+                <option value="allow-always">allow-always</option>
+                <option value="deny-once">deny-once</option>
+                <option value="deny-always">deny-always</option>
+                <option value="deny-stop">deny-stop</option>
+                <option value="revoke">revoke</option>
+              </select>
+            </div>
+          ) : null}
           <div className="ledgerList" data-testid="permission-ledger">
             {filteredLedger.length === 0 ? <p className="subtle">No permission ledger rows.</p> : null}
             {filteredLedger.map((entry) => (
@@ -1457,26 +1465,28 @@ export function App() {
             ))}
           </div>
           <h2>Task Tree</h2>
-          <div className="row">
-            <button className={`chipButton ${taskFilters.failedOnly ? "active" : ""}`} onClick={() => setTaskFilters((prev) => ({ ...prev, failedOnly: !prev.failedOnly }))}>
-              {taskFilters.failedOnly ? "Show All" : "Failed Only"}
-            </button>
-            <button className={`chipButton ${taskFilters.activeOnly ? "active" : ""}`} onClick={() => setTaskFilters((prev) => ({ ...prev, activeOnly: !prev.activeOnly }))}>
-              {taskFilters.activeOnly ? "Show All" : "Active Only"}
-            </button>
-            <button
-              className={`chipButton ${projection.taskGraph.activeNodeId ? "active" : ""}`}
-              onClick={() => {
-                if (!projection.taskGraph.activeNodeId) return
-                const node = projection.taskGraph.nodesById[projection.taskGraph.activeNodeId]
-                if (!node) return
-                jumpToEvent(node.eventId)
-              }}
-              disabled={!projection.taskGraph.activeNodeId}
-            >
-              Focus Active
-            </button>
-          </div>
+          {hasTaskNodes ? (
+            <div className="row">
+              <button className={`chipButton ${taskFilters.failedOnly ? "active" : ""}`} onClick={() => setTaskFilters((prev) => ({ ...prev, failedOnly: !prev.failedOnly }))}>
+                {taskFilters.failedOnly ? "Show All" : "Failed Only"}
+              </button>
+              <button className={`chipButton ${taskFilters.activeOnly ? "active" : ""}`} onClick={() => setTaskFilters((prev) => ({ ...prev, activeOnly: !prev.activeOnly }))}>
+                {taskFilters.activeOnly ? "Show All" : "Active Only"}
+              </button>
+              <button
+                className={`chipButton ${projection.taskGraph.activeNodeId ? "active" : ""}`}
+                onClick={() => {
+                  if (!projection.taskGraph.activeNodeId) return
+                  const node = projection.taskGraph.nodesById[projection.taskGraph.activeNodeId]
+                  if (!node) return
+                  jumpToEvent(node.eventId)
+                }}
+                disabled={!projection.taskGraph.activeNodeId}
+              >
+                Focus Active
+              </button>
+            </div>
+          ) : null}
           <TaskTreePanel
             graph={projection.taskGraph}
             expanded={taskExpanded}
@@ -1527,50 +1537,60 @@ export function App() {
               Download
             </button>
           </div>
-          <h2>Raw Events</h2>
-          <div className="row">
-            <button className="btnSecondary" onClick={() => void exportReplay()} disabled={busy || !activeSessionId}>
-              Export Replay
-            </button>
-            <button className="btnSecondary" onClick={() => void triggerReplayImport()} disabled={busy}>
-              Import Replay
-            </button>
-            <input
-              ref={replayFileInputRef}
-              type="file"
-              accept="application/json,.json"
-              data-testid="replay-import-input"
-              onChange={(event) => void onImportReplayFile(event)}
-              style={{ display: "none" }}
-            />
-          </div>
-          <p className="subtle">
-            Projection hash: <code>{projectionHash}</code> · events: {projection.events.length}
-          </p>
-          <p className="subtle">
-            metrics: received={metrics.eventsReceived} applied={metrics.eventsApplied} flushes={metrics.flushCount} max_queue=
-            {metrics.maxQueueDepth} stale_drops={metrics.staleDrops} last_latency_ms={metrics.lastQueueLatencyMs.toFixed(1)}
-          </p>
-          <div className="events">
-            {projection.events.slice(-120).map((event) => (
-              <div key={event.id} id={`event-${event.id}`}>
-                {event.id} {event.type} {safeJson(redactSensitiveValue(event.payload))}
-              </div>
-            ))}
-          </div>
-          <h3>Audit Log</h3>
-          <div className="events">
-            {auditLog.length === 0 ? <span className="subtle">No audit actions yet.</span> : null}
-            {auditLog
-              .slice()
-              .reverse()
-              .slice(0, 80)
-              .map((row) => (
-                <div key={row.id}>
-                  {new Date(row.at).toLocaleTimeString()} {row.action} {row.detail}
+          <details className="disclosure" data-testid="raw-events-disclosure" open={hasEvents}>
+            <summary>
+              <span className="disclosureTitle">Raw Events</span>
+              <span className="disclosureMeta">{hasEvents ? `${projection.events.length} events` : "hidden until stream data arrives"}</span>
+            </summary>
+            <div className="row">
+              <button className="btnSecondary" onClick={() => void exportReplay()} disabled={busy || !activeSessionId}>
+                Export Replay
+              </button>
+              <button className="btnSecondary" onClick={() => void triggerReplayImport()} disabled={busy}>
+                Import Replay
+              </button>
+              <input
+                ref={replayFileInputRef}
+                type="file"
+                accept="application/json,.json"
+                data-testid="replay-import-input"
+                onChange={(event) => void onImportReplayFile(event)}
+                style={{ display: "none" }}
+              />
+            </div>
+            <p className="subtle">
+              Projection hash: <code>{projectionHash}</code> · events: {projection.events.length}
+            </p>
+            <p className="subtle">
+              metrics: received={metrics.eventsReceived} applied={metrics.eventsApplied} flushes={metrics.flushCount} max_queue=
+              {metrics.maxQueueDepth} stale_drops={metrics.staleDrops} last_latency_ms={metrics.lastQueueLatencyMs.toFixed(1)}
+            </p>
+            <div className="events">
+              {projection.events.slice(-120).map((event) => (
+                <div key={event.id} id={`event-${event.id}`}>
+                  {event.id} {event.type} {safeJson(redactSensitiveValue(event.payload))}
                 </div>
               ))}
-          </div>
+            </div>
+          </details>
+          <details className="disclosure" data-testid="audit-log-disclosure" open={hasAuditEntries}>
+            <summary>
+              <span className="disclosureTitle">Audit Log</span>
+              <span className="disclosureMeta">{hasAuditEntries ? `${auditLog.length} actions` : "hidden until actions occur"}</span>
+            </summary>
+            <div className="events">
+              {auditLog.length === 0 ? <span className="subtle">No audit actions yet.</span> : null}
+              {auditLog
+                .slice()
+                .reverse()
+                .slice(0, 80)
+                .map((row) => (
+                  <div key={row.id}>
+                    {new Date(row.at).toLocaleTimeString()} {row.action} {row.detail}
+                  </div>
+                ))}
+            </div>
+          </details>
         </section>
       </main>
     </div>
