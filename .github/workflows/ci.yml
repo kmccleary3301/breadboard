@@ -104,6 +104,376 @@ jobs:
           path: artifacts/compat_break_guard_report.json
           if-no-files-found: error
 
+  danger_zone_acr_guard:
+    name: Danger-zone ACR guard
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve changed files for PR
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+          git diff --name-only "$base_sha" "$head_sha" > artifacts/changed_files.txt
+          echo "changed files count: $(wc -l < artifacts/changed_files.txt)"
+
+      - name: Enforce ACR artifact for danger-zone diffs
+        run: |
+          python scripts/check_danger_zone_acr.py \
+            --manifest docs/contracts/policies/kernel_danger_zone_manifest_v1.json \
+            --changed-files-file artifacts/changed_files.txt \
+            --json-out artifacts/danger_zone_acr_report.json
+
+      - name: Validate Kernel Contract Pack v1 hash snapshot
+        run: |
+          python scripts/check_kernel_contract_pack_v1.py \
+            --manifest docs/contracts/policies/kernel_contract_pack_v1_manifest.json \
+            --repo-root . \
+            --json-out artifacts/kernel_contract_pack_report.json
+
+      - name: Upload danger-zone ACR report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: danger-zone-acr-guard-report
+          path: |
+            artifacts/danger_zone_acr_report.json
+            artifacts/kernel_contract_pack_report.json
+          if-no-files-found: error
+
+  atp_contract_governance_guard:
+    name: ATP contract governance guard
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve changed files for PR
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+          git diff --name-only "$base_sha" "$head_sha" > artifacts/changed_files.txt
+          echo "changed files count: $(wc -l < artifacts/changed_files.txt)"
+
+      - name: Enforce ATP contract governance policy
+        run: |
+          python scripts/check_atp_contract_governance.py \
+            --changed-files-file artifacts/changed_files.txt \
+            --pr-template .github/PULL_REQUEST_TEMPLATE.md \
+            --json-out artifacts/atp_contract_governance_report.json
+
+      - name: Upload ATP contract governance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atp-contract-governance-guard-report
+          path: artifacts/atp_contract_governance_report.json
+          if-no-files-found: error
+
+  governance_v2_templates_guard:
+    name: Governance v2 templates guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate governance template bindings
+        run: |
+          python scripts/check_governance_v2_templates.py \
+            --repo-root . \
+            --pr-template .github/PULL_REQUEST_TEMPLATE.md \
+            --json-out artifacts/governance_v2_templates_report.json
+
+      - name: Upload governance templates report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-v2-templates-guard-report
+          path: artifacts/governance_v2_templates_report.json
+          if-no-files-found: error
+
+  kernel_ext_boundary_guard:
+    name: Kernel-extension boundary guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate kernel->extension import boundaries
+        run: |
+          python scripts/validate_kernel_ext_boundaries.py --json
+
+  request_body_hash_stability:
+    name: Request-body byte stability gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Enforce request-body hash stability baseline
+        run: |
+          python scripts/check_request_body_hashes.py \
+            --root tests/fixtures/compat/request_bodies \
+            --baseline docs/conformance/request_body_hashes_baseline_v1.json \
+            --json-out artifacts/request_body_hash_gate_report.json
+
+      - name: Upload request-body hash gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: request-body-hash-gate-report
+          path: artifacts/request_body_hash_gate_report.json
+          if-no-files-found: error
+
+  tool_schema_hash_stability:
+    name: Tool-schema hash stability gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Enforce tool-schema hash stability baseline
+        run: |
+          python scripts/check_tool_schema_hashes.py \
+            --root implementations/tools/defs \
+            --baseline docs/conformance/tool_schema_hashes_baseline_v1.json \
+            --json-out artifacts/tool_schema_hash_gate_report.json
+
+      - name: Upload tool-schema hash gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-schema-hash-gate-report
+          path: artifacts/tool_schema_hash_gate_report.json
+          if-no-files-found: error
+
+  event_envelope_snapshot_stability:
+    name: Event-envelope snapshot stability gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Enforce event-envelope snapshot baseline
+        run: |
+          python scripts/check_event_envelope_snapshots.py \
+            --baseline docs/conformance/event_envelope_snapshots_baseline_v1.json \
+            --json-out artifacts/event_envelope_snapshot_gate_report.json
+
+      - name: Upload event-envelope snapshot gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: event-envelope-snapshot-gate-report
+          path: artifacts/event_envelope_snapshot_gate_report.json
+          if-no-files-found: error
+
+  conformance_matrix_sync_guard:
+    name: Conformance matrix sync guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Unit tests for CT rows + matrix sync
+        run: |
+          pytest -q \
+            tests/test_run_ct_scenarios.py \
+            tests/test_sync_conformance_matrix_status.py
+
+      - name: Generate CT rows and sync matrix statuses
+        run: |
+          python scripts/run_ct_scenarios.py \
+            --json-out artifacts/conformance/ct_scenarios_result_v1.json \
+            --rows-out artifacts/conformance/ct_scenarios_rows_v1.json
+          python scripts/sync_conformance_matrix_status.py \
+            --matrix-csv docs/conformance/CONFORMANCE_TEST_MATRIX_V1.csv \
+            --rows-json artifacts/conformance/ct_scenarios_rows_v1.json \
+            --out-csv artifacts/conformance/CONFORMANCE_TEST_MATRIX_V1.synced.csv \
+            --summary-json artifacts/conformance/conformance_matrix_sync_summary_v1.json \
+            --summary-md artifacts/conformance/conformance_matrix_sync_summary_v1.md
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          summary = json.loads(Path("artifacts/conformance/conformance_matrix_sync_summary_v1.json").read_text(encoding="utf-8"))
+          failing = int(summary.get("failing_rows", 0))
+          if failing > 0:
+              raise SystemExit(f"conformance matrix sync guard failed: failing_rows={failing}")
+          print(f"conformance matrix sync guard OK: failing_rows={failing}")
+          PY
+
+      - name: Upload conformance matrix sync artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-matrix-sync-guard-artifacts
+          path: |
+            artifacts/conformance/ct_scenarios_result_v1.json
+            artifacts/conformance/ct_scenarios_rows_v1.json
+            artifacts/conformance/CONFORMANCE_TEST_MATRIX_V1.synced.csv
+            artifacts/conformance/conformance_matrix_sync_summary_v1.json
+            artifacts/conformance/conformance_matrix_sync_summary_v1.md
+          if-no-files-found: error
+
+  replay_determinism_guard:
+    name: Replay determinism guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Unit tests for replay determinism gate
+        run: |
+          pytest -q tests/test_check_replay_determinism_gate.py
+
+      - name: Run replay determinism gate against seeded fixture
+        run: |
+          python scripts/check_replay_determinism_gate.py \
+            --glob "tests/fixtures/conformance_v1/fixtures/valid/bb.replay_determinism_report.v1.valid.json" \
+            --json-out artifacts/conformance/replay_determinism_gate_report_v1.json
+
+      - name: Upload replay determinism gate artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: replay-determinism-gate-artifact
+          path: artifacts/conformance/replay_determinism_gate_report_v1.json
+          if-no-files-found: error
+
+  evidence_bundle_contract_guard:
+    name: Evidence bundle contract guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Evidence bundle unit tests
+        run: |
+          pytest -q tests/test_evidence_bundle_v1.py
+
+  extension_disabled_regression:
+    name: Extension-disabled regression lane
+    runs-on: ubuntu-latest
+    env:
+      BREADBOARD_EXTENSIONS_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run extension-disabled core regression checks
+        run: |
+          python scripts/validate_kernel_ext_boundaries.py --json
+          python scripts/run_conformance_matrix.py \
+            --schema-dir docs/conformance/schemas \
+            --fixtures-dir tests/fixtures/conformance_v1/fixtures
+          pytest -q \
+            tests/test_validate_kernel_ext_boundaries.py \
+            tests/test_run_conformance_matrix.py \
+            tests/test_parity_manifest_hardening.py
+
+  extension_enabled_smoke:
+    name: Extension-enabled smoke lane
+    runs-on: ubuntu-latest
+    env:
+      BREADBOARD_EXTENSIONS_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run extension-enabled ATP/EvoLake smoke checks
+        run: |
+          python scripts/run_atp_toy_loop_v1.py \
+            --out artifacts/atp_toy_loop_v1/atp_toy_loop_report.ci.json \
+            --artifacts-dir artifacts/atp_toy_loop_v1
+          python scripts/run_evolake_minimal_campaign_v1.py \
+            --generations 4 \
+            --out artifacts/evolake_minimal_campaign_v1/evolake_minimal_campaign_report.ci.json \
+            --artifacts-dir artifacts/evolake_minimal_campaign_v1 \
+            --checkpoint artifacts/evolake_minimal_campaign_v1/checkpoint.ci.json
+          pytest -q tests/test_atp_evolake_minimal_loops.py
+
+      - name: Upload extension-lane artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-enabled-smoke-artifacts
+          path: |
+            artifacts/atp_toy_loop_v1/**
+            artifacts/evolake_minimal_campaign_v1/**
+          if-no-files-found: error
+
   conformance_gate:
     name: Conformance gate (ubuntu)
     runs-on: ubuntu-latest
@@ -241,6 +611,62 @@ jobs:
             req_file="requirements.txt"
           fi
           python -m pip install -r "$req_file"
+
+      - name: Check devx onboarding suite prerequisites
+        id: devx_onboarding_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            Makefile \
+            scripts/dev/bootstrap_first_time.sh \
+            scripts/dev/check_onboarding_contract_drift.py \
+            scripts/dev/devx_smoke.sh \
+            scripts/dev/full_pass_validate.sh \
+            scripts/dev/report_devx_timing.py \
+            scripts/prune_breadboard_home.py; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Devx onboarding command-path suite (engine profile)
+        if: steps.devx_onboarding_prereqs.outputs.ready == 'true'
+        env:
+          RAY_SCE_LOCAL_MODE: "1"
+          OPENAI_API_KEY: compat-dummy
+          ANTHROPIC_API_KEY: compat-dummy
+          OPENROUTER_API_KEY: compat-dummy
+        run: |
+          mkdir -p artifacts/maintenance
+          make onboarding-contract
+          make setup-fast-engine
+          make devx-smoke-engine
+          make devx-full-pass-engine
+          make devx-timing
+          make disk-report
+          python scripts/dev/report_devx_timing.py --json > artifacts/maintenance/devx_timing_summary.json
+
+      - name: Devx onboarding command-path suite skipped (missing prerequisites)
+        if: steps.devx_onboarding_prereqs.outputs.ready != 'true'
+        run: echo "Devx onboarding suite skipped on this branch."
+
+      - name: Upload devx onboarding artifacts
+        if: ${{ always() && steps.devx_onboarding_prereqs.outputs.ready == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: devx-onboarding-artifacts
+          path: |
+            artifacts/maintenance/devx_full_pass_latest.json
+            artifacts/maintenance/devx_timing_summary.json
+            artifacts/maintenance/prune_breadboard_home.latest.json
+          if-no-files-found: error
 
       - name: Core install smoke
         run: python -c "import breadboard"
@@ -817,6 +1243,46 @@ jobs:
           BREADBOARD_SKIP_LOCAL_BIN_INSTALL: "1"
           BREADBOARD_INSTALL_QUIET: "1"
         run: bash scripts/phase12_live_smoke.sh
+
+  vscode_sidebar_e2e:
+    name: VSCode Sidebar E2E (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: vscode_sidebar/package-lock.json
+
+      - name: Install sidebar dependencies
+        working-directory: vscode_sidebar
+        run: npm ci
+
+      - name: Sidebar typecheck
+        working-directory: vscode_sidebar
+        run: npm run typecheck
+
+      - name: Sidebar unit tests
+        working-directory: vscode_sidebar
+        run: npm run test
+
+      - name: Sidebar IDE E2E (PR suite)
+        working-directory: vscode_sidebar
+        run: npm run ide-e2e:pr
+
+      - name: Assert PR suite summary is clean
+        working-directory: vscode_sidebar
+        run: node scripts/assert_ide_e2e_summary.mjs --suite pr --editor vscode
+
+      - name: Upload sidebar ide-e2e artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-sidebar-ide-e2e
+          path: docs_tmp/interfaces/ide_e2e_runs/run-*
+          if-no-files-found: ignore
 
   python:
     name: Python (${{ matrix.os }})

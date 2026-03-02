@@ -32,11 +32,72 @@ BreadBoard is a Python-first runtime for tool-using agents, with SDKs, replay to
 - Python 3.11+ (3.12 works)
 - Node.js 20+ (22+ recommended)
 
-### 2) build the local `breadboard` CLI/TUI
+### 1.5) inspect local readiness and next commands (optional)
 
 ```bash
-npm -C tui_skeleton ci
-npm -C tui_skeleton run build
+python scripts/dev/quickstart_first_time.py --include-advanced
+make cli-capabilities
+```
+
+If the CLI wrapper is installed and healthy:
+
+```bash
+breadboard quickstart --include-advanced
+```
+
+### 2) one-command first-time bootstrap (recommended)
+
+```bash
+bash scripts/dev/bootstrap_first_time.sh
+```
+
+Profile variants:
+
+```bash
+# python/engine only
+bash scripts/dev/bootstrap_first_time.sh --profile engine
+
+# tui/node only
+bash scripts/dev/bootstrap_first_time.sh --profile tui
+```
+
+Shortcut (Linux/macOS):
+
+```bash
+make help
+make setup
+make setup-fast
+make setup-engine
+make setup-fast-engine
+make setup-refresh-python
+make setup-tui
+make setup-all
+```
+
+What this does:
+- creates/reuses `.venv` (uses `uv` when available, falls back to `venv`)
+- installs Python dependencies from `requirements.txt`
+- installs/builds `sdk/ts`
+- installs/builds `tui_skeleton` when sources are present
+- skips repeated Python/Node installs when requirements or lockfiles are unchanged
+- skips repeated Node builds when `dist` outputs are newer than sources
+- installs local `breadboard` wrapper when TUI build artifacts are available
+- runs first-time setup checks
+
+If `breadboard` is already installed on your PATH, you can run the same flow via:
+
+```bash
+breadboard setup --smoke
+# or include live SDK hello verification
+breadboard setup --sdk-hello-live
+# full confidence pass
+breadboard setup --all-checks
+```
+
+If `tui_skeleton` sources are intentionally absent in your checkout:
+
+```bash
+bash scripts/dev/bootstrap_first_time.sh --profile engine
 ```
 
 ### 3) run a smoke command
@@ -52,13 +113,56 @@ breadboard run --config agent_configs/opencode_mock_c_fs.yaml "Say hi and exit."
 breadboard ui --config agent_configs/opencode_mock_c_fs.yaml
 ```
 
-### 5) optional safety preflight
+### 5) optional setup doctor + safety preflight
+
+```bash
+python scripts/dev/first_time_doctor.py --strict
+python scripts/dev/first_time_doctor.py --profile engine --strict
+```
+
+If your CLI build supports first-time doctor flags:
+
+```bash
+breadboard doctor --first-time
+breadboard doctor --first-time --first-time-profile engine
+```
 
 ```bash
 python scripts/preflight_workspace_safety.py --config agent_configs/opencode_mock_c_fs.yaml
 ```
 
-For full setup details, see `docs/INSTALL_AND_DEV_QUICKSTART.md`.
+### 6) verify SDK usage quickly (optional)
+
+With engine running locally:
+
+```bash
+python scripts/dev/python_sdk_hello.py
+node scripts/dev/ts_sdk_hello.mjs
+```
+
+One-command live SDK verification:
+
+```bash
+make sdk-hello-live
+make onboarding-contract
+make devx-smoke
+make devx-smoke-engine
+make devx-smoke-live
+make devx-full-pass
+make devx-timing
+# engine-only full pass while TUI is being edited
+make devx-full-pass-engine
+# inspect ~/.breadboard footprint and cleanup plan (dry-run)
+make disk-report
+# optional stricter TUI-inclusive checks
+make doctor-full
+make doctor-tui
+# repair local CLI wrapper if broken
+make repair-cli
+```
+
+For full setup details, toggles, and manual fallback commands, see `docs/INSTALL_AND_DEV_QUICKSTART.md`.
+For the copy-paste 5-minute onboarding path, see `docs/quickstarts/FIRST_RUN_5_MIN.md`.
 
 ## What BreadBoard covers
 
