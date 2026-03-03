@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.projection_overlay_semantics_check.v1",
+  "title": "bb.projection_overlay_semantics_check.v1",
+  "description": "Semantic check result for revision-keyed projection overlay behavior.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "projection_overlay_semantics_check_v1"
+    },
+    "mode": {
+      "const": "revision_overlay"
+    },
+    "event_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "revision_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "active_revision": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "mode",
+    "event_count",
+    "revision_count",
+    "active_revision",
+    "violations",
+    "ok"
+  ]
+}
+

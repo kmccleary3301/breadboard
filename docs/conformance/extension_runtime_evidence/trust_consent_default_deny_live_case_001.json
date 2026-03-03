@@ -1,0 +1,107 @@
+{
+  "schema_version": "extension_trust_consent_default_deny_v1",
+  "report_id": "ext_trust_live_001",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_extension_trust_consent_matrix_a",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "operations": [
+    {
+      "operation_id": "op_install_001",
+      "branch": "install",
+      "requires_workspace_trust": true,
+      "workspace_trusted": false,
+      "requires_user_consent": true,
+      "consent_decision": "allow",
+      "actual_outcome": "denied"
+    },
+    {
+      "operation_id": "op_update_001",
+      "branch": "update",
+      "requires_workspace_trust": true,
+      "workspace_trusted": true,
+      "requires_user_consent": true,
+      "consent_decision": "deny",
+      "actual_outcome": "blocked"
+    },
+    {
+      "operation_id": "op_update_002",
+      "branch": "update",
+      "requires_workspace_trust": true,
+      "workspace_trusted": true,
+      "requires_user_consent": true,
+      "consent_decision": "allow",
+      "actual_outcome": "allowed"
+    }
+  ],
+  "audit_events": [
+    {
+      "event_id": "evt_i_001",
+      "operation_id": "op_install_001",
+      "event_type": "extension.install.requested",
+      "timestamp_ms": 1000
+    },
+    {
+      "event_id": "evt_i_002",
+      "operation_id": "op_install_001",
+      "event_type": "extension.approval.decided",
+      "decision": "deny",
+      "timestamp_ms": 1010
+    },
+    {
+      "event_id": "evt_i_003",
+      "operation_id": "op_install_001",
+      "event_type": "extension.install.failed",
+      "timestamp_ms": 1020
+    },
+    {
+      "event_id": "evt_u_001",
+      "operation_id": "op_update_001",
+      "event_type": "extension.update.requested",
+      "timestamp_ms": 1030
+    },
+    {
+      "event_id": "evt_u_002",
+      "operation_id": "op_update_001",
+      "event_type": "extension.approval.decided",
+      "decision": "deny",
+      "timestamp_ms": 1040
+    },
+    {
+      "event_id": "evt_u_003",
+      "operation_id": "op_update_001",
+      "event_type": "extension.update.failed",
+      "timestamp_ms": 1050
+    },
+    {
+      "event_id": "evt_u2_001",
+      "operation_id": "op_update_002",
+      "event_type": "extension.update.requested",
+      "timestamp_ms": 1060
+    },
+    {
+      "event_id": "evt_u2_002",
+      "operation_id": "op_update_002",
+      "event_type": "extension.approval.decided",
+      "decision": "allow",
+      "timestamp_ms": 1070
+    },
+    {
+      "event_id": "evt_u2_003",
+      "operation_id": "op_update_002",
+      "event_type": "extension.update.completed",
+      "timestamp_ms": 1080
+    }
+  ],
+  "expected": {
+    "enforce_default_deny": true,
+    "required_event_types": [
+      "extension.install.requested",
+      "extension.install.failed",
+      "extension.update.requested",
+      "extension.update.failed",
+      "extension.update.completed",
+      "extension.approval.decided"
+    ]
+  }
+}

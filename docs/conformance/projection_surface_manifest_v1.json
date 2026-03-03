@@ -1,0 +1,35 @@
+{
+  "schema_version": "projection_surface_manifest_v1",
+  "surfaces": [
+    {
+      "name": "sdk",
+      "report": "projection_contract_parity_report_v1.json",
+      "expected_schema_version": "projection_contract_parity_v1",
+      "min_cases_total": 3
+    },
+    {
+      "name": "opentui",
+      "report": "projection_contract_parity_opentui_report_v1.json",
+      "expected_schema_version": "projection_contract_parity_opentui_v1",
+      "min_cases_total": 4
+    },
+    {
+      "name": "webapp",
+      "report": "projection_contract_parity_webapp_report_v1.json",
+      "expected_schema_version": "projection_contract_parity_webapp_v1",
+      "min_cases_total": 4
+    },
+    {
+      "name": "tui",
+      "report": "projection_contract_parity_tui_report_v1.json",
+      "expected_schema_version": "projection_contract_parity_tui_v1",
+      "min_cases_total": 4
+    },
+    {
+      "name": "vscode",
+      "report": "projection_reducer_parity_vscode_report_v1.json",
+      "expected_schema_version": "projection_reducer_parity_v1",
+      "min_cases_total": 3
+    }
+  ]
+}

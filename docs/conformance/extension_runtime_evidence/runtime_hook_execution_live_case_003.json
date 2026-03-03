@@ -1,0 +1,49 @@
+{
+  "schema_version": "extension_runtime_hook_execution_v1",
+  "report_id": "ext_runtime_hook_live_003",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_extension_runtime_hook_matrix_c",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "runtime_events": [
+    {
+      "middleware_id": "alpha",
+      "plugin_id": "plug.alpha",
+      "phase": "install_pre",
+      "status": "completed",
+      "isolated": false,
+      "start_ms": 3000,
+      "end_ms": 3005
+    },
+    {
+      "middleware_id": "beta",
+      "plugin_id": "plug.beta",
+      "phase": "update_pre",
+      "status": "completed",
+      "isolated": false,
+      "start_ms": 3006,
+      "end_ms": 3012
+    },
+    {
+      "middleware_id": "gamma",
+      "plugin_id": "plug.gamma",
+      "phase": "conflict_pre",
+      "status": "failed_fatal",
+      "isolated": false,
+      "start_ms": 3013,
+      "end_ms": 3019
+    }
+  ],
+  "expected_execution_order": [
+    "alpha",
+    "beta",
+    "gamma"
+  ],
+  "expected_isolated_failures": [],
+  "expected_required_phases": [
+    "install_pre",
+    "update_pre",
+    "conflict_pre"
+  ],
+  "require_monotonic_timestamps": true
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.provider_semantics_check.v1",
+  "title": "BreadBoard Provider Semantics Check v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "provider_semantics_check_v1"
+    },
+    "mode": {
+      "type": "string",
+      "const": "deterministic_tiebreak"
+    },
+    "candidate_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "expected_winner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actual_winner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "mode",
+    "candidate_count",
+    "expected_winner",
+    "actual_winner",
+    "violations",
+    "ok"
+  ]
+}
+

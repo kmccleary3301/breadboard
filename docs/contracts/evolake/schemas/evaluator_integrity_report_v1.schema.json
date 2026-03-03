@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/evolake/evaluator_integrity_report_v1.schema.json",
+  "title": "EvoLake Evaluator Integrity Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generated_at",
+    "ok",
+    "campaign_report_path",
+    "repeat_count",
+    "sampled_candidates",
+    "flake_rate",
+    "quarantined_candidates"
+  ],
+  "properties": {
+    "schema": {
+      "const": "breadboard.evolake.evaluator_integrity_report.v1"
+    },
+    "generated_at": {
+      "type": "number"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "campaign_report_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repeat_count": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "sampled_candidates": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "flake_rate": {
+      "type": "number",
+      "minimum": 0
+    },
+    "quarantined_candidates": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "nondeterminism_rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "candidate",
+          "min_score",
+          "max_score",
+          "spread"
+        ],
+        "properties": {
+          "candidate": {
+            "type": "integer"
+          },
+          "min_score": {
+            "type": "number"
+          },
+          "max_score": {
+            "type": "number"
+          },
+          "spread": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_flake_rate",
+        "score_tolerance",
+        "quarantine_on_nondeterminism"
+      ],
+      "properties": {
+        "max_flake_rate": {
+          "type": "number",
+          "minimum": 0
+        },
+        "score_tolerance": {
+          "type": "number",
+          "minimum": 0
+        },
+        "quarantine_on_nondeterminism": {
+          "type": "boolean"
+        }
+      }
+    },
+    "hermetic_mode": {
+      "type": "boolean"
+    },
+    "hermetic_fingerprint": {
+      "type": "string"
+    },
+    "nightly_reporting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quarantine_count",
+        "quarantine_candidates"
+      ],
+      "properties": {
+        "quarantine_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "quarantine_candidates": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "quarantine_artifact_path": {
+      "type": "string"
+    }
+  }
+}

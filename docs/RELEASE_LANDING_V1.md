@@ -1,20 +1,22 @@
-# BreadBoard Release Landing (v1)
+# BreadBoard release landing
 
-This is the single entrypoint for launch-facing technical onboarding.
+Single entrypoint for launch-facing technical onboarding. Start here if you are evaluating the project for the first time.
 
-## 1) Category and Promise
+---
 
-BreadBoard is the **agent harness kernel**:
+## What BreadBoard is
 
-- contract-backed event/stream surfaces,
-- replayable run artifacts,
-- projection-driven clients (TUI/SDK) over stable boundaries.
+BreadBoard is a contract-backed agent engine and multi-client coding stack. The engine runs as a FastAPI service and emits a canonical SSE event stream. Every client—TUI, Python SDK, TypeScript SDK, VSCode sidebar, or your own code—consumes that stream over a stable HTTP + SSE surface.
 
-## 2) Fast Start
+Every run produces an append-only event log that is portable, deterministically ordered, and replayable. That log is not a debugging convenience; it is the primary artifact.
+
+---
+
+## Fast start
 
 For full prerequisites and local workflow:
 
-- `docs/INSTALL_AND_DEV_QUICKSTART.md`
+→ [`INSTALL_AND_DEV_QUICKSTART.md`](INSTALL_AND_DEV_QUICKSTART.md)
 
 Minimal commands:
 
@@ -25,12 +27,18 @@ breadboard doctor --config agent_configs/opencode_mock_c_fs.yaml
 breadboard run --config agent_configs/opencode_mock_c_fs.yaml "Say hi and exit."
 ```
 
-## 3) Proof Path (Artifact-Backed)
+5-minute copy-paste path:
 
-Use this when you need reproducible evidence instead of narrative claims:
+→ [`quickstarts/FIRST_RUN_5_MIN.md`](quickstarts/FIRST_RUN_5_MIN.md)
 
-- `docs/quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md`
-- `docs/media/proof/README.md`
+---
+
+## Proof path (artifact-backed)
+
+When you need reproducible evidence rather than narrative claims:
+
+→ [`quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md`](quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md)
+→ [`media/proof/README.md`](media/proof/README.md)
 
 Core commands:
 
@@ -41,71 +49,77 @@ RUN_DIR="$(ls -1dt logging/* | head -n 1)"
 python scripts/log_reduce.py "${RUN_DIR}" --turn-limit 2 --tool-only > docs/media/proof/launch_v1/log_reduce_sample_v1.txt
 ```
 
-## 4) Contract Surfaces
+---
 
-Start here for stable boundaries and change policy:
+## Contract surfaces
 
-- `docs/CONTRACT_SURFACES.md`
-- `docs/CLI_BRIDGE_PROTOCOL_VERSIONING.md`
-- `docs/contracts/cli_bridge/openapi.json`
+Stable boundaries and change policy:
 
-## 5) Claim Discipline
+→ [`CONTRACT_SURFACES.md`](CONTRACT_SURFACES.md)
+→ [`CLI_BRIDGE_PROTOCOL_VERSIONING.md`](CLI_BRIDGE_PROTOCOL_VERSIONING.md)
+→ [`contracts/cli_bridge/openapi.json`](contracts/cli_bridge/openapi.json)
 
-Public wording must be tied to evidence:
+---
 
-- `docs/CLAIMS_EVIDENCE_LEDGER.md`
+## Claim discipline
 
-## 6) Branding and Media
+All public wording must be backed by evidence:
 
-Canonical branding assets and embed snippets:
+→ [`CLAIMS_EVIDENCE_LEDGER.md`](CLAIMS_EVIDENCE_LEDGER.md)
 
-- `docs/BRAND.md`
-- `docs/media/branding/README.md`
-- `docs/media/branding/WEB_EMBED_SNIPPETS.md`
-- `docs/media/proof/README.md`
+Two things this project does not claim without evidence:
 
-## 7) Launch Staging Status
+- "drop-in replacement" for other harnesses
+- "perfect parity"
 
-Launch sequencing and gates:
+Coverage is defined in [`PARITY_KERNEL_BOUNDARIES.md`](PARITY_KERNEL_BOUNDARIES.md) and the conformance matrix.
 
-- `docs/LAUNCH_STAGING_PLAN_V1.md`
+---
 
-Current policy:
+## Branding and media
 
-- repo/docs/proof hardening first,
-- early channel validation first,
-- Hacker News posting deferred until staging gates are satisfied.
+→ [`BRAND.md`](BRAND.md)
+→ [`media/branding/README.md`](media/branding/README.md)
+→ [`media/branding/WEB_EMBED_SNIPPETS.md`](media/branding/WEB_EMBED_SNIPPETS.md)
+→ [`media/proof/README.md`](media/proof/README.md)
 
-## 8) "What to Read Next" by Persona
+---
 
-Solo builder:
+## What to read next, by situation
 
-- `docs/INSTALL_AND_DEV_QUICKSTART.md`
-- `docs/quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md`
+| Situation | Start here |
+|-----------|------------|
+| Just cloned, want to run something | [`quickstarts/FIRST_RUN_5_MIN.md`](quickstarts/FIRST_RUN_5_MIN.md) |
+| Setting up a full dev environment | [`INSTALL_AND_DEV_QUICKSTART.md`](INSTALL_AND_DEV_QUICKSTART.md) |
+| Writing code against the engine | [`contracts/cli_bridge/openapi.json`](contracts/cli_bridge/openapi.json) |
+| Evaluating replay or parity | [`quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md`](quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md) |
+| Building or integrating a client | [`CONTRACT_SURFACES.md`](CONTRACT_SURFACES.md) · [`VSCODE_SIDEBAR_DOCS_INDEX.md`](VSCODE_SIDEBAR_DOCS_INDEX.md) |
+| Checking public claims | [`CLAIMS_EVIDENCE_LEDGER.md`](CLAIMS_EVIDENCE_LEDGER.md) |
+| Full docs map | [`INDEX.md`](INDEX.md) |
 
-Infra/platform engineer:
+---
 
-- `docs/CONTRACT_SURFACES.md`
-- `docs/CLAIMS_EVIDENCE_LEDGER.md`
+## Release readiness checklist (v1)
 
-TUI/operator workflow maintainer:
-
-- `docs/TUI_TODO_EVENT_CONTRACT.md`
-- `docs/TUI_THINKING_STREAMING_CONFIG.md`
-
-## 9) Release Readiness Checklist (v1)
-
-- [x] Quickstart commands still pass.
-- [x] Proof bundle commands still pass.
-- [x] Contract export is current.
-- [x] Claims ledger wording matches current evidence.
-- [x] Branding assets/hash list are current.
-- [x] Deterministic launch proof media bundle exists in-repo.
-- [x] Staging gates reviewed before broad launch posting.
+- [x] Quickstart commands pass
+- [x] Proof bundle commands pass
+- [x] Contract export is current
+- [x] Claims ledger wording matches current evidence
+- [x] Branding assets and hash list are current
+- [x] Deterministic launch proof media bundle exists in-repo
+- [x] Staging gates reviewed before broad launch posting
 
 Latest quickstart validation record:
 
-- `docs/ci/QUICKSTART_SAFE_VALIDATION_20260217.md`
-- `docs/ci/RELEASE_LOW_RISK_GATES_20260217.md`
-- `docs/ci/LAUNCH_STAGING_REVIEW_20260217.md`
-- `docs/ci/CHANNEL_FEEDBACK_INCORPORATION_CHECKLIST_V1.md`
+- [`ci/QUICKSTART_SAFE_VALIDATION_20260217.md`](ci/QUICKSTART_SAFE_VALIDATION_20260217.md)
+- [`ci/RELEASE_LOW_RISK_GATES_20260217.md`](ci/RELEASE_LOW_RISK_GATES_20260217.md)
+- [`ci/LAUNCH_STAGING_REVIEW_20260217.md`](ci/LAUNCH_STAGING_REVIEW_20260217.md)
+- [`ci/CHANNEL_FEEDBACK_INCORPORATION_CHECKLIST_V1.md`](ci/CHANNEL_FEEDBACK_INCORPORATION_CHECKLIST_V1.md)
+
+---
+
+## Launch staging status
+
+Current policy: repo/docs/proof hardening before broad external posting. HN and similar channel postings are deferred until staging gates are satisfied.
+
+Staging sequence and gates: [`LAUNCH_STAGING_PLAN_V1.md`](LAUNCH_STAGING_PLAN_V1.md)

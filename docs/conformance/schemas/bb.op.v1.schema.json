@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.op.v1",
+  "title": "BreadBoard Operation Envelope v1",
+  "description": "Ingress operation envelope used to request work across CLI/API/TUI and related client surfaces.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Operation envelope schema version.",
+      "examples": ["v1"]
+    },
+    "op_id": {
+      "type": "string",
+      "description": "Stable operation identifier used for correlation across events and logs."
+    },
+    "op_type": {
+      "type": "string",
+      "description": "Operation type/category requested by the client."
+    },
+    "thread_id": {
+      "type": "string",
+      "description": "Thread identifier for ordered operation/event sequencing."
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Session identifier containing the operation context."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Operation payload content."
+    },
+    "client_surface": {
+      "type": "string",
+      "description": "Client surface emitting the operation.",
+      "enum": ["cli", "api", "tui", "ide", "web", "other"]
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp when the operation was requested."
+    },
+    "meta": {
+      "type": "object",
+      "description": "Optional implementation-specific metadata."
+    }
+  },
+  "required": [
+    "schema_version",
+    "op_id",
+    "op_type",
+    "thread_id",
+    "session_id",
+    "payload",
+    "client_surface",
+    "requested_at"
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.tool_transition.v1",
+  "title": "BreadBoard Tool State Transition v1",
+  "description": "Auditable transition edge in the tool scheduler state machine.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Tool transition schema version.",
+      "examples": ["v1"]
+    },
+    "call_id": {
+      "type": "string",
+      "description": "Tool call identifier this transition belongs to."
+    },
+    "from_state": {
+      "type": "string",
+      "description": "Previous state.",
+      "enum": [
+        "validating",
+        "scheduled",
+        "awaiting_approval",
+        "executing",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "to_state": {
+      "type": "string",
+      "description": "Next state.",
+      "enum": [
+        "validating",
+        "scheduled",
+        "awaiting_approval",
+        "executing",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "description": "Reason for the transition."
+    },
+    "actor": {
+      "type": "string",
+      "description": "Optional actor or subsystem that initiated the transition."
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Attempt number this transition belongs to."
+    },
+    "transition_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp when the transition occurred."
+    }
+  },
+  "required": [
+    "schema_version",
+    "call_id",
+    "from_state",
+    "to_state",
+    "reason",
+    "transition_at"
+  ]
+}

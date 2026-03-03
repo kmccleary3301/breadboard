@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.error.v1",
+  "title": "BreadBoard Structured Error v1",
+  "description": "Typed error envelope used for validation failures, ordering violations, and runtime faults.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Error schema version.",
+      "examples": ["v1"]
+    },
+    "error_id": {
+      "type": "string",
+      "description": "Stable error identifier for correlation and triage."
+    },
+    "origin": {
+      "type": "string",
+      "description": "Subsystem where the error originated.",
+      "enum": ["protocol", "tool", "approval", "session", "provider", "extension", "system"]
+    },
+    "error_code": {
+      "type": "string",
+      "description": "Stable machine-readable error code."
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable error message."
+    },
+    "recoverable": {
+      "type": "boolean",
+      "description": "Whether retry or fallback is expected to recover safely."
+    },
+    "context": {
+      "type": "object",
+      "description": "Structured error context for diagnostics and replay."
+    },
+    "thread_id": {
+      "type": "string",
+      "description": "Optional thread identifier related to the error."
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Optional session identifier related to the error."
+    },
+    "op_id": {
+      "type": "string",
+      "description": "Optional operation identifier related to the error."
+    },
+    "emitted_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp when the error was emitted."
+    }
+  },
+  "required": [
+    "schema_version",
+    "error_id",
+    "origin",
+    "error_code",
+    "message",
+    "recoverable",
+    "context",
+    "emitted_at"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": "protocol_runtime_operator_diagnostics_live_v1",
+  "events": [
+    {"source": "session", "status": "running"},
+    {"source": "tool", "status": "degraded", "error": {"code": "bb.tool.timeout", "retryable": true}},
+    {"source": "provider", "status": "failed", "error": {"code": "bb.provider.auth_expired", "retryable": false}},
+    {"source": "projection", "status": "degraded", "error": {"code": "bb.stream.cursor_gap", "retryable": true}},
+    {"source": "recursion", "status": "degraded", "error": {"code": "bb.session.queue_pause", "retryable": true}},
+    {"source": "extension", "status": "failed", "error": {"code": "bb.ext.install_conflict", "retryable": false}},
+    {"source": "approval", "status": "failed", "error": {"code": "bb.approval.denied", "retryable": false}},
+    {"source": "session", "status": "failed", "error": {"code": "bb.session.resume_conflict", "retryable": true}}
+  ],
+  "expected": {
+    "allowed_sources": ["session", "tool", "provider", "projection", "approval", "extension", "recursion"],
+    "allowed_statuses": ["running", "completed", "failed", "degraded", "cancelled"],
+    "statuses_require_error": ["failed", "degraded"],
+    "allowed_error_prefixes": ["bb.tool.", "bb.provider.", "bb.stream.", "bb.session.", "bb.approval.", "bb.ext."],
+    "required_sources": ["session", "tool", "provider", "projection", "approval", "extension", "recursion"],
+    "required_error_sources": ["session", "tool", "provider", "projection", "approval", "extension", "recursion"]
+  }
+}

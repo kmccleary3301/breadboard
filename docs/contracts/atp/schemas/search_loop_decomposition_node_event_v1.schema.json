@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/atp/search_loop_decomposition_node_event_v1.schema.json",
+  "title": "Search Loop Decomposition Node Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "loop_id",
+    "node_id",
+    "node_type",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "search_loop_decomposition_node_event_v1"
+    },
+    "loop_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "node_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parent_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "node_type": {
+      "type": "string",
+      "enum": [
+        "root",
+        "candidate",
+        "lemma",
+        "subgoal",
+        "repair"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "closed",
+        "failed",
+        "verified"
+      ]
+    },
+    "state_ref": {
+      "type": "object"
+    },
+    "score": {
+      "type": "object"
+    }
+  }
+}

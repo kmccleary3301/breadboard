@@ -1,0 +1,18 @@
+{
+  "schema_version": "approval_replay_equivalence_v1",
+  "report_id": "approval_replay_live_001",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_approval_path_roundtrip_a",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "baseline": [
+    {"approval_id": "ap-live-001", "decision": "allow"},
+    {"approval_id": "ap-live-002", "decision": "deny"},
+    {"approval_id": "ap-live-003", "decision": "deny"}
+  ],
+  "replay": [
+    {"approval_id": "ap-live-001", "decision": "allow"},
+    {"approval_id": "ap-live-002", "decision": "deny"},
+    {"approval_id": "ap-live-003", "decision": "deny"}
+  ]
+}

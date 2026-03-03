@@ -1,0 +1,50 @@
+{
+  "schema_version": "tool_runtime_correction_loop_v1",
+  "report_id": "tool_correction_live_002",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_tool_correction_loop_matrix_b",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "attempts": [
+    {
+      "attempt": 1,
+      "tool_call_id": "call_b_001",
+      "operation_id": "op_fix_002",
+      "thread_id": "thread_xyz",
+      "status": "failed"
+    },
+    {
+      "attempt": 2,
+      "tool_call_id": "call_b_002",
+      "retries_from_tool_call_id": "call_b_001",
+      "operation_id": "op_fix_002",
+      "thread_id": "thread_xyz",
+      "status": "failed"
+    },
+    {
+      "attempt": 3,
+      "tool_call_id": "call_b_003",
+      "retries_from_tool_call_id": "call_b_002",
+      "operation_id": "op_fix_002",
+      "thread_id": "thread_xyz",
+      "status": "failed"
+    },
+    {
+      "attempt": 4,
+      "tool_call_id": "call_b_004",
+      "retries_from_tool_call_id": "call_b_003",
+      "operation_id": "op_fix_002",
+      "thread_id": "thread_xyz",
+      "status": "completed"
+    }
+  ],
+  "expected": {
+    "operation_id": "op_fix_002",
+    "thread_id": "thread_xyz",
+    "min_attempts": 4,
+    "max_attempts": 6,
+    "require_strict_attempt_increment": true,
+    "require_final_completed": true,
+    "require_failed_before_completed": true
+  }
+}

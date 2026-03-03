@@ -1,0 +1,297 @@
+{
+  "schema_version": "gap_closure_rubric_v1",
+  "defaults": {
+    "requires_live_evidence": false,
+    "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+  },
+  "gaps": [
+    {
+      "gap_id": "G-001",
+      "priority_cluster": "P0",
+      "priority_score": 4.5,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-PROTO-001;CT-PROTO-002;CT-PROTO-003;CT-PROTO-004;CT-PROJ-001;CT-PROJ-002;CT-PROJ-004",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-002",
+      "priority_cluster": "P1",
+      "priority_score": 4.6,
+      "requires_live_evidence": true,
+      "required_ct_ids": "CT-PROJ-003;CT-PROJ-012;CT-PROJ-013;CT-PROJ-018;CT-PROJ-021",
+      "required_live_ct_ids": "CT-PROJ-003;CT-PROJ-012;CT-PROJ-013;CT-PROJ-018;CT-PROJ-021",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-003",
+      "priority_cluster": "P0",
+      "priority_score": 4.7,
+      "requires_live_evidence": true,
+      "required_ct_ids": "CT-TOOL-001;CT-TOOL-002;CT-TOOL-003;CT-TOOL-004;CT-TOOL-005;CT-TOOL-006;CT-TOOL-007;CT-TOOL-008;CT-TOOL-009;CT-TOOL-010;CT-TOOL-011;CT-TOOL-012;CT-TOOL-013;CT-TOOL-014;CT-TOOL-015",
+      "required_live_ct_ids": "CT-TOOL-007;CT-TOOL-008;CT-TOOL-009;CT-TOOL-010;CT-TOOL-011;CT-TOOL-012;CT-TOOL-013;CT-TOOL-014;CT-TOOL-015",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-004",
+      "priority_cluster": "P1",
+      "priority_score": 4.35,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-TOOL-001;CT-TOOL-003;CT-TOOL-004;CT-TOOL-005",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-005",
+      "priority_cluster": "P0",
+      "priority_score": 4.6,
+      "requires_live_evidence": true,
+      "required_ct_ids": "CT-APPROVAL-001;CT-APPROVAL-002;CT-APPROVAL-003;CT-APPROVAL-004;CT-APPROVAL-005",
+      "required_live_ct_ids": "CT-APPROVAL-005",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-006",
+      "priority_cluster": "P0",
+      "priority_score": 4.5,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-SESSION-001;CT-SESSION-002;CT-SESSION-003;CT-SESSION-004;CT-SESSION-005",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-007",
+      "priority_cluster": "P1",
+      "priority_score": 4.2,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-SESSION-005",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-008",
+      "priority_cluster": "P0",
+      "priority_score": 4.5,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-REL-001;CT-REL-002;CT-REL-003;CT-REL-004;ct_scenarios_v1",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-009",
+      "priority_cluster": "P0",
+      "priority_score": 4.7,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-REL-002",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-010",
+      "priority_cluster": "P1",
+      "priority_score": 4.15,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-REL-001;CT-REL-003;CT-REL-004",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-011",
+      "priority_cluster": "P1",
+      "priority_score": 4.35,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-PROVIDER-001;CT-PROVIDER-002;CT-PROVIDER-003;CT-PROVIDER-004;CT-PROVIDER-005",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-012",
+      "priority_cluster": "P1",
+      "priority_score": 4.1,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-PROVIDER-002",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-013",
+      "priority_cluster": "P2",
+      "priority_score": 3.9,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-PLAN-001",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-014",
+      "priority_cluster": "P1",
+      "priority_score": 4.25,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-SESSION-001;CT-SESSION-002;CT-SESSION-004 + portability fixtures",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-015",
+      "priority_cluster": "P1",
+      "priority_score": 4.3,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-EXT-001;CT-EXT-002;CT-EXT-003;CT-EXT-004",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-016",
+      "priority_cluster": "P0",
+      "priority_score": 4.6,
+      "requires_live_evidence": true,
+      "required_ct_ids": "CT-APPROVAL-003;CT-APPROVAL-004;CT-EXT-007",
+      "required_live_ct_ids": "CT-EXT-007",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-017",
+      "priority_cluster": "P0",
+      "priority_score": 4.6,
+      "requires_live_evidence": true,
+      "required_ct_ids": "CT-EXT-002;CT-EXT-003;CT-EXT-008;CT-EXT-009;CT-EXT-010;CT-EXT-011;CT-EXT-013",
+      "required_live_ct_ids": "CT-EXT-008;CT-EXT-009;CT-EXT-010;CT-EXT-011;CT-EXT-013",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-018",
+      "priority_cluster": "P2",
+      "priority_score": 3.45,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-SESSION-004;CT-SESSION-006;CT-SESSION-007;CT-SESSION-008",
+      "required_live_ct_ids": "CT-SESSION-007;CT-SESSION-008",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-019",
+      "priority_cluster": "P2",
+      "priority_score": 3.9,
+      "requires_live_evidence": true,
+      "required_ct_ids": "CT-EXT-005/006/012/014",
+      "required_live_ct_ids": "CT-EXT-006;CT-EXT-012;CT-EXT-014",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-020",
+      "priority_cluster": "P1",
+      "priority_score": 4.3,
+      "requires_live_evidence": true,
+      "required_ct_ids": "CT-PROJ-007;CT-PROJ-010;CT-PROJ-011;CT-PROJ-014;CT-PROJ-015;CT-PROJ-019",
+      "required_live_ct_ids": "CT-PROJ-010;CT-PROJ-011;CT-PROJ-014;CT-PROJ-015;CT-PROJ-019",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-021",
+      "priority_cluster": "P2",
+      "priority_score": 3.95,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-RECURSE-006",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-022",
+      "priority_cluster": "P2",
+      "priority_score": 3.85,
+      "requires_live_evidence": true,
+      "required_ct_ids": "CT-PROVIDER-003;CT-PROVIDER-006",
+      "required_live_ct_ids": "CT-PROVIDER-006",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-023",
+      "priority_cluster": "P2",
+      "priority_score": 3.65,
+      "requires_live_evidence": true,
+      "required_ct_ids": "CT-PROTO-006;CT-PROTO-008;CT-PROTO-009;CT-PROTO-012;CT-PROTO-013;CT-PROJ-001;CT-PROJ-004;CT-PROJ-006;CT-SESSION-004;CT-SESSION-006",
+      "required_live_ct_ids": "CT-PROTO-008;CT-PROTO-009;CT-PROTO-012;CT-PROTO-013",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-024",
+      "priority_cluster": "P0",
+      "priority_score": 4.6,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-RECURSE-001;CT-RECURSE-002;CT-RECURSE-003;CT-RECURSE-004;CT-RECURSE-005;CT-RECURSE-006;CT-RECURSE-008",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-025",
+      "priority_cluster": "P1",
+      "priority_score": 4.1,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-RECURSE-001;CT-RECURSE-002;CT-RECURSE-003;CT-RECURSE-004;CT-RECURSE-007;CT-RECURSE-008;CT-RECURSE-010;CT-RECURSE-011;CT-RECURSE-012",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-026",
+      "priority_cluster": "P2",
+      "priority_score": 3.7,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-RECURSE-006;CT-RECURSE-009;CT-RECURSE-013;CT-RECURSE-014;CT-RECURSE-015;CT-RECURSE-016",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-027",
+      "priority_cluster": "P2",
+      "priority_score": 3.95,
+      "requires_live_evidence": true,
+      "required_ct_ids": "CT-PROJ-001;CT-PROJ-004;CT-PROJ-006;CT-PROJ-008;CT-PROJ-009;CT-PROJ-016;CT-PROJ-017;CT-PROJ-020",
+      "required_live_ct_ids": "CT-PROJ-008;CT-PROJ-009;CT-PROJ-016;CT-PROJ-017;CT-PROJ-020",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-028",
+      "priority_cluster": "P2",
+      "priority_score": 3.45,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-RECURSE-004;CT-RECURSE-005",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-029",
+      "priority_cluster": "P1",
+      "priority_score": 4.35,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-REL-001;CT-REL-003;CT-REL-004",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-030",
+      "priority_cluster": "P1",
+      "priority_score": 4.3,
+      "requires_live_evidence": false,
+      "required_ct_ids": "CT-REL-005",
+      "required_live_ct_ids": "",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-031",
+      "priority_cluster": "P2",
+      "priority_score": 3.95,
+      "requires_live_evidence": true,
+      "required_ct_ids": "projection parity bundle + strict manifest constraints + contract-version coherence checks + CT-PROJ-005 + CT-PROJ-007 + CT-PROJ-010 + CT-PROJ-011 + CT-PROJ-014 + CT-PROJ-015 + CT-PROJ-019",
+      "required_live_ct_ids": "CT-PROJ-010;CT-PROJ-011;CT-PROJ-014;CT-PROJ-015;CT-PROJ-019",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    },
+    {
+      "gap_id": "G-032",
+      "priority_cluster": "P2",
+      "priority_score": 3.85,
+      "requires_live_evidence": true,
+      "required_ct_ids": "CT-PROTO-005/006/007/010/011/014/015/016 + CT-TOOL/SESSION/PROJ/PROVIDER checker lanes",
+      "required_live_ct_ids": "CT-PROTO-010;CT-PROTO-011;CT-PROTO-014;CT-PROTO-015;CT-PROTO-016",
+      "closure_rule": "covered_requires_ct_matrix_manifest_alignment_and_empty_remaining_delta"
+    }
+  ]
+}

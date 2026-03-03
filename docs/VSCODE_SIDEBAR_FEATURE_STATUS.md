@@ -18,6 +18,8 @@ Last updated: `2026-02-21`
 - [x] RPC request envelope parsing (`v1`).
 - [x] Method param parsers for key methods.
 - [x] Host->webview payload sanitization (`connection/state/events`).
+- [x] Canonical projection contract wired across host ingest, RPC event sanitization, and transcript reduction.
+- [x] Canonical event alias normalization (`tool.result`, `assistant.message.*`) in reducer and stream surfaces.
 - [x] Unknown method logging path.
 
 ### UX
@@ -34,14 +36,17 @@ Last updated: `2026-02-21`
 ### Tests
 
 - [x] Transcript reducer unit tests.
+- [x] Projection contract unit tests.
 - [x] RPC envelope parser unit tests.
 - [x] RPC param parser unit tests.
 - [x] Host->webview payload sanitization unit tests.
+- [x] Integration tests for forced disconnect/reconnect/resume.
+- [x] Integration tests for permission request/response end-to-end rendering.
+- [x] Deterministic golden tests for full UI projection state.
+- [x] Real-engine smoke lane for core operator path.
 
 ## Planned (Not Yet Implemented)
 
-- [ ] Integration tests for forced disconnect/reconnect/resume.
-- [ ] Integration tests for permission request/response end-to-end rendering.
-- [ ] Deterministic golden tests for full UI projection state.
 - [ ] Cursor smoke lane automation in CI.
 - [ ] Artifact panel and richer run diagnostics.
+- [ ] Fixture-driven cross-interface projection parity lane (SDK <-> sidebar/webview).

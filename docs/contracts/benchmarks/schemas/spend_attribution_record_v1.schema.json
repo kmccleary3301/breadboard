@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/benchmarks/spend_attribution_record_v1.schema.json",
+  "title": "Spend Attribution Record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "project",
+    "workstream",
+    "experiment",
+    "run_id",
+    "owner",
+    "budget_usd"
+  ],
+  "properties": {
+    "schema_id": {
+      "const": "breadboard.spend_attribution_record.v1"
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workstream": {
+      "type": "string",
+      "minLength": 1
+    },
+    "experiment": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "budget_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "actual_estimated_cost_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "currency": {
+      "type": "string",
+      "default": "USD"
+    },
+    "generated_at": {
+      "type": "string"
+    }
+  }
+}

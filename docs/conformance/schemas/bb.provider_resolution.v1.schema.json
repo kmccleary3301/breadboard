@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.provider_resolution.v1",
+  "title": "BreadBoard Provider Resolution v1",
+  "description": "Deterministic provider selection record including fallback chain.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "request_id",
+    "selected_provider",
+    "selection_reason",
+    "fallback_chain",
+    "resolved_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selected_provider": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selection_reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fallback_chain": {
+      "type": "array",
+      "description": "Ordered fallback candidates considered by the resolver.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "resolved_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "provider_resolution_strict": {
+      "type": "boolean",
+      "description": "Whether strict production routing policy was active."
+    },
+    "resolution_metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

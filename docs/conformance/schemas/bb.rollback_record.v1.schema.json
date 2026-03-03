@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/schemas/bb.rollback_record.v1.schema.json",
+  "title": "bb.rollback_record.v1",
+  "description": "Audit record for rollback execution and explicit dropped ranges.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "session_id",
+    "rollback_id",
+    "from_checkpoint",
+    "to_checkpoint",
+    "dropped_ranges",
+    "trigger",
+    "rolled_back_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rollback_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "from_checkpoint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "to_checkpoint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dropped_ranges": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/dropped_range"
+      }
+    },
+    "trigger": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string"
+    },
+    "rolled_back_by": {
+      "type": "string"
+    },
+    "rolled_back_at": {
+      "$ref": "#/$defs/timestamp"
+    }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "dropped_range": {
+      "type": "object",
+      "required": [
+        "from_cursor",
+        "to_cursor"
+      ],
+      "properties": {
+        "from_cursor": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ]
+        },
+        "to_cursor": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

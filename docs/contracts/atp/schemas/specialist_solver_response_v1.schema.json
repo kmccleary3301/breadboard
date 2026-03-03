@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/atp/specialist_solver_response_v1.schema.json",
+  "title": "ATP Specialist Solver Response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "solver_type",
+    "ok",
+    "result_ref"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "atp_specialist_solver_response_v1"
+    },
+    "solver_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "result_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "diagnostic_code": {
+      "type": "string"
+    },
+    "fallback_required": {
+      "type": "boolean"
+    }
+  }
+}

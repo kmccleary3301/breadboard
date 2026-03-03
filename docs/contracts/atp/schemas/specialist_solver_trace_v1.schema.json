@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/atp/specialist_solver_trace_v1.schema.json",
+  "title": "ATP Specialist Solver Trace v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "problem_ref",
+    "calls",
+    "final_ok"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "atp_specialist_solver_trace_v1"
+    },
+    "problem_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "calls": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "call_index",
+          "solver_type",
+          "ok",
+          "fallback_triggered",
+          "result_ref"
+        ],
+        "properties": {
+          "call_index": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "solver_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "fallback_triggered": {
+            "type": "boolean"
+          },
+          "result_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "diagnostic_code": {
+            "type": "string"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "final_ok": {
+      "type": "boolean"
+    },
+    "fallback_used": {
+      "type": "boolean"
+    },
+    "replay_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

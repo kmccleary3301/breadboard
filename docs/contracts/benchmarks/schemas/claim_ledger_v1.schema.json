@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/benchmarks/claim_ledger_v1.schema.json",
+  "title": "Claim Ledger v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "generated_at",
+    "claims"
+  ],
+  "properties": {
+    "schema_id": {
+      "const": "breadboard.claim_ledger.v1"
+    },
+    "generated_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_id",
+          "title",
+          "status",
+          "tier",
+          "last_updated"
+        ],
+        "properties": {
+          "claim_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "exploratory",
+              "proposed",
+              "in_review",
+              "accepted",
+              "retracted",
+              "invalidated"
+            ]
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "tier0_exploratory",
+              "tier1_replay",
+              "tier2_statistical",
+              "tier3_release"
+            ]
+          },
+          "evidence_bundle_id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "last_updated": {
+            "type": "string",
+            "minLength": 1
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "no_claim_mode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "reason"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

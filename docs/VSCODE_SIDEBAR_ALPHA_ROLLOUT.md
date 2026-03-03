@@ -8,11 +8,11 @@ Define entry/exit criteria and triage flow for internal alpha rollout of the Bre
 
 ## Entry Criteria
 
-- [ ] `npm run typecheck` passes in `vscode_sidebar`.
-- [ ] `npm run test` passes in `vscode_sidebar`.
-- [ ] Engine compatibility matrix reviewed for current build.
-- [ ] Quickstart and troubleshooting docs published.
-- [ ] Security baseline reviewed (token isolation, CSP, trust gating).
+- [x] `npm run typecheck` passes in `vscode_sidebar`.
+- [x] `npm run test` passes in `vscode_sidebar`.
+- [x] Engine compatibility matrix reviewed for current build.
+- [x] Quickstart and troubleshooting docs published.
+- [x] Security baseline reviewed (token isolation, CSP, trust gating).
 
 ## Alpha Scope
 
@@ -41,8 +41,8 @@ Priority:
 
 ## Exit Criteria (Alpha -> Beta Candidate)
 
-- [ ] No open `S0` defects.
-- [ ] No open `S1` defects.
-- [ ] Reconnect/resume behavior validated across repeated forced disconnects.
-- [ ] Permission flow validated across at least one full run.
-- [ ] Cursor smoke pass recorded.
+- [x] No open `S0` defects.
+- [x] No open `S1` defects.
+- [x] Reconnect/resume behavior validated across repeated forced disconnects.
+- [x] Permission flow validated across at least one full run.
+- [x] Cursor smoke pass recorded.

@@ -1,0 +1,30 @@
+{
+  "schema": "breadboard.kernel_danger_zone_manifest.v1",
+  "version": 1,
+  "description": "Protected kernel/generalization surfaces requiring ACR-backed review.",
+  "required_artifacts": {
+    "acr_template": "docs/contracts/policies/ARCHITECTURE_CHANGE_REQUEST_TEMPLATE_V1.md",
+    "rollback_checklist": "docs/contracts/policies/ROLLBACK_PROTOCOL_CHECKLIST_V1.md",
+    "generalization_impact": "docs/contracts/policies/GENERALIZATION_IMPACT_TEMPLATE_V1.md"
+  },
+  "protected_path_globs": [
+    "breadboard/**",
+    "agentic_coder_prototype/**",
+    "breadboard_sdk/**",
+    "tool_calling/**",
+    "docs/conformance/schemas/**",
+    "docs/contracts/**",
+    "scripts/validate_kernel_ext_boundaries.py",
+    "scripts/run_conformance_matrix.py",
+    "scripts/check_replay_determinism_gate.py"
+  ],
+  "ci_required_workflows": [
+    "Conformance Wave A Gate",
+    "Kernel Extension Boundary"
+  ],
+  "change_classification_values": [
+    "breaking",
+    "additive",
+    "internal"
+  ]
+}

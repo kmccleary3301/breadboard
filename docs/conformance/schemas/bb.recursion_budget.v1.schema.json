@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.recursion_budget.v1",
+  "title": "BreadBoard Recursion Budget v1",
+  "description": "Session-level recursion and fanout budget contract for long-running delegation governance.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "session_id",
+    "max_depth",
+    "max_subtasks",
+    "token_budget",
+    "time_budget_ms",
+    "scope_threshold"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "max_depth": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "max_subtasks": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "token_budget": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "time_budget_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "scope_threshold": {
+      "type": "number",
+      "minimum": 0
+    },
+    "enforcement_mode": {
+      "type": "string",
+      "enum": [
+        "observe_only",
+        "hard_limit"
+      ]
+    },
+    "policy_profile": {
+      "type": "string",
+      "enum": [
+        "strict",
+        "standard",
+        "relaxed"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

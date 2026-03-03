@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.tool_result.v1",
+  "title": "BreadBoard Tool Result v1",
+  "description": "Terminal outcome record for a tool call.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Tool result schema version.",
+      "examples": ["v1"]
+    },
+    "call_id": {
+      "type": "string",
+      "description": "Tool call identifier this result belongs to."
+    },
+    "state": {
+      "type": "string",
+      "description": "Terminal state reached by the tool call.",
+      "enum": ["completed", "failed", "cancelled"]
+    },
+    "result_payload": {
+      "type": "object",
+      "description": "Structured success payload when state is completed."
+    },
+    "error_payload": {
+      "type": "object",
+      "description": "Structured error payload when execution fails."
+    },
+    "resource_usage": {
+      "type": "object",
+      "description": "Optional resource accounting metadata (tokens, time, CPU, etc.)."
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp when the tool call finished."
+    }
+  },
+  "required": [
+    "schema_version",
+    "call_id",
+    "state",
+    "finished_at"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "completed"
+          }
+        }
+      },
+      "then": {
+        "required": ["result_payload"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "failed"
+          }
+        }
+      },
+      "then": {
+        "required": ["error_payload"]
+      }
+    }
+  ]
+}

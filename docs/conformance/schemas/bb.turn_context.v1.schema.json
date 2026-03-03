@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/schemas/bb.turn_context.v1.schema.json",
+  "title": "bb.turn_context.v1",
+  "description": "Per-turn context envelope linking input, tool lifecycle, approvals, and output references.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "turn_id",
+    "session_id",
+    "input_ref",
+    "tool_calls",
+    "approval_refs",
+    "output_ref",
+    "timing"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "turn_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "turn_index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "input_ref": {
+      "$ref": "#/$defs/ref_pointer"
+    },
+    "tool_calls": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/tool_call_ref"
+      }
+    },
+    "approval_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/approval_ref"
+      }
+    },
+    "output_ref": {
+      "$ref": "#/$defs/ref_pointer"
+    },
+    "timing": {
+      "$ref": "#/$defs/timing"
+    },
+    "surface": {
+      "type": "string",
+      "enum": [
+        "cli",
+        "api",
+        "tui",
+        "ide",
+        "web"
+      ]
+    }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ref_pointer": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "required": [
+            "artifact_id"
+          ],
+          "properties": {
+            "artifact_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "part_id": {
+              "type": "string"
+            },
+            "message_id": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "tool_call_ref": {
+      "type": "object",
+      "required": [
+        "call_id",
+        "state"
+      ],
+      "properties": {
+        "call_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "validating",
+            "scheduled",
+            "awaiting_approval",
+            "executing",
+            "completed",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "requested_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "finished_at": {
+          "$ref": "#/$defs/timestamp"
+        }
+      },
+      "additionalProperties": true
+    },
+    "approval_ref": {
+      "type": "object",
+      "required": [
+        "approval_id",
+        "decision"
+      ],
+      "properties": {
+        "approval_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "decided_at": {
+          "$ref": "#/$defs/timestamp"
+        }
+      },
+      "additionalProperties": true
+    },
+    "timing": {
+      "type": "object",
+      "required": [
+        "started_at",
+        "duration_ms"
+      ],
+      "properties": {
+        "started_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "finished_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

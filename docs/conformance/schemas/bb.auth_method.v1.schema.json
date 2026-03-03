@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.auth_method.v1",
+  "title": "BreadBoard Auth Method v1",
+  "description": "Provider auth method descriptor with explicit precedence and rotation policy.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "provider_id",
+    "method",
+    "credential_source",
+    "precedence",
+    "rotation_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "provider_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "method": {
+      "type": "string",
+      "description": "Auth method under conformance coverage.",
+      "enum": [
+        "api",
+        "oauth",
+        "wellknown"
+      ]
+    },
+    "credential_source": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "precedence": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Lower values win during deterministic method resolution."
+    },
+    "scopes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "rotation_policy": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refresh_before_seconds": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "policy_profile": {
+      "type": "string",
+      "enum": [
+        "strict",
+        "standard",
+        "relaxed"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/atp/retrieval_adapter_response_v1.schema.json",
+  "title": "ATP Retrieval Adapter Response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "hits"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "atp_retrieval_adapter_response_v1"
+    },
+    "retrieval_stage": {
+      "type": "string",
+      "enum": [
+        "coarse",
+        "rerank"
+      ]
+    },
+    "reranked": {
+      "type": "boolean"
+    },
+    "reranker_model_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "hits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "doc_id",
+          "score",
+          "source"
+        ],
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "score": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "coarse_score": {
+            "type": "number"
+          },
+          "rerank_score": {
+            "type": "number"
+          },
+          "final_rank": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "payload_ref": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

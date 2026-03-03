@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.approval_semantics_check.v1",
+  "title": "BreadBoard Approval Semantics Check v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "approval_semantics_check_v1"
+    },
+    "mode": {
+      "type": "string",
+      "const": "conflicting_decisions"
+    },
+    "approval_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "conflict_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "mode",
+    "approval_id",
+    "decision_count",
+    "conflict_count",
+    "violations",
+    "ok"
+  ]
+}
+

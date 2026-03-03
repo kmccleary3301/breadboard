@@ -1,0 +1,4891 @@
+{
+  "schema_version": "ct_scenarios_manifest_v1",
+  "suite_id": "ct-wave-a-v1",
+  "target": {
+    "kind": "runtime",
+    "id": "wave_a"
+  },
+  "scenarios": [
+    {
+      "test_id": "CT-PROTO-001",
+      "description": "Protocol contract file presence validation",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "contract_exports",
+        "--payload",
+        "tests/fixtures/conformance_v1/protocol_semantics/contract_exports_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_001.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_001.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "missing_schema_count",
+                "equals": 0
+              },
+              {
+                "path": "expected_schema_count",
+                "min": 30
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-002",
+      "description": "Protocol event variant coverage validation",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "envelope_variants",
+        "--payload",
+        "tests/fixtures/conformance_v1/protocol_semantics/envelope_variants_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_002.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_002.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "missing_count",
+                "equals": 0
+              },
+              {
+                "path": "variant_count",
+                "min": 20
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-003",
+      "description": "Protocol payload minimal sample validation",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "minimal_payload_samples",
+        "--payload",
+        "tests/fixtures/conformance_v1/protocol_semantics/minimal_payload_samples_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_003.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_003.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              },
+              {
+                "path": "sample_count",
+                "min": 20
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-004",
+      "description": "Protocol runtime-to-event translation validation",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "runtime_event_translation",
+        "--payload",
+        "tests/fixtures/conformance_v1/protocol_semantics/runtime_event_translation_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_004.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_004.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              },
+              {
+                "path": "case_count",
+                "equals": 4
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-005",
+      "description": "Protocol status/error taxonomy normalization semantics",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "status_error_taxonomy",
+        "--payload",
+        "tests/fixtures/conformance_v1/protocol_semantics/status_error_taxonomy_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_005.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_005.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 5
+              },
+              {
+                "path": "error_count",
+                "equals": 2
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-006",
+      "description": "Protocol session-token PTY stream isolation anti-bleed semantics",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "session_stream_isolation",
+        "--payload",
+        "tests/fixtures/conformance_v1/protocol_semantics/session_stream_isolation_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_006.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_006.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 10
+              },
+              {
+                "path": "bleed_event_count",
+                "equals": 0
+              },
+              {
+                "path": "max_cursor_step_observed",
+                "equals": 1
+              },
+              {
+                "path": "unique_session_count",
+                "equals": 1
+              },
+              {
+                "path": "unique_stream_count",
+                "equals": 1
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-007",
+      "description": "Protocol operator diagnostics pack semantics across runtime sources",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "operator_diagnostics_pack",
+        "--payload",
+        "tests/fixtures/conformance_v1/protocol_semantics/operator_diagnostics_pack_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_007.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_007.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 5
+              },
+              {
+                "path": "source_count",
+                "min": 4
+              },
+              {
+                "path": "error_source_count",
+                "min": 3
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-008",
+      "description": "Protocol session-stream anti-bleed live reconnect-storm lane",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "session_stream_isolation",
+        "--payload",
+        "docs/conformance/protocol_runtime_evidence/session_stream_isolation_live_case_001.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_008.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_008.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 14
+              },
+              {
+                "path": "bleed_event_count",
+                "equals": 0
+              },
+              {
+                "path": "max_cursor_step_observed",
+                "equals": 1
+              },
+              {
+                "path": "unique_session_count",
+                "equals": 1
+              },
+              {
+                "path": "unique_stream_count",
+                "equals": 1
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-009",
+      "description": "Protocol session-stream anti-bleed live fork-race lane",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "session_stream_isolation",
+        "--payload",
+        "docs/conformance/protocol_runtime_evidence/session_stream_isolation_live_case_002.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_009.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_009.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 11
+              },
+              {
+                "path": "bleed_event_count",
+                "equals": 0
+              },
+              {
+                "path": "max_cursor_step_observed",
+                "equals": 1
+              },
+              {
+                "path": "unique_session_count",
+                "equals": 1
+              },
+              {
+                "path": "unique_stream_count",
+                "equals": 1
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-010",
+      "description": "Protocol operator diagnostics pack live runtime lane family-A",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "operator_diagnostics_pack",
+        "--payload",
+        "docs/conformance/protocol_runtime_evidence/operator_diagnostics_live_case_001.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_010.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_010.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 8
+              },
+              {
+                "path": "source_count",
+                "min": 6
+              },
+              {
+                "path": "error_source_count",
+                "min": 5
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-011",
+      "description": "Protocol operator diagnostics pack live runtime lane family-B",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "operator_diagnostics_pack",
+        "--payload",
+        "docs/conformance/protocol_runtime_evidence/operator_diagnostics_live_case_002.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_011.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_011.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 8
+              },
+              {
+                "path": "source_count",
+                "min": 7
+              },
+              {
+                "path": "error_source_count",
+                "min": 6
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-012",
+      "description": "Protocol session-stream anti-bleed live reconnect-storm lane family-C",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "session_stream_isolation",
+        "--payload",
+        "docs/conformance/protocol_runtime_evidence/session_stream_isolation_live_case_003.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_012.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_012.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 16
+              },
+              {
+                "path": "bleed_event_count",
+                "equals": 0
+              },
+              {
+                "path": "max_cursor_step_observed",
+                "equals": 1
+              },
+              {
+                "path": "unique_session_count",
+                "equals": 1
+              },
+              {
+                "path": "unique_stream_count",
+                "equals": 1
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-013",
+      "description": "Protocol session-stream anti-bleed live fork-race lane family-D",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "session_stream_isolation",
+        "--payload",
+        "docs/conformance/protocol_runtime_evidence/session_stream_isolation_live_case_004.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_013.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_013.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 13
+              },
+              {
+                "path": "bleed_event_count",
+                "equals": 0
+              },
+              {
+                "path": "max_cursor_step_observed",
+                "equals": 1
+              },
+              {
+                "path": "unique_session_count",
+                "equals": 1
+              },
+              {
+                "path": "unique_stream_count",
+                "equals": 1
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-014",
+      "description": "Protocol operator diagnostics pack live runtime lane family-C",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "operator_diagnostics_pack",
+        "--payload",
+        "docs/conformance/protocol_runtime_evidence/operator_diagnostics_live_case_003.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_014.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_014.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 9
+              },
+              {
+                "path": "source_count",
+                "min": 7
+              },
+              {
+                "path": "error_source_count",
+                "min": 6
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-015",
+      "description": "Protocol operator diagnostics pack live runtime lane family-D",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "operator_diagnostics_pack",
+        "--payload",
+        "docs/conformance/protocol_runtime_evidence/operator_diagnostics_live_case_004.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_015.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_015.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 8
+              },
+              {
+                "path": "source_count",
+                "min": 7
+              },
+              {
+                "path": "error_source_count",
+                "min": 7
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROTO-016",
+      "description": "Protocol operator diagnostics pack live runtime lane family-E",
+      "command": [
+        "python",
+        "scripts/check_protocol_semantics.py",
+        "--mode",
+        "operator_diagnostics_pack",
+        "--payload",
+        "docs/conformance/protocol_runtime_evidence/operator_diagnostics_live_case_005.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proto_016.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proto_016.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 10
+              },
+              {
+                "path": "source_count",
+                "min": 7
+              },
+              {
+                "path": "error_source_count",
+                "min": 7
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-001",
+      "description": "Tool lifecycle transition semantics: valid trace follows allowed edges",
+      "command": [
+        "python",
+        "scripts/check_tool_transition_semantics.py",
+        "--trace",
+        "tests/fixtures/conformance_v1/tool/transition_trace_ok.json",
+        "--allowed-edges",
+        "tests/fixtures/conformance_v1/tool/allowed_edges.yaml",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_001.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_001.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "trace_length",
+                "min": 2
+              },
+              {
+                "path": "violations",
+                "length_equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-002",
+      "description": "Tool lifecycle guard: first bash is allowed",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "one_bash_first_allowed",
+        "--payload",
+        "tests/fixtures/conformance_v1/tool/one_bash_first_allowed_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_002.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_002.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-003",
+      "description": "Tool deny mask includes mutating tools when edit denied",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "disabled_edit_mask",
+        "--payload",
+        "tests/fixtures/conformance_v1/tool/disabled_edit_mask_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_003.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_003.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              },
+              {
+                "path": "disabled_count",
+                "min": 3
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-004",
+      "description": "Tool deny mask handles shell partial allow correctly",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "shell_deny_mask",
+        "--payload",
+        "tests/fixtures/conformance_v1/tool/shell_deny_mask_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_004.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_004.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-005",
+      "description": "Runtime transition enforcer validates legal/illegal edge matrix with deterministic error codes",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "runtime_transition_matrix",
+        "--payload",
+        "tests/fixtures/conformance_v1/tool/runtime_transition_matrix_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_005.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_005.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              },
+              {
+                "path": "legal_path_count",
+                "equals": 4
+              },
+              {
+                "path": "legal_path_pass_count",
+                "equals": 4
+              },
+              {
+                "path": "invalid_case_count",
+                "equals": 4
+              },
+              {
+                "path": "invalid_case_pass_count",
+                "equals": 4
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-006",
+      "description": "Runtime transition rejection taxonomy remains deterministic across invalid lifecycle operations",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "runtime_error_taxonomy",
+        "--payload",
+        "docs/conformance/tool_runtime_evidence/runtime_error_taxonomy_live_case_001.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_006.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_006.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "case_count",
+                "equals": 6
+              },
+              {
+                "path": "unique_code_count",
+                "equals": 6
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-007",
+      "description": "Runtime correction-loop coupling preserves attempt lineage and terminal completion semantics",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "runtime_correction_loop_coupling",
+        "--payload",
+        "docs/conformance/tool_runtime_evidence/runtime_correction_loop_live_case_001.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_007.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_007.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "attempt_count",
+                "equals": 3
+              },
+              {
+                "path": "failed_count",
+                "equals": 2
+              },
+              {
+                "path": "completed_count",
+                "equals": 1
+              },
+              {
+                "path": "lineage_edge_count",
+                "equals": 2
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-008",
+      "description": "Runtime transition rejection taxonomy family-B remains deterministic across mixed invalid transition paths",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "runtime_error_taxonomy",
+        "--payload",
+        "docs/conformance/tool_runtime_evidence/runtime_error_taxonomy_live_case_002.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_008.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_008.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "case_count",
+                "equals": 8
+              },
+              {
+                "path": "unique_code_count",
+                "equals": 6
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-009",
+      "description": "Runtime correction-loop coupling family-B preserves strict attempt lineage and terminal completion over deeper retries",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "runtime_correction_loop_coupling",
+        "--payload",
+        "docs/conformance/tool_runtime_evidence/runtime_correction_loop_live_case_002.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_009.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_009.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "attempt_count",
+                "equals": 4
+              },
+              {
+                "path": "failed_count",
+                "equals": 3
+              },
+              {
+                "path": "completed_count",
+                "equals": 1
+              },
+              {
+                "path": "lineage_edge_count",
+                "equals": 3
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-010",
+      "description": "Runtime transition rejection taxonomy family-C remains deterministic under provider-coupled mixed-operation pressure",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "runtime_error_taxonomy",
+        "--payload",
+        "docs/conformance/tool_runtime_evidence/runtime_error_taxonomy_live_case_003.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_010.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_010.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "case_count",
+                "equals": 10
+              },
+              {
+                "path": "unique_code_count",
+                "equals": 6
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-011",
+      "description": "Runtime correction-loop coupling family-C preserves strict lineage and terminal completion under provider-coupled deeper retries",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "runtime_correction_loop_coupling",
+        "--payload",
+        "docs/conformance/tool_runtime_evidence/runtime_correction_loop_live_case_003.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_011.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_011.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "attempt_count",
+                "equals": 5
+              },
+              {
+                "path": "failed_count",
+                "equals": 4
+              },
+              {
+                "path": "completed_count",
+                "equals": 1
+              },
+              {
+                "path": "lineage_edge_count",
+                "equals": 4
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-012",
+      "description": "Runtime transition rejection taxonomy family-D remains deterministic under cross-provider mixed-operation pressure",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "runtime_error_taxonomy",
+        "--payload",
+        "docs/conformance/tool_runtime_evidence/runtime_error_taxonomy_live_case_004.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_012.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_012.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "case_count",
+                "equals": 12
+              },
+              {
+                "path": "unique_code_count",
+                "equals": 6
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-013",
+      "description": "Runtime correction-loop coupling family-D preserves strict lineage and terminal completion under cross-provider deeper retries",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "runtime_correction_loop_coupling",
+        "--payload",
+        "docs/conformance/tool_runtime_evidence/runtime_correction_loop_live_case_004.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_013.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_013.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "attempt_count",
+                "equals": 6
+              },
+              {
+                "path": "failed_count",
+                "equals": 5
+              },
+              {
+                "path": "completed_count",
+                "equals": 1
+              },
+              {
+                "path": "lineage_edge_count",
+                "equals": 5
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-TOOL-014",
+      "description": "Runtime transition rejection taxonomy family-E remains deterministic under broader cross-provider interference and concurrent mixed-operation pressure",
+      "gate_level": "P1-blocking",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "runtime_error_taxonomy",
+        "--payload",
+        "docs/conformance/tool_runtime_evidence/runtime_error_taxonomy_live_case_005.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_014.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_014.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "case_count",
+                "equals": 14
+              },
+              {
+                "path": "unique_code_count",
+                "equals": 6
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "test_id": "CT-TOOL-015",
+      "description": "Runtime correction-loop coupling family-E preserves strict lineage and terminal completion under broader cross-provider retry chains",
+      "gate_level": "P1-blocking",
+      "command": [
+        "python",
+        "scripts/check_tool_policy_semantics.py",
+        "--mode",
+        "runtime_correction_loop_coupling",
+        "--payload",
+        "docs/conformance/tool_runtime_evidence/runtime_correction_loop_live_case_005.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_tool_015.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_tool_015.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "attempt_count",
+                "equals": 7
+              },
+              {
+                "path": "failed_count",
+                "equals": 6
+              },
+              {
+                "path": "completed_count",
+                "equals": 1
+              },
+              {
+                "path": "lineage_edge_count",
+                "equals": 6
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "test_id": "CT-APPROVAL-001",
+      "description": "Approval policy denies destructive shell pattern",
+      "command": [
+        "python",
+        "scripts/check_approval_semantics.py",
+        "--mode",
+        "expired_request_closed",
+        "--payload",
+        "tests/fixtures/conformance_v1/approval_semantics/expired_request_closed_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_approval_001.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_approval_001.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "expired",
+                "equals": true
+              },
+              {
+                "path": "decision",
+                "equals": "deny"
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-APPROVAL-002",
+      "description": "Approval semantics reject conflicting final decisions for same approval_id",
+      "command": [
+        "python",
+        "scripts/check_approval_semantics.py",
+        "--mode",
+        "conflicting_decisions",
+        "--payload",
+        "tests/fixtures/conformance_v1/approval_semantics/conflicting_decisions_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_approval_002.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_approval_002.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "conflict_count",
+                "equals": 0
+              },
+              {
+                "path": "decision_count",
+                "equals": 1
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-APPROVAL-003",
+      "description": "Approval policy denies disallowed webfetch",
+      "command": [
+        "python",
+        "scripts/check_approval_semantics.py",
+        "--mode",
+        "webfetch_default_deny",
+        "--payload",
+        "tests/fixtures/conformance_v1/approval_semantics/webfetch_default_deny_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_approval_003.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_approval_003.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "denied",
+                "equals": true
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-APPROVAL-004",
+      "description": "Approval policy enforces network allowlist",
+      "command": [
+        "python",
+        "scripts/check_approval_semantics.py",
+        "--mode",
+        "network_allowlist_enforced",
+        "--payload",
+        "tests/fixtures/conformance_v1/approval_semantics/network_allowlist_enforced_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_approval_004.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_approval_004.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "blocked_denied",
+                "equals": true
+              },
+              {
+                "path": "allowed_passed",
+                "equals": true
+              },
+              {
+                "path": "audit_event_count",
+                "min": 3
+              },
+              {
+                "path": "audit_violation_count",
+                "equals": 0
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-APPROVAL-005",
+      "description": "Approval replay path preserves allow/deny outcomes",
+      "command": [
+        "python",
+        "scripts/check_approval_semantics.py",
+        "--mode",
+        "replay_allow_deny_equivalence",
+        "--payload",
+        "docs/conformance/approval_replay_evidence/approval_replay_equivalence_live_case_001.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_approval_005.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_approval_005.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "mismatch_count",
+                "equals": 0
+              },
+              {
+                "path": "missing_in_replay_count",
+                "equals": 0
+              },
+              {
+                "path": "missing_in_baseline_count",
+                "equals": 0
+              },
+              {
+                "path": "decision_pair_count",
+                "equals": 3
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PLAN-001",
+      "description": "Plan decision envelope follows deterministic lifecycle semantics",
+      "command": [
+        "python",
+        "scripts/check_plan_envelope_semantics.py",
+        "--mode",
+        "decision_lifecycle",
+        "--payload",
+        "tests/fixtures/conformance_v1/plan_envelope_semantics/decision_lifecycle_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_plan_001.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_plan_001.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "decision_count",
+                "min": 1
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-SESSION-001",
+      "description": "Session placeholder resolution from snapshot",
+      "command": [
+        "python",
+        "scripts/check_replay_placeholder_semantics.py",
+        "--payload",
+        "tests/fixtures/conformance_v1/session_semantics/placeholder_resolution_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_session_001.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_session_001.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              },
+              {
+                "path": "resolved.id",
+                "equals": "todo-123"
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-SESSION-002",
+      "description": "Session placeholder resolution from workspace fallback",
+      "command": [
+        "python",
+        "scripts/check_session_semantics.py",
+        "--mode",
+        "resume_fork_prefix",
+        "--payload",
+        "tests/fixtures/conformance_v1/session_semantics/resume_fork_prefix_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_session_002.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_session_002.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "prefix_length",
+                "equals": 3
+              },
+              {
+                "path": "resume_turns",
+                "equals": 5
+              },
+              {
+                "path": "fork_turns",
+                "equals": 5
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              },
+              {
+                "path": "resume_tail_count",
+                "equals": 2
+              },
+              {
+                "path": "fork_tail_count",
+                "equals": 2
+              },
+              {
+                "path": "tail_overlap_count",
+                "equals": 0
+              },
+              {
+                "path": "base_duplicate_count",
+                "equals": 0
+              },
+              {
+                "path": "resume_duplicate_count",
+                "equals": 0
+              },
+              {
+                "path": "fork_duplicate_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-SESSION-003",
+      "description": "Session rehydration tracks pending permission requests",
+      "command": [
+        "python",
+        "scripts/check_session_semantics.py",
+        "--mode",
+        "pending_permission_partition",
+        "--payload",
+        "tests/fixtures/conformance_v1/session_semantics/pending_permission_partition_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_session_003.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_session_003.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "session_pending_count",
+                "equals": 1
+              },
+              {
+                "path": "task_bucket_count",
+                "equals": 2
+              },
+              {
+                "path": "pending_total",
+                "equals": 4
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              },
+              {
+                "path": "unique_pending_count",
+                "equals": 4
+              },
+              {
+                "path": "duplicate_id_count",
+                "equals": 0
+              },
+              {
+                "path": "cross_task_overlap_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-SESSION-004",
+      "description": "Session rehydration isolates task permission request state",
+      "command": [
+        "python",
+        "scripts/check_session_semantics.py",
+        "--mode",
+        "task_scope_isolation",
+        "--payload",
+        "tests/fixtures/conformance_v1/session_semantics/task_scope_isolation_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_session_004.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_session_004.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "task_bucket_count",
+                "equals": 2
+              },
+              {
+                "path": "session_pending_count",
+                "equals": 1
+              },
+              {
+                "path": "pending_total",
+                "equals": 4
+              },
+              {
+                "path": "duplicate_key_count",
+                "equals": 0
+              },
+              {
+                "path": "conflict_count",
+                "equals": 2
+              },
+              {
+                "path": "unresolved_conflict_count",
+                "equals": 1
+              },
+              {
+                "path": "blocking_conflict_count",
+                "equals": 1
+              },
+              {
+                "path": "safe_reload_allowed",
+                "equals": false
+              },
+              {
+                "path": "safe_reload_blocked",
+                "equals": true
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              },
+              {
+                "path": "resolved_conflict_count",
+                "equals": 1
+              },
+              {
+                "path": "safe_reload_attempted",
+                "equals": true
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-SESSION-005",
+      "description": "Rollback dropped-range rewind semantics preserve boundaries",
+      "command": [
+        "python",
+        "scripts/check_rollback_semantics.py",
+        "--mode",
+        "dropped_range_rewind",
+        "--payload",
+        "tests/fixtures/conformance_v1/rollback_semantics/dropped_range_rewind_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_session_005.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_session_005.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "dropped_count",
+                "min": 1
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-SESSION-006",
+      "description": "Session safe-reload clear path allows reload once conflicts are fully resolved",
+      "command": [
+        "python",
+        "scripts/check_session_semantics.py",
+        "--mode",
+        "task_scope_isolation",
+        "--payload",
+        "tests/fixtures/conformance_v1/session_semantics/task_scope_isolation_reload_clear_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_session_006.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_session_006.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "unresolved_conflict_count",
+                "equals": 0
+              },
+              {
+                "path": "blocking_conflict_count",
+                "equals": 0
+              },
+              {
+                "path": "safe_reload_attempted",
+                "equals": true
+              },
+              {
+                "path": "safe_reload_allowed",
+                "equals": true
+              },
+              {
+                "path": "safe_reload_blocked",
+                "equals": false
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-SESSION-007",
+      "description": "Session conflict diagnostics/safe-reload family-A live runtime lane",
+      "gate_level": "P1-blocking",
+      "command": [
+        "python",
+        "scripts/check_session_semantics.py",
+        "--mode",
+        "task_scope_isolation",
+        "--payload",
+        "docs/conformance/session_runtime_evidence/task_scope_isolation_live_case_001.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_session_007.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_session_007.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "task_bucket_count",
+                "equals": 3
+              },
+              {
+                "path": "session_pending_count",
+                "equals": 2
+              },
+              {
+                "path": "pending_total",
+                "equals": 7
+              },
+              {
+                "path": "conflict_count",
+                "equals": 4
+              },
+              {
+                "path": "unresolved_conflict_count",
+                "equals": 2
+              },
+              {
+                "path": "blocking_conflict_count",
+                "equals": 2
+              },
+              {
+                "path": "resolved_conflict_count",
+                "equals": 2
+              },
+              {
+                "path": "safe_reload_attempted",
+                "equals": true
+              },
+              {
+                "path": "safe_reload_allowed",
+                "equals": false
+              },
+              {
+                "path": "safe_reload_blocked",
+                "equals": true
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "test_id": "CT-SESSION-008",
+      "description": "Session conflict diagnostics/safe-reload family-B live runtime lane",
+      "gate_level": "P1-blocking",
+      "command": [
+        "python",
+        "scripts/check_session_semantics.py",
+        "--mode",
+        "task_scope_isolation",
+        "--payload",
+        "docs/conformance/session_runtime_evidence/task_scope_isolation_live_case_002.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_session_008.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_session_008.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "task_bucket_count",
+                "equals": 4
+              },
+              {
+                "path": "session_pending_count",
+                "equals": 3
+              },
+              {
+                "path": "pending_total",
+                "equals": 10
+              },
+              {
+                "path": "conflict_count",
+                "equals": 5
+              },
+              {
+                "path": "unresolved_conflict_count",
+                "equals": 3
+              },
+              {
+                "path": "blocking_conflict_count",
+                "equals": 3
+              },
+              {
+                "path": "resolved_conflict_count",
+                "equals": 2
+              },
+              {
+                "path": "safe_reload_attempted",
+                "equals": true
+              },
+              {
+                "path": "safe_reload_allowed",
+                "equals": false
+              },
+              {
+                "path": "safe_reload_blocked",
+                "equals": true
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "test_id": "CT-PROJ-001",
+      "description": "Projection semantic check: reconnect, coalescing, and gap contract",
+      "command": [
+        "python",
+        "scripts/check_projection_semantics.py",
+        "--mode",
+        "reconnect_gap_coalescing",
+        "--snapshot",
+        "tests/fixtures/conformance_v1/projection_semantics/reconnect_gap_coalescing_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_001.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_001.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "initial_count",
+                "equals": 2
+              },
+              {
+                "path": "resumed_count",
+                "equals": 3
+              },
+              {
+                "path": "batch_count",
+                "equals": 2
+              },
+              {
+                "path": "max_batch_size_observed",
+                "equals": 2
+              },
+              {
+                "path": "gap_distance",
+                "equals": 3
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-002",
+      "description": "Projection semantic check: immutable prefix contract",
+      "command": [
+        "python",
+        "scripts/check_projection_semantics.py",
+        "--mode",
+        "immutable_prefix",
+        "--snapshot",
+        "tests/fixtures/conformance_v1/projection_semantics/immutable_prefix_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_002.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_002.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "violations",
+                "equals": []
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-003",
+      "description": "Projection revision-keyed overlay semantics",
+      "command": [
+        "python",
+        "scripts/check_projection_overlay_semantics.py",
+        "--payload",
+        "docs/conformance/projection_runtime_evidence/revision_overlay_live_case_001.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_003.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_003.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 5
+              },
+              {
+                "path": "revision_count",
+                "equals": 2
+              },
+              {
+                "path": "active_revision",
+                "equals": 2
+              },
+              {
+                "path": "violations",
+                "equals": []
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-004",
+      "description": "Projection semantic check: heartbeat recovery bounds",
+      "command": [
+        "python",
+        "scripts/check_projection_semantics.py",
+        "--mode",
+        "heartbeat_bounds",
+        "--snapshot",
+        "tests/fixtures/conformance_v1/projection_semantics/heartbeat_bounds_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_004.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_004.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "recovered_within_ms",
+                "equals": 180
+              },
+              {
+                "path": "max_allowed_ms",
+                "equals": 500
+              },
+              {
+                "path": "violations",
+                "equals": []
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-005",
+      "description": "Projection event envelope snapshot stability",
+      "command": [
+        "python",
+        "scripts/check_event_envelope_snapshots.py",
+        "--baseline",
+        "docs/conformance/event_envelope_snapshots_baseline_v1.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_005.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_005.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "files_checked",
+                "min": 4
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-006",
+      "description": "Projection semantic check: multi-gap reconnect with controlled batch reorder",
+      "command": [
+        "python",
+        "scripts/check_projection_semantics.py",
+        "--mode",
+        "reconnect_gap_coalescing",
+        "--snapshot",
+        "tests/fixtures/conformance_v1/projection_semantics/reconnect_multi_gap_reorder_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_006.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_006.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "gap_event_count",
+                "equals": 2
+              },
+              {
+                "path": "batch_count",
+                "equals": 3
+              },
+              {
+                "path": "max_batch_size_observed",
+                "equals": 2
+              },
+              {
+                "path": "gap_distance",
+                "equals": 2
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-007",
+      "description": "Projection surface parity bundle strict manifest constraints",
+      "command": [
+        "python",
+        "scripts/check_projection_surface_parity_bundle.py",
+        "--artifact-dir",
+        "tests/fixtures/conformance_v1/projection_semantics/surface_bundle_ok",
+        "--surface-manifest",
+        "docs/conformance/projection_surface_manifest_v1.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_007.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_007.json",
+            "checks": [
+              {
+                "path": "all_ok",
+                "equals": true
+              },
+              {
+                "path": "manifest_constraints_valid",
+                "equals": true
+              },
+              {
+                "path": "surface_count",
+                "equals": 5
+              },
+              {
+                "path": "total_cases",
+                "min": 18
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-008",
+      "description": "Projection semantic check: live reconnect storm family-A with multi-gap controlled reorder",
+      "command": [
+        "python",
+        "scripts/check_projection_semantics.py",
+        "--mode",
+        "reconnect_gap_coalescing",
+        "--snapshot",
+        "docs/conformance/projection_runtime_evidence/reconnect_multi_gap_reorder_live_case_001.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_008.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_008.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "resumed_count",
+                "equals": 5
+              },
+              {
+                "path": "gap_event_count",
+                "equals": 3
+              },
+              {
+                "path": "batch_count",
+                "equals": 4
+              },
+              {
+                "path": "max_batch_size_observed",
+                "equals": 2
+              },
+              {
+                "path": "gap_distance",
+                "equals": 2
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-009",
+      "description": "Projection semantic check: live reconnect storm family-B with strict ordered batch flattening",
+      "command": [
+        "python",
+        "scripts/check_projection_semantics.py",
+        "--mode",
+        "reconnect_gap_coalescing",
+        "--snapshot",
+        "docs/conformance/projection_runtime_evidence/reconnect_multi_gap_reorder_live_case_002.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_009.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_009.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "resumed_count",
+                "equals": 4
+              },
+              {
+                "path": "gap_event_count",
+                "equals": 2
+              },
+              {
+                "path": "batch_count",
+                "equals": 3
+              },
+              {
+                "path": "max_batch_size_observed",
+                "equals": 2
+              },
+              {
+                "path": "gap_distance",
+                "equals": 2
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-010",
+      "description": "Projection surface parity bundle: live render/input/destroy stress family-A",
+      "command": [
+        "python",
+        "scripts/check_projection_surface_parity_bundle.py",
+        "--artifact-dir",
+        "docs/conformance/projection_surface_runtime_evidence/render_input_destroy_live_case_001",
+        "--surface-manifest",
+        "docs/conformance/projection_surface_manifest_v1.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_010.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_010.json",
+            "checks": [
+              {
+                "path": "all_ok",
+                "equals": true
+              },
+              {
+                "path": "manifest_constraints_valid",
+                "equals": true
+              },
+              {
+                "path": "surface_count",
+                "equals": 5
+              },
+              {
+                "path": "total_cases",
+                "equals": 48
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-011",
+      "description": "Projection surface parity bundle: live render/input/destroy stress family-B",
+      "command": [
+        "python",
+        "scripts/check_projection_surface_parity_bundle.py",
+        "--artifact-dir",
+        "docs/conformance/projection_surface_runtime_evidence/render_input_destroy_live_case_002",
+        "--surface-manifest",
+        "docs/conformance/projection_surface_manifest_v1.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_011.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_011.json",
+            "checks": [
+              {
+                "path": "all_ok",
+                "equals": true
+              },
+              {
+                "path": "manifest_constraints_valid",
+                "equals": true
+              },
+              {
+                "path": "surface_count",
+                "equals": 5
+              },
+              {
+                "path": "total_cases",
+                "equals": 53
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-012",
+      "description": "Projection revision-keyed overlay semantics: live runtime lane family-B",
+      "command": [
+        "python",
+        "scripts/check_projection_overlay_semantics.py",
+        "--payload",
+        "docs/conformance/projection_runtime_evidence/revision_overlay_live_case_002.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_012.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_012.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 9
+              },
+              {
+                "path": "revision_count",
+                "equals": 4
+              },
+              {
+                "path": "active_revision",
+                "equals": 3
+              },
+              {
+                "path": "violations",
+                "equals": []
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-013",
+      "description": "Projection revision-keyed overlay semantics: live runtime lane family-C",
+      "command": [
+        "python",
+        "scripts/check_projection_overlay_semantics.py",
+        "--payload",
+        "docs/conformance/projection_runtime_evidence/revision_overlay_live_case_003.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_013.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_013.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 12
+              },
+              {
+                "path": "revision_count",
+                "equals": 5
+              },
+              {
+                "path": "active_revision",
+                "equals": 4
+              },
+              {
+                "path": "violations",
+                "equals": []
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-014",
+      "description": "Projection surface parity bundle: live render/input/destroy stress family-C",
+      "command": [
+        "python",
+        "scripts/check_projection_surface_parity_bundle.py",
+        "--artifact-dir",
+        "docs/conformance/projection_surface_runtime_evidence/render_input_destroy_live_case_003",
+        "--surface-manifest",
+        "docs/conformance/projection_surface_manifest_v1.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_014.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_014.json",
+            "checks": [
+              {
+                "path": "all_ok",
+                "equals": true
+              },
+              {
+                "path": "manifest_constraints_valid",
+                "equals": true
+              },
+              {
+                "path": "surface_count",
+                "equals": 5
+              },
+              {
+                "path": "total_cases",
+                "equals": 58
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-015",
+      "description": "Projection surface parity bundle: live render/input/destroy stress family-D",
+      "command": [
+        "python",
+        "scripts/check_projection_surface_parity_bundle.py",
+        "--artifact-dir",
+        "docs/conformance/projection_surface_runtime_evidence/render_input_destroy_live_case_004",
+        "--surface-manifest",
+        "docs/conformance/projection_surface_manifest_v1.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_015.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_015.json",
+            "checks": [
+              {
+                "path": "all_ok",
+                "equals": true
+              },
+              {
+                "path": "manifest_constraints_valid",
+                "equals": true
+              },
+              {
+                "path": "surface_count",
+                "equals": 5
+              },
+              {
+                "path": "total_cases",
+                "equals": 63
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-019",
+      "description": "Projection surface parity bundle: live render/input/destroy stress family-E",
+      "gate_level": "P1-blocking",
+      "command": [
+        "python",
+        "scripts/check_projection_surface_parity_bundle.py",
+        "--artifact-dir",
+        "docs/conformance/projection_surface_runtime_evidence/render_input_destroy_live_case_005",
+        "--surface-manifest",
+        "docs/conformance/projection_surface_manifest_v1.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_019.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_019.json",
+            "checks": [
+              {
+                "path": "all_ok",
+                "equals": true
+              },
+              {
+                "path": "manifest_constraints_valid",
+                "equals": true
+              },
+              {
+                "path": "surface_count",
+                "equals": 5
+              },
+              {
+                "path": "total_cases",
+                "equals": 68
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "test_id": "CT-PROJ-016",
+      "description": "Projection reconnect/coalescing semantics: live runtime lane family-C",
+      "command": [
+        "python",
+        "scripts/check_projection_semantics.py",
+        "--mode",
+        "reconnect_gap_coalescing",
+        "--snapshot",
+        "docs/conformance/projection_runtime_evidence/reconnect_multi_gap_reorder_live_case_003.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_016.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_016.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "resumed_count",
+                "equals": 5
+              },
+              {
+                "path": "gap_event_count",
+                "equals": 3
+              },
+              {
+                "path": "batch_count",
+                "equals": 3
+              },
+              {
+                "path": "max_batch_size_observed",
+                "equals": 2
+              },
+              {
+                "path": "gap_distance",
+                "equals": 2
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-017",
+      "description": "Projection reconnect/coalescing semantics: live runtime lane family-D",
+      "command": [
+        "python",
+        "scripts/check_projection_semantics.py",
+        "--mode",
+        "reconnect_gap_coalescing",
+        "--snapshot",
+        "docs/conformance/projection_runtime_evidence/reconnect_multi_gap_reorder_live_case_004.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_017.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_017.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "resumed_count",
+                "equals": 6
+              },
+              {
+                "path": "gap_event_count",
+                "equals": 4
+              },
+              {
+                "path": "batch_count",
+                "equals": 3
+              },
+              {
+                "path": "max_batch_size_observed",
+                "equals": 2
+              },
+              {
+                "path": "gap_distance",
+                "equals": 2
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-020",
+      "description": "Projection reconnect/coalescing semantics: live runtime lane family-E",
+      "command": [
+        "python",
+        "scripts/check_projection_semantics.py",
+        "--mode",
+        "reconnect_gap_coalescing",
+        "--snapshot",
+        "docs/conformance/projection_runtime_evidence/reconnect_multi_gap_reorder_live_case_005.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_020.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_020.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "resumed_count",
+                "equals": 7
+              },
+              {
+                "path": "gap_event_count",
+                "equals": 5
+              },
+              {
+                "path": "batch_count",
+                "equals": 4
+              },
+              {
+                "path": "max_batch_size_observed",
+                "equals": 2
+              },
+              {
+                "path": "gap_distance",
+                "equals": 2
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-018",
+      "description": "Projection revision-keyed overlay semantics: live runtime lane family-D",
+      "command": [
+        "python",
+        "scripts/check_projection_overlay_semantics.py",
+        "--payload",
+        "docs/conformance/projection_runtime_evidence/revision_overlay_live_case_004.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_018.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_018.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 15
+              },
+              {
+                "path": "revision_count",
+                "equals": 6
+              },
+              {
+                "path": "active_revision",
+                "equals": 5
+              },
+              {
+                "path": "violations",
+                "equals": []
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROJ-021",
+      "description": "Projection revision-keyed overlay semantics: live runtime lane family-E",
+      "command": [
+        "python",
+        "scripts/check_projection_overlay_semantics.py",
+        "--payload",
+        "docs/conformance/projection_runtime_evidence/revision_overlay_live_case_005.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_proj_021.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_proj_021.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 18
+              },
+              {
+                "path": "revision_count",
+                "equals": 7
+              },
+              {
+                "path": "active_revision",
+                "equals": 6
+              },
+              {
+                "path": "violations",
+                "equals": []
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROVIDER-001",
+      "description": "Provider runtime normalizes tool call arguments and content",
+      "command": [
+        "python",
+        "scripts/check_provider_semantics.py",
+        "--mode",
+        "deterministic_tiebreak",
+        "--payload",
+        "tests/fixtures/conformance_v1/provider_semantics/deterministic_tiebreak_ok_matrix.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_provider_001.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_provider_001.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "candidate_count",
+                "equals": 4
+              },
+              {
+                "path": "actual_winner",
+                "equals": "provider_beta"
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-PROVIDER-002",
+      "description": "Provider runtime null-content normalization",
+      "command": [
+        "python",
+        "scripts/check_provider_semantics.py",
+        "--mode",
+        "auth_precedence",
+        "--payload",
+        "tests/fixtures/conformance_v1/provider_semantics/auth_precedence_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_provider_002.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_provider_002.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "available_count",
+                "equals": 2
+              },
+              {
+                "path": "actual_selected",
+                "equals": "oauth"
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-PROVIDER-003",
+      "description": "Provider semantics retry-after normalization and bucket coherence",
+      "command": [
+        "python",
+        "scripts/check_provider_semantics.py",
+        "--mode",
+        "retry_after_normalization",
+        "--payload",
+        "tests/fixtures/conformance_v1/provider_semantics/retry_after_normalization_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_provider_003.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_provider_003.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "case_count",
+                "equals": 15
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROVIDER-004",
+      "description": "Provider replay runtime delegates to active replay session",
+      "command": [
+        "python",
+        "scripts/check_provider_semantics.py",
+        "--mode",
+        "replay_runtime_delegate",
+        "--payload",
+        "tests/fixtures/conformance_v1/provider_semantics/replay_runtime_delegate_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_provider_004.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_provider_004.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual_model",
+                "equals": "replay-playback"
+              },
+              {
+                "path": "actual_replay_metadata",
+                "equals": true
+              },
+              {
+                "path": "actual_session_call_count",
+                "equals": 1
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-PROVIDER-005",
+      "description": "Provider resolution provenance remains canonical across runtime paths",
+      "command": [
+        "python",
+        "scripts/check_provider_semantics.py",
+        "--mode",
+        "resolution_provenance",
+        "--payload",
+        "tests/fixtures/conformance_v1/provider_semantics/resolution_provenance_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_provider_005.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_provider_005.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "case_count",
+                "equals": 5
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-PROVIDER-006",
+      "description": "Provider retry-after normalization family-A live runtime lane",
+      "command": [
+        "python",
+        "scripts/check_provider_semantics.py",
+        "--mode",
+        "retry_after_normalization",
+        "--payload",
+        "docs/conformance/provider_runtime_evidence/retry_after_normalization_live_case_001.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_provider_006.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_provider_006.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "case_count",
+                "equals": 10
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-EXT-001",
+      "description": "Extension/plugin discovery from configured search paths",
+      "command": [
+        "python",
+        "scripts/check_plugin_discovery_semantics.py",
+        "--payload",
+        "tests/fixtures/conformance_v1/extension_semantics/plugin_discovery_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_001.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_001.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual_plugin_id",
+                "equals": "hello-plugin"
+              },
+              {
+                "path": "snapshot_count",
+                "equals": 1
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-EXT-002",
+      "description": "Extension middleware ordering by phase and priority",
+      "command": [
+        "python",
+        "scripts/check_extension_semantics.py",
+        "--mode",
+        "phase_priority_order",
+        "--payload",
+        "tests/fixtures/conformance_v1/extension_semantics/phase_priority_order_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_002.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_002.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "spec_count",
+                "equals": 3
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              },
+              {
+                "path": "actual_order",
+                "equals": [
+                  "before_high",
+                  "after_high",
+                  "after_low"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-EXT-003",
+      "description": "Extension middleware dependency ordering",
+      "command": [
+        "python",
+        "scripts/check_extension_semantics.py",
+        "--mode",
+        "dependency_order",
+        "--payload",
+        "tests/fixtures/conformance_v1/extension_semantics/dependency_order_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_003.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_003.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "spec_count",
+                "equals": 2
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              },
+              {
+                "path": "actual_order",
+                "equals": [
+                  "alpha",
+                  "beta"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-EXT-004",
+      "description": "Extension/mcp replayable determinism propagation",
+      "command": [
+        "python",
+        "scripts/check_surface_manifest_semantics.py",
+        "--mode",
+        "mcp_replayable_propagates",
+        "--payload",
+        "tests/fixtures/conformance_v1/extension_semantics/mcp_replayable_propagates_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_004.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_004.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              },
+              {
+                "path": "actual.mcp_snapshot",
+                "equals": "replayable"
+              },
+              {
+                "path": "actual.tool_schema_latest",
+                "equals": "replayable"
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-EXT-005",
+      "description": "Extension lifecycle/policy audit stream semantics",
+      "command": [
+        "python",
+        "scripts/check_extension_audit_stream_semantics.py",
+        "--mode",
+        "lifecycle_audit_stream",
+        "--payload",
+        "tests/fixtures/conformance_v1/extension_semantics/lifecycle_audit_stream_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_005.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_005.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 3
+              },
+              {
+                "path": "terminal_event_count",
+                "equals": 1
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-EXT-006",
+      "description": "Extension lifecycle branch coverage semantics including retry/conflict/reinstall-failure variants",
+      "command": [
+        "python",
+        "scripts/check_extension_audit_stream_semantics.py",
+        "--mode",
+        "lifecycle_branch_coverage",
+        "--payload",
+        "docs/conformance/extension_runtime_evidence/lifecycle_branch_coverage_live_case_001.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_006.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_006.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "required_branch_count",
+                "equals": 8
+              },
+              {
+                "path": "present_branch_count",
+                "min": 8
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-EXT-007",
+      "description": "Extension trust/consent deny-by-default and audit completeness semantics",
+      "command": [
+        "python",
+        "scripts/check_extension_audit_stream_semantics.py",
+        "--mode",
+        "trust_consent_default_deny",
+        "--payload",
+        "docs/conformance/extension_runtime_evidence/trust_consent_default_deny_live_case_001.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_007.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_007.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "operation_count",
+                "equals": 3
+              },
+              {
+                "path": "denied_operation_count",
+                "equals": 2
+              },
+              {
+                "path": "allowed_operation_count",
+                "equals": 1
+              },
+              {
+                "path": "policy_violation_count",
+                "equals": 0
+              },
+              {
+                "path": "audit_violation_count",
+                "equals": 0
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-EXT-008",
+      "description": "Extension runtime hook execution semantics (ordering, timeout isolation, continuation)",
+      "command": [
+        "python",
+        "scripts/check_extension_semantics.py",
+        "--mode",
+        "runtime_hook_execution",
+        "--payload",
+        "docs/conformance/extension_runtime_evidence/runtime_hook_execution_live_case_001.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_008.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_008.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "timed_out_count",
+                "equals": 1
+              },
+              {
+                "path": "event_count",
+                "equals": 5
+              },
+              {
+                "path": "isolated_failure_count",
+                "equals": 1
+              },
+              {
+                "path": "required_phase_count",
+                "equals": 4
+              },
+              {
+                "path": "observed_phase_count",
+                "min": 4
+              },
+              {
+                "path": "continued_after_timeout",
+                "equals": true
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-EXT-009",
+      "description": "Extension runtime hook execution stress family-B (multiple isolated failure lanes with continued execution)",
+      "command": [
+        "python",
+        "scripts/check_extension_semantics.py",
+        "--mode",
+        "runtime_hook_execution",
+        "--payload",
+        "docs/conformance/extension_runtime_evidence/runtime_hook_execution_live_case_002.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_009.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_009.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "timed_out_count",
+                "equals": 1
+              },
+              {
+                "path": "event_count",
+                "equals": 8
+              },
+              {
+                "path": "isolated_failure_count",
+                "equals": 2
+              },
+              {
+                "path": "required_phase_count",
+                "equals": 6
+              },
+              {
+                "path": "observed_phase_count",
+                "min": 6
+              },
+              {
+                "path": "continued_after_timeout",
+                "equals": true
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-EXT-010",
+      "description": "Extension runtime hook execution family-C (fatal terminal failure semantics)",
+      "command": [
+        "python",
+        "scripts/check_extension_semantics.py",
+        "--mode",
+        "runtime_hook_execution",
+        "--payload",
+        "docs/conformance/extension_runtime_evidence/runtime_hook_execution_live_case_003.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_010.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_010.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "timed_out_count",
+                "equals": 0
+              },
+              {
+                "path": "event_count",
+                "equals": 3
+              },
+              {
+                "path": "isolated_failure_count",
+                "equals": 0
+              },
+              {
+                "path": "required_phase_count",
+                "equals": 3
+              },
+              {
+                "path": "observed_phase_count",
+                "equals": 3
+              },
+              {
+                "path": "continued_after_timeout",
+                "equals": false
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-EXT-011",
+      "description": "Extension runtime hook execution family-D (provider-coupled contention + multi-plugin continuation)",
+      "gate_level": "P1-blocking",
+      "command": [
+        "python",
+        "scripts/check_extension_semantics.py",
+        "--mode",
+        "runtime_hook_execution",
+        "--payload",
+        "docs/conformance/extension_runtime_evidence/runtime_hook_execution_live_case_004.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_011.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_011.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "timed_out_count",
+                "equals": 1
+              },
+              {
+                "path": "event_count",
+                "equals": 12
+              },
+              {
+                "path": "isolated_failure_count",
+                "equals": 3
+              },
+              {
+                "path": "required_phase_count",
+                "equals": 10
+              },
+              {
+                "path": "observed_phase_count",
+                "min": 11
+              },
+              {
+                "path": "continued_after_timeout",
+                "equals": true
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "test_id": "CT-EXT-012",
+      "description": "Extension lifecycle branch coverage family-B (runtime conflict/failure trace pack)",
+      "gate_level": "P1-blocking",
+      "command": [
+        "python",
+        "scripts/check_extension_audit_stream_semantics.py",
+        "--mode",
+        "lifecycle_branch_coverage",
+        "--payload",
+        "docs/conformance/extension_runtime_evidence/lifecycle_branch_coverage_live_case_002.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_012.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_012.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 33
+              },
+              {
+                "path": "required_branch_count",
+                "equals": 8
+              },
+              {
+                "path": "present_branch_count",
+                "equals": 9
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "test_id": "CT-EXT-013",
+      "description": "Extension runtime hook execution family-E (provider-coupled interference + high-cardinality continuation)",
+      "gate_level": "P1-blocking",
+      "command": [
+        "python",
+        "scripts/check_extension_semantics.py",
+        "--mode",
+        "runtime_hook_execution",
+        "--payload",
+        "docs/conformance/extension_runtime_evidence/runtime_hook_execution_live_case_005.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_013.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_013.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "timed_out_count",
+                "equals": 2
+              },
+              {
+                "path": "event_count",
+                "equals": 14
+              },
+              {
+                "path": "isolated_failure_count",
+                "equals": 5
+              },
+              {
+                "path": "required_phase_count",
+                "equals": 12
+              },
+              {
+                "path": "observed_phase_count",
+                "min": 13
+              },
+              {
+                "path": "continued_after_timeout",
+                "equals": true
+              },
+              {
+                "path": "error_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "test_id": "CT-EXT-014",
+      "description": "Extension lifecycle branch-coverage family-C (provider-coupled conflict/failure trace pack)",
+      "gate_level": "P1-blocking",
+      "command": [
+        "python",
+        "scripts/check_extension_audit_stream_semantics.py",
+        "--mode",
+        "lifecycle_branch_coverage",
+        "--payload",
+        "docs/conformance/extension_runtime_evidence/lifecycle_branch_coverage_live_case_003.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_ext_014.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_ext_014.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "event_count",
+                "equals": 36
+              },
+              {
+                "path": "required_branch_count",
+                "equals": 8
+              },
+              {
+                "path": "present_branch_count",
+                "equals": 9
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "test_id": "CT-RECURSE-001",
+      "description": "Recursion/long-run max-steps override behavior",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "episode_max_steps_enabled_override",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/episode_max_steps_enabled_override_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_001.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_001.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual",
+                "equals": 7
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-002",
+      "description": "Recursion/long-run default max-steps behavior when disabled",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "episode_max_steps_disabled_default",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/episode_max_steps_disabled_default_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_002.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_002.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual",
+                "equals": 12
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-003",
+      "description": "Recursion/long-run policy profile env override behavior",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "policy_profile_env_override",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/policy_profile_env_override_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_003.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_003.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual",
+                "equals": "conservative"
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-004",
+      "description": "Recursion/long-run rollback bounded recovery behavior",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "single_rollback_then_stop",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/single_rollback_then_stop_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_004.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_004.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual_stop_reason",
+                "equals": "retry_budget_reached"
+              },
+              {
+                "path": "actual_episodes_run",
+                "equals": 2
+              },
+              {
+                "path": "actual_rollback_used",
+                "equals": true
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-005",
+      "description": "Recursion/long-run bounded convergence-stage stop behavior",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "convergence_stage_bounded",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/convergence_stage_bounded_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_005.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_005.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual_stop_reason",
+                "equals": "no_progress_threshold_reached"
+              },
+              {
+                "path": "actual_episodes_run",
+                "equals": 2
+              },
+              {
+                "path": "convergence_bounded",
+                "equals": true
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-006",
+      "description": "Recursion/long-run queue ordering and visibility semantics",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "queue_ordering_visibility",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/queue_ordering_visibility_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_006.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_006.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual_stop_reason",
+                "equals": "episode_completed"
+              },
+              {
+                "path": "actual_open_count",
+                "equals": 1
+              },
+              {
+                "path": "actual_claim_order",
+                "equals": [
+                  "task_alpha",
+                  "task_beta"
+                ]
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-007",
+      "description": "Recursion/long-run global token-budget stop semantics",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "global_token_budget_stop",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/global_token_budget_stop_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_007.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_007.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual_stop_reason",
+                "equals": "total_tokens_budget_reached"
+              },
+              {
+                "path": "actual_episodes_run",
+                "equals": 1
+              },
+              {
+                "path": "actual_total_tokens_used",
+                "equals": 120
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-008",
+      "description": "Recursion/long-run policy boundary matrix semantics",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "policy_boundary_matrix",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/policy_boundary_matrix_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_008.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_008.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "case_count",
+                "equals": 6
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-009",
+      "description": "Recursion/long-run queue pause/resume durability semantics",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "queue_pause_resume_durability",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/queue_pause_resume_durability_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_009.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_009.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual_run1_stop_reason",
+                "equals": "max_episodes_reached"
+              },
+              {
+                "path": "actual_run2_stop_reason",
+                "equals": "episode_completed"
+              },
+              {
+                "path": "actual_resumed_from_state",
+                "equals": true
+              },
+              {
+                "path": "actual_open_count",
+                "equals": 1
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-010",
+      "description": "Recursion/long-run global subcall-budget stop semantics",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "global_subcall_budget_stop",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/global_subcall_budget_stop_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_010.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_010.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual_stop_reason",
+                "equals": "total_subcalls_budget_reached"
+              },
+              {
+                "path": "actual_episodes_run",
+                "equals": 1
+              },
+              {
+                "path": "actual_total_subcalls_used",
+                "equals": 3
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-011",
+      "description": "Recursion/long-run resumed-state subcall budget precheck semantics",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "subcall_budget_resume_precheck",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/subcall_budget_resume_precheck_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_011.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_011.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual_stop_reason",
+                "equals": "total_subcalls_budget_reached"
+              },
+              {
+                "path": "actual_resumed_from_state",
+                "equals": true
+              },
+              {
+                "path": "actual_runner_calls",
+                "equals": 0
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-012",
+      "description": "Recursion/long-run provider-coupled budget trace semantics",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "provider_coupled_budget_trace",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/provider_coupled_budget_trace_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_012.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_012.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual_stop_reason",
+                "equals": "total_subcalls_budget_reached"
+              },
+              {
+                "path": "actual_provider_error_count",
+                "equals": 1
+              },
+              {
+                "path": "actual_backoff_count",
+                "equals": 1
+              },
+              {
+                "path": "actual_total_subcalls_used",
+                "equals": 2
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-013",
+      "description": "Recursion/long-run queue multi-resume durability semantics",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "queue_multi_resume_durability",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/queue_multi_resume_durability_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_013.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_013.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual_run1_stop_reason",
+                "equals": "max_episodes_reached"
+              },
+              {
+                "path": "actual_run2_stop_reason",
+                "equals": "max_episodes_reached"
+              },
+              {
+                "path": "actual_run3_stop_reason",
+                "equals": "episode_completed"
+              },
+              {
+                "path": "actual_run2_resumed_from_state",
+                "equals": true
+              },
+              {
+                "path": "actual_run3_resumed_from_state",
+                "equals": true
+              },
+              {
+                "path": "actual_open_count",
+                "equals": 1
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-014",
+      "description": "Recursion/long-run queue multi-resume persisted-backend durability semantics",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "queue_multi_resume_persisted_backend",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/queue_multi_resume_persisted_backend_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_014.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_014.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual_run1_stop_reason",
+                "equals": "max_episodes_reached"
+              },
+              {
+                "path": "actual_run2_stop_reason",
+                "equals": "max_episodes_reached"
+              },
+              {
+                "path": "actual_run3_stop_reason",
+                "equals": "episode_completed"
+              },
+              {
+                "path": "actual_backend",
+                "equals": "feature_file"
+              },
+              {
+                "path": "actual_open_count",
+                "equals": 1
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-015",
+      "description": "Recursion/long-run queue backend artifact trace coherence semantics",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "queue_backend_trace_coherence",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/queue_backend_trace_coherence_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_015.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_015.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "actual_run3_stop_reason",
+                "equals": "episode_completed"
+              },
+              {
+                "path": "actual_backend",
+                "equals": "feature_file"
+              },
+              {
+                "path": "actual_open_count",
+                "equals": 1
+              },
+              {
+                "path": "actual_episode_file_count",
+                "equals": 3
+              },
+              {
+                "path": "actual_summary_queue_matches_sidecar",
+                "equals": true
+              },
+              {
+                "path": "actual_state_queue_matches_sidecar",
+                "equals": true
+              },
+              {
+                "path": "actual_summary_state_stop_reason_consistent",
+                "equals": true
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-RECURSE-016",
+      "description": "Recursion/long-run externally captured queue trace bundle semantics",
+      "command": [
+        "python",
+        "scripts/check_longrun_semantics.py",
+        "--mode",
+        "queue_backend_trace_coherence",
+        "--payload",
+        "tests/fixtures/conformance_v1/recursion_semantics/queue_backend_trace_external_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_recurse_016.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_recurse_016.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "external_trace_dir_used",
+                "equals": true
+              },
+              {
+                "path": "actual_backend",
+                "equals": "feature_file"
+              },
+              {
+                "path": "actual_open_count",
+                "equals": 1
+              },
+              {
+                "path": "actual_episode_file_count",
+                "equals": 3
+              },
+              {
+                "path": "actual_summary_queue_matches_sidecar",
+                "equals": true
+              },
+              {
+                "path": "actual_state_queue_matches_sidecar",
+                "equals": true
+              },
+              {
+                "path": "actual_summary_state_stop_reason_consistent",
+                "equals": true
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-REL-001",
+      "description": "Reliability schema+fixture conformance gate",
+      "command": [
+        "python",
+        "scripts/run_conformance_matrix.py",
+        "--schema-dir",
+        "docs/conformance/schemas",
+        "--fixtures-dir",
+        "tests/fixtures/conformance_v1/fixtures",
+        "--json-out",
+        "artifacts/conformance/ct_rel_001_schema_fixture_report.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/ct_rel_001_schema_fixture_report.json",
+            "checks": [
+              {
+                "path": "checks_failed",
+                "equals": 0
+              },
+              {
+                "path": "schema_count",
+                "min": 1
+              },
+              {
+                "path": "valid_fixture_count",
+                "min": 1
+              },
+              {
+                "path": "invalid_fixture_count",
+                "min": 1
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-REL-002",
+      "description": "Reliability replay determinism hard gate",
+      "command": [
+        "python",
+        "scripts/check_replay_determinism_gate.py",
+        "--glob",
+        "tests/fixtures/conformance_v1/replay_determinism/ok/replay_determinism*.json",
+        "--glob",
+        "docs/conformance/replay_evidence/replay_determinism*.json",
+        "--glob",
+        "artifacts/conformance_qc/replay_determinism_report*.json",
+        "--min-files",
+        "8",
+        "--min-non-fixture-files",
+        "6",
+        "--min-non-fixture-turns",
+        "15",
+        "--max-drift-score",
+        "0.0",
+        "--json-out",
+        "artifacts/conformance/ct_rel_002_replay_gate_report.json"
+      ],
+      "timeout_seconds": 120,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/ct_rel_002_replay_gate_report.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "required_files_met",
+                "equals": true
+              },
+              {
+                "path": "min_files_required",
+                "equals": 8
+              },
+              {
+                "path": "files_checked",
+                "min": 8
+              },
+              {
+                "path": "required_non_fixture_files_met",
+                "equals": true
+              },
+              {
+                "path": "min_non_fixture_files_required",
+                "equals": 6
+              },
+              {
+                "path": "non_fixture_files_checked",
+                "min": 6
+              },
+              {
+                "path": "min_non_fixture_turns",
+                "equals": 15
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P0-blocking"
+    },
+    {
+      "test_id": "CT-REL-003",
+      "description": "Reliability conformance matrix semantic coherence guard",
+      "command": [
+        "python",
+        "scripts/check_conformance_matrix_semantics.py",
+        "--payload",
+        "tests/fixtures/conformance_v1/reliability_lanes/conformance_matrix_semantics_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_rel_003.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_rel_003.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "checks_failed",
+                "equals": 0
+              },
+              {
+                "path": "schema_count",
+                "min": 30
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-REL-004",
+      "description": "Reliability matrix sync exact-ID mapping semantic guard",
+      "command": [
+        "python",
+        "scripts/check_sync_mapping_semantics.py",
+        "--payload",
+        "tests/fixtures/conformance_v1/reliability_lanes/sync_mapping_semantics_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_rel_004.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_rel_004.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "mapped_rows",
+                "equals": 1
+              },
+              {
+                "path": "failing_rows",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    },
+    {
+      "test_id": "CT-REL-005",
+      "description": "Reliability docs sample-ladder semantic guard",
+      "command": [
+        "python",
+        "scripts/check_docs_sample_ladder_semantics.py",
+        "--payload",
+        "tests/fixtures/conformance_v1/reliability_lanes/docs_sample_ladder_semantics_ok.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_rel_005.json"
+      ],
+      "timeout_seconds": 180,
+      "assertions": {
+        "json_files": [
+          {
+            "path": "artifacts/conformance/node_gate/ct_rel_005.json",
+            "checks": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "docs_checked",
+                "min": 3
+              },
+              {
+                "path": "violation_count",
+                "equals": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gate_level": "P1-blocking"
+    }
+  ]
+}

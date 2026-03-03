@@ -1,0 +1,9 @@
+{
+  "schema_version": "projection_contract_parity_v1",
+  "projection_contract_version": "bb.projection.contract.v1",
+  "cases_total": 11,
+  "cases_failed": 0,
+  "ok": true,
+  "runtime_lane": "render_input_destroy_live_case_005",
+  "surface": "sdk"
+}

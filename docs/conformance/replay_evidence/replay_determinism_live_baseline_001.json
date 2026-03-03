@@ -1,0 +1,14 @@
+{
+  "schema_version": "replay_determinism_report_v1",
+  "report_id": "live_baseline_001",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_markdown_showcase",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "turn_count": 18,
+  "mismatch_count": 0,
+  "missing_count": 0,
+  "extra_count": 0,
+  "drift_score": 0.0,
+  "ok": true
+}

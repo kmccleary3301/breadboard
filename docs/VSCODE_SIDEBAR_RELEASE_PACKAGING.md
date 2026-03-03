@@ -18,14 +18,19 @@ npm ci
 npm run typecheck
 npm run test
 npm run smoke:cursor
+npm run smoke:live-engine
 ```
 
 Optional package step (requires `vsce`):
 
 ```bash
-npx @vscode/vsce package --out dist/breadboard-sidebar.vsix
-shasum -a 256 dist/breadboard-sidebar.vsix
+npx @vscode/vsce package --out ../../docs_tmp/interfaces/vscode_sidebar_release_artifacts/breadboard-sidebar-0.0.1.vsix
+sha256sum ../../docs_tmp/interfaces/vscode_sidebar_release_artifacts/breadboard-sidebar-0.0.1.vsix > ../../docs_tmp/interfaces/vscode_sidebar_release_artifacts/breadboard-sidebar-0.0.1.vsix.sha256
 ```
+
+Packaging status:
+
+- `vsce package` now runs cleanly (no repository/license warnings).
 
 ## Artifact Naming
 
@@ -39,11 +44,11 @@ Checksum file:
 
 ## Release Checklist
 
-- [ ] Typecheck/tests/smoke green
-- [ ] Compatibility matrix updated
-- [ ] Feature status updated
-- [ ] Troubleshooting doc updated
-- [ ] Known limits reviewed
-- [ ] Alpha rollout gate reviewed
-- [ ] VSIX packaged (if publishing extension artifact)
-- [ ] Checksum captured and attached to release notes
+- [x] Typecheck/tests/smoke green
+- [x] Compatibility matrix updated
+- [x] Feature status updated
+- [x] Troubleshooting doc updated
+- [x] Known limits reviewed
+- [x] Alpha rollout gate reviewed
+- [x] VSIX packaged (if publishing extension artifact)
+- [x] Checksum captured and attached to release notes

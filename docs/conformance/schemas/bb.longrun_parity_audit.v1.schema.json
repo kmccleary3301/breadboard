@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.longrun_parity_audit.v1",
+  "title": "bb.longrun_parity_audit.v1",
+  "description": "Audit payload confirming long-running mode is disabled in parity/E4 configs.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "checked",
+    "failures",
+    "results",
+    "ok"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "longrun_parity_audit_v1"
+    },
+    "checked": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "config",
+          "reason"
+        ],
+        "properties": {
+          "config": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "config",
+          "load_error",
+          "long_running_enabled"
+        ],
+        "properties": {
+          "config": {
+            "type": "string",
+            "minLength": 1
+          },
+          "load_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "long_running_enabled": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}
+

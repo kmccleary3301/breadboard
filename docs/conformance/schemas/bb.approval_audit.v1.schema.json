@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.approval_audit.v1",
+  "title": "BreadBoard Approval Audit Event v1",
+  "description": "Audit trail event for approval request and decision lifecycle.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Approval audit schema version.",
+      "examples": ["v1"]
+    },
+    "approval_id": {
+      "type": "string",
+      "description": "Approval identifier this audit event belongs to."
+    },
+    "event": {
+      "type": "string",
+      "description": "Audit event kind.",
+      "enum": [
+        "requested",
+        "decision_recorded",
+        "decision_overridden",
+        "expired",
+        "revoked",
+        "executed",
+        "denied_execution"
+      ]
+    },
+    "actor": {
+      "type": "string",
+      "description": "Actor or subsystem responsible for the event."
+    },
+    "details": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "object" }
+      ],
+      "description": "Structured or textual evidence/details associated with the event."
+    },
+    "event_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp when the audit event occurred."
+    }
+  },
+  "required": [
+    "schema_version",
+    "approval_id",
+    "event",
+    "actor",
+    "details",
+    "event_at"
+  ]
+}

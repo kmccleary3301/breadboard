@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.approval_decision.v1",
+  "title": "BreadBoard Approval Decision v1",
+  "description": "Recorded allow/deny decision for an approval request.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Approval decision schema version.",
+      "examples": ["v1"]
+    },
+    "approval_id": {
+      "type": "string",
+      "description": "Approval request identifier this decision resolves."
+    },
+    "decision": {
+      "type": "string",
+      "description": "Effective decision outcome.",
+      "enum": ["allow", "deny"]
+    },
+    "reason": {
+      "type": "string",
+      "description": "Human-readable rationale for the decision."
+    },
+    "decider": {
+      "type": "string",
+      "description": "Actor or subsystem that made the decision."
+    },
+    "decided_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp when the decision was made."
+    },
+    "policy_source": {
+      "type": "string",
+      "description": "Policy source or ruleset that produced/authorized the decision."
+    },
+    "signature": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "object" }
+      ],
+      "description": "Optional signature or verification artifact for provenance."
+    }
+  },
+  "required": [
+    "schema_version",
+    "approval_id",
+    "decision",
+    "reason",
+    "decider",
+    "decided_at",
+    "policy_source"
+  ]
+}

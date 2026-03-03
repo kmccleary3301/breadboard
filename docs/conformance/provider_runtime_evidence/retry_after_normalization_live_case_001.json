@@ -1,0 +1,156 @@
+{
+  "schema_version": "provider_retry_after_live_case_v1",
+  "report_id": "provider_retry_after_live_001",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_provider_retry_after_header_drift_a",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "cases": [
+    {
+      "provider": "openrouter",
+      "headers": {
+        "retry-after-ms": "1750",
+        "x-ratelimit-limit-requests": "2000",
+        "x-ratelimit-remaining-requests": "1997",
+        "x-ratelimit-reset-requests": "2"
+      },
+      "expected": {
+        "retry_after_ms": {
+          "min": 1750,
+          "max": 1750
+        },
+        "bucket_names": [
+          "requests"
+        ]
+      }
+    },
+    {
+      "provider": "generic",
+      "headers": {
+        "retry-after": "4",
+        "retry-after-ms": "1400"
+      },
+      "expected": {
+        "retry_after_ms": {
+          "min": 1400,
+          "max": 1400
+        }
+      }
+    },
+    {
+      "provider": "generic",
+      "headers": {
+        "retry-after-ms": "invalid",
+        "x-ratelimit-retry-after-ms": "2100",
+        "retry-after": "7"
+      },
+      "expected": {
+        "retry_after_ms": {
+          "min": 2100,
+          "max": 2100
+        }
+      }
+    },
+    {
+      "provider": "generic",
+      "headers": {
+        "x-ratelimit-retry-after": "3"
+      },
+      "expected": {
+        "retry_after_ms": {
+          "min": 3000,
+          "max": 3000
+        }
+      }
+    },
+    {
+      "provider": "anthropic",
+      "headers": {
+        "retry-after": "0",
+        "anthropic-ratelimit-requests-limit": "20",
+        "anthropic-ratelimit-requests-remaining": "19",
+        "anthropic-ratelimit-requests-reset": "2"
+      },
+      "expected": {
+        "retry_after_ms": {
+          "min": 0,
+          "max": 0
+        },
+        "bucket_names": [
+          "requests"
+        ]
+      }
+    },
+    {
+      "provider": "openrouter",
+      "headers": {
+        "x-ratelimit-limit-requests": "1000",
+        "x-ratelimit-remaining-requests": "996",
+        "x-ratelimit-reset-requests-ms": "1700000001123"
+      },
+      "expected": {
+        "bucket_names": [
+          "requests"
+        ],
+        "bucket_reset_bounds": {
+          "requests": {
+            "min": 1700000001123,
+            "max": 1700000001123
+          }
+        }
+      }
+    },
+    {
+      "provider": "anthropic",
+      "headers": {
+        "anthropic-ratelimit-requests-limit": "20",
+        "anthropic-ratelimit-requests-remaining": "18",
+        "anthropic-ratelimit-requests-reset-ms": "1700000001789"
+      },
+      "expected": {
+        "bucket_names": [
+          "requests"
+        ],
+        "bucket_reset_bounds": {
+          "requests": {
+            "min": 1700000001789,
+            "max": 1700000001789
+          }
+        }
+      }
+    },
+    {
+      "provider": "generic",
+      "headers": {
+        "retry-after": "2099-10-21T07:28:00Z"
+      },
+      "expected": {
+        "retry_after_ms": {
+          "min": 1000,
+          "max": 3600000
+        }
+      }
+    },
+    {
+      "provider": "anthropic",
+      "headers": {
+        "retry-after": "Sun Nov  6 08:49:37 2099"
+      },
+      "expected": {
+        "retry_after_ms": {
+          "min": 1000,
+          "max": 3600000
+        }
+      }
+    },
+    {
+      "provider": "generic",
+      "headers": {
+        "retry-after": "not-a-number"
+      },
+      "expected": {
+        "is_null": true
+      }
+    }
+  ]
+}

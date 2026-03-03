@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/atp/atp_diagnostic_record_v1.schema.json",
+  "title": "ATP Diagnostic Record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "taxonomy_version",
+    "generated_at",
+    "loop_id",
+    "node_id",
+    "source",
+    "raw_code",
+    "normalized_class"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "atp_diagnostic_record_v1"
+    },
+    "taxonomy_version": {
+      "const": "atp_diagnostic_taxonomy_v1"
+    },
+    "generated_at": {
+      "type": "number"
+    },
+    "loop_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "node_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "verifier",
+        "runtime",
+        "replay"
+      ]
+    },
+    "raw_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "raw_message": {
+      "type": "string"
+    },
+    "normalized_class": {
+      "type": "string",
+      "enum": [
+        "syntax_error",
+        "type_error",
+        "tactic_failure",
+        "timeout",
+        "resource_limit",
+        "missing_import",
+        "goal_mismatch",
+        "proof_incomplete",
+        "nondeterminism_detected",
+        "unknown"
+      ]
+    }
+  }
+}

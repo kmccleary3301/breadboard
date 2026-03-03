@@ -1,0 +1,109 @@
+{
+  "schema_version": "session_task_scope_isolation_v1",
+  "report_id": "session_task_scope_live_001",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_session_conflict_safe_reload_matrix_a",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "pending_permissions": [
+    {
+      "source": "session",
+      "request_id": "perm-session-1"
+    },
+    {
+      "source": "session",
+      "request_id": "perm-session-2"
+    },
+    {
+      "source": "task",
+      "task_session_id": "task-a",
+      "request_id": "perm-task-a1"
+    },
+    {
+      "source": "task",
+      "task_session_id": "task-a",
+      "request_id": "perm-task-a2"
+    },
+    {
+      "source": "task",
+      "task_session_id": "task-b",
+      "request_id": "perm-task-b1"
+    },
+    {
+      "source": "task",
+      "task_session_id": "task-c",
+      "request_id": "perm-task-c1"
+    },
+    {
+      "source": "task",
+      "task_session_id": "task-c",
+      "request_id": "perm-task-c2"
+    }
+  ],
+  "expected": {
+    "session_request_ids": [
+      "perm-session-1",
+      "perm-session-2"
+    ],
+    "task_map": {
+      "task-a": [
+        "perm-task-a1",
+        "perm-task-a2"
+      ],
+      "task-b": [
+        "perm-task-b1"
+      ],
+      "task-c": [
+        "perm-task-c1",
+        "perm-task-c2"
+      ]
+    },
+    "conflict_ids": [
+      "conflict-net-egress",
+      "conflict-ws-drift",
+      "conflict-policy-pack",
+      "conflict-provider-schema"
+    ],
+    "unresolved_conflict_ids": [
+      "conflict-net-egress",
+      "conflict-provider-schema"
+    ],
+    "blocking_conflict_ids": [
+      "conflict-net-egress",
+      "conflict-provider-schema"
+    ],
+    "safe_reload_allowed": false,
+    "safe_reload_blocked": true
+  },
+  "conflicts": [
+    {
+      "conflict_id": "conflict-net-egress",
+      "status": "unresolved"
+    },
+    {
+      "conflict_id": "conflict-ws-drift",
+      "status": "resolved"
+    },
+    {
+      "conflict_id": "conflict-policy-pack",
+      "status": "resolved"
+    },
+    {
+      "conflict_id": "conflict-provider-schema",
+      "status": "unresolved"
+    }
+  ],
+  "safe_reload": {
+    "attempted": true,
+    "reload_allowed": false,
+    "blocked": true,
+    "blocking_conflicts": [
+      "conflict-net-egress",
+      "conflict-provider-schema"
+    ],
+    "resolved_conflicts": [
+      "conflict-ws-drift",
+      "conflict-policy-pack"
+    ]
+  }
+}

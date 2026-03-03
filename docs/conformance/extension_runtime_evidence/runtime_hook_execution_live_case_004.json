@@ -1,0 +1,151 @@
+{
+  "schema_version": "extension_runtime_hook_execution_v1",
+  "report_id": "ext_runtime_hook_live_004",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_extension_runtime_hook_matrix_d_provider_coupled_contention",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "runtime_events": [
+    {
+      "middleware_id": "alpha",
+      "plugin_id": "plug.alpha",
+      "phase": "install_pre",
+      "status": "completed",
+      "isolated": false,
+      "start_ms": 4000,
+      "end_ms": 4005
+    },
+    {
+      "middleware_id": "beta",
+      "plugin_id": "plug.beta",
+      "phase": "install_pre",
+      "status": "timed_out",
+      "isolated": true,
+      "timeout_ms": 30,
+      "start_ms": 4006,
+      "end_ms": 4040
+    },
+    {
+      "middleware_id": "gamma",
+      "plugin_id": "plug.gamma",
+      "phase": "install_post",
+      "status": "completed",
+      "isolated": false,
+      "start_ms": 4041,
+      "end_ms": 4046
+    },
+    {
+      "middleware_id": "delta",
+      "plugin_id": "plug.delta",
+      "phase": "update_pre",
+      "status": "failed_isolated",
+      "isolated": true,
+      "start_ms": 4047,
+      "end_ms": 4053
+    },
+    {
+      "middleware_id": "epsilon",
+      "plugin_id": "plug.epsilon",
+      "phase": "update_post",
+      "status": "completed",
+      "isolated": false,
+      "start_ms": 4054,
+      "end_ms": 4059
+    },
+    {
+      "middleware_id": "zeta",
+      "plugin_id": "plug.zeta",
+      "phase": "conflict_pre",
+      "status": "completed",
+      "isolated": false,
+      "start_ms": 4060,
+      "end_ms": 4066
+    },
+    {
+      "middleware_id": "eta",
+      "plugin_id": "plug.eta",
+      "phase": "conflict_post",
+      "status": "failed_isolated",
+      "isolated": true,
+      "start_ms": 4067,
+      "end_ms": 4074
+    },
+    {
+      "middleware_id": "theta",
+      "plugin_id": "plug.theta",
+      "phase": "reinstall_pre",
+      "status": "completed",
+      "isolated": false,
+      "start_ms": 4075,
+      "end_ms": 4082
+    },
+    {
+      "middleware_id": "iota",
+      "plugin_id": "plug.iota",
+      "phase": "reinstall_post",
+      "status": "completed",
+      "isolated": false,
+      "start_ms": 4083,
+      "end_ms": 4090
+    },
+    {
+      "middleware_id": "kappa",
+      "plugin_id": "plug.kappa",
+      "phase": "uninstall_pre",
+      "status": "completed",
+      "isolated": false,
+      "start_ms": 4091,
+      "end_ms": 4096
+    },
+    {
+      "middleware_id": "lambda",
+      "plugin_id": "plug.lambda",
+      "phase": "uninstall_post",
+      "status": "completed",
+      "isolated": false,
+      "start_ms": 4097,
+      "end_ms": 4104
+    },
+    {
+      "middleware_id": "mu",
+      "plugin_id": "plug.mu",
+      "phase": "install_finalize",
+      "status": "completed",
+      "isolated": false,
+      "start_ms": 4105,
+      "end_ms": 4110
+    }
+  ],
+  "expected_execution_order": [
+    "alpha",
+    "beta",
+    "gamma",
+    "delta",
+    "epsilon",
+    "zeta",
+    "eta",
+    "theta",
+    "iota",
+    "kappa",
+    "lambda",
+    "mu"
+  ],
+  "expected_isolated_failures": [
+    "beta",
+    "delta",
+    "eta"
+  ],
+  "expected_required_phases": [
+    "install_pre",
+    "install_post",
+    "update_pre",
+    "update_post",
+    "conflict_pre",
+    "conflict_post",
+    "reinstall_pre",
+    "reinstall_post",
+    "uninstall_pre",
+    "uninstall_post"
+  ],
+  "require_monotonic_timestamps": true
+}

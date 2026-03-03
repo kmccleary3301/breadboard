@@ -1,0 +1,64 @@
+{
+  "schema_version": "tool_runtime_error_taxonomy_v1",
+  "report_id": "tool_taxonomy_live_001",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_tool_transition_rejects_a",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "cases": [
+    {
+      "name": "invalid_call_id",
+      "operations": [
+        {"op": "start", "call_id": ""}
+      ],
+      "expected_code": "invalid_call_id",
+      "expected_from_state": ""
+    },
+    {
+      "name": "duplicate_start",
+      "operations": [
+        {"op": "start", "call_id": "dup"},
+        {"op": "start", "call_id": "dup"}
+      ],
+      "expected_code": "duplicate_start",
+      "expected_from_state": "queued"
+    },
+    {
+      "name": "unknown_call",
+      "operations": [
+        {"op": "transition", "call_id": "missing", "to_state": "running"}
+      ],
+      "expected_code": "unknown_call",
+      "expected_from_state": "unknown"
+    },
+    {
+      "name": "unknown_target_state",
+      "operations": [
+        {"op": "start", "call_id": "target"},
+        {"op": "transition", "call_id": "target", "to_state": "paused"}
+      ],
+      "expected_code": "unknown_target_state",
+      "expected_from_state": "queued"
+    },
+    {
+      "name": "invalid_transition_edge",
+      "operations": [
+        {"op": "start", "call_id": "edge"},
+        {"op": "transition", "call_id": "edge", "to_state": "completed"}
+      ],
+      "expected_code": "invalid_transition_edge",
+      "expected_from_state": "queued"
+    },
+    {
+      "name": "terminal_state_transition",
+      "operations": [
+        {"op": "start", "call_id": "terminal"},
+        {"op": "transition", "call_id": "terminal", "to_state": "running"},
+        {"op": "transition", "call_id": "terminal", "to_state": "completed"},
+        {"op": "transition", "call_id": "terminal", "to_state": "running"}
+      ],
+      "expected_code": "terminal_state_transition",
+      "expected_from_state": "completed"
+    }
+  ]
+}

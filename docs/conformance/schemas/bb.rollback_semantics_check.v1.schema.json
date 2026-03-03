@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.rollback_semantics_check.v1",
+  "title": "bb.rollback_semantics_check.v1",
+  "description": "Semantic check result for rollback dropped-range/rewind correctness.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "rollback_semantics_check_v1"
+    },
+    "mode": {
+      "const": "dropped_range_rewind"
+    },
+    "pre_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "post_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "dropped_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rewind_to_seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "mode",
+    "pre_count",
+    "post_count",
+    "dropped_count",
+    "rewind_to_seq",
+    "violations",
+    "ok"
+  ]
+}
+

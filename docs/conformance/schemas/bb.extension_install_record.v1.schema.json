@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.extension_install_record.v1",
+  "title": "BreadBoard Extension Install Record v1",
+  "description": "Installation audit record for extension lifecycle operations and managed ownership tracking.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "extension_id",
+    "version",
+    "source",
+    "decision_ref",
+    "installed_at",
+    "managed_ownership"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "extension_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "$ref": "#/$defs/install_source"
+    },
+    "decision_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reference to explicit consent or policy decision record."
+    },
+    "installed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "managed_ownership": {
+      "type": "object",
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "strict",
+            "mixed"
+          ]
+        },
+        "managed_assets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "unmanaged_assets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "scope": {
+      "type": "string",
+      "enum": [
+        "user",
+        "workspace"
+      ]
+    }
+  },
+  "$defs": {
+    "install_source": {
+      "type": "object",
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "local",
+            "link",
+            "git",
+            "github_release",
+            "marketplace",
+            "npm"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

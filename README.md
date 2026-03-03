@@ -4,7 +4,7 @@
   <img src="docs/media/branding/breadboard_ascii_logo_v1.svg" alt="BreadBoard logo" width="640" />
 </p>
 
-<p align="center"><strong>Agent SDK + harness workbench + client/server coding UI stack.</strong></p>
+<p align="center"><strong>Agent engine · harness workbench · multi-client coding stack.</strong></p>
 
 <p align="center">
   <img alt="Version" src="https://img.shields.io/badge/version-launch--v1-7C3AED" />
@@ -19,168 +19,102 @@
   <img alt="Ray" src="https://img.shields.io/badge/ray-enabled-028CF0" />
 </p>
 
-BreadBoard is a Python-first runtime for tool-using agents, with SDKs, replay tooling, and terminal clients built on the same engine API.
+## What BreadBoard is
+
+BreadBoard started as a code agent in the same class as OpenCode and Claude Code—client-server split, terminal UX, tool-using LLM loop. It has grown past that framing.
+
+In current form it is a code agent, an SDK and engine, a harness emulator, a large-scale sandbox engine, and—on the near-term roadmap—an RL environment builder for training and evaluating coding agents at scale. Each of those is a real working thing, not a roadmap placeholder.
+
+The thread connecting all of them is that the engine-client split is not an implementation detail, it is the whole bet. Every client (TUI, SDK, VSCode sidebar, any script) talks to the same engine over the same canonical SSE event stream. The engine emits the same events regardless of which client is driving. That constraint is what makes everything else composable.
+
+The most direct way to see what that constraint buys you: BreadBoard can fully emulate Codex CLI, Claude Code, or OpenCode—not approximately, but down to hash-level equivalence on request bodies. That is validated in the conformance suite against actual golden artifacts. Encoding a target harness's behavior as a profile and running the replay suite against it turned out to be one of the more interesting things to build here, and the fact that it works at that level of fidelity is a direct consequence of the modularity being real rather than aspirational.
+
+The short version: it is roughly what Pi would look like if modularity and cross-harness compatibility were the design constraints from day one.
 
 <p align="center">
   <img src="docs/media/proof/launch_v1/launch_tui_screenshot_showcase_v1.png" alt="BreadBoard TUI screenshot" width="920" />
 </p>
 
+---
+
 ## Quick start
 
-### 1) install prerequisites
+**Prerequisites:** Python 3.11+ and Node.js 20+ (22+ recommended)
 
-- Python 3.11+ (3.12 works)
-- Node.js 20+ (22+ recommended)
-
-### 1.5) inspect local readiness and next commands (optional)
-
-```bash
-python scripts/dev/quickstart_first_time.py --include-advanced
-make cli-capabilities
-```
-
-If the CLI wrapper is installed and healthy:
-
-```bash
-breadboard quickstart --include-advanced
-```
-
-### 2) one-command first-time bootstrap (recommended)
+### Bootstrap
 
 ```bash
 bash scripts/dev/bootstrap_first_time.sh
 ```
 
-Profile variants:
-
-```bash
-# python/engine only
-bash scripts/dev/bootstrap_first_time.sh --profile engine
-
-# tui/node only
-bash scripts/dev/bootstrap_first_time.sh --profile tui
-```
-
-Shortcut (Linux/macOS):
-
-```bash
-make help
-make setup
-make setup-fast
-make setup-engine
-make setup-fast-engine
-make setup-refresh-python
-make setup-tui
-make setup-all
-```
-
-What this does:
-- creates/reuses `.venv` (uses `uv` when available, falls back to `venv`)
-- installs Python dependencies from `requirements.txt`
-- installs/builds `sdk/ts`
-- installs/builds `tui_skeleton` when sources are present
-- skips repeated Python/Node installs when requirements or lockfiles are unchanged
-- skips repeated Node builds when `dist` outputs are newer than sources
-- installs local `breadboard` wrapper when TUI build artifacts are available
-- runs first-time setup checks
-
-If `breadboard` is already installed on your PATH, you can run the same flow via:
-
-```bash
-breadboard setup --smoke
-# or include live SDK hello verification
-breadboard setup --sdk-hello-live
-# full confidence pass
-breadboard setup --all-checks
-```
-
-If `tui_skeleton` sources are intentionally absent in your checkout:
+Engine-only, no TUI:
 
 ```bash
 bash scripts/dev/bootstrap_first_time.sh --profile engine
 ```
 
-### 3) run a smoke command
+Via Make (Linux/macOS):
+
+```bash
+make setup              # full bootstrap
+make setup-fast         # full bootstrap, skip doctor checks
+make setup-engine       # engine only
+make setup-fast-engine  # engine only, skip doctor checks
+```
+
+The bootstrap creates or reuses `.venv` (prefers `uv` when available), installs Python dependencies from `requirements.txt`, builds `sdk/ts` and `tui_skeleton` when sources are present, and skips redundant installs when lockfiles and outputs are current.
+
+### Smoke check
 
 ```bash
 breadboard doctor --config agent_configs/opencode_mock_c_fs.yaml
 breadboard run --config agent_configs/opencode_mock_c_fs.yaml "Say hi and exit."
 ```
 
-### 4) start the interactive UI
+### Interactive TUI
 
 ```bash
 breadboard ui --config agent_configs/opencode_mock_c_fs.yaml
 ```
 
-### 5) optional setup doctor + safety preflight
+### Readiness and verification
 
 ```bash
-python scripts/dev/first_time_doctor.py --strict
+# check environment before or after setup
+python scripts/dev/quickstart_first_time.py --include-advanced
+make cli-capabilities
+
+# verify SDK paths are live
+make sdk-hello-live
+
+# run onboarding contract check
+make onboarding-contract
+
+# devx smoke (fast)
+make devx-smoke
+make devx-smoke-engine
+
+# full sequential confidence pass with timing report
+make devx-full-pass
+make devx-full-pass-engine
+make devx-timing
+
+# inspect ~/.breadboard footprint (dry-run)
+make disk-report
+
+# first-time doctor (strict)
 python scripts/dev/first_time_doctor.py --profile engine --strict
 ```
 
-If your CLI build supports first-time doctor flags:
+For the full setup reference, see `docs/INSTALL_AND_DEV_QUICKSTART.md`. For a copy-paste 5-minute path, see `docs/quickstarts/FIRST_RUN_5_MIN.md`.
 
-```bash
-breadboard doctor --first-time
-breadboard doctor --first-time --first-time-profile engine
-```
+---
 
-```bash
-python scripts/preflight_workspace_safety.py --config agent_configs/opencode_mock_c_fs.yaml
-```
+## What's included
 
-### 6) verify SDK usage quickly (optional)
+### Engine and SDKs
 
-With engine running locally:
-
-```bash
-python scripts/dev/python_sdk_hello.py
-node scripts/dev/ts_sdk_hello.mjs
-```
-
-One-command live SDK verification:
-
-```bash
-make sdk-hello-live
-make onboarding-contract
-make devx-smoke
-make devx-smoke-engine
-make devx-smoke-live
-make devx-full-pass
-make devx-timing
-# engine-only full pass while TUI is being edited
-make devx-full-pass-engine
-# inspect ~/.breadboard footprint and cleanup plan (dry-run)
-make disk-report
-# optional stricter TUI-inclusive checks
-make doctor-full
-make doctor-tui
-# repair local CLI wrapper if broken
-make repair-cli
-```
-
-For full setup details, toggles, and manual fallback commands, see `docs/INSTALL_AND_DEV_QUICKSTART.md`.
-For the copy-paste 5-minute onboarding path, see `docs/quickstarts/FIRST_RUN_5_MIN.md`.
-
-## What BreadBoard covers
-
-### 1) Agent/LLM SDK work (Python and TypeScript)
-
-BreadBoard includes:
-
-- Python SDK: `breadboard_sdk/`
-- TypeScript SDK: `sdk/ts/`
-- Stable HTTP + SSE engine surface: `docs/contracts/cli_bridge/openapi.json`
-
-This is the layer you use when you want app-side control like:
-
-- create/resume/inspect sessions from code,
-- stream events into your own UX,
-- pull artifacts for evals and debugging.
-
-Python example:
+The engine lives at `agentic_coder_prototype/api/cli_bridge/` and its HTTP + SSE surface is documented in `docs/contracts/cli_bridge/openapi.json`. Python and TypeScript SDKs wrap that surface.
 
 ```python
 from breadboard_sdk import BreadboardClient
@@ -199,8 +133,6 @@ for event in client.stream_events(session["session_id"], query={"schema": 2, "re
         break
 ```
 
-TypeScript example:
-
 ```ts
 import { createBreadboardClient, streamSessionEvents } from "@breadboard/sdk"
 
@@ -216,111 +148,85 @@ for await (const event of streamSessionEvents(session.session_id, { config: { ba
 }
 ```
 
-### 2) TUI alternatives (fixed-height and scrollback)
+SDK paths: `breadboard_sdk/` (Python), `sdk/ts/` (TypeScript).
 
-`tui_skeleton/` ships the terminal client and profile/preset system.
-
-Current UX work includes:
-
-- scrollback-style interaction,
-- OpenTUI/fixed-height profile surfaces,
-- thinking/status/todo projection lanes,
-- capture and replay tooling for deterministic TUI checks.
-
-Start with `tui_skeleton/README.md` and `docs/TUI_THINKING_STREAMING_CONFIG.md`.
-
-### 3) Harness calculus (emulation profiles + replay parity lanes)
-
-BreadBoard has a profile-based approach for harness emulation and parity testing:
-
-- emulation profile schema: `docs/contracts/emulation_profile/emulation_profile_manifest_v1.schema.json`
-- parity runner: `scripts/run_parity_replays.py`
-- parity kernel boundaries: `docs/PARITY_KERNEL_BOUNDARIES.md`
-
-The practical use case is not marketing parity claims; it is faster harness R&D:
-
-- encode a harness behavior as a profile,
-- replay goldens against that profile,
-- iterate on one surface at a time without rewriting your full runtime.
-
-### 4) Provider auth and plan-aware controls
-
-BreadBoard supports in-memory provider auth attach/detach/status for the engine:
-
-- concept doc: `docs/concepts/provider-plan-auth.md`
-- API schema: `docs/contracts/cli_bridge/openapi.json`
-- policy manifests: `docs/provider_plans/policy_manifests/`
-
-Current policy manifests in-repo:
-
-- OpenAI Codex/ChatGPT subscription plan: present, default-off, local-only, explicit-enable required.
-- Anthropic consumer subscription: explicitly unsupported by default.
-- OpenCode-oriented configs are available through standard provider/API-key routing today (see `agent_configs/opencode_*`); subscription-plan bridging remains policy-gated.
-
-This keeps sensitive plan tokens behind explicit gating and local-only checks.
-
-### 5) External session import and resume
-
-BreadBoard supports deterministic transcript import into canonical event JSONL:
-
-- concept doc: `docs/concepts/session-import.md`
-- import IR schema: `docs/contracts/import/import_ir_v1.schema.json`
-- manifest schema: `docs/contracts/import/import_run_manifest_v1.schema.json`
-- converter script: `scripts/import_ir_to_events_jsonl.py`
-
-This is the base path for importing sessions from other harness formats, then resuming them inside BreadBoard workflows.
-
-Current import/resume scope explicitly targets Codex CLI, OpenCode, and Claude-style harness transcripts, with deterministic conversion as the first step and harness-specific adapters layered on top.
-
-### 6) Engine-client split (local or remote control)
-
-BreadBoard uses a server-client split similar to OpenCode:
-
-- engine API runs as a service (FastAPI + SSE),
-- CLI/TUI and SDKs are clients over that API,
-- the same engine can be driven by local terminal UX, scripts, or remote clients.
-
-Engine entrypoint from source:
+You can also drive the engine directly from source:
 
 ```bash
 python -m agentic_coder_prototype.api.cli_bridge.server
 ```
 
-Main engine code:
+---
 
-- `agentic_coder_prototype/`
-- `agentic_coder_prototype/api/cli_bridge/`
+### Terminal clients
 
-## How this differs from SDK-only or CLI-only stacks
+`tui_skeleton/` is the main terminal client. It supports scrollback and fixed-height profile surfaces, thinking/status/todo projection lanes, and capture-replay tooling for deterministic TUI regression. Start at `tui_skeleton/README.md` and `docs/TUI_THINKING_STREAMING_CONFIG.md`.
 
-SDK-first frameworks usually stop at app embedding. CLI-first harnesses usually stop at terminal workflows.
+There is also an OpenTUI-style fixed-height path (`opentui_slab/`) and a VSCode sidebar extension scaffold (`vscode_sidebar/`).
 
-BreadBoard intentionally combines both with one runtime surface:
+---
 
-- SDKs for embedded usage,
-- terminal clients for operator workflows,
-- replay artifacts for regression and evidence,
-- profile-driven harness experimentation.
+### Harness emulation and parity testing
 
-If you are evaluating DSPy, Vercel AI SDK, LangChain, Pi, Claude Code, or OpenCode, this repo is built for cross-cutting work where those concerns overlap.
+BreadBoard has a profile-based system for encoding and replaying harness behaviors. The intended workflow:
 
-## Replay and evidence workflow
+1. Encode a target harness's behavior as an emulation profile.
+2. Replay your goldens against that profile.
+3. Iterate on one surface at a time without touching the rest of the runtime.
 
-When you need reproducible outputs instead of one-off runs:
+References:
+- emulation profile schema: `docs/contracts/emulation_profile/emulation_profile_manifest_v1.schema.json`
+- parity runner: `scripts/run_parity_replays.py`
+- kernel surfaces that must stay byte-stable: `docs/PARITY_KERNEL_BOUNDARIES.md`
+
+---
+
+### Provider auth and plan controls
+
+The engine supports in-memory provider auth attach/detach for session-scoped credential management. OpenAI API-key routing is the default path. Subscription-plan bridging is policy-gated and local-only—policy manifests live in `docs/provider_plans/policy_manifests/`.
+
+References: `docs/concepts/provider-plan-auth.md`, `docs/contracts/cli_bridge/openapi.json`.
+
+---
+
+### Session import and resume
+
+BreadBoard converts external transcripts into its canonical JSONL format and can resume them inside the engine. Current import scope targets Codex CLI, OpenCode, and Claude-style transcripts.
+
+References:
+- `docs/concepts/session-import.md`
+- import IR schema: `docs/contracts/import/import_ir_v1.schema.json`
+- converter: `scripts/import_ir_to_events_jsonl.py`
+
+---
+
+## Why the engine-client split matters
+
+Most SDK-first frameworks stop at app embedding. Most CLI harnesses stop at terminal workflows. BreadBoard runs the same engine for both, which means:
+
+- a Python script and a TUI session share the same event log,
+- you can replay a terminal session in CI,
+- you can drive a live session from a remote client without forking the runtime.
+
+The cost is more ceremony upfront—there are schemas, contract docs, and conformance tests to stay aware of. If you are doing cross-cutting work where DSPy, OpenCode, Claude Code, and Vercel AI SDK concerns overlap, that ceremony pays off. If you want a thin wrapper around the OpenAI SDK, it probably does not.
+
+---
+
+## Replay and evidence
+
+Every run writes `logging/<run-id>/meta/events.jsonl`—append-only, deterministically ordered, and portable to any replay or eval tool in `scripts/`.
 
 ```bash
 python scripts/export_cli_bridge_contracts.py
 bash scripts/phase12_live_smoke.sh
 RUN_DIR="$(ls -1dt logging/* | head -n 1)"
-python scripts/log_reduce.py "${RUN_DIR}" --turn-limit 2 --tool-only > docs/media/proof/launch_v1/log_reduce_sample_v1.txt
+python scripts/log_reduce.py "${RUN_DIR}" --turn-limit 2 --tool-only \
+  > docs/media/proof/launch_v1/log_reduce_sample_v1.txt
 ```
 
-Output references:
+Proof media: `docs/media/proof/launch_v1/` and `docs/media/proof/README.md`.
 
-- `docs/media/proof/launch_v1/launch_tui_screenshot_showcase_v1.png`
-- `docs/media/proof/launch_v1/launch_tui_clip_v1.mp4`
-- `docs/media/proof/launch_v1/launch_tui_clip_v1.gif`
-- `docs/media/proof/README.md`
+---
 
 ## Architecture
 
@@ -328,45 +234,59 @@ Output references:
 flowchart LR
   U[User or automation] --> CLI[breadboard CLI or TUI]
   U --> SDK[Python or TypeScript SDK]
-  CLI --> API[CLI bridge API HTTP + SSE]
+  CLI --> API[CLI bridge API · HTTP + SSE]
   SDK --> API
   API --> ENG[Engine]
   ENG --> RT[Providers, tools, runtimes]
-  ENG --> ART[Run artifacts under logging/*]
+  ENG --> ART[Run artifacts · logging/*]
   ART --> REP[Replay and diff tooling]
 ```
 
+---
+
 ## Repository map
 
-- `agentic_coder_prototype/`: engine loop, providers, bridge service, parity core.
-- `breadboard_sdk/`: Python SDK.
-- `sdk/ts/`: TypeScript SDK.
-- `tui_skeleton/`: terminal client and UX projection layer.
-- `docs/contracts/`: OpenAPI and JSON schemas.
-- `scripts/`: smoke tests, replays, exports, capture tools.
-- `docs/media/`: branding and proof media.
+| Path | Contents |
+|------|----------|
+| `agentic_coder_prototype/` | Engine loop, providers, bridge service, parity core |
+| `breadboard_sdk/` | Python SDK |
+| `sdk/ts/` | TypeScript SDK |
+| `tui_skeleton/` | Terminal client and UX projection layer |
+| `opentui_slab/` | Fixed-height OpenTUI-style client |
+| `vscode_sidebar/` | VSCode extension scaffold |
+| `docs/contracts/` | OpenAPI and JSON schemas |
+| `scripts/` | Smoke, replay, export, and capture tools |
+| `docs/media/` | Branding and proof media |
 
-## Documentation map
+---
 
-- Install/dev quickstart: `docs/INSTALL_AND_DEV_QUICKSTART.md`
-- Release entrypoint: `docs/RELEASE_LANDING_V1.md`
-- Runtime boundaries: `docs/CONTRACT_SURFACES.md`
-- TUI thinking/streaming config: `docs/TUI_THINKING_STREAMING_CONFIG.md`
-- TUI todo event surface: `docs/TUI_TODO_EVENT_CONTRACT.md`
-- Replay-proof quickstart: `docs/quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md`
-- Claims and wording guardrails: `docs/CLAIMS_EVIDENCE_LEDGER.md`
+## Docs map
+
+| Doc | Contents |
+|-----|----------|
+| `docs/INSTALL_AND_DEV_QUICKSTART.md` | Full setup reference |
+| `docs/quickstarts/FIRST_RUN_5_MIN.md` | 5-minute onboarding path |
+| `docs/RELEASE_LANDING_V1.md` | Release entrypoint |
+| `docs/CONTRACT_SURFACES.md` | Runtime contract boundaries |
+| `docs/TUI_THINKING_STREAMING_CONFIG.md` | TUI thinking/streaming config |
+| `docs/TUI_TODO_EVENT_CONTRACT.md` | TUI todo event surface |
+| `docs/quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md` | Replay-proof bundle path |
+| `docs/CLAIMS_EVIDENCE_LEDGER.md` | Claims and wording guardrails |
+
+---
 
 ## Claim boundaries
 
-This README is intentionally conservative on two points:
+Two explicit limits this README does not cross:
 
-- no blanket "drop-in replacement" claim for other harnesses,
-- no blanket "perfect parity" claim.
+- no blanket "drop-in replacement" for other harnesses,
+- no blanket "perfect parity."
 
-Coverage should be read from evidence docs and replay outputs:
-
+Coverage is in the evidence docs:
 - `docs/CLAIMS_EVIDENCE_LEDGER.md`
 - `docs/PARITY_KERNEL_BOUNDARIES.md`
+
+---
 
 ## License
 

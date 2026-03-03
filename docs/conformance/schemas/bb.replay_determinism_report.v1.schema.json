@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/schemas/bb.replay_determinism_report.v1.schema.json",
+  "title": "bb.replay_determinism_report.v1",
+  "description": "Determinism check artifact comparing replay output against golden output.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "session_id",
+    "golden_hash",
+    "replay_hash",
+    "match",
+    "diff_signature",
+    "captured_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "suite_id": {
+      "type": "string"
+    },
+    "golden_hash": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9:_-]{8,128}$"
+    },
+    "replay_hash": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9:_-]{8,128}$"
+    },
+    "match": {
+      "type": "boolean"
+    },
+    "diff_signature": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "diff_summary": {
+      "type": "string"
+    },
+    "failure_signature": {
+      "type": "string"
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "conformance_result_ref": {
+      "type": "string"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "match": {
+            "const": false
+          }
+        },
+        "required": [
+          "match"
+        ]
+      },
+      "then": {
+        "properties": {
+          "diff_signature": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": true
+}

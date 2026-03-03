@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/vscode_sidebar/e2e_scenario.schema.json",
+  "title": "BreadBoard VSCode Sidebar E2E Scenario",
+  "description": "Versioned scenario contract for deterministic VSCode/Cursor sidebar E2E runs.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "id",
+    "tier",
+    "editorTargets",
+    "suite",
+    "engine",
+    "steps",
+    "expects"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "tier": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "editorTargets": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "vscode",
+          "cursor"
+        ]
+      }
+    },
+    "suite": {
+      "type": "string",
+      "minLength": 3
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "engine": {
+      "type": "object",
+      "required": [
+        "mode",
+        "configPath"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "mock_chat",
+            "replay",
+            "live"
+          ]
+        },
+        "configPath": {
+          "type": "string",
+          "minLength": 3
+        }
+      }
+    },
+    "maxRetries": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "retryBackoffMs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "op"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 2
+          },
+          "op": {
+            "type": "string",
+            "minLength": 2
+          },
+          "args": {
+            "type": "object"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "expects": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "assert"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "assert": {
+            "type": "string",
+            "minLength": 3
+          },
+          "metric": {
+            "type": "string",
+            "minLength": 2
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "==",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<="
+            ]
+          },
+          "value": {},
+          "failureSignature": {
+            "type": "string",
+            "minLength": 4
+          }
+        }
+      }
+    }
+  }
+}

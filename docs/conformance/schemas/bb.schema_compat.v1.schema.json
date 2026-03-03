@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/schemas/bb.schema_compat.v1.schema.json",
+  "title": "bb.schema_compat.v1",
+  "description": "Compatibility policy record for schema version transitions.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "schema_id",
+    "from_version",
+    "to_version",
+    "compat_mode",
+    "migration_required",
+    "notes_ref"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "schema_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "from_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "to_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "compat_mode": {
+      "type": "string",
+      "enum": [
+        "backward",
+        "forward",
+        "breaking"
+      ]
+    },
+    "migration_required": {
+      "type": "boolean"
+    },
+    "notes_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "migration_path_ref": {
+      "type": "string"
+    },
+    "breaking_changes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "effective_from": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/schemas/bb.projection_event.v1.schema.json",
+  "title": "bb.projection_event.v1",
+  "description": "Projection delta emitted for a specific surface with resumable cursor semantics.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "projection_id",
+    "source_event_id",
+    "surface",
+    "payload_delta",
+    "cursor",
+    "emitted_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "projection_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "surface": {
+      "type": "string",
+      "enum": [
+        "cli",
+        "api",
+        "tui",
+        "ide",
+        "web"
+      ]
+    },
+    "payload_delta": {
+      "type": "object"
+    },
+    "cursor": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "string",
+          "minLength": 1
+        }
+      ]
+    },
+    "stream_id": {
+      "type": "string"
+    },
+    "sequence_no": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "emitted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "coalesced": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": true
+}

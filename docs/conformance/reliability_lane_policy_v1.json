@@ -1,0 +1,15 @@
+{
+  "policy_id": "bb.reliability_lane_policy.v1",
+  "description": "Wave A release policy thresholds for ALWAYS_PASSES and USUALLY_PASSES lanes.",
+  "lanes": {
+    "ALWAYS_PASSES": {
+      "max_failure_rate": 0.0,
+      "min_total": 1
+    },
+    "USUALLY_PASSES": {
+      "max_failure_rate": 0.25,
+      "min_total": 1
+    }
+  }
+}
+

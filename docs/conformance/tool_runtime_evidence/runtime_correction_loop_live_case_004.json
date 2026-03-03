@@ -1,0 +1,66 @@
+{
+  "schema_version": "tool_runtime_correction_loop_v1",
+  "report_id": "tool_correction_live_004",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_tool_correction_loop_matrix_d_cross_provider",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "attempts": [
+    {
+      "attempt": 1,
+      "tool_call_id": "call_d_001",
+      "operation_id": "op_fix_004",
+      "thread_id": "thread_cross_provider",
+      "status": "failed"
+    },
+    {
+      "attempt": 2,
+      "tool_call_id": "call_d_002",
+      "retries_from_tool_call_id": "call_d_001",
+      "operation_id": "op_fix_004",
+      "thread_id": "thread_cross_provider",
+      "status": "failed"
+    },
+    {
+      "attempt": 3,
+      "tool_call_id": "call_d_003",
+      "retries_from_tool_call_id": "call_d_002",
+      "operation_id": "op_fix_004",
+      "thread_id": "thread_cross_provider",
+      "status": "failed"
+    },
+    {
+      "attempt": 4,
+      "tool_call_id": "call_d_004",
+      "retries_from_tool_call_id": "call_d_003",
+      "operation_id": "op_fix_004",
+      "thread_id": "thread_cross_provider",
+      "status": "failed"
+    },
+    {
+      "attempt": 5,
+      "tool_call_id": "call_d_005",
+      "retries_from_tool_call_id": "call_d_004",
+      "operation_id": "op_fix_004",
+      "thread_id": "thread_cross_provider",
+      "status": "failed"
+    },
+    {
+      "attempt": 6,
+      "tool_call_id": "call_d_006",
+      "retries_from_tool_call_id": "call_d_005",
+      "operation_id": "op_fix_004",
+      "thread_id": "thread_cross_provider",
+      "status": "completed"
+    }
+  ],
+  "expected": {
+    "operation_id": "op_fix_004",
+    "thread_id": "thread_cross_provider",
+    "min_attempts": 6,
+    "max_attempts": 8,
+    "require_strict_attempt_increment": true,
+    "require_final_completed": true,
+    "require_failed_before_completed": true
+  }
+}

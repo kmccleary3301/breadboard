@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.event.v1",
+  "title": "BreadBoard Event Envelope v1",
+  "description": "Event envelope emitted by runtime components with sequence ordering and optional operation correlation.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Event envelope schema version.",
+      "examples": ["v1"]
+    },
+    "event_id": {
+      "type": "string",
+      "description": "Stable event identifier."
+    },
+    "event_type": {
+      "type": "string",
+      "description": "Event type/category."
+    },
+    "thread_id": {
+      "type": "string",
+      "description": "Thread identifier for per-thread event ordering."
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Session identifier containing the event context."
+    },
+    "op_id": {
+      "type": "string",
+      "description": "Optional related operation identifier."
+    },
+    "sequence_no": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonic sequence number per thread."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Event payload content."
+    },
+    "emitted_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp when the event was emitted."
+    }
+  },
+  "required": [
+    "schema_version",
+    "event_id",
+    "event_type",
+    "thread_id",
+    "session_id",
+    "sequence_no",
+    "payload",
+    "emitted_at"
+  ]
+}

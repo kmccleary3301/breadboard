@@ -1,0 +1,74 @@
+{
+  "schema_version": "tool_runtime_correction_loop_v1",
+  "report_id": "tool_correction_live_005",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_tool_correction_loop_matrix_e_cross_provider",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "attempts": [
+    {
+      "attempt": 1,
+      "tool_call_id": "call_e_001",
+      "operation_id": "op_fix_005",
+      "thread_id": "thread_cross_provider_e",
+      "status": "failed"
+    },
+    {
+      "attempt": 2,
+      "tool_call_id": "call_e_002",
+      "retries_from_tool_call_id": "call_e_001",
+      "operation_id": "op_fix_005",
+      "thread_id": "thread_cross_provider_e",
+      "status": "failed"
+    },
+    {
+      "attempt": 3,
+      "tool_call_id": "call_e_003",
+      "retries_from_tool_call_id": "call_e_002",
+      "operation_id": "op_fix_005",
+      "thread_id": "thread_cross_provider_e",
+      "status": "failed"
+    },
+    {
+      "attempt": 4,
+      "tool_call_id": "call_e_004",
+      "retries_from_tool_call_id": "call_e_003",
+      "operation_id": "op_fix_005",
+      "thread_id": "thread_cross_provider_e",
+      "status": "failed"
+    },
+    {
+      "attempt": 5,
+      "tool_call_id": "call_e_005",
+      "retries_from_tool_call_id": "call_e_004",
+      "operation_id": "op_fix_005",
+      "thread_id": "thread_cross_provider_e",
+      "status": "failed"
+    },
+    {
+      "attempt": 6,
+      "tool_call_id": "call_e_006",
+      "retries_from_tool_call_id": "call_e_005",
+      "operation_id": "op_fix_005",
+      "thread_id": "thread_cross_provider_e",
+      "status": "failed"
+    },
+    {
+      "attempt": 7,
+      "tool_call_id": "call_e_007",
+      "retries_from_tool_call_id": "call_e_006",
+      "operation_id": "op_fix_005",
+      "thread_id": "thread_cross_provider_e",
+      "status": "completed"
+    }
+  ],
+  "expected": {
+    "operation_id": "op_fix_005",
+    "thread_id": "thread_cross_provider_e",
+    "min_attempts": 7,
+    "max_attempts": 9,
+    "require_strict_attempt_increment": true,
+    "require_final_completed": true,
+    "require_failed_before_completed": true
+  }
+}

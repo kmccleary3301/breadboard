@@ -1,0 +1,32 @@
+{
+  "file_hashes": {
+    "apply_patch.yaml": "19dc12bae88f558c4a83a81a2c0bfa866e2b6e998271cbde94ecb5bd4de9d49c",
+    "apply_search_replace.yaml": "051e812098fe0e5be0f9028653c36a0b7e265ba336722da90735f98ebdb4d1b4",
+    "apply_unified_patch.yaml": "12ecd3be96366314be602c5e621f9dec353bb24f6888e26e7c3c48b8d8a8f65a",
+    "blob_get.yaml": "8c2f25bef1810e3441700698199991ce5da66b528a0a48266069cdfa1c127805",
+    "blob_put.yaml": "b3f29469390c86ef8c2cda96fbd3de96ea31808be8b522c92ce778046023318f",
+    "blob_put_file_slice.yaml": "61724569cb3e859faaf03bad5f895bce09d9079fb6e085a03a2aaa84d1230322",
+    "blob_search.yaml": "ead3a2f0011f24e1f0a4fce3134b70d16f98988395afd4796082a0c96f5a5a75",
+    "create_file.yaml": "06437b8e224454a0cd8ac83826d81e0ca0abb6710649d71ae0918fcb86383155",
+    "create_file_from_block.yaml": "7879ad689dbcabc69398e353c954c4f992c3dea8b755f94763f0db78a33bfe34",
+    "list_dir.yaml": "c0c0e9edd37846e2ee88f120d8291dde5fd93719971b7a98e047e0b726ac0798",
+    "llm_batch_query.yaml": "41169422434406c2baccb01d7f10bfcbff1d9207d5efa7c5f0c11ff54b768720",
+    "llm_query.yaml": "f9fffe32726c9c26a6029da0536e555973203fdca17c1957e70f39bf6b908e16",
+    "mark_task_complete.yaml": "3551c44510764b32b3c761c99e618b1f3a1366d561f9188d2caa4f9f9512cd14",
+    "read_file.yaml": "8d4889d7748fc8d2da27dba6ab09bd7211d7f6570301a813b958c988bf1e0d7d",
+    "run_shell.yaml": "1faabe7afd37deae35df28813e02b8f539da728ab226f07adf5853ea3e4934f0",
+    "shell_command.yaml": "6b3a4af3d474f8fbe4303869c95845261194ec77fc6853e14614f7e307a3b683",
+    "todo_attach.yaml": "fe164555f7de376379098368d4b08ae37fe1e2dbe6d16a5151de1bb4ef6244a9",
+    "todo_cancel.yaml": "83bf99c1acb5e45d5e512780845817f266ce0078b831c8df8ecd77176e44e035",
+    "todo_complete.yaml": "bc2a11897dffb6ca9a0debc018bd87a0e8c20621355c56ffda8d919fd30eb42a",
+    "todo_create.yaml": "ba709685a1df20284f674dcc3e1ceffb99c86f08cca29d05e9e421c8f2054847",
+    "todo_list.yaml": "f90ebf0bdcc71b9243214bbd625e7db80ee1345a1596a990e0a43a2292e5c689",
+    "todo_note.yaml": "8e3c832223654f37e170937e7a7e3635c8f14a8a5731b29db1bfa4acd617db4b",
+    "todo_reorder.yaml": "8b09ff45d19168873f0b3b442f6574d9fbe111cad6f1727b22ca4e5cf54c3858",
+    "todo_update.yaml": "b3dc3c3bbf82b7ed4ff8baa23a2cb651bcb1f8d14472767b231fbf12b9ad8aeb",
+    "todo_write.yaml": "c1f9defec04e433f2e82be98759575b030cff033ba549efb17766afb0cd18507",
+    "update_plan.yaml": "588408ad85215665c6a0f97057a245900e5e0615065fa1daacd006afd22c7afc"
+  },
+  "root": "/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/implementations/tools/defs",
+  "schema": "breadboard.tool_schema_hash_baseline.v1"
+}

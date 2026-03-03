@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/benchmarks/normalized_prover_result_v1.schema.json",
+  "title": "Normalized Prover Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "toolchain_id",
+    "input_hash",
+    "prover_system",
+    "budget_class",
+    "status",
+    "verification_log_digest"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "toolchain_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prover_system": {
+      "type": "string",
+      "minLength": 1
+    },
+    "budget_class": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "SOLVED",
+        "UNSOLVED",
+        "ERROR",
+        "TIMEOUT"
+      ]
+    },
+    "verification_log_digest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "attempts": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "repair_rounds_used": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "proof_artifact_ref": {
+      "type": "string"
+    },
+    "wall_clock_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tokens_in": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tokens_out": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cost_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "error": {
+      "type": "string"
+    }
+  }
+}

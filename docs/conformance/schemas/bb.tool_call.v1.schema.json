@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.tool_call.v1",
+  "title": "BreadBoard Tool Call v1",
+  "description": "Tool invocation request record tracked by the scheduler state machine.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Tool call schema version.",
+      "examples": ["v1"]
+    },
+    "call_id": {
+      "type": "string",
+      "description": "Stable tool call identifier."
+    },
+    "tool_name": {
+      "type": "string",
+      "description": "Resolved tool name."
+    },
+    "args_schema_id": {
+      "type": "string",
+      "description": "Identifier of the argument schema used to validate args."
+    },
+    "args": {
+      "type": "object",
+      "description": "Tool arguments after normalization."
+    },
+    "requested_by": {
+      "type": "string",
+      "description": "Principal or subsystem requesting the call."
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp when the call was requested."
+    },
+    "state": {
+      "type": "string",
+      "description": "Current scheduler state for the call.",
+      "enum": [
+        "validating",
+        "scheduled",
+        "awaiting_approval",
+        "executing",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "timeout_ms": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Timeout budget in milliseconds."
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Attempt counter for retries."
+    },
+    "approval_id": {
+      "type": "string",
+      "description": "Related approval request identifier when approval is required."
+    },
+    "thread_id": {
+      "type": "string",
+      "description": "Optional thread identifier for lineage."
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Optional session identifier for lineage."
+    },
+    "op_id": {
+      "type": "string",
+      "description": "Optional operation identifier for lineage."
+    }
+  },
+  "required": [
+    "schema_version",
+    "call_id",
+    "tool_name",
+    "args_schema_id",
+    "requested_by",
+    "requested_at",
+    "state"
+  ]
+}

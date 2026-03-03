@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/atp/atp_runtime_instrumentation_digest_v1.schema.json",
+  "title": "ATP Runtime Instrumentation Digest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "proof_attempt_count",
+    "verifier_call_count",
+    "verifier_latency_ms",
+    "repair_attempt_count",
+    "repair_success_rate_by_class",
+    "retrieval_calls",
+    "retrieval_hit_rate",
+    "search_node_expansions",
+    "fallback_invocations",
+    "budget_usage",
+    "replayability_status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "atp_runtime_instrumentation_digest_v1"
+    },
+    "proof_attempt_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "verifier_call_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "verifier_latency_ms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p50",
+        "p95"
+      ],
+      "properties": {
+        "p50": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p95": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "repair_attempt_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "repair_success_rate_by_class": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "retrieval_calls": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "retrieval_hit_rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "search_node_expansions": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fallback_invocations": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "budget_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tokens",
+        "cost_usd",
+        "time_s"
+      ],
+      "properties": {
+        "tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "time_s": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "replayability_status": {
+      "type": "string",
+      "enum": [
+        "replay_ok",
+        "replay_failed"
+      ]
+    }
+  }
+}

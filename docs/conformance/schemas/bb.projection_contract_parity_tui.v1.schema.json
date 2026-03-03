@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.projection_contract_parity_tui.v1",
+  "title": "bb.projection_contract_parity_tui.v1",
+  "description": "Projection contract parity report for TUI transcript normalization consumer.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "projection_contract_version",
+    "fixture",
+    "cases_total",
+    "cases_passed",
+    "cases_failed",
+    "failures",
+    "ok"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "projection_contract_parity_tui_v1"
+    },
+    "projection_contract_version": {
+      "const": "bb.projection.contract.v1"
+    },
+    "fixture": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cases_total": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cases_passed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cases_failed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "case_id",
+          "check"
+        ],
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "check": {
+            "type": "string",
+            "minLength": 1
+          },
+          "got": {},
+          "expected": {},
+          "sdk_event_type": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

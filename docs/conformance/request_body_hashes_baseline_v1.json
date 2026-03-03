@@ -1,0 +1,12 @@
+{
+  "file_hashes": {
+    "claude_code/basic.json": "a41dfae5b952315bc2472b8b99c5311b93007b9187309efbd9fd3238dd30c8c5",
+    "claude_code_system/basic.json": "a41dfae5b952315bc2472b8b99c5311b93007b9187309efbd9fd3238dd30c8c5",
+    "codex_cli/basic.json": "87c35263d919d6f6864ca550c97e54c457e5e75a5c1d1298b5ada9dd6d2823f1",
+    "codex_cli_multiline/basic.json": "41e4cae06ad64c1a59b6ee33b61b3ddde336836a963aa73f0e084bf5172773b2",
+    "opencode/basic.json": "f4acd61e6a6e39ea0e3b2602ff919d625f467445a6ba5ca346c08dd3fcb10b91",
+    "opencode_multiline/basic.json": "9dd1cd7bd3ec8f61c6bac315626351ca552d45935961ab0eaa47c914d1af0e07"
+  },
+  "root": "/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/tests/fixtures/compat/request_bodies",
+  "schema": "breadboard.request_body_hash_baseline.v1"
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": "projection_reconnect_multi_gap_reorder_v1",
+  "report_id": "proj_reconnect_live_003",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_projection_reconnect_storm_c",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "resume_after_event_id": "evt_006",
+  "initial_events": [
+    {"id": "evt_001", "seq": 1},
+    {"id": "evt_002", "seq": 2},
+    {"id": "evt_003", "seq": 3},
+    {"id": "evt_004", "seq": 4},
+    {"id": "evt_005", "seq": 5},
+    {"id": "evt_006", "seq": 6}
+  ],
+  "resumed_events": [
+    {"id": "evt_007", "seq": 7},
+    {"id": "evt_009", "seq": 9},
+    {"id": "evt_012", "seq": 12},
+    {"id": "evt_013", "seq": 13},
+    {"id": "evt_015", "seq": 15}
+  ],
+  "coalesced_batches": [
+    ["evt_009", "evt_012"],
+    ["evt_007"],
+    ["evt_013", "evt_015"]
+  ],
+  "gap_events": [
+    {"type": "stream.gap", "next_available_seq": 8},
+    {"type": "stream.gap", "next_available_seq": 11},
+    {"type": "stream.gap", "next_available_seq": 14}
+  ],
+  "expected": {
+    "allow_reordered_batches": true,
+    "max_batch_size": 2,
+    "min_batch_count": 3,
+    "min_gap_event_count": 3,
+    "min_gap_distance": 2
+  }
+}

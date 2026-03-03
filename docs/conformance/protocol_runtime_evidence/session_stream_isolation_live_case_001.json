@@ -1,0 +1,39 @@
+{
+  "schema_version": "protocol_session_stream_isolation_v1",
+  "report_id": "proto_stream_live_001",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_protocol_reconnect_storm_a",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "events": [
+    {"type": "session.stream.open", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 1, "kind": "status", "origin_session_id": "sess_live_A"},
+    {"type": "session.stream.delta", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 2, "kind": "delta", "origin_session_id": "sess_live_A"},
+    {"type": "session.stream.reconnect", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 3, "kind": "status", "origin_session_id": "sess_live_A"},
+    {"type": "session.stream.delta", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 4, "kind": "thinking", "origin_session_id": "sess_live_A"},
+    {"type": "session.stream.reconnect", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 5, "kind": "status", "origin_session_id": "sess_live_A"},
+    {"type": "session.stream.delta", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 6, "kind": "delta", "origin_session_id": "sess_live_A"},
+    {"type": "session.stream.reconnect", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 7, "kind": "status", "origin_session_id": "sess_live_A"},
+    {"type": "session.stream.delta", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 8, "kind": "delta", "origin_session_id": "sess_live_A"},
+    {"type": "session.stream.reconnect", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 9, "kind": "status", "origin_session_id": "sess_live_A"},
+    {"type": "session.stream.fork_blocked", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 10, "kind": "status", "origin_session_id": "sess_live_A"},
+    {"type": "session.stream.delta", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 11, "kind": "delta", "origin_session_id": "sess_live_A"},
+    {"type": "session.stream.reconnect", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 12, "kind": "status", "origin_session_id": "sess_live_A"},
+    {"type": "session.stream.delta", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 13, "kind": "delta", "origin_session_id": "sess_live_A"},
+    {"type": "session.stream.close", "session_id": "sess_live_A", "stream_id": "primary", "cursor": 14, "kind": "done", "origin_session_id": "sess_live_A"}
+  ],
+  "expected": {
+    "session_id": "sess_live_A",
+    "stream_id": "primary",
+    "allowed_kinds": ["status", "delta", "thinking", "done", "error"],
+    "terminal_kinds": ["done", "error"],
+    "required_event_types": ["session.stream.open", "session.stream.reconnect", "session.stream.fork_blocked", "session.stream.close"],
+    "required_event_type_counts": {
+      "session.stream.reconnect": 5,
+      "session.stream.delta": 6
+    },
+    "min_event_count": 14,
+    "max_cursor_step": 1,
+    "max_unique_sessions": 1,
+    "max_unique_streams": 1
+  }
+}

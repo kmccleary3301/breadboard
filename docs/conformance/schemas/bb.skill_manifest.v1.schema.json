@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.skill_manifest.v1",
+  "title": "BreadBoard Skill Manifest v1",
+  "description": "Skill contract with entrypoints, dependencies, permissions, and managed ownership boundaries.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "skill_id",
+    "entrypoints",
+    "deps",
+    "permissions",
+    "owned_assets",
+    "compatibility"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "skill_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entrypoints": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entrypoint"
+      }
+    },
+    "deps": {
+      "type": "array",
+      "description": "Skill dependencies such as extension IDs, packages, or service bindings.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "permissions": {
+      "type": "array",
+      "description": "Permissions requested by this skill.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "owned_assets": {
+      "type": "array",
+      "description": "Assets managed by this skill for update/merge safety.",
+      "items": {
+        "$ref": "#/$defs/owned_asset"
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "properties": {
+        "min_runtime_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "max_runtime_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "entrypoint": {
+      "type": "object",
+      "required": [
+        "name",
+        "target"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "owned_asset": {
+      "type": "object",
+      "required": [
+        "path",
+        "ownership"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ownership": {
+          "type": "string",
+          "enum": [
+            "managed",
+            "user",
+            "shared"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

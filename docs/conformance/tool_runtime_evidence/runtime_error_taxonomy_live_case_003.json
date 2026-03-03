@@ -1,0 +1,108 @@
+{
+  "schema_version": "tool_runtime_error_taxonomy_v1",
+  "report_id": "tool_taxonomy_live_003",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_tool_transition_rejects_c_provider_coupled",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "cases": [
+    {
+      "name": "provider_route_invalid_call_id",
+      "operations": [
+        {"op": "start", "call_id": ""}
+      ],
+      "expected_code": "invalid_call_id",
+      "expected_from_state": ""
+    },
+    {
+      "name": "provider_route_unknown_call_on_transition",
+      "operations": [
+        {"op": "transition", "call_id": "provider_missing_001", "to_state": "running"}
+      ],
+      "expected_code": "unknown_call",
+      "expected_from_state": "unknown"
+    },
+    {
+      "name": "mixed_duplicate_start_under_concurrency",
+      "operations": [
+        {"op": "start", "call_id": "mixed_dup_002"},
+        {"op": "start", "call_id": "mixed_dup_002"}
+      ],
+      "expected_code": "duplicate_start",
+      "expected_from_state": "queued"
+    },
+    {
+      "name": "mixed_unknown_target_after_running",
+      "operations": [
+        {"op": "start", "call_id": "mixed_target_003"},
+        {"op": "transition", "call_id": "mixed_target_003", "to_state": "running"},
+        {"op": "transition", "call_id": "mixed_target_003", "to_state": "paused"}
+      ],
+      "expected_code": "unknown_target_state",
+      "expected_from_state": "running"
+    },
+    {
+      "name": "queued_to_completed_invalid_edge_family_c",
+      "operations": [
+        {"op": "start", "call_id": "edge_c_004"},
+        {"op": "transition", "call_id": "edge_c_004", "to_state": "completed"}
+      ],
+      "expected_code": "invalid_transition_edge",
+      "expected_from_state": "queued"
+    },
+    {
+      "name": "running_to_queued_invalid_edge_family_c",
+      "operations": [
+        {"op": "start", "call_id": "edge_c_005"},
+        {"op": "transition", "call_id": "edge_c_005", "to_state": "running"},
+        {"op": "transition", "call_id": "edge_c_005", "to_state": "queued"}
+      ],
+      "expected_code": "invalid_transition_edge",
+      "expected_from_state": "running"
+    },
+    {
+      "name": "terminal_completed_transition_rejected_family_c",
+      "operations": [
+        {"op": "start", "call_id": "terminal_c_006"},
+        {"op": "transition", "call_id": "terminal_c_006", "to_state": "running"},
+        {"op": "transition", "call_id": "terminal_c_006", "to_state": "completed"},
+        {"op": "transition", "call_id": "terminal_c_006", "to_state": "failed"}
+      ],
+      "expected_code": "terminal_state_transition",
+      "expected_from_state": "completed"
+    },
+    {
+      "name": "terminal_failed_transition_rejected_family_c",
+      "operations": [
+        {"op": "start", "call_id": "terminal_c_007"},
+        {"op": "transition", "call_id": "terminal_c_007", "to_state": "running"},
+        {"op": "transition", "call_id": "terminal_c_007", "to_state": "failed"},
+        {"op": "transition", "call_id": "terminal_c_007", "to_state": "running"}
+      ],
+      "expected_code": "terminal_state_transition",
+      "expected_from_state": "failed"
+    },
+    {
+      "name": "terminal_cancelled_transition_rejected_family_c",
+      "operations": [
+        {"op": "start", "call_id": "terminal_c_008"},
+        {"op": "transition", "call_id": "terminal_c_008", "to_state": "running"},
+        {"op": "transition", "call_id": "terminal_c_008", "to_state": "cancelled"},
+        {"op": "transition", "call_id": "terminal_c_008", "to_state": "running"}
+      ],
+      "expected_code": "terminal_state_transition",
+      "expected_from_state": "cancelled"
+    },
+    {
+      "name": "provider_retry_path_invalid_target_after_retry",
+      "operations": [
+        {"op": "start", "call_id": "retry_c_009"},
+        {"op": "transition", "call_id": "retry_c_009", "to_state": "running"},
+        {"op": "transition", "call_id": "retry_c_009", "to_state": "failed"},
+        {"op": "transition", "call_id": "retry_c_009", "to_state": "queued"}
+      ],
+      "expected_code": "terminal_state_transition",
+      "expected_from_state": "failed"
+    }
+  ]
+}

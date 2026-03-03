@@ -1,0 +1,86 @@
+{
+  "schema_version": "tool_runtime_error_taxonomy_v1",
+  "report_id": "tool_taxonomy_live_002",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_tool_transition_rejects_b",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "cases": [
+    {
+      "name": "invalid_call_id_empty_start",
+      "operations": [
+        {"op": "start", "call_id": ""}
+      ],
+      "expected_code": "invalid_call_id",
+      "expected_from_state": ""
+    },
+    {
+      "name": "unknown_call_transition_from_clean_runtime",
+      "operations": [
+        {"op": "transition", "call_id": "missing_001", "to_state": "running"}
+      ],
+      "expected_code": "unknown_call",
+      "expected_from_state": "unknown"
+    },
+    {
+      "name": "duplicate_start_after_initial_queue",
+      "operations": [
+        {"op": "start", "call_id": "dup_002"},
+        {"op": "start", "call_id": "dup_002"}
+      ],
+      "expected_code": "duplicate_start",
+      "expected_from_state": "queued"
+    },
+    {
+      "name": "unknown_target_state_from_running",
+      "operations": [
+        {"op": "start", "call_id": "target_003"},
+        {"op": "transition", "call_id": "target_003", "to_state": "running"},
+        {"op": "transition", "call_id": "target_003", "to_state": "paused"}
+      ],
+      "expected_code": "unknown_target_state",
+      "expected_from_state": "running"
+    },
+    {
+      "name": "invalid_edge_queued_to_completed",
+      "operations": [
+        {"op": "start", "call_id": "edge_004"},
+        {"op": "transition", "call_id": "edge_004", "to_state": "completed"}
+      ],
+      "expected_code": "invalid_transition_edge",
+      "expected_from_state": "queued"
+    },
+    {
+      "name": "invalid_edge_running_to_queued",
+      "operations": [
+        {"op": "start", "call_id": "edge_005"},
+        {"op": "transition", "call_id": "edge_005", "to_state": "running"},
+        {"op": "transition", "call_id": "edge_005", "to_state": "queued"}
+      ],
+      "expected_code": "invalid_transition_edge",
+      "expected_from_state": "running"
+    },
+    {
+      "name": "terminal_completed_transition_rejected",
+      "operations": [
+        {"op": "start", "call_id": "terminal_006"},
+        {"op": "transition", "call_id": "terminal_006", "to_state": "running"},
+        {"op": "transition", "call_id": "terminal_006", "to_state": "completed"},
+        {"op": "transition", "call_id": "terminal_006", "to_state": "failed"}
+      ],
+      "expected_code": "terminal_state_transition",
+      "expected_from_state": "completed"
+    },
+    {
+      "name": "terminal_failed_transition_rejected",
+      "operations": [
+        {"op": "start", "call_id": "terminal_007"},
+        {"op": "transition", "call_id": "terminal_007", "to_state": "running"},
+        {"op": "transition", "call_id": "terminal_007", "to_state": "failed"},
+        {"op": "transition", "call_id": "terminal_007", "to_state": "running"}
+      ],
+      "expected_code": "terminal_state_transition",
+      "expected_from_state": "failed"
+    }
+  ]
+}

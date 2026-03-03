@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/atp/retrieval_adapter_request_v1.schema.json",
+  "title": "ATP Retrieval Adapter Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "query",
+    "k",
+    "scope"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "atp_retrieval_adapter_request_v1"
+    },
+    "query": {
+      "type": "string",
+      "minLength": 1
+    },
+    "k": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1
+    },
+    "retrieval_stage": {
+      "type": "string",
+      "enum": [
+        "coarse",
+        "rerank"
+      ]
+    },
+    "candidate_k": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "rerank_enabled": {
+      "type": "boolean"
+    },
+    "rerank_top_n": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "reranker_model_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "replay_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

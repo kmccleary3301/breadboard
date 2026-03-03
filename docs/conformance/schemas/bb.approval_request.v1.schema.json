@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.approval_request.v1",
+  "title": "BreadBoard Approval Request v1",
+  "description": "Fail-closed approval request record for risky actions.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Approval request schema version.",
+      "examples": ["v1"]
+    },
+    "approval_id": {
+      "type": "string",
+      "description": "Stable approval identifier."
+    },
+    "kind": {
+      "type": "string",
+      "description": "Approval category.",
+      "enum": ["exec", "patch", "network", "sensitive_read"]
+    },
+    "risk_summary": {
+      "type": "string",
+      "description": "Human-readable risk summary for decisioning."
+    },
+    "scope": {
+      "description": "Structured or textual scope of what is being approved.",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "object" }
+      ]
+    },
+    "requested_by": {
+      "type": "string",
+      "description": "Principal or subsystem requesting approval."
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp when approval was requested."
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp when the request expires."
+    },
+    "policy_snapshot": {
+      "type": "object",
+      "description": "Policy snapshot used to evaluate this request."
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Optional session identifier for lineage."
+    },
+    "thread_id": {
+      "type": "string",
+      "description": "Optional thread identifier for lineage."
+    },
+    "call_id": {
+      "type": "string",
+      "description": "Optional tool call identifier tied to this request."
+    }
+  },
+  "required": [
+    "schema_version",
+    "approval_id",
+    "kind",
+    "risk_summary",
+    "scope",
+    "requested_by",
+    "requested_at",
+    "expires_at",
+    "policy_snapshot"
+  ]
+}

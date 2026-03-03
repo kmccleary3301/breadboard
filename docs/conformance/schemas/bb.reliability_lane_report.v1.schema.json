@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.reliability_lane_report.v1",
+  "title": "BreadBoard Reliability Lane Report v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "reliability_lane_report_v1"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "policy_violations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "max_usually_failure_rate": {
+      "type": "number",
+      "minimum": 0
+    },
+    "lanes": {
+      "type": "object",
+      "properties": {
+        "ALWAYS_PASSES": {
+          "$ref": "#/$defs/lane_stat"
+        },
+        "USUALLY_PASSES": {
+          "$ref": "#/$defs/lane_stat"
+        }
+      },
+      "required": [
+        "ALWAYS_PASSES",
+        "USUALLY_PASSES"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "ok",
+    "policy_violations",
+    "max_usually_failure_rate",
+    "lanes"
+  ],
+  "$defs": {
+    "lane_stat": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failure_rate": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "total",
+        "failures",
+        "failure_rate"
+      ]
+    }
+  }
+}
+

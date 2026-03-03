@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/evolake/evolake_checkpoint_envelope_v1.schema.json",
+  "title": "EvoLake Checkpoint Envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generation_completed",
+    "best_candidate",
+    "best_score",
+    "parent_id",
+    "generation_rows",
+    "event_log",
+    "integrity"
+  ],
+  "properties": {
+    "schema": {
+      "const": "breadboard.evolake.minimal_campaign_checkpoint.v1"
+    },
+    "generation_completed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "best_candidate": {
+      "type": "integer"
+    },
+    "best_score": {
+      "type": "number"
+    },
+    "parent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generation_rows": {
+      "type": "array"
+    },
+    "event_log": {
+      "type": "array"
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "rng_seed",
+        "budget",
+        "schema_refs",
+        "event_log_sha256"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "replay",
+            "explore"
+          ]
+        },
+        "rng_seed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_generations",
+            "max_time_s"
+          ],
+          "properties": {
+            "max_generations": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_time_s": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "schema_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "event_log_sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/atp/atp_retrieval_snapshot_v1.schema.json",
+  "title": "ATP Retrieval Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "corpus_snapshot_id",
+    "index_build_hash",
+    "retriever_version",
+    "query_model_version",
+    "topk_docs_with_scores"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "atp_retrieval_snapshot_v1"
+    },
+    "corpus_snapshot_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "index_build_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "retriever_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "query_model_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "retrieval_stage": {
+      "type": "string",
+      "enum": [
+        "coarse",
+        "rerank"
+      ]
+    },
+    "candidate_k": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "reranker_model_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "retrieval_request_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "snapshot_created_at_utc": {
+      "type": "string",
+      "minLength": 1
+    },
+    "topk_docs_with_scores": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "rank",
+          "doc_id",
+          "score",
+          "source"
+        ],
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "doc_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "score": {
+            "type": "number"
+          },
+          "coarse_score": {
+            "type": "number"
+          },
+          "rerank_score": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

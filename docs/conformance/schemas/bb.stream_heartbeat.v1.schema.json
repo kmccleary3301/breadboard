@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/schemas/bb.stream_heartbeat.v1.schema.json",
+  "title": "bb.stream_heartbeat.v1",
+  "description": "Heartbeat contract for stream liveness and timeout symmetry.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "stream_id",
+    "heartbeat_seq",
+    "sent_at",
+    "timeout_ms"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "stream_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "heartbeat_seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sent_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "timeout_ms": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "expected_ack_by": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "normal",
+        "recovery"
+      ]
+    },
+    "producer_id": {
+      "type": "string"
+    },
+    "consumer_id": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}

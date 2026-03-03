@@ -1,0 +1,37 @@
+{
+  "schema_version": "projection_reconnect_multi_gap_reorder_v1",
+  "report_id": "proj_reconnect_live_002",
+  "source": "breadboard_live_capture",
+  "scenario_id": "phase5_projection_reconnect_storm_b",
+  "provider": "openrouter",
+  "model": "openai/gpt-5.2",
+  "resume_after_event_id": "evt_004",
+  "initial_events": [
+    {"id": "evt_001", "seq": 1},
+    {"id": "evt_002", "seq": 2},
+    {"id": "evt_003", "seq": 3},
+    {"id": "evt_004", "seq": 4}
+  ],
+  "resumed_events": [
+    {"id": "evt_005", "seq": 5},
+    {"id": "evt_006", "seq": 6},
+    {"id": "evt_009", "seq": 9},
+    {"id": "evt_010", "seq": 10}
+  ],
+  "coalesced_batches": [
+    ["evt_005", "evt_006"],
+    ["evt_009"],
+    ["evt_010"]
+  ],
+  "gap_events": [
+    {"type": "stream.gap", "next_available_seq": 7},
+    {"type": "stream.gap", "next_available_seq": 9}
+  ],
+  "expected": {
+    "allow_reordered_batches": false,
+    "max_batch_size": 2,
+    "min_batch_count": 3,
+    "min_gap_event_count": 2,
+    "min_gap_distance": 2
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/benchmarks/p2_kpi_snapshot_v1.schema.json",
+  "title": "P2 KPI Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generated_at",
+    "generalization",
+    "atp",
+    "evolake",
+    "evidence",
+    "spend",
+    "ops"
+  ],
+  "properties": {
+    "schema": {
+      "const": "breadboard.p2_kpi_snapshot.v1"
+    },
+    "generated_at": {
+      "type": "number"
+    },
+    "generalization": {
+      "type": "object",
+      "required": ["request_body_gate_ok", "tool_schema_gate_ok", "event_envelope_gate_ok"],
+      "additionalProperties": true
+    },
+    "atp": {
+      "type": "object",
+      "required": ["solve_rate"],
+      "additionalProperties": true
+    },
+    "evolake": {
+      "type": "object",
+      "required": ["best_score"],
+      "additionalProperties": true
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["benchmark_validation_ok"],
+      "additionalProperties": true
+    },
+    "spend": {
+      "type": "object",
+      "required": [
+        "record_count",
+        "invalid_record_count",
+        "budget_total_usd",
+        "actual_estimated_total_usd",
+        "budget_overrun_count"
+      ],
+      "additionalProperties": true
+    },
+    "ops": {
+      "type": "object",
+      "required": ["passive_day_green"],
+      "additionalProperties": true
+    }
+  }
+}

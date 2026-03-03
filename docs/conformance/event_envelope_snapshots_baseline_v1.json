@@ -1,0 +1,10 @@
+{
+  "file_hashes": {
+    "docs/conformance/schemas/bb.event.v1.schema.json": "9f782482da58fbc25a52a07cc52d34c0119da8739f90f47a6ebf013235b48802",
+    "docs/conformance/schemas/bb.projection_event.v1.schema.json": "9bda6adf0087914c9c40042b42c188e19295f85c26d5a9e25674326628b98017",
+    "tests/fixtures/conformance_v1/fixtures/valid/bb.event.v1.valid.json": "88d7081a153afd8ddfdce5506229c9a7b35f44a1462301aac699f3a2aa0a5312",
+    "tests/fixtures/conformance_v1/fixtures/valid/bb.projection_event.v1.valid.json": "d81e136b46d3a4c3ca843d77430ea324f78b860d6fe3f576e9cdc3528172adf7"
+  },
+  "repo_root": "/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo",
+  "schema": "breadboard.event_envelope_snapshot_baseline.v1"
+}

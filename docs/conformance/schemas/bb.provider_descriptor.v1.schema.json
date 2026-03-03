@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.provider_descriptor.v1",
+  "title": "BreadBoard Provider Descriptor v1",
+  "description": "Portable provider descriptor for deterministic capability-aware routing.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "provider_id",
+    "model_catalog",
+    "capabilities",
+    "limits",
+    "priority",
+    "health_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "provider_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable provider identifier."
+    },
+    "model_catalog": {
+      "type": "array",
+      "description": "Published models and metadata available through this provider.",
+      "items": {
+        "$ref": "#/$defs/model_descriptor"
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "description": "Provider-level capability flags used by selection logic.",
+      "properties": {
+        "streaming": {
+          "type": "boolean"
+        },
+        "tool_calls": {
+          "type": "boolean"
+        },
+        "multimodal_input": {
+          "type": "boolean"
+        },
+        "multimodal_output": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "limits": {
+      "type": "object",
+      "description": "Operational and policy limits for routing/planning.",
+      "properties": {
+        "max_context_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "requests_per_minute": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Lower value means earlier preference in deterministic ties."
+    },
+    "health_policy": {
+      "type": "object",
+      "description": "Health and fallback behavior for provider selection.",
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "failure_threshold": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cooldown_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "model_descriptor": {
+      "type": "object",
+      "required": [
+        "model_id"
+      ],
+      "properties": {
+        "model_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/atp/atp_repair_policy_decision_v1.schema.json",
+  "title": "ATP Repair Policy Decision v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "loop_id",
+    "node_id",
+    "decision_index",
+    "diagnostic_class",
+    "selected_operator",
+    "ablation_repair_off",
+    "features"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "atp_repair_policy_decision_v1"
+    },
+    "loop_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "node_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision_index": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "diagnostic_class": {
+      "type": "string",
+      "enum": [
+        "syntax_error",
+        "type_error",
+        "tactic_failure",
+        "timeout",
+        "resource_limit",
+        "missing_import",
+        "goal_mismatch",
+        "proof_incomplete",
+        "nondeterminism_detected",
+        "unknown"
+      ]
+    },
+    "selected_operator": {
+      "type": "string",
+      "enum": [
+        "repair_minimal_patch",
+        "repair_local_rewrite",
+        "repair_goal_decompose",
+        "repair_retrieve_more",
+        "repair_change_strategy",
+        "repair_off"
+      ]
+    },
+    "ablation_repair_off": {
+      "type": "boolean"
+    },
+    "justification": {
+      "type": "string"
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "attempt_index",
+        "budget_remaining_steps",
+        "goals_estimate",
+        "goal_complexity_estimate",
+        "prior_failures",
+        "fallback_used_previous"
+      ],
+      "properties": {
+        "attempt_index": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "budget_remaining_steps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "goals_estimate": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "goal_complexity_estimate": {
+          "type": "number",
+          "minimum": 0
+        },
+        "prior_failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fallback_used_previous": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

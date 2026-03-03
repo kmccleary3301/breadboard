@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.plan_envelope_semantics_check.v1",
+  "title": "bb.plan_envelope_semantics_check.v1",
+  "description": "Semantic check result for deterministic plan decision-envelope lifecycle.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "plan_envelope_semantics_check_v1"
+    },
+    "mode": {
+      "const": "decision_lifecycle"
+    },
+    "plan_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "mode",
+    "plan_id",
+    "decision_count",
+    "violations",
+    "ok"
+  ]
+}
+

@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/atp/search_loop_decomposition_trace_v1.schema.json",
+  "title": "Search Loop Decomposition Trace v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "trace_id",
+    "loop_id",
+    "nodes",
+    "lineage_complete"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "search_loop_decomposition_trace_v1"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "loop_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lineage_complete": {
+      "type": "boolean"
+    },
+    "replay_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "parent_id",
+          "node_type",
+          "node_role",
+          "status",
+          "verifier_verdict"
+        ],
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "node_type": {
+            "type": "string",
+            "enum": [
+              "root",
+              "candidate",
+              "lemma",
+              "subgoal",
+              "repair"
+            ]
+          },
+          "node_role": {
+            "type": "string",
+            "enum": [
+              "root",
+              "decomposition",
+              "proposal",
+              "verification",
+              "repair"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed",
+              "failed",
+              "verified"
+            ]
+          },
+          "verifier_verdict": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "pass",
+              "fail",
+              "repaired"
+            ]
+          },
+          "repair_from": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state_ref": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

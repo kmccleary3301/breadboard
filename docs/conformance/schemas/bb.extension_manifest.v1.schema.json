@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:breadboard:schema:bb.extension_manifest.v1",
+  "title": "BreadBoard Extension Manifest v1",
+  "description": "Canonical extension contract with trust, compatibility, and deterministic hook declarations.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "capabilities",
+    "hook_points",
+    "policies",
+    "compatibility",
+    "signature"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "Declared capability groups used by consent and policy checks.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "mcpServers",
+          "contextFiles",
+          "commands",
+          "skills",
+          "agents",
+          "hooks",
+          "settings"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "hook_points": {
+      "type": "array",
+      "description": "Deterministic hook points declared by the extension.",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "session.pre_load",
+              "session.post_load",
+              "provider.pre_request",
+              "provider.post_response",
+              "tool.pre_call",
+              "tool.post_result",
+              "ui.pre_render",
+              "ui.post_render",
+              "policy.pre_decision",
+              "policy.post_decision"
+            ]
+          },
+          {
+            "type": "string",
+            "pattern": "^x-[A-Za-z0-9_.-]+$",
+            "description": "Vendor extension hook point namespace."
+          }
+        ]
+      },
+      "uniqueItems": true
+    },
+    "policies": {
+      "type": "object",
+      "properties": {
+        "allowed_sources": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "denied_sources": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "require_workspace_trust": {
+          "type": "boolean"
+        },
+        "require_consent_on_capability_change": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "compatibility": {
+      "type": "object",
+      "properties": {
+        "min_runtime_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "max_runtime_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requires_features": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "signature": {
+      "type": "object",
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verified": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

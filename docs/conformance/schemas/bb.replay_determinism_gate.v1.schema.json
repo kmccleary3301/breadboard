@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.replay_determinism_gate.v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "files_checked",
+    "min_files_required",
+    "required_files_met",
+    "failure_count",
+    "failures",
+    "ok"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "replay_determinism_gate_v1"
+    },
+    "files_checked": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "min_files_required": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "required_files_met": {
+      "type": "boolean"
+    },
+    "non_fixture_files_checked": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "min_non_fixture_files_required": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "required_non_fixture_files_met": {
+      "type": "boolean"
+    },
+    "min_non_fixture_turns": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "max_drift_score": {
+      "type": "number",
+      "minimum": 0
+    },
+    "failure_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "mismatch_count",
+          "missing_count",
+          "extra_count",
+          "signature"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "mismatch_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "missing_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "extra_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "drift_score": {
+            "type": "number",
+            "minimum": 0
+          },
+          "turn_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ok": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "signature": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": true
+}
