@@ -302,6 +302,29 @@ jobs:
           path: artifacts/event_envelope_snapshot_gate_report.json
           if-no-files-found: error
 
+  e4_target_freeze_manifest_guard:
+    name: E4 target-freeze manifest guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install lightweight validator deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyyaml pytest
+
+      - name: Validate E4 target-freeze manifest coverage
+        run: |
+          python scripts/check_e4_target_freeze_manifest.py --json
+
+      - name: Run E4 manifest validator unit test
+        run: |
+          pytest -q tests/test_e4_target_freeze_manifest.py
+
   conformance_matrix_sync_guard:
     name: Conformance matrix sync guard
     runs-on: ubuntu-latest

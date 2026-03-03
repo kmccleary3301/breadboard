@@ -1,4 +1,4 @@
-.PHONY: help setup setup-fast setup-engine setup-fast-engine setup-refresh-python setup-tui setup-smoke setup-sdk-live setup-all doctor doctor-full doctor-tui quickstart cli-capabilities onboarding-contract disk-report disk-prune repair-cli build-tui typecheck-tui smoke sdk-hello sdk-hello-live devx-smoke devx-smoke-engine devx-smoke-live devx-full-pass devx-full-pass-engine devx-timing
+.PHONY: help setup setup-fast setup-engine setup-fast-engine setup-refresh-python setup-tui setup-smoke setup-sdk-live setup-all doctor doctor-full doctor-tui quickstart cli-capabilities onboarding-contract e4-target-manifest disk-report disk-prune repair-cli build-tui typecheck-tui smoke sdk-hello sdk-hello-live devx-smoke devx-smoke-engine devx-smoke-live devx-full-pass devx-full-pass-engine devx-timing
 
 help:
 	@echo "BreadBoard dev shortcuts"
@@ -17,6 +17,7 @@ help:
 	@echo "  make quickstart      # show recommended next commands (CLI-independent)"
 	@echo "  make cli-capabilities # detect active breadboard CLI feature support"
 	@echo "  make onboarding-contract # check onboarding script/docs contract drift"
+	@echo "  make e4-target-manifest # validate E4 harness target freeze manifest coverage"
 	@echo "  make disk-report    # dry-run ~/.breadboard cleanup plan + JSON report"
 	@echo "  make disk-prune     # apply ~/.breadboard cleanup with safe defaults"
 	@echo "  make repair-cli      # rebuild and validate local breadboard CLI wrapper"
@@ -73,6 +74,9 @@ cli-capabilities:
 
 onboarding-contract:
 	python scripts/dev/check_onboarding_contract_drift.py --strict
+
+e4-target-manifest:
+	python scripts/check_e4_target_freeze_manifest.py --json
 
 disk-report:
 	python scripts/prune_breadboard_home.py --json-out artifacts/maintenance/prune_breadboard_home.latest.json
