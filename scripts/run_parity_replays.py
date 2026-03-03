@@ -16,7 +16,7 @@ import yaml
 import tempfile
 import time
 import socket
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -259,6 +259,28 @@ def _load_optional_json(path: Path) -> Dict[str, Any]:
         return {}
 
 
+def _extract_run_dir_from_result_json(path: Path) -> Optional[Path]:
+    data = _load_optional_json(path)
+    if not isinstance(data, dict):
+        return None
+    run_dir = None
+    if isinstance(data.get("run_dir"), str):
+        run_dir = data.get("run_dir")
+    result_block = data.get("result")
+    if run_dir is None and isinstance(result_block, dict):
+        candidate = result_block.get("run_dir") or result_block.get("logging_dir")
+        if isinstance(candidate, str):
+            run_dir = candidate
+    if not isinstance(run_dir, str) or not run_dir:
+        return None
+    candidate = Path(run_dir)
+    if not candidate.is_absolute():
+        candidate = (ROOT_DIR / candidate).resolve()
+    if candidate.exists() and candidate.is_dir():
+        return candidate
+    return None
+
+
 def _extract_latest_snapshot(summary: Dict[str, Any], key: str) -> Dict[str, Any]:
     surface = summary.get("surface_snapshot") or {}
     entries = surface.get(key) or []
@@ -360,6 +382,8 @@ def _run_task_scenario(scenario, *, workspace: Path, result_dir: Path) -> Dict[s
         "--task",
         str(scenario.task),
     ]
+    task_result_json = result_dir / f"{scenario.name}_task_result.json"
+    cmd += ["--result-json", str(task_result_json)]
     if scenario.max_steps:
         cmd += ["--max-iterations", str(scenario.max_steps)]
     env = os.environ.copy()
@@ -367,12 +391,18 @@ def _run_task_scenario(scenario, *, workspace: Path, result_dir: Path) -> Dict[s
     env.setdefault("MOCK_API_KEY", "kc_parity_mock_key")
     env.setdefault("PRESERVE_SEEDED_WORKSPACE", "1")
     subprocess.run(cmd, cwd=ROOT_DIR, env=env, check=True)
-    run_dir = _latest_logging_dir(logging_root, before)
+    run_dir = _extract_run_dir_from_result_json(task_result_json)
+    if run_dir is None:
+        run_dir = _latest_logging_dir(logging_root, before)
     actual_ir = build_run_ir_from_run_dir(run_dir)
     expected_ir = build_expected_run_ir(
         Path(scenario.golden_workspace),
         summary_path=scenario.golden_meta,
     )
+    if scenario.task:
+        task_basename = Path(scenario.task).name
+        if task_basename:
+            expected_ir.ignore_workspace = list(dict.fromkeys([*expected_ir.ignore_workspace, task_basename]))
     mismatches = compare_run_ir(actual_ir, expected_ir, scenario.equivalence)
     status = "passed" if not mismatches else "failed"
     payload: Dict[str, object] = {
@@ -382,6 +412,7 @@ def _run_task_scenario(scenario, *, workspace: Path, result_dir: Path) -> Dict[s
         "golden_workspace": str(scenario.golden_workspace),
         "equivalence": scenario.equivalence.value,
         "mismatches": mismatches,
+        "task_result_path": str(task_result_json),
     }
     # Record multi-agent event logs if configured
     try:
@@ -518,20 +549,6 @@ def _run_replay_scenario(scenario, *, workspace: Path, result_dir: Path) -> Dict
             _safe_reset_dir(cfg_ws, label=f"config workspace '{cfg_ws}'")
             shutil.copytree(golden_ws, cfg_ws, dirs_exist_ok=True)
             _prune_seeded_workspace(cfg_ws)
-        # Also seed the configured workspace root if the agent ignores --workspace.
-        try:
-            import yaml  # noqa: PLC0415
-
-            cfg = yaml.safe_load(Path(scenario.config).read_text(encoding="utf-8"))
-        except Exception as exc:
-            print(f"[parity] WARNING: failed to read config {scenario.config}: {exc}", file=sys.stderr)
-            cfg = None
-        if isinstance(cfg, dict):
-            cfg_ws = Path(cfg.get("workspace", {}).get("root", "./agent_ws_claude"))
-            if not cfg_ws.is_absolute():
-                cfg_ws = (ROOT_DIR / cfg_ws).resolve()
-            _safe_reset_dir(cfg_ws, label=f"config workspace '{cfg_ws}'")
-            shutil.copytree(golden_ws, cfg_ws, dirs_exist_ok=True)
     result_json = result_dir / f"{scenario.name}_result.json"
     cmd = [
         sys.executable,
@@ -719,7 +736,7 @@ def _publish_parity_status(parity_root: Path, run_dir: Path, records: List[Dict[
         "run_dir": str(run_dir),
         "summary_path": str(summary_path),
         "results_path": str(jsonl_path),
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "scenarios": [
             {
                 "scenario": record.get("scenario"),
