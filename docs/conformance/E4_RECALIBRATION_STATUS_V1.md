@@ -31,6 +31,14 @@ Freshness milestone:
 - `python scripts/check_e4_target_freeze_manifest.py --strict-evidence --max-evidence-age-days 45 --json`
   now returns `ok: true`.
 
+Drift milestone (after freshness fix):
+
+- Drift remains open: `drift_count == 8`
+- Current drift report:
+  - `artifacts/conformance/e4_target_drift_audit_report.json`
+- Current refresh proposal:
+  - `artifacts/conformance/e4_target_refresh_plan.after_refsnapshot_fix.json`
+
 ## Batch A baseline (OpenCode replay family)
 
 Run ID:
