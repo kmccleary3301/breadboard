@@ -1,0 +1,9 @@
+{
+  "total": 1,
+  "status_counts": {
+    "passed": 1
+  },
+  "failed": [],
+  "warned": [],
+  "results_file": "/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/artifacts/parity_runs/e4_batchA_serial_20260302_204843/parity_results.jsonl"
+}

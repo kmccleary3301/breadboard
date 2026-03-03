@@ -1,0 +1,29 @@
+{
+  "run_id": "e4_batchA_serial_20260302_204843",
+  "rows": [
+    {
+      "scenario": "opencode_mvi_bash_write_replay",
+      "exit_code": 0
+    },
+    {
+      "scenario": "opencode_protofs_gpt5nano_toolio_replay",
+      "exit_code": 0
+    },
+    {
+      "scenario": "opencode_patch_todo_sentinel_replay",
+      "exit_code": 0
+    },
+    {
+      "scenario": "opencode_glob_grep_sentinel_replay",
+      "exit_code": 0
+    },
+    {
+      "scenario": "opencode_toolcall_repair_sentinel_replay",
+      "exit_code": 0
+    },
+    {
+      "scenario": "opencode_webfetch_sentinel_replay",
+      "exit_code": 0
+    }
+  ]
+}

@@ -23,6 +23,14 @@ Artifacts:
 - `artifacts/conformance/e4_target_freshness_45d_report.json`
 - `artifacts/conformance/e4_target_freshness_90d_report.json`
 
+Freshness milestone:
+
+- `config/e4_target_freeze_manifest.yaml` now includes fresh OpenCode Batch A
+  replay evidence links under:
+  - `docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/`
+- `python scripts/check_e4_target_freeze_manifest.py --strict-evidence --max-evidence-age-days 45 --json`
+  now returns `ok: true`.
+
 ## Batch A baseline (OpenCode replay family)
 
 Run ID:
@@ -63,4 +71,3 @@ This avoids intermittent Ray worker kills under high ambient memory pressure.
    only when evidence has been refreshed for those lanes.
 3. Re-run strict/freshness checks (`--strict-evidence --max-evidence-age-days 45`) and lane parity.
 4. Close drift (`drift_count == 0`) and record per-lane bump notes.
-

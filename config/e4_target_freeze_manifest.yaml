@@ -61,6 +61,8 @@ e4_configs:
         - misc/opencode_runs/parity_scenarios.yaml
         - misc/opencode_tests/protofs_test_run/opencode_session_dump.json
         - misc/opencode_tests/protofs_test_run/opencode_session_dump.guardrails.json
+        - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/opencode_mvi_bash_write_replay_result.json
+        - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/parity_summary.json
 
   opencode_e4_glob_grep_sentinel_replay:
     config_path: agent_configs/opencode_e4_glob_grep_sentinel_replay.yaml
@@ -77,6 +79,8 @@ e4_configs:
       scenario_id: opencode_glob_grep_sentinel_replay
       evidence_paths:
         - misc/opencode_tests/opencode_glob_grep_sentinel/opencode_session_dump.json
+        - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/opencode_glob_grep_sentinel_replay_result.json
+        - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/parity_summary.json
 
   opencode_e4_patch_todo_sentinel_replay:
     config_path: agent_configs/opencode_e4_patch_todo_sentinel_replay.yaml
@@ -93,6 +97,8 @@ e4_configs:
       scenario_id: opencode_patch_todo_sentinel_replay
       evidence_paths:
         - misc/opencode_tests/opencode_patch_todo_sentinel/opencode_session_dump.json
+        - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/opencode_patch_todo_sentinel_replay_result.json
+        - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/parity_summary.json
 
   opencode_e4_toolcall_repair_sentinel_replay:
     config_path: agent_configs/opencode_e4_toolcall_repair_sentinel_replay.yaml
@@ -109,6 +115,8 @@ e4_configs:
       scenario_id: opencode_toolcall_repair_sentinel_replay
       evidence_paths:
         - misc/opencode_tests/opencode_toolcall_repair_sentinel/opencode_session_dump.json
+        - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/opencode_toolcall_repair_sentinel_replay_result.json
+        - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/parity_summary.json
 
   opencode_e4_webfetch_sentinel_replay:
     config_path: agent_configs/opencode_e4_webfetch_sentinel_replay.yaml
@@ -125,6 +133,8 @@ e4_configs:
       scenario_id: opencode_webfetch_sentinel_replay
       evidence_paths:
         - misc/opencode_tests/opencode_webfetch_sentinel/opencode_session_dump.json
+        - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/opencode_webfetch_sentinel_replay_result.json
+        - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/parity_summary.json
 
   opencode_e4_oc_protofs_gpt5nano_replay:
     config_path: agent_configs/opencode_e4_oc_protofs_gpt5nano_replay.yaml
@@ -142,3 +152,5 @@ e4_configs:
       evidence_paths:
         - misc/opencode_tests/oc_protofs_gpt5nano/opencode_session_dump.json
         - misc/opencode_tests/oc_protofs_gpt5nano/opencode_session_dump.guardrails.json
+        - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/opencode_protofs_gpt5nano_toolio_replay_result.json
+        - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/parity_summary.json
