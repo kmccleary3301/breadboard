@@ -1,4 +1,4 @@
-.PHONY: help setup setup-fast setup-engine setup-fast-engine setup-refresh-python setup-tui setup-smoke setup-sdk-live setup-all doctor doctor-full doctor-tui quickstart cli-capabilities onboarding-contract e4-target-manifest disk-report disk-prune repair-cli build-tui typecheck-tui smoke sdk-hello sdk-hello-live devx-smoke devx-smoke-engine devx-smoke-live devx-full-pass devx-full-pass-engine devx-timing
+.PHONY: help setup setup-fast setup-engine setup-fast-engine setup-refresh-python setup-tui setup-smoke setup-sdk-live setup-all doctor doctor-full doctor-tui quickstart cli-capabilities onboarding-contract e4-target-manifest e4-target-refresh-plan e4-target-drift-audit disk-report disk-prune repair-cli build-tui typecheck-tui smoke sdk-hello sdk-hello-live devx-smoke devx-smoke-engine devx-smoke-live devx-full-pass devx-full-pass-engine devx-timing
 
 help:
 	@echo "BreadBoard dev shortcuts"
@@ -18,6 +18,8 @@ help:
 	@echo "  make cli-capabilities # detect active breadboard CLI feature support"
 	@echo "  make onboarding-contract # check onboarding script/docs contract drift"
 	@echo "  make e4-target-manifest # validate E4 harness target freeze manifest coverage"
+	@echo "  make e4-target-refresh-plan # dry-run refresh of E4 harness pins from local clones"
+	@echo "  make e4-target-drift-audit # check manifest pins vs upstream remote HEADs"
 	@echo "  make disk-report    # dry-run ~/.breadboard cleanup plan + JSON report"
 	@echo "  make disk-prune     # apply ~/.breadboard cleanup with safe defaults"
 	@echo "  make repair-cli      # rebuild and validate local breadboard CLI wrapper"
@@ -77,6 +79,12 @@ onboarding-contract:
 
 e4-target-manifest:
 	python scripts/check_e4_target_freeze_manifest.py --json
+
+e4-target-refresh-plan:
+	python scripts/update_e4_target_freeze_manifest.py --check --json-out artifacts/conformance/e4_target_refresh_plan.json
+
+e4-target-drift-audit:
+	python scripts/audit_e4_target_drift.py --json-out artifacts/conformance/e4_target_drift_audit_report.json --fail-on-drift
 
 disk-report:
 	python scripts/prune_breadboard_home.py --json-out artifacts/maintenance/prune_breadboard_home.latest.json

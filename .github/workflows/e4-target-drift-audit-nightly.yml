@@ -1,0 +1,38 @@
+name: E4 Target Drift Audit Nightly
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  e4_target_drift_audit:
+    name: E4 target drift audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install audit dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyyaml
+
+      - name: Run E4 target drift audit
+        run: |
+          python scripts/audit_e4_target_drift.py \
+            --manifest config/e4_target_freeze_manifest.yaml \
+            --json-out artifacts/e4_target_drift_audit_report.json \
+            --fail-on-drift
+
+      - name: Upload drift audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e4-target-drift-audit-report
+          path: artifacts/e4_target_drift_audit_report.json
+          if-no-files-found: error
+

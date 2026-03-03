@@ -43,19 +43,61 @@ Optional strict evidence check:
 python scripts/check_e4_target_freeze_manifest.py --strict-evidence --json
 ```
 
+Optional freshness check (fails stale calibration anchors):
+
+```bash
+python scripts/check_e4_target_freeze_manifest.py --strict-evidence --max-evidence-age-days 45 --json
+```
+
+## Refresh helpers
+
+Generate a dry-run update plan from local harness clones in `../other_harness_refs`:
+
+```bash
+make e4-target-refresh-plan
+```
+
+Equivalent direct command:
+
+```bash
+python scripts/update_e4_target_freeze_manifest.py --check --json-out artifacts/conformance/e4_target_refresh_plan.json
+```
+
+Apply the refresh in-place:
+
+```bash
+python scripts/update_e4_target_freeze_manifest.py --write
+```
+
+## Nightly drift audit
+
+A nightly workflow (`.github/workflows/e4-target-drift-audit-nightly.yml`) checks
+manifest-pinned commits against upstream remote HEADs and uploads:
+
+- `artifacts/e4_target_drift_audit_report.json`
+
+Local equivalent:
+
+```bash
+make e4-target-drift-audit
+```
+
 ## Update procedure when target harness changes
 
 1. Pull/update upstream harness reference repositories.
-2. Capture new evidence:
+2. Generate refresh plan and inspect drift:
+   - `make e4-target-refresh-plan`
+   - `make e4-target-drift-audit`
+3. Capture new evidence:
    - tmux nightly provider scenario captures for interactive parity lanes.
    - replay session dumps for OpenCode/other replay lanes.
-3. Add/adjust manifest rows with:
+4. Add/adjust manifest rows with:
    - upstream commit + date,
    - release label,
    - updated evidence paths.
-4. Update E4 config behavior only as required for parity.
-5. Re-run E4 checks and conformance runs.
-6. Record the bump in release notes / parity docs.
+5. Update E4 config behavior only as required for parity.
+6. Re-run E4 checks and conformance runs.
+7. Record the bump in release notes / parity docs.
 
 ## Required E4 config header convention
 

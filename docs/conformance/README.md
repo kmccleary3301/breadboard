@@ -43,6 +43,8 @@ python scripts/run_ct_scenarios.py \
 ```bash
 make e4-target-manifest
 python scripts/check_e4_target_freeze_manifest.py --strict-evidence --json
+make e4-target-refresh-plan
+make e4-target-drift-audit
 ```
 
 Policy: [E4_TARGET_VERSIONING.md](E4_TARGET_VERSIONING.md)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,7 @@ def _validate_manifest(
     manifest_path: Path,
     repo_root: Path,
     strict_evidence: bool,
+    max_evidence_age_days: float | None,
 ) -> dict[str, Any]:
     issues: list[str] = []
     manifest = _load_yaml(manifest_path)
@@ -108,14 +110,25 @@ def _validate_manifest(
         if not isinstance(evidence_paths, list) or not evidence_paths:
             issues.append(f"{stem}: calibration_anchor.evidence_paths must be a non-empty list")
         else:
+            existing_evidence_paths: list[Path] = []
             for rel in evidence_paths:
                 if not isinstance(rel, str) or not rel:
                     issues.append(f"{stem}: invalid evidence path entry: {rel!r}")
                     continue
-                if strict_evidence:
-                    p = repo_root / rel
-                    if not p.exists():
-                        issues.append(f"{stem}: missing evidence path: {rel}")
+                p = repo_root / rel
+                if p.exists():
+                    existing_evidence_paths.append(p)
+                elif strict_evidence or max_evidence_age_days is not None:
+                    issues.append(f"{stem}: missing evidence path: {rel}")
+
+            if max_evidence_age_days is not None and existing_evidence_paths:
+                newest_evidence = max(existing_evidence_paths, key=lambda p: p.stat().st_mtime)
+                newest_dt = datetime.fromtimestamp(newest_evidence.stat().st_mtime, tz=timezone.utc)
+                age_days = (datetime.now(timezone.utc) - newest_dt).total_seconds() / 86400.0
+                if age_days > max_evidence_age_days:
+                    issues.append(
+                        f"{stem}: stale calibration evidence ({age_days:.2f} days > {max_evidence_age_days:.2f} days), newest={newest_evidence.relative_to(repo_root)}"
+                    )
 
     return {
         "manifest_path": str(manifest_path),
@@ -144,6 +157,12 @@ def main() -> int:
         help="Fail if calibration evidence files are missing.",
     )
     parser.add_argument(
+        "--max-evidence-age-days",
+        type=float,
+        default=None,
+        help="Optional freshness gate. Fail if newest calibration evidence is older than this many days.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Emit JSON report.",
@@ -152,7 +171,12 @@ def main() -> int:
 
     repo_root = Path(args.repo_root).resolve()
     manifest_path = (repo_root / args.manifest).resolve()
-    report = _validate_manifest(manifest_path=manifest_path, repo_root=repo_root, strict_evidence=args.strict_evidence)
+    report = _validate_manifest(
+        manifest_path=manifest_path,
+        repo_root=repo_root,
+        strict_evidence=args.strict_evidence,
+        max_evidence_age_days=args.max_evidence_age_days,
+    )
 
     if args.json:
         print(json.dumps(report, indent=2))
