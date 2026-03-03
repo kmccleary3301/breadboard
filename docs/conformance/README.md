@@ -45,7 +45,7 @@ make e4-target-manifest
 python scripts/check_e4_target_freeze_manifest.py --strict-evidence --json
 ```
 
-Policy: [`E4_TARGET_VERSIONING.md`](E4_TARGET_VERSIONING.md)
+Policy: [E4_TARGET_VERSIONING.md](E4_TARGET_VERSIONING.md)
 
 ---
 
@@ -174,6 +174,6 @@ Validator invariants:
 
 ## Extending coverage
 
-To add a new CT row: [`ADDING_CT_ROW_GUIDE.md`](ADDING_CT_ROW_GUIDE.md)
+To add a new CT row: [ADDING_CT_ROW_GUIDE.md](ADDING_CT_ROW_GUIDE.md)
 
-To add a new semantic checker: [`ADDING_SEMANTIC_CHECKER_GUIDE.md`](ADDING_SEMANTIC_CHECKER_GUIDE.md)
+To add a new semantic checker: [ADDING_SEMANTIC_CHECKER_GUIDE.md](ADDING_SEMANTIC_CHECKER_GUIDE.md)

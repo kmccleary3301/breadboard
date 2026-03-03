@@ -179,4 +179,4 @@ bash scripts/dev/bootstrap_first_time.sh --skip-python
 
 ---
 
-For the full setup reference with all flags, profiles, and advanced smokes, see [`../INSTALL_AND_DEV_QUICKSTART.md`](../INSTALL_AND_DEV_QUICKSTART.md).
+For the full setup reference with all flags, profiles, and advanced smokes, see [../INSTALL_AND_DEV_QUICKSTART.md](../INSTALL_AND_DEV_QUICKSTART.md).

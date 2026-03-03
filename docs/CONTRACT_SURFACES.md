@@ -20,7 +20,7 @@ Properties:
 
 Related docs:
 
-- [`PARITY_KERNEL_BOUNDARIES.md`](PARITY_KERNEL_BOUNDARIES.md)
+- [PARITY_KERNEL_BOUNDARIES.md](PARITY_KERNEL_BOUNDARIES.md)
 
 ---
 
@@ -30,9 +30,9 @@ Primary surface: the CLI bridge HTTP + SSE protocol.
 
 Core references:
 
-- [`CLI_BRIDGE_PROTOCOL_VERSIONING.md`](CLI_BRIDGE_PROTOCOL_VERSIONING.md)
-- [`contracts/cli_bridge/openapi.json`](contracts/cli_bridge/openapi.json)
-- [`contracts/cli_bridge/schemas/`](contracts/cli_bridge/schemas/)
+- [CLI_BRIDGE_PROTOCOL_VERSIONING.md](CLI_BRIDGE_PROTOCOL_VERSIONING.md)
+- [contracts/cli_bridge/openapi.json](contracts/cli_bridge/openapi.json)
+- [contracts/cli_bridge/schemas/](contracts/cli_bridge/schemas/)
 
 Export current contract:
 
@@ -48,9 +48,9 @@ BreadBoard operator UIs consume projected envelopes and normalized payload field
 
 Core references:
 
-- [`TUI_TODO_EVENT_CONTRACT.md`](TUI_TODO_EVENT_CONTRACT.md)
-- [`TUI_THINKING_STREAMING_CONFIG.md`](TUI_THINKING_STREAMING_CONFIG.md)
-- [`TUI_THINKING_STREAMING_TROUBLESHOOTING.md`](TUI_THINKING_STREAMING_TROUBLESHOOTING.md)
+- [TUI_TODO_EVENT_CONTRACT.md](TUI_TODO_EVENT_CONTRACT.md)
+- [TUI_THINKING_STREAMING_CONFIG.md](TUI_THINKING_STREAMING_CONFIG.md)
+- [TUI_THINKING_STREAMING_TROUBLESHOOTING.md](TUI_THINKING_STREAMING_TROUBLESHOOTING.md)
 
 ---
 
@@ -60,9 +60,9 @@ Portability and parity are governed by explicit fixture/replay lanes and bounded
 
 Core references:
 
-- [`PARITY_KERNEL_BOUNDARIES.md`](PARITY_KERNEL_BOUNDARIES.md)
+- [PARITY_KERNEL_BOUNDARIES.md](PARITY_KERNEL_BOUNDARIES.md)
 - `scripts/run_parity_replays.py`
-- [`conformance/`](conformance/README.md)
+- [conformance/](conformance/README.md)
 
 ---
 
@@ -80,7 +80,7 @@ Core references:
 
 All public claims for these surfaces must be tracked in:
 
-- [`CLAIMS_EVIDENCE_LEDGER.md`](CLAIMS_EVIDENCE_LEDGER.md)
+- [CLAIMS_EVIDENCE_LEDGER.md](CLAIMS_EVIDENCE_LEDGER.md)
 
 ---
 
@@ -95,5 +95,5 @@ Before changing any contract surface:
 
 For breaking changes, also:
 
-- Complete the [`contracts/policies/ATP_CONTRACT_BREAK_CHECKLIST_V1.md`](contracts/policies/ATP_CONTRACT_BREAK_CHECKLIST_V1.md).
-- File or reference an ADR in [`contracts/policies/adr/`](contracts/policies/adr/).
+- Complete the [contracts/policies/ATP_CONTRACT_BREAK_CHECKLIST_V1.md](contracts/policies/ATP_CONTRACT_BREAK_CHECKLIST_V1.md).
+- File or reference an ADR in [contracts/policies/adr/](contracts/policies/adr/).

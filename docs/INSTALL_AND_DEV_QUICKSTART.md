@@ -1,6 +1,6 @@
 # Install & dev quickstart
 
-This is the full setup reference for maintainers working on BreadBoard (engine + TUI/CLI). For a minimal copy-paste path, see [`quickstarts/FIRST_RUN_5_MIN.md`](quickstarts/FIRST_RUN_5_MIN.md).
+This is the full setup reference for maintainers working on BreadBoard (engine + TUI/CLI). For a minimal copy-paste path, see [quickstarts/FIRST_RUN_5_MIN.md](quickstarts/FIRST_RUN_5_MIN.md).
 
 ---
 

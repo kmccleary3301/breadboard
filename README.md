@@ -21,15 +21,23 @@
 
 ## What BreadBoard is
 
-BreadBoard started as a code agent in the same class as OpenCode and Claude Code—client-server split, terminal UX, tool-using LLM loop. It has grown past that framing.
+BreadBoard started as a code agent in the same class as OpenCode and Claude Code: client-server split, terminal UX, tool-using LLM loop. It has grown past that framing.
 
-In current form it is a code agent, an SDK and engine, a harness emulator, a large-scale sandbox engine, and—on the near-term roadmap—an RL environment builder for training and evaluating coding agents at scale. Each of those is a real working thing, not a roadmap placeholder.
+**In current form it is:**
 
-The thread connecting all of them is that the engine-client split is not an implementation detail, it is the whole bet. Every client (TUI, SDK, VSCode sidebar, any script) talks to the same engine over the same canonical SSE event stream. The engine emits the same events regardless of which client is driving. That constraint is what makes everything else composable.
+- a code agent
+- an SDK and engine
+- a harness emulator
+- a large-scale sandbox engine
+- and, on the near-term roadmap, an RL environment builder for training and evaluating coding agents at scale
 
-The most direct way to see what that constraint buys you: BreadBoard can fully emulate Codex CLI, Claude Code, or OpenCode—not approximately, but down to hash-level equivalence on request bodies. That is validated in the conformance suite against actual golden artifacts. Encoding a target harness's behavior as a profile and running the replay suite against it turned out to be one of the more interesting things to build here, and the fact that it works at that level of fidelity is a direct consequence of the modularity being real rather than aspirational.
+Each of those is a real working thing, not a roadmap placeholder.
 
-The short version: it is roughly what Pi would look like if modularity and cross-harness compatibility were the design constraints from day one.
+**The thread connecting all of them:** the engine-client split is not an implementation detail, it is the whole bet. Every client (TUI, SDK, VSCode sidebar, any script) talks to the same engine over the same canonical SSE event stream. The engine emits the same events regardless of which client is driving. That constraint is what makes everything else composable.
+
+**The most direct way to see what that constraint buys you:** BreadBoard can fully emulate Codex CLI, Claude Code, or OpenCode—not approximately, but down to hash-level equivalence on request bodies. That is validated in the conformance suite against actual golden artifacts. Encoding a target harness's behavior as a profile and running the replay suite against it turned out to be one of the more interesting things to build here, and the fact that it works at that level of fidelity is a direct consequence of the modularity being real rather than aspirational.
+
+**The short version:** it is roughly what Pi would look like if modularity and cross-harness compatibility were the design constraints from day one.
 
 <p align="center">
   <img src="docs/media/proof/launch_v1/launch_tui_screenshot_showcase_v1.png" alt="BreadBoard TUI screenshot" width="920" />
@@ -106,7 +114,7 @@ make disk-report
 python scripts/dev/first_time_doctor.py --profile engine --strict
 ```
 
-For the full setup reference, see `docs/INSTALL_AND_DEV_QUICKSTART.md`. For a copy-paste 5-minute path, see `docs/quickstarts/FIRST_RUN_5_MIN.md`.
+For the full setup reference, see [docs/INSTALL_AND_DEV_QUICKSTART.md](docs/INSTALL_AND_DEV_QUICKSTART.md). For a copy-paste 5-minute path, see [docs/quickstarts/FIRST_RUN_5_MIN.md](docs/quickstarts/FIRST_RUN_5_MIN.md).
 
 ---
 
@@ -114,7 +122,7 @@ For the full setup reference, see `docs/INSTALL_AND_DEV_QUICKSTART.md`. For a co
 
 ### Engine and SDKs
 
-The engine lives at `agentic_coder_prototype/api/cli_bridge/` and its HTTP + SSE surface is documented in `docs/contracts/cli_bridge/openapi.json`. Python and TypeScript SDKs wrap that surface.
+The engine lives at `agentic_coder_prototype/api/cli_bridge/` and its HTTP + SSE surface is documented in [docs/contracts/cli_bridge/openapi.json](docs/contracts/cli_bridge/openapi.json). Python and TypeScript SDKs wrap that surface.
 
 ```python
 from breadboard_sdk import BreadboardClient
@@ -160,7 +168,7 @@ python -m agentic_coder_prototype.api.cli_bridge.server
 
 ### Terminal clients
 
-`tui_skeleton/` is the main terminal client. It supports scrollback and fixed-height profile surfaces, thinking/status/todo projection lanes, and capture-replay tooling for deterministic TUI regression. Start at `tui_skeleton/README.md` and `docs/TUI_THINKING_STREAMING_CONFIG.md`.
+`tui_skeleton/` is the main terminal client. It supports scrollback and fixed-height profile surfaces, thinking/status/todo projection lanes, and capture-replay tooling for deterministic TUI regression. Start at [tui_skeleton/README.md](tui_skeleton/README.md) and [docs/TUI_THINKING_STREAMING_CONFIG.md](docs/TUI_THINKING_STREAMING_CONFIG.md).
 
 There is also an OpenTUI-style fixed-height path (`opentui_slab/`) and a VSCode sidebar extension scaffold (`vscode_sidebar/`).
 
@@ -175,9 +183,9 @@ BreadBoard has a profile-based system for encoding and replaying harness behavio
 3. Iterate on one surface at a time without touching the rest of the runtime.
 
 References:
-- emulation profile schema: `docs/contracts/emulation_profile/emulation_profile_manifest_v1.schema.json`
+- emulation profile schema: [docs/contracts/emulation_profile/emulation_profile_manifest_v1.schema.json](docs/contracts/emulation_profile/emulation_profile_manifest_v1.schema.json)
 - parity runner: `scripts/run_parity_replays.py`
-- kernel surfaces that must stay byte-stable: `docs/PARITY_KERNEL_BOUNDARIES.md`
+- kernel surfaces that must stay byte-stable: [docs/PARITY_KERNEL_BOUNDARIES.md](docs/PARITY_KERNEL_BOUNDARIES.md)
 
 ---
 
@@ -185,7 +193,7 @@ References:
 
 The engine supports in-memory provider auth attach/detach for session-scoped credential management. OpenAI API-key routing is the default path. Subscription-plan bridging is policy-gated and local-only—policy manifests live in `docs/provider_plans/policy_manifests/`.
 
-References: `docs/concepts/provider-plan-auth.md`, `docs/contracts/cli_bridge/openapi.json`.
+References: [docs/concepts/provider-plan-auth.md](docs/concepts/provider-plan-auth.md), [docs/contracts/cli_bridge/openapi.json](docs/contracts/cli_bridge/openapi.json).
 
 ---
 
@@ -194,8 +202,8 @@ References: `docs/concepts/provider-plan-auth.md`, `docs/contracts/cli_bridge/op
 BreadBoard converts external transcripts into its canonical JSONL format and can resume them inside the engine. Current import scope targets Codex CLI, OpenCode, and Claude-style transcripts.
 
 References:
-- `docs/concepts/session-import.md`
-- import IR schema: `docs/contracts/import/import_ir_v1.schema.json`
+- [docs/concepts/session-import.md](docs/concepts/session-import.md)
+- import IR schema: [docs/contracts/import/import_ir_v1.schema.json](docs/contracts/import/import_ir_v1.schema.json)
 - converter: `scripts/import_ir_to_events_jsonl.py`
 
 ---
@@ -224,7 +232,7 @@ python scripts/log_reduce.py "${RUN_DIR}" --turn-limit 2 --tool-only \
   > docs/media/proof/launch_v1/log_reduce_sample_v1.txt
 ```
 
-Proof media: `docs/media/proof/launch_v1/` and `docs/media/proof/README.md`.
+Proof media: [docs/media/proof/launch_v1/](docs/media/proof/launch_v1/) and [docs/media/proof/README.md](docs/media/proof/README.md).
 
 ---
 
@@ -264,14 +272,14 @@ flowchart LR
 
 | Doc | Contents |
 |-----|----------|
-| `docs/INSTALL_AND_DEV_QUICKSTART.md` | Full setup reference |
-| `docs/quickstarts/FIRST_RUN_5_MIN.md` | 5-minute onboarding path |
-| `docs/RELEASE_LANDING_V1.md` | Release entrypoint |
-| `docs/CONTRACT_SURFACES.md` | Runtime contract boundaries |
-| `docs/TUI_THINKING_STREAMING_CONFIG.md` | TUI thinking/streaming config |
-| `docs/TUI_TODO_EVENT_CONTRACT.md` | TUI todo event surface |
-| `docs/quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md` | Replay-proof bundle path |
-| `docs/CLAIMS_EVIDENCE_LEDGER.md` | Claims and wording guardrails |
+| [docs/INSTALL_AND_DEV_QUICKSTART.md](docs/INSTALL_AND_DEV_QUICKSTART.md) | Full setup reference |
+| [docs/quickstarts/FIRST_RUN_5_MIN.md](docs/quickstarts/FIRST_RUN_5_MIN.md) | 5-minute onboarding path |
+| [docs/RELEASE_LANDING_V1.md](docs/RELEASE_LANDING_V1.md) | Release entrypoint |
+| [docs/CONTRACT_SURFACES.md](docs/CONTRACT_SURFACES.md) | Runtime contract boundaries |
+| [docs/TUI_THINKING_STREAMING_CONFIG.md](docs/TUI_THINKING_STREAMING_CONFIG.md) | TUI thinking/streaming config |
+| [docs/TUI_TODO_EVENT_CONTRACT.md](docs/TUI_TODO_EVENT_CONTRACT.md) | TUI todo event surface |
+| [docs/quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md](docs/quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md) | Replay-proof bundle path |
+| [docs/CLAIMS_EVIDENCE_LEDGER.md](docs/CLAIMS_EVIDENCE_LEDGER.md) | Claims and wording guardrails |
 
 ---
 
@@ -283,8 +291,8 @@ Two explicit limits this README does not cross:
 - no blanket "perfect parity."
 
 Coverage is in the evidence docs:
-- `docs/CLAIMS_EVIDENCE_LEDGER.md`
-- `docs/PARITY_KERNEL_BOUNDARIES.md`
+- [docs/CLAIMS_EVIDENCE_LEDGER.md](docs/CLAIMS_EVIDENCE_LEDGER.md)
+- [docs/PARITY_KERNEL_BOUNDARIES.md](docs/PARITY_KERNEL_BOUNDARIES.md)
 
 ---
 

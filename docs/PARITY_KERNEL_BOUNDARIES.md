@@ -97,8 +97,8 @@ python scripts/check_e4_target_freeze_manifest.py --json
 make e4-target-manifest
 ```
 
-Policy: [`conformance/E4_TARGET_VERSIONING.md`](conformance/E4_TARGET_VERSIONING.md)
+Policy: [conformance/E4_TARGET_VERSIONING.md](conformance/E4_TARGET_VERSIONING.md)
 
 ---
 
-Extend this list as new parity-critical surfaces are identified. File a note in the evidence ledger ([`CLAIMS_EVIDENCE_LEDGER.md`](CLAIMS_EVIDENCE_LEDGER.md)) when boundaries change.
+Extend this list as new parity-critical surfaces are identified. File a note in the evidence ledger ([CLAIMS_EVIDENCE_LEDGER.md](CLAIMS_EVIDENCE_LEDGER.md)) when boundaries change.
