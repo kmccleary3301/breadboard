@@ -48,6 +48,7 @@ make e4-target-drift-audit
 ```
 
 Policy: [E4_TARGET_VERSIONING.md](E4_TARGET_VERSIONING.md)
+Recalibration playbook: [E4_RECALIBRATION_PLAN_V1.md](E4_RECALIBRATION_PLAN_V1.md)
 
 ---
 

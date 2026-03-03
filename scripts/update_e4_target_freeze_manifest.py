@@ -25,6 +25,22 @@ def _run_git(repo: Path, *args: str) -> str:
     return proc.stdout.strip()
 
 
+def _resolve_git_ref_for_snapshot(repo: Path) -> str:
+    """Prefer fetched remote HEAD when available, otherwise fall back to local HEAD.
+
+    This keeps refresh planning stable even when reference clones are dirty.
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "--verify", "-q", "origin/HEAD"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode == 0 and proc.stdout.strip():
+        return "origin/HEAD"
+    return "HEAD"
+
+
 def _resolve_family_repo(
     repo_root: Path,
     harness_root: Path,
@@ -133,8 +149,9 @@ def main() -> int:
 
         if family_repo not in cache:
             try:
-                commit = _run_git(family_repo, "rev-parse", "HEAD")
-                commit_date = _run_git(family_repo, "show", "-s", "--format=%cI", "HEAD")
+                ref = _resolve_git_ref_for_snapshot(family_repo)
+                commit = _run_git(family_repo, "rev-parse", ref)
+                commit_date = _run_git(family_repo, "show", "-s", "--format=%cI", ref)
                 cache[family_repo] = (commit, commit_date)
             except Exception as exc:  # noqa: BLE001
                 report["errors"].append(
