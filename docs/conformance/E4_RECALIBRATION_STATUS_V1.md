@@ -1,6 +1,6 @@
 # E4 Recalibration Status (V1)
 
-Date: 2026-03-03
+Date: 2026-03-04
 
 ## Scope
 
@@ -9,10 +9,11 @@ Operational status for the E4 target-freeze recalibration campaign.
 Primary plan:
 
 - `docs/conformance/E4_RECALIBRATION_PLAN_V1.md`
+- `docs/conformance/E4_CODEX_LIVE_REFRESH_RUNBOOK.md`
 
 ## Reference sync + drift status
 
-- `codex` reference clone updated to `56cc2c71f40c5349b9e48351731c589127faeea6`.
+- `codex` reference clone updated to `e951ef43741628a4835dceaf61df297c504b7281`.
 - `claude-code` reference clone updated to `38281cfd46336ec4c21dfb8f29a649515cc09dad`.
 - `opencode` reference clone fetched; updater now reads `origin/HEAD` to avoid dirty-worktree pin skew.
 
@@ -23,21 +24,31 @@ Artifacts:
 - `artifacts/conformance/e4_target_freshness_45d_report.json`
 - `artifacts/conformance/e4_target_freshness_90d_report.json`
 
-Freshness milestone:
+Freshness/evidence milestone:
 
-- `config/e4_target_freeze_manifest.yaml` now includes fresh OpenCode Batch A
-  replay evidence links under:
-  - `docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260302_204843/`
+- Fresh live capture anchors were refreshed for:
+  - `codex_cli_gpt51mini_e4_live` -> run `20260304-005206`
+  - `claude_code_haiku45_e4_replay` -> run `20260304-000215`
+- `config/e4_target_freeze_manifest.yaml` now points codex/claude rows to those
+  run IDs and current upstream commits.
+- Repo-local evidence mirrors were restored under:
+  - `docs_tmp/tmux_captures/scenarios/nightly_provider/*`
+  - `misc/opencode_runs/*`
+  - `misc/opencode_tests/*`
+- `python scripts/check_e4_target_freeze_manifest.py --strict-evidence --json`
+  returns `ok: true`.
 - `python scripts/check_e4_target_freeze_manifest.py --strict-evidence --max-evidence-age-days 45 --json`
-  now returns `ok: true`.
+  returns `ok: true`.
 
-Drift milestone (after freshness fix):
+Drift milestone (current):
 
-- Drift remains open: `drift_count == 8`
+- Drift closed: `drift_count == 0`
+- Aligned lane count: `aligned_count == 8`
+- Open drift lanes: none.
 - Current drift report:
   - `artifacts/conformance/e4_target_drift_audit_report.json`
 - Current refresh proposal:
-  - `artifacts/conformance/e4_target_refresh_plan.after_refsnapshot_fix.json`
+  - `artifacts/conformance/e4_target_refresh_plan.json`
 
 ## Batch A baseline (OpenCode replay family)
 
@@ -74,8 +85,12 @@ This avoids intermittent Ray worker kills under high ambient memory pressure.
 
 ## Remaining work (from plan)
 
-1. Refresh evidence captures/session-dumps for all drifted lanes at current upstream targets.
-2. Update `config/e4_target_freeze_manifest.yaml` via `scripts/update_e4_target_freeze_manifest.py --write`
-   only when evidence has been refreshed for those lanes.
-3. Re-run strict/freshness checks (`--strict-evidence --max-evidence-age-days 45`) and lane parity.
-4. Close drift (`drift_count == 0`) and record per-lane bump notes.
+1. None for this recalibration pass; strict evidence checks and drift audit are green:
+   - `python scripts/check_e4_target_freeze_manifest.py --strict-evidence --json` -> `ok: true`
+   - `python scripts/check_e4_target_freeze_manifest.py --strict-evidence --max-evidence-age-days 45 --json` -> `ok: true`
+   - `python scripts/audit_e4_target_drift.py ...` -> `drift_count: 0`
+2. Hardening landed in `scripts/start_tmux_phase4_replay_target.sh`:
+   - defaults replay targets to safe `/tmp/breadboard_replay_<session>_ws` workspace
+   - auto-falls back to safe workspace when repo-root is requested
+   - prefers `--use-dist` by default and auto-builds `tui_skeleton/dist/main.js` if missing
+   - supports `--use-dev` override for explicit tsx/dev runtime.

@@ -8,7 +8,7 @@ Usage: start_tmux_phase4_replay_target.sh --session <breadboard_test_*> [--cols 
                                          [--tui-preset PRESET] [--config PATH] [--workspace PATH]
                                          [--scrollback-mode <window|scrollback>]
                                          [--landing-always <0|1>]
-                                         [--use-dist]
+                                         [--use-dist] [--use-dev]
                                          [--attach]
 
 Starts a fixed-size tmux session running the classic Ink TUI plus a local
@@ -24,8 +24,10 @@ Safety:
 
 Examples:
   scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_phase4_todo --port 9101 --tui-preset claude_code_like
-  # CI-friendly (assumes tui_skeleton/dist has been built already):
+  # CI-friendly/default path (dist runtime is preferred):
   scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_phase4_todo --port 9101 --use-dist
+  # Force dev/tsx runtime:
+  scripts/start_tmux_phase4_replay_target.sh --session breadboard_test_phase4_todo --port 9101 --use-dev
   python scripts/run_tmux_capture_scenario.py --target breadboard_test_phase4_todo:0.0 --scenario phase4_replay/todo_preview_v1 --actions config/tmux_scenario_actions/ci/phase4_replay/todo_preview_v1.json
 EOF
   exit 1
@@ -40,7 +42,7 @@ port=""
 tui_preset="claude_code_like"
 config_path="agent_configs/opencode_openrouter_grok4fast_cli_default.yaml"
 workspace=""
-use_dist=0
+use_dist=1
 scrollback_mode="scrollback"
 landing_always="1"
 
@@ -58,6 +60,7 @@ while [[ $# -gt 0 ]]; do
     --scrollback-mode) shift; scrollback_mode="${1:-}";;
     --landing-always) shift; landing_always="${1:-}";;
     --use-dist) use_dist=1;;
+    --use-dev) use_dist=0;;
     --help|-h) usage;;
     *) echo "Unknown arg: $1" >&2; usage;;
   esac
@@ -83,8 +86,20 @@ if [[ "$session" != breadboard_test_* ]]; then
 fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-workspace="${workspace:-$repo_root}"
+
+# Replay targets should never default to repo-root workspaces; this collides with
+# workspace safety guards and causes confusing false-negative capture failures.
+if [[ -z "$workspace" ]]; then
+  workspace="/tmp/breadboard_replay_${session}_ws"
+fi
+mkdir -p "$workspace"
 workspace="$(cd "$workspace" && pwd)"
+if [[ "$workspace" == "$repo_root" ]]; then
+  fallback_workspace="/tmp/breadboard_replay_${session}_ws"
+  mkdir -p "$fallback_workspace"
+  workspace="$(cd "$fallback_workspace" && pwd)"
+  echo "warning: requested workspace resolved to repo root; using safe fallback '$workspace'." >&2
+fi
 
 if ! command -v tmux >/dev/null; then
   echo "tmux is required but not installed." >&2
@@ -114,10 +129,18 @@ if [[ -z "$port" ]]; then
   port=$((9100 + (sum % 200)))
 fi
 
-# Choose a TUI entrypoint. In CI we prefer `dist/` so we don't depend on tsx/dev tooling.
+# Choose a TUI entrypoint. Dist runtime is preferred for replay stability; if dist
+# is missing we can auto-build once and proceed.
 if [[ $use_dist -eq 1 ]]; then
   if [[ ! -f "$repo_root/tui_skeleton/dist/main.js" ]]; then
-    echo "missing tui_skeleton/dist/main.js (run: cd tui_skeleton && npm run build)" >&2
+    echo "dist runtime missing; building tui_skeleton/dist/main.js..." >&2
+    if ! (cd "$repo_root/tui_skeleton" && npm run build >/dev/null 2>&1); then
+      echo "failed to build dist runtime (run: cd tui_skeleton && npm run build)." >&2
+      exit 2
+    fi
+  fi
+  if [[ ! -f "$repo_root/tui_skeleton/dist/main.js" ]]; then
+    echo "missing tui_skeleton/dist/main.js after build attempt." >&2
     exit 2
   fi
   entrypoint_use_dist=(--use-dist)
