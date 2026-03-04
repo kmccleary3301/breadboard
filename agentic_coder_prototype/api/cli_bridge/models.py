@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, validator
 
@@ -244,3 +244,100 @@ class ProviderAuthStatusItem(BaseModel):
 
 class ProviderAuthStatusResponse(BaseModel):
     attached: List[ProviderAuthStatusItem] = Field(default_factory=list)
+
+
+class ATPReplMetrics(BaseModel):
+    repl_ms: Optional[float] = None
+    restore_ms: Optional[float] = None
+
+
+class ATPReplError(BaseModel):
+    severity: Optional[str] = None
+    message: str
+    pos_line: Optional[int] = None
+    pos_col: Optional[int] = None
+    signature: Optional[str] = None
+
+
+class ATPReplSorry(BaseModel):
+    pos_line: Optional[int] = None
+    pos_col: Optional[int] = None
+    goal: Optional[str] = None
+
+
+class ATPReplRequest(BaseModel):
+    api_version: Literal["atp.repl.v1"] = "atp.repl.v1"
+    commands: List[str] = Field(default_factory=list)
+    state_ref: Optional[str] = None
+    timeout_s: Optional[float] = None
+    memory_mb: Optional[int] = None
+    max_heartbeats: Optional[int] = None
+    want_state: bool = False
+    tenant_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    @validator("commands")
+    def _validate_commands(cls, value: List[str]) -> List[str]:
+        if not value:
+            raise ValueError("commands must not be empty")
+        normalized = [str(item) for item in value if str(item).strip()]
+        if not normalized:
+            raise ValueError("commands must not be empty")
+        return normalized
+
+
+class ATPReplResponse(BaseModel):
+    api_version: Literal["atp.repl.v1"] = "atp.repl.v1"
+    request_id: Optional[str] = None
+    success: bool = False
+    messages: List[str] = Field(default_factory=list)
+    errors: List[ATPReplError] = Field(default_factory=list)
+    sorries: List[ATPReplSorry] = Field(default_factory=list)
+    metrics: List[ATPReplMetrics] = Field(default_factory=list)
+    new_state_ref: Optional[str] = None
+    error_code: Optional[str] = None
+    error_detail: Dict[str, Any] | None = None
+    harness_diagnostic: Dict[str, Any] | None = None
+
+
+class ATPReplBatchRequest(BaseModel):
+    api_version: Literal["atp.repl.v1"] = "atp.repl.v1"
+    requests: List[ATPReplRequest] = Field(default_factory=list)
+
+    @validator("requests")
+    def _validate_requests(cls, value: List[ATPReplRequest]) -> List[ATPReplRequest]:
+        if not value:
+            raise ValueError("requests must not be empty")
+        return value
+
+
+class ATPReplBatchResponse(BaseModel):
+    api_version: Literal["atp.repl.v1"] = "atp.repl.v1"
+    results: List[ATPReplResponse] = Field(default_factory=list)
+
+
+class EvoLakeHealthResponse(BaseModel):
+    status: str = "ok"
+    ext_id: str = "evolake"
+
+
+class EvoLakeHelloResponse(BaseModel):
+    status: str = "ok"
+    ext_id: str = "evolake"
+    message: str = "hello"
+
+
+class EvoLakeRunCampaignRequest(BaseModel):
+    api_version: Literal["evolake.campaign.v1"] = "evolake.campaign.v1"
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    dry_run: bool = True
+
+
+class EvoLakeRunCampaignResponse(BaseModel):
+    api_version: Literal["evolake.campaign.v1"] = "evolake.campaign.v1"
+    status: str
+    dry_run: bool
+    error_code: Optional[str] = None
+    error_detail: Dict[str, Any] | None = None
+    harness_diagnostic: Dict[str, Any] | None = None
+    received: Dict[str, Any] | None = None

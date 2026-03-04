@@ -73,12 +73,57 @@ def _load_chaos_config() -> Dict[str, float] | None:
     }
 
 
-def create_app(service: SessionService | None = None) -> FastAPI:
+def _env_flag(name: str) -> bool:
+    return (os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"})
+
+
+def _configured_extension_enabled(config: Dict[str, Any] | None, ext_id: str) -> bool | None:
+    if not isinstance(config, dict):
+        return None
+    ext_cfg = config.get("extensions")
+    if not isinstance(ext_cfg, dict) or ext_id not in ext_cfg:
+        return None
+    entry = ext_cfg.get(ext_id)
+    if isinstance(entry, bool):
+        return entry
+    if isinstance(entry, dict) and isinstance(entry.get("enabled"), bool):
+        return bool(entry.get("enabled"))
+    return None
+
+
+def create_app(service: SessionService | None = None, include_atp_routes: bool | None = None) -> FastAPI:
     engine_version = (os.environ.get("BREADBOARD_ENGINE_VERSION") or "0.1.0").strip() or "0.1.0"
     app = FastAPI(title="BreadBoard CLI Bridge", version=engine_version)
     _service = service or SessionService()
     chaos_config = _load_chaos_config()
     required_token = (os.environ.get("BREADBOARD_API_TOKEN") or "").strip()
+    extension_config = None
+    mounted_extensions: list[str] = []
+    try:
+        from .extension_loader import load_extension_config_from_env
+
+        extension_config = load_extension_config_from_env()
+    except FileNotFoundError:
+        extension_config = None
+    except Exception as exc:
+        logger.warning("Failed to load extension config: %s", exc)
+        extension_config = None
+
+    env_atp_enabled = _env_flag("ATP_REPL_ENABLE") or _env_flag("ATP_REPL_ROUTE")
+    cfg_atp_enabled = _configured_extension_enabled(extension_config, "atp")
+    cfg_evolake_enabled = _configured_extension_enabled(extension_config, "evolake")
+
+    if include_atp_routes is True:
+        atp_routes_enabled = True
+    elif include_atp_routes is False:
+        atp_routes_enabled = False
+    elif cfg_atp_enabled is None:
+        atp_routes_enabled = env_atp_enabled
+    else:
+        atp_routes_enabled = bool(cfg_atp_enabled)
+
+    evolake_routes_enabled = bool(cfg_evolake_enabled)
+    _service._atp_repl_enabled = bool(atp_routes_enabled)
 
     @app.middleware("http")
     async def _auth_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -176,6 +221,27 @@ def create_app(service: SessionService | None = None) -> FastAPI:
             "ray": {
                 "available": ray_available,
                 "initialized": ray_initialized,
+            },
+        }
+
+    @app.get("/features")
+    async def feature_audit() -> dict[str, Any]:
+        atp_status = _service.atp_feature_status(enabled=atp_routes_enabled)
+        return {
+            "status": "ok",
+            "extensions": {
+                "atp": {
+                    "enabled": bool(atp_routes_enabled),
+                    "mounted": bool("atp" in mounted_extensions),
+                },
+                "evolake": {
+                    "enabled": bool(evolake_routes_enabled),
+                    "mounted": bool("evolake" in mounted_extensions),
+                },
+            },
+            "atp": atp_status,
+            "metadata": {
+                "mounted_extensions": list(mounted_extensions),
             },
         }
 
@@ -484,6 +550,22 @@ def create_app(service: SessionService | None = None) -> FastAPI:
     async def download_artifact(session_id: str, artifact: str, svc: SessionService = Depends(get_service)):
         path = await svc.resolve_artifact_path(session_id, artifact)
         return FileResponse(path)
+
+    if atp_routes_enabled:
+        from .atp_router import build_atp_router
+
+        app.include_router(build_atp_router(get_service))
+        mounted_extensions.append("atp")
+
+    if evolake_routes_enabled:
+        from breadboard.ext.interfaces import EndpointProvider
+        from breadboard_ext.evolake import EvoLakeBridgeExtension
+
+        extension = EvoLakeBridgeExtension()
+        for provider in extension.providers():
+            if isinstance(provider, EndpointProvider):
+                provider.register_routes(app, get_service)
+        mounted_extensions.append("evolake")
 
     return app
 

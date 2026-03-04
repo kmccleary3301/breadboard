@@ -3,16 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import time
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, AsyncIterator, Optional, Sequence
 
 from fastapi import HTTPException, UploadFile, status
 
 from .events import EventType, SessionEvent
 from .models import (
+    ATPReplBatchRequest,
+    ATPReplBatchResponse,
+    ATPReplError,
+    ATPReplMetrics,
+    ATPReplRequest,
+    ATPReplResponse,
+    ATPReplSorry,
     AttachmentHandle,
     AttachmentUploadResponse,
     ModelCatalogEntry,
@@ -29,6 +39,7 @@ from .models import (
     SessionInputResponse,
     SessionStatus,
 )
+from .atp_diagnostics import build_atp_harness_diagnostic
 from .registry import SessionRecord, SessionRegistry
 from .session_runner import SessionRunner
 from .tail_index import _TAIL_LINE_INDEX_CACHE
@@ -55,12 +66,20 @@ def _load_bridge_chaos_metadata() -> dict[str, float] | None:
     }
 
 
+def _env_flag(name: str) -> bool:
+    return (os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"})
+
+
 class SessionService:
     """Facade that coordinates the registry, runners, and FastAPI endpoints."""
 
     def __init__(self, registry: SessionRegistry | None = None) -> None:
         self.registry = registry or SessionRegistry()
         self._bridge_chaos = _load_bridge_chaos_metadata()
+        self._atp_repl_enabled = _env_flag("ATP_REPL_ENABLE") or _env_flag("ATP_REPL_ROUTE")
+        self._atp_repl_service: Any | None = None
+        self._atp_service_initialized = False
+        self._atp_runtime_capabilities: dict[str, Any] = {}
 
     async def create_session(self, request: SessionCreateRequest) -> SessionCreateResponse:
         session_id = str(uuid.uuid4())
@@ -622,6 +641,181 @@ class SessionService:
             default_model=str(default_model) if default_model else None,
             config_path=str(config_path),
         )
+
+    def atp_feature_status(self, *, enabled: bool | None = None) -> dict[str, Any]:
+        return {
+            "enabled": bool(self._atp_repl_enabled if enabled is None else enabled),
+            "service_initialized": bool(self._atp_service_initialized),
+            "runtime_capabilities": dict(self._atp_runtime_capabilities or {}),
+        }
+
+    async def _ensure_atp_repl_service(self):
+        if not bool(self._atp_repl_enabled):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "error_code": "atp_repl_disabled",
+                    "message": "ATP REPL is disabled",
+                },
+            )
+        if self._atp_repl_service is not None:
+            return self._atp_repl_service
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error_code": "atp_repl_unavailable",
+                "message": "ATP REPL backend not initialized",
+            },
+        )
+
+    @staticmethod
+    def _build_atp_backend_request(payload: ATPReplRequest):
+        metadata = dict(payload.metadata or {})
+        if payload.tenant_id:
+            metadata["tenant_id"] = payload.tenant_id
+        return SimpleNamespace(
+            commands=list(payload.commands),
+            state_ref=payload.state_ref,
+            timeout_s=payload.timeout_s,
+            memory_mb=payload.memory_mb,
+            max_heartbeats=payload.max_heartbeats,
+            want_state=bool(payload.want_state),
+            metadata=metadata,
+        )
+
+    @staticmethod
+    async def _maybe_await(value):
+        if asyncio.iscoroutine(value):
+            return await value
+        return value
+
+    @staticmethod
+    def _coerce_metrics(metrics: Any) -> list[ATPReplMetrics]:
+        rows: list[ATPReplMetrics] = []
+        for item in list(metrics or []):
+            rows.append(
+                ATPReplMetrics(
+                    repl_ms=(None if getattr(item, "repl_ms", None) is None else float(getattr(item, "repl_ms"))),
+                    restore_ms=(
+                        None if getattr(item, "restore_ms", None) is None else float(getattr(item, "restore_ms"))
+                    ),
+                )
+            )
+        return rows
+
+    @staticmethod
+    def _coerce_errors(errors: Any) -> list[ATPReplError]:
+        rows: list[ATPReplError] = []
+        for item in list(errors or []):
+            rows.append(
+                ATPReplError(
+                    severity=getattr(item, "severity", None),
+                    message=str(getattr(item, "message", "")),
+                    pos_line=getattr(item, "pos_line", None),
+                    pos_col=getattr(item, "pos_col", None),
+                    signature=getattr(item, "signature", None),
+                )
+            )
+        return rows
+
+    @staticmethod
+    def _coerce_sorries(sorries: Any) -> list[ATPReplSorry]:
+        rows: list[ATPReplSorry] = []
+        for item in list(sorries or []):
+            rows.append(
+                ATPReplSorry(
+                    pos_line=getattr(item, "pos_line", None),
+                    pos_col=getattr(item, "pos_col", None),
+                    goal=getattr(item, "goal", None),
+                )
+            )
+        return rows
+
+    def _map_atp_result(self, result: Any, metrics: Any) -> ATPReplResponse:
+        error_code = getattr(result, "error_code", None)
+        error_detail = getattr(result, "error_detail", None)
+        return ATPReplResponse(
+            request_id=getattr(result, "request_id", None),
+            success=bool(getattr(result, "success", False)),
+            messages=list(getattr(result, "messages", []) or []),
+            errors=self._coerce_errors(getattr(result, "errors", None)),
+            sorries=self._coerce_sorries(getattr(result, "sorries", None)),
+            metrics=self._coerce_metrics(metrics),
+            new_state_ref=getattr(result, "new_state_ref", None),
+            error_code=error_code,
+            error_detail=error_detail,
+            harness_diagnostic=build_atp_harness_diagnostic(error_code, error_detail),
+        )
+
+    @staticmethod
+    def _append_metrics_rows(
+        path: str,
+        *,
+        result: Any,
+        response: ATPReplResponse,
+        batch_size: int,
+    ) -> None:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        now = time.time()
+        rows = response.metrics or [ATPReplMetrics(repl_ms=None, restore_ms=None)]
+        with target.open("a", encoding="utf-8") as handle:
+            for metric in rows:
+                payload = {
+                    "ts": now,
+                    "request_id": response.request_id,
+                    "success": bool(response.success),
+                    "repl_ms": metric.repl_ms,
+                    "restore_ms": metric.restore_ms,
+                    "batch_size": int(batch_size),
+                    "error_code": response.error_code,
+                    "header_cache_hit": bool(getattr(result, "header_cache_hit", False)),
+                    "header_cache_miss": bool(getattr(result, "header_cache_miss", False)),
+                }
+                handle.write(json.dumps(payload, sort_keys=True) + "\n")
+
+    async def atp_repl(self, payload: ATPReplRequest) -> ATPReplResponse:
+        service = await self._ensure_atp_repl_service()
+        backend_request = self._build_atp_backend_request(payload)
+        result, metrics = await self._maybe_await(service.submit_request_with_metrics(backend_request))
+        response = self._map_atp_result(result, metrics)
+        metrics_path = os.environ.get("ATP_REPL_METRICS_PATH", "").strip()
+        if metrics_path:
+            self._append_metrics_rows(metrics_path, result=result, response=response, batch_size=1)
+        return response
+
+    async def atp_repl_batch(self, payload: ATPReplBatchRequest) -> ATPReplBatchResponse:
+        service = await self._ensure_atp_repl_service()
+        backend_requests = [self._build_atp_backend_request(item) for item in payload.requests]
+        results, metrics_rows = await self._maybe_await(service.submit_batch_requests(backend_requests))
+        result_list = list(results or [])
+        metric_list = list(metrics_rows or [])
+        if len(result_list) != len(backend_requests) or len(metric_list) != len(backend_requests):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "error_code": "protocol_batch_mismatch",
+                    "message": "ATP REPL batch size mismatch",
+                    "detail": {
+                        "requests": len(backend_requests),
+                        "results": len(result_list),
+                        "metrics": len(metric_list),
+                    },
+                },
+            )
+        response_rows: list[ATPReplResponse] = []
+        metrics_path = os.environ.get("ATP_REPL_METRICS_PATH", "").strip()
+        for result, row_metrics in zip(result_list, metric_list):
+            response = self._map_atp_result(result, row_metrics)
+            response_rows.append(response)
+            if metrics_path:
+                self._append_metrics_rows(
+                    metrics_path,
+                    result=result,
+                    response=response,
+                    batch_size=len(backend_requests),
+                )
+        return ATPReplBatchResponse(results=response_rows)
 
     async def resolve_artifact_path(self, session_id: str, artifact: str) -> Path:
         if not artifact or not str(artifact).strip():
