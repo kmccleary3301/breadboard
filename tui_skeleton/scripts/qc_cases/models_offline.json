@@ -1,0 +1,7 @@
+[
+  { "action": "waitFor", "text": "Try \"refactor <filepath>\"", "timeoutMs": 20000 },
+  { "action": "press", "key": "ctrl+k" },
+  { "action": "waitFor", "text": "Loading model catalog", "timeoutMs": 20000 },
+  { "action": "waitFor", "text": "Select model", "timeoutMs": 10000 },
+  { "action": "snapshot", "label": "models-offline-fallback" }
+]

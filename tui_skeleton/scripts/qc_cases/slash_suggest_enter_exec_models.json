@@ -1,0 +1,9 @@
+[
+  { "action": "waitFor", "text": "Try \"refactor <filepath>\"", "timeoutMs": 20000 },
+  { "action": "type", "text": "/mo", "typingDelayMs": 8 },
+  { "action": "wait", "ms": 180 },
+  { "action": "press", "key": "down", "repeat": 2, "delayMs": 50 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Loading model catalog", "timeoutMs": 20000 },
+  { "action": "snapshot", "label": "slash-suggest-enter-exec-models" }
+]

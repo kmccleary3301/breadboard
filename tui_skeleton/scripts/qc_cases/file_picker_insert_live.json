@@ -1,0 +1,8 @@
+[
+  { "action": "waitFor", "text": "Try \"refactor <filepath>\"", "timeoutMs": 20000 },
+  { "action": "type", "text": "@src/main.ts", "typingDelayMs": 8 },
+  { "action": "waitFor", "text": "src/main.ts", "timeoutMs": 10000 },
+  { "action": "press", "key": "enter", "expectSubmit": false },
+  { "action": "wait", "ms": 300 },
+  { "action": "snapshot", "label": "after-file-picker-insert" }
+]

@@ -1,0 +1,15 @@
+[
+  { "action": "waitFor", "text": "Try \"refactor <filepath>\"", "timeoutMs": 20000 },
+  { "action": "type", "text": "/models", "typingDelayMs": 10 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Select model", "timeoutMs": 20000 },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 120 },
+  { "action": "resize", "cols": 160, "rows": 46, "delayMs": 80 },
+  { "action": "resize", "cols": 96, "rows": 30, "delayMs": 80 },
+  { "action": "resize", "cols": 146, "rows": 42, "delayMs": 80 },
+  { "action": "resize", "cols": 88, "rows": 28, "delayMs": 80 },
+  { "action": "resize", "cols": 152, "rows": 44, "delayMs": 80 },
+  { "action": "wait", "ms": 420 },
+  { "action": "snapshot", "label": "disconnected-resize-churn", "maxLines": 80 }
+]

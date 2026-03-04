@@ -101,7 +101,7 @@ export const ReplViewShell: React.FC<{ controller: ReplViewController }> = ({ co
   return (
     <Box flexDirection="column">
       {scrollbackMode && (
-        <Static key={`static-${scrollbackEpoch}`} items={staticFeed}>
+        <Static items={staticFeed}>
           {(item) => {
             const entry = item as { id: string; node: React.ReactNode }
             return <React.Fragment key={entry.id}>{entry.node}</React.Fragment>

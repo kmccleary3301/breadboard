@@ -1,0 +1,17 @@
+[
+  { "action": "waitFor", "text": "Try \"refactor <filepath>\"", "timeoutMs": 20000 },
+  { "action": "type", "text": "/models", "typingDelayMs": 10 },
+  { "action": "press", "key": "enter", "expectSubmit": false },
+  { "action": "waitFor", "text": "Select model", "timeoutMs": 20000 },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 200 },
+  { "action": "type", "text": "@src/main.ts", "typingDelayMs": 10 },
+  { "action": "waitFor", "text": "src/main.ts", "timeoutMs": 20000 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 300 },
+  { "action": "resize", "cols": 92, "rows": 30, "delayMs": 80 },
+  { "action": "resize", "cols": 130, "rows": 40, "delayMs": 80 },
+  { "action": "resize", "cols": 120, "rows": 36, "delayMs": 80 },
+  { "action": "wait", "ms": 400 },
+  { "action": "snapshot", "label": "menu-combo-stability-final" }
+]

@@ -7,7 +7,7 @@ import stripAnsi from "strip-ansi"
 const MAX_BUFFER_SIZE = 200_000
 const MAX_PLAIN_BUFFER_SIZE = 40_000
 const DEFAULT_WATCHDOG_MS = 60_000
-const DEFAULT_SUBMIT_TIMEOUT_MS = 8_000
+const DEFAULT_SUBMIT_TIMEOUT_MS = 0
 const DEFAULT_MAX_DURATION_MS = 180_000
 
 type KeyName =
@@ -33,7 +33,13 @@ type KeyName =
 type Step =
   | { readonly action: "wait"; readonly ms: number }
   | { readonly action: "type"; readonly text: string; readonly typingDelayMs?: number }
-  | { readonly action: "press"; readonly key: KeyName; readonly repeat?: number; readonly delayMs?: number }
+  | {
+      readonly action: "press"
+      readonly key: KeyName
+      readonly repeat?: number
+      readonly delayMs?: number
+      readonly expectSubmit?: boolean
+    }
   | { readonly action: "snapshot"; readonly label: string; readonly maxLines?: number; readonly mode?: "frame" | "history" }
   | { readonly action: "waitFor"; readonly text: string; readonly timeoutMs?: number }
   | { readonly action: "log"; readonly message: string }
@@ -125,7 +131,7 @@ const parseArgs = (): HarnessOptions => {
   const args = process.argv.slice(2)
   let scriptPath: string | undefined
   let configPath: string | undefined
-  let command = "node dist/main.js repl"
+  let command = "node dist/main.js repl --tui classic"
   let snapshotPath: string | undefined
   let baseUrl = process.env.BREADBOARD_API_URL
   let cols = 120
@@ -408,7 +414,15 @@ const run = async () => {
               const trimmed = currentInput.trim()
               const isSlashCommand = trimmed.startsWith("/")
               const inputLocked = isInputLocked()
-              if (options.submitTimeoutMs > 0 && hasPendingInput && !pendingSubmit && !isSlashCommand && !inputLocked) {
+              const shouldExpectSubmit = step.expectSubmit ?? true
+              if (
+                shouldExpectSubmit &&
+                options.submitTimeoutMs > 0 &&
+                hasPendingInput &&
+                !pendingSubmit &&
+                !isSlashCommand &&
+                !inputLocked
+              ) {
                 pendingSubmit = {
                   deadline: Date.now() + options.submitTimeoutMs,
                   userLines: observedUserLines,

@@ -1,0 +1,21 @@
+{
+  "steps": [
+    { "action": "waitFor", "text": "❯ Try", "timeoutMs": 20000 },
+    { "action": "type", "text": "quick landing persistence probe", "typingDelayMs": 4 },
+    { "action": "press", "key": "enter" },
+    { "action": "wait", "ms": 1200 },
+    { "action": "resize", "cols": 104, "rows": 30, "delayMs": 500 },
+    { "action": "resize", "cols": 160, "rows": 45, "delayMs": 700 },
+    { "action": "waitFor", "text": "❯ Try", "timeoutMs": 15000 },
+    { "action": "snapshot", "label": "after_prompt_resize" }
+  ],
+  "assertions": [
+    {
+      "label": "after_prompt_resize",
+      "includes": ["❯ Try"],
+      "maxOccurrences": {
+        "╭── BreadBoard": 1
+      }
+    }
+  ]
+}

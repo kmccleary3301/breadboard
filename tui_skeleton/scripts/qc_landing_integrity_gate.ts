@@ -52,7 +52,7 @@ const main = async () => {
 
   const failures: string[] = []
   for (const section of sections) {
-    assertExactlyOne(section, "landing header", /BreadBoard v0\.0\.0a/g, failures)
+    assertExactlyOne(section, "landing header", /BreadBoard v(?:0\.2\.0|0\.0\.0a)/g, failures)
     assertExactlyOne(section, "landing tips", /Tips for getting started/g, failures)
     assertExactlyOne(section, "landing activity", /Recent activity/g, failures)
     assertExactlyOne(section, "landing config", /Config:/g, failures)

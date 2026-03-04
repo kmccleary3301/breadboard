@@ -1,0 +1,8 @@
+[
+  { "action": "waitFor", "text": "Try \"refactor <filepath>\"", "timeoutMs": 20000 },
+  { "action": "type", "text": "/files", "typingDelayMs": 10 },
+  { "action": "wait", "ms": 120 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Listing files in workspace root:", "timeoutMs": 20000 },
+  { "action": "snapshot", "label": "files-slash-offline" }
+]
