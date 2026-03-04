@@ -1,0 +1,122 @@
+name: e4-recalibration-snapshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      snapshot_id:
+        description: Optional snapshot id override (defaults to timestamped e4_refsnapshot_*).
+        required: false
+        type: string
+
+jobs:
+  e4-recalibration-snapshot:
+    name: E4 snapshot-window recalibration
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      BREADBOARD_PHASE4_REPLAY_LOG_ROOT: ${{ github.workspace }}/docs_tmp/tmux_captures/targets_logs
+      HARNESS_ROOT: ${{ runner.temp }}/other_harness_refs
+      TMUX_SOCKET_NAME: bb_e4_snapshot_ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure tmux is available
+        run: |
+          if ! command -v tmux >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y tmux
+          fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyyaml pillow wcwidth
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: tui_skeleton/package-lock.json
+
+      - name: Build TUI dist
+        working-directory: tui_skeleton
+        run: |
+          npm ci
+          npm run build
+
+      - name: Clone harness references
+        run: |
+          set -euo pipefail
+          mkdir -p "$HARNESS_ROOT"
+          git clone --depth 1 https://github.com/openai/codex.git "$HARNESS_ROOT/codex"
+          git clone --depth 1 https://github.com/anomalyco/opencode.git "$HARNESS_ROOT/opencode"
+          git clone --depth 1 https://github.com/anthropics/claude-code.git "$HARNESS_ROOT/claude-code"
+
+      - name: Run snapshot-window recalibration wrapper
+        run: |
+          set -euo pipefail
+          cmd=(python scripts/run_e4_snapshot_recalibration.py
+            --repo-root "$GITHUB_WORKSPACE"
+            --harness-root "$HARNESS_ROOT"
+            --tmux-socket "$TMUX_SOCKET_NAME")
+          if [[ -n "${{ inputs.snapshot_id }}" ]]; then
+            cmd+=(--snapshot-id "${{ inputs.snapshot_id }}")
+          fi
+          "${cmd[@]}"
+
+      - name: Add recalibration summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          summary = Path("artifacts/conformance/e4_snapshot_recalibration_summary.json")
+          if not summary.exists():
+            raise SystemExit(0)
+          data = json.loads(summary.read_text(encoding="utf-8"))
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if not summary_path:
+            raise SystemExit(0)
+          with open(Path(summary_path), "a", encoding="utf-8") as out:
+            out.write("## E4 snapshot recalibration\n\n")
+            out.write(f"- snapshot_id: `{data.get('snapshot_id', 'n/a')}`\n")
+            out.write(f"- codex run_id: `{data.get('codex_run_id', 'n/a')}`\n")
+            out.write(f"- claude run_id: `{data.get('claude_run_id', 'n/a')}`\n")
+            out.write(f"- opencode batch run_id: `{data.get('opencode_batch_run_id', 'n/a')}`\n")
+            strict = data.get("strict_check", {})
+            strict45 = data.get("strict_45d_check", {})
+            out.write(f"- strict manifest gate ok: `{strict.get('ok', 'n/a')}`\n")
+            out.write(f"- 45d freshness gate ok: `{strict45.get('ok', 'n/a')}`\n")
+          PY
+
+      - name: Upload recalibration artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e4-recalibration-snapshot-artifacts
+          path: |
+            artifacts/conformance/e4_snapshot_recalibration_summary.json
+            artifacts/conformance/e4_target_drift_live_head_report.json
+            artifacts/conformance/e4_target_drift_snapshot_report.json
+            artifacts/conformance/e4_refsnapshot_*.json
+            docs/conformance/e4_recalibration_evidence/e4_refsnapshot_*.json
+            docs/conformance/e4_recalibration_evidence/e4_batchA_serial_*
+            docs_tmp/tmux_captures/scenarios/nightly_provider/codex_e2e_compact_semantic_v1
+            docs_tmp/tmux_captures/scenarios/nightly_provider/claude_e2e_compact_semantic_v1
+            docs_tmp/tmux_captures/targets_logs
+          if-no-files-found: ignore

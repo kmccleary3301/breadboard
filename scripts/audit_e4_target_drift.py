@@ -5,7 +5,7 @@ import argparse
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -54,30 +54,15 @@ def _load_snapshot_heads(path: Path) -> dict[str, str]:
     return out
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Audit E4 target-freeze manifest drift against upstream HEAD.")
-    parser.add_argument("--manifest", default="config/e4_target_freeze_manifest.yaml")
-    parser.add_argument("--repo-root", default=".")
-    parser.add_argument("--json-out", default=None)
-    parser.add_argument("--fail-on-drift", action="store_true")
-    parser.add_argument(
-        "--snapshot-json",
-        default=None,
-        help="optional ref snapshot JSON; when provided, compare pinned commits against snapshot commits by repo URL",
-    )
-    args = parser.parse_args()
-
-    repo_root = Path(args.repo_root).resolve()
-    manifest_path = (repo_root / args.manifest).resolve()
-    payload = _load_manifest(manifest_path)
-    e4_configs = payload["e4_configs"]
-    snapshot_heads: dict[str, str] = {}
-    if args.snapshot_json:
-        snapshot_heads = _load_snapshot_heads(Path(args.snapshot_json).resolve())
-
+def _build_report(
+    *,
+    e4_configs: dict[str, Any],
+    snapshot_heads: dict[str, str] | None = None,
+    remote_head_lookup: Callable[[str], str] = _git_ls_remote_head,
+) -> dict[str, Any]:
+    snapshot_heads = snapshot_heads or {}
     repo_cache: dict[str, str] = {}
     report: dict[str, Any] = {
-        "manifest_path": str(manifest_path),
         "comparison_source": "snapshot_json" if snapshot_heads else "live_remote_head",
         "drifted": [],
         "aligned": [],
@@ -107,7 +92,7 @@ def main() -> int:
             if remote_head is None:
                 remote_head = repo_cache.get(repo_url)
             if remote_head is None:
-                remote_head = _git_ls_remote_head(repo_url)
+                remote_head = remote_head_lookup(repo_url)
                 repo_cache[repo_url] = remote_head
         except Exception as exc:  # noqa: BLE001
             report["errors"].append({"key": key, "repo": repo_url, "reason": str(exc)})
@@ -127,6 +112,32 @@ def main() -> int:
     report["drift_count"] = len(report["drifted"])
     report["aligned_count"] = len(report["aligned"])
     report["error_count"] = len(report["errors"])
+    return report
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Audit E4 target-freeze manifest drift against upstream HEAD.")
+    parser.add_argument("--manifest", default="config/e4_target_freeze_manifest.yaml")
+    parser.add_argument("--repo-root", default=".")
+    parser.add_argument("--json-out", default=None)
+    parser.add_argument("--fail-on-drift", action="store_true")
+    parser.add_argument(
+        "--snapshot-json",
+        default=None,
+        help="optional ref snapshot JSON; when provided, compare pinned commits against snapshot commits by repo URL",
+    )
+    args = parser.parse_args()
+
+    repo_root = Path(args.repo_root).resolve()
+    manifest_path = (repo_root / args.manifest).resolve()
+    payload = _load_manifest(manifest_path)
+    e4_configs = payload["e4_configs"]
+    snapshot_heads: dict[str, str] = {}
+    if args.snapshot_json:
+        snapshot_heads = _load_snapshot_heads(Path(args.snapshot_json).resolve())
+
+    report = _build_report(e4_configs=e4_configs, snapshot_heads=snapshot_heads)
+    report["manifest_path"] = str(manifest_path)
 
     text = json.dumps(report, indent=2)
     print(text)

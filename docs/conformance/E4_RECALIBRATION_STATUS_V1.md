@@ -23,7 +23,8 @@ Primary plan:
 
 Artifacts:
 
-- `artifacts/conformance/e4_target_drift_audit_report.json`
+- `artifacts/conformance/e4_target_drift_live_head_report.json`
+- `artifacts/conformance/e4_target_drift_snapshot_report.json`
 - `artifacts/conformance/e4_target_refresh_plan.after_refsnapshot_fix.json`
 - `artifacts/conformance/e4_target_freshness_45d_report.json`
 - `artifacts/conformance/e4_target_freshness_90d_report.json`
@@ -51,10 +52,22 @@ Drift milestone (current, snapshot-based):
 - Drift closed: `drift_count == 0` (when compared to the frozen snapshot file)
 - Aligned lane count: `aligned_count == 8`
 - Open drift lanes: none.
-- Current drift report:
-  - `artifacts/conformance/e4_target_drift_audit_report.json`
+- Current drift reports:
+  - `artifacts/conformance/e4_target_drift_live_head_report.json`
+  - `artifacts/conformance/e4_target_drift_snapshot_report.json`
 - Current refresh proposal:
   - `artifacts/conformance/e4_target_refresh_plan.json`
+
+CI automation (manual + nightly):
+
+- Manual recalibration wrapper workflow:
+  - `.github/workflows/e4-recalibration-snapshot.yml`
+  - runs `scripts/run_e4_snapshot_recalibration.py` end-to-end and uploads
+    codex/claude capture evidence + OpenCode Batch A evidence + drift reports.
+- Nightly drift workflow now publishes both views:
+  - live head drift (`e4_target_drift_live_head_report.json`)
+  - snapshot drift (`e4_target_drift_snapshot_report.json`, when snapshot exists)
+  - workflow: `.github/workflows/e4-target-drift-audit-nightly.yml`
 
 ## Batch A baseline (OpenCode replay family)
 

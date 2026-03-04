@@ -25,14 +25,64 @@ jobs:
         run: |
           python scripts/audit_e4_target_drift.py \
             --manifest config/e4_target_freeze_manifest.yaml \
-            --json-out artifacts/e4_target_drift_audit_report.json \
+            --json-out artifacts/e4_target_drift_live_head_report.json \
             --fail-on-drift
+
+      - name: Run E4 snapshot drift audit (if snapshot exists)
+        run: |
+          set -euo pipefail
+          latest_snapshot="$(ls -1 docs/conformance/e4_recalibration_evidence/e4_refsnapshot_*.json 2>/dev/null | sort | tail -n1 || true)"
+          if [[ -z "$latest_snapshot" ]]; then
+            cat > artifacts/e4_target_drift_snapshot_report.json <<'JSON'
+            {
+              "comparison_source": "snapshot_json",
+              "skipped": true,
+              "reason": "no_snapshot_json_found"
+            }
+            JSON
+            exit 0
+          fi
+          python scripts/audit_e4_target_drift.py \
+            --manifest config/e4_target_freeze_manifest.yaml \
+            --snapshot-json "$latest_snapshot" \
+            --json-out artifacts/e4_target_drift_snapshot_report.json
+
+      - name: Add drift audit summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          def _load(path: str):
+            p = Path(path)
+            if not p.exists():
+              return None
+            return json.loads(p.read_text(encoding="utf-8"))
+
+          live = _load("artifacts/e4_target_drift_live_head_report.json") or {}
+          snap = _load("artifacts/e4_target_drift_snapshot_report.json") or {}
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if not summary_path:
+            raise SystemExit(0)
+          with open(Path(summary_path), "a", encoding="utf-8") as f:
+            f.write("## E4 target drift audit\n\n")
+            f.write(f"- live drift count: `{live.get('drift_count', 'n/a')}`\n")
+            f.write(f"- live errors: `{live.get('error_count', 'n/a')}`\n")
+            f.write(f"- snapshot drift count: `{snap.get('drift_count', 'n/a')}`\n")
+            f.write(f"- snapshot errors: `{snap.get('error_count', 'n/a')}`\n")
+            if snap.get("skipped"):
+              f.write(f"- snapshot audit skipped: `{snap.get('reason', 'unknown')}`\n")
+          PY
 
       - name: Upload drift audit artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: e4-target-drift-audit-report
-          path: artifacts/e4_target_drift_audit_report.json
+          path: |
+            artifacts/e4_target_drift_live_head_report.json
+            artifacts/e4_target_drift_snapshot_report.json
           if-no-files-found: error
-
