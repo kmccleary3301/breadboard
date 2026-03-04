@@ -61,7 +61,7 @@ import type { TranscriptMatch } from "../types.js"
 import { useReplLayout } from "../layout/useReplLayout.js"
 import { formatIsoTimestamp } from "../utils/diff.js"
 import { stripAnsiCodes } from "../utils/ansi.js"
-import { getOverlayFocusLabel } from "../keybindings/overlayState.js"
+import { computeInputLocked, computeOverlayActive } from "../keybindings/overlayState.js"
 import { useReplKeyRouter } from "../keybindings/useReplKeyRouter.js"
 import { matchCtrl, runKeymap } from "../keybindings/keymaps.js"
 import { useModalController } from "../features/modals/useModalController.js"
@@ -100,19 +100,11 @@ import { buildTodoPreviewModel } from "../composer/todoPreview.js"
 import { buildThinkingPreviewModel } from "../composer/thinkingPreview.js"
 import { useTuiConfig } from "../../../../tui_config/context.js"
 import { formatConfiguredCompletionLine } from "../../../../tui_config/load.js"
-import { useUIClock } from "../../../clock/context.js"
 import {
   buildTaskFocusCadenceRequest,
   deriveTaskFocusCadencePlan,
   type TaskFocusCadenceState,
 } from "./taskFocusCadence.js"
-import {
-  DEFAULT_STATUS_CHIP_HYSTERESIS_MS,
-  mapRuntimePhaseLineState,
-  mapActivityToRuntimeChip,
-  resolveRuntimeStatusChipTransition,
-  type RuntimeStatusChip,
-} from "./runtimeStatusChip.js"
 
 const META_LINE_COUNT = 2
 const COMPOSER_MIN_ROWS = 6
@@ -123,6 +115,7 @@ const TOOL_LABEL_WIDTH = 12
 const LABEL_WIDTH = 9
 const DEFAULT_TASK_FOCUS_TAIL_LINES = 24
 const DEFAULT_TASK_FOCUS_REFRESH_MS = 1500
+
 type TaskboardSessionPrefs = {
   readonly statusFilter: "all" | "running" | "blocked" | "completed" | "failed" | "cancelled" | "pending"
   readonly groupMode: "status" | "lane"
@@ -154,19 +147,11 @@ const resolveScrollbackMode = (): boolean => {
   return parseBoolEnv(process.env.BREADBOARD_TUI_SCROLLBACK, true)
 }
 
-const resolveScreenReaderMode = (): boolean => {
-  const explicit = (process.env.BREADBOARD_TUI_SCREEN_READER ?? "").trim().toLowerCase()
-  if (["1", "true", "yes", "on"].includes(explicit)) return true
-  if (["0", "false", "no", "off"].includes(explicit)) return false
-  return parseBoolEnv(process.env.BREADBOARD_TUI_ACCESSIBLE_LAYOUT, false)
-}
+const resolveScreenReaderMode = (): boolean => parseBoolEnv(process.env.BREADBOARD_TUI_SCREEN_READER, false)
 
-type ScreenReaderProfile = "concise" | "balanced" | "verbose"
-
-const resolveScreenReaderProfile = (): ScreenReaderProfile => {
+const resolveScreenReaderProfile = (): "concise" | "balanced" | "verbose" => {
   const raw = (process.env.BREADBOARD_TUI_SCREEN_READER_PROFILE ?? "").trim().toLowerCase()
-  if (raw === "concise" || raw === "minimal" || raw === "compact") return "concise"
-  if (raw === "verbose" || raw === "detailed" || raw === "full") return "verbose"
+  if (raw === "concise" || raw === "verbose") return raw
   return "balanced"
 }
 
@@ -230,7 +215,6 @@ export const useReplViewController = ({
   onCtreeRequest,
   onCtreeRefresh,
 }: ReplViewProps) => {
-  const clock = useUIClock()
   const tuiConfig = useTuiConfig()
   const SCROLLBACK_MODE = useMemo(() => resolveScrollbackMode(), [])
   const SCREEN_READER_MODE = useMemo(() => resolveScreenReaderMode(), [])
@@ -241,8 +225,6 @@ export const useReplViewController = ({
   const [selectedCollapsibleEntryId, setSelectedCollapsibleEntryId] = useState<string | null>(null)
   const [pendingStartedAt, setPendingStartedAt] = useState<number | null>(null)
   const [lastDurationMs, setLastDurationMs] = useState<number | null>(null)
-  const [runtimeStatusChip, setRuntimeStatusChip] = useState<RuntimeStatusChip | null>(null)
-  const runtimeStatusChipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingStartedAtRef = useRef<number | null>(null)
   const {
     paletteState,
@@ -450,20 +432,19 @@ export const useReplViewController = ({
   }, [inspectMenu.status])
   useEffect(() => {
     if (pendingResponse) {
-      const startedAt = pendingStartedAtRef.current ?? clock.now()
-      pendingStartedAtRef.current = startedAt
-      setPendingStartedAt(startedAt)
+      if (pendingStartedAtRef.current == null) {
+        pendingStartedAtRef.current = Date.now()
+      }
+      setPendingStartedAt(pendingStartedAtRef.current)
       return
     }
     if (pendingStartedAtRef.current != null) {
-      const duration = clock.now() - pendingStartedAtRef.current
+      const duration = Date.now() - pendingStartedAtRef.current
       pendingStartedAtRef.current = null
-      setPendingStartedAt(null)
       setLastDurationMs(duration)
-      return
     }
     setPendingStartedAt(null)
-  }, [clock, pendingResponse])
+  }, [pendingResponse])
   const inspectRawViewportRows = useMemo(() => Math.max(10, Math.min(24, Math.floor(rowCount * 0.6))), [rowCount])
   const panels = useReplViewPanels({
     inspectRawOpen,
@@ -622,7 +603,6 @@ export const useReplViewController = ({
     formatCTreeNodeFlags,
     requestTaskTail,
   } = panels
-  const overlayFocusLabel = useMemo(() => getOverlayFocusLabel(overlayFlags), [overlayFlags])
 
   const todoPreviewModel = useMemo(() => {
     if (!claudeChrome) return null
@@ -672,83 +652,31 @@ export const useReplViewController = ({
     })
   }, [claudeChrome, contentWidth, overlayActive, runtimeFlags, thinkingArtifact, thinkingPreview])
 
-  const runtimeStatusChipTarget = useMemo(
-    () => mapActivityToRuntimeChip(activity as ActivitySnapshot | undefined, pendingResponse, disconnected, clock.now()),
-    [activity, clock, pendingResponse, disconnected],
-  )
-
-  useEffect(() => {
-    if (runtimeStatusChipTimerRef.current) {
-      clock.clearTimeout(runtimeStatusChipTimerRef.current)
-      runtimeStatusChipTimerRef.current = null
+  const runtimeStatusChips = useMemo(() => {
+    if (disconnected) {
+      return [{ id: "disconnected", label: "disconnected", tone: "error" as const }]
     }
-    if (!runtimeStatusChipTarget) {
-      setRuntimeStatusChip(null)
-      return
+    if (pendingResponse) {
+      const phase = String(activity?.primary ?? "").trim().toLowerCase()
+      const label = phase.includes("think") ? "thinking" : "responding"
+      return [{ id: label, label, tone: "info" as const }]
     }
-    if (!runtimeStatusChip) {
-      setRuntimeStatusChip(runtimeStatusChipTarget)
-      return
+    if (status === "halted") {
+      return [{ id: "halted", label: "halted", tone: "warning" as const }]
     }
-    if (runtimeStatusChip.id === runtimeStatusChipTarget.id) {
-      const targetMatchesCurrent =
-        runtimeStatusChip.label === runtimeStatusChipTarget.label &&
-        runtimeStatusChip.tone === runtimeStatusChipTarget.tone &&
-        runtimeStatusChip.priority === runtimeStatusChipTarget.priority
-      if (targetMatchesCurrent) return
-      setRuntimeStatusChip({
-        ...runtimeStatusChipTarget,
-        updatedAt: runtimeStatusChip.updatedAt,
-      })
-      return
-    }
-    const hysteresisMs = Math.max(
-      DEFAULT_STATUS_CHIP_HYSTERESIS_MS,
-      Number(runtimeFlags?.statusUpdateMs ?? DEFAULT_STATUS_CHIP_HYSTERESIS_MS),
-    )
-    const transition = resolveRuntimeStatusChipTransition({
-      current: runtimeStatusChip,
-      target: runtimeStatusChipTarget,
-      nowMs: clock.now(),
-      hysteresisMs,
-    })
-    if (transition.kind === "noop") return
-    if (transition.kind === "set") {
-      setRuntimeStatusChip(transition.chip)
-      return
-    }
-    runtimeStatusChipTimerRef.current = clock.setTimeout(() => {
-      setRuntimeStatusChip(transition.chip)
-      runtimeStatusChipTimerRef.current = null
-    }, transition.delayMs)
-  }, [clock, runtimeFlags?.statusUpdateMs, runtimeStatusChip, runtimeStatusChipTarget])
-
-  useEffect(() => {
-    return () => {
-      if (runtimeStatusChipTimerRef.current) {
-        clock.clearTimeout(runtimeStatusChipTimerRef.current)
-        runtimeStatusChipTimerRef.current = null
-      }
-    }
-  }, [clock])
-
-  const runtimeStatusChips = useMemo(
-    () =>
-      runtimeStatusChip
-        ? [{ id: runtimeStatusChip.id, label: runtimeStatusChip.label, tone: runtimeStatusChip.tone }]
-        : [],
-    [runtimeStatusChip],
-  )
+    return []
+  }, [activity, disconnected, pendingResponse, status])
 
   const phaseLineState = useMemo(
     () =>
-      mapRuntimePhaseLineState({
-        disconnected,
-        pendingResponse,
-        status,
-        runtimeStatusChip,
-      }),
-    [disconnected, pendingResponse, runtimeStatusChip, status],
+      disconnected
+        ? ({ id: "disconnected", label: "disconnected", tone: "error" } as const)
+        : pendingResponse
+          ? ({ id: "responding", label: "responding", tone: "info" } as const)
+          : status === "halted"
+            ? ({ id: "halted", label: "halted", tone: "warning" } as const)
+            : ({ id: "ready", label: "ready", tone: "muted" } as const),
+    [disconnected, pendingResponse, status],
   )
 
   useEffect(() => {
@@ -984,6 +912,7 @@ export const useReplViewController = ({
     modelVisibleRows: MODEL_VISIBLE_ROWS,
     normalizeProviderKey,
     onCtreeRefresh,
+    onModelMenuOpen,
     onModelMenuCancel,
     onModelSelect,
     onPermissionDecision,
@@ -1339,32 +1268,33 @@ export const useReplViewController = ({
     toolEvents.length === 0
 
   const composerPanelContext = {
-    claudeChrome, modelMenu, pendingClaudeStatus, thinkingPreviewModel, todoPreviewModel, promptRule, input, cursor, inputLocked,
+    claudeChrome, modelMenu, pendingClaudeStatus, todoPreviewModel, promptRule, input, cursor, inputLocked,
     attachments, fileMentions, inputMaxVisibleLines, handleLineEditGuarded, handleLineSubmit, handleAttachment,
     overlayActive, filePickerActive, fileIndexMeta, fileMenuMode, filePicker, fileMenuRows, fileMenuHasLarge,
     fileMenuWindow, fileMenuIndex, fileMenuNeedlePending, filePickerQueryParts, filePickerConfig, fileMentionConfig,
-    selectedFileIsLarge, columnWidth, todosOpen, tasksOpen, todos, todoRows, todoScroll, todoMaxScroll, todoViewportRows,
+    selectedFileIsLarge, columnWidth, todosOpen, todos, todoRows, todoScroll, todoMaxScroll, todoViewportRows,
     suggestions, suggestionWindow, suggestionPrefix, suggestionLayout,
     buildSuggestionLines, suggestIndex, activeSlashQuery, hintNodes, shortcutHintNodes,
     runtimeStatusChips,
+    thinkingPreviewModel,
+    footerV2Enabled: FOOTER_V2_ENABLED,
+    keymap,
+    pendingResponse,
     phaseLineState,
+    disconnected,
+    status,
+    overlayLabel: overlayActive ? "overlay" : null,
+    spinner,
+    pendingStartedAtMs: pendingStartedAt,
+    lastDurationMs,
+    clockNowMs: Date.now(),
+    tasks,
+    stats,
     composerPromptPrefix: tuiConfig.composer.promptPrefix,
     composerPlaceholderClassic: tuiConfig.composer.placeholderClassic,
     composerPlaceholderClaude: tuiConfig.composer.placeholderClaude,
     composerShowTopRule: tuiConfig.composer.showTopRule,
     composerShowBottomRule: tuiConfig.composer.showBottomRule,
-    footerV2Enabled: FOOTER_V2_ENABLED,
-    keymap,
-    pendingResponse,
-    disconnected,
-    status,
-    overlayLabel: overlayFocusLabel,
-    spinner,
-    pendingStartedAtMs: pendingStartedAt,
-    lastDurationMs,
-    clockNowMs: clock.now(),
-    tasks,
-    stats,
   }
   const baseContent = (
     <ReplViewBaseContent
@@ -1426,11 +1356,11 @@ export const useReplViewController = ({
     if (cadencePlan.immediate) {
       void requestTaskTail(buildTaskFocusCadenceRequest(nextCadence))
     }
-    const interval = clock.setInterval(() => {
+    const interval = setInterval(() => {
       void requestTaskTail(buildTaskFocusCadenceRequest(nextCadence))
     }, taskFocusRefreshMs)
-    return () => clock.clearInterval(interval)
-  }, [clock, requestTaskTail, selectedTask, taskFocusFollowTail, taskFocusRawMode, taskFocusTailLines, taskFocusViewOpen, taskFocusRefreshMs, tasksOpen])
+    return () => clearInterval(interval)
+  }, [requestTaskTail, selectedTask, taskFocusFollowTail, taskFocusRawMode, taskFocusTailLines, taskFocusViewOpen, taskFocusRefreshMs, tasksOpen])
 
   const modalStack = useReplViewModalStack({
     confirmState,

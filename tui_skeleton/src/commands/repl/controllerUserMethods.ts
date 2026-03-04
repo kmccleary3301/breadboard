@@ -1,6 +1,8 @@
 import type { ReadSessionFileOptions } from "../../api/client.js"
 import { ApiError } from "../../api/client.js"
 import type { SessionFileContent, SessionFileInfo } from "../../api/types.js"
+import { promises as fs } from "node:fs"
+import path from "node:path"
 import { DEFAULT_MODEL_ID } from "../../config/appConfig.js"
 import { getModelCatalog } from "../../providers/modelCatalog.js"
 import type {
@@ -11,6 +13,107 @@ import type {
 } from "../../repl/types.js"
 import type { ReplState } from "./controller.js"
 import { DEBUG_WAIT, sleep } from "./controllerUtils.js"
+
+const workspaceRootFor = (context: any): string => {
+  const configured = context?.config?.workspace
+  if (typeof configured === "string" && configured.trim().length > 0) {
+    return path.resolve(configured)
+  }
+  return process.cwd()
+}
+
+const resolveWorkspacePath = (context: any, targetPath?: string): { root: string; resolved: string } => {
+  const root = workspaceRootFor(context)
+  const candidate = (targetPath ?? ".").trim()
+  const relativeTarget = candidate === "" || candidate === "." ? "." : candidate.replace(/^\/+/, "")
+  const resolved = path.resolve(root, relativeTarget)
+  const rel = path.relative(root, resolved)
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error(`Path is outside workspace: ${targetPath ?? "."}`)
+  }
+  return { root, resolved }
+}
+
+const toSessionPath = (root: string, absolutePath: string): string => {
+  const relative = path.relative(root, absolutePath)
+  const normalized = relative.split(path.sep).join("/")
+  return normalized.length > 0 ? normalized : "."
+}
+
+const localListFiles = async (context: any, targetPath?: string): Promise<SessionFileInfo[]> => {
+  const { root, resolved } = resolveWorkspacePath(context, targetPath)
+  const stats = await fs.stat(resolved)
+  if (!stats.isDirectory()) {
+    return [{
+      path: toSessionPath(root, resolved),
+      type: "file",
+      size: stats.size,
+      updated_at: stats.mtime.toISOString(),
+    }]
+  }
+  const entries = await fs.readdir(resolved, { withFileTypes: true })
+  const files: SessionFileInfo[] = []
+  for (const entry of entries) {
+    const full = path.join(resolved, entry.name)
+    const entryStats = await fs.stat(full)
+    const type: "file" | "directory" = entryStats.isDirectory() ? "directory" : "file"
+    files.push({
+      path: toSessionPath(root, full),
+      type,
+      size: type === "file" ? entryStats.size : undefined,
+      updated_at: entryStats.mtime.toISOString(),
+    })
+  }
+  files.sort((left, right) => {
+    if (left.type !== right.type) return left.type === "directory" ? -1 : 1
+    return left.path.localeCompare(right.path)
+  })
+  return files
+}
+
+const applySnippet = (
+  content: string,
+  options?: ReadSessionFileOptions,
+): { content: string; truncated: boolean } => {
+  if (options?.mode !== "snippet") {
+    const maxBytes = typeof options?.maxBytes === "number" && options.maxBytes > 0 ? options.maxBytes : null
+    if (!maxBytes || Buffer.byteLength(content, "utf8") <= maxBytes) {
+      return { content, truncated: false }
+    }
+    const clipped = Buffer.from(content, "utf8").subarray(0, maxBytes).toString("utf8")
+    return { content: clipped, truncated: true }
+  }
+
+  const normalized = content.replace(/\r\n/g, "\n")
+  const lines = normalized.split("\n")
+  const head = Math.max(1, options.headLines ?? 80)
+  const tail = Math.max(1, options.tailLines ?? 80)
+  if (lines.length <= head + tail + 1) {
+    return { content: normalized, truncated: false }
+  }
+  const snippet = [...lines.slice(0, head), "", "...", "", ...lines.slice(-tail)].join("\n")
+  return { content: snippet, truncated: true }
+}
+
+const localReadFile = async (
+  context: any,
+  targetPath: string,
+  options?: ReadSessionFileOptions,
+): Promise<SessionFileContent> => {
+  const { root, resolved } = resolveWorkspacePath(context, targetPath)
+  const stats = await fs.stat(resolved)
+  if (!stats.isFile()) {
+    throw new Error(`Path is not a file: ${targetPath}`)
+  }
+  const raw = await fs.readFile(resolved, "utf8")
+  const snippet = applySnippet(raw, options)
+  return {
+    path: toSessionPath(root, resolved),
+    content: snippet.content,
+    truncated: snippet.truncated,
+    total_bytes: stats.size,
+  }
+}
 
 export async function dispatchSlashCommand(
   this: any,
@@ -27,15 +130,18 @@ export async function dispatchSlashCommand(
 
 export async function listFiles(this: any, path?: string): Promise<SessionFileInfo[]> {
   if (!this.sessionId) {
-    throw new Error("Session not ready yet.")
+    return await localListFiles(this, path)
   }
   try {
     return await this.api().listSessionFiles(this.sessionId, path)
   } catch (error) {
     if (error instanceof ApiError) {
+      if (error.status === 409 || error.status === 404) {
+        return await localListFiles(this, path)
+      }
       throw new Error(`File listing failed (${error.status}).`)
     }
-    throw error
+    return await localListFiles(this, path)
   }
 }
 
@@ -44,19 +150,22 @@ export async function readFile(
   path: string,
   options?: ReadSessionFileOptions,
 ): Promise<SessionFileContent> {
-  if (!this.sessionId) {
-    throw new Error("Session not ready yet.")
-  }
   if (!path || !path.trim()) {
     throw new Error("File path is empty.")
+  }
+  if (!this.sessionId) {
+    return await localReadFile(this, path, options)
   }
   try {
     return await this.api().readSessionFile(this.sessionId, path, options)
   } catch (error) {
     if (error instanceof ApiError) {
+      if (error.status === 409 || error.status === 404) {
+        return await localReadFile(this, path, options)
+      }
       throw new Error(`File read failed (${error.status}).`)
     }
-    throw error
+    return await localReadFile(this, path, options)
   }
 }
 
@@ -285,6 +394,34 @@ export async function loadModelMenuItems(this: any): Promise<ModelMenuItem[]> {
   const catalog = await getModelCatalog({ configPath: this.config.configPath })
   const models = catalog.models
   const defaultModel = catalog.defaultModel ?? DEFAULT_MODEL_ID
+  if (models.length === 0) {
+    const fallbackIds = Array.from(
+      new Set(
+        [this.stats?.model, this.config?.model, defaultModel]
+          .map((value) => (typeof value === "string" ? value.trim() : ""))
+          .filter((value) => value.length > 0),
+      ),
+    )
+    return fallbackIds.map<ModelMenuItem>((modelId) => {
+      const providerRaw = modelId.includes("/") ? modelId.split("/", 1)[0] : "custom"
+      const providerLabel = providerRaw
+        .split(/[^a-z0-9]+/i)
+        .filter((part) => part.length > 0)
+        .map((part) => part[0].toUpperCase() + part.slice(1))
+        .join(" ")
+      return {
+        label: `${providerLabel || "Custom"} · ${modelId}`,
+        value: modelId,
+        provider: providerRaw || "custom",
+        detail: "local fallback",
+        contextTokens: null,
+        priceInPerM: null,
+        priceOutPerM: null,
+        isDefault: modelId === defaultModel,
+        isCurrent: modelId === this.stats.model,
+      }
+    })
+  }
   return models.map<ModelMenuItem>((model) => {
     const providerLabel = (() => {
       const raw = model.provider ?? "unknown"

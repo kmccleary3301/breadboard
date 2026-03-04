@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Box, Static } from "ink"
 import { useStdout } from "ink"
 import { ModalHost } from "../ModalHost.js"
@@ -37,7 +37,16 @@ export const ReplViewShell: React.FC<{ controller: ReplViewController }> = ({ co
     baseContent,
   } = controller
   const altBufferEnabled = useMemo(() => parseBoolEnv(process.env.BREADBOARD_TUI_ALT_BUFFER_VIEWER, false), [])
+  const resetOnResizeEnabled = useMemo(
+    () => parseBoolEnv(process.env.BREADBOARD_TUI_SCROLLBACK_RESET_ON_RESIZE, true),
+    [],
+  )
   const altBufferSessionRef = useRef<ReturnType<typeof createAltBufferSession> | null>(null)
+  const previousSizeRef = useRef<{ cols: number; rows: number } | null>(null)
+  const [scrollbackEpoch, setScrollbackEpoch] = useState(0)
+
+  const cols = stdout?.columns && Number.isFinite(stdout.columns) && stdout.columns > 0 ? stdout.columns : 0
+  const rows = stdout?.rows && Number.isFinite(stdout.rows) && stdout.rows > 0 ? stdout.rows : 0
 
   useEffect(() => {
     const isTty = Boolean(stdout && (stdout as NodeJS.WriteStream).isTTY)
@@ -56,6 +65,32 @@ export const ReplViewShell: React.FC<{ controller: ReplViewController }> = ({ co
     altBufferSessionRef.current?.sync(altBufferEnabled && transcriptViewerOpen)
   }, [altBufferEnabled, transcriptViewerOpen])
 
+  useEffect(() => {
+    if (!scrollbackMode) {
+      previousSizeRef.current = cols > 0 && rows > 0 ? { cols, rows } : null
+      return
+    }
+    if (!resetOnResizeEnabled) {
+      previousSizeRef.current = cols > 0 && rows > 0 ? { cols, rows } : null
+      return
+    }
+    if (!stdout?.isTTY || cols <= 0 || rows <= 0) return
+    const previous = previousSizeRef.current
+    if (!previous) {
+      previousSizeRef.current = { cols, rows }
+      return
+    }
+    if (previous.cols === cols && previous.rows === rows) return
+    previousSizeRef.current = { cols, rows }
+    try {
+      // Full reset keeps resize churn from leaving stale artifacts in scrollback.
+      stdout.write("\u001b[3J\u001b[2J\u001b[H")
+    } catch {
+      // Ignore write failures; Ink will still re-render.
+    }
+    setScrollbackEpoch((value) => value + 1)
+  }, [cols, resetOnResizeEnabled, rows, scrollbackMode, stdout])
+
   const transcriptViewerDetailLabel =
     altBufferEnabled && transcriptViewerOpen
       ? transcriptDetailLabel
@@ -66,7 +101,7 @@ export const ReplViewShell: React.FC<{ controller: ReplViewController }> = ({ co
   return (
     <Box flexDirection="column">
       {scrollbackMode && (
-        <Static items={staticFeed}>
+        <Static key={`static-${scrollbackEpoch}`} items={staticFeed}>
           {(item) => {
             const entry = item as { id: string; node: React.ReactNode }
             return <React.Fragment key={entry.id}>{entry.node}</React.Fragment>
@@ -89,7 +124,9 @@ export const ReplViewShell: React.FC<{ controller: ReplViewController }> = ({ co
           variant={keymap === "claude" ? "claude" : "default"}
         />
       ) : (
-        <ModalHost stack={modalStack}>{baseContent}</ModalHost>
+        <ModalHost key={`viewport-${scrollbackEpoch}`} stack={modalStack}>
+          {baseContent}
+        </ModalHost>
       )}
     </Box>
   )

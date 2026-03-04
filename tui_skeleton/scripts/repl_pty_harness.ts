@@ -18,6 +18,7 @@ type KeyName =
   | "ctrl+backspace"
   | "ctrl+c"
   | "ctrl+d"
+  | "ctrl+b"
   | "ctrl+l"
   | "ctrl+t"
   | "ctrl+o"
@@ -33,9 +34,10 @@ type Step =
   | { readonly action: "wait"; readonly ms: number }
   | { readonly action: "type"; readonly text: string; readonly typingDelayMs?: number }
   | { readonly action: "press"; readonly key: KeyName; readonly repeat?: number; readonly delayMs?: number }
-  | { readonly action: "snapshot"; readonly label: string }
+  | { readonly action: "snapshot"; readonly label: string; readonly maxLines?: number; readonly mode?: "frame" | "history" }
   | { readonly action: "waitFor"; readonly text: string; readonly timeoutMs?: number }
   | { readonly action: "log"; readonly message: string }
+  | { readonly action: "resize"; readonly cols: number; readonly rows: number; readonly delayMs?: number }
 
 interface ScriptDefinition {
   readonly steps: Step[]
@@ -90,6 +92,8 @@ const resolveKey = (key: KeyName): string => {
       return "\u0003"
     case "ctrl+d":
       return "\u0004"
+    case "ctrl+b":
+      return "\u0002"
     case "ctrl+l":
       return "\f"
     case "ctrl+k":
@@ -341,11 +345,11 @@ const run = async () => {
     return input
   }
 
-  const takeSnapshot = (label: string) => {
-    const frame = extractLatestFrame(buffer)
-    const plain = stripAnsi(frame)
+  const takeSnapshot = (label: string, maxLines?: number, mode: "frame" | "history" = "frame") => {
+    const plain = mode === "history" ? plainBuffer : stripAnsi(extractLatestFrame(buffer))
     const lines = plain.split(/\r?\n/)
-    const trimmed = lines.slice(-MAX_SNAPSHOT_LINES).join("\n")
+    const cap = typeof maxLines === "number" && maxLines > 0 ? Math.floor(maxLines) : MAX_SNAPSHOT_LINES
+    const trimmed = lines.slice(-cap).join("\n")
     const promptLine = [...lines]
       .reverse()
       .find((line) => line.trimStart().startsWith("›"))
@@ -421,7 +425,14 @@ const run = async () => {
           break
         }
         case "snapshot":
-          takeSnapshot(step.label)
+          takeSnapshot(step.label, step.maxLines, step.mode ?? "frame")
+          break
+        case "resize":
+          child.resize(step.cols, step.rows)
+          if (step.delayMs && step.delayMs > 0) {
+            await sleep(step.delayMs)
+          }
+          checkGuards()
           break
         case "waitFor":
           await waitForOutput(step.text, step.timeoutMs)

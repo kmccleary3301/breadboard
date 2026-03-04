@@ -13,7 +13,7 @@ type NetworkBanner = {
 
 type ReplViewBaseContentProps = {
   claudeChrome: boolean
-  footerV2Enabled: boolean
+  footerV2Enabled?: boolean
   scrollbackMode: boolean
   sessionId: string
   statusGlyph: string
@@ -44,7 +44,7 @@ type ReplViewBaseContentProps = {
 
 export const ReplViewBaseContent: React.FC<ReplViewBaseContentProps> = ({
   claudeChrome,
-  footerV2Enabled,
+  footerV2Enabled = false,
   scrollbackMode,
   sessionId,
   statusGlyph,

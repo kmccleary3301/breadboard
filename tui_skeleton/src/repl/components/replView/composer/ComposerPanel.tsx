@@ -16,12 +16,29 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     claudeChrome,
     todosOpen,
     tasksOpen,
+    todos,
+    todoRows,
+    todoScroll,
+    todoMaxScroll,
+    todoViewportRows,
     modelMenu,
     pendingClaudeStatus,
-    thinkingPreviewModel,
     runtimeStatusChips,
-    phaseLineState,
+    thinkingPreviewModel,
     todoPreviewModel,
+    footerV2Enabled,
+    keymap,
+    pendingResponse,
+    phaseLineState,
+    disconnected,
+    status,
+    overlayLabel,
+    spinner,
+    pendingStartedAtMs,
+    lastDurationMs,
+    clockNowMs,
+    tasks,
+    stats,
     promptRule,
     composerPromptPrefix,
     composerPlaceholderClassic,
@@ -61,17 +78,6 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     activeSlashQuery,
     hintNodes,
     shortcutHintNodes,
-    footerV2Enabled,
-    keymap,
-    pendingResponse,
-    overlayLabel,
-    spinner,
-    pendingStartedAtMs,
-    lastDurationMs,
-    clockNowMs,
-    todos,
-    tasks,
-    stats,
   } = context
 
   if (claudeChrome && modelMenu.status !== "hidden") return null
@@ -84,57 +90,129 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
 
   const showClaudePlaceholder =
     claudeChrome && input.length === 0 && attachments.length === 0 && fileMentions.length === 0
-
   const showClaudeShortcutHints =
     !footerV2Enabled && claudeChrome && shortcutHintNodes.length > 0 && (!overlayActive || todosOpen || tasksOpen)
 
-  const replaceInputWithOverlay = claudeChrome && overlayActive
+  if (claudeChrome && todosOpen) {
+    const scroll = Math.max(0, Math.min(todoScroll ?? 0, todoMaxScroll ?? 0))
+    const visibleRows = Array.isArray(todoRows) ? todoRows.slice(scroll, scroll + (todoViewportRows ?? 0)) : []
+    const colorForStatus = (status?: string) => {
+      switch (status) {
+        case "in_progress":
+          return COLORS.info
+        case "done":
+          return COLORS.success
+        case "blocked":
+          return COLORS.error
+        case "canceled":
+          return COLORS.muted
+        default:
+          return COLORS.warning
+      }
+    }
+    const titleLines: SelectPanelLine[] = [{ text: CHALK.bold("Todos"), color: COLORS.info }]
+    const hintLines: SelectPanelLine[] = [
+      {
+        text:
+          (Array.isArray(todos) ? todos.length : 0) === 0
+            ? "No todos yet."
+            : `${Array.isArray(todos) ? todos.length : 0} item${Array.isArray(todos) && todos.length === 1 ? "" : "s"} • ↑/↓ scroll • PgUp/PgDn page • Esc close`,
+        color: "gray",
+      },
+    ]
+    const panelRows: SelectPanelRow[] = []
+    if (!Array.isArray(todoRows) || todoRows.length === 0) {
+      panelRows.push({ kind: "empty", text: "TodoWrite output will appear here once the agent updates the board.", color: "dim" })
+    } else {
+      visibleRows.forEach((row: any) => {
+        if (row.kind === "header") {
+          panelRows.push({ kind: "header", text: row.label, color: colorForStatus(row.status) })
+        } else {
+          panelRows.push({ kind: "item", text: `  • ${row.label}`, wrap: "truncate-end" })
+        }
+      })
+      if (todoRows.length > (todoViewportRows ?? 0)) {
+        panelRows.push({
+          kind: "header",
+          text: `${scroll + 1}-${Math.min(scroll + (todoViewportRows ?? 0), todoRows.length)} of ${todoRows.length}`,
+          color: "dim",
+        })
+      }
+    }
+
+    return (
+      <Box marginTop={0} flexDirection="column" width={ruleWidth}>
+        {composerShowTopRule ? (
+          <Text color={COLORS.textMuted} wrap="truncate">
+            {promptRuleLine}
+          </Text>
+        ) : null}
+        <SelectPanel
+          width={ruleWidth}
+          showBorder={false}
+          paddingX={0}
+          paddingY={0}
+          marginTop={0}
+          alignSelf="flex-start"
+          rowsMarginTop={0}
+          titleLines={titleLines}
+          hintLines={hintLines}
+          rows={panelRows}
+        />
+        {composerShowBottomRule ? (
+          <Text color={COLORS.textMuted} wrap="truncate">
+            {promptRuleLine}
+          </Text>
+        ) : null}
+        {showClaudeShortcutHints ? <Box flexDirection="column">{shortcutHintNodes}</Box> : null}
+      </Box>
+    )
+  }
 
   return (
     <Box marginTop={claudeChrome ? 0 : 1} flexDirection="column" width={ruleWidth}>
       <RuntimePreviewStack
         claudeChrome={claudeChrome}
         overlayActive={overlayActive}
-        pendingClaudeStatus={footerV2Enabled ? null : (pendingClaudeStatus ?? null)}
+        footerV2Enabled={Boolean(footerV2Enabled)}
+        pendingClaudeStatus={pendingClaudeStatus ?? null}
+        runtimeStatusChips={Array.isArray(runtimeStatusChips) ? runtimeStatusChips : []}
         thinkingPreviewModel={thinkingPreviewModel ?? null}
-        statusChips={footerV2Enabled ? [] : (runtimeStatusChips ?? [])}
         todoPreviewModel={todoPreviewModel ?? null}
-        hintNodes={!overlayActive && !footerV2Enabled ? hintNodes : []}
+        hintNodes={!overlayActive ? hintNodes : []}
       />
-      {!replaceInputWithOverlay && claudeChrome && (
+      {claudeChrome && (
         composerShowTopRule ? (
           <Text color={COLORS.textMuted} wrap="truncate">
             {promptRuleLine}
           </Text>
         ) : null
       )}
-      {!replaceInputWithOverlay && (
-        <Box minHeight={1} width={ruleWidth} flexDirection="row">
-          <Text>
-            <Text color={claudeChrome ? COLORS.textBright : "cyan"}>{`${composerPromptPrefix || GLYPHS.chevron} `}</Text>
-          </Text>
-          <LineEditor
-            value={input}
-            cursor={cursor}
-            focus={!inputLocked}
-            placeholder={
-              showClaudePlaceholder
-                ? (composerPlaceholderClaude || 'Try "refactor <filepath>"')
-                : claudeChrome
-                  ? ""
-                  : (composerPlaceholderClassic || `Type your request${GLYPHS.ellipsis}`)
-            }
-            placeholderPad={!claudeChrome}
-            hideCaretWhenPlaceholder={claudeChrome}
-            maxVisibleLines={inputMaxVisibleLines}
-            onChange={handleLineEditGuarded}
-            onSubmit={handleLineSubmit}
-            submitOnEnter
-            onPasteAttachment={handleAttachment}
-          />
-        </Box>
-      )}
-      {!replaceInputWithOverlay && claudeChrome && (
+      <Box minHeight={1} width={ruleWidth} flexDirection="row">
+        <Text>
+          <Text color={claudeChrome ? COLORS.textBright : "cyan"}>{`${composerPromptPrefix || GLYPHS.chevron} `}</Text>
+        </Text>
+        <LineEditor
+          value={input}
+          cursor={cursor}
+          focus={!inputLocked}
+          placeholder={
+            showClaudePlaceholder
+              ? (composerPlaceholderClaude || 'Try "refactor <filepath>"')
+              : claudeChrome
+                ? ""
+                : (composerPlaceholderClassic || `Type your request${GLYPHS.ellipsis}`)
+          }
+          placeholderPad={!claudeChrome}
+          hideCaretWhenPlaceholder={claudeChrome}
+          maxVisibleLines={inputMaxVisibleLines}
+          onChange={handleLineEditGuarded}
+          onSubmit={handleLineSubmit}
+          submitOnEnter
+          onPasteAttachment={handleAttachment}
+        />
+      </Box>
+      {claudeChrome && (
         composerShowBottomRule ? (
           <Text color={COLORS.textMuted} wrap="truncate">
             {promptRuleLine}
@@ -326,7 +404,7 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
           {shortcutHintNodes}
         </Box>
       )}
-      {!overlayActive && !claudeChrome && !footerV2Enabled && hintNodes.length > 0 && (
+      {!overlayActive && !claudeChrome && hintNodes.length > 0 && (
         <Box marginTop={claudeChrome ? 0 : 1} flexDirection="column">
           {hintNodes}
         </Box>
@@ -358,24 +436,33 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
           <Text color={COLORS.warning}>Files are attached as context on submit; oversized files are truncated.</Text>
         </Box>
       )}
-      <FooterV2
-        enabled={Boolean(footerV2Enabled)}
-        input={{
-          pendingResponse: Boolean(pendingResponse),
-          overlayActive: Boolean(overlayActive),
-          keymap: String(keymap ?? ""),
-          phaseLineState: phaseLineState ?? null,
-          overlayLabel: typeof overlayLabel === "string" && overlayLabel.length > 0 ? overlayLabel : null,
-          spinner: String(spinner ?? ""),
-          pendingStartedAtMs: Number.isFinite(pendingStartedAtMs) ? Number(pendingStartedAtMs) : null,
-          lastDurationMs: Number.isFinite(lastDurationMs) ? Number(lastDurationMs) : null,
-          nowMs: Number.isFinite(clockNowMs) ? Number(clockNowMs) : Date.now(),
-          todos: Array.isArray(todos) ? todos : [],
-          tasks: Array.isArray(tasks) ? tasks : [],
-          stats,
-          width: ruleWidth,
-        }}
-      />
+      {claudeChrome ? (
+        <FooterV2
+          enabled={Boolean(footerV2Enabled)}
+          input={{
+            pendingResponse: Boolean(pendingResponse),
+            overlayActive: Boolean(overlayActive),
+            overlayLabel: overlayLabel != null ? String(overlayLabel) : null,
+            keymap: String(keymap ?? "claude"),
+            phaseLineState: phaseLineState ?? null,
+            spinner: String(spinner ?? "."),
+            pendingStartedAtMs: pendingStartedAtMs != null ? Number(pendingStartedAtMs) : null,
+            lastDurationMs: lastDurationMs != null ? Number(lastDurationMs) : null,
+            nowMs: clockNowMs != null ? Number(clockNowMs) : Date.now(),
+            todos: Array.isArray(todos) ? todos : [],
+            tasks: Array.isArray(tasks) ? tasks : [],
+            stats: stats ?? {
+              model: status ?? "unknown",
+              remote: false,
+              eventCount: 0,
+              toolCount: 0,
+              usage: null,
+              lastTurn: null,
+            },
+            width: Math.max(24, Number(columnWidth) || 80),
+          }}
+        />
+      ) : null}
     </Box>
   )
 }

@@ -108,7 +108,7 @@ export const handleMenuOverlayKeys = (
   }
 
   if (modelMenu.status === "hidden") return false
-  if (key.escape) {
+  if (key.escape || char === "\u001b") {
     onModelMenuCancel()
     return true
   }

@@ -74,7 +74,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     return (
       <Box flexDirection="column">
         <Text color={toneColor}>{subagentStrip.headline}</Text>
-        {subagentStrip.detail ? <Text color={COLORS.textSoft}>{subagentStrip.detail}</Text> : null}
+        {subagentStrip.detail ? <Text color={COLORS.textMuted}>{subagentStrip.detail}</Text> : null}
       </Box>
     )
   }, [scrollbackMode, subagentStrip])
@@ -264,7 +264,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
       if (!statusText || statusLinePosition === "below_input") return []
       const line = formatCell(statusText, Math.max(1, contentWidth), statusLineAlign)
       return [
-        <Text key="hint-claude-status" color={COLORS.footerHint}>
+        <Text key="hint-claude-status" color={COLORS.textMuted}>
           {line}
         </Text>,
       ]
@@ -310,7 +310,7 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
     const belowStatusLine =
       statusLinePosition === "below_input" && statusText
         ? [
-            <Text key="hint-claude-status-below" color={COLORS.footerHint}>
+            <Text key="hint-claude-status-below" color={COLORS.textMuted}>
               {formatCell(statusText, Math.max(1, contentWidth), statusLineAlign)}
             </Text>,
           ]
@@ -333,14 +333,14 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
         combined = combined.slice(0, width)
       }
       return [
-        <Text key="hint-claude-shortcuts-status" color={COLORS.footerHint}>
+        <Text key="hint-claude-shortcuts-status" color={COLORS.textMuted}>
           {combined}
         </Text>,
       ]
     }
     return [
       ...belowStatusLine,
-      <Text key="hint-claude-shortcuts" color={COLORS.footerHint}>
+      <Text key="hint-claude-shortcuts" color={COLORS.textMuted}>
         {"  ? for shortcuts"}
       </Text>,
     ]
@@ -376,13 +376,8 @@ export const useReplViewRenderNodes = (context: RenderNodesContext) => {
         return []
       }
       return [
-        <Text key="transcript-empty-primary" color={COLORS.textSoft}>
-          {pendingResponse ? "Assistant is thinking…" : "No conversation yet."}
-        </Text>,
-        <Text key="transcript-empty-secondary" color={COLORS.textMuted}>
-          {pendingResponse
-            ? "Press Esc to interrupt the current response."
-            : "Try / commands, @ files, or ask for a brief repo summary."}
+        <Text key="transcript-empty" color="gray">
+          {pendingResponse ? "Assistant is thinking…" : "No conversation yet. Type a prompt to get started."}
         </Text>,
       ]
     }

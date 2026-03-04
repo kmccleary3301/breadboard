@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process"
+import { spawn, type ChildProcess, type StdioOptions } from "node:child_process"
 import { homedir } from "node:os"
 import path from "node:path"
 import fs from "node:fs"
@@ -526,6 +526,15 @@ export const ensureEngine = async ({
   const port = isolated ? await pickEphemeralPort(baseHost) : await findAvailablePort(baseHost, preferredPort)
   const resolvedBaseUrl = `http://${baseHost}:${port}`
   const { command, args, cwd, shell } = await resolveEngineCommand()
+  await fsp.mkdir(path.dirname(ENGINE_LOG_PATH), { recursive: true })
+  const inheritEngineStdio = process.env.BREADBOARD_ENGINE_INHERIT_STDIO === "1"
+  let logFd: number | null = null
+  const stdio: StdioOptions = inheritEngineStdio
+    ? "inherit"
+    : (() => {
+        logFd = fs.openSync(ENGINE_LOG_PATH, "a")
+        return ["ignore", logFd, logFd]
+      })()
   const child = spawn(command, args, {
     cwd,
     env: {
@@ -533,9 +542,16 @@ export const ensureEngine = async ({
       BREADBOARD_CLI_HOST: baseHost,
       BREADBOARD_CLI_PORT: String(port),
     },
-    stdio: "inherit",
+    stdio,
     shell,
   })
+  if (logFd != null) {
+    try {
+      fs.closeSync(logFd)
+    } catch {
+      // ignore best-effort fd close in parent
+    }
+  }
   activeChild = child
   activeBaseUrl = resolvedBaseUrl
   process.env.BREADBOARD_API_URL = resolvedBaseUrl

@@ -13,7 +13,7 @@ const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => 
   return fallback
 }
 
-const LANDING_ALWAYS = parseBoolEnv(process.env.BREADBOARD_TUI_LANDING_ALWAYS, false)
+const LANDING_ALWAYS = parseBoolEnv(process.env.BREADBOARD_TUI_LANDING_ALWAYS, true)
 
 interface ScrollbackFeedOptions {
   readonly enabled: boolean

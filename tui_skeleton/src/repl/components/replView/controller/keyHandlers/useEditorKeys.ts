@@ -52,6 +52,7 @@ export const useEditorKeys = (context: EditorKeyHandlerContext): KeyHandler => {
     setShortcutsOpen,
     setSuggestIndex,
     setSuppressSuggestions,
+    submitSuggestedSlashCommand,
     shortcutsOpenedAtRef,
     suggestIndex,
     suggestions,
@@ -249,6 +250,13 @@ export const useEditorKeys = (context: EditorKeyHandlerContext): KeyHandler => {
           const trimmed = inputValueRef.current.trim()
           const isSlash = trimmed.startsWith("/")
           if (isSlash) {
+            const choice = suggestions[Math.max(0, Math.min(suggestIndex, suggestions.length - 1))]
+            if (choice?.command?.startsWith("/") && typeof submitSuggestedSlashCommand === "function") {
+              setSuggestIndex(0)
+              setSuppressSuggestions(true)
+              void submitSuggestedSlashCommand(choice.command)
+              return true
+            }
             const body = trimmed.slice(1).trim()
             const [commandName] = body.split(/\s+/)
             const isExactCommand = Boolean(commandName) && SLASH_COMMANDS.some((cmd) => cmd.name === commandName)
@@ -325,7 +333,10 @@ export const useEditorKeys = (context: EditorKeyHandlerContext): KeyHandler => {
       rawFilePickerNeedle,
       recallHistory,
       removeLastAttachment,
+      setSuggestIndex,
+      setSuppressSuggestions,
       setShortcutsOpen,
+      submitSuggestedSlashCommand,
       suggestIndex,
       suggestions,
     ],

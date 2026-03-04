@@ -16,6 +16,11 @@ import type {
   CTreeTreeResponse,
   CTreeDiskArtifactsResponse,
   CTreeEventsResponse,
+  ProviderAuthAttachRequest,
+  ProviderAuthAttachResponse,
+  ProviderAuthDetachRequest,
+  ProviderAuthDetachResponse,
+  ProviderAuthStatusResponse,
 } from "./types.js"
 
 export class ApiError extends Error {
@@ -190,6 +195,12 @@ export const createApiClient = (config: ApiClientConfig) => ({
         limit: options?.limit,
       },
     }),
+  providerAuthAttach: (body: ProviderAuthAttachRequest) =>
+    requestWithConfig<ProviderAuthAttachResponse>(config, "/v1/provider-auth/attach", "POST", { body }),
+  providerAuthDetach: (body: ProviderAuthDetachRequest) =>
+    requestWithConfig<ProviderAuthDetachResponse>(config, "/v1/provider-auth/detach", "POST", { body }),
+  providerAuthStatus: () =>
+    requestWithConfig<ProviderAuthStatusResponse>(config, "/v1/provider-auth/status", "GET"),
   downloadArtifact: (sessionId: string, artifact: string) =>
     requestWithConfig<string>(config, `/sessions/${sessionId}/download`, "GET", { query: { artifact }, responseType: "text" }),
   uploadAttachments: async (sessionId: string, attachments: ReadonlyArray<AttachmentUploadPayload>) => {
@@ -263,6 +274,9 @@ export const ApiClient: ApiClientInstance = {
   getCtreeTree: (...args) => buildApiClient().getCtreeTree(...args),
   getCtreeDisk: (...args) => buildApiClient().getCtreeDisk(...args),
   getCtreeEvents: (...args) => buildApiClient().getCtreeEvents(...args),
+  providerAuthAttach: (...args) => buildApiClient().providerAuthAttach(...args),
+  providerAuthDetach: (...args) => buildApiClient().providerAuthDetach(...args),
+  providerAuthStatus: (...args) => buildApiClient().providerAuthStatus(...args),
   downloadArtifact: (...args) => buildApiClient().downloadArtifact(...args),
   uploadAttachments: (...args) => buildApiClient().uploadAttachments(...args),
 }
@@ -283,4 +297,9 @@ export type {
   CTreeTreeResponse,
   CTreeDiskArtifactsResponse,
   CTreeEventsResponse,
+  ProviderAuthAttachRequest,
+  ProviderAuthAttachResponse,
+  ProviderAuthDetachRequest,
+  ProviderAuthDetachResponse,
+  ProviderAuthStatusResponse,
 }

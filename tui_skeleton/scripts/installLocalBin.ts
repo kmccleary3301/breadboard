@@ -8,9 +8,31 @@ const shouldSkipInstall = (): boolean => {
   return raw === "1" || raw === "true" || raw === "yes"
 }
 
+const ensureSourceMainExists = async () => {
+  const srcOk = await fs
+    .access(srcMain)
+    .then(() => true)
+    .catch(() => false)
+  if (!srcOk) {
+    throw new Error(`Missing ${srcMain}.`)
+  }
+  const tsxLocalPackage = path.join(projectRoot, "node_modules", "tsx", "package.json")
+  const tsxOk = await fs
+    .access(tsxLocalPackage)
+    .then(() => true)
+    .catch(() => false)
+  if (!tsxOk) {
+    throw new Error(`Missing ${tsxLocalPackage}. Run \`npm install\` first.`)
+  }
+}
+
 const here = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(here, "..")
 const distMain = path.join(projectRoot, "dist", "main.js")
+const srcMain = path.join(projectRoot, "src", "main.ts")
+const launcherMode = (process.env.BREADBOARD_LAUNCHER_MODE?.trim().toLowerCase() || "dist") as
+  | "dist"
+  | "source"
 
 const resolveBinDir = (): string => {
   const override = process.env.BREADBOARD_BIN_DIR?.trim()
@@ -23,23 +45,38 @@ const resolveBinDir = (): string => {
   return path.join(homedir(), ".local", "bin")
 }
 
+const BIN_NAMES = ["breadboard", "bb"] as const
+
 const writeWrapper = async (binDir: string) => {
   await fs.mkdir(binDir, { recursive: true })
   if (process.platform === "win32") {
     const cmd = `@echo off\r\nnode ${JSON.stringify(distMain)} %*\r\n`
-    await fs.writeFile(path.join(binDir, "breadboard.cmd"), cmd, "utf8")
+    for (const name of BIN_NAMES) {
+      await fs.writeFile(path.join(binDir, `${name}.cmd`), cmd, "utf8")
+    }
     const ps1 = `#!/usr/bin/env pwsh\nnode ${JSON.stringify(distMain)} @args\n`
-    await fs.writeFile(path.join(binDir, "breadboard.ps1"), ps1, "utf8")
+    for (const name of BIN_NAMES) {
+      await fs.writeFile(path.join(binDir, `${name}.ps1`), ps1, "utf8")
+    }
     return
   }
 
-  const wrapper = `#!/usr/bin/env bash
+  const wrapper =
+    launcherMode === "source"
+      ? `#!/usr/bin/env bash
+set -euo pipefail
+cd ${JSON.stringify(projectRoot)}
+node --import tsx ${JSON.stringify(srcMain)} \"$@\"
+`
+      : `#!/usr/bin/env bash
 set -euo pipefail
 node ${JSON.stringify(distMain)} \"$@\"
 `
-  const targetPath = path.join(binDir, "breadboard")
-  await fs.writeFile(targetPath, wrapper, "utf8")
-  await fs.chmod(targetPath, 0o755)
+  for (const name of BIN_NAMES) {
+    const targetPath = path.join(binDir, name)
+    await fs.writeFile(targetPath, wrapper, "utf8")
+    await fs.chmod(targetPath, 0o755)
+  }
 }
 
 const ensureDistMainExists = async () => {
@@ -56,11 +93,15 @@ const main = async () => {
   if (shouldSkipInstall()) {
     return
   }
-  await ensureDistMainExists()
+  if (launcherMode === "source") {
+    await ensureSourceMainExists()
+  } else {
+    await ensureDistMainExists()
+  }
   const binDir = resolveBinDir()
   await writeWrapper(binDir)
   if (process.env.BREADBOARD_INSTALL_QUIET !== "1") {
-    console.log(`[breadboard] Installed wrappers into ${binDir}`)
+    console.log(`[breadboard] Installed ${launcherMode} wrappers (${BIN_NAMES.join(", ")}) into ${binDir}`)
   }
 }
 

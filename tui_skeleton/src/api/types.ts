@@ -311,6 +311,58 @@ export interface ErrorResponse {
   readonly detail?: Record<string, unknown>
 }
 
+export interface ProviderAuthMaterialRequest {
+  readonly provider_id: string
+  readonly alias?: string
+  readonly api_key?: string
+  readonly headers?: Record<string, string>
+  readonly base_url?: string
+  readonly routing?: Record<string, unknown> | null
+  readonly issued_at_ms?: number
+  readonly expires_at_ms?: number
+  readonly ttl_seconds?: number
+  readonly is_subscription_plan?: boolean
+}
+
+export interface ProviderAuthAttachRequest {
+  readonly material: ProviderAuthMaterialRequest
+  readonly required_profile?: Record<string, unknown> | null
+  readonly config_path?: string
+  readonly overrides?: Record<string, unknown> | null
+}
+
+export interface ProviderAuthAttachResponse {
+  readonly ok?: boolean
+  readonly detail?: Record<string, unknown> | null
+}
+
+export interface ProviderAuthDetachRequest {
+  readonly provider_id: string
+  readonly alias?: string
+}
+
+export interface ProviderAuthDetachResponse {
+  readonly ok?: boolean
+}
+
+export interface ProviderAuthStatusItem {
+  readonly provider_id: string
+  readonly alias?: string | null
+  readonly has_api_key?: boolean
+  readonly header_keys?: string[]
+  readonly base_url?: string | null
+  readonly routing_keys?: string[]
+  readonly issued_at_ms?: number | null
+  readonly expires_at_ms?: number | null
+  readonly expires_in_ms?: number | null
+  readonly is_subscription_plan?: boolean
+  readonly required_profile?: Record<string, unknown> | null
+}
+
+export interface ProviderAuthStatusResponse {
+  readonly attached: ProviderAuthStatusItem[]
+}
+
 export interface ApiError extends Error {
   readonly status: number
   readonly body?: unknown

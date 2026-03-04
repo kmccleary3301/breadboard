@@ -1,6 +1,6 @@
 import { useCallback } from "react"
 import type { SessionFileInfo } from "../../../../api/types.js"
-import type { SlashCommandInfo, SlashSuggestion } from "../../../slashCommands.js"
+import { SLASH_COMMANDS, type SlashCommandInfo, type SlashSuggestion } from "../../../slashCommands.js"
 import {
   clampCommandLines,
   formatListCommandLines,
@@ -41,6 +41,8 @@ export const useReplCommands = (context: CommandsContext) => {
     setUsageOpen,
     setTasksOpen,
     enterTranscriptViewer,
+    onModelMenuOpen,
+    onSkillsMenuOpen,
     inputLocked,
     closePalette,
   } = context
@@ -183,7 +185,15 @@ export const useReplCommands = (context: CommandsContext) => {
       if (!trimmed || inputLocked) return
       const normalized = value.trimEnd()
       if (trimmed.startsWith("/")) {
-        const [command] = trimmed.slice(1).split(/\s+/)
+        const [command, ...commandArgs] = trimmed.slice(1).split(/\s+/)
+        if (command === "help") {
+          const lines = SLASH_COMMANDS.map((entry) =>
+            `${GLYPHS.bullet} /${entry.name}${entry.usage ? ` ${entry.usage}` : ""} — ${entry.summary}`,
+          )
+          pushCommandResult("Slash commands", lines)
+          handleLineEdit("", 0)
+          return
+        }
         if (command === "tool-display") {
           const parts = trimmed.split(/\s+/).slice(1)
           const subcommand = parts[0] ?? "list"
@@ -208,6 +218,11 @@ export const useReplCommands = (context: CommandsContext) => {
           handleLineEdit("", 0)
           return
         }
+        if (command === "files") {
+          const argument = commandArgs.join(" ").trim()
+          await handleAtCommand({ kind: "list", argument: argument || undefined })
+          return
+        }
         if (command === "todos") {
           setTodosOpen(true)
           handleLineEdit("", 0)
@@ -225,6 +240,24 @@ export const useReplCommands = (context: CommandsContext) => {
         }
         if (command === "transcript") {
           enterTranscriptViewer()
+          handleLineEdit("", 0)
+          return
+        }
+        if (command === "models") {
+          if (typeof onModelMenuOpen === "function") {
+            await onModelMenuOpen()
+          } else {
+            pushCommandResult("/models", ["Model picker is unavailable in this view."])
+          }
+          handleLineEdit("", 0)
+          return
+        }
+        if (command === "skills") {
+          if (typeof onSkillsMenuOpen === "function") {
+            await onSkillsMenuOpen()
+          } else {
+            pushCommandResult("/skills", ["Skills menu is unavailable in this view."])
+          }
           handleLineEdit("", 0)
           return
         }
@@ -312,6 +345,8 @@ export const useReplCommands = (context: CommandsContext) => {
       attachments,
       configPath,
       enterTranscriptViewer,
+      onModelMenuOpen,
+      onSkillsMenuOpen,
       fileMentionConfig,
       fileMentions,
       handleAtCommand,
