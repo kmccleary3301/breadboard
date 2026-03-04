@@ -64,10 +64,17 @@ CI automation (manual + nightly):
   - `.github/workflows/e4-recalibration-snapshot.yml`
   - runs `scripts/run_e4_snapshot_recalibration.py` end-to-end and uploads
     codex/claude capture evidence + OpenCode Batch A evidence + drift reports.
+  - policy: `workflow_dispatch` only (no schedule).
 - Nightly drift workflow now publishes both views:
   - live head drift (`e4_target_drift_live_head_report.json`)
   - snapshot drift (`e4_target_drift_snapshot_report.json`, when snapshot exists)
   - workflow: `.github/workflows/e4-target-drift-audit-nightly.yml`
+
+Policy decision (scoped item 5):
+
+- Heavy CI/GitHub Actions recalibration cadence is **struck down**.
+- Keep heavy recalibration manual-only to avoid CI cost/flakes/provider-dependency coupling.
+- Keep nightly drift visibility (lightweight) as the only scheduled automation in this area.
 
 ## Batch A baseline (OpenCode replay family)
 

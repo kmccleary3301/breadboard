@@ -74,7 +74,8 @@ python scripts/update_e4_target_freeze_manifest.py --write
 A nightly workflow (`.github/workflows/e4-target-drift-audit-nightly.yml`) checks
 manifest-pinned commits against upstream remote HEADs and uploads:
 
-- `artifacts/e4_target_drift_audit_report.json`
+- `artifacts/e4_target_drift_live_head_report.json`
+- `artifacts/e4_target_drift_snapshot_report.json` (when snapshot JSON is available)
 
 Local equivalent:
 
@@ -89,8 +90,9 @@ make e4-target-drift-audit
    - `make e4-target-refresh-plan`
    - `make e4-target-drift-audit`
 3. Capture new evidence:
-   - tmux nightly provider scenario captures for interactive parity lanes.
+   - tmux provider scenario captures for interactive parity lanes.
    - replay session dumps for OpenCode/other replay lanes.
+   - use manual recalibration (`.github/workflows/e4-recalibration-snapshot.yml`, `workflow_dispatch`) for heavy refresh.
 4. Add/adjust manifest rows with:
    - upstream commit + date,
    - release label,
@@ -109,3 +111,8 @@ Each E4 config should include:
 ```
 
 This is non-functional metadata for maintainers and reviewers.
+
+## CI boundary
+
+- Scheduled CI should remain lightweight (drift visibility only).
+- Do not add scheduled heavy recalibration/provider replay capture loops to GitHub Actions.

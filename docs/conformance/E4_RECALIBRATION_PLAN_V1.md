@@ -8,6 +8,12 @@ Owner: Engine parity / conformance lane
 Recalibrate every E4 config lane to its current upstream harness snapshot in a controlled,
 evidence-first order, without silently changing target pins.
 
+## Policy decision (CI scope)
+
+- Heavy recalibration cadence is intentionally **not** run on schedule in GitHub Actions.
+- Full recalibration remains an operator-driven/manual action (`workflow_dispatch` or local runbook).
+- CI keeps lightweight drift visibility only (live/snapshot drift reports), not full provider replay/capture loops.
+
 This plan is driven by:
 
 - `artifacts/conformance/e4_target_drift_audit_report.json`
@@ -110,6 +116,7 @@ All must be true:
 2. `check_e4_target_freeze_manifest.py --strict-evidence --max-evidence-age-days 45 --json` returns `ok: true`.
 3. Each lane has new evidence artifacts linked in manifest.
 4. E4 lane replay/live checks pass for all 8 lanes.
+5. No scheduled heavy recalibration workflow is introduced; manual-only policy remains enforced.
 
 ## Rollback strategy
 
@@ -141,4 +148,3 @@ python scripts/check_e4_target_freeze_manifest.py --strict-evidence --max-eviden
   so planning remains stable even if a reference clone worktree is dirty.
 - OpenCode reference clone currently has a dirty worktree, but fetched `origin/HEAD`
   is used for pin planning and does not block recalibration.
-
