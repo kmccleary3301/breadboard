@@ -1,0 +1,12 @@
+{
+  "total": 6,
+  "status_counts": {
+    "passed": 5,
+    "warn": 1
+  },
+  "failed": [],
+  "warned": [
+    "opencode_patch_todo_sentinel_replay"
+  ],
+  "results_file": "/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_recovery_work_20260217_170242/artifacts/parity_runs/e4_batchA_serial_20260304_3/parity_results.jsonl"
+}

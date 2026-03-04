@@ -36,22 +36,49 @@ def _load_manifest(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _load_snapshot_heads(path: Path) -> dict[str, str]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("snapshot root must be an object")
+    entries = payload.get("entries")
+    if not isinstance(entries, dict):
+        raise ValueError("snapshot.entries must be an object")
+    out: dict[str, str] = {}
+    for _name, row in entries.items():
+        if not isinstance(row, dict):
+            continue
+        repo_url = row.get("repo_url")
+        commit = row.get("commit")
+        if isinstance(repo_url, str) and repo_url and isinstance(commit, str) and commit:
+            out[repo_url] = commit
+    return out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Audit E4 target-freeze manifest drift against upstream HEAD.")
     parser.add_argument("--manifest", default="config/e4_target_freeze_manifest.yaml")
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--json-out", default=None)
     parser.add_argument("--fail-on-drift", action="store_true")
+    parser.add_argument(
+        "--snapshot-json",
+        default=None,
+        help="optional ref snapshot JSON; when provided, compare pinned commits against snapshot commits by repo URL",
+    )
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
     manifest_path = (repo_root / args.manifest).resolve()
     payload = _load_manifest(manifest_path)
     e4_configs = payload["e4_configs"]
+    snapshot_heads: dict[str, str] = {}
+    if args.snapshot_json:
+        snapshot_heads = _load_snapshot_heads(Path(args.snapshot_json).resolve())
 
     repo_cache: dict[str, str] = {}
     report: dict[str, Any] = {
         "manifest_path": str(manifest_path),
+        "comparison_source": "snapshot_json" if snapshot_heads else "live_remote_head",
         "drifted": [],
         "aligned": [],
         "errors": [],
@@ -76,7 +103,9 @@ def main() -> int:
             continue
 
         try:
-            remote_head = repo_cache.get(repo_url)
+            remote_head = snapshot_heads.get(repo_url)
+            if remote_head is None:
+                remote_head = repo_cache.get(repo_url)
             if remote_head is None:
                 remote_head = _git_ls_remote_head(repo_url)
                 repo_cache[repo_url] = remote_head
@@ -116,4 +145,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

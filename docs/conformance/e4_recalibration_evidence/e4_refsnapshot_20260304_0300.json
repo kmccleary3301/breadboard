@@ -1,0 +1,30 @@
+{
+  "snapshot_id": "e4_refsnapshot_20260304_0300",
+  "captured_at_utc": "2026-03-04T04:05:37.421815+00:00",
+  "entries": {
+    "codex": {
+      "repo_url": "https://github.com/openai/codex",
+      "local_repo": "/shared_folders/querylake_server/ray_testing/ray_SCE/other_harness_refs/codex",
+      "commit": "e6773f856c97ce766b7f507a99e5447a1e2a306c",
+      "commit_date": "2026-03-04T02:41:57+00:00",
+      "ref": "origin/main"
+    },
+    "claude_code": {
+      "repo_url": "https://github.com/anthropics/claude-code.git",
+      "local_repo": "/shared_folders/querylake_server/ray_testing/ray_SCE/other_harness_refs/sdk_competitors/claude_code",
+      "commit": "a8335230bc62baae60c8eb18ae77ab32123454bd",
+      "commit_date": "2026-03-04T02:23:29+00:00",
+      "ref": "origin/main"
+    },
+    "opencode": {
+      "repo_url": "https://github.com/anomalyco/opencode",
+      "local_repo": "/shared_folders/querylake_server/ray_testing/ray_SCE/other_harness_refs/opencode",
+      "commit": "3ebebe0a96de5ec4757de12a21cb9f933e0fbba0",
+      "commit_date": "2026-03-03T22:14:28-05:00",
+      "ref": "origin/HEAD"
+    }
+  },
+  "notes": [
+    "Use this snapshot for this recalibration window to avoid live HEAD race."
+  ]
+}
