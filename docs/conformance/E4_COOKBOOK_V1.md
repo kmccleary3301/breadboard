@@ -302,6 +302,7 @@ Required checks after freezing:
 ```bash
 python scripts/check_e4_target_freeze_manifest.py --strict-evidence --json
 python scripts/audit_e4_target_drift.py
+python scripts/check_e4_snapshot_coverage.py --json
 ```
 
 Interpretation:
@@ -321,7 +322,8 @@ Preferred pattern:
 1. keep the base config name for the currently active lane
 2. create versioned snapshot configs that encode the target versions
 3. update the freeze manifest to map both the base lane and the versioned lane
-4. leave older versioned configs in place unless they are known-bad
+4. verify that every base lane still has at least one snapshot row
+5. leave older versioned configs in place unless they are known-bad
 
 Examples already in use include tags like:
 
@@ -437,6 +439,7 @@ Fix:
 - [ ] Update `parity_scenarios.yaml` if the lane is replay-driven.
 - [ ] Update `config/e4_target_freeze_manifest.yaml`.
 - [ ] Add a new versioned snapshot config.
+- [ ] Run `check_e4_snapshot_coverage.py`.
 - [ ] Run `check_e4_target_freeze_manifest.py --strict-evidence`.
 - [ ] Run drift audit.
 - [ ] Update `E4_RECALIBRATION_STATUS_V1.md`.

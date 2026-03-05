@@ -49,6 +49,18 @@ Optional freshness check (fails stale calibration anchors):
 python scripts/check_e4_target_freeze_manifest.py --strict-evidence --max-evidence-age-days 45 --json
 ```
 
+Snapshot coverage check:
+
+```bash
+make e4-snapshot-coverage
+```
+
+Equivalent direct command:
+
+```bash
+python scripts/check_e4_snapshot_coverage.py --json
+```
+
 ## Refresh helpers
 
 Generate a dry-run update plan from local harness clones in `../other_harness_refs`:
@@ -115,9 +127,11 @@ make e4-target-drift-audit
    - upstream commit + date,
    - release label,
    - updated evidence paths.
-5. Update E4 config behavior only as required for parity.
-6. Re-run E4 checks and conformance runs.
-7. Record the bump in release notes / parity docs.
+5. Verify snapshot coverage:
+   - `make e4-snapshot-coverage`
+6. Update E4 config behavior only as required for parity.
+7. Re-run E4 checks and conformance runs.
+8. Record the bump in release notes / parity docs.
 
 ## Post-Restore Strict Probe Baseline (2026-03-04)
 
