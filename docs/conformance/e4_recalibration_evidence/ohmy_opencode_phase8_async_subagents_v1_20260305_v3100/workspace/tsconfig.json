@@ -1,0 +1,4 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_recovery_work_20260217_170242/../other_harness_refs/opencode/packages/opencode/tsconfig.json"
+}

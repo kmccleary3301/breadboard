@@ -69,14 +69,26 @@ if [[ -z "${SCENARIO}" || -z "${PROMPT}" ]]; then
   exit 2
 fi
 
-OPENCODE_REPO_ROOT="${ROOT_DIR}/industry_refs/opencode"
+if [[ -d "${ROOT_DIR}/industry_refs/opencode" ]]; then
+  OPENCODE_REPO_ROOT="${ROOT_DIR}/industry_refs/opencode"
+elif [[ -d "${ROOT_DIR}/../other_harness_refs/opencode" ]]; then
+  OPENCODE_REPO_ROOT="${ROOT_DIR}/../other_harness_refs/opencode"
+else
+  OPENCODE_REPO_ROOT="${ROOT_DIR}/industry_refs/opencode"
+fi
 OPENCODE_PACKAGE_DIR="${OPENCODE_REPO_ROOT}/packages/opencode"
 OPENCODE_ENTRYPOINT="${OPENCODE_PACKAGE_DIR}/src/index.ts"
 OPENCODE_PACKAGE_JSON="${OPENCODE_REPO_ROOT}/packages/opencode/package.json"
 OPENCODE_TSCONFIG="${OPENCODE_REPO_ROOT}/packages/opencode/tsconfig.json"
 OPENCODE_BUNFIG="${OPENCODE_REPO_ROOT}/packages/opencode/bunfig.toml"
 
-OMO_REPO_ROOT="${ROOT_DIR}/industry_refs/oh-my-opencode"
+if [[ -d "${ROOT_DIR}/industry_refs/oh-my-opencode" ]]; then
+  OMO_REPO_ROOT="${ROOT_DIR}/industry_refs/oh-my-opencode"
+elif [[ -d "${ROOT_DIR}/../other_harness_refs/oh-my-opencode" ]]; then
+  OMO_REPO_ROOT="${ROOT_DIR}/../other_harness_refs/oh-my-opencode"
+else
+  OMO_REPO_ROOT="${ROOT_DIR}/industry_refs/oh-my-opencode"
+fi
 OMO_PACKAGE_JSON="${OMO_REPO_ROOT}/package.json"
 OMO_DIST_ENTRY="${OMO_REPO_ROOT}/dist/index.js"
 

@@ -1,0 +1,13 @@
+{
+  "agent": null,
+  "captured_at_utc": "2026-03-05T18:46:07Z",
+  "extra_args": [
+    ""
+  ],
+  "model": "openai/gpt-5.1-codex-mini",
+  "oh_my_opencode_commit": "5137df72d8fab3fec609c82f91387db8e3b13825",
+  "opencode_commit": "85ff05670a53079066fcbc0abc0271ea355585c1",
+  "run_id": "20260305_ohmy_v3100_refresh",
+  "scenario": "phase8_async_subagents_v1",
+  "version_label": "opencode_1.2.17__oh-my-opencode_3.10.0"
+}

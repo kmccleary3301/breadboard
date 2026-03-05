@@ -1,0 +1,8 @@
+extends: opencode_gpt5_nano_c_fs_v2.yaml
+
+profile: { name: oh-my-opencode-phase8-async-subagents-v1-replay }
+
+# Replay profile for the oh-my-opencode async background_task/background_output goldens.
+replay:
+  compare_tool_outputs: [background_task, background_output, background_cancel, call_omo_agent]
+  fail_on_tool_output_mismatch: true

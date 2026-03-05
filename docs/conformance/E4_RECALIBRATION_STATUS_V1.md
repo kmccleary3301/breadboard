@@ -276,3 +276,46 @@ Manifest/drift verification:
 - `python scripts/check_e4_target_freeze_manifest.py --strict-evidence --json` -> `ok: true`
 - `python scripts/audit_e4_target_drift.py --json-out artifacts/conformance/e4_target_drift_audit_report.20260305_fix4_final.json`
   - `drift_count: 0` (all 44 E4 rows aligned at run time)
+
+## oh-my-opencode follow-up refresh (2026-03-05)
+
+The fourth harness lane (`oh-my-opencode`) was refreshed against the current
+upstream `dev` head and promoted into the freeze manifest as an explicit E4 row.
+
+Reference sync:
+
+- upstream repo: `https://github.com/code-yeongyu/oh-my-opencode`
+- pinned commit: `5137df72d8fab3fec609c82f91387db8e3b13825`
+- upstream tag: `v3.10.0`
+- commit date: `2026-03-05T18:11:22+00:00`
+
+Fresh capture evidence:
+
+- run id: `20260305_ohmy_v3100_refresh`
+- path:
+  - `misc/oh_my_opencode_runs/goldens/opencode_1.2.17__oh-my-opencode_3.10.0/phase8_async_subagents_v1/runs/20260305_ohmy_v3100_refresh`
+- tracked evidence mirror:
+  - `docs/conformance/e4_recalibration_evidence/ohmy_opencode_phase8_async_subagents_v1_20260305_v3100/`
+
+Replay verification:
+
+- run id: `ohmy_opencode_e4_refresh_20260305_v3100`
+- artifact:
+  - `artifacts/parity_runs/ohmy_opencode_e4_refresh_20260305_v3100/parity_summary.json`
+- result: `status_counts.passed = 1`, `failed = []`, `warned = []`
+
+New explicit E4 rows:
+
+- `oh_my_opencode_e4_phase8_async_subagents_v1_replay`
+- `oh_my_opencode_e4_phase8_async_subagents_v1_replay__codex0_1070_claude2_1_63_opencode1_2_17_ohmyopencode3_10_0_20260305`
+
+Notes:
+
+- `scripts/capture_oh_my_opencode_golden.sh` now falls back to
+  `../other_harness_refs/{opencode,oh-my-opencode}` when the older
+  `industry_refs/` layout is absent.
+- `python scripts/check_e4_target_freeze_manifest.py --strict-evidence --json`
+  returns `ok: true` after adding the new oh-my-opencode E4 rows.
+- A live-remote drift audit run performed after this follow-up showed Codex and
+  OpenCode had already advanced again on GitHub, but the two `oh-my-opencode`
+  E4 rows were aligned to current remote head at capture time.

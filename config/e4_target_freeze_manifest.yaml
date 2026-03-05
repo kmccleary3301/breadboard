@@ -1,5 +1,5 @@
 schema_version: e4_target_freeze_manifest_v1
-manifest_updated_utc: '2026-03-05T05:42:05Z'
+manifest_updated_utc: '2026-03-05T18:48:46Z'
 notes:
 - This manifest pins each E4 BreadBoard config to the exact upstream harness snapshot
   it was calibrated against.
@@ -148,6 +148,24 @@ e4_configs:
       - misc/opencode_tests/oc_protofs_gpt5nano/opencode_session_dump.guardrails.json
       - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/opencode_protofs_gpt5nano_toolio_replay_result.json
       - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/parity_summary.json
+  oh_my_opencode_e4_phase8_async_subagents_v1_replay:
+    config_path: agent_configs/oh_my_opencode_e4_phase8_async_subagents_v1_replay.yaml
+    harness:
+      family: oh_my_opencode
+      upstream_repo: https://github.com/code-yeongyu/oh-my-opencode
+      upstream_commit: 5137df72d8fab3fec609c82f91387db8e3b13825
+      upstream_commit_date: '2026-03-05T18:11:22+00:00'
+      upstream_release_label: oh-my-opencode@v3.10.0
+      runtime_surface:
+        provider_model: openai/gpt-5.1-codex-mini
+    calibration_anchor:
+      class: replay_session_dump
+      scenario_id: oh_my_opencode_phase8_async_subagents_v1_replay
+      evidence_paths:
+      - misc/opencode_runs/parity_scenarios.yaml
+      - docs/conformance/e4_recalibration_evidence/ohmy_opencode_phase8_async_subagents_v1_20260305_v3100/scenario.json
+      - docs/conformance/e4_recalibration_evidence/ohmy_opencode_phase8_async_subagents_v1_20260305_v3100/replay_session.json
+      - docs/conformance/e4_recalibration_evidence/ohmy_opencode_phase8_async_subagents_v1_20260305_v3100/parity_summary.json
   claude_code_haiku45_e4_replay__codex_cli_0_105_0_20260304:
     config_path: agent_configs/claude_code_haiku45_e4_replay__codex_cli_0_105_0_20260304.yaml
     harness:
@@ -854,3 +872,23 @@ e4_configs:
       - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/parity_summary.json
     snapshot_source_entry: opencode_e4_webfetch_sentinel_replay
     snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305
+  oh_my_opencode_e4_phase8_async_subagents_v1_replay__codex0_1070_claude2_1_63_opencode1_2_17_ohmyopencode3_10_0_20260305:
+    config_path: agent_configs/oh_my_opencode_e4_phase8_async_subagents_v1_replay__codex0_1070_claude2_1_63_opencode1_2_17_ohmyopencode3_10_0_20260305.yaml
+    harness:
+      family: oh_my_opencode
+      upstream_repo: https://github.com/code-yeongyu/oh-my-opencode
+      upstream_commit: 5137df72d8fab3fec609c82f91387db8e3b13825
+      upstream_commit_date: '2026-03-05T18:11:22+00:00'
+      upstream_release_label: oh-my-opencode@v3.10.0+bb-snapshot-codex0_1070_claude2_1_63_opencode1_2_17_ohmyopencode3_10_0_20260305
+      runtime_surface:
+        provider_model: openai/gpt-5.1-codex-mini
+    calibration_anchor:
+      class: replay_session_dump
+      scenario_id: oh_my_opencode_phase8_async_subagents_v1_replay
+      evidence_paths:
+      - misc/opencode_runs/parity_scenarios.yaml
+      - docs/conformance/e4_recalibration_evidence/ohmy_opencode_phase8_async_subagents_v1_20260305_v3100/scenario.json
+      - docs/conformance/e4_recalibration_evidence/ohmy_opencode_phase8_async_subagents_v1_20260305_v3100/replay_session.json
+      - docs/conformance/e4_recalibration_evidence/ohmy_opencode_phase8_async_subagents_v1_20260305_v3100/parity_summary.json
+    snapshot_source_entry: oh_my_opencode_e4_phase8_async_subagents_v1_replay
+    snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_ohmyopencode3_10_0_20260305
