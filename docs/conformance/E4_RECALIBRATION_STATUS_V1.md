@@ -190,3 +190,46 @@ Scenarios covered:
 - `claude_code_phase8_subagent_allowlist_denial_v1_replay`
 - `claude_code_phase8_async_subagent_resume_taskoutput_v1_replay`
 - `claude_code_phase8_subagent_resume_success_v1_replay`
+
+## Capture refresh tranche (2026-03-05)
+
+Refreshed target-harness captures were regenerated against current local clones,
+and versioned snapshot configs were added without deleting prior snapshots.
+
+Capture bundle run ids:
+
+- Codex refresh bundle:
+  - `e4_refresh_20260305_fix3_codex_ping`
+  - `e4_refresh_20260305_fix3_codex_sub_sync`
+  - `e4_refresh_20260305_fix3_codex_sub_async`
+- Codex MVI refresh lane:
+  - `e4_refresh_20260305_fix3_codex_mvi_patch_v2`
+- Claude refresh ping:
+  - `e4_refresh_20260305_fix3_claude_claude_ping`
+- OpenCode refresh ping:
+  - `e4_refresh_20260305_fix3_opencode_opencode_ping`
+
+Replay probe reruns after refresh:
+
+- `e4_postrestore_strict_probe_20260305_030615` (7/7 passed)
+- `e4_claude_legacy_strict_probe_20260305_030706` (11/11 passed)
+
+Snapshot/versioning:
+
+- Manifest pins refreshed to latest local Codex/OpenCode clone commits.
+- New snapshot tag created:
+  - `codex0_1070_claude2_0_72_opencode1_2_17_20260305`
+- New versioned E4 config entries added for all codex/claude/opencode E4
+  base rows under `agent_configs/*__codex0_1070_claude2_0_72_opencode1_2_17_20260305.yaml`.
+
+Tooling hardening in this tranche:
+
+- `scripts/capture_codex_golden.sh`
+  - fixed Codex 0.107.x reasoning override key:
+    - from `reasoning.effort` to `model_reasoning_effort`
+  - added `--reasoning-effort` flag (default `high`)
+  - added optional `--isolate-home` mode (off by default) for deterministic
+    runs when local auth context is not required.
+- `scripts/capture_opencode_golden.sh`
+  - dependency bootstrap now also repairs missing
+    `node_modules/@aws-sdk/credential-providers` after upstream pulls.

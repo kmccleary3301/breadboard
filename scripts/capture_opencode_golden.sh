@@ -7,7 +7,7 @@ Usage:
   scripts/capture_opencode_golden.sh --scenario <name> --prompt <text> [options] [-- <extra opencode args...>]
 
 Options:
-  --version <ver>        OpenCode version label for output dir (default: read from industry_refs/opencode)
+  --version <ver>        OpenCode version label for output dir (default: read from detected OpenCode clone)
   --model <provider/model>  OpenCode model (default: openai/gpt-5.1-codex-mini)
   --agent <name>         OpenCode agent name (default: none)
   --run-id <id>          Unique run id for this capture (default: UTC timestamp)
@@ -16,7 +16,11 @@ Options:
 
 Notes:
   - Captures under: misc/opencode_runs/goldens/<version>/<scenario>/runs/<run-id>/
-  - Runs OpenCode from `industry_refs/opencode` with an isolated HOME + XDG dirs.
+  - Runs OpenCode from the first detected clone:
+      - `industry_refs/opencode`
+      - `../other_harness_refs/opencode`
+      - `other_harness_refs/opencode`
+    with an isolated HOME + XDG dirs.
   - Requires instrumented OpenCode (sets OPENCODE_PROVIDER_DUMP_DIR to capture raw provider request bodies).
   - Sources .env if present (expects OPENAI_API_KEY / ANTHROPIC_API_KEY / OPENROUTER_API_KEY as needed).
 EOF
@@ -69,7 +73,22 @@ if [[ -z "${SCENARIO}" || -z "${PROMPT}" ]]; then
   exit 2
 fi
 
-OPENCODE_REPO_ROOT="${ROOT_DIR}/industry_refs/opencode"
+OPENCODE_REPO_ROOT=""
+for candidate in \
+  "${ROOT_DIR}/industry_refs/opencode" \
+  "${ROOT_DIR}/../other_harness_refs/opencode" \
+  "${ROOT_DIR}/other_harness_refs/opencode"
+do
+  if [[ -f "${candidate}/packages/opencode/src/index.ts" ]]; then
+    OPENCODE_REPO_ROOT="${candidate}"
+    break
+  fi
+done
+if [[ -z "${OPENCODE_REPO_ROOT}" ]]; then
+  echo "[capture-opencode-golden] Could not locate OpenCode repo clone." >&2
+  echo "Checked: ${ROOT_DIR}/industry_refs/opencode, ${ROOT_DIR}/../other_harness_refs/opencode, ${ROOT_DIR}/other_harness_refs/opencode" >&2
+  exit 2
+fi
 OPENCODE_PACKAGE_DIR="${OPENCODE_REPO_ROOT}/packages/opencode"
 OPENCODE_ENTRYPOINT="${OPENCODE_PACKAGE_DIR}/src/index.ts"
 OPENCODE_PACKAGE_JSON="${OPENCODE_REPO_ROOT}/packages/opencode/package.json"
@@ -141,8 +160,9 @@ elif [[ -f "${ROOT_DIR}/../backup.env" ]]; then
   set +a
 fi
 
-# Ensure OpenCode deps are present (monorepo root).
-if [[ ! -d "${OPENCODE_REPO_ROOT}/node_modules" ]]; then
+# Ensure OpenCode deps are present (monorepo root), and refresh after upstream
+# pulls when new packages are introduced.
+if [[ ! -d "${OPENCODE_REPO_ROOT}/node_modules" || ! -d "${OPENCODE_REPO_ROOT}/node_modules/@aws-sdk/credential-providers" ]]; then
   echo "[capture-opencode-golden] Installing OpenCode deps (bun install)..." >&2
   (cd "${OPENCODE_REPO_ROOT}" && bun install)
 fi
