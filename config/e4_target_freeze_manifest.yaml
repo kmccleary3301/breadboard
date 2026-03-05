@@ -1,5 +1,5 @@
 schema_version: e4_target_freeze_manifest_v1
-manifest_updated_utc: '2026-03-05T03:05:57Z'
+manifest_updated_utc: '2026-03-05T05:42:05Z'
 notes:
 - This manifest pins each E4 BreadBoard config to the exact upstream harness snapshot
   it was calibrated against.
@@ -12,8 +12,8 @@ e4_configs:
     harness:
       family: codex_cli
       upstream_repo: https://github.com/openai/codex
-      upstream_commit: be5e8fbd379481275d0b7c3823a57a537dac13ec
-      upstream_commit_date: '2026-03-04T18:32:35-07:00'
+      upstream_commit: 3eb9115cefbee2035e0e95ef744e33c3b8aacb51
+      upstream_commit_date: '2026-03-05T04:23:20+00:00'
       upstream_release_label: codex-cli@snapshot-2026-03-04-main
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -30,8 +30,8 @@ e4_configs:
     harness:
       family: claude_code
       upstream_repo: https://github.com/anthropics/claude-code.git
-      upstream_commit: a8335230bc62baae60c8eb18ae77ab32123454bd
-      upstream_commit_date: '2026-03-04T02:23:29+00:00'
+      upstream_commit: 9582ad480f687bbeaf0025852ac4f020b07f20bb
+      upstream_commit_date: '2026-03-05T00:25:31+00:00'
       upstream_release_label: claude-code@snapshot-2026-03-04
       runtime_surface:
         provider_model: anthropic/claude-haiku-4-5-20251001
@@ -48,8 +48,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -67,8 +67,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -84,8 +84,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -101,8 +101,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -118,8 +118,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -135,8 +135,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04
       runtime_surface:
         provider_model: openai/gpt-5-nano
@@ -153,8 +153,8 @@ e4_configs:
     harness:
       family: claude_code
       upstream_repo: https://github.com/anthropics/claude-code.git
-      upstream_commit: a8335230bc62baae60c8eb18ae77ab32123454bd
-      upstream_commit_date: '2026-03-04T02:23:29+00:00'
+      upstream_commit: 9582ad480f687bbeaf0025852ac4f020b07f20bb
+      upstream_commit_date: '2026-03-05T00:25:31+00:00'
       upstream_release_label: claude-code@snapshot-2026-03-04+bb-snapshot-codex_cli_0_105_0_20260304
       runtime_surface:
         provider_model: anthropic/claude-haiku-4-5-20251001
@@ -173,8 +173,8 @@ e4_configs:
     harness:
       family: codex_cli
       upstream_repo: https://github.com/openai/codex
-      upstream_commit: be5e8fbd379481275d0b7c3823a57a537dac13ec
-      upstream_commit_date: '2026-03-04T18:32:35-07:00'
+      upstream_commit: 3eb9115cefbee2035e0e95ef744e33c3b8aacb51
+      upstream_commit_date: '2026-03-05T04:23:20+00:00'
       upstream_release_label: codex-cli@snapshot-2026-03-04-main+bb-snapshot-codex_cli_0_105_0_20260304
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -193,8 +193,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex_cli_0_105_0_20260304
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -212,8 +212,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex_cli_0_105_0_20260304
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -233,8 +233,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex_cli_0_105_0_20260304
       runtime_surface:
         provider_model: openai/gpt-5-nano
@@ -253,8 +253,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex_cli_0_105_0_20260304
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -272,8 +272,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex_cli_0_105_0_20260304
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -291,8 +291,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex_cli_0_105_0_20260304
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -310,8 +310,8 @@ e4_configs:
     harness:
       family: codex_cli
       upstream_repo: https://github.com/openai/codex
-      upstream_commit: be5e8fbd379481275d0b7c3823a57a537dac13ec
-      upstream_commit_date: '2026-03-04T18:32:35-07:00'
+      upstream_commit: 3eb9115cefbee2035e0e95ef744e33c3b8aacb51
+      upstream_commit_date: '2026-03-05T04:23:20+00:00'
       upstream_release_label: codex-cli@0.105.0-snapshot-2026-03-04
       runtime_surface:
         provider_model: openai/gpt-5-codex
@@ -328,8 +328,8 @@ e4_configs:
     harness:
       family: claude_code
       upstream_repo: https://github.com/anthropics/claude-code.git
-      upstream_commit: a8335230bc62baae60c8eb18ae77ab32123454bd
-      upstream_commit_date: '2026-03-04T02:23:29+00:00'
+      upstream_commit: 9582ad480f687bbeaf0025852ac4f020b07f20bb
+      upstream_commit_date: '2026-03-05T00:25:31+00:00'
       upstream_release_label: claude-code@snapshot-2026-03-04+bb-snapshot-codex0_1050_claude2_0_72_opencode1_2_6_20260304
       runtime_surface:
         provider_model: anthropic/claude-haiku-4-5-20251001
@@ -348,8 +348,8 @@ e4_configs:
     harness:
       family: codex_cli
       upstream_repo: https://github.com/openai/codex
-      upstream_commit: be5e8fbd379481275d0b7c3823a57a537dac13ec
-      upstream_commit_date: '2026-03-04T18:32:35-07:00'
+      upstream_commit: 3eb9115cefbee2035e0e95ef744e33c3b8aacb51
+      upstream_commit_date: '2026-03-05T04:23:20+00:00'
       upstream_release_label: codex-cli@snapshot-2026-03-04-main+bb-snapshot-codex0_1050_claude2_0_72_opencode1_2_6_20260304
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -368,8 +368,8 @@ e4_configs:
     harness:
       family: codex_cli
       upstream_repo: https://github.com/openai/codex
-      upstream_commit: be5e8fbd379481275d0b7c3823a57a537dac13ec
-      upstream_commit_date: '2026-03-04T18:32:35-07:00'
+      upstream_commit: 3eb9115cefbee2035e0e95ef744e33c3b8aacb51
+      upstream_commit_date: '2026-03-05T04:23:20+00:00'
       upstream_release_label: codex-cli@0.105.0-snapshot-2026-03-04+bb-snapshot-codex0_1050_claude2_0_72_opencode1_2_6_20260304
       runtime_surface:
         provider_model: openai/gpt-5-codex
@@ -388,8 +388,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1050_claude2_0_72_opencode1_2_6_20260304
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -407,8 +407,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1050_claude2_0_72_opencode1_2_6_20260304
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -428,8 +428,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1050_claude2_0_72_opencode1_2_6_20260304
       runtime_surface:
         provider_model: openai/gpt-5-nano
@@ -448,8 +448,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1050_claude2_0_72_opencode1_2_6_20260304
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -467,8 +467,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1050_claude2_0_72_opencode1_2_6_20260304
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -486,8 +486,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1050_claude2_0_72_opencode1_2_6_20260304
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -505,8 +505,8 @@ e4_configs:
     harness:
       family: claude_code
       upstream_repo: https://github.com/anthropics/claude-code.git
-      upstream_commit: a8335230bc62baae60c8eb18ae77ab32123454bd
-      upstream_commit_date: '2026-03-04T02:23:29+00:00'
+      upstream_commit: 9582ad480f687bbeaf0025852ac4f020b07f20bb
+      upstream_commit_date: '2026-03-05T00:25:31+00:00'
       upstream_release_label: claude-code@snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_0_72_opencode1_2_17_20260305
       runtime_surface:
         provider_model: anthropic/claude-haiku-4-5-20251001
@@ -525,8 +525,8 @@ e4_configs:
     harness:
       family: codex_cli
       upstream_repo: https://github.com/openai/codex
-      upstream_commit: be5e8fbd379481275d0b7c3823a57a537dac13ec
-      upstream_commit_date: '2026-03-04T18:32:35-07:00'
+      upstream_commit: 3eb9115cefbee2035e0e95ef744e33c3b8aacb51
+      upstream_commit_date: '2026-03-05T04:23:20+00:00'
       upstream_release_label: codex-cli@snapshot-2026-03-04-main+bb-snapshot-codex0_1070_claude2_0_72_opencode1_2_17_20260305
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -545,8 +545,8 @@ e4_configs:
     harness:
       family: codex_cli
       upstream_repo: https://github.com/openai/codex
-      upstream_commit: be5e8fbd379481275d0b7c3823a57a537dac13ec
-      upstream_commit_date: '2026-03-04T18:32:35-07:00'
+      upstream_commit: 3eb9115cefbee2035e0e95ef744e33c3b8aacb51
+      upstream_commit_date: '2026-03-05T04:23:20+00:00'
       upstream_release_label: codex-cli@0.105.0-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_0_72_opencode1_2_17_20260305
       runtime_surface:
         provider_model: openai/gpt-5-codex
@@ -565,8 +565,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_0_72_opencode1_2_17_20260305
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -584,8 +584,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_0_72_opencode1_2_17_20260305
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -605,8 +605,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_0_72_opencode1_2_17_20260305
       runtime_surface:
         provider_model: openai/gpt-5-nano
@@ -625,8 +625,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_0_72_opencode1_2_17_20260305
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -644,8 +644,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_0_72_opencode1_2_17_20260305
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -663,8 +663,8 @@ e4_configs:
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
-      upstream_commit: 324230806e99d4e5c9cc14fd66ddad0ba0c2b6e6
-      upstream_commit_date: '2026-03-05T09:49:11+10:00'
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
       upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_0_72_opencode1_2_17_20260305
       runtime_surface:
         provider_model: openai/gpt-5.1-codex-mini
@@ -677,3 +677,180 @@ e4_configs:
       - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/parity_summary.json
     snapshot_source_entry: opencode_e4_webfetch_sentinel_replay
     snapshot_tag: codex0_1070_claude2_0_72_opencode1_2_17_20260305
+  claude_code_haiku45_e4_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305:
+    config_path: agent_configs/claude_code_haiku45_e4_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml
+    harness:
+      family: claude_code
+      upstream_repo: https://github.com/anthropics/claude-code.git
+      upstream_commit: 9582ad480f687bbeaf0025852ac4f020b07f20bb
+      upstream_commit_date: '2026-03-05T00:25:31+00:00'
+      upstream_release_label: claude-code@snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_1_63_opencode1_2_17_20260305
+      runtime_surface:
+        provider_model: anthropic/claude-haiku-4-5-20251001
+    calibration_anchor:
+      class: tmux_scenario_capture
+      scenario_id: nightly_provider/claude_e2e_compact_semantic_v1
+      run_id: 20260304-041108
+      evidence_paths:
+      - docs_tmp/tmux_captures/scenarios/nightly_provider/claude_e2e_compact_semantic_v1/20260304-041108/meta.json
+      - docs_tmp/tmux_captures/scenarios/nightly_provider/claude_e2e_compact_semantic_v1/20260304-041108/scenario_manifest.json
+      - docs_tmp/tmux_captures/scenarios/nightly_provider/claude_e2e_compact_semantic_v1/20260304-041108/run_summary.json
+    snapshot_source_entry: claude_code_haiku45_e4_replay
+    snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305
+  codex_cli_gpt51mini_e4_live__codex0_1070_claude2_1_63_opencode1_2_17_20260305:
+    config_path: agent_configs/codex_cli_gpt51mini_e4_live__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml
+    harness:
+      family: codex_cli
+      upstream_repo: https://github.com/openai/codex
+      upstream_commit: 3eb9115cefbee2035e0e95ef744e33c3b8aacb51
+      upstream_commit_date: '2026-03-05T04:23:20+00:00'
+      upstream_release_label: codex-cli@snapshot-2026-03-04-main+bb-snapshot-codex0_1070_claude2_1_63_opencode1_2_17_20260305
+      runtime_surface:
+        provider_model: openai/gpt-5.1-codex-mini
+    calibration_anchor:
+      class: tmux_scenario_capture
+      scenario_id: nightly_provider/codex_e2e_compact_semantic_v1
+      run_id: 20260304-040559
+      evidence_paths:
+      - docs_tmp/tmux_captures/scenarios/nightly_provider/codex_e2e_compact_semantic_v1/20260304-040559/meta.json
+      - docs_tmp/tmux_captures/scenarios/nightly_provider/codex_e2e_compact_semantic_v1/20260304-040559/scenario_manifest.json
+      - docs_tmp/tmux_captures/scenarios/nightly_provider/codex_e2e_compact_semantic_v1/20260304-040559/run_summary.json
+    snapshot_source_entry: codex_cli_gpt51mini_e4_live
+    snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305
+  codex_cli_gpt5_e4_live__codex0_1070_claude2_1_63_opencode1_2_17_20260305:
+    config_path: agent_configs/codex_cli_gpt5_e4_live__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml
+    harness:
+      family: codex_cli
+      upstream_repo: https://github.com/openai/codex
+      upstream_commit: 3eb9115cefbee2035e0e95ef744e33c3b8aacb51
+      upstream_commit_date: '2026-03-05T04:23:20+00:00'
+      upstream_release_label: codex-cli@0.105.0-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_1_63_opencode1_2_17_20260305
+      runtime_surface:
+        provider_model: openai/gpt-5-codex
+    calibration_anchor:
+      class: codex_exec_rollout_capture
+      scenario_id: codex_subagent_sync_v1
+      run_id: e4_refresh_20260304_bundle_codex_sub_sync
+      evidence_paths:
+      - misc/codex_cli_runs/goldens/0.105.0/codex_subagent_sync_v1/runs/e4_refresh_20260304_bundle_codex_sub_sync/scenario.json
+      - misc/codex_cli_runs/goldens/0.105.0/codex_subagent_sync_v1/runs/e4_refresh_20260304_bundle_codex_sub_sync/rollout.jsonl
+      - misc/codex_cli_runs/goldens/0.105.0/codex_subagent_sync_v1/runs/e4_refresh_20260304_bundle_codex_sub_sync/exports/replay_session.json
+    snapshot_source_entry: codex_cli_gpt5_e4_live
+    snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305
+  opencode_e4_glob_grep_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305:
+    config_path: agent_configs/opencode_e4_glob_grep_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml
+    harness:
+      family: opencode
+      upstream_repo: https://github.com/anomalyco/opencode
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
+      upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_1_63_opencode1_2_17_20260305
+      runtime_surface:
+        provider_model: openai/gpt-5.1-codex-mini
+    calibration_anchor:
+      class: replay_session_dump
+      scenario_id: opencode_glob_grep_sentinel_replay
+      evidence_paths:
+      - misc/opencode_tests/opencode_glob_grep_sentinel/opencode_session_dump.json
+      - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/opencode_glob_grep_sentinel_replay_result.json
+      - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/parity_summary.json
+    snapshot_source_entry: opencode_e4_glob_grep_sentinel_replay
+    snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305
+  opencode_e4_mvi_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305:
+    config_path: agent_configs/opencode_e4_mvi_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml
+    harness:
+      family: opencode
+      upstream_repo: https://github.com/anomalyco/opencode
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
+      upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_1_63_opencode1_2_17_20260305
+      runtime_surface:
+        provider_model: openai/gpt-5.1-codex-mini
+    calibration_anchor:
+      class: replay_session_dump
+      scenario_id: opencode_mvi_bash_write_replay
+      evidence_paths:
+      - misc/opencode_runs/parity_scenarios.yaml
+      - misc/opencode_tests/protofs_test_run/opencode_session_dump.json
+      - misc/opencode_tests/protofs_test_run/opencode_session_dump.guardrails.json
+      - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/opencode_mvi_bash_write_replay_result.json
+      - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/parity_summary.json
+    snapshot_source_entry: opencode_e4_mvi_replay
+    snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305
+  opencode_e4_oc_protofs_gpt5nano_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305:
+    config_path: agent_configs/opencode_e4_oc_protofs_gpt5nano_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml
+    harness:
+      family: opencode
+      upstream_repo: https://github.com/anomalyco/opencode
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
+      upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_1_63_opencode1_2_17_20260305
+      runtime_surface:
+        provider_model: openai/gpt-5-nano
+    calibration_anchor:
+      class: replay_session_dump
+      scenario_id: opencode_protofs_gpt5nano_toolio_replay
+      evidence_paths:
+      - misc/opencode_tests/oc_protofs_gpt5nano/opencode_session_dump.json
+      - misc/opencode_tests/oc_protofs_gpt5nano/opencode_session_dump.guardrails.json
+      - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/opencode_protofs_gpt5nano_toolio_replay_result.json
+      - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/parity_summary.json
+    snapshot_source_entry: opencode_e4_oc_protofs_gpt5nano_replay
+    snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305
+  opencode_e4_patch_todo_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305:
+    config_path: agent_configs/opencode_e4_patch_todo_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml
+    harness:
+      family: opencode
+      upstream_repo: https://github.com/anomalyco/opencode
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
+      upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_1_63_opencode1_2_17_20260305
+      runtime_surface:
+        provider_model: openai/gpt-5.1-codex-mini
+    calibration_anchor:
+      class: replay_session_dump
+      scenario_id: opencode_patch_todo_sentinel_replay
+      evidence_paths:
+      - misc/opencode_tests/opencode_patch_todo_sentinel/opencode_session_dump.json
+      - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/opencode_patch_todo_sentinel_replay_result.json
+      - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/parity_summary.json
+    snapshot_source_entry: opencode_e4_patch_todo_sentinel_replay
+    snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305
+  opencode_e4_toolcall_repair_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305:
+    config_path: agent_configs/opencode_e4_toolcall_repair_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml
+    harness:
+      family: opencode
+      upstream_repo: https://github.com/anomalyco/opencode
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
+      upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_1_63_opencode1_2_17_20260305
+      runtime_surface:
+        provider_model: openai/gpt-5.1-codex-mini
+    calibration_anchor:
+      class: replay_session_dump
+      scenario_id: opencode_toolcall_repair_sentinel_replay
+      evidence_paths:
+      - misc/opencode_tests/opencode_toolcall_repair_sentinel/opencode_session_dump.json
+      - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/opencode_toolcall_repair_sentinel_replay_result.json
+      - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/parity_summary.json
+    snapshot_source_entry: opencode_e4_toolcall_repair_sentinel_replay
+    snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305
+  opencode_e4_webfetch_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305:
+    config_path: agent_configs/opencode_e4_webfetch_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml
+    harness:
+      family: opencode
+      upstream_repo: https://github.com/anomalyco/opencode
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
+      upstream_release_label: opencode@dev-snapshot-2026-03-04+bb-snapshot-codex0_1070_claude2_1_63_opencode1_2_17_20260305
+      runtime_surface:
+        provider_model: openai/gpt-5.1-codex-mini
+    calibration_anchor:
+      class: replay_session_dump
+      scenario_id: opencode_webfetch_sentinel_replay
+      evidence_paths:
+      - misc/opencode_tests/opencode_webfetch_sentinel/opencode_session_dump.json
+      - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/opencode_webfetch_sentinel_replay_result.json
+      - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/parity_summary.json
+    snapshot_source_entry: opencode_e4_webfetch_sentinel_replay
+    snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305

@@ -1,0 +1,13 @@
+# E4 version snapshot file
+# source_manifest_entry: claude_code_haiku45_e4_replay
+# snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305
+
+extends: claude_code_haiku45_c_fs_v2.yaml
+
+# Replay configuration for Claude Code E4 suite:
+# - preserve tool names as recorded from Claude Code (Read/Grep/Edit/Write/Bash/etc.)
+# - compare all tool outputs against recorded tool_result payloads
+replay:
+  preserve_tool_names: true
+  compare_tool_outputs: true
+

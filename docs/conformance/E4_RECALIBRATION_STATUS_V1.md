@@ -233,3 +233,46 @@ Tooling hardening in this tranche:
 - `scripts/capture_opencode_golden.sh`
   - dependency bootstrap now also repairs missing
     `node_modules/@aws-sdk/credential-providers` after upstream pulls.
+
+## Follow-up refresh (Claude 2.1.63, 2026-03-05)
+
+Additional follow-up aligned the Claude lane to current local CLI/runtime and
+re-synced all harness pin commits to current local clone heads.
+
+Capture evidence:
+
+- Claude ping capture (`version=2.1.63`):
+  - run id: `e4_refresh_20260305_fix4_claude_ping`
+  - path:
+    - `misc/claude_code_runs/goldens/2.1.63/claude_e4_refresh_ping_v1/runs/e4_refresh_20260305_fix4_claude_ping`
+
+New snapshot tag generated:
+
+- `codex0_1070_claude2_1_63_opencode1_2_17_20260305`
+
+Added versioned rows:
+
+- `claude_code_haiku45_e4_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305`
+- `codex_cli_gpt51mini_e4_live__codex0_1070_claude2_1_63_opencode1_2_17_20260305`
+- `codex_cli_gpt5_e4_live__codex0_1070_claude2_1_63_opencode1_2_17_20260305`
+- `opencode_e4_glob_grep_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305`
+- `opencode_e4_mvi_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305`
+- `opencode_e4_oc_protofs_gpt5nano_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305`
+- `opencode_e4_patch_todo_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305`
+- `opencode_e4_toolcall_repair_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305`
+- `opencode_e4_webfetch_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305`
+
+Strict replay probe reruns:
+
+- `e4_postrestore_strict_probe_20260305_054103`
+  - artifact: `artifacts/parity_runs/e4_postrestore_strict_probe_20260305_054103/parity_summary.json`
+  - result: `status_counts.passed = 7`, `failed = []`, `warned = []`
+- `e4_claude_legacy_strict_probe_20260305_054223`
+  - artifact: `artifacts/parity_runs/e4_claude_legacy_strict_probe_20260305_054223/parity_summary.json`
+  - result: `status_counts.passed = 11`, `failed = []`, `warned = []`
+
+Manifest/drift verification:
+
+- `python scripts/check_e4_target_freeze_manifest.py --strict-evidence --json` -> `ok: true`
+- `python scripts/audit_e4_target_drift.py --json-out artifacts/conformance/e4_target_drift_audit_report.20260305_fix4_final.json`
+  - `drift_count: 0` (all 44 E4 rows aligned at run time)
