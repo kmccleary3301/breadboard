@@ -159,3 +159,34 @@ Notes:
 - `opencode_patch_todo_sentinel_replay` now points to a restored deterministic
   golden workspace snapshot path:
   - `misc/opencode_runs/golden_live/opencode_patch_todo_sentinel_20260304`
+
+## Claude legacy replay lane restore probe (2026-03-04)
+
+Legacy Claude phase8/protofs replay fixture lanes were restored and revalidated
+in strict mode.
+
+Quick rerun command:
+
+```bash
+make e4-claude-legacy-strict-probe
+```
+
+Latest strict run:
+
+- run id: `claude_legacy_fixture_restore_probe_20260304_strict`
+- artifact: `artifacts/parity_runs/claude_legacy_fixture_restore_probe_20260304_strict/parity_summary.json`
+- result: 11/11 passed, 0 warns
+
+Scenarios covered:
+
+- `claude45_protofs_replay`
+- `claude_code_task_subagent_sync_replay`
+- `claude_code_phase8_async_subagents_v1_replay`
+- `claude_code_phase8_subagent_nested_spawn_v1_replay`
+- `claude_code_phase8_async_subagent_wakeup_ordering_v1_replay`
+- `claude_code_phase8_async_wakeup_eventlog_replay`
+- `claude_code_phase8_subagent_write_denial_v1_replay`
+- `claude_code_phase8_subagent_permission_propagation_v1_replay`
+- `claude_code_phase8_subagent_allowlist_denial_v1_replay`
+- `claude_code_phase8_async_subagent_resume_taskoutput_v1_replay`
+- `claude_code_phase8_subagent_resume_success_v1_replay`

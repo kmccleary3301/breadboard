@@ -53,6 +53,12 @@ make e4-target-drift-audit
 make e4-postrestore-strict-probe
 ```
 
+### Claude legacy strict replay bundle
+
+```bash
+make e4-claude-legacy-strict-probe
+```
+
 Policy: [E4_TARGET_VERSIONING.md](E4_TARGET_VERSIONING.md)
 Recalibration playbook: [E4_RECALIBRATION_PLAN_V1.md](E4_RECALIBRATION_PLAN_V1.md)
 Current status: [E4_RECALIBRATION_STATUS_V1.md](E4_RECALIBRATION_STATUS_V1.md)

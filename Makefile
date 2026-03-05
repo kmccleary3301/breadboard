@@ -1,4 +1,4 @@
-.PHONY: help setup setup-fast setup-engine setup-fast-engine setup-refresh-python setup-tui setup-smoke setup-sdk-live setup-all doctor doctor-full doctor-tui quickstart cli-capabilities onboarding-contract e4-target-manifest e4-target-refresh-plan e4-target-drift-audit e4-postrestore-strict-probe disk-report disk-prune repair-cli build-tui typecheck-tui smoke sdk-hello sdk-hello-live devx-smoke devx-smoke-engine devx-smoke-live devx-full-pass devx-full-pass-engine devx-timing
+.PHONY: help setup setup-fast setup-engine setup-fast-engine setup-refresh-python setup-tui setup-smoke setup-sdk-live setup-all doctor doctor-full doctor-tui quickstart cli-capabilities onboarding-contract e4-target-manifest e4-target-refresh-plan e4-target-drift-audit e4-postrestore-strict-probe e4-claude-legacy-strict-probe disk-report disk-prune repair-cli build-tui typecheck-tui smoke sdk-hello sdk-hello-live devx-smoke devx-smoke-engine devx-smoke-live devx-full-pass devx-full-pass-engine devx-timing
 
 help:
 	@echo "BreadBoard dev shortcuts"
@@ -21,6 +21,7 @@ help:
 	@echo "  make e4-target-refresh-plan # dry-run refresh of E4 harness pins from local clones"
 	@echo "  make e4-target-drift-audit # check manifest pins vs upstream remote HEADs"
 	@echo "  make e4-postrestore-strict-probe # strict Codex+Claude+OpenCode post-restore replay probe"
+	@echo "  make e4-claude-legacy-strict-probe # strict Claude legacy replay bundle (phase8 + protofs)"
 	@echo "  make disk-report    # dry-run ~/.breadboard cleanup plan + JSON report"
 	@echo "  make disk-prune     # apply ~/.breadboard cleanup with safe defaults"
 	@echo "  make repair-cli      # rebuild and validate local breadboard CLI wrapper"
@@ -97,6 +98,21 @@ e4-postrestore-strict-probe:
 		--scenario codex_cli_subagent_sync_replay \
 		--scenario codex_cli_subagent_async_replay \
 		--parity-run-id e4_postrestore_strict_probe_$$(date -u +%Y%m%d_%H%M%S)
+
+e4-claude-legacy-strict-probe:
+	python scripts/run_parity_replays.py --strict \
+		--scenario claude45_protofs_replay \
+		--scenario claude_code_task_subagent_sync_replay \
+		--scenario claude_code_phase8_async_subagents_v1_replay \
+		--scenario claude_code_phase8_subagent_nested_spawn_v1_replay \
+		--scenario claude_code_phase8_async_subagent_wakeup_ordering_v1_replay \
+		--scenario claude_code_phase8_async_wakeup_eventlog_replay \
+		--scenario claude_code_phase8_subagent_write_denial_v1_replay \
+		--scenario claude_code_phase8_subagent_permission_propagation_v1_replay \
+		--scenario claude_code_phase8_subagent_allowlist_denial_v1_replay \
+		--scenario claude_code_phase8_async_subagent_resume_taskoutput_v1_replay \
+		--scenario claude_code_phase8_subagent_resume_success_v1_replay \
+		--parity-run-id e4_claude_legacy_strict_probe_$$(date -u +%Y%m%d_%H%M%S)
 
 disk-report:
 	python scripts/prune_breadboard_home.py --json-out artifacts/maintenance/prune_breadboard_home.latest.json
