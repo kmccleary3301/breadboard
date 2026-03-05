@@ -47,9 +47,16 @@ make e4-target-refresh-plan
 make e4-target-drift-audit
 ```
 
+### Post-restore strict replay probe (Codex + Claude + OpenCode)
+
+```bash
+make e4-postrestore-strict-probe
+```
+
 Policy: [E4_TARGET_VERSIONING.md](E4_TARGET_VERSIONING.md)
 Recalibration playbook: [E4_RECALIBRATION_PLAN_V1.md](E4_RECALIBRATION_PLAN_V1.md)
 Current status: [E4_RECALIBRATION_STATUS_V1.md](E4_RECALIBRATION_STATUS_V1.md)
+Capture + side-by-side versioning: [E4_CAPTURE_REFRESH_AND_VERSIONING_V2.md](E4_CAPTURE_REFRESH_AND_VERSIONING_V2.md)
 
 ---
 

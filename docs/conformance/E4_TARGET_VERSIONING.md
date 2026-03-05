@@ -69,6 +69,24 @@ Apply the refresh in-place:
 python scripts/update_e4_target_freeze_manifest.py --write
 ```
 
+Create side-by-side versioned E4 config snapshots (preserve old files/rows):
+
+```bash
+python scripts/create_versioned_e4_snapshot_configs.py --snapshot-tag <tag>
+```
+
+Example:
+
+```bash
+python scripts/create_versioned_e4_snapshot_configs.py --snapshot-tag codex_cli_0_105_0_20260304
+```
+
+More explicit multi-harness example (recommended):
+
+```bash
+python scripts/create_versioned_e4_snapshot_configs.py --snapshot-tag codex0_1050_claude2_0_72_opencode1_2_6_20260304
+```
+
 ## Nightly drift audit
 
 A nightly workflow (`.github/workflows/e4-target-drift-audit-nightly.yml`) checks
@@ -100,6 +118,49 @@ make e4-target-drift-audit
 5. Update E4 config behavior only as required for parity.
 6. Re-run E4 checks and conformance runs.
 7. Record the bump in release notes / parity docs.
+
+## Post-Restore Strict Probe Baseline (2026-03-04)
+
+After repository restore and fixture reindexing, we established an explicit
+strict replay probe baseline for current Codex/Claude/OpenCode parity surfaces.
+
+Canonical strict probe run:
+
+```bash
+make e4-postrestore-strict-probe
+```
+
+Equivalent explicit command:
+
+```bash
+python scripts/run_parity_replays.py --strict \
+  --scenario claude_e4_refresh_ping_replay_20260304 \
+  --scenario opencode_patch_todo_sentinel_replay \
+  --scenario opencode_glob_grep_sentinel_replay \
+  --scenario opencode_toolcall_repair_sentinel_replay \
+  --scenario codex_cli_mvi_patch_v2_replay \
+  --scenario codex_cli_subagent_sync_replay \
+  --scenario codex_cli_subagent_async_replay \
+  --parity-run-id e4_postrestore_strict_probe_<utc_timestamp>
+```
+
+Baseline semantics:
+
+- Codex modern lanes target `bitwise_trace` (`0.105.0` event schema).
+- OpenCode patch/todo sentinel targets `normalized_trace` (deterministic replay
+  with restored golden workspace snapshot).
+- OpenCode glob/grep + toolcall-repair sentinels target `bitwise_trace`.
+- Claude refresh ping replay lane targets `normalized_trace` for low-spend
+  deterministic post-restore probes when older protofs/phase8 replay fixtures
+  are unavailable in the restored tree.
+
+Primary evidence references from this tranche:
+
+- `artifacts/parity_runs/codex_capture_refresh_20260304_postfix/parity_summary.json`
+- `artifacts/parity_runs/claude_opencode_replay_probe_strict_20260304_v2/parity_summary.json`
+
+This baseline is the current "go/no-go" strict replay probe set for post-restore
+E4 confidence and should be rerun whenever target harness version snapshots are bumped.
 
 ## Required E4 config header convention
 

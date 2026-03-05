@@ -122,3 +122,40 @@ This avoids intermittent Ray worker kills under high ambient memory pressure.
    - auto-falls back to safe workspace when repo-root is requested
    - prefers `--use-dist` by default and auto-builds `tui_skeleton/dist/main.js` if missing
    - supports `--use-dev` override for explicit tsx/dev runtime.
+
+## Post-restore strict replay probe baseline (2026-03-04)
+
+Additional post-restore evidence was generated to pin strict replay probe
+behavior for Codex/Claude/OpenCode lanes.
+
+Quick rerun command:
+
+```bash
+make e4-postrestore-strict-probe
+```
+
+Codex strict replay bundle:
+
+- run id: `codex_capture_refresh_20260304_postfix`
+- artifact: `artifacts/parity_runs/codex_capture_refresh_20260304_postfix/parity_summary.json`
+- result: 3/3 passed (`codex_cli_mvi_patch_v2_replay`, `codex_cli_subagent_sync_replay`, `codex_cli_subagent_async_replay`)
+
+Claude + OpenCode strict replay bundle:
+
+- run id: `claude_opencode_replay_probe_strict_20260304_v2`
+- artifact: `artifacts/parity_runs/claude_opencode_replay_probe_strict_20260304_v2/parity_summary.json`
+- result: 4/4 passed
+  - `opencode_patch_todo_sentinel_replay`
+  - `opencode_glob_grep_sentinel_replay`
+  - `opencode_toolcall_repair_sentinel_replay`
+  - `claude_e4_refresh_ping_replay_20260304`
+
+Notes:
+
+- Legacy Claude replay fixtures referenced by older parity scenarios are still
+  absent in the restored tree; the new
+  `claude_e4_refresh_ping_replay_20260304` lane is the canonical low-spend
+  strict replay probe baseline until those fixtures are regenerated.
+- `opencode_patch_todo_sentinel_replay` now points to a restored deterministic
+  golden workspace snapshot path:
+  - `misc/opencode_runs/golden_live/opencode_patch_todo_sentinel_20260304`
