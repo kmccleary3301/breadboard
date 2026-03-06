@@ -1,0 +1,222 @@
+{
+  "metadata": {
+    "name": "Simple Agent"
+  },
+  "data": {
+    "edges": [
+      {
+        "source": "Agent-oYRYa",
+        "target": "ChatOutput-z90NZ",
+        "data": {
+          "targetHandle": {
+            "fieldName": "input_value"
+          }
+        }
+      },
+      {
+        "source": "CalculatorComponent-Nbeeo",
+        "target": "Agent-oYRYa",
+        "data": {
+          "targetHandle": {
+            "fieldName": "tools"
+          }
+        }
+      },
+      {
+        "source": "ChatInput-2M1cy",
+        "target": "Agent-oYRYa",
+        "data": {
+          "targetHandle": {
+            "fieldName": "input_value"
+          }
+        }
+      },
+      {
+        "source": "URLComponent-qf3tz",
+        "target": "Agent-oYRYa",
+        "data": {
+          "targetHandle": {
+            "fieldName": "tools"
+          }
+        }
+      }
+    ],
+    "nodes": [
+      {
+        "id": "note-kXSAk",
+        "type": "noteNode",
+        "data": {
+          "type": "note",
+          "node": {
+            "display_name": "",
+            "template": {
+              "backgroundColor": "neutral"
+            }
+          }
+        }
+      },
+      {
+        "id": "CalculatorComponent-Nbeeo",
+        "data": {
+          "node": {
+            "key": "CalculatorComponent",
+            "display_name": "Calculator",
+            "field_order": [
+              "expression"
+            ],
+            "metadata": {
+              "module": "lfx.components.utilities.calculator_core.CalculatorComponent"
+            },
+            "template": {
+              "expression": {
+                "value": ""
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "ChatInput-2M1cy",
+        "data": {
+          "node": {
+            "key": "ChatInput",
+            "display_name": "Chat Input",
+            "field_order": [
+              "input_value",
+              "should_store_message",
+              "sender",
+              "sender_name",
+              "session_id"
+            ],
+            "template": {
+              "input_value": {
+                "value": "Hello, how are you?"
+              },
+              "sender": {
+                "value": "User"
+              },
+              "sender_name": {
+                "value": "User"
+              },
+              "should_store_message": {
+                "value": true
+              },
+              "session_id": {
+                "value": ""
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "ChatOutput-z90NZ",
+        "data": {
+          "node": {
+            "key": "ChatOutput",
+            "display_name": "Chat Output",
+            "field_order": [
+              "input_value",
+              "should_store_message",
+              "sender",
+              "sender_name",
+              "clean_data",
+              "data_template"
+            ],
+            "template": {
+              "input_value": {
+                "value": ""
+              },
+              "sender": {
+                "value": "Machine"
+              },
+              "sender_name": {
+                "value": "AI"
+              },
+              "should_store_message": {
+                "value": true
+              },
+              "clean_data": {
+                "value": true
+              },
+              "data_template": {
+                "value": "{text}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "URLComponent-qf3tz",
+        "data": {
+          "node": {
+            "key": "URLComponent",
+            "display_name": "URL",
+            "field_order": [
+              "urls",
+              "max_depth"
+            ],
+            "metadata": {
+              "module": "lfx.components.data.url.URLComponent"
+            },
+            "template": {
+              "urls": {
+                "value": ""
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "Agent-oYRYa",
+        "data": {
+          "node": {
+            "display_name": "Agent",
+            "field_order": [
+              "model",
+              "system_prompt",
+              "tools",
+              "input_value",
+              "verbose",
+              "max_iterations",
+              "add_current_date_tool"
+            ],
+            "metadata": {
+              "module": "lfx.components.models_and_agents.agent.AgentComponent"
+            },
+            "template": {
+              "input_value": {
+                "value": ""
+              },
+              "system_prompt": {
+                "value": "You are a helpful assistant that can use tools to answer questions and perform tasks."
+              },
+              "model": {
+                "value": [
+                  {
+                    "provider": "Anthropic",
+                    "name": "claude-opus-4-5-20251101",
+                    "metadata": {
+                      "model_name_param": "model"
+                    }
+                  }
+                ]
+              },
+              "tools": {
+                "value": ""
+              },
+              "verbose": {
+                "value": true
+              },
+              "max_iterations": {
+                "value": 15
+              },
+              "add_current_date_tool": {
+                "value": true
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}
