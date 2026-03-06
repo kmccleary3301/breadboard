@@ -14,6 +14,8 @@ def test_target_package_assets_exist() -> None:
         REPO_ROOT / "config/e4_targets/claude_code/2.1.63/prompts/system-vendor-logged.prompt.md",
         REPO_ROOT / "config/e4_targets/opencode/1.2.17/codexmini_responses_harness.yaml",
         REPO_ROOT / "config/e4_targets/opencode/1.2.17/prompts/system.md",
+        REPO_ROOT / "config/e4_targets/oh_my_opencode/3.10.0/phase8_async_harness.yaml",
+        REPO_ROOT / "config/e4_targets/oh_my_opencode/3.10.0/prompts/system.md",
         REPO_ROOT / "docs/conformance/E4_TARGET_PACKAGES.md",
     ]
     missing = [str(path) for path in expected_files if not path.exists()]
@@ -30,6 +32,7 @@ def test_latest_snapshot_configs_load_via_target_packages() -> None:
         REPO_ROOT / "agent_configs/opencode_e4_toolcall_repair_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
         REPO_ROOT / "agent_configs/opencode_e4_webfetch_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
         REPO_ROOT / "agent_configs/opencode_e4_oc_protofs_gpt5nano_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
+        REPO_ROOT / "agent_configs/oh_my_opencode_e4_phase8_async_subagents_v1_replay__codex0_1070_claude2_1_63_opencode1_2_17_ohmyopencode3_10_0_20260305.yaml",
     ]
 
     loaded = [load_agent_config(str(path)) for path in snapshot_paths]
@@ -40,7 +43,10 @@ def test_latest_snapshot_configs_load_via_target_packages() -> None:
     assert loaded[1]["prompts"]["packs"]["base"]["system"].endswith(
         "config/e4_targets/claude_code/2.1.63/prompts/system-vendor-logged.prompt.md"
     )
-    for config in loaded[2:]:
+    for config in loaded[2:8]:
         assert config["prompts"]["packs"]["base"]["system"].endswith(
             "config/e4_targets/opencode/1.2.17/prompts/system.md"
         )
+    assert loaded[8]["prompts"]["packs"]["base"]["system"].endswith(
+        "config/e4_targets/oh_my_opencode/3.10.0/prompts/system.md"
+    )

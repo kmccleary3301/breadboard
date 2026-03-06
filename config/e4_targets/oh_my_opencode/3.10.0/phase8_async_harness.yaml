@@ -1,24 +1,11 @@
-# E4 version snapshot file
-# source_manifest_entry: oh_my_opencode_e4_phase8_async_subagents_v1_replay
-# snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_ohmyopencode3_10_0_20260305
+extends: ../../../../agent_configs/opencode_openai_codexmini_c_fs_cli_shared.yaml
 
-extends: ../config/e4_targets/oh_my_opencode/3.10.0/phase8_async_harness.yaml
-
-# Current latest oh-my-opencode replay lane.
+# Canonical tracked target package for oh-my-opencode 3.10.0 / Phase 8 async-subagent lane.
 #
-# This snapshot duplicates the common oh-my-opencode async/subagent substrate inline so the
-# lane is readable on its own. The canonical tracked target package remains under
-# `config/e4_targets/oh_my_opencode/3.10.0/`.
-# Nearby package assets worth reading:
-# - config/e4_targets/oh_my_opencode/3.10.0/prompts/system.md
-# - config/e4_targets/oh_my_opencode/3.10.0/prompts/plan.md
-# - config/e4_targets/oh_my_opencode/3.10.0/prompts/builder.md
-# - config/e4_targets/oh_my_opencode/3.10.0/refs/agents.mdx
-# - config/e4_targets/oh_my_opencode/3.10.0/refs/mcp-servers.mdx
-# - config/e4_targets/oh_my_opencode/3.10.0/refs/tools.mdx
-# - config/e4_targets/oh_my_opencode/3.10.0/refs/permissions.mdx
+# The replay overlay for the latest frozen lane extends this package so the common tool,
+# permission, prompt, and multi-agent substrate is visible in one tracked place.
 
-profile: { name: oh-my-opencode-phase8-async-subagents-v1-replay }
+profile: { name: oh-my-opencode-3.10.0-phase8-async-target }
 
 permissions:
   options:
@@ -159,7 +146,3 @@ multi_agent:
         sharing:
           default: shared_readonly_subagents
           write_lock: main_only
-
-replay:
-  compare_tool_outputs: [background_task, background_output, background_cancel, call_omo_agent]
-  fail_on_tool_output_mismatch: true
