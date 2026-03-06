@@ -10,16 +10,29 @@
 # |   -> enhanced BB validation / diff policy / permissions                |
 # |   -> scenario-specific replay lanes remain in agent_configs/misc       |
 # +------------------------------------------------------------------------+
+#
+# Reading guide:
+# - This is the public top-level OpenCode dossier.
+# - It is deliberately broader than a single tiny replay overlay, but narrower than the
+#   entire OpenCode feature matrix; specialized replay lanes still live in `agent_configs/misc/`.
+# - OpenCode is especially interesting because so much of its product feel comes from policy:
+#   diff splitting, environment formatting, validation posture, and shell permissions.
+# - Those are treated below as first-class harness semantics rather than hidden defaults.
 
 version: 2
 profile:
   name: opencode-1.2.17-e4-2026-03-06
 workspace:
+  # The public OpenCode lane is still a direct-workspace harness even though BreadBoard can
+  # support mirrors and other indirection. That directness is part of the product feel.
   root: agent_ws_opencode
   mirror:
     enabled: false
     mode: development
 providers:
+  # This public dossier shows the canonical "OpenCode on OpenAI Responses" lane.
+  # The important insight is that OpenCode is not merely model + prompts; it is also the
+  # choice of Responses-native tooling and developer-role request shaping.
   default_model: openai/gpt-5.1-codex-mini
   models:
   - id: openai/gpt-5.1-codex-mini
@@ -30,6 +43,9 @@ providers:
   stream_responses: true
 prompts:
   # OpenCode relies on a persistent compiled system prompt plus environment context.
+  #
+  # This matters because the OpenCode prompt model is "one durable system envelope
+  # plus environment scaffolding", not repeated ad hoc tool catalogs every turn.
   tool_prompt_mode: system_compiled_and_persistent_per_turn
   packs:
     base:
@@ -40,6 +56,8 @@ prompts:
     enabled: true
     format: opencode
     file_limit: 200
+    # The environment format is a real part of the harness identity. Readers should interpret
+    # this as "how the world is rendered to the model", not as an incidental SDK setting.
   tool_prompt_synthesis:
     enabled: false
   injection:
@@ -49,23 +67,46 @@ prompts:
 provider_tools:
   # OpenCode's public harness is strongly native-tool-oriented and uses
   # developer-role prompts on the Responses API.
+  #
+  # This is the closest thing to OpenCode's "spine":
+  # - native tools
+  # - Responses API
+  # - developer-role shaping
+  # - prompt suppression because the harness already has its own compiled surface
   use_native: true
   suppress_prompts: true
   api_variant: responses
   responses_use_developer_role: true
   tool_choice: auto
 features:
+  # This top-level dossier is intentionally not a todo/taskboard showcase lane.
+  # More specialized replay configs under `misc/` can freeze those narrower surfaces.
   plan: false
   todos:
     enabled: false
     strict: false
     reset_streak_on_todo: true
 completion:
+  # OpenCode is comfortable with content-only completion. The public dossier keeps that visible
+  # so a reader can see this harness is less "must call finish tool" and more "end naturally".
   allow_zero_tool_completion: true
   build_guard:
     require_run_shell: false
     require_successful_tests: false
 loop:
+  # The top-level dossier keeps the visible loop minimal:
+  #
+  # +-------------------+
+  # | plan (light)      |
+  # +-------------------+
+  #           |
+  #           v
+  # +-------------------+
+  # | build             |
+  # +-------------------+
+  #
+  # The richer replay personalities live in the specialized misc configs, but the public
+  # OpenCode door should still expose the general two-stage shape.
   sequence:
   - mode: plan
   - mode: build
@@ -91,10 +132,17 @@ tools:
     include:
     - bash
     - write
+    #
+    # This top-level OpenCode dossier intentionally stays narrow at the visible-tool layer.
+    # The wider replay lanes in `misc/` add scenario-specific tools as needed, but this file
+    # keeps the public front door interpretable.
 enhanced_tools:
   # This is where the "BreadBoard plus polish" layer becomes visible:
   # validation, patch splitting, and LSP integration are explicit instead of
   # hiding in runtime code.
+  #
+  # If someone asks "what makes BreadBoard's OpenCode surface powerful?", the answer is largely
+  # here: these are the implementation policies that turn a plain tool catalog into a product.
   enabled: true
   validation:
     enabled: false
@@ -123,6 +171,10 @@ enhanced_tools:
     enabled: true
 guardrails:
   # Guardrails are composed from tracked baseline files plus OpenCode-specific overrides.
+  #
+  # The OpenCode family is a good example of why these dossiers matter: users can actually read
+  # the shell-write policy, workspace-context behavior, and bootstrap strategy instead of having
+  # to infer them from CLI behavior.
   include:
   - ../implementations/guardrails/base_workspace.yaml
   - ../implementations/guardrails/execution_baseline.yaml
@@ -157,6 +209,9 @@ guardrails:
 permissions:
   # The permission block is intentionally long because it is the public x-ray into
   # the shell policy rather than incidental implementation detail.
+  #
+  # Read this block as "how the harness decides what feels safe or frictionful", not just
+  # as an ACL dump.
   shell:
     default: allow
     allow:
@@ -220,6 +275,10 @@ permissions:
 replay:
   # The top-level OpenCode dossier is a reference lane; the more specialized replay
   # lanes still live in `agent_configs/misc/` and share this substrate.
+  #
+  # That split is intentional:
+  # - this file explains the core OpenCode substrate
+  # - the misc replay lanes pin individual behaviors like grep/glob, patch-todo, webfetch, etc.
   preserve_tool_names: true
   compare_tool_outputs:
   - bash

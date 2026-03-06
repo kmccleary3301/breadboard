@@ -9,22 +9,39 @@
 # |   -> explicit multi-agent/team config                                  |
 # |   -> async/subagent replay lane frozen in this public dossier          |
 # +------------------------------------------------------------------------+
+#
+# Reading guide:
+# - This is the public top-level oh-my-opencode dossier.
+# - It is intentionally denser than OpenCode because the frozen public lane here is already
+#   an async/subagent lane rather than just a baseline MVI lane.
+# - The interesting parts are not only the tool catalog but also:
+#   - background task primitives
+#   - explicit team topology
+#   - navigation between parent and child work
+#   - broader slash/skill/LSP surfaces
+# - In other words: this file should feel like an x-ray of a bigger harness, not just a replay tag.
 
 version: 2
 profile:
   name: oh-my-opencode-3.10.0-e4-2026-03-06
 workspace:
+  # Like OpenCode, this stays direct-workspace at the public surface.
+  # The async/subagent behavior comes from orchestration policy, not from workspace indirection.
   root: agent_ws_opencode
   mirror:
     enabled: false
     mode: development
 providers:
+  # This lane keeps the provider section intentionally boring so the reader can focus on the
+  # thing that actually differentiates the harness here: the wider tool + subagent substrate.
   default_model: openai/gpt-5.1-codex-mini
   models:
   - id: openai/gpt-5.1-codex-mini
     adapter: openai
     params: {}
 prompts:
+  # The prompt model follows the OpenCode family pattern: durable system prompt, environment
+  # context, and no ad hoc per-turn synthesized tool dump.
   tool_prompt_mode: system_compiled_and_persistent_per_turn
   packs:
     base:
@@ -44,6 +61,9 @@ prompts:
 provider_tools:
   # Same general provider-native pattern as OpenCode, but with the more expansive
   # oh-my-opencode tool surface.
+  #
+  # The crucial difference from plain OpenCode is not here; it is lower in the config where the
+  # tool registry and `multi_agent` surface become materially richer.
   use_native: true
   suppress_prompts: true
   api_variant: responses
@@ -51,17 +71,26 @@ provider_tools:
   tool_choice: auto
   responses_stateful: false
 features:
+  # The public async/subagent lane is frozen as a build-first lane, not a planning showcase.
   plan: false
   todos:
     enabled: false
     strict: false
     reset_streak_on_todo: true
 completion:
+  # Like OpenCode, this harness is willing to complete naturally without a dedicated finish tool.
   allow_zero_tool_completion: true
   build_guard:
     require_run_shell: false
     require_successful_tests: false
 loop:
+  # The loop is intentionally simple:
+  #
+  # +-------------------+
+  # | build-only lane   |
+  # +-------------------+
+  #
+  # The sophistication is not in stage count; it is in the subordinate/background tool surface.
   sequence:
   - mode: build
   plan_turn_limit: 0
@@ -121,8 +150,18 @@ tools:
     - context7_get-library-docs
     - websearch_exa_web_search_exa
     - grep_app_searchGitHub
+    #
+    # This list is long on purpose. The file should let a reader grasp the public harness
+    # surface at a glance:
+    # - ordinary coding tools
+    # - subagent/task tools
+    # - background task primitives
+    # - slash/skill helpers
+    # - LSP and retrieval-style tools
   aliases: {}
 enhanced_tools:
+  # The extra validation/diff layer is still visible here even though the headline feature of
+  # this dossier is async/subagents. That matters because the public harness is not "just task()".
   enabled: true
   validation:
     enabled: false
@@ -150,6 +189,9 @@ enhanced_tools:
 guardrails:
   # Guardrails remain explicit even in the async/subagent lane so the reader can see
   # what is inherited from the execution baseline and what is deliberately relaxed.
+  #
+  # This section is especially important in a subagent-capable harness because it communicates
+  # what remains centrally constrained even when work fans out to helpers.
   include:
   - ../implementations/guardrails/base_workspace.yaml
   - ../implementations/guardrails/execution_baseline.yaml
@@ -183,6 +225,9 @@ guardrails:
     seed_file: ../implementations/system_prompts/opencode/plan_bootstrap_protofs.yaml
 permissions:
   # Like OpenCode, this is part of the public harness dossier rather than incidental detail.
+  #
+  # Because the tool surface is broader here, the permission block is also effectively the
+  # public explanation of how that power stays bounded.
   shell:
     default: allow
     allow:
@@ -246,6 +291,8 @@ permissions:
   options:
     mode: auto_allow
 turn_strategy:
+  # Tool-role continuation is visible as part of the public harness feel: actions stream into
+  # the transcript instead of being hidden behind a separate orchestration layer.
   flow: tool_role
 multi_agent:
   # Unlike the current Codex dossier, this lane really is frozen on a subagent-capable replay.
@@ -259,6 +306,12 @@ multi_agent:
   #   repo-scanner             grep-summarizer
   #
   # The config refs below point at the exact BreadBoard helper configs used for those roles.
+  #
+  # Read this section as the heart of the public dossier:
+  # - who can spawn whom
+  # - whether async spawn is enabled
+  # - how joins happen
+  # - what the shared workspace policy is
   enabled: true
   event_log_path: misc/multi_agent_runs/oh_my_opencode_phase8_async_event_log.jsonl
   team_config:
@@ -300,6 +353,8 @@ multi_agent:
           max_concurrent_agents: 2
         spawn_protocol:
           tool_name: task
+          # This lane uses the OpenCode-family `task` surface rather than Codex-style
+          # `spawn_agent`. That distinction is important and should be visible to a reader.
           async:
             enabled: false
         join_policy:
@@ -315,6 +370,9 @@ multi_agent:
           default: shared_readonly_subagents
           write_lock: main_only
 replay:
+  # The replay block names the specific tools whose outputs are contractually important for this
+  # public lane. That is especially useful in async/subagent configs where not every event type
+  # deserves equal weight.
   compare_tool_outputs:
   - background_task
   - background_output
