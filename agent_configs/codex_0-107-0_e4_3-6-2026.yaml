@@ -2,21 +2,46 @@
 # Captured against Codex CLI 0.107.0 and calibrated using the GPT-5.1 Codex Mini lane.
 # This file is fully standalone by design: no `extends`, no hidden prompt refs, and no gitignored assets.
 # Local reference material lives under `../config/e4_targets/codex/0.107.0/`.
+#
+# +--------------------------- Codex dossier map ---------------------------+
+# | tracked vendor prompt + policy refs                                    |
+# |   -> OpenAI Responses API with provider-native tools                   |
+# |   -> BreadBoard tool registry narrowed to the evidence-backed subset   |
+# |   -> mode / completion / concurrency policy for the frozen Codex lane  |
+# +------------------------------------------------------------------------+
+#
+# Reading guide:
+# - This file is the public top-level Codex dossier.
+# - The adjacent target package contains the prompt bundle and reference material.
+# - Where Codex exposes richer product machinery than this frozen lane currently exercises,
+#   the comments below say so plainly instead of overstating parity.
+#
+# Calibration note:
+# The short filename intentionally omits the calibration model nickname. The current latest
+# strict Codex E4 lane was frozen using the GPT-5.1 Codex Mini route, which is why that exact
+# model id is still explicit below.
 
 version: 2
 profile:
   name: codex-0.107.0-e4-2026-03-06
+
 workspace:
+  # Codex is fundamentally a direct-workspace harness.
   root: ./agent_ws
   sandbox:
+    # The public E4 lane uses BreadBoard's process sandbox rather than a heavier VM.
     driver: process
   mirror:
+    # Mirror support exists in BreadBoard, but the frozen Codex lane is direct-workspace.
     enabled: false
     path: ./agent_ws
     mode: development
+
 providers:
   default_model: openai/gpt-5.1-codex-mini
   routing:
+    # If the provider cannot honor native tools or streaming, fail soft instead of crashing
+    # the harness. This keeps the public lane operational while still preferring the real shape.
     disable_native_tools_on_probe_failure: true
     disable_stream_on_probe_failure: true
   models:
@@ -25,25 +50,50 @@ providers:
     params:
       temperature: 0.2
       top_p: 0.9
+
 provider_tools:
+  # Codex is a provider-native tool harness on the Responses API.
+  # We do not layer a second fake tool protocol on top of that.
   use_native: true
   suppress_prompts: false
   api_variant: responses
+
 prompts:
   packs:
     base:
+      # This frozen lane reuses the same tracked vendor prompt bundle for system / plan /
+      # builder / compact because it is close to: vendor prompt + provider-native tools +
+      # narrowed BB execution surface.
       system: ../config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
       plan: ../config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
       builder: ../config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
       compact: ../config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
       tools_catalog_full: ../config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
       tools_catalog_short: ../config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+  # Because Codex is using provider-native tools, BreadBoard does not synthesize an extra
+  # Jinja-generated tool catalog into the model prompt for this lane.
   tool_prompt_mode: none
   tool_prompt_synthesis:
     enabled: false
+
 tools:
+  # Codex can conclude by explicitly marking the task complete.
   mark_task_complete: true
   registry:
+    # `tools.registry.paths` is a deliberate catalog boundary.
+    #
+    # It points at the tracked BreadBoard tool-definition directory; that is where the actual
+    # JSON-schema/tool metadata lives. We keep the path instead of copying those large schemas
+    # inline, but the *effective* public surface of this frozen Codex lane is the `include`
+    # list just below.
+    #
+    # Effective tool surface in this strict public lane:
+    # - shell_command : sandboxed command execution
+    # - apply_patch   : structured file-change/diff tool
+    # - update_plan   : Codex-like plan/todo lifecycle tool
+    #
+    # In other words: yes, this is a deferral to shared tool definitions, but it is now an
+    # explicit and documented one rather than hidden magic.
     paths:
     - ../implementations/tools/defs
     include:
@@ -51,12 +101,15 @@ tools:
     - apply_patch
     - update_plan
   aliases:
+    # These aliases make the dossier easier to compare to Codex concepts and transcripts.
     bash: run_shell
     edit: apply_search_replace
     list: list_dir
     patch: apply_unified_patch
     read: read_file
   dialects:
+    # When BreadBoard must render edits textually, these preferences preserve the Codex-like
+    # feel of the edit surface instead of leaving it to arbitrary defaults.
     preference:
       default:
       - aider_search_replace
@@ -81,6 +134,21 @@ tools:
         openai/*:
         - aider_search_replace
         - unified_diff
+
+# The frozen Codex lane keeps the canonical two-stage loop shape visible even though the exact
+# 2026-03-06 strict replay lane currently has `features.plan: false`.
+#
+# +------------------+
+# | optional plan    |  read/list/glob/grep only
+# +------------------+
+#           |
+#           v
+# +------------------+
+# | build / execute  |  full evidence-backed tool surface
+# +------------------+
+#
+# This reflects Codex's recognizable interaction shape without pretending the current evidence
+# pack already covers every plan-mode variant.
 modes:
 - name: plan
   prompt: '@pack(base).plan'
@@ -98,6 +166,7 @@ modes:
 - name: compact
   prompt: '@pack(base).compact'
   tools_enabled: []
+
 loop:
   sequence:
   - if: features.plan
@@ -106,10 +175,52 @@ loop:
   - mode: build
   plan_turn_limit: 1
   turn_strategy:
+    # Codex-like execution allows the assistant to continue after tool output in the same turn.
     relay: tool_role
     flow: assistant_continuation
     allow_multiple_per_turn: true
+
+# -----------------------------------------------------------------------------
+# Upstream Codex collaboration / subagent substrate (observed in source)
+# -----------------------------------------------------------------------------
+# Codex 0.107.0 already exposes richer subagent/collaboration machinery than the current public
+# frozen lane exercises. The notable surfaces visible in upstream source are:
+#
+# 1. Subagent provenance on outbound requests:
+#    - request header: `x-openai-subagent`
+#    - known labels observed in source:
+#      * review
+#      * compact
+#      * memory_consolidation
+#      * collab_spawn    (thread-spawn / collaborator worker)
+#
+# 2. App-server collaboration lifecycle events:
+#    - collab_agent_spawn_begin / collab_agent_spawn_end
+#    - collab_agent_interaction_begin / collab_agent_interaction_end
+#    - collab_waiting_begin / collab_waiting_end
+#    - collab_close_begin / collab_close_end
+#    - collab_resume_begin / collab_resume_end
+#
+# 3. Session / thread source taxonomy:
+#    - cli
+#    - vscode
+#    - exec
+#    - mcp
+#    - subagent(...)
+#
+# 4. Other adjacent visible product surfaces:
+#    - todo_list events and plan_update events
+#    - mcpToolCall items and MCP server status APIs
+#    - approvalPolicy threading through CLI/SDK/app-server layers
+#
+# We are intentionally *not* enabling a speculative `multi_agent` section in this public Codex
+# dossier yet, because the 2026-03-06 Codex E4 refresh did not freeze a dedicated sync/async
+# subagent golden. The purpose of this block is interpretability: it documents the target harness
+# surface we know exists, while being honest that the strict public lane is still narrower.
+
 long_running:
+  # BreadBoard's generic long-running controller is visible in the dossier, but Codex E4 today
+  # is still frozen on the ordinary foreground turn loop.
   enabled: false
   controller: longrun_v1
   reset_policy: fresh
@@ -142,13 +253,18 @@ long_running:
     total_episodes: 0
     total_tokens: 0
     total_cost_usd: 0.0
+
 features:
+  # Codex has plan and todo-like surfaces upstream, but this exact frozen lane keeps them off
+  # because the current strict evidence pack is narrower than the full product.
   plan: false
   todos:
     enabled: false
     strict: false
     reset_streak_on_todo: true
+
 completion:
+  # Codex can terminate with a plain assistant answer instead of requiring an explicit tool call.
   confidence_threshold: 0.6
   natural_finish:
     idle_turn_limit: 1
@@ -162,7 +278,9 @@ completion:
   - IMPLEMENTATION COMPLETE
   - '>>>>>> END RESPONSE'
   allow_content_only_completion: true
+
 concurrency:
+  # Shell is serialized aggressively; reads can fan out.
   at_most_one_of:
   - shell_command
   groups:

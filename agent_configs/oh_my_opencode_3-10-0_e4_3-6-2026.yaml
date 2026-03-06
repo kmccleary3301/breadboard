@@ -2,6 +2,13 @@
 # Captured against oh-my-opencode 3.10.0 and calibrated on the Phase 8 async/subagent replay lane.
 # This file is fully standalone by design: no `extends`, no hidden prompt refs, and no gitignored assets.
 # Local reference material lives under `../config/e4_targets/oh_my_opencode/3.10.0/`.
+#
+# +---------------------- oh-my-opencode dossier map ----------------------+
+# | OpenCode-like prompt/tool substrate                                    |
+# |   -> broader registry including background + slash/skill tools         |
+# |   -> explicit multi-agent/team config                                  |
+# |   -> async/subagent replay lane frozen in this public dossier          |
+# +------------------------------------------------------------------------+
 
 version: 2
 profile:
@@ -35,6 +42,8 @@ prompts:
     - '@pack(base).system'
     per_turn_order: []
 provider_tools:
+  # Same general provider-native pattern as OpenCode, but with the more expansive
+  # oh-my-opencode tool surface.
   use_native: true
   suppress_prompts: true
   api_variant: responses
@@ -70,6 +79,9 @@ modes:
   tools_disabled: []
 tools:
   registry:
+    # `defs_omo` is the tracked oh-my-opencode tool catalog. The long `include` list
+    # is intentional: it lets a reader inspect the public surface without opening the
+    # defs directory first.
     paths:
     - ../implementations/tools/defs_omo
     include:
@@ -136,6 +148,8 @@ enhanced_tools:
         '
       on_violation: warn_and_split
 guardrails:
+  # Guardrails remain explicit even in the async/subagent lane so the reader can see
+  # what is inherited from the execution baseline and what is deliberately relaxed.
   include:
   - ../implementations/guardrails/base_workspace.yaml
   - ../implementations/guardrails/execution_baseline.yaml
@@ -168,6 +182,7 @@ guardrails:
     warmup_turns: 1
     seed_file: ../implementations/system_prompts/opencode/plan_bootstrap_protofs.yaml
 permissions:
+  # Like OpenCode, this is part of the public harness dossier rather than incidental detail.
   shell:
     default: allow
     allow:
@@ -233,6 +248,17 @@ permissions:
 turn_strategy:
   flow: tool_role
 multi_agent:
+  # Unlike the current Codex dossier, this lane really is frozen on a subagent-capable replay.
+  #
+  # +---------------- main agent ----------------+
+  # | delegates to read-only helpers            |
+  # +-------------------+-----------------------+
+  #                     |
+  #         +-----------+-----------+
+  #         v                       v
+  #   repo-scanner             grep-summarizer
+  #
+  # The config refs below point at the exact BreadBoard helper configs used for those roles.
   enabled: true
   event_log_path: misc/multi_agent_runs/oh_my_opencode_phase8_async_event_log.jsonl
   team_config:

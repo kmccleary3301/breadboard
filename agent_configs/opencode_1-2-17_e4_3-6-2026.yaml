@@ -3,6 +3,13 @@
 # This file is fully standalone by design: no `extends`, no hidden prompt refs, and no gitignored assets.
 # Scenario-specific OpenCode replay lanes remain available under `agent_configs/misc/`.
 # Local reference material lives under `../config/e4_targets/opencode/1.2.17/`.
+#
+# +------------------------ OpenCode dossier map --------------------------+
+# | tracked OpenCode prompt pack                                           |
+# |   -> provider-native Responses tools                                   |
+# |   -> enhanced BB validation / diff policy / permissions                |
+# |   -> scenario-specific replay lanes remain in agent_configs/misc       |
+# +------------------------------------------------------------------------+
 
 version: 2
 profile:
@@ -22,6 +29,7 @@ providers:
       top_p: 0.9
   stream_responses: true
 prompts:
+  # OpenCode relies on a persistent compiled system prompt plus environment context.
   tool_prompt_mode: system_compiled_and_persistent_per_turn
   packs:
     base:
@@ -39,6 +47,8 @@ prompts:
     - '@pack(base).system'
     per_turn_order: []
 provider_tools:
+  # OpenCode's public harness is strongly native-tool-oriented and uses
+  # developer-role prompts on the Responses API.
   use_native: true
   suppress_prompts: true
   api_variant: responses
@@ -73,12 +83,18 @@ modes:
   tools_disabled: []
 tools:
   registry:
+    # This path points at the tracked OpenCode-compatible tool-definition catalog.
+    # The file keeps the public surface explicit through `include` while avoiding
+    # inlining every schema blob.
     paths:
     - ../implementations/tools/defs_oc
     include:
     - bash
     - write
 enhanced_tools:
+  # This is where the "BreadBoard plus polish" layer becomes visible:
+  # validation, patch splitting, and LSP integration are explicit instead of
+  # hiding in runtime code.
   enabled: true
   validation:
     enabled: false
@@ -106,6 +122,7 @@ enhanced_tools:
   lsp_integration:
     enabled: true
 guardrails:
+  # Guardrails are composed from tracked baseline files plus OpenCode-specific overrides.
   include:
   - ../implementations/guardrails/base_workspace.yaml
   - ../implementations/guardrails/execution_baseline.yaml
@@ -138,6 +155,8 @@ guardrails:
     warmup_turns: 1
     seed_file: ../implementations/system_prompts/opencode/plan_bootstrap_protofs.yaml
 permissions:
+  # The permission block is intentionally long because it is the public x-ray into
+  # the shell policy rather than incidental implementation detail.
   shell:
     default: allow
     allow:
@@ -199,6 +218,8 @@ permissions:
   edit:
     default: allow
 replay:
+  # The top-level OpenCode dossier is a reference lane; the more specialized replay
+  # lanes still live in `agent_configs/misc/` and share this substrate.
   preserve_tool_names: true
   compare_tool_outputs:
   - bash

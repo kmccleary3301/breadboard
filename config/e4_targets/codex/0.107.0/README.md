@@ -23,3 +23,7 @@ The live calibrated lane still intentionally keeps a small model-visible tool su
 (`shell_command`, `apply_patch`, `update_plan`) because that is the surface covered by the
 current golden/replay evidence. This package is the first step toward making that tradeoff
 explicit instead of hiding it.
+
+The public top-level dossier now also documents the richer Codex collaboration/subagent substrate
+visible in upstream source, while still being honest that the current strict lane does not yet
+freeze a dedicated sync/async subagent golden.

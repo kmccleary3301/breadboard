@@ -10,6 +10,10 @@ Why this exists:
   and the shared runtime/tool substrate for a particular upstream harness version.
 - The versioned `agent_configs/*__<snapshot>.yaml` files remain the machine-facing frozen lanes.
 
+As of the March 6, 2026 reorg, the top-level `agent_configs/` surface is reserved for the
+latest public standalone dossiers for the big four harnesses. Those files should be readable
+front doors, heavily commented, and should not rely on `extends`.
+
 Current packaged targets:
 
 - `config/e4_targets/codex/0.107.0/`
