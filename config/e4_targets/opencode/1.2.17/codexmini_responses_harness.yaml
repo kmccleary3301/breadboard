@@ -1,0 +1,94 @@
+extends: ../../../../agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+
+# Canonical tracked target package for OpenCode 1.2.17 / GPT-5.1 Codex Mini responses lane.
+#
+# The replay overlays for MVI, grep/glob, patch/todo, toolcall repair, webfetch, and protofs
+# all extend this package so the common OpenCode substrate is visible in one tracked place.
+
+profile: { name: opencode-1.2.17-codexmini-responses-target }
+
+providers:
+  default_model: openai/gpt-5.1-codex-mini
+  models:
+    - id: openai/gpt-5.1-codex-mini
+      adapter: openai_responses
+      params:
+        temperature: 0.2
+        top_p: 0.9
+  stream_responses: true
+
+provider_tools:
+  use_native: true
+  suppress_prompts: true
+  api_variant: responses
+  responses_use_developer_role: true
+  tool_choice: auto
+
+prompts:
+  packs:
+    base:
+      system: config/e4_targets/opencode/1.2.17/prompts/system.md
+      plan: config/e4_targets/opencode/1.2.17/prompts/plan.md
+      builder: config/e4_targets/opencode/1.2.17/prompts/builder.md
+  environment:
+    enabled: true
+    format: opencode
+    file_limit: 200
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  tool_prompt_synthesis:
+    enabled: false
+  injection:
+    system_order:
+      - '@pack(base).system'
+    per_turn_order: []
+
+guardrails:
+  include:
+    - implementations/guardrails/base_workspace.yaml
+    - implementations/guardrails/execution_baseline.yaml
+  overrides:
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 8
+        abort_after_turns: 20
+    completion_guard:
+      parameters:
+        warnings_before_abort: 6
+    plan_bootstrap:
+      strategy: never
+    shell_write_block:
+      parameters:
+        enabled: false
+      templates:
+        validation: config/e4_targets/opencode/1.2.17/prompts/shell_write_block_opencode.prompt.md
+
+enhanced_tools:
+  enabled: true
+  validation:
+    enabled: false
+    rules: []
+    rule_config:
+      read_before_edit:
+        mode: relaxed
+        require_fresh_read: false
+        max_age_seconds: 1800
+  diff_policy:
+    patch_splitting:
+      policy: auto_split
+      max_files_per_patch: 1
+      validation_message: |
+        <VALIDATION_ERROR>
+        Multi-file patches are disabled in this configuration. Submit exactly one apply_unified_patch per file.
+        </VALIDATION_ERROR>
+      on_violation: warn_and_split
+
+features:
+  plan: false
+  todos:
+    enabled: false
+    strict: false
+
+completion:
+  build_guard:
+    require_run_shell: false
+    require_successful_tests: false

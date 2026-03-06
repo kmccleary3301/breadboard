@@ -2,7 +2,7 @@
 # source_manifest_entry: opencode_e4_patch_todo_sentinel_replay
 # snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305
 
-extends: opencode_openai_codexmini_c_fs_guardrails.yaml
+extends: ../config/e4_targets/opencode/1.2.17/codexmini_responses_harness.yaml
 
 # OpenCode E4 sentinel replay:
 # - preserves OpenCode tool IDs (bash/patch/todowrite/todoread)

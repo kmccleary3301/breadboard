@@ -1,0 +1,73 @@
+extends: ../../../../agent_configs/base_v2.yaml
+
+# Canonical tracked target package for the Codex CLI 0.107.0 / GPT-5.1 Codex Mini
+# refresh tranche.
+#
+# Nearby local assets in this package expose the visible prompt and policy substrate:
+# - prompts/gpt_5_1_codex_prompt.md
+# - refs/agents_md.md
+# - refs/execpolicy.md
+# - refs/sandbox.md
+# - refs/custom_prompts.md
+# - templates/collaboration_mode/*
+# - templates/agents/orchestrator.md
+#
+# The current E4 lane is intentionally conservative about the exposed live tool surface,
+# because parity is anchored to the exercised golden/replay lanes rather than every Codex
+# product feature. The config is still written out explicitly here so the tradeoffs are
+# visible instead of being hidden behind `extends` plus missing refs.
+
+profile: { name: codex-cli-0.107.0-gpt5.1-codex-mini-target }
+
+providers:
+  default_model: openai/gpt-5.1-codex-mini
+  models:
+    - id: openai/gpt-5.1-codex-mini
+      adapter: openai
+      params:
+        temperature: 0.2
+        top_p: 0.9
+
+provider_tools:
+  # Codex relies on provider-native tool calling in the Responses API.
+  use_native: true
+  suppress_prompts: false
+  api_variant: responses
+
+prompts:
+  packs:
+    base:
+      # Local tracked copy of the upstream Codex prompt bundle.
+      system: config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      plan: config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      builder: config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      compact: config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      tools_catalog_full: config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      tools_catalog_short: config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+  # Native tool calling means we do not synthesize an additional BreadBoard tool catalog.
+  tool_prompt_mode: none
+  tool_prompt_synthesis:
+    enabled: false
+
+features:
+  # The strict live Codex E4 lane we currently freeze does not expose plan/todo surfaces.
+  plan: false
+  todos:
+    enabled: false
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs
+    include:
+      - shell_command
+      - apply_patch
+      - update_plan
+  aliases: {}
+
+completion:
+  # Codex can complete with a content-only final assistant response.
+  allow_content_only_completion: true
+
+concurrency:
+  at_most_one_of: [shell_command]
