@@ -158,6 +158,13 @@ tools:
     # - background task primitives
     # - slash/skill helpers
     # - LSP and retrieval-style tools
+    #
+    # Important distinctions inside this catalog:
+    # - `task`            : OpenCode-family subagent spawn surface
+    # - `background_*`    : long-running detached work handles / polling / cancel
+    # - `call_omo_agent`  : oh-my-opencode-specific agent dispatch wrapper
+    #
+    # Those are different ideas and the config should make that obvious.
   aliases: {}
 enhanced_tools:
   # The extra validation/diff layer is still visible here even though the headline feature of
@@ -228,6 +235,11 @@ permissions:
   #
   # Because the tool surface is broader here, the permission block is also effectively the
   # public explanation of how that power stays bounded.
+  #
+  # The right mental model is:
+  # - broad tool surface
+  # - strong shell boundaries
+  # - orchestration power comes from task/background tools, not from unconstrained shell access
   shell:
     default: allow
     allow:
@@ -312,6 +324,15 @@ multi_agent:
   # - whether async spawn is enabled
   # - how joins happen
   # - what the shared workspace policy is
+  #
+  # Also note what this section is *not*:
+  # - it is not the same as `background_task`
+  # - it is not the same as `call_omo_agent`
+  #
+  # Roughly:
+  # - `task` / `multi_agent` = delegated conversational worker sessions
+  # - `background_*`         = detached task handles the parent can poll/cancel
+  # - `call_omo_agent`       = higher-level oh-my wrapper for agent dispatch
   enabled: true
   event_log_path: misc/multi_agent_runs/oh_my_opencode_phase8_async_event_log.jsonl
   team_config:
@@ -351,12 +372,16 @@ multi_agent:
         scheduler:
           kind: deterministic_event_loop
           max_concurrent_agents: 2
+          # The scheduler stays small and deterministic in the frozen public lane so that the
+          # replay evidence remains interpretable instead of devolving into nondeterministic noise.
         spawn_protocol:
           tool_name: task
           # This lane uses the OpenCode-family `task` surface rather than Codex-style
           # `spawn_agent`. That distinction is important and should be visible to a reader.
           async:
             enabled: false
+            # This specific public lane is sync-join oriented even though the wider harness has
+            # async/background primitives elsewhere in the tool surface.
         join_policy:
           default: block_until_complete
       bus:
@@ -373,6 +398,8 @@ replay:
   # The replay block names the specific tools whose outputs are contractually important for this
   # public lane. That is especially useful in async/subagent configs where not every event type
   # deserves equal weight.
+  #
+  # In practice this says: these are the tools whose behavior defines the public replay claim.
   compare_tool_outputs:
   - background_task
   - background_output

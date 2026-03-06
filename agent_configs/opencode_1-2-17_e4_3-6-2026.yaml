@@ -64,6 +64,8 @@ prompts:
     system_order:
     - '@pack(base).system'
     per_turn_order: []
+    # OpenCode's public style is "single durable system envelope". That is why this block stays
+    # sparse: if it were full of per-turn prompt fragments, it would stop reading like OpenCode.
 provider_tools:
   # OpenCode's public harness is strongly native-tool-oriented and uses
   # developer-role prompts on the Responses API.
@@ -107,6 +109,10 @@ loop:
   #
   # The richer replay personalities live in the specialized misc configs, but the public
   # OpenCode door should still expose the general two-stage shape.
+  #
+  # That is a deliberate tradeoff:
+  # - top-level file = substrate and public identity
+  # - misc replay lane = individual narrow equivalence trophies
   sequence:
   - mode: plan
   - mode: build
@@ -136,6 +142,11 @@ tools:
     # This top-level OpenCode dossier intentionally stays narrow at the visible-tool layer.
     # The wider replay lanes in `misc/` add scenario-specific tools as needed, but this file
     # keeps the public front door interpretable.
+    #
+    # A reader should infer:
+    # - `defs_oc` is the wider OpenCode-compatible schema catalog
+    # - this top-level dossier is not claiming every single OpenCode tool at once
+    # - the specialized replay lanes are where those narrower surfaces are frozen
 enhanced_tools:
   # This is where the "BreadBoard plus polish" layer becomes visible:
   # validation, patch splitting, and LSP integration are explicit instead of
@@ -167,8 +178,11 @@ enhanced_tools:
 
         '
       on_violation: warn_and_split
+      # This is one of the clearest examples of BreadBoard exposing the "how" of a harness:
+      # you can see exactly why a multi-file patch would be split instead of guessing.
   lsp_integration:
     enabled: true
+    # OpenCode's polished coding UX depends heavily on these enriched editor/runtime behaviors.
 guardrails:
   # Guardrails are composed from tracked baseline files plus OpenCode-specific overrides.
   #
@@ -206,6 +220,8 @@ guardrails:
     max_turns: 2
     warmup_turns: 1
     seed_file: ../implementations/system_prompts/opencode/plan_bootstrap_protofs.yaml
+    # The bootstrap seed is explicit because it is part of the harness teaching style:
+    # how the model is nudged into useful early behavior before the user has done much.
 permissions:
   # The permission block is intentionally long because it is the public x-ray into
   # the shell policy rather than incidental implementation detail.
@@ -258,6 +274,9 @@ permissions:
     - yarn upgrade*
     deny:
     - rm -rf*
+    # The allow/ask/deny split is the public x-ray of OpenCode's shell posture:
+    # permissive for normal engineering work, but visibly escalatory around installs,
+    # downloads, and destructive actions.
     - sudo*
     - chmod 777*
     - :(){:|:&};: null
@@ -279,6 +298,9 @@ replay:
   # That split is intentional:
   # - this file explains the core OpenCode substrate
   # - the misc replay lanes pin individual behaviors like grep/glob, patch-todo, webfetch, etc.
+  #
+  # This means the top-level file is best read as "the trunk of the harness tree", not as the
+  # complete set of every E4 replay artifact.
   preserve_tool_names: true
   compare_tool_outputs:
   - bash

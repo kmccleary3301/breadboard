@@ -64,6 +64,29 @@ provider_tools:
   use_native: true
   suppress_prompts: false
   anthropic:
+    # Lifecycle sketch for the replay-calibrated Claude lane:
+    #
+    # +---------------- system prompt ----------------+
+    # | vendor prompt + cache-control                |
+    # +--------------------+-------------------------+
+    #                      |
+    #                      v
+    # +--------------- tool-use turn ----------------+
+    # | native Anthropic tool call / tool results    |
+    # +--------------------+-------------------------+
+    #                      |
+    #                      v
+    # +-------------- reminder check ----------------+
+    # | budget / TodoWrite nudge / cooldown logic    |
+    # +--------------------+-------------------------+
+    #                      |
+    #                      v
+    # +-------------- retry window ------------------+
+    # | token buffer + min wait + bounded retries    |
+    # +---------------------------------------------+
+    #
+    # The point of keeping this visible is that Claude Code feels "self-regulating" in use.
+    # Those regulator behaviors are represented here, not implied.
     max_output_tokens: 32000
     temperature: 0.1
     turn_delay_seconds: 1.0
@@ -73,12 +96,16 @@ provider_tools:
       enabled: true
       usd_budget_limit: 0.25
       todowrite_nudge_after_tool_results: 4
+      # In practice this means the harness can inject compact reminder nudges after several
+      # tool-heavy turns instead of silently letting the session drift.
     prompt_cache:
       beta_header: null
       apply_to_system: true
       cache_control:
         type: ephemeral
         ttl: 1h
+      # The replay lane keeps the cache policy explicit because it affects request bodies and
+      # therefore parity, not just performance.
     rate_limit:
       enabled: true
       token_buffer: 4000
@@ -88,6 +115,8 @@ provider_tools:
       retry_base_seconds: 2.0
       retry_max_seconds: 20.0
       retry_jitter_seconds: 0.5
+      # Read this block as the "harness patience policy": how long Claude Code waits, retries,
+      # and backs off before admitting the provider is unavailable.
 prompts:
   packs:
     base:
@@ -107,6 +136,9 @@ prompts:
   injection:
     system_order:
     - '@pack(base).system'
+    # Keeping only the vendor system prompt in `system_order` is intentional. For this lane,
+    # Claude's personality and tool expectations are carried by the preserved vendor prompt,
+    # not by a BreadBoard-generated stack of prompt fragments.
 tools:
   mark_task_complete: false
   registry:
@@ -175,6 +207,8 @@ modes:
 #
 # The replay tranche keeps all three visible so the reader can see that Claude's "plan mode"
 # behavior is a harness concern, not just a generic BreadBoard feature.
+# It is also a reminder that Claude's compact lane is a real public behavior surface even
+# when the strict replay evidence is anchored to narrower tasks.
 - name: plan
   prompt: '@pack(base).plan'
   tools_enabled:
@@ -199,6 +233,8 @@ loop:
     relay: tool_role
     flow: tool_role
     allow_multiple_per_turn: true
+    # Claude's transcript is intentionally "tool-forward": tool calls and their results stay
+    # in the main conversational flow instead of being abstracted away into hidden orchestration.
   guardrails:
     # The zero-tool watchdog is present but effectively relaxed in this replay lane. Keeping it
     # explicit matters because Claude Code does have this kind of harness-level nanny behavior.
@@ -257,6 +293,9 @@ features:
 completion:
   # Claude can still finish naturally with content. The important thing is that the completion
   # section tells the reader what counts as a believable "done" signal in this lane.
+  #
+  # The `provider_signals` flag matters here because Claude parity is sensitive to the exact
+  # boundary between "model thinks it's done" and "harness decides to stop".
   confidence_threshold: 0.6
   natural_finish:
     idle_turn_limit: 1
@@ -301,6 +340,9 @@ concurrency:
 replay:
   # Replay strictness is part of the harness contract here. These flags are worth exposing
   # because Claude parity work lives and dies on tool-name and tool-output stability.
+  #
+  # In other words: this section is the public statement that we are not hand-waving Claude
+  # parity. The lane is expected to replay tightly enough that tool naming and outputs matter.
   compare_tool_outputs: true
   fail_on_tool_output_mismatch: true
   preserve_tool_names: true
