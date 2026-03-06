@@ -21,6 +21,7 @@ AGENTS.md
 .claude.json.backup
 .ray_tmp/
 .beads/
+.beads_local/
 $script
 $SCRIPT
 $tmpdir/
