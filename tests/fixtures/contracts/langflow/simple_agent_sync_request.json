@@ -1,0 +1,9 @@
+{
+  "flow_id": "langflow-simple-agent-acceptance",
+  "background": false,
+  "stream": false,
+  "inputs": {
+    "ChatInput-2M1cy.input_value": "Use the calculator to add 2 and 2.",
+    "ChatInput-2M1cy.session_id": "langflow-acceptance-1"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "flow_id": "langflow-simple-agent-acceptance",
+  "object": "response",
+  "status": "completed",
+  "errors": [],
+  "inputs": {
+    "ChatInput-2M1cy.input_value": "Use the calculator to add 2 and 2.",
+    "ChatInput-2M1cy.session_id": "langflow-acceptance-1"
+  },
+  "outputs": {
+    "ChatOutput-z90NZ": {
+      "type": "message",
+      "status": "completed",
+      "content": "4",
+      "metadata": {
+        "sender": "Machine",
+        "sender_name": "AI",
+        "data_template": "{text}",
+        "clean_data": true,
+        "session_id": "langflow-acceptance-1"
+      }
+    }
+  }
+}

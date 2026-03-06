@@ -18,6 +18,12 @@ def _fixture_payload() -> dict:
     return json.loads(fixture.read_text(encoding="utf-8"))
 
 
+def _contract_fixture(name: str) -> dict:
+    root = Path(__file__).resolve().parents[1]
+    fixture = root / f"tests/fixtures/contracts/langflow/{name}"
+    return json.loads(fixture.read_text(encoding="utf-8"))
+
+
 def test_parse_langflow_workflow_sync_request_accepts_sync_payload() -> None:
     request = parse_langflow_workflow_sync_request(
         {
@@ -82,3 +88,25 @@ def test_execute_langflow_workflow_sync_request_uses_fallback_for_unsupported_sl
     )
     assert result.mode == "fallback"
     assert result.response["status"] == "failed"
+
+
+def test_real_langflow_simple_agent_sync_contract_fixture() -> None:
+    root = Path(__file__).resolve().parents[1]
+    real_flow = (
+        root.parent
+        / "other_harness_refs/oss_targets/langflow/src/backend/base/langflow/initial_setup/starter_projects/Simple Agent.json"
+    )
+    if not real_flow.exists():
+        pytest.skip("real Langflow starter flow not available in workspace")
+
+    request = _contract_fixture("simple_agent_sync_request.json")
+    expected = _contract_fixture("simple_agent_sync_expected_response.json")
+
+    result = execute_langflow_workflow_sync_request(
+        request,
+        flow_path=real_flow,
+        breadboard_runner=lambda payload: {"terminal_text": "4", "status": "completed", "errors": []},
+    )
+
+    assert result.mode == "breadboard"
+    assert result.response == expected
