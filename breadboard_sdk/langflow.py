@@ -54,6 +54,19 @@ class LangflowSimpleAgentIR:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class LangflowBreadboardExecutionPayload:
+    schema_version: str
+    session_id: Optional[str]
+    input_text: str
+    config_overrides: Dict[str, Any]
+    projection: Dict[str, Any]
+    raw_inputs: Dict[str, Any]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
 SUPPORTED_TOOL_COMPONENTS: Dict[str, str] = {
     "CalculatorComponent": "calculator",
     "URLComponent": "url",
@@ -276,13 +289,108 @@ def compile_langflow_simple_agent_ir_from_path(path: str | Path) -> LangflowSimp
     return compile_langflow_simple_agent_ir(load_langflow_flow(path))
 
 
+def _raw_inputs(inputs: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if inputs is None:
+        return {}
+    if not isinstance(inputs, dict):
+        raise LangflowCompileError("Langflow flat inputs must be a dict")
+    return dict(inputs)
+
+
+def _extract_session_id(flat_inputs: Dict[str, Any]) -> Optional[str]:
+    for key, value in flat_inputs.items():
+        if not isinstance(key, str):
+            continue
+        if key.endswith(".session_id") and isinstance(value, str) and value:
+            return value
+    return None
+
+
+def build_langflow_breadboard_execution_payload(
+    ir: LangflowSimpleAgentIR,
+    *,
+    flat_inputs: Optional[Dict[str, Any]] = None,
+) -> LangflowBreadboardExecutionPayload:
+    inputs = _raw_inputs(flat_inputs)
+    input_text = str(inputs.get(f"{ir.input_node_id}.input_value") or ir.default_input_text)
+    system_prompt = str(inputs.get(f"{ir.agent_node_id}.system_prompt") or ir.system_prompt)
+
+    config_overrides: Dict[str, Any] = {
+        "langflow_adapter": {
+            "mode": "simple_agent_v1",
+            "input_node_id": ir.input_node_id,
+            "agent_node_id": ir.agent_node_id,
+            "output_node_id": ir.output_node_id,
+        },
+        "model": ir.model.raw if ir.model is not None else None,
+        "system_prompt": system_prompt,
+        "max_iterations": ir.max_iterations,
+        "verbose": ir.verbose,
+        "add_current_date_tool": ir.add_current_date_tool,
+        "tools": [tool.tool_kind for tool in ir.tools],
+    }
+
+    projection = {
+        "flow_output_node_id": ir.output_node_id,
+        "type": "message",
+        "sender": ir.output_sender,
+        "sender_name": ir.output_sender_name,
+        "data_template": ir.output_data_template,
+        "clean_data": ir.output_clean_data,
+    }
+
+    return LangflowBreadboardExecutionPayload(
+        schema_version="langflow_breadboard_execution_payload_v1",
+        session_id=_extract_session_id(inputs),
+        input_text=input_text,
+        config_overrides=config_overrides,
+        projection=projection,
+        raw_inputs=inputs,
+    )
+
+
+def project_breadboard_terminal_to_langflow_response(
+    ir: LangflowSimpleAgentIR,
+    payload: LangflowBreadboardExecutionPayload,
+    *,
+    flow_id: str,
+    terminal_text: str,
+    status: str = "completed",
+    errors: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    return {
+        "flow_id": flow_id,
+        "object": "response",
+        "status": status,
+        "errors": list(errors or []),
+        "inputs": dict(payload.raw_inputs),
+        "outputs": {
+            ir.output_node_id: {
+                "type": "message",
+                "status": status,
+                "content": terminal_text,
+                "metadata": {
+                    "sender": ir.output_sender,
+                    "sender_name": ir.output_sender_name,
+                    "data_template": ir.output_data_template,
+                    "clean_data": ir.output_clean_data,
+                    "session_id": payload.session_id,
+                },
+            }
+        },
+    }
+
+
 __all__ = [
+    "LangflowBreadboardExecutionPayload",
     "LangflowCompileError",
     "LangflowModelRef",
     "LangflowToolRef",
     "LangflowSimpleAgentIR",
     "SUPPORTED_TOOL_COMPONENTS",
+    "build_langflow_breadboard_execution_payload",
     "compile_langflow_simple_agent_ir",
     "compile_langflow_simple_agent_ir_from_path",
     "load_langflow_flow",
+    "project_breadboard_terminal_to_langflow_response",
 ]

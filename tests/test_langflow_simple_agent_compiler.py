@@ -7,8 +7,10 @@ import pytest
 
 from breadboard_sdk.langflow import (
     LangflowCompileError,
+    build_langflow_breadboard_execution_payload,
     compile_langflow_simple_agent_ir,
     compile_langflow_simple_agent_ir_from_path,
+    project_breadboard_terminal_to_langflow_response,
 )
 
 
@@ -88,3 +90,38 @@ def test_compile_langflow_simple_agent_ir_from_path_reads_fixture_file() -> None
     ir = compile_langflow_simple_agent_ir_from_path(fixture)
     assert ir.input_sender == "User"
     assert ir.output_sender_name == "AI"
+
+
+def test_build_langflow_breadboard_execution_payload_applies_flat_inputs() -> None:
+    ir = compile_langflow_simple_agent_ir(_fixture_payload())
+    payload = build_langflow_breadboard_execution_payload(
+        ir,
+        flat_inputs={
+            "ChatInput-2M1cy.input_value": "What is 2 + 2?",
+            "ChatInput-2M1cy.session_id": "sess-123",
+            "Agent-oYRYa.system_prompt": "You are concise.",
+        },
+    )
+    assert payload.session_id == "sess-123"
+    assert payload.input_text == "What is 2 + 2?"
+    assert payload.config_overrides["system_prompt"] == "You are concise."
+    assert payload.config_overrides["tools"] == ["calculator", "url"]
+    assert payload.projection["flow_output_node_id"] == "ChatOutput-z90NZ"
+
+
+def test_project_breadboard_terminal_to_langflow_response_shapes_sync_output() -> None:
+    ir = compile_langflow_simple_agent_ir(_fixture_payload())
+    payload = build_langflow_breadboard_execution_payload(
+        ir,
+        flat_inputs={"ChatInput-2M1cy.session_id": "sess-abc"},
+    )
+    response = project_breadboard_terminal_to_langflow_response(
+        ir,
+        payload,
+        flow_id="flow-123",
+        terminal_text="4",
+    )
+    assert response["flow_id"] == "flow-123"
+    assert response["status"] == "completed"
+    assert response["outputs"]["ChatOutput-z90NZ"]["content"] == "4"
+    assert response["outputs"]["ChatOutput-z90NZ"]["metadata"]["session_id"] == "sess-abc"
