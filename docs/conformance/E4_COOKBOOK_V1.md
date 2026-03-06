@@ -22,6 +22,7 @@ Use this together with:
 - [E4_RECALIBRATION_STATUS_V1.md](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/docs/conformance/E4_RECALIBRATION_STATUS_V1.md)
 - [E4_CAPTURE_REFRESH_AND_VERSIONING_V2.md](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/docs/conformance/E4_CAPTURE_REFRESH_AND_VERSIONING_V2.md)
 - [E4_TARGET_VERSIONING.md](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/docs/conformance/E4_TARGET_VERSIONING.md)
+- [E4_DOSSIER_STYLE_GUIDE_V1.md](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/docs/conformance/E4_DOSSIER_STYLE_GUIDE_V1.md)
 - [config/e4_target_freeze_manifest.yaml](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/config/e4_target_freeze_manifest.yaml)
 
 ## What E4 means here

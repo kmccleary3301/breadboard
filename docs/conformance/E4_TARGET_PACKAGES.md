@@ -24,7 +24,7 @@ Current packaged targets:
 Codex note:
 
 - the public Codex dossier now includes dedicated exercised sync/async collaboration replay
-  fixtures under `misc/codex_cli_tests/`
+  fixtures under `docs/conformance/e4_recalibration_evidence/`
 - those fixtures were refreshed on 2026-03-06 against Codex CLI 0.110.0 and document the
   current `spawn_agent` / `wait` event shape used by Codex collaboration flows
 
@@ -35,3 +35,6 @@ Design rules:
 3. Keep the package YAML explicit enough that a reader can inspect the core harness substrate
    without chasing hidden defaults.
 4. When upstream harnesses move, mint a new package version instead of mutating the old one.
+5. Public top-level dossiers should follow
+   [E4_DOSSIER_STYLE_GUIDE_V1.md](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/docs/conformance/E4_DOSSIER_STYLE_GUIDE_V1.md)
+   and remain explanatory, not just executable.
