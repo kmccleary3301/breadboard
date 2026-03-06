@@ -1,0 +1,218 @@
+[
+  {
+    "role": "user",
+    "message_id": "user_1",
+    "parts": [
+      {
+        "id": "part_user_1",
+        "type": "text",
+        "text": "Create two tiny worker tasks and finish both before exiting:\n\n1. Create `alpha.txt` with line `alpha=1`.\n2. Create `beta.txt` with line `beta=2`.\n\nUse subagents if available. Keep output concise. End with exactly:\n`sync-subagent-done`",
+        "meta": {
+          "synthetic": true,
+          "time": {
+            "start": 0,
+            "end": 0
+          }
+        }
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "message_id": "assistant_1",
+    "parts": [
+      {
+        "id": "part_assistant_text_1",
+        "type": "text",
+        "text": "**Updates**\n- `alpha.txt:1` – worker Linnaeus wrote the file with the lone line `alpha=1` and I confirmed via `cat`.\n- `beta.txt:1` – worker Volta wrote the file with the lone line `beta=2` and I confirmed via `cat`.\n\nsync-subagent-done",
+        "meta": {
+          "synthetic": true,
+          "time": {
+            "start": 0,
+            "end": 0
+          }
+        }
+      },
+      {
+        "id": "part_tool_1",
+        "type": "tool",
+        "tool": "spawn_agent",
+        "meta": {
+          "state": {
+            "input": {
+              "prompt": "You own file `alpha.txt` in the workspace root. Create it (or overwrite it) so it contains exactly the single line `alpha=1` ending with a newline. Use simple shell commands (e.g., `printf`). After editing, briefly confirm the file contents and report the path(s) you touched. Remember you are not alone in the repo, so do not modify other files.",
+              "sender_thread_id": "019cc4e5-e3e2-76b3-9dbe-b669b677420a",
+              "receiver_thread_ids": [
+                "019cc4e6-153b-7991-b006-a7f793c5965b"
+              ]
+            },
+            "status": "completed",
+            "output": {
+              "019cc4e6-153b-7991-b006-a7f793c5965b": {
+                "status": "pending_init",
+                "message": null
+              }
+            },
+            "metadata": {
+              "call_id": "item_1"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_2",
+        "type": "tool",
+        "tool": "spawn_agent",
+        "meta": {
+          "state": {
+            "input": {
+              "prompt": "You own file `beta.txt` in the workspace root. Create or overwrite it so it contains exactly the single line `beta=2` ending with a newline. Use straightforward shell commands to write it, verify the contents, then report which path(s) you changed. Do not touch other files; other teammates may be editing.",
+              "sender_thread_id": "019cc4e5-e3e2-76b3-9dbe-b669b677420a",
+              "receiver_thread_ids": [
+                "019cc4e6-1d07-7c71-a67b-8a6463e2d56d"
+              ]
+            },
+            "status": "completed",
+            "output": {
+              "019cc4e6-1d07-7c71-a67b-8a6463e2d56d": {
+                "status": "pending_init",
+                "message": null
+              }
+            },
+            "metadata": {
+              "call_id": "item_3"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_3",
+        "type": "tool",
+        "tool": "shell_command",
+        "meta": {
+          "state": {
+            "input": {
+              "command": "/bin/bash -lc \"cd /tmp/bb_codex_subagent_refresh_1981859/misc/codex_cli_runs/goldens/0.110.0/codex_subagent_sync_v1/runs/e4_refresh_20260306_codex110_subagents_sync/workspace && printf 'alpha=1\n' > alpha.txt\""
+            },
+            "status": "completed",
+            "output": "",
+            "metadata": {
+              "call_id": "item_5"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_4",
+        "type": "tool",
+        "tool": "shell_command",
+        "meta": {
+          "state": {
+            "input": {
+              "command": "/bin/bash -lc 'cd /tmp/bb_codex_subagent_refresh_1981859/misc/codex_cli_runs/goldens/0.110.0/codex_subagent_sync_v1/runs/e4_refresh_20260306_codex110_subagents_sync/workspace && cat alpha.txt'"
+            },
+            "status": "completed",
+            "output": "alpha=1\n",
+            "metadata": {
+              "call_id": "item_7"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_5",
+        "type": "tool",
+        "tool": "shell_command",
+        "meta": {
+          "state": {
+            "input": {
+              "command": "/bin/bash -lc 'cd /tmp/bb_codex_subagent_refresh_1981859/misc/codex_cli_runs/goldens/0.110.0/codex_subagent_sync_v1/runs/e4_refresh_20260306_codex110_subagents_sync/workspace && ls'"
+            },
+            "status": "completed",
+            "output": "alpha.txt\n",
+            "metadata": {
+              "call_id": "item_12"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_6",
+        "type": "tool",
+        "tool": "shell_command",
+        "meta": {
+          "state": {
+            "input": {
+              "command": "/bin/bash -lc \"cd /tmp/bb_codex_subagent_refresh_1981859/misc/codex_cli_runs/goldens/0.110.0/codex_subagent_sync_v1/runs/e4_refresh_20260306_codex110_subagents_sync/workspace && printf 'beta=2\n' > beta.txt\""
+            },
+            "status": "completed",
+            "output": "",
+            "metadata": {
+              "call_id": "item_13"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_7",
+        "type": "tool",
+        "tool": "shell_command",
+        "meta": {
+          "state": {
+            "input": {
+              "command": "/bin/bash -lc 'cd /tmp/bb_codex_subagent_refresh_1981859/misc/codex_cli_runs/goldens/0.110.0/codex_subagent_sync_v1/runs/e4_refresh_20260306_codex110_subagents_sync/workspace && cat -n beta.txt'"
+            },
+            "status": "completed",
+            "output": "     1\tbeta=2\n",
+            "metadata": {
+              "call_id": "item_15"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_8",
+        "type": "tool",
+        "tool": "wait",
+        "meta": {
+          "state": {
+            "input": {
+              "prompt": null,
+              "sender_thread_id": "019cc4e5-e3e2-76b3-9dbe-b669b677420a",
+              "receiver_thread_ids": [
+                "019cc4e6-1d07-7c71-a67b-8a6463e2d56d"
+              ]
+            },
+            "status": "completed",
+            "output": {
+              "019cc4e6-1d07-7c71-a67b-8a6463e2d56d": {
+                "status": "completed",
+                "message": "beta.txt now contains the single line `beta=2` with trailing newline (verified via `cat -n`).  \nChanged path: `beta.txt`."
+              }
+            },
+            "metadata": {
+              "call_id": "item_17"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_9",
+        "type": "tool",
+        "tool": "shell_command",
+        "meta": {
+          "state": {
+            "input": {
+              "command": "/bin/bash -lc \"cd /tmp/bb_codex_subagent_refresh_1981859/misc/codex_cli_runs/goldens/0.110.0/codex_subagent_sync_v1/runs/e4_refresh_20260306_codex110_subagents_sync/workspace && for f in alpha.txt beta.txt; do printf '%s: ' \\\"\"'$f\"; cat \"$f\"; done'"
+            },
+            "status": "completed",
+            "output": "alpha.txt: alpha=1\nbeta.txt: beta=2\n",
+            "metadata": {
+              "call_id": "item_21"
+            }
+          }
+        }
+      }
+    ]
+  }
+]

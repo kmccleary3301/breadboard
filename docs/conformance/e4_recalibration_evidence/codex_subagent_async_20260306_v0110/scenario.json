@@ -1,0 +1,13 @@
+{
+  "captured_at_utc": "2026-03-06T20:45:55Z",
+  "codex_version_raw": "codex-cli 0.110.0",
+  "extra_args": [
+    ""
+  ],
+  "model": "gpt-5-codex",
+  "reasoning_effort": "high",
+  "run_id": "e4_refresh_20260306_codex110_subagents_async",
+  "sandbox_mode": "danger-full-access",
+  "scenario": "codex_subagent_async_v1",
+  "version_label": "0.110.0"
+}

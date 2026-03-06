@@ -19,9 +19,22 @@ def test_target_package_assets_exist() -> None:
         REPO_ROOT / "config/e4_targets/oh_my_opencode/3.10.0/phase8_async_harness.yaml",
         REPO_ROOT / "config/e4_targets/oh_my_opencode/3.10.0/prompts/system.md",
         REPO_ROOT / "docs/conformance/E4_TARGET_PACKAGES.md",
+        REPO_ROOT / "docs/conformance/e4_recalibration_evidence/codex_subagent_sync_20260306_v0110/replay_session.json",
+        REPO_ROOT / "docs/conformance/e4_recalibration_evidence/codex_subagent_async_20260306_v0110/replay_session.json",
+        REPO_ROOT / "docs/conformance/e4_recalibration_evidence/codex_subagent_sync_20260306_v0110/workspace/alpha.txt",
+        REPO_ROOT / "docs/conformance/e4_recalibration_evidence/codex_subagent_async_20260306_v0110/workspace/gamma.txt",
     ]
     missing = [str(path) for path in expected_files if not path.exists()]
     assert not missing, f"missing target package files: {missing}"
+
+
+def test_codex_public_dossier_carries_exercised_subagent_surface() -> None:
+    path = REPO_ROOT / "agent_configs/codex_0-107-0_e4_3-6-2026.yaml"
+    text = path.read_text(encoding="utf-8")
+    assert "multi_agent:" in text
+    assert "tool_name: spawn_agent" in text
+    assert "docs/conformance/e4_recalibration_evidence/codex_subagent_sync_20260306_v0110/replay_session.json" in text
+    assert "docs/conformance/e4_recalibration_evidence/codex_subagent_async_20260306_v0110/replay_session.json" in text
 
 
 def test_latest_snapshot_configs_load_via_target_packages() -> None:

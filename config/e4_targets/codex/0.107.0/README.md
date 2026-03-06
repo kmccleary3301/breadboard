@@ -24,6 +24,10 @@ The live calibrated lane still intentionally keeps a small model-visible tool su
 current golden/replay evidence. This package is the first step toward making that tradeoff
 explicit instead of hiding it.
 
-The public top-level dossier now also documents the richer Codex collaboration/subagent substrate
-visible in upstream source, while still being honest that the current strict lane does not yet
-freeze a dedicated sync/async subagent golden.
+The public top-level dossier now also carries dedicated exercised collaboration evidence:
+
+- `docs/conformance/e4_recalibration_evidence/codex_subagent_sync_20260306_v0110/`
+- `docs/conformance/e4_recalibration_evidence/codex_subagent_async_20260306_v0110/`
+
+Those replay fixtures were refreshed on 2026-03-06 against Codex CLI 0.110.0 and preserve the
+current Codex collab event shape (`spawn_agent`, `wait`, and downstream command execution).

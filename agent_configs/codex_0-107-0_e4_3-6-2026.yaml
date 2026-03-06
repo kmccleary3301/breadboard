@@ -92,6 +92,11 @@ tools:
     # - apply_patch   : structured file-change/diff tool
     # - update_plan   : Codex-like plan/todo lifecycle tool
     #
+    # Collaboration tools are a separate surface from the ordinary registry:
+    # - `spawn_agent` and `wait` come from the orchestration/collaboration layer
+    # - they are documented under `multi_agent:` below rather than being treated as ordinary
+    #   file/edit/search tools
+    #
     # In other words: yes, this is a deferral to shared tool definitions, but it is now an
     # explicit and documented one rather than hidden magic.
     paths:
@@ -213,10 +218,82 @@ loop:
 #    - mcpToolCall items and MCP server status APIs
 #    - approvalPolicy threading through CLI/SDK/app-server layers
 #
-# We are intentionally *not* enabling a speculative `multi_agent` section in this public Codex
-# dossier yet, because the 2026-03-06 Codex E4 refresh did not freeze a dedicated sync/async
-# subagent golden. The purpose of this block is interpretability: it documents the target harness
-# surface we know exists, while being honest that the strict public lane is still narrower.
+# As of the 2026-03-06 refresh, the public dossier now has fresh exercised collaboration evidence:
+# - sync replay:  docs/conformance/e4_recalibration_evidence/codex_subagent_sync_20260306_v0110/replay_session.json
+# - async replay: docs/conformance/e4_recalibration_evidence/codex_subagent_async_20260306_v0110/replay_session.json
+#
+# The sections below keep that surface visible as configuration rather than burying it in notes.
+
+multi_agent:
+  # Dedicated sync/async Codex collaboration evidence, refreshed against Codex CLI 0.110.0:
+  # - docs/conformance/e4_recalibration_evidence/codex_subagent_sync_20260306_v0110/
+  # - docs/conformance/e4_recalibration_evidence/codex_subagent_async_20260306_v0110/
+  #
+  # +-------------------- sync lane ---------------------+
+  # | main                                               |
+  # |  |- spawn_agent(worker alpha)                      |
+  # |  |- spawn_agent(worker beta)                       |
+  # |  '- wait(all workers) -> final assistant message   |
+  # +----------------------------------------------------+
+  #
+  # +-------------------- async lane --------------------+
+  # | main                                               |
+  # |  |- spawn_agent(worker gamma)                      |
+  # |  |- spawn_agent(worker delta)                      |
+  # |  '- wait(receiver_thread_ids) as workers complete  |
+  # +----------------------------------------------------+
+  #
+  # These collaboration tools are *not* ordinary registry tools. They are part of the Codex
+  # orchestration surface and appear in captured transcripts as collab tool calls.
+  enabled: true
+  event_log_path: misc/multi_agent_runs/codex_cli_subagent_event_log.jsonl
+  team_config:
+    team:
+      id: codex_cli_collab
+      version: 1
+      agents:
+        main:
+          role: main
+          config_ref: agent_configs/codex_0-107-0_e4_3-6-2026.yaml
+          entrypoint: true
+        readonly-worker:
+          role: readonly-worker
+          config_ref: agent_configs/misc/codex_subagent_readonly.yaml
+          entrypoint: false
+          capabilities:
+            read_only: false
+            allow_spawn: false
+      topology:
+        edges:
+        - from: main
+          to: readonly-worker
+          mode:
+          - sync
+          - async
+      orchestration:
+        scheduler:
+          kind: deterministic_event_loop
+          max_concurrent_agents: 2
+        spawn_protocol:
+          # Codex collaboration is surfaced to the model with `spawn_agent`; the async lane
+          # acknowledges spawned worker thread ids and joins them using `wait`.
+          tool_name: spawn_agent
+          async:
+            enabled: true
+            ack_fields:
+            - receiver_thread_ids
+        join_policy:
+          default: block_until_complete
+      bus:
+        model_visible_topics:
+        - tool_result
+        retention:
+          max_events: 2000
+          max_age_seconds: 86400
+      workspace:
+        sharing:
+          default: shared_workspace
+          write_lock: advisory_only
 
 long_running:
   # BreadBoard's generic long-running controller is visible in the dossier, but Codex E4 today

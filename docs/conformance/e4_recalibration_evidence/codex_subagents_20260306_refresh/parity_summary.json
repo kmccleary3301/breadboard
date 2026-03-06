@@ -1,0 +1,9 @@
+{
+  "total": 2,
+  "status_counts": {
+    "passed": 2
+  },
+  "failed": [],
+  "warned": [],
+  "results_file": "/tmp/bb_codex_subagent_refresh_1981859/artifacts/parity_runs/codex_subagents_20260306_refresh_docs/parity_results.jsonl"
+}

@@ -1,0 +1,261 @@
+[
+  {
+    "role": "user",
+    "message_id": "user_1",
+    "parts": [
+      {
+        "id": "part_user_1",
+        "type": "text",
+        "text": "Start one background-style worker for each task below and wait for completion:\n\n1. Write `gamma.txt` with `gamma=3`.\n2. Write `delta.txt` with `delta=4`.\n\nIf async/background subagents are unavailable, fall back to sequential execution.\nEnd with exactly:\n`async-subagent-done`",
+        "meta": {
+          "synthetic": true,
+          "time": {
+            "start": 0,
+            "end": 0
+          }
+        }
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "message_id": "assistant_1",
+    "parts": [
+      {
+        "id": "part_assistant_text_1",
+        "type": "text",
+        "text": "- `gamma.txt` now contains exactly `gamma=3` with no trailing newline (gamma.txt:1).\n- `delta.txt` now contains exactly `delta=4` with no trailing newline (delta.txt:1).\n\nasync-subagent-done",
+        "meta": {
+          "synthetic": true,
+          "time": {
+            "start": 0,
+            "end": 0
+          }
+        }
+      },
+      {
+        "id": "part_tool_1",
+        "type": "tool",
+        "tool": "spawn_agent",
+        "meta": {
+          "state": {
+            "input": {
+              "prompt": "You own task 1 only. Create gamma.txt in the repo root with exactly the text `gamma=3` and no trailing newline. Do not touch other files. Report once done.",
+              "sender_thread_id": "019cc4e6-5651-70c3-8374-585e94e21b65",
+              "receiver_thread_ids": [
+                "019cc4e6-6979-7aa3-84d9-fe2108d1e1e6"
+              ]
+            },
+            "status": "completed",
+            "output": {
+              "019cc4e6-6979-7aa3-84d9-fe2108d1e1e6": {
+                "status": "pending_init",
+                "message": null
+              }
+            },
+            "metadata": {
+              "call_id": "item_1"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_2",
+        "type": "tool",
+        "tool": "spawn_agent",
+        "meta": {
+          "state": {
+            "input": {
+              "prompt": "You own task 2 only. Create delta.txt in the repo root with exactly the text `delta=4` and no trailing newline. Do not touch other files. Report once done.",
+              "sender_thread_id": "019cc4e6-5651-70c3-8374-585e94e21b65",
+              "receiver_thread_ids": [
+                "019cc4e6-6f77-7521-a55d-bb4d2b812cb2"
+              ]
+            },
+            "status": "completed",
+            "output": {
+              "019cc4e6-6f77-7521-a55d-bb4d2b812cb2": {
+                "status": "pending_init",
+                "message": null
+              }
+            },
+            "metadata": {
+              "call_id": "item_3"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_3",
+        "type": "tool",
+        "tool": "shell_command",
+        "meta": {
+          "state": {
+            "input": {
+              "command": "/bin/bash -lc \"cd /tmp/bb_codex_subagent_refresh_1981859/misc/codex_cli_runs/goldens/0.110.0/codex_subagent_async_v1/runs/e4_refresh_20260306_codex110_subagents_async/workspace && printf 'gamma=3' > gamma.txt\""
+            },
+            "status": "completed",
+            "output": "",
+            "metadata": {
+              "call_id": "item_7"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_4",
+        "type": "tool",
+        "tool": "shell_command",
+        "meta": {
+          "state": {
+            "input": {
+              "command": "/bin/bash -lc \"cd /tmp/bb_codex_subagent_refresh_1981859/misc/codex_cli_runs/goldens/0.110.0/codex_subagent_async_v1/runs/e4_refresh_20260306_codex110_subagents_async/workspace && printf 'delta=4' > delta.txt\""
+            },
+            "status": "completed",
+            "output": "",
+            "metadata": {
+              "call_id": "item_10"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_5",
+        "type": "tool",
+        "tool": "wait",
+        "meta": {
+          "state": {
+            "input": {
+              "prompt": null,
+              "sender_thread_id": "019cc4e6-5651-70c3-8374-585e94e21b65",
+              "receiver_thread_ids": [
+                "019cc4e6-6979-7aa3-84d9-fe2108d1e1e6"
+              ]
+            },
+            "status": "completed",
+            "output": {
+              "019cc4e6-6979-7aa3-84d9-fe2108d1e1e6": {
+                "status": "completed",
+                "message": "gamma.txt written with required contents; no other files touched."
+              }
+            },
+            "metadata": {
+              "call_id": "item_5"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_6",
+        "type": "tool",
+        "tool": "shell_command",
+        "meta": {
+          "state": {
+            "input": {
+              "command": "/bin/bash -lc \"cd /tmp/bb_codex_subagent_refresh_1981859/misc/codex_cli_runs/goldens/0.110.0/codex_subagent_async_v1/runs/e4_refresh_20260306_codex110_subagents_async/workspace && python - <<'PY'\nfrom pathlib import Path\np = Path('delta.txt')\ndata = p.read_bytes()\nprint(data)\nprint('newline?', data.endswith(b'\\\\n'))\nPY\""
+            },
+            "status": "completed",
+            "output": "b'delta=4'\nnewline? False\n",
+            "metadata": {
+              "call_id": "item_14"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_7",
+        "type": "tool",
+        "tool": "wait",
+        "meta": {
+          "state": {
+            "input": {
+              "prompt": null,
+              "sender_thread_id": "019cc4e6-5651-70c3-8374-585e94e21b65",
+              "receiver_thread_ids": [
+                "019cc4e6-6f77-7521-a55d-bb4d2b812cb2"
+              ]
+            },
+            "status": "completed",
+            "output": {
+              "019cc4e6-6f77-7521-a55d-bb4d2b812cb2": {
+                "status": "completed",
+                "message": "Task 2 complete: `delta.txt` now contains exactly `delta=4` with no trailing newline."
+              }
+            },
+            "metadata": {
+              "call_id": "item_16"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_8",
+        "type": "tool",
+        "tool": "shell_command",
+        "meta": {
+          "state": {
+            "input": {
+              "command": "/bin/bash -lc 'cd /tmp/bb_codex_subagent_refresh_1981859/misc/codex_cli_runs/goldens/0.110.0/codex_subagent_async_v1/runs/e4_refresh_20260306_codex110_subagents_async/workspace && ls'"
+            },
+            "status": "completed",
+            "output": "delta.txt\ngamma.txt\n",
+            "metadata": {
+              "call_id": "item_21"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_9",
+        "type": "tool",
+        "tool": "shell_command",
+        "meta": {
+          "state": {
+            "input": {
+              "command": "/bin/bash -lc 'cd /tmp/bb_codex_subagent_refresh_1981859/misc/codex_cli_runs/goldens/0.110.0/codex_subagent_async_v1/runs/e4_refresh_20260306_codex110_subagents_async/workspace && cat -n gamma.txt delta.txt'"
+            },
+            "status": "completed",
+            "output": "     1\tgamma=3delta=4",
+            "metadata": {
+              "call_id": "item_23"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_10",
+        "type": "tool",
+        "tool": "shell_command",
+        "meta": {
+          "state": {
+            "input": {
+              "command": "/bin/bash -lc 'cd /tmp/bb_codex_subagent_refresh_1981859/misc/codex_cli_runs/goldens/0.110.0/codex_subagent_async_v1/runs/e4_refresh_20260306_codex110_subagents_async/workspace && cat -A gamma.txt'"
+            },
+            "status": "completed",
+            "output": "gamma=3",
+            "metadata": {
+              "call_id": "item_25"
+            }
+          }
+        }
+      },
+      {
+        "id": "part_tool_11",
+        "type": "tool",
+        "tool": "shell_command",
+        "meta": {
+          "state": {
+            "input": {
+              "command": "/bin/bash -lc 'cd /tmp/bb_codex_subagent_refresh_1981859/misc/codex_cli_runs/goldens/0.110.0/codex_subagent_async_v1/runs/e4_refresh_20260306_codex110_subagents_async/workspace && cat -A delta.txt'"
+            },
+            "status": "completed",
+            "output": "delta=4",
+            "metadata": {
+              "call_id": "item_27"
+            }
+          }
+        }
+      }
+    ]
+  }
+]

@@ -140,6 +140,26 @@ Codex strict replay bundle:
 - artifact: `artifacts/parity_runs/codex_capture_refresh_20260304_postfix/parity_summary.json`
 - result: 3/3 passed (`codex_cli_mvi_patch_v2_replay`, `codex_cli_subagent_sync_replay`, `codex_cli_subagent_async_replay`)
 
+## Codex subagent replay refresh (2026-03-06)
+
+Fresh Codex CLI collaboration fixtures were regenerated against Codex CLI `0.110.0`
+and the parity manifest was rewired to those refreshed sessions.
+
+- sync run:
+  `misc/codex_cli_runs/goldens/0.110.0/codex_subagent_sync_v1/runs/e4_refresh_20260306_codex110_subagents_sync`
+- async run:
+  `misc/codex_cli_runs/goldens/0.110.0/codex_subagent_async_v1/runs/e4_refresh_20260306_codex110_subagents_async`
+- checked-in replay fixtures:
+  - `docs/conformance/e4_recalibration_evidence/codex_subagent_sync_20260306_v0110/replay_session.json`
+  - `docs/conformance/e4_recalibration_evidence/codex_subagent_async_20260306_v0110/replay_session.json`
+- focused parity rerun:
+  `artifacts/parity_runs/codex_subagents_20260306_refresh/parity_summary.json`
+- result: 2/2 passed (`codex_cli_subagent_sync_replay`, `codex_cli_subagent_async_replay`)
+
+The public top-level Codex dossier now treats collaboration as an exercised surface rather than a
+purely inferential one: the `multi_agent` block documents the actual `spawn_agent` / `wait`
+seam that these replay fixtures froze.
+
 Claude + OpenCode strict replay bundle:
 
 - run id: `claude_opencode_replay_probe_strict_20260304_v2`

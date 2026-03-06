@@ -498,14 +498,14 @@ scenarios:
 
   - name: codex_cli_subagent_sync_replay
     description: >
-      Replay seed from Codex CLI 0.105.0 collaboration flow using `spawn_agent`
+      Replay seed from Codex CLI 0.110.0 collaboration flow using `spawn_agent`
       and `wait` plus command execution events (current Codex event schema).
     tags: [codex, codex_cli, replay, subagent, sync, mvgs]
     enabled: true
     mode: replay
-    config: agent_configs/misc/codex_cli_gpt51mini_mvi_parity.yaml
-    session: misc/codex_cli_tests/codex_subagent_sync_session.json
-    golden_workspace: misc/codex_cli_runs/goldens/0.105.0/codex_subagent_sync_v1/runs/e4_refresh_20260304_bundle_codex_sub_sync/workspace
+    config: agent_configs/codex_0-107-0_e4_3-6-2026.yaml
+    session: docs/conformance/e4_recalibration_evidence/codex_subagent_sync_20260306_v0110/replay_session.json
+    golden_workspace: docs/conformance/e4_recalibration_evidence/codex_subagent_sync_20260306_v0110/workspace
     equivalence: bitwise_trace
     tiers:
       gate: E1
@@ -514,14 +514,14 @@ scenarios:
 
   - name: codex_cli_subagent_async_replay
     description: >
-      Replay seed from Codex CLI 0.105.0 async/background collaboration-style
+      Replay seed from Codex CLI 0.110.0 async/background collaboration-style
       flow (current Codex event schema with collab tool calls + waits).
     tags: [codex, codex_cli, replay, subagent, async, mvgs]
     enabled: true
     mode: replay
-    config: agent_configs/misc/codex_cli_gpt51mini_mvi_parity.yaml
-    session: misc/codex_cli_tests/codex_subagent_async_session.json
-    golden_workspace: misc/codex_cli_runs/goldens/0.105.0/codex_subagent_async_v1/runs/e4_refresh_20260304_bundle_codex_sub_async/workspace
+    config: agent_configs/codex_0-107-0_e4_3-6-2026.yaml
+    session: docs/conformance/e4_recalibration_evidence/codex_subagent_async_20260306_v0110/replay_session.json
+    golden_workspace: docs/conformance/e4_recalibration_evidence/codex_subagent_async_20260306_v0110/workspace
     equivalence: bitwise_trace
     tiers:
       gate: E1

@@ -19,6 +19,14 @@ Current packaged targets:
 - `config/e4_targets/codex/0.107.0/`
 - `config/e4_targets/claude_code/2.1.63/`
 - `config/e4_targets/opencode/1.2.17/`
+- `config/e4_targets/oh_my_opencode/3.10.0/`
+
+Codex note:
+
+- the public Codex dossier now includes dedicated exercised sync/async collaboration replay
+  fixtures under `misc/codex_cli_tests/`
+- those fixtures were refreshed on 2026-03-06 against Codex CLI 0.110.0 and document the
+  current `spawn_agent` / `wait` event shape used by Codex collaboration flows
 
 Design rules:
 
