@@ -4,8 +4,107 @@
 
 extends: ../config/e4_targets/opencode/1.2.17/codexmini_responses_harness.yaml
 
-# OpenCode E4 track: preserve OpenCode tool IDs and gate tool-result content
-# against recorded OpenCode session dumps (model variance removed via replay).
+# Current latest OpenCode MVI replay lane.
+#
+# This snapshot duplicates the common OpenCode substrate inline so the lane is readable on its
+# own. The canonical shared package remains under `config/e4_targets/opencode/1.2.17/`.
+# Nearby package assets worth reading:
+# - config/e4_targets/opencode/1.2.17/prompts/system.md
+# - config/e4_targets/opencode/1.2.17/prompts/plan.md
+# - config/e4_targets/opencode/1.2.17/prompts/builder.md
+# - config/e4_targets/opencode/1.2.17/prompts/plan_bootstrap_protofs.yaml
+# - config/e4_targets/opencode/1.2.17/refs/agents.mdx
+# - config/e4_targets/opencode/1.2.17/refs/mcp-servers.mdx
+# - config/e4_targets/opencode/1.2.17/refs/tools.mdx
+
+profile: { name: opencode-e4-mvi-replay }
+
+providers:
+  default_model: openai/gpt-5.1-codex-mini
+  models:
+    - id: openai/gpt-5.1-codex-mini
+      adapter: openai_responses
+      params:
+        temperature: 0.2
+        top_p: 0.9
+  stream_responses: true
+
+provider_tools:
+  use_native: true
+  suppress_prompts: true
+  api_variant: responses
+  responses_use_developer_role: true
+  tool_choice: auto
+
+prompts:
+  packs:
+    base:
+      system: config/e4_targets/opencode/1.2.17/prompts/system.md
+      plan: config/e4_targets/opencode/1.2.17/prompts/plan.md
+      builder: config/e4_targets/opencode/1.2.17/prompts/builder.md
+  environment:
+    enabled: true
+    format: opencode
+    file_limit: 200
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  tool_prompt_synthesis:
+    enabled: false
+  injection:
+    system_order:
+      - '@pack(base).system'
+    per_turn_order: []
+
+guardrails:
+  include:
+    - implementations/guardrails/base_workspace.yaml
+    - implementations/guardrails/execution_baseline.yaml
+  overrides:
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 8
+        abort_after_turns: 20
+    completion_guard:
+      parameters:
+        warnings_before_abort: 6
+    plan_bootstrap:
+      strategy: never
+    shell_write_block:
+      parameters:
+        enabled: false
+      templates:
+        validation: config/e4_targets/opencode/1.2.17/prompts/shell_write_block_opencode.prompt.md
+
+enhanced_tools:
+  enabled: true
+  validation:
+    enabled: false
+    rules: []
+    rule_config:
+      read_before_edit:
+        mode: relaxed
+        require_fresh_read: false
+        max_age_seconds: 1800
+  diff_policy:
+    patch_splitting:
+      policy: auto_split
+      max_files_per_patch: 1
+      validation_message: |
+        <VALIDATION_ERROR>
+        Multi-file patches are disabled in this configuration. Submit exactly one apply_unified_patch per file.
+        </VALIDATION_ERROR>
+      on_violation: warn_and_split
+
+features:
+  plan: false
+  todos:
+    enabled: false
+    strict: false
+
+completion:
+  build_guard:
+    require_run_shell: false
+    require_successful_tests: false
+
 replay:
   preserve_tool_names: true
   compare_tool_outputs:
@@ -14,10 +113,6 @@ replay:
 
 guardrails:
   overrides:
-    # OpenCode does not enforce a "no shell redirection/heredoc writes" rule at
-    # tool-execution time (it is prompt guidance only). Enforcing it would be a
-    # model-visible divergence and breaks OpenCode session replays that include
-    # such commands.
     shell_write_block:
       parameters:
         enabled: false

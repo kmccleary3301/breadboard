@@ -6,8 +6,72 @@ extends: ../config/e4_targets/codex/0.107.0/gpt51mini_harness.yaml
 
 # Current latest Codex E4 lane.
 #
-# The common Codex prompt/policy substrate now lives in the tracked target package under
-# `config/e4_targets/codex/0.107.0/`. This snapshot keeps the lane frozen to the current
-# evidence-backed live surface while remaining directly inspectable.
+# This snapshot intentionally duplicates the common Codex substrate inline so that opening
+# this file gives you a readable picture of the calibrated harness instead of a tiny pointer.
+# The canonical tracked target package still lives under `config/e4_targets/codex/0.107.0/`.
+# Nearby package assets worth reading:
+# - config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+# - config/e4_targets/codex/0.107.0/refs/agents_md.md
+# - config/e4_targets/codex/0.107.0/refs/execpolicy.md
+# - config/e4_targets/codex/0.107.0/refs/sandbox.md
+# - config/e4_targets/codex/0.107.0/templates/collaboration_mode/*
+# - config/e4_targets/codex/0.107.0/templates/agents/orchestrator.md
+#
+# Important scope note:
+# - this lane is strict for the currently exercised Codex E4 live surfaces
+# - it does not claim that every upstream Codex feature is currently exercised in this lane
+# - the intentionally exposed tool surface remains the one covered by the current goldens
 
 profile: { name: codex-cli-gpt5.1-codex-mini-e4-live }
+
+providers:
+  default_model: openai/gpt-5.1-codex-mini
+  models:
+    - id: openai/gpt-5.1-codex-mini
+      adapter: openai
+      params:
+        temperature: 0.2
+        top_p: 0.9
+
+provider_tools:
+  # Codex uses provider-native tool calling on the Responses API.
+  use_native: true
+  suppress_prompts: false
+  api_variant: responses
+
+prompts:
+  packs:
+    base:
+      # Local tracked copy of the upstream Codex prompt bundle.
+      system: config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      plan: config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      builder: config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      compact: config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      tools_catalog_full: config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      tools_catalog_short: config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+  # Native tool calling means no extra BreadBoard tool-catalog prompt synthesis.
+  tool_prompt_mode: none
+  tool_prompt_synthesis:
+    enabled: false
+
+features:
+  # The strict live Codex E4 lane currently does not expose plan/todo surfaces.
+  plan: false
+  todos:
+    enabled: false
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs
+    include:
+      - shell_command
+      - apply_patch
+      - update_plan
+  aliases: {}
+
+completion:
+  allow_content_only_completion: true
+
+concurrency:
+  at_most_one_of: [shell_command]
