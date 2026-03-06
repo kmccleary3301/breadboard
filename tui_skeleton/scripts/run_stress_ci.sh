@@ -14,7 +14,7 @@ if [[ -n "${STRESS_CI_CASES:-}" ]]; then
   # shellcheck disable=SC2206
   CASES=(${STRESS_CI_CASES})
 fi
-CONFIG_PATH="${CONFIG_PATH:-${STRESS_CONFIG:-../agent_configs/opencode_cli_mock_guardrails.yaml}}"
+CONFIG_PATH="${CONFIG_PATH:-${STRESS_CONFIG:-../agent_configs/misc/opencode_cli_mock_guardrails.yaml}}"
 HOST="${BREADBOARD_CI_HOST:-127.0.0.1}"
 PORT="${BREADBOARD_CI_PORT:-9099}"
 BASE_URL="http://${HOST}:${PORT}"

@@ -29,7 +29,7 @@ npm install
 
 # Run specific commands in dev mode
 npm run dev -- ask "list repo modules"
-npm run dev -- repl --config agent_configs/opencode_openrouter_grok4fast_cli_default.yaml
+npm run dev -- repl --config agent_configs/misc/opencode_openrouter_grok4fast_cli_default.yaml
 npm run dev -- render <session-id> --output json
 
 # Compile the CLI

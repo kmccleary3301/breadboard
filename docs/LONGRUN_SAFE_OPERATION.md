@@ -60,8 +60,8 @@ Use this only after deterministic gates are green and credits are approved.
 1. Run a small paired baseline-vs-longrun pilot with hard caps:
 ```bash
 python scripts/run_longrun_phase2_live_pilot.py \
-  --baseline-config agent_configs/base_v2.yaml \
-  --longrun-config agent_configs/longrun_conservative_v1.yaml \
+  --baseline-config agent_configs/misc/base_v2.yaml \
+  --longrun-config agent_configs/misc/longrun_conservative_v1.yaml \
   --out-json artifacts/longrun/live/longrun_phase2_live_pilot_v1.json \
   --out-markdown artifacts/longrun/live/longrun_phase2_live_pilot_v1.md \
   --workspace-root tmp/longrun_phase2_live_runs \

@@ -25,7 +25,7 @@ const parseArgs = (): CliOptions => {
   let colors = false
   let asciiOnly = true
   let includeLiveSlots = false
-  let configPath = path.resolve("agent_configs/codex_cli_gpt51mini_e4_live.yaml")
+  let configPath = path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml")
 
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]

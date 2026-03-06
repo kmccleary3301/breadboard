@@ -13,7 +13,7 @@ export const readSidebarConfig = (): SidebarConfig => {
   const conf = vscode.workspace.getConfiguration()
   return {
     engineBaseUrl: conf.get<string>(ENGINE_BASE_URL_KEY, "http://127.0.0.1:9099"),
-    defaultConfigPath: conf.get<string>(DEFAULT_CONFIG_PATH_KEY, "agent_configs/base_v2.yaml"),
+    defaultConfigPath: conf.get<string>(DEFAULT_CONFIG_PATH_KEY, "agent_configs/misc/base_v2.yaml"),
   }
 }
 

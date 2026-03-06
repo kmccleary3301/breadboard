@@ -354,7 +354,7 @@ const formatEventForStdout = (event: CliBridgeSessionEvent): string | null => {
 }
 
 const args = parseArgs(process.argv)
-const configPath = args.configPath?.trim() || process.env.BREADBOARD_CONFIG_PATH?.trim() || "agent_configs/test_enhanced_agent_v2.yaml"
+const configPath = args.configPath?.trim() || process.env.BREADBOARD_CONFIG_PATH?.trim() || "agent_configs/misc/test_enhanced_agent_v2.yaml"
 const workspace = args.workspace?.trim() || process.env.BREADBOARD_WORKSPACE?.trim() || ""
 
 const bridge = await ensureCliBridge({

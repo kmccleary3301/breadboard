@@ -282,7 +282,7 @@ def main() -> int:
                 "--tui-preset",
                 "codex_cli_like",
                 "--config",
-                "agent_configs/codex_cli_gpt51mini_e4_live.yaml",
+                "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
             ],
             cwd=repo_root,
         )
@@ -299,7 +299,7 @@ def main() -> int:
                 "--tui-preset",
                 "claude_code_like",
                 "--config",
-                "agent_configs/claude_code_haiku45_e4_replay.yaml",
+                "agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml",
             ],
             cwd=repo_root,
         )

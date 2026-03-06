@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
-CONFIG_PATH="${CONFIG_PATH:-${STRESS_CONFIG:-../agent_configs/opencode_cli_mock_guardrails.yaml}}"
+CONFIG_PATH="${CONFIG_PATH:-${STRESS_CONFIG:-../agent_configs/misc/opencode_cli_mock_guardrails.yaml}}"
 BASE_URL="${BASE_URL:-${BREADBOARD_API_URL:-http://127.0.0.1:9099}}"
 
 echo "[stress] Using config: ${CONFIG_PATH}"

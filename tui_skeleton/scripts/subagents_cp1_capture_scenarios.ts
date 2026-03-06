@@ -23,7 +23,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 const createController = (): Controller =>
   new ReplSessionController({
-    configPath: "agent_configs/test_simple_native.yaml",
+    configPath: "agent_configs/misc/test_simple_native.yaml",
     workspace: ".",
   }) as unknown as Controller
 

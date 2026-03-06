@@ -13,7 +13,7 @@ def test_agent_engine_builds_run_ir(tmp_path: Path) -> None:
 
     This uses the existing mock provider configuration to avoid real API calls.
     """
-    config_path = "agent_configs/opencode_mock_c_fs.yaml"
+    config_path = "agent_configs/misc/opencode_mock_c_fs.yaml"
     workspace = tmp_path / "engine-ws"
     engine = create_engine(config_path, workspace_dir=str(workspace))
 

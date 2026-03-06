@@ -57,7 +57,7 @@ const parseArgs = (): CliOptions => {
   const args = process.argv.slice(2)
   let manifestPath = "misc/tui_goldens/manifests/tui_goldens.yaml"
   let outputRoot = "misc/tui_goldens/artifacts"
-  let configPath = "agent_configs/codex_cli_gpt51mini_e4_live.yaml"
+  let configPath = "agent_configs/codex_0-107-0_e4_3-6-2026.yaml"
   let maxWidth: number | undefined
 
   for (let i = 0; i < args.length; i += 1) {

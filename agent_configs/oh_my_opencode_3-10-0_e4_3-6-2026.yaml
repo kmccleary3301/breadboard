@@ -1,0 +1,297 @@
+# oh-my-opencode E4 reference config
+# Captured against oh-my-opencode 3.10.0 and calibrated on the Phase 8 async/subagent replay lane.
+# This file is fully standalone by design: no `extends`, no hidden prompt refs, and no gitignored assets.
+# Local reference material lives under `../config/e4_targets/oh_my_opencode/3.10.0/`.
+
+version: 2
+profile:
+  name: oh-my-opencode-3.10.0-e4-2026-03-06
+workspace:
+  root: agent_ws_opencode
+  mirror:
+    enabled: false
+    mode: development
+providers:
+  default_model: openai/gpt-5.1-codex-mini
+  models:
+  - id: openai/gpt-5.1-codex-mini
+    adapter: openai
+    params: {}
+prompts:
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  packs:
+    base:
+      system: ../config/e4_targets/oh_my_opencode/3.10.0/prompts/system.md
+      plan: ../config/e4_targets/oh_my_opencode/3.10.0/prompts/plan.md
+      builder: ../config/e4_targets/oh_my_opencode/3.10.0/prompts/builder.md
+  environment:
+    enabled: true
+    format: opencode
+    file_limit: 200
+  tool_prompt_synthesis:
+    enabled: false
+  injection:
+    system_order:
+    - '@pack(base).system'
+    per_turn_order: []
+provider_tools:
+  use_native: true
+  suppress_prompts: true
+  api_variant: responses
+  responses_use_developer_role: true
+  tool_choice: auto
+  responses_stateful: false
+features:
+  plan: false
+  todos:
+    enabled: false
+    strict: false
+    reset_streak_on_todo: true
+completion:
+  allow_zero_tool_completion: true
+  build_guard:
+    require_run_shell: false
+    require_successful_tests: false
+loop:
+  sequence:
+  - mode: build
+  plan_turn_limit: 0
+modes:
+- name: plan
+  prompt: ''
+  tools_enabled:
+  - read_file
+  - list_dir
+  tools_disabled: []
+- name: build
+  prompt: ''
+  tools_enabled:
+  - '*'
+  tools_disabled: []
+tools:
+  registry:
+    paths:
+    - ../implementations/tools/defs_omo
+    include:
+    - bash
+    - read
+    - glob
+    - grep
+    - list
+    - edit
+    - write
+    - task
+    - webfetch
+    - todowrite
+    - todoread
+    - skill
+    - lsp_hover
+    - lsp_goto_definition
+    - lsp_find_references
+    - lsp_document_symbols
+    - lsp_workspace_symbols
+    - lsp_diagnostics
+    - lsp_servers
+    - lsp_prepare_rename
+    - lsp_rename
+    - lsp_code_actions
+    - lsp_code_action_resolve
+    - ast_grep_search
+    - ast_grep_replace
+    - slashcommand
+    - background_task
+    - background_output
+    - background_cancel
+    - call_omo_agent
+    - look_at
+    - interactive_bash
+    - context7_resolve-library-id
+    - context7_get-library-docs
+    - websearch_exa_web_search_exa
+    - grep_app_searchGitHub
+  aliases: {}
+enhanced_tools:
+  enabled: true
+  validation:
+    enabled: false
+    rules: []
+    rule_config:
+      one_bash_per_turn:
+        turn_window_seconds: 120
+      read_before_edit:
+        mode: relaxed
+        require_fresh_read: false
+        max_age_seconds: 1800
+  diff_policy:
+    patch_splitting:
+      policy: auto_split
+      max_files_per_patch: 1
+      validation_message: '<VALIDATION_ERROR>
+
+        Multi-file patches are disabled in this configuration. Submit exactly one
+        apply_unified_patch per file.
+
+        </VALIDATION_ERROR>
+
+        '
+      on_violation: warn_and_split
+guardrails:
+  include:
+  - ../implementations/guardrails/base_workspace.yaml
+  - ../implementations/guardrails/execution_baseline.yaml
+  overrides:
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 8
+        abort_after_turns: 20
+    shell_write_block:
+      templates:
+        validation: ../implementations/system_prompts/guardrails/shell_write_block_opencode.prompt.md
+      parameters:
+        enabled: false
+    todo_rate_limit:
+      parameters:
+        todo_updates_before_progress: 1
+    completion_guard:
+      parameters:
+        warnings_before_abort: 6
+    workspace_context:
+      parameters:
+        require_exploration_before_edit: false
+        require_read_before_edit: false
+        require_progress_before_todo_updates: false
+    plan_bootstrap:
+      strategy: never
+  plan_bootstrap:
+    strategy: soft
+    max_turns: 2
+    warmup_turns: 1
+    seed_file: ../implementations/system_prompts/opencode/plan_bootstrap_protofs.yaml
+permissions:
+  shell:
+    default: allow
+    allow:
+    - ls*
+    - pwd
+    - cat*
+    - head
+    - tail
+    - tree
+    - git*
+    - rg*
+    - grep*
+    - sed
+    - awk
+    - find
+    - python*
+    - pytest*
+    - python*
+    - pytest*
+    - make
+    - cmake*
+    - npm run*
+    - yarn run*
+    - pnpm run*
+    - go test*
+    - cargo test*
+    - uv run*
+    - bash
+    - sh
+    - zsh
+    ask:
+    - npm install*
+    - yarn add*
+    - pnpm add*
+    - pip install*
+    - curl*
+    - wget*
+    - apt-get*
+    - brew install*
+    - uv pip install*
+    - go install*
+    - cargo install*
+    - npm update*
+    - yarn upgrade*
+    deny:
+    - rm *
+    - rm -rf *
+    - mv *
+    - sudo *
+    - chmod *
+    - chown *
+    - dd *
+    - mkfs*
+    - shutdown*
+    - reboot*
+    - kill *
+    - pkill *
+    - killall *
+  edit:
+    default: deny
+  options:
+    mode: auto_allow
+turn_strategy:
+  flow: tool_role
+multi_agent:
+  enabled: true
+  event_log_path: misc/multi_agent_runs/oh_my_opencode_phase8_async_event_log.jsonl
+  team_config:
+    team:
+      id: oh_my_opencode_phase8_async
+      version: 1
+      agents:
+        main:
+          role: main
+          config_ref: agent_configs/misc/oh_my_opencode_phase8_async_live.yaml
+          entrypoint: true
+        repo-scanner:
+          role: repo-scanner
+          config_ref: agent_configs/misc/opencode_phase8_subagent_readonly.yaml
+          entrypoint: false
+          capabilities:
+            read_only: true
+            allow_spawn: false
+        grep-summarizer:
+          role: grep-summarizer
+          config_ref: agent_configs/misc/opencode_phase8_subagent_readonly.yaml
+          entrypoint: false
+          capabilities:
+            read_only: true
+            allow_spawn: false
+      topology:
+        edges:
+        - from: main
+          to: repo-scanner
+          mode:
+          - sync
+        - from: main
+          to: grep-summarizer
+          mode:
+          - sync
+      orchestration:
+        scheduler:
+          kind: deterministic_event_loop
+          max_concurrent_agents: 2
+        spawn_protocol:
+          tool_name: task
+          async:
+            enabled: false
+        join_policy:
+          default: block_until_complete
+      bus:
+        model_visible_topics:
+        - tool_result
+        retention:
+          max_events: 2000
+          max_age_seconds: 86400
+      workspace:
+        sharing:
+          default: shared_readonly_subagents
+          write_lock: main_only
+replay:
+  compare_tool_outputs:
+  - background_task
+  - background_output
+  - background_cancel
+  - call_omo_agent
+  fail_on_tool_output_mismatch: true

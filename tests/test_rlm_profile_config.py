@@ -12,7 +12,7 @@ def test_rlm_base_profile_loads_and_enables_rlm(monkeypatch) -> None:
     prev = Path.cwd()
     try:
         os.chdir(repo_root)
-        cfg = load_agent_config("agent_configs/rlm_base_v1.yaml")
+        cfg = load_agent_config("agent_configs/misc/rlm_base_v1.yaml")
     finally:
         os.chdir(prev)
     assert cfg["version"] == 2

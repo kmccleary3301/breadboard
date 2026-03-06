@@ -229,29 +229,29 @@ def default_request_body_cases() -> Iterable[Dict[str, Any]]:
     return [
         {
             "id": "claude_code",
-            "config_path": "agent_configs/claude_code_haiku45_c_fs_v2.yaml",
+            "config_path": "agent_configs/misc/claude_code_haiku45_c_fs_v2.yaml",
         },
         {
             "id": "claude_code_system",
-            "config_path": "agent_configs/claude_code_haiku45_c_fs_v2.yaml",
+            "config_path": "agent_configs/misc/claude_code_haiku45_c_fs_v2.yaml",
             "system_prompt": "System compat harness.",
         },
         {
             "id": "codex_cli",
-            "config_path": "agent_configs/codex_cli_gpt51mini_e4_live.yaml",
+            "config_path": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
         },
         {
             "id": "codex_cli_multiline",
-            "config_path": "agent_configs/codex_cli_gpt51mini_e4_live.yaml",
+            "config_path": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
             "user_prompt": "Hello from compat harness.\n\nPlease keep responses brief.",
         },
         {
             "id": "opencode",
-            "config_path": "agent_configs/opencode_openai_gpt5mini_c_fs_cli_shared.yaml",
+            "config_path": "agent_configs/misc/opencode_openai_gpt5mini_c_fs_cli_shared.yaml",
         },
         {
             "id": "opencode_multiline",
-            "config_path": "agent_configs/opencode_openai_gpt5mini_c_fs_cli_shared.yaml",
+            "config_path": "agent_configs/misc/opencode_openai_gpt5mini_c_fs_cli_shared.yaml",
             "user_prompt": "Hello from compat harness.\nSecond line.\nThird line.",
         },
     ]

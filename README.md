@@ -75,14 +75,14 @@ The bootstrap creates or reuses `.venv` (prefers `uv` when available), installs 
 ### Smoke check
 
 ```bash
-breadboard doctor --config agent_configs/opencode_mock_c_fs.yaml
-breadboard run --config agent_configs/opencode_mock_c_fs.yaml "Say hi and exit."
+breadboard doctor --config agent_configs/misc/opencode_mock_c_fs.yaml
+breadboard run --config agent_configs/misc/opencode_mock_c_fs.yaml "Say hi and exit."
 ```
 
 ### Interactive TUI
 
 ```bash
-breadboard ui --config agent_configs/opencode_mock_c_fs.yaml
+breadboard ui --config agent_configs/misc/opencode_mock_c_fs.yaml
 ```
 
 ### Readiness and verification
@@ -129,7 +129,7 @@ from breadboard_sdk import BreadboardClient
 
 client = BreadboardClient(base_url="http://127.0.0.1:9099")
 session = client.create_session(
-    config_path="agent_configs/opencode_mock_c_fs.yaml",
+    config_path="agent_configs/misc/opencode_mock_c_fs.yaml",
     task="Summarize this repository layout.",
     stream=True,
 )
@@ -146,7 +146,7 @@ import { createBreadboardClient, streamSessionEvents } from "@breadboard/sdk"
 
 const client = createBreadboardClient({ baseUrl: "http://127.0.0.1:9099" })
 const session = await client.createSession({
-  config_path: "agent_configs/opencode_mock_c_fs.yaml",
+  config_path: "agent_configs/misc/opencode_mock_c_fs.yaml",
   task: "List the top-level modules and explain each in one line."
 })
 

@@ -82,7 +82,7 @@ def test_run_one_with_guard_fail_open_on_exception(tmp_path: Path, monkeypatch) 
     monkeypatch.setattr(module, "_run_one", _boom)
     row = module._run_one_with_guard(
         label="baseline",
-        config_path=Path("agent_configs/base_v2.yaml"),
+        config_path=Path("agent_configs/misc/base_v2.yaml"),
         workspace_root=tmp_path / "ws",
         task=task,
         model_override=None,
@@ -151,7 +151,7 @@ def test_run_one_with_guard_timeout_returns_structured_failure(tmp_path: Path, m
     monkeypatch.setattr(module.mp, "get_context", lambda _: _FakeContext())
     row = module._run_one_with_guard(
         label="longrun",
-        config_path=Path("agent_configs/longrun_conservative_v1.yaml"),
+        config_path=Path("agent_configs/misc/longrun_conservative_v1.yaml"),
         workspace_root=tmp_path / "ws",
         task=task,
         model_override=None,

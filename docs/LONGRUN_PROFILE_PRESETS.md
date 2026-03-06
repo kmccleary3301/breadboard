@@ -2,9 +2,9 @@
 
 BreadBoard now ships three preset longrun profiles for policy experiments:
 
-- `agent_configs/longrun_conservative_v1.yaml`
-- `agent_configs/longrun_balanced_v1.yaml`
-- `agent_configs/longrun_aggressive_v1.yaml`
+- `agent_configs/misc/longrun_conservative_v1.yaml`
+- `agent_configs/misc/longrun_balanced_v1.yaml`
+- `agent_configs/misc/longrun_aggressive_v1.yaml`
 
 ## Safety Notes
 1. These presets are **opt-in** and separate from parity/E4 configs.
@@ -30,12 +30,12 @@ BreadBoard now ships three preset longrun profiles for policy experiments:
 
 ## Example Usage
 ```bash
-python main.py agent_configs/longrun_balanced_v1.yaml -t "Implement feature X with tests"
+python main.py agent_configs/misc/longrun_balanced_v1.yaml -t "Implement feature X with tests"
 ```
 
 ```bash
 AGENT_SCHEMA_V2_ENABLED=1 BREADBOARD_LONGRUN_ENABLE=1 \
-python main.py agent_configs/longrun_conservative_v1.yaml -i
+python main.py agent_configs/misc/longrun_conservative_v1.yaml -i
 ```
 
 ## Related Gates

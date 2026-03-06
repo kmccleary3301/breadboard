@@ -712,7 +712,7 @@ jobs:
           OPENAI_API_KEY: compat-dummy
           ANTHROPIC_API_KEY: compat-dummy
           OPENROUTER_API_KEY: compat-dummy
-        run: bash scripts/sdk_ci_guardrail.sh agent_configs/opencode_mock_c_fs.yaml
+        run: bash scripts/sdk_ci_guardrail.sh agent_configs/misc/opencode_mock_c_fs.yaml
 
       - name: SDK doctor + smoke guardrail skipped (missing script)
         if: steps.sdk_guardrail_prereqs.outputs.ready != 'true'

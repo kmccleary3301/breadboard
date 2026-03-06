@@ -7,7 +7,7 @@ Usage:
   scripts/capture_phase8_async_subagents_live.sh [options]
 
 Options:
-  --config <path>         Breadboard config YAML (default: agent_configs/claude_code_haiku45_phase8_async_live.yaml)
+  --config <path>         Breadboard config YAML (default: agent_configs/misc/claude_code_haiku45_phase8_async_live.yaml)
   --fixture-dir <path>    Workspace fixture dir to seed (default: misc/phase_8_fixtures/phase8_async_subagents_v1)
   --scenario <name>       Output scenario name under misc/phase_8_live_checks (default: claude_code_phase8_async_subagents_v1)
   --run-id <id>           Run id (default: UTC timestamp)
@@ -23,7 +23,7 @@ EOF
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-CONFIG="${ROOT_DIR}/agent_configs/claude_code_haiku45_phase8_async_live.yaml"
+CONFIG="${ROOT_DIR}/agent_configs/misc/claude_code_haiku45_phase8_async_live.yaml"
 FIXTURE_DIR="${ROOT_DIR}/misc/phase_8_fixtures/phase8_async_subagents_v1"
 SCENARIO="claude_code_phase8_async_subagents_v1"
 RUN_ID=""

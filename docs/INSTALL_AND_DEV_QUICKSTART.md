@@ -172,9 +172,9 @@ The CLI auto-starts a local engine when:
 ### Common commands
 
 ```bash
-breadboard doctor --config agent_configs/opencode_mock_c_fs.yaml
-breadboard ui --config agent_configs/opencode_mock_c_fs.yaml
-breadboard run --config agent_configs/opencode_mock_c_fs.yaml "Say hi and exit."
+breadboard doctor --config agent_configs/misc/opencode_mock_c_fs.yaml
+breadboard ui --config agent_configs/misc/opencode_mock_c_fs.yaml
+breadboard run --config agent_configs/misc/opencode_mock_c_fs.yaml "Say hi and exit."
 ```
 
 ### Useful environment toggles
@@ -204,7 +204,7 @@ Interactive provider login (OpenCode-style menu):
 
 ```bash
 breadboard auth
-breadboard auth login --config agent_configs/codex_cli_gpt51mini_e4_live.yaml
+breadboard auth login --config agent_configs/codex_0-107-0_e4_3-6-2026.yaml
 ```
 
 In the OpenAI login-method menu, use `ChatGPT Pro/Plus (browser, force re-login)` to force a fresh browser auth handshake even if a reusable local Codex token already exists.
@@ -212,7 +212,7 @@ In the OpenAI login-method menu, use `ChatGPT Pro/Plus (browser, force re-login)
 Codex subscription non-interactive flow (CI-friendly):
 
 ```bash
-breadboard auth codex-subscription login --no-browser --config agent_configs/codex_cli_gpt51mini_e4_live.yaml
+breadboard auth codex-subscription login --no-browser --config agent_configs/codex_0-107-0_e4_3-6-2026.yaml
 ```
 
 If the local keychain is locked or unavailable, BreadBoard saves subscription tokens to `~/.breadboard/auth/codex_subscription_tokens.json`.

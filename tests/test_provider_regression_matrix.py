@@ -18,7 +18,7 @@ from agentic_coder_prototype.provider_routing import provider_router
 REGRESSION_SCENARIOS = [
     {
         "id": "openrouter_streaming_fallback",
-        "config": "agent_configs/opencode_grok4fast_c_fs_v2.yaml",
+        "config": "agent_configs/misc/opencode_grok4fast_c_fs_v2.yaml",
         "stream": True,
         "probe": CapabilityProbeResult(
             model_id="openrouter/x-ai/grok-4-fast",
@@ -34,7 +34,7 @@ REGRESSION_SCENARIOS = [
     },
     {
         "id": "openrouter_text_only",
-        "config": "agent_configs/opencode_grok4fast_c_fs_v2.yaml",
+        "config": "agent_configs/misc/opencode_grok4fast_c_fs_v2.yaml",
         "stream": False,
         "probe": CapabilityProbeResult(
             model_id="openrouter/x-ai/grok-4-fast",

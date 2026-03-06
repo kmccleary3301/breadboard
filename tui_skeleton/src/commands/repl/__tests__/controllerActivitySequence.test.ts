@@ -12,7 +12,7 @@ const event = (seq: number, type: string, payload: Record<string, unknown> = {})
 describe("ReplSessionController activity sequencing", () => {
   it("tracks core lifecycle transitions for run -> tool -> permission -> completion", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -35,7 +35,7 @@ describe("ReplSessionController activity sequencing", () => {
 
   it("coalesces duplicate status updates inside update window", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -55,7 +55,7 @@ describe("ReplSessionController activity sequencing", () => {
 
   it("applies hysteresis in event path and suppresses low-priority churn", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -79,7 +79,7 @@ describe("ReplSessionController activity sequencing", () => {
 
   it("keeps first active state deterministic as thinking across run.start + turn_start bursts", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -98,7 +98,7 @@ describe("ReplSessionController activity sequencing", () => {
 
   it("transitions to responding only once for an assistant delta burst", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -120,7 +120,7 @@ describe("ReplSessionController activity sequencing", () => {
 
   it("maps permission allow/deny/timeout branches deterministically", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -147,7 +147,7 @@ describe("ReplSessionController activity sequencing", () => {
 
   it("surfaces reconnecting and compacting states, then clears them deterministically", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -176,7 +176,7 @@ describe("ReplSessionController activity sequencing", () => {
 
   it("keeps transcript behavior stable when activity runtime is disabled", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -203,7 +203,7 @@ describe("ReplSessionController activity sequencing", () => {
 
   it("emits bounded lifecycle toast only when lifecycle-toasts flag is enabled", () => {
     const enabled = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -218,7 +218,7 @@ describe("ReplSessionController activity sequencing", () => {
     expect(state.liveSlots.some((slot: any) => String(slot.text).includes("[lifecycle]"))).toBe(true)
 
     const disabled = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -235,7 +235,7 @@ describe("ReplSessionController activity sequencing", () => {
 
   it("suppresses status churn during repeated permission/tool bursts", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -265,7 +265,7 @@ describe("ReplSessionController activity sequencing", () => {
 
   it("tracks event batching telemetry when queued events are flushed together", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       enqueueEvent: (evt: any) => void
@@ -295,7 +295,7 @@ describe("ReplSessionController activity sequencing", () => {
 
   it("keeps inline thinking block disabled by default and avoids transcript leakage", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -321,7 +321,7 @@ describe("ReplSessionController activity sequencing", () => {
 
   it("emits inline thinking summary block only when explicitly enabled", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -359,7 +359,7 @@ describe("ReplSessionController activity sequencing", () => {
 
   it("tracks optimistic tool/diff reconciliation counters", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void

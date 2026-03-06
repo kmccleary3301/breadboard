@@ -4,7 +4,7 @@ import { markTodoScopesStale } from "../controllerEventMethods.js"
 
 describe("todo stale semantics", () => {
   it("marks existing scopes stale (reconnect behavior)", () => {
-    const controller = new ReplSessionController({ configPath: "agent_configs/test_simple_native.yaml" })
+    const controller = new ReplSessionController({ configPath: "agent_configs/misc/test_simple_native.yaml" })
 
     // Seed an authoritative update so the scope exists in controller state.
     ;(controller as any).handleToolResult(

@@ -62,8 +62,8 @@ python scripts/dev/first_time_doctor.py --profile engine --strict
 ## 3. Quick CLI check
 
 ```bash
-breadboard doctor --config agent_configs/opencode_mock_c_fs.yaml
-breadboard run --config agent_configs/opencode_mock_c_fs.yaml "Reply exactly with: OK"
+breadboard doctor --config agent_configs/misc/opencode_mock_c_fs.yaml
+breadboard run --config agent_configs/misc/opencode_mock_c_fs.yaml "Reply exactly with: OK"
 ```
 
 ---
@@ -71,7 +71,7 @@ breadboard run --config agent_configs/opencode_mock_c_fs.yaml "Reply exactly wit
 ## 4. Launch the interactive TUI
 
 ```bash
-breadboard ui --config agent_configs/opencode_mock_c_fs.yaml
+breadboard ui --config agent_configs/misc/opencode_mock_c_fs.yaml
 ```
 
 ---

@@ -1,4 +1,4 @@
-extends: ../../../../agent_configs/base_v2.yaml
+extends: ../../../../agent_configs/misc/base_v2.yaml
 
 # Canonical tracked target package for the Codex CLI 0.107.0 / GPT-5.1 Codex Mini
 # refresh tranche.

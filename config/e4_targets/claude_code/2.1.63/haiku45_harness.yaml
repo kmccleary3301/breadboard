@@ -1,4 +1,4 @@
-extends: ../../../../agent_configs/base_v2.yaml
+extends: ../../../../agent_configs/misc/base_v2.yaml
 
 # Canonical tracked target package for Claude Code 2.1.63 / Claude Haiku 4.5.
 #

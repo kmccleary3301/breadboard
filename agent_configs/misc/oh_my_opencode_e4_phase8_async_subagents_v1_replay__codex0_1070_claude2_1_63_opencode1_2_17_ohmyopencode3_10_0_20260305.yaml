@@ -1,6 +1,24 @@
-extends: opencode_openai_codexmini_c_fs_cli_shared.yaml
+# E4 version snapshot file
+# source_manifest_entry: oh_my_opencode_e4_phase8_async_subagents_v1_replay
+# snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_ohmyopencode3_10_0_20260305
 
-profile: { name: oh-my-opencode-phase8-async-live }
+extends: ../../config/e4_targets/oh_my_opencode/3.10.0/phase8_async_harness.yaml
+
+# Current latest oh-my-opencode replay lane.
+#
+# This snapshot duplicates the common oh-my-opencode async/subagent substrate inline so the
+# lane is readable on its own. The canonical tracked target package remains under
+# `config/e4_targets/oh_my_opencode/3.10.0/`.
+# Nearby package assets worth reading:
+# - config/e4_targets/oh_my_opencode/3.10.0/prompts/system.md
+# - config/e4_targets/oh_my_opencode/3.10.0/prompts/plan.md
+# - config/e4_targets/oh_my_opencode/3.10.0/prompts/builder.md
+# - config/e4_targets/oh_my_opencode/3.10.0/refs/agents.mdx
+# - config/e4_targets/oh_my_opencode/3.10.0/refs/mcp-servers.mdx
+# - config/e4_targets/oh_my_opencode/3.10.0/refs/tools.mdx
+# - config/e4_targets/oh_my_opencode/3.10.0/refs/permissions.mdx
+
+profile: { name: oh-my-opencode-phase8-async-subagents-v1-replay }
 
 permissions:
   options:
@@ -74,6 +92,11 @@ provider_tools:
   tool_choice: auto
 
 prompts:
+  packs:
+    base:
+      system: config/e4_targets/oh_my_opencode/3.10.0/prompts/system.md
+      plan: config/e4_targets/oh_my_opencode/3.10.0/prompts/plan.md
+      builder: config/e4_targets/oh_my_opencode/3.10.0/prompts/builder.md
   tool_prompt_synthesis:
     enabled: false
   injection:
@@ -99,18 +122,18 @@ multi_agent:
       agents:
         main:
           role: main
-          config_ref: agent_configs/oh_my_opencode_phase8_async_live.yaml
+          config_ref: agent_configs/misc/oh_my_opencode_phase8_async_live.yaml
           entrypoint: true
         repo-scanner:
           role: repo-scanner
-          config_ref: agent_configs/opencode_phase8_subagent_readonly.yaml
+          config_ref: agent_configs/misc/opencode_phase8_subagent_readonly.yaml
           entrypoint: false
           capabilities:
             read_only: true
             allow_spawn: false
         grep-summarizer:
           role: grep-summarizer
-          config_ref: agent_configs/opencode_phase8_subagent_readonly.yaml
+          config_ref: agent_configs/misc/opencode_phase8_subagent_readonly.yaml
           entrypoint: false
           capabilities:
             read_only: true
@@ -136,3 +159,7 @@ multi_agent:
         sharing:
           default: shared_readonly_subagents
           write_lock: main_only
+
+replay:
+  compare_tool_outputs: [background_task, background_output, background_cancel, call_omo_agent]
+  fail_on_tool_output_mismatch: true

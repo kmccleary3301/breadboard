@@ -149,7 +149,7 @@ export class HostController {
       deps.configProvider ??
       (() => ({
         engineBaseUrl: "http://127.0.0.1:9099",
-        defaultConfigPath: "agent_configs/base_v2.yaml",
+        defaultConfigPath: "agent_configs/misc/base_v2.yaml",
       }))
     this.runtimeProvider =
       deps.runtimeProvider ??

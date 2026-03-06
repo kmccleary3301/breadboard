@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-CONFIG_PATH="${1:-agent_configs/codex_cli_gpt51mini_e4_live.yaml}"
+CONFIG_PATH="${1:-agent_configs/codex_0-107-0_e4_3-6-2026.yaml}"
 shift || true
 
 export BREADBOARD_ENGINE_PREFER_BUNDLE=0

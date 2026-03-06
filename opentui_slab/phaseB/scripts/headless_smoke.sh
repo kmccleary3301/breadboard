@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT}"
 
-CONFIG="${1:-agent_configs/codex_cli_gpt51mini_e4_live.yaml}"
+CONFIG="${1:-agent_configs/codex_0-107-0_e4_3-6-2026.yaml}"
 
 timeout 25s bun run phaseB/controller.ts \
   --no-ui \

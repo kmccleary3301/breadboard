@@ -2,7 +2,7 @@
 # source_manifest_entry: codex_cli_gpt51mini_e4_live
 # snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305
 
-extends: ../config/e4_targets/codex/0.107.0/gpt51mini_harness.yaml
+extends: ../../config/e4_targets/codex/0.107.0/gpt51mini_harness.yaml
 
 # Current latest Codex E4 lane.
 #

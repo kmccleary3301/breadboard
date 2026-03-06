@@ -12,9 +12,9 @@ def _load(rel_path: str) -> dict:
 
 def test_longrun_profile_configs_load_and_enable_longrun(monkeypatch) -> None:
     monkeypatch.setenv("AGENT_SCHEMA_V2_ENABLED", "1")
-    conservative = _load("agent_configs/longrun_conservative_v1.yaml")
-    balanced = _load("agent_configs/longrun_balanced_v1.yaml")
-    aggressive = _load("agent_configs/longrun_aggressive_v1.yaml")
+    conservative = _load("agent_configs/misc/longrun_conservative_v1.yaml")
+    balanced = _load("agent_configs/misc/longrun_balanced_v1.yaml")
+    aggressive = _load("agent_configs/misc/longrun_aggressive_v1.yaml")
 
     assert conservative["long_running"]["enabled"] is True
     assert balanced["long_running"]["enabled"] is True

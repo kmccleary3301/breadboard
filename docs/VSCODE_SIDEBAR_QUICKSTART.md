@@ -52,4 +52,4 @@ npm run test
 Extension settings:
 
 - `breadboardSidebar.engineBaseUrl` (default `http://127.0.0.1:9099`)
-- `breadboardSidebar.defaultConfigPath` (default `agent_configs/base_v2.yaml`)
+- `breadboardSidebar.defaultConfigPath` (default `agent_configs/misc/base_v2.yaml`)

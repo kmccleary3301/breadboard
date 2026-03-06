@@ -1,0 +1,189 @@
+# Codex CLI E4 reference config
+# Captured against Codex CLI 0.107.0 and calibrated using the GPT-5.1 Codex Mini lane.
+# This file is fully standalone by design: no `extends`, no hidden prompt refs, and no gitignored assets.
+# Local reference material lives under `../config/e4_targets/codex/0.107.0/`.
+
+version: 2
+profile:
+  name: codex-0.107.0-e4-2026-03-06
+workspace:
+  root: ./agent_ws
+  sandbox:
+    driver: process
+  mirror:
+    enabled: false
+    path: ./agent_ws
+    mode: development
+providers:
+  default_model: openai/gpt-5.1-codex-mini
+  routing:
+    disable_native_tools_on_probe_failure: true
+    disable_stream_on_probe_failure: true
+  models:
+  - id: openai/gpt-5.1-codex-mini
+    adapter: openai
+    params:
+      temperature: 0.2
+      top_p: 0.9
+provider_tools:
+  use_native: true
+  suppress_prompts: false
+  api_variant: responses
+prompts:
+  packs:
+    base:
+      system: ../config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      plan: ../config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      builder: ../config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      compact: ../config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      tools_catalog_full: ../config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+      tools_catalog_short: ../config/e4_targets/codex/0.107.0/prompts/gpt_5_1_codex_prompt.md
+  tool_prompt_mode: none
+  tool_prompt_synthesis:
+    enabled: false
+tools:
+  mark_task_complete: true
+  registry:
+    paths:
+    - ../implementations/tools/defs
+    include:
+    - shell_command
+    - apply_patch
+    - update_plan
+  aliases:
+    bash: run_shell
+    edit: apply_search_replace
+    list: list_dir
+    patch: apply_unified_patch
+    read: read_file
+  dialects:
+    preference:
+      default:
+      - aider_search_replace
+      - unified_diff
+      - bash_block
+      by_model:
+        openrouter/openai/*:
+          order:
+          - aider_search_replace
+          - unified_diff
+          - bash_block
+        openai/*:
+          order:
+          - aider_search_replace
+          - unified_diff
+          - bash_block
+    selection:
+      by_model:
+        openrouter/openai/*:
+        - aider_search_replace
+        - unified_diff
+        openai/*:
+        - aider_search_replace
+        - unified_diff
+modes:
+- name: plan
+  prompt: '@pack(base).plan'
+  tools_enabled:
+  - read_file
+  - list_dir
+  - glob
+  - grep
+  tools_disabled: []
+- name: build
+  prompt: '@pack(base).builder'
+  tools_enabled:
+  - '*'
+  tools_disabled: []
+- name: compact
+  prompt: '@pack(base).compact'
+  tools_enabled: []
+loop:
+  sequence:
+  - if: features.plan
+    then:
+      mode: plan
+  - mode: build
+  plan_turn_limit: 1
+  turn_strategy:
+    relay: tool_role
+    flow: assistant_continuation
+    allow_multiple_per_turn: true
+long_running:
+  enabled: false
+  controller: longrun_v1
+  reset_policy: fresh
+  episode:
+    max_steps_override: null
+  queue:
+    backend: todo_store
+  reviewer:
+    enabled: false
+    mode: read_only
+  resume:
+    enabled: false
+    state_path: meta/longrun_state.json
+  verification:
+    tiers:
+    - name: smoke
+      commands:
+      - pytest -q tests/test_longrun_controller.py
+      timeout_seconds: 120
+      hard_fail: false
+    - name: full
+      commands:
+      - pytest -q
+      timeout_seconds: 1200
+      hard_fail: true
+  recovery:
+    no_progress_signature_repeats: 0
+  budgets:
+    wall_clock_s: 0
+    total_episodes: 0
+    total_tokens: 0
+    total_cost_usd: 0.0
+features:
+  plan: false
+  todos:
+    enabled: false
+    strict: false
+    reset_streak_on_todo: true
+completion:
+  confidence_threshold: 0.6
+  natural_finish:
+    idle_turn_limit: 1
+    no_tool_turns_threshold: 2
+  primary: hybrid
+  tool_finish: mark_task_complete
+  provider_signals: true
+  text_sentinels:
+  - TASK COMPLETE
+  - ALL TESTS PASSED
+  - IMPLEMENTATION COMPLETE
+  - '>>>>>> END RESPONSE'
+  allow_content_only_completion: true
+concurrency:
+  at_most_one_of:
+  - shell_command
+  groups:
+  - name: fs_reads
+    match_tools:
+    - read_file
+    - list_dir
+    - glob
+    - grep
+    max_parallel: 4
+  - name: edits_and_bash
+    match_tools:
+    - apply_unified_patch
+    - apply_search_replace
+    - write
+    - run_shell
+    max_parallel: 1
+    barrier_after: apply_unified_patch
+  nonblocking_tools:
+  - read_file
+  - list_dir
+  - glob
+  - grep
+  - apply_search_replace

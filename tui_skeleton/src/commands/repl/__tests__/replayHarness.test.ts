@@ -35,7 +35,7 @@ const buildControllerFromFixture = (name: string): ReplSessionController => {
   const raw = readFileSync(jsonlPath, "utf8")
   const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0)
   const controller = new ReplSessionController({
-    configPath: path.resolve("agent_configs/codex_cli_gpt51mini_e4_live.yaml"),
+    configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
     workspace: null,
     model: null,
     remotePreference: null,
@@ -123,7 +123,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("binds tool result without tool_name to prior call_id", () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_cli_gpt51mini_e4_live.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -148,7 +148,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("orders assistant segments around tool events by createdAt", () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_cli_gpt51mini_e4_live.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -177,7 +177,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("preserves canonical assistant transcript text across markdown and status surfaces", () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_cli_gpt51mini_e4_live.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,

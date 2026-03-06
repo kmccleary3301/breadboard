@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="${ROOT_DIR}/logging"
 CLI_DIR="${ROOT_DIR}/tui_skeleton"
-CONFIG_PATH="${CONFIG_PATH:-${ROOT_DIR}/agent_configs/opencode_cli_mock_guardrails.yaml}"
+CONFIG_PATH="${CONFIG_PATH:-${ROOT_DIR}/agent_configs/misc/opencode_cli_mock_guardrails.yaml}"
 MODE="verify"
 METRICS_OUTPUT="${GUARDRAIL_METRICS_OUTPUT:-${ROOT_DIR}/artifacts/cli_guardrail_metrics.jsonl}"
 ALLOWED_FAIL_SCENARIOS=("modal_overlay_stress" "resize_storm")

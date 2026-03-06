@@ -20,7 +20,7 @@ import { resolveAsciiOnly, resolveColorMode } from "../../repl/designSystem.js"
 import { resolveTuiConfig } from "../../tui_config/load.js"
 import type { ResolvedTuiConfig } from "../../tui_config/types.js"
 
-const DEFAULT_CONFIG = process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/opencode_openrouter_grok4fast_cli_default.yaml"
+const DEFAULT_CONFIG = process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/misc/opencode_openrouter_grok4fast_cli_default.yaml"
 const DEFAULT_SCRIPT_MAX_DURATION_MS = 180_000
 
 const configOption = Options.text("config").pipe(Options.withDefault(DEFAULT_CONFIG))

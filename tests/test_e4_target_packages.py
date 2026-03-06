@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import yaml
+
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
 
 
@@ -24,15 +26,15 @@ def test_target_package_assets_exist() -> None:
 
 def test_latest_snapshot_configs_load_via_target_packages() -> None:
     snapshot_paths = [
-        REPO_ROOT / "agent_configs/codex_cli_gpt51mini_e4_live__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
-        REPO_ROOT / "agent_configs/claude_code_haiku45_e4_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
-        REPO_ROOT / "agent_configs/opencode_e4_mvi_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
-        REPO_ROOT / "agent_configs/opencode_e4_glob_grep_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
-        REPO_ROOT / "agent_configs/opencode_e4_patch_todo_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
-        REPO_ROOT / "agent_configs/opencode_e4_toolcall_repair_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
-        REPO_ROOT / "agent_configs/opencode_e4_webfetch_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
-        REPO_ROOT / "agent_configs/opencode_e4_oc_protofs_gpt5nano_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
-        REPO_ROOT / "agent_configs/oh_my_opencode_e4_phase8_async_subagents_v1_replay__codex0_1070_claude2_1_63_opencode1_2_17_ohmyopencode3_10_0_20260305.yaml",
+        REPO_ROOT / "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+        REPO_ROOT / "agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml",
+        REPO_ROOT / "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+        REPO_ROOT / "agent_configs/misc/opencode_e4_glob_grep_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
+        REPO_ROOT / "agent_configs/misc/opencode_e4_patch_todo_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
+        REPO_ROOT / "agent_configs/misc/opencode_e4_toolcall_repair_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
+        REPO_ROOT / "agent_configs/misc/opencode_e4_webfetch_sentinel_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
+        REPO_ROOT / "agent_configs/misc/opencode_e4_oc_protofs_gpt5nano_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml",
+        REPO_ROOT / "agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml",
     ]
 
     loaded = [load_agent_config(str(path)) for path in snapshot_paths]
@@ -50,3 +52,18 @@ def test_latest_snapshot_configs_load_via_target_packages() -> None:
     assert loaded[8]["prompts"]["packs"]["base"]["system"].endswith(
         "config/e4_targets/oh_my_opencode/3.10.0/prompts/system.md"
     )
+
+
+def test_top_level_e4_reference_configs_are_standalone_and_only_four_yaml_files_exist() -> None:
+    top_level_yaml_paths = sorted((REPO_ROOT / "agent_configs").glob("*.yaml"))
+    assert [path.name for path in top_level_yaml_paths] == [
+        "claude_code_2-1-63_e4_3-6-2026.yaml",
+        "codex_0-107-0_e4_3-6-2026.yaml",
+        "oh_my_opencode_3-10-0_e4_3-6-2026.yaml",
+        "opencode_1-2-17_e4_3-6-2026.yaml",
+    ]
+
+    for path in top_level_yaml_paths:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert isinstance(payload, dict), f"{path} must load as a mapping"
+        assert "extends" not in payload, f"{path} must be standalone and not use extends"

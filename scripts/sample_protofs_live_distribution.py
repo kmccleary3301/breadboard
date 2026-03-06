@@ -427,7 +427,7 @@ def main() -> int:
     parser.add_argument("--task", default="implementations/test_tasks/protofs_c.md", help="Task markdown path")
     parser.add_argument(
         "--kc-config",
-        default="agent_configs/opencode_openai_codexmini_c_fs_cli_shared.yaml",
+        default="agent_configs/misc/opencode_openai_codexmini_c_fs_cli_shared.yaml",
         help="BreadBoard config path",
     )
     parser.add_argument("--kc-max-iterations", type=int, default=40, help="BreadBoard max iterations")

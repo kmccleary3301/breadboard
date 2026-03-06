@@ -19,7 +19,7 @@ describe("ReplSessionController subagent routing", () => {
 
   it("keeps task_event tool-rail lines in baseline mode", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -32,7 +32,7 @@ describe("ReplSessionController subagent routing", () => {
 
   it("routes task_event away from tool rail when subagent v2 is enabled", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -53,7 +53,7 @@ describe("ReplSessionController subagent routing", () => {
 
   it("emits subagent toast slots when enabled", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -73,7 +73,7 @@ describe("ReplSessionController subagent routing", () => {
 
   it("sanitizes and truncates subagent toast preview text", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as any
     controller.runtimeFlags = {
@@ -99,7 +99,7 @@ describe("ReplSessionController subagent routing", () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-02-13T00:00:00Z"))
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as any
     controller.runtimeFlags = {
@@ -122,7 +122,7 @@ describe("ReplSessionController subagent routing", () => {
 
   it("uses longer TTL for failed subagent toasts", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as any
     controller.runtimeFlags = {
@@ -146,7 +146,7 @@ describe("ReplSessionController subagent routing", () => {
 
   it("captures async completion flow with toast + no task tool-rail spam", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as any
     controller.runtimeFlags = {
@@ -187,7 +187,7 @@ describe("ReplSessionController subagent routing", () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-02-13T00:00:00Z"))
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as any
     controller.runtimeFlags = {
@@ -211,7 +211,7 @@ describe("ReplSessionController subagent routing", () => {
   it("expires subagent toast deterministically with controlled clock", () => {
     const clock = new ControlledClock(10_000)
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
       clock,
     }) as any
@@ -234,7 +234,7 @@ describe("ReplSessionController subagent routing", () => {
 
   it("absorbs concurrent async task bursts with deterministic workgraph caps", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as any
     controller.runtimeFlags = {

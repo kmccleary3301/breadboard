@@ -46,7 +46,7 @@ const parseEvent = (raw: string): RawEvent | null => {
 
 const stateFromFixture = (fixturePath: string): any => {
   const controller = new ReplSessionController({
-    configPath: "agent_configs/test_simple_native.yaml",
+    configPath: "agent_configs/misc/test_simple_native.yaml",
     workspace: ".",
   }) as unknown as {
     applyEvent: (evt: any) => void

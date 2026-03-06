@@ -33,7 +33,7 @@ const parseArgs = (): Args => {
   let rows = Number(process.env.BREADBOARD_TUI_FRAME_HEIGHT ?? "40")
   let cols = Number(process.env.BREADBOARD_TUI_FRAME_WIDTH ?? "120")
   let strict = false
-  let configPath = path.resolve("../agent_configs/codex_cli_gpt51mini_e4_live.yaml")
+  let configPath = path.resolve("../agent_configs/codex_0-107-0_e4_3-6-2026.yaml")
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === "--out-dir") outDir = path.resolve(argv[++i] ?? outDir)

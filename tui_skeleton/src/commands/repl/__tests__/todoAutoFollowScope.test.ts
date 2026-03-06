@@ -12,7 +12,7 @@ const event = (seq: number, type: string, payload: Record<string, unknown> = {})
 describe("todo auto-follow scope", () => {
   it("switches active scope to the most recently updated non-active scope when enabled", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       todoAutoFollowScope: "on",
       todoAutoFollowHysteresisMs: 0,
       todoAutoFollowManualOverrideMs: 15000,
@@ -37,7 +37,7 @@ describe("todo auto-follow scope", () => {
 
   it("respects manual override window", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       todoAutoFollowScope: "on",
       todoAutoFollowHysteresisMs: 0,
       todoAutoFollowManualOverrideMs: 10_000,
@@ -64,7 +64,7 @@ describe("todo auto-follow scope", () => {
 
   it("applies hysteresis to avoid bouncing between scopes", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       todoAutoFollowScope: "on",
       todoAutoFollowHysteresisMs: 10_000,
       todoAutoFollowManualOverrideMs: 0,

@@ -87,8 +87,8 @@ def _build_payload(include_advanced: bool) -> dict:
 
     bootstrap_cmd = "bash scripts/dev/bootstrap_first_time.sh"
     profile_cmd = "bash scripts/dev/bootstrap_first_time.sh --profile engine"
-    ui_cmd = "breadboard ui --config agent_configs/opencode_mock_c_fs.yaml"
-    run_cmd = "breadboard run --config agent_configs/opencode_mock_c_fs.yaml \"Say hi and exit.\""
+    ui_cmd = "breadboard ui --config agent_configs/misc/opencode_mock_c_fs.yaml"
+    run_cmd = "breadboard run --config agent_configs/misc/opencode_mock_c_fs.yaml \"Say hi and exit.\""
 
     actions = [
         {"step": "bootstrap", "command": profile_cmd if not has_tui else bootstrap_cmd},

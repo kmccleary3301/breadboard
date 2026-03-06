@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
-CONFIG_PATH="${CONFIG_PATH:-agent_configs/opencode_mock_c_fs.yaml}"
+CONFIG_PATH="${CONFIG_PATH:-agent_configs/misc/opencode_mock_c_fs.yaml}"
 WORKSPACE="${WORKSPACE:-${ROOT_DIR}/agent_ws_smoke_local}"
 DOCTOR_TIMEOUT_S="${DOCTOR_TIMEOUT_S:-60}"
 RUN_TIMEOUT_S="${RUN_TIMEOUT_S:-120}"

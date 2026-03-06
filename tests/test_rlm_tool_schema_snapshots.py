@@ -103,7 +103,7 @@ def test_rlm_snapshot_fixture_only_covers_rlm_enabled_configs(monkeypatch) -> No
 
 def test_non_rlm_base_schema_excludes_rlm_tools_and_stays_stable(monkeypatch) -> None:
     monkeypatch.setenv("AGENT_SCHEMA_V2_ENABLED", "1")
-    snapshot = _compute_tool_schema_snapshot("agent_configs/base_v2.yaml")
+    snapshot = _compute_tool_schema_snapshot("agent_configs/misc/base_v2.yaml")
     assert _RLM_TOOL_NAMES.isdisjoint(set(snapshot.get("tool_names") or []))
     assert snapshot["tool_count"] == 20
     assert snapshot["schema_hash"] == "35f0dabf94d3c8e8a6463ee4f2b796ad0187a9eb55479ef40755660fbdc9e14a"

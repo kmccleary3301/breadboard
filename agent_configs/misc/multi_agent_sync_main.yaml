@@ -12,11 +12,11 @@ multi_agent:
       agents:
         main:
           role: main
-          config_ref: agent_configs/multi_agent_sync_main.yaml
+          config_ref: agent_configs/misc/multi_agent_sync_main.yaml
           entrypoint: true
         reviewer:
           role: reviewer
-          config_ref: agent_configs/multi_agent_sync_subagent.yaml
+          config_ref: agent_configs/misc/multi_agent_sync_subagent.yaml
           entrypoint: false
           capabilities:
             read_only: true

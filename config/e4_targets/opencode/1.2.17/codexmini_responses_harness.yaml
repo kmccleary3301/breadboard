@@ -1,4 +1,4 @@
-extends: ../../../../agent_configs/opencode_openai_codexmini_c_fs_guardrails.yaml
+extends: ../../../../agent_configs/misc/opencode_openai_codexmini_c_fs_guardrails.yaml
 
 # Canonical tracked target package for OpenCode 1.2.17 / GPT-5.1 Codex Mini responses lane.
 #

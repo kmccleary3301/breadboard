@@ -99,7 +99,7 @@ jobs:
           node --import tsx scripts/run_tui_goldens.ts \
             --manifest "$MANIFEST" \
             --out "$RUNS_ROOT" \
-            --config ../agent_configs/codex_cli_gpt51mini_e4_live.yaml \
+            --config ../agent_configs/codex_0-107-0_e4_3-6-2026.yaml \
             --max-width "${{ matrix.width }}"
 
           LATEST_RUN="$(ls -td "$RUNS_ROOT"/run-* | head -n 1)"
@@ -209,7 +209,7 @@ jobs:
         run: |
           node --import tsx scripts/todo_preview_churn_gate.ts \
             --input ui_baselines/u1/scenarios/todo_preview_churn_gate/input/events.jsonl \
-            --config ../agent_configs/codex_cli_gpt51mini_e4_live.yaml \
+            --config ../agent_configs/codex_0-107-0_e4_3-6-2026.yaml \
             --out ../artifacts/todo_preview_churn_nightly/summary.json \
             --strict
 

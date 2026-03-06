@@ -53,7 +53,7 @@ RLM-enabled runs may produce:
 
 ## 6) Recommended adoption path
 
-1. Start with `agent_configs/rlm_base_v1.yaml` in non-parity lanes.
+1. Start with `agent_configs/misc/rlm_base_v1.yaml` in non-parity lanes.
 2. Validate with `scripts/validate_rlm_artifacts.py`.
 3. Run parity audit before any release candidate:
 - `scripts/audit_longrun_parity_disabled.py`

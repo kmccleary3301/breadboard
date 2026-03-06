@@ -73,7 +73,7 @@
             "blocklist": ["lint.fix"]
           },
           "sources": {
-            "config_path": "agent_configs/opencode_cli_mock_guardrails.yaml",
+            "config_path": "agent_configs/misc/opencode_cli_mock_guardrails.yaml",
             "workspace": ".",
             "plugin_count": 2,
             "skill_paths": ["skills/repo.json", "skills/core.json"]
@@ -147,7 +147,7 @@
       "blocklist": ["lint.fix"]
     },
     "sources": {
-      "config_path": "agent_configs/opencode_cli_mock_guardrails.yaml",
+      "config_path": "agent_configs/misc/opencode_cli_mock_guardrails.yaml",
       "workspace": ".",
       "plugin_count": 2,
       "skill_paths": ["skills/repo.json", "skills/core.json"]

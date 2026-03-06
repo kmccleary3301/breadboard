@@ -34,18 +34,18 @@ multi_agent:
       agents:
         main:
           role: main
-          config_ref: agent_configs/claude_code_haiku45_phase8_async_live.yaml
+          config_ref: agent_configs/misc/claude_code_haiku45_phase8_async_live.yaml
           entrypoint: true
         repo-scanner:
           role: repo-scanner
-          config_ref: agent_configs/claude_code_haiku45_phase8_subagent_readonly.yaml
+          config_ref: agent_configs/misc/claude_code_haiku45_phase8_subagent_readonly.yaml
           entrypoint: false
           capabilities:
             read_only: true
             allow_spawn: false
         grep-summarizer:
           role: grep-summarizer
-          config_ref: agent_configs/claude_code_haiku45_phase8_subagent_readonly.yaml
+          config_ref: agent_configs/misc/claude_code_haiku45_phase8_subagent_readonly.yaml
           entrypoint: false
           capabilities:
             read_only: true

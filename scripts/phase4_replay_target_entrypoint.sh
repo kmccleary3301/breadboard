@@ -32,7 +32,7 @@ EOF
 session=""
 port=""
 tui_preset="claude_code_like"
-config_path="agent_configs/opencode_openrouter_grok4fast_cli_default.yaml"
+config_path="agent_configs/misc/opencode_openrouter_grok4fast_cli_default.yaml"
 workspace=""
 cols=""
 rows=""

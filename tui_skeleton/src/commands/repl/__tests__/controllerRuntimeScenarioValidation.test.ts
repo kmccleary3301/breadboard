@@ -13,7 +13,7 @@ const event = (seq: number, type: string, payload: Record<string, unknown> = {})
 describe("runtime scenario validator (warn-mode hook)", () => {
   it("flags no warnings for healthy run/tool/permission/completion sequence", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -54,7 +54,7 @@ describe("runtime scenario validator (warn-mode hook)", () => {
 
   it("validates stream-gap recovery scenario without stuck activity", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void
@@ -74,7 +74,7 @@ describe("runtime scenario validator (warn-mode hook)", () => {
 
   it("validates compaction lifecycle scenario and exits compacting state", () => {
     const controller = new ReplSessionController({
-      configPath: "agent_configs/test_simple_native.yaml",
+      configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
     }) as unknown as {
       applyEvent: (evt: any) => void

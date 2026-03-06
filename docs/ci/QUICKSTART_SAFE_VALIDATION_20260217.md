@@ -6,18 +6,18 @@ against the restored repository state.
 ## Scope
 
 - Repo: `breadboard_repo/`
-- Config: `agent_configs/opencode_mock_c_fs.yaml`
+- Config: `agent_configs/misc/opencode_mock_c_fs.yaml`
 - Safety mode: workspace preflight enforced before runtime commands.
 - Validation style: local command execution, no destructive operations.
 
 ## Commands Executed
 
 ```bash
-python scripts/preflight_workspace_safety.py --config agent_configs/opencode_mock_c_fs.yaml
+python scripts/preflight_workspace_safety.py --config agent_configs/misc/opencode_mock_c_fs.yaml
 npm -C tui_skeleton ci
 npm -C tui_skeleton run build
-breadboard doctor --config agent_configs/opencode_mock_c_fs.yaml
-breadboard run --config agent_configs/opencode_mock_c_fs.yaml "Say hi and exit."
+breadboard doctor --config agent_configs/misc/opencode_mock_c_fs.yaml
+breadboard run --config agent_configs/misc/opencode_mock_c_fs.yaml "Say hi and exit."
 ```
 
 ## Result Summary

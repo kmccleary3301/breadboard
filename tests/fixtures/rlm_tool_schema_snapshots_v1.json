@@ -2,7 +2,7 @@
   "version": 1,
   "dedicated_rlm_configs": [
     {
-      "config_path": "agent_configs/rlm_base_v1.yaml",
+      "config_path": "agent_configs/misc/rlm_base_v1.yaml",
       "profile_name": "rlm-base-v1",
       "tool_count": 26,
       "schema_hash": "18ee8091c69266cb13a1cfe6fd1b9ae98418f4880bce478877ff13e68c889670",

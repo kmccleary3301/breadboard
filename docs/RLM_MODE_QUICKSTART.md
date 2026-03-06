@@ -10,7 +10,7 @@ Status:
 ## Enable
 
 Use:
-- `agent_configs/rlm_base_v1.yaml`
+- `agent_configs/misc/rlm_base_v1.yaml`
 
 or set:
 - `features.rlm.enabled: true`

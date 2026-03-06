@@ -57,7 +57,7 @@ class XorShift32 {
   }
 }
 
-const DEFAULT_CONFIG = resolveRepoPath("../agent_configs/opencode_cli_mock_guardrails.yaml")
+const DEFAULT_CONFIG = resolveRepoPath("../agent_configs/misc/opencode_cli_mock_guardrails.yaml")
 const DEFAULT_COMMAND = "node dist/main.js repl"
 const DEFAULT_BASE_URL = process.env.BREADBOARD_API_URL ?? "http://127.0.0.1:9099"
 

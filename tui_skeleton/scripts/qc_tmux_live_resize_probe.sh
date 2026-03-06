@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG_PATH="${CONFIG_PATH:-$ROOT_DIR/../agent_configs/opencode_openrouter_grok4fast_cli_default.yaml}"
+CONFIG_PATH="${CONFIG_PATH:-$ROOT_DIR/../agent_configs/misc/opencode_openrouter_grok4fast_cli_default.yaml}"
 WORKSPACE="${WORKSPACE:-/shared_folders/querylake_server/ray_testing/ray_SCE}"
 REPLAY_PATH="${REPLAY_PATH:-config/cli_bridge_replays/phase4/subagents_strip_churn_smoke_v1.jsonl}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/scripts}"

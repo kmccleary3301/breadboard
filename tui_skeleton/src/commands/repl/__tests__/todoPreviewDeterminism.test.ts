@@ -12,7 +12,7 @@ const event = (seq: number, type: string, payload: Record<string, unknown> = {})
 
 describe("todo preview determinism", () => {
   it("does not change the preview model when only assistant deltas arrive", () => {
-    const controller = new ReplSessionController({ configPath: "agent_configs/test_simple_native.yaml" }) as any
+    const controller = new ReplSessionController({ configPath: "agent_configs/misc/test_simple_native.yaml" }) as any
 
     controller.applyEvent(
       event(1, "tool_result", {
@@ -33,7 +33,7 @@ describe("todo preview determinism", () => {
   })
 
   it("clears stale flag only after an accepted todo update", () => {
-    const controller = new ReplSessionController({ configPath: "agent_configs/test_simple_native.yaml" }) as any
+    const controller = new ReplSessionController({ configPath: "agent_configs/misc/test_simple_native.yaml" }) as any
 
     controller.applyEvent(
       event(1, "tool_result", {

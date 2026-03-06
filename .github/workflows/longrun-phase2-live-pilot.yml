@@ -66,8 +66,8 @@ jobs:
             MODEL_FLAG="--model-override ${{ github.event.inputs.model_override }}"
           fi
           python scripts/run_longrun_phase2_live_pilot.py \
-            --baseline-config agent_configs/base_v2.yaml \
-            --longrun-config agent_configs/longrun_conservative_v1.yaml \
+            --baseline-config agent_configs/misc/base_v2.yaml \
+            --longrun-config agent_configs/misc/longrun_conservative_v1.yaml \
             --tasks-json config/longrun/phase2_live_tasks_v1.json \
             --out-json artifacts/longrun/live/longrun_phase2_live_pilot_v1.json \
             --out-markdown artifacts/longrun/live/longrun_phase2_live_pilot_v1.md \

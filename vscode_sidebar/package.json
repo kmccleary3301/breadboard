@@ -89,7 +89,7 @@
         },
         "breadboardSidebar.defaultConfigPath": {
           "type": "string",
-          "default": "agent_configs/base_v2.yaml",
+          "default": "agent_configs/misc/base_v2.yaml",
           "description": "Default BreadBoard config path used when creating sessions."
         }
       }

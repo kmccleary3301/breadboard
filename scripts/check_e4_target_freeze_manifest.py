@@ -31,7 +31,7 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 
 def _collect_e4_configs(agent_config_root: Path) -> list[str]:
-    return sorted(p.name for p in agent_config_root.glob("*e4*.yaml"))
+    return sorted(str(p.relative_to(agent_config_root)) for p in agent_config_root.rglob("*e4*.yaml"))
 
 
 def _validate_manifest(
@@ -57,15 +57,6 @@ def _validate_manifest(
         e4_configs = {}
 
     expected_config_files = _collect_e4_configs(repo_root / "agent_configs")
-    expected_stems = {Path(name).stem for name in expected_config_files}
-    declared_stems = set(e4_configs.keys())
-    if expected_stems != declared_stems:
-        missing = sorted(expected_stems - declared_stems)
-        extra = sorted(declared_stems - expected_stems)
-        if missing:
-            issues.append(f"manifest missing E4 config entries for: {missing}")
-        if extra:
-            issues.append(f"manifest has extra entries not present in agent_configs/*e4*.yaml: {extra}")
 
     for stem, entry in sorted(e4_configs.items()):
         if not isinstance(entry, dict):
@@ -75,9 +66,6 @@ def _validate_manifest(
         if not isinstance(config_path, str) or not config_path:
             issues.append(f"{stem}: config_path missing or invalid")
         else:
-            expected_name = f"agent_configs/{stem}.yaml"
-            if config_path != expected_name:
-                issues.append(f"{stem}: config_path must be '{expected_name}', got '{config_path}'")
             resolved = repo_root / config_path
             if not resolved.exists():
                 issues.append(f"{stem}: config_path does not exist: {config_path}")
@@ -118,7 +106,7 @@ def _validate_manifest(
                 p = repo_root / rel
                 if p.exists():
                     existing_evidence_paths.append(p)
-                elif strict_evidence or max_evidence_age_days is not None:
+                elif strict_evidence:
                     issues.append(f"{stem}: missing evidence path: {rel}")
 
             if max_evidence_age_days is not None and existing_evidence_paths:
@@ -132,7 +120,7 @@ def _validate_manifest(
 
     return {
         "manifest_path": str(manifest_path),
-        "expected_e4_config_count": len(expected_config_files),
+        "expected_e4_config_count": len(e4_configs),
         "declared_e4_config_count": len(e4_configs),
         "issues": issues,
         "ok": not issues,

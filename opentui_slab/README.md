@@ -10,7 +10,7 @@ Scrollback-first OpenTUI “bottom slab” UI:
 From repo root:
 
 ```bash
-bash breadboard_repo/scripts/dev/run_opentui_phaseB.sh agent_configs/codex_cli_gpt51mini_e4_live.yaml
+bash breadboard_repo/scripts/dev/run_opentui_phaseB.sh agent_configs/codex_0-107-0_e4_3-6-2026.yaml
 ```
 
 ## Phase C UX (current)

@@ -1,23 +1,14 @@
 # E4 version snapshot file
-# source_manifest_entry: opencode_e4_mvi_replay
+# source_manifest_entry: opencode_e4_patch_todo_sentinel_replay
 # snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_20260305
 
-extends: ../config/e4_targets/opencode/1.2.17/codexmini_responses_harness.yaml
+extends: ../../config/e4_targets/opencode/1.2.17/codexmini_responses_harness.yaml
 
-# Current latest OpenCode MVI replay lane.
-#
-# This snapshot duplicates the common OpenCode substrate inline so the lane is readable on its
-# own. The canonical shared package remains under `config/e4_targets/opencode/1.2.17/`.
-# Nearby package assets worth reading:
-# - config/e4_targets/opencode/1.2.17/prompts/system.md
-# - config/e4_targets/opencode/1.2.17/prompts/plan.md
-# - config/e4_targets/opencode/1.2.17/prompts/builder.md
-# - config/e4_targets/opencode/1.2.17/prompts/plan_bootstrap_protofs.yaml
-# - config/e4_targets/opencode/1.2.17/refs/agents.mdx
-# - config/e4_targets/opencode/1.2.17/refs/mcp-servers.mdx
-# - config/e4_targets/opencode/1.2.17/refs/tools.mdx
+# Current latest OpenCode patch/todo sentinel replay lane.
+# This file duplicates the common OpenCode substrate inline so the lane is inspectable
+# without leaving the snapshot YAML.
 
-profile: { name: opencode-e4-mvi-replay }
+profile: { name: opencode-e4-patch-todo-sentinel-replay }
 
 providers:
   default_model: openai/gpt-5.1-codex-mini
@@ -108,8 +99,11 @@ completion:
 replay:
   preserve_tool_names: true
   compare_tool_outputs:
+    - todowrite
+    - todoread
     - bash
-    - write
+    - patch
+  guardrail_allowlist: []
 
 guardrails:
   overrides:
@@ -117,14 +111,24 @@ guardrails:
       parameters:
         enabled: false
 
-enhanced_tools:
-  lsp_integration:
-    enabled: true
-
 tools:
   registry:
     paths:
       - implementations/tools/defs_oc
     include:
       - bash
+      - patch
+      - read
       - write
+      - todowrite
+      - todoread
+
+modes:
+  - name: build
+    prompt: "@pack(base).builder"
+    tools_enabled: [bash, patch, read, write, todowrite, todoread]
+    tools_disabled: []
+
+loop:
+  sequence:
+    - mode: build

@@ -135,8 +135,8 @@ Current branch: main
 Main branch (you will usually use this for PRs): 
 
 Status:
-M agent_configs/opencode_grok4fast_c_fs_compiled.yaml
- M agent_configs/opencode_grok4fast_c_fs_v2.yaml
+M agent_configs/misc/opencode_grok4fast_c_fs_compiled.yaml
+ M agent_configs/misc/opencode_grok4fast_c_fs_v2.yaml
  D docs/phase_2/CLAUDE_CODE_ANALYSIS.md
  M docs/phase_4/runbook.md
 ?? .breadboard/

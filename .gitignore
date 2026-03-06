@@ -27,6 +27,8 @@ $SCRIPT
 $tmpdir/
 $TMP_DIR/
 misc/
+!agent_configs/misc/
+!agent_configs/misc/**
 perf/
 goldens/
 repo_reconstruct_*

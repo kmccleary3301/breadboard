@@ -23,8 +23,8 @@ Minimal commands:
 ```bash
 npm -C tui_skeleton ci
 npm -C tui_skeleton run build
-breadboard doctor --config agent_configs/opencode_mock_c_fs.yaml
-breadboard run --config agent_configs/opencode_mock_c_fs.yaml "Say hi and exit."
+breadboard doctor --config agent_configs/misc/opencode_mock_c_fs.yaml
+breadboard run --config agent_configs/misc/opencode_mock_c_fs.yaml "Say hi and exit."
 ```
 
 5-minute copy-paste path:

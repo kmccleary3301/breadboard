@@ -49,10 +49,10 @@ const resolveTuiPath = (value: string): string => {
 }
 
 const DEFAULT_CONFIG = resolveRepoPath(
-  process.env.CONFIG_PATH ?? process.env.STRESS_CONFIG ?? "../agent_configs/opencode_cli_mock_guardrails.yaml",
+  process.env.CONFIG_PATH ?? process.env.STRESS_CONFIG ?? "../agent_configs/misc/opencode_cli_mock_guardrails.yaml",
 )
 const DEFAULT_LIVE_CONFIG = resolveRepoPath(
-  process.env.BREADBOARD_LIVE_CONFIG || "../agent_configs/opencode_openai_gpt5nano_c_fs_cli_shared.yaml",
+  process.env.BREADBOARD_LIVE_CONFIG || "../agent_configs/misc/opencode_openai_gpt5nano_c_fs_cli_shared.yaml",
 )
 const DEFAULT_BASE_URL = process.env.BASE_URL ?? process.env.BREADBOARD_API_URL ?? "http://127.0.0.1:9099"
 const DEFAULT_COMMAND = "node dist/main.js repl"
@@ -751,7 +751,7 @@ const STRESS_CASES: StressCase[] = [
     description: "Live engine smoke (requires running CLI bridge)",
     requiresLive: true,
     submitTimeoutMs: 0,
-    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
   },
   {
     id: "live_engine_permission",
@@ -760,7 +760,7 @@ const STRESS_CASES: StressCase[] = [
     description: "Live engine permission modal flow (requires CLI bridge)",
     requiresLive: true,
     submitTimeoutMs: 0,
-    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
     command: "node dist/main.js repl --permission-mode prompt",
     env: {
       BREADBOARD_DEBUG_PERMISSIONS: "1",
@@ -773,7 +773,7 @@ const STRESS_CASES: StressCase[] = [
     description: "Live engine model picker (requires CLI bridge)",
     requiresLive: true,
     submitTimeoutMs: 0,
-    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
   },
   {
     id: "live_engine_stop_retry",
@@ -782,7 +782,7 @@ const STRESS_CASES: StressCase[] = [
     description: "Live engine stop + /retry semantics (requires CLI bridge)",
     requiresLive: true,
     submitTimeoutMs: 0,
-    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
   },
   {
     id: "live_engine_tool_events",
@@ -791,7 +791,7 @@ const STRESS_CASES: StressCase[] = [
     description: "Live engine tool events (requires CLI bridge)",
     requiresLive: true,
     submitTimeoutMs: 0,
-    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
   },
   {
     id: "live_engine_rewind",
@@ -800,7 +800,7 @@ const STRESS_CASES: StressCase[] = [
     description: "Live engine rewind checkpoints (requires CLI bridge)",
     requiresLive: true,
     submitTimeoutMs: 0,
-    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
   },
   {
     id: "live_engine_skills",
@@ -809,7 +809,7 @@ const STRESS_CASES: StressCase[] = [
     description: "Live engine skills picker (requires CLI bridge)",
     requiresLive: true,
     submitTimeoutMs: 0,
-    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
   },
   {
     id: "live_engine_ctree",
@@ -818,7 +818,7 @@ const STRESS_CASES: StressCase[] = [
     description: "Live engine CTree summary (requires CLI bridge)",
     requiresLive: true,
     submitTimeoutMs: 0,
-    configPath: "agent_configs/opencode_mock_c_fs.yaml",
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
   },
   {
     id: "keymap_codex",

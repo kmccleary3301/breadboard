@@ -8,9 +8,9 @@ import { shutdownEngine } from "../engine/engineSupervisor.js"
 import { DEFAULT_MODEL_ID } from "../config/appConfig.js"
 import { resolveBreadboardPath, resolveBreadboardWorkspace } from "../utils/paths.js"
 
-const DEFAULT_CONFIG = process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/claude_code_haiku45_c_fs_v2.yaml"
+const DEFAULT_CONFIG = process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/misc/claude_code_haiku45_c_fs_v2.yaml"
 const ANALYSIS_CONFIG =
-  process.env.BREADBOARD_ANALYSIS_CONFIG ?? "agent_configs/opencode_openai_gpt5nano_c_fs_cli_analysis.yaml"
+  process.env.BREADBOARD_ANALYSIS_CONFIG ?? "agent_configs/misc/opencode_openai_gpt5nano_c_fs_cli_analysis.yaml"
 
 const configOption = Options.text("config").pipe(Options.withDefault(DEFAULT_CONFIG))
 const workspaceOption = Options.text("workspace").pipe(Options.optional)

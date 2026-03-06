@@ -1,0 +1,205 @@
+# OpenCode E4 reference config
+# Captured against OpenCode 1.2.17 and calibrated using the canonical MVI replay lane.
+# This file is fully standalone by design: no `extends`, no hidden prompt refs, and no gitignored assets.
+# Scenario-specific OpenCode replay lanes remain available under `agent_configs/misc/`.
+# Local reference material lives under `../config/e4_targets/opencode/1.2.17/`.
+
+version: 2
+profile:
+  name: opencode-1.2.17-e4-2026-03-06
+workspace:
+  root: agent_ws_opencode
+  mirror:
+    enabled: false
+    mode: development
+providers:
+  default_model: openai/gpt-5.1-codex-mini
+  models:
+  - id: openai/gpt-5.1-codex-mini
+    adapter: openai_responses
+    params:
+      temperature: 0.2
+      top_p: 0.9
+  stream_responses: true
+prompts:
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  packs:
+    base:
+      system: ../config/e4_targets/opencode/1.2.17/prompts/system.md
+      plan: ../config/e4_targets/opencode/1.2.17/prompts/plan.md
+      builder: ../config/e4_targets/opencode/1.2.17/prompts/builder.md
+  environment:
+    enabled: true
+    format: opencode
+    file_limit: 200
+  tool_prompt_synthesis:
+    enabled: false
+  injection:
+    system_order:
+    - '@pack(base).system'
+    per_turn_order: []
+provider_tools:
+  use_native: true
+  suppress_prompts: true
+  api_variant: responses
+  responses_use_developer_role: true
+  tool_choice: auto
+features:
+  plan: false
+  todos:
+    enabled: false
+    strict: false
+    reset_streak_on_todo: true
+completion:
+  allow_zero_tool_completion: true
+  build_guard:
+    require_run_shell: false
+    require_successful_tests: false
+loop:
+  sequence:
+  - mode: plan
+  - mode: build
+modes:
+- name: plan
+  prompt: ''
+  tools_enabled:
+  - read_file
+  - list_dir
+  tools_disabled: []
+- name: build
+  prompt: ''
+  tools_enabled:
+  - '*'
+  tools_disabled: []
+tools:
+  registry:
+    paths:
+    - ../implementations/tools/defs_oc
+    include:
+    - bash
+    - write
+enhanced_tools:
+  enabled: true
+  validation:
+    enabled: false
+    rules: []
+    rule_config:
+      one_bash_per_turn:
+        turn_window_seconds: 120
+      read_before_edit:
+        mode: relaxed
+        require_fresh_read: false
+        max_age_seconds: 1800
+  diff_policy:
+    patch_splitting:
+      policy: auto_split
+      max_files_per_patch: 1
+      validation_message: '<VALIDATION_ERROR>
+
+        Multi-file patches are disabled in this configuration. Submit exactly one
+        apply_unified_patch per file.
+
+        </VALIDATION_ERROR>
+
+        '
+      on_violation: warn_and_split
+  lsp_integration:
+    enabled: true
+guardrails:
+  include:
+  - ../implementations/guardrails/base_workspace.yaml
+  - ../implementations/guardrails/execution_baseline.yaml
+  overrides:
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 8
+        abort_after_turns: 20
+    shell_write_block:
+      templates:
+        validation: ../config/e4_targets/opencode/1.2.17/prompts/shell_write_block_opencode.prompt.md
+      parameters:
+        enabled: false
+    todo_rate_limit:
+      parameters:
+        todo_updates_before_progress: 1
+    completion_guard:
+      parameters:
+        warnings_before_abort: 6
+    workspace_context:
+      parameters:
+        require_exploration_before_edit: false
+        require_read_before_edit: false
+        require_progress_before_todo_updates: false
+    plan_bootstrap:
+      strategy: never
+  plan_bootstrap:
+    strategy: soft
+    max_turns: 2
+    warmup_turns: 1
+    seed_file: ../implementations/system_prompts/opencode/plan_bootstrap_protofs.yaml
+permissions:
+  shell:
+    default: allow
+    allow:
+    - ls*
+    - pwd
+    - cat*
+    - head
+    - tail
+    - tree
+    - git*
+    - rg*
+    - grep*
+    - sed
+    - awk
+    - find
+    - python*
+    - pytest*
+    - python*
+    - pytest*
+    - make
+    - cmake*
+    - npm run*
+    - yarn run*
+    - pnpm run*
+    - go test*
+    - cargo test*
+    - uv run*
+    - bash
+    - sh
+    - zsh
+    ask:
+    - npm install*
+    - yarn add*
+    - pnpm add*
+    - pip install*
+    - curl*
+    - wget*
+    - apt-get*
+    - brew install*
+    - uv pip install*
+    - go install*
+    - cargo install*
+    - npm update*
+    - yarn upgrade*
+    deny:
+    - rm -rf*
+    - sudo*
+    - chmod 777*
+    - :(){:|:&};: null
+    - shutdown*
+    - reboot*
+    - poweroff*
+    - mkfs*
+    - dd if=*
+    - kill -9*
+    - useradd*
+    - groupadd*
+    - chown*
+  edit:
+    default: allow
+replay:
+  preserve_tool_names: true
+  compare_tool_outputs:
+  - bash
+  - write

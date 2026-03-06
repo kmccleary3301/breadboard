@@ -436,7 +436,7 @@ else
 fi
 if breadboard_cli_usable; then
   echo "  2) Verify CLI:"
-  echo "     breadboard doctor --config agent_configs/opencode_mock_c_fs.yaml"
+  echo "     breadboard doctor --config agent_configs/misc/opencode_mock_c_fs.yaml"
 else
   echo "  2) CLI wrapper is unavailable in the current state."
   echo "     Use quickstart helper: python scripts/dev/quickstart_first_time.py --include-advanced"
@@ -454,7 +454,7 @@ fi
 if [[ "${SKIP_NODE}" == "0" ]]; then
   if [[ "${HAS_TUI_SOURCE}" == "1" ]]; then
     echo "  4) Run UI:"
-    echo "     breadboard ui --config agent_configs/opencode_mock_c_fs.yaml"
+    echo "     breadboard ui --config agent_configs/misc/opencode_mock_c_fs.yaml"
   else
     echo "  4) TUI source not present in this checkout; engine/sdk setup completed."
   fi

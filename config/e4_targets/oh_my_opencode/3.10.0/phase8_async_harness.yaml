@@ -1,4 +1,4 @@
-extends: ../../../../agent_configs/opencode_openai_codexmini_c_fs_cli_shared.yaml
+extends: ../../../../agent_configs/misc/opencode_openai_codexmini_c_fs_cli_shared.yaml
 
 # Canonical tracked target package for oh-my-opencode 3.10.0 / Phase 8 async-subagent lane.
 #
@@ -109,18 +109,18 @@ multi_agent:
       agents:
         main:
           role: main
-          config_ref: agent_configs/oh_my_opencode_phase8_async_live.yaml
+          config_ref: agent_configs/misc/oh_my_opencode_phase8_async_live.yaml
           entrypoint: true
         repo-scanner:
           role: repo-scanner
-          config_ref: agent_configs/opencode_phase8_subagent_readonly.yaml
+          config_ref: agent_configs/misc/opencode_phase8_subagent_readonly.yaml
           entrypoint: false
           capabilities:
             read_only: true
             allow_spawn: false
         grep-summarizer:
           role: grep-summarizer
-          config_ref: agent_configs/opencode_phase8_subagent_readonly.yaml
+          config_ref: agent_configs/misc/opencode_phase8_subagent_readonly.yaml
           entrypoint: false
           capabilities:
             read_only: true

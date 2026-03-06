@@ -3,7 +3,7 @@ import { ReplSessionController } from "../controller.js"
 
 describe("todo projection scoping + revision gating", () => {
   it("routes updates into per-scope stores and ignores stale revisions", async () => {
-    const controller = new ReplSessionController({ configPath: "agent_configs/test_simple_native.yaml" })
+    const controller = new ReplSessionController({ configPath: "agent_configs/misc/test_simple_native.yaml" })
 
     ;(controller as any).handleToolCall(
       {
@@ -49,7 +49,7 @@ describe("todo projection scoping + revision gating", () => {
   })
 
   it("ignores unversioned fallbacks once a revisioned update has been observed", () => {
-    const controller = new ReplSessionController({ configPath: "agent_configs/test_simple_native.yaml" })
+    const controller = new ReplSessionController({ configPath: "agent_configs/misc/test_simple_native.yaml" })
 
     ;(controller as any).handleToolResult(
       {
@@ -76,7 +76,7 @@ describe("todo projection scoping + revision gating", () => {
   })
 
   it("does not fallback to tool parsing when payload.todo is present but invalid", () => {
-    const controller = new ReplSessionController({ configPath: "agent_configs/test_simple_native.yaml" })
+    const controller = new ReplSessionController({ configPath: "agent_configs/misc/test_simple_native.yaml" })
 
     ;(controller as any).handleToolResult(
       {

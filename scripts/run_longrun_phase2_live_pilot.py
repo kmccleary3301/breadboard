@@ -651,8 +651,8 @@ def _render_markdown(payload: Mapping[str, Any]) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a spend-capped live Phase-2 longrun pilot.")
-    parser.add_argument("--baseline-config", default="agent_configs/base_v2.yaml")
-    parser.add_argument("--longrun-config", default="agent_configs/longrun_conservative_v1.yaml")
+    parser.add_argument("--baseline-config", default="agent_configs/misc/base_v2.yaml")
+    parser.add_argument("--longrun-config", default="agent_configs/misc/longrun_conservative_v1.yaml")
     parser.add_argument("--tasks-json", help="Optional task list JSON path. Defaults to built-in lightweight tasks.")
     parser.add_argument("--out-json", required=True, help="Output artifact JSON path.")
     parser.add_argument("--out-markdown", help="Optional markdown summary path.")

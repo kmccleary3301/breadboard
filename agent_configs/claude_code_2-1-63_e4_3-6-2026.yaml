@@ -1,0 +1,220 @@
+# Claude Code E4 reference config
+# Captured against Claude Code 2.1.63 and calibrated using the Claude Haiku 4.5 replay lane.
+# This file is fully standalone by design: no `extends`, no hidden prompt refs, and no gitignored assets.
+# Local reference material lives under `../config/e4_targets/claude_code/2.1.63/`.
+
+version: 2
+profile:
+  name: claude-code-2.1.63-e4-2026-03-06
+workspace:
+  root: ./agent_ws_claude
+  sandbox:
+    driver: process
+  mirror:
+    enabled: false
+    path: ./agent_ws_claude
+    mode: development
+providers:
+  default_model: anthropic/claude-haiku-4-5-20251001
+  routing:
+    disable_native_tools_on_probe_failure: false
+    disable_stream_on_probe_failure: true
+  models:
+  - id: anthropic/claude-haiku-4-5-20251001
+    adapter: anthropic
+    params:
+      tool_use: true
+      temperature: 0.1
+      max_output_tokens: 32000
+    routing:
+      fallback_models: []
+provider_tools:
+  use_native: true
+  suppress_prompts: false
+  anthropic:
+    max_output_tokens: 32000
+    temperature: 0.1
+    turn_delay_seconds: 1.0
+    tool_choice: auto
+    stream: true
+    system_reminders:
+      enabled: true
+      usd_budget_limit: 0.25
+      todowrite_nudge_after_tool_results: 4
+    prompt_cache:
+      beta_header: null
+      apply_to_system: true
+      cache_control:
+        type: ephemeral
+        ttl: 1h
+    rate_limit:
+      enabled: true
+      token_buffer: 4000
+      fallback_cooldown_seconds: 5
+      min_wait_seconds: 1.0
+      max_retries: 2
+      retry_base_seconds: 2.0
+      retry_max_seconds: 20.0
+      retry_jitter_seconds: 0.5
+prompts:
+  packs:
+    base:
+      system: ../config/e4_targets/claude_code/2.1.63/prompts/system-vendor-logged.prompt.md
+      plan: ../config/e4_targets/claude_code/2.1.63/prompts/system-vendor-logged.prompt.md
+      builder: ../config/e4_targets/claude_code/2.1.63/prompts/system-vendor-logged.prompt.md
+      compact: ../config/e4_targets/claude_code/2.1.63/prompts/system-vendor-logged.prompt.md
+      tools_catalog_full: ../implementations/system_prompts/default.md
+      tools_catalog_short: ../implementations/system_prompts/default.md
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  tool_prompt_synthesis:
+    enabled: false
+  injection:
+    system_order:
+    - '@pack(base).system'
+tools:
+  mark_task_complete: false
+  registry:
+    paths:
+    - ../implementations/tools/defs_cc
+    include:
+    - '*'
+  aliases: null
+  dialects:
+    preference:
+      default:
+      - unified_diff
+      - bash_block
+      by_model:
+        openrouter/openai/*:
+          order:
+          - aider_search_replace
+          - unified_diff
+          - bash_block
+        openai/*:
+          order:
+          - aider_search_replace
+          - unified_diff
+          - bash_block
+        anthropic/*:
+          order:
+          - unified_diff
+          - bash_block
+    selection:
+      by_model:
+        openrouter/openai/*:
+        - aider_search_replace
+        - unified_diff
+        openai/*:
+        - aider_search_replace
+        - unified_diff
+        anthropic/*:
+        - unified_diff
+modes:
+- name: plan
+  prompt: '@pack(base).plan'
+  tools_enabled:
+  - '*'
+- name: build
+  prompt: '@pack(base).builder'
+  tools_enabled:
+  - '*'
+- name: compact
+  prompt: '@pack(base).compact'
+  tools_enabled: []
+loop:
+  sequence:
+  - if: features.plan
+    then:
+      mode: plan
+  - mode: build
+  plan_turn_limit: 1
+  turn_strategy:
+    relay: tool_role
+    flow: tool_role
+    allow_multiple_per_turn: true
+  guardrails:
+    zero_tool_watchdog:
+      warn_after_turns: 0
+      abort_after_turns: 0
+      emit_event: false
+long_running:
+  enabled: false
+  controller: longrun_v1
+  reset_policy: fresh
+  episode:
+    max_steps_override: null
+  queue:
+    backend: todo_store
+  reviewer:
+    enabled: false
+    mode: read_only
+  resume:
+    enabled: false
+    state_path: meta/longrun_state.json
+  verification:
+    tiers:
+    - name: smoke
+      commands:
+      - pytest -q tests/test_longrun_controller.py
+      timeout_seconds: 120
+      hard_fail: false
+    - name: full
+      commands:
+      - pytest -q
+      timeout_seconds: 1200
+      hard_fail: true
+  recovery:
+    no_progress_signature_repeats: 0
+  budgets:
+    wall_clock_s: 0
+    total_episodes: 0
+    total_tokens: 0
+    total_cost_usd: 0.0
+features:
+  plan: true
+  todos:
+    enabled: false
+    strict: false
+    reset_streak_on_todo: true
+completion:
+  confidence_threshold: 0.6
+  natural_finish:
+    idle_turn_limit: 1
+    no_tool_turns_threshold: 2
+  primary: hybrid
+  tool_finish: mark_task_complete
+  provider_signals: true
+  text_sentinels:
+  - TASK COMPLETE
+  - ALL TESTS PASSED
+  - IMPLEMENTATION COMPLETE
+  - '>>>>>> END RESPONSE'
+concurrency:
+  at_most_one_of:
+  - run_shell
+  groups:
+  - name: fs_reads
+    match_tools:
+    - read_file
+    - list_dir
+    - glob
+    - grep
+    max_parallel: 4
+  - name: edits_and_bash
+    match_tools:
+    - apply_unified_patch
+    - apply_search_replace
+    - write
+    - run_shell
+    max_parallel: 1
+    barrier_after: apply_unified_patch
+  nonblocking_tools:
+  - read_file
+  - list_dir
+  - glob
+  - grep
+  - apply_search_replace
+replay:
+  compare_tool_outputs: true
+  fail_on_tool_output_mismatch: true
+  preserve_tool_names: true

@@ -30,7 +30,7 @@ run_lane() {
     node --import tsx scripts/run_tui_goldens.ts \
       --manifest "${manifest}" \
       --out "${runs_root}" \
-      --config ../agent_configs/codex_cli_gpt51mini_e4_live.yaml \
+      --config ../agent_configs/codex_0-107-0_e4_3-6-2026.yaml \
       --max-width "${width}"
 
     local latest_run

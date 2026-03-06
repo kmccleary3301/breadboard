@@ -4,8 +4,8 @@ Render TPSL (tool prompt synthesis) catalogs for a given config and mode without
 calling any provider. Useful for verifying template selection and content.
 
 Usage:
-  python scripts/compile_tpsl_preview.py agent_configs/opencode_grok4fast_c_fs_v2.yaml plan
-  python scripts/compile_tpsl_preview.py agent_configs/opencode_grok4fast_c_fs_v2.yaml build
+  python scripts/compile_tpsl_preview.py agent_configs/misc/opencode_grok4fast_c_fs_v2.yaml plan
+  python scripts/compile_tpsl_preview.py agent_configs/misc/opencode_grok4fast_c_fs_v2.yaml build
 """
 from __future__ import annotations
 

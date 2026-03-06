@@ -300,7 +300,7 @@ test("host operator-path integration: create->attach->prompt->permission->files-
     batchDelayMs: 1,
     retryBackoffMs: [1, 2],
     runtimeProvider: () => runtime,
-    configProvider: () => ({ engineBaseUrl: "http://127.0.0.1:9099", defaultConfigPath: "agent_configs/base_v2.yaml" }),
+    configProvider: () => ({ engineBaseUrl: "http://127.0.0.1:9099", defaultConfigPath: "agent_configs/misc/base_v2.yaml" }),
   })
 
   controller.setSink({

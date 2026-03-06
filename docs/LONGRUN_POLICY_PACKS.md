@@ -14,9 +14,9 @@ This profile is additive and non-breaking. It is recorded in longrun state/summa
 
 Preset profiles:
 
-1. `agent_configs/longrun_conservative_v1.yaml`
-2. `agent_configs/longrun_balanced_v1.yaml`
-3. `agent_configs/longrun_aggressive_v1.yaml`
+1. `agent_configs/misc/longrun_conservative_v1.yaml`
+2. `agent_configs/misc/longrun_balanced_v1.yaml`
+3. `agent_configs/misc/longrun_aggressive_v1.yaml`
 
 Prompt-pack bindings:
 

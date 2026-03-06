@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARTIFACT_DIR="${1:-$ROOT/../../docs_tmp/cli_phase_5/opentui_phaseb_replay_artifacts}"
 mkdir -p "${ARTIFACT_DIR}"
 
-CONFIG_PATH="${BREADBOARD_REPLAY_CONFIG_PATH:-agent_configs/opencode_openrouter_grok4fast_cli_default.yaml}"
+CONFIG_PATH="${BREADBOARD_REPLAY_CONFIG_PATH:-agent_configs/misc/opencode_openrouter_grok4fast_cli_default.yaml}"
 
 run_fixture() {
   local fixture_id="$1"
