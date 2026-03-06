@@ -17,6 +17,12 @@ from .langflow_executor import (
     execute_langflow_simple_agent_sync,
     execute_langflow_simple_agent_sync_from_path,
 )
+from .langflow_workflow import (
+    LangflowWorkflowRequestError,
+    LangflowWorkflowSyncRequest,
+    execute_langflow_workflow_sync_request,
+    parse_langflow_workflow_sync_request,
+)
 
 __all__ = [
     "ApiError",
@@ -26,13 +32,17 @@ __all__ = [
     "LangflowCompileError",
     "LangflowExecutorResult",
     "LangflowSimpleAgentIR",
+    "LangflowWorkflowRequestError",
+    "LangflowWorkflowSyncRequest",
     "build_langflow_breadboard_execution_payload",
     "compile_langflow_simple_agent_ir",
     "compile_langflow_simple_agent_ir_from_path",
     "execute_langflow_simple_agent_sync",
     "execute_langflow_simple_agent_sync_from_path",
+    "execute_langflow_workflow_sync_request",
     "load_json",
     "load_langflow_flow",
+    "parse_langflow_workflow_sync_request",
     "project_breadboard_terminal_to_langflow_response",
     "write_events_jsonl",
 ]
