@@ -27,6 +27,7 @@ from .langflow_shim import (
     LangflowShimResult,
     handle_langflow_v2_sync_request,
 )
+from .langflow_patch import make_langflow_v2_sync_override
 
 __all__ = [
     "ApiError",
@@ -34,6 +35,7 @@ __all__ = [
     "LangflowBreadboardExecutionPayload",
     "import_ir_to_cli_bridge_events",
     "LangflowCompileError",
+    "make_langflow_v2_sync_override",
     "LangflowExecutorResult",
     "LangflowSimpleAgentIR",
     "LangflowShimResult",
