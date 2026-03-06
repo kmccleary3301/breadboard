@@ -23,6 +23,10 @@ from .langflow_workflow import (
     execute_langflow_workflow_sync_request,
     parse_langflow_workflow_sync_request,
 )
+from .langflow_shim import (
+    LangflowShimResult,
+    handle_langflow_v2_sync_request,
+)
 
 __all__ = [
     "ApiError",
@@ -32,6 +36,7 @@ __all__ = [
     "LangflowCompileError",
     "LangflowExecutorResult",
     "LangflowSimpleAgentIR",
+    "LangflowShimResult",
     "LangflowWorkflowRequestError",
     "LangflowWorkflowSyncRequest",
     "build_langflow_breadboard_execution_payload",
@@ -40,6 +45,7 @@ __all__ = [
     "execute_langflow_simple_agent_sync",
     "execute_langflow_simple_agent_sync_from_path",
     "execute_langflow_workflow_sync_request",
+    "handle_langflow_v2_sync_request",
     "load_json",
     "load_langflow_flow",
     "parse_langflow_workflow_sync_request",
