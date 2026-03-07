@@ -1,0 +1,203 @@
+{
+  "schema": "breadboard.atp.retrieval_solver_replay_fixture.v1",
+  "seed": 20260223,
+  "replay_id": "atp-retrieval-solver-fixture-v1",
+  "proof_plan_ir": {
+    "schema_version": "atp_proof_plan_ir_v1",
+    "plan_id": "proof-plan-v1",
+    "loop_id": "atp.toy.loop",
+    "goal": "Show Nat.add_zero style target is solvable",
+    "strategy": "retrieval_guided",
+    "steps": [
+      {
+        "step_id": "s1",
+        "step_kind": "retrieve_lemma",
+        "statement": "Retrieve relevant Nat.add_* lemmas from pinned corpus",
+        "depends_on": []
+      },
+      {
+        "step_id": "s2",
+        "step_kind": "attempt_proof",
+        "statement": "Construct candidate proof from retrieved lemma set",
+        "depends_on": [
+          "s1"
+        ]
+      },
+      {
+        "step_id": "s3",
+        "step_kind": "verify",
+        "statement": "Run verifier verdict over candidate proof",
+        "depends_on": [
+          "s2"
+        ]
+      }
+    ]
+  },
+  "retrieval_request": {
+    "schema_version": "atp_retrieval_adapter_request_v1",
+    "query": "lemma: nat add zero",
+    "k": 3,
+    "scope": "lean.mathlib",
+    "retrieval_stage": "rerank",
+    "candidate_k": 16,
+    "rerank_enabled": true,
+    "rerank_top_n": 3,
+    "reranker_model_version": "rr-v1",
+    "seed": 20260223,
+    "replay_id": "atp-retrieval-solver-fixture-v1"
+  },
+  "specialist_solver_request": {
+    "schema_version": "atp_specialist_solver_request_v1",
+    "solver_type": "geometry_stub",
+    "problem_ref": "problem://toy/geometry/001",
+    "budget": {
+      "max_seconds": 30,
+      "max_calls": 4
+    },
+    "seed": 20260223,
+    "replay_id": "atp-retrieval-solver-fixture-v1"
+  },
+  "retrieval_response": {
+    "schema_version": "atp_retrieval_adapter_response_v1",
+    "retrieval_stage": "rerank",
+    "reranked": true,
+    "reranker_model_version": "rr-v1",
+    "hits": [
+      {
+        "doc_id": "mathlib.lemma.Nat.add_zero",
+        "score": 0.99,
+        "coarse_score": 0.94,
+        "rerank_score": 0.99,
+        "final_rank": 1,
+        "source": "lean.mathlib",
+        "payload_ref": "artifact://retrieval/hit0.json"
+      }
+    ]
+  },
+  "specialist_solver_response": {
+    "schema_version": "atp_specialist_solver_response_v1",
+    "solver_type": "geometry_stub",
+    "ok": true,
+    "result_ref": "artifact://solver/result0.json",
+    "fallback_required": false
+  },
+  "specialist_solver_trace": {
+    "schema_version": "atp_specialist_solver_trace_v1",
+    "problem_ref": "problem://toy/geometry/001",
+    "calls": [
+      {
+        "call_index": 1,
+        "solver_type": "geometry_stub",
+        "ok": true,
+        "fallback_triggered": false,
+        "result_ref": "artifact://solver/result0.json",
+        "diagnostic_code": "ok",
+        "latency_ms": 212
+      }
+    ],
+    "final_ok": true,
+    "fallback_used": false,
+    "replay_id": "atp-retrieval-solver-fixture-v1",
+    "seed": 20260223
+  },
+  "decomposition_events": [
+    {
+      "schema_version": "search_loop_decomposition_node_event_v1",
+      "loop_id": "atp.toy.loop",
+      "node_id": "n000001",
+      "parent_id": null,
+      "node_type": "root",
+      "status": "open",
+      "state_ref": {
+        "schema_id": "breadboard.artifact_ref.v1",
+        "artifact_id": "atp.toy.loop.n000001.state_ref",
+        "storage_locator": "artifacts/root.json"
+      },
+      "score": {}
+    },
+    {
+      "schema_version": "search_loop_decomposition_node_event_v1",
+      "loop_id": "atp.toy.loop",
+      "node_id": "n000002",
+      "parent_id": "n000001",
+      "node_type": "candidate",
+      "status": "failed",
+      "state_ref": {
+        "schema_id": "breadboard.artifact_ref.v1",
+        "artifact_id": "atp.toy.loop.n000002.state_ref",
+        "storage_locator": "artifacts/candidate.json"
+      },
+      "score": {
+        "attempt": 1
+      }
+    },
+    {
+      "schema_version": "search_loop_decomposition_node_event_v1",
+      "loop_id": "atp.toy.loop",
+      "node_id": "n000003",
+      "parent_id": "n000002",
+      "node_type": "repair",
+      "status": "verified",
+      "state_ref": {
+        "schema_id": "breadboard.artifact_ref.v1",
+        "artifact_id": "atp.toy.loop.n000003.state_ref",
+        "storage_locator": "artifacts/repair.json"
+      },
+      "score": {
+        "attempt": 2
+      }
+    }
+  ],
+  "decomposition_trace": {
+    "schema_version": "search_loop_decomposition_trace_v1",
+    "trace_id": "atp-toy-loop-trace-v1",
+    "loop_id": "atp.toy.loop",
+    "lineage_complete": true,
+    "replay_id": "atp-retrieval-solver-fixture-v1",
+    "seed": 20260223,
+    "nodes": [
+      {
+        "node_id": "n000001",
+        "parent_id": null,
+        "node_type": "root",
+        "node_role": "root",
+        "status": "open",
+        "verifier_verdict": "pending",
+        "repair_from": null,
+        "state_ref": {
+          "schema_id": "breadboard.artifact_ref.v1",
+          "artifact_id": "atp.toy.loop.n000001.state_ref",
+          "storage_locator": "artifacts/root.json"
+        }
+      },
+      {
+        "node_id": "n000002",
+        "parent_id": "n000001",
+        "node_type": "candidate",
+        "node_role": "proposal",
+        "status": "failed",
+        "verifier_verdict": "fail",
+        "repair_from": null,
+        "state_ref": {
+          "schema_id": "breadboard.artifact_ref.v1",
+          "artifact_id": "atp.toy.loop.n000002.state_ref",
+          "storage_locator": "artifacts/candidate.json"
+        }
+      },
+      {
+        "node_id": "n000003",
+        "parent_id": "n000002",
+        "node_type": "repair",
+        "node_role": "repair",
+        "status": "verified",
+        "verifier_verdict": "repaired",
+        "repair_from": "n000002",
+        "state_ref": {
+          "schema_id": "breadboard.artifact_ref.v1",
+          "artifact_id": "atp.toy.loop.n000003.state_ref",
+          "storage_locator": "artifacts/repair.json"
+        }
+      }
+    ]
+  }
+}

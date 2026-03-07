@@ -1,0 +1,52 @@
+{
+  "schema_version": "search_loop_decomposition_trace_v1",
+  "trace_id": "decomp-case-success-v1",
+  "loop_id": "atp.decomp.case.success",
+  "lineage_complete": true,
+  "replay_id": "decomp-case-success-v1",
+  "seed": 20260223,
+  "nodes": [
+    {
+      "node_id": "n000001",
+      "parent_id": null,
+      "node_type": "root",
+      "node_role": "root",
+      "status": "open",
+      "verifier_verdict": "pending",
+      "repair_from": null,
+      "state_ref": {
+        "schema_id": "breadboard.artifact_ref.v1",
+        "artifact_id": "atp.decomp.case.success.n000001.state_ref",
+        "storage_locator": "artifacts/root.json"
+      }
+    },
+    {
+      "node_id": "n000002",
+      "parent_id": "n000001",
+      "node_type": "lemma",
+      "node_role": "decomposition",
+      "status": "closed",
+      "verifier_verdict": "pass",
+      "repair_from": null,
+      "state_ref": {
+        "schema_id": "breadboard.artifact_ref.v1",
+        "artifact_id": "atp.decomp.case.success.n000002.state_ref",
+        "storage_locator": "artifacts/lemma.json"
+      }
+    },
+    {
+      "node_id": "n000003",
+      "parent_id": "n000002",
+      "node_type": "candidate",
+      "node_role": "proposal",
+      "status": "verified",
+      "verifier_verdict": "pass",
+      "repair_from": null,
+      "state_ref": {
+        "schema_id": "breadboard.artifact_ref.v1",
+        "artifact_id": "atp.decomp.case.success.n000003.state_ref",
+        "storage_locator": "artifacts/candidate.json"
+      }
+    }
+  ]
+}

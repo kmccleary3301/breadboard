@@ -1,0 +1,38 @@
+{
+  "schema_version": "search_loop_decomposition_trace_v1",
+  "trace_id": "decomp-case-failure-v1",
+  "loop_id": "atp.decomp.case.failure",
+  "lineage_complete": true,
+  "replay_id": "decomp-case-failure-v1",
+  "seed": 20260223,
+  "nodes": [
+    {
+      "node_id": "n000001",
+      "parent_id": null,
+      "node_type": "root",
+      "node_role": "root",
+      "status": "open",
+      "verifier_verdict": "pending",
+      "repair_from": null,
+      "state_ref": {
+        "schema_id": "breadboard.artifact_ref.v1",
+        "artifact_id": "atp.decomp.case.failure.n000001.state_ref",
+        "storage_locator": "artifacts/root.json"
+      }
+    },
+    {
+      "node_id": "n000002",
+      "parent_id": "n000001",
+      "node_type": "subgoal",
+      "node_role": "decomposition",
+      "status": "failed",
+      "verifier_verdict": "fail",
+      "repair_from": null,
+      "state_ref": {
+        "schema_id": "breadboard.artifact_ref.v1",
+        "artifact_id": "atp.decomp.case.failure.n000002.state_ref",
+        "storage_locator": "artifacts/subgoal.json"
+      }
+    }
+  ]
+}

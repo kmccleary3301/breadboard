@@ -1,0 +1,36 @@
+extends: codex_cli_gpt51mini_e4_live.yaml
+
+profile: { name: atp-bb-aristotle-match-codexmini-v1 }
+
+prompts:
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  tool_prompt_synthesis:
+    enabled: true
+    dialects:
+      atp_aristotle_match:
+        system_full: implementations/tool_prompt_synthesis/atp_aristotle_match/system_full.j2.md
+        per_turn_short: implementations/tool_prompt_synthesis/atp_aristotle_match/per_turn_short.j2.md
+    selection:
+      by_mode:
+        plan: atp_aristotle_match
+        build: atp_aristotle_match
+    detail:
+      system: full
+      per_turn: short
+
+provider_tools:
+  use_native: true
+  suppress_prompts: false
+  api_variant: responses
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs
+    include:
+      - shell_command
+      - apply_patch
+      - update_plan
+      - mark_task_complete
+  aliases: {}
+

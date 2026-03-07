@@ -1,0 +1,164 @@
+name: ATP State-Ref Fastpath (nightly)
+
+on:
+  schedule:
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  atp_state_ref_fastpath:
+    name: ATP state-ref fastpath (self-hosted)
+    if: ${{ vars.ATP_FIRECRACKER_SMOKE == '1' }}
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Snapshot preflight
+        env:
+          FIRECRACKER_SNAPSHOT_DIRS: ${{ vars.FIRECRACKER_SNAPSHOT_DIRS }}
+          FIRECRACKER_SNAPSHOT: ${{ vars.FIRECRACKER_SNAPSHOT }}
+        run: python scripts/atp_snapshot_preflight.py --json
+
+      - name: Run stable two-pass state-ref benchmark
+        env:
+          FIRECRACKER_SNAPSHOT_DIRS: ${{ vars.FIRECRACKER_SNAPSHOT_DIRS }}
+          FIRECRACKER_SNAPSHOT: ${{ vars.FIRECRACKER_SNAPSHOT }}
+          FIRECRACKER_BIN: ${{ vars.FIRECRACKER_BIN }}
+          FIRECRACKER_VSOCK_PORT: ${{ vars.FIRECRACKER_VSOCK_PORT }}
+          FIRECRACKER_REPL_VSOCK_PORT: ${{ vars.FIRECRACKER_REPL_VSOCK_PORT }}
+          RUN_TAG: nightly_c4
+          CONCURRENCY: ${{ vars.ATP_STATE_REF_CONCURRENCY || '4' }}
+          WARMUP_ITERS: ${{ vars.ATP_STATE_REF_WARMUP_ITERS || '3' }}
+          MEASURE_ITERS: ${{ vars.ATP_STATE_REF_MEASURE_ITERS || '10' }}
+          MEASURE_BURN_IN_ITERS: ${{ vars.ATP_STATE_REF_MEASURE_BURN_IN_ITERS || '2' }}
+          REPL_TIMEOUT: ${{ vars.ATP_STATE_REF_REPL_TIMEOUT || '120' }}
+          ATP_SNAPSHOT_POOL_PROBE: ${{ vars.ATP_SNAPSHOT_POOL_PROBE || '1' }}
+          ATP_SNAPSHOT_POOL_MIN_HEALTHY: ${{ vars.ATP_SNAPSHOT_POOL_MIN_HEALTHY || '1' }}
+        run: scripts/run_atp_state_ref_fastpath_stable.sh
+
+      - name: Validate generated measured artifact schema
+        run: |
+          latest="$(ls -1t artifacts/atp_state_ref_fastpath_nightly_c4_*_measured.json | head -n1)"
+          python scripts/validate_atp_artifacts.py "$latest"
+
+      - name: Drift check against baseline (env path or repo baseline)
+        env:
+          ATP_STATE_REF_BASELINE_PATH: ${{ vars.ATP_STATE_REF_BASELINE_PATH }}
+          ATP_STATE_REF_MAX_REGRESSION_PCT: ${{ vars.ATP_STATE_REF_MAX_REGRESSION_PCT || '10' }}
+        run: |
+          latest="$(ls -1t artifacts/atp_state_ref_fastpath_nightly_c4_*_measured.json | head -n1)"
+          baseline="${ATP_STATE_REF_BASELINE_PATH:-}"
+          if [ -z "$baseline" ] && [ -f artifacts/atp_state_ref_fastpath_baseline.json ]; then
+            baseline="artifacts/atp_state_ref_fastpath_baseline.json"
+          fi
+          if [ -z "$baseline" ]; then
+            echo "No baseline configured; skipping drift check."
+            exit 0
+          fi
+          python scripts/check_atp_benchmark_drift.py \
+            --baseline "$baseline" \
+            --candidate "$latest" \
+            --max-regression-pct "$ATP_STATE_REF_MAX_REGRESSION_PCT" \
+            --out artifacts/atp_benchmark_drift_report.nightly.json
+
+      - name: Validate baseline artifact + metadata completeness
+        env:
+          ATP_STATE_REF_BASELINE_PATH: ${{ vars.ATP_STATE_REF_BASELINE_PATH }}
+          ATP_STATE_REF_BASELINE_META_PATH: ${{ vars.ATP_STATE_REF_BASELINE_META_PATH }}
+        run: |
+          baseline="${ATP_STATE_REF_BASELINE_PATH:-}"
+          if [ -z "$baseline" ] && [ -f artifacts/atp_state_ref_fastpath_baseline.json ]; then
+            baseline="artifacts/atp_state_ref_fastpath_baseline.json"
+          fi
+          if [ -z "$baseline" ]; then
+            echo "No baseline configured; skipping baseline metadata validation."
+            exit 0
+          fi
+          meta="${ATP_STATE_REF_BASELINE_META_PATH:-${baseline%.json}.meta.json}"
+          if [ ! -f "$meta" ]; then
+            echo "Baseline metadata missing: $meta" >&2
+            exit 1
+          fi
+          python scripts/validate_atp_artifacts.py "$baseline" "$meta"
+
+      - name: Regression recovery decision report
+        env:
+          ATP_STATE_REF_BASELINE_PATH: ${{ vars.ATP_STATE_REF_BASELINE_PATH }}
+          ATP_STATE_REF_MAX_REGRESSION_PCT: ${{ vars.ATP_STATE_REF_MAX_REGRESSION_PCT || '10' }}
+          ATP_STATE_REF_RECOVERY_RUNS: ${{ vars.ATP_STATE_REF_RECOVERY_RUNS || '3' }}
+          ATP_STATE_REF_RECOVERY_REQUIRED_CONSECUTIVE: ${{ vars.ATP_STATE_REF_RECOVERY_REQUIRED_CONSECUTIVE || '2' }}
+          ATP_STATE_REF_RECOVERY_ITERS: ${{ vars.ATP_STATE_REF_MEASURE_ITERS || '10' }}
+          ATP_STATE_REF_RECOVERY_BURN_IN_ITERS: ${{ vars.ATP_STATE_REF_MEASURE_BURN_IN_ITERS || '2' }}
+          ATP_STATE_REF_REPL_TIMEOUT: ${{ vars.ATP_STATE_REF_REPL_TIMEOUT || '120' }}
+        run: |
+          baseline="${ATP_STATE_REF_BASELINE_PATH:-}"
+          if [ -z "$baseline" ] && [ -f artifacts/atp_state_ref_fastpath_baseline.json ]; then
+            baseline="artifacts/atp_state_ref_fastpath_baseline.json"
+          fi
+          if [ -z "$baseline" ]; then
+            echo "No baseline configured; skipping regression-recovery decision run."
+            exit 0
+          fi
+          python scripts/atp_state_ref_regression_recovery.py \
+            --baseline "$baseline" \
+            --runs "$ATP_STATE_REF_RECOVERY_RUNS" \
+            --required-consecutive-pass "$ATP_STATE_REF_RECOVERY_REQUIRED_CONSECUTIVE" \
+            --max-regression-pct "$ATP_STATE_REF_MAX_REGRESSION_PCT" \
+            --run-tag nightly_c4 \
+            --concurrency "${ATP_STATE_REF_CONCURRENCY:-4}" \
+            --iters "$ATP_STATE_REF_RECOVERY_ITERS" \
+            --burn-in-iters "$ATP_STATE_REF_RECOVERY_BURN_IN_ITERS" \
+            --repl-timeout "$ATP_STATE_REF_REPL_TIMEOUT" \
+            --skip-preflight \
+            --report-out artifacts/atp_state_ref_recovery_report.nightly.json
+
+      - name: Build state-ref variance trend report
+        if: always()
+        env:
+          ATP_STATE_REF_BASELINE_PATH: ${{ vars.ATP_STATE_REF_BASELINE_PATH }}
+        run: |
+          baseline="${ATP_STATE_REF_BASELINE_PATH:-}"
+          if [ -z "$baseline" ] && [ -f artifacts/atp_state_ref_fastpath_baseline.json ]; then
+            baseline="artifacts/atp_state_ref_fastpath_baseline.json"
+          fi
+          if [ -n "$baseline" ]; then
+            python scripts/atp_state_ref_variance_report.py \
+              --glob "artifacts/atp_state_ref_fastpath_nightly_c4_*_measured*.json" \
+              --limit 20 \
+              --baseline "$baseline" \
+              --out artifacts/atp_state_ref_variance_report.nightly.json
+          else
+            python scripts/atp_state_ref_variance_report.py \
+              --glob "artifacts/atp_state_ref_fastpath_nightly_c4_*_measured*.json" \
+              --limit 20 \
+              --out artifacts/atp_state_ref_variance_report.nightly.json
+          fi
+
+      - name: Upload nightly ATP state-ref artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atp-state-ref-fastpath-nightly
+          path: |
+            artifacts/atp_state_ref_fastpath_nightly_c4_*_warmup.json
+            artifacts/atp_state_ref_fastpath_nightly_c4_*_measured.json
+            artifacts/atp_benchmark_drift_report.nightly.json
+            artifacts/atp_state_ref_recovery_report.nightly.json
+            artifacts/atp_state_ref_recovery_report.latest.json
+            artifacts/atp_state_ref_variance_report.nightly.json
+          if-no-files-found: ignore
+
+      - name: Apply local artifact retention policy
+        if: always()
+        env:
+          ATP_ARTIFACT_KEEP: ${{ vars.ATP_ARTIFACT_KEEP || '80' }}
+        run: python scripts/atp_artifact_retention.py --root artifacts --keep "$ATP_ARTIFACT_KEEP" --apply

@@ -1,0 +1,17 @@
+{
+  "schema_version": "atp_retrieval_adapter_response_v1",
+  "hits": [
+    {
+      "doc_id": "mathlib.lemma.Nat.mul_one",
+      "score": 0.95,
+      "source": "lean.mathlib",
+      "payload_ref": "artifact://retrieval/embed/hit0.json"
+    },
+    {
+      "doc_id": "mathlib.lemma.Nat.one_mul",
+      "score": 0.89,
+      "source": "lean.mathlib",
+      "payload_ref": "artifact://retrieval/embed/hit1.json"
+    }
+  ]
+}

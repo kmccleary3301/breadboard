@@ -1,0 +1,52 @@
+{
+  "schema_version": "breadboard.compliance.aristotle_permission_scope.v1",
+  "status": "operator_override_internal_only",
+  "effective_at_utc": "2026-03-03T00:00:00Z",
+  "review_due_at_utc": null,
+  "decision_source": "operator_override",
+  "source": {
+    "channel": "internal_policy",
+    "contact": "ATP/EvoLake maintainers",
+    "ticket_id": null,
+    "response_ref": "docs_tmp/ATP/P4_ARISTOTLE_PERMISSION_RESPONSE_LOG_2026-03-03.md"
+  },
+  "permissions": {
+    "benchmark_evaluation_public_datasets": {
+      "approved": true,
+      "notes": "Allowed for internal-only benchmarking under operator override."
+    },
+    "store_outputs_for_reproducibility": {
+      "approved": true,
+      "notes": "Allowed for internal reproducibility archives."
+    },
+    "internal_comparative_reporting": {
+      "approved": true,
+      "notes": "Allowed for internal reporting only."
+    },
+    "external_aggregate_reporting": {
+      "approved": false,
+      "notes": "Blocked until explicit provider approval."
+    }
+  },
+  "constraints": {
+    "max_requests_per_second": null,
+    "max_concurrent_projects": 5,
+    "retention_days": null,
+    "required_attribution": "",
+    "internal_only": true
+  },
+  "enforcement": {
+    "fail_closed_until_explicit_approval": true,
+    "external_reporting_blocked": true
+  },
+  "experiment_classes": {
+    "allowed_now": [
+      "internal_benchmark_execution",
+      "internal_reproducibility_storage",
+      "internal_comparative_reporting"
+    ],
+    "blocked_now": [
+      "external_aggregate_reporting"
+    ]
+  }
+}

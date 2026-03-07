@@ -1,0 +1,67 @@
+name: ATP Firecracker Load (nightly)
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  atp_firecracker_load:
+    name: ATP Firecracker Load (self-hosted)
+    if: ${{ vars.ATP_FIRECRACKER_SMOKE == '1' }}
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Snapshot preflight
+        env:
+          FIRECRACKER_SNAPSHOT: ${{ vars.FIRECRACKER_SNAPSHOT }}
+          FIRECRACKER_SNAPSHOT_DIRS: ${{ vars.FIRECRACKER_SNAPSHOT_DIRS }}
+        run: python scripts/atp_snapshot_preflight.py --json
+
+      - name: Run nightly Firecracker REPL load
+        env:
+          FIRECRACKER_SNAPSHOT: ${{ vars.FIRECRACKER_SNAPSHOT }}
+          FIRECRACKER_SNAPSHOT_MEM: ${{ vars.FIRECRACKER_SNAPSHOT_MEM }}
+          FIRECRACKER_SNAPSHOT_VSOCK: ${{ vars.FIRECRACKER_SNAPSHOT_VSOCK }}
+          FIRECRACKER_ROOTFS: ${{ vars.FIRECRACKER_ROOTFS }}
+          FIRECRACKER_BIN: ${{ vars.FIRECRACKER_BIN }}
+          FIRECRACKER_VSOCK_PORT: ${{ vars.FIRECRACKER_VSOCK_PORT }}
+          ATP_REPL_LOAD_CONCURRENCY: ${{ vars.ATP_REPL_LOAD_CONCURRENCY }}
+          ATP_REPL_LOAD_ITERS: ${{ vars.ATP_REPL_LOAD_ITERS }}
+          ATP_REPL_LOAD_SUMMARY_PATH: ${{ vars.ATP_REPL_LOAD_SUMMARY_PATH }}
+          ATP_SNAPSHOT_POOL_PROBE: ${{ vars.ATP_SNAPSHOT_POOL_PROBE || '1' }}
+          ATP_SNAPSHOT_POOL_MIN_HEALTHY: ${{ vars.ATP_SNAPSHOT_POOL_MIN_HEALTHY || '1' }}
+        run: bash scripts/atp_firecracker_repl_load_nightly.sh
+
+      - name: Build concurrency stability summary
+        if: always()
+        env:
+          ATP_POOL_STABILITY_MIN_RUNS: ${{ vars.ATP_POOL_STABILITY_MIN_RUNS || '1' }}
+          ATP_POOL_STABILITY_MAX_P95_MS: ${{ vars.ATP_POOL_STABILITY_MAX_P95_MS || '200' }}
+        run: |
+          python scripts/atp_snapshot_pool_stability.py \
+            --glob "artifacts/atp_firecracker_repl_load*.json" \
+            --require-concurrency "${ATP_REPL_LOAD_CONCURRENCY:-4}" \
+            --min-runs "$ATP_POOL_STABILITY_MIN_RUNS" \
+            --max-p95-ms "$ATP_POOL_STABILITY_MAX_P95_MS" \
+            --out artifacts/atp_snapshot_pool_stability_summary.nightly.json
+
+      - name: Upload nightly ATP load artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atp-firecracker-load-nightly
+          path: |
+            artifacts/atp_firecracker_repl_load*.json
+            artifacts/atp_snapshot_pool_stability_summary.nightly.json
+          if-no-files-found: ignore

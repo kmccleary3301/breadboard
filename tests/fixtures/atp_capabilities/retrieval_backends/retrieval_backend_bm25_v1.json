@@ -1,0 +1,17 @@
+{
+  "schema_version": "atp_retrieval_adapter_response_v1",
+  "hits": [
+    {
+      "doc_id": "mathlib.lemma.Nat.add_zero",
+      "score": 0.91,
+      "source": "lean.mathlib",
+      "payload_ref": "artifact://retrieval/bm25/hit0.json"
+    },
+    {
+      "doc_id": "mathlib.lemma.Nat.zero_add",
+      "score": 0.87,
+      "source": "lean.mathlib",
+      "payload_ref": "artifact://retrieval/bm25/hit1.json"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "type": "hello_ack",
+  "version": 1,
+  "capabilities": {
+    "repl": true,
+    "envelope": true
+  }
+}

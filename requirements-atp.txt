@@ -1,0 +1,10 @@
+# ATP / API extras layered on top of core
+-r requirements-core.txt
+
+# Optional API + service deps used by ATP endpoints
+fastapi>=0.100.0
+uvicorn>=0.20.0
+requests>=2.28.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.9
+aristotlelib

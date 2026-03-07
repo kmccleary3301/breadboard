@@ -1,0 +1,8 @@
+{
+  "type": "repl",
+  "version": 1,
+  "payload": {
+    "command": "#check Nat",
+    "timeout": 5.0
+  }
+}

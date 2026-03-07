@@ -1,0 +1,8 @@
+{
+  "type": "repl_response",
+  "version": 1,
+  "error": {
+    "code": "repl_unsupported",
+    "message": "repl mode not supported"
+  }
+}

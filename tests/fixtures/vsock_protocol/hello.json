@@ -1,0 +1,8 @@
+{
+  "type": "hello",
+  "version": 1,
+  "capabilities": {
+    "repl": true,
+    "envelope": true
+  }
+}
