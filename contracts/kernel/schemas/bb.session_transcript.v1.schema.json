@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.session_transcript.v1.schema.json",
+  "title": "BreadBoard Session Transcript V1",
+  "type": "object",
+  "$comment": "First-pass transcript scaffold. Derived-state semantics live in the paired dossier.",
+  "additionalProperties": true,
+  "required": [
+    "schemaVersion",
+    "sessionId",
+    "items"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bb.session_transcript.v1" },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "runId": { "type": "string" },
+    "eventCursor": { "type": ["integer", "null"], "minimum": 0 },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "visibility"],
+        "additionalProperties": true,
+        "properties": {
+          "kind": { "type": "string", "minLength": 1 },
+          "visibility": {
+            "type": "string",
+            "enum": ["model", "host", "audit"]
+          },
+          "callId": { "type": "string" },
+          "provenance": { "type": "object", "additionalProperties": true },
+          "content": {}
+        }
+      }
+    },
+    "metadata": { "type": "object", "additionalProperties": true }
+  }
+}

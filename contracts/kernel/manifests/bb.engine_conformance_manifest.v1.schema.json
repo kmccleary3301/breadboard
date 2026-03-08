@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.engine_conformance_manifest.v1.schema.json",
+  "title": "BreadBoard Engine Conformance Manifest V1",
+  "type": "object",
+  "$comment": "First-pass engine conformance manifest scaffold.",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "contractVersion", "rows"],
+  "properties": {
+    "schemaVersion": { "const": "bb.engine_conformance_manifest.v1" },
+    "contractVersion": { "type": "string", "minLength": 1 },
+    "generatedAt": { "type": "string" },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "engineFamily",
+          "engineRef",
+          "scenarioId",
+          "supportTier",
+          "comparatorClass",
+          "evidence"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "engineFamily": { "type": "string", "minLength": 1 },
+          "engineRef": { "type": "string", "minLength": 1 },
+          "scenarioId": { "type": "string", "minLength": 1 },
+          "supportTier": { "type": "string", "minLength": 1 },
+          "comparatorClass": { "type": "string", "minLength": 1 },
+          "evidence": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "exemptions": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}

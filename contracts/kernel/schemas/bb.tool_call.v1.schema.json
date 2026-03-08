@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.tool_call.v1.schema.json",
+  "title": "BreadBoard Tool Call V1",
+  "type": "object",
+  "$comment": "First-pass tool call scaffold.",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "callId", "toolName", "args", "state"],
+  "properties": {
+    "schemaVersion": { "const": "bb.tool_call.v1" },
+    "callId": { "type": "string", "minLength": 1 },
+    "toolName": { "type": "string", "minLength": 1 },
+    "args": {},
+    "state": { "type": "string", "minLength": 1 },
+    "runId": { "type": "string" },
+    "sessionId": { "type": "string" },
+    "turnId": { "type": "string" },
+    "stepId": { "type": "string" },
+    "taskId": { "type": "string" },
+    "metadata": { "type": "object", "additionalProperties": true }
+  }
+}

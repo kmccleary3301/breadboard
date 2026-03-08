@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.tool_model_render.v1.schema.json",
+  "title": "BreadBoard Tool Model Render V1",
+  "type": "object",
+  "$comment": "First-pass model-visible tool render scaffold.",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "callId", "parts"],
+  "properties": {
+    "schemaVersion": { "const": "bb.tool_model_render.v1" },
+    "callId": { "type": "string", "minLength": 1 },
+    "parts": { "type": "array", "items": {} },
+    "truncation": { "type": "object", "additionalProperties": true },
+    "visibility": {
+      "type": "string",
+      "enum": ["model", "host", "audit"]
+    },
+    "metadata": { "type": "object", "additionalProperties": true }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.kernel_event.v1.schema.json",
+  "title": "BreadBoard Kernel Event V1",
+  "type": "object",
+  "$comment": "First-pass schema scaffold. Envelope-focused by design.",
+  "additionalProperties": true,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "runId",
+    "sessionId",
+    "seq",
+    "ts",
+    "actor",
+    "visibility",
+    "kind",
+    "payload"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bb.kernel_event.v1" },
+    "eventId": { "type": "string", "minLength": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "turnId": { "type": "string" },
+    "stepId": { "type": "string" },
+    "taskId": { "type": "string" },
+    "callId": { "type": "string" },
+    "causedBy": { "type": "string" },
+    "seq": { "type": "integer", "minimum": 0 },
+    "ts": { "type": "string", "minLength": 1 },
+    "actor": {
+      "type": "string",
+      "enum": ["engine", "provider", "tool", "subagent", "human", "service"]
+    },
+    "visibility": {
+      "type": "string",
+      "enum": ["model", "host", "audit"]
+    },
+    "kind": { "type": "string", "minLength": 1 },
+    "payload": {}
+  }
+}

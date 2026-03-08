@@ -56,3 +56,13 @@ Human-readable dossiers here should be paired with machine-readable artifacts un
 - `contracts/kernel/`
 
 The dossier explains the semantics. The schema validates the shape. The fixture bundle proves the claim.
+
+---
+
+## First tranche status
+
+The first drafted dossiers are:
+
+- `kernel_event_v1.md`
+- `session_transcript_v1.md`
+- `tool_lifecycle_and_render_v1.md`

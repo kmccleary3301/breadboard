@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.tool_execution_outcome.v1.schema.json",
+  "title": "BreadBoard Tool Execution Outcome V1",
+  "type": "object",
+  "$comment": "First-pass raw execution outcome scaffold.",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "callId", "terminalState"],
+  "properties": {
+    "schemaVersion": { "const": "bb.tool_execution_outcome.v1" },
+    "callId": { "type": "string", "minLength": 1 },
+    "terminalState": {
+      "type": "string",
+      "enum": ["completed", "failed", "cancelled", "denied"]
+    },
+    "result": {},
+    "error": { "type": "object", "additionalProperties": true },
+    "artifacts": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+    "usage": { "type": "object", "additionalProperties": true },
+    "metadata": { "type": "object", "additionalProperties": true }
+  }
+}
