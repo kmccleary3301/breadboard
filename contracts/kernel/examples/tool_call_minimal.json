@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "bb.tool_call.v1",
+  "callId": "call-1",
+  "toolName": "run_shell",
+  "args": {"command": "echo hi"},
+  "state": "requested"
+}

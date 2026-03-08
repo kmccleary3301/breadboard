@@ -26,6 +26,40 @@ class ReplayToolOutputMismatchError(RuntimeError):
     """Raised when replay-mode tool outputs diverge from the golden trace."""
 
 
+def build_tool_execution_outcome_record(tool_name: str, tool_result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize the engine-side execution outcome for a tool call.
+
+    This boundary is intentionally distinct from any model-visible transcript or
+    provider-facing render of the same tool result.
+    """
+
+    payload = dict(tool_result or {})
+    error = payload.get("error")
+    return {
+        "tool": str(tool_name or ""),
+        "ok": not bool(error),
+        "error": error,
+        "raw": payload,
+    }
+
+
+def build_tool_model_render_record(tool_name: str, tool_result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build the minimal model-visible render summary for a tool outcome.
+
+    The intent is to keep render semantics explicit instead of letting every
+    transcript or projection caller infer its own summary ad hoc.
+    """
+
+    outcome = build_tool_execution_outcome_record(tool_name, tool_result)
+    return {
+        "tool": outcome["tool"],
+        "status": "ok" if outcome["ok"] else "error",
+        "error": outcome["error"],
+    }
+
+
 def legacy_message_view(provider_message: ProviderMessage) -> SimpleNamespace:
     tool_calls_ns: List[SimpleNamespace] = []
     for call in provider_message.tool_calls:
@@ -290,10 +324,12 @@ def summarize_execution_results(
                 )
             except Exception:
                 pass
+        model_render = build_tool_model_render_record(tool_name, tool_result_dict)
         recent_tools_summary.append({
             "name": tool_name,
             "read_only": conductor._is_read_only_tool(tool_name),
             "completion_action": isinstance(tool_result, dict) and tool_result.get("action") == "complete",
+            "model_render": model_render,
         })
     if turn_index_int is not None:
         conductor._record_lsp_reward_metrics(session_state, turn_index_int)

@@ -1,0 +1,7 @@
+{
+  "fixture_family": "kernel_event",
+  "fixture_id": "kernel_event_minimal",
+  "comparator_class": "shape-equal",
+  "contract": "bb.kernel_event.v1",
+  "example_ref": "../../../contracts/kernel/examples/kernel_event_minimal.json"
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v1.schema.json",
+  "title": "bb.provider_exchange.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "exchange_id", "request", "response"],
+  "properties": {
+    "schema_version": {"const": "bb.provider_exchange.v1"},
+    "exchange_id": {"type": "string", "minLength": 1},
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_family", "runtime_id", "model", "stream"],
+      "properties": {
+        "provider_family": {"type": "string", "minLength": 1},
+        "runtime_id": {"type": "string", "minLength": 1},
+        "route_id": {"type": ["string", "null"]},
+        "model": {"type": "string", "minLength": 1},
+        "stream": {"type": "boolean"},
+        "message_count": {"type": "integer", "minimum": 0},
+        "tool_count": {"type": "integer", "minimum": 0},
+        "metadata": {"type": "object", "additionalProperties": true}
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message_count"],
+      "properties": {
+        "message_count": {"type": "integer", "minimum": 0},
+        "finish_reasons": {
+          "type": "array",
+          "items": {"type": ["string", "null"]}
+        },
+        "usage": {"type": ["object", "null"], "additionalProperties": true},
+        "metadata": {"type": "object", "additionalProperties": true},
+        "evidence_refs": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    }
+  }
+}

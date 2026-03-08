@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "bb.engine_conformance_manifest.v1",
+  "contractVersion": "kernel_v1_draft",
+  "generatedAt": "2026-03-08T00:00:00Z",
+  "rows": [
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "kernel_event_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "kernel_event/minimal_fixture.json"
+      ],
+      "notes": "First scaffold manifest row for kernel event shape validation."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "provider_exchange_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "provider_exchange/minimal_fixture.json"
+      ],
+      "notes": "First scaffold manifest row for provider exchange shape validation."
+    }
+  ]
+}

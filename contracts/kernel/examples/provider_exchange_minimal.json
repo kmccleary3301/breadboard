@@ -1,0 +1,21 @@
+{
+  "schema_version": "bb.provider_exchange.v1",
+  "exchange_id": "px-1",
+  "request": {
+    "provider_family": "openai",
+    "runtime_id": "openai_responses",
+    "route_id": "openai/gpt-5.2",
+    "model": "gpt-5.2",
+    "stream": false,
+    "message_count": 3,
+    "tool_count": 2,
+    "metadata": {"tool_prompt_mode": "native"}
+  },
+  "response": {
+    "message_count": 1,
+    "finish_reasons": ["stop"],
+    "usage": {"total_tokens": 42},
+    "metadata": {"provider": "openai"},
+    "evidence_refs": []
+  }
+}

@@ -10,3 +10,13 @@ Examples should be:
 - paired with semantic dossiers and fixture bundles
 
 These are examples of contract shape, not complete replay or host integration artifacts.
+
+Current minimal examples exist for:
+
+- kernel event
+- session transcript
+- tool call
+- run request
+- provider exchange
+- permission
+- replay session

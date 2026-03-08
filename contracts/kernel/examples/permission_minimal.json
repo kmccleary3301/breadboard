@@ -1,0 +1,13 @@
+{
+  "schema_version": "bb.permission.v1",
+  "request_id": "perm-1",
+  "category": "shell",
+  "pattern": "git status",
+  "scope": "workspace",
+  "metadata": {"tool": "bash"},
+  "decision": "allow",
+  "decision_source": "config_allow",
+  "reason": "explicit allowlist",
+  "requires_host_interaction": false,
+  "audit_refs": []
+}

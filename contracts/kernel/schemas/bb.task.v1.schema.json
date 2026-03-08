@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.task.v1.schema.json",
+  "title": "bb.task.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "kind", "status"],
+  "properties": {
+    "schema_version": {"const": "bb.task.v1"},
+    "task_id": {"type": "string", "minLength": 1},
+    "parent_task_id": {"type": ["string", "null"]},
+    "session_id": {"type": ["string", "null"]},
+    "kind": {"type": "string", "minLength": 1},
+    "task_type": {"type": ["string", "null"]},
+    "status": {"type": "string", "minLength": 1},
+    "depth": {"type": ["integer", "null"], "minimum": 0},
+    "description": {"type": ["string", "null"]},
+    "visibility": {"type": ["string", "null"]},
+    "metadata": {"type": "object", "additionalProperties": true}
+  }
+}

@@ -36,6 +36,7 @@ This directory should **not** hold:
 Start here:
 
 - [KERNEL_DOCTRINES_V1.md](KERNEL_DOCTRINES_V1.md)
+- [PROGRAM_INDEX_V1.md](PROGRAM_INDEX_V1.md)
 
 Then read:
 

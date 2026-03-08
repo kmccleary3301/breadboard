@@ -1,0 +1,7 @@
+{
+  "fixture_family": "replay_session",
+  "fixture_id": "replay_session_minimal",
+  "comparator_class": "shape-equal",
+  "contract": "bb.replay_session.v1",
+  "example_ref": "../../../contracts/kernel/examples/replay_session_minimal.json"
+}

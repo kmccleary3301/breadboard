@@ -66,3 +66,32 @@ The first drafted dossiers are:
 - `kernel_event_v1.md`
 - `session_transcript_v1.md`
 - `tool_lifecycle_and_render_v1.md`
+
+The second tranche now adds:
+
+- `run_request_and_context_v1.md`
+- `provider_exchange_v1.md`
+- `permission_and_guardrails_v1.md`
+- `middleware_lifecycle_v1.md`
+- `task_and_subagent_v1.md`
+- `checkpoint_and_longrun_v1.md`
+- `replay_session_v1.md`
+- `conformance_evidence_v1.md`
+
+## Status snapshot
+
+- drafted and scaffolded:
+  - `run_request_and_context_v1.md`
+  - `kernel_event_v1.md`
+  - `session_transcript_v1.md`
+  - `provider_exchange_v1.md`
+  - `tool_lifecycle_and_render_v1.md`
+  - `permission_and_guardrails_v1.md`
+  - `middleware_lifecycle_v1.md`
+  - `task_and_subagent_v1.md`
+  - `checkpoint_and_longrun_v1.md`
+  - `replay_session_v1.md`
+  - `conformance_evidence_v1.md`
+- intentionally deferred to a later tranche:
+  - `import_export_session_v1.md`
+  - `projection_adapter_boundaries_v1.md`

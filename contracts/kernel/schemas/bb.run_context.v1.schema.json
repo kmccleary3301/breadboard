@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.run_context.v1.schema.json",
+  "title": "bb.run_context.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session_id", "engine_family", "request_id"],
+  "properties": {
+    "schema_version": {"const": "bb.run_context.v1"},
+    "session_id": {"type": "string", "minLength": 1},
+    "engine_family": {"type": "string", "minLength": 1},
+    "engine_ref": {"type": ["string", "null"]},
+    "request_id": {"type": "string", "minLength": 1},
+    "workspace_root": {"type": ["string", "null"]},
+    "resolved_model": {"type": ["string", "null"]},
+    "resolved_provider_route": {"type": ["string", "null"]},
+    "active_mode": {"type": ["string", "null"]},
+    "feature_flags": {"type": "object", "additionalProperties": true},
+    "execution_mode": {"type": ["string", "null"]},
+    "delegated_services": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "metadata": {"type": "object", "additionalProperties": true}
+  }
+}

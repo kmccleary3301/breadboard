@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.permission.v1.schema.json",
+  "title": "bb.permission.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "category", "pattern", "decision"],
+  "properties": {
+    "schema_version": {"const": "bb.permission.v1"},
+    "request_id": {"type": "string", "minLength": 1},
+    "category": {"type": "string", "minLength": 1},
+    "pattern": {"type": "string", "minLength": 1},
+    "scope": {"type": ["string", "null"]},
+    "metadata": {"type": "object", "additionalProperties": true},
+    "decision": {"type": "string", "minLength": 1},
+    "decision_source": {"type": ["string", "null"]},
+    "reason": {"type": ["string", "null"]},
+    "requires_host_interaction": {"type": "boolean"},
+    "audit_refs": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}

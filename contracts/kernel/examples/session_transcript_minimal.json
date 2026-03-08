@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "bb.session_transcript.v1",
+  "sessionId": "sess-1",
+  "items": [
+    {
+      "kind": "assistant_message",
+      "visibility": "model",
+      "content": {"text": "Hello"}
+    }
+  ]
+}

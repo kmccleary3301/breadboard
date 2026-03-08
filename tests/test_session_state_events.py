@@ -93,6 +93,24 @@ def test_session_state_emits_ctree_node_events() -> None:
     assert snapshot.get("node_count")
 
 
+def test_session_state_builds_kernel_event_record_and_normalizes_transcript() -> None:
+    collector = EventCollector()
+    state = SessionState("ws", "image", {}, event_emitter=collector)
+    state.set_provider_metadata("session_id", "sess-123")
+
+    record = state.build_kernel_event_record("assistant_message", {"message": {"role": "assistant"}}, turn=4, seq=9)
+    assert record["type"] == "assistant_message"
+    assert record["turn"] == 4
+    assert record["seq"] == 9
+    assert record["session_id"] == "sess-123"
+    assert record["payload"]["seq"] == 9
+
+    entry = {"assistant": "hello"}
+    state.add_transcript_entry(entry)
+    entry["assistant"] = "mutated"
+    assert state.transcript[-1]["assistant"] == "hello"
+
+
 def test_session_runner_translates_runtime_events() -> None:
     registry = SessionRegistry()
     record = SessionRecord(session_id="sess-1", status=SessionStatus.STARTING)

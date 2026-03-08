@@ -140,3 +140,37 @@ def test_provider_invoker_respects_circuit_breaker():
     assert used_streaming is False
     runtime.invoke.assert_not_called()
     retry_with_fallback.assert_called_once()
+
+
+def test_provider_invoker_records_provider_exchange_request_and_response():
+    runtime_result = _provider_result()
+    runtime = _mk_runtime(runtime_result)
+    retry_with_fallback = Mock(return_value=None)
+    invoker = _make_invoker(retry_with_fallback)
+    invoker.route_health.is_circuit_open.return_value = False
+
+    session_state = _session_state()
+    result, used_streaming = invoker.invoke(
+        runtime=runtime,
+        client=object(),
+        model="cli_mock/dev",
+        send_messages=[{"role": "user", "content": "hi"}],
+        tools_schema=[{"name": "bash"}],
+        stream_responses=False,
+        runtime_context=ProviderRuntimeContext(session_state=session_state, agent_config={}),
+        session_state=session_state,
+        markdown_logger=_markdown_logger(),
+        turn_index=2,
+        route_id="cli_mock/dev",
+    )
+
+    assert result is runtime_result
+    assert used_streaming is False
+    request_record = session_state.get_provider_metadata("last_provider_exchange_request")
+    response_record = session_state.get_provider_metadata("last_provider_exchange_response")
+    assert request_record["provider_family"] == "mock"
+    assert request_record["runtime_id"] == "mock_chat"
+    assert request_record["message_count"] == 1
+    assert request_record["tool_count"] == 1
+    assert response_record["request"]["exchange_id"] == request_record["exchange_id"]
+    assert response_record["response"]["message_count"] == 1

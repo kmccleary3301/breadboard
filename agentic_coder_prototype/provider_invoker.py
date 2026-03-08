@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .messaging.markdown_logger import MarkdownLogger
@@ -53,6 +54,19 @@ class ProviderInvoker:
         success_recorded = False
         self.set_last_latency(None)
         self.set_html_detected(False)
+        exchange_request = self._build_exchange_request_record(
+            runtime=runtime,
+            model=model,
+            send_messages=send_messages,
+            tools_schema=tools_schema,
+            stream=stream_responses,
+            route_id=route_id,
+            turn_index=turn_index,
+        )
+        try:
+            session_state.set_provider_metadata("last_provider_exchange_request", exchange_request)
+        except Exception:
+            pass
 
         if self.route_health.is_circuit_open(model):
             notice = f"[circuit-open] Skipping direct call for route {model}; attempting fallback."
@@ -244,6 +258,10 @@ class ProviderInvoker:
         try:
             if result is not None:
                 session_state.set_provider_metadata("raw_finish_meta", result.metadata)
+                session_state.set_provider_metadata(
+                    "last_provider_exchange_response",
+                    self._build_exchange_response_record(exchange_request=exchange_request, result=result),
+                )
         except Exception:
             pass
 
@@ -270,3 +288,58 @@ class ProviderInvoker:
             self.logger_v2.append_text("conversation/conversation.md", self.md_writer.system(message))
         except Exception:
             pass
+
+    def _build_exchange_request_record(
+        self,
+        *,
+        runtime: Any,
+        model: str,
+        send_messages: List[Dict[str, Any]],
+        tools_schema: Optional[List[Dict[str, Any]]],
+        stream: bool,
+        route_id: Optional[str],
+        turn_index: int,
+    ) -> Dict[str, Any]:
+        """
+        Build the normalized provider-exchange request record.
+
+        This is the kernel-facing request boundary: enough structure to compare
+        engines semantically without baking transport objects into the contract.
+        """
+
+        descriptor = getattr(runtime, "descriptor", None)
+        return {
+            "exchange_id": f"px_{uuid.uuid4().hex}",
+            "provider_family": str(getattr(descriptor, "provider_id", "unknown")),
+            "runtime_id": str(getattr(descriptor, "runtime_id", "unknown")),
+            "route_id": route_id,
+            "model": str(model),
+            "stream": bool(stream),
+            "turn_index": int(turn_index),
+            "message_count": len(send_messages or []),
+            "tool_count": len(tools_schema or []),
+            "metadata": {},
+        }
+
+    def _build_exchange_response_record(
+        self,
+        *,
+        exchange_request: Dict[str, Any],
+        result: ProviderResult,
+    ) -> Dict[str, Any]:
+        """Build the normalized provider-exchange response record."""
+
+        finish_reasons: List[Optional[str]] = []
+        for message in result.messages or []:
+            finish_reasons.append(getattr(message, "finish_reason", None))
+        return {
+            "exchange_id": exchange_request.get("exchange_id"),
+            "request": dict(exchange_request),
+            "response": {
+                "message_count": len(result.messages or []),
+                "finish_reasons": finish_reasons,
+                "usage": result.usage,
+                "metadata": dict(result.metadata or {}),
+                "evidence_refs": [],
+            },
+        }

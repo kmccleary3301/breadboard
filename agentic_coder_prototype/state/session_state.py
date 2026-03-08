@@ -83,16 +83,42 @@ class SessionState:
         self._event_seq += 1
         return self._event_seq
 
+    def build_kernel_event_record(
+        self,
+        event_type: str,
+        payload: Dict[str, Any],
+        *,
+        turn: Optional[int] = None,
+        seq: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Build the canonical in-memory kernel event record for this session.
+
+        The current emitter API still forwards `(event_type, payload, turn)` to
+        observers, but the kernel contract program needs one explicit place that
+        defines the event-envelope semantics owned by `SessionState`.
+        """
+
+        envelope: Dict[str, Any] = {
+            "type": str(event_type),
+            "payload": dict(payload or {}),
+            "session_id": str(self.provider_metadata.get("session_id") or ""),
+        }
+        if turn is not None:
+            envelope["turn"] = turn
+        if seq is not None:
+            envelope["seq"] = seq
+            envelope["payload"].setdefault("seq", seq)
+        return envelope
+
     def _emit_event(self, event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> Optional[int]:
         seq = self._next_event_seq()
+        event_record = self.build_kernel_event_record(event_type, payload, turn=turn, seq=seq)
+        payload_out = event_record["payload"]
         if not self._event_emitter:
-            if isinstance(payload, dict) and "seq" not in payload:
-                payload["seq"] = seq
             return seq
         try:
-            if isinstance(payload, dict) and "seq" not in payload:
-                payload["seq"] = seq
-            self._event_emitter(event_type, payload, turn=turn)
+            self._event_emitter(event_record["type"], payload_out, turn=event_record.get("turn"))
         except Exception:
             # Event handlers should never break the session loop.
             return seq
@@ -224,11 +250,24 @@ class SessionState:
         elif role == "tool":
             self._emit_event("tool_result", payload, turn=turn_hint)
 
+    def normalize_transcript_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize the canonical transcript entry owned by the session layer.
+
+        This keeps transcript derivation distinct from projection/rendering:
+        transcript entries are durable kernel/session records, not UI payloads.
+        """
+
+        if not isinstance(entry, dict):
+            return {"value": entry}
+        return dict(entry)
+
     def add_transcript_entry(self, entry: Dict[str, Any]):
-        """Add an entry to the transcript"""
-        self.transcript.append(entry)
+        """Add an entry to the canonical session transcript."""
+        normalized = self.normalize_transcript_entry(entry)
+        self.transcript.append(normalized)
         try:
-            self._record_ctree("transcript", entry, turn=self._active_turn_index)
+            self._record_ctree("transcript", normalized, turn=self._active_turn_index)
         except Exception:
             pass
 

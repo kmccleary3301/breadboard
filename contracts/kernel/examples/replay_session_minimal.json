@@ -1,0 +1,15 @@
+{
+  "schema_version": "bb.replay_session.v1",
+  "scenario_id": "minimal-replay",
+  "lane_id": "python-reference-shape",
+  "comparator_class": "shape-equal",
+  "messages": [
+    {"role": "user", "content": "Hello"},
+    {"role": "assistant", "content": "Hi"}
+  ],
+  "tool_results": [],
+  "completion_summary": {"completed": true, "reason": "fixture"},
+  "evidence_refs": [],
+  "strictness": "draft",
+  "notes": "Minimal replay-session scaffold."
+}

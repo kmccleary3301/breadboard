@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.replay_session.v1.schema.json",
+  "title": "bb.replay_session.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "scenario_id", "lane_id", "comparator_class"],
+  "properties": {
+    "schema_version": {"const": "bb.replay_session.v1"},
+    "scenario_id": {"type": "string", "minLength": 1},
+    "lane_id": {"type": "string", "minLength": 1},
+    "comparator_class": {"type": "string", "minLength": 1},
+    "messages": {
+      "type": "array",
+      "items": {"type": "object", "additionalProperties": true}
+    },
+    "tool_results": {
+      "type": "array",
+      "items": {"type": "object", "additionalProperties": true}
+    },
+    "completion_summary": {"type": ["object", "null"], "additionalProperties": true},
+    "evidence_refs": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "strictness": {"type": ["string", "null"]},
+    "notes": {"type": ["string", "null"]}
+  }
+}

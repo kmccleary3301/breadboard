@@ -9,6 +9,7 @@ This is the top-level map of the contract boundaries that should stay stable as 
 Primary references:
 
 - [contracts/kernel/README.md](contracts/kernel/README.md)
+- [contracts/kernel/PROGRAM_INDEX_V1.md](contracts/kernel/PROGRAM_INDEX_V1.md)
 - [contracts/kernel/KERNEL_DOCTRINES_V1.md](contracts/kernel/KERNEL_DOCTRINES_V1.md)
 - [contracts/kernel/semantics/README.md](contracts/kernel/semantics/README.md)
 - [../conformance/engine_fixtures/README.md](../conformance/engine_fixtures/README.md)

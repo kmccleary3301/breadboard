@@ -1,0 +1,7 @@
+{
+  "fixture_family": "tool_lifecycle",
+  "fixture_id": "tool_call_minimal",
+  "comparator_class": "shape-equal",
+  "contract": "bb.tool_call.v1",
+  "example_ref": "../../../contracts/kernel/examples/tool_call_minimal.json"
+}

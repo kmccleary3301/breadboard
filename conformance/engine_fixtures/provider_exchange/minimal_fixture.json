@@ -1,0 +1,7 @@
+{
+  "fixture_family": "provider_exchange",
+  "fixture_id": "provider_exchange_minimal",
+  "comparator_class": "shape-equal",
+  "contract": "bb.provider_exchange.v1",
+  "example_ref": "../../../contracts/kernel/examples/provider_exchange_minimal.json"
+}

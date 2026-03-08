@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.run_request.v1.schema.json",
+  "title": "bb.run_request.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "entry_mode", "task"],
+  "properties": {
+    "schema_version": {"const": "bb.run_request.v1"},
+    "request_id": {"type": "string", "minLength": 1},
+    "entry_mode": {"type": "string", "minLength": 1},
+    "task": {"type": "string"},
+    "config_ref": {"type": ["string", "null"]},
+    "workspace_root": {"type": ["string", "null"]},
+    "requested_model": {"type": ["string", "null"]},
+    "requested_features": {"type": "object", "additionalProperties": true},
+    "requested_execution": {"type": "object", "additionalProperties": true},
+    "metadata": {"type": "object", "additionalProperties": true}
+  }
+}

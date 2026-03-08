@@ -1,0 +1,7 @@
+{
+  "fixture_family": "session_transcript",
+  "fixture_id": "session_transcript_minimal",
+  "comparator_class": "shape-equal",
+  "contract": "bb.session_transcript.v1",
+  "example_ref": "../../../contracts/kernel/examples/session_transcript_minimal.json"
+}
