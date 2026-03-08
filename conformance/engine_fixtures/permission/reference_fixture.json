@@ -1,0 +1,23 @@
+{
+  "fixture_family": "permission",
+  "fixture_id": "permission_python_reference",
+  "comparator_class": "draft-semantic",
+  "support_tier": "reference-engine",
+  "contract": "bb.permission.v1",
+  "reference_output": {
+    "schema_version": "bb.permission.v1",
+    "request_id": "perm-ref-1",
+    "category": "shell",
+    "pattern": "npm install *",
+    "scope": "workspace",
+    "metadata": {
+      "tool": "bash",
+      "summary": "npm install pkg"
+    },
+    "decision": "always",
+    "decision_source": "user_prompt",
+    "reason": "reference fixture",
+    "requires_host_interaction": true,
+    "audit_refs": []
+  }
+}

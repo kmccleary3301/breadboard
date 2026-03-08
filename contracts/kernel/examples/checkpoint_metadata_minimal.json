@@ -1,0 +1,15 @@
+{
+  "schema_version": "bb.checkpoint_metadata.v1",
+  "source_kind": "workspace_checkpoint",
+  "checkpoint_ref": "ckpt-0001",
+  "created_at": 1234567890,
+  "summary": {
+    "checkpoint_id": "ckpt-0001",
+    "created_at": 1234567890,
+    "preview": "snapshot test",
+    "tracked_files": 2,
+    "additions": 4,
+    "deletions": 1,
+    "has_untracked_changes": false
+  }
+}

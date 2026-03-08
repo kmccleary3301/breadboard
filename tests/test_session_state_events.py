@@ -111,6 +111,58 @@ def test_session_state_builds_kernel_event_record_and_normalizes_transcript() ->
     assert state.transcript[-1]["assistant"] == "hello"
 
 
+def test_session_state_builds_permission_task_and_guardrail_records() -> None:
+    collector = EventCollector()
+    state = SessionState("ws", "image", {}, event_emitter=collector)
+    state.set_provider_metadata("session_id", "sess-123")
+    state.begin_turn(7)
+
+    permission_request = state.build_permission_record(
+        "permission_request",
+        {
+            "id": "perm-1",
+            "items": [
+                {
+                    "category": "shell",
+                    "pattern": "npm install *",
+                    "metadata": {"tool": "bash"},
+                }
+            ],
+        },
+    )
+    assert permission_request["request_id"] == "perm-1"
+    assert permission_request["category"] == "shell"
+    assert permission_request["pattern"] == "npm install *"
+
+    permission_response = state.build_permission_record(
+        "permission_response",
+        {"request_id": "perm-1", "responses": {"default": "once"}},
+    )
+    assert permission_response["decision"] == "once"
+
+    state._last_ctree_node_id = "ctree-7"
+    state._last_ctree_snapshot = {"node_count": 3}
+    task_record = state.build_task_record(
+        {
+            "kind": "subagent_spawned",
+            "taskId": "task-7",
+            "sessionId": "sess-child-7",
+            "subagentType": "explore",
+            "status": "running",
+        }
+    )
+    assert task_record["task_id"] == "task-7"
+    assert task_record["session_id"] == "sess-child-7"
+    assert task_record["subagent_type"] == "explore"
+    assert task_record["lifecycle_status"] == "running"
+    assert task_record["ctree_node_id"] == "ctree-7"
+
+    guardrail_record = state.build_guardrail_record("context_window_warning", {"remaining": 1024})
+    assert guardrail_record["type"] == "context_window_warning"
+    assert guardrail_record["turn"] == 7
+    assert guardrail_record["payload"]["remaining"] == 1024
+
+
 def test_session_runner_translates_runtime_events() -> None:
     registry = SessionRegistry()
     record = SessionRecord(session_id="sess-1", status=SessionStatus.STARTING)

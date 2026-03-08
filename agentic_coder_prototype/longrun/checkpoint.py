@@ -9,6 +9,34 @@ from typing import Any, Mapping
 LATEST_POINTER_REL = "meta/checkpoints/latest_checkpoint.json"
 
 
+def build_longrun_checkpoint_metadata_record(
+    *,
+    path: str,
+    episode: int,
+    phase: str,
+    updated_at: float,
+    source_kind: str = "longrun_checkpoint",
+) -> dict[str, Any]:
+    """Build the portable longrun checkpoint metadata record."""
+
+    return {
+        "schema_version": "bb.checkpoint_metadata.v1",
+        "source_kind": str(source_kind),
+        "checkpoint_ref": str(path),
+        "created_at": float(updated_at),
+        "path": str(path),
+        "episode": int(episode),
+        "phase": str(phase),
+        "updated_at": float(updated_at),
+        "summary": {
+            "path": str(path),
+            "episode": int(episode),
+            "phase": str(phase),
+            "updated_at": float(updated_at),
+        },
+    }
+
+
 def write_checkpoint(
     logger_v2: Any,
     payload: Mapping[str, Any],
@@ -26,12 +54,13 @@ def write_checkpoint(
         logger_v2.write_json(rel, dict(payload))
     except Exception:
         return None
-    pointer = {
-        "path": rel,
-        "episode": int(episode),
-        "phase": str(phase),
-        "updated_at": time.time(),
-    }
+    updated_at = time.time()
+    pointer = build_longrun_checkpoint_metadata_record(
+        path=rel,
+        episode=int(episode),
+        phase=str(phase),
+        updated_at=updated_at,
+    )
     try:
         logger_v2.write_json(LATEST_POINTER_REL, pointer)
     except Exception:

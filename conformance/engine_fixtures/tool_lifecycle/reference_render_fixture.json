@@ -1,0 +1,22 @@
+{
+  "fixture_family": "tool_lifecycle",
+  "fixture_id": "tool_render_python_reference",
+  "comparator_class": "draft-semantic",
+  "support_tier": "reference-engine",
+  "contract": "bb.tool_model_render.v1",
+  "reference_output": {
+    "schemaVersion": "bb.tool_model_render.v1",
+    "callId": "call-run-shell-1",
+    "parts": [
+      {
+        "tool": "run_shell",
+        "status": "ok",
+        "error": null
+      }
+    ],
+    "visibility": "model",
+    "metadata": {
+      "tool": "run_shell"
+    }
+  }
+}

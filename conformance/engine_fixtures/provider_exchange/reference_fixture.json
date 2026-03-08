@@ -1,0 +1,35 @@
+{
+  "fixture_family": "provider_exchange",
+  "fixture_id": "provider_exchange_python_reference",
+  "comparator_class": "draft-semantic",
+  "support_tier": "reference-engine",
+  "contract": "bb.provider_exchange.v1",
+  "reference_output": {
+    "schema_version": "bb.provider_exchange.v1",
+    "exchange_id": "px-ref-1",
+    "request": {
+      "provider_family": "openai",
+      "runtime_id": "responses_api",
+      "route_id": "primary",
+      "model": "openai/gpt-5.2",
+      "stream": false,
+      "message_count": 1,
+      "tool_count": 1,
+      "metadata": {}
+    },
+    "response": {
+      "message_count": 1,
+      "finish_reasons": [
+        "stop"
+      ],
+      "usage": {
+        "input_tokens": 3,
+        "output_tokens": 2
+      },
+      "metadata": {
+        "latency_ms": 10
+      },
+      "evidence_refs": []
+    }
+  }
+}

@@ -31,6 +31,27 @@ class CheckpointSummary:
         }
 
 
+def build_checkpoint_metadata_record(
+    summary: CheckpointSummary,
+    *,
+    source_kind: str = "workspace_checkpoint",
+) -> Dict[str, Any]:
+    """
+    Build the first shared checkpoint metadata record.
+
+    This intentionally captures only the portable checkpoint summary surface,
+    not the full Python-backed git/checkpoint implementation details.
+    """
+
+    return {
+        "schema_version": "bb.checkpoint_metadata.v1",
+        "source_kind": str(source_kind),
+        "checkpoint_ref": str(summary.checkpoint_id),
+        "created_at": int(summary.created_at),
+        "summary": summary.as_payload(),
+    }
+
+
 class CheckpointManager:
     """
     Git-backed checkpointing for a single session workspace.

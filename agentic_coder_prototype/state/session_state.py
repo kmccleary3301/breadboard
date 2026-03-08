@@ -190,16 +190,13 @@ class SessionState:
 
     def emit_task_event(self, payload: Dict[str, Any]) -> None:
         """Emit a multi-agent/task lifecycle event to observers."""
-        enriched = dict(payload or {})
-        if self._last_ctree_node_id and "ctree_node_id" not in enriched:
-            enriched["ctree_node_id"] = self._last_ctree_node_id
-        if self._last_ctree_snapshot and "ctree_snapshot" not in enriched:
-            enriched["ctree_snapshot"] = dict(self._last_ctree_snapshot)
+        enriched = self.build_task_record(payload)
         self._emit_event("task_event", enriched, turn=self._active_turn_index)
 
     def emit_permission_event(self, event_type: str, payload: Dict[str, Any]) -> None:
         """Emit permission request/response events to observers."""
-        self._emit_event(str(event_type), dict(payload or {}), turn=self._active_turn_index)
+        normalized = self.build_permission_record(event_type, payload)
+        self._emit_event(str(event_type), normalized, turn=self._active_turn_index)
 
     def todo_snapshot(self) -> Optional[Dict[str, Any]]:
         if not self.todo_manager:
@@ -262,6 +259,72 @@ class SessionState:
             return {"value": entry}
         return dict(entry)
 
+    def build_task_record(self, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Normalize the canonical task/subagent payload before emission.
+
+        This preserves upstream/raw fields while also freezing the snake_case
+        aliases that future shared contracts should consume.
+        """
+
+        enriched = dict(payload or {})
+        if "taskId" in enriched and "task_id" not in enriched:
+            enriched["task_id"] = enriched.get("taskId")
+        if "sessionId" in enriched and "session_id" not in enriched:
+            enriched["session_id"] = enriched.get("sessionId")
+        if "subagentType" in enriched and "subagent_type" not in enriched:
+            enriched["subagent_type"] = enriched.get("subagentType")
+        if "parentTaskId" in enriched and "parent_task_id" not in enriched:
+            enriched["parent_task_id"] = enriched.get("parentTaskId")
+        if "status" in enriched and "lifecycle_status" not in enriched:
+            enriched["lifecycle_status"] = enriched.get("status")
+        if self._last_ctree_node_id and "ctree_node_id" not in enriched:
+            enriched["ctree_node_id"] = self._last_ctree_node_id
+        if self._last_ctree_snapshot and "ctree_snapshot" not in enriched:
+            enriched["ctree_snapshot"] = dict(self._last_ctree_snapshot)
+        return enriched
+
+    def build_permission_record(self, event_type: str, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Normalize permission request/response payloads before emission.
+
+        Host bridges may still project these differently, but the session layer
+        should expose a stable request/decision surface.
+        """
+
+        normalized = dict(payload or {})
+        request_id = normalized.get("request_id") or normalized.get("id")
+        if request_id is not None:
+            normalized.setdefault("request_id", request_id)
+
+        items = normalized.get("items")
+        first_item = items[0] if isinstance(items, list) and items else {}
+        first_meta = first_item.get("metadata") if isinstance(first_item, dict) else {}
+        metadata = normalized.get("metadata") or first_meta or {}
+
+        if str(event_type) == "permission_request":
+            category = normalized.get("category") or (first_item.get("category") if isinstance(first_item, dict) else None)
+            pattern = normalized.get("pattern") or (first_item.get("pattern") if isinstance(first_item, dict) else None)
+            if category is not None:
+                normalized.setdefault("category", category)
+            if pattern is not None:
+                normalized.setdefault("pattern", pattern)
+            if metadata:
+                normalized.setdefault("metadata", dict(metadata))
+        else:
+            decision = normalized.get("decision") or normalized.get("response")
+            responses = normalized.get("responses")
+            if decision is None and isinstance(responses, dict):
+                if "default" in responses:
+                    decision = responses.get("default")
+                elif isinstance(responses.get("items"), dict):
+                    unique = {str(v) for v in (responses.get("items") or {}).values() if v is not None}
+                    if len(unique) == 1:
+                        decision = next(iter(unique))
+            if decision is not None:
+                normalized.setdefault("decision", decision)
+        return normalized
+
     def add_transcript_entry(self, entry: Dict[str, Any]):
         """Add an entry to the canonical session transcript."""
         normalized = self.normalize_transcript_entry(entry)
@@ -274,6 +337,23 @@ class SessionState:
     # --- Guardrail telemetry -------------------------------------------------
     def record_guardrail_event(self, event_type: str, payload: Optional[Dict[str, Any]] = None) -> None:
         """Record a structured guardrail event and emit it to observers."""
+        entry = self.build_guardrail_record(event_type, payload)
+        self.guardrail_events.append(entry)
+        seq = self._emit_event("guardrail_event", entry, turn=self._active_turn_index)
+        if isinstance(seq, int):
+            entry["seq"] = seq
+        try:
+            self._record_ctree("guardrail", entry, turn=self._active_turn_index)
+        except Exception:
+            pass
+
+    def build_guardrail_record(
+        self,
+        event_type: str,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Build the canonical in-memory guardrail event record."""
+
         entry: Dict[str, Any] = {
             "type": str(event_type),
             "payload": dict(payload or {}),
@@ -283,14 +363,7 @@ class SessionState:
             entry["timestamp"] = time.time()
         except Exception:
             pass
-        self.guardrail_events.append(entry)
-        seq = self._emit_event("guardrail_event", entry, turn=self._active_turn_index)
-        if isinstance(seq, int):
-            entry["seq"] = seq
-        try:
-            self._record_ctree("guardrail", entry, turn=self._active_turn_index)
-        except Exception:
-            pass
+        return entry
 
     def _record_ctree(
         self,

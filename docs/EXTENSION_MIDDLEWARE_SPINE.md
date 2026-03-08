@@ -21,6 +21,18 @@ All extensions must execute within one of these phases. The phase order is fixed
 8. `on_turn_end(ctx)`
 9. `on_session_end(ctx)`
 
+Canonical phase identifiers:
+
+- `on_session_init`
+- `on_turn_start`
+- `before_model`
+- `after_model`
+- `before_tool`
+- `after_tool`
+- `before_emit`
+- `on_turn_end`
+- `on_session_end`
+
 ## Deterministic Ordering Within a Phase
 Within each phase, middleware is ordered by:
 

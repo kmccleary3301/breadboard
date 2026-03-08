@@ -1,0 +1,22 @@
+{
+  "fixture_family": "checkpoint_metadata",
+  "fixture_id": "checkpoint_metadata_python_reference",
+  "comparator_class": "draft-semantic",
+  "support_tier": "reference-engine",
+  "contract": "bb.checkpoint_metadata.v1",
+  "reference_output": {
+    "schema_version": "bb.checkpoint_metadata.v1",
+    "source_kind": "workspace_checkpoint",
+    "checkpoint_ref": "ckpt-ref-1",
+    "created_at": 1234567890,
+    "summary": {
+      "checkpoint_id": "ckpt-ref-1",
+      "created_at": 1234567890,
+      "preview": "reference fixture",
+      "tracked_files": 2,
+      "additions": 4,
+      "deletions": 1,
+      "has_untracked_changes": false
+    }
+  }
+}

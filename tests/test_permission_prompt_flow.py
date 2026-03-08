@@ -39,6 +39,13 @@ def test_permission_prompt_allows_and_records_wildcard() -> None:
     evt_types = [e[0] for e in events]
     assert "permission_request" in evt_types
     assert "permission_response" in evt_types
+    request_payload = next(payload for event_type, payload, _ in events if event_type == "permission_request")
+    response_payload = next(payload for event_type, payload, _ in events if event_type == "permission_response")
+    assert request_payload["request_id"]
+    assert request_payload["category"] == "shell"
+    assert request_payload["pattern"] == "npm install *"
+    assert response_payload["request_id"] == request_payload["request_id"]
+    assert response_payload["decision"] == "always"
 
     # Subsequent matching calls should not re-prompt when approved "always"
     events.clear()
@@ -107,9 +114,10 @@ def test_permission_prompt_batches_multiple_calls_with_per_item_decisions() -> N
 
     assert len([e for e in events if e[0] == "permission_request"]) == 1
     assert len([e for e in events if e[0] == "permission_response"]) == 1
+    response_payload = next(payload for event_type, payload, _ in events if event_type == "permission_response")
+    assert response_payload.get("decision") is None or response_payload.get("decision") == response_payload.get("response")
 
     state = session_state.get_provider_metadata(PermissionBroker.STATE_KEY) or {}
     assert isinstance(state, dict)
     approved = (state.get("approved") or {}).get("shell") or []
     assert "npm install *" in approved
-

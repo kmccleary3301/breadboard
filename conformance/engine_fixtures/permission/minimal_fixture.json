@@ -1,0 +1,7 @@
+{
+  "fixture_family": "permission",
+  "fixture_id": "permission_minimal",
+  "comparator_class": "shape-equal",
+  "contract": "bb.permission.v1",
+  "example_ref": "../../../contracts/kernel/examples/permission_minimal.json"
+}

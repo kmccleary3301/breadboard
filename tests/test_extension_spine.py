@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from agentic_coder_prototype.extensions.spine import MiddlewareSpec, order_middleware
+from agentic_coder_prototype.extensions.spine import MiddlewareSpec, PHASE_ORDER, order_middleware
 
 
 def test_extension_spine_orders_by_phase_and_priority() -> None:
@@ -31,3 +33,9 @@ def test_extension_spine_cycle_detection() -> None:
     ]
     with pytest.raises(ValueError):
         order_middleware(specs)
+
+
+def test_extension_spine_docs_match_runtime_phase_order() -> None:
+    doc_text = (Path(__file__).resolve().parents[1] / "docs" / "EXTENSION_MIDDLEWARE_SPINE.md").read_text(encoding="utf-8")
+    for phase in PHASE_ORDER:
+        assert f"`{phase}`" in doc_text

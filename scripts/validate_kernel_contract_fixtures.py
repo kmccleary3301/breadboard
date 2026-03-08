@@ -20,6 +20,8 @@ EXAMPLE_SCHEMA_MAP = {
     "provider_exchange_minimal.json": "bb.provider_exchange.v1.schema.json",
     "permission_minimal.json": "bb.permission.v1.schema.json",
     "replay_session_minimal.json": "bb.replay_session.v1.schema.json",
+    "task_minimal.json": "bb.task.v1.schema.json",
+    "checkpoint_metadata_minimal.json": "bb.checkpoint_metadata.v1.schema.json",
 }
 
 
@@ -54,6 +56,9 @@ def _validate_manifest_and_fixtures() -> List[str]:
                 errors.append(f"manifest missing evidence file: {rel}")
                 continue
             fixture = _load_json(target)
+            support_tier = fixture.get("support_tier")
+            if support_tier is not None and support_tier not in {"draft-shape", "draft-semantic", "reference-engine"}:
+                errors.append(f"fixture invalid support tier: {target} -> {support_tier}")
             example_ref = fixture.get("example_ref")
             if example_ref:
                 example_path = (target.parent / example_ref).resolve()
@@ -64,6 +69,17 @@ def _validate_manifest_and_fixtures() -> List[str]:
                     continue
                 if not example_path.is_file():
                     errors.append(f"fixture missing example ref target: {target} -> {example_ref}")
+            contract = fixture.get("contract")
+            reference_output = fixture.get("reference_output")
+            if isinstance(contract, str) and reference_output is not None:
+                schema_path = SCHEMA_DIR / f"{contract}.schema.json"
+                if not schema_path.is_file():
+                    errors.append(f"fixture references missing contract schema: {target} -> {contract}")
+                else:
+                    schema = _load_json(schema_path)
+                    validator = Draft202012Validator(schema)
+                    for err in validator.iter_errors(reference_output):
+                        errors.append(f"fixture {target.name} failed {contract}: {err.message}")
     return errors
 
 

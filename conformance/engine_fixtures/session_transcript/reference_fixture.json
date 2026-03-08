@@ -1,0 +1,28 @@
+{
+  "fixture_family": "session_transcript",
+  "fixture_id": "session_transcript_python_reference",
+  "comparator_class": "draft-semantic",
+  "support_tier": "reference-engine",
+  "contract": "bb.session_transcript.v1",
+  "reference_output": {
+    "schemaVersion": "bb.session_transcript.v1",
+    "sessionId": "sess-ref-1",
+    "runId": "run-ref-1",
+    "eventCursor": 1,
+    "items": [
+      {
+        "kind": "assistant_message",
+        "visibility": "model",
+        "content": {
+          "text": "hello"
+        },
+        "provenance": {
+          "source": "reference-fixture"
+        }
+      }
+    ],
+    "metadata": {
+      "source": "python_reference"
+    }
+  }
+}

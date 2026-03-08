@@ -20,3 +20,5 @@ Current minimal examples exist for:
 - provider exchange
 - permission
 - replay session
+- task
+- checkpoint metadata

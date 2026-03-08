@@ -9,10 +9,26 @@
       "scenarioId": "kernel_event_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
-      "evidence": [
-        "kernel_event/minimal_fixture.json"
-      ],
-      "notes": "First scaffold manifest row for kernel event shape validation."
+      "evidence": ["kernel_event/minimal_fixture.json"],
+      "notes": "Minimal kernel-event shape validation."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "kernel_event_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": ["kernel_event/reference_fixture.json"],
+      "notes": "Reference-engine kernel event example built from SessionState helper output."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "session_transcript_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": ["session_transcript/reference_fixture.json"],
+      "notes": "Reference-engine transcript derivation fixture."
     },
     {
       "engineFamily": "python_reference",
@@ -20,10 +36,98 @@
       "scenarioId": "provider_exchange_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
-      "evidence": [
-        "provider_exchange/minimal_fixture.json"
-      ],
-      "notes": "First scaffold manifest row for provider exchange shape validation."
+      "evidence": ["provider_exchange/minimal_fixture.json"],
+      "notes": "Minimal provider-exchange shape validation."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "provider_exchange_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "draft-semantic",
+      "evidence": ["provider_exchange/reference_fixture.json"],
+      "notes": "Reference-engine provider exchange fixture built from invoker helpers."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "permission_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": ["permission/minimal_fixture.json"],
+      "notes": "Minimal permission contract scaffold."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "permission_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "draft-semantic",
+      "evidence": ["permission/reference_fixture.json"],
+      "notes": "Reference-engine permission lifecycle fixture."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "task_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": ["task_subagent/minimal_fixture.json"],
+      "notes": "Minimal task/subagent scaffold."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "task_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "draft-semantic",
+      "evidence": ["task_subagent/reference_fixture.json"],
+      "notes": "Reference-engine task/subagent identity fixture."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "checkpoint_metadata_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": ["checkpoint_metadata/minimal_fixture.json"],
+      "notes": "Portable checkpoint metadata scaffold."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "checkpoint_metadata_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "draft-semantic",
+      "evidence": ["checkpoint_metadata/reference_fixture.json"],
+      "notes": "Reference-engine checkpoint metadata fixture."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "tool_execution_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "draft-semantic",
+      "evidence": ["tool_lifecycle/reference_execution_fixture.json"],
+      "notes": "Reference-engine raw tool execution outcome fixture."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "tool_render_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "model-visible-equal",
+      "evidence": ["tool_lifecycle/reference_render_fixture.json"],
+      "notes": "Reference-engine model-visible tool render fixture."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "replay_session_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": ["replay_session/minimal_fixture.json"],
+      "notes": "Minimal replay-session scaffold."
     }
   ]
 }

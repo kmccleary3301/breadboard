@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.checkpoint_metadata.v1.schema.json",
+  "title": "bb.checkpoint_metadata.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source_kind", "checkpoint_ref", "created_at", "summary"],
+  "properties": {
+    "schema_version": {"const": "bb.checkpoint_metadata.v1"},
+    "source_kind": {"type": "string", "minLength": 1},
+    "checkpoint_ref": {"type": "string", "minLength": 1},
+    "created_at": {"type": "number"},
+    "summary": {"type": "object", "additionalProperties": true}
+  }
+}

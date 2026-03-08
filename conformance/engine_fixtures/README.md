@@ -35,6 +35,17 @@ At minimum:
 
 Not every contract or lane needs the same comparator class, but each fixture bundle should declare which class it is meant to satisfy.
 
+## Support tiers
+
+The first manifest rows should use one of:
+
+- `draft-shape`
+- `draft-semantic`
+- `reference-engine`
+
+These tiers indicate how strong a fixture family is as a future gate for
+cross-engine conformance.
+
 ---
 
 ## Relationship to existing conformance work

@@ -1,0 +1,20 @@
+{
+  "fixture_family": "tool_lifecycle",
+  "fixture_id": "tool_execution_python_reference",
+  "comparator_class": "draft-semantic",
+  "support_tier": "reference-engine",
+  "contract": "bb.tool_execution_outcome.v1",
+  "reference_output": {
+    "schemaVersion": "bb.tool_execution_outcome.v1",
+    "callId": "call-run-shell-1",
+    "terminalState": "completed",
+    "result": {
+      "stdout": "hi",
+      "exit_code": 0
+    },
+    "metadata": {
+      "tool": "run_shell",
+      "ok": true
+    }
+  }
+}

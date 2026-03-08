@@ -1,0 +1,7 @@
+{
+  "fixture_family": "checkpoint_metadata",
+  "fixture_id": "checkpoint_metadata_minimal",
+  "comparator_class": "shape-equal",
+  "contract": "bb.checkpoint_metadata.v1",
+  "example_ref": "../../../contracts/kernel/examples/checkpoint_metadata_minimal.json"
+}

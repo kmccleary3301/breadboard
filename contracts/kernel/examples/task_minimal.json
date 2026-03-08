@@ -1,0 +1,16 @@
+{
+  "schema_version": "bb.task.v1",
+  "task_id": "task-1",
+  "parent_task_id": null,
+  "session_id": "sess-child-1",
+  "kind": "subagent_spawned",
+  "task_type": "explore",
+  "status": "running",
+  "depth": 1,
+  "description": "Explore repository surface",
+  "visibility": "host",
+  "metadata": {
+    "child_session_id": "sess-child-1",
+    "parent_session_id": "sess-parent-1"
+  }
+}

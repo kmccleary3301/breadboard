@@ -45,3 +45,5 @@ Draft scaffold schemas now exist for:
 - `bb.task.v1`
 
 These should be read as contract-pack scaffolds, not claims of semantic completeness.
+
+Current first-pass schemas also include checkpoint metadata.

@@ -1,0 +1,7 @@
+{
+  "fixture_family": "task_subagent",
+  "fixture_id": "task_minimal",
+  "comparator_class": "shape-equal",
+  "contract": "bb.task.v1",
+  "example_ref": "../../../contracts/kernel/examples/task_minimal.json"
+}

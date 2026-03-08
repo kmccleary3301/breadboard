@@ -1,0 +1,25 @@
+{
+  "fixture_family": "task_subagent",
+  "fixture_id": "task_python_reference",
+  "comparator_class": "draft-semantic",
+  "support_tier": "reference-engine",
+  "contract": "bb.task.v1",
+  "reference_output": {
+    "schema_version": "bb.task.v1",
+    "task_id": "task-ref-1",
+    "parent_task_id": null,
+    "session_id": "sess-child-ref-1",
+    "kind": "subagent_spawned",
+    "task_type": "explore",
+    "status": "running",
+    "depth": 1,
+    "description": "Explore repository surface",
+    "visibility": "host",
+    "metadata": {
+      "ctree_node_id": "ctree-ref-1",
+      "ctree_snapshot": {
+        "node_count": 1
+      }
+    }
+  }
+}
