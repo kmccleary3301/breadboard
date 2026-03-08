@@ -74,6 +74,20 @@ These files and modules are parity-critical and should be treated as the parity 
 
 ---
 
+## Relationship to the kernel contract program
+
+This document is specifically about parity-critical surfaces for target-harness alignment and E4-style claims.
+
+It is not the complete multi-engine kernel contract. The broader kernel-contract program now lives under:
+
+- `docs/contracts/kernel/`
+- `contracts/kernel/`
+- `conformance/engine_fixtures/`
+
+Important rule: projection contracts and client event shapes must not be mistaken for the canonical kernel contract, even when they are parity-sensitive.
+
+---
+
 ## Change discipline
 
 Before touching any parity-kernel module:

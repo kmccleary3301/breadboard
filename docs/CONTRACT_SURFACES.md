@@ -4,6 +4,26 @@ This is the top-level map of the contract boundaries that should stay stable as 
 
 ---
 
+## 0. Kernel contract program
+
+Primary references:
+
+- [contracts/kernel/README.md](contracts/kernel/README.md)
+- [contracts/kernel/KERNEL_DOCTRINES_V1.md](contracts/kernel/KERNEL_DOCTRINES_V1.md)
+- [contracts/kernel/semantics/README.md](contracts/kernel/semantics/README.md)
+- [../conformance/engine_fixtures/README.md](../conformance/engine_fixtures/README.md)
+
+The kernel contract program is the shared runtime truth surface for any future multi-engine BreadBoard architecture. It is broader than current parity-only or UI-only contract boundaries.
+
+Rules:
+
+- kernel event log is canonical
+- transcript/session state is derived
+- projection contracts are derived and must not be promoted to kernel truth
+- tool execution and tool model rendering are distinct contract surfaces
+
+---
+
 ## 1. Run artifact contract (replay surface)
 
 Primary artifact:
