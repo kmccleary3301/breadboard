@@ -59,6 +59,29 @@ Reference scripts:
 - `scripts/run_cross_system_pilot_bundle_v1.py`
 - `scripts/build_cross_system_frozen_slices_v1.py`
 
+`scripts/run_bb_atp_adapter_slice_v1.py` is the real BreadBoard execution path for
+Hilbert comparison packs. It creates a per-task workspace, launches an actual
+BreadBoard session against the supplied config/model, verifies the resulting Lean
+file against Kimina, and emits `normalized_prover_result_v1` rows plus raw
+diagnostic JSON.
+
+Example invocation:
+
+```bash
+cd breadboard_repo
+python scripts/run_bb_atp_adapter_slice_v1.py \
+  --manifest artifacts/benchmarks/hilbert_comparison_packs_v1/pack_a_seedproof_sanity_minif2f_v1/cross_system_manifest.json \
+  --task-inputs artifacts/benchmarks/hilbert_comparison_packs_v1/pack_a_seedproof_sanity_minif2f_v1/bb_task_inputs.json \
+  --config agent_configs/atp_bb_aristotle_match_codexmini_v1.yaml \
+  --model openrouter/openai/gpt-5.4 \
+  --base-url http://127.0.0.1:9599 \
+  --start-engine \
+  --engine-port 9599 \
+  --verifier-url http://127.0.0.1:18001/verify \
+  --out artifacts/benchmarks/hilbert_comparison_packs_v1/pack_a_seedproof_sanity_minif2f_v1/bb_atp_normalized_results_v1.jsonl \
+  --summary-out artifacts/benchmarks/hilbert_comparison_packs_v1/pack_a_seedproof_sanity_minif2f_v1/bb_atp_slice_summary_v1.json
+```
+
 Adapter input fixture example:
 
 - `tests/fixtures/benchmarks/cross_system_task_inputs_demo_v1.json`
