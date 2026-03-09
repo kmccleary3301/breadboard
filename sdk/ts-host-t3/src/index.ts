@@ -1,10 +1,11 @@
 import type { ProviderExchangeV1 } from "@breadboard/kernel-contracts"
 import { createBackbone, type BackboneTurnResult, type SupportClaim } from "@breadboard/backbone"
 import {
-  buildProviderHostTurnView,
   createProviderHostSession,
   type HostManagedTranscript,
   normalizeHostManagedTranscript,
+  type ProviderHostSessionTurnResult,
+  resolveProviderHostTurnView,
 } from "@breadboard/host-kits"
 import {
   createAiSdkTransportSession,
@@ -75,6 +76,27 @@ export interface T3CodeStarter {
     initialTranscript?: HostManagedTranscript | null
     initialTransportState?: AiSdkTransportState | null
   }): T3CodeSession
+}
+
+function buildT3PromptTurnResult(
+  result: ProviderHostSessionTurnResult<AiSdkTransportState, readonly AiSdkTransportFrame[]>,
+): T3CodePromptTurnResult {
+  const resolved = resolveProviderHostTurnView({
+    result,
+    fallbackProjectionOutput: [],
+    fallbackProjectionState: {
+      lastMessageId: result.turn.runContextId,
+      transcriptDigest: null,
+      turnCount: 0,
+    },
+  })
+
+  return {
+    supportClaim: resolved.supportClaim,
+    turn: resolved.turn,
+    frames: resolved.projectionOutput,
+    transportState: resolved.projectionState,
+  }
 }
 
 function buildRequest(input: T3CodePromptTurnInput) {
@@ -214,36 +236,16 @@ export function createT3CodeStarter(options: T3CodeStarterOptions = {}): T3CodeS
          * Run a provider-backed prompt turn and persist transcript/transport state in-session.
          */
         async runPromptTurn(input) {
-          const result = buildProviderHostTurnView(await providerHostSession.runProviderTurn(input))
-          return {
-            supportClaim: result.supportClaim,
-            turn: result.turn,
-            frames: result.projectionOutput ?? [],
-            transportState: result.projectionState ?? transportSession.state ?? {
-              lastMessageId: result.turn.runContextId,
-              transcriptDigest: null,
-              turnCount: 0,
-            },
-          }
+          return buildT3PromptTurnResult(await providerHostSession.runProviderTurn(input))
         },
         /**
          * Continue a prior prompt turn using transcript and transport state owned by the session wrapper.
          */
         async continuePromptTurn(input) {
-          const result = buildProviderHostTurnView(await providerHostSession.continueProviderTurn({
+          return buildT3PromptTurnResult(await providerHostSession.continueProviderTurn({
             ...input,
             existingTranscript: input.existingTranscript ?? providerHostSession.transcript ?? [],
           }))
-          return {
-            supportClaim: result.supportClaim,
-            turn: result.turn,
-            frames: result.projectionOutput ?? [],
-            transportState: result.projectionState ?? transportSession.state ?? {
-              lastMessageId: result.turn.runContextId,
-              transcriptDigest: null,
-              turnCount: 0,
-            },
-          }
         },
         get transcript() {
           return providerHostSession.transcript

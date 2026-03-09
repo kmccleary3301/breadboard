@@ -29,6 +29,11 @@ This document explains the current V3 adoption path for a thin TypeScript host s
    - `initialTransportState`
    so BreadBoard can continue the session without taking over persistence ownership.
 
+Reference migration kits:
+- [T3 Backbone Adoption V1](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/docs/contracts/kernel/T3_BACKBONE_ADOPTION_V1.md)
+- [`sdk/ts-host-t3/examples/next-route-handler.ts`](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/sdk/ts-host-t3/examples/next-route-handler.ts)
+- [`sdk/ts-host-t3/examples/session-store.ts`](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/sdk/ts-host-t3/examples/session-store.ts)
+
 ## Supported V3 slices
 
 - prompt-turn classification

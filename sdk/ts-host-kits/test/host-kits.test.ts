@@ -6,6 +6,7 @@ import {
   buildHostResultMeta,
   buildHostTranscriptProjection,
   buildProviderHostTurnView,
+  resolveProviderHostTurnView,
   buildFallbackHostKitInvocation,
   buildSupportedHostKitInvocation,
   createProviderHostSession,
@@ -331,6 +332,43 @@ test("buildHostResultMeta produces reusable host-facing result metadata", () => 
       stopReason: "completed",
     },
   )
+})
+
+test("resolveProviderHostTurnView fills missing projection output and state", () => {
+  const resolved = resolveProviderHostTurnView({
+    result: {
+      supportClaim: supportedClaim,
+      turn: {
+        supportClaim: supportedClaim,
+        projectionProfile: { id: "host_callbacks", summary: "Host callbacks" },
+        runContextId: "run-1",
+        transcript: {
+          schemaVersion: "bb.session_transcript.v1",
+          sessionId: "session-1",
+          items: [],
+        },
+        events: [],
+        providerTurn: undefined,
+        driverTurn: undefined,
+        unsupportedCase: undefined,
+      },
+      projectionOutput: null,
+      projectionState: null,
+    },
+    fallbackProjectionOutput: [],
+    fallbackProjectionState: {
+      lastMessageId: "run-1",
+      transcriptDigest: null,
+      turnCount: 0,
+    },
+  })
+
+  assert.deepEqual(resolved.projectionOutput, [])
+  assert.deepEqual(resolved.projectionState, {
+    lastMessageId: "run-1",
+    transcriptDigest: null,
+    turnCount: 0,
+  })
 })
 
 test("normalizeHostManagedTranscript wraps host-owned transcript items in the canonical envelope", () => {

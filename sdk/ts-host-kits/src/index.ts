@@ -62,6 +62,12 @@ export interface ProviderHostTurnView<ProjectionState, ProjectionOutput> {
   readonly projectionState: ProjectionState | null
 }
 
+export interface ResolvedProviderHostTurnView<ProjectionState, ProjectionOutput>
+  extends ProviderHostTurnView<ProjectionState, ProjectionOutput> {
+  readonly projectionOutput: ProjectionOutput
+  readonly projectionState: ProjectionState
+}
+
 export interface HostTranscriptProjection {
   readonly entries: Array<
     | { kind: "assistant_text"; text: string }
@@ -195,6 +201,24 @@ export function buildProviderHostTurnView<ProjectionState, ProjectionOutput>(
     turn: result.turn,
     projectionOutput: result.projectionOutput,
     projectionState: result.projectionState,
+  }
+}
+
+/**
+ * Resolve a provider-host turn into a fully populated projection view. This is useful for thin
+ * hosts that want a stable product-layer result shape without repeating fallback-state logic for
+ * missing projection output or state.
+ */
+export function resolveProviderHostTurnView<ProjectionState, ProjectionOutput>(options: {
+  readonly result: ProviderHostSessionTurnResult<ProjectionState, ProjectionOutput>
+  readonly fallbackProjectionState: ProjectionState
+  readonly fallbackProjectionOutput: ProjectionOutput
+}): ResolvedProviderHostTurnView<ProjectionState, ProjectionOutput> {
+  const view = buildProviderHostTurnView(options.result)
+  return {
+    ...view,
+    projectionOutput: view.projectionOutput ?? options.fallbackProjectionOutput,
+    projectionState: view.projectionState ?? options.fallbackProjectionState,
   }
 }
 
