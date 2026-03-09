@@ -28,6 +28,7 @@ It is the smallest OpenClaw-shaped request that still proves the important bound
 Tracked acceptance fixture:
 
 - `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_supported_slice.json`
+- `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_transcript_continuation_slice.json`
 
 Tracked executable proof:
 
@@ -45,3 +46,13 @@ This acceptance slice does **not** claim:
 - full Pi runtime replacement
 
 It is a proving-ground contract for the bridge seam, not a full OpenClaw compatibility claim.
+
+## Transcript continuity note
+
+The second frozen fixture captures the more realistic host-level requirement:
+
+- preserve host-owned transcript pre-state
+- append the current turn through BreadBoard
+- return a transcript post-state suitable for host-owned persistence
+
+That is still not claiming ownership of OpenClaw session storage. It is proving that BreadBoard can participate in transcript continuity without taking over transcript persistence.

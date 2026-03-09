@@ -10,11 +10,13 @@ import {
   cloneTranscriptItem,
   eventBelongsToSession,
   executeProviderTextTurn,
+  executeProviderTextContinuationTurn,
   executeScriptedToolTurn,
   executeStaticTextTurn,
   loadEngineConformanceManifest,
   loadKernelFixture,
   normalizeTranscriptContractItem,
+  normalizeTranscriptContractItems,
 } from "../src/index.js"
 
 test("kernel core helpers remain deterministic", () => {
@@ -53,6 +55,30 @@ test("kernel core transcript normalization maps legacy entries", () => {
     content: "hello",
     provenance: { source: "legacy_transcript_entry", legacy_key: "assistant" },
   })
+})
+
+test("kernel core transcript normalization maps arrays of mixed items", () => {
+  const normalized = normalizeTranscriptContractItems([
+    { user: "seed user" },
+    {
+      kind: "assistant_message",
+      visibility: "model",
+      content: { text: "seed assistant" },
+    },
+  ])
+  assert.deepEqual(normalized, [
+    {
+      kind: "user_message",
+      visibility: "model",
+      content: "seed user",
+      provenance: { source: "legacy_transcript_entry", legacy_key: "user" },
+    },
+    {
+      kind: "assistant_message",
+      visibility: "model",
+      content: { text: "seed assistant" },
+    },
+  ])
 })
 
 test("kernel core lineage and checkpoint helpers stay deterministic", () => {
@@ -215,4 +241,66 @@ test("kernel core can execute a provider-aware constrained text turn", () => {
   assert.equal(result.events[1]?.kind, "assistant_message")
   assert.equal(result.transcript.items.length, 3)
   assert.equal(result.providerExchange.exchange_id, "px-1")
+})
+
+test("kernel core can continue from an existing transcript during a provider-aware turn", () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-provider-2",
+    entry_mode: "interactive",
+    task: "hello",
+  } as const
+
+  const result = executeProviderTextContinuationTurn(request, {
+    sessionId: "sess-provider-2",
+    existingTranscript: [
+      { user: "seed user" },
+      {
+        kind: "assistant_message",
+        visibility: "model",
+        content: { text: "seed assistant" },
+      },
+    ],
+    providerExchange: {
+      schema_version: "bb.provider_exchange.v1",
+      exchange_id: "px-2",
+      request: {
+        provider_family: "openai",
+        runtime_id: "responses_api",
+        route_id: "primary",
+        model: "openai/gpt-5.2",
+        stream: false,
+      },
+      response: {
+        message_count: 1,
+        finish_reasons: ["stop"],
+        metadata: { provider_family: "openai", runtime_id: "responses_api" },
+      },
+    },
+    assistantText: "hello from the continuation turn",
+  })
+
+  assert.equal(result.transcript.items.length, 5)
+  assert.deepEqual(result.transcript.items.slice(0, 2), [
+    {
+      kind: "user_message",
+      visibility: "model",
+      content: "seed user",
+      provenance: { source: "legacy_transcript_entry", legacy_key: "user" },
+    },
+    {
+      kind: "assistant_message",
+      visibility: "model",
+      content: { text: "seed assistant" },
+    },
+  ])
+  assert.equal(result.transcript.items[4]?.kind, "assistant_message")
+  assert.deepEqual(result.transcript.metadata, {
+    execution_mode: "provider_text_turn",
+    source: "ts-kernel-core",
+    exchange_id: "px-2",
+    provider_family: "openai",
+    continuation_from_existing_transcript: true,
+    preserved_prefix_items: 2,
+  })
 })

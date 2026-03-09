@@ -179,6 +179,41 @@ test("openclaw bridge honors the frozen supported-slice acceptance fixture", asy
   assert.equal(invocation.result.meta.stopReason, fixture.expected.stopReason)
 })
 
+test("openclaw bridge preserves host-owned transcript pre-state across a continuation turn", async () => {
+  const fixture = JSON.parse(loadFixture("openclaw_embedded_transcript_continuation_slice.json")) as {
+    request: OpenClawEmbeddedRunParams
+    existingTranscript: Array<Record<string, unknown>>
+    breadboardOutput: {
+      assistantText: string
+      usage: Record<string, unknown>
+    }
+    expected: {
+      mode: "breadboard"
+      transcriptKinds: string[]
+      assistantTailText: string
+      preservedPrefixItems: number
+    }
+  }
+
+  const invocation = await runOpenClawEmbeddedViaBreadboard(fixture.request, {
+    existingTranscript: fixture.existingTranscript,
+    executeBreadboard: async () => fixture.breadboardOutput,
+  })
+
+  assert.equal(invocation.mode, fixture.expected.mode)
+  assert.deepEqual(
+    invocation.transcriptPostState?.items.map((item) => item.kind),
+    fixture.expected.transcriptKinds,
+  )
+  assert.deepEqual(invocation.transcriptPostState?.items.at(-1)?.content, {
+    text: fixture.expected.assistantTailText,
+  })
+  assert.equal(
+    invocation.transcriptPostState?.metadata?.preserved_prefix_items,
+    fixture.expected.preservedPrefixItems,
+  )
+})
+
 test("openclaw bridge falls back cleanly on unsupported slice fields", async () => {
   const invocation = await runOpenClawEmbeddedViaBreadboard(
     {

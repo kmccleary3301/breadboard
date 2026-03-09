@@ -1,0 +1,43 @@
+{
+  "request": {
+    "sessionId": "session:test",
+    "sessionKey": "agent:test:embedded:fixture-2",
+    "sessionFile": "/tmp/session-fixture-2.jsonl",
+    "workspaceDir": "/tmp/workspace",
+    "prompt": "hello",
+    "provider": "openai",
+    "model": "mock-1",
+    "timeoutMs": 5000,
+    "runId": "run-embedded-fixture-2"
+  },
+  "existingTranscript": [
+    {
+      "user": "seed user"
+    },
+    {
+      "kind": "assistant_message",
+      "visibility": "model",
+      "content": {
+        "text": "seed assistant"
+      }
+    }
+  ],
+  "breadboardOutput": {
+    "assistantText": "hello from BreadBoard",
+    "usage": {
+      "total": 10
+    }
+  },
+  "expected": {
+    "mode": "breadboard",
+    "transcriptKinds": [
+      "user_message",
+      "assistant_message",
+      "user_message",
+      "provider_response",
+      "assistant_message"
+    ],
+    "assistantTailText": "hello from BreadBoard",
+    "preservedPrefixItems": 2
+  }
+}

@@ -69,6 +69,16 @@ export function normalizeTranscriptContractItem(item: Record<string, unknown>): 
   }
 }
 
+export function normalizeTranscriptContractItems(
+  items: Array<Record<string, unknown> | SessionTranscriptV1Item>,
+): SessionTranscriptV1Item[] {
+  return items.map((item) =>
+    "kind" in item && "visibility" in item && "content" in item
+      ? cloneTranscriptItem(item as SessionTranscriptV1Item)
+      : normalizeTranscriptContractItem(item as Record<string, unknown>),
+  )
+}
+
 export function buildTaskLineage(task: TaskV1, tasksById: Record<string, TaskV1>): string[] {
   const lineage: string[] = [task.task_id]
   let cursor = task.parent_task_id
@@ -201,6 +211,12 @@ export interface ProviderTextTurnOptions {
 
 export interface ProviderTextTurnResult extends StaticTextTurnResult {
   providerExchange: ProviderExchangeV1
+}
+
+export interface ProviderTextContinuationTurnOptions extends ProviderTextTurnOptions {
+  existingTranscript:
+    | SessionTranscriptV1
+    | Array<Record<string, unknown> | SessionTranscriptV1Item>
 }
 
 export function buildRunContextFromRequest(
@@ -498,4 +514,26 @@ export function executeProviderTextTurn(
     },
   }
   return { runContext, events, transcript, providerExchange }
+}
+
+export function executeProviderTextContinuationTurn(
+  requestInput: RunRequestV1,
+  options: ProviderTextContinuationTurnOptions,
+): ProviderTextTurnResult {
+  const base = executeProviderTextTurn(requestInput, options)
+  const existingItems = Array.isArray(options.existingTranscript)
+    ? normalizeTranscriptContractItems(options.existingTranscript)
+    : normalizeTranscriptContractItems(options.existingTranscript.items)
+  return {
+    ...base,
+    transcript: {
+      ...base.transcript,
+      items: [...existingItems, ...base.transcript.items],
+      metadata: {
+        ...base.transcript.metadata,
+        continuation_from_existing_transcript: true,
+        preserved_prefix_items: existingItems.length,
+      },
+    },
+  }
 }

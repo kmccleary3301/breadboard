@@ -2,8 +2,14 @@ import type {
   KernelEventV1,
   ProviderExchangeV1,
   RunRequestV1,
+  SessionTranscriptV1,
+  SessionTranscriptV1Item,
 } from "@breadboard/kernel-contracts"
-import { executeProviderTextTurn, type ProviderTextTurnResult } from "@breadboard/kernel-core"
+import {
+  executeProviderTextContinuationTurn,
+  executeProviderTextTurn,
+  type ProviderTextTurnResult,
+} from "@breadboard/kernel-core"
 
 export type OpenClawClientToolDefinition = {
   type: "function"
@@ -103,6 +109,7 @@ export type OpenClawBridgeInvocation =
       result: OpenClawEmbeddedRunResult
       unsupportedFields: string[]
       providerTurn?: ProviderTextTurnResult
+      transcriptPostState?: SessionTranscriptV1
     }
   | {
       mode: "fallback"
@@ -278,6 +285,7 @@ export async function runOpenClawEmbeddedViaBreadboard(
   options: {
     executeBreadboard?: OpenClawBreadboardExecutor
     nativeFallback?: OpenClawNativeFallback
+    existingTranscript?: SessionTranscriptV1 | Array<Record<string, unknown> | SessionTranscriptV1Item>
   } = {},
 ): Promise<OpenClawBridgeInvocation> {
   const unsupportedFields = findUnsupportedOpenClawFields(params)
@@ -313,13 +321,22 @@ export async function runOpenClawEmbeddedViaBreadboard(
 
   const output = await executeBreadboard(runRequest, params)
   const providerExchange = buildOpenClawProviderExchange(params, output)
-  const providerTurn = executeProviderTextTurn(runRequest, {
-    sessionId: params.sessionKey ?? params.sessionId,
-    executionMode: "openclaw_embedded_bridge",
-    activeMode: "embedded",
-    providerExchange,
-    assistantText: output.assistantText,
-  })
+  const providerTurn = options.existingTranscript
+    ? executeProviderTextContinuationTurn(runRequest, {
+        sessionId: params.sessionKey ?? params.sessionId,
+        executionMode: "openclaw_embedded_bridge",
+        activeMode: "embedded",
+        providerExchange,
+        assistantText: output.assistantText,
+        existingTranscript: options.existingTranscript,
+      })
+    : executeProviderTextTurn(runRequest, {
+        sessionId: params.sessionKey ?? params.sessionId,
+        executionMode: "openclaw_embedded_bridge",
+        activeMode: "embedded",
+        providerExchange,
+        assistantText: output.assistantText,
+      })
 
   await emitKernelEventsToOpenClawCallbacks(params, providerTurn.events)
   await emitBridgeOutputToOpenClawCallbacks(params, output)
@@ -329,6 +346,7 @@ export async function runOpenClawEmbeddedViaBreadboard(
     runRequest,
     unsupportedFields,
     providerTurn,
+    transcriptPostState: providerTurn.transcript,
     result: buildOpenClawResult(params, output),
   }
 }
