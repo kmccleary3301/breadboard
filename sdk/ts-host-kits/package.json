@@ -16,10 +16,11 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
-    "test": "npm --prefix ../ts-workspace run build && npm --prefix ../ts-backbone install ../ts-workspace >/dev/null && npm --prefix ../ts-backbone run build && npm install ../ts-backbone >/dev/null && npm run build && node --test dist/test/host-kits.test.js"
+    "test": "npm --prefix ../ts-workspace run build && npm --prefix ../ts-kernel-contracts run build && npm --prefix ../ts-backbone install ../ts-workspace ../ts-kernel-contracts >/dev/null && npm --prefix ../ts-backbone run build && npm install ../ts-backbone ../ts-kernel-contracts >/dev/null && npm run build && node --test dist/test/host-kits.test.js"
   },
   "dependencies": {
-    "@breadboard/backbone": "file:../ts-backbone"
+    "@breadboard/backbone": "file:../ts-backbone",
+    "@breadboard/kernel-contracts": "file:../ts-kernel-contracts"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

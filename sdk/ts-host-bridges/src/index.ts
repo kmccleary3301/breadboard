@@ -6,6 +6,7 @@ import {
 import type { HostKit, HostKitClassification, HostKitInvocation } from "@breadboard/host-kits"
 import {
   buildFallbackHostKitInvocation,
+  createProviderHostSession,
   buildSupportedHostKitInvocation,
   createHostKit,
   normalizeHostKitSupportClaim,
@@ -676,14 +677,27 @@ export async function runOpenClawEmbeddedViaBreadboard(
 
   const output = await executeBreadboard(runRequest, params)
   const providerExchange = buildOpenClawProviderExchange(params, output)
-  const providerTurn = await session.runProviderTurn({
-    request: runRequest,
+  const providerHostSession = createProviderHostSession<
+    { providerExchange: ProviderExchangeV1; assistantText: string },
+    null,
+    null
+  >({
+    backboneSession: session,
+    buildInput(input) {
+      return {
+        request: runRequest,
+        providerExchange: input.providerExchange,
+        assistantText: input.assistantText,
+        existingTranscript: options.existingTranscript,
+      }
+    },
+  })
+  const providerTurn = await providerHostSession.runProviderTurn({
     providerExchange,
     assistantText: output.assistantText,
-    existingTranscript: options.existingTranscript,
   })
 
-  await emitKernelEventsToOpenClawCallbacks(params, [...providerTurn.events])
+  await emitKernelEventsToOpenClawCallbacks(params, [...providerTurn.turn.events])
   await emitBridgeOutputToOpenClawCallbacks(params, output)
 
   return {
@@ -692,8 +706,8 @@ export async function runOpenClawEmbeddedViaBreadboard(
     executionCapability,
     executionPlacement,
     unsupportedFields,
-    providerTurn: providerTurn.providerTurn,
-    transcriptPostState: providerTurn.transcript,
+    providerTurn: providerTurn.turn.providerTurn,
+    transcriptPostState: providerTurn.turn.transcript,
     unsupportedCase: undefined,
     result: buildOpenClawResult(params, output),
   }

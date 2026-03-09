@@ -78,6 +78,8 @@ This is the first proving-ground bridge that exercises a real host boundary agai
 
 In V3 terms, this is no longer only a bespoke bridge. It is the first concrete Host Kit realization built on top of the new backbone-facing product layer.
 
+The supported provider-turn path now also uses the reusable Host Kit provider-session helper, which means transcript continuity on the BreadBoard path is no longer managed by OpenClaw-specific bridge code alone.
+
 ## Current stopping boundary
 
 This program now stops at:

@@ -6,6 +6,7 @@ Current scope:
 - OpenClaw embedded-runner bridge package
 - `createOpenClawHostKit(...)` as the first reusable Host Kit realization
 - Backbone-first provider-turn execution for the supported embedded slice
+- provider-turn continuity managed through the reusable `@breadboard/host-kits` session helper on the supported path
 - strict supported-slice detection
 - fallback-safe routing to a native host executor
 - projection of canonical BreadBoard kernel events into OpenClaw-style callbacks

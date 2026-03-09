@@ -9,5 +9,6 @@ It standardizes:
 - fallback-vs-supported mode reporting
 - support-claim normalization
 - reusable fallback/supported invocation builders
+- reusable provider-turn session ownership for transcript continuity and host projection state
 
 This package does not own host-specific request schemas by itself. It provides the reusable abstraction layer that concrete host kits, such as OpenClaw, should implement.

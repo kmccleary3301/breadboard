@@ -49,4 +49,5 @@ The current thin-host starter now includes:
 - first-turn execution
 - continuation-turn execution
 - a reusable in-memory session wrapper for repeated prompt turns
+- that session wrapper is now implemented through the reusable Host Kit provider-turn session helper
 - resumable AI SDK-style transport projection

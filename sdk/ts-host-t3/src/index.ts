@@ -1,5 +1,6 @@
 import type { ProviderExchangeV1 } from "@breadboard/kernel-contracts"
 import { createBackbone, type BackboneTurnResult, type SupportClaim } from "@breadboard/backbone"
+import { createProviderHostSession } from "@breadboard/host-kits"
 import {
   createAiSdkTransportSession,
   projectBackboneTurnToAiSdkTransport,
@@ -90,7 +91,7 @@ export function createT3CodeStarter(options: T3CodeStarterOptions = {}): T3CodeS
     workspaceId: string
     workspaceRoot?: string | null
     requestedModel: string
-    providerExchange: ProviderExchangeV1
+    requestedProvider: string
     sessionId: string
   }) {
     const workspace = createWorkspace({
@@ -104,7 +105,7 @@ export function createT3CodeStarter(options: T3CodeStarterOptions = {}): T3CodeS
       sessionId: input.sessionId,
       workspaceRoot: input.workspaceRoot ?? null,
       requestedModel: input.requestedModel,
-      requestedProvider: input.providerExchange.request.provider_family,
+      requestedProvider: input.requestedProvider,
       projectionProfileId: "ai_sdk_transport",
     })
   }
@@ -113,7 +114,10 @@ export function createT3CodeStarter(options: T3CodeStarterOptions = {}): T3CodeS
     input: T3CodePromptTurnInput,
     previousTransportState?: AiSdkTransportState | null,
   ): Promise<T3CodePromptTurnResult> {
-    const session = buildBackboneForInput(input)
+    const session = buildBackboneForInput({
+      ...input,
+      requestedProvider: input.providerExchange.request.provider_family,
+    })
     const turn = await session.runProviderTurn({
       request: buildRequest(input),
       providerExchange: input.providerExchange,
@@ -134,7 +138,10 @@ export function createT3CodeStarter(options: T3CodeStarterOptions = {}): T3CodeS
 
   return {
     classifyPromptTurn(input: T3CodePromptTurnInput): SupportClaim {
-      const session = buildBackboneForInput(input)
+      const session = buildBackboneForInput({
+        ...input,
+        requestedProvider: input.providerExchange.request.provider_family,
+      })
       return session.classifyProviderTurn({
         request: buildRequest(input),
         providerExchange: input.providerExchange,
@@ -148,7 +155,6 @@ export function createT3CodeStarter(options: T3CodeStarterOptions = {}): T3CodeS
       return runTurn(input, input.previousTransportState)
     },
     openSession(sessionInput): T3CodeSession {
-      let transcriptState: BackboneTurnResult["transcript"] | null = null
       const transportSession = createAiSdkTransportSession()
       const base = {
         sessionId: sessionInput.sessionId,
@@ -156,59 +162,85 @@ export function createT3CodeStarter(options: T3CodeStarterOptions = {}): T3CodeS
         workspaceRoot: sessionInput.workspaceRoot ?? null,
         requestedModel: sessionInput.requestedModel,
       }
-      return {
-        /**
-         * Classify a prompt turn against the current thin-host session boundary.
-         */
-        classifyPromptTurn(input) {
-          return buildBackboneForInput({
-            ...base,
-            providerExchange: input.providerExchange,
-          }).classifyProviderTurn({
+      const providerHostSession = createProviderHostSession<
+        Omit<T3CodePromptTurnInput, "sessionId" | "workspaceId" | "workspaceRoot" | "requestedModel">,
+        AiSdkTransportState,
+        readonly AiSdkTransportFrame[]
+      >({
+        backboneSession: buildBackboneForInput({
+          ...base,
+          requestedProvider: sessionInput.requestedProvider,
+          sessionId: sessionInput.sessionId,
+        }),
+        buildInput(input, transcript) {
+          return {
             request: buildRequest({
               ...base,
               ...input,
             }),
             providerExchange: input.providerExchange,
             assistantText: input.assistantText,
-          })
+            existingTranscript: input.existingTranscript ?? transcript ?? [],
+          }
+        },
+        projectTurn(turn, context) {
+          const projection = context.resumed
+            ? transportSession.projectResumedTurn(turn)
+            : transportSession.projectTurn(turn)
+          return {
+            state: projection.state,
+            output: projection.frames,
+          }
+        },
+      })
+
+      return {
+        /**
+         * Classify a prompt turn against the current thin-host session boundary.
+         */
+        classifyPromptTurn(input) {
+          return providerHostSession.classifyProviderTurn(input)
         },
         /**
          * Run a provider-backed prompt turn and persist transcript/transport state in-session.
          */
-        runPromptTurn(input) {
-          return runTurn({
-            ...base,
-            ...input,
-            existingTranscript: transcriptState ?? input.existingTranscript,
-          }).then((result) => {
-            transcriptState = result.turn.transcript
-            transportSession.projectTurn(result.turn)
-            return result
-          })
+        async runPromptTurn(input) {
+          const result = await providerHostSession.runProviderTurn(input)
+          return {
+            supportClaim: result.supportClaim,
+            turn: result.turn,
+            frames: result.projectionOutput ?? [],
+            transportState: result.projectionState ?? transportSession.state ?? {
+              lastMessageId: result.turn.runContextId,
+              transcriptDigest: null,
+              turnCount: 0,
+            },
+          }
         },
         /**
          * Continue a prior prompt turn using transcript and transport state owned by the session wrapper.
          */
-        continuePromptTurn(input) {
-          return runTurn(
-            {
-              ...base,
-              ...input,
-              existingTranscript: input.existingTranscript ?? transcriptState ?? [],
-            },
-            input.previousTransportState ?? transportSession.state,
-          ).then((result) => {
-            transcriptState = result.turn.transcript
-            transportSession.projectResumedTurn(result.turn)
-            return result
+        async continuePromptTurn(input) {
+          const result = await providerHostSession.continueProviderTurn({
+            ...input,
+            existingTranscript: input.existingTranscript ?? providerHostSession.transcript ?? [],
           })
+          return {
+            supportClaim: result.supportClaim,
+            turn: result.turn,
+            frames: result.projectionOutput ?? [],
+            transportState: result.projectionState ?? transportSession.state ?? {
+              lastMessageId: result.turn.runContextId,
+              transcriptDigest: null,
+              turnCount: 0,
+            },
+          }
         },
         get transcript() {
-          return transcriptState
+          return providerHostSession.transcript
         },
         get transportState() {
-          return transportSession.state
+          return providerHostSession.projectionState ?? transportSession.state
         }
       }
     },
