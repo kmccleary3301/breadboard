@@ -130,8 +130,16 @@ export interface AiSdkTransportProjectTurnResult {
   readonly state: AiSdkTransportState
 }
 
+export interface AiSdkTransportSessionUpdate extends AiSdkTransportProjectTurnResult {
+  readonly resumed: boolean
+}
+
 export interface AiSdkTransportSession {
   readonly state: AiSdkTransportState | null
+  appendTurn(
+    result: BackboneTurnResult,
+    options?: { messageId?: string; stopReason?: string },
+  ): AiSdkTransportSessionUpdate
   projectTurn(
     result: BackboneTurnResult,
     options?: { messageId?: string; stopReason?: string },
@@ -171,6 +179,19 @@ export function createAiSdkTransportSession(
   return {
     get state(): AiSdkTransportState | null {
       return state
+    },
+    appendTurn(
+      result: BackboneTurnResult,
+      options: { messageId?: string; stopReason?: string } = {},
+    ): AiSdkTransportSessionUpdate {
+      const resumed = Boolean(state && result.providerTurn?.transcriptContinuationPatch)
+      const projection = resumed
+        ? this.projectResumedTurn(result, options)
+        : this.projectTurn(result, options)
+      return {
+        ...projection,
+        resumed,
+      }
     },
     projectTurn(
       result: BackboneTurnResult,

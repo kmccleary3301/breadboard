@@ -200,3 +200,25 @@ test("createAiSdkTransportSession projects a first turn and then a resumed turn"
     turnCount: 2,
   })
 })
+
+test("createAiSdkTransportSession can auto-append turns and detect resumed projection", () => {
+  const session = createAiSdkTransportSession()
+  const first = session.appendTurn(result, { messageId: "auto-1" })
+  assert.equal(first.resumed, false)
+  assert.deepEqual(first.frames.map((frame) => frame.type), [
+    "start",
+    "continuation-patch",
+    "text-delta",
+    "tool",
+    "finish",
+  ])
+
+  const second = session.appendTurn(result, { messageId: "auto-2" })
+  assert.equal(second.resumed, true)
+  assert.equal(second.frames[0]?.type, "resume")
+  assert.deepEqual(session.state, {
+    lastMessageId: "auto-2",
+    transcriptDigest: "digest:post",
+    turnCount: 2,
+  })
+})

@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import {
+  buildProviderHostTurnView,
   buildFallbackHostKitInvocation,
   buildSupportedHostKitInvocation,
   createProviderHostSession,
@@ -210,4 +211,9 @@ test("createProviderHostSession preserves transcript continuity and projection s
   assert.equal(second.projectionOutput?.summary, "resume:run-2")
   assert.equal(providerSession.transcript?.metadata?.preserved_prefix_items, 1)
   assert.equal(providerSession.projectionState?.count, 2)
+
+  const view = buildProviderHostTurnView(second)
+  assert.equal(view.supportClaim.level, "supported")
+  assert.equal(view.projectionOutput?.summary, "resume:run-2")
+  assert.equal(view.projectionState?.count, 2)
 })

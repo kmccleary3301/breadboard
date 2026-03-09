@@ -17,3 +17,6 @@ Current scope:
 - host-session state managed through the reusable `@breadboard/host-kits` provider-turn session helper
 
 This package exists to prove that BreadBoard can be attractive for thin TypeScript hosts without exposing kernel substrate details directly.
+
+Example:
+- [`examples/basic-session.ts`](./examples/basic-session.ts)

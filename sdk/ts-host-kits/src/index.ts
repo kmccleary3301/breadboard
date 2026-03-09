@@ -55,6 +55,13 @@ export interface ProviderHostSessionTurnResult<ProjectionState, ProjectionOutput
   readonly projectionOutput: ProjectionOutput | null
 }
 
+export interface ProviderHostTurnView<ProjectionState, ProjectionOutput> {
+  readonly supportClaim: SupportClaim
+  readonly turn: BackboneTurnResult
+  readonly projectionOutput: ProjectionOutput | null
+  readonly projectionState: ProjectionState | null
+}
+
 export interface ProviderHostSession<Input, ProjectionState, ProjectionOutput> {
   classifyProviderTurn(input: Input): SupportClaim
   runProviderTurn(input: Input): Promise<ProviderHostSessionTurnResult<ProjectionState, ProjectionOutput>>
@@ -138,6 +145,20 @@ export function createHostKit<Request, Result, Invocation>(
     invoke(request: Request): Promise<HostKitInvocation<Result, Invocation>> {
       return options.invoke(request)
     },
+  }
+}
+
+/**
+ * Normalize the common public view returned from a provider-backed host session turn.
+ */
+export function buildProviderHostTurnView<ProjectionState, ProjectionOutput>(
+  result: ProviderHostSessionTurnResult<ProjectionState, ProjectionOutput>,
+): ProviderHostTurnView<ProjectionState, ProjectionOutput> {
+  return {
+    supportClaim: result.supportClaim,
+    turn: result.turn,
+    projectionOutput: result.projectionOutput,
+    projectionState: result.projectionState,
   }
 }
 

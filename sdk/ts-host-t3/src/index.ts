@@ -1,6 +1,6 @@
 import type { ProviderExchangeV1 } from "@breadboard/kernel-contracts"
 import { createBackbone, type BackboneTurnResult, type SupportClaim } from "@breadboard/backbone"
-import { createProviderHostSession } from "@breadboard/host-kits"
+import { buildProviderHostTurnView, createProviderHostSession } from "@breadboard/host-kits"
 import {
   createAiSdkTransportSession,
   projectBackboneTurnToAiSdkTransport,
@@ -205,7 +205,7 @@ export function createT3CodeStarter(options: T3CodeStarterOptions = {}): T3CodeS
          * Run a provider-backed prompt turn and persist transcript/transport state in-session.
          */
         async runPromptTurn(input) {
-          const result = await providerHostSession.runProviderTurn(input)
+          const result = buildProviderHostTurnView(await providerHostSession.runProviderTurn(input))
           return {
             supportClaim: result.supportClaim,
             turn: result.turn,
@@ -221,10 +221,10 @@ export function createT3CodeStarter(options: T3CodeStarterOptions = {}): T3CodeS
          * Continue a prior prompt turn using transcript and transport state owned by the session wrapper.
          */
         async continuePromptTurn(input) {
-          const result = await providerHostSession.continueProviderTurn({
+          const result = buildProviderHostTurnView(await providerHostSession.continueProviderTurn({
             ...input,
             existingTranscript: input.existingTranscript ?? providerHostSession.transcript ?? [],
-          })
+          }))
           return {
             supportClaim: result.supportClaim,
             turn: result.turn,

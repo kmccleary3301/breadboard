@@ -19,6 +19,7 @@ Current public helpers:
 - `projectBackboneTurnToAiSdkTransport(...)`
 - `deriveAiSdkTransportState(...)`
 - `createAiSdkTransportSession(...)`
+- `AiSdkTransportSession.appendTurn(...)` for resumable auto-projection
 
 The session helper exists for thin hosts that want resumable projection state without turning the transport layer into kernel truth.
 
