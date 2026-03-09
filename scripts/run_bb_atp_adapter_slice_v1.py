@@ -202,19 +202,20 @@ def _build_task_prompt(*, prepared: PreparedTask, verifier_url: str) -> str:
         You are solving a Lean 4 theorem in the current workspace.
 
         Requirements:
-        1. Create `{rel_target}` with the exact theorem skeleton below, then replace the final `sorry` with a complete proof.
-           Your first tool call should be this exact `shell_command`:
+        1. Start by creating `target/`, `artifacts/`, and `result/`, then write `{rel_target}` with a concrete proof attempt.
+           Your first tool call must modify `{rel_target}` directly with a whole-file rewrite command. Use this exact template:
            ```bash
-           mkdir -p target artifacts result && cat > {rel_target} <<'EOF'
-           {theorem_block}
-           EOF
+           mkdir -p target artifacts result && python - <<'PY'
+           from pathlib import Path
+           Path("{rel_target}").write_text(\"\"\"{theorem_block}
+           \"\"\", encoding="utf-8")
+           PY
            ```
-           Do not use `apply_patch`; use `shell_command` for file creation and subsequent edits.
+           Fill in the proof body before running it. Do not leave the file unchanged.
         2. Preserve the theorem statement and imports unless a minimal import change is strictly required.
-        3. Use the verifier until the file is clean. Run this exact command after each edit:
+        3. Use the verifier until the file is clean. After each edit, run this exact command:
            ```bash
            python - <<'PY'
-           import json
            import pathlib
            import requests
            proof_path = pathlib.Path("{rel_target}")
@@ -229,11 +230,12 @@ def _build_task_prompt(*, prepared: PreparedTask, verifier_url: str) -> str:
            print(response.text)
            PY
            ```
-        4. Inspect `artifacts/verify_latest.json` after each verification attempt.
+        4. After each verification attempt, inspect `artifacts/verify_latest.json` and make another proof edit. Do not spend more than one inspection/read-only shell command between proof edits.
         5. If you cannot solve the theorem within budget, leave your best attempt in place and explain the blocker in `{rel_notes}`.
 
         Work cleanly:
-        - Start by writing the theorem file exactly once, then iterate by editing and verifying it.
+        - Alternate between proof edits and verification.
+        - Read-only shell commands are only for verifier feedback or a single targeted inspection; avoid directory listing loops.
         - Do not create alternate theorem files.
         - Do not call `mark_task_complete` unless `{rel_target}` exists and the verifier has passed cleanly.
         - When the verifier passes with no `sorry` and no errors, stop and reply with exactly `TASK COMPLETE`.
@@ -257,6 +259,9 @@ def prepare_task_workspace(
     target_path = task_dir / "target" / f"{task_id}.lean"
     notes_path = task_dir / "result" / "notes.md"
     diagnostic_path = task_dir / "artifacts" / "runner_diagnostic.json"
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    notes_path.parent.mkdir(parents=True, exist_ok=True)
+    diagnostic_path.parent.mkdir(parents=True, exist_ok=True)
     prompt = _build_task_prompt(
         prepared=PreparedTask(
             task_id=task_id,

@@ -104,7 +104,8 @@ def test_prepare_task_workspace_scaffolds_verifier_helper(tmp_path: Path) -> Non
     )
     assert prepared.workspace_dir.exists()
     assert prepared.target_path.name == "t1.lean"
-    assert "mkdir -p target artifacts result && cat > target/t1.lean <<'EOF'" in prepared.prompt
+    assert "mkdir -p target artifacts result && python - <<'PY'" in prepared.prompt
+    assert 'Path("target/t1.lean").write_text' in prepared.prompt
     assert 'requests.post("http://127.0.0.1:18001/verify"' in prepared.prompt
 
 
