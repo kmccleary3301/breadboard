@@ -82,6 +82,15 @@ python scripts/run_bb_atp_adapter_slice_v1.py \
   --summary-out artifacts/benchmarks/hilbert_comparison_packs_v1/pack_a_seedproof_sanity_minif2f_v1/bb_atp_slice_summary_v1.json
 ```
 
+Hilbert-style comparator arm:
+
+- `agent_configs/atp_hilbert_like_gpt54_v1.yaml`
+
+This is a separate BreadBoard evaluation arm, not a replacement for the generic BB ATP
+baseline. It keeps the visible tool surface to `shell_command`, uses a persistent
+theorem-locking system prompt, and is intended for side-by-side Pack A / Pack B comparison
+against Hilbert-style proof loops.
+
 Adapter input fixture example:
 
 - `tests/fixtures/benchmarks/cross_system_task_inputs_demo_v1.json`
