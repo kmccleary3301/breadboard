@@ -71,6 +71,13 @@ The third frozen fixture captures the first honest tool-bearing embedded slice:
 
 This is intentionally narrow. It proves the host boundary can carry a driver-mediated tool run without pretending the whole Pi runtime has been replaced.
 
+The current implementation also supports two practical expansions of that slice:
+
+- direct trusted-local execution through the local execution driver
+- OCI-backed execution through the OCI driver when the host provides an OCI runtime adapter
+
+Those are implementation-backed capabilities, but they are still governed by the same intentionally narrow supported-slice rules.
+
 ## Provider-quirk note
 
 The fourth frozen fixture captures the first provider-quirk preservation lane:

@@ -20,6 +20,8 @@ import {
   type DriverMediatedToolTurnResult,
   type ProviderTextTurnResult,
 } from "@breadboard/kernel-core"
+import type { LocalCommandExecutor } from "@breadboard/execution-driver-local"
+import type { OciCommandExecutor } from "@breadboard/execution-driver-oci"
 
 export type OpenClawClientToolDefinition = {
   type: "function"
@@ -114,7 +116,7 @@ export type OpenClawNativeFallback = (
 
 export type OpenClawToolSliceOptions = {
   command: string[] | ((tool: OpenClawClientToolDefinition, params: OpenClawEmbeddedRunParams) => string[])
-  executeSandbox: (request: SandboxRequestV1, context: {
+  executeSandbox?: (request: SandboxRequestV1, context: {
     capability: ExecutionCapabilityV1
     placement: ExecutionPlacementV1
     driverId: string
@@ -126,6 +128,10 @@ export type OpenClawToolSliceOptions = {
   securityTier?: ExecutionCapabilityV1["security_tier"]
   allowRunPrograms?: string[]
   allowNetHosts?: string[]
+  localCommandExecutor?: LocalCommandExecutor
+  ociCommandExecutor?: OciCommandExecutor
+  ociRuntimeCommand?: string
+  ociWorkspaceMountTarget?: string
   assistantText?: string | ((result: DriverMediatedToolTurnResult, tool: OpenClawClientToolDefinition) => string)
 }
 
@@ -499,12 +505,18 @@ export async function runOpenClawEmbeddedViaBreadboard(
       allowNetHosts: options.toolSlice.allowNetHosts ?? [],
       driverIdHint: imageRef ? "oci" : undefined,
       assistantText: null,
-      executeSandbox: (request, context) =>
-        options.toolSlice!.executeSandbox(request, {
-          ...context,
-          tool,
-          params,
-        }),
+      executeSandbox: options.toolSlice.executeSandbox
+        ? (request, context) =>
+            options.toolSlice!.executeSandbox!(request, {
+              ...context,
+              tool,
+              params,
+            })
+        : undefined,
+      localCommandExecutor: options.toolSlice.localCommandExecutor,
+      ociCommandExecutor: options.toolSlice.ociCommandExecutor,
+      ociRuntimeCommand: options.toolSlice.ociRuntimeCommand,
+      ociWorkspaceMountTarget: options.toolSlice.ociWorkspaceMountTarget,
     })
     if (typeof options.toolSlice.assistantText === "function") {
       const assistantText = options.toolSlice.assistantText(driverTurn, tool)

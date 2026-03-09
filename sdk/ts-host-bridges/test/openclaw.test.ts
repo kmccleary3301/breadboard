@@ -336,6 +336,82 @@ test("openclaw bridge supports the frozen narrow tool-bearing slice", async () =
   ])
 })
 
+test("openclaw bridge can use the trusted-local driver path without a bespoke sandbox callback", async () => {
+  const seen: string[] = []
+  const invocation = await runOpenClawEmbeddedViaBreadboard(
+    {
+      ...buildBaseParams(),
+      prompt: "Run the repo_linter tool directly.",
+      clientTools: [{ type: "function", function: { name: "repo_linter" } }],
+      onAssistantMessageStart: async () => {
+        seen.push("assistant_start")
+      },
+      onPartialReply: async (payload) => {
+        seen.push(`assistant_delta:${payload.text}`)
+      },
+      onToolResult: async (payload) => {
+        seen.push(`tool:${payload.text}`)
+      },
+    },
+    {
+      toolSlice: {
+        command: ["repo_linter", "--quick"],
+        allowRunPrograms: ["repo_linter"],
+        localCommandExecutor: async () => ({
+          exitCode: 0,
+          stdout: "openclaw local ok",
+          stderr: "",
+        }),
+      },
+    },
+  )
+
+  assert.equal(invocation.mode, "breadboard")
+  assert.equal(invocation.driverTurn?.driverId, "local-process")
+  assert.equal(invocation.driverTurn?.sandboxResult.status, "completed")
+  assert.match(invocation.driverTurn?.sandboxResult.stdout_ref ?? "", /^file:\/\//)
+  assert.equal(invocation.result.payloads?.[0]?.text, "repo_linter completed successfully.")
+  assert.deepEqual(seen, [
+    "tool:repo_linter completed via sandbox (repo_linter --quick)",
+    "assistant_start",
+    "assistant_delta:repo_linter completed successfully.",
+  ])
+})
+
+test("openclaw bridge can preserve provider quirks on an OCI-backed tool slice", async () => {
+  const invocation = await runOpenClawEmbeddedViaBreadboard(
+    {
+      ...buildBaseParams(),
+      provider: "anthropic",
+      model: "claude-3.7-sonnet",
+      authProfileId: "profile:team:anthropic:max",
+      authProfileIdSource: "user",
+      prompt: "Run the sandboxed repo audit.",
+      clientTools: [{ type: "function", function: { name: "repo_audit" } }],
+    },
+    {
+      toolSlice: {
+        command: ["sh", "-lc", "echo oci tool ok"],
+        imageRef: "node:20-alpine",
+        isolationClass: "oci",
+        ociCommandExecutor: async () => ({
+          exitCode: 0,
+          stdout: "oci tool ok",
+          stderr: "",
+        }),
+      },
+    },
+  )
+
+  assert.equal(invocation.mode, "breadboard")
+  assert.equal(invocation.driverTurn?.driverId, "oci")
+  assert.equal(invocation.executionPlacement.placement_class, "local_oci")
+  assert.equal(invocation.driverTurn?.sandboxResult.status, "completed")
+  assert.match(invocation.driverTurn?.sandboxResult.stdout_ref ?? "", /^file:\/\//)
+  assert.equal(invocation.result.meta.agentMeta?.provider, "anthropic")
+  assert.equal(invocation.result.meta.agentMeta?.model, "claude-3.7-sonnet")
+})
+
 test("openclaw bridge falls back cleanly on unsupported slice fields", async () => {
   const invocation = await runOpenClawEmbeddedViaBreadboard(
     {

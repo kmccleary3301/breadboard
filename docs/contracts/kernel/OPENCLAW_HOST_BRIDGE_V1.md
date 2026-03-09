@@ -40,7 +40,7 @@ The current bridge accepts:
   - response finish reason
 - one narrow tool-bearing lane when:
   - exactly one host function tool is provided
-  - a BreadBoard tool-slice executor is explicitly supplied
+  - either a BreadBoard tool-slice executor is explicitly supplied or the selected execution driver can execute directly
   - execution placement is negotiated through the execution-driver family
 
 ## Explicitly unsupported in V1
