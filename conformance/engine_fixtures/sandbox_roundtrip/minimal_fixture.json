@@ -1,0 +1,8 @@
+{
+  "requestSchema": "bb.sandbox_request.v1",
+  "resultSchema": "bb.sandbox_result.v1",
+  "requestExample": "sandbox_request_minimal.json",
+  "resultExample": "sandbox_result_minimal.json",
+  "supportTier": "draft-shape",
+  "comparatorClass": "shape-equal"
+}

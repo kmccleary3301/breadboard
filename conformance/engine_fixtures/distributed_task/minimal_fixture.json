@@ -1,0 +1,6 @@
+{
+  "schema": "bb.distributed_task_descriptor.v1",
+  "example": "distributed_task_descriptor_minimal.json",
+  "supportTier": "draft-shape",
+  "comparatorClass": "shape-equal"
+}

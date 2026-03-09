@@ -27,6 +27,7 @@ def test_kernel_semantics_directory_tracks_expected_v1_dossiers() -> None:
         "execution_capability_and_placement_v1.md",
         "sandbox_envelopes_v1.md",
         "distributed_task_descriptor_v1.md",
+        "durable_orchestration_and_resume_v1.md",
         "transcript_continuation_patch_v1.md",
         "unsupported_case_v1.md",
         "replay_session_v1.md",
@@ -62,6 +63,12 @@ def test_engine_fixture_families_cover_permission_task_and_checkpoint() -> None:
         "tool_lifecycle/reference_denied_execution_fixture.json",
         "tool_lifecycle/reference_denied_render_fixture.json",
         "replay_session/reference_fixture.json",
+        "execution_capability/minimal_fixture.json",
+        "execution_placement/minimal_fixture.json",
+        "sandbox_roundtrip/minimal_fixture.json",
+        "transcript_continuation_patch/minimal_fixture.json",
+        "unsupported_case/minimal_fixture.json",
+        "distributed_task/minimal_fixture.json",
     }
     present = {str(path.relative_to(fixture_dir)) for path in fixture_dir.rglob("*.json")}
     missing = sorted(expected - present)
@@ -74,6 +81,7 @@ def test_kernel_program_docs_cover_event_registry_and_hybrid_boundaries() -> Non
     expected = {
         "KERNEL_EVENT_FAMILY_REGISTRY_V1.md",
         "HYBRID_DELEGATION_BOUNDARIES_V1.md",
+        "ORCHESTRATION_BACKEND_DECISION_V1.md",
         "PYTHON_SERVICE_BOUNDARY_MATRIX_V1.md",
         "OPENCLAW_PROVING_GROUND_READINESS_V1.md",
     }
@@ -110,3 +118,21 @@ def test_kernel_conformance_scripts_cover_manifest_compare_and_gate() -> None:
     present = {path.name for path in scripts_dir.glob("*.py")}
     missing = sorted(expected - present)
     assert not missing, f"Missing kernel conformance scripts: {missing}"
+
+
+def test_ts_runtime_surface_includes_remote_driver_and_temporal_adapter() -> None:
+    root = Path(__file__).resolve().parents[1]
+    sdk_dir = root / "sdk"
+    expected = {
+        "ts-kernel-contracts",
+        "ts-kernel-core",
+        "ts-host-bridges",
+        "ts-execution-drivers",
+        "ts-execution-driver-local",
+        "ts-execution-driver-oci",
+        "ts-execution-driver-remote",
+        "ts-orchestration-temporal",
+    }
+    present = {path.name for path in sdk_dir.iterdir() if path.is_dir()}
+    missing = sorted(expected - present)
+    assert not missing, f"Missing TS runtime surfaces: {missing}"

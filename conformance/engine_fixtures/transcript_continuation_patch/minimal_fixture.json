@@ -1,0 +1,6 @@
+{
+  "schema": "bb.transcript_continuation_patch.v1",
+  "example": "transcript_continuation_patch_minimal.json",
+  "supportTier": "draft-shape",
+  "comparatorClass": "shape-equal"
+}

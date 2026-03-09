@@ -1,0 +1,28 @@
+{
+  "name": "@breadboard/orchestration-temporal",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/ts-orchestration-temporal/sdk/ts-orchestration-temporal/src/index.js",
+  "types": "dist/ts-orchestration-temporal/sdk/ts-orchestration-temporal/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/ts-orchestration-temporal/sdk/ts-orchestration-temporal/src/index.d.ts",
+      "default": "./dist/ts-orchestration-temporal/sdk/ts-orchestration-temporal/src/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "test": "npm --prefix ../ts-kernel-contracts run build && npm install ../ts-kernel-contracts >/dev/null && npm run build && node --test dist/ts-orchestration-temporal/sdk/ts-orchestration-temporal/test/temporal.test.js"
+  },
+  "dependencies": {
+    "@breadboard/kernel-contracts": "file:../ts-kernel-contracts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.5.4"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "schema": "bb.unsupported_case.v1",
+  "example": "unsupported_case_minimal.json",
+  "supportTier": "draft-shape",
+  "comparatorClass": "shape-equal"
+}

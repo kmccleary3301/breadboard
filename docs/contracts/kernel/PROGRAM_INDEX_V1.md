@@ -11,6 +11,7 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 5. `docs/contracts/kernel/HYBRID_DELEGATION_BOUNDARIES_V1.md`
 6. `contracts/kernel/README.md`
 7. `conformance/engine_fixtures/README.md`
+8. `docs/contracts/kernel/ORCHESTRATION_BACKEND_DECISION_V1.md`
 
 ## Semantic dossiers drafted so far
 
@@ -27,6 +28,7 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 - execution driver policy and evidence
 - sandbox envelopes
 - distributed task descriptor
+- durable orchestration and resume
 - transcript continuation patch
 - unsupported case taxonomy
 - replay session
@@ -49,6 +51,7 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 
 - `docs/contracts/kernel/HYBRID_DELEGATION_BOUNDARIES_V1.md`
 - `docs/contracts/kernel/PYTHON_SERVICE_BOUNDARY_MATRIX_V1.md`
+- `docs/contracts/kernel/ORCHESTRATION_BACKEND_DECISION_V1.md`
 - `docs/contracts/kernel/OPENCLAW_PROVING_GROUND_READINESS_V1.md`
 - `docs/contracts/kernel/OPENCLAW_HOST_BRIDGE_V1.md`
 - `docs/contracts/kernel/OPENCLAW_HOST_BRIDGE_ACCEPTANCE_V1.md`
@@ -61,6 +64,8 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 - `sdk/ts-execution-drivers/`
 - `sdk/ts-execution-driver-local/`
 - `sdk/ts-execution-driver-oci/`
+- `sdk/ts-execution-driver-remote/`
+- `sdk/ts-orchestration-temporal/`
 
 ## Current tranche status
 
@@ -73,10 +78,11 @@ Current state is strong on:
 - first engine-fixture scaffolds
 - first Python reference-engine boundary clarifications
 - the new V2 execution-capability contract family
+- the initial V2 execution-driver and orchestration backend family
 
 Current state is still intentionally early on:
 
 - the last full Python reference-engine event-family sweep
 - comparator-grade cross-engine runtime execution, beyond shared fixture consumption
-- TypeScript engine implementation beyond the current constrained execution slice
-- hybrid proving-ground execution
+- broader TypeScript engine execution beyond the current supported slices
+- production-grade orchestration and remote execution hardening

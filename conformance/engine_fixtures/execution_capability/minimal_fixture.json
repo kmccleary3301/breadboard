@@ -1,0 +1,6 @@
+{
+  "schema": "bb.execution_capability.v1",
+  "example": "execution_capability_minimal.json",
+  "supportTier": "draft-shape",
+  "comparatorClass": "shape-equal"
+}

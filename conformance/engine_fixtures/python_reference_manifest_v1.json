@@ -9,7 +9,9 @@
       "scenarioId": "run_request_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
-      "evidence": ["run_request/minimal_fixture.json"],
+      "evidence": [
+        "run_request/minimal_fixture.json"
+      ],
       "notes": "Minimal run-request shape validation."
     },
     {
@@ -18,7 +20,9 @@
       "scenarioId": "run_request_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["run_request/reference_fixture.json"],
+      "evidence": [
+        "run_request/reference_fixture.json"
+      ],
       "notes": "Reference-engine run request fixture."
     },
     {
@@ -27,7 +31,9 @@
       "scenarioId": "run_context_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
-      "evidence": ["run_context/minimal_fixture.json"],
+      "evidence": [
+        "run_context/minimal_fixture.json"
+      ],
       "notes": "Minimal run-context shape validation."
     },
     {
@@ -36,7 +42,9 @@
       "scenarioId": "run_context_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["run_context/reference_fixture.json"],
+      "evidence": [
+        "run_context/reference_fixture.json"
+      ],
       "notes": "Reference-engine run context fixture."
     },
     {
@@ -45,7 +53,9 @@
       "scenarioId": "kernel_event_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
-      "evidence": ["kernel_event/minimal_fixture.json"],
+      "evidence": [
+        "kernel_event/minimal_fixture.json"
+      ],
       "notes": "Minimal kernel-event shape validation."
     },
     {
@@ -54,7 +64,9 @@
       "scenarioId": "kernel_event_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["kernel_event/reference_fixture.json"],
+      "evidence": [
+        "kernel_event/reference_fixture.json"
+      ],
       "notes": "Reference-engine kernel event example built from SessionState helper output."
     },
     {
@@ -63,7 +75,9 @@
       "scenarioId": "session_transcript_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
-      "evidence": ["session_transcript/minimal_fixture.json"],
+      "evidence": [
+        "session_transcript/minimal_fixture.json"
+      ],
       "notes": "Minimal transcript shape validation."
     },
     {
@@ -72,7 +86,9 @@
       "scenarioId": "session_transcript_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["session_transcript/reference_fixture.json"],
+      "evidence": [
+        "session_transcript/reference_fixture.json"
+      ],
       "notes": "Reference-engine transcript derivation fixture."
     },
     {
@@ -81,7 +97,9 @@
       "scenarioId": "provider_exchange_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
-      "evidence": ["provider_exchange/minimal_fixture.json"],
+      "evidence": [
+        "provider_exchange/minimal_fixture.json"
+      ],
       "notes": "Minimal provider-exchange shape validation."
     },
     {
@@ -90,7 +108,9 @@
       "scenarioId": "provider_exchange_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["provider_exchange/reference_fixture.json"],
+      "evidence": [
+        "provider_exchange/reference_fixture.json"
+      ],
       "notes": "Reference-engine provider exchange fixture built from invoker helpers."
     },
     {
@@ -99,7 +119,9 @@
       "scenarioId": "provider_exchange_fallback_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["provider_exchange/reference_fallback_fixture.json"],
+      "evidence": [
+        "provider_exchange/reference_fallback_fixture.json"
+      ],
       "notes": "Reference-engine provider exchange fixture for stream-to-nonstream fallback metadata."
     },
     {
@@ -108,7 +130,9 @@
       "scenarioId": "permission_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
-      "evidence": ["permission/minimal_fixture.json"],
+      "evidence": [
+        "permission/minimal_fixture.json"
+      ],
       "notes": "Minimal permission contract scaffold."
     },
     {
@@ -117,7 +141,9 @@
       "scenarioId": "permission_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["permission/reference_fixture.json"],
+      "evidence": [
+        "permission/reference_fixture.json"
+      ],
       "notes": "Reference-engine permission lifecycle fixture."
     },
     {
@@ -126,7 +152,9 @@
       "scenarioId": "task_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
-      "evidence": ["task_subagent/minimal_fixture.json"],
+      "evidence": [
+        "task_subagent/minimal_fixture.json"
+      ],
       "notes": "Minimal task/subagent scaffold."
     },
     {
@@ -135,7 +163,9 @@
       "scenarioId": "task_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["task_subagent/reference_fixture.json"],
+      "evidence": [
+        "task_subagent/reference_fixture.json"
+      ],
       "notes": "Reference-engine task/subagent identity fixture."
     },
     {
@@ -144,7 +174,9 @@
       "scenarioId": "task_background_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["task_subagent/reference_background_fixture.json"],
+      "evidence": [
+        "task_subagent/reference_background_fixture.json"
+      ],
       "notes": "Reference-engine background task fixture."
     },
     {
@@ -153,7 +185,9 @@
       "scenarioId": "checkpoint_metadata_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
-      "evidence": ["checkpoint_metadata/minimal_fixture.json"],
+      "evidence": [
+        "checkpoint_metadata/minimal_fixture.json"
+      ],
       "notes": "Portable checkpoint metadata scaffold."
     },
     {
@@ -162,7 +196,9 @@
       "scenarioId": "checkpoint_metadata_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["checkpoint_metadata/reference_fixture.json"],
+      "evidence": [
+        "checkpoint_metadata/reference_fixture.json"
+      ],
       "notes": "Reference-engine checkpoint metadata fixture."
     },
     {
@@ -171,7 +207,9 @@
       "scenarioId": "checkpoint_metadata_longrun_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["checkpoint_metadata/reference_longrun_fixture.json"],
+      "evidence": [
+        "checkpoint_metadata/reference_longrun_fixture.json"
+      ],
       "notes": "Reference-engine longrun checkpoint metadata fixture."
     },
     {
@@ -180,7 +218,9 @@
       "scenarioId": "tool_spec_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
-      "evidence": ["tool_spec/minimal_fixture.json"],
+      "evidence": [
+        "tool_spec/minimal_fixture.json"
+      ],
       "notes": "Minimal tool-spec shape validation."
     },
     {
@@ -189,7 +229,9 @@
       "scenarioId": "tool_spec_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["tool_spec/reference_fixture.json"],
+      "evidence": [
+        "tool_spec/reference_fixture.json"
+      ],
       "notes": "Reference-engine tool-spec fixture."
     },
     {
@@ -198,7 +240,9 @@
       "scenarioId": "tool_execution_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["tool_lifecycle/reference_execution_fixture.json"],
+      "evidence": [
+        "tool_lifecycle/reference_execution_fixture.json"
+      ],
       "notes": "Reference-engine raw tool execution outcome fixture."
     },
     {
@@ -207,7 +251,9 @@
       "scenarioId": "tool_render_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "model-visible-equal",
-      "evidence": ["tool_lifecycle/reference_render_fixture.json"],
+      "evidence": [
+        "tool_lifecycle/reference_render_fixture.json"
+      ],
       "notes": "Reference-engine model-visible tool render fixture."
     },
     {
@@ -216,7 +262,9 @@
       "scenarioId": "tool_execution_denied_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["tool_lifecycle/reference_denied_execution_fixture.json"],
+      "evidence": [
+        "tool_lifecycle/reference_denied_execution_fixture.json"
+      ],
       "notes": "Reference-engine denied tool execution outcome fixture."
     },
     {
@@ -225,7 +273,9 @@
       "scenarioId": "tool_render_denied_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "model-visible-equal",
-      "evidence": ["tool_lifecycle/reference_denied_render_fixture.json"],
+      "evidence": [
+        "tool_lifecycle/reference_denied_render_fixture.json"
+      ],
       "notes": "Reference-engine denied tool render fixture."
     },
     {
@@ -234,7 +284,9 @@
       "scenarioId": "replay_session_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
-      "evidence": ["replay_session/minimal_fixture.json"],
+      "evidence": [
+        "replay_session/minimal_fixture.json"
+      ],
       "notes": "Minimal replay-session scaffold."
     },
     {
@@ -243,8 +295,76 @@
       "scenarioId": "replay_session_python_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "normalized-trace-equal",
-      "evidence": ["replay_session/reference_fixture.json"],
+      "evidence": [
+        "replay_session/reference_fixture.json"
+      ],
       "notes": "Reference-engine replay session fixture anchored to normalized provider and transcript outputs."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "execution_capability_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "execution_capability/minimal_fixture.json"
+      ],
+      "notes": "Minimal execution capability V2 shape validation."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "execution_placement_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "execution_placement/minimal_fixture.json"
+      ],
+      "notes": "Minimal execution placement V2 shape validation."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "sandbox_roundtrip_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "sandbox_roundtrip/minimal_fixture.json"
+      ],
+      "notes": "Minimal sandbox request/result roundtrip validation."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "transcript_continuation_patch_minimal",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "transcript_continuation_patch/minimal_fixture.json"
+      ],
+      "notes": "Transcript continuation patch shape and semantic intent scaffold."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "unsupported_case_minimal",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "unsupported_case/minimal_fixture.json"
+      ],
+      "notes": "Unsupported-case taxonomy scaffold for V2 execution and host fallback boundaries."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "distributed_task_minimal",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "distributed_task/minimal_fixture.json"
+      ],
+      "notes": "Durable/distributed task descriptor scaffold for orchestration backend adapters."
     }
   ]
 }
