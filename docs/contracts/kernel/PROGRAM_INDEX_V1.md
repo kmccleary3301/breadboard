@@ -67,6 +67,8 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 - `sdk/ts-kernel-core/`
 - `sdk/ts-backbone/`
 - `sdk/ts-workspace/`
+- `sdk/ts-host-kits/`
+- `sdk/ts-transport-ai-sdk/`
 - `sdk/ts-host-bridges/`
 - `sdk/ts-execution-drivers/`
 - `sdk/ts-execution-driver-local/`

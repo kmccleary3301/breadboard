@@ -2,6 +2,8 @@
 
 This document records the first concrete BreadBoard host-bridge seam for OpenClaw's embedded runner.
 
+It now also serves as the first concrete proving ground for the reusable Host Kit abstraction introduced in V3.
+
 ## Boundary
 
 Primary host seam:
@@ -72,6 +74,8 @@ The bridge:
 ## Why this matters
 
 This is the first proving-ground bridge that exercises a real host boundary against the stronger kernel contract program. It is intentionally narrow and should be treated as an executable seam proof, not as full OpenClaw compatibility.
+
+In V3 terms, this is no longer only a bespoke bridge. It is the first concrete Host Kit realization built on top of the new backbone-facing product layer.
 
 ## Current stopping boundary
 

@@ -9,6 +9,7 @@ import {
   buildOpenClawBreadboardRunRequest,
   buildOpenClawExecutionCapability,
   buildOpenClawExecutionPlacement,
+  createOpenClawHostKit,
   findUnsupportedOpenClawFields,
   runOpenClawEmbeddedViaBreadboard,
   type OpenClawEmbeddedRunParams,
@@ -75,6 +76,13 @@ test("openclaw bridge derives execution capability and placement for the support
   assert.equal(placement.schema_version, "bb.execution_placement.v1")
   assert.equal(placement.placement_class, "inline_ts")
   assert.equal(placement.capability_id, capability.capability_id)
+})
+
+test("openclaw host kit classifies the supported embedded slice", () => {
+  const hostKit = createOpenClawHostKit()
+  const classification = hostKit.classify(buildBaseParams())
+  assert.equal(classification.mode, "supported")
+  assert.equal(classification.supportClaim.level, "supported")
 })
 
 test("openclaw bridge detects unsupported slice fields", () => {
@@ -147,6 +155,19 @@ test("openclaw bridge routes supported slice through BreadBoard and projects cal
     "tool:tool ok",
     "event:breadboard.synthetic",
   ])
+})
+
+test("openclaw host kit invokes the bridge and returns a supported invocation result", async () => {
+  const hostKit = createOpenClawHostKit({
+    executeBreadboard: async () => ({
+      assistantText: "hello from host kit",
+      usage: { total: 4 },
+    }),
+  })
+  const invocation = await hostKit.invoke(buildBaseParams())
+  assert.equal(invocation.mode, "supported")
+  assert.equal(invocation.result.payloads?.[0]?.text, "hello from host kit")
+  assert.equal(invocation.supportClaim.level, "supported")
 })
 
 test("openclaw bridge honors the frozen supported-slice acceptance fixture", async () => {

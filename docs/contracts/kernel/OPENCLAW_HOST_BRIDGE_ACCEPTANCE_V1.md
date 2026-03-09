@@ -2,6 +2,8 @@
 
 This document records the first frozen acceptance slice for the OpenClaw embedded-runner bridge.
 
+In V3, these fixtures also serve as the first acceptance base for the OpenClaw Host Kit realization.
+
 ## Selected slice
 
 The current frozen slice is the narrow supported embedded-run path:

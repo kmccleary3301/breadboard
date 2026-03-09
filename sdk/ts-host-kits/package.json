@@ -1,0 +1,28 @@
+{
+  "name": "@breadboard/host-kits",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "test": "npm --prefix ../ts-backbone run build && npm install ../ts-backbone >/dev/null && npm run build && node --test dist/test/host-kits.test.js"
+  },
+  "dependencies": {
+    "@breadboard/backbone": "file:../ts-backbone"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.5.4"
+  }
+}

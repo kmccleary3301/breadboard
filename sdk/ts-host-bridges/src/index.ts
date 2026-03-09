@@ -1,3 +1,14 @@
+import type { SupportClaim } from "@breadboard/backbone"
+import {
+  buildSupportClaim,
+  buildToolTurnSupportClaim,
+} from "@breadboard/backbone"
+import type {
+  HostKit,
+  HostKitClassification,
+  HostKitInvocation,
+} from "@breadboard/host-kits"
+import { createHostKit } from "@breadboard/host-kits"
 import type {
   ExecutionCapabilityV1,
   ExecutionPlacementV1,
@@ -158,6 +169,13 @@ export type OpenClawBridgeInvocation =
       unsupportedCase?: UnsupportedCaseV1
     }
 
+export interface OpenClawHostKitOptions {
+  readonly nativeFallback?: OpenClawNativeFallback
+  readonly executeBreadboard?: OpenClawBreadboardExecutor
+  readonly existingTranscript?: SessionTranscriptV1 | Array<Record<string, unknown> | SessionTranscriptV1Item>
+  readonly toolSlice?: OpenClawToolSliceOptions
+}
+
 export class UnsupportedOpenClawEmbeddedRunError extends Error {
   readonly unsupportedFields: string[]
 
@@ -165,6 +183,64 @@ export class UnsupportedOpenClawEmbeddedRunError extends Error {
     super(message)
     this.name = "UnsupportedOpenClawEmbeddedRunError"
     this.unsupportedFields = unsupportedFields
+  }
+}
+
+export function buildOpenClawSupportClaim(
+  params: OpenClawEmbeddedRunParams,
+  options: { toolSlice?: OpenClawToolSliceOptions } = {},
+): SupportClaim {
+  const request = buildOpenClawBreadboardRunRequest(params)
+  const unsupportedFields = findUnsupportedOpenClawFields(params, {
+    allowSingleFunctionToolSlice: Boolean(options.toolSlice),
+  })
+  if ((params.clientTools?.length ?? 0) > 0) {
+    return buildToolTurnSupportClaim(
+      buildOpenClawWorkspace(params),
+      {
+        request,
+        toolName: params.clientTools?.[0]?.function.name ?? "unknown_tool",
+        command: [],
+        driverIdHint: options.toolSlice?.remoteExecutor || options.toolSlice?.remoteHttp
+          ? "remote"
+          : options.toolSlice?.imageRef
+            ? "oci"
+            : "trusted_local",
+      },
+    )
+  }
+  return buildSupportClaim({
+    workspace: buildOpenClawWorkspace(params),
+    request,
+    executionProfileId: "trusted_local",
+    unsupportedFields,
+    summary:
+      unsupportedFields.length === 0
+        ? "OpenClaw embedded request is supported by the current Host Kit slice."
+        : `OpenClaw embedded request requires fallback for: ${unsupportedFields.join(", ")}`,
+  })
+}
+
+function buildOpenClawWorkspace(params: OpenClawEmbeddedRunParams) {
+  return {
+    workspaceId: `openclaw:${params.sessionId}`,
+    rootDir: params.workspaceDir,
+    capabilitySet: {
+      canReadWorkspace: true,
+      canWriteWorkspace: true,
+      canSearchWorkspace: true,
+      canRunTrustedLocal: true,
+      canRunSandboxedLocal: true,
+      canRunRemoteIsolated: true,
+      supportsArtifacts: true,
+    },
+    defaultExecutionProfileId: "trusted_local" as const,
+    shapeToolOutput(text: string) {
+      return { userVisibleText: text, modelVisibleText: text, truncated: false, artifactRefs: [] }
+    },
+    supportsProfile() {
+      return true
+    },
   }
 }
 
@@ -613,4 +689,52 @@ export async function runOpenClawEmbeddedViaBreadboard(
     unsupportedCase: undefined,
     result: buildOpenClawResult(params, output),
   }
+}
+
+export function createOpenClawHostKit(
+  options: OpenClawHostKitOptions = {},
+): HostKit<OpenClawEmbeddedRunParams, OpenClawEmbeddedRunResult, OpenClawBridgeInvocation> {
+  return createHostKit({
+    id: "openclaw.embedded.v1",
+    classify(
+      request: OpenClawEmbeddedRunParams,
+    ): HostKitClassification<OpenClawEmbeddedRunParams> {
+      const supportClaim = buildOpenClawSupportClaim(request, { toolSlice: options.toolSlice })
+      return {
+        mode: supportClaim.level === "supported" ? "supported" : "fallback",
+        request,
+        unsupportedFields: [...supportClaim.unsupportedFields],
+        supportClaim,
+      }
+    },
+    async invoke(
+      request: OpenClawEmbeddedRunParams,
+    ): Promise<HostKitInvocation<OpenClawEmbeddedRunResult, OpenClawBridgeInvocation>> {
+      const invocation = await runOpenClawEmbeddedViaBreadboard(request, {
+        nativeFallback: options.nativeFallback,
+        executeBreadboard: options.executeBreadboard,
+        existingTranscript: options.existingTranscript,
+        toolSlice: options.toolSlice,
+      })
+      const supportClaim =
+        invocation.mode === "breadboard"
+          ? buildOpenClawSupportClaim(request, { toolSlice: options.toolSlice })
+          : invocation.unsupportedCase
+            ? ({
+                level: "fallback",
+                summary: invocation.unsupportedCase.summary,
+                executionProfileId: "trusted_local",
+                fallbackAvailable: true,
+                unsupportedFields: invocation.unsupportedFields,
+                evidenceMode: "replay_strict",
+              } satisfies SupportClaim)
+            : buildOpenClawSupportClaim(request, { toolSlice: options.toolSlice })
+      return {
+        mode: invocation.mode === "breadboard" ? "supported" : "fallback",
+        result: invocation.result,
+        invocation,
+        supportClaim,
+      }
+    },
+  })
 }

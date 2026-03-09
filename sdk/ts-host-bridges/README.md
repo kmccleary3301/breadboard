@@ -4,6 +4,7 @@ Host-facing bridge package for adapting external TypeScript applications onto Br
 
 Current scope:
 - OpenClaw embedded-runner bridge package
+- `createOpenClawHostKit(...)` as the first reusable Host Kit realization
 - strict supported-slice detection
 - fallback-safe routing to a native host executor
 - projection of canonical BreadBoard kernel events into OpenClaw-style callbacks
