@@ -1,0 +1,34 @@
+{
+  "name": "@breadboard/backbone",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "test": "npm --prefix ../ts-kernel-contracts run build && npm --prefix ../ts-execution-drivers run build && npm --prefix ../ts-execution-driver-local run build && npm --prefix ../ts-execution-driver-oci run build && npm --prefix ../ts-execution-driver-remote run build && npm --prefix ../ts-kernel-core install ../ts-kernel-contracts ../ts-execution-drivers ../ts-execution-driver-local ../ts-execution-driver-oci ../ts-execution-driver-remote >/dev/null && npm --prefix ../ts-kernel-core run build && npm --prefix ../ts-workspace run build && npm install ../ts-kernel-contracts ../ts-execution-drivers ../ts-execution-driver-local ../ts-execution-driver-oci ../ts-execution-driver-remote ../ts-kernel-core ../ts-workspace >/dev/null && npm run build && node --test dist/test/backbone.test.js"
+  },
+  "dependencies": {
+    "@breadboard/execution-driver-local": "file:../ts-execution-driver-local",
+    "@breadboard/execution-driver-oci": "file:../ts-execution-driver-oci",
+    "@breadboard/execution-driver-remote": "file:../ts-execution-driver-remote",
+    "@breadboard/execution-drivers": "file:../ts-execution-drivers",
+    "@breadboard/kernel-contracts": "file:../ts-kernel-contracts",
+    "@breadboard/kernel-core": "file:../ts-kernel-core",
+    "@breadboard/workspace": "file:../ts-workspace"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.5.4"
+  }
+}

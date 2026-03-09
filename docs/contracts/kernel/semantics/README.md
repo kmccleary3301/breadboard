@@ -16,18 +16,22 @@ Each dossier should answer:
 ## Intended dossier set
 
 1. `run_request_and_context_v1.md`
-2. `kernel_event_v1.md`
-3. `session_transcript_v1.md`
-4. `provider_exchange_v1.md`
-5. `tool_lifecycle_and_render_v1.md`
-6. `permission_and_guardrails_v1.md`
-7. `middleware_lifecycle_v1.md`
-8. `task_and_subagent_v1.md`
-9. `checkpoint_and_longrun_v1.md`
-10. `replay_session_v1.md`
-11. `conformance_evidence_v1.md`
-12. `import_export_session_v1.md`
-13. `projection_adapter_boundaries_v1.md`
+2. `backbone_api_v1.md`
+3. `kernel_event_v1.md`
+4. `session_transcript_v1.md`
+5. `provider_exchange_v1.md`
+6. `support_claim_and_projection_profile_v1.md`
+7. `workspace_layer_v1.md`
+8. `host_kit_v1.md`
+9. `tool_lifecycle_and_render_v1.md`
+10. `permission_and_guardrails_v1.md`
+11. `middleware_lifecycle_v1.md`
+12. `task_and_subagent_v1.md`
+13. `checkpoint_and_longrun_v1.md`
+14. `replay_session_v1.md`
+15. `conformance_evidence_v1.md`
+16. `import_export_session_v1.md`
+17. `projection_adapter_boundaries_v1.md`
 
 ---
 
@@ -87,13 +91,24 @@ The V2 tranche now adds:
 - `unsupported_case_v1.md`
 - `execution_driver_policy_and_evidence_v1.md`
 
+The first V3 tranche now adds:
+
+- `backbone_api_v1.md`
+- `support_claim_and_projection_profile_v1.md`
+- `workspace_layer_v1.md`
+- `host_kit_v1.md`
+
 ## Status snapshot
 
 - drafted and scaffolded:
   - `run_request_and_context_v1.md`
+  - `backbone_api_v1.md`
   - `kernel_event_v1.md`
   - `session_transcript_v1.md`
   - `provider_exchange_v1.md`
+  - `support_claim_and_projection_profile_v1.md`
+  - `workspace_layer_v1.md`
+  - `host_kit_v1.md`
   - `tool_lifecycle_and_render_v1.md`
   - `permission_and_guardrails_v1.md`
   - `middleware_lifecycle_v1.md`

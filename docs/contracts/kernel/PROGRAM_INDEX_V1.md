@@ -16,9 +16,13 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 ## Semantic dossiers drafted so far
 
 - run request / run context
+- backbone API
 - kernel event
 - session transcript
 - provider exchange
+- support claim and projection profile
+- workspace layer
+- host kit
 - tool lifecycle and render
 - permission and guardrails
 - middleware lifecycle
@@ -61,6 +65,8 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 
 - `sdk/ts-kernel-contracts/`
 - `sdk/ts-kernel-core/`
+- `sdk/ts-backbone/`
+- `sdk/ts-workspace/`
 - `sdk/ts-host-bridges/`
 - `sdk/ts-execution-drivers/`
 - `sdk/ts-execution-driver-local/`

@@ -83,24 +83,28 @@ The first hybrid-delegation and proving-ground boundaries live alongside the ker
 The initial contract families are:
 
 1. run request / run context
-2. kernel event log
-3. session / transcript snapshot
-4. provider exchange IR
-5. tool lifecycle and tool render
-6. permission / approval / guardrail record
-7. middleware / hook lifecycle
-8. task / subagent / background task
-9. checkpoint / longrun state
-10. execution capability / placement
-11. execution driver policy / evidence expectations
-12. sandbox request / result
-13. distributed task descriptor
-14. transcript continuation patch
-15. unsupported-case taxonomy
-16. replay session
-17. conformance evidence
-18. import / export session
-19. projection adapter boundaries
+2. backbone API
+3. kernel event log
+4. session / transcript snapshot
+5. provider exchange IR
+6. support claim / projection profile
+7. workspace layer and artifact shaping
+8. host-kit boundaries
+9. tool lifecycle and tool render
+10. permission / approval / guardrail record
+11. middleware / hook lifecycle
+12. task / subagent / background task
+13. checkpoint / longrun state
+14. execution capability / placement
+15. execution driver policy / evidence expectations
+16. sandbox request / result
+17. distributed task descriptor
+18. transcript continuation patch
+19. unsupported-case taxonomy
+20. replay session
+21. conformance evidence
+22. import / export session
+23. projection adapter boundaries
 
 ---
 
