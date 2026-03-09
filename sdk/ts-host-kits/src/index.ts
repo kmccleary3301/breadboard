@@ -83,6 +83,19 @@ export interface HostProjectionEnvelope<Result> {
   readonly result: Result
 }
 
+export interface HostAgentMeta {
+  readonly sessionId: string
+  readonly provider: string
+  readonly model: string
+  readonly usage?: Record<string, unknown>
+}
+
+export interface HostResultMeta {
+  readonly durationMs: number
+  readonly agentMeta: HostAgentMeta
+  readonly stopReason: string
+}
+
 export interface ProviderHostSession<Input, ProjectionState, ProjectionOutput> {
   classifyProviderTurn(input: Input): SupportClaim
   runProviderTurn(input: Input): Promise<ProviderHostSessionTurnResult<ProjectionState, ProjectionOutput>>
@@ -264,6 +277,30 @@ export function buildHostProjectionEnvelope<Result>(options: {
   return {
     transcript: buildHostTranscriptProjection(options.transcriptSource),
     result: options.result,
+  }
+}
+
+/**
+ * Build a small, reusable host-facing result metadata block without coupling hosts to any one
+ * bridge implementation.
+ */
+export function buildHostResultMeta(options: {
+  readonly sessionId: string
+  readonly provider: string
+  readonly model: string
+  readonly stopReason: string
+  readonly durationMs?: number
+  readonly usage?: Record<string, unknown>
+}): HostResultMeta {
+  return {
+    durationMs: options.durationMs ?? 0,
+    agentMeta: {
+      sessionId: options.sessionId,
+      provider: options.provider,
+      model: options.model,
+      usage: options.usage,
+    },
+    stopReason: options.stopReason,
   }
 }
 

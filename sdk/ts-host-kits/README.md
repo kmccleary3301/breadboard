@@ -11,5 +11,6 @@ It standardizes:
 - reusable fallback/supported invocation builders
 - reusable provider-turn session ownership for transcript continuity and host projection state
 - reusable transcript/result projection helpers for host callbacks and host-shaped results
+- reusable host-facing result metadata helpers
 
 This package does not own host-specific request schemas by itself. It provides the reusable abstraction layer that concrete host kits, such as OpenClaw, should implement.

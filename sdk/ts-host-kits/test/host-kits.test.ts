@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 
 import {
   buildHostProjectionEnvelope,
+  buildHostResultMeta,
   buildHostTranscriptProjection,
   buildProviderHostTurnView,
   buildFallbackHostKitInvocation,
@@ -308,6 +309,28 @@ test("buildHostProjectionEnvelope pairs transcript projection with a host-shaped
     },
     result: { ok: true },
   })
+})
+
+test("buildHostResultMeta produces reusable host-facing result metadata", () => {
+  assert.deepEqual(
+    buildHostResultMeta({
+      sessionId: "session-1",
+      provider: "openai",
+      model: "openai/gpt-5.4-mini",
+      stopReason: "completed",
+      usage: { output_tokens: 32 },
+    }),
+    {
+      durationMs: 0,
+      agentMeta: {
+        sessionId: "session-1",
+        provider: "openai",
+        model: "openai/gpt-5.4-mini",
+        usage: { output_tokens: 32 },
+      },
+      stopReason: "completed",
+    },
+  )
 })
 
 test("normalizeHostManagedTranscript wraps host-owned transcript items in the canonical envelope", () => {

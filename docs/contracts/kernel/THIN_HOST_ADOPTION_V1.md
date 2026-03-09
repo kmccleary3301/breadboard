@@ -24,6 +24,10 @@ This document explains the current V3 adoption path for a thin TypeScript host s
 3. Use `runPromptTurn(...)` for the first provider-backed turn.
 4. Use `continuePromptTurn(...)` or the session wrapper returned by `openSession(...)` for resumable flows.
 5. Feed the returned transport frames to the host UI or AI SDK transport layer.
+6. When migrating an existing host session surface, seed `openSession(...)` with:
+   - `initialTranscript`
+   - `initialTransportState`
+   so BreadBoard can continue the session without taking over persistence ownership.
 
 ## Supported V3 slices
 
@@ -48,4 +52,4 @@ V3 does not claim:
 - transport projection stays projection-only
 - the host gets explicit support and execution-profile signals
 - the migration path is incremental instead of all-or-nothing
-
+- existing host-owned transcript/transport state can be carried forward explicitly instead of rewritten

@@ -6,6 +6,7 @@ import {
 import type { HostKit, HostKitClassification, HostKitInvocation } from "@breadboard/host-kits"
 import {
   buildHostProjectionEnvelope,
+  buildHostResultMeta,
   buildFallbackHostKitInvocation,
   emitHostProjectionCallbacks,
   createProviderHostSession,
@@ -476,16 +477,13 @@ function buildOpenClawResult(
           },
         ]
       : [],
-    meta: {
-      durationMs: 0,
-      agentMeta: {
-        sessionId: params.sessionId,
-        provider: params.provider ?? "breadboard-bridge",
-        model: params.model ?? "unspecified",
-        usage: output.usage,
-      },
+    meta: buildHostResultMeta({
+      sessionId: params.sessionId,
+      provider: params.provider ?? "breadboard-bridge",
+      model: params.model ?? "unspecified",
+      usage: output.usage,
       stopReason: output.stopReason ?? "completed",
-    },
+    }),
   }
 }
 
@@ -507,16 +505,13 @@ function buildOpenClawResultFromDriverTurn(
           },
         ]
       : [],
-    meta: {
-      durationMs: 0,
-      agentMeta: {
-        sessionId: params.sessionId,
-        provider: params.provider ?? "breadboard-driver",
-        model: params.model ?? "unspecified",
-        usage: turn.sandboxResult.usage ?? undefined,
-      },
+    meta: buildHostResultMeta({
+      sessionId: params.sessionId,
+      provider: params.provider ?? "breadboard-driver",
+      model: params.model ?? "unspecified",
+      usage: turn.sandboxResult.usage ?? undefined,
       stopReason: turn.sandboxResult.status,
-    },
+    }),
   }
 }
 
