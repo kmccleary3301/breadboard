@@ -1,5 +1,8 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 import {
   UnsupportedOpenClawEmbeddedRunError,
@@ -8,6 +11,23 @@ import {
   runOpenClawEmbeddedViaBreadboard,
   type OpenClawEmbeddedRunParams,
 } from "../src/index.js"
+
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
+
+function loadFixture(name: string): string {
+  const candidates = [
+    join(MODULE_DIR, "fixtures", name),
+    join(MODULE_DIR, "../../../test/fixtures", name),
+  ]
+  for (const candidate of candidates) {
+    try {
+      return readFileSync(candidate, "utf8")
+    } catch {
+      continue
+    }
+  }
+  throw new Error(`Unable to load fixture ${name}`)
+}
 
 function buildBaseParams(): OpenClawEmbeddedRunParams {
   return {
@@ -101,6 +121,62 @@ test("openclaw bridge routes supported slice through BreadBoard and projects cal
     "tool:tool ok",
     "event:breadboard.synthetic",
   ])
+})
+
+test("openclaw bridge honors the frozen supported-slice acceptance fixture", async () => {
+  const fixture = JSON.parse(loadFixture("openclaw_embedded_supported_slice.json")) as {
+    request: OpenClawEmbeddedRunParams
+    breadboardOutput: {
+      assistantText: string
+      reasoningDeltas: string[]
+      toolResults: Array<{ text?: string; mediaUrls?: string[] }>
+      agentEvents: Array<{ stream: string; data: Record<string, unknown> }>
+      usage: Record<string, unknown>
+    }
+    expected: {
+      mode: "breadboard"
+      callbackTrace: string[]
+      payloadText: string
+      provider: string
+      model: string
+      stopReason: string
+    }
+  }
+
+  const seen: string[] = []
+  const invocation = await runOpenClawEmbeddedViaBreadboard(
+    {
+      ...fixture.request,
+      onAssistantMessageStart: async () => {
+        seen.push("assistant_start")
+      },
+      onPartialReply: async (payload) => {
+        seen.push(`assistant_delta:${payload.text}`)
+      },
+      onReasoningStream: async (payload) => {
+        seen.push(`reasoning:${payload.text}`)
+      },
+      onReasoningEnd: async () => {
+        seen.push("reasoning_end")
+      },
+      onToolResult: async (payload) => {
+        seen.push(`tool:${payload.text}`)
+      },
+      onAgentEvent: (evt) => {
+        seen.push(`event:${evt.stream}`)
+      },
+    },
+    {
+      executeBreadboard: async () => fixture.breadboardOutput,
+    },
+  )
+
+  assert.equal(invocation.mode, fixture.expected.mode)
+  assert.deepEqual(seen, fixture.expected.callbackTrace)
+  assert.equal(invocation.result.payloads?.[0]?.text, fixture.expected.payloadText)
+  assert.equal(invocation.result.meta.agentMeta?.provider, fixture.expected.provider)
+  assert.equal(invocation.result.meta.agentMeta?.model, fixture.expected.model)
+  assert.equal(invocation.result.meta.stopReason, fixture.expected.stopReason)
 })
 
 test("openclaw bridge falls back cleanly on unsupported slice fields", async () => {

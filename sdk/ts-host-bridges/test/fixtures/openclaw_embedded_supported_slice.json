@@ -1,0 +1,51 @@
+{
+  "request": {
+    "sessionId": "session:test",
+    "sessionKey": "agent:test:embedded:fixture-1",
+    "sessionFile": "/tmp/session-fixture-1.jsonl",
+    "workspaceDir": "/tmp/workspace",
+    "prompt": "hello",
+    "provider": "openai",
+    "model": "mock-1",
+    "timeoutMs": 5000,
+    "runId": "run-embedded-fixture-1"
+  },
+  "breadboardOutput": {
+    "assistantText": "hello from BreadBoard",
+    "reasoningDeltas": [
+      "thinking..."
+    ],
+    "toolResults": [
+      {
+        "text": "tool ok"
+      }
+    ],
+    "agentEvents": [
+      {
+        "stream": "breadboard.synthetic",
+        "data": {
+          "ok": true
+        }
+      }
+    ],
+    "usage": {
+      "total": 10
+    }
+  },
+  "expected": {
+    "mode": "breadboard",
+    "callbackTrace": [
+      "event:provider_response",
+      "assistant_start",
+      "assistant_delta:hello from BreadBoard",
+      "reasoning:thinking...",
+      "reasoning_end",
+      "tool:tool ok",
+      "event:breadboard.synthetic"
+    ],
+    "payloadText": "hello from BreadBoard",
+    "provider": "openai",
+    "model": "mock-1",
+    "stopReason": "completed"
+  }
+}
