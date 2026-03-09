@@ -184,6 +184,28 @@ def test_session_state_classifies_projection_and_legacy_events() -> None:
     assert unknown_meta["family"] == "legacy.unclassified"
 
 
+def test_session_state_event_family_registry_covers_public_runtime_event_types() -> None:
+    registry = SessionState.event_family_registry()
+
+    expected = {
+        "assistant_message": ("canonical", "message.assistant"),
+        "user_message": ("canonical", "message.user"),
+        "tool_call": ("canonical", "tool.called"),
+        "tool_result": ("canonical", "tool.completed"),
+        "permission_request": ("canonical", "permission.requested"),
+        "permission_response": ("canonical", "permission.decided"),
+        "task_event": ("canonical", "task.progress"),
+        "turn_start": ("canonical", "turn.started"),
+        "todo_event": ("projection_only", "projection.todo_snapshot"),
+        "ctree_snapshot": ("projection_only", "projection.ctree_snapshot"),
+        "guardrail_event": ("audit_only", "warning.guardrail"),
+        "lifecycle_event": ("audit_only", "run.lifecycle"),
+    }
+    for event_type, (classification, family) in expected.items():
+        assert registry[event_type]["classification"] == classification
+        assert registry[event_type]["family"] == family
+
+
 def test_session_runner_translates_runtime_events() -> None:
     registry = SessionRegistry()
     record = SessionRecord(session_id="sess-1", status=SessionStatus.STARTING)

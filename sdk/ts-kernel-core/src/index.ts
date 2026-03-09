@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -7,7 +7,10 @@ import {
   type CheckpointMetadataV1,
   type EngineConformanceManifestV1,
   type KernelEventV1,
+  type RunContextV1,
+  type RunRequestV1,
   type SessionTranscriptV1Item,
+  type SessionTranscriptV1,
   type TaskV1,
 } from "@breadboard/kernel-contracts"
 
@@ -104,4 +107,145 @@ export function loadEngineConformanceManifest(repoRoot?: string): EngineConforma
 
 export function loadKernelFixture<T = unknown>(fixtureRelativePath: string, repoRoot?: string): T {
   return loadTrackedJson<T>(join("conformance/engine_fixtures", fixtureRelativePath), repoRoot)
+}
+
+export interface KernelConformanceSummary {
+  schemaVersion: "bb.kernel_conformance_summary.v1"
+  manifestRows: number
+  comparatorClasses: string[]
+  supportTiers: string[]
+  fixtureFamilies: string[]
+  fixtureCount: number
+}
+
+export function listKernelFixtureFamilies(repoRoot?: string): string[] {
+  const root = resolveRepoRoot(repoRoot)
+  const fixturesRoot = join(root, "conformance", "engine_fixtures")
+  if (!existsSync(fixturesRoot)) {
+    return []
+  }
+  return readdirSync(fixturesRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+}
+
+export function buildConformanceSummary(repoRoot?: string): KernelConformanceSummary {
+  const root = resolveRepoRoot(repoRoot)
+  const manifest = loadEngineConformanceManifest(root)
+  const fixtureFamilies = listKernelFixtureFamilies(root)
+  let fixtureCount = 0
+  for (const family of fixtureFamilies) {
+    const familyRoot = join(root, "conformance", "engine_fixtures", family)
+    fixtureCount += readdirSync(familyRoot, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+      .length
+  }
+  return {
+    schemaVersion: "bb.kernel_conformance_summary.v1",
+    manifestRows: manifest.rows.length,
+    comparatorClasses: Array.from(new Set(manifest.rows.map((row) => row.comparatorClass))).sort(),
+    supportTiers: Array.from(new Set(manifest.rows.map((row) => row.supportTier))).sort(),
+    fixtureFamilies,
+    fixtureCount,
+  }
+}
+
+export interface StaticTextTurnOptions {
+  sessionId?: string
+  engineFamily?: string
+  engineRef?: string | null
+  resolvedModel?: string | null
+  resolvedProviderRoute?: string | null
+  executionMode?: string | null
+  activeMode?: string | null
+  assistantText: string
+  startedAt?: string
+}
+
+export interface StaticTextTurnResult {
+  runContext: RunContextV1
+  events: KernelEventV1[]
+  transcript: SessionTranscriptV1
+}
+
+export function buildRunContextFromRequest(
+  request: RunRequestV1,
+  options: Omit<StaticTextTurnOptions, "assistantText" | "startedAt"> = {},
+): RunContextV1 {
+  return {
+    schema_version: "bb.run_context.v1",
+    session_id: options.sessionId ?? `sess-${request.request_id}`,
+    engine_family: options.engineFamily ?? "breadboard-ts",
+    request_id: request.request_id,
+    engine_ref: options.engineRef ?? "ts-kernel-core/v0",
+    workspace_root: request.workspace_root ?? null,
+    resolved_model: options.resolvedModel ?? request.requested_model ?? null,
+    resolved_provider_route: options.resolvedProviderRoute ?? null,
+    active_mode: options.activeMode ?? null,
+    feature_flags: { ...(request.requested_features ?? {}) },
+    execution_mode: options.executionMode ?? "static_text_turn",
+    delegated_services: [],
+    metadata: { source: "ts-kernel-core" },
+  }
+}
+
+export function executeStaticTextTurn(
+  requestInput: RunRequestV1,
+  options: StaticTextTurnOptions,
+): StaticTextTurnResult {
+  const request = assertValid<RunRequestV1>("runRequest", requestInput)
+  const runContext = buildRunContextFromRequest(request, options)
+  const ts = options.startedAt ?? "2026-03-08T00:00:00Z"
+  const events: KernelEventV1[] = [
+    {
+      schemaVersion: "bb.kernel_event.v1",
+      eventId: buildKernelEventId(request.request_id, 1),
+      runId: request.request_id,
+      sessionId: runContext.session_id,
+      seq: 1,
+      ts,
+      actor: "human",
+      visibility: "model",
+      kind: "user_message",
+      payload: { text: request.task },
+    },
+    {
+      schemaVersion: "bb.kernel_event.v1",
+      eventId: buildKernelEventId(request.request_id, 2),
+      runId: request.request_id,
+      sessionId: runContext.session_id,
+      seq: 2,
+      ts,
+      actor: "engine",
+      visibility: "model",
+      kind: "assistant_message",
+      payload: { text: options.assistantText },
+    },
+  ]
+  const transcript: SessionTranscriptV1 = {
+    schemaVersion: "bb.session_transcript.v1",
+    sessionId: runContext.session_id,
+    runId: request.request_id,
+    eventCursor: 2,
+    items: [
+      {
+        kind: "user_message",
+        visibility: "model",
+        content: { text: request.task },
+        provenance: { source: "ts_static_text_turn", eventId: events[0].eventId },
+      },
+      {
+        kind: "assistant_message",
+        visibility: "model",
+        content: { text: options.assistantText },
+        provenance: { source: "ts_static_text_turn", eventId: events[1].eventId },
+      },
+    ],
+    metadata: {
+      execution_mode: runContext.execution_mode,
+      source: "ts-kernel-core",
+    },
+  }
+  return { runContext, events, transcript }
 }

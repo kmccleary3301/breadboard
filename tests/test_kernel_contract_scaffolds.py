@@ -75,3 +75,16 @@ def test_kernel_program_docs_cover_event_registry_and_hybrid_boundaries() -> Non
     present = {path.name for path in docs_dir.glob("*.md")}
     missing = sorted(expected - present)
     assert not missing, f"Missing kernel program docs: {missing}"
+
+
+def test_kernel_conformance_scripts_cover_manifest_compare_and_gate() -> None:
+    root = Path(__file__).resolve().parents[1]
+    scripts_dir = root / "scripts"
+    expected = {
+        "validate_engine_conformance_manifest.py",
+        "compare_kernel_conformance_engines.py",
+        "run_kernel_conformance_gate.py",
+    }
+    present = {path.name for path in scripts_dir.glob("*.py")}
+    missing = sorted(expected - present)
+    assert not missing, f"Missing kernel conformance scripts: {missing}"

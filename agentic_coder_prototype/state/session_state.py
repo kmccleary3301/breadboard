@@ -44,6 +44,14 @@ AUDIT_ONLY_RUNTIME_EVENT_TYPES: dict[str, dict[str, str]] = {
     "guardrail_event": {"family": "warning.guardrail", "actor": "service", "visibility": "audit"},
 }
 
+PROJECTED_RUNTIME_EVENT_FAMILIES = {meta["family"] for meta in PROJECTION_ONLY_RUNTIME_EVENT_TYPES.values()}
+
+AUDIT_RUNTIME_EVENT_FAMILIES = {meta["family"] for meta in AUDIT_ONLY_RUNTIME_EVENT_TYPES.values()}
+
+PROJECTED_RUNTIME_EVENT_FAMILIES = {meta["family"] for meta in PROJECTION_ONLY_RUNTIME_EVENT_TYPES.values()}
+
+AUDIT_RUNTIME_EVENT_FAMILIES = {meta["family"] for meta in AUDIT_ONLY_RUNTIME_EVENT_TYPES.values()}
+
 
 class SessionState:
     """Manages session state for agentic coding loops"""
@@ -161,6 +169,40 @@ class SessionState:
             "actor": "engine",
             "visibility": "audit",
         }
+
+    @staticmethod
+    def event_family_registry() -> Dict[str, Dict[str, str]]:
+        registry: Dict[str, Dict[str, str]] = {}
+        for source, classification in (
+            (CANONICAL_KERNEL_EVENT_TYPES, "canonical"),
+            (PROJECTION_ONLY_RUNTIME_EVENT_TYPES, "projection_only"),
+            (AUDIT_ONLY_RUNTIME_EVENT_TYPES, "audit_only"),
+        ):
+            for event_type, meta in source.items():
+                registry[event_type] = {
+                    "classification": classification,
+                    "family": str(meta.get("family") or "legacy.unclassified"),
+                    "actor": str(meta.get("actor") or "service"),
+                    "visibility": str(meta.get("visibility") or "audit"),
+                }
+        return registry
+
+    @staticmethod
+    def event_family_registry() -> Dict[str, Dict[str, str]]:
+        registry: Dict[str, Dict[str, str]] = {}
+        for source, classification in (
+            (CANONICAL_KERNEL_EVENT_TYPES, "canonical"),
+            (PROJECTION_ONLY_RUNTIME_EVENT_TYPES, "projection_only"),
+            (AUDIT_ONLY_RUNTIME_EVENT_TYPES, "audit_only"),
+        ):
+            for event_type, meta in source.items():
+                registry[event_type] = {
+                    "classification": classification,
+                    "family": str(meta.get("family") or "legacy.unclassified"),
+                    "actor": str(meta.get("actor") or "service"),
+                    "visibility": str(meta.get("visibility") or "audit"),
+                }
+        return registry
 
     def _emit_event(self, event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> Optional[int]:
         seq = self._next_event_seq()

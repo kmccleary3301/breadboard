@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.compare_kernel_conformance_engines import main as compare_main
 from scripts.build_python_reference_contract_fixtures import write_python_reference_contract_fixtures
 from scripts.validate_kernel_contract_fixtures import validate_kernel_contract_fixtures
 
@@ -17,6 +18,8 @@ def main() -> int:
     if errors:
         for error in errors:
             print(error)
+        return 1
+    if compare_main() != 0:
         return 1
     print("ok")
     return 0

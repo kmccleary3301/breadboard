@@ -36,6 +36,7 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 
 - `conformance/engine_fixtures/COMPARATOR_CLASSES_V1.md`
 - `conformance/engine_fixtures/python_reference_manifest_v1.json`
+- `scripts/compare_kernel_conformance_engines.py`
 - `scripts/run_kernel_conformance_gate.py`
 
 ## Hybrid / proving-ground readiness
@@ -57,7 +58,7 @@ Current state is strong on:
 
 Current state is still intentionally early on:
 
-- Python reference-engine normalization
-- executable differential engine-vs-engine comparison
-- TypeScript engine implementation
+- the last full Python reference-engine event-family sweep
+- comparator-grade cross-engine runtime execution, beyond shared fixture consumption
+- TypeScript engine implementation beyond the current constrained execution slice
 - hybrid proving-ground execution

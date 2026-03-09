@@ -2,11 +2,14 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import {
+  buildConformanceSummary,
   buildKernelEventId,
+  buildRunContextFromRequest,
   buildTaskLineage,
   cloneCheckpointMetadata,
   cloneTranscriptItem,
   eventBelongsToSession,
+  executeStaticTextTurn,
   loadEngineConformanceManifest,
   loadKernelFixture,
   normalizeTranscriptContractItem,
@@ -87,4 +90,41 @@ test("kernel core can load tracked manifest and fixtures", () => {
 
   const fixture = loadKernelFixture<{ fixture_id: string }>("kernel_event/reference_fixture.json")
   assert.equal(fixture.fixture_id, "kernel_event_python_reference")
+})
+
+test("kernel core can build cross-engine conformance summary", () => {
+  const summary = buildConformanceSummary()
+  assert.equal(summary.schemaVersion, "bb.kernel_conformance_summary.v1")
+  assert.ok(summary.manifestRows >= 1)
+  assert.ok(summary.fixtureFamilies.includes("kernel_event"))
+  assert.ok(summary.comparatorClasses.includes("normalized-trace-equal"))
+})
+
+test("kernel core can execute a constrained static text turn", () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-static-1",
+    entry_mode: "interactive",
+    task: "Write a short plan.",
+    requested_model: "openai/gpt-5.2",
+  } as const
+  const runContext = buildRunContextFromRequest(request, {
+    sessionId: "sess-static-1",
+    resolvedProviderRoute: "primary",
+  })
+  assert.equal(runContext.session_id, "sess-static-1")
+  assert.equal(runContext.request_id, "run-static-1")
+
+  const result = executeStaticTextTurn(request, {
+    sessionId: "sess-static-1",
+    resolvedProviderRoute: "primary",
+    assistantText: "1. Inspect the repo\\n2. Draft the plan",
+  })
+  assert.equal(result.events.length, 2)
+  assert.equal(result.events[0].kind, "user_message")
+  assert.equal(result.events[1].kind, "assistant_message")
+  assert.equal(result.transcript.items.length, 2)
+  assert.deepEqual(result.transcript.items[1]?.content, {
+    text: "1. Inspect the repo\\n2. Draft the plan",
+  })
 })
