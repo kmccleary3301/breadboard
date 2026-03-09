@@ -33,11 +33,14 @@ export function buildSupportClaim(options: {
   executionProfileId?: ExecutionProfileId
   unsupportedFields?: readonly string[]
   summary?: string
+  recommendedHostMode?: "inline" | "streaming" | "background"
+  confidence?: "high" | "medium" | "low"
 }): SupportClaim {
   const capability = buildExecutionCapabilityFromRunRequest(options.request, {
     capabilityId: `${options.request.request_id}:backbone-support`,
   })
   const executionProfileId = options.executionProfileId ?? buildExecutionProfileIdFromCapability(capability)
+  const executionProfile = options.workspace.getExecutionProfile(executionProfileId)
   const unsupportedFields = [...(options.unsupportedFields ?? [])]
   const supported = options.workspace.supportsProfile(executionProfileId) && unsupportedFields.length === 0
   return {
@@ -48,9 +51,14 @@ export function buildSupportClaim(options: {
         ? `Supported on execution profile ${executionProfileId}.`
         : `Unsupported on execution profile ${executionProfileId}.`),
     executionProfileId,
+    executionProfile,
     fallbackAvailable: !supported,
     unsupportedFields,
     evidenceMode: capability.evidence_mode,
+    recommendedHostMode:
+      options.recommendedHostMode ??
+      (executionProfile.backendHint === "remote" ? "background" : capability.isolation_class === "none" ? "inline" : "streaming"),
+    confidence: options.confidence ?? (supported ? "high" : "medium"),
   }
 }
 
@@ -66,6 +74,7 @@ export function buildToolTurnSupportClaim(workspace: Workspace, input: ToolTurnI
     request: input.request,
     executionProfileId,
     summary: `Tool turn requested on ${executionProfileId}.`,
+    recommendedHostMode: executionProfileId === "remote_isolated" ? "background" : "streaming",
   })
 }
 

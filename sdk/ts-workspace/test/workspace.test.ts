@@ -28,6 +28,7 @@ test("workspace capability defaults choose trusted_local when available", () => 
     capabilitySet: buildWorkspaceCapabilitySet(),
   })
   assert.equal(workspace.defaultExecutionProfileId, "trusted_local")
+  assert.equal(workspace.defaultExecutionProfile.backendHint, "inline")
 })
 
 test("supportsExecutionProfile respects sandbox and remote capability flags", () => {
@@ -39,4 +40,16 @@ test("supportsExecutionProfile respects sandbox and remote capability flags", ()
   assert.equal(supportsExecutionProfile(capabilities, "trusted_local"), false)
   assert.equal(supportsExecutionProfile(capabilities, "sandboxed_local"), true)
   assert.equal(supportsExecutionProfile(capabilities, "remote_isolated"), true)
+})
+
+test("workspace returns rich execution profile metadata", () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-2",
+    capabilitySet: buildWorkspaceCapabilitySet({ canRunRemoteIsolated: true }),
+  })
+  const profile = workspace.getExecutionProfile("remote_isolated")
+  assert.equal(profile.placementHint, "remote_worker")
+  assert.equal(profile.securityTierHint, "multi_tenant")
+  assert.equal(profile.backendHint, "remote")
+  assert.ok(profile.recommendedFor.includes("remote workers"))
 })

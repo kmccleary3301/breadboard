@@ -6,6 +6,13 @@ export type AiSdkTransportFrame =
       messageId: string
       supportLevel: BackboneTurnResult["supportClaim"]["level"]
       projectionProfile: string
+      executionProfileId: string
+    }
+  | {
+      type: "resume"
+      messageId: string
+      patchId: string
+      postStateDigest: string
     }
   | {
       type: "text-delta"
@@ -18,10 +25,25 @@ export type AiSdkTransportFrame =
       preview: string
     }
   | {
+      type: "continuation-patch"
+      messageId: string
+      patchId: string
+      appendedMessageCount: number
+      appendedToolEventCount: number
+      postStateDigest: string
+      lossinessFlags: string[]
+    }
+  | {
       type: "finish"
       messageId: string
       stopReason: string
     }
+
+export interface AiSdkTransportState {
+  readonly lastMessageId: string
+  readonly transcriptDigest: string | null
+  readonly turnCount: number
+}
 
 function extractAssistantText(result: BackboneTurnResult): string {
   const lastAssistant = [...result.transcript.items]
@@ -45,17 +67,39 @@ function extractToolPreview(result: BackboneTurnResult): string | null {
 
 export function projectBackboneTurnToAiSdkFrames(
   result: BackboneTurnResult,
-  options: { messageId?: string; stopReason?: string } = {},
+  options: { messageId?: string; stopReason?: string; resumeFrom?: AiSdkTransportState | null } = {},
 ): AiSdkTransportFrame[] {
   const messageId = options.messageId ?? result.runContextId
-  const frames: AiSdkTransportFrame[] = [
+  const frames: AiSdkTransportFrame[] = []
+  const continuationPatch = result.providerTurn?.transcriptContinuationPatch
+  if (options.resumeFrom && continuationPatch) {
+    frames.push({
+      type: "resume",
+      messageId,
+      patchId: continuationPatch.patch_id,
+      postStateDigest: options.resumeFrom.transcriptDigest ?? continuationPatch.post_state_digest,
+    })
+  }
+  frames.push(
     {
       type: "start",
       messageId,
       supportLevel: result.supportClaim.level,
       projectionProfile: result.projectionProfile.id,
+      executionProfileId: result.supportClaim.executionProfileId,
     },
-  ]
+  )
+  if (continuationPatch) {
+    frames.push({
+      type: "continuation-patch",
+      messageId,
+      patchId: continuationPatch.patch_id,
+      appendedMessageCount: continuationPatch.appended_messages.length,
+      appendedToolEventCount: continuationPatch.appended_tool_events?.length ?? 0,
+      postStateDigest: continuationPatch.post_state_digest,
+      lossinessFlags: [...(continuationPatch.lossiness_flags ?? [])],
+    })
+  }
   const text = extractAssistantText(result)
   if (text.length > 0) {
     frames.push({ type: "text-delta", messageId, text })
@@ -66,4 +110,40 @@ export function projectBackboneTurnToAiSdkFrames(
   }
   frames.push({ type: "finish", messageId, stopReason: options.stopReason ?? "stop" })
   return frames
+}
+
+export function deriveAiSdkTransportState(
+  result: BackboneTurnResult,
+  options: { messageId?: string; previousState?: AiSdkTransportState | null } = {},
+): AiSdkTransportState {
+  const messageId = options.messageId ?? result.runContextId
+  const continuationPatch = result.providerTurn?.transcriptContinuationPatch
+  return {
+    lastMessageId: messageId,
+    transcriptDigest: continuationPatch?.post_state_digest ?? null,
+    turnCount: (options.previousState?.turnCount ?? 0) + 1,
+  }
+}
+
+export interface AiSdkTransportProjectTurnResult {
+  readonly frames: AiSdkTransportFrame[]
+  readonly state: AiSdkTransportState
+}
+
+export function projectBackboneTurnToAiSdkTransport(
+  result: BackboneTurnResult,
+  options: { messageId?: string; stopReason?: string; previousState?: AiSdkTransportState | null } = {},
+): AiSdkTransportProjectTurnResult {
+  const frames = projectBackboneTurnToAiSdkFrames(result, {
+    messageId: options.messageId,
+    stopReason: options.stopReason,
+    resumeFrom: options.previousState,
+  })
+  return {
+    frames,
+    state: deriveAiSdkTransportState(result, {
+      messageId: options.messageId,
+      previousState: options.previousState,
+    }),
+  }
 }

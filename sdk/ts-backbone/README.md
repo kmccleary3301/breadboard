@@ -7,6 +7,7 @@ It exposes host-shaped objects:
 - `BackboneSession`
 - `SupportClaim`
 - `ProjectionProfile`
+- `ExecutionProfile` via the workspace-backed product surface
 
 This package is intentionally above `@breadboard/kernel-core` and below host-specific kits.
 
@@ -15,6 +16,7 @@ Current scope:
 - provider-backed text turns
 - driver-mediated tool turns
 - support-claim generation
+- execution-profile-aware support classification
 - projection-profile exposure
 
 It does **not** replace Host Kits or Workspace. It composes them.

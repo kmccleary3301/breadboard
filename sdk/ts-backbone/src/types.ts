@@ -17,9 +17,12 @@ export interface SupportClaim {
   readonly level: "supported" | "fallback" | "unsupported"
   readonly summary: string
   readonly executionProfileId: ExecutionProfileId
+  readonly executionProfile: Workspace["defaultExecutionProfile"]
   readonly fallbackAvailable: boolean
   readonly unsupportedFields: readonly string[]
   readonly evidenceMode: string | null
+  readonly recommendedHostMode: "inline" | "streaming" | "background"
+  readonly confidence: "high" | "medium" | "low"
 }
 
 export interface ProjectionProfile {

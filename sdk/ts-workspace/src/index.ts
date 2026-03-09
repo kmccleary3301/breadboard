@@ -1,4 +1,5 @@
 import type {
+  ExecutionProfile,
   ExecutionProfileId,
   ToolOutputShape,
   ToolOutputShaperOptions,
@@ -11,6 +12,7 @@ import type {
 const ANSI_PATTERN = /\u001b\[[0-9;]*m/g
 
 export type {
+  ExecutionProfile,
   ExecutionProfileId,
   ToolOutputShape,
   ToolOutputShaperOptions,
@@ -80,19 +82,65 @@ export function supportsExecutionProfile(
   }
 }
 
+export function createExecutionProfile(profileId: ExecutionProfileId): ExecutionProfile {
+  switch (profileId) {
+    case "trusted_local":
+      return {
+        id: profileId,
+        summary: "Trusted local execution with direct process access.",
+        placementHint: "local_process",
+        securityTierHint: "trusted_dev",
+        recommendedFor: ["local developer workflows", "trusted repos", "fast inner-loop runs"],
+        backendHint: "inline",
+      }
+    case "constrained_local":
+      return {
+        id: profileId,
+        summary: "Constrained local execution with reduced capability assumptions.",
+        placementHint: "local_process",
+        securityTierHint: "shared_host",
+        recommendedFor: ["shared workstations", "lower-trust local commands", "restricted host paths"],
+        backendHint: "inline",
+      }
+    case "sandboxed_local":
+      return {
+        id: profileId,
+        summary: "Sandboxed local execution mediated by OCI-class isolation.",
+        placementHint: "oci_container",
+        securityTierHint: "single_tenant",
+        recommendedFor: ["containerized tool turns", "stronger local isolation", "OCI-backed automation"],
+        backendHint: "oci",
+      }
+    case "remote_isolated":
+      return {
+        id: profileId,
+        summary: "Delegated remote execution behind an isolated worker boundary.",
+        placementHint: "remote_worker",
+        securityTierHint: "multi_tenant",
+        recommendedFor: ["untrusted code paths", "remote workers", "shared fleet execution"],
+        backendHint: "remote",
+      }
+  }
+}
+
 export function createWorkspace(options: WorkspaceOptions): Workspace {
   const defaultExecutionProfileId =
     options.defaultExecutionProfileId ?? defaultProfileForCapabilities(options.capabilitySet)
+  const defaultExecutionProfile = createExecutionProfile(defaultExecutionProfileId)
   return {
     workspaceId: options.workspaceId,
     rootDir: options.rootDir ?? null,
     capabilitySet: options.capabilitySet,
     defaultExecutionProfileId,
+    defaultExecutionProfile,
     shapeToolOutput(text: string, shapeOptions?: ToolOutputShaperOptions): ToolOutputShape {
       return shapeToolOutput(text, shapeOptions)
     },
     supportsProfile(profileId: ExecutionProfileId): boolean {
       return supportsExecutionProfile(options.capabilitySet, profileId)
+    },
+    getExecutionProfile(profileId?: ExecutionProfileId): ExecutionProfile {
+      return createExecutionProfile(profileId ?? defaultExecutionProfileId)
     },
   }
 }

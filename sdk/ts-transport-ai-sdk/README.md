@@ -7,8 +7,12 @@ It projects `BackboneTurnResult` values into a small AI SDK-style transport fram
 
 Current scope:
 - start frame
+- resume frame for transcript-continuation turns
 - assistant text delta frame
 - tool preview frame
+- transcript-continuation patch frame
 - finish frame
+
+It also exposes a small transport-state helper so thin hosts can resume the streamable projection layer without owning kernel semantics.
 
 This is intentionally narrow and designed to sit above the Backbone API.

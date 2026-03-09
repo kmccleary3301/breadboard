@@ -34,6 +34,7 @@ import {
 import type { LocalCommandExecutor } from "@breadboard/execution-driver-local"
 import type { OciCommandExecutor } from "@breadboard/execution-driver-oci"
 import type { RemoteExecutionHttpOptions, RemoteSandboxExecutor } from "@breadboard/execution-driver-remote"
+import { buildWorkspaceCapabilitySet, createWorkspace } from "@breadboard/workspace"
 
 export type OpenClawClientToolDefinition = {
   type: "function"
@@ -222,26 +223,15 @@ export function buildOpenClawSupportClaim(
 }
 
 function buildOpenClawWorkspace(params: OpenClawEmbeddedRunParams) {
-  return {
+  return createWorkspace({
     workspaceId: `openclaw:${params.sessionId}`,
     rootDir: params.workspaceDir,
-    capabilitySet: {
-      canReadWorkspace: true,
-      canWriteWorkspace: true,
-      canSearchWorkspace: true,
-      canRunTrustedLocal: true,
+    capabilitySet: buildWorkspaceCapabilitySet({
       canRunSandboxedLocal: true,
       canRunRemoteIsolated: true,
-      supportsArtifacts: true,
-    },
-    defaultExecutionProfileId: "trusted_local" as const,
-    shapeToolOutput(text: string) {
-      return { userVisibleText: text, modelVisibleText: text, truncated: false, artifactRefs: [] }
-    },
-    supportsProfile() {
-      return true
-    },
-  }
+    }),
+    defaultExecutionProfileId: "trusted_local",
+  })
 }
 
 export function findUnsupportedOpenClawFields(
@@ -724,9 +714,12 @@ export function createOpenClawHostKit(
                 level: "fallback",
                 summary: invocation.unsupportedCase.summary,
                 executionProfileId: "trusted_local",
+                executionProfile: buildOpenClawWorkspace(request).defaultExecutionProfile,
                 fallbackAvailable: true,
                 unsupportedFields: invocation.unsupportedFields,
                 evidenceMode: "replay_strict",
+                recommendedHostMode: "inline",
+                confidence: "medium",
               } satisfies SupportClaim)
             : buildOpenClawSupportClaim(request, { toolSlice: options.toolSlice })
       return {

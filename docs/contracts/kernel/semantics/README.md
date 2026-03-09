@@ -24,15 +24,16 @@ Each dossier should answer:
 7. `workspace_layer_v1.md`
 8. `host_kit_v1.md`
 9. `ai_sdk_transport_adapter_v1.md`
-10. `tool_lifecycle_and_render_v1.md`
-11. `permission_and_guardrails_v1.md`
-12. `middleware_lifecycle_v1.md`
-13. `task_and_subagent_v1.md`
-14. `checkpoint_and_longrun_v1.md`
-15. `replay_session_v1.md`
-16. `conformance_evidence_v1.md`
-17. `import_export_session_v1.md`
-18. `projection_adapter_boundaries_v1.md`
+10. `thin_host_dx_v1.md`
+11. `tool_lifecycle_and_render_v1.md`
+12. `permission_and_guardrails_v1.md`
+13. `middleware_lifecycle_v1.md`
+14. `task_and_subagent_v1.md`
+15. `checkpoint_and_longrun_v1.md`
+16. `replay_session_v1.md`
+17. `conformance_evidence_v1.md`
+18. `import_export_session_v1.md`
+19. `projection_adapter_boundaries_v1.md`
 
 ---
 
@@ -111,8 +112,9 @@ The first V3 tranche now adds:
   - `support_claim_and_projection_profile_v1.md`
   - `workspace_layer_v1.md`
   - `host_kit_v1.md`
-  - `ai_sdk_transport_adapter_v1.md`
-  - `tool_lifecycle_and_render_v1.md`
+- `ai_sdk_transport_adapter_v1.md`
+- `thin_host_dx_v1.md`
+- `tool_lifecycle_and_render_v1.md`
   - `permission_and_guardrails_v1.md`
   - `middleware_lifecycle_v1.md`
   - `task_and_subagent_v1.md`

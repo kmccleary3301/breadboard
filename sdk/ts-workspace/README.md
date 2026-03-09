@@ -7,6 +7,7 @@ It is intentionally above raw execution drivers and below host-specific integrat
 This package currently provides:
 - workspace capability sets
 - execution-profile support checks
+- rich public `ExecutionProfile` objects with placement/security/backend hints
 - artifact references
 - tool-output shaping suitable for model-visible and user-visible views
 

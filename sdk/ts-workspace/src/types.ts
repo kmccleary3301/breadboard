@@ -4,6 +4,15 @@ export type ExecutionProfileId =
   | "sandboxed_local"
   | "remote_isolated"
 
+export interface ExecutionProfile {
+  readonly id: ExecutionProfileId
+  readonly summary: string
+  readonly placementHint: "local_process" | "oci_container" | "remote_worker"
+  readonly securityTierHint: "trusted_dev" | "shared_host" | "single_tenant" | "multi_tenant"
+  readonly recommendedFor: readonly string[]
+  readonly backendHint: "inline" | "oci" | "remote"
+}
+
 export interface WorkspaceCapabilitySet {
   readonly canReadWorkspace: boolean
   readonly canWriteWorkspace: boolean
@@ -49,6 +58,8 @@ export interface Workspace {
   readonly rootDir: string | null
   readonly capabilitySet: WorkspaceCapabilitySet
   readonly defaultExecutionProfileId: ExecutionProfileId
+  readonly defaultExecutionProfile: ExecutionProfile
   shapeToolOutput(text: string, options?: ToolOutputShaperOptions): ToolOutputShape
   supportsProfile(profileId: ExecutionProfileId): boolean
+  getExecutionProfile(profileId?: ExecutionProfileId): ExecutionProfile
 }

@@ -59,6 +59,9 @@ test("classifyProviderTurn returns a supported claim on the default profile", ()
   const claim = session.classifyProviderTurn({ request, providerExchange: exchange, assistantText: "hello" })
   assert.equal(claim.level, "supported")
   assert.equal(claim.executionProfileId, "trusted_local")
+  assert.equal(claim.executionProfile.backendHint, "inline")
+  assert.equal(claim.recommendedHostMode, "inline")
+  assert.equal(claim.confidence, "high")
 })
 
 test("runProviderTurn returns transcript and provider turn output", async () => {
@@ -93,4 +96,5 @@ test("classifyToolTurn advertises remote profile when requested", () => {
     driverIdHint: "remote",
   })
   assert.equal(claim.executionProfileId, "remote_isolated")
+  assert.equal(claim.recommendedHostMode, "background")
 })
