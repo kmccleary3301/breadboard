@@ -8,6 +8,8 @@ Current scope:
 - fallback-safe routing to a native host executor
 - projection of canonical BreadBoard kernel events into OpenClaw-style callbacks
 - transcript-continuation bridge path for host-owned transcript persistence
+- execution capability / placement records for the supported embedded slice
+- unsupported-case classification for fallback and unsupported requests
 
 Non-goals in the current tranche:
 - full OpenClaw runtime replacement

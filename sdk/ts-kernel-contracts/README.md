@@ -7,6 +7,7 @@ Scope:
 - exports TypeScript contract types
 - exports small validator helpers for contract examples and fixtures
 - exports the engine conformance manifest contract
+- exports execution capability / placement / sandbox / unsupported-case contract types
 
 Non-goals:
 - no engine loop logic

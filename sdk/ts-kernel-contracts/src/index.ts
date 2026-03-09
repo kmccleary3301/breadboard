@@ -149,6 +149,115 @@ export interface PermissionV1 {
   audit_refs?: string[]
 }
 
+export interface ExecutionCapabilityV1 {
+  schema_version: "bb.execution_capability.v1"
+  capability_id: string
+  security_tier: "trusted_dev" | "single_tenant" | "shared_host" | "multi_tenant"
+  isolation_class: "none" | "process" | "oci" | "gvisor" | "kata" | "microvm" | "remote_service"
+  allow_read_paths?: string[]
+  allow_write_paths?: string[]
+  allow_net_hosts?: string[]
+  allow_run_programs?: string[]
+  allow_env_keys?: string[]
+  secret_mode: "inline" | "ref_only" | "scoped_proxy"
+  tty_mode?: "none" | "optional" | "required"
+  resource_budget?: Record<string, unknown> | null
+  evidence_mode: "minimal" | "replay_strict" | "audit_full"
+}
+
+export interface ExecutionPlacementV1 {
+  schema_version: "bb.execution_placement.v1"
+  placement_id: string
+  placement_class:
+    | "inline_ts"
+    | "local_process"
+    | "local_oci"
+    | "local_oci_gvisor"
+    | "local_oci_kata"
+    | "local_microvm"
+    | "remote_worker"
+    | "delegated_python"
+    | "delegated_oci"
+    | "delegated_microvm"
+  runtime_id: string
+  capability_id?: string | null
+  satisfied_security_tier?: string | null
+  downgrade_reason?: string | null
+  metadata?: Record<string, unknown>
+}
+
+export interface SandboxRequestV1 {
+  schema_version: "bb.sandbox_request.v1"
+  request_id: string
+  capability_id?: string | null
+  placement_class?: string | null
+  workspace_ref?: string | null
+  rootfs_ref?: string | null
+  image_ref?: string | null
+  snapshot_ref?: string | null
+  command: string[]
+  network_policy?: Record<string, unknown> | null
+  secret_refs?: string[]
+  timeout_seconds?: number | null
+  evidence_mode: "minimal" | "replay_strict" | "audit_full"
+  metadata?: Record<string, unknown>
+}
+
+export interface SandboxResultV1 {
+  schema_version: "bb.sandbox_result.v1"
+  request_id: string
+  status: "completed" | "failed" | "cancelled" | "timed_out"
+  placement_id?: string | null
+  stdout_ref?: string | null
+  stderr_ref?: string | null
+  artifact_refs?: string[]
+  side_effect_digest?: string | null
+  usage?: Record<string, unknown> | null
+  evidence_refs?: string[]
+  error?: Record<string, unknown> | null
+}
+
+export interface DistributedTaskDescriptorV1 {
+  schema_version: "bb.distributed_task_descriptor.v1"
+  task_id: string
+  task_kind: "turn" | "step" | "subagent" | "background" | "workflow"
+  parent_task_id?: string | null
+  placement_preferences?: string[]
+  checkpoint_strategy?: string | null
+  wake_conditions?: string[]
+  join_policy?: string | null
+  retry_policy?: Record<string, unknown> | null
+  priority?: number | null
+  budget?: Record<string, unknown> | null
+  expected_output_contract?: string | null
+  artifact_refs?: string[]
+}
+
+export interface TranscriptContinuationPatchV1 {
+  schema_version: "bb.transcript_continuation_patch.v1"
+  patch_id: string
+  pre_state_ref?: string | null
+  appended_messages: Array<Record<string, unknown>>
+  appended_tool_events?: Array<Record<string, unknown>>
+  lineage_updates?: Array<Record<string, unknown>>
+  compaction_markers?: Array<Record<string, unknown>>
+  post_state_digest: string
+  lossiness_flags?: string[]
+}
+
+export interface UnsupportedCaseV1 {
+  schema_version: "bb.unsupported_case.v1"
+  reason_code: string
+  summary: string
+  contract_family?: string | null
+  fallback_allowed: boolean
+  fallback_taken: boolean
+  required_capability_id?: string | null
+  unavailable_placement?: string | null
+  evidence_refs?: string[]
+  metadata?: Record<string, unknown>
+}
+
 export interface ReplaySessionV1 {
   schema_version: "bb.replay_session.v1"
   scenario_id: string
@@ -238,6 +347,13 @@ const runRequestSchema = loadTrackedSchema("bb.run_request.v1.schema.json")
 const runContextSchema = loadTrackedSchema("bb.run_context.v1.schema.json")
 const providerExchangeSchema = loadTrackedSchema("bb.provider_exchange.v1.schema.json")
 const permissionSchema = loadTrackedSchema("bb.permission.v1.schema.json")
+const executionCapabilitySchema = loadTrackedSchema("bb.execution_capability.v1.schema.json")
+const executionPlacementSchema = loadTrackedSchema("bb.execution_placement.v1.schema.json")
+const sandboxRequestSchema = loadTrackedSchema("bb.sandbox_request.v1.schema.json")
+const sandboxResultSchema = loadTrackedSchema("bb.sandbox_result.v1.schema.json")
+const distributedTaskDescriptorSchema = loadTrackedSchema("bb.distributed_task_descriptor.v1.schema.json")
+const transcriptContinuationPatchSchema = loadTrackedSchema("bb.transcript_continuation_patch.v1.schema.json")
+const unsupportedCaseSchema = loadTrackedSchema("bb.unsupported_case.v1.schema.json")
 const replaySessionSchema = loadTrackedSchema("bb.replay_session.v1.schema.json")
 const taskSchema = loadTrackedSchema("bb.task.v1.schema.json")
 const checkpointMetadataSchema = loadTrackedSchema("bb.checkpoint_metadata.v1.schema.json")
@@ -257,6 +373,13 @@ const validators = {
   runContext: ajv.compile(runContextSchema),
   providerExchange: ajv.compile(providerExchangeSchema),
   permission: ajv.compile(permissionSchema),
+  executionCapability: ajv.compile(executionCapabilitySchema),
+  executionPlacement: ajv.compile(executionPlacementSchema),
+  sandboxRequest: ajv.compile(sandboxRequestSchema),
+  sandboxResult: ajv.compile(sandboxResultSchema),
+  distributedTaskDescriptor: ajv.compile(distributedTaskDescriptorSchema),
+  transcriptContinuationPatch: ajv.compile(transcriptContinuationPatchSchema),
+  unsupportedCase: ajv.compile(unsupportedCaseSchema),
   replaySession: ajv.compile(replaySessionSchema),
   task: ajv.compile(taskSchema),
   checkpointMetadata: ajv.compile(checkpointMetadataSchema),
@@ -274,6 +397,13 @@ export const kernelSchemas = {
   runContext: runContextSchema,
   providerExchange: providerExchangeSchema,
   permission: permissionSchema,
+  executionCapability: executionCapabilitySchema,
+  executionPlacement: executionPlacementSchema,
+  sandboxRequest: sandboxRequestSchema,
+  sandboxResult: sandboxResultSchema,
+  distributedTaskDescriptor: distributedTaskDescriptorSchema,
+  transcriptContinuationPatch: transcriptContinuationPatchSchema,
+  unsupportedCase: unsupportedCaseSchema,
   replaySession: replaySessionSchema,
   task: taskSchema,
   checkpointMetadata: checkpointMetadataSchema,

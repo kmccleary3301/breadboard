@@ -1,11 +1,17 @@
 import type {
+  ExecutionCapabilityV1,
+  ExecutionPlacementV1,
   KernelEventV1,
   ProviderExchangeV1,
   RunRequestV1,
   SessionTranscriptV1,
   SessionTranscriptV1Item,
+  UnsupportedCaseV1,
 } from "@breadboard/kernel-contracts"
 import {
+  buildExecutionCapabilityFromRunRequest,
+  buildExecutionPlacement,
+  buildUnsupportedCase,
   executeProviderTextContinuationTurn,
   executeProviderTextTurn,
   type ProviderTextTurnResult,
@@ -106,15 +112,19 @@ export type OpenClawBridgeInvocation =
   | {
       mode: "breadboard"
       runRequest: RunRequestV1
+      executionCapability: ExecutionCapabilityV1
+      executionPlacement: ExecutionPlacementV1
       result: OpenClawEmbeddedRunResult
       unsupportedFields: string[]
       providerTurn?: ProviderTextTurnResult
       transcriptPostState?: SessionTranscriptV1
+      unsupportedCase?: UnsupportedCaseV1
     }
   | {
       mode: "fallback"
       result: OpenClawEmbeddedRunResult
       unsupportedFields: string[]
+      unsupportedCase?: UnsupportedCaseV1
     }
 
 export class UnsupportedOpenClawEmbeddedRunError extends Error {
@@ -168,6 +178,59 @@ export function buildOpenClawBreadboardRunRequest(params: OpenClawEmbeddedRunPar
       extra_system_prompt: params.extraSystemPrompt ?? null,
     },
   }
+}
+
+export function buildOpenClawExecutionCapability(params: OpenClawEmbeddedRunParams): ExecutionCapabilityV1 {
+  return buildExecutionCapabilityFromRunRequest(buildOpenClawBreadboardRunRequest(params), {
+    capabilityId: `openclaw:${params.runId}:embedded`,
+    securityTier: "trusted_dev",
+    isolationClass: "none",
+    evidenceMode: "replay_strict",
+    allowReadPaths: [params.workspaceDir],
+    allowWritePaths: [params.workspaceDir],
+    allowRunPrograms: [],
+    allowNetHosts: [],
+    ttyMode: "optional",
+  })
+}
+
+export function buildOpenClawExecutionPlacement(
+  capability: ExecutionCapabilityV1,
+  params: OpenClawEmbeddedRunParams,
+): ExecutionPlacementV1 {
+  return buildExecutionPlacement(capability, {
+    placementId: `openclaw:${params.runId}:inline_ts`,
+    placementClass: "inline_ts",
+    runtimeId: "breadboard.ts-host-bridges/openclaw",
+    metadata: {
+      host: "openclaw",
+      mode: "embedded",
+    },
+  })
+}
+
+export function buildOpenClawUnsupportedCase(
+  reasonCode: string,
+  summary: string,
+  options: {
+    params: OpenClawEmbeddedRunParams
+    fallbackAllowed?: boolean
+    fallbackTaken?: boolean
+    unavailablePlacement?: string | null
+    metadata?: Record<string, unknown>
+  },
+): UnsupportedCaseV1 {
+  return buildUnsupportedCase(reasonCode, summary, {
+    contractFamily: "bb.unsupported_case.v1",
+    fallbackAllowed: options.fallbackAllowed,
+    fallbackTaken: options.fallbackTaken,
+    requiredCapabilityId: `openclaw:${options.params.runId}:embedded`,
+    unavailablePlacement: options.unavailablePlacement ?? null,
+    metadata: {
+      host: "openclaw",
+      ...options.metadata,
+    },
+  })
 }
 
 export function buildOpenClawProviderExchange(
@@ -290,11 +353,22 @@ export async function runOpenClawEmbeddedViaBreadboard(
 ): Promise<OpenClawBridgeInvocation> {
   const unsupportedFields = findUnsupportedOpenClawFields(params)
   if (unsupportedFields.length > 0) {
+    const unsupportedCase = buildOpenClawUnsupportedCase(
+      "unsupported_openclaw_embedded_fields",
+      `Unsupported OpenClaw embedded fields: ${unsupportedFields.join(", ")}`,
+      {
+        params,
+        fallbackAllowed: Boolean(options.nativeFallback),
+        fallbackTaken: Boolean(options.nativeFallback),
+        metadata: { unsupported_fields: unsupportedFields },
+      },
+    )
     if (options.nativeFallback) {
       return {
         mode: "fallback",
         result: await options.nativeFallback(params),
         unsupportedFields,
+        unsupportedCase,
       }
     }
     throw new UnsupportedOpenClawEmbeddedRunError(
@@ -304,13 +378,25 @@ export async function runOpenClawEmbeddedViaBreadboard(
   }
 
   const runRequest = buildOpenClawBreadboardRunRequest(params)
+  const executionCapability = buildOpenClawExecutionCapability(params)
+  const executionPlacement = buildOpenClawExecutionPlacement(executionCapability, params)
   const executeBreadboard = options.executeBreadboard
   if (!executeBreadboard) {
+    const unsupportedCase = buildOpenClawUnsupportedCase(
+      "missing_breadboard_executor",
+      "No BreadBoard executor was provided for the OpenClaw embedded bridge",
+      {
+        params,
+        fallbackAllowed: Boolean(options.nativeFallback),
+        fallbackTaken: Boolean(options.nativeFallback),
+      },
+    )
     if (options.nativeFallback) {
       return {
         mode: "fallback",
         result: await options.nativeFallback(params),
         unsupportedFields: ["executeBreadboard"],
+        unsupportedCase,
       }
     }
     throw new UnsupportedOpenClawEmbeddedRunError(
@@ -344,9 +430,12 @@ export async function runOpenClawEmbeddedViaBreadboard(
   return {
     mode: "breadboard",
     runRequest,
+    executionCapability,
+    executionPlacement,
     unsupportedFields,
     providerTurn,
     transcriptPostState: providerTurn.transcript,
+    unsupportedCase: undefined,
     result: buildOpenClawResult(params, output),
   }
 }

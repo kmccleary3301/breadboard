@@ -6,12 +6,16 @@ import {
   assertValid,
   type CheckpointMetadataV1,
   type EngineConformanceManifestV1,
+  type ExecutionCapabilityV1,
+  type ExecutionPlacementV1,
   type KernelEventV1,
   type ProviderExchangeV1,
   type RunContextV1,
   type RunRequestV1,
   type SessionTranscriptV1Item,
   type SessionTranscriptV1,
+  type TranscriptContinuationPatchV1,
+  type UnsupportedCaseV1,
   type TaskV1,
   type ToolCallV1,
   type ToolExecutionOutcomeV1,
@@ -211,6 +215,7 @@ export interface ProviderTextTurnOptions {
 
 export interface ProviderTextTurnResult extends StaticTextTurnResult {
   providerExchange: ProviderExchangeV1
+  transcriptContinuationPatch?: TranscriptContinuationPatchV1
 }
 
 export interface ProviderTextContinuationTurnOptions extends ProviderTextTurnOptions {
@@ -238,6 +243,118 @@ export function buildRunContextFromRequest(
     delegated_services: [],
     metadata: { source: "ts-kernel-core" },
   }
+}
+
+export function buildExecutionCapabilityFromRunRequest(
+  requestInput: RunRequestV1,
+  options: {
+    capabilityId?: string
+    securityTier?: ExecutionCapabilityV1["security_tier"]
+    isolationClass?: ExecutionCapabilityV1["isolation_class"]
+    secretMode?: ExecutionCapabilityV1["secret_mode"]
+    evidenceMode?: ExecutionCapabilityV1["evidence_mode"]
+    allowRunPrograms?: string[]
+    allowReadPaths?: string[]
+    allowWritePaths?: string[]
+    allowNetHosts?: string[]
+    ttyMode?: ExecutionCapabilityV1["tty_mode"]
+  } = {},
+): ExecutionCapabilityV1 {
+  const request = assertValid<RunRequestV1>("runRequest", requestInput)
+  return assertValid<ExecutionCapabilityV1>("executionCapability", {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: options.capabilityId ?? `cap:${request.request_id}`,
+    security_tier: options.securityTier ?? "trusted_dev",
+    isolation_class: options.isolationClass ?? "none",
+    allow_read_paths: options.allowReadPaths ?? (request.workspace_root ? [request.workspace_root] : []),
+    allow_write_paths: options.allowWritePaths ?? (request.workspace_root ? [request.workspace_root] : []),
+    allow_net_hosts: options.allowNetHosts ?? [],
+    allow_run_programs: options.allowRunPrograms ?? [],
+    allow_env_keys: [],
+    secret_mode: options.secretMode ?? "ref_only",
+    tty_mode: options.ttyMode ?? "optional",
+    resource_budget: null,
+    evidence_mode: options.evidenceMode ?? "replay_strict",
+  })
+}
+
+export function buildExecutionPlacement(
+  capability: ExecutionCapabilityV1,
+  options: {
+    placementId: string
+    placementClass: ExecutionPlacementV1["placement_class"]
+    runtimeId: string
+    satisfiedSecurityTier?: string | null
+    downgradeReason?: string | null
+    metadata?: Record<string, unknown>
+  },
+): ExecutionPlacementV1 {
+  return assertValid<ExecutionPlacementV1>("executionPlacement", {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: options.placementId,
+    placement_class: options.placementClass,
+    runtime_id: options.runtimeId,
+    capability_id: capability.capability_id,
+    satisfied_security_tier: options.satisfiedSecurityTier ?? capability.security_tier,
+    downgrade_reason: options.downgradeReason ?? null,
+    metadata: options.metadata ?? {},
+  })
+}
+
+export function buildTranscriptContinuationPatch(
+  transcript: SessionTranscriptV1,
+  options: {
+    patchId: string
+    preStateRef?: string | null
+    preservedPrefixItems?: number
+    appendedToolEvents?: Array<Record<string, unknown>>
+    lineageUpdates?: Array<Record<string, unknown>>
+    compactionMarkers?: Array<Record<string, unknown>>
+    lossinessFlags?: string[]
+  },
+): TranscriptContinuationPatchV1 {
+  const preservedPrefixItems = options.preservedPrefixItems ?? 0
+  const appendedMessages = transcript.items
+    .slice(preservedPrefixItems)
+    .map((item) => cloneTranscriptItem(item) as unknown as Record<string, unknown>)
+  return assertValid<TranscriptContinuationPatchV1>("transcriptContinuationPatch", {
+    schema_version: "bb.transcript_continuation_patch.v1",
+    patch_id: options.patchId,
+    pre_state_ref: options.preStateRef ?? null,
+    appended_messages: appendedMessages,
+    appended_tool_events: options.appendedToolEvents ?? [],
+    lineage_updates: options.lineageUpdates ?? [],
+    compaction_markers: options.compactionMarkers ?? [],
+    post_state_digest: `${transcript.sessionId}:${transcript.eventCursor ?? transcript.items.length}`,
+    lossiness_flags: options.lossinessFlags ?? [],
+  })
+}
+
+export function buildUnsupportedCase(
+  reasonCode: string,
+  summary: string,
+  options: {
+    contractFamily?: string | null
+    fallbackAllowed?: boolean
+    fallbackTaken?: boolean
+    requiredCapabilityId?: string | null
+    unavailablePlacement?: string | null
+    evidenceRefs?: string[]
+    metadata?: Record<string, unknown>
+  } = {},
+): UnsupportedCaseV1 {
+  return assertValid<UnsupportedCaseV1>("unsupportedCase", {
+    schema_version: "bb.unsupported_case.v1",
+    reason_code: reasonCode,
+    summary,
+    contract_family: options.contractFamily ?? null,
+    fallback_allowed: options.fallbackAllowed ?? false,
+    fallback_taken: options.fallbackTaken ?? false,
+    required_capability_id: options.requiredCapabilityId ?? null,
+    unavailable_placement: options.unavailablePlacement ?? null,
+    evidence_refs: options.evidenceRefs ?? [],
+    metadata: options.metadata ?? {},
+  })
 }
 
 export function executeStaticTextTurn(
@@ -524,16 +641,21 @@ export function executeProviderTextContinuationTurn(
   const existingItems = Array.isArray(options.existingTranscript)
     ? normalizeTranscriptContractItems(options.existingTranscript)
     : normalizeTranscriptContractItems(options.existingTranscript.items)
+  const transcript = {
+    ...base.transcript,
+    items: [...existingItems, ...base.transcript.items],
+    metadata: {
+      ...base.transcript.metadata,
+      continuation_from_existing_transcript: true,
+      preserved_prefix_items: existingItems.length,
+    },
+  }
   return {
     ...base,
-    transcript: {
-      ...base.transcript,
-      items: [...existingItems, ...base.transcript.items],
-      metadata: {
-        ...base.transcript.metadata,
-        continuation_from_existing_transcript: true,
-        preserved_prefix_items: existingItems.length,
-      },
-    },
+    transcript,
+    transcriptContinuationPatch: buildTranscriptContinuationPatch(transcript, {
+      patchId: `${base.runContext.request_id}:transcript_patch`,
+      preservedPrefixItems: existingItems.length,
+    }),
   }
 }

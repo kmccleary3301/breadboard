@@ -57,6 +57,9 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 - `sdk/ts-kernel-contracts/`
 - `sdk/ts-kernel-core/`
 - `sdk/ts-host-bridges/`
+- `sdk/ts-execution-drivers/`
+- `sdk/ts-execution-driver-local/`
+- `sdk/ts-execution-driver-oci/`
 
 ## Current tranche status
 

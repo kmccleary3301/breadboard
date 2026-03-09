@@ -2,10 +2,14 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import {
+  buildExecutionCapabilityFromRunRequest,
+  buildExecutionPlacement,
   buildConformanceSummary,
   buildKernelEventId,
   buildRunContextFromRequest,
+  buildTranscriptContinuationPatch,
   buildTaskLineage,
+  buildUnsupportedCase,
   cloneCheckpointMetadata,
   cloneTranscriptItem,
   eventBelongsToSession,
@@ -157,6 +161,35 @@ test("kernel core can execute a constrained static text turn", () => {
   })
 })
 
+test("kernel core can build execution capability and placement from a run request", () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-cap-1",
+    entry_mode: "interactive",
+    task: "inspect workspace",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const capability = buildExecutionCapabilityFromRunRequest(request, {
+    capabilityId: "cap-run-cap-1",
+    isolationClass: "oci",
+    securityTier: "single_tenant",
+    allowRunPrograms: ["rg"],
+  })
+  assert.equal(capability.schema_version, "bb.execution_capability.v1")
+  assert.equal(capability.isolation_class, "oci")
+  assert.deepEqual(capability.allow_run_programs, ["rg"])
+
+  const placement = buildExecutionPlacement(capability, {
+    placementId: "placement-1",
+    placementClass: "local_oci",
+    runtimeId: "docker.oci",
+  })
+  assert.equal(placement.schema_version, "bb.execution_placement.v1")
+  assert.equal(placement.placement_class, "local_oci")
+  assert.equal(placement.capability_id, "cap-run-cap-1")
+})
+
 test("kernel core can execute a constrained scripted tool turn", () => {
   const request = {
     schema_version: "bb.run_request.v1",
@@ -303,4 +336,34 @@ test("kernel core can continue from an existing transcript during a provider-awa
     continuation_from_existing_transcript: true,
     preserved_prefix_items: 2,
   })
+  assert.equal(result.transcriptContinuationPatch?.schema_version, "bb.transcript_continuation_patch.v1")
+  assert.equal(result.transcriptContinuationPatch?.appended_messages.length, 3)
+})
+
+test("kernel core can build transcript continuation patches and unsupported cases", () => {
+  const patch = buildTranscriptContinuationPatch(
+    {
+      schemaVersion: "bb.session_transcript.v1",
+      sessionId: "sess-1",
+      items: [
+        { kind: "user_message", visibility: "model", content: { text: "hi" } },
+        { kind: "assistant_message", visibility: "model", content: { text: "hello" } },
+      ],
+      eventCursor: 2,
+    },
+    {
+      patchId: "patch-1",
+      preservedPrefixItems: 1,
+    },
+  )
+  assert.equal(patch.schema_version, "bb.transcript_continuation_patch.v1")
+  assert.equal(patch.appended_messages.length, 1)
+
+  const unsupported = buildUnsupportedCase("placement_unavailable", "microvm unavailable", {
+    fallbackAllowed: true,
+    fallbackTaken: true,
+    unavailablePlacement: "local_microvm",
+  })
+  assert.equal(unsupported.schema_version, "bb.unsupported_case.v1")
+  assert.equal(unsupported.fallback_taken, true)
 })

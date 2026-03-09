@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url"
 import {
   UnsupportedOpenClawEmbeddedRunError,
   buildOpenClawBreadboardRunRequest,
+  buildOpenClawExecutionCapability,
+  buildOpenClawExecutionPlacement,
   findUnsupportedOpenClawFields,
   runOpenClawEmbeddedViaBreadboard,
   type OpenClawEmbeddedRunParams,
@@ -64,6 +66,17 @@ test("openclaw bridge builds a stable BreadBoard run request", () => {
   })
 })
 
+test("openclaw bridge derives execution capability and placement for the supported slice", () => {
+  const capability = buildOpenClawExecutionCapability(buildBaseParams())
+  const placement = buildOpenClawExecutionPlacement(capability, buildBaseParams())
+  assert.equal(capability.schema_version, "bb.execution_capability.v1")
+  assert.equal(capability.security_tier, "trusted_dev")
+  assert.equal(capability.isolation_class, "none")
+  assert.equal(placement.schema_version, "bb.execution_placement.v1")
+  assert.equal(placement.placement_class, "inline_ts")
+  assert.equal(placement.capability_id, capability.capability_id)
+})
+
 test("openclaw bridge detects unsupported slice fields", () => {
   const unsupported = findUnsupportedOpenClawFields({
     ...buildBaseParams(),
@@ -110,6 +123,8 @@ test("openclaw bridge routes supported slice through BreadBoard and projects cal
   )
 
   assert.equal(invocation.mode, "breadboard")
+  assert.equal(invocation.executionCapability.schema_version, "bb.execution_capability.v1")
+  assert.equal(invocation.executionPlacement.schema_version, "bb.execution_placement.v1")
   assert.equal(invocation.result.payloads?.[0]?.text, "hello from BreadBoard")
   assert.equal(invocation.result.meta.agentMeta?.provider, "openai")
   assert.deepEqual(seen, [
@@ -230,6 +245,7 @@ test("openclaw bridge falls back cleanly on unsupported slice fields", async () 
 
   assert.equal(invocation.mode, "fallback")
   assert.deepEqual(invocation.unsupportedFields, ["images"])
+  assert.equal(invocation.unsupportedCase?.reason_code, "unsupported_openclaw_embedded_fields")
   assert.equal(invocation.result.payloads?.[0]?.text, "native fallback")
 })
 

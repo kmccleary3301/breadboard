@@ -14,6 +14,33 @@ test("kernel validators accept tracked examples", () => {
   assert.doesNotThrow(() => assertValid("runRequest", loadJson("../../contracts/kernel/examples/run_request_minimal.json")))
   assert.doesNotThrow(() => assertValid("runContext", loadJson("../../contracts/kernel/examples/run_context_minimal.json")))
   assert.doesNotThrow(() => assertValid("providerExchange", loadJson("../../contracts/kernel/examples/provider_exchange_minimal.json")))
+  assert.doesNotThrow(() =>
+    assertValid("executionCapability", loadJson("../../contracts/kernel/examples/execution_capability_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("executionPlacement", loadJson("../../contracts/kernel/examples/execution_placement_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("sandboxRequest", loadJson("../../contracts/kernel/examples/sandbox_request_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("sandboxResult", loadJson("../../contracts/kernel/examples/sandbox_result_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid(
+      "distributedTaskDescriptor",
+      loadJson("../../contracts/kernel/examples/distributed_task_descriptor_minimal.json"),
+    ),
+  )
+  assert.doesNotThrow(() =>
+    assertValid(
+      "transcriptContinuationPatch",
+      loadJson("../../contracts/kernel/examples/transcript_continuation_patch_minimal.json"),
+    ),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("unsupportedCase", loadJson("../../contracts/kernel/examples/unsupported_case_minimal.json")),
+  )
   assert.doesNotThrow(() => assertValid("toolSpec", loadJson("../../contracts/kernel/examples/tool_spec_minimal.json")))
   assert.doesNotThrow(() => assertValid("task", loadJson("../../contracts/kernel/examples/task_minimal.json")))
   assert.doesNotThrow(() => assertValid("checkpointMetadata", loadJson("../../contracts/kernel/examples/checkpoint_metadata_minimal.json")))

@@ -1,0 +1,29 @@
+{
+  "name": "@breadboard/execution-driver-oci",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/ts-execution-driver-oci/src/index.js",
+  "types": "dist/ts-execution-driver-oci/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/ts-execution-driver-oci/src/index.d.ts",
+      "default": "./dist/ts-execution-driver-oci/src/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "test": "npm --prefix ../ts-kernel-contracts run build && npm --prefix ../ts-execution-drivers run build && npm install ../ts-kernel-contracts ../ts-execution-drivers >/dev/null && node --test dist/ts-execution-driver-oci/test/oci.test.js"
+  },
+  "dependencies": {
+    "@breadboard/execution-drivers": "file:../ts-execution-drivers",
+    "@breadboard/kernel-contracts": "file:../ts-kernel-contracts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.5.4"
+  }
+}
