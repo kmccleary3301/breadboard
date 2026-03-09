@@ -56,3 +56,14 @@ The second frozen fixture captures the more realistic host-level requirement:
 - return a transcript post-state suitable for host-owned persistence
 
 That is still not claiming ownership of OpenClaw session storage. It is proving that BreadBoard can participate in transcript continuity without taking over transcript persistence.
+
+## Explicit closure condition for this program
+
+For the current TypeScript SDK effort, the OpenClaw proving-ground is considered complete when:
+
+1. the supported embedded-run slice is frozen
+2. the transcript-continuation slice is frozen
+3. fallback behavior is explicit and tested
+4. the bridge does not overclaim tool-rich or ACP parity
+
+That condition is now met.

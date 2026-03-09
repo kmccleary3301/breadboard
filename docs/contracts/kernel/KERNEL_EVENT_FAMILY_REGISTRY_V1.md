@@ -10,6 +10,7 @@ These event types are treated as kernel-owned truth surfaces.
 | --- | --- | --- | --- |
 | `assistant_message` | `message.assistant` | `engine` | `model` |
 | `user_message` | `message.user` | `human` | `model` |
+| `provider_response` | `provider.exchange` | `provider` | `host` |
 | `tool_call` | `tool.called` | `engine` | `host` |
 | `tool_result` | `tool.completed` | `tool` | `host` |
 | `permission_request` | `permission.requested` | `service` | `host` |
@@ -66,6 +67,7 @@ These are useful host-facing events, but they are not part of the kernel event f
 ### Notes on current owners
 
 - `limits_update` is emitted as a best-effort host-facing bridge event from provider runtime code when provider rate-limit headers are parsed. It is intentionally not treated as kernel truth.
+- `provider_response` is kernel truth for the scoped TS program because both the Python reference fixtures and the TS kernel/provider-aware execution slices rely on a shared host-visible provider exchange event family.
 - long-running macro events are currently collapsed through `SessionState.record_lifecycle_event(...)`, so their cross-engine contract surface today is `lifecycle_event`, not a separate macro-event family.
 - replay-only events like `completion` and `run_finished` are bridge/session orchestration surfaces, not kernel event families.
 

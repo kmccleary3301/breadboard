@@ -23,6 +23,7 @@ from ..todo.projection import project_store_snapshot_to_tui_envelope
 CANONICAL_KERNEL_EVENT_TYPES: dict[str, dict[str, str]] = {
     "assistant_message": {"family": "message.assistant", "actor": "engine", "visibility": "model"},
     "user_message": {"family": "message.user", "actor": "human", "visibility": "model"},
+    "provider_response": {"family": "provider.exchange", "actor": "provider", "visibility": "host"},
     "tool_call": {"family": "tool.called", "actor": "engine", "visibility": "host"},
     "tool_result": {"family": "tool.completed", "actor": "tool", "visibility": "host"},
     "permission_request": {"family": "permission.requested", "actor": "service", "visibility": "host"},
@@ -43,10 +44,6 @@ AUDIT_ONLY_RUNTIME_EVENT_TYPES: dict[str, dict[str, str]] = {
     "lifecycle_event": {"family": "run.lifecycle", "actor": "engine", "visibility": "audit"},
     "guardrail_event": {"family": "warning.guardrail", "actor": "service", "visibility": "audit"},
 }
-
-PROJECTED_RUNTIME_EVENT_FAMILIES = {meta["family"] for meta in PROJECTION_ONLY_RUNTIME_EVENT_TYPES.values()}
-
-AUDIT_RUNTIME_EVENT_FAMILIES = {meta["family"] for meta in AUDIT_ONLY_RUNTIME_EVENT_TYPES.values()}
 
 PROJECTED_RUNTIME_EVENT_FAMILIES = {meta["family"] for meta in PROJECTION_ONLY_RUNTIME_EVENT_TYPES.values()}
 
@@ -169,23 +166,6 @@ class SessionState:
             "actor": "engine",
             "visibility": "audit",
         }
-
-    @staticmethod
-    def event_family_registry() -> Dict[str, Dict[str, str]]:
-        registry: Dict[str, Dict[str, str]] = {}
-        for source, classification in (
-            (CANONICAL_KERNEL_EVENT_TYPES, "canonical"),
-            (PROJECTION_ONLY_RUNTIME_EVENT_TYPES, "projection_only"),
-            (AUDIT_ONLY_RUNTIME_EVENT_TYPES, "audit_only"),
-        ):
-            for event_type, meta in source.items():
-                registry[event_type] = {
-                    "classification": classification,
-                    "family": str(meta.get("family") or "legacy.unclassified"),
-                    "actor": str(meta.get("actor") or "service"),
-                    "visibility": str(meta.get("visibility") or "audit"),
-                }
-        return registry
 
     @staticmethod
     def event_family_registry() -> Dict[str, Dict[str, str]]:

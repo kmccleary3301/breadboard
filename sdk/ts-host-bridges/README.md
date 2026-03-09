@@ -7,9 +7,11 @@ Current scope:
 - strict supported-slice detection
 - fallback-safe routing to a native host executor
 - projection of canonical BreadBoard kernel events into OpenClaw-style callbacks
+- transcript-continuation bridge path for host-owned transcript persistence
 
 Non-goals in the current tranche:
 - full OpenClaw runtime replacement
+- tool-rich embedded Pi parity
 - hidden in-process BreadBoard engine
 - transcript persistence ownership takeover
 - ACP or broad channel-routing parity

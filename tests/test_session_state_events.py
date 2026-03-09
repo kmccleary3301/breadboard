@@ -195,6 +195,7 @@ def test_session_state_event_family_registry_covers_public_runtime_event_types()
     expected = {
         "assistant_message": ("canonical", "message.assistant"),
         "user_message": ("canonical", "message.user"),
+        "provider_response": ("canonical", "provider.exchange"),
         "tool_call": ("canonical", "tool.called"),
         "tool_result": ("canonical", "tool.completed"),
         "permission_request": ("canonical", "permission.requested"),

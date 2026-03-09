@@ -44,6 +44,7 @@ These currently force native fallback or an unsupported-slice error:
 - block-reply callback surfaces
 - richer channel / group routing fields
 - inherited subagent policy surfaces
+- tool-bearing embedded execution parity beyond the tracked bridge fixtures
 
 ## Bridge semantics
 
@@ -59,3 +60,21 @@ The bridge:
 ## Why this matters
 
 This is the first proving-ground bridge that exercises a real host boundary against the stronger kernel contract program. It is intentionally narrow and should be treated as an executable seam proof, not as full OpenClaw compatibility.
+
+## Current stopping boundary
+
+This program now stops at:
+
+- host-boundary acceptance
+- callback projection
+- transcript continuity
+- explicit native fallback
+
+It does **not** currently stop at:
+
+- full Pi replacement
+- tool-rich embedded parity
+- ACP parity
+- delivery/channel parity
+
+That boundary is intentional. It marks the end of the scoped TypeScript kernel and host-bridge effort, not a lack of future direction.
