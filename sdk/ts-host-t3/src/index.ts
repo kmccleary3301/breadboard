@@ -1,6 +1,11 @@
 import type { ProviderExchangeV1 } from "@breadboard/kernel-contracts"
 import { createBackbone, type BackboneTurnResult, type SupportClaim } from "@breadboard/backbone"
-import { buildProviderHostTurnView, createProviderHostSession } from "@breadboard/host-kits"
+import {
+  buildProviderHostTurnView,
+  createProviderHostSession,
+  type HostManagedTranscript,
+  normalizeHostManagedTranscript,
+} from "@breadboard/host-kits"
 import {
   createAiSdkTransportSession,
   projectBackboneTurnToAiSdkTransport,
@@ -67,6 +72,8 @@ export interface T3CodeStarter {
     workspaceRoot?: string | null
     requestedModel: string
     requestedProvider: string
+    initialTranscript?: HostManagedTranscript | null
+    initialTransportState?: AiSdkTransportState | null
   }): T3CodeSession
 }
 
@@ -155,7 +162,7 @@ export function createT3CodeStarter(options: T3CodeStarterOptions = {}): T3CodeS
       return runTurn(input, input.previousTransportState)
     },
     openSession(sessionInput): T3CodeSession {
-      const transportSession = createAiSdkTransportSession()
+      const transportSession = createAiSdkTransportSession(sessionInput.initialTransportState ?? null)
       const base = {
         sessionId: sessionInput.sessionId,
         workspaceId: sessionInput.workspaceId,
@@ -172,6 +179,8 @@ export function createT3CodeStarter(options: T3CodeStarterOptions = {}): T3CodeS
           requestedProvider: sessionInput.requestedProvider,
           sessionId: sessionInput.sessionId,
         }),
+        initialTranscript: normalizeHostManagedTranscript(sessionInput.sessionId, sessionInput.initialTranscript),
+        initialProjectionState: sessionInput.initialTransportState ?? null,
         buildInput(input, transcript) {
           return {
             request: buildRequest({

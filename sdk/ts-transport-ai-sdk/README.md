@@ -20,6 +20,7 @@ Current public helpers:
 - `deriveAiSdkTransportState(...)`
 - `createAiSdkTransportSession(...)`
 - `AiSdkTransportSession.appendTurn(...)` for resumable auto-projection
+- `AiSdkTransportSession.createStreamChunk(...)` for host-facing resumable frame chunks
 
 The session helper exists for thin hosts that want resumable projection state without turning the transport layer into kernel truth.
 

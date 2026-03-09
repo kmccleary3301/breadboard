@@ -134,8 +134,16 @@ export interface AiSdkTransportSessionUpdate extends AiSdkTransportProjectTurnRe
   readonly resumed: boolean
 }
 
+export interface AiSdkTransportStreamChunk extends AiSdkTransportSessionUpdate {
+  readonly turnCount: number
+}
+
 export interface AiSdkTransportSession {
   readonly state: AiSdkTransportState | null
+  createStreamChunk(
+    result: BackboneTurnResult,
+    options?: { messageId?: string; stopReason?: string },
+  ): AiSdkTransportStreamChunk
   appendTurn(
     result: BackboneTurnResult,
     options?: { messageId?: string; stopReason?: string },
@@ -179,6 +187,16 @@ export function createAiSdkTransportSession(
   return {
     get state(): AiSdkTransportState | null {
       return state
+    },
+    createStreamChunk(
+      result: BackboneTurnResult,
+      options: { messageId?: string; stopReason?: string } = {},
+    ): AiSdkTransportStreamChunk {
+      const update = this.appendTurn(result, options)
+      return {
+        ...update,
+        turnCount: update.state.turnCount,
+      }
     },
     appendTurn(
       result: BackboneTurnResult,

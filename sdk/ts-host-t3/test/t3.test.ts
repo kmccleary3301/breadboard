@@ -117,3 +117,42 @@ test("t3 starter can open a reusable session wrapper", async () => {
   assert.equal(continued.frames[0]?.type, "resume")
   assert.equal(session.transportState?.turnCount, 2)
 })
+
+test("t3 starter can seed a reusable session with existing transcript and transport state", async () => {
+  const starter = createT3CodeStarter()
+  const session = starter.openSession({
+    sessionId: "session-2",
+    workspaceId: "workspace-1",
+    workspaceRoot: "/tmp/project",
+    requestedModel: "openai/gpt-5.4-mini",
+    requestedProvider: "openai",
+    initialTranscript: [
+      {
+        kind: "assistant_message",
+        visibility: "model",
+        content: { text: "Existing assistant state." },
+      },
+    ],
+    initialTransportState: {
+      lastMessageId: "prior-message",
+      transcriptDigest: "digest:prior",
+      turnCount: 1,
+    },
+  })
+
+  const continued = await session.continuePromptTurn({
+    task: "Continue",
+    providerExchange: exchange,
+    assistantText: "And here is a continuation.",
+    existingTranscript: session.transcript ?? [],
+    previousTransportState: session.transportState,
+  })
+
+  assert.equal(continued.frames[0]?.type, "resume")
+  assert.equal(continued.transportState.turnCount, 2)
+  assert.ok((session.transcript?.items.length ?? 0) >= 2)
+  assert.equal(
+    ((session.transcript?.items[0]?.content ?? {}) as { text?: string }).text,
+    "Existing assistant state.",
+  )
+})

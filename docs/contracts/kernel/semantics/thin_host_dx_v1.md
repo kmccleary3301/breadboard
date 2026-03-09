@@ -51,3 +51,4 @@ The current thin-host starter now includes:
 - a reusable in-memory session wrapper for repeated prompt turns
 - that session wrapper is now implemented through the reusable Host Kit provider-turn session helper
 - resumable AI SDK-style transport projection
+- explicit migration seeding through initial transcript and transport state in the session opener

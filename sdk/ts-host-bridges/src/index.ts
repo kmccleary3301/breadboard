@@ -5,7 +5,9 @@ import {
 } from "@breadboard/backbone"
 import type { HostKit, HostKitClassification, HostKitInvocation } from "@breadboard/host-kits"
 import {
+  buildHostProjectionEnvelope,
   buildFallbackHostKitInvocation,
+  emitHostProjectionCallbacks,
   createProviderHostSession,
   buildSupportedHostKitInvocation,
   createHostKit,
@@ -455,30 +457,10 @@ async function emitDriverTurnToOpenClawCallbacks(
   params: OpenClawEmbeddedRunParams,
   turn: DriverMediatedToolTurnResult,
 ): Promise<void> {
-  let assistantStarted = false
-  for (const item of turn.transcript.items) {
-    if (item.kind === "tool_result") {
-      const parts = (item.content as { parts?: Array<{ preview?: string }> }).parts ?? []
-      const text = parts
-        .map((part) => part.preview)
-        .filter((value): value is string => typeof value === "string" && value.length > 0)
-        .join("\n")
-      if (text.length > 0) {
-        await params.onToolResult?.({ text, mediaUrls: [] })
-      }
-      continue
-    }
-    if (item.kind === "assistant_message" && item.visibility === "model") {
-      const text = (item.content as { text?: string }).text
-      if (typeof text === "string" && text.length > 0) {
-        if (!assistantStarted) {
-          assistantStarted = true
-          await params.onAssistantMessageStart?.()
-        }
-        await params.onPartialReply?.({ text })
-      }
-    }
-  }
+  await emitHostProjectionCallbacks(params, buildHostProjectionEnvelope({
+    transcriptSource: turn,
+    result: null,
+  }).transcript)
 }
 
 function buildOpenClawResult(
@@ -511,7 +493,11 @@ function buildOpenClawResultFromDriverTurn(
   params: OpenClawEmbeddedRunParams,
   turn: DriverMediatedToolTurnResult,
 ): OpenClawEmbeddedRunResult {
-  const assistantText = ((turn.transcript.items.at(-1)?.content ?? {}) as { text?: string }).text ?? ""
+  const projection = buildHostProjectionEnvelope({
+    transcriptSource: turn,
+    result: null,
+  }).transcript
+  const assistantText = projection.assistantTexts.at(-1) ?? ""
   return {
     payloads: assistantText
       ? [

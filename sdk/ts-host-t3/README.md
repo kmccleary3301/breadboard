@@ -20,3 +20,9 @@ This package exists to prove that BreadBoard can be attractive for thin TypeScri
 
 Example:
 - [`examples/basic-session.ts`](./examples/basic-session.ts)
+- [`examples/migration-starter.ts`](./examples/migration-starter.ts)
+
+Migration posture:
+- keep persistence and routing host-owned
+- optionally seed transcript and transport state into `openSession(...)`
+- let BreadBoard own turn execution, transcript continuation, and projection state updates

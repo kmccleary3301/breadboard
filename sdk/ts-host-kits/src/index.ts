@@ -62,6 +62,27 @@ export interface ProviderHostTurnView<ProjectionState, ProjectionOutput> {
   readonly projectionState: ProjectionState | null
 }
 
+export interface HostTranscriptProjection {
+  readonly entries: Array<
+    | { kind: "assistant_text"; text: string }
+    | { kind: "tool_preview"; text: string }
+  >
+  readonly assistantTexts: readonly string[]
+  readonly toolPreviews: readonly string[]
+}
+
+export interface HostProjectionCallbackSink {
+  readonly onAssistantMessageStart?: () => void | Promise<void>
+  readonly onPartialReply?: (payload: { text?: string; mediaUrls?: string[] }) => void | Promise<void>
+  readonly onToolResult?: (payload: { text?: string; mediaUrls?: string[] }) => void | Promise<void>
+  readonly onAgentEvent?: (payload: { stream: string; data: Record<string, unknown> }) => void | Promise<void>
+}
+
+export interface HostProjectionEnvelope<Result> {
+  readonly transcript: HostTranscriptProjection
+  readonly result: Result
+}
+
 export interface ProviderHostSession<Input, ProjectionState, ProjectionOutput> {
   classifyProviderTurn(input: Input): SupportClaim
   runProviderTurn(input: Input): Promise<ProviderHostSessionTurnResult<ProjectionState, ProjectionOutput>>
@@ -73,6 +94,8 @@ export interface ProviderHostSession<Input, ProjectionState, ProjectionOutput> {
 export interface ProviderHostSessionOptions<Input, ProjectionState, ProjectionOutput> {
   readonly backboneSession: BackboneSession
   readonly buildInput: (input: Input, transcript: SessionTranscriptV1 | null) => ProviderTurnInput
+  readonly initialTranscript?: SessionTranscriptV1 | null
+  readonly initialProjectionState?: ProjectionState | null
   readonly projectTurn?: (
     turn: BackboneTurnResult,
     context: ProviderHostSessionProjectContext<ProjectionState>,
@@ -163,14 +186,118 @@ export function buildProviderHostTurnView<ProjectionState, ProjectionOutput>(
 }
 
 /**
+ * Build a host-facing transcript projection from any transcript-bearing turn/result shape.
+ */
+export function buildHostTranscriptProjection(source: {
+  readonly transcript: SessionTranscriptV1
+}): HostTranscriptProjection {
+  const entries: Array<
+    | { kind: "assistant_text"; text: string }
+    | { kind: "tool_preview"; text: string }
+  > = []
+  const assistantTexts: string[] = []
+  const toolPreviews: string[] = []
+
+  for (const item of source.transcript.items) {
+    if (item.kind === "assistant_message" && item.visibility === "model") {
+      const text = ((item.content ?? {}) as { text?: string }).text
+      if (typeof text === "string" && text.length > 0) {
+        entries.push({ kind: "assistant_text", text })
+        assistantTexts.push(text)
+      }
+      continue
+    }
+
+    if (item.kind === "tool_result") {
+      const parts = ((item.content ?? {}) as { parts?: Array<{ preview?: string }> }).parts ?? []
+      const preview = parts
+        .map((part) => part.preview)
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+        .join("\n")
+      if (preview.length > 0) {
+        entries.push({ kind: "tool_preview", text: preview })
+        toolPreviews.push(preview)
+      }
+    }
+  }
+
+  return {
+    entries,
+    assistantTexts,
+    toolPreviews,
+  }
+}
+
+/**
+ * Emit a normalized transcript projection through a host callback sink.
+ */
+export async function emitHostProjectionCallbacks(
+  sink: HostProjectionCallbackSink,
+  projection: HostTranscriptProjection,
+  agentEvents: Array<{ stream: string; data: Record<string, unknown> }> = [],
+): Promise<void> {
+  let assistantStarted = false
+  for (const entry of projection.entries) {
+    if (entry.kind === "assistant_text") {
+      if (!assistantStarted) {
+        assistantStarted = true
+        await sink.onAssistantMessageStart?.()
+      }
+      await sink.onPartialReply?.({ text: entry.text })
+      continue
+    }
+    await sink.onToolResult?.({ text: entry.text, mediaUrls: [] })
+  }
+
+  for (const event of agentEvents) {
+    await sink.onAgentEvent?.(event)
+  }
+}
+
+/**
+ * Normalize the common envelope many hosts need: transcript projection plus a host-shaped result.
+ */
+export function buildHostProjectionEnvelope<Result>(options: {
+  readonly transcriptSource: { readonly transcript: SessionTranscriptV1 }
+  readonly result: Result
+}): HostProjectionEnvelope<Result> {
+  return {
+    transcript: buildHostTranscriptProjection(options.transcriptSource),
+    result: options.result,
+  }
+}
+
+/**
+ * Normalize a host-managed transcript input into the canonical transcript envelope used by the
+ * session helper. Hosts may retain looser local item typing, but this helper pins the shape at
+ * the Host Kit boundary.
+ */
+export function normalizeHostManagedTranscript(
+  sessionId: string,
+  transcript: HostManagedTranscript | null | undefined,
+): SessionTranscriptV1 | null {
+  if (!transcript) {
+    return null
+  }
+  if (Array.isArray(transcript)) {
+    return {
+      schemaVersion: "bb.session_transcript.v1",
+      sessionId,
+      items: transcript as SessionTranscriptV1Item[],
+    }
+  }
+  return transcript
+}
+
+/**
  * Create a reusable host-managed provider-turn session that keeps transcript continuity and
  * optional projection state outside of host-specific bridge code.
  */
 export function createProviderHostSession<Input, ProjectionState, ProjectionOutput>(
   options: ProviderHostSessionOptions<Input, ProjectionState, ProjectionOutput>,
 ): ProviderHostSession<Input, ProjectionState, ProjectionOutput> {
-  let transcript: SessionTranscriptV1 | null = null
-  let projectionState: ProjectionState | null = null
+  let transcript: SessionTranscriptV1 | null = options.initialTranscript ?? null
+  let projectionState: ProjectionState | null = options.initialProjectionState ?? null
 
   async function run(
     input: Input,

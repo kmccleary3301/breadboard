@@ -2,11 +2,15 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import {
+  buildHostProjectionEnvelope,
+  buildHostTranscriptProjection,
   buildProviderHostTurnView,
   buildFallbackHostKitInvocation,
   buildSupportedHostKitInvocation,
   createProviderHostSession,
   createHostKit,
+  emitHostProjectionCallbacks,
+  normalizeHostManagedTranscript,
   normalizeHostKitSupportClaim,
 } from "../src/index.js"
 
@@ -216,4 +220,114 @@ test("createProviderHostSession preserves transcript continuity and projection s
   assert.equal(view.supportClaim.level, "supported")
   assert.equal(view.projectionOutput?.summary, "resume:run-2")
   assert.equal(view.projectionState?.count, 2)
+})
+
+test("buildHostTranscriptProjection extracts assistant text and tool previews", () => {
+  const projection = buildHostTranscriptProjection({
+    transcript: {
+      schemaVersion: "bb.session_transcript.v1",
+      sessionId: "session-1",
+      items: [
+        {
+          kind: "assistant_message",
+          visibility: "model",
+          content: { text: "hello" },
+        },
+        {
+          kind: "tool_result",
+          visibility: "model",
+          content: { parts: [{ preview: "pwd => /tmp/project" }] },
+        },
+      ],
+    },
+  })
+
+  assert.deepEqual(projection, {
+    entries: [
+      { kind: "assistant_text", text: "hello" },
+      { kind: "tool_preview", text: "pwd => /tmp/project" },
+    ],
+    assistantTexts: ["hello"],
+    toolPreviews: ["pwd => /tmp/project"],
+  })
+})
+
+test("emitHostProjectionCallbacks replays projected assistant text, tool previews, and agent events", async () => {
+  const seen: string[] = []
+  await emitHostProjectionCallbacks(
+    {
+      async onAssistantMessageStart() {
+        seen.push("assistant:start")
+      },
+      async onPartialReply(payload) {
+        seen.push(`assistant:${payload.text}`)
+      },
+      async onToolResult(payload) {
+        seen.push(`tool:${payload.text}`)
+      },
+      async onAgentEvent(payload) {
+        seen.push(`event:${payload.stream}`)
+      },
+    },
+    {
+      entries: [
+        { kind: "assistant_text", text: "hello" },
+        { kind: "tool_preview", text: "pwd => /tmp/project" },
+      ],
+      assistantTexts: ["hello"],
+      toolPreviews: ["pwd => /tmp/project"],
+    },
+    [{ stream: "provider_response", data: { ok: true } }],
+  )
+
+  assert.deepEqual(seen, [
+    "assistant:start",
+    "assistant:hello",
+    "tool:pwd => /tmp/project",
+    "event:provider_response",
+  ])
+})
+
+test("buildHostProjectionEnvelope pairs transcript projection with a host-shaped result", () => {
+  const envelope = buildHostProjectionEnvelope({
+    transcriptSource: {
+      transcript: {
+        schemaVersion: "bb.session_transcript.v1",
+        sessionId: "session-1",
+        items: [{ kind: "assistant_message", visibility: "model", content: { text: "hello" } }],
+      },
+    },
+    result: { ok: true },
+  })
+
+  assert.deepEqual(envelope, {
+    transcript: {
+      entries: [{ kind: "assistant_text", text: "hello" }],
+      assistantTexts: ["hello"],
+      toolPreviews: [],
+    },
+    result: { ok: true },
+  })
+})
+
+test("normalizeHostManagedTranscript wraps host-owned transcript items in the canonical envelope", () => {
+  const transcript = normalizeHostManagedTranscript("session-1", [
+    {
+      kind: "assistant_message",
+      visibility: "model",
+      content: { text: "hello" },
+    },
+  ])
+
+  assert.deepEqual(transcript, {
+    schemaVersion: "bb.session_transcript.v1",
+    sessionId: "session-1",
+    items: [
+      {
+        kind: "assistant_message",
+        visibility: "model",
+        content: { text: "hello" },
+      },
+    ],
+  })
 })

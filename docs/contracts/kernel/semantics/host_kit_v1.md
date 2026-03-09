@@ -29,5 +29,6 @@ The repo now has:
 - reusable support-claim normalization
 - reusable supported/fallback invocation builders
 - a reusable provider-turn session helper for transcript continuity and host-side projection state
+- reusable transcript projection and callback-emission helpers for host-facing result shaping
 
 That means Host Kit is no longer just a design direction. It is now part of the public TS product layer, with OpenClaw serving as the first hard-runtime proving ground.

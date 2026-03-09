@@ -222,3 +222,17 @@ test("createAiSdkTransportSession can auto-append turns and detect resumed proje
     turnCount: 2,
   })
 })
+
+test("createAiSdkTransportSession can emit a richer host-facing stream chunk", () => {
+  const session = createAiSdkTransportSession()
+  const chunk = session.createStreamChunk(result, { messageId: "chunk-1" })
+
+  assert.equal(chunk.resumed, false)
+  assert.equal(chunk.turnCount, 1)
+  assert.equal(chunk.frames[0]?.type, "start")
+  assert.deepEqual(chunk.state, {
+    lastMessageId: "chunk-1",
+    transcriptDigest: "digest:post",
+    turnCount: 1,
+  })
+})
