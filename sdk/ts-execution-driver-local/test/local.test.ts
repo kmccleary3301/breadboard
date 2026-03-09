@@ -1,7 +1,12 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { buildLocalProcessSandboxRequest, chooseTrustedLocalPlacement, trustedLocalExecutionDriver } from "../src/index.js"
+import {
+  buildLocalProcessSandboxRequest,
+  chooseTrustedLocalPlacement,
+  executeLocalProcessSandboxRequest,
+  trustedLocalExecutionDriver,
+} from "../src/index.js"
 
 test("trusted local driver chooses inline vs local process cleanly", () => {
   assert.equal(
@@ -75,4 +80,25 @@ test("trusted local driver can build a local-process sandbox request", () => {
     workspaceRef: "workspace://repo/main",
   })
   assert.equal(built?.placement_class, "local_process")
+})
+
+test("trusted local driver can execute a local-process sandbox request", async () => {
+  const request = buildLocalProcessSandboxRequest({
+    requestId: "sandbox-exec-1",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-exec-1",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      allow_net_hosts: [],
+      secret_mode: "ref_only",
+      evidence_mode: "replay_strict",
+    },
+    command: ["node", "-e", "process.stdout.write('local ok')"],
+    workspaceRef: "/tmp",
+  })
+  const result = await executeLocalProcessSandboxRequest(request)
+  assert.equal(result.status, "completed")
+  assert.ok(result.stdout_ref?.startsWith("file://"))
+  assert.ok(result.side_effect_digest?.startsWith("sha256:"))
 })

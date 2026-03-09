@@ -10,6 +10,7 @@ Current scope:
 - transcript-continuation bridge path for host-owned transcript persistence
 - execution capability / placement records for the supported embedded slice
 - narrow one-tool embedded slice via the execution-driver family and injected sandbox execution
+- provider-quirk preservation for the narrow supported embedded slice
 - unsupported-case classification for fallback and unsupported requests
 
 Non-goals in the current tranche:

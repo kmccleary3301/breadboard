@@ -240,6 +240,42 @@ test("openclaw bridge preserves host-owned transcript pre-state across a continu
   )
 })
 
+test("openclaw bridge preserves richer provider quirks in the embedded slice", async () => {
+  const fixture = JSON.parse(loadFixture("openclaw_embedded_provider_quirk_slice.json")) as {
+    request: OpenClawEmbeddedRunParams
+    breadboardOutput: {
+      assistantText: string
+      providerExchange: Record<string, unknown>
+      usage: Record<string, unknown>
+      stopReason: string
+    }
+    expected: {
+      mode: "breadboard"
+      routeId: string
+      providerFamily: string
+      runtimeId: string
+      finishReason: string
+      assistantText: string
+    }
+  }
+
+  const invocation = await runOpenClawEmbeddedViaBreadboard(fixture.request, {
+    executeBreadboard: async () => fixture.breadboardOutput as never,
+  })
+
+  assert.equal(invocation.mode, fixture.expected.mode)
+  assert.equal(invocation.providerTurn?.providerExchange.request.route_id, fixture.expected.routeId)
+  assert.equal(invocation.providerTurn?.providerExchange.request.provider_family, fixture.expected.providerFamily)
+  assert.equal(invocation.providerTurn?.providerExchange.request.runtime_id, fixture.expected.runtimeId)
+  assert.equal(
+    invocation.providerTurn?.providerExchange.response.finish_reasons?.[0],
+    fixture.expected.finishReason,
+  )
+  assert.deepEqual(invocation.transcriptPostState?.items.at(-1)?.content, {
+    text: fixture.expected.assistantText,
+  })
+})
+
 test("openclaw bridge supports the frozen narrow tool-bearing slice", async () => {
   const fixture = JSON.parse(loadFixture("openclaw_embedded_tool_slice.json")) as {
     request: OpenClawEmbeddedRunParams

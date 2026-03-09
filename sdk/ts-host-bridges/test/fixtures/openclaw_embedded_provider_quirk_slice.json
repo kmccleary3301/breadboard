@@ -1,0 +1,62 @@
+{
+  "request": {
+    "sessionId": "session:provider-quirk",
+    "sessionKey": "agent:test:embedded:provider",
+    "sessionFile": "/tmp/session-provider.jsonl",
+    "workspaceDir": "/tmp/workspace",
+    "prompt": "Summarize the repo with a custom provider route.",
+    "provider": "anthropic",
+    "model": "claude-3.7-sonnet",
+    "authProfileId": "profile:team:anthropic:max",
+    "authProfileIdSource": "user",
+    "thinkLevel": "high",
+    "reasoningLevel": "deep",
+    "extraSystemPrompt": "Prefer concise repository summaries.",
+    "timeoutMs": 7000,
+    "runId": "run-embedded-provider-1"
+  },
+  "breadboardOutput": {
+    "assistantText": "Repository summary complete.",
+    "providerExchange": {
+      "schema_version": "bb.provider_exchange.v1",
+      "exchange_id": "px-provider-quirk-1",
+      "request": {
+        "provider_family": "anthropic",
+        "runtime_id": "anthropic_messages",
+        "route_id": "profile:team:anthropic:max",
+        "model": "claude-3.7-sonnet",
+        "stream": true,
+        "message_count": 1,
+        "tool_count": 0,
+        "metadata": {
+          "reasoning_level": "deep",
+          "auth_profile_source": "user"
+        }
+      },
+      "response": {
+        "message_count": 1,
+        "finish_reasons": ["stop_sequence"],
+        "usage": {
+          "input_tokens": 100,
+          "output_tokens": 40
+        },
+        "metadata": {
+          "cache_write": true
+        }
+      }
+    },
+    "usage": {
+      "input_tokens": 100,
+      "output_tokens": 40
+    },
+    "stopReason": "stop_sequence"
+  },
+  "expected": {
+    "mode": "breadboard",
+    "routeId": "profile:team:anthropic:max",
+    "providerFamily": "anthropic",
+    "runtimeId": "anthropic_messages",
+    "finishReason": "stop_sequence",
+    "assistantText": "Repository summary complete."
+  }
+}

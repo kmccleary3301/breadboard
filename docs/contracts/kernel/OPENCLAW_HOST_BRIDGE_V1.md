@@ -33,6 +33,11 @@ The current bridge accepts:
   - reasoning deltas/end
   - tool results
   - generic agent events
+- provider-quirk preservation for the supported embedded lane:
+  - provider family
+  - runtime id
+  - route id
+  - response finish reason
 - one narrow tool-bearing lane when:
   - exactly one host function tool is provided
   - a BreadBoard tool-slice executor is explicitly supplied
@@ -71,6 +76,7 @@ This program now stops at:
 - host-boundary acceptance
 - callback projection
 - transcript continuity
+- provider-quirk preservation
 - explicit native fallback
 
 It does **not** currently stop at:

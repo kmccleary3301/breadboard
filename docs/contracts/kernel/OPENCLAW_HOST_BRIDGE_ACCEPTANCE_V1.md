@@ -30,6 +30,7 @@ Tracked acceptance fixture:
 - `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_supported_slice.json`
 - `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_transcript_continuation_slice.json`
 - `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_tool_slice.json`
+- `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_provider_quirk_slice.json`
 
 Tracked executable proof:
 
@@ -70,6 +71,17 @@ The third frozen fixture captures the first honest tool-bearing embedded slice:
 
 This is intentionally narrow. It proves the host boundary can carry a driver-mediated tool run without pretending the whole Pi runtime has been replaced.
 
+## Provider-quirk note
+
+The fourth frozen fixture captures the first provider-quirk preservation lane:
+
+- host request carries richer provider-routing intent
+- BreadBoard path preserves provider family, runtime id, and route id
+- response-side finish reason survives the bridge projection
+- no claim is made that every Pi/OpenClaw provider quirk is now supported
+
+This slice matters because a credible host bridge cannot collapse all provider behavior into a generic text path. It must preserve the subset of provider-routing semantics that the host actually depends on.
+
 ## Explicit closure condition for this program
 
 For the current TypeScript SDK effort, the OpenClaw proving-ground is considered complete when:
@@ -77,7 +89,8 @@ For the current TypeScript SDK effort, the OpenClaw proving-ground is considered
 1. the supported embedded-run slice is frozen
 2. the transcript-continuation slice is frozen
 3. the narrow tool-bearing slice is frozen
-4. fallback behavior is explicit and tested
-5. the bridge does not overclaim tool-rich or ACP parity
+4. the provider-quirk preservation slice is frozen
+5. fallback behavior is explicit and tested
+6. the bridge does not overclaim tool-rich or ACP parity
 
 That condition is now met.

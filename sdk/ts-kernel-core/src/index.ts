@@ -254,7 +254,7 @@ export interface DriverMediatedToolTurnOptions {
   allowNetHosts?: string[]
   driverIdHint?: "trusted_local" | "oci"
   assistantText?: string | null
-  executeSandbox: (request: SandboxRequestV1, context: {
+  executeSandbox?: (request: SandboxRequestV1, context: {
     capability: ExecutionCapabilityV1
     placement: ExecutionPlacementV1
     driverId: string
@@ -547,9 +547,28 @@ export async function executeDriverMediatedToolTurn(
     throw new Error(unsupported.summary)
   }
 
+  const executeSandbox = options.executeSandbox
+    ? options.executeSandbox
+    : plan.driver.execute
+      ? (request: SandboxRequestV1, _context: {
+          capability: ExecutionCapabilityV1
+          placement: ExecutionPlacementV1
+          driverId: string
+        }) => plan.driver.execute!(request)
+      : null
+  if (!executeSandbox) {
+    const unsupported = buildExecutionDriverUnsupportedCase({
+      capability,
+      placementClass,
+      fallbackAllowed: false,
+      fallbackTaken: false,
+      summary: `Execution driver ${plan.driver.driverId} has no executable backend for ${placementClass}`,
+    })
+    throw new Error(unsupported.summary)
+  }
   const sandboxResult = assertValid<SandboxResultV1>(
     "sandboxResult",
-    await options.executeSandbox(plan.sandboxRequest, {
+    await executeSandbox(plan.sandboxRequest, {
       capability: plan.capability,
       placement: plan.placement,
       driverId: plan.driver.driverId,

@@ -1,7 +1,13 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { buildOciSandboxRequest, chooseOciPlacement, ociExecutionDriver } from "../src/index.js"
+import {
+  buildOciRuntimeInvocation,
+  buildOciSandboxRequest,
+  chooseOciPlacement,
+  executeOciSandboxRequest,
+  ociExecutionDriver,
+} from "../src/index.js"
 
 test("oci driver chooses placement from capability isolation class", () => {
   assert.equal(
@@ -83,4 +89,54 @@ test("oci driver can build an OCI sandbox request", () => {
     imageRef: "docker://breadboard/base:latest",
   })
   assert.equal(built?.placement_class, "local_oci")
+})
+
+test("oci driver can build a concrete runtime invocation", () => {
+  const request = buildOciSandboxRequest({
+    requestId: "oci-runtime-1",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-runtime-1",
+      security_tier: "single_tenant",
+      isolation_class: "gvisor",
+      allow_net_hosts: [],
+      secret_mode: "ref_only",
+      evidence_mode: "replay_strict",
+    },
+    command: ["npm", "run", "lint"],
+    workspaceRef: "/tmp/workspace",
+    imageRef: "ghcr.io/example/lint:latest",
+  })
+  const invocation = buildOciRuntimeInvocation(request)
+  assert.equal(invocation.runtimeCommand, "docker")
+  assert.ok(invocation.runtimeArgs.includes("--runtime=runsc"))
+  assert.ok(invocation.runtimeArgs.includes("ghcr.io/example/lint:latest"))
+})
+
+test("oci driver can execute through an injected runtime adapter", async () => {
+  const request = buildOciSandboxRequest({
+    requestId: "oci-exec-1",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-exec-1",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      allow_net_hosts: [],
+      secret_mode: "ref_only",
+      evidence_mode: "replay_strict",
+    },
+    command: ["ruff", "check", "."],
+    workspaceRef: "/tmp/workspace",
+    imageRef: "ghcr.io/example/ruff:latest",
+  })
+  const result = await executeOciSandboxRequest(request, {
+    commandExecutor: async ({ runtimeCommand, runtimeArgs }) => ({
+      exitCode: runtimeCommand === "docker" && runtimeArgs.includes("ghcr.io/example/ruff:latest") ? 0 : 1,
+      stdout: "oci ok",
+      stderr: "",
+    }),
+  })
+  assert.equal(result.status, "completed")
+  assert.ok(result.stdout_ref?.startsWith("file://"))
+  assert.ok(result.side_effect_digest?.startsWith("sha256:"))
 })
