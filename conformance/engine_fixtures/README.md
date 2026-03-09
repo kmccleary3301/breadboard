@@ -46,6 +46,12 @@ The first manifest rows should use one of:
 These tiers indicate how strong a fixture family is as a future gate for
 cross-engine conformance.
 
+Canonical validation entrypoints:
+
+- `python scripts/validate_engine_conformance_manifest.py`
+- `python scripts/validate_kernel_contract_fixtures.py`
+- `python scripts/run_kernel_conformance_gate.py`
+
 ---
 
 ## Relationship to existing conformance work

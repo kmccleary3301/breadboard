@@ -52,6 +52,18 @@ export interface ToolCallV1 {
   metadata?: Record<string, unknown>
 }
 
+export interface ToolSpecV1 {
+  schemaVersion: "bb.tool_spec.v1"
+  name: string
+  aliases?: string[]
+  description: string
+  inputSchema: Record<string, unknown>
+  outputSchema?: Record<string, unknown>
+  approvalPolicy?: Record<string, unknown>
+  visibility?: Record<string, unknown>
+  capabilityTags?: string[]
+}
+
 export interface ToolExecutionOutcomeV1 {
   schemaVersion: "bb.tool_execution_outcome.v1"
   callId: string
@@ -166,7 +178,34 @@ export interface CheckpointMetadataV1 {
   source_kind: string
   checkpoint_ref: string
   created_at: number
+  path?: string
+  episode?: number
+  phase?: string
+  updated_at?: number
   summary: Record<string, unknown>
+}
+
+export interface EngineConformanceManifestV1Row {
+  engineFamily: string
+  engineRef: string
+  scenarioId: string
+  supportTier: "draft-shape" | "draft-semantic" | "reference-engine"
+  comparatorClass:
+    | "shape-equal"
+    | "normalized-trace-equal"
+    | "model-visible-equal"
+    | "workspace-side-effects-equal"
+    | "projection-equal"
+  evidence: string[]
+  exemptions?: string[]
+  notes?: string
+}
+
+export interface EngineConformanceManifestV1 {
+  schemaVersion: "bb.engine_conformance_manifest.v1"
+  contractVersion: string
+  generatedAt?: string
+  rows: EngineConformanceManifestV1Row[]
 }
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
@@ -189,6 +228,7 @@ function loadTrackedSchema(name: string): unknown {
 const kernelEventSchema = loadTrackedSchema("bb.kernel_event.v1.schema.json")
 const sessionTranscriptSchema = loadTrackedSchema("bb.session_transcript.v1.schema.json")
 const toolCallSchema = loadTrackedSchema("bb.tool_call.v1.schema.json")
+const toolSpecSchema = loadTrackedSchema("bb.tool_spec.v1.schema.json")
 const toolExecutionOutcomeSchema = loadTrackedSchema("bb.tool_execution_outcome.v1.schema.json")
 const toolModelRenderSchema = loadTrackedSchema("bb.tool_model_render.v1.schema.json")
 const runRequestSchema = loadTrackedSchema("bb.run_request.v1.schema.json")
@@ -198,6 +238,7 @@ const permissionSchema = loadTrackedSchema("bb.permission.v1.schema.json")
 const replaySessionSchema = loadTrackedSchema("bb.replay_session.v1.schema.json")
 const taskSchema = loadTrackedSchema("bb.task.v1.schema.json")
 const checkpointMetadataSchema = loadTrackedSchema("bb.checkpoint_metadata.v1.schema.json")
+const engineConformanceManifestSchema = loadTrackedSchema("../manifests/bb.engine_conformance_manifest.v1.schema.json")
 
 const AjvCtor: any = (Ajv2020Module as any).default ?? Ajv2020Module
 const ajv = new AjvCtor({ allErrors: true })
@@ -206,6 +247,7 @@ const validators = {
   kernelEvent: ajv.compile(kernelEventSchema),
   sessionTranscript: ajv.compile(sessionTranscriptSchema),
   toolCall: ajv.compile(toolCallSchema),
+  toolSpec: ajv.compile(toolSpecSchema),
   toolExecutionOutcome: ajv.compile(toolExecutionOutcomeSchema),
   toolModelRender: ajv.compile(toolModelRenderSchema),
   runRequest: ajv.compile(runRequestSchema),
@@ -215,12 +257,14 @@ const validators = {
   replaySession: ajv.compile(replaySessionSchema),
   task: ajv.compile(taskSchema),
   checkpointMetadata: ajv.compile(checkpointMetadataSchema),
+  engineConformanceManifest: ajv.compile(engineConformanceManifestSchema),
 }
 
 export const kernelSchemas = {
   kernelEvent: kernelEventSchema,
   sessionTranscript: sessionTranscriptSchema,
   toolCall: toolCallSchema,
+  toolSpec: toolSpecSchema,
   toolExecutionOutcome: toolExecutionOutcomeSchema,
   toolModelRender: toolModelRenderSchema,
   runRequest: runRequestSchema,
@@ -230,6 +274,7 @@ export const kernelSchemas = {
   replaySession: replaySessionSchema,
   task: taskSchema,
   checkpointMetadata: checkpointMetadataSchema,
+  engineConformanceManifest: engineConformanceManifestSchema,
 } as const
 
 export const kernelValidators = validators

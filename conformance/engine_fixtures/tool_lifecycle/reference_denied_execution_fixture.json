@@ -1,20 +1,20 @@
 {
   "fixture_family": "tool_lifecycle",
-  "fixture_id": "tool_execution_python_reference",
+  "fixture_id": "tool_execution_denied_python_reference",
   "comparator_class": "normalized-trace-equal",
   "support_tier": "reference-engine",
   "contract": "bb.tool_execution_outcome.v1",
   "reference_output": {
     "schemaVersion": "bb.tool_execution_outcome.v1",
-    "callId": "call-run-shell-1",
-    "terminalState": "completed",
+    "callId": "call-run-shell-denied-1",
+    "terminalState": "denied",
     "result": {
-      "stdout": "hi",
-      "exit_code": 0
+      "error": "blocked by policy",
+      "guardrail": "workspace_guard_violation"
     },
     "metadata": {
       "tool": "run_shell",
-      "ok": true
+      "ok": false
     }
   }
 }

@@ -20,6 +20,30 @@ from ..provider_ir import (
 )
 from ..todo.projection import project_store_snapshot_to_tui_envelope
 
+CANONICAL_KERNEL_EVENT_TYPES: dict[str, dict[str, str]] = {
+    "assistant_message": {"family": "message.assistant", "actor": "engine", "visibility": "model"},
+    "user_message": {"family": "message.user", "actor": "human", "visibility": "model"},
+    "tool_call": {"family": "tool.called", "actor": "engine", "visibility": "host"},
+    "tool_result": {"family": "tool.completed", "actor": "tool", "visibility": "host"},
+    "permission_request": {"family": "permission.requested", "actor": "service", "visibility": "host"},
+    "permission_response": {"family": "permission.decided", "actor": "service", "visibility": "host"},
+    "task_event": {"family": "task.progress", "actor": "subagent", "visibility": "host"},
+    "turn_start": {"family": "turn.started", "actor": "engine", "visibility": "audit"},
+    "guardrail_event": {"family": "warning.guardrail", "actor": "service", "visibility": "audit"},
+    "lifecycle_event": {"family": "run.lifecycle", "actor": "engine", "visibility": "audit"},
+    "ctree_node": {"family": "compaction.ctree_node", "actor": "service", "visibility": "audit"},
+}
+
+PROJECTION_ONLY_RUNTIME_EVENT_TYPES: dict[str, dict[str, str]] = {
+    "todo_event": {"family": "projection.todo_snapshot", "actor": "service", "visibility": "host"},
+    "ctree_snapshot": {"family": "projection.ctree_snapshot", "actor": "service", "visibility": "host"},
+}
+
+AUDIT_ONLY_RUNTIME_EVENT_TYPES: dict[str, dict[str, str]] = {
+    "lifecycle_event": {"family": "run.lifecycle", "actor": "engine", "visibility": "audit"},
+    "guardrail_event": {"family": "warning.guardrail", "actor": "service", "visibility": "audit"},
+}
+
 
 class SessionState:
     """Manages session state for agentic coding loops"""
@@ -104,12 +128,39 @@ class SessionState:
             "payload": dict(payload or {}),
             "session_id": str(self.provider_metadata.get("session_id") or ""),
         }
+        contract_meta = self.classify_runtime_event_type(event_type)
+        envelope["classification"] = contract_meta["classification"]
+        envelope["family"] = contract_meta["family"]
+        envelope["actor"] = contract_meta["actor"]
+        envelope["visibility"] = contract_meta["visibility"]
         if turn is not None:
             envelope["turn"] = turn
         if seq is not None:
             envelope["seq"] = seq
             envelope["payload"].setdefault("seq", seq)
         return envelope
+
+    def classify_runtime_event_type(self, event_type: str) -> Dict[str, str]:
+        """Classify a runtime event as canonical, projection-only, or legacy."""
+        event_name = str(event_type or "")
+        if event_name in CANONICAL_KERNEL_EVENT_TYPES:
+            meta = dict(CANONICAL_KERNEL_EVENT_TYPES[event_name])
+            meta["classification"] = "canonical"
+            return meta
+        if event_name in PROJECTION_ONLY_RUNTIME_EVENT_TYPES:
+            meta = dict(PROJECTION_ONLY_RUNTIME_EVENT_TYPES[event_name])
+            meta["classification"] = "projection_only"
+            return meta
+        if event_name in AUDIT_ONLY_RUNTIME_EVENT_TYPES:
+            meta = dict(AUDIT_ONLY_RUNTIME_EVENT_TYPES[event_name])
+            meta["classification"] = "audit_only"
+            return meta
+        return {
+            "classification": "legacy_unclassified",
+            "family": "legacy.unclassified",
+            "actor": "engine",
+            "visibility": "audit",
+        }
 
     def _emit_event(self, event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> Optional[int]:
         seq = self._next_event_seq()
@@ -258,6 +309,68 @@ class SessionState:
         if not isinstance(entry, dict):
             return {"value": entry}
         return dict(entry)
+
+    def build_transcript_contract_item(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Derive a normalized transcript-contract item from a legacy transcript entry.
+
+        The transcript remains stored in its current mixed legacy form for
+        compatibility, but this helper defines the shared derived-state view that
+        contract fixtures and alternative engines should converge on.
+        """
+
+        normalized = self.normalize_transcript_entry(entry)
+        if {
+            "kind",
+            "visibility",
+            "content",
+        }.issubset(normalized.keys()):
+            item = {
+                "kind": str(normalized.get("kind") or "annotation"),
+                "visibility": str(normalized.get("visibility") or "host"),
+                "content": normalized.get("content"),
+            }
+            if "callId" in normalized:
+                item["callId"] = normalized["callId"]
+            if "provenance" in normalized and isinstance(normalized["provenance"], dict):
+                item["provenance"] = dict(normalized["provenance"])
+            return item
+
+        if len(normalized) == 1:
+            key, value = next(iter(normalized.items()))
+            mapping = {
+                "assistant": ("assistant_message", "model"),
+                "user": ("user_message", "model"),
+                "tool_execution_plan": ("tool_execution_plan", "host"),
+                "completion_analysis": ("completion_analysis", "host"),
+                "turn_context": ("turn_context", "host"),
+                "context_window": ("context_window", "host"),
+                "loop_detection": ("loop_detection", "host"),
+                "stream_policy": ("stream_policy", "host"),
+                "stop_requested": ("stop_requested", "host"),
+                "provider_response": ("provider_response", "host"),
+            }
+            kind, visibility = mapping.get(str(key), (str(key), "host"))
+            return {
+                "kind": kind,
+                "visibility": visibility,
+                "content": value,
+                "provenance": {
+                    "source": "legacy_transcript_entry",
+                    "legacy_key": str(key),
+                },
+            }
+
+        return {
+            "kind": "annotation",
+            "visibility": "host",
+            "content": normalized,
+            "provenance": {"source": "legacy_transcript_entry", "legacy_shape": "multi_key"},
+        }
+
+    def derive_transcript_contract_items(self) -> List[Dict[str, Any]]:
+        """Project the current transcript list into the shared contract item view."""
+        return [self.build_transcript_contract_item(entry) for entry in self.transcript]
 
     def build_task_record(self, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """

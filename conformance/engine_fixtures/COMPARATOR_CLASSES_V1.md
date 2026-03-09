@@ -11,15 +11,19 @@ This document defines the first shared comparator vocabulary for the engine-conf
 2. `normalized-trace-equal`
    - normalized event sequence equality
    - ignores transport/private details but preserves semantic order
+   - appropriate for replay-session and event-lineage fixtures
 
 3. `model-visible-equal`
    - compares the exact content that the model would effectively observe
+   - appropriate for transcript and tool-render fixtures
 
 4. `workspace-side-effects-equal`
    - compares resulting workspace state / file changes / side effects
+   - appropriate once delegated or full-engine workspace fixtures exist
 
 5. `projection-equal`
    - compares host projection output derived from kernel events
+   - appropriate for UI/client reducers, never as kernel truth
 
 ## Rule
 
@@ -41,3 +45,9 @@ Use these support tiers in the engine conformance manifest:
 3. `reference-engine`
    - Python reference interpreter has produced the fixture/evidence bundle
    - the bundle is strong enough to gate future alternative-engine work
+
+## Gating rule
+
+- `draft-shape` rows gate schema and package plumbing only
+- `draft-semantic` rows gate early implementation work but not public parity claims
+- `reference-engine` rows are the minimum tier for cross-engine equivalence work that aspires to be a real BreadBoard runtime claim

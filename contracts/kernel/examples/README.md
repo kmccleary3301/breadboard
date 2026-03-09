@@ -16,7 +16,11 @@ Current minimal examples exist for:
 - kernel event
 - session transcript
 - tool call
+- tool spec
+- tool execution outcome
+- tool model render
 - run request
+- run context
 - provider exchange
 - permission
 - replay session

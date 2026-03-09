@@ -6,6 +6,42 @@
     {
       "engineFamily": "python_reference",
       "engineRef": "working-tree",
+      "scenarioId": "run_request_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": ["run_request/minimal_fixture.json"],
+      "notes": "Minimal run-request shape validation."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "run_request_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": ["run_request/reference_fixture.json"],
+      "notes": "Reference-engine run request fixture."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "run_context_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": ["run_context/minimal_fixture.json"],
+      "notes": "Minimal run-context shape validation."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "run_context_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": ["run_context/reference_fixture.json"],
+      "notes": "Reference-engine run context fixture."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
       "scenarioId": "kernel_event_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
@@ -20,6 +56,15 @@
       "comparatorClass": "normalized-trace-equal",
       "evidence": ["kernel_event/reference_fixture.json"],
       "notes": "Reference-engine kernel event example built from SessionState helper output."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "session_transcript_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": ["session_transcript/minimal_fixture.json"],
+      "notes": "Minimal transcript shape validation."
     },
     {
       "engineFamily": "python_reference",
@@ -44,9 +89,18 @@
       "engineRef": "working-tree",
       "scenarioId": "provider_exchange_python_reference",
       "supportTier": "reference-engine",
-      "comparatorClass": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
       "evidence": ["provider_exchange/reference_fixture.json"],
       "notes": "Reference-engine provider exchange fixture built from invoker helpers."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "provider_exchange_fallback_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": ["provider_exchange/reference_fallback_fixture.json"],
+      "notes": "Reference-engine provider exchange fixture for stream-to-nonstream fallback metadata."
     },
     {
       "engineFamily": "python_reference",
@@ -62,7 +116,7 @@
       "engineRef": "working-tree",
       "scenarioId": "permission_python_reference",
       "supportTier": "reference-engine",
-      "comparatorClass": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
       "evidence": ["permission/reference_fixture.json"],
       "notes": "Reference-engine permission lifecycle fixture."
     },
@@ -80,9 +134,18 @@
       "engineRef": "working-tree",
       "scenarioId": "task_python_reference",
       "supportTier": "reference-engine",
-      "comparatorClass": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
       "evidence": ["task_subagent/reference_fixture.json"],
       "notes": "Reference-engine task/subagent identity fixture."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "task_background_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": ["task_subagent/reference_background_fixture.json"],
+      "notes": "Reference-engine background task fixture."
     },
     {
       "engineFamily": "python_reference",
@@ -98,16 +161,43 @@
       "engineRef": "working-tree",
       "scenarioId": "checkpoint_metadata_python_reference",
       "supportTier": "reference-engine",
-      "comparatorClass": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
       "evidence": ["checkpoint_metadata/reference_fixture.json"],
       "notes": "Reference-engine checkpoint metadata fixture."
     },
     {
       "engineFamily": "python_reference",
       "engineRef": "working-tree",
+      "scenarioId": "checkpoint_metadata_longrun_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": ["checkpoint_metadata/reference_longrun_fixture.json"],
+      "notes": "Reference-engine longrun checkpoint metadata fixture."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "tool_spec_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": ["tool_spec/minimal_fixture.json"],
+      "notes": "Minimal tool-spec shape validation."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "tool_spec_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": ["tool_spec/reference_fixture.json"],
+      "notes": "Reference-engine tool-spec fixture."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
       "scenarioId": "tool_execution_python_reference",
       "supportTier": "reference-engine",
-      "comparatorClass": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
       "evidence": ["tool_lifecycle/reference_execution_fixture.json"],
       "notes": "Reference-engine raw tool execution outcome fixture."
     },
@@ -123,11 +213,38 @@
     {
       "engineFamily": "python_reference",
       "engineRef": "working-tree",
+      "scenarioId": "tool_execution_denied_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": ["tool_lifecycle/reference_denied_execution_fixture.json"],
+      "notes": "Reference-engine denied tool execution outcome fixture."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "tool_render_denied_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "model-visible-equal",
+      "evidence": ["tool_lifecycle/reference_denied_render_fixture.json"],
+      "notes": "Reference-engine denied tool render fixture."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
       "scenarioId": "replay_session_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
       "evidence": ["replay_session/minimal_fixture.json"],
       "notes": "Minimal replay-session scaffold."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "replay_session_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": ["replay_session/reference_fixture.json"],
+      "notes": "Reference-engine replay session fixture anchored to normalized provider and transcript outputs."
     }
   ]
 }

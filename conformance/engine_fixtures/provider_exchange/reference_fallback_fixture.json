@@ -1,29 +1,27 @@
 {
   "fixture_family": "provider_exchange",
-  "fixture_id": "provider_exchange_python_reference",
+  "fixture_id": "provider_exchange_fallback_python_reference",
   "comparator_class": "normalized-trace-equal",
   "support_tier": "reference-engine",
   "contract": "bb.provider_exchange.v1",
   "reference_output": {
     "schema_version": "bb.provider_exchange.v1",
-    "exchange_id": "px-ref-1",
+    "exchange_id": "px-ref-fallback-1",
     "request": {
       "provider_family": "openai",
       "runtime_id": "responses_api",
-      "route_id": "primary",
-      "model": "openai/gpt-5.2",
+      "route_id": "fallback",
+      "model": "openai/gpt-5.2-mini",
       "stream": false,
       "message_count": 1,
-      "tool_count": 1,
+      "tool_count": 0,
       "metadata": {
         "message_roles": [
           "user"
         ],
-        "tool_names": [
-          "bash"
-        ],
+        "tool_names": [],
         "route_selected": true,
-        "stream_requested": false,
+        "stream_requested": true,
         "transport": "provider_runtime.invoke"
       }
     },
@@ -37,13 +35,14 @@
         "output_tokens": 2
       },
       "metadata": {
-        "latency_ms": 10,
-        "finish_reason_count": 1,
-        "stream_requested": false,
-        "route_id": "primary",
         "provider_family": "openai",
         "runtime_id": "responses_api",
-        "message_count": 1
+        "route_id": "fallback",
+        "stream_requested": false,
+        "fallback_from_stream": true,
+        "fallback_reason": "stream_rejected",
+        "message_count": 1,
+        "finish_reason_count": 1
       },
       "evidence_refs": []
     }

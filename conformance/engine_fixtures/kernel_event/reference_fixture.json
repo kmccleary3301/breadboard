@@ -1,7 +1,7 @@
 {
   "fixture_family": "kernel_event",
   "fixture_id": "kernel_event_python_reference",
-  "comparator_class": "draft-semantic",
+  "comparator_class": "normalized-trace-equal",
   "support_tier": "reference-engine",
   "contract": "bb.kernel_event.v1",
   "reference_output": {

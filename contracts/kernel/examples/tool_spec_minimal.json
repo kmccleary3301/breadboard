@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "bb.tool_spec.v1",
+  "name": "run_shell",
+  "description": "Execute a shell command in the workspace.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string"
+      }
+    },
+    "required": ["command"]
+  },
+  "outputSchema": {
+    "type": "object"
+  },
+  "approvalPolicy": {
+    "mode": "prompt"
+  },
+  "visibility": {
+    "model": true
+  },
+  "capabilityTags": ["shell"]
+}

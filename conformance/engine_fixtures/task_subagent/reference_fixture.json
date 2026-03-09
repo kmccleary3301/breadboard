@@ -1,7 +1,7 @@
 {
   "fixture_family": "task_subagent",
   "fixture_id": "task_python_reference",
-  "comparator_class": "draft-semantic",
+  "comparator_class": "normalized-trace-equal",
   "support_tier": "reference-engine",
   "contract": "bb.task.v1",
   "reference_output": {

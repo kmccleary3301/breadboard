@@ -104,11 +104,21 @@ def test_session_state_builds_kernel_event_record_and_normalizes_transcript() ->
     assert record["seq"] == 9
     assert record["session_id"] == "sess-123"
     assert record["payload"]["seq"] == 9
+    assert record["classification"] == "canonical"
+    assert record["family"] == "message.assistant"
+    assert record["actor"] == "engine"
+    assert record["visibility"] == "model"
 
     entry = {"assistant": "hello"}
     state.add_transcript_entry(entry)
     entry["assistant"] = "mutated"
     assert state.transcript[-1]["assistant"] == "hello"
+    assert state.derive_transcript_contract_items()[-1] == {
+        "kind": "assistant_message",
+        "visibility": "model",
+        "content": "hello",
+        "provenance": {"source": "legacy_transcript_entry", "legacy_key": "assistant"},
+    }
 
 
 def test_session_state_builds_permission_task_and_guardrail_records() -> None:
@@ -161,6 +171,17 @@ def test_session_state_builds_permission_task_and_guardrail_records() -> None:
     assert guardrail_record["type"] == "context_window_warning"
     assert guardrail_record["turn"] == 7
     assert guardrail_record["payload"]["remaining"] == 1024
+
+
+def test_session_state_classifies_projection_and_legacy_events() -> None:
+    state = SessionState("ws", "image", {})
+    todo_meta = state.classify_runtime_event_type("todo_event")
+    assert todo_meta["classification"] == "projection_only"
+    assert todo_meta["family"] == "projection.todo_snapshot"
+
+    unknown_meta = state.classify_runtime_event_type("mystery_event")
+    assert unknown_meta["classification"] == "legacy_unclassified"
+    assert unknown_meta["family"] == "legacy.unclassified"
 
 
 def test_session_runner_translates_runtime_events() -> None:

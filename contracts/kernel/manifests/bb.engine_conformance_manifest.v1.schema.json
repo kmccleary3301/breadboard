@@ -27,8 +27,20 @@
           "engineFamily": { "type": "string", "minLength": 1 },
           "engineRef": { "type": "string", "minLength": 1 },
           "scenarioId": { "type": "string", "minLength": 1 },
-          "supportTier": { "type": "string", "minLength": 1 },
-          "comparatorClass": { "type": "string", "minLength": 1 },
+          "supportTier": {
+            "type": "string",
+            "enum": ["draft-shape", "draft-semantic", "reference-engine"]
+          },
+          "comparatorClass": {
+            "type": "string",
+            "enum": [
+              "shape-equal",
+              "normalized-trace-equal",
+              "model-visible-equal",
+              "workspace-side-effects-equal",
+              "projection-equal"
+            ]
+          },
           "evidence": {
             "type": "array",
             "items": { "type": "string", "minLength": 1 }

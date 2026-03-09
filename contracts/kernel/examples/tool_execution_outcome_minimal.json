@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "bb.tool_execution_outcome.v1",
+  "callId": "call-min-1",
+  "terminalState": "completed",
+  "result": {
+    "stdout": "hello"
+  },
+  "metadata": {
+    "tool": "run_shell"
+  }
+}

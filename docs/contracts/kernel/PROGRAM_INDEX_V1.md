@@ -6,8 +6,11 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 
 1. `docs/contracts/kernel/KERNEL_DOCTRINES_V1.md`
 2. `docs/contracts/kernel/semantics/README.md`
-3. `contracts/kernel/README.md`
-4. `conformance/engine_fixtures/README.md`
+3. `docs/contracts/kernel/KERNEL_EVENT_FAMILY_REGISTRY_V1.md`
+4. `docs/contracts/kernel/PYTHON_SERVICE_BOUNDARY_MATRIX_V1.md`
+5. `docs/contracts/kernel/HYBRID_DELEGATION_BOUNDARIES_V1.md`
+6. `contracts/kernel/README.md`
+7. `conformance/engine_fixtures/README.md`
 
 ## Semantic dossiers drafted so far
 
@@ -33,6 +36,13 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 
 - `conformance/engine_fixtures/COMPARATOR_CLASSES_V1.md`
 - `conformance/engine_fixtures/python_reference_manifest_v1.json`
+- `scripts/run_kernel_conformance_gate.py`
+
+## Hybrid / proving-ground readiness
+
+- `docs/contracts/kernel/HYBRID_DELEGATION_BOUNDARIES_V1.md`
+- `docs/contracts/kernel/PYTHON_SERVICE_BOUNDARY_MATRIX_V1.md`
+- `docs/contracts/kernel/OPENCLAW_PROVING_GROUND_READINESS_V1.md`
 
 ## Current tranche status
 

@@ -1,0 +1,33 @@
+{
+  "fixture_family": "tool_spec",
+  "fixture_id": "tool_spec_python_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "reference-engine",
+  "contract": "bb.tool_spec.v1",
+  "reference_output": {
+    "schemaVersion": "bb.tool_spec.v1",
+    "name": "run_shell",
+    "aliases": ["bash"],
+    "description": "Execute a shell command in the workspace.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        }
+      },
+      "required": ["command"]
+    },
+    "outputSchema": {
+      "type": "object"
+    },
+    "approvalPolicy": {
+      "mode": "prompt"
+    },
+    "visibility": {
+      "model": true,
+      "host": true
+    },
+    "capabilityTags": ["shell"]
+  }
+}

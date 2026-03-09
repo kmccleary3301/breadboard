@@ -1,0 +1,8 @@
+{
+  "fixture_family": "run_context",
+  "fixture_id": "run_context_minimal",
+  "comparator_class": "shape-equal",
+  "support_tier": "draft-shape",
+  "contract": "bb.run_context.v1",
+  "example_ref": "../../../contracts/kernel/examples/run_context_minimal.json"
+}

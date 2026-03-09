@@ -6,6 +6,7 @@ Scope:
 - exports machine-readable kernel schemas
 - exports TypeScript contract types
 - exports small validator helpers for contract examples and fixtures
+- exports the engine conformance manifest contract
 
 Non-goals:
 - no engine loop logic

@@ -44,10 +44,34 @@ def test_engine_fixture_families_cover_permission_task_and_checkpoint() -> None:
     root = Path(__file__).resolve().parents[1]
     fixture_dir = root / "conformance" / "engine_fixtures"
     expected = {
+        "run_request/minimal_fixture.json",
+        "run_request/reference_fixture.json",
+        "run_context/minimal_fixture.json",
+        "run_context/reference_fixture.json",
+        "tool_spec/minimal_fixture.json",
+        "tool_spec/reference_fixture.json",
         "permission/minimal_fixture.json",
         "task_subagent/minimal_fixture.json",
         "checkpoint_metadata/minimal_fixture.json",
+        "provider_exchange/reference_fallback_fixture.json",
+        "tool_lifecycle/reference_denied_execution_fixture.json",
+        "tool_lifecycle/reference_denied_render_fixture.json",
+        "replay_session/reference_fixture.json",
     }
     present = {str(path.relative_to(fixture_dir)) for path in fixture_dir.rglob("*.json")}
     missing = sorted(expected - present)
     assert not missing, f"Missing engine fixture files: {missing}"
+
+
+def test_kernel_program_docs_cover_event_registry_and_hybrid_boundaries() -> None:
+    root = Path(__file__).resolve().parents[1]
+    docs_dir = root / "docs" / "contracts" / "kernel"
+    expected = {
+        "KERNEL_EVENT_FAMILY_REGISTRY_V1.md",
+        "HYBRID_DELEGATION_BOUNDARIES_V1.md",
+        "PYTHON_SERVICE_BOUNDARY_MATRIX_V1.md",
+        "OPENCLAW_PROVING_GROUND_READINESS_V1.md",
+    }
+    present = {path.name for path in docs_dir.glob("*.md")}
+    missing = sorted(expected - present)
+    assert not missing, f"Missing kernel program docs: {missing}"

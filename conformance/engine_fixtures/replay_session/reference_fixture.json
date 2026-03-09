@@ -1,0 +1,38 @@
+{
+  "fixture_family": "replay_session",
+  "fixture_id": "replay_session_python_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "reference-engine",
+  "contract": "bb.replay_session.v1",
+  "reference_output": {
+    "schema_version": "bb.replay_session.v1",
+    "scenario_id": "provider-fallback-replay",
+    "lane_id": "python-reference-semantic",
+    "comparator_class": "normalized-trace-equal",
+    "messages": [
+      {
+        "role": "user",
+        "content": "hello"
+      },
+      {
+        "role": "assistant",
+        "content": "hi"
+      }
+    ],
+    "tool_results": [
+      {
+        "call_id": "call-run-shell-1",
+        "status": "completed"
+      }
+    ],
+    "completion_summary": {
+      "completed": true,
+      "reason": "stop"
+    },
+    "evidence_refs": [
+      "provider_exchange/reference_fixture.json"
+    ],
+    "strictness": "semantic-reference",
+    "notes": "Reference replay session anchored to normalized provider exchange and transcript outputs."
+  }
+}

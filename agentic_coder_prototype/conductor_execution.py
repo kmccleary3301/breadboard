@@ -26,6 +26,17 @@ class ReplayToolOutputMismatchError(RuntimeError):
     """Raised when replay-mode tool outputs diverge from the golden trace."""
 
 
+def classify_tool_terminal_state(tool_result: Dict[str, Any]) -> str:
+    payload = dict(tool_result or {})
+    if payload.get("cancelled"):
+        return "cancelled"
+    if payload.get("denied") or payload.get("permission_denied") or payload.get("guardrail"):
+        return "denied"
+    if payload.get("error"):
+        return "failed"
+    return "completed"
+
+
 def build_tool_execution_outcome_record(tool_name: str, tool_result: Dict[str, Any]) -> Dict[str, Any]:
     """
     Normalize the engine-side execution outcome for a tool call.
@@ -38,13 +49,19 @@ def build_tool_execution_outcome_record(tool_name: str, tool_result: Dict[str, A
     error = payload.get("error")
     return {
         "tool": str(tool_name or ""),
+        "terminal_state": classify_tool_terminal_state(payload),
         "ok": not bool(error),
         "error": error,
         "raw": payload,
     }
 
 
-def build_tool_model_render_record(tool_name: str, tool_result: Dict[str, Any]) -> Dict[str, Any]:
+def build_tool_model_render_record(
+    tool_name: str,
+    tool_result: Dict[str, Any],
+    *,
+    max_preview_chars: int = 120,
+) -> Dict[str, Any]:
     """
     Build the minimal model-visible render summary for a tool outcome.
 
@@ -53,10 +70,23 @@ def build_tool_model_render_record(tool_name: str, tool_result: Dict[str, Any]) 
     """
 
     outcome = build_tool_execution_outcome_record(tool_name, tool_result)
+    raw = outcome["raw"]
+    preview_source = raw.get("stdout")
+    if preview_source is None:
+        preview_source = raw.get("content")
+    if preview_source is None and outcome["error"] is not None:
+        preview_source = outcome["error"]
+    preview = str(preview_source or "")
+    truncated = len(preview) > max_preview_chars
+    if truncated:
+        preview = preview[:max_preview_chars]
     return {
         "tool": outcome["tool"],
+        "terminal_state": outcome["terminal_state"],
         "status": "ok" if outcome["ok"] else "error",
         "error": outcome["error"],
+        "preview": preview,
+        "truncated": truncated,
     }
 
 

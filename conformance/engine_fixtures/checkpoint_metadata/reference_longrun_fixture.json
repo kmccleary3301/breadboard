@@ -1,0 +1,23 @@
+{
+  "fixture_family": "checkpoint_metadata",
+  "fixture_id": "checkpoint_metadata_longrun_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "reference-engine",
+  "contract": "bb.checkpoint_metadata.v1",
+  "reference_output": {
+    "schema_version": "bb.checkpoint_metadata.v1",
+    "source_kind": "longrun_checkpoint",
+    "checkpoint_ref": "meta/checkpoints/longrun_state_ep_2_resume.json",
+    "created_at": 123.5,
+    "path": "meta/checkpoints/longrun_state_ep_2_resume.json",
+    "episode": 2,
+    "phase": "resume",
+    "updated_at": 123.5,
+    "summary": {
+      "path": "meta/checkpoints/longrun_state_ep_2_resume.json",
+      "episode": 2,
+      "phase": "resume",
+      "updated_at": 123.5
+    }
+  }
+}

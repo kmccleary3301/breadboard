@@ -308,6 +308,12 @@ class ProviderInvoker:
         """
 
         descriptor = getattr(runtime, "descriptor", None)
+        metadata = ProviderInvoker._normalize_exchange_request_metadata(
+            send_messages=send_messages,
+            tools_schema=tools_schema,
+            route_id=route_id,
+            stream=stream,
+        )
         return {
             "exchange_id": f"px_{uuid.uuid4().hex}",
             "provider_family": str(getattr(descriptor, "provider_id", "unknown")),
@@ -318,7 +324,7 @@ class ProviderInvoker:
             "turn_index": int(turn_index),
             "message_count": len(send_messages or []),
             "tool_count": len(tools_schema or []),
-            "metadata": {},
+            "metadata": metadata,
         }
 
     def _build_exchange_response_record(
@@ -332,6 +338,11 @@ class ProviderInvoker:
         finish_reasons: List[Optional[str]] = []
         for message in result.messages or []:
             finish_reasons.append(getattr(message, "finish_reason", None))
+        response_metadata = ProviderInvoker._normalize_exchange_response_metadata(
+            request_record=exchange_request,
+            result=result,
+            finish_reasons=finish_reasons,
+        )
         return {
             "exchange_id": exchange_request.get("exchange_id"),
             "request": dict(exchange_request),
@@ -339,7 +350,49 @@ class ProviderInvoker:
                 "message_count": len(result.messages or []),
                 "finish_reasons": finish_reasons,
                 "usage": result.usage,
-                "metadata": dict(result.metadata or {}),
+                "metadata": response_metadata,
                 "evidence_refs": [],
             },
         }
+
+    @staticmethod
+    def _normalize_exchange_request_metadata(
+        *,
+        send_messages: List[Dict[str, Any]],
+        tools_schema: Optional[List[Dict[str, Any]]],
+        route_id: Optional[str],
+        stream: bool,
+    ) -> Dict[str, Any]:
+        message_roles: List[str] = []
+        for message in send_messages or []:
+            role = message.get("role")
+            if role is not None:
+                message_roles.append(str(role))
+        tool_names: List[str] = []
+        for tool in tools_schema or []:
+            name = tool.get("name") or tool.get("function", {}).get("name")
+            if name:
+                tool_names.append(str(name))
+        return {
+            "message_roles": message_roles,
+            "tool_names": tool_names,
+            "route_selected": route_id is not None,
+            "stream_requested": bool(stream),
+            "transport": "provider_runtime.invoke",
+        }
+
+    @staticmethod
+    def _normalize_exchange_response_metadata(
+        *,
+        request_record: Dict[str, Any],
+        result: ProviderResult,
+        finish_reasons: List[Optional[str]],
+    ) -> Dict[str, Any]:
+        metadata = dict(result.metadata or {})
+        metadata.setdefault("finish_reason_count", len([reason for reason in finish_reasons if reason is not None]))
+        metadata.setdefault("stream_requested", bool(request_record.get("stream")))
+        metadata.setdefault("route_id", request_record.get("route_id"))
+        metadata.setdefault("provider_family", request_record.get("provider_family"))
+        metadata.setdefault("runtime_id", request_record.get("runtime_id"))
+        metadata.setdefault("message_count", len(result.messages or []))
+        return metadata

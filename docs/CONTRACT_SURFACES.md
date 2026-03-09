@@ -11,6 +11,9 @@ Primary references:
 - [contracts/kernel/README.md](contracts/kernel/README.md)
 - [contracts/kernel/PROGRAM_INDEX_V1.md](contracts/kernel/PROGRAM_INDEX_V1.md)
 - [contracts/kernel/KERNEL_DOCTRINES_V1.md](contracts/kernel/KERNEL_DOCTRINES_V1.md)
+- [contracts/kernel/KERNEL_EVENT_FAMILY_REGISTRY_V1.md](contracts/kernel/KERNEL_EVENT_FAMILY_REGISTRY_V1.md)
+- [contracts/kernel/PYTHON_SERVICE_BOUNDARY_MATRIX_V1.md](contracts/kernel/PYTHON_SERVICE_BOUNDARY_MATRIX_V1.md)
+- [contracts/kernel/HYBRID_DELEGATION_BOUNDARIES_V1.md](contracts/kernel/HYBRID_DELEGATION_BOUNDARIES_V1.md)
 - [contracts/kernel/semantics/README.md](contracts/kernel/semantics/README.md)
 - [../conformance/engine_fixtures/README.md](../conformance/engine_fixtures/README.md)
 

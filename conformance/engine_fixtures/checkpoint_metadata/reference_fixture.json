@@ -1,7 +1,7 @@
 {
   "fixture_family": "checkpoint_metadata",
   "fixture_id": "checkpoint_metadata_python_reference",
-  "comparator_class": "draft-semantic",
+  "comparator_class": "normalized-trace-equal",
   "support_tier": "reference-engine",
   "contract": "bb.checkpoint_metadata.v1",
   "reference_output": {

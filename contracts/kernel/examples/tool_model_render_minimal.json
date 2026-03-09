@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "bb.tool_model_render.v1",
+  "callId": "call-min-1",
+  "parts": [
+    {
+      "tool": "run_shell",
+      "terminal_state": "completed",
+      "status": "ok",
+      "error": null,
+      "preview": "hello",
+      "truncated": false
+    }
+  ],
+  "visibility": "model",
+  "metadata": {
+    "tool": "run_shell"
+  }
+}

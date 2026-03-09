@@ -172,5 +172,11 @@ def test_provider_invoker_records_provider_exchange_request_and_response():
     assert request_record["runtime_id"] == "mock_chat"
     assert request_record["message_count"] == 1
     assert request_record["tool_count"] == 1
+    assert request_record["metadata"]["message_roles"] == ["user"]
+    assert request_record["metadata"]["tool_names"] == ["bash"]
+    assert request_record["metadata"]["transport"] == "provider_runtime.invoke"
     assert response_record["request"]["exchange_id"] == request_record["exchange_id"]
     assert response_record["response"]["message_count"] == 1
+    assert response_record["response"]["metadata"]["provider_family"] == "mock"
+    assert response_record["response"]["metadata"]["runtime_id"] == "mock_chat"
+    assert response_record["response"]["metadata"]["message_count"] == 1

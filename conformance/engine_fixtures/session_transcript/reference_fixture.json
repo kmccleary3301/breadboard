@@ -1,7 +1,7 @@
 {
   "fixture_family": "session_transcript",
   "fixture_id": "session_transcript_python_reference",
-  "comparator_class": "draft-semantic",
+  "comparator_class": "normalized-trace-equal",
   "support_tier": "reference-engine",
   "contract": "bb.session_transcript.v1",
   "reference_output": {

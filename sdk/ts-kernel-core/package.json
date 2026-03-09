@@ -2,20 +2,21 @@
   "name": "@breadboard/kernel-core",
   "version": "0.1.0",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/ts-kernel-core/src/index.js",
+  "types": "dist/ts-kernel-core/src/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/ts-kernel-core/src/index.d.ts",
+      "default": "./dist/ts-kernel-core/src/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
-    "test": "node --test dist/ts-kernel-core/test/core.test.js"
+    "test": "npm --prefix ../ts-kernel-contracts run build && npm install ../ts-kernel-contracts >/dev/null && node --test dist/ts-kernel-core/test/core.test.js"
   },
   "dependencies": {
     "@breadboard/kernel-contracts": "file:../ts-kernel-contracts"

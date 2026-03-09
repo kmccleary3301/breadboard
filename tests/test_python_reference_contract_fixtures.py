@@ -13,3 +13,9 @@ def test_python_reference_contract_fixtures_match_tracked_files() -> None:
     for rel, payload in generated.items():
         tracked = json.loads((fixture_root / rel).read_text(encoding="utf-8"))
         assert tracked == payload
+
+
+def test_python_reference_contract_fixture_generator_is_deterministic() -> None:
+    first = build_python_reference_contract_fixtures()
+    second = build_python_reference_contract_fixtures()
+    assert first == second

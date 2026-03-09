@@ -17,11 +17,15 @@ EXAMPLE_SCHEMA_MAP = {
     "session_transcript_minimal.json": "bb.session_transcript.v1.schema.json",
     "tool_call_minimal.json": "bb.tool_call.v1.schema.json",
     "run_request_minimal.json": "bb.run_request.v1.schema.json",
+    "run_context_minimal.json": "bb.run_context.v1.schema.json",
     "provider_exchange_minimal.json": "bb.provider_exchange.v1.schema.json",
     "permission_minimal.json": "bb.permission.v1.schema.json",
     "replay_session_minimal.json": "bb.replay_session.v1.schema.json",
     "task_minimal.json": "bb.task.v1.schema.json",
     "checkpoint_metadata_minimal.json": "bb.checkpoint_metadata.v1.schema.json",
+    "tool_spec_minimal.json": "bb.tool_spec.v1.schema.json",
+    "tool_execution_outcome_minimal.json": "bb.tool_execution_outcome.v1.schema.json",
+    "tool_model_render_minimal.json": "bb.tool_model_render.v1.schema.json",
 }
 
 
@@ -44,12 +48,23 @@ def _validate_examples() -> List[str]:
 
 def _validate_manifest_and_fixtures() -> List[str]:
     errors: List[str] = []
+    valid_support_tiers = {"draft-shape", "draft-semantic", "reference-engine"}
+    valid_comparator_classes = {
+        "shape-equal",
+        "normalized-trace-equal",
+        "model-visible-equal",
+        "workspace-side-effects-equal",
+        "projection-equal",
+    }
     manifest_schema = _load_json(ROOT / "contracts" / "kernel" / "manifests" / "bb.engine_conformance_manifest.v1.schema.json")
     manifest = _load_json(MANIFEST_PATH)
     validator = Draft202012Validator(manifest_schema)
     for err in validator.iter_errors(manifest):
         errors.append(f"manifest invalid: {err.message}")
     for row in manifest.get("rows", []):
+        comparator = row.get("comparatorClass")
+        if comparator not in valid_comparator_classes:
+            errors.append(f"manifest invalid comparator class: {row.get('scenarioId')} -> {comparator}")
         for rel in row.get("evidence", []):
             target = FIXTURE_DIR / rel
             if not target.is_file():
@@ -57,8 +72,11 @@ def _validate_manifest_and_fixtures() -> List[str]:
                 continue
             fixture = _load_json(target)
             support_tier = fixture.get("support_tier")
-            if support_tier is not None and support_tier not in {"draft-shape", "draft-semantic", "reference-engine"}:
+            if support_tier is not None and support_tier not in valid_support_tiers:
                 errors.append(f"fixture invalid support tier: {target} -> {support_tier}")
+            comparator_class = fixture.get("comparator_class")
+            if comparator_class is not None and comparator_class not in valid_comparator_classes:
+                errors.append(f"fixture invalid comparator class: {target} -> {comparator_class}")
             example_ref = fixture.get("example_ref")
             if example_ref:
                 example_path = (target.parent / example_ref).resolve()

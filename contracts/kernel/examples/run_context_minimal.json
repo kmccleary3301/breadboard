@@ -1,0 +1,17 @@
+{
+  "schema_version": "bb.run_context.v1",
+  "session_id": "sess-min-1",
+  "engine_family": "python_reference",
+  "request_id": "req-min-1",
+  "engine_ref": "working-tree",
+  "workspace_root": "/tmp/ws",
+  "resolved_model": "openai/gpt-5.2",
+  "resolved_provider_route": "primary",
+  "active_mode": "interactive",
+  "feature_flags": {
+    "todos": true
+  },
+  "execution_mode": "foreground",
+  "delegated_services": [],
+  "metadata": {}
+}
