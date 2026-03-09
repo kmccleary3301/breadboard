@@ -238,6 +238,19 @@ def _task_specific_guidance(task_id: str) -> str:
             - Prefer one concrete proof rewrite plus verifier run over repeated exploratory shell commands.
             """
         ).rstrip()
+    if normalized == "mathd_numbertheory_530":
+        return textwrap.dedent(
+            """\
+            Task-specific proof hints:
+            - The current proof shape is already close. Do not restart from scratch; repair the ratio-to-integer steps and finish the reduced coprime-product argument.
+            - Convert the ratio bounds with the exact lemmas `lt_div_iff₀` and `div_lt_iff₀`, not `linarith` on the raw division hypotheses.
+            - After setting `d := Nat.gcd n k` and writing `n = d * a`, `k = d * b`, use `Nat.coprime_div_gcd_div_gcd` or the equivalent divisibility decomposition to get `Nat.Coprime a b`.
+            - For the final expression, the useful factorization lemmas are `Nat.lcm_mul_left` and `Nat.gcd_mul_left`; after rewriting, `simp [Nat.Coprime.lcm_eq_mul, Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm]` should collapse `Nat.lcm (d*a) (d*b) / Nat.gcd (d*a) (d*b)` to `a * b`.
+            - The lower bound route should be: derive `2 ≤ b`, derive `5 * b + 1 ≤ a`, then conclude `22 ≤ a * b` by arithmetic.
+            - Keep the witness for membership simple: `n = 11`, `k = 2`.
+            - Avoid repeated exploratory shell commands; this task wants exact theorem names and a clean algebraic finish.
+            """
+        ).rstrip()
     return textwrap.dedent(
         """\
         Task-specific proof hints:
