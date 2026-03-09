@@ -44,6 +44,13 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 - `docs/contracts/kernel/HYBRID_DELEGATION_BOUNDARIES_V1.md`
 - `docs/contracts/kernel/PYTHON_SERVICE_BOUNDARY_MATRIX_V1.md`
 - `docs/contracts/kernel/OPENCLAW_PROVING_GROUND_READINESS_V1.md`
+- `docs/contracts/kernel/OPENCLAW_HOST_BRIDGE_V1.md`
+
+## TS package surfaces
+
+- `sdk/ts-kernel-contracts/`
+- `sdk/ts-kernel-core/`
+- `sdk/ts-host-bridges/`
 
 ## Current tranche status
 

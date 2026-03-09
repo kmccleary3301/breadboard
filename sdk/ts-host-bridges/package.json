@@ -1,0 +1,29 @@
+{
+  "name": "@breadboard/ts-host-bridges",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/ts-host-bridges/src/index.js",
+  "types": "dist/ts-host-bridges/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/ts-host-bridges/src/index.d.ts",
+      "default": "./dist/ts-host-bridges/src/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "test": "npm --prefix ../ts-kernel-contracts run build && npm --prefix ../ts-kernel-core run build && npm install ../ts-kernel-contracts ../ts-kernel-core >/dev/null && node --test dist/ts-host-bridges/test/openclaw.test.js"
+  },
+  "dependencies": {
+    "@breadboard/kernel-contracts": "file:../ts-kernel-contracts",
+    "@breadboard/kernel-core": "file:../ts-kernel-core"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.5.4"
+  }
+}
