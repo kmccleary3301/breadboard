@@ -75,6 +75,7 @@ The current implementation also supports two practical expansions of that slice:
 
 - direct trusted-local execution through the local execution driver
 - OCI-backed execution through the OCI driver when the host provides an OCI runtime adapter
+- delegated remote execution through the remote execution driver when the host provides a remote adapter or endpoint
 
 Those are implementation-backed capabilities, but they are still governed by the same intentionally narrow supported-slice rules.
 

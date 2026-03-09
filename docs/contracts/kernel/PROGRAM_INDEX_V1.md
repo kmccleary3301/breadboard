@@ -55,6 +55,7 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 - `docs/contracts/kernel/OPENCLAW_PROVING_GROUND_READINESS_V1.md`
 - `docs/contracts/kernel/OPENCLAW_HOST_BRIDGE_V1.md`
 - `docs/contracts/kernel/OPENCLAW_HOST_BRIDGE_ACCEPTANCE_V1.md`
+- `docs/contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md`
 
 ## TS package surfaces
 
@@ -79,6 +80,8 @@ Current state is strong on:
 - first Python reference-engine boundary clarifications
 - the new V2 execution-capability contract family
 - the initial V2 execution-driver and orchestration backend family
+- the first honest delegated remote execution path
+- the first honest statement of the Python-free primary TS host boundary
 
 Current state is still intentionally early on:
 

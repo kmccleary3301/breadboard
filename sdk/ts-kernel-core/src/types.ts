@@ -17,6 +17,7 @@ import type {
 } from "@breadboard/execution-drivers"
 import type { LocalCommandExecutor } from "@breadboard/execution-driver-local"
 import type { OciCommandExecutor } from "@breadboard/execution-driver-oci"
+import type { RemoteExecutionHttpOptions, RemoteSandboxExecutor } from "@breadboard/execution-driver-remote"
 
 export interface StaticTextTurnOptions {
   sessionId?: string
@@ -84,7 +85,7 @@ export interface DriverMediatedToolTurnOptions {
   evidenceMode?: ExecutionCapabilityV1["evidence_mode"]
   allowRunPrograms?: string[]
   allowNetHosts?: string[]
-  driverIdHint?: "trusted_local" | "oci"
+  driverIdHint?: "trusted_local" | "oci" | "remote"
   assistantText?: string | null
   executeSandbox?: (
     request: SandboxRequestV1,
@@ -94,6 +95,8 @@ export interface DriverMediatedToolTurnOptions {
   ociCommandExecutor?: OciCommandExecutor
   ociRuntimeCommand?: string
   ociWorkspaceMountTarget?: string
+  remoteExecutor?: RemoteSandboxExecutor
+  remoteHttp?: RemoteExecutionHttpOptions
   startedAt?: string
 }
 

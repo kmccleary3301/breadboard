@@ -20,10 +20,20 @@ This document defines the first shared comparator vocabulary for the engine-conf
 4. `workspace-side-effects-equal`
    - compares resulting workspace state / file changes / side effects
    - appropriate once delegated or full-engine workspace fixtures exist
+   - appropriate for backend-mediated execution lanes once filesystem and artifact digests are frozen strongly enough
 
 5. `projection-equal`
    - compares host projection output derived from kernel events
    - appropriate for UI/client reducers, never as kernel truth
+
+## Backend-mediated execution note
+
+Execution-driver and sandbox lanes frequently need two different comparators:
+
+- `normalized-trace-equal` for request/result and lineage semantics
+- `workspace-side-effects-equal` for stronger backend-mediated side-effect parity
+
+The V2 program currently freezes the first class broadly and only begins preparing the second class where backend evidence is strong enough.
 
 ## Rule
 

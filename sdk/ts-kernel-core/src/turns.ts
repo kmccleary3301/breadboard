@@ -28,6 +28,11 @@ import {
   executeOciSandboxRequest,
   ociExecutionDriver,
 } from "@breadboard/execution-driver-oci"
+import {
+  chooseRemotePlacement,
+  executeRemoteSandboxRequest,
+  makeRemoteExecutionDriver,
+} from "@breadboard/execution-driver-remote"
 
 import {
   buildExecutionCapabilityFromRunRequest,
@@ -121,6 +126,9 @@ function chooseDriverMediatedPlacement(
   capability: ExecutionCapabilityV1,
   driverIdHint?: DriverMediatedToolTurnOptions["driverIdHint"],
 ): ExecutionPlacementV1["placement_class"] {
+  if (driverIdHint === "remote" || capability.isolation_class === "remote_service") {
+    return chooseRemotePlacement(capability)
+  }
   if (driverIdHint === "oci" || ["oci", "gvisor", "kata"].includes(capability.isolation_class)) {
     return chooseOciPlacement(capability)
   }
@@ -150,6 +158,14 @@ function buildDriverExecutionAdapter(
         runtimeCommand: options.ociRuntimeCommand,
         workspaceMountTarget: options.ociWorkspaceMountTarget,
       })
+  }
+
+  if (plan.driver.driverId === "remote" && options.remoteHttp) {
+    return (request) => executeRemoteSandboxRequest(request, options.remoteHttp!)
+  }
+
+  if (plan.driver.driverId === "remote" && options.remoteExecutor) {
+    return (request) => options.remoteExecutor!(request)
   }
 
   if (plan.driver.execute) {
@@ -182,11 +198,23 @@ export async function executeDriverMediatedToolTurn(
     runtimeId:
       placementClass === "local_process"
         ? "breadboard.ts-execution-driver-local"
+        : placementClass === "remote_worker" ||
+            placementClass === "delegated_python" ||
+            placementClass === "delegated_oci" ||
+            placementClass === "delegated_microvm"
+          ? "breadboard.ts-execution-driver-remote"
         : "breadboard.ts-execution-driver-oci",
   })
-  const drivers: ExecutionDriverV1[] = options.driverIdHint === "oci"
-    ? [ociExecutionDriver, trustedLocalExecutionDriver]
-    : [trustedLocalExecutionDriver, ociExecutionDriver]
+  const remoteDriver =
+    options.remoteExecutor || options.remoteHttp
+      ? makeRemoteExecutionDriver(options.remoteExecutor, options.remoteHttp)
+      : makeRemoteExecutionDriver()
+  const drivers: ExecutionDriverV1[] =
+    options.driverIdHint === "remote"
+      ? [remoteDriver, ociExecutionDriver, trustedLocalExecutionDriver]
+      : options.driverIdHint === "oci"
+        ? [ociExecutionDriver, trustedLocalExecutionDriver, remoteDriver]
+        : [trustedLocalExecutionDriver, ociExecutionDriver, remoteDriver]
   const plan = buildPlannedExecution({
     capability,
     placement,

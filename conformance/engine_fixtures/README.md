@@ -75,3 +75,8 @@ Instead, it extends that discipline to the multi-engine problem:
 5. replay session round-trip fixtures
 6. permission lifecycle fixtures
 7. task/subagent lifecycle fixtures
+8. execution capability / placement fixtures
+9. sandbox roundtrip fixtures
+10. transcript continuation patch fixtures
+11. unsupported-case fixtures
+12. distributed task / orchestration fixtures

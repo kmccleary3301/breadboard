@@ -412,6 +412,56 @@ test("openclaw bridge can preserve provider quirks on an OCI-backed tool slice",
   assert.equal(invocation.result.meta.agentMeta?.model, "claude-3.7-sonnet")
 })
 
+test("openclaw bridge can execute a delegated remote tool slice", async () => {
+  const invocation = await runOpenClawEmbeddedViaBreadboard(
+    {
+      ...buildBaseParams(),
+      provider: "openrouter",
+      model: "moonshotai/kimi-k2.5",
+      prompt: "Run the delegated remote audit.",
+      clientTools: [{ type: "function", function: { name: "remote_audit" } }],
+    },
+    {
+      toolSlice: {
+        command: ["python", "audit.py"],
+        isolationClass: "remote_service",
+        securityTier: "multi_tenant",
+        remoteHttp: {
+          endpointUrl: "https://remote.example.test/execute",
+          fetchImpl: async () =>
+            ({
+              ok: true,
+              status: 200,
+              json: async () => ({
+                schema_version: "bb.remote_execution_response.v1",
+                result: {
+                  schema_version: "bb.sandbox_result.v1",
+                  request_id: "run-openclaw-remote-1:sandbox",
+                  status: "completed",
+                  placement_id: "remote:openclaw:1",
+                  stdout_ref: "artifact://remote/stdout/openclaw",
+                  stderr_ref: "artifact://remote/stderr/openclaw",
+                  artifact_refs: ["artifact://remote/report/openclaw"],
+                  side_effect_digest: "sha256:openclawremote1",
+                  usage: { wall_ms: 52, backend: "remote-http" },
+                  evidence_refs: ["evidence://remote/openclaw/1"],
+                  error: null,
+                },
+              }),
+            }) as Response,
+        },
+      },
+    },
+  )
+
+  assert.equal(invocation.mode, "breadboard")
+  assert.equal(invocation.driverTurn?.driverId, "remote")
+  assert.equal(invocation.executionPlacement.placement_class, "remote_worker")
+  assert.equal(invocation.driverTurn?.sandboxResult.placement_id, "remote:openclaw:1")
+  assert.equal(invocation.result.meta.agentMeta?.provider, "openrouter")
+  assert.equal(invocation.result.meta.agentMeta?.model, "moonshotai/kimi-k2.5")
+})
+
 test("openclaw bridge falls back cleanly on unsupported slice fields", async () => {
   const invocation = await runOpenClawEmbeddedViaBreadboard(
     {

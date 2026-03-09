@@ -3,7 +3,13 @@ import assert from "node:assert/strict"
 
 import type { ExecutionCapabilityV1 } from "@breadboard/kernel-contracts"
 import { buildExecutionDriverUnsupportedCase } from "@breadboard/execution-drivers"
-import { buildRemoteSandboxRequest, chooseRemotePlacement, makeRemoteExecutionDriver } from "../src/index.js"
+import {
+  buildRemoteExecutionRequestEnvelope,
+  buildRemoteSandboxRequest,
+  chooseRemotePlacement,
+  executeRemoteSandboxRequest,
+  makeRemoteExecutionDriver,
+} from "../src/index.js"
 
 const remoteCapability: ExecutionCapabilityV1 = {
   schema_version: "bb.execution_capability.v1",
@@ -36,6 +42,21 @@ test("remote driver builds a remote sandbox request", () => {
   assert.equal(request.placement_class, "remote_worker")
   assert.equal(request.image_ref, "breadboard/worker:latest")
   assert.deepEqual(request.command, ["python", "worker.py"])
+})
+
+test("remote driver builds an explicit remote execution envelope", () => {
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:remote:env",
+    capability: remoteCapability,
+    command: ["python", "worker.py"],
+  })
+  const envelope = buildRemoteExecutionRequestEnvelope({
+    request,
+    metadata: { route: "primary-remote" },
+  })
+  assert.equal(envelope.schema_version, "bb.remote_execution_request.v1")
+  assert.equal(envelope.request.request_id, "req:remote:env")
+  assert.equal(envelope.metadata?.route, "primary-remote")
 })
 
 test("remote driver can execute through an injected adapter", async () => {
@@ -71,6 +92,82 @@ test("remote driver can execute through an injected adapter", async () => {
   const result = await driver.execute!(request)
   assert.equal(result.status, "completed")
   assert.equal(result.placement_id, "remote:place:1")
+})
+
+test("remote driver can execute through a fetch-backed HTTP adapter", async () => {
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:remote:http",
+    capability: remoteCapability,
+    command: ["python", "worker.py"],
+  })
+  let seenUrl = ""
+  let seenHeaders: Record<string, string> = {}
+  let seenBody = ""
+  const result = await executeRemoteSandboxRequest(request, {
+    endpointUrl: "https://example.test/remote-exec",
+    headers: { authorization: "Bearer test-token" },
+    fetchImpl: async (input, init) => {
+      seenUrl = String(input)
+      seenHeaders = (init?.headers as Record<string, string>) ?? {}
+      seenBody = String(init?.body ?? "")
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          schema_version: "bb.remote_execution_response.v1",
+          result: {
+            schema_version: "bb.sandbox_result.v1",
+            request_id: request.request_id,
+            status: "completed",
+            placement_id: "remote:http:1",
+            stdout_ref: "artifact://remote/stdout/http",
+            stderr_ref: "artifact://remote/stderr/http",
+            artifact_refs: [],
+            side_effect_digest: "sha256:remotehttp",
+            usage: { wall_ms: 21 },
+            evidence_refs: ["evidence://remote/http/1"],
+            error: null,
+          },
+        }),
+      } as Response
+    },
+  })
+  assert.equal(seenUrl, "https://example.test/remote-exec")
+  assert.equal(seenHeaders.authorization, "Bearer test-token")
+  assert.ok(seenBody.includes("\"schema_version\":\"bb.remote_execution_request.v1\""))
+  assert.equal(result.placement_id, "remote:http:1")
+})
+
+test("remote driver can be constructed from HTTP options alone", async () => {
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:remote:http:driver",
+    capability: remoteCapability,
+    command: ["python", "worker.py"],
+  })
+  const driver = makeRemoteExecutionDriver(undefined, {
+    endpointUrl: "https://example.test/driver-http",
+    fetchImpl: async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          schema_version: "bb.sandbox_result.v1",
+          request_id: request.request_id,
+          status: "completed",
+          placement_id: "remote:http:driver",
+          stdout_ref: null,
+          stderr_ref: null,
+          artifact_refs: [],
+          side_effect_digest: "sha256:remotehttpdriver",
+          usage: null,
+          evidence_refs: [],
+          error: null,
+        }),
+      }) as Response,
+  })
+  const result = await driver.execute!(request)
+  assert.equal(result.status, "completed")
+  assert.equal(result.placement_id, "remote:http:driver")
 })
 
 test("unsupported case helper still models delegated gaps honestly", () => {

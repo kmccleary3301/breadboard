@@ -42,6 +42,7 @@ The current bridge accepts:
   - exactly one host function tool is provided
   - either a BreadBoard tool-slice executor is explicitly supplied or the selected execution driver can execute directly
   - execution placement is negotiated through the execution-driver family
+  - delegated remote execution may be selected when the host provides a remote execution adapter or endpoint
 
 ## Explicitly unsupported in V1
 
@@ -77,6 +78,7 @@ This program now stops at:
 - callback projection
 - transcript continuity
 - provider-quirk preservation
+- delegated remote execution through the remote execution-driver boundary
 - explicit native fallback
 
 It does **not** currently stop at:

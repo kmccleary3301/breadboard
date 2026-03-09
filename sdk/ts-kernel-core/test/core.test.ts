@@ -315,6 +315,56 @@ test("kernel core can execute a driver-mediated OCI tool turn", async () => {
   assert.equal(result.transcript.items.at(-1)?.kind, "assistant_message")
 })
 
+test("kernel core can execute a driver-mediated remote tool turn", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-driver-remote-1",
+    entry_mode: "interactive",
+    task: "Run a delegated remote audit.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-driver-remote-1",
+    toolName: "remote_audit",
+    command: ["python", "audit.py"],
+    workspaceRef: "/tmp/workspace",
+    isolationClass: "remote_service",
+    securityTier: "multi_tenant",
+    driverIdHint: "remote",
+    remoteHttp: {
+      endpointUrl: "https://remote.example.test/execute",
+      fetchImpl: async () =>
+        ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_execution_response.v1",
+            result: {
+              schema_version: "bb.sandbox_result.v1",
+              request_id: "run-driver-remote-1:sandbox",
+              status: "completed",
+              placement_id: "remote:exec:1",
+              stdout_ref: "artifact://remote/stdout/1",
+              stderr_ref: "artifact://remote/stderr/1",
+              artifact_refs: ["artifact://remote/report/1"],
+              side_effect_digest: "sha256:remoteexec1",
+              usage: { wall_ms: 44 },
+              evidence_refs: ["evidence://remote/1"],
+              error: null,
+            },
+          }),
+        }) as Response,
+    },
+  })
+
+  assert.equal(result.driverId, "remote")
+  assert.equal(result.executionPlacement.placement_class, "remote_worker")
+  assert.equal(result.sandboxRequest.placement_class, "remote_worker")
+  assert.equal(result.sandboxResult.placement_id, "remote:exec:1")
+  assert.equal(result.sideEffectExpectation.filesystem_scope, "remote_scoped")
+})
+
 test("kernel core can execute a provider-aware constrained text turn", () => {
   const request = {
     schema_version: "bb.run_request.v1",

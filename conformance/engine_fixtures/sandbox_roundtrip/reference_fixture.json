@@ -1,0 +1,54 @@
+{
+  "fixture_family": "sandbox_roundtrip",
+  "fixture_id": "sandbox_roundtrip_remote_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "draft-semantic",
+  "request_contract": "bb.sandbox_request.v1",
+  "result_contract": "bb.sandbox_result.v1",
+  "reference_input": {
+    "schema_version": "bb.sandbox_request.v1",
+    "request_id": "sandbox:req:remote:1",
+    "capability_id": "cap:openclaw:remote_tool",
+    "placement_class": "remote_worker",
+    "workspace_ref": "/tmp/workspace",
+    "rootfs_ref": null,
+    "image_ref": "breadboard/worker:latest",
+    "snapshot_ref": null,
+    "command": [
+      "python",
+      "audit.py"
+    ],
+    "network_policy": {
+      "allow": [
+        "remote.example.test"
+      ]
+    },
+    "secret_refs": [],
+    "timeout_seconds": 30,
+    "evidence_mode": "audit_full",
+    "metadata": {
+      "driver": "remote",
+      "tool_name": "remote_audit"
+    }
+  },
+  "reference_output": {
+    "schema_version": "bb.sandbox_result.v1",
+    "request_id": "sandbox:req:remote:1",
+    "status": "completed",
+    "placement_id": "remote:worker:1",
+    "stdout_ref": "artifact://remote/stdout/1",
+    "stderr_ref": "artifact://remote/stderr/1",
+    "artifact_refs": [
+      "artifact://remote/report/1"
+    ],
+    "side_effect_digest": "sha256:remote-roundtrip-1",
+    "usage": {
+      "wall_ms": 52,
+      "backend": "remote-http"
+    },
+    "evidence_refs": [
+      "evidence://remote/openclaw/1"
+    ],
+    "error": null
+  }
+}

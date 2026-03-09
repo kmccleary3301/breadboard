@@ -14,6 +14,7 @@ Current scope:
 - constrained provider-aware text execution slice for contract-first provider-exchange consumption
 - provider-aware continuation slice with transcript continuation patch output
 - constrained driver-mediated tool execution slice for trusted-local and OCI-backed paths with injected sandbox execution
+- constrained driver-mediated tool execution slice for trusted-local, OCI-backed, and delegated-remote paths
 - conformance summary helpers over the tracked fixture and manifest substrate
 - no provider runtime implementation
 - no hidden in-process engine

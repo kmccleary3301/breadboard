@@ -1,0 +1,32 @@
+{
+  "fixture_family": "transcript_continuation_patch",
+  "fixture_id": "transcript_continuation_patch_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "draft-semantic",
+  "contract": "bb.transcript_continuation_patch.v1",
+  "reference_output": {
+    "schema_version": "bb.transcript_continuation_patch.v1",
+    "patch_id": "patch:openclaw:1",
+    "pre_state_ref": "transcript://openclaw/session:test",
+    "appended_messages": [
+      {
+        "kind": "tool_result",
+        "visibility": "model"
+      },
+      {
+        "kind": "assistant_message",
+        "visibility": "model"
+      }
+    ],
+    "appended_tool_events": [
+      {
+        "tool": "remote_audit",
+        "event": "completed"
+      }
+    ],
+    "lineage_updates": [],
+    "compaction_markers": [],
+    "post_state_digest": "sha256:patch-openclaw-1",
+    "lossiness_flags": []
+  }
+}

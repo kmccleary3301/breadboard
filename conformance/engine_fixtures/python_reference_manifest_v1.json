@@ -314,6 +314,17 @@
     {
       "engineFamily": "python_reference",
       "engineRef": "working-tree",
+      "scenarioId": "execution_capability_remote_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "execution_capability/reference_fixture.json"
+      ],
+      "notes": "Execution capability reference for delegated remote tool execution."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
       "scenarioId": "execution_placement_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
@@ -321,6 +332,17 @@
         "execution_placement/minimal_fixture.json"
       ],
       "notes": "Minimal execution placement V2 shape validation."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "execution_placement_remote_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "execution_placement/reference_fixture.json"
+      ],
+      "notes": "Execution placement reference for delegated remote tool execution."
     },
     {
       "engineFamily": "python_reference",
@@ -336,6 +358,17 @@
     {
       "engineFamily": "python_reference",
       "engineRef": "working-tree",
+      "scenarioId": "sandbox_roundtrip_remote_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "sandbox_roundtrip/reference_fixture.json"
+      ],
+      "notes": "Backend-mediated remote sandbox request/result reference lane."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
       "scenarioId": "transcript_continuation_patch_minimal",
       "supportTier": "draft-semantic",
       "comparatorClass": "shape-equal",
@@ -343,6 +376,17 @@
         "transcript_continuation_patch/minimal_fixture.json"
       ],
       "notes": "Transcript continuation patch shape and semantic intent scaffold."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "transcript_continuation_patch_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "transcript_continuation_patch/reference_fixture.json"
+      ],
+      "notes": "Transcript continuation patch reference for host-owned continuation over tool-bearing remote execution."
     },
     {
       "engineFamily": "python_reference",
@@ -358,6 +402,17 @@
     {
       "engineFamily": "python_reference",
       "engineRef": "working-tree",
+      "scenarioId": "unsupported_case_driver_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "unsupported_case/reference_fixture.json"
+      ],
+      "notes": "Unsupported-case reference for execution-driver negotiation failures."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
       "scenarioId": "distributed_task_minimal",
       "supportTier": "draft-semantic",
       "comparatorClass": "shape-equal",
@@ -365,6 +420,17 @@
         "distributed_task/minimal_fixture.json"
       ],
       "notes": "Durable/distributed task descriptor scaffold for orchestration backend adapters."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "distributed_task_temporal_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "distributed_task/reference_fixture.json"
+      ],
+      "notes": "Distributed task descriptor reference aligned with the Temporal adapter path."
     }
   ]
 }

@@ -22,6 +22,7 @@ import {
 } from "@breadboard/kernel-core"
 import type { LocalCommandExecutor } from "@breadboard/execution-driver-local"
 import type { OciCommandExecutor } from "@breadboard/execution-driver-oci"
+import type { RemoteExecutionHttpOptions, RemoteSandboxExecutor } from "@breadboard/execution-driver-remote"
 
 export type OpenClawClientToolDefinition = {
   type: "function"
@@ -132,6 +133,8 @@ export type OpenClawToolSliceOptions = {
   ociCommandExecutor?: OciCommandExecutor
   ociRuntimeCommand?: string
   ociWorkspaceMountTarget?: string
+  remoteExecutor?: RemoteSandboxExecutor
+  remoteHttp?: RemoteExecutionHttpOptions
   assistantText?: string | ((result: DriverMediatedToolTurnResult, tool: OpenClawClientToolDefinition) => string)
 }
 
@@ -503,7 +506,7 @@ export async function runOpenClawEmbeddedViaBreadboard(
       securityTier: options.toolSlice.securityTier ?? "trusted_dev",
       allowRunPrograms: options.toolSlice.allowRunPrograms ?? [command[0]].filter(Boolean),
       allowNetHosts: options.toolSlice.allowNetHosts ?? [],
-      driverIdHint: imageRef ? "oci" : undefined,
+      driverIdHint: options.toolSlice.remoteExecutor || options.toolSlice.remoteHttp ? "remote" : imageRef ? "oci" : undefined,
       assistantText: null,
       executeSandbox: options.toolSlice.executeSandbox
         ? (request, context) =>
@@ -517,6 +520,8 @@ export async function runOpenClawEmbeddedViaBreadboard(
       ociCommandExecutor: options.toolSlice.ociCommandExecutor,
       ociRuntimeCommand: options.toolSlice.ociRuntimeCommand,
       ociWorkspaceMountTarget: options.toolSlice.ociWorkspaceMountTarget,
+      remoteExecutor: options.toolSlice.remoteExecutor,
+      remoteHttp: options.toolSlice.remoteHttp,
     })
     if (typeof options.toolSlice.assistantText === "function") {
       const assistantText = options.toolSlice.assistantText(driverTurn, tool)

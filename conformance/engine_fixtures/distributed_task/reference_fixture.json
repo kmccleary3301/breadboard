@@ -1,0 +1,33 @@
+{
+  "fixture_family": "distributed_task",
+  "fixture_id": "distributed_task_temporal_reference",
+  "comparator_class": "shape-equal",
+  "support_tier": "draft-semantic",
+  "contract": "bb.distributed_task_descriptor.v1",
+  "reference_output": {
+    "schema_version": "bb.distributed_task_descriptor.v1",
+    "task_id": "task:background:1",
+    "task_kind": "background",
+    "parent_task_id": "task:root:1",
+    "placement_preferences": [
+      "remote_worker",
+      "delegated_oci"
+    ],
+    "checkpoint_strategy": "episode_boundary",
+    "wake_conditions": [
+      "timer",
+      "child_completion"
+    ],
+    "join_policy": "await_explicit",
+    "retry_policy": {
+      "max_attempts": 3,
+      "backoff": "exponential"
+    },
+    "priority": 5,
+    "budget": {
+      "wall_seconds": 1800
+    },
+    "expected_output_contract": "bb.replay_session.v1",
+    "artifact_refs": []
+  }
+}

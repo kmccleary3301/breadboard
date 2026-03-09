@@ -64,11 +64,17 @@ def test_engine_fixture_families_cover_permission_task_and_checkpoint() -> None:
         "tool_lifecycle/reference_denied_render_fixture.json",
         "replay_session/reference_fixture.json",
         "execution_capability/minimal_fixture.json",
+        "execution_capability/reference_fixture.json",
         "execution_placement/minimal_fixture.json",
+        "execution_placement/reference_fixture.json",
         "sandbox_roundtrip/minimal_fixture.json",
+        "sandbox_roundtrip/reference_fixture.json",
         "transcript_continuation_patch/minimal_fixture.json",
+        "transcript_continuation_patch/reference_fixture.json",
         "unsupported_case/minimal_fixture.json",
+        "unsupported_case/reference_fixture.json",
         "distributed_task/minimal_fixture.json",
+        "distributed_task/reference_fixture.json",
     }
     present = {str(path.relative_to(fixture_dir)) for path in fixture_dir.rglob("*.json")}
     missing = sorted(expected - present)
@@ -84,6 +90,7 @@ def test_kernel_program_docs_cover_event_registry_and_hybrid_boundaries() -> Non
         "ORCHESTRATION_BACKEND_DECISION_V1.md",
         "PYTHON_SERVICE_BOUNDARY_MATRIX_V1.md",
         "OPENCLAW_PROVING_GROUND_READINESS_V1.md",
+        "TS_PRIMARY_HOST_PATH_READINESS_V1.md",
     }
     present = {path.name for path in docs_dir.glob("*.md")}
     missing = sorted(expected - present)
