@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.sandbox_result.v1.schema.json",
+  "title": "bb.sandbox_result.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "status"],
+  "properties": {
+    "schema_version": {"const": "bb.sandbox_result.v1"},
+    "request_id": {"type": "string", "minLength": 1},
+    "status": {"enum": ["completed", "failed", "cancelled", "timed_out"]},
+    "placement_id": {"type": ["string", "null"]},
+    "stdout_ref": {"type": ["string", "null"]},
+    "stderr_ref": {"type": ["string", "null"]},
+    "artifact_refs": {"type": "array", "items": {"type": "string"}},
+    "side_effect_digest": {"type": ["string", "null"]},
+    "usage": {"type": ["object", "null"], "additionalProperties": true},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}},
+    "error": {"type": ["object", "null"], "additionalProperties": true}
+  }
+}

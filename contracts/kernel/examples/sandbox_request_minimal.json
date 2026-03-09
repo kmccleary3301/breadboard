@@ -1,0 +1,16 @@
+{
+  "schema_version": "bb.sandbox_request.v1",
+  "request_id": "sandbox_req_1",
+  "capability_id": "cap_local_patch",
+  "placement_class": "local_oci",
+  "workspace_ref": "workspace://repo/main",
+  "rootfs_ref": null,
+  "image_ref": "docker://breadboard/base:latest",
+  "snapshot_ref": null,
+  "command": ["bash", "-lc", "rg --files | head"],
+  "network_policy": {"allow": []},
+  "secret_refs": ["secret://openai/api-key"],
+  "timeout_seconds": 30,
+  "evidence_mode": "replay_strict",
+  "metadata": {"tool_name": "shell"}
+}

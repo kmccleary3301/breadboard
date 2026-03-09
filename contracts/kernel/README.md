@@ -46,6 +46,11 @@ Those may reference the kernel, but they should not redefine it.
 - middleware lifecycle
 - task / subagent / background task
 - checkpoint / longrun state
+- execution capability / placement
+- sandbox request / result
+- distributed task descriptor
+- transcript continuation patch
+- unsupported case taxonomy
 - replay session
 - conformance evidence
 - import/export session

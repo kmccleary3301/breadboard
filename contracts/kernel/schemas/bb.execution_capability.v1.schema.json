@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.execution_capability.v1.schema.json",
+  "title": "bb.execution_capability.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "capability_id", "security_tier", "isolation_class", "secret_mode", "evidence_mode"],
+  "properties": {
+    "schema_version": {"const": "bb.execution_capability.v1"},
+    "capability_id": {"type": "string", "minLength": 1},
+    "security_tier": {"enum": ["trusted_dev", "single_tenant", "shared_host", "multi_tenant"]},
+    "isolation_class": {"enum": ["none", "process", "oci", "gvisor", "kata", "microvm", "remote_service"]},
+    "allow_read_paths": {"type": "array", "items": {"type": "string"}},
+    "allow_write_paths": {"type": "array", "items": {"type": "string"}},
+    "allow_net_hosts": {"type": "array", "items": {"type": "string"}},
+    "allow_run_programs": {"type": "array", "items": {"type": "string"}},
+    "allow_env_keys": {"type": "array", "items": {"type": "string"}},
+    "secret_mode": {"enum": ["inline", "ref_only", "scoped_proxy"]},
+    "tty_mode": {"enum": ["none", "optional", "required"]},
+    "resource_budget": {"type": ["object", "null"], "additionalProperties": true},
+    "evidence_mode": {"enum": ["minimal", "replay_strict", "audit_full"]}
+  }
+}

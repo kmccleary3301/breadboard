@@ -1,0 +1,13 @@
+{
+  "schema_version": "bb.sandbox_result.v1",
+  "request_id": "sandbox_req_1",
+  "status": "completed",
+  "placement_id": "placement_local_oci_1",
+  "stdout_ref": "artifact://stdout/1",
+  "stderr_ref": null,
+  "artifact_refs": ["artifact://workspace-digest/1"],
+  "side_effect_digest": "sha256:abc123",
+  "usage": {"wall_ms": 420},
+  "evidence_refs": ["evidence://sandbox/1"],
+  "error": null
+}

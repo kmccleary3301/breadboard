@@ -41,6 +41,13 @@ Draft scaffold schemas now exist for:
 - `bb.run_context.v1`
 - `bb.provider_exchange.v1`
 - `bb.permission.v1`
+- `bb.execution_capability.v1`
+- `bb.execution_placement.v1`
+- `bb.sandbox_request.v1`
+- `bb.sandbox_result.v1`
+- `bb.distributed_task_descriptor.v1`
+- `bb.transcript_continuation_patch.v1`
+- `bb.unsupported_case.v1`
 - `bb.replay_session.v1`
 - `bb.task.v1`
 

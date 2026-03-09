@@ -23,6 +23,12 @@ Current minimal examples exist for:
 - run context
 - provider exchange
 - permission
+- execution capability
+- execution placement
+- sandbox request / result
+- distributed task descriptor
+- transcript continuation patch
+- unsupported case
 - replay session
 - task
 - checkpoint metadata

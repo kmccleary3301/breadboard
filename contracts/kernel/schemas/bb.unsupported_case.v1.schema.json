@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.unsupported_case.v1.schema.json",
+  "title": "bb.unsupported_case.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "reason_code", "summary", "fallback_allowed", "fallback_taken"],
+  "properties": {
+    "schema_version": {"const": "bb.unsupported_case.v1"},
+    "reason_code": {"type": "string", "minLength": 1},
+    "summary": {"type": "string", "minLength": 1},
+    "contract_family": {"type": ["string", "null"]},
+    "fallback_allowed": {"type": "boolean"},
+    "fallback_taken": {"type": "boolean"},
+    "required_capability_id": {"type": ["string", "null"]},
+    "unavailable_placement": {"type": ["string", "null"]},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}},
+    "metadata": {"type": "object", "additionalProperties": true}
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.transcript_continuation_patch.v1.schema.json",
+  "title": "bb.transcript_continuation_patch.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "patch_id", "appended_messages", "post_state_digest"],
+  "properties": {
+    "schema_version": {"const": "bb.transcript_continuation_patch.v1"},
+    "patch_id": {"type": "string", "minLength": 1},
+    "pre_state_ref": {"type": ["string", "null"]},
+    "appended_messages": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "appended_tool_events": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "lineage_updates": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "compaction_markers": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "post_state_digest": {"type": "string", "minLength": 1},
+    "lossiness_flags": {"type": "array", "items": {"type": "string"}}
+  }
+}

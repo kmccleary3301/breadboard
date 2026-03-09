@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.sandbox_request.v1.schema.json",
+  "title": "bb.sandbox_request.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "command", "evidence_mode"],
+  "properties": {
+    "schema_version": {"const": "bb.sandbox_request.v1"},
+    "request_id": {"type": "string", "minLength": 1},
+    "capability_id": {"type": ["string", "null"]},
+    "placement_class": {"type": ["string", "null"]},
+    "workspace_ref": {"type": ["string", "null"]},
+    "rootfs_ref": {"type": ["string", "null"]},
+    "image_ref": {"type": ["string", "null"]},
+    "snapshot_ref": {"type": ["string", "null"]},
+    "command": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "network_policy": {"type": ["object", "null"], "additionalProperties": true},
+    "secret_refs": {"type": "array", "items": {"type": "string"}},
+    "timeout_seconds": {"type": ["number", "null"], "minimum": 0},
+    "evidence_mode": {"enum": ["minimal", "replay_strict", "audit_full"]},
+    "metadata": {"type": "object", "additionalProperties": true}
+  }
+}

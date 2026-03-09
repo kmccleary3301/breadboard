@@ -23,6 +23,11 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 - middleware lifecycle
 - task and subagent
 - checkpoint and longrun
+- execution capability and placement
+- sandbox envelopes
+- distributed task descriptor
+- transcript continuation patch
+- unsupported case taxonomy
 - replay session
 - conformance evidence
 
@@ -63,6 +68,7 @@ Current state is strong on:
 - first schema pack scaffolds
 - first engine-fixture scaffolds
 - first Python reference-engine boundary clarifications
+- the new V2 execution-capability contract family
 
 Current state is still intentionally early on:
 

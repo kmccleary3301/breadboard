@@ -1,0 +1,15 @@
+{
+  "schema_version": "bb.distributed_task_descriptor.v1",
+  "task_id": "task_bg_1",
+  "task_kind": "background",
+  "parent_task_id": "task_turn_1",
+  "placement_preferences": ["remote_worker", "delegated_python"],
+  "checkpoint_strategy": "periodic",
+  "wake_conditions": ["timer", "signal:user_approval"],
+  "join_policy": "manual",
+  "retry_policy": {"max_attempts": 3},
+  "priority": 5,
+  "budget": {"max_wall_seconds": 600},
+  "expected_output_contract": "bb.session_transcript.v1",
+  "artifact_refs": []
+}

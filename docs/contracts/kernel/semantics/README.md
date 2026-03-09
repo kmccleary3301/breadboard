@@ -78,6 +78,14 @@ The second tranche now adds:
 - `replay_session_v1.md`
 - `conformance_evidence_v1.md`
 
+The V2 tranche now adds:
+
+- `execution_capability_and_placement_v1.md`
+- `sandbox_envelopes_v1.md`
+- `distributed_task_descriptor_v1.md`
+- `transcript_continuation_patch_v1.md`
+- `unsupported_case_v1.md`
+
 ## Status snapshot
 
 - drafted and scaffolded:
@@ -92,6 +100,11 @@ The second tranche now adds:
   - `checkpoint_and_longrun_v1.md`
   - `replay_session_v1.md`
   - `conformance_evidence_v1.md`
+  - `execution_capability_and_placement_v1.md`
+  - `sandbox_envelopes_v1.md`
+  - `distributed_task_descriptor_v1.md`
+  - `transcript_continuation_patch_v1.md`
+  - `unsupported_case_v1.md`
 - intentionally deferred to a later tranche:
   - `import_export_session_v1.md`
   - `projection_adapter_boundaries_v1.md`

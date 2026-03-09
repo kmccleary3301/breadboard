@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.execution_placement.v1.schema.json",
+  "title": "bb.execution_placement.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "placement_id", "placement_class", "runtime_id"],
+  "properties": {
+    "schema_version": {"const": "bb.execution_placement.v1"},
+    "placement_id": {"type": "string", "minLength": 1},
+    "placement_class": {"enum": ["inline_ts", "local_process", "local_oci", "local_oci_gvisor", "local_oci_kata", "local_microvm", "remote_worker", "delegated_python", "delegated_oci", "delegated_microvm"]},
+    "runtime_id": {"type": "string", "minLength": 1},
+    "capability_id": {"type": ["string", "null"]},
+    "satisfied_security_tier": {"type": ["string", "null"]},
+    "downgrade_reason": {"type": ["string", "null"]},
+    "metadata": {"type": "object", "additionalProperties": true}
+  }
+}

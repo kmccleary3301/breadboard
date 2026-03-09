@@ -24,6 +24,11 @@ def test_kernel_semantics_directory_tracks_expected_v1_dossiers() -> None:
         "middleware_lifecycle_v1.md",
         "task_and_subagent_v1.md",
         "checkpoint_and_longrun_v1.md",
+        "execution_capability_and_placement_v1.md",
+        "sandbox_envelopes_v1.md",
+        "distributed_task_descriptor_v1.md",
+        "transcript_continuation_patch_v1.md",
+        "unsupported_case_v1.md",
         "replay_session_v1.md",
         "conformance_evidence_v1.md",
     }
@@ -75,6 +80,23 @@ def test_kernel_program_docs_cover_event_registry_and_hybrid_boundaries() -> Non
     present = {path.name for path in docs_dir.glob("*.md")}
     missing = sorted(expected - present)
     assert not missing, f"Missing kernel program docs: {missing}"
+
+
+def test_kernel_examples_include_execution_driver_contracts() -> None:
+    root = Path(__file__).resolve().parents[1]
+    example_dir = root / "contracts" / "kernel" / "examples"
+    expected = {
+        "execution_capability_minimal.json",
+        "execution_placement_minimal.json",
+        "sandbox_request_minimal.json",
+        "sandbox_result_minimal.json",
+        "distributed_task_descriptor_minimal.json",
+        "transcript_continuation_patch_minimal.json",
+        "unsupported_case_minimal.json",
+    }
+    present = {path.name for path in example_dir.glob("*.json")}
+    missing = sorted(expected - present)
+    assert not missing, f"Missing execution-driver examples: {missing}"
 
 
 def test_kernel_conformance_scripts_cover_manifest_compare_and_gate() -> None:

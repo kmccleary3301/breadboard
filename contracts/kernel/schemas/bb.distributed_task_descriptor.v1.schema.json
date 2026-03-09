@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.distributed_task_descriptor.v1.schema.json",
+  "title": "bb.distributed_task_descriptor.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "task_kind"],
+  "properties": {
+    "schema_version": {"const": "bb.distributed_task_descriptor.v1"},
+    "task_id": {"type": "string", "minLength": 1},
+    "task_kind": {"enum": ["turn", "step", "subagent", "background", "workflow"]},
+    "parent_task_id": {"type": ["string", "null"]},
+    "placement_preferences": {"type": "array", "items": {"type": "string"}},
+    "checkpoint_strategy": {"type": ["string", "null"]},
+    "wake_conditions": {"type": "array", "items": {"type": "string"}},
+    "join_policy": {"type": ["string", "null"]},
+    "retry_policy": {"type": ["object", "null"], "additionalProperties": true},
+    "priority": {"type": ["integer", "null"]},
+    "budget": {"type": ["object", "null"], "additionalProperties": true},
+    "expected_output_contract": {"type": ["string", "null"]},
+    "artifact_refs": {"type": "array", "items": {"type": "string"}}
+  }
+}

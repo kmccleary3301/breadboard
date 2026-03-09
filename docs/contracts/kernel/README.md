@@ -89,10 +89,15 @@ The initial contract families are:
 7. middleware / hook lifecycle
 8. task / subagent / background task
 9. checkpoint / longrun state
-10. replay session
-11. conformance evidence
-12. import / export session
-13. projection adapter boundaries
+10. execution capability / placement
+11. sandbox request / result
+12. distributed task descriptor
+13. transcript continuation patch
+14. unsupported-case taxonomy
+15. replay session
+16. conformance evidence
+17. import / export session
+18. projection adapter boundaries
 
 ---
 

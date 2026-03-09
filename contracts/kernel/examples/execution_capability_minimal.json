@@ -1,0 +1,15 @@
+{
+  "schema_version": "bb.execution_capability.v1",
+  "capability_id": "cap_local_patch",
+  "security_tier": "trusted_dev",
+  "isolation_class": "process",
+  "allow_read_paths": ["/workspace"],
+  "allow_write_paths": ["/workspace"],
+  "allow_net_hosts": [],
+  "allow_run_programs": ["git", "rg"],
+  "allow_env_keys": ["OPENAI_API_KEY"],
+  "secret_mode": "ref_only",
+  "tty_mode": "optional",
+  "resource_budget": {"cpu_seconds": 30},
+  "evidence_mode": "replay_strict"
+}

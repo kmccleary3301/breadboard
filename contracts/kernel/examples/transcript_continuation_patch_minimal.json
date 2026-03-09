@@ -1,0 +1,16 @@
+{
+  "schema_version": "bb.transcript_continuation_patch.v1",
+  "patch_id": "patch_1",
+  "pre_state_ref": "transcript://thread/1@sha256:old",
+  "appended_messages": [
+    {
+      "role": "assistant",
+      "content": [{"type": "output_text", "text": "Done."}]
+    }
+  ],
+  "appended_tool_events": [],
+  "lineage_updates": [],
+  "compaction_markers": [],
+  "post_state_digest": "sha256:new",
+  "lossiness_flags": []
+}

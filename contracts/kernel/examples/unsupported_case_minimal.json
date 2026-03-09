@@ -1,0 +1,12 @@
+{
+  "schema_version": "bb.unsupported_case.v1",
+  "reason_code": "placement_unavailable",
+  "summary": "microvm placement is not available on this host",
+  "contract_family": "bb.execution_placement.v1",
+  "fallback_allowed": true,
+  "fallback_taken": true,
+  "required_capability_id": "cap_strong_isolation",
+  "unavailable_placement": "local_microvm",
+  "evidence_refs": [],
+  "metadata": {"fallback": "local_oci_gvisor"}
+}

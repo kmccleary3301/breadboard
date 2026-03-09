@@ -1,0 +1,10 @@
+{
+  "schema_version": "bb.execution_placement.v1",
+  "placement_id": "placement_local_oci_1",
+  "placement_class": "local_oci",
+  "runtime_id": "docker.oci",
+  "capability_id": "cap_local_patch",
+  "satisfied_security_tier": "single_tenant",
+  "downgrade_reason": null,
+  "metadata": {"driver": "oci-local"}
+}
