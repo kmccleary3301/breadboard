@@ -8,6 +8,7 @@ Current scope:
 - transcript / task / checkpoint normalization helpers
 - constrained static-text execution slice for contract-first kernel events and transcript output
 - constrained scripted-tool execution slice for contract-first tool-call, tool-result, and transcript semantics
+- constrained provider-aware text execution slice for contract-first provider-exchange consumption
 - conformance summary helpers over the tracked fixture and manifest substrate
 - no provider runtime implementation
 - no hidden in-process engine

@@ -7,6 +7,7 @@ import {
   type CheckpointMetadataV1,
   type EngineConformanceManifestV1,
   type KernelEventV1,
+  type ProviderExchangeV1,
   type RunContextV1,
   type RunRequestV1,
   type SessionTranscriptV1Item,
@@ -185,6 +186,21 @@ export interface ScriptedToolTurnOptions {
   toolRender: ToolModelRenderV1
   assistantText?: string | null
   startedAt?: string
+}
+
+export interface ProviderTextTurnOptions {
+  sessionId?: string
+  engineFamily?: string
+  engineRef?: string | null
+  executionMode?: string | null
+  activeMode?: string | null
+  providerExchange: ProviderExchangeV1
+  assistantText: string
+  startedAt?: string
+}
+
+export interface ProviderTextTurnResult extends StaticTextTurnResult {
+  providerExchange: ProviderExchangeV1
 }
 
 export function buildRunContextFromRequest(
@@ -391,4 +407,95 @@ export function executeScriptedToolTurn(
     },
   }
   return { runContext, events, transcript }
+}
+
+export function executeProviderTextTurn(
+  requestInput: RunRequestV1,
+  options: ProviderTextTurnOptions,
+): ProviderTextTurnResult {
+  const request = assertValid<RunRequestV1>("runRequest", requestInput)
+  const providerExchange = assertValid<ProviderExchangeV1>("providerExchange", options.providerExchange)
+  const runContext = buildRunContextFromRequest(request, {
+    sessionId: options.sessionId,
+    engineFamily: options.engineFamily,
+    engineRef: options.engineRef,
+    resolvedModel: providerExchange.request.model,
+    resolvedProviderRoute: providerExchange.request.route_id ?? null,
+    executionMode: options.executionMode ?? "provider_text_turn",
+    activeMode: options.activeMode,
+  })
+  const ts = options.startedAt ?? "2026-03-08T00:00:00Z"
+  const providerEventId = buildKernelEventId(request.request_id, 1)
+  const assistantEventId = buildKernelEventId(request.request_id, 2)
+  const events: KernelEventV1[] = [
+    {
+      schemaVersion: "bb.kernel_event.v1",
+      eventId: providerEventId,
+      runId: request.request_id,
+      sessionId: runContext.session_id,
+      seq: 1,
+      ts,
+      actor: "provider",
+      visibility: "host",
+      kind: "provider_response",
+      payload: {
+        exchangeId: providerExchange.exchange_id,
+        model: providerExchange.request.model,
+        routeId: providerExchange.request.route_id ?? null,
+        messageCount: providerExchange.response.message_count,
+        finishReasons: providerExchange.response.finish_reasons ?? [],
+        metadata: providerExchange.response.metadata ?? {},
+      },
+    },
+    {
+      schemaVersion: "bb.kernel_event.v1",
+      eventId: assistantEventId,
+      runId: request.request_id,
+      sessionId: runContext.session_id,
+      seq: 2,
+      ts,
+      actor: "engine",
+      visibility: "model",
+      kind: "assistant_message",
+      payload: { text: options.assistantText },
+      causedBy: providerEventId,
+    },
+  ]
+  const transcript: SessionTranscriptV1 = {
+    schemaVersion: "bb.session_transcript.v1",
+    sessionId: runContext.session_id,
+    runId: request.request_id,
+    eventCursor: 2,
+    items: [
+      {
+        kind: "user_message",
+        visibility: "model",
+        content: { text: request.task },
+        provenance: { source: "ts_provider_text_turn", kind: "request" },
+      },
+      {
+        kind: "provider_response",
+        visibility: "host",
+        content: {
+          exchangeId: providerExchange.exchange_id,
+          finishReasons: providerExchange.response.finish_reasons ?? [],
+          metadata: providerExchange.response.metadata ?? {},
+        },
+        provenance: { source: "ts_provider_text_turn", eventId: providerEventId },
+      },
+      {
+        kind: "assistant_message",
+        visibility: "model",
+        content: { text: options.assistantText },
+        provenance: { source: "ts_provider_text_turn", eventId: assistantEventId },
+      },
+    ],
+    metadata: {
+      execution_mode: runContext.execution_mode,
+      source: "ts-kernel-core",
+      exchange_id: providerExchange.exchange_id,
+      provider_family: providerExchange.request.provider_family,
+    },
+  }
+  return { runContext, events, transcript, providerExchange }
 }

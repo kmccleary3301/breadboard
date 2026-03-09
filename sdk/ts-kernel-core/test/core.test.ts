@@ -9,6 +9,7 @@ import {
   cloneCheckpointMetadata,
   cloneTranscriptItem,
   eventBelongsToSession,
+  executeProviderTextTurn,
   executeScriptedToolTurn,
   executeStaticTextTurn,
   loadEngineConformanceManifest,
@@ -173,4 +174,45 @@ test("kernel core can execute a constrained scripted tool turn", () => {
   assert.deepEqual(result.transcript.items[1]?.content, {
     parts: [{ tool: "calculator", preview: "4", status: "ok" }],
   })
+})
+
+test("kernel core can execute a provider-aware constrained text turn", () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-provider-1",
+    entry_mode: "interactive",
+    task: "Summarize the repository state.",
+  } as const
+
+  const result = executeProviderTextTurn(request, {
+    sessionId: "sess-provider-1",
+    providerExchange: {
+      schema_version: "bb.provider_exchange.v1",
+      exchange_id: "px-1",
+      request: {
+        provider_family: "openai",
+        runtime_id: "responses_api",
+        route_id: "primary",
+        model: "openai/gpt-5.2",
+        stream: false,
+        message_count: 1,
+        tool_count: 0,
+        metadata: { message_roles: ["user"] },
+      },
+      response: {
+        message_count: 1,
+        finish_reasons: ["stop"],
+        metadata: { provider_family: "openai", runtime_id: "responses_api" },
+      },
+    },
+    assistantText: "The repository is clean and the TS kernel substrate is in place.",
+  })
+
+  assert.equal(result.runContext.resolved_model, "openai/gpt-5.2")
+  assert.equal(result.runContext.resolved_provider_route, "primary")
+  assert.equal(result.events.length, 2)
+  assert.equal(result.events[0]?.kind, "provider_response")
+  assert.equal(result.events[1]?.kind, "assistant_message")
+  assert.equal(result.transcript.items.length, 3)
+  assert.equal(result.providerExchange.exchange_id, "px-1")
 })
