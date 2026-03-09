@@ -15,4 +15,11 @@ Current scope:
 
 It also exposes a small transport-state helper so thin hosts can resume the streamable projection layer without owning kernel semantics.
 
+Current public helpers:
+- `projectBackboneTurnToAiSdkTransport(...)`
+- `deriveAiSdkTransportState(...)`
+- `createAiSdkTransportSession(...)`
+
+The session helper exists for thin hosts that want resumable projection state without turning the transport layer into kernel truth.
+
 This is intentionally narrow and designed to sit above the Backbone API.

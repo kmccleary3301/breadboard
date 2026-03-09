@@ -42,3 +42,11 @@ Thin-host DX should not:
 The first thin-host proving-ground package is `@breadboard/host-t3`.
 
 Its purpose is not to prove runtime breadth. Its purpose is to prove that BreadBoard can feel easy, attractive, and unsurprising for a T3 Code-class host.
+
+The current thin-host starter now includes:
+
+- prompt-turn classification
+- first-turn execution
+- continuation-turn execution
+- a reusable in-memory session wrapper for repeated prompt turns
+- resumable AI SDK-style transport projection

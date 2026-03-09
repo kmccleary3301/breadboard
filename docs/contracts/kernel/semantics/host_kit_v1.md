@@ -26,5 +26,7 @@ Host Kit is the host-specific adaptation layer above Backbone.
 The repo now has:
 - a generalized `@breadboard/host-kits` package
 - `createOpenClawHostKit(...)` as the first concrete Host Kit realization
+- reusable support-claim normalization
+- reusable supported/fallback invocation builders
 
 That means Host Kit is no longer just a design direction. It is now part of the public TS product layer, with OpenClaw serving as the first hard-runtime proving ground.

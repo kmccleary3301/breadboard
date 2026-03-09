@@ -19,4 +19,10 @@ Current scope:
 - execution-profile-aware support classification
 - projection-profile exposure
 
+Hosts should treat `SupportClaim` as the public truth for:
+- whether a slice is supported
+- which execution profile is in play
+- how confident BreadBoard is about the supported path
+- what host interaction mode is recommended
+
 It does **not** replace Host Kits or Workspace. It composes them.

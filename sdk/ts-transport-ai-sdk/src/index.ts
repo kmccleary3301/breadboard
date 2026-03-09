@@ -130,6 +130,18 @@ export interface AiSdkTransportProjectTurnResult {
   readonly state: AiSdkTransportState
 }
 
+export interface AiSdkTransportSession {
+  readonly state: AiSdkTransportState | null
+  projectTurn(
+    result: BackboneTurnResult,
+    options?: { messageId?: string; stopReason?: string },
+  ): AiSdkTransportProjectTurnResult
+  projectResumedTurn(
+    result: BackboneTurnResult,
+    options?: { messageId?: string; stopReason?: string },
+  ): AiSdkTransportProjectTurnResult
+}
+
 export function projectBackboneTurnToAiSdkTransport(
   result: BackboneTurnResult,
   options: { messageId?: string; stopReason?: string; previousState?: AiSdkTransportState | null } = {},
@@ -145,5 +157,43 @@ export function projectBackboneTurnToAiSdkTransport(
       messageId: options.messageId,
       previousState: options.previousState,
     }),
+  }
+}
+
+/**
+ * Create a resumable transport-session helper for thin hosts that want to project Backbone turns
+ * onto AI SDK-style frames without making transport state the source of kernel truth.
+ */
+export function createAiSdkTransportSession(
+  initialState: AiSdkTransportState | null = null,
+): AiSdkTransportSession {
+  let state = initialState
+  return {
+    get state(): AiSdkTransportState | null {
+      return state
+    },
+    projectTurn(
+      result: BackboneTurnResult,
+      options: { messageId?: string; stopReason?: string } = {},
+    ): AiSdkTransportProjectTurnResult {
+      const projection = projectBackboneTurnToAiSdkTransport(result, {
+        messageId: options.messageId,
+        stopReason: options.stopReason,
+      })
+      state = projection.state
+      return projection
+    },
+    projectResumedTurn(
+      result: BackboneTurnResult,
+      options: { messageId?: string; stopReason?: string } = {},
+    ): AiSdkTransportProjectTurnResult {
+      const projection = projectBackboneTurnToAiSdkTransport(result, {
+        messageId: options.messageId,
+        stopReason: options.stopReason,
+        previousState: state,
+      })
+      state = projection.state
+      return projection
+    },
   }
 }

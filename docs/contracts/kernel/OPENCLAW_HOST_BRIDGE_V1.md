@@ -65,11 +65,12 @@ These currently force native fallback or an unsupported-slice error:
 The bridge:
 
 1. maps OpenClaw embedded-run params into `bb.run_request.v1`
-2. requires an injected BreadBoard executor for the supported slice
-3. projects BreadBoard output into:
+2. routes provider-backed supported turns through `@breadboard/backbone`
+3. routes tool-bearing supported turns through the execution-driver family
+4. projects BreadBoard output into:
    - OpenClaw host callbacks
    - a minimal `EmbeddedPiRunResult`-compatible result
-4. preserves an explicit native fallback seam
+5. preserves an explicit native fallback seam
 
 ## Why this matters
 

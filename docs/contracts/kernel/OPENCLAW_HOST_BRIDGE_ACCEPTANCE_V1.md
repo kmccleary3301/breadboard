@@ -2,7 +2,7 @@
 
 This document records the first frozen acceptance slice for the OpenClaw embedded-runner bridge.
 
-In V3, these fixtures also serve as the first acceptance base for the OpenClaw Host Kit realization.
+In V3, these fixtures also serve as the first acceptance base for the OpenClaw Host Kit realization built on top of Backbone rather than bridge-local provider-turn orchestration.
 
 ## Selected slice
 

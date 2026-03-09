@@ -59,6 +59,8 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 - `docs/contracts/kernel/OPENCLAW_PROVING_GROUND_READINESS_V1.md`
 - `docs/contracts/kernel/OPENCLAW_HOST_BRIDGE_V1.md`
 - `docs/contracts/kernel/OPENCLAW_HOST_BRIDGE_ACCEPTANCE_V1.md`
+- `docs/contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md`
+- `docs/contracts/kernel/THIN_HOST_ADOPTION_V1.md`
 - `docs/contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md`
 
 ## TS package surfaces

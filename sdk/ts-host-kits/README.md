@@ -7,5 +7,7 @@ It standardizes:
 - support claims
 - invocation results
 - fallback-vs-supported mode reporting
+- support-claim normalization
+- reusable fallback/supported invocation builders
 
 This package does not own host-specific request schemas by itself. It provides the reusable abstraction layer that concrete host kits, such as OpenClaw, should implement.

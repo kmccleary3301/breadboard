@@ -40,3 +40,9 @@ The current public `SupportClaim` shape now carries:
 - `confidence`
 
 That is intentional. The public product surface should expose more than a yes/no support bit if we want serious TS hosts to make good runtime choices.
+
+Hosts are expected to use `SupportClaim` for:
+- support vs fallback routing
+- execution-profile messaging
+- host-mode selection
+- confidence-sensitive UX

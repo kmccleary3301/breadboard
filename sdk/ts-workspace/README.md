@@ -11,5 +11,11 @@ This package currently provides:
 - artifact references
 - tool-output shaping suitable for model-visible and user-visible views
 
+Example shaping pattern:
+
+- user-visible output may preserve more context and artifact links
+- model-visible output should stay shorter and safer
+- artifact references should carry the full path or locator for follow-up inspection
+
 It does **not** attempt to own filesystem execution, sandboxing, or host persistence by itself.
 Those remain delegated to lower-level runtime and driver packages.

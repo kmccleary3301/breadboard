@@ -39,3 +39,11 @@ The adapter now also carries a small transport-state helper so thin hosts can:
 - consume transcript continuation patches without taking ownership of kernel semantics
 
 This keeps AI SDK transport useful for adoption without letting it redefine transcript truth.
+
+The current public surface also includes a small transport-session helper so hosts can project:
+
+- first turns
+- resumed turns
+- transcript-continuation-aware turns
+
+without treating transport state as the source of kernel truth.

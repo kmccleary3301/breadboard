@@ -3,6 +3,7 @@ import type {
   ProviderExchangeV1,
   RunRequestV1,
   SessionTranscriptV1,
+  SessionTranscriptV1Item,
   UnsupportedCaseV1,
 } from "@breadboard/kernel-contracts"
 import type {
@@ -42,7 +43,7 @@ export interface ProviderTurnInput {
   readonly request: RunRequestV1
   readonly providerExchange: ProviderExchangeV1
   readonly assistantText: string
-  readonly existingTranscript?: SessionTranscriptV1 | Array<Record<string, unknown>>
+  readonly existingTranscript?: SessionTranscriptV1 | Array<Record<string, unknown> | SessionTranscriptV1Item>
 }
 
 export interface ToolTurnInput {

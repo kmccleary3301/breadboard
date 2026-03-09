@@ -27,6 +27,11 @@ The current implementation slice provides:
 - artifact references
 - tool output shaping for user-visible and model-visible views
 
+V3 also treats Workspace as the natural public home for:
+- `ExecutionProfile` descriptions
+- artifact-shaping examples
+- host-facing output shaping that should remain above kernel truth
+
 ## Non-goals
 
 Workspace does not currently own:

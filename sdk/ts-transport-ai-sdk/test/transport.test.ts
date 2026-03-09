@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import {
+  createAiSdkTransportSession,
   deriveAiSdkTransportState,
   projectBackboneTurnToAiSdkFrames,
   projectBackboneTurnToAiSdkTransport,
@@ -170,6 +171,31 @@ test("projectBackboneTurnToAiSdkTransport emits a resume frame when prior state 
   })
   assert.deepEqual(projection.state, {
     lastMessageId: "run-1",
+    transcriptDigest: "digest:post",
+    turnCount: 2,
+  })
+})
+
+test("createAiSdkTransportSession projects a first turn and then a resumed turn", () => {
+  const session = createAiSdkTransportSession()
+  const first = session.projectTurn(result, { messageId: "msg-1" })
+  assert.deepEqual(first.frames.map((frame) => frame.type), [
+    "start",
+    "continuation-patch",
+    "text-delta",
+    "tool",
+    "finish",
+  ])
+  assert.deepEqual(session.state, {
+    lastMessageId: "msg-1",
+    transcriptDigest: "digest:post",
+    turnCount: 1,
+  })
+
+  const resumed = session.projectResumedTurn(result, { messageId: "msg-2" })
+  assert.equal(resumed.frames[0]?.type, "resume")
+  assert.deepEqual(session.state, {
+    lastMessageId: "msg-2",
     transcriptDigest: "digest:post",
     turnCount: 2,
   })
