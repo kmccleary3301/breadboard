@@ -1,0 +1,30 @@
+{
+  "request": {
+    "sessionId": "session:tool-slice",
+    "sessionKey": "agent:test:embedded:tool",
+    "sessionFile": "/tmp/session-tool.jsonl",
+    "workspaceDir": "/tmp/workspace",
+    "prompt": "Run the repo linter tool.",
+    "provider": "openai",
+    "model": "mock-1",
+    "timeoutMs": 5000,
+    "runId": "run-embedded-tool-1",
+    "clientTools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "repo_linter",
+          "description": "Runs lint checks in the repository."
+        }
+      }
+    ]
+  },
+  "expected": {
+    "mode": "breadboard",
+    "placementClass": "local_process",
+    "toolCallbackText": "repo_linter completed via sandbox (npm run lint)",
+    "assistantText": "repo_linter completed successfully.",
+    "provider": "openai",
+    "model": "mock-1"
+  }
+}

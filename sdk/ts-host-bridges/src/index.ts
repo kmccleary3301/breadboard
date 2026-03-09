@@ -4,6 +4,8 @@ import type {
   KernelEventV1,
   ProviderExchangeV1,
   RunRequestV1,
+  SandboxRequestV1,
+  SandboxResultV1,
   SessionTranscriptV1,
   SessionTranscriptV1Item,
   UnsupportedCaseV1,
@@ -12,8 +14,10 @@ import {
   buildExecutionCapabilityFromRunRequest,
   buildExecutionPlacement,
   buildUnsupportedCase,
+  executeDriverMediatedToolTurn,
   executeProviderTextContinuationTurn,
   executeProviderTextTurn,
+  type DriverMediatedToolTurnResult,
   type ProviderTextTurnResult,
 } from "@breadboard/kernel-core"
 
@@ -108,6 +112,23 @@ export type OpenClawNativeFallback = (
   params: OpenClawEmbeddedRunParams,
 ) => Promise<OpenClawEmbeddedRunResult>
 
+export type OpenClawToolSliceOptions = {
+  command: string[] | ((tool: OpenClawClientToolDefinition, params: OpenClawEmbeddedRunParams) => string[])
+  executeSandbox: (request: SandboxRequestV1, context: {
+    capability: ExecutionCapabilityV1
+    placement: ExecutionPlacementV1
+    driverId: string
+    tool: OpenClawClientToolDefinition
+    params: OpenClawEmbeddedRunParams
+  }) => Promise<SandboxResultV1>
+  imageRef?: string | ((tool: OpenClawClientToolDefinition, params: OpenClawEmbeddedRunParams) => string | null)
+  isolationClass?: ExecutionCapabilityV1["isolation_class"]
+  securityTier?: ExecutionCapabilityV1["security_tier"]
+  allowRunPrograms?: string[]
+  allowNetHosts?: string[]
+  assistantText?: string | ((result: DriverMediatedToolTurnResult, tool: OpenClawClientToolDefinition) => string)
+}
+
 export type OpenClawBridgeInvocation =
   | {
       mode: "breadboard"
@@ -117,6 +138,7 @@ export type OpenClawBridgeInvocation =
       result: OpenClawEmbeddedRunResult
       unsupportedFields: string[]
       providerTurn?: ProviderTextTurnResult
+      driverTurn?: DriverMediatedToolTurnResult
       transcriptPostState?: SessionTranscriptV1
       unsupportedCase?: UnsupportedCaseV1
     }
@@ -137,10 +159,19 @@ export class UnsupportedOpenClawEmbeddedRunError extends Error {
   }
 }
 
-export function findUnsupportedOpenClawFields(params: OpenClawEmbeddedRunParams): string[] {
+export function findUnsupportedOpenClawFields(
+  params: OpenClawEmbeddedRunParams,
+  options: { allowSingleFunctionToolSlice?: boolean } = {},
+): string[] {
   const unsupported: string[] = []
   if ((params.images?.length ?? 0) > 0) unsupported.push("images")
-  if ((params.clientTools?.length ?? 0) > 0) unsupported.push("clientTools")
+  if ((params.clientTools?.length ?? 0) > 0) {
+    const supportedToolSlice =
+      options.allowSingleFunctionToolSlice === true &&
+      params.clientTools?.length === 1 &&
+      params.clientTools.every((tool) => tool.type === "function")
+    if (!supportedToolSlice) unsupported.push("clientTools")
+  }
   if (params.disableTools) unsupported.push("disableTools")
   if (typeof params.onBlockReply === "function") unsupported.push("onBlockReply")
   if (typeof params.onBlockReplyFlush === "function") unsupported.push("onBlockReplyFlush")
@@ -317,6 +348,36 @@ async function emitBridgeOutputToOpenClawCallbacks(
   }
 }
 
+async function emitDriverTurnToOpenClawCallbacks(
+  params: OpenClawEmbeddedRunParams,
+  turn: DriverMediatedToolTurnResult,
+): Promise<void> {
+  let assistantStarted = false
+  for (const item of turn.transcript.items) {
+    if (item.kind === "tool_result") {
+      const parts = (item.content as { parts?: Array<{ preview?: string }> }).parts ?? []
+      const text = parts
+        .map((part) => part.preview)
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+        .join("\n")
+      if (text.length > 0) {
+        await params.onToolResult?.({ text, mediaUrls: [] })
+      }
+      continue
+    }
+    if (item.kind === "assistant_message" && item.visibility === "model") {
+      const text = (item.content as { text?: string }).text
+      if (typeof text === "string" && text.length > 0) {
+        if (!assistantStarted) {
+          assistantStarted = true
+          await params.onAssistantMessageStart?.()
+        }
+        await params.onPartialReply?.({ text })
+      }
+    }
+  }
+}
+
 function buildOpenClawResult(
   params: OpenClawEmbeddedRunParams,
   output: OpenClawBreadboardBridgeOutput,
@@ -343,15 +404,46 @@ function buildOpenClawResult(
   }
 }
 
+function buildOpenClawResultFromDriverTurn(
+  params: OpenClawEmbeddedRunParams,
+  turn: DriverMediatedToolTurnResult,
+): OpenClawEmbeddedRunResult {
+  const assistantText = ((turn.transcript.items.at(-1)?.content ?? {}) as { text?: string }).text ?? ""
+  return {
+    payloads: assistantText
+      ? [
+          {
+            text: assistantText,
+            mediaUrls: [],
+          },
+        ]
+      : [],
+    meta: {
+      durationMs: 0,
+      agentMeta: {
+        sessionId: params.sessionId,
+        provider: params.provider ?? "breadboard-driver",
+        model: params.model ?? "unspecified",
+        usage: turn.sandboxResult.usage ?? undefined,
+      },
+      stopReason: turn.sandboxResult.status,
+    },
+  }
+}
+
 export async function runOpenClawEmbeddedViaBreadboard(
   params: OpenClawEmbeddedRunParams,
   options: {
     executeBreadboard?: OpenClawBreadboardExecutor
     nativeFallback?: OpenClawNativeFallback
     existingTranscript?: SessionTranscriptV1 | Array<Record<string, unknown> | SessionTranscriptV1Item>
+    toolSlice?: OpenClawToolSliceOptions
   } = {},
 ): Promise<OpenClawBridgeInvocation> {
-  const unsupportedFields = findUnsupportedOpenClawFields(params)
+  const toolSliceRequested = (params.clientTools?.length ?? 0) > 0
+  const unsupportedFields = findUnsupportedOpenClawFields(params, {
+    allowSingleFunctionToolSlice: Boolean(options.toolSlice),
+  })
   if (unsupportedFields.length > 0) {
     const unsupportedCase = buildOpenClawUnsupportedCase(
       "unsupported_openclaw_embedded_fields",
@@ -378,6 +470,72 @@ export async function runOpenClawEmbeddedViaBreadboard(
   }
 
   const runRequest = buildOpenClawBreadboardRunRequest(params)
+  if (toolSliceRequested && options.toolSlice) {
+    const tool = params.clientTools?.[0]
+    if (!tool) {
+      throw new UnsupportedOpenClawEmbeddedRunError("Tool-bearing OpenClaw slice requires one function tool", [
+        "clientTools",
+      ])
+    }
+    const command =
+      typeof options.toolSlice.command === "function"
+        ? options.toolSlice.command(tool, params)
+        : options.toolSlice.command
+    const imageRef =
+      typeof options.toolSlice.imageRef === "function"
+        ? options.toolSlice.imageRef(tool, params)
+        : options.toolSlice.imageRef ?? null
+    const driverTurn = await executeDriverMediatedToolTurn(runRequest, {
+      sessionId: params.sessionKey ?? params.sessionId,
+      activeMode: "embedded",
+      toolName: tool.function.name,
+      toolDescription: tool.function.description ?? null,
+      command,
+      workspaceRef: params.workspaceDir,
+      imageRef,
+      isolationClass: options.toolSlice.isolationClass ?? "process",
+      securityTier: options.toolSlice.securityTier ?? "trusted_dev",
+      allowRunPrograms: options.toolSlice.allowRunPrograms ?? [command[0]].filter(Boolean),
+      allowNetHosts: options.toolSlice.allowNetHosts ?? [],
+      driverIdHint: imageRef ? "oci" : undefined,
+      assistantText: null,
+      executeSandbox: (request, context) =>
+        options.toolSlice!.executeSandbox(request, {
+          ...context,
+          tool,
+          params,
+        }),
+    })
+    if (typeof options.toolSlice.assistantText === "function") {
+      const assistantText = options.toolSlice.assistantText(driverTurn, tool)
+      if (assistantText.length > 0) {
+        const assistantItem = driverTurn.transcript.items.at(-1)
+        if (assistantItem?.kind === "assistant_message") {
+          assistantItem.content = { text: assistantText }
+        }
+      }
+    } else if (typeof options.toolSlice.assistantText === "string" && options.toolSlice.assistantText.length > 0) {
+      const assistantItem = driverTurn.transcript.items.at(-1)
+      if (assistantItem?.kind === "assistant_message") {
+        assistantItem.content = { text: options.toolSlice.assistantText }
+      }
+    }
+
+    await emitDriverTurnToOpenClawCallbacks(params, driverTurn)
+    return {
+      mode: "breadboard",
+      runRequest,
+      executionCapability: driverTurn.executionCapability,
+      executionPlacement: driverTurn.executionPlacement,
+      unsupportedFields,
+      providerTurn: undefined,
+      driverTurn,
+      transcriptPostState: driverTurn.transcript,
+      unsupportedCase: undefined,
+      result: buildOpenClawResultFromDriverTurn(params, driverTurn),
+    }
+  }
+
   const executionCapability = buildOpenClawExecutionCapability(params)
   const executionPlacement = buildOpenClawExecutionPlacement(executionCapability, params)
   const executeBreadboard = options.executeBreadboard

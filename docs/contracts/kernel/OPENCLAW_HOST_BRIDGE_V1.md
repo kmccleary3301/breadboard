@@ -33,18 +33,21 @@ The current bridge accepts:
   - reasoning deltas/end
   - tool results
   - generic agent events
+- one narrow tool-bearing lane when:
+  - exactly one host function tool is provided
+  - a BreadBoard tool-slice executor is explicitly supplied
+  - execution placement is negotiated through the execution-driver family
 
 ## Explicitly unsupported in V1
 
 These currently force native fallback or an unsupported-slice error:
 
 - multimodal `images`
-- `clientTools`
 - `disableTools`
 - block-reply callback surfaces
 - richer channel / group routing fields
 - inherited subagent policy surfaces
-- tool-bearing embedded execution parity beyond the tracked bridge fixtures
+- tool-bearing embedded execution parity beyond the tracked single-tool fixture
 
 ## Bridge semantics
 
@@ -73,7 +76,7 @@ This program now stops at:
 It does **not** currently stop at:
 
 - full Pi replacement
-- tool-rich embedded parity
+- broad tool-rich embedded parity
 - ACP parity
 - delivery/channel parity
 

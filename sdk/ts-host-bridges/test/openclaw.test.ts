@@ -87,6 +87,17 @@ test("openclaw bridge detects unsupported slice fields", () => {
   assert.deepEqual(unsupported, ["images", "clientTools", "onBlockReply"])
 })
 
+test("openclaw bridge allows a narrow single-function tool slice when explicitly enabled", () => {
+  const unsupported = findUnsupportedOpenClawFields(
+    {
+      ...buildBaseParams(),
+      clientTools: [{ type: "function", function: { name: "repo_linter" } }],
+    },
+    { allowSingleFunctionToolSlice: true },
+  )
+  assert.deepEqual(unsupported, [])
+})
+
 test("openclaw bridge routes supported slice through BreadBoard and projects callbacks", async () => {
   const seen: string[] = []
   const invocation = await runOpenClawEmbeddedViaBreadboard(
@@ -227,6 +238,66 @@ test("openclaw bridge preserves host-owned transcript pre-state across a continu
     invocation.transcriptPostState?.metadata?.preserved_prefix_items,
     fixture.expected.preservedPrefixItems,
   )
+})
+
+test("openclaw bridge supports the frozen narrow tool-bearing slice", async () => {
+  const fixture = JSON.parse(loadFixture("openclaw_embedded_tool_slice.json")) as {
+    request: OpenClawEmbeddedRunParams
+    expected: {
+      mode: "breadboard"
+      placementClass: string
+      toolCallbackText: string
+      assistantText: string
+      provider: string
+      model: string
+    }
+  }
+
+  const seen: string[] = []
+  const invocation = await runOpenClawEmbeddedViaBreadboard(
+    {
+      ...fixture.request,
+      onAssistantMessageStart: async () => {
+        seen.push("assistant_start")
+      },
+      onPartialReply: async (payload) => {
+        seen.push(`assistant_delta:${payload.text}`)
+      },
+      onToolResult: async (payload) => {
+        seen.push(`tool:${payload.text}`)
+      },
+    },
+    {
+      toolSlice: {
+        command: ["npm", "run", "lint"],
+        executeSandbox: async (request) => ({
+          schema_version: "bb.sandbox_result.v1",
+          request_id: request.request_id,
+          status: "completed",
+          placement_id: "place-openclaw-tool-1",
+          stdout_ref: "artifact://stdout/openclaw-tool-1",
+          stderr_ref: "artifact://stderr/openclaw-tool-1",
+          artifact_refs: ["artifact://report/openclaw-tool-1"],
+          side_effect_digest: "sha256:openclawtool1",
+          usage: { wall_ms: 55 },
+          evidence_refs: ["evidence://openclaw/tool/1"],
+          error: null,
+        }),
+      },
+    },
+  )
+
+  assert.equal(invocation.mode, fixture.expected.mode)
+  assert.equal(invocation.executionPlacement.placement_class, fixture.expected.placementClass)
+  assert.equal(invocation.driverTurn?.driverId, "local-process")
+  assert.equal(invocation.result.payloads?.[0]?.text, fixture.expected.assistantText)
+  assert.equal(invocation.result.meta.agentMeta?.provider, fixture.expected.provider)
+  assert.equal(invocation.result.meta.agentMeta?.model, fixture.expected.model)
+  assert.deepEqual(seen, [
+    "tool:repo_linter completed via sandbox (npm run lint)",
+    "assistant_start",
+    "assistant_delta:repo_linter completed successfully.",
+  ])
 })
 
 test("openclaw bridge falls back cleanly on unsupported slice fields", async () => {

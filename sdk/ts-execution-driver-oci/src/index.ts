@@ -50,4 +50,19 @@ export const ociExecutionDriver: ExecutionDriverV1 = {
   supportsCapability(capability, placementClass) {
     return isPlacementCompatible(capability, placementClass)
   },
+  buildSandboxRequest({ requestId, capability, command, workspaceRef, imageRef }) {
+    if (!imageRef) {
+      throw new Error("ociExecutionDriver requires imageRef for OCI-backed execution")
+    }
+    if (command.length === 0) {
+      throw new Error("ociExecutionDriver requires a non-empty command")
+    }
+    return buildOciSandboxRequest({
+      requestId,
+      capability,
+      command,
+      workspaceRef,
+      imageRef,
+    })
+  },
 }

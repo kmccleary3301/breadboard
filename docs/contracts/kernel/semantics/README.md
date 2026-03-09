@@ -85,6 +85,7 @@ The V2 tranche now adds:
 - `distributed_task_descriptor_v1.md`
 - `transcript_continuation_patch_v1.md`
 - `unsupported_case_v1.md`
+- `execution_driver_policy_and_evidence_v1.md`
 
 ## Status snapshot
 

@@ -8,10 +8,12 @@ Current scope:
 - transcript / task / checkpoint normalization helpers
 - execution capability / placement helpers
 - transcript continuation patch and unsupported-case helpers
+- execution-driver planning helpers
 - constrained static-text execution slice for contract-first kernel events and transcript output
 - constrained scripted-tool execution slice for contract-first tool-call, tool-result, and transcript semantics
 - constrained provider-aware text execution slice for contract-first provider-exchange consumption
 - provider-aware continuation slice with transcript continuation patch output
+- constrained driver-mediated tool execution slice for trusted-local and OCI-backed paths with injected sandbox execution
 - conformance summary helpers over the tracked fixture and manifest substrate
 - no provider runtime implementation
 - no hidden in-process engine

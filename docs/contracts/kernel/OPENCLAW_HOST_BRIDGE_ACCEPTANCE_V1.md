@@ -29,6 +29,7 @@ Tracked acceptance fixture:
 
 - `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_supported_slice.json`
 - `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_transcript_continuation_slice.json`
+- `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_tool_slice.json`
 
 Tracked executable proof:
 
@@ -57,13 +58,26 @@ The second frozen fixture captures the more realistic host-level requirement:
 
 That is still not claiming ownership of OpenClaw session storage. It is proving that BreadBoard can participate in transcript continuity without taking over transcript persistence.
 
+## Tool-bearing note
+
+The third frozen fixture captures the first honest tool-bearing embedded slice:
+
+- exactly one host-provided function tool
+- explicit execution-driver planning
+- explicit sandbox request/result boundary
+- callback projection for tool results and assistant text
+- no claim of broad Pi tool parity
+
+This is intentionally narrow. It proves the host boundary can carry a driver-mediated tool run without pretending the whole Pi runtime has been replaced.
+
 ## Explicit closure condition for this program
 
 For the current TypeScript SDK effort, the OpenClaw proving-ground is considered complete when:
 
 1. the supported embedded-run slice is frozen
 2. the transcript-continuation slice is frozen
-3. fallback behavior is explicit and tested
-4. the bridge does not overclaim tool-rich or ACP parity
+3. the narrow tool-bearing slice is frozen
+4. fallback behavior is explicit and tested
+5. the bridge does not overclaim tool-rich or ACP parity
 
 That condition is now met.

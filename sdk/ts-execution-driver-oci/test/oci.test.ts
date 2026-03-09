@@ -60,4 +60,27 @@ test("oci driver can build an OCI sandbox request", () => {
     ),
     true,
   )
+  const built = ociExecutionDriver.buildSandboxRequest?.({
+    requestId: "oci-2",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-4",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      allow_net_hosts: [],
+      secret_mode: "ref_only",
+      evidence_mode: "replay_strict",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-oci-1",
+      placement_class: "local_oci",
+      runtime_id: "oci",
+      capability_id: "cap-oci-4",
+    },
+    command: ["ruff", "check", "."],
+    workspaceRef: "workspace://repo/main",
+    imageRef: "docker://breadboard/base:latest",
+  })
+  assert.equal(built?.placement_class, "local_oci")
 })

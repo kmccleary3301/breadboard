@@ -5,6 +5,7 @@ import {
   buildExecutionCapabilityFromRunRequest,
   buildExecutionPlacement,
   buildConformanceSummary,
+  executeDriverMediatedToolTurn,
   buildKernelEventId,
   buildRunContextFromRequest,
   buildTranscriptContinuationPatch,
@@ -233,6 +234,85 @@ test("kernel core can execute a constrained scripted tool turn", () => {
   assert.deepEqual(result.transcript.items[1]?.content, {
     parts: [{ tool: "calculator", preview: "4", status: "ok" }],
   })
+})
+
+test("kernel core can execute a driver-mediated trusted-local tool turn", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-driver-local-1",
+    entry_mode: "interactive",
+    task: "Run a local formatter tool.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-driver-local-1",
+    toolName: "formatter",
+    command: ["prettier", "--check", "README.md"],
+    workspaceRef: "/tmp/workspace",
+    allowRunPrograms: ["prettier"],
+    executeSandbox: async (sandboxRequest) => ({
+      schema_version: "bb.sandbox_result.v1",
+      request_id: sandboxRequest.request_id,
+      status: "completed",
+      placement_id: "placement-local-1",
+      stdout_ref: "artifact://stdout/local-1",
+      stderr_ref: "artifact://stderr/local-1",
+      artifact_refs: ["artifact://report/local-1"],
+      side_effect_digest: "sha256:local1",
+      usage: { wall_ms: 32 },
+      evidence_refs: ["evidence://local/1"],
+      error: null,
+    }),
+  })
+
+  assert.equal(result.driverId, "local-process")
+  assert.equal(result.executionPlacement.placement_class, "local_process")
+  assert.equal(result.sandboxRequest.placement_class, "local_process")
+  assert.equal(result.sandboxResult.status, "completed")
+  assert.equal(result.evidenceExpectation.require_evidence_refs, true)
+  assert.equal(result.sideEffectExpectation.filesystem_scope, "workspace_scoped")
+  assert.equal(result.transcript.items[1]?.kind, "tool_result")
+})
+
+test("kernel core can execute a driver-mediated OCI tool turn", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-driver-oci-1",
+    entry_mode: "interactive",
+    task: "Run a containerized linter.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-driver-oci-1",
+    toolName: "container_linter",
+    command: ["ruff", "check", "."],
+    workspaceRef: "/tmp/workspace",
+    imageRef: "ghcr.io/example/ruff:latest",
+    isolationClass: "oci",
+    securityTier: "single_tenant",
+    driverIdHint: "oci",
+    executeSandbox: async (sandboxRequest) => ({
+      schema_version: "bb.sandbox_result.v1",
+      request_id: sandboxRequest.request_id,
+      status: "completed",
+      placement_id: "placement-oci-1",
+      stdout_ref: "artifact://stdout/oci-1",
+      stderr_ref: "artifact://stderr/oci-1",
+      artifact_refs: ["artifact://report/oci-1"],
+      side_effect_digest: "sha256:oci1",
+      usage: { wall_ms: 101 },
+      evidence_refs: ["evidence://oci/1"],
+      error: null,
+    }),
+  })
+
+  assert.equal(result.driverId, "oci")
+  assert.equal(result.executionPlacement.placement_class, "local_oci")
+  assert.equal(result.sandboxRequest.image_ref, "ghcr.io/example/ruff:latest")
+  assert.equal(result.sideEffectExpectation.filesystem_scope, "container_scoped")
+  assert.equal(result.transcript.items.at(-1)?.kind, "assistant_message")
 })
 
 test("kernel core can execute a provider-aware constrained text turn", () => {

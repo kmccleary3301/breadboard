@@ -9,11 +9,12 @@ Current scope:
 - projection of canonical BreadBoard kernel events into OpenClaw-style callbacks
 - transcript-continuation bridge path for host-owned transcript persistence
 - execution capability / placement records for the supported embedded slice
+- narrow one-tool embedded slice via the execution-driver family and injected sandbox execution
 - unsupported-case classification for fallback and unsupported requests
 
 Non-goals in the current tranche:
 - full OpenClaw runtime replacement
-- tool-rich embedded Pi parity
+- broad tool-rich embedded Pi parity
 - hidden in-process BreadBoard engine
 - transcript persistence ownership takeover
 - ACP or broad channel-routing parity

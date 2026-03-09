@@ -24,6 +24,7 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 - task and subagent
 - checkpoint and longrun
 - execution capability and placement
+- execution driver policy and evidence
 - sandbox envelopes
 - distributed task descriptor
 - transcript continuation patch

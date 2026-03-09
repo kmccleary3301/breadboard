@@ -90,14 +90,15 @@ The initial contract families are:
 8. task / subagent / background task
 9. checkpoint / longrun state
 10. execution capability / placement
-11. sandbox request / result
-12. distributed task descriptor
-13. transcript continuation patch
-14. unsupported-case taxonomy
-15. replay session
-16. conformance evidence
-17. import / export session
-18. projection adapter boundaries
+11. execution driver policy / evidence expectations
+12. sandbox request / result
+13. distributed task descriptor
+14. transcript continuation patch
+15. unsupported-case taxonomy
+16. replay session
+17. conformance evidence
+18. import / export session
+19. projection adapter boundaries
 
 ---
 

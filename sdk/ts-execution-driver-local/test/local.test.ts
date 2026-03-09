@@ -53,4 +53,26 @@ test("trusted local driver can build a local-process sandbox request", () => {
     secret_mode: "ref_only",
     evidence_mode: "replay_strict",
   }, "local_process"), true)
+  const built = trustedLocalExecutionDriver.buildSandboxRequest?.({
+    requestId: "sandbox-2",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-4",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      allow_net_hosts: [],
+      secret_mode: "ref_only",
+      evidence_mode: "replay_strict",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-1",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-4",
+    },
+    command: ["node", "-v"],
+    workspaceRef: "workspace://repo/main",
+  })
+  assert.equal(built?.placement_class, "local_process")
 })

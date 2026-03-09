@@ -38,6 +38,17 @@ export const trustedLocalExecutionDriver: ExecutionDriverV1 = {
     if (placementClass === "local_process") return isPlacementCompatible(capability, placementClass)
     return false
   },
+  buildSandboxRequest({ requestId, capability, command, workspaceRef }) {
+    if (command.length === 0) {
+      throw new Error("trustedLocalExecutionDriver requires a non-empty command for local_process placement")
+    }
+    return buildLocalProcessSandboxRequest({
+      requestId,
+      capability,
+      command,
+      workspaceRef,
+    })
+  },
 }
 
 export function chooseTrustedLocalPlacement(
