@@ -79,4 +79,16 @@ def test_pack_specs_include_calibration_and_stress_tranches():
     assert "pack_s1_imo_stress_minif2f_v1" in PACK_SPECS
     calibration_ids = [entry["task_id"] for entry in PACK_SPECS["pack_a2_calibration_minif2f_v1"]["task_entries"]]
     assert "imo_1977_p6" not in calibration_ids
-    assert calibration_ids[:2] == ["mathd_numbertheory_780", "mathd_algebra_282"]
+    assert "mathd_algebra_282" not in calibration_ids
+    assert calibration_ids[:2] == ["mathd_numbertheory_780", "mathd_numbertheory_530"]
+
+
+def test_pack_specs_exclude_malformed_mathd_algebra_282_from_active_hilbert_packs():
+    active_packs = [
+        "pack_a_seedproof_sanity_minif2f_v1",
+        "pack_a2_calibration_minif2f_v1",
+        "pack_b_hilbert_comparator_minif2f_v1",
+    ]
+    for pack_name in active_packs:
+        task_ids = [entry["task_id"] for entry in PACK_SPECS[pack_name]["task_entries"]]
+        assert "mathd_algebra_282" not in task_ids
