@@ -63,6 +63,12 @@ These should be treated as projection/transport artifacts until they are promote
 
 These are useful host-facing events, but they are not part of the kernel event family registry.
 
+### Notes on current owners
+
+- `limits_update` is emitted as a best-effort host-facing bridge event from provider runtime code when provider rate-limit headers are parsed. It is intentionally not treated as kernel truth.
+- long-running macro events are currently collapsed through `SessionState.record_lifecycle_event(...)`, so their cross-engine contract surface today is `lifecycle_event`, not a separate macro-event family.
+- replay-only events like `completion` and `run_finished` are bridge/session orchestration surfaces, not kernel event families.
+
 ## Legacy or still-unclassified events
 
 These should not be relied on as cross-engine truth until they are promoted into the registry.

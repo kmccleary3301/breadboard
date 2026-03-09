@@ -218,6 +218,8 @@ def test_cli_bridge_runtime_event_sets_match_kernel_vs_projection_boundary() -> 
     assert "todo_event" in KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES
     assert "assistant.message.delta" in BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES
     assert "run_finished" in BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES
+    assert "limits_update" in BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES
+    assert "warning" in BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES
 
     for event_type in KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES:
         if event_type in {"tool.result"}:
