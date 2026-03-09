@@ -43,6 +43,9 @@ The current bridge accepts:
   - either a BreadBoard tool-slice executor is explicitly supplied or the selected execution driver can execute directly
   - execution placement is negotiated through the execution-driver family
   - delegated remote execution may be selected when the host provides a remote execution adapter or endpoint
+- two frozen driver-mediated expansions of that tool lane:
+  - OCI-backed execution
+  - delegated remote execution
 
 ## Explicitly unsupported in V1
 
@@ -79,6 +82,7 @@ This program now stops at:
 - transcript continuity
 - provider-quirk preservation
 - delegated remote execution through the remote execution-driver boundary
+- frozen OCI-backed and delegated-remote tool acceptance fixtures
 - explicit native fallback
 
 It does **not** currently stop at:

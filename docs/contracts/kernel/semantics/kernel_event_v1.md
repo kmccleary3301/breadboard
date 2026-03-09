@@ -183,16 +183,15 @@ Current supporting evidence and tests include:
 - `docs/conformance/event_envelope_snapshots_baseline_v1.json`
 - `docs/conformance/projection_surface_manifest_v1.json`
 
-These prove that event and projection behavior matters today, but not yet that a single kernel event contract is frozen.
+These now support a frozen kernel event envelope plus a tracked event-family registry for the currently scoped surfaces.
 
 ---
 
 ## Known Ambiguities
 
-1. kernel and projection events are not yet cleanly separated in practice
-2. event families are not yet published as one canonical list
-3. visibility semantics are not yet formalized consistently
-4. some longrun/task events may still be represented differently in different subsystems
+1. some longrun/task payload families may still grow richer over time
+2. projection adapters may still expose additional convenience fields above kernel truth
+3. future backend-specific event families must still be classified before they are treated as kernel truth
 
 ---
 
@@ -209,14 +208,14 @@ The first-pass schema for `bb.kernel_event.v1` should prioritize:
 
 It should **not** attempt to fully encode every kind-specific payload in the first pass.
 
-That kind-specific specificity should be layered in once the family list and semantic dossiers are stable.
+That kind-specific specificity should be layered in only when new families are added or existing families gain additional frozen semantics.
 
 ---
 
 ## Immediate Next Steps
 
-1. freeze the event family list
-2. audit current emitters against that list
-3. identify projection-only events and demote them from kernel status
+1. keep the event-family registry aligned with future emitter additions
+2. classify any new backend-mediated families before they are treated as kernel truth
+3. expand family-specific payload semantics only when new runtime slices require it
 4. define first comparator class for event traces
 5. create example fixtures under `conformance/engine_fixtures/`

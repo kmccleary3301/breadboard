@@ -59,4 +59,7 @@ For V2, the durable orchestration story is complete when:
 
 1. the kernel contracts express the necessary semantics
 2. one chosen backend is documented
-3. one adapter scaffold proves the contracts can be consumed without semantic drift
+3. one adapter package proves the contracts can be consumed without semantic drift across:
+   - workflow start
+   - workflow control-plane
+   - resume/update

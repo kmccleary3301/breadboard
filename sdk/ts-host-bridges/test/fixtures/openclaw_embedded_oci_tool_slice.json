@@ -1,0 +1,31 @@
+{
+  "request": {
+    "sessionId": "session:oci-tool",
+    "sessionKey": "agent:test:embedded:oci-tool",
+    "sessionFile": "/tmp/session-oci-tool.jsonl",
+    "workspaceDir": "/tmp/workspace",
+    "prompt": "Run the sandboxed repo audit.",
+    "provider": "anthropic",
+    "model": "claude-3.7-sonnet",
+    "authProfileId": "profile:team:anthropic:max",
+    "authProfileIdSource": "user",
+    "timeoutMs": 5000,
+    "runId": "run-embedded-oci-tool-1",
+    "clientTools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "repo_audit",
+          "description": "Runs a sandboxed repository audit."
+        }
+      }
+    ]
+  },
+  "expected": {
+    "mode": "breadboard",
+    "driverId": "oci",
+    "placementClass": "local_oci",
+    "provider": "anthropic",
+    "model": "claude-3.7-sonnet"
+  }
+}

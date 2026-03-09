@@ -31,6 +31,8 @@ Tracked acceptance fixture:
 - `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_transcript_continuation_slice.json`
 - `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_tool_slice.json`
 - `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_provider_quirk_slice.json`
+- `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_oci_tool_slice.json`
+- `sdk/ts-host-bridges/test/fixtures/openclaw_embedded_remote_tool_slice.json`
 
 Tracked executable proof:
 
@@ -77,7 +79,7 @@ The current implementation also supports two practical expansions of that slice:
 - OCI-backed execution through the OCI driver when the host provides an OCI runtime adapter
 - delegated remote execution through the remote execution driver when the host provides a remote adapter or endpoint
 
-Those are implementation-backed capabilities, but they are still governed by the same intentionally narrow supported-slice rules.
+Those are implementation-backed capabilities, and the OCI-backed and delegated-remote lanes are now frozen as explicit acceptance fixtures, but they are still governed by the same intentionally narrow supported-slice rules.
 
 ## Provider-quirk note
 

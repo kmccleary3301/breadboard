@@ -121,16 +121,15 @@ Current supporting evidence and tests include:
 - `tests/test_checkpoint_snapshot.py`
 - `tests/test_permission_rule_persistence.py`
 
-These are useful but still do not yet amount to a published transcript contract.
+These now support a published transcript contract for the currently scoped kernel and host-bridge surfaces.
 
 ---
 
 ## Known Ambiguities
 
-1. transcript state may still be entangled with logger/rendering concerns
-2. reasoning metadata likely lacks one canonical location
-3. compaction and ctrees integration into transcript state likely needs more explicit treatment
-4. transcript and checkpoint boundaries may still be under-specified
+1. compaction and ctrees integration may still need deeper future treatment
+2. richer reasoning metadata may still need additional cross-engine freezing
+3. transcript and checkpoint interaction may grow more detailed for longrun-heavy runtimes
 
 ---
 
@@ -144,7 +143,7 @@ The first-pass `bb.session_transcript.v1` schema should capture:
 - host-only annotation support
 - event cursor or snapshot metadata
 
-It should avoid prematurely freezing a UI-specific rendering model.
+It should avoid prematurely freezing a UI-specific rendering model, even as host/proving-ground transcript slices widen.
 
 ---
 

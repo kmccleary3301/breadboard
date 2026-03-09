@@ -4,7 +4,9 @@ import assert from "node:assert/strict"
 import type { ExecutionCapabilityV1 } from "@breadboard/kernel-contracts"
 import { buildExecutionDriverUnsupportedCase } from "@breadboard/execution-drivers"
 import {
+  buildRemoteExecutionErrorSummary,
   buildRemoteExecutionRequestEnvelope,
+  buildRemoteExecutionResponseEnvelope,
   buildRemoteSandboxRequest,
   chooseRemotePlacement,
   executeRemoteSandboxRequest,
@@ -57,6 +59,28 @@ test("remote driver builds an explicit remote execution envelope", () => {
   assert.equal(envelope.schema_version, "bb.remote_execution_request.v1")
   assert.equal(envelope.request.request_id, "req:remote:env")
   assert.equal(envelope.metadata?.route, "primary-remote")
+})
+
+test("remote driver builds an explicit remote execution response envelope", () => {
+  const envelope = buildRemoteExecutionResponseEnvelope({
+    result: {
+      schema_version: "bb.sandbox_result.v1",
+      request_id: "req:remote:result",
+      status: "completed",
+      placement_id: "remote:result:1",
+      stdout_ref: "artifact://remote/stdout/result",
+      stderr_ref: "artifact://remote/stderr/result",
+      artifact_refs: [],
+      side_effect_digest: "sha256:remote-result",
+      usage: { wall_ms: 11 },
+      evidence_refs: [],
+      error: null,
+    },
+    metadata: { route: "remote-primary" },
+  })
+  assert.equal(envelope.schema_version, "bb.remote_execution_response.v1")
+  assert.equal(envelope.result.request_id, "req:remote:result")
+  assert.equal(envelope.metadata?.route, "remote-primary")
 })
 
 test("remote driver can execute through an injected adapter", async () => {
@@ -136,6 +160,56 @@ test("remote driver can execute through a fetch-backed HTTP adapter", async () =
   assert.equal(seenHeaders.authorization, "Bearer test-token")
   assert.ok(seenBody.includes("\"schema_version\":\"bb.remote_execution_request.v1\""))
   assert.equal(result.placement_id, "remote:http:1")
+})
+
+test("remote driver surfaces error summaries from remote error payloads", async () => {
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:remote:error",
+    capability: remoteCapability,
+    command: ["python", "worker.py"],
+  })
+  await assert.rejects(
+    () =>
+      executeRemoteSandboxRequest(request, {
+        endpointUrl: "https://example.test/remote-error",
+        fetchImpl: async () =>
+          ({
+            ok: false,
+            status: 503,
+            json: async () => ({
+              metadata: { summary: "remote backend unavailable" },
+            }),
+          }) as Response,
+      }),
+    /remote backend unavailable/,
+  )
+})
+
+test("remote driver turns timeout aborts into a stable timeout error", async () => {
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:remote:timeout",
+    capability: remoteCapability,
+    command: ["python", "worker.py"],
+  })
+  await assert.rejects(
+    () =>
+      executeRemoteSandboxRequest(request, {
+        endpointUrl: "https://example.test/remote-timeout",
+        timeoutMs: 5,
+        fetchImpl: async (_input, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              reject(init.signal?.reason ?? new Error("aborted"))
+            })
+          }),
+      }),
+    /timed out after 5ms/,
+  )
+})
+
+test("remote error-summary helper falls back cleanly", () => {
+  assert.equal(buildRemoteExecutionErrorSummary({ message: "oops" }, 500), "oops")
+  assert.equal(buildRemoteExecutionErrorSummary({}, 502), "Remote execution endpoint returned HTTP 502")
 })
 
 test("remote driver can be constructed from HTTP options alone", async () => {

@@ -3,7 +3,7 @@
 Host-facing bridge package for adapting external TypeScript applications onto BreadBoard kernel contracts.
 
 Current scope:
-- OpenClaw embedded-runner bridge scaffold
+- OpenClaw embedded-runner bridge package
 - strict supported-slice detection
 - fallback-safe routing to a native host executor
 - projection of canonical BreadBoard kernel events into OpenClaw-style callbacks

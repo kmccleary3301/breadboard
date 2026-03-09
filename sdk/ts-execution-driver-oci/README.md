@@ -8,4 +8,4 @@ Current scope:
 - participate in planned-execution records with explicit side-effect and evidence expectations
 - provide the first real OCI runtime invocation helper behind the shared execution-driver contract
 
-This package does not yet implement real Docker/containerd calls. It defines the contract-consistent helper layer those drivers should share.
+This package does not attempt to own Docker/containerd fleet management. It does provide a real command-executor-backed OCI execution path, which is enough for the scoped V2 TS host/runtime slices.

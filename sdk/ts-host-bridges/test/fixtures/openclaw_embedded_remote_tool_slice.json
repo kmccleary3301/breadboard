@@ -1,0 +1,30 @@
+{
+  "request": {
+    "sessionId": "session:remote-tool",
+    "sessionKey": "agent:test:embedded:remote-tool",
+    "sessionFile": "/tmp/session-remote-tool.jsonl",
+    "workspaceDir": "/tmp/workspace",
+    "prompt": "Run the delegated remote audit.",
+    "provider": "openrouter",
+    "model": "moonshotai/kimi-k2.5",
+    "timeoutMs": 5000,
+    "runId": "run-embedded-remote-tool-1",
+    "clientTools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "remote_audit",
+          "description": "Runs a delegated remote repository audit."
+        }
+      }
+    ]
+  },
+  "expected": {
+    "mode": "breadboard",
+    "driverId": "remote",
+    "placementClass": "remote_worker",
+    "placementId": "remote:openclaw:1",
+    "provider": "openrouter",
+    "model": "moonshotai/kimi-k2.5"
+  }
+}

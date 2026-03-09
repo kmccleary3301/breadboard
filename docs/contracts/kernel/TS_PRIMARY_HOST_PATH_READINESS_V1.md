@@ -1,6 +1,6 @@
 # TS Primary Host Path Readiness V1
 
-This note records the remaining gap between the current V2 TypeScript runtime program and a credible **Python-free primary host path** for supported TypeScript hosts.
+This note records the shipped boundary for the current V2 TypeScript runtime program and the remaining gap beyond the supported **Python-free primary host path**.
 
 ## What is already true
 
@@ -38,7 +38,7 @@ This does **not** mean:
 - BreadBoard has reimplemented gVisor, Firecracker, or Ray in TypeScript
 - every host/runtime surface is now TypeScript-native
 
-## What remains before the claim is fully comfortable
+## Remaining limits beyond the supported host path
 
 ### 1. Stronger backend realism
 
@@ -61,15 +61,19 @@ It is not yet a broad host-runtime replacement.
 
 ### 3. Durable orchestration backend proof
 
-Temporal is now the chosen durable orchestration direction, but the repo still has only an adapter scaffold.
+Temporal is now the chosen durable orchestration direction, and the repo now has a real adapter package for:
 
-That is enough for architectural honesty, but not yet enough to claim a complete Python-free heavy-service story.
+- workflow start descriptors
+- workflow control-plane descriptors
+- resume/update descriptors driven by transcript continuation patches
+
+That is enough for architectural honesty and for a bounded heavy-service story, but not yet enough to claim a complete Python-free heavy-service replacement across every backend/runtime surface.
 
 ## Current readiness assessment
 
 For the currently frozen OpenClaw-supported slices:
 
-- a Python-free primary host path is **credible**
+- a Python-free primary host path is **real**
 - the contracts are explicit
 - the TS execution path is real
 - the fallback boundary is honest

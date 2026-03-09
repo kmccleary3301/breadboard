@@ -47,7 +47,7 @@ Then read:
 
 - [semantics/README.md](semantics/README.md)
 
-Machine-readable scaffolds live under:
+Machine-readable contract artifacts live under:
 
 - [../../../contracts/kernel/README.md](../../../contracts/kernel/README.md)
 - [../../../conformance/engine_fixtures/README.md](../../../conformance/engine_fixtures/README.md)

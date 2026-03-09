@@ -34,13 +34,13 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 - replay session
 - conformance evidence
 
-## Machine-readable scaffold
+## Machine-readable contract pack
 
 - `contracts/kernel/schemas/`
 - `contracts/kernel/examples/`
 - `contracts/kernel/manifests/`
 
-## Engine-conformance scaffold
+## Engine-conformance program
 
 - `conformance/engine_fixtures/COMPARATOR_CLASSES_V1.md`
 - `conformance/engine_fixtures/python_reference_manifest_v1.json`
@@ -74,18 +74,19 @@ Current state is strong on:
 
 - kernel doctrine
 - contract inventory
-- first semantic dossiers
-- first schema pack scaffolds
-- first engine-fixture scaffolds
-- first Python reference-engine boundary clarifications
-- the new V2 execution-capability contract family
-- the initial V2 execution-driver and orchestration backend family
-- the first honest delegated remote execution path
-- the first honest statement of the Python-free primary TS host boundary
+- semantic dossiers for the scoped V2 runtime families
+- machine-readable contract pack
+- engine-fixture and manifest program
+- Python reference-engine boundary clarifications
+- the V2 execution-capability contract family
+- the execution-driver and orchestration backend family
+- delegated remote execution path
+- the Python-free primary TS host boundary for supported slices
+- the OpenClaw proving-ground seam for the scoped supported slices
 
-Current state is still intentionally early on:
+Current state is intentionally bounded on:
 
-- the last full Python reference-engine event-family sweep
-- comparator-grade cross-engine runtime execution, beyond shared fixture consumption
-- broader TypeScript engine execution beyond the current supported slices
-- production-grade orchestration and remote execution hardening
+- broad host/runtime parity beyond the frozen supported slices
+- microVM-backed or stronger delegated execution paths
+- production-grade orchestration deployment and fleet management
+- full Pi/OpenClaw replacement claims

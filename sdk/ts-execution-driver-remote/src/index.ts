@@ -29,6 +29,8 @@ export interface RemoteExecutionHttpOptions {
   headers?: Record<string, string>
   fetchImpl?: typeof fetch
   metadata?: Record<string, unknown>
+  timeoutMs?: number
+  signal?: AbortSignal
 }
 
 export function chooseRemotePlacement(
@@ -90,6 +92,37 @@ export function buildRemoteExecutionRequestEnvelope(input: {
   }
 }
 
+export function buildRemoteExecutionResponseEnvelope(input: {
+  result: SandboxResultV1
+  metadata?: Record<string, unknown>
+}): RemoteExecutionResponseEnvelopeV1 {
+  return {
+    schema_version: "bb.remote_execution_response.v1",
+    result: assertValid<SandboxResultV1>("sandboxResult", input.result),
+    metadata: input.metadata ?? {},
+  }
+}
+
+export function buildRemoteExecutionErrorSummary(payload: unknown, statusCode: number): string {
+  if (typeof payload === "object" && payload !== null) {
+    const objectPayload = payload as {
+      metadata?: { summary?: unknown }
+      error?: { message?: unknown }
+      message?: unknown
+    }
+    if (typeof objectPayload.metadata?.summary === "string") {
+      return objectPayload.metadata.summary
+    }
+    if (typeof objectPayload.error?.message === "string") {
+      return objectPayload.error.message
+    }
+    if (typeof objectPayload.message === "string") {
+      return objectPayload.message
+    }
+  }
+  return `Remote execution endpoint returned HTTP ${statusCode}`
+}
+
 export async function executeRemoteSandboxRequest(
   request: SandboxRequestV1,
   options: RemoteExecutionHttpOptions,
@@ -102,26 +135,42 @@ export async function executeRemoteSandboxRequest(
     request,
     metadata: options.metadata,
   })
-  const response = await fetchImpl(options.endpointUrl, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(options.headers ?? {}),
-    },
-    body: JSON.stringify(envelope),
-  })
-  const payload = (await response.json()) as RemoteExecutionResponseEnvelopeV1 | SandboxResultV1
-  if (!response.ok) {
-    const summary =
-      typeof (payload as { metadata?: { summary?: unknown } }).metadata?.summary === "string"
-        ? String((payload as { metadata?: { summary?: unknown } }).metadata?.summary)
-        : `Remote execution endpoint returned HTTP ${response.status}`
-    throw new Error(summary)
+  const abortController =
+    options.timeoutMs != null && options.signal == null ? new AbortController() : null
+  const timeoutHandle =
+    abortController != null
+      ? setTimeout(() => {
+          abortController.abort(new Error(`Remote execution timed out after ${options.timeoutMs}ms`))
+        }, options.timeoutMs)
+      : null
+  try {
+    const response = await fetchImpl(options.endpointUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(options.headers ?? {}),
+      },
+      body: JSON.stringify(envelope),
+      signal: options.signal ?? abortController?.signal,
+    })
+    const payload = (await response.json()) as RemoteExecutionResponseEnvelopeV1 | SandboxResultV1
+    if (!response.ok) {
+      throw new Error(buildRemoteExecutionErrorSummary(payload, response.status))
+    }
+    if ((payload as RemoteExecutionResponseEnvelopeV1).schema_version === "bb.remote_execution_response.v1") {
+      return assertValid<SandboxResultV1>("sandboxResult", (payload as RemoteExecutionResponseEnvelopeV1).result)
+    }
+    return assertValid<SandboxResultV1>("sandboxResult", payload as SandboxResultV1)
+  } catch (error) {
+    if ((error as Error).name === "AbortError" || String((error as Error).message).includes("timed out")) {
+      throw new Error(`Remote execution timed out after ${options.timeoutMs ?? "unknown"}ms`)
+    }
+    throw error
+  } finally {
+    if (timeoutHandle != null) {
+      clearTimeout(timeoutHandle)
+    }
   }
-  if ((payload as RemoteExecutionResponseEnvelopeV1).schema_version === "bb.remote_execution_response.v1") {
-    return assertValid<SandboxResultV1>("sandboxResult", (payload as RemoteExecutionResponseEnvelopeV1).result)
-  }
-  return assertValid<SandboxResultV1>("sandboxResult", payload as SandboxResultV1)
 }
 
 export function makeRemoteExecutionDriver(

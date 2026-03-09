@@ -63,5 +63,6 @@ The TypeScript program is allowed to claim a credible heavy-service/orchestratio
 V2 does not claim a production-hardened Temporal deployment. It claims:
 
 - a chosen backend
-- a contract-aligned adapter path
+- a contract-aligned adapter package
+- workflow start/control-plane/resume descriptor helpers
 - a credible route to durable orchestration that does not let the backend become kernel truth

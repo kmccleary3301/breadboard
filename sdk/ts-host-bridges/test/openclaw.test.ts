@@ -379,16 +379,18 @@ test("openclaw bridge can use the trusted-local driver path without a bespoke sa
 })
 
 test("openclaw bridge can preserve provider quirks on an OCI-backed tool slice", async () => {
+  const fixture = JSON.parse(loadFixture("openclaw_embedded_oci_tool_slice.json")) as {
+    request: OpenClawEmbeddedRunParams
+    expected: {
+      mode: "breadboard"
+      driverId: string
+      placementClass: string
+      provider: string
+      model: string
+    }
+  }
   const invocation = await runOpenClawEmbeddedViaBreadboard(
-    {
-      ...buildBaseParams(),
-      provider: "anthropic",
-      model: "claude-3.7-sonnet",
-      authProfileId: "profile:team:anthropic:max",
-      authProfileIdSource: "user",
-      prompt: "Run the sandboxed repo audit.",
-      clientTools: [{ type: "function", function: { name: "repo_audit" } }],
-    },
+    fixture.request,
     {
       toolSlice: {
         command: ["sh", "-lc", "echo oci tool ok"],
@@ -403,24 +405,29 @@ test("openclaw bridge can preserve provider quirks on an OCI-backed tool slice",
     },
   )
 
-  assert.equal(invocation.mode, "breadboard")
-  assert.equal(invocation.driverTurn?.driverId, "oci")
-  assert.equal(invocation.executionPlacement.placement_class, "local_oci")
+  assert.equal(invocation.mode, fixture.expected.mode)
+  assert.equal(invocation.driverTurn?.driverId, fixture.expected.driverId)
+  assert.equal(invocation.executionPlacement.placement_class, fixture.expected.placementClass)
   assert.equal(invocation.driverTurn?.sandboxResult.status, "completed")
   assert.match(invocation.driverTurn?.sandboxResult.stdout_ref ?? "", /^file:\/\//)
-  assert.equal(invocation.result.meta.agentMeta?.provider, "anthropic")
-  assert.equal(invocation.result.meta.agentMeta?.model, "claude-3.7-sonnet")
+  assert.equal(invocation.result.meta.agentMeta?.provider, fixture.expected.provider)
+  assert.equal(invocation.result.meta.agentMeta?.model, fixture.expected.model)
 })
 
 test("openclaw bridge can execute a delegated remote tool slice", async () => {
+  const fixture = JSON.parse(loadFixture("openclaw_embedded_remote_tool_slice.json")) as {
+    request: OpenClawEmbeddedRunParams
+    expected: {
+      mode: "breadboard"
+      driverId: string
+      placementClass: string
+      placementId: string
+      provider: string
+      model: string
+    }
+  }
   const invocation = await runOpenClawEmbeddedViaBreadboard(
-    {
-      ...buildBaseParams(),
-      provider: "openrouter",
-      model: "moonshotai/kimi-k2.5",
-      prompt: "Run the delegated remote audit.",
-      clientTools: [{ type: "function", function: { name: "remote_audit" } }],
-    },
+    fixture.request,
     {
       toolSlice: {
         command: ["python", "audit.py"],
@@ -454,12 +461,12 @@ test("openclaw bridge can execute a delegated remote tool slice", async () => {
     },
   )
 
-  assert.equal(invocation.mode, "breadboard")
-  assert.equal(invocation.driverTurn?.driverId, "remote")
-  assert.equal(invocation.executionPlacement.placement_class, "remote_worker")
-  assert.equal(invocation.driverTurn?.sandboxResult.placement_id, "remote:openclaw:1")
-  assert.equal(invocation.result.meta.agentMeta?.provider, "openrouter")
-  assert.equal(invocation.result.meta.agentMeta?.model, "moonshotai/kimi-k2.5")
+  assert.equal(invocation.mode, fixture.expected.mode)
+  assert.equal(invocation.driverTurn?.driverId, fixture.expected.driverId)
+  assert.equal(invocation.executionPlacement.placement_class, fixture.expected.placementClass)
+  assert.equal(invocation.driverTurn?.sandboxResult.placement_id, fixture.expected.placementId)
+  assert.equal(invocation.result.meta.agentMeta?.provider, fixture.expected.provider)
+  assert.equal(invocation.result.meta.agentMeta?.model, fixture.expected.model)
 })
 
 test("openclaw bridge falls back cleanly on unsupported slice fields", async () => {
