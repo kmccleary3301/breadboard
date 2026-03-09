@@ -152,6 +152,14 @@ def test_completion_summary_done_treats_loop_exit_as_terminal() -> None:
     assert module._completion_summary_done({"reason": "still_running"}) is False
 
 
+def test_task_specific_guidance_contains_pack_a_hints() -> None:
+    module = _load_module("run_bb_atp_adapter_slice_v1_guidance", "scripts/run_bb_atp_adapter_slice_v1.py")
+    imo_guidance = module._task_specific_guidance("imo_1977_p6")
+    math_guidance = module._task_specific_guidance("mathd_numbertheory_780")
+    assert "StrictMono f" in imo_guidance
+    assert "`215`" in math_guidance
+
+
 def test_run_bb_slice_uses_real_runner_contract_with_injected_fakes(tmp_path: Path) -> None:
     module = _load_module("run_bb_atp_adapter_slice_v1_fake", "scripts/run_bb_atp_adapter_slice_v1.py")
     manifest_path = tmp_path / "manifest.json"

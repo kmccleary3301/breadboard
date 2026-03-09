@@ -193,10 +193,45 @@ def _resolve_config_path(config_path: str) -> Path:
     raise FileNotFoundError(f"config file not found: {config_path}")
 
 
+def _task_specific_guidance(task_id: str) -> str:
+    normalized = str(task_id).strip().lower()
+    if normalized == "imo_1977_p6":
+        return textwrap.dedent(
+            """\
+            Task-specific proof hints:
+            - First prove `StrictMono f` from `h₀`; this should give `a < b -> f a < f b`.
+            - Use monotonicity to derive the lower bound `n ≤ f n` for every positive natural `n`.
+            - Prove the base case `f 1 = 1` by contradiction using the lower bound and `h₀ 1`.
+            - Then aim for induction on positive naturals; `h₀` should relate `f (f n)` and `f (n + 1)`.
+            - Prefer named lemmas and short structured steps over repeated search commands.
+            """
+        ).rstrip()
+    if normalized == "mathd_numbertheory_780":
+        return textwrap.dedent(
+            """\
+            Task-specific proof hints:
+            - Avoid leaving `aesop` as the final proof. Use it only for quick probing, then replace it with an explicit argument.
+            - The intended number-theory shape is: if `x = 6⁻¹` modulo `m` and also `x ≡ 36 [MOD m]`, then `6 * 36 ≡ 1 [MOD m]`.
+            - From that, derive that `m` divides `215`, then combine with `10 ≤ m ≤ 99` to conclude `m = 43`.
+            - Tactics worth trying after introducing the arithmetic facts: `norm_num`, `omega`, `linarith`, `nlinarith`, `zify`.
+            - If the current statement shape around `x` is awkward, add intermediate `have` statements instead of brute-force search.
+            """
+        ).rstrip()
+    return textwrap.dedent(
+        """\
+        Task-specific proof hints:
+        - Prefer explicit `have` lemmas and short structured rewrites over repeated directory inspection.
+        - If `aesop` fails, replace it with a more explicit proof attempt; do not keep the same tactic unchanged.
+        - After each verifier failure, edit the theorem body immediately using the new feedback.
+        """
+    ).rstrip()
+
+
 def _build_task_prompt(*, prepared: PreparedTask, verifier_url: str) -> str:
     rel_target = _safe_relpath(prepared.target_path, start=prepared.workspace_dir)
     rel_notes = _safe_relpath(prepared.notes_path, start=prepared.workspace_dir)
     theorem_block = prepared.input_text.rstrip()
+    hint_block = _task_specific_guidance(prepared.task_id)
     return textwrap.dedent(
         f"""\
         You are solving a Lean 4 theorem in the current workspace.
@@ -239,6 +274,8 @@ def _build_task_prompt(*, prepared: PreparedTask, verifier_url: str) -> str:
         - Do not create alternate theorem files.
         - Do not call `mark_task_complete` unless `{rel_target}` exists and the verifier has passed cleanly.
         - When the verifier passes with no `sorry` and no errors, stop and reply with exactly `TASK COMPLETE`.
+
+        {hint_block}
 
         Verifier endpoint for this workspace: `{verifier_url}`
         """
