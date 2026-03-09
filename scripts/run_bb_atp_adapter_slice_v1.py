@@ -203,6 +203,10 @@ def _task_specific_guidance(task_id: str) -> str:
             - Use monotonicity to derive the lower bound `n ≤ f n` for every positive natural `n`.
             - Prove the base case `f 1 = 1` by contradiction using the lower bound and `h₀ 1`.
             - Then aim for induction on positive naturals; `h₀` should relate `f (f n)` and `f (n + 1)`.
+            - Add named lemmas such as `have hmono : StrictMono f := by ...` and `have hlower : ∀ n, n ≤ f n := by ...`.
+            - Do not stop at `intro n`; before the next verifier run, add at least one named intermediate lemma.
+            - If `ℕ+` APIs get awkward, introduce helper lemmas on `ℕ` with explicit positivity hypotheses and transfer back to `ℕ+`.
+            - A viable contradiction route is to assume a least positive `m` with `f m ≠ m` or `f m < m`, then use monotonicity and `h₀` to derive an impossible strict inequality.
             - Prefer named lemmas and short structured steps over repeated search commands.
             """
         ).rstrip()
@@ -213,6 +217,9 @@ def _task_specific_guidance(task_id: str) -> str:
             - Avoid leaving `aesop` as the final proof. Use it only for quick probing, then replace it with an explicit argument.
             - The intended number-theory shape is: if `x = 6⁻¹` modulo `m` and also `x ≡ 36 [MOD m]`, then `6 * 36 ≡ 1 [MOD m]`.
             - From that, derive that `m` divides `215`, then combine with `10 ≤ m ≤ 99` to conclude `m = 43`.
+            - Keep the theorem statement unchanged; do not mutate the goal to an easier false target such as `m = 30`.
+            - If the modular argument stalls, use the bounded range directly: destruct `h₀` into `10 ≤ m` and `m ≤ 99`, then try `interval_cases m` followed by `norm_num` / `omega`.
+            - Keep all helper facts in `have` lemmas; do not change binders or hypotheses to make `interval_cases` easier.
             - Tactics worth trying after introducing the arithmetic facts: `norm_num`, `omega`, `linarith`, `nlinarith`, `zify`.
             - If the current statement shape around `x` is awkward, add intermediate `have` statements instead of brute-force search.
             """
@@ -248,6 +255,7 @@ def _build_task_prompt(*, prepared: PreparedTask, verifier_url: str) -> str:
            ```
            Fill in the proof body before running it. Do not leave the file unchanged.
         2. Preserve the theorem statement and imports unless a minimal import change is strictly required.
+           Changing the theorem statement, hypotheses, or goal counts as failure even if the file otherwise verifies.
         3. Use the verifier until the file is clean. After each edit, run this exact command:
            ```bash
            python - <<'PY'
@@ -269,8 +277,10 @@ def _build_task_prompt(*, prepared: PreparedTask, verifier_url: str) -> str:
         5. If you cannot solve the theorem within budget, leave your best attempt in place and explain the blocker in `{rel_notes}`.
 
         Work cleanly:
+        - Your first three tool calls should be: proof edit, verifier run, proof edit or verifier-driven correction.
         - Alternate between proof edits and verification.
         - Read-only shell commands are only for verifier feedback or a single targeted inspection; avoid directory listing loops.
+        - Do not spend more than two total read-only shell commands before making another proof edit.
         - Do not create alternate theorem files.
         - Do not call `mark_task_complete` unless `{rel_target}` exists and the verifier has passed cleanly.
         - When the verifier passes with no `sorry` and no errors, stop and reply with exactly `TASK COMPLETE`.
@@ -426,7 +436,7 @@ def _run_task_with_breadboard(
         task=prepared.prompt,
         metadata=metadata,
         workspace=str(prepared.workspace_dir),
-        max_steps=max(24, min(80, max(1, int(timeout_s)) // 10)),
+        max_steps=max(36, min(96, max(1, int(timeout_s)) // 8)),
         permission_mode=permission_mode,
         stream=False,
     )
@@ -526,6 +536,27 @@ def _proof_candidate_is_present(*, task_id: str, proof_text: str) -> bool:
     return task_id.lower() in lowered and any(token in lowered for token in ("theorem ", "lemma ", "example "))
 
 
+def _extract_statement_block(text: str) -> str:
+    lines = [line.rstrip() for line in str(text or "").splitlines()]
+    kept: list[str] = []
+    for line in lines:
+        kept.append(line)
+        if ":= by" in line:
+            break
+    return "\n".join(line for line in kept if line.strip())
+
+
+def _normalize_statement_block(text: str) -> str:
+    block = _extract_statement_block(text)
+    return " ".join(block.split())
+
+
+def _proof_preserves_statement(*, original_text: str, proof_text: str) -> bool:
+    original = _normalize_statement_block(original_text)
+    candidate = _normalize_statement_block(proof_text)
+    return bool(original) and bool(candidate) and original == candidate
+
+
 def _status_from_execution(*, execution: TaskExecutionResult, verification: dict[str, Any], candidate_present: bool) -> str:
     if candidate_present and bool(verification.get("is_valid_no_sorry")):
         return "SOLVED"
@@ -570,6 +601,7 @@ def _run_single_task(
     proof_path = prepared.target_path
     proof_text = proof_path.read_text(encoding="utf-8") if proof_path.exists() else ""
     candidate_present = _proof_candidate_is_present(task_id=prepared.task_id, proof_text=proof_text)
+    statement_preserved = _proof_preserves_statement(original_text=prepared.input_text, proof_text=proof_text)
     verify_fn = verifier or verify_with_kimina
     verifier_payload: dict[str, Any]
     verifier_error = ""
@@ -586,7 +618,11 @@ def _run_single_task(
     verification = _interpret_verifier_payload(verifier_payload)
     if not candidate_present and not verifier_error:
         verifier_error = "missing_or_invalid_candidate_proof"
+    if candidate_present and not statement_preserved and not verifier_error:
+        verifier_error = "theorem_statement_mismatch"
     status = _status_from_execution(execution=execution, verification=verification, candidate_present=candidate_present)
+    if status == "SOLVED" and not statement_preserved:
+        status = "UNSOLVED"
 
     diagnostic_payload = {
         "schema": "breadboard.bb_atp_adapter_slice_v2.task_diagnostic",
@@ -602,6 +638,7 @@ def _run_single_task(
         "model": model or "",
         "verification": verification,
         "candidate_present": candidate_present,
+        "statement_preserved": statement_preserved,
         "verifier_payload": verifier_payload,
         "completion_summary": execution.completion_summary,
         "reward_summary": execution.reward_summary,

@@ -142,6 +142,15 @@ def test_candidate_proof_presence_rejects_empty_payload() -> None:
     ) is True
 
 
+def test_proof_preserves_statement_rejects_mutated_goal() -> None:
+    module = _load_module("run_bb_atp_adapter_slice_v1_statement", "scripts/run_bb_atp_adapter_slice_v1.py")
+    original = "import Mathlib\n\ntheorem t1 (n : Nat) : n = n := by\n  sorry\n"
+    mutated = "import Mathlib\n\ntheorem t1 (n : Nat) : True := by\n  trivial\n"
+    preserved = "import Mathlib\n\ntheorem t1 (n : Nat) : n = n := by\n  rfl\n"
+    assert module._proof_preserves_statement(original_text=original, proof_text=mutated) is False
+    assert module._proof_preserves_statement(original_text=original, proof_text=preserved) is True
+
+
 def test_completion_summary_done_treats_loop_exit_as_terminal() -> None:
     module = _load_module("run_bb_atp_adapter_slice_v1_terminal", "scripts/run_bb_atp_adapter_slice_v1.py")
     assert module._completion_summary_done(None) is False
@@ -157,7 +166,11 @@ def test_task_specific_guidance_contains_pack_a_hints() -> None:
     imo_guidance = module._task_specific_guidance("imo_1977_p6")
     math_guidance = module._task_specific_guidance("mathd_numbertheory_780")
     assert "StrictMono f" in imo_guidance
+    assert "least positive `m`" in imo_guidance
     assert "`215`" in math_guidance
+    assert "m = 30" in math_guidance
+    assert "intro n" in imo_guidance
+    assert "`interval_cases m`" in math_guidance
 
 
 def test_run_bb_slice_uses_real_runner_contract_with_injected_fakes(tmp_path: Path) -> None:
@@ -179,7 +192,7 @@ def test_run_bb_slice_uses_real_runner_contract_with_injected_fakes(tmp_path: Pa
     def fake_runner(*, client, config_path, model, prepared, permission_mode, timeout_s, poll_interval_s):
         if prepared.task_id == "t1":
             prepared.target_path.parent.mkdir(parents=True, exist_ok=True)
-            prepared.target_path.write_text("import Mathlib\n\ntheorem t1 : True := by\n  trivial\n", encoding="utf-8")
+            prepared.target_path.write_text("import Mathlib\n\ntheorem t1 : False := by\n  sorry\n", encoding="utf-8")
             return module.TaskExecutionResult(
                 session_id="session-t1",
                 session_status="completed",
@@ -256,15 +269,14 @@ def test_run_bb_slice_uses_real_runner_contract_with_injected_fakes(tmp_path: Pa
         module._ensure_engine = original_ensure_engine
 
     assert summary["ok"] is True
-    assert summary["status_counts"] == {"SOLVED": 1, "UNSOLVED": 1}
+    assert summary["status_counts"] == {"UNSOLVED": 2}
     rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert [row["task_id"] for row in rows] == ["t1", "t2"]
-    assert rows[0]["status"] == "SOLVED"
-    assert "proof_artifact_ref" in rows[0]
+    assert rows[0]["status"] == "UNSOLVED"
+    assert rows[0]["error"] == "theorem_statement_mismatch"
     assert rows[1]["status"] == "UNSOLVED"
     assert rows[0]["prover_system"] == "bb_atp"
     assert rows[0]["budget_class"] == "B"
     assert rows[0]["toolchain_id"] == "lean4.12.0_mathlib.deadbeef"
     assert rows[0]["verification_log_digest"]
     assert (tmp_path / "raw" / "t1.json").exists()
-    assert (tmp_path / "proofs" / "t1.lean").exists()
