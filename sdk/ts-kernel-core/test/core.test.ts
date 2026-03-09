@@ -9,6 +9,7 @@ import {
   cloneCheckpointMetadata,
   cloneTranscriptItem,
   eventBelongsToSession,
+  executeScriptedToolTurn,
   executeStaticTextTurn,
   loadEngineConformanceManifest,
   loadKernelFixture,
@@ -126,5 +127,50 @@ test("kernel core can execute a constrained static text turn", () => {
   assert.equal(result.transcript.items.length, 2)
   assert.deepEqual(result.transcript.items[1]?.content, {
     text: "1. Inspect the repo\\n2. Draft the plan",
+  })
+})
+
+test("kernel core can execute a constrained scripted tool turn", () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-tool-1",
+    entry_mode: "interactive",
+    task: "Run the calculator tool.",
+  } as const
+
+  const result = executeScriptedToolTurn(request, {
+    sessionId: "sess-tool-1",
+    toolCall: {
+      schemaVersion: "bb.tool_call.v1",
+      callId: "call-1",
+      toolName: "calculator",
+      args: { expression: "2+2" },
+      state: "completed",
+      taskId: "task-1",
+    },
+    toolOutcome: {
+      schemaVersion: "bb.tool_execution_outcome.v1",
+      callId: "call-1",
+      terminalState: "completed",
+      result: { value: 4 },
+      metadata: { tool: "calculator" },
+    },
+    toolRender: {
+      schemaVersion: "bb.tool_model_render.v1",
+      callId: "call-1",
+      parts: [{ tool: "calculator", preview: "4", status: "ok" }],
+      visibility: "model",
+      metadata: { tool: "calculator" },
+    },
+    assistantText: "The calculator returned 4.",
+  })
+
+  assert.equal(result.events.length, 4)
+  assert.equal(result.events[1]?.kind, "tool_call")
+  assert.equal(result.events[2]?.kind, "tool_result")
+  assert.equal(result.events[3]?.kind, "assistant_message")
+  assert.equal(result.transcript.items.length, 3)
+  assert.deepEqual(result.transcript.items[1]?.content, {
+    parts: [{ tool: "calculator", preview: "4", status: "ok" }],
   })
 })

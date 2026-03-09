@@ -12,6 +12,9 @@ import {
   type SessionTranscriptV1Item,
   type SessionTranscriptV1,
   type TaskV1,
+  type ToolCallV1,
+  type ToolExecutionOutcomeV1,
+  type ToolModelRenderV1,
 } from "@breadboard/kernel-contracts"
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
@@ -169,6 +172,21 @@ export interface StaticTextTurnResult {
   transcript: SessionTranscriptV1
 }
 
+export interface ScriptedToolTurnOptions {
+  sessionId?: string
+  engineFamily?: string
+  engineRef?: string | null
+  resolvedModel?: string | null
+  resolvedProviderRoute?: string | null
+  executionMode?: string | null
+  activeMode?: string | null
+  toolCall: ToolCallV1
+  toolOutcome: ToolExecutionOutcomeV1
+  toolRender: ToolModelRenderV1
+  assistantText?: string | null
+  startedAt?: string
+}
+
 export function buildRunContextFromRequest(
   request: RunRequestV1,
   options: Omit<StaticTextTurnOptions, "assistantText" | "startedAt"> = {},
@@ -245,6 +263,131 @@ export function executeStaticTextTurn(
     metadata: {
       execution_mode: runContext.execution_mode,
       source: "ts-kernel-core",
+    },
+  }
+  return { runContext, events, transcript }
+}
+
+export function executeScriptedToolTurn(
+  requestInput: RunRequestV1,
+  options: ScriptedToolTurnOptions,
+): StaticTextTurnResult {
+  const request = assertValid<RunRequestV1>("runRequest", requestInput)
+  const toolCall = assertValid<ToolCallV1>("toolCall", options.toolCall)
+  const toolOutcome = assertValid<ToolExecutionOutcomeV1>("toolExecutionOutcome", options.toolOutcome)
+  const toolRender = assertValid<ToolModelRenderV1>("toolModelRender", options.toolRender)
+  const runContext = buildRunContextFromRequest(request, {
+    sessionId: options.sessionId,
+    engineFamily: options.engineFamily,
+    engineRef: options.engineRef,
+    resolvedModel: options.resolvedModel,
+    resolvedProviderRoute: options.resolvedProviderRoute,
+    executionMode: options.executionMode ?? "scripted_tool_turn",
+    activeMode: options.activeMode,
+  })
+  const ts = options.startedAt ?? "2026-03-08T00:00:00Z"
+  const events: KernelEventV1[] = [
+    {
+      schemaVersion: "bb.kernel_event.v1",
+      eventId: buildKernelEventId(request.request_id, 1),
+      runId: request.request_id,
+      sessionId: runContext.session_id,
+      seq: 1,
+      ts,
+      actor: "human",
+      visibility: "model",
+      kind: "user_message",
+      payload: { text: request.task },
+    },
+    {
+      schemaVersion: "bb.kernel_event.v1",
+      eventId: buildKernelEventId(request.request_id, 2),
+      runId: request.request_id,
+      sessionId: runContext.session_id,
+      seq: 2,
+      ts,
+      actor: "engine",
+      visibility: "host",
+      kind: "tool_call",
+      payload: {
+        callId: toolCall.callId,
+        toolName: toolCall.toolName,
+        args: toolCall.args,
+        state: toolCall.state,
+        metadata: toolCall.metadata ?? {},
+      },
+      taskId: toolCall.taskId,
+      callId: toolCall.callId,
+    },
+    {
+      schemaVersion: "bb.kernel_event.v1",
+      eventId: buildKernelEventId(request.request_id, 3),
+      runId: request.request_id,
+      sessionId: runContext.session_id,
+      seq: 3,
+      ts,
+      actor: "tool",
+      visibility: "host",
+      kind: "tool_result",
+      payload: {
+        callId: toolOutcome.callId,
+        terminalState: toolOutcome.terminalState,
+        result: toolOutcome.result,
+        error: toolOutcome.error,
+        metadata: toolOutcome.metadata ?? {},
+      },
+      taskId: toolCall.taskId,
+      callId: toolOutcome.callId,
+      causedBy: buildKernelEventId(request.request_id, 2),
+    },
+  ]
+  const transcriptItems: SessionTranscriptV1Item[] = [
+    {
+      kind: "user_message",
+      visibility: "model",
+      content: { text: request.task },
+      provenance: { source: "ts_scripted_tool_turn", eventId: events[0].eventId },
+    },
+    {
+      kind: "tool_result",
+      visibility: toolRender.visibility ?? "model",
+      callId: toolRender.callId,
+      content: { parts: toolRender.parts },
+      provenance: { source: "ts_scripted_tool_turn", eventId: events[2].eventId },
+    },
+  ]
+  if (typeof options.assistantText === "string" && options.assistantText.length > 0) {
+    const assistantEvent: KernelEventV1 = {
+      schemaVersion: "bb.kernel_event.v1",
+      eventId: buildKernelEventId(request.request_id, 4),
+      runId: request.request_id,
+      sessionId: runContext.session_id,
+      seq: 4,
+      ts,
+      actor: "engine",
+      visibility: "model",
+      kind: "assistant_message",
+      payload: { text: options.assistantText },
+      causedBy: buildKernelEventId(request.request_id, 3),
+    }
+    events.push(assistantEvent)
+    transcriptItems.push({
+      kind: "assistant_message",
+      visibility: "model",
+      content: { text: options.assistantText },
+      provenance: { source: "ts_scripted_tool_turn", eventId: assistantEvent.eventId },
+    })
+  }
+  const transcript: SessionTranscriptV1 = {
+    schemaVersion: "bb.session_transcript.v1",
+    sessionId: runContext.session_id,
+    runId: request.request_id,
+    eventCursor: events.length,
+    items: transcriptItems,
+    metadata: {
+      execution_mode: runContext.execution_mode,
+      source: "ts-kernel-core",
+      tool_name: toolCall.toolName,
     },
   }
   return { runContext, events, transcript }

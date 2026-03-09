@@ -67,17 +67,20 @@ export interface ToolSpecV1 {
 export interface ToolExecutionOutcomeV1 {
   schemaVersion: "bb.tool_execution_outcome.v1"
   callId: string
-  ok: boolean
-  output?: unknown
-  error?: unknown
+  terminalState: "completed" | "failed" | "cancelled" | "denied"
+  result?: unknown
+  error?: Record<string, unknown>
+  artifacts?: Array<Record<string, unknown>>
+  usage?: Record<string, unknown>
   metadata?: Record<string, unknown>
 }
 
 export interface ToolModelRenderV1 {
   schemaVersion: "bb.tool_model_render.v1"
   callId: string
-  renderKind: string
-  content: unknown
+  parts: unknown[]
+  truncation?: Record<string, unknown>
+  visibility?: "model" | "host" | "audit"
   metadata?: Record<string, unknown>
 }
 

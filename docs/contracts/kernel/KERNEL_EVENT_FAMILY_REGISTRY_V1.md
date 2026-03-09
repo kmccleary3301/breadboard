@@ -29,6 +29,40 @@ These exist because current clients need direct convenience payloads. They are n
 | `todo_event` | `projection.todo_snapshot` | `service` | `host` |
 | `ctree_snapshot` | `projection.ctree_snapshot` | `service` | `host` |
 
+## CLI bridge stream-only and host-only events
+
+The CLI bridge currently handles additional runtime event types that are important for live UX but are not yet treated as shared kernel truth.
+
+### Stream-only bridge events
+
+- `stream.gap`
+- `assistant.message.start`
+- `assistant.message.delta`
+- `assistant.message.end`
+- `assistant.reasoning.delta`
+- `assistant.thought_summary.delta`
+- `assistant_delta`
+
+These should be treated as projection/transport artifacts until they are promoted into explicit kernel contracts.
+
+### Host-only lifecycle/control events
+
+- `conversation.compaction.start`
+- `conversation.compaction.end`
+- `checkpoint_list`
+- `checkpoint_restored`
+- `skills_catalog`
+- `skills_selection`
+- `warning`
+- `reward_update`
+- `limits_update`
+- `completion`
+- `log_link`
+- `error`
+- `run_finished`
+
+These are useful host-facing events, but they are not part of the kernel event family registry.
+
 ## Legacy or still-unclassified events
 
 These should not be relied on as cross-engine truth until they are promoted into the registry.

@@ -42,6 +42,53 @@ logger = logging.getLogger(__name__)
 AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
 
 
+# These runtime event types are treated as kernel-owned event families and are
+# bridged through mostly as-is, subject to payload normalization.
+KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES = {
+    "assistant_message",
+    "user_message",
+    "tool_call",
+    "tool.result",
+    "tool_result",
+    "todo_event",
+    "permission_request",
+    "permission_response",
+    "ctree_node",
+    "ctree_snapshot",
+    "task_event",
+}
+
+# These runtime event types exist primarily for live client streaming and are
+# not yet part of the shared kernel truth surface.
+BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES = {
+    "stream.gap",
+    "assistant.message.start",
+    "assistant.message.delta",
+    "assistant.message.end",
+    "assistant.reasoning.delta",
+    "assistant.thought_summary.delta",
+    "assistant_delta",
+}
+
+# These are host-facing lifecycle/control artifacts emitted by the bridge or
+# session orchestration layer rather than the kernel contract itself.
+BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES = {
+    "conversation.compaction.start",
+    "conversation.compaction.end",
+    "checkpoint_list",
+    "checkpoint_restored",
+    "skills_catalog",
+    "skills_selection",
+    "warning",
+    "reward_update",
+    "limits_update",
+    "completion",
+    "log_link",
+    "error",
+    "run_finished",
+}
+
+
 class SessionRunner:
     """Coordinates agent execution, user inputs, and command handling for a session."""
 

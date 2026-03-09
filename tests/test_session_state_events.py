@@ -12,7 +12,12 @@ from agentic_coder_prototype.api.cli_bridge.events import EventType, SessionEven
 from agentic_coder_prototype.api.cli_bridge.models import SessionCreateRequest, SessionStatus
 from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord, SessionRegistry
 from agentic_coder_prototype.api.cli_bridge.service import SessionService
-from agentic_coder_prototype.api.cli_bridge.session_runner import SessionRunner
+from agentic_coder_prototype.api.cli_bridge.session_runner import (
+    BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES,
+    BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES,
+    KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES,
+    SessionRunner,
+)
 from agentic_coder_prototype.state.session_state import SessionState
 
 
@@ -204,6 +209,23 @@ def test_session_state_event_family_registry_covers_public_runtime_event_types()
     for event_type, (classification, family) in expected.items():
         assert registry[event_type]["classification"] == classification
         assert registry[event_type]["family"] == family
+
+
+def test_cli_bridge_runtime_event_sets_match_kernel_vs_projection_boundary() -> None:
+    registry = SessionState.event_family_registry()
+
+    assert "assistant_message" in KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES
+    assert "todo_event" in KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES
+    assert "assistant.message.delta" in BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES
+    assert "run_finished" in BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES
+
+    for event_type in KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES:
+        if event_type in {"tool.result"}:
+            continue
+        assert event_type in registry, f"{event_type} should be classified in SessionState registry"
+
+    for event_type in BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES | BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES:
+        assert event_type not in registry, f"{event_type} should remain outside kernel registry"
 
 
 def test_session_runner_translates_runtime_events() -> None:
