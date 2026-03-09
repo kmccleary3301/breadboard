@@ -173,10 +173,58 @@ def test_task_specific_guidance_contains_pack_a_hints() -> None:
     assert "irrational_sqrt_natCast_iff" in algebra_guidance
     assert "`interval_cases m <;> norm_num at h₂ h₃ ⊢ <;> omega`" in math_guidance
     assert "lt_div_iff₀" in n530_guidance
+    assert "Nat.div_eq_iff_eq_mul_right" in n530_guidance
+    assert "Nat.lt_of_mul_lt_mul_left" in n530_guidance
     assert "Nat.lcm_mul_left" in n530_guidance
+    assert "Nat.coprime_div_gcd_div_gcd (Nat.gcd_pos_of_pos_right n hkpos)" in n530_guidance
+    assert "Do not add an extra `· exact hab_coprime`" in n530_guidance
     assert "m = 30" in math_guidance
     assert "intro n" in imo_guidance
     assert "bounded-range route" in math_guidance
+
+
+def test_candidate_verifies_cleanly_requires_statement_match(tmp_path: Path) -> None:
+    module = _load_module("run_bb_atp_adapter_slice_v1_candidate_probe", "scripts/run_bb_atp_adapter_slice_v1.py")
+    workspace_dir = tmp_path / "workspace"
+    target_path = workspace_dir / "target" / "t1.lean"
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    original_text = "import Mathlib\n\ntheorem t1 : True := by\n  sorry\n"
+    target_path.write_text("import Mathlib\n\ntheorem t1 : True := by\n  trivial\n", encoding="utf-8")
+    prepared = module.PreparedTask(
+        task_id="t1",
+        input_text=original_text,
+        input_hash="abc",
+        workspace_dir=workspace_dir,
+        target_path=target_path,
+        notes_path=workspace_dir / "result" / "notes.md",
+        diagnostic_path=workspace_dir / "artifacts" / "runner_diagnostic.json",
+        prompt="",
+    )
+
+    calls: list[str] = []
+
+    def fake_verify(*, proof_text, task_id, verifier_url, timeout_s):
+        calls.append(task_id)
+        return {"results": [{"error": None, "response": {"messages": [], "time": 0.1}}]}
+
+    original_verify = module.verify_with_kimina
+    try:
+        module.verify_with_kimina = fake_verify
+        assert module._candidate_verifies_cleanly(
+            prepared=prepared,
+            verifier_url="http://verifier",
+            verifier_timeout_s=30,
+        ) is True
+        target_path.write_text("import Mathlib\n\ntheorem t1 : False := by\n  trivial\n", encoding="utf-8")
+        assert module._candidate_verifies_cleanly(
+            prepared=prepared,
+            verifier_url="http://verifier",
+            verifier_timeout_s=30,
+        ) is False
+    finally:
+        module.verify_with_kimina = original_verify
+
+    assert calls == ["t1"]
 
 
 def test_run_bb_slice_uses_real_runner_contract_with_injected_fakes(tmp_path: Path) -> None:
@@ -195,7 +243,7 @@ def test_run_bb_slice_uses_real_runner_contract_with_injected_fakes(tmp_path: Pa
         def health(self):
             return {"status": "ok"}
 
-    def fake_runner(*, client, config_path, model, prepared, permission_mode, timeout_s, poll_interval_s):
+    def fake_runner(*, client, config_path, model, prepared, verifier_url, verifier_timeout_s, permission_mode, timeout_s, poll_interval_s):
         if prepared.task_id == "t1":
             prepared.target_path.parent.mkdir(parents=True, exist_ok=True)
             prepared.target_path.write_text("import Mathlib\n\ntheorem t1 : False := by\n  sorry\n", encoding="utf-8")

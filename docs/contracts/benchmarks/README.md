@@ -98,6 +98,11 @@ Recommended Hilbert comparison progression:
 - `pack_s1_imo_stress_minif2f_v1`: explicit stress pack for expensive search-heavy theorems
 - `pack_c_putnam_frontier_v1`: hard frontier tranche after the MiniF2F lanes are stable
 
+Current calibration status:
+
+- `pack_a2_calibration_minif2f_v1` is now the stable low-cost lane. BreadBoard Hilbert-like reaches `4/4` solved on the repaired pack, versus Hilbert `1/4`, using `cross_system_pilot_report_v3.json`.
+- The BB runner now performs stop-on-verified-proof during polling, so a valid Lean proof is captured immediately instead of being overwritten by later low-value drift.
+
 Adapter input fixture example:
 
 - `tests/fixtures/benchmarks/cross_system_task_inputs_demo_v1.json`

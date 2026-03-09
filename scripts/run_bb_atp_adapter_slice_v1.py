@@ -242,11 +242,28 @@ def _task_specific_guidance(task_id: str) -> str:
         return textwrap.dedent(
             """\
             Task-specific proof hints:
-            - The current proof shape is already close. Do not restart from scratch; repair the ratio-to-integer steps and finish the reduced coprime-product argument.
-            - Convert the ratio bounds with the exact lemmas `lt_div_iff₀` and `div_lt_iff₀`, not `linarith` on the raw division hypotheses.
-            - After setting `d := Nat.gcd n k` and writing `n = d * a`, `k = d * b`, use `Nat.coprime_div_gcd_div_gcd` or the equivalent divisibility decomposition to get `Nat.Coprime a b`.
-            - For the final expression, the useful factorization lemmas are `Nat.lcm_mul_left` and `Nat.gcd_mul_left`; after rewriting, `simp [Nat.Coprime.lcm_eq_mul, Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm]` should collapse `Nat.lcm (d*a) (d*b) / Nat.gcd (d*a) (d*b)` to `a * b`.
-            - The lower bound route should be: derive `2 ≤ b`, derive `5 * b + 1 ≤ a`, then conclude `22 ≤ a * b` by arithmetic.
+            - The current proof shape is already close. Do not restart from scratch; preserve the gcd reduction and repair the exact theorem applications.
+            - Convert the ratio bounds with the exact lemmas `lt_div_iff₀` and `div_lt_iff₀`, then immediately cast them to natural inequalities `5 * k < n` and `n < 6 * k` with `exact_mod_cast`.
+            - After setting `d := Nat.gcd n k`, `a := n / d`, `b := k / d`, use:
+              `Nat.div_eq_iff_eq_mul_right hdpos hd_dvd_n`,
+              `Nat.div_eq_iff_eq_mul_right hdpos hd_dvd_k`,
+              `Nat.coprime_div_gcd_div_gcd (Nat.gcd_pos_of_pos_right n hkpos)`,
+              `Nat.le_of_dvd hnpos hd_dvd_n`,
+              `Nat.le_of_dvd hkpos hd_dvd_k`,
+              and `Nat.div_pos`.
+            - The exact local shape that verifies is:
+              `have hab_coprime : Nat.Coprime a b := by dsimp [a, b, d]; simpa using Nat.coprime_div_gcd_div_gcd (Nat.gcd_pos_of_pos_right n hkpos)`
+              `have hdn_le_n : d ≤ n := Nat.le_of_dvd hnpos hd_dvd_n`
+              `have hdk_le_k : d ≤ k := Nat.le_of_dvd hkpos hd_dvd_k`
+              `have hapos : 0 < a := by dsimp [a]; exact Nat.div_pos hdn_le_n hdpos`
+              `have hbpos : 0 < b := by dsimp [b]; exact Nat.div_pos hdk_le_k hdpos`
+            - The reduced-ratio inequalities should be derived by rewriting to `d * (5 * b) < d * a` and `d * a < d * (6 * b)`, then canceling `d` with `Nat.lt_of_mul_lt_mul_left`.
+            - Prove `2 ≤ b` by combining `0 < b` with `b ≠ 1`; the `b ≠ 1` contradiction should come from `5 * b < a` and `a < 6 * b` via `omega`.
+            - Then derive `5 * b + 1 ≤ a`, conclude `22 ≤ a * b`, and finish with the exact factorization:
+              `rw [hn_eq, hk_eq, Nat.lcm_mul_left, Nat.gcd_mul_left, hab_coprime.gcd_eq_one]`
+              followed by
+              `simp [Nat.Coprime.lcm_eq_mul hab_coprime, Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm, hdpos]`.
+            - Do not add an extra `· exact hab_coprime` branch after the `rw` chain above; the `rw` sequence should leave a single simplification goal, not side goals.
             - Keep the witness for membership simple: `n = 11`, `k = 2`.
             - Avoid repeated exploratory shell commands; this task wants exact theorem names and a clean algebraic finish.
             """
@@ -447,6 +464,8 @@ def _run_task_with_breadboard(
     config_path: str,
     model: str | None,
     prepared: PreparedTask,
+    verifier_url: str,
+    verifier_timeout_s: int,
     permission_mode: str,
     timeout_s: int,
     poll_interval_s: float,
@@ -475,12 +494,35 @@ def _run_task_with_breadboard(
     last_summary: dict[str, Any] | None = None
     timed_out = False
     session_status = str(created.get("status") or "").strip().lower() or "starting"
+    last_candidate_signature: tuple[int, int] | None = None
     while True:
         last_summary = client.get_session(session_id)
         session_status = str(last_summary.get("status") or "").strip().lower() or session_status
         completion_summary = last_summary.get("completion_summary") if isinstance(last_summary.get("completion_summary"), dict) else None
         if _is_session_done(session_status) or _completion_summary_done(completion_summary):
             break
+        with contextlib.suppress(FileNotFoundError):
+            stat = prepared.target_path.stat()
+            candidate_signature = (int(stat.st_mtime_ns), int(stat.st_size))
+            if candidate_signature != last_candidate_signature:
+                last_candidate_signature = candidate_signature
+                if _candidate_verifies_cleanly(
+                    prepared=prepared,
+                    verifier_url=verifier_url,
+                    verifier_timeout_s=verifier_timeout_s,
+                ):
+                    with contextlib.suppress(Exception):
+                        client.post_command(session_id, command="stop")
+                    session_status = "stopped"
+                    last_summary = dict(last_summary)
+                    if not isinstance(last_summary.get("completion_summary"), dict):
+                        last_summary["completion_summary"] = {
+                            "completed": False,
+                            "reason": "verified_solution_detected",
+                            "method": "runner_verify_stop",
+                            "exit_kind": "stopped",
+                        }
+                    break
         if time.monotonic() >= deadline:
             timed_out = True
             with contextlib.suppress(Exception):
@@ -584,6 +626,32 @@ def _proof_preserves_statement(*, original_text: str, proof_text: str) -> bool:
     return bool(original) and bool(candidate) and original == candidate
 
 
+def _candidate_verifies_cleanly(
+    *,
+    prepared: PreparedTask,
+    verifier_url: str,
+    verifier_timeout_s: int,
+) -> bool:
+    if not prepared.target_path.exists():
+        return False
+    proof_text = prepared.target_path.read_text(encoding="utf-8")
+    if not _proof_candidate_is_present(task_id=prepared.task_id, proof_text=proof_text):
+        return False
+    if not _proof_preserves_statement(original_text=prepared.input_text, proof_text=proof_text):
+        return False
+    try:
+        verifier_payload = verify_with_kimina(
+            proof_text=proof_text,
+            task_id=prepared.task_id,
+            verifier_url=verifier_url,
+            timeout_s=verifier_timeout_s,
+        )
+    except Exception:
+        return False
+    verification = _interpret_verifier_payload(verifier_payload)
+    return bool(verification.get("is_valid_no_sorry"))
+
+
 def _status_from_execution(*, execution: TaskExecutionResult, verification: dict[str, Any], candidate_present: bool) -> str:
     if candidate_present and bool(verification.get("is_valid_no_sorry")):
         return "SOLVED"
@@ -620,6 +688,8 @@ def _run_single_task(
         config_path=config_path,
         model=model,
         prepared=prepared,
+        verifier_url=verifier_url,
+        verifier_timeout_s=verifier_timeout_s,
         permission_mode=permission_mode,
         timeout_s=task_timeout_s,
         poll_interval_s=poll_interval_s,
