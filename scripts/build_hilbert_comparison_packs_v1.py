@@ -65,6 +65,42 @@ PACK_SPECS: dict[str, dict[str, Any]] = {
             },
         ],
     },
+    "pack_a2_calibration_minif2f_v1": {
+        "benchmark_slug": "minif2f_v2_s1_seed1337_n100",
+        "description": "Cheap calibration pack for bounded ATP comparison runs. Excludes IMO P6 and other open-ended stress tasks.",
+        "task_entries": [
+            {
+                "task_id": "mathd_numbertheory_780",
+                "tier": "calibration_anchor",
+                "reference_source": "Seed-Prover MiniF2F.zip",
+                "reference_quality": "published_clean",
+            },
+            {
+                "task_id": "mathd_algebra_282",
+                "tier": "calibration_reference",
+                "reference_source": "Seed-Prover MiniF2F.zip",
+                "reference_quality": "published_with_placeholders",
+            },
+            {
+                "task_id": "mathd_numbertheory_530",
+                "tier": "calibration_reference",
+                "reference_source": "Seed-Prover MiniF2F.zip",
+                "reference_quality": "published_with_placeholders",
+            },
+            {
+                "task_id": "mathd_algebra_156",
+                "tier": "calibration_representative",
+                "reference_source": "Frozen MiniF2F slice",
+                "reference_quality": "no_published_proof_reference",
+            },
+            {
+                "task_id": "mathd_algebra_171",
+                "tier": "calibration_representative",
+                "reference_source": "Frozen MiniF2F slice",
+                "reference_quality": "no_published_proof_reference",
+            },
+        ],
+    },
     "pack_b_hilbert_comparator_minif2f_v1": {
         "benchmark_slug": "minif2f_v2_s1_seed1337_n100",
         "description": "First BreadBoard vs Hilbert comparator pack: anchor problems plus representative frozen-slice tasks.",
@@ -134,6 +170,18 @@ PACK_SPECS: dict[str, dict[str, Any]] = {
                 "tier": "representative",
                 "reference_source": "Frozen MiniF2F slice",
                 "reference_quality": "no_published_proof_reference",
+            },
+        ],
+    },
+    "pack_s1_imo_stress_minif2f_v1": {
+        "benchmark_slug": "minif2f_v2_s1_seed1337_n100",
+        "description": "Stress-only pack for expensive theorem-search tasks. Run only with explicit budget approval.",
+        "task_entries": [
+            {
+                "task_id": "imo_1977_p6",
+                "tier": "stress",
+                "reference_source": "Seed-Prover MiniF2F.zip",
+                "reference_quality": "published_clean",
             },
         ],
     },

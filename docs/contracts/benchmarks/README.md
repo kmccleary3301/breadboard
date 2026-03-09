@@ -91,6 +91,13 @@ baseline. It keeps the visible tool surface to `shell_command`, uses a persisten
 theorem-locking system prompt, and is intended for side-by-side Pack A / Pack B comparison
 against Hilbert-style proof loops.
 
+Recommended Hilbert comparison progression:
+
+- `pack_a2_calibration_minif2f_v1`: cheap calibration pack for bounded test-phase runs
+- `pack_b_hilbert_comparator_minif2f_v1`: broader direct-comparison pack once calibration is healthy
+- `pack_s1_imo_stress_minif2f_v1`: explicit stress pack for expensive search-heavy theorems
+- `pack_c_putnam_frontier_v1`: hard frontier tranche after the MiniF2F lanes are stable
+
 Adapter input fixture example:
 
 - `tests/fixtures/benchmarks/cross_system_task_inputs_demo_v1.json`

@@ -1,6 +1,7 @@
 import json
 
 from scripts.build_hilbert_comparison_packs_v1 import HilbertDatasetRow
+from scripts.build_hilbert_comparison_packs_v1 import PACK_SPECS
 from scripts.build_hilbert_comparison_packs_v1 import canonicalize_task_input_text
 from scripts.build_hilbert_comparison_packs_v1 import split_header_and_formal_statement
 
@@ -71,3 +72,11 @@ def test_canonicalize_task_input_text_overrides_malformed_pack_task():
     assert "(m x : ℤ)" in fixed
     assert "(h₂ : (6 * x) % m = 1)" in fixed
     assert "(h₃ : (x - 6 ^ 2) % m = 0)" in fixed
+
+
+def test_pack_specs_include_calibration_and_stress_tranches():
+    assert "pack_a2_calibration_minif2f_v1" in PACK_SPECS
+    assert "pack_s1_imo_stress_minif2f_v1" in PACK_SPECS
+    calibration_ids = [entry["task_id"] for entry in PACK_SPECS["pack_a2_calibration_minif2f_v1"]["task_entries"]]
+    assert "imo_1977_p6" not in calibration_ids
+    assert calibration_ids[:2] == ["mathd_numbertheory_780", "mathd_algebra_282"]
