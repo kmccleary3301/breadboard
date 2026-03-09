@@ -164,13 +164,16 @@ def test_completion_summary_done_treats_loop_exit_as_terminal() -> None:
 def test_task_specific_guidance_contains_pack_a_hints() -> None:
     module = _load_module("run_bb_atp_adapter_slice_v1_guidance", "scripts/run_bb_atp_adapter_slice_v1.py")
     imo_guidance = module._task_specific_guidance("imo_1977_p6")
+    algebra_guidance = module._task_specific_guidance("mathd_algebra_282")
     math_guidance = module._task_specific_guidance("mathd_numbertheory_780")
     assert "StrictMono f" in imo_guidance
     assert "least positive `m`" in imo_guidance
-    assert "`215`" in math_guidance
+    assert "irrational_pi" in algebra_guidance
+    assert "irrational_sqrt_natCast_iff" in algebra_guidance
+    assert "`interval_cases m <;> norm_num at h₂ h₃ ⊢ <;> omega`" in math_guidance
     assert "m = 30" in math_guidance
     assert "intro n" in imo_guidance
-    assert "`interval_cases m`" in math_guidance
+    assert "bounded-range route" in math_guidance
 
 
 def test_run_bb_slice_uses_real_runner_contract_with_injected_fakes(tmp_path: Path) -> None:
