@@ -141,6 +141,16 @@ def test_candidate_proof_presence_rejects_empty_payload() -> None:
     ) is True
 
 
+def test_completion_summary_done_treats_loop_exit_as_terminal() -> None:
+    module = _load_module("run_bb_atp_adapter_slice_v1_terminal", "scripts/run_bb_atp_adapter_slice_v1.py")
+    assert module._completion_summary_done(None) is False
+    assert module._completion_summary_done({"completed": True}) is True
+    assert module._completion_summary_done({"reason": "max_steps_exhausted"}) is True
+    assert module._completion_summary_done({"exit_kind": "loop_exit"}) is True
+    assert module._completion_summary_done({"method": "loop_exit"}) is True
+    assert module._completion_summary_done({"reason": "still_running"}) is False
+
+
 def test_run_bb_slice_uses_real_runner_contract_with_injected_fakes(tmp_path: Path) -> None:
     module = _load_module("run_bb_atp_adapter_slice_v1_fake", "scripts/run_bb_atp_adapter_slice_v1.py")
     manifest_path = tmp_path / "manifest.json"

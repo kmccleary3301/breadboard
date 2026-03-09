@@ -236,7 +236,7 @@ def _build_task_prompt(*, prepared: PreparedTask, verifier_url: str) -> str:
         - Start by writing the theorem file exactly once, then iterate by editing and verifying it.
         - Do not create alternate theorem files.
         - Do not call `mark_task_complete` unless `{rel_target}` exists and the verifier has passed cleanly.
-        - Stop when the verifier passes with no `sorry` and no errors.
+        - When the verifier passes with no `sorry` and no errors, stop and reply with exactly `TASK COMPLETE`.
 
         Verifier endpoint for this workspace: `{verifier_url}`
         """
@@ -348,6 +348,20 @@ def _is_session_done(status: str) -> bool:
     return str(status or "").strip().lower() in _TERMINAL_SESSION_STATUSES
 
 
+def _completion_summary_done(summary: dict[str, Any] | None) -> bool:
+    if not isinstance(summary, dict):
+        return False
+    if bool(summary.get("completed")):
+        return True
+    reason = str(summary.get("reason") or "").strip().lower()
+    exit_kind = str(summary.get("exit_kind") or "").strip().lower()
+    method = str(summary.get("method") or "").strip().lower()
+    return any(
+        value in {"max_steps_exhausted", "loop_exit"}
+        for value in (reason, exit_kind, method)
+    )
+
+
 def _run_task_with_breadboard(
     *,
     client: BreadboardClient,
@@ -385,7 +399,8 @@ def _run_task_with_breadboard(
     while True:
         last_summary = client.get_session(session_id)
         session_status = str(last_summary.get("status") or "").strip().lower() or session_status
-        if _is_session_done(session_status):
+        completion_summary = last_summary.get("completion_summary") if isinstance(last_summary.get("completion_summary"), dict) else None
+        if _is_session_done(session_status) or _completion_summary_done(completion_summary):
             break
         if time.monotonic() >= deadline:
             timed_out = True
