@@ -3,6 +3,12 @@ import type {
   ExecutionPlacementV1,
   SandboxRequestV1,
   SandboxResultV1,
+  TerminalCleanupResultV1,
+  TerminalInteractionV1,
+  TerminalOutputDeltaV1,
+  TerminalRegistrySnapshotV1,
+  TerminalSessionDescriptorV1,
+  TerminalSessionEndV1,
   UnsupportedCaseV1,
 } from "@breadboard/kernel-contracts"
 
@@ -20,6 +26,61 @@ export interface ExecutionDriverV1 {
     metadata?: Record<string, unknown>
   }): SandboxRequestV1
   execute?(request: SandboxRequestV1): Promise<SandboxResultV1>
+}
+
+export interface TerminalSessionStartInputV1 {
+  terminalSessionId: string
+  command: string[]
+  cwd?: string | null
+  startupCallId?: string | null
+  ownerTaskId?: string | null
+  publicHandles?: TerminalSessionDescriptorV1["public_handles"]
+  capability?: ExecutionCapabilityV1 | null
+  placement?: ExecutionPlacementV1 | null
+  persistenceScope?: TerminalSessionDescriptorV1["persistence_scope"]
+  continuationScope?: TerminalSessionDescriptorV1["continuation_scope"]
+  streamMode?: TerminalSessionDescriptorV1["stream_mode"]
+  streamSplit?: TerminalSessionDescriptorV1["stream_split"]
+}
+
+export interface TerminalSessionStartResultV1 {
+  descriptor: TerminalSessionDescriptorV1
+  outputDeltas: TerminalOutputDeltaV1[]
+  end?: TerminalSessionEndV1
+}
+
+export interface TerminalSessionInteractionInputV1 {
+  terminalSessionId: string
+  interactionKind: TerminalInteractionV1["interaction_kind"]
+  causingCallId?: string | null
+  inputText?: string | null
+  inputB64?: string | null
+  signal?: string | null
+  settleMs?: number
+}
+
+export interface TerminalSessionInteractionResultV1 {
+  interaction: TerminalInteractionV1
+  outputDeltas: TerminalOutputDeltaV1[]
+  end?: TerminalSessionEndV1
+}
+
+export interface TerminalSessionCleanupInputV1 {
+  cleanupId: string
+  scope: TerminalCleanupResultV1["scope"]
+  sessionIds?: string[]
+  signal?: string | null
+}
+
+export interface TerminalSessionDriverV1 extends ExecutionDriverV1 {
+  supportsTerminalSessions?(
+    capability: ExecutionCapabilityV1,
+    placementClass: ExecutionPlacementV1["placement_class"],
+  ): boolean
+  startTerminalSession?(input: TerminalSessionStartInputV1): Promise<TerminalSessionStartResultV1>
+  interactTerminalSession?(input: TerminalSessionInteractionInputV1): Promise<TerminalSessionInteractionResultV1>
+  snapshotTerminalRegistry?(): Promise<TerminalRegistrySnapshotV1>
+  cleanupTerminalSessions?(input: TerminalSessionCleanupInputV1): Promise<TerminalCleanupResultV1>
 }
 
 export interface ExecutionDriverSideEffectExpectationV1 {

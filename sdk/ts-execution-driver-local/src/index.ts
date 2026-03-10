@@ -10,8 +10,9 @@ import type {
   SandboxRequestV1,
   SandboxResultV1,
 } from "@breadboard/kernel-contracts"
-import type { ExecutionDriverV1 } from "@breadboard/execution-drivers"
+import type { TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
 import { isPlacementCompatible } from "@breadboard/execution-drivers"
+import { trustedLocalTerminalSessionDriver } from "./terminals.js"
 
 export function buildLocalProcessSandboxRequest(input: {
   requestId: string
@@ -129,7 +130,7 @@ export async function executeLocalProcessSandboxRequest(
   }
 }
 
-export const trustedLocalExecutionDriver: ExecutionDriverV1 = {
+export const trustedLocalExecutionDriver: TerminalSessionDriverV1 = {
   driverId: "local-process",
   supportedPlacements: ["inline_ts", "local_process"],
   supportsCapability(capability, placementClass) {
@@ -151,6 +152,11 @@ export const trustedLocalExecutionDriver: ExecutionDriverV1 = {
   execute(request) {
     return executeLocalProcessSandboxRequest(request)
   },
+  supportsTerminalSessions: trustedLocalTerminalSessionDriver.supportsTerminalSessions,
+  startTerminalSession: trustedLocalTerminalSessionDriver.startTerminalSession,
+  interactTerminalSession: trustedLocalTerminalSessionDriver.interactTerminalSession,
+  snapshotTerminalRegistry: trustedLocalTerminalSessionDriver.snapshotTerminalRegistry,
+  cleanupTerminalSessions: trustedLocalTerminalSessionDriver.cleanupTerminalSessions,
 }
 
 export function chooseTrustedLocalPlacement(
@@ -158,3 +164,5 @@ export function chooseTrustedLocalPlacement(
 ): ExecutionPlacementV1["placement_class"] {
   return capability.isolation_class === "none" ? "inline_ts" : "local_process"
 }
+
+export * from "./terminals.js"

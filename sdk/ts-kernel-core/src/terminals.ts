@@ -3,6 +3,7 @@ import {
   type EffectiveToolSurfaceV1,
   type KernelEventV1,
   type TerminalCleanupResultV1,
+  type TerminalInteractionV1,
   type TerminalOutputDeltaV1,
   type TerminalRegistrySnapshotV1,
   type TerminalSessionDescriptorV1,
@@ -16,6 +17,80 @@ export interface TerminalSessionSnapshot {
   readonly lifecycle: "running" | "ended"
   readonly recentOutputChunks: TerminalOutputDeltaV1[]
   readonly end?: TerminalSessionEndV1
+}
+
+interface KernelTerminalEventContext {
+  runId: string
+  sessionId: string
+  eventId: string
+  seq: number
+  ts: string
+  taskId?: string
+  callId?: string
+  causedBy?: string
+}
+
+function buildTerminalKernelEvent(
+  context: KernelTerminalEventContext,
+  kind: KernelEventV1["kind"],
+  payload: unknown,
+): KernelEventV1 {
+  return {
+    schemaVersion: "bb.kernel_event.v1",
+    eventId: context.eventId,
+    runId: context.runId,
+    sessionId: context.sessionId,
+    seq: context.seq,
+    ts: context.ts,
+    actor: "tool",
+    visibility: "host",
+    kind,
+    payload,
+    taskId: context.taskId,
+    callId: context.callId,
+    causedBy: context.causedBy,
+  }
+}
+
+export function buildTerminalSessionBeginEvent(
+  context: KernelTerminalEventContext,
+  descriptor: TerminalSessionDescriptorV1,
+): KernelEventV1 {
+  return buildTerminalKernelEvent(context, "terminal_session_begin", descriptor)
+}
+
+export function buildTerminalInteractionEvent(
+  context: KernelTerminalEventContext,
+  interaction: TerminalInteractionV1,
+): KernelEventV1 {
+  return buildTerminalKernelEvent(context, "terminal_interaction", interaction)
+}
+
+export function buildTerminalOutputDeltaEvents(
+  context: Omit<KernelTerminalEventContext, "eventId" | "seq"> & {
+    startingSeq: number
+    eventIdForSeq: (seq: number, delta: TerminalOutputDeltaV1) => string
+  },
+  deltas: readonly TerminalOutputDeltaV1[],
+): KernelEventV1[] {
+  return deltas.map((delta, index) =>
+    buildTerminalKernelEvent(
+      {
+        ...context,
+        seq: context.startingSeq + index,
+        eventId: context.eventIdForSeq(context.startingSeq + index, delta),
+      },
+      "terminal_output_delta",
+      delta,
+    ),
+  )
+}
+
+export function buildTerminalSessionEndEvent(
+  context: KernelTerminalEventContext,
+  end: TerminalSessionEndV1,
+): KernelEventV1 {
+  return buildTerminalKernelEvent(context, "terminal_session_end", end)
 }
 
 export function reduceTerminalRegistry(events: readonly KernelEventV1[]): TerminalRegistrySnapshotV1 {

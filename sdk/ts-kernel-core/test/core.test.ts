@@ -2,6 +2,10 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import {
+  buildTerminalInteractionEvent,
+  buildTerminalOutputDeltaEvents,
+  buildTerminalSessionBeginEvent,
+  buildTerminalSessionEndEvent,
   buildExecutionCapabilityFromRunRequest,
   buildExecutionPlacement,
   buildEffectiveToolSurface,
@@ -210,6 +214,94 @@ test("kernel core can reduce terminal registry and effective tool surface", () =
     projectionProfileId: "host_callbacks",
   })
   assert.deepEqual(surface.tool_ids, ["cuda.profile.capture"])
+})
+
+test("kernel core can wrap terminal lifecycle payloads into canonical events", () => {
+  const descriptor = {
+    schema_version: "bb.terminal_session_descriptor.v1",
+    terminal_session_id: "term-2",
+    startup_call_id: "call-start-2",
+    command: ["bash", "-lc", "sleep 30"] as string[],
+    stream_mode: "pipes",
+    persistence_scope: "thread",
+    continuation_scope: "both",
+  } as const
+  const begin = buildTerminalSessionBeginEvent(
+    {
+      runId: "run-term-2",
+      sessionId: "sess-term-2",
+      eventId: "evt-term-begin",
+      seq: 1,
+      ts: "2026-03-10T01:00:00Z",
+      callId: "call-start-2",
+    },
+    descriptor,
+  )
+  const interaction = buildTerminalInteractionEvent(
+    {
+      runId: "run-term-2",
+      sessionId: "sess-term-2",
+      eventId: "evt-term-interact",
+      seq: 2,
+      ts: "2026-03-10T01:00:01Z",
+      callId: "call-continue-2",
+    },
+    {
+      schema_version: "bb.terminal_interaction.v1",
+      terminal_session_id: "term-2",
+      startup_call_id: "call-start-2",
+      causing_call_id: "call-continue-2",
+      interaction_kind: "stdin",
+      input_b64: Buffer.from("hello\n", "utf8").toString("base64"),
+      signal: null,
+    },
+  )
+  const deltas = buildTerminalOutputDeltaEvents(
+    {
+      runId: "run-term-2",
+      sessionId: "sess-term-2",
+      ts: "2026-03-10T01:00:02Z",
+      callId: "call-continue-2",
+      startingSeq: 3,
+      eventIdForSeq: (seq) => `evt-term-delta-${seq}`,
+    },
+    [
+      {
+        schema_version: "bb.terminal_output_delta.v1",
+        terminal_session_id: "term-2",
+        startup_call_id: "call-start-2",
+        causing_call_id: "call-continue-2",
+        stream: "stdout",
+        chunk_b64: Buffer.from("echo:hello\n", "utf8").toString("base64"),
+        chunk_seq: 0,
+      },
+    ],
+  )
+  const end = buildTerminalSessionEndEvent(
+    {
+      runId: "run-term-2",
+      sessionId: "sess-term-2",
+      eventId: "evt-term-end",
+      seq: 4,
+      ts: "2026-03-10T01:00:03Z",
+      callId: "call-continue-2",
+    },
+    {
+      schema_version: "bb.terminal_session_end.v1",
+      terminal_session_id: "term-2",
+      startup_call_id: "call-start-2",
+      causing_call_id: "call-continue-2",
+      terminal_state: "completed",
+      exit_code: 0,
+    },
+  )
+
+  const registry = reduceTerminalRegistry([begin, interaction, ...deltas, end])
+  assert.equal(interaction.kind, "terminal_interaction")
+  assert.equal(deltas[0]?.kind, "terminal_output_delta")
+  assert.equal(end.kind, "terminal_session_end")
+  assert.equal(registry.active_sessions.length, 0)
+  assert.deepEqual(registry.ended_session_ids, ["term-2"])
 })
 
 test("kernel core can execute a constrained static text turn", () => {

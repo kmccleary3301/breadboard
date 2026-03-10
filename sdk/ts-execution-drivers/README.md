@@ -9,6 +9,7 @@ This package owns:
 - side-effect expectation helpers
 - evidence expectation helpers
 - unsupported-case helpers for execution-driver negotiation
+- persistent terminal-session driver contracts
 
 This package does not own:
 - kernel truth
@@ -24,3 +25,12 @@ The intended layering is:
 4. Driver-specific packages build backend-shaped sandbox requests.
 5. Backend execution returns a `bb.sandbox_result.v1` that the kernel can interpret without
    learning backend-private lifecycle details.
+
+For persistent terminal/process sessions, driver packages may additionally expose:
+
+- terminal session startup
+- stdin / poll / signal interactions
+- derived registry snapshots
+- cleanup/control results
+
+Those flows remain distinct from one-shot sandbox execution.

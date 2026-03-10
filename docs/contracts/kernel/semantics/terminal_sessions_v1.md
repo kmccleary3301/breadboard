@@ -78,3 +78,18 @@ The first-pass schema set should likely include:
 - public dossiers/configs should expose terminal-session shape explicitly through a
   `terminal_sessions:` section, even when a given lane is only documenting rather than freezing
   that surface
+
+## Current implementation notes
+
+The first shipped runtime tranche now includes:
+
+- shared terminal-session driver contracts in `@breadboard/execution-drivers`
+- a trusted-local process-backed session manager in `@breadboard/execution-driver-local`
+- kernel-core helpers that wrap begin / interaction / delta / end payloads into canonical kernel events
+- a terminal registry reducer that remains a derived projection rather than canonical truth
+
+This is intentionally the first runtime slice, not the final parity claim:
+
+- the trusted-local path is pipes-backed rather than PTY-backed
+- stronger OCI / remote session drivers remain follow-on work
+- Codex-background-terminal E4 claims still require frozen golden/conformance lanes on top of these primitives
