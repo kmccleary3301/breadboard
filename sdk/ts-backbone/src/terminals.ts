@@ -37,11 +37,66 @@ import type {
   BackboneTerminalCleanupResult,
   BackboneTerminalInteractionInput,
   BackboneTerminalInteractionResult,
+  BackboneTerminalSessionView,
   BackboneTerminalStartInput,
   BackboneTerminalStartResult,
   SupportClaim,
 } from "./types.js"
 import { buildSupportClaim } from "./support.js"
+
+function createTerminalSessionView(options: {
+  api: BackboneTerminalApi
+  descriptor: TerminalSessionDescriptorV1
+  supportClaim: SupportClaim
+  executionProfileId: ExecutionProfileId
+}): BackboneTerminalSessionView {
+  return {
+    descriptor: options.descriptor,
+    supportClaim: options.supportClaim,
+    executionProfileId: options.executionProfileId,
+    poll(input = {}) {
+      return options.api.interact({
+        terminalSessionId: options.descriptor.terminal_session_id,
+        executionProfileId: options.executionProfileId,
+        interactionKind: "poll",
+        settleMs: input.settleMs,
+        causingCallId: input.causingCallId ?? null,
+      })
+    },
+    writeStdin(inputText, input = {}) {
+      return options.api.interact({
+        terminalSessionId: options.descriptor.terminal_session_id,
+        executionProfileId: options.executionProfileId,
+        interactionKind: "stdin",
+        inputText,
+        causingCallId: input.causingCallId ?? null,
+        settleMs: input.settleMs,
+      })
+    },
+    sendSignal(signal, input = {}) {
+      return options.api.interact({
+        terminalSessionId: options.descriptor.terminal_session_id,
+        executionProfileId: options.executionProfileId,
+        interactionKind: "signal",
+        signal,
+        causingCallId: input.causingCallId ?? null,
+      })
+    },
+    snapshot() {
+      return options.api.snapshot({
+        executionProfileId: options.executionProfileId,
+      })
+    },
+    cleanup(input = {}) {
+      return options.api.cleanup({
+        scope: "single",
+        executionProfileId: options.executionProfileId,
+        sessionIds: [options.descriptor.terminal_session_id],
+        signal: input.signal ?? null,
+      })
+    },
+  }
+}
 
 function buildTerminalCapability(input: {
   profileId: ExecutionProfileId
@@ -221,7 +276,7 @@ export function createBackboneTerminalApi(options: {
   remoteHttp?: RemoteExecutionHttpOptions
   ociTerminalAdapter?: OciTerminalSessionAdapter
 }): BackboneTerminalApi {
-  return {
+  const api: BackboneTerminalApi = {
     reduceRegistry(events) {
       return reduceTerminalRegistry(events)
     },
@@ -258,6 +313,7 @@ export function createBackboneTerminalApi(options: {
           }),
           descriptor: null,
           outputDeltas: [],
+          session: null,
         }
       }
       const startInput: TerminalSessionStartInputV1 = {
@@ -280,6 +336,12 @@ export function createBackboneTerminalApi(options: {
         descriptor: result.descriptor,
         outputDeltas: result.outputDeltas,
         end: result.end,
+        session: createTerminalSessionView({
+          api,
+          descriptor: result.descriptor,
+          supportClaim: resolved.claim,
+          executionProfileId,
+        }),
       }
     },
     async interact(input) {
@@ -300,6 +362,7 @@ export function createBackboneTerminalApi(options: {
           }),
           interaction: null,
           outputDeltas: [],
+          end: undefined,
         }
       }
       const result = await resolved.driver.interactTerminalSession({
@@ -373,4 +436,5 @@ export function createBackboneTerminalApi(options: {
       }
     },
   }
+  return api
 }

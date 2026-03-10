@@ -1,0 +1,90 @@
+# Internal Phase 14 Codex background-terminal parity-prep lane
+# -----------------------------------------------------------------------------
+# This config is intentionally not a public top-level dossier yet.
+# Its job is to make the new terminal-session and tool-binding primitives easy
+# to review together while the surface is still in draft-semantic conformance.
+
+version: 2
+profile:
+  name: codex-background-terminals-phase14-v1
+
+workspace:
+  root: ./agent_ws
+  sandbox:
+    driver: process
+
+providers:
+  default_model: openai/gpt-5.1-codex-mini
+  routing:
+    disable_native_tools_on_probe_failure: true
+    disable_stream_on_probe_failure: true
+  models:
+  - id: openai/gpt-5.1-codex-mini
+    adapter: openai
+    params:
+      temperature: 0.2
+      top_p: 0.9
+
+provider_tools:
+  use_native: true
+  suppress_prompts: false
+  api_variant: responses
+
+tool_packs:
+  background-terminals:
+    description: Codex-style persistent background terminals
+    tool_ids:
+    - exec_command
+    - write_stdin
+    exposure: interactive_terminal_protocol
+    support_status: parity_prep_not_frozen
+
+tool_bindings:
+  - id: codex.terminal.process_session
+    tool_id: exec_command
+    binding_kind: sandbox
+    execution_profile: trusted_local
+    placement: workspace_local
+    exposure: interactive_terminal_protocol
+    support_status: parity_prep_not_frozen
+    # `exec_command` is the terminal-session startup tool. The binding resolves
+    # to a persistent process-backed session instead of one-shot sandbox exec.
+  - id: codex.terminal.stdin_continuation
+    tool_id: write_stdin
+    binding_kind: sandbox
+    execution_profile: trusted_local
+    placement: workspace_local
+    exposure: interactive_terminal_protocol
+    support_status: parity_prep_not_frozen
+    # `write_stdin` continues an existing terminal session. Poll remains a
+    # kernel interaction kind and can be projected Codex-style later.
+
+terminal_sessions:
+  enabled: true
+  support_status: parity_prep_not_frozen
+  startup_tool: exec_command
+  continuation_tool: write_stdin
+  interaction_kinds:
+  - stdin
+  - poll
+  - signal
+  registry_surface:
+    model_visible_summary: true
+    host_listing_command: /ps
+  cleanup_surface:
+    host_cleanup_command: /clean
+  session_identity:
+    kernel_session_id: explicit
+    public_handle: explicit
+    backend_handle: explicit
+
+replay:
+  strictness: draft_semantic
+  evidence:
+    fixtures:
+    - ../../conformance/engine_fixtures/terminal_session/codex_background_start_fixture.json
+    - ../../conformance/engine_fixtures/terminal_session/codex_background_write_fixture.json
+    - ../../conformance/engine_fixtures/terminal_session/codex_background_poll_fixture.json
+    - ../../conformance/engine_fixtures/terminal_session/codex_background_list_fixture.json
+    - ../../conformance/engine_fixtures/terminal_session/codex_background_cleanup_fixture.json
+    - ../../conformance/engine_fixtures/effective_tool_surface/codex_background_terminal_surface_fixture.json

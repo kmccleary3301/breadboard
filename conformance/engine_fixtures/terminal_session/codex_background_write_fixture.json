@@ -1,0 +1,15 @@
+{
+  "fixture_family": "terminal_session",
+  "fixture_id": "codex_background_write_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "draft-semantic",
+  "contract": "bb.terminal_interaction.v1",
+  "reference_output": {
+    "schema_version": "bb.terminal_interaction.v1",
+    "terminal_session_id": "codex_term_bg_01",
+    "startup_call_id": "call_exec_background_codex_01",
+    "causing_call_id": "call_write_background_codex_01",
+    "interaction_kind": "stdin",
+    "input_b64": "c3RhdHVzCg=="
+  }
+}

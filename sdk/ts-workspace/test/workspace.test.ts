@@ -4,6 +4,7 @@ import assert from "node:assert/strict"
 import {
   buildWorkspaceCapabilitySet,
   createWorkspace,
+  shapeTerminalOutput,
   shapeToolOutput,
   stripAnsi,
   supportsExecutionProfile,
@@ -19,6 +20,12 @@ test("shapeToolOutput truncates while preserving head and tail", () => {
   assert.equal(shaped.truncated, true)
   assert.match(shaped.userVisibleText, /\.\.\./)
   assert.ok(shaped.modelVisibleText.length <= 603)
+})
+
+test("shapeTerminalOutput records chunk count while preserving shaping semantics", () => {
+  const shaped = shapeTerminalOutput("terminal output", { chunkCount: 3 })
+  assert.equal(shaped.chunkCount, 3)
+  assert.equal(shaped.userVisibleText, "terminal output")
 })
 
 test("workspace capability defaults choose trusted_local when available", () => {
@@ -52,4 +59,15 @@ test("workspace returns rich execution profile metadata", () => {
   assert.equal(profile.securityTierHint, "multi_tenant")
   assert.equal(profile.backendHint, "remote")
   assert.ok(profile.recommendedFor.includes("remote workers"))
+})
+
+test("workspace exposes terminal output shaping", () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-3",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const shaped = workspace.shapeTerminalOutput("hello", { chunkCount: 2 })
+  assert.equal(shaped.chunkCount, 2)
+  assert.equal(shaped.userVisibleText, "hello")
+  assert.equal(shaped.modelVisibleText, "hello")
 })

@@ -523,6 +523,61 @@
     {
       "engineFamily": "python_reference",
       "engineRef": "working-tree",
+      "scenarioId": "codex_background_terminal_start_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "terminal_session/codex_background_start_fixture.json"
+      ],
+      "notes": "Codex-shaped background-terminal start descriptor using the new persistent terminal-session family."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "codex_background_terminal_write_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "terminal_session/codex_background_write_fixture.json"
+      ],
+      "notes": "Codex-shaped stdin continuation interaction for a persistent background terminal."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "codex_background_terminal_poll_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "terminal_session/codex_background_poll_fixture.json"
+      ],
+      "notes": "Codex-shaped poll interaction for a persistent background terminal."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "codex_background_terminal_list_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "projection-equal",
+      "evidence": [
+        "terminal_session/codex_background_list_fixture.json"
+      ],
+      "notes": "Codex-shaped derived listing projection for active background terminals."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "codex_background_terminal_cleanup_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "projection-equal",
+      "evidence": [
+        "terminal_session/codex_background_cleanup_fixture.json"
+      ],
+      "notes": "Codex-shaped cleanup projection for background terminal sessions."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
       "scenarioId": "effective_tool_surface_minimal",
       "supportTier": "draft-shape",
       "comparatorClass": "shape-equal",
@@ -552,6 +607,17 @@
         "effective_tool_surface/reference_hidden_terminal_fixture.json"
       ],
       "notes": "Reference effective tool surface where terminal-session tools are hidden by environment support."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "codex_background_terminal_surface_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "projection-equal",
+      "evidence": [
+        "effective_tool_surface/codex_background_terminal_surface_fixture.json"
+      ],
+      "notes": "Codex-shaped effective tool surface exposing the background-terminal tool pair."
     }
   ]
 }

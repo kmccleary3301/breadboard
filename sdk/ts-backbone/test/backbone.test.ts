@@ -180,14 +180,18 @@ test("BackboneSession can classify and drive a local terminal session lifecycle"
     command: ["/bin/bash", "-lc", "printf 'ready\\n'; sleep 0.5"],
   })
   assert.ok(started.descriptor)
+  assert.ok(started.session)
+  assert.equal(started.session?.descriptor.terminal_session_id, started.descriptor?.terminal_session_id)
+  assert.equal(started.session?.supportClaim.level, "supported")
+  assert.equal(started.session?.executionProfileId, "trusted_local")
 
-  const interacted = await session.terminals.interact({
-    terminalSessionId: started.descriptor!.terminal_session_id,
-    interactionKind: "poll",
-    settleMs: 25,
-  })
+  const interacted = await started.session!.poll({ settleMs: 25 })
   assert.ok(interacted.outputDeltas.length >= 1)
 
-  const snapshot = await session.terminals.snapshot()
+  const snapshot = await started.session!.snapshot()
   assert.ok(snapshot.snapshot)
+
+  const cleanup = await started.session!.cleanup()
+  assert.ok(cleanup.result)
+  assert.deepEqual(cleanup.result.cleaned_session_ids, [started.session!.descriptor.terminal_session_id])
 })

@@ -38,6 +38,10 @@ export interface ToolOutputShape {
   readonly artifactRefs: readonly WorkspaceArtifactRef[]
 }
 
+export interface TerminalOutputShape extends ToolOutputShape {
+  readonly chunkCount: number
+}
+
 export interface ToolOutputShaperOptions {
   readonly maxChars?: number
   readonly headChars?: number
@@ -60,6 +64,7 @@ export interface Workspace {
   readonly defaultExecutionProfileId: ExecutionProfileId
   readonly defaultExecutionProfile: ExecutionProfile
   shapeToolOutput(text: string, options?: ToolOutputShaperOptions): ToolOutputShape
+  shapeTerminalOutput(text: string, options?: ToolOutputShaperOptions & { chunkCount?: number }): TerminalOutputShape
   supportsProfile(profileId: ExecutionProfileId): boolean
   getExecutionProfile(profileId?: ExecutionProfileId): ExecutionProfile
 }

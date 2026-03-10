@@ -3,6 +3,7 @@ import {
   buildTerminalCleanupResult,
   reduceTerminalRegistry,
   resolveEffectiveToolSurface,
+  resolveToolBindings,
   executeDriverMediatedToolTurn,
   executeProviderTextContinuationTurn,
   executeProviderTextTurn,
@@ -31,6 +32,9 @@ function makeBackboneSession(options: BackboneOptions, descriptor: HostSessionDe
       },
       resolveEffectiveSurface(input) {
         return resolveEffectiveToolSurface(input)
+      },
+      resolveBindings(input) {
+        return resolveToolBindings(input)
       },
     },
     classifyProviderTurn(input: ProviderTurnInput) {

@@ -8,6 +8,12 @@ import {
   type ToolSupportClaimV1,
 } from "@breadboard/kernel-contracts"
 
+export interface ToolPackDefinition {
+  readonly packId: string
+  readonly toolIds: readonly string[]
+  readonly bindingIds?: readonly string[]
+}
+
 export interface EffectiveToolSurfaceResolutionInput {
   readonly surfaceId: string
   readonly bindings: readonly ToolBindingV1[]
@@ -19,6 +25,14 @@ export interface EffectiveToolSurfaceResolutionInput {
   readonly imageId?: string | null
   readonly serviceIds?: readonly string[]
   readonly features?: readonly string[]
+  readonly toolPacks?: readonly ToolPackDefinition[]
+  readonly activePackIds?: readonly string[]
+}
+
+export interface ResolvedToolBinding {
+  readonly toolId: string
+  readonly binding: ToolBindingV1
+  readonly claim: ToolSupportClaimV1 | null
 }
 
 function matchesSelector(
@@ -59,24 +73,134 @@ function buildSurfaceHash(toolIds: readonly string[], bindingIds: readonly strin
     .digest("hex")}`
 }
 
-export function resolveEffectiveToolSurface(input: EffectiveToolSurfaceResolutionInput): EffectiveToolSurfaceV1 {
+function buildActivePackSets(input: EffectiveToolSurfaceResolutionInput): {
+  toolIds: Set<string> | null
+  bindingIds: Set<string> | null
+} {
+  if (!input.toolPacks?.length) {
+    return { toolIds: null, bindingIds: null }
+  }
+  const activePackIds = new Set(input.activePackIds ?? input.toolPacks.map((pack) => pack.packId))
+  const toolIds = new Set<string>()
+  const bindingIds = new Set<string>()
+  for (const pack of input.toolPacks) {
+    if (!activePackIds.has(pack.packId)) continue
+    for (const toolId of pack.toolIds) toolIds.add(toolId)
+    for (const bindingId of pack.bindingIds ?? []) bindingIds.add(bindingId)
+  }
+  return { toolIds, bindingIds }
+}
+
+function claimPriority(claim: ToolSupportClaimV1 | null): number {
+  switch (claim?.level) {
+    case "supported":
+      return 4
+    case "degraded":
+      return 3
+    case "install_required":
+      return 2
+    case "unsupported":
+      return 1
+    default:
+      return 0
+  }
+}
+
+function isModelVisibleClaim(claim: ToolSupportClaimV1 | null): boolean {
+  if (!claim) return false
+  if (claim.level === "hidden") return false
+  if (claim.exposed_to_model === false) return false
+  return true
+}
+
+function chooseBindingForTool(options: {
+  readonly toolId: string
+  readonly candidates: readonly ToolBindingV1[]
+  readonly claimByBindingId: ReadonlyMap<string, ToolSupportClaimV1>
+  readonly claimsByToolId: ReadonlyMap<string, readonly ToolSupportClaimV1[]>
+}): ResolvedToolBinding | null {
+  const queue = [...options.candidates]
+  const seen = new Set<string>()
+  let best: ResolvedToolBinding | null = null
+
+  while (queue.length > 0) {
+    const binding = queue.shift()!
+    if (seen.has(binding.binding_id)) continue
+    seen.add(binding.binding_id)
+
+    const claim =
+      options.claimByBindingId.get(binding.binding_id) ??
+      options.claimsByToolId.get(options.toolId)?.find((candidate) => candidate.binding_id === binding.binding_id) ??
+      options.claimsByToolId.get(options.toolId)?.[0] ??
+      null
+
+    if (isModelVisibleClaim(claim) && (!best || claimPriority(claim) > claimPriority(best.claim))) {
+      best = { toolId: options.toolId, binding, claim }
+    }
+
+    for (const fallbackId of binding.fallback_binding_ids ?? []) {
+      const fallback = options.candidates.find((candidate) => candidate.binding_id === fallbackId)
+      if (fallback && !seen.has(fallback.binding_id)) {
+        queue.push(fallback)
+      }
+    }
+  }
+
+  return best
+}
+
+export function resolveToolBindings(input: EffectiveToolSurfaceResolutionInput): ResolvedToolBinding[] {
   const visibleClaims = input.claims.filter((claim) => claim.level !== "hidden")
-  const claimByBinding = new Map(
-    visibleClaims
-      .filter((claim) => typeof claim.binding_id === "string" && claim.binding_id.length > 0)
-      .map((claim) => [claim.binding_id!, claim]),
-  )
-  const activeBindings = input.bindings.filter((binding) => {
-    if (!matchesSelector(binding.environment_selector ?? null, input)) {
+  const claimsByToolId = new Map<string, ToolSupportClaimV1[]>()
+  const claimByBindingId = new Map<string, ToolSupportClaimV1>()
+  for (const claim of visibleClaims) {
+    const existing = claimsByToolId.get(claim.tool_id) ?? []
+    claimsByToolId.set(claim.tool_id, [...existing, claim])
+    if (claim.binding_id) {
+      claimByBindingId.set(claim.binding_id, claim)
+    }
+  }
+
+  const activePackSets = buildActivePackSets(input)
+  const scopedBindings = input.bindings.filter((binding) => {
+    if (activePackSets.toolIds && !activePackSets.toolIds.has(binding.tool_id)) {
       return false
     }
-    const claim = claimByBinding.get(binding.binding_id)
-    return claim != null || visibleClaims.some((visible) => visible.tool_id === binding.tool_id)
+    if (activePackSets.bindingIds && activePackSets.bindingIds.size > 0 && !activePackSets.bindingIds.has(binding.binding_id)) {
+      return false
+    }
+    return matchesSelector(binding.environment_selector ?? null, input)
   })
-  const toolIds = [...new Set(activeBindings.map((binding) => binding.tool_id))]
-  const bindingIds = activeBindings.map((binding) => binding.binding_id)
+
+  const bindingsByToolId = new Map<string, ToolBindingV1[]>()
+  for (const binding of scopedBindings) {
+    const existing = bindingsByToolId.get(binding.tool_id) ?? []
+    bindingsByToolId.set(binding.tool_id, [...existing, binding])
+  }
+
+  return [...bindingsByToolId.entries()]
+    .map(([toolId, candidates]) =>
+      chooseBindingForTool({
+        toolId,
+        candidates,
+        claimByBindingId,
+        claimsByToolId,
+      }),
+    )
+    .filter((resolved): resolved is ResolvedToolBinding => resolved != null)
+}
+
+export function resolveEffectiveToolSurface(input: EffectiveToolSurfaceResolutionInput): EffectiveToolSurfaceV1 {
+  const resolvedBindings = resolveToolBindings(input)
+  const toolIds = resolvedBindings.map((resolved) => resolved.toolId)
+  const bindingIds = resolvedBindings.map((resolved) => resolved.binding.binding_id)
   const hiddenToolIds = input.claims
-    .filter((claim) => claim.level === "hidden" || claim.hidden_reason === "selector_mismatch")
+    .filter(
+      (claim) =>
+        claim.level === "hidden" ||
+        claim.hidden_reason === "selector_mismatch" ||
+        claim.exposed_to_model === false,
+    )
     .map((claim) => claim.tool_id)
 
   return assertValid<EffectiveToolSurfaceV1>("effectiveToolSurface", {

@@ -2,14 +2,19 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import {
+  buildBackboneTerminalCleanupView,
+  buildBackboneTerminalOutputView,
   buildBackboneEffectiveToolSurfaceView,
   buildBackboneTerminalCleanupResult,
   buildBackboneTerminalRegistryView,
+  buildTerminalCleanupView,
+  buildTerminalOutputView,
   buildEffectiveToolSurfaceView,
   buildHostProjectionEnvelope,
   buildHostResultMeta,
   buildHostTranscriptProjection,
   buildTerminalRegistryView,
+  buildTerminalSessionView,
   buildProviderHostTurnView,
   resolveProviderHostTurnView,
   buildFallbackHostKitInvocation,
@@ -159,6 +164,9 @@ test("createProviderHostSession preserves transcript continuity and projection s
         buildEffectiveSurface() {
           throw new Error("not used in this test")
         },
+        resolveBindings() {
+          throw new Error("not used in this test")
+        },
       },
       classifyProviderTurn() {
         return supportedClaim
@@ -293,6 +301,16 @@ test("buildHostTranscriptProjection extracts assistant text and tool previews", 
 })
 
 test("Host Kit can build terminal and tool-surface views", () => {
+  const sessionView = buildTerminalSessionView({
+    schema_version: "bb.terminal_session_descriptor.v1",
+    terminal_session_id: "term-raw-1",
+    command: ["bash", "-lc", "echo hi"],
+    stream_mode: "pipes",
+    persistence_scope: "thread",
+    continuation_scope: "both",
+  })
+  assert.equal(sessionView.commandSummary, "bash -lc echo hi")
+
   const terminalView = buildTerminalRegistryView({
     schema_version: "bb.terminal_registry_snapshot.v1",
     snapshot_id: "term-reg:1",
@@ -309,6 +327,36 @@ test("Host Kit can build terminal and tool-surface views", () => {
     ended_session_ids: ["term-0"],
   })
   assert.equal(terminalView.activeSessions[0]?.commandSummary, "bash -lc sleep 30")
+
+  const workspace = createWorkspace({
+    workspaceId: "ws-term",
+    rootDir: "/tmp/project",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const outputView = buildTerminalOutputView({
+    outputDeltas: [
+      {
+        schema_version: "bb.terminal_output_delta.v1",
+        terminal_session_id: "term-1",
+        stream: "stdout",
+        chunk_b64: Buffer.from("ready\n", "utf8").toString("base64"),
+        chunk_seq: 0,
+      },
+    ],
+    workspace,
+  })
+  assert.equal(outputView.text, "ready\n")
+  assert.equal(outputView.shape?.chunkCount, 1)
+
+  const cleanupView = buildTerminalCleanupView({
+    schema_version: "bb.terminal_cleanup_result.v1",
+    cleanup_id: "cleanup-raw-1",
+    scope: "filtered",
+    cleaned_session_ids: ["term-1"],
+    failed_session_ids: ["term-2"],
+  })
+  assert.equal(cleanupView.cleanedCount, 1)
+  assert.equal(cleanupView.failedCount, 1)
 
   const surfaceView = buildEffectiveToolSurfaceView({
     schema_version: "bb.effective_tool_surface.v1",
@@ -359,6 +407,25 @@ test("Host Kit can project terminal and tool surfaces through Backbone", () => {
     cleanedSessionIds: ["term-1"],
   })
   assert.deepEqual(cleanup.cleaned_session_ids, ["term-1"])
+  const cleanupView = buildBackboneTerminalCleanupView(session, {
+    cleanupId: "cleanup-1",
+    scope: "all",
+    cleanedSessionIds: ["term-1"],
+  })
+  assert.equal(cleanupView.cleanedCount, 1)
+  assert.deepEqual(cleanupView.cleanedSessionIds, ["term-1"])
+
+  const outputView = buildBackboneTerminalOutputView(session, [
+    {
+      schema_version: "bb.terminal_output_delta.v1",
+      terminal_session_id: "term-1",
+      stream: "stdout",
+      chunk_b64: Buffer.from("ready\\n", "utf8").toString("base64"),
+      chunk_seq: 0,
+    },
+  ])
+  assert.equal(outputView.text, "ready\\n")
+  assert.equal(outputView.shape?.chunkCount, 1)
 
   const surfaceView = buildBackboneEffectiveToolSurfaceView(session, {
     surfaceId: "surface-1",
@@ -382,6 +449,63 @@ test("Host Kit can project terminal and tool surfaces through Backbone", () => {
     ],
   })
   assert.deepEqual(surfaceView.visibleToolIds, ["firecrawl.local"])
+})
+
+test("Host Kit can resolve terminal session, output, and cleanup views consistently", () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-hostkit",
+    rootDir: "/tmp/project",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+
+  const sessionView = buildTerminalSessionView({
+    schema_version: "bb.terminal_session_descriptor.v1",
+    terminal_session_id: "term-view-1",
+    command: ["bash", "-lc", "python profiler.py"],
+    stream_mode: "pty",
+    persistence_scope: "thread",
+    continuation_scope: "both",
+    startup_call_id: "call-start-1",
+  })
+  assert.equal(sessionView.terminalSessionId, "term-view-1")
+  assert.equal(sessionView.commandSummary, "bash -lc python profiler.py")
+
+  const outputView = buildTerminalOutputView({
+    outputDeltas: [
+      {
+        schema_version: "bb.terminal_output_delta.v1",
+        terminal_session_id: "term-view-1",
+        startup_call_id: "call-start-1",
+        causing_call_id: "call-poll-1",
+        stream: "stdout",
+        chunk_b64: Buffer.from("trace ready\n", "utf8").toString("base64"),
+        chunk_seq: 0,
+      },
+      {
+        schema_version: "bb.terminal_output_delta.v1",
+        terminal_session_id: "term-view-1",
+        startup_call_id: "call-start-1",
+        causing_call_id: "call-poll-1",
+        stream: "stdout",
+        chunk_b64: Buffer.from("capturing...\n", "utf8").toString("base64"),
+        chunk_seq: 1,
+      },
+    ],
+    workspace,
+  })
+  assert.equal(outputView.text, "trace ready\ncapturing...\n")
+  assert.equal(outputView.shape?.chunkCount, 2)
+
+  const cleanupView = buildTerminalCleanupView({
+    schema_version: "bb.terminal_cleanup_result.v1",
+    cleanup_id: "cleanup-view-1",
+    scope: "filtered",
+    cleaned_session_ids: ["term-view-1"],
+    failed_session_ids: ["term-view-2"],
+  })
+  assert.equal(cleanupView.cleanedCount, 1)
+  assert.equal(cleanupView.failedCount, 1)
+  assert.deepEqual(cleanupView.failedSessionIds, ["term-view-2"])
 })
 
 test("emitHostProjectionCallbacks replays projected assistant text, tool previews, and agent events", async () => {

@@ -11,8 +11,11 @@ import type {
   SessionTranscriptV1,
   SessionTranscriptV1Item,
   TerminalCleanupResultV1,
+  TerminalOutputDeltaV1,
   TerminalRegistrySnapshotV1,
+  TerminalSessionDescriptorV1,
 } from "@breadboard/kernel-contracts"
+import type { TerminalOutputShape, Workspace } from "@breadboard/workspace"
 
 export type HostKitMode = "supported" | "fallback"
 
@@ -115,6 +118,20 @@ export interface HostTerminalSessionView {
   readonly commandSummary: string
   readonly persistenceScope: string
   readonly continuationScope: string
+}
+
+export interface HostTerminalOutputView {
+  readonly text: string
+  readonly shape: TerminalOutputShape | null
+}
+
+export interface HostTerminalCleanupView {
+  readonly cleanupId: string
+  readonly scope: string
+  readonly cleanedCount: number
+  readonly failedCount: number
+  readonly cleanedSessionIds: readonly string[]
+  readonly failedSessionIds: readonly string[]
 }
 
 export interface HostTerminalRegistryView {
@@ -365,13 +382,63 @@ export function buildTerminalRegistryView(
 ): HostTerminalRegistryView {
   return {
     snapshotId: snapshot.snapshot_id,
-    activeSessions: snapshot.active_sessions.map((session) => ({
-      terminalSessionId: session.terminal_session_id,
-      commandSummary: session.command.join(" "),
-      persistenceScope: session.persistence_scope,
-      continuationScope: session.continuation_scope,
-    })),
+    activeSessions: snapshot.active_sessions.map((session) => buildTerminalSessionView(session)),
     endedSessionIds: snapshot.ended_session_ids ?? [],
+  }
+}
+
+export function buildTerminalSessionView(
+  descriptor: TerminalSessionDescriptorV1,
+): HostTerminalSessionView {
+  return {
+    terminalSessionId: descriptor.terminal_session_id,
+    commandSummary: descriptor.command.join(" "),
+    persistenceScope: descriptor.persistence_scope,
+    continuationScope: descriptor.continuation_scope,
+  }
+}
+
+function decodeTerminalOutputText(outputDeltas: readonly TerminalOutputDeltaV1[]): string {
+  return outputDeltas
+    .map((delta) => Buffer.from(delta.chunk_b64, "base64").toString("utf8"))
+    .join("")
+}
+
+export function buildTerminalOutputView(options: {
+  readonly outputDeltas: readonly TerminalOutputDeltaV1[]
+  readonly workspace?: Workspace | null
+}): HostTerminalOutputView {
+  const text = decodeTerminalOutputText(options.outputDeltas)
+  return {
+    text,
+    shape: options.workspace ? options.workspace.shapeTerminalOutput(text, { chunkCount: options.outputDeltas.length }) : null,
+  }
+}
+
+/**
+ * Convenience helper for hosts that want to shape terminal output through Backbone while keeping
+ * workspace-aware output shaping at the product layer.
+ */
+export function buildBackboneTerminalOutputView(
+  session: BackboneSession,
+  outputDeltas: readonly TerminalOutputDeltaV1[],
+): HostTerminalOutputView {
+  return buildTerminalOutputView({
+    outputDeltas,
+    workspace: session.workspace,
+  })
+}
+
+export function buildTerminalCleanupView(
+  result: TerminalCleanupResultV1,
+): HostTerminalCleanupView {
+  return {
+    cleanupId: result.cleanup_id,
+    scope: result.scope,
+    cleanedCount: result.cleaned_session_ids.length,
+    failedCount: result.failed_session_ids?.length ?? 0,
+    cleanedSessionIds: result.cleaned_session_ids,
+    failedSessionIds: result.failed_session_ids ?? [],
   }
 }
 
@@ -409,6 +476,13 @@ export function buildBackboneTerminalCleanupResult(
   input: TerminalCleanupInput,
 ): TerminalCleanupResultV1 {
   return session.terminals.buildCleanupResult(input)
+}
+
+export function buildBackboneTerminalCleanupView(
+  session: BackboneSession,
+  input: TerminalCleanupInput,
+): HostTerminalCleanupView {
+  return buildTerminalCleanupView(session.terminals.buildCleanupResult(input))
 }
 
 /**

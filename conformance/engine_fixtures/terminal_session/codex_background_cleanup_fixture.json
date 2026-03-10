@@ -1,0 +1,19 @@
+{
+  "fixture_family": "terminal_session",
+  "fixture_id": "codex_background_cleanup_reference",
+  "comparator_class": "projection-equal",
+  "support_tier": "draft-semantic",
+  "contract": "bb.terminal_cleanup_result.v1",
+  "reference_output": {
+    "schema_version": "bb.terminal_cleanup_result.v1",
+    "cleanup_id": "codex-term-cleanup-01",
+    "scope": "single",
+    "cleaned_session_ids": [
+      "codex_term_bg_01"
+    ],
+    "failed_session_ids": [],
+    "metadata": {
+      "signal": "SIGTERM"
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import type {
   ExecutionProfile,
   ExecutionProfileId,
+  TerminalOutputShape,
   ToolOutputShape,
   ToolOutputShaperOptions,
   Workspace,
@@ -14,6 +15,7 @@ const ANSI_PATTERN = /\u001b\[[0-9;]*m/g
 export type {
   ExecutionProfile,
   ExecutionProfileId,
+  TerminalOutputShape,
   ToolOutputShape,
   ToolOutputShaperOptions,
   Workspace,
@@ -56,6 +58,16 @@ export function shapeToolOutput(text: string, options: ToolOutputShaperOptions =
     modelVisibleText,
     truncated,
     artifactRefs: options.artifactRefs ?? [],
+  }
+}
+
+export function shapeTerminalOutput(
+  text: string,
+  options: ToolOutputShaperOptions & { chunkCount?: number } = {},
+): TerminalOutputShape {
+  return {
+    ...shapeToolOutput(text, options),
+    chunkCount: options.chunkCount ?? 0,
   }
 }
 
@@ -135,6 +147,9 @@ export function createWorkspace(options: WorkspaceOptions): Workspace {
     defaultExecutionProfile,
     shapeToolOutput(text: string, shapeOptions?: ToolOutputShaperOptions): ToolOutputShape {
       return shapeToolOutput(text, shapeOptions)
+    },
+    shapeTerminalOutput(text: string, shapeOptions?: ToolOutputShaperOptions & { chunkCount?: number }): TerminalOutputShape {
+      return shapeTerminalOutput(text, shapeOptions)
     },
     supportsProfile(profileId: ExecutionProfileId): boolean {
       return supportsExecutionProfile(options.capabilitySet, profileId)

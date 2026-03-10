@@ -176,12 +176,18 @@ tool_packs:
     # Upstream Codex also exposes a distinct persistent background-terminal surface. We are
     # deliberately spelling it out in the dossier now so the eventual parity lane remains
     # inspectable and easy to compare line-by-line.
+    #
+    # Phase 14 status:
+    # - contracts are real
+    # - trusted-local runtime slice is real
+    # - parity-prep conformance fixtures now exist
+    # - full frozen E4 parity is still not claimed
     description: upstream Codex persistent terminal-session surface
     tool_ids:
     - exec_command
     - write_stdin
     exposure: interactive_terminal_protocol
-    support_status: planned_not_frozen
+    support_status: parity_prep_not_frozen
 
 tool_bindings:
   # `tool_bindings` answers a different question from `tools.registry.include`.
@@ -217,21 +223,25 @@ tool_bindings:
     execution_profile: trusted_local
     placement: workspace_local
     exposure: interactive_terminal_protocol
-    support_status: planned_not_frozen
+    support_status: parity_prep_not_frozen
+    # Backed today by the new persistent terminal-session primitives and the
+    # trusted-local driver lane. This is now parity-prep, not just planned.
   - id: codex.terminal.stdin_continuation
     tool_id: write_stdin
     binding_kind: sandbox
     execution_profile: trusted_local
     placement: workspace_local
     exposure: interactive_terminal_protocol
-    support_status: planned_not_frozen
+    support_status: parity_prep_not_frozen
+    # Continuation is represented canonically as stdin/signal/poll interactions
+    # over a persistent terminal session, then projected Codex-style as needed.
 
 terminal_sessions:
   # This section is intentionally present before the strict lane fully freezes Codex background
   # terminals. We want the dossier to already reveal the *shape* of the target surface, while
   # being totally honest that the parity lane is still under construction.
   enabled: false
-  support_status: planned_not_frozen
+  support_status: parity_prep_not_frozen
   startup_tool: exec_command
   continuation_tool: write_stdin
   interaction_kinds:
@@ -244,9 +254,13 @@ terminal_sessions:
   cleanup_surface:
     host_cleanup_command: /clean
   session_identity:
-    kernel_session_id: planned
-    public_handle: planned
-    backend_handle: planned
+    kernel_session_id: explicit
+    public_handle: explicit
+    backend_handle: explicit
+  # The strict public lane is still not frozen here, but the surface is no longer just a plan.
+  # Phase 14 now has parity-prep conformance fixtures for start / write / poll / list / cleanup:
+  # - conformance/engine_fixtures/terminal_session/codex_background_*_fixture.json
+  # - conformance/engine_fixtures/effective_tool_surface/codex_background_terminal_surface_fixture.json
 
 # The frozen Codex lane keeps the canonical two-stage loop shape visible even though the exact
 # 2026-03-06 strict replay lane currently has `features.plan: false`.

@@ -101,3 +101,13 @@ The first shipped Phase 14 tranche now includes:
   - a minimal effective tool surface
   - a visible terminal-session-backed effective surface
   - a hidden terminal-tool surface when the environment does not support those bindings
+
+Phase 14 now also includes the first Codex-shaped effective tool-surface fixture for the
+background-terminal pair:
+
+- visible `exec_command`
+- visible `write_stdin`
+- explicit binding ids
+- explicit projection profile
+
+This is still parity-prep evidence, not a frozen E4 claim.

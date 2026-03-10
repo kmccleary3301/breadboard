@@ -108,6 +108,7 @@ export interface BackboneTerminalStartResult {
   readonly descriptor: TerminalSessionDescriptorV1 | null
   readonly outputDeltas: readonly TerminalOutputDeltaV1[]
   readonly end?: import("@breadboard/kernel-contracts").TerminalSessionEndV1
+  readonly session: BackboneTerminalSessionView | null
 }
 
 export interface BackboneTerminalInteractionInput {
@@ -149,6 +150,20 @@ export interface BackboneTerminalCleanupResult {
   readonly result: TerminalCleanupResultV1 | null
 }
 
+export interface BackboneTerminalSessionView {
+  readonly descriptor: TerminalSessionDescriptorV1
+  readonly supportClaim: SupportClaim
+  readonly executionProfileId: ExecutionProfileId
+  poll(options?: { settleMs?: number; causingCallId?: string | null }): Promise<BackboneTerminalInteractionResult>
+  writeStdin(
+    inputText: string,
+    options?: { causingCallId?: string | null; settleMs?: number },
+  ): Promise<BackboneTerminalInteractionResult>
+  sendSignal(signal: string, options?: { causingCallId?: string | null }): Promise<BackboneTerminalInteractionResult>
+  snapshot(): Promise<BackboneTerminalSnapshotResult>
+  cleanup(options?: { signal?: string | null }): Promise<BackboneTerminalCleanupResult>
+}
+
 export interface EffectiveToolSurfaceInput {
   readonly surfaceId: string
   readonly bindings: ToolBindingV1[]
@@ -163,6 +178,8 @@ export interface EffectiveToolSurfaceResolutionInput extends EffectiveToolSurfac
   readonly imageId?: string | null
   readonly serviceIds?: readonly string[]
   readonly features?: readonly string[]
+  readonly toolPacks?: readonly import("@breadboard/kernel-core").ToolPackDefinition[]
+  readonly activePackIds?: readonly string[]
 }
 
 export interface BackboneTerminalApi {
@@ -178,6 +195,7 @@ export interface BackboneTerminalApi {
 export interface BackboneToolSurfaceApi {
   buildEffectiveSurface(input: EffectiveToolSurfaceInput): EffectiveToolSurfaceV1
   resolveEffectiveSurface(input: EffectiveToolSurfaceResolutionInput): EffectiveToolSurfaceV1
+  resolveBindings(input: EffectiveToolSurfaceResolutionInput): readonly import("@breadboard/kernel-core").ResolvedToolBinding[]
 }
 
 export interface BackboneSession {

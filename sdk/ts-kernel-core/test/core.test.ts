@@ -29,6 +29,7 @@ import {
   normalizeTranscriptContractItem,
   normalizeTranscriptContractItems,
   reduceTerminalRegistry,
+  resolveToolBindings,
 } from "../src/index.js"
 
 test("kernel core helpers remain deterministic", () => {
@@ -214,6 +215,113 @@ test("kernel core can reduce terminal registry and effective tool surface", () =
     projectionProfileId: "host_callbacks",
   })
   assert.deepEqual(surface.tool_ids, ["cuda.profile.capture"])
+})
+
+test("kernel core can resolve tool bindings through packs, fallbacks, and hidden provider-native surfaces", () => {
+  const resolved = resolveToolBindings({
+    surfaceId: "surface-bindings-1",
+    profileId: "trusted_local",
+    providerFamily: "openai",
+    driverClass: "local_process",
+    features: ["terminal_sessions"],
+    serviceIds: ["firecrawl-local"],
+    toolPacks: [
+      {
+        packId: "codex.background-terminals",
+        toolIds: ["exec_command", "write_stdin"],
+        bindingIds: ["bind-term-primary", "bind-stdin-primary", "bind-term-fallback"],
+      },
+    ],
+    activePackIds: ["codex.background-terminals"],
+    bindings: [
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-term-primary",
+        tool_id: "exec_command",
+        binding_kind: "sandbox",
+        environment_selector: {
+          profile_ids: ["sandboxed_local"],
+        },
+        fallback_binding_ids: ["bind-term-fallback"],
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-term-fallback",
+        tool_id: "exec_command",
+        binding_kind: "sandbox",
+        environment_selector: {
+          profile_ids: ["trusted_local"],
+          features: ["terminal_sessions"],
+        },
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-stdin-primary",
+        tool_id: "write_stdin",
+        binding_kind: "sandbox",
+        environment_selector: {
+          profile_ids: ["trusted_local"],
+          features: ["terminal_sessions"],
+        },
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-firecrawl-hidden",
+        tool_id: "firecrawl.local.search",
+        binding_kind: "service",
+        environment_selector: {
+          service_ids: ["firecrawl-local"],
+        },
+      },
+    ],
+    claims: [
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "exec_command",
+        binding_id: "bind-term-primary",
+        level: "unsupported",
+        summary: "sandboxed local terminal unavailable",
+        fallback_available: true,
+        hidden_reason: "selector_mismatch",
+        exposed_to_model: false,
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "exec_command",
+        binding_id: "bind-term-fallback",
+        level: "supported",
+        summary: "trusted local terminal available",
+        fallback_available: false,
+        exposed_to_model: true,
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "write_stdin",
+        binding_id: "bind-stdin-primary",
+        level: "supported",
+        summary: "terminal continuation available",
+        fallback_available: false,
+        exposed_to_model: true,
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "firecrawl.local.search",
+        binding_id: "bind-firecrawl-hidden",
+        level: "supported",
+        summary: "bound but hidden from provider-native surface",
+        fallback_available: false,
+        exposed_to_model: false,
+      },
+    ],
+  })
+
+  assert.deepEqual(
+    resolved.map((binding) => [binding.toolId, binding.binding.binding_id]),
+    [
+      ["exec_command", "bind-term-fallback"],
+      ["write_stdin", "bind-stdin-primary"],
+    ],
+  )
 })
 
 test("kernel core can wrap terminal lifecycle payloads into canonical events", () => {

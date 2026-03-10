@@ -94,6 +94,16 @@ This is intentionally the first runtime slice, not the final parity claim:
 - stronger OCI / remote session drivers remain follow-on work
 - Codex-background-terminal E4 claims still require frozen golden/conformance lanes on top of these primitives
 
+Phase 14 now also includes the first Codex-shaped parity-prep evidence bundle for:
+
+- start
+- stdin continuation
+- poll
+- list / registry projection
+- cleanup
+
+Those fixtures are still `draft-semantic`, but they mean the surface has moved beyond "planned".
+
 ## Conformance status
 
 The first Phase 14 conformance tranche now includes explicit terminal-session fixture families for:
