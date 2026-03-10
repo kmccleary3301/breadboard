@@ -1,6 +1,9 @@
 import type {
   EffectiveToolSurfaceV1,
   KernelEventV1,
+  TerminalInteractionV1,
+  TerminalOutputDeltaV1,
+  TerminalSessionDescriptorV1,
   ProviderExchangeV1,
   RunRequestV1,
   SessionTranscriptV1,
@@ -29,6 +32,14 @@ export interface SupportClaim {
   readonly evidenceMode: string | null
   readonly recommendedHostMode: "inline" | "streaming" | "background"
   readonly confidence: "high" | "medium" | "low"
+  readonly terminalSupport?: {
+    readonly canStart: boolean
+    readonly canInteract: boolean
+    readonly canPoll: boolean
+    readonly canList: boolean
+    readonly canCleanup: boolean
+    readonly streamMode: "pty" | "pipes"
+  }
 }
 
 export interface ProjectionProfile {
@@ -77,6 +88,67 @@ export interface TerminalCleanupInput {
   readonly failedSessionIds?: string[]
 }
 
+export interface BackboneTerminalStartInput {
+  readonly command: string[]
+  readonly cwd?: string | null
+  readonly executionProfileId?: ExecutionProfileId
+  readonly terminalSessionId?: string
+  readonly startupCallId?: string | null
+  readonly ownerTaskId?: string | null
+  readonly publicHandles?: TerminalSessionDescriptorV1["public_handles"]
+  readonly persistenceScope?: TerminalSessionDescriptorV1["persistence_scope"]
+  readonly continuationScope?: TerminalSessionDescriptorV1["continuation_scope"]
+  readonly streamMode?: TerminalSessionDescriptorV1["stream_mode"]
+  readonly streamSplit?: TerminalSessionDescriptorV1["stream_split"]
+}
+
+export interface BackboneTerminalStartResult {
+  readonly supportClaim: SupportClaim
+  readonly unsupportedCase?: UnsupportedCaseV1
+  readonly descriptor: TerminalSessionDescriptorV1 | null
+  readonly outputDeltas: readonly TerminalOutputDeltaV1[]
+  readonly end?: import("@breadboard/kernel-contracts").TerminalSessionEndV1
+}
+
+export interface BackboneTerminalInteractionInput {
+  readonly terminalSessionId: string
+  readonly interactionKind: TerminalInteractionV1["interaction_kind"]
+  readonly executionProfileId?: ExecutionProfileId
+  readonly causingCallId?: string | null
+  readonly inputText?: string | null
+  readonly inputB64?: string | null
+  readonly signal?: string | null
+  readonly settleMs?: number
+}
+
+export interface BackboneTerminalInteractionResult {
+  readonly supportClaim: SupportClaim
+  readonly unsupportedCase?: UnsupportedCaseV1
+  readonly interaction: TerminalInteractionV1 | null
+  readonly outputDeltas: readonly TerminalOutputDeltaV1[]
+  readonly end?: import("@breadboard/kernel-contracts").TerminalSessionEndV1
+}
+
+export interface BackboneTerminalSnapshotResult {
+  readonly supportClaim: SupportClaim
+  readonly unsupportedCase?: UnsupportedCaseV1
+  readonly snapshot: TerminalRegistrySnapshotV1 | null
+}
+
+export interface BackboneTerminalCleanupInput {
+  readonly scope: TerminalCleanupResultV1["scope"]
+  readonly executionProfileId?: ExecutionProfileId
+  readonly sessionIds?: string[]
+  readonly signal?: string | null
+  readonly cleanupId?: string
+}
+
+export interface BackboneTerminalCleanupResult {
+  readonly supportClaim: SupportClaim
+  readonly unsupportedCase?: UnsupportedCaseV1
+  readonly result: TerminalCleanupResultV1 | null
+}
+
 export interface EffectiveToolSurfaceInput {
   readonly surfaceId: string
   readonly bindings: ToolBindingV1[]
@@ -84,13 +156,28 @@ export interface EffectiveToolSurfaceInput {
   readonly projectionProfileId?: string | null
 }
 
+export interface EffectiveToolSurfaceResolutionInput extends EffectiveToolSurfaceInput {
+  readonly profileId?: string | null
+  readonly providerFamily?: string | null
+  readonly driverClass?: string | null
+  readonly imageId?: string | null
+  readonly serviceIds?: readonly string[]
+  readonly features?: readonly string[]
+}
+
 export interface BackboneTerminalApi {
   reduceRegistry(events: readonly KernelEventV1[]): TerminalRegistrySnapshotV1
   buildCleanupResult(input: TerminalCleanupInput): TerminalCleanupResultV1
+  classify(input: { executionProfileId?: ExecutionProfileId }): SupportClaim
+  start(input: BackboneTerminalStartInput): Promise<BackboneTerminalStartResult>
+  interact(input: BackboneTerminalInteractionInput): Promise<BackboneTerminalInteractionResult>
+  snapshot(input?: { executionProfileId?: ExecutionProfileId }): Promise<BackboneTerminalSnapshotResult>
+  cleanup(input: BackboneTerminalCleanupInput): Promise<BackboneTerminalCleanupResult>
 }
 
 export interface BackboneToolSurfaceApi {
   buildEffectiveSurface(input: EffectiveToolSurfaceInput): EffectiveToolSurfaceV1
+  resolveEffectiveSurface(input: EffectiveToolSurfaceResolutionInput): EffectiveToolSurfaceV1
 }
 
 export interface BackboneSession {
@@ -108,6 +195,9 @@ export interface BackboneSession {
 export interface BackboneOptions {
   readonly workspace: Workspace
   readonly defaultProjectionProfileId?: ProjectionProfileId
+  readonly remoteHttp?: import("@breadboard/execution-driver-remote").RemoteExecutionHttpOptions
+  readonly remoteExecutor?: import("@breadboard/execution-driver-remote").RemoteSandboxExecutor
+  readonly ociTerminalAdapter?: import("@breadboard/execution-driver-oci").OciTerminalSessionAdapter
 }
 
 export interface Backbone {

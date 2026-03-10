@@ -77,6 +77,17 @@ def test_engine_fixture_families_cover_permission_task_and_checkpoint() -> None:
         "unsupported_case/reference_fixture.json",
         "distributed_task/minimal_fixture.json",
         "distributed_task/reference_fixture.json",
+        "terminal_session/minimal_start_fixture.json",
+        "terminal_session/reference_begin_fixture.json",
+        "terminal_session/reference_poll_fixture.json",
+        "terminal_session/reference_stdin_fixture.json",
+        "terminal_session/reference_output_fixture.json",
+        "terminal_session/reference_end_fixture.json",
+        "terminal_session/reference_registry_fixture.json",
+        "terminal_session/reference_cleanup_fixture.json",
+        "effective_tool_surface/minimal_fixture.json",
+        "effective_tool_surface/reference_terminal_binding_fixture.json",
+        "effective_tool_surface/reference_hidden_terminal_fixture.json",
     }
     present = {str(path.relative_to(fixture_dir)) for path in fixture_dir.rglob("*.json")}
     missing = sorted(expected - present)

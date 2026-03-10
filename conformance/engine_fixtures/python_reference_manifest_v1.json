@@ -431,6 +431,127 @@
         "distributed_task/reference_fixture.json"
       ],
       "notes": "Distributed task descriptor reference aligned with the Temporal adapter path."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "terminal_session_start_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "terminal_session/minimal_start_fixture.json"
+      ],
+      "notes": "Minimal terminal-session descriptor scaffold."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "terminal_session_begin_local_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "terminal_session/reference_begin_fixture.json"
+      ],
+      "notes": "Reference terminal-session begin payload for the trusted-local driver lane."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "terminal_session_poll_local_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "terminal_session/reference_poll_fixture.json"
+      ],
+      "notes": "Reference terminal-session poll interaction payload."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "terminal_session_stdin_local_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "terminal_session/reference_stdin_fixture.json"
+      ],
+      "notes": "Reference terminal-session stdin interaction payload."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "terminal_session_output_local_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "terminal_session/reference_output_fixture.json"
+      ],
+      "notes": "Reference terminal-session output delta payload."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "terminal_session_end_local_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "terminal_session/reference_end_fixture.json"
+      ],
+      "notes": "Reference terminal-session end payload."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "terminal_session_registry_local_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "projection-equal",
+      "evidence": [
+        "terminal_session/reference_registry_fixture.json"
+      ],
+      "notes": "Reference derived terminal-session registry projection."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "terminal_session_cleanup_local_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "projection-equal",
+      "evidence": [
+        "terminal_session/reference_cleanup_fixture.json"
+      ],
+      "notes": "Reference derived terminal-session cleanup projection."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "effective_tool_surface_minimal",
+      "supportTier": "draft-shape",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "effective_tool_surface/minimal_fixture.json"
+      ],
+      "notes": "Minimal effective tool surface scaffold."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "effective_tool_surface_terminal_binding_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "projection-equal",
+      "evidence": [
+        "effective_tool_surface/reference_terminal_binding_fixture.json"
+      ],
+      "notes": "Reference effective tool surface with visible terminal-session-backed tools."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "effective_tool_surface_hidden_terminal_reference",
+      "supportTier": "draft-semantic",
+      "comparatorClass": "projection-equal",
+      "evidence": [
+        "effective_tool_surface/reference_hidden_terminal_fixture.json"
+      ],
+      "notes": "Reference effective tool surface where terminal-session tools are hidden by environment support."
     }
   ]
 }

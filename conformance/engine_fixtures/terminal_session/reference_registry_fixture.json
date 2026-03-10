@@ -1,0 +1,21 @@
+{
+  "fixture_family": "terminal_session",
+  "fixture_id": "terminal_session_registry_local_reference",
+  "comparator_class": "projection-equal",
+  "support_tier": "draft-semantic",
+  "contract": "bb.terminal_registry_snapshot.v1",
+  "reference_output": {
+    "schema_version": "bb.terminal_registry_snapshot.v1",
+    "snapshot_id": "term-snapshot-01",
+    "active_sessions": [
+      {
+        "schema_version": "bb.terminal_session_descriptor.v1",
+        "terminal_session_id": "term_local_ref_01",
+        "command": ["/bin/bash", "-lc", "printf 'ready\\n'; sleep 30"],
+        "stream_mode": "pipes",
+        "persistence_scope": "thread",
+        "continuation_scope": "both"
+      }
+    ]
+  }
+}

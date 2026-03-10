@@ -1,0 +1,15 @@
+{
+  "fixture_family": "terminal_session",
+  "fixture_id": "terminal_session_output_local_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "draft-semantic",
+  "contract": "bb.terminal_output_delta.v1",
+  "reference_output": {
+    "schema_version": "bb.terminal_output_delta.v1",
+    "terminal_session_id": "term_local_ref_01",
+    "stream": "stdout",
+    "chunk_b64": "cmVhZHkK",
+    "chunk_seq": 0,
+    "causing_call_id": "call_poll_background_01"
+  }
+}

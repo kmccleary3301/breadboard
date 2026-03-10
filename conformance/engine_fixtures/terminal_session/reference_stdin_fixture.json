@@ -1,0 +1,14 @@
+{
+  "fixture_family": "terminal_session",
+  "fixture_id": "terminal_session_stdin_local_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "draft-semantic",
+  "contract": "bb.terminal_interaction.v1",
+  "reference_output": {
+    "schema_version": "bb.terminal_interaction.v1",
+    "terminal_session_id": "term_local_ref_01",
+    "interaction_kind": "stdin",
+    "causing_call_id": "call_write_terminal_01",
+    "input_b64": "c3RhdHVzCg=="
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "fixture_family": "terminal_session",
+  "fixture_id": "terminal_session_start_minimal",
+  "comparator_class": "shape-equal",
+  "support_tier": "draft-shape",
+  "contract": "bb.terminal_session_descriptor.v1",
+  "reference_output": {
+    "schema_version": "bb.terminal_session_descriptor.v1",
+    "terminal_session_id": "term_minimal_01",
+    "command": ["/bin/bash", "-lc", "sleep 30"],
+    "stream_mode": "pipes",
+    "persistence_scope": "thread",
+    "continuation_scope": "model"
+  }
+}

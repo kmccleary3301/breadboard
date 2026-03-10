@@ -2,11 +2,13 @@ import {
   buildEffectiveToolSurface,
   buildTerminalCleanupResult,
   reduceTerminalRegistry,
+  resolveEffectiveToolSurface,
   executeDriverMediatedToolTurn,
   executeProviderTextContinuationTurn,
   executeProviderTextTurn,
 } from "@breadboard/kernel-core"
 import type { Backbone, BackboneOptions, BackboneSession, HostSessionDescriptor, ProviderTurnInput, ToolTurnInput } from "./types.js"
+import { createBackboneTerminalApi } from "./terminals.js"
 import { buildBackboneTurnResult, buildProjectionProfile, buildSupportClaim, buildToolTurnSupportClaim } from "./support.js"
 
 function makeBackboneSession(options: BackboneOptions, descriptor: HostSessionDescriptor): BackboneSession {
@@ -17,17 +19,18 @@ function makeBackboneSession(options: BackboneOptions, descriptor: HostSessionDe
     descriptor,
     workspace: options.workspace,
     projectionProfile,
-    terminals: {
-      reduceRegistry(events) {
-        return reduceTerminalRegistry(events)
-      },
-      buildCleanupResult(input) {
-        return buildTerminalCleanupResult(input)
-      },
-    },
+    terminals: createBackboneTerminalApi({
+      workspace: options.workspace,
+      remoteExecutor: options.remoteExecutor,
+      remoteHttp: options.remoteHttp,
+      ociTerminalAdapter: options.ociTerminalAdapter,
+    }),
     tools: {
       buildEffectiveSurface(input) {
         return buildEffectiveToolSurface(input)
+      },
+      resolveEffectiveSurface(input) {
+        return resolveEffectiveToolSurface(input)
       },
     },
     classifyProviderTurn(input: ProviderTurnInput) {

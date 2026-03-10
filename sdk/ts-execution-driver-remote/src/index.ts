@@ -5,8 +5,12 @@ import type {
   SandboxResultV1,
 } from "@breadboard/kernel-contracts"
 import { assertValid } from "@breadboard/kernel-contracts"
-import type { ExecutionDriverV1 } from "@breadboard/execution-drivers"
+import type { ExecutionDriverV1, TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
 import { isPlacementCompatible } from "@breadboard/execution-drivers"
+import {
+  makeRemoteTerminalSessionDriver,
+  type RemoteTerminalExecutionHttpOptions,
+} from "./terminals.js"
 
 export interface RemoteSandboxExecutor {
   (request: SandboxRequestV1): Promise<SandboxResultV1>
@@ -176,7 +180,7 @@ export async function executeRemoteSandboxRequest(
 export function makeRemoteExecutionDriver(
   executor?: RemoteSandboxExecutor,
   httpOptions?: RemoteExecutionHttpOptions,
-): ExecutionDriverV1 {
+): TerminalSessionDriverV1 {
   const executeRemote =
     executor ??
     (httpOptions
@@ -204,7 +208,11 @@ export function makeRemoteExecutionDriver(
       })
     },
     execute: executeRemote,
+    ...(httpOptions ? makeRemoteTerminalSessionDriver(httpOptions) : {}),
   }
 }
 
 export const remoteExecutionDriver: ExecutionDriverV1 = makeRemoteExecutionDriver()
+
+export type { RemoteTerminalExecutionHttpOptions }
+export * from "./terminals.js"

@@ -83,6 +83,24 @@ export interface TerminalSessionDriverV1 extends ExecutionDriverV1 {
   cleanupTerminalSessions?(input: TerminalSessionCleanupInputV1): Promise<TerminalCleanupResultV1>
 }
 
+export function selectTerminalSessionDriver(input: {
+  capability: ExecutionCapabilityV1
+  placement: ExecutionPlacementV1
+  drivers: TerminalSessionDriverV1[]
+}): TerminalSessionDriverV1 | null {
+  return (
+    input.drivers.find((driver) => {
+      if (!driver.supportedPlacements.includes(input.placement.placement_class)) {
+        return false
+      }
+      if (typeof driver.supportsTerminalSessions === "function") {
+        return driver.supportsTerminalSessions(input.capability, input.placement.placement_class)
+      }
+      return driver.supportsCapability(input.capability, input.placement.placement_class)
+    }) ?? null
+  )
+}
+
 export interface ExecutionDriverSideEffectExpectationV1 {
   filesystem_scope: "none" | "workspace_scoped" | "container_scoped" | "remote_scoped"
   network_scope: "disabled" | "restricted" | "backend_policy"

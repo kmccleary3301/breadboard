@@ -1,0 +1,20 @@
+{
+  "fixture_family": "effective_tool_surface",
+  "fixture_id": "effective_tool_surface_terminal_binding_reference",
+  "comparator_class": "projection-equal",
+  "support_tier": "draft-semantic",
+  "contract": "bb.effective_tool_surface.v1",
+  "reference_output": {
+    "schema_version": "bb.effective_tool_surface.v1",
+    "surface_id": "surface_terminal_local",
+    "tool_ids": ["terminal.exec.start", "terminal.exec.interact", "cuda.profile.capture"],
+    "binding_ids": [
+      "bind_terminal_start_local",
+      "bind_terminal_interact_local",
+      "bind_cuda_profile_default"
+    ],
+    "hidden_tool_ids": [],
+    "projection_profile_id": "host_callbacks",
+    "surface_hash": "surface_terminal_local_hash"
+  }
+}

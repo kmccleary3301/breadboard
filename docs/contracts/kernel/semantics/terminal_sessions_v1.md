@@ -93,3 +93,17 @@ This is intentionally the first runtime slice, not the final parity claim:
 - the trusted-local path is pipes-backed rather than PTY-backed
 - stronger OCI / remote session drivers remain follow-on work
 - Codex-background-terminal E4 claims still require frozen golden/conformance lanes on top of these primitives
+
+## Conformance status
+
+The first Phase 14 conformance tranche now includes explicit terminal-session fixture families for:
+
+- begin / start descriptor
+- poll
+- stdin continuation
+- output delta
+- end
+- registry projection
+- cleanup projection
+
+These fixtures are parity-prep evidence, not yet final Codex E4 goldens.

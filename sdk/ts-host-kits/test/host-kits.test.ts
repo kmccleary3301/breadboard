@@ -130,6 +130,21 @@ test("createProviderHostSession preserves transcript continuity and projection s
       workspace: {} as never,
       projectionProfile: { id: "host_callbacks", summary: "Host callbacks" },
       terminals: {
+        classify() {
+          throw new Error("not used in this test")
+        },
+        async start() {
+          throw new Error("not used in this test")
+        },
+        async interact() {
+          throw new Error("not used in this test")
+        },
+        async snapshot() {
+          throw new Error("not used in this test")
+        },
+        async cleanup() {
+          throw new Error("not used in this test")
+        },
         reduceRegistry() {
           throw new Error("not used in this test")
         },
@@ -138,6 +153,9 @@ test("createProviderHostSession preserves transcript continuity and projection s
         },
       },
       tools: {
+        resolveEffectiveSurface() {
+          throw new Error("not used in this test")
+        },
         buildEffectiveSurface() {
           throw new Error("not used in this test")
         },

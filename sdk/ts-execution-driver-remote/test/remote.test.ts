@@ -11,6 +11,7 @@ import {
   chooseRemotePlacement,
   executeRemoteSandboxRequest,
   makeRemoteExecutionDriver,
+  makeRemoteTerminalSessionDriver,
 } from "../src/index.js"
 
 const remoteCapability: ExecutionCapabilityV1 = {
@@ -242,6 +243,76 @@ test("remote driver can be constructed from HTTP options alone", async () => {
   const result = await driver.execute!(request)
   assert.equal(result.status, "completed")
   assert.equal(result.placement_id, "remote:http:driver")
+})
+
+test("remote terminal driver can execute through a fetch-backed adapter", async () => {
+  const driver = makeRemoteTerminalSessionDriver({
+    endpointUrl: "https://example.test/remote-term",
+    fetchImpl: async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { action: string; payload: Record<string, unknown> }
+      if (body.action === "start") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: {
+              output_deltas: [],
+            },
+          }),
+        } as Response
+      }
+      if (body.action === "snapshot") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: {
+              snapshot: {
+                schema_version: "bb.terminal_registry_snapshot.v1",
+                snapshot_id: "remote-snap-1",
+                active_sessions: [],
+                ended_session_ids: [],
+              },
+            },
+          }),
+        } as Response
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          schema_version: "bb.remote_terminal_response.v1",
+          payload: {
+            output_deltas: [],
+            cleaned_session_ids: ["term-remote-1"],
+            failed_session_ids: [],
+          },
+        }),
+      } as Response
+    },
+  })
+  await driver.startTerminalSession?.({
+    terminalSessionId: "term-remote-1",
+    command: ["python", "worker.py"],
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-term-remote-1",
+      placement_class: "remote_worker",
+      runtime_id: "remote",
+      capability_id: remoteCapability.capability_id,
+    },
+  })
+  const snapshot = await driver.snapshotTerminalRegistry?.()
+  assert.equal(snapshot?.snapshot_id, "remote-snap-1")
+  const cleanup = await driver.cleanupTerminalSessions?.({
+    cleanupId: "cleanup-remote-1",
+    scope: "single",
+    sessionIds: ["term-remote-1"],
+  })
+  assert.deepEqual(cleanup?.cleaned_session_ids, ["term-remote-1"])
 })
 
 test("unsupported case helper still models delegated gaps honestly", () => {

@@ -89,3 +89,15 @@ The first-pass schema set should likely include:
 - should feed into Backbone `SupportClaim` and Workspace shaping, not replace them
 - should be made visible in public dossiers/configs via explicit `tool_packs:` and `tool_bindings:`
   sections rather than being left as hidden runtime convention
+
+## Current implementation notes
+
+The first shipped Phase 14 tranche now includes:
+
+- kernel-core effective tool surface resolution using environment selectors
+- Backbone exposure for building and resolving effective tool surfaces
+- dossier/config support for `tool_packs:` and `tool_bindings:`
+- conformance fixtures for:
+  - a minimal effective tool surface
+  - a visible terminal-session-backed effective surface
+  - a hidden terminal-tool surface when the environment does not support those bindings

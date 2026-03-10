@@ -8,6 +8,7 @@ import {
   buildExecutionDriverUnsupportedCase,
   buildPlannedExecution,
   isPlacementCompatible,
+  selectTerminalSessionDriver,
 } from "../src/index.js"
 
 test("execution driver helpers classify placement compatibility", () => {
@@ -134,4 +135,34 @@ test("execution driver helpers can build a planned execution record", () => {
   assert.equal(plan?.driver.driverId, "local")
   assert.equal(plan?.sandboxRequest?.placement_class, "local_process")
   assert.equal(plan?.evidenceExpectation.require_evidence_refs, true)
+})
+
+test("execution driver helpers can select a terminal-capable driver", () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-term-1",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "replay_strict",
+  }
+  const driver = selectTerminalSessionDriver({
+    capability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-term-1",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: capability.capability_id,
+    },
+    drivers: [
+      {
+        driverId: "local-term",
+        supportedPlacements: ["local_process"],
+        supportsCapability: () => true,
+        supportsTerminalSessions: () => true,
+      },
+    ],
+  })
+  assert.equal(driver?.driverId, "local-term")
 })

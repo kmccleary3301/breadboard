@@ -162,3 +162,32 @@ test("BackboneSession exposes terminal and effective-tool-surface helpers", () =
   })
   assert.deepEqual(surface.tool_ids, ["cuda.profile.capture"])
 })
+
+test("BackboneSession can classify and drive a local terminal session lifecycle", async () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-2",
+    rootDir: "/tmp",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({ workspace })
+  const session = backbone.openSession({ sessionId: "s-2", workspaceRoot: "/tmp" })
+
+  const claim = session.terminals.classify({})
+  assert.equal(claim.level, "supported")
+  assert.equal(claim.terminalSupport?.canStart, true)
+
+  const started = await session.terminals.start({
+    command: ["/bin/bash", "-lc", "printf 'ready\\n'; sleep 0.5"],
+  })
+  assert.ok(started.descriptor)
+
+  const interacted = await session.terminals.interact({
+    terminalSessionId: started.descriptor!.terminal_session_id,
+    interactionKind: "poll",
+    settleMs: 25,
+  })
+  assert.ok(interacted.outputDeltas.length >= 1)
+
+  const snapshot = await session.terminals.snapshot()
+  assert.ok(snapshot.snapshot)
+})

@@ -10,8 +10,9 @@ import type {
   SandboxRequestV1,
   SandboxResultV1,
 } from "@breadboard/kernel-contracts"
-import type { ExecutionDriverV1 } from "@breadboard/execution-drivers"
+import type { TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
 import { isPlacementCompatible } from "@breadboard/execution-drivers"
+import { makeOciTerminalSessionDriver, type OciTerminalSessionAdapter } from "./terminals.js"
 
 export function chooseOciPlacement(
   capability: ExecutionCapabilityV1,
@@ -172,7 +173,7 @@ export async function executeOciSandboxRequest(
   }
 }
 
-export const ociExecutionDriver: ExecutionDriverV1 = {
+export const ociExecutionDriver: TerminalSessionDriverV1 = {
   driverId: "oci",
   supportedPlacements: ["local_oci", "local_oci_gvisor", "local_oci_kata"],
   supportsCapability(capability, placementClass) {
@@ -197,3 +198,17 @@ export const ociExecutionDriver: ExecutionDriverV1 = {
     return executeOciSandboxRequest(request)
   },
 }
+
+export function makeOciExecutionDriver(adapter?: OciTerminalSessionAdapter): TerminalSessionDriverV1 {
+  const terminalDriver = adapter ? makeOciTerminalSessionDriver(adapter) : null
+  return {
+    ...ociExecutionDriver,
+    supportsTerminalSessions: terminalDriver?.supportsTerminalSessions,
+    startTerminalSession: terminalDriver?.startTerminalSession,
+    interactTerminalSession: terminalDriver?.interactTerminalSession,
+    snapshotTerminalRegistry: terminalDriver?.snapshotTerminalRegistry,
+    cleanupTerminalSessions: terminalDriver?.cleanupTerminalSessions,
+  }
+}
+
+export * from "./terminals.js"

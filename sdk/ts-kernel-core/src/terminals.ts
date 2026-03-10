@@ -1,6 +1,7 @@
 import {
   assertValid,
   type EffectiveToolSurfaceV1,
+  type EnvironmentSelectorV1,
   type KernelEventV1,
   type TerminalCleanupResultV1,
   type TerminalInteractionV1,
@@ -11,6 +12,7 @@ import {
   type ToolBindingV1,
   type ToolSupportClaimV1,
 } from "@breadboard/kernel-contracts"
+import { resolveEffectiveToolSurface, type EffectiveToolSurfaceResolutionInput } from "./tool-surfaces.js"
 
 export interface TerminalSessionSnapshot {
   readonly descriptor: TerminalSessionDescriptorV1
@@ -169,3 +171,6 @@ export function buildEffectiveToolSurface(input: {
     projection_profile_id: input.projectionProfileId ?? null,
   })
 }
+
+export { resolveEffectiveToolSurface }
+export type { EffectiveToolSurfaceResolutionInput, EnvironmentSelectorV1 }
