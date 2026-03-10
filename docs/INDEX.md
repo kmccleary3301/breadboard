@@ -1,6 +1,10 @@
 # BreadBoard docs
 
-This is the docs map. If you are new, start at the row that fits your situation and follow it forward. If you already know what you want, jump directly to the doc.
+This is the companion navigator for the root [`README.md`](../README.md).
+
+Use the README when you want the top-level project picture, repository map, package overview, and adoption entrypoints. Use this page when you already know you need documentation and want the fastest path to the right document.
+
+If you are new, start at the row that fits your situation and follow it forward. If you already know what you want, jump directly to the doc.
 
 ---
 
@@ -14,6 +18,12 @@ This is the docs map. If you are new, start at the row that fits your situation 
 
 **Writing code against the engine (Python or TypeScript SDK):**
 → [contracts/cli_bridge/openapi.json](contracts/cli_bridge/openapi.json) · SDK examples in the repo README
+
+**Adopting BreadBoard as a TypeScript backbone in a host app:**
+→ [contracts/kernel/T3_BACKBONE_ADOPTION_V1.md](contracts/kernel/T3_BACKBONE_ADOPTION_V1.md) · [contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md](contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md) · [contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md](contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md)
+
+**Inspecting the public E4 dossier configs directly:**
+→ [`../agent_configs/`](../agent_configs/) · [conformance/E4_TARGET_PACKAGES.md](conformance/E4_TARGET_PACKAGES.md) · [conformance/E4_DOSSIER_STYLE_GUIDE_V1.md](conformance/E4_DOSSIER_STYLE_GUIDE_V1.md)
 
 **Evaluating or reproducing a run (replay/parity/conformance):**
 → [quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md](quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md) · [conformance/README.md](conformance/README.md) · [PARITY_KERNEL_BOUNDARIES.md](PARITY_KERNEL_BOUNDARIES.md)
@@ -47,6 +57,7 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [contracts/cli_bridge/openapi.json](contracts/cli_bridge/openapi.json) | HTTP + SSE API schema (machine-readable) |
 | [PARITY_KERNEL_BOUNDARIES.md](PARITY_KERNEL_BOUNDARIES.md) | Modules that must stay byte-stable for E4 parity |
 | [CLAIMS_EVIDENCE_LEDGER.md](CLAIMS_EVIDENCE_LEDGER.md) | Public claim wording and backing evidence |
+| [contracts/kernel/PROGRAM_INDEX_V1.md](contracts/kernel/PROGRAM_INDEX_V1.md) | Kernel, TS backbone, execution-driver, and host-layer program map |
 
 ### Conformance and testing
 
@@ -64,8 +75,24 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | Doc | What it covers |
 |-----|----------------|
 | [PARITY_KERNEL_BOUNDARIES.md](PARITY_KERNEL_BOUNDARIES.md) | Parity-critical module surfaces |
+| [conformance/E4_COOKBOOK_V1.md](conformance/E4_COOKBOOK_V1.md) | How target harness capture, replay, and dossier refresh works |
+| [conformance/E4_TARGET_PACKAGES.md](conformance/E4_TARGET_PACKAGES.md) | Public target-package model behind the E4 dossiers |
+| [conformance/E4_DOSSIER_STYLE_GUIDE_V1.md](conformance/E4_DOSSIER_STYLE_GUIDE_V1.md) | How top-level public E4 configs should read and be maintained |
 | [SAFE_MODE_EXECUTION_POLICY.md](SAFE_MODE_EXECUTION_POLICY.md) | Execution policy for safe-mode sandboxes |
 | [contracts/benchmarks/EVIDENCE_V2_CLAIM_LEDGER_V1.md](contracts/benchmarks/EVIDENCE_V2_CLAIM_LEDGER_V1.md) | Evidence v2 claim ledger |
+
+### TypeScript backbone and host adoption
+
+| Doc | What it covers |
+|-----|----------------|
+| [contracts/kernel/T3_BACKBONE_ADOPTION_V1.md](contracts/kernel/T3_BACKBONE_ADOPTION_V1.md) | Thin-host / T3-style adoption path |
+| [contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md](contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md) | Hard-host / OpenClaw-style adoption path |
+| [contracts/kernel/THIN_HOST_ADOPTION_V1.md](contracts/kernel/THIN_HOST_ADOPTION_V1.md) | Thin-host migration guidance |
+| [contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md](contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md) | Honest support boundary for Python-free primary TS host slices |
+| [contracts/kernel/semantics/backbone_api_v1.md](contracts/kernel/semantics/backbone_api_v1.md) | Backbone API semantics |
+| [contracts/kernel/semantics/workspace_layer_v1.md](contracts/kernel/semantics/workspace_layer_v1.md) | Workspace layer semantics |
+| [contracts/kernel/semantics/host_kit_v1.md](contracts/kernel/semantics/host_kit_v1.md) | Host Kit semantics |
+| [contracts/kernel/semantics/ai_sdk_transport_adapter_v1.md](contracts/kernel/semantics/ai_sdk_transport_adapter_v1.md) | AI SDK transport adapter semantics |
 
 ### Client surfaces
 
