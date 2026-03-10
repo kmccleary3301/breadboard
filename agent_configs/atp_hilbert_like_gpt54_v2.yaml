@@ -1,0 +1,70 @@
+extends: base_v2.yaml
+
+profile: { name: atp-hilbert-like-gpt54-v2 }
+
+providers:
+  default_model: openrouter/openai/gpt-5.4
+  models:
+    - id: openrouter/openai/gpt-5.4
+      adapter: openai
+      params:
+        temperature: 0.1
+        top_p: 0.9
+
+provider_tools:
+  use_native: false
+  suppress_prompts: false
+
+features:
+  plan: false
+  todos:
+    enabled: false
+
+prompts:
+  packs:
+    base:
+      system: config/e4_targets/atp_hilbert_like/2026-03-10/system.md
+      plan: config/e4_targets/atp_hilbert_like/2026-03-10/system.md
+      builder: config/e4_targets/atp_hilbert_like/2026-03-10/system.md
+      compact: config/e4_targets/atp_hilbert_like/2026-03-10/system.md
+      tools_catalog_full: config/e4_targets/atp_hilbert_like/2026-03-10/system.md
+      tools_catalog_short: config/e4_targets/atp_hilbert_like/2026-03-10/system.md
+  tool_prompt_mode: none
+  tool_prompt_synthesis:
+    enabled: false
+
+tools:
+  mark_task_complete: false
+  registry:
+    paths:
+      - implementations/tools/defs
+    include: []
+  aliases: {}
+
+modes:
+  - name: build
+    prompt: "@pack(base).builder"
+    tools_enabled: []
+    tools_disabled: ["*"]
+
+loop:
+  sequence:
+    - mode: build
+  plan_turn_limit: 0
+  turn_strategy:
+    relay: tool_role
+    flow: assistant_continuation
+    allow_multiple_per_turn: false
+
+completion:
+  confidence_threshold: 0.6
+  natural_finish:
+    idle_turn_limit: 1
+    no_tool_turns_threshold: 1
+  primary: hybrid
+  tool_finish: null
+  provider_signals: true
+  text_sentinels:
+    - TASK COMPLETE
+
+max_iterations: 8

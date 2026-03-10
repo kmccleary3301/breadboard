@@ -23,3 +23,24 @@ class ErrorHandler:
             "error_type": exc.__class__.__name__,
             "hint": None,
         }
+
+    def handle_validation_error(self, payload: Dict[str, Any]) -> str:
+        error = str(payload.get("error") or "validation_failed").strip()
+        tool_name = str(payload.get("tool_name") or "").strip()
+        details = payload.get("details")
+        message = ["<VALIDATION_ERROR>", error]
+        if tool_name:
+            message.append(f"tool={tool_name}")
+        if details:
+            message.append(str(details))
+        message.append("</VALIDATION_ERROR>")
+        return "\n".join(message)
+
+    def handle_constraint_violation(self, error: Any) -> str:
+        return "\n".join(
+            [
+                "<CONSTRAINT_VIOLATION>",
+                str(error),
+                "</CONSTRAINT_VIOLATION>",
+            ]
+        )
