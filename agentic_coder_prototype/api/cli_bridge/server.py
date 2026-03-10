@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, Dict
 
 import uvicorn
@@ -17,7 +18,10 @@ from agentic_coder_prototype.api.cli_bridge.app import create_app
 
 def _load_env() -> None:
     if load_dotenv is not None:
-        load_dotenv()
+        repo_root = Path(__file__).resolve().parents[3]
+        for candidate in (repo_root / ".env", repo_root / ".env.local"):
+            if candidate.exists():
+                load_dotenv(candidate, override=False)
 
 def _is_local_bind(host: str) -> bool:
     normalized = (host or "").strip().lower()

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url"
 import { loadAppConfig } from "../config/appConfig.js"
 import { loadUserConfigSync } from "../config/userConfig.js"
 import { CLI_PROTOCOL_VERSION, CLI_VERSION } from "../config/version.js"
+import { assertRuntimeIntegrity, resolveEngineRoot as resolveRuntimeEngineRoot } from "../config/runtimePaths.js"
 
 interface EngineLock {
   readonly pid: number
@@ -204,28 +205,25 @@ const findAvailablePort = async (host: string, preferredPort: number): Promise<n
   throw new Error(`No available port found starting at ${preferredPort}.`)
 }
 
-const findUpward = (startDir: string, relativePath: string): string | null => {
-  let current = path.resolve(startDir)
-  for (;;) {
-    const candidate = path.join(current, relativePath)
-    if (fs.existsSync(candidate)) return current
-    const parent = path.dirname(current)
-    if (parent === current) break
-    current = parent
-  }
-  return null
-}
-
 const resolveEngineRoot = (): string | null => {
   const explicit = process.env.BREADBOARD_ENGINE_ROOT?.trim()
   if (explicit) {
     return path.resolve(explicit)
   }
-  const cwdHit = findUpward(process.cwd(), "agentic_coder_prototype")
-  if (cwdHit) return cwdHit
-  const moduleDir = path.dirname(fileURLToPath(import.meta.url))
-  const moduleHit = findUpward(moduleDir, "agentic_coder_prototype")
-  return moduleHit
+  try {
+    return resolveRuntimeEngineRoot()
+  } catch {
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url))
+    let current = path.resolve(moduleDir)
+    for (;;) {
+      const candidate = path.join(current, "agentic_coder_prototype")
+      if (fs.existsSync(candidate)) return current
+      const parent = path.dirname(current)
+      if (parent === current) break
+      current = parent
+    }
+    return null
+  }
 }
 
 const resolveEngineCommand = async (): Promise<{ command: string; args: string[]; cwd?: string; shell?: boolean }> => {
@@ -467,6 +465,7 @@ export const ensureEngine = async ({
   allowSpawn?: boolean
   isolated?: boolean
 } = {}): Promise<EngineSupervisorResult> => {
+  assertRuntimeIntegrity({ includeSource: true })
   if (activeBaseUrl) {
     return { baseUrl: activeBaseUrl, started: Boolean(activeChild?.pid), pid: activeChild?.pid }
   }

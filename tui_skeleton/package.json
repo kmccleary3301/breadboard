@@ -11,6 +11,8 @@
     "build": "tsc -p tsconfig.json && tsx scripts/copyAsciiHeader.ts",
     "postbuild": "tsx scripts/installLocalBin.ts",
     "start": "node dist/main.js",
+    "preflight:integrity": "node --import tsx scripts/preflight_integrity_check.ts",
+    "preflight:snapshot": "node --import tsx scripts/preflight_integrity_check.ts --snapshot",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "runtime:gate:jitter": "node --import tsx scripts/runtime_jitter_gate.ts",
@@ -61,7 +63,7 @@
     "qc:user-reported:files-offline": "node --import tsx scripts/repl_pty_harness.ts --script scripts/qc_cases/files_slash_offline.json --snapshots scripts/_tmp_qc_files_slash_offline.txt --max-duration-ms 180000",
     "qc:user-reported:file-picker-insert": "node --import tsx scripts/repl_pty_harness.ts --script scripts/qc_cases/file_picker_insert_live.json --snapshots scripts/_tmp_qc_file_picker_insert.txt --max-duration-ms 180000 && node --import tsx scripts/qc_file_picker_insert_gate.ts scripts/_tmp_qc_file_picker_insert.txt",
     "qc:user-reported:models-offline": "node --import tsx scripts/repl_pty_harness.ts --script scripts/qc_cases/models_offline.json --snapshots scripts/_tmp_qc_models_offline.txt --max-duration-ms 180000 && node --import tsx scripts/qc_models_offline_gate.ts scripts/_tmp_qc_models_offline.txt",
-    "qc:user-reported:extended": "bash scripts/qc_user_reported_extended.sh",
+    "qc:user-reported:extended": "npm run -s preflight:integrity && bash scripts/qc_user_reported_extended.sh",
     "tui:goldens:report": "node --import tsx scripts/tui_goldens_report.ts",
     "tui:goldens:strict": "node --import tsx scripts/tui_goldens_strict.ts",
     "claude:compare:report": "node --import tsx scripts/claude_compare_report.ts"

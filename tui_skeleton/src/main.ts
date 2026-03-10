@@ -67,7 +67,7 @@ const shouldSkipEngine = (args: string[]): boolean => {
     }
     const envMode = (process.env.BREADBOARD_TUI_MODE ?? "").trim().toLowerCase()
     if (envMode === "classic") return false
-    return envMode === "opentui" || envMode === "" // default to OpenTUI
+    return envMode === "opentui"
   }
   return false
 }

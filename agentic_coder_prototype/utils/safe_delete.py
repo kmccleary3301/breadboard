@@ -23,6 +23,14 @@ def assert_disposable_workspace_path(
     repo_root_resolved = _resolve_existing(repo_root)
     home = _resolve_existing(Path.home())
     tmp_root = _resolve_existing(Path(tempfile.gettempdir()))
+    repo_tmp_root = _resolve_existing(repo_root_resolved / "tmp")
+
+    def _is_within(base: Path, candidate: Path) -> bool:
+        try:
+            candidate.relative_to(base)
+            return True
+        except ValueError:
+            return False
 
     if resolved == Path("/"):
         raise RuntimeError(f"[safety] Refusing {label}: '{resolved}'")
@@ -36,6 +44,12 @@ def assert_disposable_workspace_path(
         raise RuntimeError(f"[safety] Refusing {label}: '{resolved}' (home dir)")
     if resolved == tmp_root:
         raise RuntimeError(f"[safety] Refusing {label}: '{resolved}' (tmp root)")
+    if resolved == repo_tmp_root:
+        raise RuntimeError(f"[safety] Refusing {label}: '{resolved}' (repo tmp root)")
     if (resolved / ".git").exists():
         raise RuntimeError(f"[safety] Refusing {label}: '{resolved}' (contains .git)")
+    if not _is_within(repo_tmp_root, resolved):
+        raise RuntimeError(
+            f"[safety] Refusing {label}: '{resolved}' (must live under '{repo_tmp_root}')"
+        )
     return resolved

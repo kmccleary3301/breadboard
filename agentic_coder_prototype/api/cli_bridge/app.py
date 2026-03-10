@@ -8,6 +8,7 @@ import logging
 import os
 import random
 import time
+from pathlib import Path
 from typing import Any, AsyncIterator, Dict
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
@@ -19,7 +20,10 @@ except ImportError:  # pragma: no cover - optional dependency
     load_dotenv = None
 
 if load_dotenv is not None:
-    load_dotenv()
+    _REPO_ROOT = Path(__file__).resolve().parents[3]
+    for _candidate in (_REPO_ROOT / ".env", _REPO_ROOT / ".env.local"):
+        if _candidate.exists():
+            load_dotenv(_candidate, override=False)
 
 from .events import SessionEvent, PROTOCOL_VERSION
 from .models import (

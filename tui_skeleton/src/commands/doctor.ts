@@ -5,7 +5,7 @@ import { ApiClient, ApiError } from "../api/client.js"
 import type { HealthResponse } from "../api/types.js"
 import { DEFAULT_CONFIG_PATH, loadAppConfig } from "../config/appConfig.js"
 import { getUserConfigPath } from "../config/userConfig.js"
-import { resolveBreadboardPath } from "../utils/paths.js"
+import { resolveBreadboardRepoPath } from "../utils/paths.js"
 import { shutdownEngine } from "../engine/engineSupervisor.js"
 
 const configOption = Options.text("config").pipe(Options.withDefault(DEFAULT_CONFIG_PATH))
@@ -27,7 +27,7 @@ export const doctorCommand = Command.make(
   ({ config }) =>
     Effect.tryPromise(async () => {
       const appConfig = loadAppConfig()
-      const configPath = resolveBreadboardPath(config)
+      const configPath = resolveBreadboardRepoPath(config)
       const configExists = existsSync(configPath)
       const userConfigPath = getUserConfigPath()
 
