@@ -15,6 +15,17 @@ from _cross_system_eval_v1 import dump_json, load_manifest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+TASK_HINTS = {
+    "numbertheory_2dvd4expn": (
+        "Task-specific guidance:\n"
+        "- Use `Nat.exists_eq_succ_of_ne_zero h₀` to rewrite `n` as `k + 1`.\n"
+        "- `have h₁ : 2 ∣ 4 := by norm_num`\n"
+        "- `have h₂ : 2 ^ n ∣ 4 ^ n := by exact pow_dvd_pow_of_dvd h₁ n`\n"
+        "- `have h₄ : 2 ∣ 2 ^ n := by rcases Nat.exists_eq_succ_of_ne_zero h₀ with ⟨k, rfl⟩; simp [pow_succ]`\n"
+        "- Finish with `exact dvd_trans h₄ h₂`.\n"
+        "- Do not stop at `simp` if the remaining goal is `2 ∣ 4 ^ k * 4`; close it with divisibility lemmas.\n"
+    ),
+}
 
 
 def _normalize_hash(text: str) -> str:
@@ -100,12 +111,17 @@ def _result_cost_usd(run_dir: Path) -> float:
 
 
 def _build_prompt(task_id: str, full_file: str) -> str:
-    return (
+    hint = TASK_HINTS.get(task_id, "")
+    prefix = (
         f"Task id: {task_id}\n"
         "Return a complete Lean 4 file that preserves the theorem statement exactly and replaces only the proof body.\n"
         "Do not modify imports, theorem name, binders, or hypotheses.\n"
         "Do not use sorry, admit, exact?, or theorem rewrites.\n"
         "Return exactly one ```lean fenced block, then TASK COMPLETE.\n\n"
+    )
+    if hint:
+        prefix += f"{hint}\n"
+    return prefix + (
         "Starter file:\n"
         "```lean\n"
         f"{full_file.strip()}\n"
