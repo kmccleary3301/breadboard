@@ -75,3 +75,6 @@ The first-pass schema set should likely include:
 - `bb.execution_capability.v1` and `bb.execution_placement.v1` still describe where/how a session may run
 - `bb.sandbox_request.v1` / `bb.sandbox_result.v1` remain the one-shot command family
 - task/subagent contracts should reference terminal sessions by lineage or wake-condition refs
+- public dossiers/configs should expose terminal-session shape explicitly through a
+  `terminal_sessions:` section, even when a given lane is only documenting rather than freezing
+  that surface

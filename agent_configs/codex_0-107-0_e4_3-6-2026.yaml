@@ -140,6 +140,114 @@ tools:
         - aider_search_replace
         - unified_diff
 
+# -----------------------------------------------------------------------------
+# Tool packs / bindings / terminal sessions
+# -----------------------------------------------------------------------------
+# These sections are part of the public dossier layer, not just implementation notes.
+# The goal is that a reader can inspect:
+# - which tools conceptually travel together
+# - which execution/binding shape actually satisfies a tool
+# - which persistent terminal-session surfaces are currently frozen vs merely targeted
+#
+# The frozen public lane here is still intentionally narrower than upstream Codex as a whole.
+
+tool_packs:
+  core-e4:
+    # This is the evidence-backed public tool pack for the strict Codex lane currently shipped
+    # at top level in `agent_configs/`.
+    description: frozen public Codex E4 pack
+    tool_ids:
+    - shell_command
+    - apply_patch
+    - update_plan
+    exposure: provider_native
+    support_status: frozen
+  collaboration:
+    # Collaboration is a separate Codex surface from the ordinary shell/edit/read tool pack.
+    # We keep it visible here as a pack even though the detailed behavior lives under
+    # `multi_agent:` below.
+    description: Codex collaboration/orchestration surface
+    tool_ids:
+    - spawn_agent
+    - wait
+    exposure: collab_protocol
+    support_status: frozen
+  background-terminals:
+    # Upstream Codex also exposes a distinct persistent background-terminal surface. We are
+    # deliberately spelling it out in the dossier now so the eventual parity lane remains
+    # inspectable and easy to compare line-by-line.
+    description: upstream Codex persistent terminal-session surface
+    tool_ids:
+    - exec_command
+    - write_stdin
+    exposure: interactive_terminal_protocol
+    support_status: planned_not_frozen
+
+tool_bindings:
+  # `tool_bindings` answers a different question from `tools.registry.include`.
+  #
+  # - `tools.registry.include` says which abstract tools are in the public lane
+  # - `tool_bindings` says what execution/profile/binding shape actually satisfies those tools
+  #
+  # This is exactly the kind of interpretability surface we want BreadBoard to expose well.
+  - id: codex.shell.process_local
+    tool_id: shell_command
+    binding_kind: sandbox
+    execution_profile: trusted_local
+    placement: workspace_local
+    exposure: provider_native
+    support_status: frozen
+  - id: codex.patch.workspace_local
+    tool_id: apply_patch
+    binding_kind: host
+    execution_profile: trusted_local
+    placement: workspace_local
+    exposure: provider_native
+    support_status: frozen
+  - id: codex.plan.workspace_local
+    tool_id: update_plan
+    binding_kind: host
+    execution_profile: trusted_local
+    placement: workspace_local
+    exposure: provider_native
+    support_status: frozen
+  - id: codex.terminal.process_session
+    tool_id: exec_command
+    binding_kind: sandbox
+    execution_profile: trusted_local
+    placement: workspace_local
+    exposure: interactive_terminal_protocol
+    support_status: planned_not_frozen
+  - id: codex.terminal.stdin_continuation
+    tool_id: write_stdin
+    binding_kind: sandbox
+    execution_profile: trusted_local
+    placement: workspace_local
+    exposure: interactive_terminal_protocol
+    support_status: planned_not_frozen
+
+terminal_sessions:
+  # This section is intentionally present before the strict lane fully freezes Codex background
+  # terminals. We want the dossier to already reveal the *shape* of the target surface, while
+  # being totally honest that the parity lane is still under construction.
+  enabled: false
+  support_status: planned_not_frozen
+  startup_tool: exec_command
+  continuation_tool: write_stdin
+  interaction_kinds:
+  - stdin
+  - poll
+  - signal
+  registry_surface:
+    model_visible_summary: true
+    host_listing_command: /ps
+  cleanup_surface:
+    host_cleanup_command: /clean
+  session_identity:
+    kernel_session_id: planned
+    public_handle: planned
+    backend_handle: planned
+
 # The frozen Codex lane keeps the canonical two-stage loop shape visible even though the exact
 # 2026-03-06 strict replay lane currently has `features.plan: false`.
 #

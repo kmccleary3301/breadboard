@@ -58,6 +58,47 @@ long_running:
     assert conf["long_running"]["episode"]["max_steps_override"] == 5
 
 
+def test_v2_loader_preserves_tool_binding_and_terminal_sections(tmp_path, monkeypatch):
+    cfg = tmp_path / "tool_binding_terminal_v2.yaml"
+    cfg.write_text(
+        """
+version: 2
+workspace:
+  root: ./agent_ws
+  sandbox: { driver: process }
+providers:
+  default_model: openrouter/openai/gpt-5-nano
+  models:
+    - id: openrouter/openai/gpt-5-nano
+      adapter: openai
+modes:
+  - name: build
+loop:
+  sequence:
+    - mode: build
+tool_packs:
+  core:
+    tool_ids: [shell_command]
+tool_bindings:
+  - id: core.shell
+    tool_id: shell_command
+    binding_kind: sandbox
+    execution_profile: trusted_local
+terminal_sessions:
+  enabled: false
+  startup_tool: exec_command
+  continuation_tool: write_stdin
+        """.strip()
+    )
+
+    monkeypatch.setenv("AGENT_SCHEMA_V2_ENABLED", "1")
+    conf = load_agent_config(str(cfg))
+    assert conf["tool_packs"]["core"]["tool_ids"] == ["shell_command"]
+    assert conf["tool_bindings"][0]["tool_id"] == "shell_command"
+    assert conf["terminal_sessions"]["startup_tool"] == "exec_command"
+    assert conf["terminal_sessions"]["continuation_tool"] == "write_stdin"
+
+
 def test_v2_loader_legacy_fallback(tmp_path, monkeypatch):
     legacy = tmp_path / "legacy.yaml"
     legacy.write_text("providers: {}\n")

@@ -87,4 +87,5 @@ The first-pass schema set should likely include:
 - builds directly on `bb.tool_spec.v1`, `bb.tool_call.v1`, `bb.tool_execution_outcome.v1`, and `bb.tool_model_render.v1`
 - reuses `bb.execution_capability.v1` and `bb.execution_placement.v1`
 - should feed into Backbone `SupportClaim` and Workspace shaping, not replace them
-
+- should be made visible in public dossiers/configs via explicit `tool_packs:` and `tool_bindings:`
+  sections rather than being left as hidden runtime convention

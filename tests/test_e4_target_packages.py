@@ -32,6 +32,11 @@ def test_codex_public_dossier_carries_exercised_subagent_surface() -> None:
     path = REPO_ROOT / "agent_configs/codex_0-107-0_e4_3-6-2026.yaml"
     text = path.read_text(encoding="utf-8")
     assert "multi_agent:" in text
+    assert "tool_packs:" in text
+    assert "tool_bindings:" in text
+    assert "terminal_sessions:" in text
+    assert "exec_command" in text
+    assert "write_stdin" in text
     assert "tool_name: spawn_agent" in text
     assert "docs/conformance/e4_recalibration_evidence/codex_subagent_sync_20260306_v0110/replay_session.json" in text
     assert "docs/conformance/e4_recalibration_evidence/codex_subagent_async_20260306_v0110/replay_session.json" in text

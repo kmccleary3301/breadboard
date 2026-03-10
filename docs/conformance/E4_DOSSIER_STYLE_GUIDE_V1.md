@@ -100,6 +100,9 @@ At minimum:
 - `provider_tools`
 - `prompts`
 - `tools`
+- `tool_packs` when the harness has meaningful pack-level grouping
+- `tool_bindings` when execution/binding shape is part of the insight surface
+- `terminal_sessions` when persistent terminal/process sessions are part of the harness story
 - `loop` / `modes`
 - `guardrails`
 - `permissions`
@@ -192,6 +195,43 @@ Public dossiers should explain:
 - where the real schemas live
 - what the effective visible tool surface is
 - why the catalog is not being inlined
+
+### `tool_packs`
+
+Interpret as:
+
+- conceptual grouping of tools into user-visible/product-visible surfaces
+
+The dossier should say:
+
+- which pack is actually frozen in the public lane
+- which packs are documented but not yet frozen
+- whether a pack is ordinary tools, collaboration, or terminal/process interaction
+
+### `tool_bindings`
+
+Interpret as:
+
+- the execution/binding shape that actually satisfies a tool in the current lane
+
+The dossier should say:
+
+- what execution profile is assumed
+- what placement is assumed
+- whether the binding is frozen or only targeted
+
+### `terminal_sessions`
+
+Interpret as:
+
+- persistent process/PTY/session semantics
+
+The dossier should say:
+
+- whether terminal sessions are actually frozen in the public lane
+- which tools start and continue a session
+- which interaction kinds exist
+- how listing/cleanup surfaces are projected
 
 ### `features`
 
