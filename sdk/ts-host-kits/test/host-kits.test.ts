@@ -2,9 +2,14 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import {
+  buildBackboneEffectiveToolSurfaceView,
+  buildBackboneTerminalCleanupResult,
+  buildBackboneTerminalRegistryView,
+  buildEffectiveToolSurfaceView,
   buildHostProjectionEnvelope,
   buildHostResultMeta,
   buildHostTranscriptProjection,
+  buildTerminalRegistryView,
   buildProviderHostTurnView,
   resolveProviderHostTurnView,
   buildFallbackHostKitInvocation,
@@ -15,6 +20,8 @@ import {
   normalizeHostManagedTranscript,
   normalizeHostKitSupportClaim,
 } from "../src/index.js"
+import { createBackbone } from "@breadboard/backbone"
+import { buildWorkspaceCapabilitySet, createWorkspace } from "@breadboard/workspace"
 
 const supportedClaim = {
   level: "supported" as const,
@@ -122,6 +129,19 @@ test("createProviderHostSession preserves transcript continuity and projection s
       },
       workspace: {} as never,
       projectionProfile: { id: "host_callbacks", summary: "Host callbacks" },
+      terminals: {
+        reduceRegistry() {
+          throw new Error("not used in this test")
+        },
+        buildCleanupResult() {
+          throw new Error("not used in this test")
+        },
+      },
+      tools: {
+        buildEffectiveSurface() {
+          throw new Error("not used in this test")
+        },
+      },
       classifyProviderTurn() {
         return supportedClaim
       },
@@ -252,6 +272,98 @@ test("buildHostTranscriptProjection extracts assistant text and tool previews", 
     assistantTexts: ["hello"],
     toolPreviews: ["pwd => /tmp/project"],
   })
+})
+
+test("Host Kit can build terminal and tool-surface views", () => {
+  const terminalView = buildTerminalRegistryView({
+    schema_version: "bb.terminal_registry_snapshot.v1",
+    snapshot_id: "term-reg:1",
+    active_sessions: [
+      {
+        schema_version: "bb.terminal_session_descriptor.v1",
+        terminal_session_id: "term-1",
+        command: ["bash", "-lc", "sleep 30"],
+        stream_mode: "pipes",
+        persistence_scope: "thread",
+        continuation_scope: "model",
+      },
+    ],
+    ended_session_ids: ["term-0"],
+  })
+  assert.equal(terminalView.activeSessions[0]?.commandSummary, "bash -lc sleep 30")
+
+  const surfaceView = buildEffectiveToolSurfaceView({
+    schema_version: "bb.effective_tool_surface.v1",
+    surface_id: "surface-1",
+    tool_ids: ["cuda.profile.capture"],
+    binding_ids: ["bind-1"],
+    hidden_tool_ids: ["firecrawl.local"],
+  })
+  assert.deepEqual(surfaceView.visibleToolIds, ["cuda.profile.capture"])
+  assert.deepEqual(surfaceView.hiddenToolIds, ["firecrawl.local"])
+})
+
+test("Host Kit can project terminal and tool surfaces through Backbone", () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-1",
+    rootDir: "/tmp/project",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({ workspace })
+  const session = backbone.openSession({ sessionId: "session-1" })
+
+  const terminalView = buildBackboneTerminalRegistryView(session, [
+    {
+      schemaVersion: "bb.kernel_event.v1",
+      eventId: "evt-1",
+      runId: "run-1",
+      sessionId: "session-1",
+      seq: 1,
+      ts: "2026-03-10T00:00:00Z",
+      actor: "tool",
+      visibility: "host",
+      kind: "terminal_session_begin",
+      payload: {
+        schema_version: "bb.terminal_session_descriptor.v1",
+        terminal_session_id: "term-1",
+        command: ["python", "-m", "http.server"],
+        stream_mode: "pipes",
+        persistence_scope: "thread",
+        continuation_scope: "both",
+      },
+    },
+  ])
+  assert.equal(terminalView.activeSessions[0]?.terminalSessionId, "term-1")
+
+  const cleanup = buildBackboneTerminalCleanupResult(session, {
+    cleanupId: "cleanup-1",
+    scope: "all",
+    cleanedSessionIds: ["term-1"],
+  })
+  assert.deepEqual(cleanup.cleaned_session_ids, ["term-1"])
+
+  const surfaceView = buildBackboneEffectiveToolSurfaceView(session, {
+    surfaceId: "surface-1",
+    bindings: [
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-1",
+        tool_id: "firecrawl.local",
+        binding_kind: "service",
+      },
+    ],
+    claims: [
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "firecrawl.local",
+        binding_id: "bind-1",
+        level: "supported",
+        summary: "available",
+        exposed_to_model: true,
+      },
+    ],
+  })
+  assert.deepEqual(surfaceView.visibleToolIds, ["firecrawl.local"])
 })
 
 test("emitHostProjectionCallbacks replays projected assistant text, tool previews, and agent events", async () => {

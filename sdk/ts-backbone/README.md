@@ -18,11 +18,19 @@ Current scope:
 - support-claim generation
 - execution-profile-aware support classification
 - projection-profile exposure
+- terminal registry reduction and cleanup result construction through `BackboneSession.terminals`
+- effective tool-surface construction through `BackboneSession.tools`
 
 Hosts should treat `SupportClaim` as the public truth for:
 - whether a slice is supported
 - which execution profile is in play
 - how confident BreadBoard is about the supported path
 - what host interaction mode is recommended
+
+Hosts should treat:
+- `BackboneSession.terminals`
+  as the public product-layer entrypoint for persistent terminal registry reduction and cleanup result construction
+- `BackboneSession.tools`
+  as the public product-layer entrypoint for effective tool-surface construction
 
 It does **not** replace Host Kits or Workspace. It composes them.

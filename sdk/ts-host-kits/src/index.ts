@@ -1,10 +1,18 @@
 import type {
   BackboneSession,
   BackboneTurnResult,
+  EffectiveToolSurfaceInput,
   ProviderTurnInput,
   SupportClaim,
+  TerminalCleanupInput,
 } from "@breadboard/backbone"
-import type { SessionTranscriptV1, SessionTranscriptV1Item } from "@breadboard/kernel-contracts"
+import type {
+  EffectiveToolSurfaceV1,
+  SessionTranscriptV1,
+  SessionTranscriptV1Item,
+  TerminalCleanupResultV1,
+  TerminalRegistrySnapshotV1,
+} from "@breadboard/kernel-contracts"
 
 export type HostKitMode = "supported" | "fallback"
 
@@ -100,6 +108,26 @@ export interface HostResultMeta {
   readonly durationMs: number
   readonly agentMeta: HostAgentMeta
   readonly stopReason: string
+}
+
+export interface HostTerminalSessionView {
+  readonly terminalSessionId: string
+  readonly commandSummary: string
+  readonly persistenceScope: string
+  readonly continuationScope: string
+}
+
+export interface HostTerminalRegistryView {
+  readonly snapshotId: string
+  readonly activeSessions: HostTerminalSessionView[]
+  readonly endedSessionIds: readonly string[]
+}
+
+export interface EffectiveToolSurfaceView {
+  readonly surfaceId: string
+  readonly visibleToolIds: readonly string[]
+  readonly hiddenToolIds: readonly string[]
+  readonly bindingIds: readonly string[]
 }
 
 export interface ProviderHostSession<Input, ProjectionState, ProjectionOutput> {
@@ -326,6 +354,72 @@ export function buildHostResultMeta(options: {
     },
     stopReason: options.stopReason,
   }
+}
+
+/**
+ * Normalize a terminal registry snapshot into a small host-facing view that avoids exposing the
+ * full kernel descriptor shape to every host integration.
+ */
+export function buildTerminalRegistryView(
+  snapshot: TerminalRegistrySnapshotV1,
+): HostTerminalRegistryView {
+  return {
+    snapshotId: snapshot.snapshot_id,
+    activeSessions: snapshot.active_sessions.map((session) => ({
+      terminalSessionId: session.terminal_session_id,
+      commandSummary: session.command.join(" "),
+      persistenceScope: session.persistence_scope,
+      continuationScope: session.continuation_scope,
+    })),
+    endedSessionIds: snapshot.ended_session_ids ?? [],
+  }
+}
+
+/**
+ * Project an effective tool surface into a stable host/product-facing view.
+ */
+export function buildEffectiveToolSurfaceView(
+  surface: EffectiveToolSurfaceV1,
+): EffectiveToolSurfaceView {
+  return {
+    surfaceId: surface.surface_id,
+    visibleToolIds: surface.tool_ids,
+    hiddenToolIds: surface.hidden_tool_ids ?? [],
+    bindingIds: surface.binding_ids,
+  }
+}
+
+/**
+ * Convenience helper for hosts that want to reduce a terminal registry through Backbone and
+ * immediately receive a stable host-facing view.
+ */
+export function buildBackboneTerminalRegistryView(
+  session: BackboneSession,
+  events: readonly import("@breadboard/kernel-contracts").KernelEventV1[],
+): HostTerminalRegistryView {
+  return buildTerminalRegistryView(session.terminals.reduceRegistry(events))
+}
+
+/**
+ * Convenience helper for hosts that want to build a cleanup result through Backbone while keeping
+ * the call site on the product-facing Host Kit surface.
+ */
+export function buildBackboneTerminalCleanupResult(
+  session: BackboneSession,
+  input: TerminalCleanupInput,
+): TerminalCleanupResultV1 {
+  return session.terminals.buildCleanupResult(input)
+}
+
+/**
+ * Convenience helper for hosts that want to resolve a product-facing effective tool surface via
+ * Backbone without reaching into kernel-core directly.
+ */
+export function buildBackboneEffectiveToolSurfaceView(
+  session: BackboneSession,
+  input: EffectiveToolSurfaceInput,
+): EffectiveToolSurfaceView {
+  return buildEffectiveToolSurfaceView(session.tools.buildEffectiveSurface(input))
 }
 
 /**

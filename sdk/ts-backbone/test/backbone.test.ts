@@ -98,3 +98,67 @@ test("classifyToolTurn advertises remote profile when requested", () => {
   assert.equal(claim.executionProfileId, "remote_isolated")
   assert.equal(claim.recommendedHostMode, "background")
 })
+
+test("BackboneSession exposes terminal and effective-tool-surface helpers", () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-1",
+    rootDir: "/tmp/project",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({ workspace })
+  const session = backbone.openSession({ sessionId: "s-1" })
+
+  const registry = session.terminals.reduceRegistry([
+    {
+      schemaVersion: "bb.kernel_event.v1",
+      eventId: "evt-1",
+      runId: "run-1",
+      sessionId: "s-1",
+      seq: 1,
+      ts: "2026-03-10T00:00:00Z",
+      actor: "tool",
+      visibility: "host",
+      kind: "terminal_session_begin",
+      payload: {
+        schema_version: "bb.terminal_session_descriptor.v1",
+        terminal_session_id: "term-1",
+        command: ["bash", "-lc", "sleep 30"],
+        stream_mode: "pipes",
+        persistence_scope: "thread",
+        continuation_scope: "model",
+      },
+    },
+  ])
+  assert.equal(registry.active_sessions.length, 1)
+
+  const cleanup = session.terminals.buildCleanupResult({
+    cleanupId: "cleanup-1",
+    scope: "single",
+    cleanedSessionIds: ["term-1"],
+  })
+  assert.deepEqual(cleanup.cleaned_session_ids, ["term-1"])
+
+  const surface = session.tools.buildEffectiveSurface({
+    surfaceId: "surface-1",
+    bindings: [
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-1",
+        tool_id: "cuda.profile.capture",
+        binding_kind: "sandbox",
+      },
+    ],
+    claims: [
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "cuda.profile.capture",
+        binding_id: "bind-1",
+        level: "supported",
+        summary: "available",
+        fallback_available: false,
+        exposed_to_model: true,
+      },
+    ],
+  })
+  assert.deepEqual(surface.tool_ids, ["cuda.profile.capture"])
+})

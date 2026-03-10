@@ -1,9 +1,14 @@
 import type {
+  EffectiveToolSurfaceV1,
   KernelEventV1,
   ProviderExchangeV1,
   RunRequestV1,
   SessionTranscriptV1,
   SessionTranscriptV1Item,
+  TerminalCleanupResultV1,
+  TerminalRegistrySnapshotV1,
+  ToolBindingV1,
+  ToolSupportClaimV1,
   UnsupportedCaseV1,
 } from "@breadboard/kernel-contracts"
 import type {
@@ -65,10 +70,35 @@ export interface BackboneTurnResult {
   readonly unsupportedCase?: UnsupportedCaseV1
 }
 
+export interface TerminalCleanupInput {
+  readonly cleanupId: string
+  readonly scope: TerminalCleanupResultV1["scope"]
+  readonly cleanedSessionIds: string[]
+  readonly failedSessionIds?: string[]
+}
+
+export interface EffectiveToolSurfaceInput {
+  readonly surfaceId: string
+  readonly bindings: ToolBindingV1[]
+  readonly claims: ToolSupportClaimV1[]
+  readonly projectionProfileId?: string | null
+}
+
+export interface BackboneTerminalApi {
+  reduceRegistry(events: readonly KernelEventV1[]): TerminalRegistrySnapshotV1
+  buildCleanupResult(input: TerminalCleanupInput): TerminalCleanupResultV1
+}
+
+export interface BackboneToolSurfaceApi {
+  buildEffectiveSurface(input: EffectiveToolSurfaceInput): EffectiveToolSurfaceV1
+}
+
 export interface BackboneSession {
   readonly descriptor: HostSessionDescriptor
   readonly workspace: Workspace
   readonly projectionProfile: ProjectionProfile
+  readonly terminals: BackboneTerminalApi
+  readonly tools: BackboneToolSurfaceApi
   classifyProviderTurn(input: ProviderTurnInput): SupportClaim
   classifyToolTurn(input: ToolTurnInput): SupportClaim
   runProviderTurn(input: ProviderTurnInput): Promise<BackboneTurnResult>

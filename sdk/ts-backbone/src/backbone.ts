@@ -1,4 +1,7 @@
 import {
+  buildEffectiveToolSurface,
+  buildTerminalCleanupResult,
+  reduceTerminalRegistry,
   executeDriverMediatedToolTurn,
   executeProviderTextContinuationTurn,
   executeProviderTextTurn,
@@ -14,6 +17,19 @@ function makeBackboneSession(options: BackboneOptions, descriptor: HostSessionDe
     descriptor,
     workspace: options.workspace,
     projectionProfile,
+    terminals: {
+      reduceRegistry(events) {
+        return reduceTerminalRegistry(events)
+      },
+      buildCleanupResult(input) {
+        return buildTerminalCleanupResult(input)
+      },
+    },
+    tools: {
+      buildEffectiveSurface(input) {
+        return buildEffectiveToolSurface(input)
+      },
+    },
     classifyProviderTurn(input: ProviderTurnInput) {
       return buildSupportClaim({
         workspace: options.workspace,

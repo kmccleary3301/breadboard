@@ -20,7 +20,8 @@
   },
   "dependencies": {
     "@breadboard/backbone": "file:../ts-backbone",
-    "@breadboard/kernel-contracts": "file:../ts-kernel-contracts"
+    "@breadboard/kernel-contracts": "file:../ts-kernel-contracts",
+    "@breadboard/workspace": "file:../ts-workspace"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

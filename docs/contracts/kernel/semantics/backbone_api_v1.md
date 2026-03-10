@@ -31,6 +31,8 @@ The current implementation slice is intentionally narrow:
 - provider-backed text turn execution
 - driver-mediated tool turn execution
 - projection-profile exposure
+- terminal registry reduction and cleanup result construction
+- effective tool-surface construction
 
 It is not yet a full host-kit replacement layer.
 

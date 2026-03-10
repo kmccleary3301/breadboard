@@ -15,3 +15,9 @@ It standardizes:
 - reusable projection-state/result resolution helpers for session-oriented thin hosts
 
 This package does not own host-specific request schemas by itself. It provides the reusable abstraction layer that concrete host kits, such as OpenClaw, should implement.
+
+It now also includes public product-layer helpers for:
+- terminal-registry projection
+- terminal cleanup result construction through Backbone
+- effective tool-surface projection through Backbone
+- host-facing transcript/result envelopes that combine SupportClaim, projection state, and host-shaped result metadata
