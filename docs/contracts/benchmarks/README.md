@@ -102,6 +102,7 @@ Current calibration status:
 
 - `pack_a2_calibration_minif2f_v1` is now the stable low-cost lane. BreadBoard Hilbert-like reaches `4/4` solved on the repaired pack, versus Hilbert `1/4`, using `cross_system_pilot_report_v3.json`.
 - The BB runner now performs stop-on-verified-proof during polling, so a valid Lean proof is captured immediately instead of being overwritten by later low-value drift.
+- The local external comparator clone at `other_harness_refs/ml-hilbert` now tracks the maintained `Rose-STL-Lab/ml-hilbert` fork on `main` (`bee1325`), while preserving Apple’s repository as the `apple` remote for reference.
 
 Adapter input fixture example:
 
