@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.terminal_session_descriptor.v1.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "terminal_session_id",
+    "command",
+    "stream_mode",
+    "persistence_scope",
+    "continuation_scope"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.terminal_session_descriptor.v1"
+    },
+    "terminal_session_id": {
+      "type": "string"
+    },
+    "startup_call_id": {
+      "type": ["string", "null"]
+    },
+    "owner_task_id": {
+      "type": ["string", "null"]
+    },
+    "public_handles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["namespace", "label", "value", "audience"],
+        "properties": {
+          "namespace": {"type": "string"},
+          "label": {"type": "string"},
+          "value": {"type": ["string", "number"]},
+          "audience": {"enum": ["model", "host"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "command": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "cwd": {
+      "type": ["string", "null"]
+    },
+    "stream_mode": {
+      "enum": ["pty", "pipes"]
+    },
+    "stream_split": {
+      "enum": ["stdout_stderr", "merged"]
+    },
+    "capability_id": {
+      "type": ["string", "null"]
+    },
+    "placement_id": {
+      "type": ["string", "null"]
+    },
+    "persistence_scope": {
+      "enum": ["turn", "thread", "until_cleanup"]
+    },
+    "continuation_scope": {
+      "enum": ["none", "model", "host", "both"]
+    }
+  },
+  "additionalProperties": false
+}

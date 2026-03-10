@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.terminal_session_end.v1.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "terminal_session_id",
+    "terminal_state"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.terminal_session_end.v1"
+    },
+    "terminal_session_id": {"type": "string"},
+    "startup_call_id": {"type": ["string", "null"]},
+    "causing_call_id": {"type": ["string", "null"]},
+    "terminal_state": {
+      "enum": ["completed", "failed", "cancelled", "cleaned_up", "backend_lost"]
+    },
+    "exit_code": {"type": ["integer", "null"]},
+    "duration_ms": {"type": ["integer", "null"], "minimum": 0},
+    "artifact_refs": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  },
+  "additionalProperties": false
+}

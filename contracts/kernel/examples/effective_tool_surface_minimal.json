@@ -1,0 +1,9 @@
+{
+  "schema_version": "bb.effective_tool_surface.v1",
+  "surface_id": "surface_default",
+  "tool_ids": ["cuda.profile.capture", "firecrawl.search"],
+  "binding_ids": ["bind_cuda_profile_default", "bind_firecrawl_service_default"],
+  "hidden_tool_ids": [],
+  "projection_profile_id": "host_callbacks"
+}
+

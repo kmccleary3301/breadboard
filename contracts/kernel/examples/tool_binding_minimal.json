@@ -1,0 +1,14 @@
+{
+  "schema_version": "bb.tool_binding.v1",
+  "binding_id": "bind_cuda_profile_default",
+  "tool_id": "cuda.profile.capture",
+  "binding_kind": "sandbox",
+  "environment_selector": {
+    "profile_ids": ["cuda-dev"],
+    "features": ["gpu", "cuda"]
+  },
+  "capability_id": "cap_gpu_debug",
+  "placement_id": "place_local_oci",
+  "policy_tags": ["artifact_heavy", "privileged_diagnostic"]
+}
+

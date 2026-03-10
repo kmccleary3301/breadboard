@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.effective_tool_surface.v1.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "surface_id",
+    "tool_ids",
+    "binding_ids"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.effective_tool_surface.v1"
+    },
+    "surface_id": {"type": "string"},
+    "tool_ids": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "binding_ids": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "hidden_tool_ids": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "projection_profile_id": {"type": ["string", "null"]},
+    "surface_hash": {"type": ["string", "null"]}
+  },
+  "additionalProperties": false
+}

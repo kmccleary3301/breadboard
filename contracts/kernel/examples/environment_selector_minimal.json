@@ -1,0 +1,5 @@
+{
+  "profile_ids": ["cuda-dev"],
+  "features": ["gpu", "cuda", "nsys"]
+}
+

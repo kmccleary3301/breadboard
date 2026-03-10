@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.terminal_interaction.v1.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "terminal_session_id",
+    "interaction_kind"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.terminal_interaction.v1"
+    },
+    "terminal_session_id": {"type": "string"},
+    "startup_call_id": {"type": ["string", "null"]},
+    "causing_call_id": {"type": ["string", "null"]},
+    "interaction_kind": {"enum": ["stdin", "poll", "signal"]},
+    "input_b64": {"type": ["string", "null"]},
+    "signal": {"type": ["string", "null"]}
+  },
+  "additionalProperties": false
+}

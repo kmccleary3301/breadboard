@@ -245,6 +245,120 @@ export interface TranscriptContinuationPatchV1 {
   lossiness_flags?: string[]
 }
 
+export interface TerminalSessionDescriptorV1PublicHandle {
+  namespace: string
+  label: string
+  value: string | number
+  audience: "model" | "host"
+}
+
+export interface TerminalSessionDescriptorV1 {
+  schema_version: "bb.terminal_session_descriptor.v1"
+  terminal_session_id: string
+  startup_call_id?: string | null
+  owner_task_id?: string | null
+  public_handles?: TerminalSessionDescriptorV1PublicHandle[]
+  command: string[]
+  cwd?: string | null
+  stream_mode: "pty" | "pipes"
+  stream_split?: "stdout_stderr" | "merged"
+  capability_id?: string | null
+  placement_id?: string | null
+  persistence_scope: "turn" | "thread" | "until_cleanup"
+  continuation_scope: "none" | "model" | "host" | "both"
+}
+
+export interface TerminalOutputDeltaV1 {
+  schema_version: "bb.terminal_output_delta.v1"
+  terminal_session_id: string
+  startup_call_id?: string | null
+  causing_call_id?: string | null
+  stream: "stdout" | "stderr" | "merged"
+  chunk_b64: string
+  chunk_seq: number
+}
+
+export interface TerminalInteractionV1 {
+  schema_version: "bb.terminal_interaction.v1"
+  terminal_session_id: string
+  startup_call_id?: string | null
+  causing_call_id?: string | null
+  interaction_kind: "stdin" | "poll" | "signal"
+  input_b64?: string | null
+  signal?: string | null
+}
+
+export interface TerminalSessionEndV1 {
+  schema_version: "bb.terminal_session_end.v1"
+  terminal_session_id: string
+  startup_call_id?: string | null
+  causing_call_id?: string | null
+  terminal_state: "completed" | "failed" | "cancelled" | "cleaned_up" | "backend_lost"
+  exit_code?: number | null
+  duration_ms?: number | null
+  artifact_refs?: string[]
+  evidence_refs?: string[]
+}
+
+export interface TerminalRegistrySnapshotV1 {
+  schema_version: "bb.terminal_registry_snapshot.v1"
+  snapshot_id: string
+  active_sessions: TerminalSessionDescriptorV1[]
+  ended_session_ids?: string[]
+}
+
+export interface TerminalCleanupResultV1 {
+  schema_version: "bb.terminal_cleanup_result.v1"
+  cleanup_id: string
+  scope: "single" | "all" | "filtered"
+  cleaned_session_ids: string[]
+  failed_session_ids?: string[]
+  metadata?: Record<string, unknown>
+}
+
+export interface EnvironmentSelectorV1 {
+  profile_ids?: string[]
+  features?: string[]
+  provider_families?: string[]
+  driver_classes?: string[]
+  image_ids?: string[]
+  service_ids?: string[]
+}
+
+export interface ToolBindingV1 {
+  schema_version: "bb.tool_binding.v1"
+  binding_id: string
+  tool_id: string
+  binding_kind: "host" | "sandbox" | "service" | "mcp" | "delegated" | "provider_hosted" | "synthetic_only"
+  environment_selector?: EnvironmentSelectorV1
+  capability_id?: string | null
+  placement_id?: string | null
+  fallback_binding_ids?: string[]
+  policy_tags?: string[]
+  evidence_mode?: string | null
+}
+
+export interface ToolSupportClaimV1 {
+  schema_version: "bb.tool_support_claim.v1"
+  tool_id: string
+  binding_id?: string | null
+  level: "supported" | "degraded" | "install_required" | "unsupported" | "hidden"
+  summary: string
+  fallback_available?: boolean
+  hidden_reason?: string | null
+  exposed_to_model?: boolean
+}
+
+export interface EffectiveToolSurfaceV1 {
+  schema_version: "bb.effective_tool_surface.v1"
+  surface_id: string
+  tool_ids: string[]
+  binding_ids: string[]
+  hidden_tool_ids?: string[]
+  projection_profile_id?: string | null
+  surface_hash?: string | null
+}
+
 export interface UnsupportedCaseV1 {
   schema_version: "bb.unsupported_case.v1"
   reason_code: string
@@ -354,6 +468,16 @@ const sandboxResultSchema = loadTrackedSchema("bb.sandbox_result.v1.schema.json"
 const distributedTaskDescriptorSchema = loadTrackedSchema("bb.distributed_task_descriptor.v1.schema.json")
 const transcriptContinuationPatchSchema = loadTrackedSchema("bb.transcript_continuation_patch.v1.schema.json")
 const unsupportedCaseSchema = loadTrackedSchema("bb.unsupported_case.v1.schema.json")
+const terminalSessionDescriptorSchema = loadTrackedSchema("bb.terminal_session_descriptor.v1.schema.json")
+const terminalOutputDeltaSchema = loadTrackedSchema("bb.terminal_output_delta.v1.schema.json")
+const terminalInteractionSchema = loadTrackedSchema("bb.terminal_interaction.v1.schema.json")
+const terminalSessionEndSchema = loadTrackedSchema("bb.terminal_session_end.v1.schema.json")
+const terminalRegistrySnapshotSchema = loadTrackedSchema("bb.terminal_registry_snapshot.v1.schema.json")
+const terminalCleanupResultSchema = loadTrackedSchema("bb.terminal_cleanup_result.v1.schema.json")
+const environmentSelectorSchema = loadTrackedSchema("bb.environment_selector.v1.schema.json")
+const toolBindingSchema = loadTrackedSchema("bb.tool_binding.v1.schema.json")
+const toolSupportClaimSchema = loadTrackedSchema("bb.tool_support_claim.v1.schema.json")
+const effectiveToolSurfaceSchema = loadTrackedSchema("bb.effective_tool_surface.v1.schema.json")
 const replaySessionSchema = loadTrackedSchema("bb.replay_session.v1.schema.json")
 const taskSchema = loadTrackedSchema("bb.task.v1.schema.json")
 const checkpointMetadataSchema = loadTrackedSchema("bb.checkpoint_metadata.v1.schema.json")
@@ -361,6 +485,49 @@ const engineConformanceManifestSchema = loadTrackedSchema("../manifests/bb.engin
 
 const AjvCtor: any = (Ajv2020Module as any).default ?? Ajv2020Module
 const ajv = new AjvCtor({ allErrors: true })
+
+function registerTrackedSchema(filename: string, schema: unknown): void {
+  const schemaId =
+    typeof schema === "object" && schema !== null && "$id" in schema && typeof (schema as { $id?: unknown }).$id === "string"
+      ? ((schema as { $id: string }).$id)
+      : null
+  const registrationKey = schemaId ?? filename
+  if (!ajv.getSchema(registrationKey)) {
+    ajv.addSchema(schema, filename)
+  }
+}
+
+registerTrackedSchema("bb.kernel_event.v1.schema.json", kernelEventSchema)
+registerTrackedSchema("bb.session_transcript.v1.schema.json", sessionTranscriptSchema)
+registerTrackedSchema("bb.tool_call.v1.schema.json", toolCallSchema)
+registerTrackedSchema("bb.tool_spec.v1.schema.json", toolSpecSchema)
+registerTrackedSchema("bb.tool_execution_outcome.v1.schema.json", toolExecutionOutcomeSchema)
+registerTrackedSchema("bb.tool_model_render.v1.schema.json", toolModelRenderSchema)
+registerTrackedSchema("bb.run_request.v1.schema.json", runRequestSchema)
+registerTrackedSchema("bb.run_context.v1.schema.json", runContextSchema)
+registerTrackedSchema("bb.provider_exchange.v1.schema.json", providerExchangeSchema)
+registerTrackedSchema("bb.permission.v1.schema.json", permissionSchema)
+registerTrackedSchema("bb.execution_capability.v1.schema.json", executionCapabilitySchema)
+registerTrackedSchema("bb.execution_placement.v1.schema.json", executionPlacementSchema)
+registerTrackedSchema("bb.sandbox_request.v1.schema.json", sandboxRequestSchema)
+registerTrackedSchema("bb.sandbox_result.v1.schema.json", sandboxResultSchema)
+registerTrackedSchema("bb.distributed_task_descriptor.v1.schema.json", distributedTaskDescriptorSchema)
+registerTrackedSchema("bb.transcript_continuation_patch.v1.schema.json", transcriptContinuationPatchSchema)
+registerTrackedSchema("bb.unsupported_case.v1.schema.json", unsupportedCaseSchema)
+registerTrackedSchema("bb.terminal_session_descriptor.v1.schema.json", terminalSessionDescriptorSchema)
+registerTrackedSchema("bb.terminal_output_delta.v1.schema.json", terminalOutputDeltaSchema)
+registerTrackedSchema("bb.terminal_interaction.v1.schema.json", terminalInteractionSchema)
+registerTrackedSchema("bb.terminal_session_end.v1.schema.json", terminalSessionEndSchema)
+registerTrackedSchema("bb.terminal_registry_snapshot.v1.schema.json", terminalRegistrySnapshotSchema)
+registerTrackedSchema("bb.terminal_cleanup_result.v1.schema.json", terminalCleanupResultSchema)
+registerTrackedSchema("bb.environment_selector.v1.schema.json", environmentSelectorSchema)
+registerTrackedSchema("bb.tool_binding.v1.schema.json", toolBindingSchema)
+registerTrackedSchema("bb.tool_support_claim.v1.schema.json", toolSupportClaimSchema)
+registerTrackedSchema("bb.effective_tool_surface.v1.schema.json", effectiveToolSurfaceSchema)
+registerTrackedSchema("bb.replay_session.v1.schema.json", replaySessionSchema)
+registerTrackedSchema("bb.task.v1.schema.json", taskSchema)
+registerTrackedSchema("bb.checkpoint_metadata.v1.schema.json", checkpointMetadataSchema)
+registerTrackedSchema("bb.engine_conformance_manifest.v1.schema.json", engineConformanceManifestSchema)
 
 const validators = {
   kernelEvent: ajv.compile(kernelEventSchema),
@@ -380,6 +547,16 @@ const validators = {
   distributedTaskDescriptor: ajv.compile(distributedTaskDescriptorSchema),
   transcriptContinuationPatch: ajv.compile(transcriptContinuationPatchSchema),
   unsupportedCase: ajv.compile(unsupportedCaseSchema),
+  terminalSessionDescriptor: ajv.compile(terminalSessionDescriptorSchema),
+  terminalOutputDelta: ajv.compile(terminalOutputDeltaSchema),
+  terminalInteraction: ajv.compile(terminalInteractionSchema),
+  terminalSessionEnd: ajv.compile(terminalSessionEndSchema),
+  terminalRegistrySnapshot: ajv.compile(terminalRegistrySnapshotSchema),
+  terminalCleanupResult: ajv.compile(terminalCleanupResultSchema),
+  environmentSelector: ajv.compile(environmentSelectorSchema),
+  toolBinding: ajv.compile(toolBindingSchema),
+  toolSupportClaim: ajv.compile(toolSupportClaimSchema),
+  effectiveToolSurface: ajv.compile(effectiveToolSurfaceSchema),
   replaySession: ajv.compile(replaySessionSchema),
   task: ajv.compile(taskSchema),
   checkpointMetadata: ajv.compile(checkpointMetadataSchema),
@@ -404,6 +581,16 @@ export const kernelSchemas = {
   distributedTaskDescriptor: distributedTaskDescriptorSchema,
   transcriptContinuationPatch: transcriptContinuationPatchSchema,
   unsupportedCase: unsupportedCaseSchema,
+  terminalSessionDescriptor: terminalSessionDescriptorSchema,
+  terminalOutputDelta: terminalOutputDeltaSchema,
+  terminalInteraction: terminalInteractionSchema,
+  terminalSessionEnd: terminalSessionEndSchema,
+  terminalRegistrySnapshot: terminalRegistrySnapshotSchema,
+  terminalCleanupResult: terminalCleanupResultSchema,
+  environmentSelector: environmentSelectorSchema,
+  toolBinding: toolBindingSchema,
+  toolSupportClaim: toolSupportClaimSchema,
+  effectiveToolSurface: effectiveToolSurfaceSchema,
   replaySession: replaySessionSchema,
   task: taskSchema,
   checkpointMetadata: checkpointMetadataSchema,

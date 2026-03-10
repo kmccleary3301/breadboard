@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.tool_support_claim.v1.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "tool_id",
+    "level",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.tool_support_claim.v1"
+    },
+    "tool_id": {"type": "string"},
+    "binding_id": {"type": ["string", "null"]},
+    "level": {"enum": ["supported", "degraded", "install_required", "unsupported", "hidden"]},
+    "summary": {"type": "string"},
+    "fallback_available": {"type": "boolean"},
+    "hidden_reason": {"type": ["string", "null"]},
+    "exposed_to_model": {"type": "boolean"}
+  },
+  "additionalProperties": false
+}

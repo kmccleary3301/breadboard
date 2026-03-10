@@ -34,6 +34,8 @@ Each dossier should answer:
 17. `conformance_evidence_v1.md`
 18. `import_export_session_v1.md`
 19. `projection_adapter_boundaries_v1.md`
+20. `terminal_sessions_v1.md`
+21. `tool_bindings_and_effective_surfaces_v1.md`
 
 ---
 
@@ -93,6 +95,11 @@ The V2 tranche now adds:
 - `unsupported_case_v1.md`
 - `execution_driver_policy_and_evidence_v1.md`
 
+The first Phase 14 tranche now adds:
+
+- `terminal_sessions_v1.md`
+- `tool_bindings_and_effective_surfaces_v1.md`
+
 The first V3 tranche now adds:
 
 - `backbone_api_v1.md`
@@ -126,6 +133,8 @@ The first V3 tranche now adds:
   - `distributed_task_descriptor_v1.md`
   - `transcript_continuation_patch_v1.md`
   - `unsupported_case_v1.md`
+  - `terminal_sessions_v1.md`
+  - `tool_bindings_and_effective_surfaces_v1.md`
 - intentionally deferred to a later tranche:
   - `import_export_session_v1.md`
   - `projection_adapter_boundaries_v1.md`

@@ -1,0 +1,9 @@
+{
+  "schema_version": "bb.terminal_session_descriptor.v1",
+  "terminal_session_id": "term_01HXYZ",
+  "command": ["bash", "-lc", "sleep 30"],
+  "stream_mode": "pipes",
+  "persistence_scope": "thread",
+  "continuation_scope": "model"
+}
+

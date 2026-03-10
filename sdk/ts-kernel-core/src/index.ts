@@ -1,5 +1,6 @@
 export * from "./conformance.js"
 export * from "./contracts.js"
+export * from "./terminals.js"
 export * from "./transcript.js"
 export * from "./turns.js"
 export * from "./types.js"

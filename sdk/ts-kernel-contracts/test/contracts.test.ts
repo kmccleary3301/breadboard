@@ -41,6 +41,45 @@ test("kernel validators accept tracked examples", () => {
   assert.doesNotThrow(() =>
     assertValid("unsupportedCase", loadJson("../../contracts/kernel/examples/unsupported_case_minimal.json")),
   )
+  assert.doesNotThrow(() =>
+    assertValid(
+      "terminalSessionDescriptor",
+      loadJson("../../contracts/kernel/examples/terminal_session_descriptor_minimal.json"),
+    ),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("terminalOutputDelta", loadJson("../../contracts/kernel/examples/terminal_output_delta_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("terminalInteraction", loadJson("../../contracts/kernel/examples/terminal_interaction_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("terminalSessionEnd", loadJson("../../contracts/kernel/examples/terminal_session_end_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid(
+      "terminalRegistrySnapshot",
+      loadJson("../../contracts/kernel/examples/terminal_registry_snapshot_minimal.json"),
+    ),
+  )
+  assert.doesNotThrow(() =>
+    assertValid(
+      "terminalCleanupResult",
+      loadJson("../../contracts/kernel/examples/terminal_cleanup_result_minimal.json"),
+    ),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("environmentSelector", loadJson("../../contracts/kernel/examples/environment_selector_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("toolBinding", loadJson("../../contracts/kernel/examples/tool_binding_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("toolSupportClaim", loadJson("../../contracts/kernel/examples/tool_support_claim_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("effectiveToolSurface", loadJson("../../contracts/kernel/examples/effective_tool_surface_minimal.json")),
+  )
   assert.doesNotThrow(() => assertValid("toolSpec", loadJson("../../contracts/kernel/examples/tool_spec_minimal.json")))
   assert.doesNotThrow(() => assertValid("task", loadJson("../../contracts/kernel/examples/task_minimal.json")))
   assert.doesNotThrow(() => assertValid("checkpointMetadata", loadJson("../../contracts/kernel/examples/checkpoint_metadata_minimal.json")))

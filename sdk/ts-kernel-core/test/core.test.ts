@@ -4,7 +4,9 @@ import assert from "node:assert/strict"
 import {
   buildExecutionCapabilityFromRunRequest,
   buildExecutionPlacement,
+  buildEffectiveToolSurface,
   buildConformanceSummary,
+  buildTerminalCleanupResult,
   executeDriverMediatedToolTurn,
   buildKernelEventId,
   buildRunContextFromRequest,
@@ -22,6 +24,7 @@ import {
   loadKernelFixture,
   normalizeTranscriptContractItem,
   normalizeTranscriptContractItems,
+  reduceTerminalRegistry,
 } from "../src/index.js"
 
 test("kernel core helpers remain deterministic", () => {
@@ -131,6 +134,82 @@ test("kernel core can build cross-engine conformance summary", () => {
   assert.ok(summary.manifestRows >= 1)
   assert.ok(summary.fixtureFamilies.includes("kernel_event"))
   assert.ok(summary.comparatorClasses.includes("normalized-trace-equal"))
+})
+
+test("kernel core can reduce terminal registry and effective tool surface", () => {
+  const registry = reduceTerminalRegistry([
+    {
+      schemaVersion: "bb.kernel_event.v1",
+      eventId: "evt-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      seq: 1,
+      ts: "2026-03-10T00:00:00Z",
+      actor: "tool",
+      visibility: "host",
+      kind: "terminal_session_begin",
+      payload: {
+        schema_version: "bb.terminal_session_descriptor.v1",
+        terminal_session_id: "term-1",
+        command: ["bash", "-lc", "sleep 30"],
+        stream_mode: "pipes",
+        persistence_scope: "thread",
+        continuation_scope: "model",
+      },
+    },
+    {
+      schemaVersion: "bb.kernel_event.v1",
+      eventId: "evt-2",
+      runId: "run-1",
+      sessionId: "sess-1",
+      seq: 2,
+      ts: "2026-03-10T00:00:01Z",
+      actor: "tool",
+      visibility: "host",
+      kind: "terminal_output_delta",
+      payload: {
+        schema_version: "bb.terminal_output_delta.v1",
+        terminal_session_id: "term-1",
+        stream: "stdout",
+        chunk_b64: "aGVsbG8K",
+        chunk_seq: 0,
+      },
+    },
+  ])
+  assert.equal(registry.schema_version, "bb.terminal_registry_snapshot.v1")
+  assert.equal(registry.active_sessions.length, 1)
+
+  const cleanup = buildTerminalCleanupResult({
+    cleanupId: "clean-1",
+    scope: "all",
+    cleanedSessionIds: ["term-1"],
+  })
+  assert.equal(cleanup.cleaned_session_ids[0], "term-1")
+
+  const surface = buildEffectiveToolSurface({
+    surfaceId: "surface-1",
+    bindings: [
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-1",
+        tool_id: "cuda.profile.capture",
+        binding_kind: "sandbox",
+      },
+    ],
+    claims: [
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "cuda.profile.capture",
+        binding_id: "bind-1",
+        level: "supported",
+        summary: "available",
+        fallback_available: false,
+        exposed_to_model: true,
+      },
+    ],
+    projectionProfileId: "host_callbacks",
+  })
+  assert.deepEqual(surface.tool_ids, ["cuda.profile.capture"])
 })
 
 test("kernel core can execute a constrained static text turn", () => {

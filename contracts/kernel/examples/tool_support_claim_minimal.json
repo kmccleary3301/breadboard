@@ -1,0 +1,10 @@
+{
+  "schema_version": "bb.tool_support_claim.v1",
+  "tool_id": "cuda.profile.capture",
+  "binding_id": "bind_cuda_profile_default",
+  "level": "supported",
+  "summary": "CUDA profiler is available in the current sandbox profile.",
+  "fallback_available": false,
+  "exposed_to_model": true
+}
+

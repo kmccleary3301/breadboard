@@ -32,6 +32,8 @@ def test_kernel_semantics_directory_tracks_expected_v1_dossiers() -> None:
         "unsupported_case_v1.md",
         "replay_session_v1.md",
         "conformance_evidence_v1.md",
+        "terminal_sessions_v1.md",
+        "tool_bindings_and_effective_surfaces_v1.md",
     }
     present = {path.name for path in semantics_dir.glob("*.md") if path.name != "README.md"}
     missing = sorted(expected - present)
@@ -108,6 +110,16 @@ def test_kernel_examples_include_execution_driver_contracts() -> None:
         "distributed_task_descriptor_minimal.json",
         "transcript_continuation_patch_minimal.json",
         "unsupported_case_minimal.json",
+        "terminal_session_descriptor_minimal.json",
+        "terminal_output_delta_minimal.json",
+        "terminal_interaction_minimal.json",
+        "terminal_session_end_minimal.json",
+        "terminal_registry_snapshot_minimal.json",
+        "terminal_cleanup_result_minimal.json",
+        "environment_selector_minimal.json",
+        "tool_binding_minimal.json",
+        "tool_support_claim_minimal.json",
+        "effective_tool_surface_minimal.json",
     }
     present = {path.name for path in example_dir.glob("*.json")}
     missing = sorted(expected - present)

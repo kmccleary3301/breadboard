@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.terminal_registry_snapshot.v1.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "snapshot_id",
+    "active_sessions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.terminal_registry_snapshot.v1"
+    },
+    "snapshot_id": {"type": "string"},
+    "active_sessions": {
+      "type": "array",
+      "items": {
+        "$ref": "bb.terminal_session_descriptor.v1.schema.json"
+      }
+    },
+    "ended_session_ids": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  },
+  "additionalProperties": false
+}

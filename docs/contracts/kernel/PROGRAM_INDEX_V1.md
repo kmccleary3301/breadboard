@@ -30,6 +30,8 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 - checkpoint and longrun
 - execution capability and placement
 - execution driver policy and evidence
+- terminal sessions
+- tool bindings and effective tool surfaces
 - sandbox envelopes
 - distributed task descriptor
 - durable orchestration and resume
@@ -102,3 +104,14 @@ Current state is intentionally bounded on:
 - microVM-backed or stronger delegated execution paths
 - production-grade orchestration deployment and fleet management
 - full Pi/OpenClaw replacement claims
+
+## Phase 14 frontier
+
+The next frontier is:
+
+- persistent terminal-session primitives
+- canonical tool bindings
+- inspectable effective tool surfaces
+- dossier/config surfaces for those families
+
+These are the missing pieces needed for honest Codex background-terminal parity and serious environment-aware custom tool injection.

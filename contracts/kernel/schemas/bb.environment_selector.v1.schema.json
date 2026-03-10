@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.environment_selector.v1.schema.json",
+  "type": "object",
+  "properties": {
+    "profile_ids": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "features": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "provider_families": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "driver_classes": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "image_ids": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "service_ids": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  },
+  "additionalProperties": false
+}

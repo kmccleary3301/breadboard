@@ -1,0 +1,7 @@
+{
+  "schema_version": "bb.terminal_cleanup_result.v1",
+  "cleanup_id": "clean-1",
+  "scope": "all",
+  "cleaned_session_ids": ["term_01HXYZ"]
+}
+
