@@ -28,6 +28,7 @@ const ensureSourceMainExists = async () => {
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(here, "..")
+const repoRoot = path.resolve(projectRoot, "..")
 const distMain = path.join(projectRoot, "dist", "main.js")
 const srcMain = path.join(projectRoot, "src", "main.ts")
 const launcherMode = (process.env.BREADBOARD_LAUNCHER_MODE?.trim().toLowerCase() || "dist") as
@@ -65,11 +66,19 @@ const writeWrapper = async (binDir: string) => {
     launcherMode === "source"
       ? `#!/usr/bin/env bash
 set -euo pipefail
+if [ ! -f ${JSON.stringify(path.join(projectRoot, "package.json"))} ] || [ ! -f ${JSON.stringify(path.join(repoRoot, "agentic_coder_prototype", "utils", "safe_delete.py"))} ] || [ ! -f ${JSON.stringify(srcMain)} ]; then
+  echo "BreadBoard launcher target is incomplete or corrupted: ${projectRoot}" >&2
+  exit 1
+fi
 cd ${JSON.stringify(projectRoot)}
 node --import tsx ${JSON.stringify(srcMain)} \"$@\"
 `
       : `#!/usr/bin/env bash
 set -euo pipefail
+if [ ! -f ${JSON.stringify(path.join(projectRoot, "package.json"))} ] || [ ! -f ${JSON.stringify(path.join(repoRoot, "agentic_coder_prototype", "utils", "safe_delete.py"))} ] || [ ! -f ${JSON.stringify(distMain)} ]; then
+  echo "BreadBoard launcher target is incomplete or corrupted: ${projectRoot}" >&2
+  exit 1
+fi
 node ${JSON.stringify(distMain)} \"$@\"
 `
   for (const name of BIN_NAMES) {

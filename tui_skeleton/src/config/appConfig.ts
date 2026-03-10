@@ -1,11 +1,11 @@
-import dotenv from "dotenv"
 import { homedir } from "node:os"
 import path from "node:path"
 import { promises as fs } from "node:fs"
 import { Effect, Layer, Context } from "effect"
 import { loadUserConfigSync } from "./userConfig.js"
+import { loadRepoDotenv } from "./runtimePaths.js"
 
-dotenv.config()
+loadRepoDotenv()
 
 export interface AppConfig {
   readonly baseUrl: string

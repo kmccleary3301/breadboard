@@ -15,7 +15,7 @@ import { forgetSession } from "../../cache/sessionCache.js"
 import type { ModelMenuItem, QueuedAttachment, SkillSelection } from "../../repl/types.js"
 import { CliProviders } from "../../providers/cliProviders.js"
 import type { PermissionDecision } from "../../repl/types.js"
-import { resolveBreadboardPath, resolveBreadboardWorkspace } from "../../utils/paths.js"
+import { resolveBreadboardPath, resolveBreadboardRepoPath, resolveBreadboardWorkspace } from "../../utils/paths.js"
 import { resolveAsciiOnly, resolveColorMode } from "../../repl/designSystem.js"
 import { resolveTuiConfig } from "../../tui_config/load.js"
 import type { ResolvedTuiConfig } from "../../tui_config/types.js"
@@ -64,7 +64,7 @@ const resolveTuiMode = (args: {
   if (cliMode) return cliMode
   const envMode = normalizeTuiMode(process.env.BREADBOARD_TUI_MODE)
   if (envMode) return envMode
-  return "opentui"
+  return "classic"
 }
 
 const runOpenTui = async (options: {
@@ -72,7 +72,7 @@ const runOpenTui = async (options: {
   workspace?: string | null
   permissionMode?: string | null
 }): Promise<void> => {
-  const opentuiRoot = resolveBreadboardPath("opentui_slab")
+  const opentuiRoot = resolveBreadboardRepoPath("opentui_slab")
   const args = ["run", "phaseB/controller.ts"]
   if (options.configPath) {
     args.push("--config", options.configPath)
@@ -565,7 +565,7 @@ const buildReplCommand = (name: string) =>
           onNone: () => undefined,
           onSome: (value) => value,
         })
-        const resolvedConfigPath = resolveBreadboardPath(config)
+        const resolvedConfigPath = resolveBreadboardRepoPath(config)
         const resolvedWorkspace = resolveBreadboardWorkspace(workspaceValue)
         const resolvedTuiConfig = await resolveTuiConfig({
           workspace: resolvedWorkspace,
@@ -584,10 +584,6 @@ const buildReplCommand = (name: string) =>
             permissionMode: permissionValue ?? null,
           })
           return
-        }
-
-        if (!scriptPath && process.env.BREADBOARD_TUI_SUPPRESS_MAINTENANCE !== "1") {
-          console.warn("[tui] Classic Ink TUI is in maintenance mode; use --tui opentui for the new slab UI.")
         }
 
         const controller = new ReplSessionController({

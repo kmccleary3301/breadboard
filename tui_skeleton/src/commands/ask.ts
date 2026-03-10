@@ -5,7 +5,7 @@ import type { SessionEvent } from "../api/types.js"
 import { parseJsonObject } from "../utils/json.js"
 import { runAsk } from "./askLogic.js"
 import { DEFAULT_MODEL_ID } from "../config/appConfig.js"
-import { resolveBreadboardPath, resolveBreadboardWorkspace } from "../utils/paths.js"
+import { resolveBreadboardRepoPath, resolveBreadboardWorkspace } from "../utils/paths.js"
 
 const DEFAULT_CONFIG = process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/misc/claude_code_haiku45_c_fs_v2.yaml"
 const ANALYSIS_CONFIG =
@@ -119,7 +119,7 @@ export const askCommand = Command.make(
           requestMetadata.permission_mode = "analysis"
         }
       }
-      const resolvedConfigPath = resolveBreadboardPath(configPath)
+      const resolvedConfigPath = resolveBreadboardRepoPath(configPath)
       const resolvedWorkspace = resolveBreadboardWorkspace(workspaceValue)
       try {
         const result = yield* Effect.promise(() =>

@@ -15,6 +15,7 @@ import { resolveAuthToken } from "../config/authTokenProvider.js"
 import { getUserConfigPath, loadUserConfigSync, writeUserConfig } from "../config/userConfig.js"
 import { deleteKeychainAuthToken, getKeychainAuthToken, isKeychainAvailable, setKeychainAuthToken } from "../config/keychain.js"
 import { ensureEngine } from "../engine/engineSupervisor.js"
+import { resolveBreadboardRepoPath } from "../utils/paths.js"
 
 const urlOption = Options.text("url").pipe(Options.optional)
 const configOption = Options.text("config").pipe(Options.optional)
@@ -90,7 +91,7 @@ const resolveBaseUrl = (override: Option.Option<string>): string => {
 const resolveConfigPath = (override: Option.Option<string>): string => {
   const raw = Option.getOrNull(override)?.trim()
   if (!raw) return DEFAULT_CONFIG_PATH
-  return path.isAbsolute(raw) ? raw : path.resolve(raw)
+  return resolveBreadboardRepoPath(raw)
 }
 
 const isLocalHost = (host: string): boolean => {

@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { resolveBreadboardPath } from "../utils/paths.js"
+import { resolveBreadboardRepoPath } from "../utils/paths.js"
 
 export interface ToolDisplayRuleInfo {
   readonly id: string
@@ -72,7 +72,7 @@ const normalizeRules = (raw: any, basePriority: number): ToolDisplayRuleInfo[] =
 }
 
 export const loadToolDisplayRules = async (configPath?: string | null): Promise<ToolDisplayRuleInfo[]> => {
-  const defaultsPath = resolveBreadboardPath(DEFAULTS_PATH)
+  const defaultsPath = resolveBreadboardRepoPath(DEFAULTS_PATH)
   const defaultsConfig = await parseConfigFile(defaultsPath).catch(() => null)
   const rules: ToolDisplayRuleInfo[] = []
   if (defaultsConfig && typeof defaultsConfig === "object") {
@@ -80,7 +80,7 @@ export const loadToolDisplayRules = async (configPath?: string | null): Promise<
     rules.push(...defaultRules)
   }
   if (configPath) {
-    const resolvedConfig = path.isAbsolute(configPath) ? configPath : resolveBreadboardPath(configPath)
+    const resolvedConfig = path.isAbsolute(configPath) ? configPath : resolveBreadboardRepoPath(configPath)
     const config = await parseConfigFile(resolvedConfig).catch(() => null)
     if (config && typeof config === "object") {
       const ui = (config as any).ui

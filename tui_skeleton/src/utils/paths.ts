@@ -34,6 +34,23 @@ export const resolveBreadboardPath = (value: string): string => {
   return cwdCandidate
 }
 
+export const resolveBreadboardRepoPath = (value: string): string => {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    throw new Error("Path is empty.")
+  }
+  if (path.isAbsolute(trimmed)) return trimmed
+
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url))
+  const repoRoot = findUpward(moduleDir, "agentic_coder_prototype")
+  if (repoRoot) {
+    const repoCandidate = path.join(repoRoot, trimmed)
+    if (existsSync(repoCandidate)) return repoCandidate
+  }
+
+  return resolveBreadboardPath(trimmed)
+}
+
 export const resolveBreadboardWorkspace = (value?: string | null): string | undefined => {
   if (!value || !value.trim()) {
     return undefined
