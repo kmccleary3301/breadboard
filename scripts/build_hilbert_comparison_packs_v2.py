@@ -53,6 +53,12 @@ PACKS = {
         "mathd_algebra_107",
     ],
 }
+EXCLUDED_TASKS = {
+    "mathd_numbertheory_780": (
+        "Unsound under extracted ℕ semantics: m=11, x=2 satisfies the hypotheses "
+        "because Nat subtraction truncates (2 - 36) to 0, but the conclusion m = 43 is false."
+    ),
+}
 
 
 def _sha256(text: str) -> str:
@@ -108,6 +114,8 @@ def _load_tasks(task_ids: List[str]) -> List[Dict[str, Any]]:
     merged = "\n\n".join(texts)
     tasks: List[Dict[str, Any]] = []
     for task_id in task_ids:
+        if task_id in EXCLUDED_TASKS:
+            continue
         block = _extract_theorem_block(merged, task_id)
         header, formal_statement = _extract_header_and_statement(block)
         formal_statement = _canonicalize_formal_statement(task_id, formal_statement)
@@ -168,7 +176,8 @@ def _build_manifest(pack_name: str, tasks: List[Dict[str, Any]]) -> Dict[str, An
 
 
 def build_pack(pack_name: str, out_root: Path) -> Dict[str, Any]:
-    tasks = _load_tasks(PACKS[pack_name])
+    requested_task_ids = PACKS[pack_name]
+    tasks = _load_tasks(requested_task_ids)
     pack_dir = out_root / pack_name
     pack_dir.mkdir(parents=True, exist_ok=True)
 
@@ -197,12 +206,27 @@ def build_pack(pack_name: str, out_root: Path) -> Dict[str, Any]:
     dump_json(pack_dir / "cross_system_manifest.json", manifest)
     dump_json(pack_dir / "bb_task_inputs.json", {"schema": "breadboard.bb_task_inputs.v2", "tasks": bb_tasks})
     _write_jsonl(pack_dir / "hilbert_dataset.jsonl", hilbert_rows)
+    excluded = [
+        {"task_id": task_id, "reason": EXCLUDED_TASKS[task_id]}
+        for task_id in requested_task_ids
+        if task_id in EXCLUDED_TASKS
+    ]
+    dump_json(
+        pack_dir / "pack_metadata.json",
+        {
+            "pack_name": pack_name,
+            "requested_task_ids": requested_task_ids,
+            "included_task_ids": [task["task_id"] for task in tasks],
+            "excluded_tasks": excluded,
+        },
+    )
 
     return {
         "pack_name": pack_name,
         "task_count": len(tasks),
         "task_ids": [task["task_id"] for task in tasks],
         "dir": str(pack_dir),
+        "excluded_tasks": excluded,
     }
 
 
