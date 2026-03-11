@@ -196,6 +196,10 @@ tool_bindings:
   # - `tool_bindings` says what execution/profile/binding shape actually satisfies those tools
   #
   # This is exactly the kind of interpretability surface we want BreadBoard to expose well.
+  # It is also the surface that lets a future host answer questions like:
+  # - "Which bindings are active for this execution profile?"
+  # - "Did `exec_command` fall back to a different implementation?"
+  # - "Why is a custom service or CUDA profiling tool hidden from the model right now?"
   - id: codex.shell.process_local
     tool_id: shell_command
     binding_kind: sandbox
@@ -235,6 +239,8 @@ tool_bindings:
     support_status: parity_prep_not_frozen
     # Continuation is represented canonically as stdin/signal/poll interactions
     # over a persistent terminal session, then projected Codex-style as needed.
+    # The effective tool surface can still hide or degrade this binding when the
+    # active driver/profile does not actually support persistent sessions.
 
 terminal_sessions:
   # This section is intentionally present before the strict lane fully freezes Codex background

@@ -3,6 +3,9 @@ import assert from "node:assert/strict"
 
 import {
   buildSupportClaimView,
+  buildTerminalSupportSummaryView,
+  buildTerminalInteractionView,
+  buildBackboneTerminalInteractionView,
   buildBackboneEffectiveToolSurfaceAnalysisView,
   buildBackboneTerminalEndView,
   buildBackboneTerminalCleanupView,
@@ -130,6 +133,38 @@ test("buildSupportClaimView projects host-facing support metadata cleanly", () =
   assert.equal(view.recommendedHostMode, supportedClaim.recommendedHostMode)
 })
 
+test("buildTerminalSupportSummaryView produces a stable terminal capability summary", () => {
+  const supported = buildTerminalSupportSummaryView({
+    ...supportedClaim,
+    terminalSupport: {
+      canStart: true,
+      canInteract: true,
+      canPoll: true,
+      canList: true,
+      canCleanup: true,
+      streamMode: "pty",
+    },
+  })
+  assert.deepEqual(supported, {
+    canStart: true,
+    canInteract: true,
+    canPoll: true,
+    canList: true,
+    canCleanup: true,
+    streamMode: "pty",
+  })
+
+  const unsupported = buildTerminalSupportSummaryView(supportedClaim)
+  assert.deepEqual(unsupported, {
+    canStart: false,
+    canInteract: false,
+    canPoll: false,
+    canList: false,
+    canCleanup: false,
+    streamMode: "unknown",
+  })
+})
+
 test("buildFallbackHostKitInvocation emits a fallback-mode invocation with normalized support metadata", () => {
   const invocation = buildFallbackHostKitInvocation({
     result: { ok: false },
@@ -160,6 +195,9 @@ test("createProviderHostSession preserves transcript continuity and projection s
       projectionProfile: { id: "host_callbacks", summary: "Host callbacks" },
       terminals: {
         classify() {
+          throw new Error("not used in this test")
+        },
+        async get() {
           throw new Error("not used in this test")
         },
         async start() {
@@ -575,6 +613,42 @@ test("Host Kit can project terminal and tool surfaces through Backbone", () => {
   assert.equal(view.lastSnapshotId, "snap-1")
   assert.equal(view.support?.level, "supported")
 
+  const interactionView = buildBackboneTerminalInteractionView(session, {
+    supportClaim: {
+      ...session.terminals.classify({}),
+      terminalSupport: {
+        canStart: true,
+        canInteract: true,
+        canPoll: true,
+        canList: true,
+        canCleanup: true,
+        streamMode: "pipes",
+      },
+    },
+    unsupportedCase: undefined,
+    interaction: {
+      schema_version: "bb.terminal_interaction.v1",
+      terminal_session_id: "term-1",
+      startup_call_id: "call-start-1",
+      causing_call_id: "call-write-1",
+      interaction_kind: "stdin",
+      input_b64: Buffer.from("status\n", "utf8").toString("base64"),
+    },
+    outputDeltas: [
+      {
+        schema_version: "bb.terminal_output_delta.v1",
+        terminal_session_id: "term-1",
+        stream: "stdout",
+        chunk_b64: Buffer.from("ok\n", "utf8").toString("base64"),
+        chunk_seq: 0,
+      },
+    ],
+    end: undefined,
+  })
+  assert.equal(interactionView.terminalSessionId, "term-1")
+  assert.equal(interactionView.output.shape?.chunkCount, 1)
+  assert.equal(interactionView.support?.terminalSupport?.canInteract, true)
+
   const endView = buildBackboneTerminalEndView(session, {
     terminal_state: "completed",
     exit_code: 0,
@@ -756,6 +830,55 @@ test("Host Kit can resolve terminal session, output, and cleanup views consisten
   assert.equal(cleanupView.cleanedCount, 1)
   assert.equal(cleanupView.failedCount, 1)
   assert.deepEqual(cleanupView.failedSessionIds, ["term-view-2"])
+})
+
+test("Host Kit can build terminal interaction views", () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-terminal-interaction",
+    rootDir: "/tmp/project",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+
+  const interactionView = buildTerminalInteractionView({
+    interaction: {
+      terminal_session_id: "term-int-1",
+      interaction_kind: "stdin",
+    },
+    outputDeltas: [
+      {
+        schema_version: "bb.terminal_output_delta.v1",
+        terminal_session_id: "term-int-1",
+        stream: "stdout",
+        chunk_b64: Buffer.from("build complete\n", "utf8").toString("base64"),
+        chunk_seq: 0,
+      },
+    ],
+    end: {
+      terminal_state: "completed",
+      exit_code: 0,
+      duration_ms: 42,
+      artifact_refs: ["artifact://terminal/stdout/int-1"],
+      evidence_refs: ["evidence://terminal/int-1"],
+    },
+    support: buildSupportClaimView({
+      ...supportedClaim,
+      terminalSupport: {
+        canStart: true,
+        canInteract: true,
+        canPoll: true,
+        canList: true,
+        canCleanup: true,
+        streamMode: "pipes",
+      },
+    }),
+    workspace,
+  })
+
+  assert.equal(interactionView.terminalSessionId, "term-int-1")
+  assert.equal(interactionView.interactionKind, "stdin")
+  assert.equal(interactionView.output.text, "build complete\n")
+  assert.equal(interactionView.ended?.terminalState, "completed")
+  assert.equal(interactionView.support?.terminalSupport?.streamMode, "pipes")
 })
 
 test("emitHostProjectionCallbacks replays projected assistant text, tool previews, and agent events", async () => {

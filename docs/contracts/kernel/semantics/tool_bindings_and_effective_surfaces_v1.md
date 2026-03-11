@@ -132,3 +132,6 @@ Tracked example note:
 - `agent_configs/misc/firecrawl_local_toolpack_phase14_v1.yaml` is now the first heavily
   commented Phase 14 reference config for a service-backed local tool pack with delegated
   fallback and a hidden provider-native binding
+- `agent_configs/misc/cuda_profiler_toolpack_phase14_v1.yaml` is now the parallel
+  sandbox-oriented reference config for CUDA tracing / flamegraph tooling with delegated fallback
+  and execution-profile-sensitive visibility

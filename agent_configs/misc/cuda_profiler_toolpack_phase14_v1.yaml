@@ -1,0 +1,136 @@
+version: 2
+profile:
+  name: cuda-profiler-toolpack-phase14-v1
+
+# This is a Phase 14 reference config showing how to inject environment-sensitive
+# CUDA profiling and tracing tools into BreadBoard without making the runtime
+# semantics opaque.
+#
+# The important design points are:
+# - canonical tool identity is stable across bindings
+# - the active binding depends on the execution environment
+# - hidden/provider-native surfaces remain inspectable in the effective tool view
+# - delegated fallbacks are explicit instead of magical
+
+workspace:
+  root: ./agent_ws
+  sandbox:
+    driver: process
+
+providers:
+  default_model: openai/gpt-5.1-codex-mini
+  models:
+  - id: openai/gpt-5.1-codex-mini
+    adapter: openai
+
+modes:
+  - name: build
+    prompt: You are testing CUDA profiler tool-pack injection.
+
+loop:
+  sequence:
+    - mode: build
+
+tool_packs:
+  cuda-profiler:
+    description: CUDA tracing, flamegraph, and memory diagnostics
+    tool_ids:
+    - cuda.trace
+    - cuda.flamegraph
+    - cuda.memcheck
+    exposure: provider_native
+    support_status: phase14_reference
+
+tool_bindings:
+  - id: cuda.trace.sandbox_primary
+    tool_id: cuda.trace
+    binding_kind: sandbox
+    execution_profile: sandboxed_local
+    placement: sandbox_local
+    exposure: provider_native
+    support_status: phase14_reference
+    environment_selector:
+      profile_ids:
+      - sandboxed_local
+      features:
+      - cuda
+      - profiling
+      image_ids:
+      - cuda-dev
+    fallback_binding_ids:
+    - cuda.trace.sidecar_fallback
+
+  - id: cuda.trace.sidecar_fallback
+    tool_id: cuda.trace
+    binding_kind: service
+    execution_profile: trusted_local
+    placement: local_service
+    exposure: provider_native
+    support_status: phase14_reference
+    environment_selector:
+      profile_ids:
+      - trusted_local
+      service_ids:
+      - cuda-profiler-sidecar
+
+  - id: cuda.flamegraph.sandbox_primary
+    tool_id: cuda.flamegraph
+    binding_kind: sandbox
+    execution_profile: sandboxed_local
+    placement: sandbox_local
+    exposure: provider_native
+    support_status: phase14_reference
+    environment_selector:
+      profile_ids:
+      - sandboxed_local
+      features:
+      - cuda
+      - profiling
+      image_ids:
+      - cuda-dev
+    fallback_binding_ids:
+    - cuda.flamegraph.remote_fallback
+
+  - id: cuda.flamegraph.remote_fallback
+    tool_id: cuda.flamegraph
+    binding_kind: delegated
+    execution_profile: remote_isolated
+    placement: remote_worker
+    exposure: provider_native
+    support_status: phase14_reference
+    environment_selector:
+      profile_ids:
+      - remote_isolated
+      features:
+      - cuda
+      - profiling
+
+  - id: cuda.memcheck.hidden_service
+    tool_id: cuda.memcheck
+    binding_kind: service
+    execution_profile: trusted_local
+    placement: local_service
+    exposure: hidden_provider_native
+    support_status: phase14_reference
+    environment_selector:
+      profile_ids:
+      - trusted_local
+      service_ids:
+      - cuda-profiler-sidecar
+
+features:
+  enabled:
+  - tool_packs
+  - effective_tool_surface_analysis
+  - local_services
+  - sandbox_profiles
+  - cuda
+  - profiling
+
+# Notes for developers:
+# - `cuda.trace` shows a classic sandbox-primary, sidecar-fallback pattern.
+# - `cuda.flamegraph` shows a sandbox-primary, delegated-remote-fallback pattern.
+# - `cuda.memcheck` demonstrates a hidden/provider-native binding that still
+#   exists in the effective tool surface for analysis and support-claiming.
+# - This same structure should be usable for any heavy profiler / trace / local
+#   daemon capability, not just CUDA-specific tools.

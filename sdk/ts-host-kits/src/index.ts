@@ -12,6 +12,7 @@ import type {
   SessionTranscriptV1,
   SessionTranscriptV1Item,
   TerminalCleanupResultV1,
+  UnsupportedCaseV1,
   TerminalOutputDeltaV1,
   TerminalRegistrySnapshotV1,
   TerminalSessionDescriptorV1,
@@ -149,9 +150,27 @@ export interface HostTerminalSessionView {
   readonly support?: SupportClaimView | null
 }
 
+export interface HostTerminalSupportSummaryView {
+  readonly canStart: boolean
+  readonly canInteract: boolean
+  readonly canPoll: boolean
+  readonly canList: boolean
+  readonly canCleanup: boolean
+  readonly streamMode: "pty" | "pipes" | "unknown"
+}
+
 export interface HostTerminalOutputView {
   readonly text: string
   readonly shape: TerminalOutputShape | null
+}
+
+export interface HostTerminalInteractionView {
+  readonly terminalSessionId: string | null
+  readonly interactionKind: string | null
+  readonly output: HostTerminalOutputView
+  readonly ended: HostTerminalEndView | null
+  readonly support: SupportClaimView | null
+  readonly unsupportedCase: UnsupportedCaseV1 | Record<string, unknown> | null
 }
 
 export interface HostTerminalEndView {
@@ -251,6 +270,33 @@ export function buildSupportClaimView(claim: SupportClaim): SupportClaimView {
     fallbackAvailable: claim.fallbackAvailable,
     unsupportedFields: claim.unsupportedFields,
     terminalSupport: claim.terminalSupport ?? null,
+  }
+}
+
+/**
+ * Project the terminal-related portion of a support claim into a compact host-facing summary.
+ */
+export function buildTerminalSupportSummaryView(
+  claim: SupportClaim,
+): HostTerminalSupportSummaryView {
+  const terminalSupport = claim.terminalSupport
+  if (!terminalSupport) {
+    return {
+      canStart: false,
+      canInteract: false,
+      canPoll: false,
+      canList: false,
+      canCleanup: false,
+      streamMode: "unknown",
+    }
+  }
+  return {
+    canStart: terminalSupport.canStart,
+    canInteract: terminalSupport.canInteract,
+    canPoll: terminalSupport.canPoll,
+    canList: terminalSupport.canList,
+    canCleanup: terminalSupport.canCleanup,
+    streamMode: terminalSupport.streamMode,
   }
 }
 
@@ -513,6 +559,52 @@ export function buildTerminalOutputView(options: {
 }
 
 /**
+ * Project a terminal interaction result into a stable host-facing view that keeps raw terminal
+ * payloads behind the kernel/backbone boundary.
+ */
+export function buildTerminalInteractionView(options: {
+  readonly interaction: {
+    readonly terminal_session_id?: string
+    readonly interaction_kind?: string
+  } | null
+  readonly outputDeltas: readonly TerminalOutputDeltaV1[]
+  readonly end?: {
+    readonly artifact_refs?: readonly string[]
+    readonly evidence_refs?: readonly string[]
+    readonly terminal_state?: string | null
+    readonly exit_code?: number | null
+    readonly duration_ms?: number | null
+  } | null
+  readonly support?: SupportClaimView | null
+  readonly unsupportedCase?: UnsupportedCaseV1 | Record<string, unknown> | null
+  readonly workspace?: Workspace | null
+}): HostTerminalInteractionView {
+  return {
+    terminalSessionId: options.interaction?.terminal_session_id ?? null,
+    interactionKind: options.interaction?.interaction_kind ?? null,
+    output: buildTerminalOutputView({
+      outputDeltas: options.outputDeltas,
+      workspace: options.workspace ?? null,
+    }),
+    ended: options.end
+      ? buildTerminalEndView(
+          options.workspace
+            ? options.workspace.shapeTerminalSessionEnd(options.end)
+            : {
+                terminalState: options.end.terminal_state ?? null,
+                exitCode: options.end.exit_code ?? null,
+                durationMs: options.end.duration_ms ?? null,
+                artifactRefs: [],
+                evidenceRefs: options.end.evidence_refs ?? [],
+              },
+        )
+      : null,
+    support: options.support ?? null,
+    unsupportedCase: options.unsupportedCase ?? null,
+  }
+}
+
+/**
  * Convenience helper for hosts that want to shape terminal output through Backbone while keeping
  * workspace-aware output shaping at the product layer.
  */
@@ -525,6 +617,24 @@ export function buildBackboneTerminalOutputView(
     text,
     shape: session.workspace.shapeTerminalOutputDeltas(outputDeltas),
   }
+}
+
+/**
+ * Convenience helper for projecting Backbone terminal interactions into a stable host-facing
+ * interaction/result view.
+ */
+export function buildBackboneTerminalInteractionView(
+  session: BackboneSession,
+  result: import("@breadboard/backbone").BackboneTerminalInteractionResult,
+): HostTerminalInteractionView {
+  return buildTerminalInteractionView({
+    interaction: result.interaction,
+    outputDeltas: result.outputDeltas,
+    end: result.end,
+    support: buildSupportClaimView(result.supportClaim),
+    unsupportedCase: result.unsupportedCase ?? null,
+    workspace: session.workspace,
+  })
 }
 
 export function buildBackboneTerminalSessionView(
