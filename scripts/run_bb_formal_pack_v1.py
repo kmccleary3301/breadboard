@@ -7,7 +7,6 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -16,6 +15,20 @@ from _cross_system_eval_v1 import dump_json, load_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TASK_HINTS = {
+    "mathd_algebra_156": (
+        "Task-specific guidance:\n"
+        "- First derive `hx : x^4 = 5 * x^2 - 6` and `hy : y^4 = 5 * y^2 - 6` from the hypotheses.\n"
+        "- Convert those to `(x^2 - 2) * (x^2 - 3) = 0` and `(y^2 - 2) * (y^2 - 3) = 0` with `nlinarith`.\n"
+        "- Use `eq_zero_or_eq_zero_of_mul_eq_zero` only as an intermediate step. Write the conversion explicitly:\n"
+        "  `have hx_sq : x^2 = 2 ∨ x^2 = 3 := by`\n"
+        "  `  rcases eq_zero_or_eq_zero_of_mul_eq_zero hx_mul with hx2 | hx3`\n"
+        "  `  · left; nlinarith`\n"
+        "  `  · right; nlinarith`\n"
+        "  and similarly for `hy_sq`.\n"
+        "- Do not use `rfl` to case-split on `x^2 = 2` or `y^2 = 3`; those equalities are not suitable for `subst`.\n"
+        "- Instead, name the cases explicitly, e.g. `rcases hx_sq with hx2 | hx3` and `rcases hy_sq with hy2 | hy3`.\n"
+        "- Finish every branch with `nlinarith [h₄, hx2, hy2]`, `nlinarith [h₄, hx2, hy3]`, etc.; the only consistent branch yields `y^2 - x^2 = 1`.\n"
+    ),
     "numbertheory_2dvd4expn": (
         "Task-specific guidance:\n"
         "- Use `Nat.exists_eq_succ_of_ne_zero h₀` to rewrite `n` as `k + 1`.\n"
@@ -129,6 +142,12 @@ def _build_prompt(task_id: str, full_file: str) -> str:
     )
 
 
+def _workspace_root(run_id: str, task_id: str) -> Path:
+    safe_run_id = re.sub(r"[^A-Za-z0-9._-]+", "_", run_id).strip("._-") or "bb-formal-pack"
+    safe_task_id = re.sub(r"[^A-Za-z0-9._-]+", "_", task_id).strip("._-") or "task"
+    return REPO_ROOT / "tmp" / "bb_formal_pack_workspaces" / safe_run_id / safe_task_id
+
+
 def run_pack(
     *,
     manifest_path: Path,
@@ -158,7 +177,7 @@ def run_pack(
         task_id = str(task["task_id"])
         input_text = str(task["input_text"])
         task_hash = str(task.get("input_hash") or _normalize_hash(input_text))
-        workspace = raw_output_dir.parent / "bb_workspaces_v1" / task_id
+        workspace = _workspace_root(run_id, task_id)
         if workspace.exists():
             shutil.rmtree(workspace)
         workspace.mkdir(parents=True, exist_ok=True)

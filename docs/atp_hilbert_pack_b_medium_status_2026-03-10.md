@@ -24,26 +24,29 @@ Tasks:
 
 ## Corrected Result
 
-- BreadBoard (`bb_hilbert_like`): `3/7`
+- BreadBoard (`bb_hilbert_like`): `4/7`
 - Hilbert maintained fork (`hilbert_roselab`): `3/7`
 - both solved: `3`
-- both unsolved: `4`
-- discordant pairs: `0`
+- both unsolved: `3`
+- BreadBoard-only: `1`
+- Hilbert-only: `0`
 
 Solved by both:
 - `mathd_algebra_171`
 - `mathd_algebra_107`
 - `numbertheory_2dvd4expn`
 
-Unsolved by both:
+BreadBoard-only:
 - `mathd_algebra_156`
+
+Unsolved by both:
 - `numbertheory_exk2powkeqapb2mulbpa2_aeq1`
 - `aime_1984_p5`
 - `amc12a_2019_p12`
 
 Reference artifacts:
-- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_medium_noimo530_minif2f_v1/cross_system_pilot_report_v4.json`
-- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_medium_noimo530_minif2f_v1/cross_system_validation_report_v4.json`
+- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_medium_noimo530_minif2f_v1/cross_system_pilot_report_v5.json`
+- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_medium_noimo530_minif2f_v1/cross_system_validation_report_v5.json`
 - `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_medium_noimo530_minif2f_v1/pack_metadata.json`
 
 ## Spend
@@ -60,4 +63,6 @@ BreadBoard exact provider-side spend is not available from the current direct fo
 - `mathd_numbertheory_530` required theorem-header canonicalization in `scripts/build_hilbert_comparison_packs_v2.py`.
 - `mathd_numbertheory_780` is excluded via the invalid-task filter in `scripts/build_hilbert_comparison_packs_v2.py`.
 - The `numbertheory_2dvd4expn` gap closed after adding task-local runner guidance in `scripts/run_bb_formal_pack_v1.py`.
-- The next ATP targets from this rerun are the four shared unsolved tasks: `mathd_algebra_156`, `numbertheory_exk2powkeqapb2mulbpa2_aeq1`, `aime_1984_p5`, and `amc12a_2019_p12`.
+- A direct-formal-runner workspace-root bug also surfaced during rerun work: workspace paths must live under `tmp/`, not under `artifacts/`. That is now fixed in `scripts/run_bb_formal_pack_v1.py`.
+- `mathd_algebra_156` flipped in BreadBoard's favor after adding theorem-specific case-split guidance.
+- The next ATP targets from this rerun are the three shared unsolved tasks: `numbertheory_exk2powkeqapb2mulbpa2_aeq1`, `aime_1984_p5`, and `amc12a_2019_p12`.

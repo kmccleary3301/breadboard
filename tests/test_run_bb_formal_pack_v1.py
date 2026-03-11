@@ -24,6 +24,17 @@ def test_numbertheory_2dvd4expn_prompt_includes_task_guidance() -> None:
     assert "Do not stop at `simp`" in prompt
 
 
+def test_mathd_algebra_156_prompt_includes_case_split_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_algebra_156",
+        "import Mathlib\n\ntheorem mathd_algebra_156 : True := by\n  trivial\n",
+    )
+
+    assert "Do not use `rfl` to case-split" in prompt
+    assert "rcases hx_sq with hx2 | hx3" in prompt
+    assert "Finish every branch with `nlinarith" in prompt
+
+
 def test_other_tasks_do_not_get_numbertheory_specific_hint() -> None:
     prompt = runner._build_prompt(
         "mathd_algebra_171",
@@ -31,3 +42,12 @@ def test_other_tasks_do_not_get_numbertheory_specific_hint() -> None:
     )
 
     assert "pow_dvd_pow_of_dvd" not in prompt
+    assert "Do not use `rfl` to case-split" not in prompt
+
+
+def test_workspace_root_is_forced_under_tmp() -> None:
+    workspace = runner._workspace_root("hilbert-compare/pack:b", "mathd_algebra_156")
+
+    assert str(workspace).startswith(str(runner.REPO_ROOT / "tmp"))
+    assert workspace.parts[-2] == "hilbert-compare_pack_b"
+    assert workspace.parts[-1] == "mathd_algebra_156"
