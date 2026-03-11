@@ -248,7 +248,9 @@ tool_bindings:
     # Continuation is represented canonically as stdin/signal/poll interactions
     # over a persistent terminal session, then projected Codex-style as needed.
     # The effective tool surface can still hide or degrade this binding when the
-    # active driver/profile does not actually support persistent sessions.
+    # active driver/profile does not actually support persistent sessions. Phase 14 now
+    # also carries a fallback-selected remote surface lane so the same canonical tool pair
+    # can remain visible while swapping binding strategy.
 
 terminal_sessions:
   # This section is intentionally present before the strict lane fully freezes Codex background

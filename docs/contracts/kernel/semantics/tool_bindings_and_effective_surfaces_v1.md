@@ -111,6 +111,7 @@ background-terminal pair:
 - visible `write_stdin`
 - explicit binding ids
 - explicit projection profile
+- a fallback-selected remote binding lane that preserves the same canonical tool surface
 
 This is still parity-prep evidence, not a frozen E4 claim.
 

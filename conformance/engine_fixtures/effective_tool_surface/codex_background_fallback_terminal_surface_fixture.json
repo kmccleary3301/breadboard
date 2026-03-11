@@ -1,22 +1,24 @@
 {
   "fixture_family": "effective_tool_surface",
-  "fixture_id": "codex_background_terminal_surface_reference",
+  "fixture_id": "codex_background_fallback_terminal_surface_reference",
   "comparator_class": "projection-equal",
   "support_tier": "reference-engine",
   "contract": "bb.effective_tool_surface.v1",
   "reference_output": {
     "schema_version": "bb.effective_tool_surface.v1",
-    "surface_id": "surface_codex_background_terminals",
+    "surface_id": "surface_codex_background_terminals_fallback",
     "tool_ids": [
       "exec_command",
-      "write_stdin"
+      "write_stdin",
+      "firecrawl.search"
     ],
     "binding_ids": [
-      "codex.terminal.process_session",
-      "codex.terminal.stdin_continuation"
+      "codex.terminal.process_session.fallback_remote",
+      "codex.terminal.stdin_continuation.fallback_remote",
+      "firecrawl.service.local"
     ],
     "hidden_tool_ids": [],
     "projection_profile_id": "host_callbacks",
-    "surface_hash": "surface_codex_background_terminals_hash"
+    "surface_hash": "surface_codex_background_terminals_fallback_hash"
   }
 }

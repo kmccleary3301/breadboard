@@ -684,6 +684,17 @@
         "terminal_session/codex_background_cleanup_after_exit_fixture.json"
       ],
       "notes": "Codex-shaped cleanup result when the targeted background process has already exited."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "codex_background_fallback_terminal_surface_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "projection-equal",
+      "evidence": [
+        "effective_tool_surface/codex_background_fallback_terminal_surface_fixture.json"
+      ],
+      "notes": "Codex-shaped effective tool surface where background-terminal bindings remain visible through an explicit fallback-selected remote binding path."
     }
   ]
 }
