@@ -64,9 +64,10 @@ TASK_HINTS = {
         "- Then compare `u` and `v` by subtracting: `v - u = (b - a) * (a + b - 1)` when `a < b`, and symmetrically otherwise.\n"
         "- Split the unequal case directly with `lt_or_gt_of_ne hab`; do not use `wlog`.\n"
         "- If `a < b`, first prove `m < n`; a safe route is contradiction from `n ≤ m` using `Nat.pow_le_pow_right (by omega)`, `u = 2^m`, `v = 2^n`, and `u < v`.\n"
-        "- Do not try `Nat.dvd_sub' hu_dvd hv_dvd` directly; those hypotheses only show divisibility into `2^k`. First derive the smaller power divides the larger one from the exponent gap. If `a < b`, write `n = m + t + 1`, prove `v = u * 2^(t+1)`, obtain `hu_dvd_v : u ∣ v`, then use `Nat.dvd_sub' hu_dvd_v (dvd_refl u)` on `v - u`. Do the symmetric construction when `b < a`.\n"
+        "- Do not try `Nat.dvd_sub' hu_dvd hv_dvd` directly; those hypotheses only show divisibility into `2^k`. First derive the smaller power divides the larger one from the exponent gap. If `a < b`, use `obtain ⟨t, rfl⟩ := Nat.exists_eq_add_of_lt hmn_lt`, then prove `v = u * 2^(t+1)` by rewriting both `hn` and `hm` and simplifying `2^(m+t+1)` with `Nat.pow_add`. Then obtain `hu_dvd_v : u ∣ v` and use `Nat.dvd_sub' hu_dvd_v (dvd_refl u)` on `v - u`. Do the symmetric construction when `b < a`.\n"
         "- If you need `u ≤ u * t` or `v ≤ v * t`, use `simpa [Nat.mul_comm] using Nat.le_mul_of_pos_left u htpos` and the analogous form for `v`.\n"
         "- If `a < b`, use `u = 2^m` and `v = 2^n` to show `u ∣ v - u`. Since `Nat.Coprime 2 (a + b - 1)` and `u = 2^m`, use `hcop.pow_left m` and `hcop_u.dvd_of_dvd_mul_right` to conclude `u ∣ (b - a)`, contradicting `b - a < u`.\n"
+        "- Avoid introducing `htpos : 0 < t`; `Nat.exists_eq_add_of_lt` already gives the needed strict gap through the trailing `+ 1`.\n"
         "- Handle `b < a` symmetrically. Conclude the unequal case is impossible.\n"
         "- Keep the proof statement-preserving and avoid the earlier broken route around `Odd 2`, field-style notation on `Even`, or direct-argument calls to `Nat.dvd_prime_pow`.\n"
     ),

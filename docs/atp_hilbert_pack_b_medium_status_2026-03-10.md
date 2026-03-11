@@ -70,14 +70,14 @@ BreadBoard exact provider-side spend is not available from the current direct fo
 ## Focused Follow-up — `numbertheory_exk2powkeqapb2mulbpa2_aeq1`
 
 - Added repair-seed support to `scripts/run_bb_formal_pack_v1.py`, so focused reruns can inject the previous candidate proof plus clipped Lean errors instead of regenerating from scratch.
-- Focused seeded reruns `v5` and `v6` are still `UNSOLVED`, but they removed earlier control errors:
+- Focused seeded reruns `v5` through `v7` are still `UNSOLVED`, but they removed earlier control errors:
   - `hk` orientation for `hu_dvd` / `hv_dvd` is now correct
   - zero-exponent handling now uses `u > 1` and `v > 1`
   - the remaining blocker is the unequal-case contradiction route, not theorem corruption
 - Latest focused artifacts:
-  - `tmp/focused_numbertheory_exk2powkeqapb2mulbpa2_aeq1_v1/bb_hilbert_like_summary_v6.json`
-  - `tmp/focused_numbertheory_exk2powkeqapb2mulbpa2_aeq1_v1/bb_hilbert_like_raw_v6/numbertheory_exk2powkeqapb2mulbpa2_aeq1.json`
-  - `tmp/focused_numbertheory_exk2powkeqapb2mulbpa2_aeq1_v1/bb_hilbert_like_proofs_v6/numbertheory_exk2powkeqapb2mulbpa2_aeq1.lean`
+  - `tmp/focused_numbertheory_exk2powkeqapb2mulbpa2_aeq1_v1/bb_hilbert_like_summary_v7.json`
+  - `tmp/focused_numbertheory_exk2powkeqapb2mulbpa2_aeq1_v1/bb_hilbert_like_raw_v7/numbertheory_exk2powkeqapb2mulbpa2_aeq1.json`
+  - `tmp/focused_numbertheory_exk2powkeqapb2mulbpa2_aeq1_v1/bb_hilbert_like_proofs_v7/numbertheory_exk2powkeqapb2mulbpa2_aeq1.lean`
 - Remaining Lean work is now narrow:
-  - exponent-gap factorization should use `n = m + (t + 1)` / `m = n + (t + 1)` so `Nat.pow_add` rewrites cleanly
+  - exponent-gap factorization should use `obtain ⟨t, rfl⟩ := Nat.exists_eq_add_of_lt ...` and then rewrite `2^(m + (t + 1))` / `2^(n + (t + 1))` with `Nat.pow_add` in a `calc` block
   - the derived `u ∣ v` / `v ∣ u` steps need to be threaded into the difference contradiction without overrelying on `omega`
