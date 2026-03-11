@@ -38,6 +38,31 @@ TASK_HINTS = {
         "- Finish with `exact dvd_trans h₄ h₂`.\n"
         "- Do not stop at `simp` if the remaining goal is `2 ∣ 4 ^ k * 4`; close it with divisibility lemmas.\n"
     ),
+    "numbertheory_exk2powkeqapb2mulbpa2_aeq1": (
+        "Task-specific guidance:\n"
+        "- Let `u := a + b^2` and `v := b + a^2`. From the product hypothesis, prove both `u ∣ 2^k` and `v ∣ 2^k`.\n"
+        "- Use the current mathlib syntax for powers of a prime: `obtain ⟨m, hm_le, hm⟩ := (Nat.dvd_prime_pow Nat.prime_two).mp hu_dvd` and similarly for `v`.\n"
+        "- Do not call `Nat.dvd_prime_pow` as if it took `hu_dvd` as a direct final argument; use the `.mp` form above.\n"
+        "- Prefer a short contradiction proof, not a large parity/subgoal tree.\n"
+        "- A clean route is by cases on `hab : a = b`.\n"
+        "- When `u` and `v` are local `let` bindings, unfold them with `dsimp [u, v]` or `simpa [u, v]`; do not `rw [u, v]` because they are definitions, not rewrite lemmas.\n"
+        "- In the equal case, rewrite `u = 2^m` to `a * (a + 1) = 2^m`. Then prove `a ∣ 2^m` and `a + 1 ∣ 2^m`, obtain `a = 2^i` and `a + 1 = 2^j`, and conclude `a = 1` because otherwise both `a` and `a + 1` are even.\n"
+        "- For the unequal case, first prove `Even a ↔ Even b` from the parity of `u` and `v`. Useful square-parity facts are:\n"
+        "  `have hb2_even : Even (b^2) := by simpa [pow_two] using hb_even.mul_left b`\n"
+        "  `have hb_even : Even b := by`\n"
+        "  `  by_contra hbe`\n"
+        "  `  have hbo : Odd b := Nat.odd_iff_not_even.mpr hbe`\n"
+        "  `  have hbo2 : Odd (b^2) := by simpa [pow_two] using hbo.mul hbo`\n"
+        "  `  exact (Nat.not_even_iff_odd.mpr hbo2) hb2`\n"
+        "- To avoid broken `Even.sub` terms, use `Nat.even_add` as an equivalence. For example, `have h_even_u : Even a ↔ Even (b^2) := by simpa [u, Nat.even_add] using hu_even`.\n"
+        "- Once `Even a ↔ Even b`, deduce `Even (a + b)` and therefore `¬ 2 ∣ a + b - 1` by a two-witness `omega` contradiction.\n"
+        "- Do not use `even_two.pow`; to prove `Even (2^m)` for positive `m`, rewrite `m = t + 1` with `Nat.exists_eq_succ_of_ne_zero` and then `simp [pow_succ, even_iff_two_dvd]`.\n"
+        "- Then compare `u` and `v` by subtracting: `v - u = (b - a) * (a + b - 1)` when `a < b`, and symmetrically otherwise.\n"
+        "- Split the unequal case directly with `lt_or_gt_of_ne hab`; do not use `wlog`.\n"
+        "- If `a < b`, use `u = 2^m` and `v = 2^n` to show `u ∣ v - u`. Since `Nat.Coprime 2 (a + b - 1)` and `u = 2^m`, use `hcop.pow_left m` and `hcop_u.dvd_of_dvd_mul_right` to conclude `u ∣ (b - a)`, contradicting `b - a < u`.\n"
+        "- Handle `b < a` symmetrically. Conclude the unequal case is impossible.\n"
+        "- Keep the proof statement-preserving and avoid the earlier broken route around `Odd 2`, field-style notation on `Even`, or direct-argument calls to `Nat.dvd_prime_pow`.\n"
+    ),
 }
 
 

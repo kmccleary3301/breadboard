@@ -35,6 +35,17 @@ def test_mathd_algebra_156_prompt_includes_case_split_guidance() -> None:
     assert "Finish every branch with `nlinarith" in prompt
 
 
+def test_numbertheory_exk2pow_prompt_includes_prime_power_guidance() -> None:
+    prompt = runner._build_prompt(
+        "numbertheory_exk2powkeqapb2mulbpa2_aeq1",
+        "import Mathlib\n\ntheorem numbertheory_exk2powkeqapb2mulbpa2_aeq1 : True := by\n  trivial\n",
+    )
+
+    assert "(Nat.dvd_prime_pow Nat.prime_two).mp hu_dvd" in prompt
+    assert "v - u = (b - a) * (a + b - 1)" in prompt
+    assert "Prefer a short contradiction proof" in prompt
+
+
 def test_other_tasks_do_not_get_numbertheory_specific_hint() -> None:
     prompt = runner._build_prompt(
         "mathd_algebra_171",
