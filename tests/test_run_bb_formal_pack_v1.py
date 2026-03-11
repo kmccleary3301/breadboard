@@ -51,9 +51,12 @@ def test_numbertheory_exk2pow_prompt_includes_prime_power_guidance() -> None:
     assert "exact (Nat.not_lt_of_ge hv_le) hltv" in prompt
     assert "Do not use `sq_lt_sq.mpr` on naturals" in prompt
     assert "have ha2_lt_hb2 : a^2 < b^2 := by gcongr" in prompt
+    assert "have hsub_pos : 0 < u - v := by rw [hsub_eq]; exact Nat.mul_pos hba_pos hsum_pos" in prompt
+    assert "have hv_lt_u : v < u := Nat.lt_of_sub_pos hsub_pos" in prompt
     assert "exact Nat.mul_comm a (a + 1)" in prompt
     assert "Do not rebuild the evenness witnesses manually" in prompt
     assert "simp [pow_succ, even_iff_two_dvd]" in prompt
+    assert "exact Nat.le_add_right b (a^2)" in prompt
     assert "prove `b - a < b` by `Nat.sub_lt hb0 ha0`" in prompt
     assert "Handle `b < a` symmetrically with the corrected sign convention" in prompt
     assert "Avoid introducing `htpos : 0 < t`" in prompt
