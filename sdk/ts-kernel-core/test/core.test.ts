@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import {
+  analyzeEffectiveToolSurface,
   buildTerminalInteractionEvent,
   buildTerminalOutputDeltaEvents,
   buildTerminalSessionBeginEvent,
@@ -322,6 +323,117 @@ test("kernel core can resolve tool bindings through packs, fallbacks, and hidden
       ["write_stdin", "bind-stdin-primary"],
     ],
   )
+  assert.equal(resolved[0]?.selectedViaFallback, true)
+  assert.deepEqual(resolved[0]?.resolutionPath, ["bind-term-primary", "bind-term-fallback"])
+
+  const analysis = analyzeEffectiveToolSurface({
+    surfaceId: "surface-bindings-1",
+    profileId: "trusted_local",
+    providerFamily: "openai",
+    driverClass: "local_process",
+    features: ["terminal_sessions"],
+    serviceIds: ["firecrawl-local"],
+    toolPacks: [
+      {
+        packId: "codex.background-terminals",
+        toolIds: ["exec_command", "write_stdin"],
+        bindingIds: ["bind-term-primary", "bind-stdin-primary", "bind-term-fallback"],
+      },
+      {
+        packId: "firecrawl.local",
+        toolIds: ["firecrawl.local.search"],
+        bindingIds: ["bind-firecrawl-hidden"],
+        environmentSelector: {
+          service_ids: ["firecrawl-local"],
+        },
+      },
+    ],
+    activePackIds: ["codex.background-terminals", "firecrawl.local"],
+    bindings: [
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-term-primary",
+        tool_id: "exec_command",
+        binding_kind: "sandbox",
+        environment_selector: {
+          profile_ids: ["sandboxed_local"],
+        },
+        fallback_binding_ids: ["bind-term-fallback"],
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-term-fallback",
+        tool_id: "exec_command",
+        binding_kind: "sandbox",
+        environment_selector: {
+          profile_ids: ["trusted_local"],
+          features: ["terminal_sessions"],
+        },
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-stdin-primary",
+        tool_id: "write_stdin",
+        binding_kind: "sandbox",
+        environment_selector: {
+          profile_ids: ["trusted_local"],
+          features: ["terminal_sessions"],
+        },
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-firecrawl-hidden",
+        tool_id: "firecrawl.local.search",
+        binding_kind: "service",
+        environment_selector: {
+          service_ids: ["firecrawl-local"],
+        },
+      },
+    ],
+    claims: [
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "exec_command",
+        binding_id: "bind-term-primary",
+        level: "unsupported",
+        summary: "sandboxed local terminal unavailable",
+        fallback_available: true,
+        hidden_reason: "selector_mismatch",
+        exposed_to_model: false,
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "exec_command",
+        binding_id: "bind-term-fallback",
+        level: "supported",
+        summary: "trusted local terminal available",
+        fallback_available: false,
+        exposed_to_model: true,
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "write_stdin",
+        binding_id: "bind-stdin-primary",
+        level: "supported",
+        summary: "terminal continuation available",
+        fallback_available: false,
+        exposed_to_model: true,
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "firecrawl.local.search",
+        binding_id: "bind-firecrawl-hidden",
+        level: "hidden",
+        summary: "bound but hidden from provider-native surface",
+        fallback_available: false,
+        hidden_reason: "provider_native_hidden",
+        exposed_to_model: false,
+      },
+    ],
+  })
+  assert.equal(analysis.visibleEntries.length, 2)
+  assert.equal(analysis.hiddenEntries[0]?.toolId, "firecrawl.local.search")
+  assert.equal(analysis.visibleEntries[0]?.selectedViaFallback, true)
 })
 
 test("kernel core can wrap terminal lifecycle payloads into canonical events", () => {

@@ -188,6 +188,25 @@ export interface EffectiveToolSurfaceInput {
   readonly projectionProfileId?: string | null
 }
 
+export interface EffectiveToolSurfaceEntryView {
+  readonly toolId: string
+  readonly bindingId: string | null
+  readonly bindingKind: ToolBindingV1["binding_kind"] | null
+  readonly level: ToolSupportClaimV1["level"] | "unbound"
+  readonly summary: string
+  readonly exposedToModel: boolean
+  readonly selectedViaFallback: boolean
+  readonly hiddenReason: string | null
+  readonly resolutionPath: readonly string[]
+}
+
+export interface EffectiveToolSurfaceAnalysisView {
+  readonly surface: EffectiveToolSurfaceV1
+  readonly visibleEntries: readonly EffectiveToolSurfaceEntryView[]
+  readonly hiddenEntries: readonly EffectiveToolSurfaceEntryView[]
+  readonly unsupportedEntries: readonly EffectiveToolSurfaceEntryView[]
+}
+
 export interface EffectiveToolSurfaceResolutionInput extends EffectiveToolSurfaceInput {
   readonly profileId?: string | null
   readonly providerFamily?: string | null
@@ -213,6 +232,7 @@ export interface BackboneTerminalApi {
 export interface BackboneToolSurfaceApi {
   buildEffectiveSurface(input: EffectiveToolSurfaceInput): EffectiveToolSurfaceV1
   resolveEffectiveSurface(input: EffectiveToolSurfaceResolutionInput): EffectiveToolSurfaceV1
+  analyzeEffectiveSurface(input: EffectiveToolSurfaceResolutionInput): EffectiveToolSurfaceAnalysisView
   resolveBindings(input: EffectiveToolSurfaceResolutionInput): readonly import("@breadboard/kernel-core").ResolvedToolBinding[]
 }
 

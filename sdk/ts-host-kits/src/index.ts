@@ -1,6 +1,7 @@
 import type {
   BackboneSession,
   BackboneTurnResult,
+  EffectiveToolSurfaceAnalysisView,
   EffectiveToolSurfaceInput,
   ProviderTurnInput,
   SupportClaim,
@@ -150,6 +151,25 @@ export interface EffectiveToolSurfaceView {
   readonly visibleToolIds: readonly string[]
   readonly hiddenToolIds: readonly string[]
   readonly bindingIds: readonly string[]
+}
+
+export interface EffectiveToolSurfaceEntryHostView {
+  readonly toolId: string
+  readonly bindingId: string | null
+  readonly bindingKind: string | null
+  readonly level: string
+  readonly summary: string
+  readonly exposedToModel: boolean
+  readonly selectedViaFallback: boolean
+  readonly hiddenReason: string | null
+  readonly resolutionPath: readonly string[]
+}
+
+export interface EffectiveToolSurfaceAnalysisHostView {
+  readonly surface: EffectiveToolSurfaceView
+  readonly visibleEntries: readonly EffectiveToolSurfaceEntryHostView[]
+  readonly hiddenEntries: readonly EffectiveToolSurfaceEntryHostView[]
+  readonly unsupportedEntries: readonly EffectiveToolSurfaceEntryHostView[]
 }
 
 export interface ProviderHostSession<Input, ProjectionState, ProjectionOutput> {
@@ -487,6 +507,36 @@ export function buildEffectiveToolSurfaceView(
   }
 }
 
+function buildEffectiveToolEntryHostView(
+  entry: EffectiveToolSurfaceAnalysisView["visibleEntries"][number],
+): EffectiveToolSurfaceEntryHostView {
+  return {
+    toolId: entry.toolId,
+    bindingId: entry.bindingId,
+    bindingKind: entry.bindingKind,
+    level: entry.level,
+    summary: entry.summary,
+    exposedToModel: entry.exposedToModel,
+    selectedViaFallback: entry.selectedViaFallback,
+    hiddenReason: entry.hiddenReason,
+    resolutionPath: entry.resolutionPath,
+  }
+}
+
+/**
+ * Project a support-rich effective tool surface into a stable host/product-facing analysis view.
+ */
+export function buildEffectiveToolSurfaceAnalysisView(
+  analysis: EffectiveToolSurfaceAnalysisView,
+): EffectiveToolSurfaceAnalysisHostView {
+  return {
+    surface: buildEffectiveToolSurfaceView(analysis.surface),
+    visibleEntries: analysis.visibleEntries.map(buildEffectiveToolEntryHostView),
+    hiddenEntries: analysis.hiddenEntries.map(buildEffectiveToolEntryHostView),
+    unsupportedEntries: analysis.unsupportedEntries.map(buildEffectiveToolEntryHostView),
+  }
+}
+
 /**
  * Convenience helper for hosts that want to reduce a terminal registry through Backbone and
  * immediately receive a stable host-facing view.
@@ -533,6 +583,17 @@ export function buildBackboneEffectiveToolSurfaceView(
   input: EffectiveToolSurfaceInput,
 ): EffectiveToolSurfaceView {
   return buildEffectiveToolSurfaceView(session.tools.buildEffectiveSurface(input))
+}
+
+/**
+ * Convenience helper for hosts that want the richer support/fallback explanation behind an
+ * effective tool surface instead of only the visible tool id list.
+ */
+export function buildBackboneEffectiveToolSurfaceAnalysisView(
+  session: BackboneSession,
+  input: Parameters<BackboneSession["tools"]["analyzeEffectiveSurface"]>[0],
+): EffectiveToolSurfaceAnalysisHostView {
+  return buildEffectiveToolSurfaceAnalysisView(session.tools.analyzeEffectiveSurface(input))
 }
 
 /**

@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import {
+  buildBackboneEffectiveToolSurfaceAnalysisView,
   buildBackboneTerminalCleanupView,
   buildBackboneTerminalOutputView,
   buildBackboneEffectiveToolSurfaceView,
@@ -12,6 +13,7 @@ import {
   buildTerminalCleanupView,
   buildTerminalOutputView,
   buildEffectiveToolSurfaceView,
+  buildEffectiveToolSurfaceAnalysisView,
   buildHostProjectionEnvelope,
   buildHostResultMeta,
   buildHostTranscriptProjection,
@@ -164,6 +166,9 @@ test("createProviderHostSession preserves transcript continuity and projection s
       },
       tools: {
         resolveEffectiveSurface() {
+          throw new Error("not used in this test")
+        },
+        analyzeEffectiveSurface() {
           throw new Error("not used in this test")
         },
         buildEffectiveSurface() {
@@ -372,6 +377,45 @@ test("Host Kit can build terminal and tool-surface views", () => {
   })
   assert.deepEqual(surfaceView.visibleToolIds, ["cuda.profile.capture"])
   assert.deepEqual(surfaceView.hiddenToolIds, ["firecrawl.local"])
+
+  const analysisView = buildEffectiveToolSurfaceAnalysisView({
+    surface: {
+      schema_version: "bb.effective_tool_surface.v1",
+      surface_id: "surface-analysis-1",
+      tool_ids: ["exec_command"],
+      binding_ids: ["bind-term-fallback"],
+      hidden_tool_ids: ["firecrawl.local.search"],
+    },
+    visibleEntries: [
+      {
+        toolId: "exec_command",
+        bindingId: "bind-term-fallback",
+        bindingKind: "sandbox",
+        level: "supported",
+        summary: "trusted local terminal available",
+        exposedToModel: true,
+        selectedViaFallback: true,
+        hiddenReason: null,
+        resolutionPath: ["bind-term-primary", "bind-term-fallback"],
+      },
+    ],
+    hiddenEntries: [
+      {
+        toolId: "firecrawl.local.search",
+        bindingId: "bind-firecrawl-hidden",
+        bindingKind: "service",
+        level: "hidden",
+        summary: "bound but hidden",
+        exposedToModel: false,
+        selectedViaFallback: false,
+        hiddenReason: "provider_native_hidden",
+        resolutionPath: ["bind-firecrawl-hidden"],
+      },
+    ],
+    unsupportedEntries: [],
+  })
+  assert.equal(analysisView.visibleEntries[0]?.selectedViaFallback, true)
+  assert.equal(analysisView.hiddenEntries[0]?.hiddenReason, "provider_native_hidden")
 })
 
 test("Host Kit can project terminal and tool surfaces through Backbone", () => {
@@ -508,6 +552,50 @@ test("Host Kit can project terminal and tool surfaces through Backbone", () => {
     ],
   })
   assert.deepEqual(surfaceView.visibleToolIds, ["firecrawl.local"])
+
+  const analysisView = buildBackboneEffectiveToolSurfaceAnalysisView(session, {
+    surfaceId: "surface-2",
+    profileId: "trusted_local",
+    features: ["terminal_sessions"],
+    bindings: [
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-exec-primary",
+        tool_id: "exec_command",
+        binding_kind: "sandbox",
+        environment_selector: { profile_ids: ["sandboxed_local"] },
+        fallback_binding_ids: ["bind-exec-fallback"],
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-exec-fallback",
+        tool_id: "exec_command",
+        binding_kind: "host",
+        environment_selector: { profile_ids: ["trusted_local"], features: ["terminal_sessions"] },
+      },
+    ],
+    claims: [
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "exec_command",
+        binding_id: "bind-exec-primary",
+        level: "unsupported",
+        summary: "sandbox terminal unavailable",
+        exposed_to_model: false,
+        hidden_reason: "selector_mismatch",
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "exec_command",
+        binding_id: "bind-exec-fallback",
+        level: "supported",
+        summary: "local terminal available",
+        exposed_to_model: true,
+      },
+    ],
+  })
+  assert.equal(analysisView.visibleEntries[0]?.selectedViaFallback, true)
+  assert.deepEqual(analysisView.visibleEntries[0]?.resolutionPath, ["bind-exec-primary", "bind-exec-fallback"])
 })
 
 test("Host Kit can derive a live terminal registry view from Backbone", async () => {

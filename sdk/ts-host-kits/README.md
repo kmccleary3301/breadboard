@@ -20,4 +20,10 @@ It now also includes public product-layer helpers for:
 - terminal-registry projection
 - terminal cleanup result construction through Backbone
 - effective tool-surface projection through Backbone
+- support-rich effective tool-surface analysis views, including:
+  - visible entries
+  - hidden entries
+  - unsupported entries
+  - fallback-selected bindings
+  - resolution paths
 - host-facing transcript/result envelopes that combine SupportClaim, projection state, and host-shaped result metadata

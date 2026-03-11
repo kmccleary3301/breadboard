@@ -12,6 +12,10 @@ export interface ToolPackDefinition {
   readonly packId: string
   readonly toolIds: readonly string[]
   readonly bindingIds?: readonly string[]
+  readonly defaultBindingIds?: readonly string[]
+  readonly environmentSelector?: EnvironmentSelectorV1
+  readonly tags?: readonly string[]
+  readonly metadata?: Readonly<Record<string, unknown>>
 }
 
 export interface EffectiveToolSurfaceResolutionInput {
@@ -33,6 +37,27 @@ export interface ResolvedToolBinding {
   readonly toolId: string
   readonly binding: ToolBindingV1
   readonly claim: ToolSupportClaimV1 | null
+  readonly selectedViaFallback: boolean
+  readonly resolutionPath: readonly string[]
+}
+
+export interface EffectiveToolSurfaceEntry {
+  readonly toolId: string
+  readonly bindingId: string | null
+  readonly bindingKind: ToolBindingV1["binding_kind"] | null
+  readonly level: ToolSupportClaimV1["level"] | "unbound"
+  readonly summary: string
+  readonly exposedToModel: boolean
+  readonly selectedViaFallback: boolean
+  readonly hiddenReason: string | null
+  readonly resolutionPath: readonly string[]
+}
+
+export interface EffectiveToolSurfaceAnalysis {
+  readonly surface: EffectiveToolSurfaceV1
+  readonly visibleEntries: readonly EffectiveToolSurfaceEntry[]
+  readonly hiddenEntries: readonly EffectiveToolSurfaceEntry[]
+  readonly unsupportedEntries: readonly EffectiveToolSurfaceEntry[]
 }
 
 function matchesSelector(
@@ -85,8 +110,9 @@ function buildActivePackSets(input: EffectiveToolSurfaceResolutionInput): {
   const bindingIds = new Set<string>()
   for (const pack of input.toolPacks) {
     if (!activePackIds.has(pack.packId)) continue
+    if (!matchesSelector(pack.environmentSelector ?? null, input)) continue
     for (const toolId of pack.toolIds) toolIds.add(toolId)
-    for (const bindingId of pack.bindingIds ?? []) bindingIds.add(bindingId)
+    for (const bindingId of [...(pack.bindingIds ?? []), ...(pack.defaultBindingIds ?? [])]) bindingIds.add(bindingId)
   }
   return { toolIds, bindingIds }
 }
@@ -116,15 +142,25 @@ function isModelVisibleClaim(claim: ToolSupportClaimV1 | null): boolean {
 function chooseBindingForTool(options: {
   readonly toolId: string
   readonly candidates: readonly ToolBindingV1[]
+  readonly input: EffectiveToolSurfaceResolutionInput
   readonly claimByBindingId: ReadonlyMap<string, ToolSupportClaimV1>
   readonly claimsByToolId: ReadonlyMap<string, readonly ToolSupportClaimV1[]>
 }): ResolvedToolBinding | null {
-  const queue = [...options.candidates]
+  const fallbackBindingIds = new Set(
+    options.candidates.flatMap((binding) => binding.fallback_binding_ids ?? []),
+  )
+  const rootCandidates = options.candidates.filter((binding) => !fallbackBindingIds.has(binding.binding_id))
+  const queue = (rootCandidates.length > 0 ? rootCandidates : options.candidates).map((binding) => ({
+    binding,
+    path: [binding.binding_id],
+    selectedViaFallback: false,
+  }))
   const seen = new Set<string>()
   let best: ResolvedToolBinding | null = null
 
   while (queue.length > 0) {
-    const binding = queue.shift()!
+    const candidate = queue.shift()!
+    const binding = candidate.binding
     if (seen.has(binding.binding_id)) continue
     seen.add(binding.binding_id)
 
@@ -134,14 +170,25 @@ function chooseBindingForTool(options: {
       options.claimsByToolId.get(options.toolId)?.[0] ??
       null
 
-    if (isModelVisibleClaim(claim) && (!best || claimPriority(claim) > claimPriority(best.claim))) {
-      best = { toolId: options.toolId, binding, claim }
+    const eligible = matchesSelector(binding.environment_selector ?? null, options.input)
+    if (eligible && isModelVisibleClaim(claim) && (!best || claimPriority(claim) > claimPriority(best.claim))) {
+      best = {
+        toolId: options.toolId,
+        binding,
+        claim,
+        selectedViaFallback: candidate.selectedViaFallback,
+        resolutionPath: candidate.path,
+      }
     }
 
     for (const fallbackId of binding.fallback_binding_ids ?? []) {
       const fallback = options.candidates.find((candidate) => candidate.binding_id === fallbackId)
       if (fallback && !seen.has(fallback.binding_id)) {
-        queue.push(fallback)
+        queue.push({
+          binding: fallback,
+          path: [...candidate.path, fallback.binding_id],
+          selectedViaFallback: true,
+        })
       }
     }
   }
@@ -169,7 +216,7 @@ export function resolveToolBindings(input: EffectiveToolSurfaceResolutionInput):
     if (activePackSets.bindingIds && activePackSets.bindingIds.size > 0 && !activePackSets.bindingIds.has(binding.binding_id)) {
       return false
     }
-    return matchesSelector(binding.environment_selector ?? null, input)
+    return true
   })
 
   const bindingsByToolId = new Map<string, ToolBindingV1[]>()
@@ -183,6 +230,7 @@ export function resolveToolBindings(input: EffectiveToolSurfaceResolutionInput):
       chooseBindingForTool({
         toolId,
         candidates,
+        input,
         claimByBindingId,
         claimsByToolId,
       }),
@@ -190,26 +238,95 @@ export function resolveToolBindings(input: EffectiveToolSurfaceResolutionInput):
     .filter((resolved): resolved is ResolvedToolBinding => resolved != null)
 }
 
-export function resolveEffectiveToolSurface(input: EffectiveToolSurfaceResolutionInput): EffectiveToolSurfaceV1 {
-  const resolvedBindings = resolveToolBindings(input)
-  const toolIds = resolvedBindings.map((resolved) => resolved.toolId)
-  const bindingIds = resolvedBindings.map((resolved) => resolved.binding.binding_id)
-  const hiddenToolIds = input.claims
-    .filter(
-      (claim) =>
-        claim.level === "hidden" ||
-        claim.hidden_reason === "selector_mismatch" ||
-        claim.exposed_to_model === false,
-    )
-    .map((claim) => claim.tool_id)
-
+function buildEffectiveToolSurfaceFromEntries(options: {
+  readonly surfaceId: string
+  readonly projectionProfileId?: string | null
+  readonly visibleEntries: readonly EffectiveToolSurfaceEntry[]
+  readonly hiddenEntries: readonly EffectiveToolSurfaceEntry[]
+}): EffectiveToolSurfaceV1 {
+  const toolIds = options.visibleEntries.map((resolved) => resolved.toolId)
+  const bindingIds = options.visibleEntries.flatMap((resolved) => (resolved.bindingId ? [resolved.bindingId] : []))
+  const hiddenToolIds = options.hiddenEntries.map((claim) => claim.toolId)
   return assertValid<EffectiveToolSurfaceV1>("effectiveToolSurface", {
     schema_version: "bb.effective_tool_surface.v1",
-    surface_id: input.surfaceId,
+    surface_id: options.surfaceId,
     tool_ids: toolIds,
     binding_ids: bindingIds,
     hidden_tool_ids: hiddenToolIds,
-    projection_profile_id: input.projectionProfileId ?? null,
+    projection_profile_id: options.projectionProfileId ?? null,
     surface_hash: buildSurfaceHash(toolIds, bindingIds),
   })
+}
+
+function buildToolEntry(options: {
+  readonly toolId: string
+  readonly binding: ToolBindingV1 | null
+  readonly claim: ToolSupportClaimV1 | null
+  readonly selectedViaFallback?: boolean
+  readonly resolutionPath?: readonly string[]
+}): EffectiveToolSurfaceEntry {
+  const exposedToModel = !!options.claim && isModelVisibleClaim(options.claim)
+  return {
+    toolId: options.toolId,
+    bindingId: options.binding?.binding_id ?? options.claim?.binding_id ?? null,
+    bindingKind: options.binding?.binding_kind ?? null,
+    level: options.claim?.level ?? "unbound",
+    summary: options.claim?.summary ?? "No compatible binding was selected.",
+    exposedToModel,
+    selectedViaFallback: options.selectedViaFallback ?? false,
+    hiddenReason: options.claim?.hidden_reason ?? null,
+    resolutionPath: options.resolutionPath ?? (options.binding ? [options.binding.binding_id] : []),
+  }
+}
+
+export function analyzeEffectiveToolSurface(input: EffectiveToolSurfaceResolutionInput): EffectiveToolSurfaceAnalysis {
+  const resolvedBindings = resolveToolBindings(input)
+  const resolvedByToolId = new Map(resolvedBindings.map((resolved) => [resolved.toolId, resolved] as const))
+  const visibleEntries = resolvedBindings.map((resolved) =>
+    buildToolEntry({
+      toolId: resolved.toolId,
+      binding: resolved.binding,
+      claim: resolved.claim,
+      selectedViaFallback: resolved.selectedViaFallback,
+      resolutionPath: resolved.resolutionPath,
+    }),
+  )
+  const hiddenEntries = input.claims
+    .filter((claim) => !resolvedByToolId.has(claim.tool_id) && (claim.level === "hidden" || claim.exposed_to_model === false))
+    .map((claim) =>
+      buildToolEntry({
+        toolId: claim.tool_id,
+        binding: input.bindings.find((binding) => binding.binding_id === claim.binding_id) ?? null,
+        claim,
+      }),
+    )
+  const unsupportedEntries = input.claims
+    .filter(
+      (claim) =>
+        !resolvedByToolId.has(claim.tool_id) &&
+        claim.level !== "hidden" &&
+        claim.exposed_to_model !== false,
+    )
+    .map((claim) =>
+      buildToolEntry({
+        toolId: claim.tool_id,
+        binding: input.bindings.find((binding) => binding.binding_id === claim.binding_id) ?? null,
+        claim,
+      }),
+    )
+  return {
+    surface: buildEffectiveToolSurfaceFromEntries({
+      surfaceId: input.surfaceId,
+      projectionProfileId: input.projectionProfileId ?? null,
+      visibleEntries,
+      hiddenEntries,
+    }),
+    visibleEntries,
+    hiddenEntries,
+    unsupportedEntries,
+  }
+}
+
+export function resolveEffectiveToolSurface(input: EffectiveToolSurfaceResolutionInput): EffectiveToolSurfaceV1 {
+  return analyzeEffectiveToolSurface(input).surface
 }

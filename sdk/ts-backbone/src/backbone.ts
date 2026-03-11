@@ -1,4 +1,5 @@
 import {
+  analyzeEffectiveToolSurface,
   buildEffectiveToolSurface,
   buildTerminalCleanupResult,
   reduceTerminalRegistry,
@@ -32,6 +33,9 @@ function makeBackboneSession(options: BackboneOptions, descriptor: HostSessionDe
       },
       resolveEffectiveSurface(input) {
         return resolveEffectiveToolSurface(input)
+      },
+      analyzeEffectiveSurface(input) {
+        return analyzeEffectiveToolSurface(input)
       },
       resolveBindings(input) {
         return resolveToolBindings(input)

@@ -60,6 +60,8 @@ The system should be able to say:
 - which bindings won
 - which tools were hidden or degraded and why
 - what provider/model projections were derived
+- whether a visible binding was selected via fallback
+- what binding-resolution path led to the visible binding
 
 ### 5. MCP and provider-native tools are ingress/projection paths
 
@@ -118,3 +120,9 @@ Visibility note:
 - a tool can fall back from one binding to another while preserving the same canonical tool id
 - terminal-session-backed tools are the clearest current example of this, because their visibility
   depends on execution profile and driver support rather than only on catalog presence
+
+Current product-layer note:
+
+- the Host Kit surface now exposes a richer effective-tool-surface analysis view
+- hosts do not need to infer fallback selection from binding ids alone
+- this keeps the system inspectable enough for dossier-grade configs and parity analysis
