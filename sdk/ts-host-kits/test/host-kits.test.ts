@@ -212,6 +212,9 @@ test("createProviderHostSession preserves transcript continuity and projection s
         async list() {
           throw new Error("not used in this test")
         },
+        async listViews() {
+          throw new Error("not used in this test")
+        },
         async cleanup() {
           throw new Error("not used in this test")
         },
@@ -402,8 +405,20 @@ test("Host Kit can build terminal and tool-surface views", () => {
       },
     ],
     ended_session_ids: ["term-0"],
+  }, {
+    support: {
+      canStart: true,
+      canInteract: true,
+      canPoll: true,
+      canList: true,
+      canCleanup: true,
+      streamMode: "pipes",
+    },
   })
   assert.equal(terminalView.activeSessions[0]?.commandSummary, "bash -lc sleep 30")
+  assert.equal(terminalView.activeCount, 1)
+  assert.equal(terminalView.endedCount, 1)
+  assert.equal(terminalView.support?.canList, true)
 
   const workspace = createWorkspace({
     workspaceId: "ws-term",
@@ -772,6 +787,9 @@ test("Host Kit can derive a live terminal registry view from Backbone", async ()
   assert.ok(liveView.activeSessions.length >= 1)
   assert.equal(liveView.activeSessions[0]?.terminalSessionId, "term-live-1")
   assert.equal(liveView.activeSessions[0]?.support, null)
+  assert.equal(liveView.support?.canList, true)
+  assert.equal(liveView.activeCount, 1)
+  assert.equal(liveView.endedCount, 0)
 })
 
 test("Host Kit can resolve terminal session, output, and cleanup views consistently", () => {

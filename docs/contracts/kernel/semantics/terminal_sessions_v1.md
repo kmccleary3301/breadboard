@@ -119,7 +119,9 @@ Phase 14 now also includes the first Codex-shaped parity-prep evidence bundle fo
 - no-output poll
 - list / registry projection
 - multi-session listing
+- mixed-state listing with one ended session carried forward
 - cleanup
+- cleanup after exit
 
 The generic reference fixtures remain `draft-semantic`, but the Codex-shaped lanes now include
 several `reference-engine` rows for:
@@ -130,7 +132,9 @@ several `reference-engine` rows for:
 - no-output poll
 - list / registry projection
 - multi-session listing
+- mixed-state listing
 - cleanup
+- cleanup after exit
 - dead-session interaction failure shaping
 
 That means the surface has moved beyond "planned" and beyond pure parity-prep shape checking.

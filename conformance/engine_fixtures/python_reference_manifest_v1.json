@@ -662,6 +662,28 @@
         "unsupported_case/codex_background_dead_session_fixture.json"
       ],
       "notes": "Codex-style dead-session interaction failure shaped through the public unsupported-case contract instead of a raw driver exception."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "codex_background_terminal_mixed_state_list_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "projection-equal",
+      "evidence": [
+        "terminal_session/codex_background_mixed_state_list_fixture.json"
+      ],
+      "notes": "Codex-shaped mixed-state terminal registry with one active session and one ended-session id."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "codex_background_terminal_cleanup_after_exit_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "projection-equal",
+      "evidence": [
+        "terminal_session/codex_background_cleanup_after_exit_fixture.json"
+      ],
+      "notes": "Codex-shaped cleanup result when the targeted background process has already exited."
     }
   ]
 }

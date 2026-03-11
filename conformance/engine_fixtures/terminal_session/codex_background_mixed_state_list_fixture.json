@@ -1,40 +1,42 @@
 {
   "fixture_family": "terminal_session",
-  "fixture_id": "codex_background_list_reference",
+  "fixture_id": "codex_background_mixed_state_list_reference",
   "comparator_class": "projection-equal",
   "support_tier": "reference-engine",
   "contract": "bb.terminal_registry_snapshot.v1",
   "reference_output": {
     "schema_version": "bb.terminal_registry_snapshot.v1",
-    "snapshot_id": "codex-term-snapshot-01",
+    "snapshot_id": "codex-term-snapshot-03",
     "active_sessions": [
       {
         "schema_version": "bb.terminal_session_descriptor.v1",
-        "terminal_session_id": "codex_term_bg_01",
+        "terminal_session_id": "codex_term_bg_02",
         "public_handles": [
           {
             "namespace": "codex",
             "label": "session_id",
-            "value": "codex_term_bg_01",
+            "value": "codex_term_bg_02",
             "audience": "model"
           }
         ],
         "command": [
           "/bin/bash",
           "-lc",
-          "python -m http.server 8765"
+          "tail -f server.log"
         ],
         "cwd": "/tmp/project",
-        "startup_call_id": "call_exec_background_codex_01",
-        "owner_task_id": "task_codex_background_01",
+        "startup_call_id": "call_exec_background_codex_02",
+        "owner_task_id": "task_codex_background_02",
         "stream_mode": "pipes",
         "stream_split": "stdout_stderr",
-        "capability_id": "term-cap:codex_term_bg_01",
-        "placement_id": "term-place:term-cap:codex_term_bg_01",
+        "capability_id": "term-cap:codex_term_bg_02",
+        "placement_id": "term-place:term-cap:codex_term_bg_02",
         "persistence_scope": "thread",
         "continuation_scope": "both"
       }
     ],
-    "ended_session_ids": []
+    "ended_session_ids": [
+      "codex_term_bg_01"
+    ]
   }
 }

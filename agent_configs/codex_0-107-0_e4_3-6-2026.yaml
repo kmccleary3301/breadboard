@@ -182,6 +182,8 @@ tool_packs:
     # - trusted-local runtime slice is real
     # - Codex-shaped reference-engine lanes now exist for start/write/poll/list/cleanup and
     #   dead-session interaction failure shaping
+    # - mixed-state list and cleanup-after-exit rows are also frozen as reference-engine
+    #   semantic lanes so hosts can reason about "recently ended" sessions without guessing
     # - full frozen E4 parity is still not claimed
     description: upstream Codex persistent terminal-session surface
     tool_ids:
@@ -232,7 +234,8 @@ tool_bindings:
     # Dead-session interaction failures are now expected to project through
     # `bb.unsupported_case.v1` rather than leaking raw backend exceptions. This keeps the
     # failure surface interpretable and lets different harness projections render the same
-    # underlying semantics differently.
+    # underlying semantics differently. The current semantic lanes also freeze cleanup-after-exit
+    # and mixed-state listing behavior around this binding family.
     # Backed today by the new persistent terminal-session primitives and the
     # trusted-local driver lane. This is now parity-prep, not just planned.
   - id: codex.terminal.stdin_continuation

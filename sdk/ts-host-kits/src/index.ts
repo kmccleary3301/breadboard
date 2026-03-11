@@ -192,8 +192,11 @@ export interface HostTerminalCleanupView {
 
 export interface HostTerminalRegistryView {
   readonly snapshotId: string
+  readonly activeCount: number
+  readonly endedCount: number
   readonly activeSessions: HostTerminalSessionView[]
   readonly endedSessionIds: readonly string[]
+  readonly support: HostTerminalSupportSummaryView | null
 }
 
 export interface EffectiveToolSurfaceView {
@@ -499,11 +502,17 @@ export function buildHostResultMeta(options: {
  */
 export function buildTerminalRegistryView(
   snapshot: TerminalRegistrySnapshotV1,
+  options: {
+    readonly support?: HostTerminalSupportSummaryView | null
+  } = {},
 ): HostTerminalRegistryView {
   return {
     snapshotId: snapshot.snapshot_id,
+    activeCount: snapshot.active_sessions.length,
+    endedCount: (snapshot.ended_session_ids ?? []).length,
     activeSessions: snapshot.active_sessions.map((session) => buildTerminalSessionView(session)),
     endedSessionIds: snapshot.ended_session_ids ?? [],
+    support: options.support ?? null,
   }
 }
 
@@ -747,7 +756,8 @@ export function buildBackboneTerminalRegistryView(
   session: BackboneSession,
   events: readonly import("@breadboard/kernel-contracts").KernelEventV1[],
 ): HostTerminalRegistryView {
-  return buildTerminalRegistryView(session.terminals.reduceRegistry(events))
+  const support = buildTerminalSupportSummaryView(session.terminals.classify({}))
+  return buildTerminalRegistryView(session.terminals.reduceRegistry(events), { support })
 }
 
 export async function buildBackboneLiveTerminalRegistryView(
@@ -755,7 +765,8 @@ export async function buildBackboneLiveTerminalRegistryView(
   input?: { executionProfileId?: import("@breadboard/workspace").ExecutionProfileId },
 ): Promise<HostTerminalRegistryView | null> {
   const result = await session.terminals.list(input)
-  return result.snapshot ? buildTerminalRegistryView(result.snapshot) : null
+  const support = buildTerminalSupportSummaryView(result.supportClaim)
+  return result.snapshot ? buildTerminalRegistryView(result.snapshot, { support }) : null
 }
 
 /**

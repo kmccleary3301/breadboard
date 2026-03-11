@@ -2,7 +2,7 @@
   "fixture_family": "terminal_session",
   "fixture_id": "codex_background_no_output_poll_reference",
   "comparator_class": "normalized-trace-equal",
-  "support_tier": "draft-semantic",
+  "support_tier": "reference-engine",
   "contract": "bb.terminal_interaction.v1",
   "reference_output": {
     "schema_version": "bb.terminal_interaction.v1",

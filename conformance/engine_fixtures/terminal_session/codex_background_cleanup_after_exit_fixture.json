@@ -1,19 +1,20 @@
 {
   "fixture_family": "terminal_session",
-  "fixture_id": "codex_background_cleanup_reference",
+  "fixture_id": "codex_background_cleanup_after_exit_reference",
   "comparator_class": "projection-equal",
   "support_tier": "reference-engine",
   "contract": "bb.terminal_cleanup_result.v1",
   "reference_output": {
     "schema_version": "bb.terminal_cleanup_result.v1",
-    "cleanup_id": "codex-term-cleanup-01",
+    "cleanup_id": "codex-term-cleanup-02",
     "scope": "single",
     "cleaned_session_ids": [
       "codex_term_bg_01"
     ],
     "failed_session_ids": [],
     "metadata": {
-      "signal": "SIGTERM"
+      "signal": "SIGTERM",
+      "already_exited": true
     }
   }
 }
