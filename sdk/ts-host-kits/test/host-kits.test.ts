@@ -7,6 +7,7 @@ import {
   buildTerminalInteractionView,
   buildBackboneTerminalInteractionView,
   buildBackboneEffectiveToolSurfaceAnalysisView,
+  buildBackboneEffectiveToolSurfaceSupportSummaryView,
   buildBackboneTerminalEndView,
   buildBackboneTerminalCleanupView,
   buildBackboneTerminalOutputView,
@@ -20,6 +21,7 @@ import {
   buildTerminalOutputView,
   buildEffectiveToolSurfaceView,
   buildEffectiveToolSurfaceAnalysisView,
+  buildEffectiveToolSurfaceSupportSummaryView,
   buildHostProjectionEnvelope,
   buildHostResultMeta,
   buildHostTranscriptProjection,
@@ -510,6 +512,14 @@ test("Host Kit can build terminal and tool-surface views", () => {
   })
   assert.equal(analysisView.visibleEntries[0]?.selectedViaFallback, true)
   assert.equal(analysisView.hiddenEntries[0]?.hiddenReason, "provider_native_hidden")
+  const supportSummary = buildEffectiveToolSurfaceSupportSummaryView(analysisView)
+  assert.deepEqual(supportSummary, {
+    visibleCount: 1,
+    hiddenCount: 1,
+    unsupportedCount: 0,
+    fallbackSelectedCount: 1,
+    providerNativeHiddenCount: 1,
+  })
 })
 
 test("Host Kit can project terminal and tool surfaces through Backbone", () => {
@@ -742,6 +752,69 @@ test("Host Kit can project terminal and tool surfaces through Backbone", () => {
   })
   assert.equal(analysisView.visibleEntries[0]?.selectedViaFallback, true)
   assert.deepEqual(analysisView.visibleEntries[0]?.resolutionPath, ["bind-exec-primary", "bind-exec-fallback"])
+  const supportSummary = buildBackboneEffectiveToolSurfaceSupportSummaryView(session, {
+    surfaceId: "surface-2",
+    profileId: "trusted_local",
+    features: ["terminal_sessions"],
+    bindings: [
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-exec-primary",
+        tool_id: "exec_command",
+        binding_kind: "sandbox",
+        environment_selector: { profile_ids: ["sandboxed_local"] },
+        fallback_binding_ids: ["bind-exec-fallback"],
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-exec-fallback",
+        tool_id: "exec_command",
+        binding_kind: "host",
+        environment_selector: { profile_ids: ["trusted_local"], features: ["terminal_sessions"] },
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-provider-hidden",
+        tool_id: "provider.native.terminal",
+        binding_kind: "provider_hosted",
+      },
+    ],
+    claims: [
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "exec_command",
+        binding_id: "bind-exec-primary",
+        level: "unsupported",
+        summary: "sandbox terminal unavailable",
+        exposed_to_model: false,
+        hidden_reason: "selector_mismatch",
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "exec_command",
+        binding_id: "bind-exec-fallback",
+        level: "supported",
+        summary: "local terminal available",
+        exposed_to_model: true,
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "provider.native.terminal",
+        binding_id: "bind-provider-hidden",
+        level: "hidden",
+        summary: "bound but hidden",
+        exposed_to_model: false,
+        hidden_reason: "provider_native_hidden",
+      },
+    ],
+  })
+  assert.deepEqual(supportSummary, {
+    visibleCount: 1,
+    hiddenCount: 1,
+    unsupportedCount: 0,
+    fallbackSelectedCount: 1,
+    providerNativeHiddenCount: 1,
+  })
 })
 
 test("Host Kit can derive a live terminal registry view from Backbone", async () => {

@@ -111,7 +111,7 @@ This is intentionally the first runtime slice, not the final parity claim:
 - stronger OCI / remote session drivers remain follow-on work
 - Codex-background-terminal E4 claims still require frozen golden/conformance lanes on top of these primitives
 
-Phase 14 now also includes the first Codex-shaped parity-prep evidence bundle for:
+Phase 14 now also includes a Codex-shaped reference-engine semantic evidence bundle for:
 
 - start
 - stdin continuation
@@ -160,7 +160,8 @@ The first Phase 14 conformance tranche now includes explicit terminal-session fi
 - registry projection
 - cleanup projection
 
-These fixtures are parity-prep evidence, not yet final Codex E4 goldens.
+These fixtures are now stronger than parity-prep shape checks: they are reference-engine semantic
+lanes, but they are still not final Codex E4 goldens.
 
 Codex-specific projection note:
 

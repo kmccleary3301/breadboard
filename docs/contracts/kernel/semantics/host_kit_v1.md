@@ -32,5 +32,6 @@ The repo now has:
 - reusable transcript projection and callback-emission helpers for host-facing result shaping
 - reusable host-facing result metadata helpers for bridge/package result envelopes
 - reusable terminal-registry and effective tool-surface projection helpers above Backbone
+- compact effective-tool-surface support summaries for hosts that only need visibility/fallback counts
 
 That means Host Kit is no longer just a design direction. It is now part of the public TS product layer, with OpenClaw serving as the first hard-runtime proving ground.

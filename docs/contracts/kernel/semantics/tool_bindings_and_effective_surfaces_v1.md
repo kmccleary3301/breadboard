@@ -113,7 +113,7 @@ background-terminal pair:
 - explicit projection profile
 - a fallback-selected remote binding lane that preserves the same canonical tool surface
 
-This is still parity-prep evidence, not a frozen E4 claim.
+This is now reference-engine semantic evidence, not yet a frozen E4 claim.
 
 Visibility note:
 

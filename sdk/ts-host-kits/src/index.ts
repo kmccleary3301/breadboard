@@ -229,6 +229,14 @@ export interface EffectiveToolSurfaceAnalysisHostView {
   readonly unsupportedEntries: readonly EffectiveToolSurfaceEntryHostView[]
 }
 
+export interface EffectiveToolSurfaceSupportSummaryView {
+  readonly visibleCount: number
+  readonly hiddenCount: number
+  readonly unsupportedCount: number
+  readonly fallbackSelectedCount: number
+  readonly providerNativeHiddenCount: number
+}
+
 export interface ProviderHostSession<Input, ProjectionState, ProjectionOutput> {
   classifyProviderTurn(input: Input): SupportClaim
   runProviderTurn(input: Input): Promise<ProviderHostSessionTurnResult<ProjectionState, ProjectionOutput>>
@@ -763,6 +771,24 @@ export function buildEffectiveToolSurfaceAnalysisView(
 }
 
 /**
+ * Summarize the host-facing effective tool surface analysis into stable product-facing counts
+ * so hosts can present visibility/fallback state without re-implementing analysis rules.
+ */
+export function buildEffectiveToolSurfaceSupportSummaryView(
+  analysis: EffectiveToolSurfaceAnalysisHostView,
+): EffectiveToolSurfaceSupportSummaryView {
+  return {
+    visibleCount: analysis.visibleEntries.length,
+    hiddenCount: analysis.hiddenEntries.length,
+    unsupportedCount: analysis.unsupportedEntries.length,
+    fallbackSelectedCount: analysis.visibleEntries.filter((entry) => entry.selectedViaFallback).length,
+    providerNativeHiddenCount: analysis.hiddenEntries.filter(
+      (entry) => entry.hiddenReason === "provider_native_hidden",
+    ).length,
+  }
+}
+
+/**
  * Convenience helper for hosts that want to reduce a terminal registry through Backbone and
  * immediately receive a stable host-facing view.
  */
@@ -826,6 +852,19 @@ export function buildBackboneEffectiveToolSurfaceAnalysisView(
   input: Parameters<BackboneSession["tools"]["analyzeEffectiveSurface"]>[0],
 ): EffectiveToolSurfaceAnalysisHostView {
   return buildEffectiveToolSurfaceAnalysisView(session.tools.analyzeEffectiveSurface(input))
+}
+
+/**
+ * Convenience helper for hosts that want a compact support/fallback summary instead of the
+ * full effective-tool-surface analysis payload.
+ */
+export function buildBackboneEffectiveToolSurfaceSupportSummaryView(
+  session: BackboneSession,
+  input: Parameters<BackboneSession["tools"]["analyzeEffectiveSurface"]>[0],
+): EffectiveToolSurfaceSupportSummaryView {
+  return buildEffectiveToolSurfaceSupportSummaryView(
+    buildBackboneEffectiveToolSurfaceAnalysisView(session, input),
+  )
 }
 
 /**

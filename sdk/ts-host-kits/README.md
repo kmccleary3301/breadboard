@@ -31,4 +31,5 @@ It now also includes public product-layer helpers for:
   - unsupported entries
   - fallback-selected bindings
   - resolution paths
+- compact effective tool-surface support summaries for host/product UIs that only need counts and fallback visibility
 - host-facing transcript/result envelopes that combine SupportClaim, projection state, and host-shaped result metadata

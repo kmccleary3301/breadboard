@@ -192,7 +192,7 @@ tool_packs:
     - exec_command
     - write_stdin
     exposure: interactive_terminal_protocol
-    support_status: parity_prep_not_frozen
+    support_status: reference_engine_frozen_not_e4
 
 tool_bindings:
   # `tool_bindings` answers a different question from `tools.registry.include`.
@@ -232,21 +232,22 @@ tool_bindings:
     execution_profile: trusted_local
     placement: workspace_local
     exposure: interactive_terminal_protocol
-    support_status: parity_prep_not_frozen
+    support_status: reference_engine_frozen_not_e4
     # Dead-session interaction failures are now expected to project through
     # `bb.unsupported_case.v1` rather than leaking raw backend exceptions. This keeps the
     # failure surface interpretable and lets different harness projections render the same
     # underlying semantics differently. The current semantic lanes also freeze cleanup-after-exit
     # and mixed-state listing behavior around this binding family.
     # Backed today by the new persistent terminal-session primitives and the
-    # trusted-local driver lane. This is now parity-prep, not just planned.
+    # trusted-local driver lane. This is now reference-engine frozen for the
+    # scoped semantic lanes, though still not a full E4 parity claim.
   - id: codex.terminal.stdin_continuation
     tool_id: write_stdin
     binding_kind: sandbox
     execution_profile: trusted_local
     placement: workspace_local
     exposure: interactive_terminal_protocol
-    support_status: parity_prep_not_frozen
+    support_status: reference_engine_frozen_not_e4
     # Continuation is represented canonically as stdin/signal/poll interactions
     # over a persistent terminal session, then projected Codex-style as needed.
     # The effective tool surface can still hide or degrade this binding when the
@@ -255,11 +256,12 @@ tool_bindings:
     # can remain visible while swapping binding strategy.
 
 terminal_sessions:
-  # This section is intentionally present before the strict lane fully freezes Codex background
-  # terminals. We want the dossier to already reveal the *shape* of the target surface, while
-  # being totally honest that the parity lane is still under construction.
+  # This section is intentionally present before the strict lane reaches full E4 parity. We want
+  # the dossier to already reveal the *shape* of the target surface, while being totally honest
+  # that the remaining gap is now about the final parity claim, not about whether the semantic
+  # lane exists at all.
   enabled: false
-  support_status: parity_prep_not_frozen
+  support_status: reference_engine_frozen_not_e4
   startup_tool: exec_command
   continuation_tool: write_stdin
   interaction_kinds:
@@ -306,8 +308,8 @@ terminal_sessions:
     # what lets us support Codex `/ps` semantics cleanly without baking host UI concerns into the
     # event ontology.
     derived_projection: true
-  # The strict public lane is still not frozen here, but the surface is no longer just a plan.
-  # Phase 14 now has parity-prep conformance fixtures for:
+  # The strict public lane is still not full E4 here, but the surface is no longer just a plan
+  # or a draft semantic sketch. Phase 14 now has reference-engine semantic lanes for:
   # - start
   # - write
   # - poll
