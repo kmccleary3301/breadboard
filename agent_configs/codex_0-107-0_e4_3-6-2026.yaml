@@ -257,6 +257,23 @@ terminal_sessions:
     kernel_session_id: explicit
     public_handle: explicit
     backend_handle: explicit
+  call_identity:
+    # Two distinct refs matter here:
+    # - `startup_call_id` groups the session under the originating exec-style tool call
+    # - `causing_call_id` records the interaction that produced a later write/poll/signal event
+    # This is how BreadBoard stays general while still being able to project Codex-style grouping.
+    startup_call_grouping: explicit
+    causal_interaction_ref: explicit
+  poll_projection:
+    # Poll is a first-class kernel interaction kind. Codex can still render it as an "empty"
+    # follow-up terminal interaction when no new stdin payload is supplied.
+    kernel_kind: poll
+    codex_rendering: empty_write_or_poll_equivalent
+  registry_projection:
+    # Registry/listing is derived host projection rather than kernel truth. That distinction is
+    # what lets us support Codex `/ps` semantics cleanly without baking host UI concerns into the
+    # event ontology.
+    derived_projection: true
   # The strict public lane is still not frozen here, but the surface is no longer just a plan.
   # Phase 14 now has parity-prep conformance fixtures for start / write / poll / list / cleanup:
   # - conformance/engine_fixtures/terminal_session/codex_background_*_fixture.json

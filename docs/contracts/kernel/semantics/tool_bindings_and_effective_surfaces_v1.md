@@ -111,3 +111,10 @@ background-terminal pair:
 - explicit projection profile
 
 This is still parity-prep evidence, not a frozen E4 claim.
+
+Visibility note:
+
+- a tool can be fully bound and operational but still hidden from the model
+- a tool can fall back from one binding to another while preserving the same canonical tool id
+- terminal-session-backed tools are the clearest current example of this, because their visibility
+  depends on execution profile and driver support rather than only on catalog presence

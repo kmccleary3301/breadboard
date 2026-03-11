@@ -160,6 +160,21 @@ test("oci driver can manage terminal sessions through an injected adapter", asyn
       }
     },
     async interactSession({ descriptor, interaction }) {
+      if (interaction.interaction_kind === "stdin") {
+        return {
+          outputDeltas: [
+            {
+              schema_version: "bb.terminal_output_delta.v1",
+              terminal_session_id: descriptor.terminal_session_id,
+              startup_call_id: descriptor.startup_call_id ?? null,
+              causing_call_id: interaction.causing_call_id ?? null,
+              stream: "stdout",
+              chunk_b64: Buffer.from("status: up\n", "utf8").toString("base64"),
+              chunk_seq: 1,
+            },
+          ],
+        }
+      }
       return {
         outputDeltas: [],
         end: {
@@ -174,6 +189,9 @@ test("oci driver can manage terminal sessions through an injected adapter", asyn
           evidence_refs: [],
         },
       }
+    },
+    async cleanupSessions({ sessionIds }) {
+      return sessionIds
     },
   })
   const started = await driver.startTerminalSession?.({
@@ -196,10 +214,68 @@ test("oci driver can manage terminal sessions through an injected adapter", asyn
     },
   })
   assert.equal(started?.outputDeltas.length, 1)
+  const initialSnapshot = await driver.snapshotTerminalRegistry?.()
+  assert.equal(initialSnapshot?.active_sessions.length, 1)
+  assert.equal(initialSnapshot?.active_sessions[0]?.terminal_session_id, "term-oci-1")
+  const stdinResult = await driver.interactTerminalSession?.({
+    terminalSessionId: "term-oci-1",
+    interactionKind: "stdin",
+    inputText: "status\n",
+    causingCallId: "call-stdin-1",
+  })
+  assert.equal(stdinResult?.outputDeltas.length, 1)
+  assert.match(Buffer.from(stdinResult?.outputDeltas[0]?.chunk_b64 ?? "", "base64").toString("utf8"), /status: up/)
   const interacted = await driver.interactTerminalSession?.({
     terminalSessionId: "term-oci-1",
     interactionKind: "poll",
     causingCallId: "call-1",
   })
   assert.equal(interacted?.end?.terminal_state, "completed")
+  const postEndSnapshot = await driver.snapshotTerminalRegistry?.()
+  assert.equal(postEndSnapshot?.active_sessions.length, 0)
+  const cleanup = await driver.cleanupTerminalSessions?.({
+    cleanupId: "cleanup-oci-1",
+    scope: "single",
+    sessionIds: ["term-oci-1"],
+  })
+  assert.deepEqual(cleanup?.cleaned_session_ids, ["term-oci-1"])
+})
+
+test("oci terminal support follows runtime selection semantics", async () => {
+  const driver = makeOciExecutionDriver({
+    async startSession() {
+      return { outputDeltas: [] }
+    },
+    async interactSession() {
+      return { outputDeltas: [] }
+    },
+  })
+  assert.equal(
+    driver.supportsTerminalSessions?.(
+      {
+        schema_version: "bb.execution_capability.v1",
+        capability_id: "cap-term-oci-gvisor",
+        security_tier: "shared_host",
+        isolation_class: "gvisor",
+        secret_mode: "ref_only",
+        evidence_mode: "audit_full",
+      },
+      "local_oci_gvisor",
+    ),
+    true,
+  )
+  assert.equal(
+    driver.supportsTerminalSessions?.(
+      {
+        schema_version: "bb.execution_capability.v1",
+        capability_id: "cap-term-oci-kata",
+        security_tier: "shared_host",
+        isolation_class: "kata",
+        secret_mode: "ref_only",
+        evidence_mode: "audit_full",
+      },
+      "local_oci_kata",
+    ),
+    true,
+  )
 })

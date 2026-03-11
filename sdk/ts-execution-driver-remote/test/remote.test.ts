@@ -246,6 +246,7 @@ test("remote driver can be constructed from HTTP options alone", async () => {
 })
 
 test("remote terminal driver can execute through a fetch-backed adapter", async () => {
+  let seenInteract = false
   const driver = makeRemoteTerminalSessionDriver({
     endpointUrl: "https://example.test/remote-term",
     fetchImpl: async (_input, init) => {
@@ -262,6 +263,29 @@ test("remote terminal driver can execute through a fetch-backed adapter", async 
           }),
         } as Response
       }
+      if (body.action === "interact") {
+        seenInteract = true
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: {
+              output_deltas: [
+                {
+                  schema_version: "bb.terminal_output_delta.v1",
+                  terminal_session_id: "term-remote-1",
+                  startup_call_id: null,
+                  causing_call_id: "call-remote-poll-1",
+                  stream: "stdout",
+                  chunk_b64: Buffer.from("remote ok\n", "utf8").toString("base64"),
+                  chunk_seq: 0,
+                },
+              ],
+            },
+          }),
+        } as Response
+      }
       if (body.action === "snapshot") {
         return {
           ok: true,
@@ -272,7 +296,23 @@ test("remote terminal driver can execute through a fetch-backed adapter", async 
               snapshot: {
                 schema_version: "bb.terminal_registry_snapshot.v1",
                 snapshot_id: "remote-snap-1",
-                active_sessions: [],
+                active_sessions: [
+                  {
+                    schema_version: "bb.terminal_session_descriptor.v1",
+                    terminal_session_id: "term-remote-1",
+                    public_handles: [],
+                    command: ["python", "worker.py"],
+                    cwd: null,
+                    startup_call_id: null,
+                    owner_task_id: null,
+                    stream_mode: "pipes",
+                    stream_split: "stdout_stderr",
+                    capability_id: remoteCapability.capability_id,
+                    placement_id: "place-term-remote-1",
+                    persistence_scope: "thread",
+                    continuation_scope: "both"
+                  }
+                ],
                 ended_session_ids: [],
               },
             },
@@ -305,14 +345,53 @@ test("remote terminal driver can execute through a fetch-backed adapter", async 
       capability_id: remoteCapability.capability_id,
     },
   })
+  const interacted = await driver.interactTerminalSession?.({
+    terminalSessionId: "term-remote-1",
+    interactionKind: "poll",
+    causingCallId: "call-remote-poll-1",
+  })
+  assert.equal(seenInteract, true)
+  assert.equal(interacted?.outputDeltas.length, 1)
   const snapshot = await driver.snapshotTerminalRegistry?.()
   assert.equal(snapshot?.snapshot_id, "remote-snap-1")
+  assert.equal(snapshot?.active_sessions.length, 1)
   const cleanup = await driver.cleanupTerminalSessions?.({
     cleanupId: "cleanup-remote-1",
     scope: "single",
     sessionIds: ["term-remote-1"],
   })
   assert.deepEqual(cleanup?.cleaned_session_ids, ["term-remote-1"])
+})
+
+test("remote terminal driver surfaces endpoint failures cleanly", async () => {
+  const driver = makeRemoteTerminalSessionDriver({
+    endpointUrl: "https://example.test/remote-term-error",
+    fetchImpl: async () =>
+      ({
+        ok: false,
+        status: 503,
+        json: async () => ({
+          message: "terminal backend unavailable",
+        }),
+      }) as Response,
+  })
+
+  await assert.rejects(
+    () =>
+      driver.startTerminalSession?.({
+        terminalSessionId: "term-remote-error-1",
+        command: ["python", "worker.py"],
+        capability: remoteCapability,
+        placement: {
+          schema_version: "bb.execution_placement.v1",
+          placement_id: "place-term-remote-error-1",
+          placement_class: "remote_worker",
+          runtime_id: "remote",
+          capability_id: remoteCapability.capability_id,
+        },
+      }) ?? Promise.resolve(undefined),
+    /HTTP 503/,
+  )
 })
 
 test("unsupported case helper still models delegated gaps honestly", () => {

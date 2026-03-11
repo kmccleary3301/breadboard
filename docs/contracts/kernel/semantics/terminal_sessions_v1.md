@@ -50,6 +50,15 @@ The kernel should represent `poll` as its own interaction kind. Empty-stdin-as-p
 
 Active-session listings, `/ps`-style outputs, and running-session summaries are derived projection surfaces, not canonical event families.
 
+### 6. Startup grouping and causal attribution are distinct
+
+For Codex-style background terminals we need both:
+
+- `startup_call_id` for grouping the terminal under the originating start/exec call
+- `causing_call_id` for attributing later write, poll, or signal interactions
+
+Those should not be collapsed into one field.
+
 ## Non-goals
 
 This dossier does not freeze:
@@ -117,3 +126,9 @@ The first Phase 14 conformance tranche now includes explicit terminal-session fi
 - cleanup projection
 
 These fixtures are parity-prep evidence, not yet final Codex E4 goldens.
+
+Codex-specific projection note:
+
+- kernel `poll` should remain a first-class interaction kind
+- a Codex-facing projection can still render that as an empty write/continue operation if needed
+- the kernel should not collapse `poll` into `stdin` just to match one harness view
