@@ -311,7 +311,7 @@ test("oci terminal driver keeps multi-session listing and no-output poll semanti
                 terminal_session_id: descriptor.terminal_session_id,
                 startup_call_id: descriptor.startup_call_id ?? null,
                 causing_call_id: interaction.causing_call_id ?? null,
-                terminal_state: "signaled",
+                terminal_state: "cancelled",
                 exit_code: null,
                 duration_ms: 8,
                 artifact_refs: [],
@@ -374,7 +374,7 @@ test("oci terminal driver keeps multi-session listing and no-output poll semanti
     signal: "SIGTERM",
     causingCallId: "call-oci-signal-1",
   })
-  assert.equal(signaled?.end?.terminal_state, "signaled")
+  assert.equal(signaled?.end?.terminal_state, "cancelled")
   const finalSnapshot = await driver.snapshotTerminalRegistry?.()
   assert.equal(finalSnapshot?.active_sessions.length, 0)
 })

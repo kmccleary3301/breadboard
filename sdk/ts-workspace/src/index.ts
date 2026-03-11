@@ -2,6 +2,7 @@ import type {
   ExecutionProfile,
   ExecutionProfileId,
   TerminalOutputShape,
+  TerminalSessionEndShape,
   ToolOutputShape,
   ToolOutputShaperOptions,
   Workspace,
@@ -16,6 +17,7 @@ export type {
   ExecutionProfile,
   ExecutionProfileId,
   TerminalOutputShape,
+  TerminalSessionEndShape,
   ToolOutputShape,
   ToolOutputShaperOptions,
   Workspace,
@@ -82,6 +84,30 @@ export function shapeTerminalOutputDeltas(
     ...options,
     chunkCount: outputDeltas.length,
   })
+}
+
+function shapeArtifactRefs(locations: readonly string[] | undefined): readonly WorkspaceArtifactRef[] {
+  return (locations ?? []).map((location) => ({
+    artifactId: location,
+    kind: "generic" as const,
+    location,
+  }))
+}
+
+export function shapeTerminalSessionEnd(end: {
+  readonly artifact_refs?: readonly string[]
+  readonly evidence_refs?: readonly string[]
+  readonly terminal_state?: string | null
+  readonly exit_code?: number | null
+  readonly duration_ms?: number | null
+}): TerminalSessionEndShape {
+  return {
+    terminalState: end.terminal_state ?? null,
+    exitCode: end.exit_code ?? null,
+    durationMs: end.duration_ms ?? null,
+    artifactRefs: shapeArtifactRefs(end.artifact_refs),
+    evidenceRefs: [...(end.evidence_refs ?? [])],
+  }
 }
 
 function defaultProfileForCapabilities(capabilities: WorkspaceCapabilitySet): ExecutionProfileId {
@@ -169,6 +195,9 @@ export function createWorkspace(options: WorkspaceOptions): Workspace {
       shapeOptions?: ToolOutputShaperOptions,
     ): TerminalOutputShape {
       return shapeTerminalOutputDeltas(outputDeltas, shapeOptions)
+    },
+    shapeTerminalSessionEnd(end): TerminalSessionEndShape {
+      return shapeTerminalSessionEnd(end)
     },
     supportsProfile(profileId: ExecutionProfileId): boolean {
       return supportsExecutionProfile(options.capabilitySet, profileId)

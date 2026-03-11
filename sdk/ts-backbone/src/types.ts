@@ -154,12 +154,17 @@ export interface BackboneTerminalSessionSummary {
   readonly terminalSessionId: string
   readonly commandSummary: string
   readonly status: "running" | "ended"
+  readonly publicHandles: readonly NonNullable<TerminalSessionDescriptorV1["public_handles"]>[number][]
   readonly outputPreview: string
   readonly outputChunkCount: number
   readonly persistenceScope: TerminalSessionDescriptorV1["persistence_scope"]
   readonly continuationScope: TerminalSessionDescriptorV1["continuation_scope"]
   readonly lastSnapshotId: string | null
   readonly lastEndState: import("@breadboard/kernel-contracts").TerminalSessionEndV1["terminal_state"] | null
+  readonly exitCode: number | null
+  readonly durationMs: number | null
+  readonly artifactRefCount: number
+  readonly evidenceRefCount: number
 }
 
 export interface BackboneTerminalSessionView {

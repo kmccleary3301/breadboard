@@ -19,6 +19,8 @@ This package does not own host-specific request schemas by itself. It provides t
 It now also includes public product-layer helpers for:
 - support-claim projection into a stable host-facing view
 - terminal-registry projection
+- terminal-session projection with public handles, support view, and end-state summaries
+- terminal-end projection with shaped artifact/evidence refs
 - terminal cleanup result construction through Backbone
 - effective tool-surface projection through Backbone
 - support-rich effective tool-surface analysis views, including:

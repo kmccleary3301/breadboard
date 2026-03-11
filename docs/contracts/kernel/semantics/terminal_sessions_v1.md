@@ -96,6 +96,11 @@ The first shipped runtime tranche now includes:
 - a trusted-local process-backed session manager in `@breadboard/execution-driver-local`
 - kernel-core helpers that wrap begin / interaction / delta / end payloads into canonical kernel events
 - a terminal registry reducer that remains a derived projection rather than canonical truth
+- product-facing session views in `@breadboard/backbone` that keep support claims, status,
+  snapshot state, and end-state summaries together
+- host-facing session/end projection helpers in `@breadboard/host-kits`
+- workspace terminal shaping helpers that turn terminal end payloads into host-usable
+  artifact/evidence references without changing kernel truth
 
 This is intentionally the first runtime slice, not the final parity claim:
 

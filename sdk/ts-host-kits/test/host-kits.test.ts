@@ -4,6 +4,7 @@ import assert from "node:assert/strict"
 import {
   buildSupportClaimView,
   buildBackboneEffectiveToolSurfaceAnalysisView,
+  buildBackboneTerminalEndView,
   buildBackboneTerminalCleanupView,
   buildBackboneTerminalOutputView,
   buildBackboneEffectiveToolSurfaceView,
@@ -12,6 +13,7 @@ import {
   buildBackboneTerminalCleanupResult,
   buildBackboneTerminalRegistryView,
   buildTerminalCleanupView,
+  buildTerminalEndView,
   buildTerminalOutputView,
   buildEffectiveToolSurfaceView,
   buildEffectiveToolSurfaceAnalysisView,
@@ -336,8 +338,17 @@ test("Host Kit can build terminal and tool-surface views", () => {
     stream_mode: "pipes",
     persistence_scope: "thread",
     continuation_scope: "both",
+    public_handles: [{ namespace: "host", label: "pid", value: 42, audience: "host" }],
+  }, {
+    exitCode: 0,
+    durationMs: 125,
+    artifactRefs: [{ artifactId: "artifact://terminal/stdout/1", kind: "generic", location: "artifact://terminal/stdout/1" }],
+    evidenceRefs: ["evidence://terminal/1"],
   })
   assert.equal(sessionView.commandSummary, "bash -lc echo hi")
+  assert.equal(sessionView.publicHandles[0]?.label, "pid")
+  assert.equal(sessionView.exitCode, 0)
+  assert.equal(sessionView.artifactRefs?.[0]?.location, "artifact://terminal/stdout/1")
 
   const terminalView = buildTerminalRegistryView({
     schema_version: "bb.terminal_registry_snapshot.v1",
@@ -385,6 +396,16 @@ test("Host Kit can build terminal and tool-surface views", () => {
   })
   assert.equal(cleanupView.cleanedCount, 1)
   assert.equal(cleanupView.failedCount, 1)
+
+  const endView = buildTerminalEndView({
+    terminalState: "completed",
+    exitCode: 0,
+    durationMs: 125,
+    artifactRefs: [{ artifactId: "artifact://terminal/stdout/1", kind: "generic", location: "artifact://terminal/stdout/1" }],
+    evidenceRefs: ["evidence://terminal/1"],
+  })
+  assert.equal(endView.terminalState, "completed")
+  assert.equal(endView.artifactRefs[0]?.location, "artifact://terminal/stdout/1")
 
   const surfaceView = buildEffectiveToolSurfaceView({
     schema_version: "bb.effective_tool_surface.v1",
@@ -518,12 +539,17 @@ test("Host Kit can project terminal and tool surfaces through Backbone", () => {
         terminalSessionId: "term-1",
         commandSummary: "python -m http.server",
         status: "running",
+        publicHandles: [],
         outputPreview: "ready",
         outputChunkCount: 1,
         persistenceScope: "thread",
         continuationScope: "both",
         lastSnapshotId: "snap-1",
         lastEndState: null,
+        exitCode: null,
+        durationMs: null,
+        artifactRefCount: 0,
+        evidenceRefCount: 0,
       }
     },
     async refresh() {
@@ -547,6 +573,17 @@ test("Host Kit can project terminal and tool surfaces through Backbone", () => {
   })
   assert.equal(view.outputPreview, "ready")
   assert.equal(view.lastSnapshotId, "snap-1")
+  assert.equal(view.support?.level, "supported")
+
+  const endView = buildBackboneTerminalEndView(session, {
+    terminal_state: "completed",
+    exit_code: 0,
+    duration_ms: 25,
+    artifact_refs: ["artifact://terminal/stdout/1"],
+    evidence_refs: ["evidence://terminal/1"],
+  })
+  assert.equal(endView.exitCode, 0)
+  assert.equal(endView.artifactRefs[0]?.artifactId, "artifact://terminal/stdout/1")
 
   const surfaceView = buildBackboneEffectiveToolSurfaceView(session, {
     surfaceId: "surface-1",
@@ -660,6 +697,7 @@ test("Host Kit can derive a live terminal registry view from Backbone", async ()
   }
   assert.ok(liveView.activeSessions.length >= 1)
   assert.equal(liveView.activeSessions[0]?.terminalSessionId, "term-live-1")
+  assert.equal(liveView.activeSessions[0]?.support, null)
 })
 
 test("Host Kit can resolve terminal session, output, and cleanup views consistently", () => {
@@ -680,6 +718,7 @@ test("Host Kit can resolve terminal session, output, and cleanup views consisten
   })
   assert.equal(sessionView.terminalSessionId, "term-view-1")
   assert.equal(sessionView.commandSummary, "bash -lc python profiler.py")
+  assert.equal(sessionView.publicHandles.length, 0)
 
   const outputView = buildTerminalOutputView({
     outputDeltas: [

@@ -218,4 +218,7 @@ test("BackboneSession can classify and drive a local terminal session lifecycle"
   assert.equal(terminalSession.status, "ended")
   assert.equal(terminalSession.summary().status, "ended")
   assert.equal(terminalSession.summary().lastEndState, "cleaned_up")
+  assert.equal(terminalSession.summary().artifactRefCount, 0)
+  assert.equal(terminalSession.summary().evidenceRefCount, 0)
+  assert.equal(terminalSession.summary().publicHandles.length, 1)
 })

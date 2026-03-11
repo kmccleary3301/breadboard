@@ -4,6 +4,7 @@ import assert from "node:assert/strict"
 import {
   buildWorkspaceCapabilitySet,
   createWorkspace,
+  shapeTerminalSessionEnd,
   shapeTerminalOutput,
   shapeToolOutput,
   stripAnsi,
@@ -84,4 +85,19 @@ test("workspace exposes terminal output delta shaping", () => {
   assert.equal(shaped.chunkCount, 2)
   assert.equal(shaped.userVisibleText, "hello\nworld\n")
   assert.equal(shaped.modelVisibleText, "hello\nworld\n")
+})
+
+test("workspace shapes terminal session end metadata into host-friendly refs", () => {
+  const shaped = shapeTerminalSessionEnd({
+    terminal_state: "completed",
+    exit_code: 0,
+    duration_ms: 123,
+    artifact_refs: ["artifact://terminal/stdout/1"],
+    evidence_refs: ["evidence://terminal/1"],
+  })
+  assert.equal(shaped.terminalState, "completed")
+  assert.equal(shaped.exitCode, 0)
+  assert.equal(shaped.durationMs, 123)
+  assert.equal(shaped.artifactRefs[0]?.location, "artifact://terminal/stdout/1")
+  assert.deepEqual(shaped.evidenceRefs, ["evidence://terminal/1"])
 })

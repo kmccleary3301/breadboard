@@ -442,7 +442,7 @@ test("remote terminal driver preserves no-output poll and multi-session listing 
                       terminal_session_id: "term-remote-keepalive",
                       startup_call_id: null,
                       causing_call_id: interaction.causing_call_id ?? null,
-                      terminal_state: "signaled",
+                      terminal_state: "cancelled",
                       exit_code: null,
                       duration_ms: 9,
                       artifact_refs: [],
@@ -542,7 +542,7 @@ test("remote terminal driver preserves no-output poll and multi-session listing 
     signal: "SIGTERM",
     causingCallId: "call-remote-signal-1",
   })
-  assert.equal(signaled?.end?.terminal_state, "signaled")
+  assert.equal(signaled?.end?.terminal_state, "cancelled")
 })
 
 test("unsupported case helper still models delegated gaps honestly", () => {

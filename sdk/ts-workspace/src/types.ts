@@ -42,6 +42,14 @@ export interface TerminalOutputShape extends ToolOutputShape {
   readonly chunkCount: number
 }
 
+export interface TerminalSessionEndShape {
+  readonly terminalState: string | null
+  readonly exitCode: number | null
+  readonly durationMs: number | null
+  readonly artifactRefs: readonly WorkspaceArtifactRef[]
+  readonly evidenceRefs: readonly string[]
+}
+
 export interface ToolOutputShaperOptions {
   readonly maxChars?: number
   readonly headChars?: number
@@ -69,6 +77,13 @@ export interface Workspace {
     outputDeltas: readonly { readonly chunk_b64: string }[],
     options?: ToolOutputShaperOptions,
   ): TerminalOutputShape
+  shapeTerminalSessionEnd(end: {
+    readonly artifact_refs?: readonly string[]
+    readonly evidence_refs?: readonly string[]
+    readonly terminal_state?: string | null
+    readonly exit_code?: number | null
+    readonly duration_ms?: number | null
+  }): TerminalSessionEndShape
   supportsProfile(profileId: ExecutionProfileId): boolean
   getExecutionProfile(profileId?: ExecutionProfileId): ExecutionProfile
 }

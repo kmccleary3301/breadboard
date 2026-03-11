@@ -16,7 +16,7 @@ import type {
   TerminalRegistrySnapshotV1,
   TerminalSessionDescriptorV1,
 } from "@breadboard/kernel-contracts"
-import type { TerminalOutputShape, Workspace } from "@breadboard/workspace"
+import type { TerminalOutputShape, TerminalSessionEndShape, Workspace, WorkspaceArtifactRef } from "@breadboard/workspace"
 
 export type HostKitMode = "supported" | "fallback"
 
@@ -130,17 +130,36 @@ export interface HostTerminalSessionView {
   readonly terminalSessionId: string
   readonly commandSummary: string
   readonly status: "running" | "ended"
+  readonly publicHandles: readonly {
+    namespace: string
+    label: string
+    value: string | number
+    audience: "model" | "host"
+  }[]
   readonly outputPreview?: string | null
   readonly outputChunkCount?: number
   readonly persistenceScope: string
   readonly continuationScope: string
   readonly lastSnapshotId?: string | null
   readonly lastEndState?: string | null
+  readonly exitCode?: number | null
+  readonly durationMs?: number | null
+  readonly artifactRefs?: readonly WorkspaceArtifactRef[]
+  readonly evidenceRefs?: readonly string[]
+  readonly support?: SupportClaimView | null
 }
 
 export interface HostTerminalOutputView {
   readonly text: string
   readonly shape: TerminalOutputShape | null
+}
+
+export interface HostTerminalEndView {
+  readonly terminalState: string | null
+  readonly exitCode: number | null
+  readonly durationMs: number | null
+  readonly artifactRefs: readonly WorkspaceArtifactRef[]
+  readonly evidenceRefs: readonly string[]
 }
 
 export interface HostTerminalCleanupView {
@@ -450,18 +469,29 @@ export function buildTerminalSessionView(
     readonly outputChunkCount?: number
     readonly lastSnapshotId?: string | null
     readonly lastEndState?: string | null
+    readonly exitCode?: number | null
+    readonly durationMs?: number | null
+    readonly artifactRefs?: readonly WorkspaceArtifactRef[]
+    readonly evidenceRefs?: readonly string[]
+    readonly support?: SupportClaimView | null
   } = {},
 ): HostTerminalSessionView {
   return {
     terminalSessionId: descriptor.terminal_session_id,
     commandSummary: descriptor.command.join(" "),
     status: options.status ?? "running",
+    publicHandles: [...(descriptor.public_handles ?? [])],
     outputPreview: options.outputPreview ?? null,
     outputChunkCount: options.outputChunkCount ?? 0,
     persistenceScope: descriptor.persistence_scope,
     continuationScope: descriptor.continuation_scope,
     lastSnapshotId: options.lastSnapshotId ?? null,
     lastEndState: options.lastEndState ?? null,
+    exitCode: options.exitCode ?? null,
+    durationMs: options.durationMs ?? null,
+    artifactRefs: options.artifactRefs ?? [],
+    evidenceRefs: options.evidenceRefs ?? [],
+    support: options.support ?? null,
   }
 }
 
@@ -507,7 +537,39 @@ export function buildBackboneTerminalSessionView(
     outputChunkCount: summary.outputChunkCount,
     lastSnapshotId: summary.lastSnapshotId,
     lastEndState: summary.lastEndState,
+    exitCode: summary.exitCode,
+    durationMs: summary.durationMs,
+    artifactRefs: sessionView.lastEnd?.artifact_refs?.map((location) => ({
+      artifactId: location,
+      kind: "generic" as const,
+      location,
+    })) ?? [],
+    evidenceRefs: sessionView.lastEnd?.evidence_refs ?? [],
+    support: buildSupportClaimView(sessionView.supportClaim),
   })
+}
+
+export function buildTerminalEndView(end: TerminalSessionEndShape): HostTerminalEndView {
+  return {
+    terminalState: end.terminalState,
+    exitCode: end.exitCode,
+    durationMs: end.durationMs,
+    artifactRefs: end.artifactRefs,
+    evidenceRefs: end.evidenceRefs,
+  }
+}
+
+export function buildBackboneTerminalEndView(
+  session: BackboneSession,
+  end: {
+    readonly artifact_refs?: readonly string[]
+    readonly evidence_refs?: readonly string[]
+    readonly terminal_state?: string | null
+    readonly exit_code?: number | null
+    readonly duration_ms?: number | null
+  },
+): HostTerminalEndView {
+  return buildTerminalEndView(session.workspace.shapeTerminalSessionEnd(end))
 }
 
 export function buildTerminalCleanupView(

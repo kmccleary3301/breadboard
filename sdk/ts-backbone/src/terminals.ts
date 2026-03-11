@@ -86,12 +86,17 @@ function createTerminalSessionView(options: {
       terminalSessionId: options.descriptor.terminal_session_id,
       commandSummary: options.descriptor.command.join(" "),
       status,
+      publicHandles: [...(options.descriptor.public_handles ?? [])],
       outputPreview,
       outputChunkCount,
       persistenceScope: options.descriptor.persistence_scope,
       continuationScope: options.descriptor.continuation_scope,
       lastSnapshotId: lastSnapshot?.snapshot_id ?? null,
       lastEndState: lastEnd?.terminal_state ?? null,
+      exitCode: lastEnd?.exit_code ?? null,
+      durationMs: lastEnd?.duration_ms ?? null,
+      artifactRefCount: lastEnd?.artifact_refs?.length ?? 0,
+      evidenceRefCount: lastEnd?.evidence_refs?.length ?? 0,
     }
   }
 

@@ -10,6 +10,9 @@ This package currently provides:
 - rich public `ExecutionProfile` objects with placement/security/backend hints
 - artifact references
 - tool-output shaping suitable for model-visible and user-visible views
+- terminal-output shaping for chunked session output
+- terminal-end shaping so hosts can render artifact/evidence refs and end-state metadata without
+  reading raw kernel payloads directly
 
 Example shaping pattern:
 
