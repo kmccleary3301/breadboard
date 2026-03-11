@@ -12,7 +12,7 @@ import type {
 } from "@breadboard/kernel-contracts"
 import type { TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
 import { isPlacementCompatible } from "@breadboard/execution-drivers"
-import { trustedLocalTerminalSessionDriver } from "./terminals.js"
+import { LocalTerminalSessionManager, trustedLocalTerminalSessionDriver } from "./terminals.js"
 
 export function buildLocalProcessSandboxRequest(input: {
   requestId: string
@@ -130,34 +130,41 @@ export async function executeLocalProcessSandboxRequest(
   }
 }
 
-export const trustedLocalExecutionDriver: TerminalSessionDriverV1 = {
-  driverId: "local-process",
-  supportedPlacements: ["inline_ts", "local_process"],
-  supportsCapability(capability, placementClass) {
-    if (placementClass === "inline_ts") return capability.isolation_class === "none"
-    if (placementClass === "local_process") return isPlacementCompatible(capability, placementClass)
-    return false
-  },
-  buildSandboxRequest({ requestId, capability, command, workspaceRef }) {
-    if (command.length === 0) {
-      throw new Error("trustedLocalExecutionDriver requires a non-empty command for local_process placement")
-    }
-    return buildLocalProcessSandboxRequest({
-      requestId,
-      capability,
-      command,
-      workspaceRef,
-    })
-  },
-  execute(request) {
-    return executeLocalProcessSandboxRequest(request)
-  },
-  supportsTerminalSessions: trustedLocalTerminalSessionDriver.supportsTerminalSessions,
-  startTerminalSession: trustedLocalTerminalSessionDriver.startTerminalSession,
-  interactTerminalSession: trustedLocalTerminalSessionDriver.interactTerminalSession,
-  snapshotTerminalRegistry: trustedLocalTerminalSessionDriver.snapshotTerminalRegistry,
-  cleanupTerminalSessions: trustedLocalTerminalSessionDriver.cleanupTerminalSessions,
+export function makeTrustedLocalExecutionDriver(): TerminalSessionDriverV1 {
+  const terminalDriver = new LocalTerminalSessionManager()
+  return {
+    driverId: "local-process",
+    supportedPlacements: ["inline_ts", "local_process"],
+    supportsCapability(capability, placementClass) {
+      if (placementClass === "inline_ts") return capability.isolation_class === "none"
+      if (placementClass === "local_process") return isPlacementCompatible(capability, placementClass)
+      return false
+    },
+    buildSandboxRequest({ requestId, capability, command, workspaceRef }) {
+      if (command.length === 0) {
+        throw new Error("trustedLocalExecutionDriver requires a non-empty command for local_process placement")
+      }
+      return buildLocalProcessSandboxRequest({
+        requestId,
+        capability,
+        command,
+        workspaceRef,
+      })
+    },
+    execute(request) {
+      return executeLocalProcessSandboxRequest(request)
+    },
+    supportsTerminalSessions() {
+      return true
+    },
+    startTerminalSession: terminalDriver.startSession.bind(terminalDriver),
+    interactTerminalSession: terminalDriver.interactSession.bind(terminalDriver),
+    snapshotTerminalRegistry: terminalDriver.snapshotRegistry.bind(terminalDriver),
+    cleanupTerminalSessions: terminalDriver.cleanupSessions.bind(terminalDriver),
+  }
 }
+
+export const trustedLocalExecutionDriver: TerminalSessionDriverV1 = makeTrustedLocalExecutionDriver()
 
 export function chooseTrustedLocalPlacement(
   capability: ExecutionCapabilityV1,

@@ -23,7 +23,11 @@ import {
 } from "@breadboard/execution-drivers"
 import { buildTerminalCleanupResult, reduceTerminalRegistry } from "@breadboard/kernel-core"
 import { buildExecutionPlacement } from "@breadboard/kernel-core"
-import { chooseTrustedLocalPlacement, trustedLocalExecutionDriver } from "@breadboard/execution-driver-local"
+import {
+  chooseTrustedLocalPlacement,
+  makeTrustedLocalExecutionDriver,
+  trustedLocalExecutionDriver,
+} from "@breadboard/execution-driver-local"
 import { chooseOciPlacement, makeOciExecutionDriver, type OciTerminalSessionAdapter } from "@breadboard/execution-driver-oci"
 import {
   chooseRemotePlacement,
@@ -386,6 +390,7 @@ function resolveTerminalDriver(options: {
   remoteExecutor?: RemoteSandboxExecutor
   remoteHttp?: RemoteExecutionHttpOptions
   ociTerminalAdapter?: OciTerminalSessionAdapter
+  localDriver?: TerminalSessionDriverV1
   ociDriver?: TerminalSessionDriverV1
   remoteDriver?: TerminalSessionDriverV1
 }): {
@@ -401,7 +406,7 @@ function resolveTerminalDriver(options: {
   })
   const placement = chooseTerminalPlacement(capability, options.executionProfileId)
   const drivers: TerminalSessionDriverV1[] = [
-    trustedLocalExecutionDriver,
+    options.localDriver ?? trustedLocalExecutionDriver,
     options.ociDriver ?? makeOciExecutionDriver(options.ociTerminalAdapter),
     options.remoteDriver ?? makeRemoteExecutionDriver(options.remoteExecutor, options.remoteHttp),
   ]
@@ -433,6 +438,7 @@ export function createBackboneTerminalApi(options: {
   ociTerminalAdapter?: OciTerminalSessionAdapter
 }): BackboneTerminalApi {
   const sessionViews = new Map<string, InternalTerminalSessionView>()
+  const localDriver = makeTrustedLocalExecutionDriver()
   const ociDriver = makeOciExecutionDriver(options.ociTerminalAdapter)
   const remoteDriver = makeRemoteExecutionDriver(options.remoteExecutor, options.remoteHttp)
 
@@ -547,6 +553,7 @@ export function createBackboneTerminalApi(options: {
         remoteExecutor: options.remoteExecutor,
         remoteHttp: options.remoteHttp,
         ociTerminalAdapter: options.ociTerminalAdapter,
+        localDriver,
         ociDriver,
         remoteDriver,
       }).claim
@@ -561,6 +568,7 @@ export function createBackboneTerminalApi(options: {
         remoteExecutor: options.remoteExecutor,
         remoteHttp: options.remoteHttp,
         ociTerminalAdapter: options.ociTerminalAdapter,
+        localDriver,
         ociDriver,
         remoteDriver,
       })
@@ -614,6 +622,7 @@ export function createBackboneTerminalApi(options: {
         remoteExecutor: options.remoteExecutor,
         remoteHttp: options.remoteHttp,
         ociTerminalAdapter: options.ociTerminalAdapter,
+        localDriver,
         ociDriver,
         remoteDriver,
       })
@@ -716,6 +725,7 @@ export function createBackboneTerminalApi(options: {
         remoteExecutor: options.remoteExecutor,
         remoteHttp: options.remoteHttp,
         ociTerminalAdapter: options.ociTerminalAdapter,
+        localDriver,
         ociDriver,
         remoteDriver,
       })
@@ -781,6 +791,7 @@ export function createBackboneTerminalApi(options: {
         remoteExecutor: options.remoteExecutor,
         remoteHttp: options.remoteHttp,
         ociTerminalAdapter: options.ociTerminalAdapter,
+        localDriver,
         ociDriver,
         remoteDriver,
       })
