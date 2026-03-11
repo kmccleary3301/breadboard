@@ -24,6 +24,7 @@ export interface RemoteTerminalExecutionHttpOptions {
   readonly headers?: Record<string, string>
   readonly fetchImpl?: typeof fetch
   readonly metadata?: Record<string, unknown>
+  readonly timeoutMs?: number
   readonly signal?: AbortSignal
 }
 
@@ -91,20 +92,50 @@ async function executeRemoteTerminalRequest(
   if (typeof fetchImpl !== "function") {
     throw new Error("Remote terminal execution requires a fetch-compatible implementation")
   }
-  const response = await fetchImpl(options.endpointUrl, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(options.headers ?? {}),
-    },
-    body: JSON.stringify(envelope),
-    signal: options.signal,
-  })
-  const payload = (await response.json()) as RemoteTerminalSessionResponseEnvelopeV1
-  if (!response.ok) {
-    throw new Error(`Remote terminal endpoint returned HTTP ${response.status}`)
+  const abortController =
+    options.timeoutMs != null && options.signal == null ? new AbortController() : null
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+  try {
+    if (abortController) {
+      timeoutHandle = setTimeout(() => {
+        abortController.abort(new Error(`Remote terminal execution timed out after ${options.timeoutMs}ms`))
+      }, options.timeoutMs)
+    }
+    const response = await fetchImpl(options.endpointUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(options.headers ?? {}),
+      },
+      body: JSON.stringify(envelope),
+      signal: options.signal ?? abortController?.signal,
+    })
+    const payload = (await response.json()) as RemoteTerminalSessionResponseEnvelopeV1 & {
+      readonly error?: { readonly summary?: string; readonly message?: string }
+      readonly metadata?: { readonly summary?: string }
+    }
+    if (!response.ok) {
+      const summary =
+        payload.error?.summary ??
+        payload.error?.message ??
+        payload.metadata?.summary ??
+        `Remote terminal endpoint returned HTTP ${response.status}`
+      throw new Error(summary)
+    }
+    return payload
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Remote terminal execution timed out after ${options.timeoutMs ?? "unknown"}ms`)
+    }
+    if (error instanceof Error && /timed out after/.test(error.message)) {
+      throw new Error(error.message)
+    }
+    throw error
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle)
+    }
   }
-  return payload
 }
 
 export class RemoteTerminalSessionManager {
@@ -149,6 +180,9 @@ export class RemoteTerminalSessionManager {
   async interactSession(input: TerminalSessionInteractionInputV1): Promise<TerminalSessionInteractionResultV1> {
     const record = this.sessions.get(input.terminalSessionId)
     if (!record) {
+      if (this.endedSessionIds.includes(input.terminalSessionId)) {
+        throw new Error(`Remote terminal session already ended: ${input.terminalSessionId}`)
+      }
       throw new Error(`Unknown remote terminal session: ${input.terminalSessionId}`)
     }
     const interaction = buildInteraction(record.descriptor, input)
@@ -200,13 +234,16 @@ export class RemoteTerminalSessionManager {
         : input.scope === "filtered"
           ? input.sessionIds ?? []
           : [...this.sessions.keys()]
+    const alreadyEnded = targetIds.filter((sessionId) => !this.sessions.has(sessionId) && this.endedSessionIds.includes(sessionId))
     const response = await executeRemoteTerminalRequest(this.httpOptions, {
       schema_version: "bb.remote_terminal_request.v1",
       action: "cleanup",
       payload: { session_ids: targetIds, signal: normalizeSignal(input.signal) },
       metadata: this.httpOptions.metadata ?? {},
     })
-    const cleanedSessionIds = (response.payload.cleaned_session_ids as string[] | undefined) ?? targetIds
+    const cleanedSessionIds = [
+      ...new Set([...(response.payload.cleaned_session_ids as string[] | undefined ?? targetIds), ...alreadyEnded]),
+    ]
     const failedSessionIds = (response.payload.failed_session_ids as string[] | undefined) ?? []
     for (const sessionId of cleanedSessionIds) {
       this.sessions.delete(sessionId)

@@ -161,6 +161,9 @@ export interface BackboneTerminalListViewResult {
   readonly supportClaim: SupportClaim
   readonly unsupportedCase?: UnsupportedCaseV1
   readonly snapshot: TerminalRegistrySnapshotV1 | null
+  readonly activeCount: number
+  readonly endedCount: number
+  readonly sessionCount: number
   readonly sessions: readonly BackboneTerminalSessionView[]
 }
 

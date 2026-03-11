@@ -369,6 +369,16 @@ test("oci terminal driver keeps multi-session listing and no-output poll semanti
     sessionIds: ["term-oci-fast-exit"],
   })
   assert.deepEqual(cleanupExited?.cleaned_session_ids, ["term-oci-fast-exit"])
+  await assert.rejects(
+    () =>
+      driver.interactTerminalSession?.({
+        terminalSessionId: "term-oci-fast-exit",
+        interactionKind: "stdin",
+        inputText: "status\n",
+        causingCallId: "call-oci-ended-stdin",
+      }) ?? Promise.resolve(undefined),
+    /already ended/,
+  )
   const signaled = await driver.interactTerminalSession?.({
     terminalSessionId: "term-oci-keepalive",
     interactionKind: "signal",

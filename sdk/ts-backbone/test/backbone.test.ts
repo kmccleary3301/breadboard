@@ -287,6 +287,9 @@ test("BackboneSession terminals can get and list multiple sessions with mixed st
   const listViewsAfterCleanup = await session.terminals.listViews()
   assert.ok(listViewsAfterCleanup.snapshot)
   assert.equal(listViewsAfterCleanup.sessions.length, 2)
+  assert.equal(listViewsAfterCleanup.activeCount, 1)
+  assert.equal(listViewsAfterCleanup.endedCount, 1)
+  assert.equal(listViewsAfterCleanup.sessionCount, 2)
   const cleanedView = listViewsAfterCleanup.sessions.find(
     (item) => item.descriptor.terminal_session_id === firstStarted.descriptor!.terminal_session_id,
   )

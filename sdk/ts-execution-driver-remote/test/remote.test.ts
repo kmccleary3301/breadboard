@@ -536,6 +536,16 @@ test("remote terminal driver preserves no-output poll and multi-session listing 
     sessionIds: ["term-remote-fast-exit"],
   })
   assert.deepEqual(cleanupExited?.cleaned_session_ids, ["term-remote-fast-exit"])
+  await assert.rejects(
+    () =>
+      driver.interactTerminalSession?.({
+        terminalSessionId: "term-remote-fast-exit",
+        interactionKind: "stdin",
+        inputText: "status\n",
+        causingCallId: "call-remote-ended-stdin",
+      }) ?? Promise.resolve(undefined),
+    /already ended/,
+  )
   const signaled = await driver.interactTerminalSession?.({
     terminalSessionId: "term-remote-keepalive",
     interactionKind: "signal",
@@ -546,6 +556,36 @@ test("remote terminal driver preserves no-output poll and multi-session listing 
   const finalSnapshot = await driver.snapshotTerminalRegistry?.()
   assert.ok((finalSnapshot?.ended_session_ids ?? []).includes("term-remote-fast-exit"))
   assert.equal(finalSnapshot?.active_sessions[0]?.terminal_session_id, "term-remote-keepalive")
+})
+
+test("remote terminal driver turns timeout aborts into a stable timeout error", async () => {
+  const driver = makeRemoteTerminalSessionDriver({
+    endpointUrl: "https://example.test/remote-term-timeout",
+    timeoutMs: 5,
+    fetchImpl: async (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(init.signal?.reason ?? new Error("aborted"))
+        })
+      }),
+  })
+
+  await assert.rejects(
+    () =>
+      driver.startTerminalSession?.({
+        terminalSessionId: "term-remote-timeout",
+        command: ["python", "worker.py"],
+        capability: remoteCapability,
+        placement: {
+          schema_version: "bb.execution_placement.v1",
+          placement_id: "place-term-remote-timeout",
+          placement_class: "remote_worker",
+          runtime_id: "remote",
+          capability_id: remoteCapability.capability_id,
+        },
+      }) ?? Promise.resolve(undefined),
+    /timed out after 5ms/,
+  )
 })
 
 test("unsupported case helper still models delegated gaps honestly", () => {

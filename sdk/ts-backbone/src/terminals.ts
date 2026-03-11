@@ -386,6 +386,8 @@ function resolveTerminalDriver(options: {
   remoteExecutor?: RemoteSandboxExecutor
   remoteHttp?: RemoteExecutionHttpOptions
   ociTerminalAdapter?: OciTerminalSessionAdapter
+  ociDriver?: TerminalSessionDriverV1
+  remoteDriver?: TerminalSessionDriverV1
 }): {
   capability: ExecutionCapabilityV1
   placement: ExecutionPlacementV1
@@ -400,8 +402,8 @@ function resolveTerminalDriver(options: {
   const placement = chooseTerminalPlacement(capability, options.executionProfileId)
   const drivers: TerminalSessionDriverV1[] = [
     trustedLocalExecutionDriver,
-    makeOciExecutionDriver(options.ociTerminalAdapter),
-    makeRemoteExecutionDriver(options.remoteExecutor, options.remoteHttp),
+    options.ociDriver ?? makeOciExecutionDriver(options.ociTerminalAdapter),
+    options.remoteDriver ?? makeRemoteExecutionDriver(options.remoteExecutor, options.remoteHttp),
   ]
   const driver = selectTerminalSessionDriver({
     capability,
@@ -431,6 +433,8 @@ export function createBackboneTerminalApi(options: {
   ociTerminalAdapter?: OciTerminalSessionAdapter
 }): BackboneTerminalApi {
   const sessionViews = new Map<string, InternalTerminalSessionView>()
+  const ociDriver = makeOciExecutionDriver(options.ociTerminalAdapter)
+  const remoteDriver = makeRemoteExecutionDriver(options.remoteExecutor, options.remoteHttp)
 
   function buildSyntheticEndedState(
     descriptor: TerminalSessionDescriptorV1,
@@ -543,6 +547,8 @@ export function createBackboneTerminalApi(options: {
         remoteExecutor: options.remoteExecutor,
         remoteHttp: options.remoteHttp,
         ociTerminalAdapter: options.ociTerminalAdapter,
+        ociDriver,
+        remoteDriver,
       }).claim
     },
     async start(input) {
@@ -555,6 +561,8 @@ export function createBackboneTerminalApi(options: {
         remoteExecutor: options.remoteExecutor,
         remoteHttp: options.remoteHttp,
         ociTerminalAdapter: options.ociTerminalAdapter,
+        ociDriver,
+        remoteDriver,
       })
       if (!resolved.driver?.startTerminalSession) {
         return {
@@ -606,6 +614,8 @@ export function createBackboneTerminalApi(options: {
         remoteExecutor: options.remoteExecutor,
         remoteHttp: options.remoteHttp,
         ociTerminalAdapter: options.ociTerminalAdapter,
+        ociDriver,
+        remoteDriver,
       })
       if (!resolved.driver?.interactTerminalSession) {
         return {
@@ -706,6 +716,8 @@ export function createBackboneTerminalApi(options: {
         remoteExecutor: options.remoteExecutor,
         remoteHttp: options.remoteHttp,
         ociTerminalAdapter: options.ociTerminalAdapter,
+        ociDriver,
+        remoteDriver,
       })
       if (!resolved.driver?.snapshotTerminalRegistry) {
         return {
@@ -731,6 +743,8 @@ export function createBackboneTerminalApi(options: {
       const result = await api.snapshot(input)
       const sessions: BackboneTerminalSessionView[] = []
       const seen = new Set<string>()
+      const activeCount = result.snapshot?.active_sessions.length ?? 0
+      const endedCount = result.snapshot?.ended_session_ids?.length ?? 0
       if (result.snapshot) {
         for (const descriptor of result.snapshot.active_sessions) {
           const session = buildSessionView({
@@ -753,6 +767,9 @@ export function createBackboneTerminalApi(options: {
         supportClaim: result.supportClaim,
         unsupportedCase: result.unsupportedCase,
         snapshot: result.snapshot,
+        activeCount,
+        endedCount,
+        sessionCount: activeCount + endedCount,
         sessions,
       }
     },
@@ -764,6 +781,8 @@ export function createBackboneTerminalApi(options: {
         remoteExecutor: options.remoteExecutor,
         remoteHttp: options.remoteHttp,
         ociTerminalAdapter: options.ociTerminalAdapter,
+        ociDriver,
+        remoteDriver,
       })
       if (!resolved.driver?.cleanupTerminalSessions) {
         return {

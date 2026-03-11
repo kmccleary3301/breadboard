@@ -127,6 +127,9 @@ export class OciTerminalSessionManager {
   async interactSession(input: TerminalSessionInteractionInputV1): Promise<TerminalSessionInteractionResultV1> {
     const record = this.sessions.get(input.terminalSessionId)
     if (!record) {
+      if (this.endedSessionIds.includes(input.terminalSessionId)) {
+        throw new Error(`OCI terminal session already ended: ${input.terminalSessionId}`)
+      }
       throw new Error(`Unknown OCI terminal session: ${input.terminalSessionId}`)
     }
     const interaction = buildInteraction(record.descriptor, input)
@@ -161,12 +164,13 @@ export class OciTerminalSessionManager {
         : input.scope === "filtered"
           ? input.sessionIds ?? []
           : [...this.sessions.keys()]
+    const alreadyEnded = targetIds.filter((sessionId) => !this.sessions.has(sessionId) && this.endedSessionIds.includes(sessionId))
     const cleaned = this.adapter.cleanupSessions
       ? [...await this.adapter.cleanupSessions({ sessionIds: targetIds, signal: normalizeSignal(input.signal) })]
       : [...targetIds]
-    const cleanedSet = new Set(cleaned)
+    const cleanedSet = new Set([...cleaned, ...alreadyEnded])
     const failed = targetIds.filter((sessionId) => !cleanedSet.has(sessionId))
-    for (const sessionId of cleaned) {
+    for (const sessionId of cleanedSet) {
       this.sessions.delete(sessionId)
       this.rememberEndedSession(sessionId)
     }
@@ -174,7 +178,7 @@ export class OciTerminalSessionManager {
       schema_version: "bb.terminal_cleanup_result.v1",
       cleanup_id: input.cleanupId || randomUUID(),
       scope: input.scope,
-      cleaned_session_ids: cleaned,
+      cleaned_session_ids: [...cleanedSet],
       failed_session_ids: failed,
       metadata: { signal: normalizeSignal(input.signal) },
     })

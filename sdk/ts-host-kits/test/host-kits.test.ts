@@ -776,6 +776,9 @@ test("Host Kit can derive a live terminal registry view from Backbone", async ()
             ],
             ended_session_ids: ["term-live-2"],
           },
+          activeCount: 1,
+          endedCount: 1,
+          sessionCount: 2,
           sessions: [
             {
               descriptor: {
