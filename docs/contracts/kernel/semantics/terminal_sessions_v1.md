@@ -108,7 +108,9 @@ Phase 14 now also includes the first Codex-shaped parity-prep evidence bundle fo
 - start
 - stdin continuation
 - poll
+- no-output poll
 - list / registry projection
+- multi-session listing
 - cleanup
 
 Those fixtures are still `draft-semantic`, but they mean the surface has moved beyond "planned".

@@ -279,3 +279,102 @@ test("oci terminal support follows runtime selection semantics", async () => {
     true,
   )
 })
+
+test("oci terminal driver keeps multi-session listing and no-output poll semantics explicit", async () => {
+  const driver = makeOciExecutionDriver({
+    async startSession({ descriptor }) {
+      return {
+        outputDeltas: [],
+        end:
+          descriptor.terminal_session_id === "term-oci-fast-exit"
+            ? {
+                schema_version: "bb.terminal_session_end.v1",
+                terminal_session_id: descriptor.terminal_session_id,
+                startup_call_id: descriptor.startup_call_id ?? null,
+                causing_call_id: null,
+                terminal_state: "completed",
+                exit_code: 0,
+                duration_ms: 5,
+                artifact_refs: [],
+                evidence_refs: [],
+              }
+            : undefined,
+      }
+    },
+    async interactSession({ descriptor, interaction }) {
+      return {
+        outputDeltas: [],
+        end:
+          interaction.interaction_kind === "signal"
+            ? {
+                schema_version: "bb.terminal_session_end.v1",
+                terminal_session_id: descriptor.terminal_session_id,
+                startup_call_id: descriptor.startup_call_id ?? null,
+                causing_call_id: interaction.causing_call_id ?? null,
+                terminal_state: "signaled",
+                exit_code: null,
+                duration_ms: 8,
+                artifact_refs: [],
+                evidence_refs: [],
+              }
+            : undefined,
+      }
+    },
+    async cleanupSessions({ sessionIds }) {
+      return sessionIds
+    },
+  })
+  const capability = {
+    schema_version: "bb.execution_capability.v1" as const,
+    capability_id: "cap-term-oci-multi",
+    security_tier: "single_tenant" as const,
+    isolation_class: "oci" as const,
+    secret_mode: "ref_only" as const,
+    evidence_mode: "replay_strict" as const,
+  }
+  const placement = {
+    schema_version: "bb.execution_placement.v1" as const,
+    placement_id: "place-term-oci-multi",
+    placement_class: "local_oci" as const,
+    runtime_id: "oci",
+    capability_id: "cap-term-oci-multi",
+  }
+  await driver.startTerminalSession?.({
+    terminalSessionId: "term-oci-keepalive",
+    command: ["bash", "-lc", "sleep 10"],
+    capability,
+    placement,
+  })
+  const exited = await driver.startTerminalSession?.({
+    terminalSessionId: "term-oci-fast-exit",
+    command: ["bash", "-lc", "echo done"],
+    capability,
+    placement,
+  })
+  assert.equal(exited?.end?.terminal_state, "completed")
+  const snapshot = await driver.snapshotTerminalRegistry?.()
+  assert.equal(snapshot?.active_sessions.length, 1)
+  assert.equal(snapshot?.active_sessions[0]?.terminal_session_id, "term-oci-keepalive")
+  const polled = await driver.interactTerminalSession?.({
+    terminalSessionId: "term-oci-keepalive",
+    interactionKind: "poll",
+    causingCallId: "call-oci-poll-no-output",
+  })
+  assert.equal(polled?.outputDeltas.length, 0)
+  assert.equal(polled?.end, undefined)
+  const cleanupExited = await driver.cleanupTerminalSessions?.({
+    cleanupId: "cleanup-oci-exited",
+    scope: "single",
+    sessionIds: ["term-oci-fast-exit"],
+  })
+  assert.deepEqual(cleanupExited?.cleaned_session_ids, ["term-oci-fast-exit"])
+  const signaled = await driver.interactTerminalSession?.({
+    terminalSessionId: "term-oci-keepalive",
+    interactionKind: "signal",
+    signal: "SIGTERM",
+    causingCallId: "call-oci-signal-1",
+  })
+  assert.equal(signaled?.end?.terminal_state, "signaled")
+  const finalSnapshot = await driver.snapshotTerminalRegistry?.()
+  assert.equal(finalSnapshot?.active_sessions.length, 0)
+})

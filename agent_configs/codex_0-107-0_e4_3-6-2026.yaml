@@ -275,7 +275,14 @@ terminal_sessions:
     # event ontology.
     derived_projection: true
   # The strict public lane is still not frozen here, but the surface is no longer just a plan.
-  # Phase 14 now has parity-prep conformance fixtures for start / write / poll / list / cleanup:
+  # Phase 14 now has parity-prep conformance fixtures for:
+  # - start
+  # - write
+  # - poll
+  # - no-output poll
+  # - list
+  # - multi-session list
+  # - cleanup
   # - conformance/engine_fixtures/terminal_session/codex_background_*_fixture.json
   # - conformance/engine_fixtures/effective_tool_surface/codex_background_terminal_surface_fixture.json
 

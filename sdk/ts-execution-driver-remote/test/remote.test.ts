@@ -394,6 +394,157 @@ test("remote terminal driver surfaces endpoint failures cleanly", async () => {
   )
 })
 
+test("remote terminal driver preserves no-output poll and multi-session listing semantics", async () => {
+  const driver = makeRemoteTerminalSessionDriver({
+    endpointUrl: "https://example.test/remote-term-multi",
+    fetchImpl: async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { action: string; payload: Record<string, unknown> }
+      if (body.action === "start") {
+        const descriptor = body.payload.descriptor as { terminal_session_id: string }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: {
+              output_deltas: [],
+              end:
+                descriptor.terminal_session_id === "term-remote-fast-exit"
+                  ? {
+                      schema_version: "bb.terminal_session_end.v1",
+                      terminal_session_id: descriptor.terminal_session_id,
+                      startup_call_id: null,
+                      causing_call_id: null,
+                      terminal_state: "completed",
+                      exit_code: 0,
+                      duration_ms: 4,
+                      artifact_refs: [],
+                      evidence_refs: [],
+                    }
+                  : undefined,
+            },
+          }),
+        } as Response
+      }
+      if (body.action === "interact") {
+        const interaction = body.payload.interaction as { interaction_kind: string; causing_call_id?: string | null }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: {
+              output_deltas: [],
+              end:
+                interaction.interaction_kind === "signal"
+                  ? {
+                      schema_version: "bb.terminal_session_end.v1",
+                      terminal_session_id: "term-remote-keepalive",
+                      startup_call_id: null,
+                      causing_call_id: interaction.causing_call_id ?? null,
+                      terminal_state: "signaled",
+                      exit_code: null,
+                      duration_ms: 9,
+                      artifact_refs: [],
+                      evidence_refs: [],
+                    }
+                  : undefined,
+            },
+          }),
+        } as Response
+      }
+      if (body.action === "snapshot") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            schema_version: "bb.remote_terminal_response.v1",
+            payload: {
+              snapshot: {
+                schema_version: "bb.terminal_registry_snapshot.v1",
+                snapshot_id: "remote-snap-multi",
+                active_sessions: [
+                  {
+                    schema_version: "bb.terminal_session_descriptor.v1",
+                    terminal_session_id: "term-remote-keepalive",
+                    public_handles: [],
+                    command: ["python", "worker.py"],
+                    cwd: null,
+                    startup_call_id: null,
+                    owner_task_id: null,
+                    stream_mode: "pipes",
+                    stream_split: "stdout_stderr",
+                    capability_id: remoteCapability.capability_id,
+                    placement_id: "place-term-remote-keepalive",
+                    persistence_scope: "thread",
+                    continuation_scope: "both"
+                  }
+                ],
+                ended_session_ids: ["term-remote-fast-exit"],
+              },
+            },
+          }),
+        } as Response
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          schema_version: "bb.remote_terminal_response.v1",
+          payload: {
+            output_deltas: [],
+            cleaned_session_ids: body.payload.session_ids ?? [],
+            failed_session_ids: [],
+          },
+        }),
+      } as Response
+    },
+  })
+  const placement = {
+    schema_version: "bb.execution_placement.v1" as const,
+    placement_id: "place-term-remote-multi",
+    placement_class: "remote_worker" as const,
+    runtime_id: "remote",
+    capability_id: remoteCapability.capability_id,
+  }
+  await driver.startTerminalSession?.({
+    terminalSessionId: "term-remote-keepalive",
+    command: ["python", "worker.py"],
+    capability: remoteCapability,
+    placement,
+  })
+  const fastExit = await driver.startTerminalSession?.({
+    terminalSessionId: "term-remote-fast-exit",
+    command: ["python", "worker.py", "--once"],
+    capability: remoteCapability,
+    placement,
+  })
+  assert.equal(fastExit?.end?.terminal_state, "completed")
+  const polled = await driver.interactTerminalSession?.({
+    terminalSessionId: "term-remote-keepalive",
+    interactionKind: "poll",
+    causingCallId: "call-remote-poll-no-output",
+  })
+  assert.equal(polled?.outputDeltas.length, 0)
+  assert.equal(polled?.end, undefined)
+  const snapshot = await driver.snapshotTerminalRegistry?.()
+  assert.equal(snapshot?.active_sessions.length, 1)
+  assert.deepEqual(snapshot?.ended_session_ids, ["term-remote-fast-exit"])
+  const cleanupExited = await driver.cleanupTerminalSessions?.({
+    cleanupId: "cleanup-remote-exited",
+    scope: "single",
+    sessionIds: ["term-remote-fast-exit"],
+  })
+  assert.deepEqual(cleanupExited?.cleaned_session_ids, ["term-remote-fast-exit"])
+  const signaled = await driver.interactTerminalSession?.({
+    terminalSessionId: "term-remote-keepalive",
+    interactionKind: "signal",
+    signal: "SIGTERM",
+    causingCallId: "call-remote-signal-1",
+  })
+  assert.equal(signaled?.end?.terminal_state, "signaled")
+})
+
 test("unsupported case helper still models delegated gaps honestly", () => {
   const unsupported = buildExecutionDriverUnsupportedCase({
     capability: remoteCapability,
