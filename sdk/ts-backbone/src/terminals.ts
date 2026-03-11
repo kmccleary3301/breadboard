@@ -8,6 +8,7 @@ import type {
   TerminalOutputDeltaV1,
   TerminalRegistrySnapshotV1,
   TerminalSessionDescriptorV1,
+  TerminalSessionEndV1,
   UnsupportedCaseV1,
 } from "@breadboard/kernel-contracts"
 import { assertValid } from "@breadboard/kernel-contracts"
@@ -35,6 +36,7 @@ import type {
   BackboneTerminalApi,
   BackboneTerminalCleanupInput,
   BackboneTerminalCleanupResult,
+  BackboneTerminalGetResult,
   BackboneTerminalInteractionInput,
   BackboneTerminalInteractionResult,
   BackboneTerminalSessionView,
@@ -50,6 +52,12 @@ function decodeTerminalOutputText(outputDeltas: readonly TerminalOutputDeltaV1[]
     .join("")
 }
 
+type InternalTerminalSessionView = BackboneTerminalSessionView & {
+  applyInteractionResult(result: BackboneTerminalInteractionResult): void
+  applySnapshot(snapshot: TerminalRegistrySnapshotV1 | null): void
+  markEndedIfMissing(end: TerminalSessionEndV1): void
+}
+
 function createTerminalSessionView(options: {
   api: BackboneTerminalApi
   descriptor: TerminalSessionDescriptorV1
@@ -57,8 +65,8 @@ function createTerminalSessionView(options: {
   executionProfileId: ExecutionProfileId
   workspace: Workspace
   initialOutputDeltas?: readonly TerminalOutputDeltaV1[]
-  initialEnd?: import("@breadboard/kernel-contracts").TerminalSessionEndV1 | undefined
-}): BackboneTerminalSessionView {
+  initialEnd?: TerminalSessionEndV1 | undefined
+}): InternalTerminalSessionView {
   let lastSnapshot: TerminalRegistrySnapshotV1 | null = null
   let lastEnd = options.initialEnd ?? null
   let outputText = decodeTerminalOutputText(options.initialOutputDeltas ?? [])
@@ -113,6 +121,18 @@ function createTerminalSessionView(options: {
     get lastEnd() {
       return lastEnd
     },
+    applyInteractionResult(result) {
+      appendOutput(result.outputDeltas)
+      if (result.end) {
+        lastEnd = result.end
+      }
+    },
+    applySnapshot(snapshot) {
+      applySnapshot(snapshot)
+    },
+    markEndedIfMissing(end) {
+      lastEnd = lastEnd ?? end
+    },
     summary() {
       return buildSummary()
     },
@@ -145,12 +165,6 @@ function createTerminalSessionView(options: {
         interactionKind: "poll",
         settleMs: input.settleMs,
         causingCallId: input.causingCallId ?? null,
-      }).then((result) => {
-        appendOutput(result.outputDeltas)
-        if (result.end) {
-          lastEnd = result.end
-        }
-        return result
       })
     },
     writeStdin(inputText, input = {}) {
@@ -161,12 +175,6 @@ function createTerminalSessionView(options: {
         inputText,
         causingCallId: input.causingCallId ?? null,
         settleMs: input.settleMs,
-      }).then((result) => {
-        appendOutput(result.outputDeltas)
-        if (result.end) {
-          lastEnd = result.end
-        }
-        return result
       })
     },
     sendSignal(signal, input = {}) {
@@ -176,12 +184,6 @@ function createTerminalSessionView(options: {
         interactionKind: "signal",
         signal,
         causingCallId: input.causingCallId ?? null,
-      }).then((result) => {
-        appendOutput(result.outputDeltas)
-        if (result.end) {
-          lastEnd = result.end
-        }
-        return result
       })
     },
     snapshot() {
@@ -398,6 +400,104 @@ export function createBackboneTerminalApi(options: {
   remoteHttp?: RemoteExecutionHttpOptions
   ociTerminalAdapter?: OciTerminalSessionAdapter
 }): BackboneTerminalApi {
+  const sessionViews = new Map<string, InternalTerminalSessionView>()
+
+  function buildSyntheticEndedState(
+    descriptor: TerminalSessionDescriptorV1,
+    terminalState: TerminalSessionEndV1["terminal_state"],
+  ): TerminalSessionEndV1 {
+    return {
+      schema_version: "bb.terminal_session_end.v1",
+      terminal_session_id: descriptor.terminal_session_id,
+      startup_call_id: descriptor.startup_call_id ?? null,
+      causing_call_id: null,
+      terminal_state: terminalState,
+      exit_code: null,
+      duration_ms: 0,
+      artifact_refs: [],
+      evidence_refs: [],
+    }
+  }
+
+  function rememberSessionView(view: InternalTerminalSessionView): InternalTerminalSessionView {
+    sessionViews.set(view.descriptor.terminal_session_id, view)
+    return view
+  }
+
+  function buildSessionView(viewOptions: {
+    descriptor: TerminalSessionDescriptorV1
+    supportClaim: SupportClaim
+    executionProfileId: ExecutionProfileId
+    workspace?: Workspace
+    initialOutputDeltas?: readonly TerminalOutputDeltaV1[]
+    initialEnd?: TerminalSessionEndV1 | undefined
+  }): InternalTerminalSessionView {
+    const existing = sessionViews.get(viewOptions.descriptor.terminal_session_id)
+    if (existing) {
+      if (viewOptions.initialOutputDeltas?.length) {
+        existing.applyInteractionResult({
+          supportClaim: viewOptions.supportClaim,
+          interaction: null,
+          outputDeltas: viewOptions.initialOutputDeltas,
+          end: viewOptions.initialEnd,
+        })
+      } else if (viewOptions.initialEnd) {
+        existing.markEndedIfMissing(viewOptions.initialEnd)
+      }
+      return rememberSessionView(existing)
+    }
+    return rememberSessionView(
+      createTerminalSessionView({
+        api,
+        descriptor: viewOptions.descriptor,
+        supportClaim: viewOptions.supportClaim,
+        executionProfileId: viewOptions.executionProfileId,
+        workspace: viewOptions.workspace ?? options.workspace,
+        initialOutputDeltas: viewOptions.initialOutputDeltas,
+        initialEnd: viewOptions.initialEnd,
+      }),
+    )
+  }
+
+  function syncSessionViews(
+    snapshot: TerminalRegistrySnapshotV1 | null,
+    supportClaim: SupportClaim,
+    executionProfileId: ExecutionProfileId,
+  ): void {
+    if (!snapshot) {
+      return
+    }
+    const activeIds = new Set(snapshot.active_sessions.map((session) => session.terminal_session_id))
+    for (const descriptor of snapshot.active_sessions) {
+      const view =
+        sessionViews.get(descriptor.terminal_session_id) ??
+        rememberSessionView(
+          createTerminalSessionView({
+            api,
+            descriptor,
+            supportClaim,
+            executionProfileId,
+            workspace: options.workspace,
+          }),
+        )
+      view.applySnapshot(snapshot)
+    }
+    const endedSessionIds = snapshot.ended_session_ids ?? []
+    for (const endedSessionId of endedSessionIds) {
+      const view = sessionViews.get(endedSessionId)
+      if (view) {
+        view.applySnapshot(snapshot)
+        view.markEndedIfMissing(buildSyntheticEndedState(view.descriptor, "completed"))
+      }
+    }
+    for (const [sessionId, view] of sessionViews.entries()) {
+      if (view.status === "running" && !activeIds.has(sessionId) && endedSessionIds.includes(sessionId)) {
+        view.applySnapshot(snapshot)
+        view.markEndedIfMissing(buildSyntheticEndedState(view.descriptor, "completed"))
+      }
+    }
+  }
+
   const api: BackboneTerminalApi = {
     reduceRegistry(events) {
       return reduceTerminalRegistry(events)
@@ -453,20 +553,19 @@ export function createBackboneTerminalApi(options: {
         streamSplit: input.streamSplit ?? "stdout_stderr",
       }
       const result = await resolved.driver.startTerminalSession(startInput)
+      const session = buildSessionView({
+        descriptor: result.descriptor,
+        supportClaim: resolved.claim,
+        executionProfileId,
+        initialOutputDeltas: result.outputDeltas,
+        initialEnd: result.end,
+      })
       return {
         supportClaim: resolved.claim,
         descriptor: result.descriptor,
         outputDeltas: result.outputDeltas,
         end: result.end,
-        session: createTerminalSessionView({
-          api,
-          descriptor: result.descriptor,
-          supportClaim: resolved.claim,
-          executionProfileId,
-          workspace: options.workspace,
-          initialOutputDeltas: result.outputDeltas,
-          initialEnd: result.end,
-        }),
+        session,
       }
     },
     async interact(input) {
@@ -499,11 +598,29 @@ export function createBackboneTerminalApi(options: {
         signal: input.signal ?? null,
         settleMs: input.settleMs,
       })
+      const sessionView = sessionViews.get(input.terminalSessionId)
+      sessionView?.applyInteractionResult({
+        supportClaim: resolved.claim,
+        interaction: result.interaction,
+        outputDeltas: result.outputDeltas,
+        end: result.end,
+      })
       return {
         supportClaim: resolved.claim,
         interaction: result.interaction,
         outputDeltas: result.outputDeltas,
         end: result.end,
+      }
+    },
+    async get(input): Promise<BackboneTerminalGetResult> {
+      const snapshotResult = await api.snapshot({
+        executionProfileId: input.executionProfileId,
+      })
+      return {
+        supportClaim: snapshotResult.supportClaim,
+        unsupportedCase: snapshotResult.unsupportedCase,
+        snapshot: snapshotResult.snapshot,
+        session: sessionViews.get(input.terminalSessionId) ?? null,
       }
     },
     async snapshot(input) {
@@ -525,9 +642,11 @@ export function createBackboneTerminalApi(options: {
           snapshot: null,
         }
       }
+      const snapshot = await resolved.driver.snapshotTerminalRegistry()
+      syncSessionViews(snapshot, resolved.claim, executionProfileId)
       return {
         supportClaim: resolved.claim,
-        snapshot: await resolved.driver.snapshotTerminalRegistry(),
+        snapshot,
       }
     },
     async list(input) {
@@ -563,6 +682,19 @@ export function createBackboneTerminalApi(options: {
         result: await resolved.driver.cleanupTerminalSessions(cleanupInput),
       }
     },
+  }
+  const originalCleanup = api.cleanup
+  api.cleanup = async (input) => {
+    const result = await originalCleanup(input)
+    if (result.result) {
+      for (const sessionId of result.result.cleaned_session_ids) {
+        const view = sessionViews.get(sessionId)
+        if (view) {
+          view.markEndedIfMissing(buildSyntheticEndedState(view.descriptor, "cleaned_up"))
+        }
+      }
+    }
+    return result
   }
   return api
 }

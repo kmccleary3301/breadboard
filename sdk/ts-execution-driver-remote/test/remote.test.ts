@@ -543,6 +543,9 @@ test("remote terminal driver preserves no-output poll and multi-session listing 
     causingCallId: "call-remote-signal-1",
   })
   assert.equal(signaled?.end?.terminal_state, "cancelled")
+  const finalSnapshot = await driver.snapshotTerminalRegistry?.()
+  assert.ok((finalSnapshot?.ended_session_ids ?? []).includes("term-remote-fast-exit"))
+  assert.equal(finalSnapshot?.active_sessions[0]?.terminal_session_id, "term-remote-keepalive")
 })
 
 test("unsupported case helper still models delegated gaps honestly", () => {

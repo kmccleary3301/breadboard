@@ -72,6 +72,18 @@ function normalizeSignal(signal?: string | null): NodeJS.Signals {
 
 export class LocalTerminalSessionManager {
   private readonly sessions = new Map<string, LocalTerminalSessionRecord>()
+  private readonly endedSessionIds: string[] = []
+
+  private rememberEndedSession(sessionId: string): void {
+    const existingIndex = this.endedSessionIds.indexOf(sessionId)
+    if (existingIndex >= 0) {
+      this.endedSessionIds.splice(existingIndex, 1)
+    }
+    this.endedSessionIds.push(sessionId)
+    if (this.endedSessionIds.length > 32) {
+      this.endedSessionIds.splice(0, this.endedSessionIds.length - 32)
+    }
+  }
 
   async startSession(input: TerminalSessionStartInputV1): Promise<TerminalSessionStartResultV1> {
     if (input.command.length === 0) {
@@ -135,6 +147,7 @@ export class LocalTerminalSessionManager {
         exitCode: exitCode ?? null,
         durationMs: Date.now() - record.startedAtMs,
       })
+      this.rememberEndedSession(descriptor.terminal_session_id)
     })
 
     this.sessions.set(descriptor.terminal_session_id, record)
@@ -179,6 +192,7 @@ export class LocalTerminalSessionManager {
       end = record.pendingEnd
       record.deliveredEnd = true
       this.sessions.delete(record.descriptor.terminal_session_id)
+      this.rememberEndedSession(record.descriptor.terminal_session_id)
     }
     return { interaction, outputDeltas, end }
   }
@@ -188,7 +202,7 @@ export class LocalTerminalSessionManager {
       schema_version: "bb.terminal_registry_snapshot.v1",
       snapshot_id: `term-reg:${Date.now()}`,
       active_sessions: [...this.sessions.values()].map((record) => record.descriptor),
-      ended_session_ids: [],
+      ended_session_ids: [...this.endedSessionIds],
     })
   }
 
@@ -217,6 +231,7 @@ export class LocalTerminalSessionManager {
         })
       cleaned.push(sessionId)
       this.sessions.delete(sessionId)
+      this.rememberEndedSession(sessionId)
     }
     return assertValid<TerminalCleanupResultV1>("terminalCleanupResult", {
       schema_version: "bb.terminal_cleanup_result.v1",

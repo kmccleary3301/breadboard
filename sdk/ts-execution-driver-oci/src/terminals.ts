@@ -91,6 +91,18 @@ function buildInteraction(
 
 export class OciTerminalSessionManager {
   private readonly sessions = new Map<string, OciTerminalSessionRecord>()
+  private readonly endedSessionIds: string[] = []
+
+  private rememberEndedSession(sessionId: string): void {
+    const existingIndex = this.endedSessionIds.indexOf(sessionId)
+    if (existingIndex >= 0) {
+      this.endedSessionIds.splice(existingIndex, 1)
+    }
+    this.endedSessionIds.push(sessionId)
+    if (this.endedSessionIds.length > 32) {
+      this.endedSessionIds.splice(0, this.endedSessionIds.length - 32)
+    }
+  }
 
   constructor(private readonly adapter: OciTerminalSessionAdapter) {}
 
@@ -103,6 +115,7 @@ export class OciTerminalSessionManager {
     })
     if (result.end) {
       this.sessions.delete(descriptor.terminal_session_id)
+      this.rememberEndedSession(descriptor.terminal_session_id)
     }
     return {
       descriptor,
@@ -123,6 +136,7 @@ export class OciTerminalSessionManager {
     })
     if (result.end) {
       this.sessions.delete(record.descriptor.terminal_session_id)
+      this.rememberEndedSession(record.descriptor.terminal_session_id)
     }
     return {
       interaction,
@@ -136,7 +150,7 @@ export class OciTerminalSessionManager {
       schema_version: "bb.terminal_registry_snapshot.v1",
       snapshot_id: `oci-term-reg:${Date.now()}`,
       active_sessions: [...this.sessions.values()].map((record) => record.descriptor),
-      ended_session_ids: [],
+      ended_session_ids: [...this.endedSessionIds],
     })
   }
 
@@ -154,6 +168,7 @@ export class OciTerminalSessionManager {
     const failed = targetIds.filter((sessionId) => !cleanedSet.has(sessionId))
     for (const sessionId of cleaned) {
       this.sessions.delete(sessionId)
+      this.rememberEndedSession(sessionId)
     }
     return assertValid<TerminalCleanupResultV1>("terminalCleanupResult", {
       schema_version: "bb.terminal_cleanup_result.v1",

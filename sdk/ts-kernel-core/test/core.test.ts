@@ -436,6 +436,197 @@ test("kernel core can resolve tool bindings through packs, fallbacks, and hidden
   assert.equal(analysis.visibleEntries[0]?.selectedViaFallback, true)
 })
 
+test("kernel core resolves tool packs deterministically across pack defaults and fallback chains", () => {
+  const analysis = analyzeEffectiveToolSurface({
+    surfaceId: "surface-bindings-deterministic",
+    profileId: "sandboxed_local",
+    providerFamily: "openai",
+    driverClass: "oci",
+    features: ["cuda", "profiling"],
+    toolPacks: [
+      {
+        packId: "cuda.profiler",
+        toolIds: ["cuda.flamegraph", "cuda.trace"],
+        defaultBindingIds: ["bind-cuda-trace-primary", "bind-cuda-flamegraph-primary"],
+        environmentSelector: {
+          profile_ids: ["sandboxed_local"],
+          features: ["cuda", "profiling"],
+        },
+      },
+    ],
+    activePackIds: ["cuda.profiler"],
+    bindings: [
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-cuda-trace-primary",
+        tool_id: "cuda.trace",
+        binding_kind: "sandbox",
+        environment_selector: {
+          profile_ids: ["sandboxed_local"],
+          features: ["cuda", "profiling"],
+        },
+        fallback_binding_ids: ["bind-cuda-trace-service"],
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-cuda-trace-service",
+        tool_id: "cuda.trace",
+        binding_kind: "service",
+        environment_selector: {
+          service_ids: ["cuda-profiler-sidecar"],
+        },
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-cuda-flamegraph-primary",
+        tool_id: "cuda.flamegraph",
+        binding_kind: "sandbox",
+        environment_selector: {
+          profile_ids: ["sandboxed_local"],
+          features: ["cuda", "profiling"],
+        },
+        fallback_binding_ids: ["bind-cuda-flamegraph-alt"],
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-cuda-flamegraph-alt",
+        tool_id: "cuda.flamegraph",
+        binding_kind: "sandbox",
+        environment_selector: {
+          profile_ids: ["sandboxed_local"],
+          features: ["cuda", "profiling"],
+        },
+      },
+    ],
+    claims: [
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "cuda.trace",
+        binding_id: "bind-cuda-trace-primary",
+        level: "supported",
+        summary: "CUDA trace is available in sandbox",
+        fallback_available: true,
+        exposed_to_model: true,
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "cuda.trace",
+        binding_id: "bind-cuda-trace-service",
+        level: "degraded",
+        summary: "Fallback sidecar trace available",
+        fallback_available: false,
+        exposed_to_model: true,
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "cuda.flamegraph",
+        binding_id: "bind-cuda-flamegraph-primary",
+        level: "supported",
+        summary: "Flamegraph capture available",
+        fallback_available: true,
+        exposed_to_model: true,
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "cuda.flamegraph",
+        binding_id: "bind-cuda-flamegraph-alt",
+        level: "supported",
+        summary: "Alternate flamegraph capture available",
+        fallback_available: false,
+        exposed_to_model: true,
+      },
+    ],
+  })
+
+  assert.deepEqual(
+    analysis.visibleEntries.map((entry) => [entry.toolId, entry.bindingId]),
+    [
+      ["cuda.flamegraph", "bind-cuda-flamegraph-primary"],
+      ["cuda.trace", "bind-cuda-trace-primary"],
+    ],
+  )
+  assert.equal(analysis.visibleEntries[0]?.selectedViaFallback, false)
+  assert.equal(analysis.visibleEntries[1]?.selectedViaFallback, false)
+})
+
+test("kernel core ignores cyclic fallback chains and preserves hidden unsupported surfaces deterministically", () => {
+  const analysis = analyzeEffectiveToolSurface({
+    surfaceId: "surface-bindings-cycle",
+    profileId: "trusted_local",
+    providerFamily: "openai",
+    driverClass: "local_process",
+    toolPacks: [
+      {
+        packId: "terminal.control",
+        toolIds: ["exec_command", "write_stdin", "provider.native.secret"],
+        bindingIds: ["bind-exec-a", "bind-exec-b", "bind-provider-hidden"],
+      },
+    ],
+    activePackIds: ["terminal.control"],
+    bindings: [
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-exec-a",
+        tool_id: "exec_command",
+        binding_kind: "sandbox",
+        fallback_binding_ids: ["bind-exec-b"],
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-exec-b",
+        tool_id: "exec_command",
+        binding_kind: "sandbox",
+        fallback_binding_ids: ["bind-exec-a"],
+      },
+      {
+        schema_version: "bb.tool_binding.v1",
+        binding_id: "bind-provider-hidden",
+        tool_id: "provider.native.secret",
+        binding_kind: "provider_hosted",
+      },
+    ],
+    claims: [
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "exec_command",
+        binding_id: "bind-exec-a",
+        level: "supported",
+        summary: "Exec command available",
+        fallback_available: true,
+        exposed_to_model: true,
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "exec_command",
+        binding_id: "bind-exec-b",
+        level: "supported",
+        summary: "Alternate exec command available",
+        fallback_available: true,
+        exposed_to_model: true,
+      },
+      {
+        schema_version: "bb.tool_support_claim.v1",
+        tool_id: "provider.native.secret",
+        binding_id: "bind-provider-hidden",
+        level: "hidden",
+        summary: "Provider native secret is hidden from the model",
+        fallback_available: false,
+        hidden_reason: "provider_native_hidden",
+        exposed_to_model: false,
+      },
+    ],
+  })
+
+  assert.deepEqual(
+    analysis.visibleEntries.map((entry) => [entry.toolId, entry.bindingId]),
+    [["exec_command", "bind-exec-a"]],
+  )
+  assert.deepEqual(
+    analysis.hiddenEntries.map((entry) => [entry.toolId, entry.bindingId, entry.hiddenReason]),
+    [["provider.native.secret", "bind-provider-hidden", "provider_native_hidden"]],
+  )
+})
+
 test("kernel core can wrap terminal lifecycle payloads into canonical events", () => {
   const descriptor = {
     schema_version: "bb.terminal_session_descriptor.v1",

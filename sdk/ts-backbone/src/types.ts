@@ -136,6 +136,13 @@ export interface BackboneTerminalSnapshotResult {
   readonly snapshot: TerminalRegistrySnapshotV1 | null
 }
 
+export interface BackboneTerminalGetResult {
+  readonly supportClaim: SupportClaim
+  readonly unsupportedCase?: UnsupportedCaseV1
+  readonly snapshot: TerminalRegistrySnapshotV1 | null
+  readonly session: BackboneTerminalSessionView | null
+}
+
 export interface BackboneTerminalCleanupInput {
   readonly scope: TerminalCleanupResultV1["scope"]
   readonly executionProfileId?: ExecutionProfileId
@@ -229,6 +236,7 @@ export interface BackboneTerminalApi {
   classify(input: { executionProfileId?: ExecutionProfileId }): SupportClaim
   start(input: BackboneTerminalStartInput): Promise<BackboneTerminalStartResult>
   interact(input: BackboneTerminalInteractionInput): Promise<BackboneTerminalInteractionResult>
+  get(input: { terminalSessionId: string; executionProfileId?: ExecutionProfileId }): Promise<BackboneTerminalGetResult>
   snapshot(input?: { executionProfileId?: ExecutionProfileId }): Promise<BackboneTerminalSnapshotResult>
   list(input?: { executionProfileId?: ExecutionProfileId }): Promise<BackboneTerminalSnapshotResult>
   cleanup(input: BackboneTerminalCleanupInput): Promise<BackboneTerminalCleanupResult>

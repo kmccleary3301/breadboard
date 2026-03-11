@@ -132,6 +132,40 @@ function claimPriority(claim: ToolSupportClaimV1 | null): number {
   }
 }
 
+function compareResolvedCandidates(
+  next: {
+    readonly claim: ToolSupportClaimV1 | null
+    readonly selectedViaFallback: boolean
+    readonly resolutionPath: readonly string[]
+    readonly bindingId: string
+  },
+  current: {
+    readonly claim: ToolSupportClaimV1 | null
+    readonly selectedViaFallback: boolean
+    readonly resolutionPath: readonly string[]
+    readonly bindingId: string
+  },
+): number {
+  const priorityDelta = claimPriority(next.claim) - claimPriority(current.claim)
+  if (priorityDelta !== 0) return priorityDelta
+
+  // Prefer a direct binding over a fallback-selected binding when both are otherwise equal.
+  if (next.selectedViaFallback !== current.selectedViaFallback) {
+    return next.selectedViaFallback ? -1 : 1
+  }
+
+  // Prefer the shorter resolution path when priorities and fallback status are equal.
+  if (next.resolutionPath.length !== current.resolutionPath.length) {
+    return current.resolutionPath.length - next.resolutionPath.length
+  }
+
+  // Preserve deterministic output for ties by falling back to binding id ordering.
+  if (next.bindingId === current.bindingId) {
+    return 0
+  }
+  return next.bindingId < current.bindingId ? 1 : -1
+}
+
 function isModelVisibleClaim(claim: ToolSupportClaimV1 | null): boolean {
   if (!claim) return false
   if (claim.level === "hidden") return false
@@ -171,13 +205,32 @@ function chooseBindingForTool(options: {
       null
 
     const eligible = matchesSelector(binding.environment_selector ?? null, options.input)
-    if (eligible && isModelVisibleClaim(claim) && (!best || claimPriority(claim) > claimPriority(best.claim))) {
-      best = {
+    if (eligible && isModelVisibleClaim(claim)) {
+      const resolvedCandidate: ResolvedToolBinding = {
         toolId: options.toolId,
         binding,
         claim,
         selectedViaFallback: candidate.selectedViaFallback,
         resolutionPath: candidate.path,
+      }
+      if (
+        !best ||
+        compareResolvedCandidates(
+          {
+            claim,
+            selectedViaFallback: candidate.selectedViaFallback,
+            resolutionPath: candidate.path,
+            bindingId: binding.binding_id,
+          },
+          {
+            claim: best.claim,
+            selectedViaFallback: best.selectedViaFallback,
+            resolutionPath: best.resolutionPath,
+            bindingId: best.binding.binding_id,
+          },
+        ) > 0
+      ) {
+        best = resolvedCandidate
       }
     }
 
@@ -236,6 +289,12 @@ export function resolveToolBindings(input: EffectiveToolSurfaceResolutionInput):
       }),
     )
     .filter((resolved): resolved is ResolvedToolBinding => resolved != null)
+    .sort((left, right) => {
+      if (left.toolId !== right.toolId) {
+        return left.toolId.localeCompare(right.toolId)
+      }
+      return left.binding.binding_id.localeCompare(right.binding.binding_id)
+    })
 }
 
 function buildEffectiveToolSurfaceFromEntries(options: {
@@ -314,16 +373,23 @@ export function analyzeEffectiveToolSurface(input: EffectiveToolSurfaceResolutio
         claim,
       }),
     )
+  const sortEntries = (entries: EffectiveToolSurfaceEntry[]): EffectiveToolSurfaceEntry[] =>
+    [...entries].sort((left, right) => {
+      if (left.toolId !== right.toolId) {
+        return left.toolId.localeCompare(right.toolId)
+      }
+      return (left.bindingId ?? "").localeCompare(right.bindingId ?? "")
+    })
   return {
     surface: buildEffectiveToolSurfaceFromEntries({
       surfaceId: input.surfaceId,
       projectionProfileId: input.projectionProfileId ?? null,
-      visibleEntries,
-      hiddenEntries,
+      visibleEntries: sortEntries(visibleEntries),
+      hiddenEntries: sortEntries(hiddenEntries),
     }),
-    visibleEntries,
-    hiddenEntries,
-    unsupportedEntries,
+    visibleEntries: sortEntries(visibleEntries),
+    hiddenEntries: sortEntries(hiddenEntries),
+    unsupportedEntries: sortEntries(unsupportedEntries),
   }
 }
 

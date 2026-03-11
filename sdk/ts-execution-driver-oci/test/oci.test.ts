@@ -354,6 +354,7 @@ test("oci terminal driver keeps multi-session listing and no-output poll semanti
   assert.equal(exited?.end?.terminal_state, "completed")
   const snapshot = await driver.snapshotTerminalRegistry?.()
   assert.equal(snapshot?.active_sessions.length, 1)
+  assert.ok((snapshot?.ended_session_ids ?? []).includes("term-oci-fast-exit"))
   assert.equal(snapshot?.active_sessions[0]?.terminal_session_id, "term-oci-keepalive")
   const polled = await driver.interactTerminalSession?.({
     terminalSessionId: "term-oci-keepalive",
@@ -377,4 +378,6 @@ test("oci terminal driver keeps multi-session listing and no-output poll semanti
   assert.equal(signaled?.end?.terminal_state, "cancelled")
   const finalSnapshot = await driver.snapshotTerminalRegistry?.()
   assert.equal(finalSnapshot?.active_sessions.length, 0)
+  assert.ok((finalSnapshot?.ended_session_ids ?? []).includes("term-oci-keepalive"))
+  assert.ok((finalSnapshot?.ended_session_ids ?? []).includes("term-oci-fast-exit"))
 })

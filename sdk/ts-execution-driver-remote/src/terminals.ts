@@ -109,8 +109,20 @@ async function executeRemoteTerminalRequest(
 
 export class RemoteTerminalSessionManager {
   private readonly sessions = new Map<string, RemoteTerminalSessionRecord>()
+  private readonly endedSessionIds: string[] = []
 
   constructor(private readonly httpOptions: RemoteTerminalExecutionHttpOptions) {}
+
+  private rememberEndedSession(sessionId: string): void {
+    const existingIndex = this.endedSessionIds.indexOf(sessionId)
+    if (existingIndex >= 0) {
+      this.endedSessionIds.splice(existingIndex, 1)
+    }
+    this.endedSessionIds.push(sessionId)
+    if (this.endedSessionIds.length > 32) {
+      this.endedSessionIds.splice(0, this.endedSessionIds.length - 32)
+    }
+  }
 
   async startSession(input: TerminalSessionStartInputV1): Promise<TerminalSessionStartResultV1> {
     const descriptor = buildDescriptor(input)
@@ -124,6 +136,8 @@ export class RemoteTerminalSessionManager {
     const end = (response.payload.end as TerminalSessionEndV1 | undefined) ?? undefined
     if (!end) {
       this.sessions.set(descriptor.terminal_session_id, { descriptor })
+    } else {
+      this.rememberEndedSession(descriptor.terminal_session_id)
     }
     return {
       descriptor,
@@ -148,6 +162,7 @@ export class RemoteTerminalSessionManager {
     const end = (response.payload.end as TerminalSessionEndV1 | undefined) ?? undefined
     if (end) {
       this.sessions.delete(record.descriptor.terminal_session_id)
+      this.rememberEndedSession(record.descriptor.terminal_session_id)
     }
     return {
       interaction,
@@ -165,13 +180,16 @@ export class RemoteTerminalSessionManager {
     })
     const snapshot = response.payload.snapshot as TerminalRegistrySnapshotV1 | undefined
     if (snapshot) {
+      for (const sessionId of snapshot.ended_session_ids ?? []) {
+        this.rememberEndedSession(sessionId)
+      }
       return assertValid<TerminalRegistrySnapshotV1>("terminalRegistrySnapshot", snapshot)
     }
     return assertValid<TerminalRegistrySnapshotV1>("terminalRegistrySnapshot", {
       schema_version: "bb.terminal_registry_snapshot.v1",
       snapshot_id: `remote-term-reg:${Date.now()}`,
       active_sessions: [...this.sessions.values()].map((record) => record.descriptor),
-      ended_session_ids: [],
+      ended_session_ids: [...this.endedSessionIds],
     })
   }
 
@@ -192,6 +210,7 @@ export class RemoteTerminalSessionManager {
     const failedSessionIds = (response.payload.failed_session_ids as string[] | undefined) ?? []
     for (const sessionId of cleanedSessionIds) {
       this.sessions.delete(sessionId)
+      this.rememberEndedSession(sessionId)
     }
     return assertValid<TerminalCleanupResultV1>("terminalCleanupResult", {
       schema_version: "bb.terminal_cleanup_result.v1",

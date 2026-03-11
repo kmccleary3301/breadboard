@@ -171,6 +171,7 @@ test("BackboneSession can classify and drive a local terminal session lifecycle"
   })
   const backbone = createBackbone({ workspace })
   const session = backbone.openSession({ sessionId: "s-2", workspaceRoot: "/tmp" })
+  await session.terminals.cleanup({ scope: "all" })
 
   const claim = session.terminals.classify({})
   assert.equal(claim.level, "supported")
@@ -221,4 +222,69 @@ test("BackboneSession can classify and drive a local terminal session lifecycle"
   assert.equal(terminalSession.summary().artifactRefCount, 0)
   assert.equal(terminalSession.summary().evidenceRefCount, 0)
   assert.equal(terminalSession.summary().publicHandles.length, 1)
+})
+
+test("BackboneSession terminals can get and list multiple sessions with mixed states", async () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-3",
+    rootDir: "/tmp",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({ workspace })
+  const session = backbone.openSession({ sessionId: "s-3", workspaceRoot: "/tmp" })
+  await session.terminals.cleanup({ scope: "all" })
+
+  const firstStarted = await session.terminals.start({
+    command: ["/bin/bash", "-lc", "printf 'one\\n'; sleep 0.5"],
+  })
+  const secondStarted = await session.terminals.start({
+    command: ["/bin/bash", "-lc", "printf 'two\\n'; sleep 0.5"],
+  })
+
+  assert.ok(firstStarted.session)
+  assert.ok(secondStarted.session)
+  if (!firstStarted.session || !secondStarted.session || !firstStarted.descriptor || !secondStarted.descriptor) {
+    throw new Error("expected terminal session views")
+  }
+
+  await firstStarted.session.poll({ settleMs: 25 })
+  await secondStarted.session.poll({ settleMs: 25 })
+
+  const fetchedFirst = await session.terminals.get({
+    terminalSessionId: firstStarted.descriptor.terminal_session_id,
+  })
+  assert.equal(fetchedFirst.supportClaim.level, "supported")
+  assert.ok(fetchedFirst.snapshot)
+  assert.ok(fetchedFirst.session)
+  assert.equal(
+    fetchedFirst.session?.descriptor.terminal_session_id,
+    firstStarted.descriptor.terminal_session_id,
+  )
+
+  const listWhileRunning = await session.terminals.list()
+  assert.ok(listWhileRunning.snapshot)
+  assert.equal(listWhileRunning.snapshot?.active_sessions.length, 2)
+
+  const cleanedFirst = await firstStarted.session.cleanup()
+  assert.ok(cleanedFirst.result)
+  assert.deepEqual(cleanedFirst.result?.cleaned_session_ids, [firstStarted.descriptor.terminal_session_id])
+
+  const listAfterCleanup = await session.terminals.list()
+  assert.ok(listAfterCleanup.snapshot)
+  assert.ok(
+    listAfterCleanup.snapshot?.active_sessions.some(
+      (item) => item.terminal_session_id === secondStarted.descriptor!.terminal_session_id,
+    ),
+  )
+
+  const fetchedAfterCleanup = await session.terminals.get({
+    terminalSessionId: firstStarted.descriptor.terminal_session_id,
+  })
+  assert.ok(fetchedAfterCleanup.session)
+  assert.equal(fetchedAfterCleanup.session?.status, "ended")
+  assert.equal(fetchedAfterCleanup.session?.summary().lastEndState, "cleaned_up")
+
+  const cleanedSecond = await secondStarted.session.cleanup()
+  assert.ok(cleanedSecond.result)
+  assert.deepEqual(cleanedSecond.result?.cleaned_session_ids, [secondStarted.descriptor.terminal_session_id])
 })

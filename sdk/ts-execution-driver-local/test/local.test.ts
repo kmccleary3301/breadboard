@@ -165,3 +165,105 @@ test("trusted local driver can manage a persistent terminal session lifecycle", 
   const registry = await trustedLocalExecutionDriver.snapshotTerminalRegistry?.()
   assert.equal(registry?.active_sessions.length, 0)
 })
+
+test("trusted local driver rejects interaction with an exited terminal session", async () => {
+  const start = await trustedLocalExecutionDriver.startTerminalSession?.({
+    terminalSessionId: "term-local-exit-1",
+    command: ["node", "-e", "process.stdout.write('done\\n')"],
+    cwd: "/tmp",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-term-exit-1",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "replay_strict",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-term-exit-1",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-term-exit-1",
+    },
+    startupCallId: "call-exit-1",
+  })
+  assert.ok(start)
+
+  await sleep(25)
+  const polled = await trustedLocalExecutionDriver.interactTerminalSession?.({
+    terminalSessionId: "term-local-exit-1",
+    interactionKind: "poll",
+    settleMs: 10,
+  })
+  assert.ok(polled?.end)
+  assert.equal(polled?.end?.terminal_state, "completed")
+  const snapshotAfterExit = await trustedLocalExecutionDriver.snapshotTerminalRegistry?.()
+  assert.ok((snapshotAfterExit?.ended_session_ids ?? []).includes("term-local-exit-1"))
+
+  await assert.rejects(
+    () =>
+      trustedLocalExecutionDriver.interactTerminalSession?.({
+        terminalSessionId: "term-local-exit-1",
+        interactionKind: "stdin",
+        inputText: "late\n",
+      }) ?? Promise.resolve(undefined),
+    /Unknown terminal session/,
+  )
+})
+
+test("trusted local driver cleanup is stable for missing or already cleaned sessions", async () => {
+  const cleanedMissing = await trustedLocalExecutionDriver.cleanupTerminalSessions?.({
+    cleanupId: "cleanup-missing-1",
+    scope: "single",
+    sessionIds: ["term-local-missing-1"],
+    signal: null,
+  })
+  assert.ok(cleanedMissing)
+  assert.deepEqual(cleanedMissing?.cleaned_session_ids, [])
+  assert.deepEqual(cleanedMissing?.failed_session_ids, ["term-local-missing-1"])
+
+  const start = await trustedLocalExecutionDriver.startTerminalSession?.({
+    terminalSessionId: "term-local-cleanup-1",
+    command: ["/bin/bash", "-lc", "sleep 5"],
+    cwd: "/tmp",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-term-cleanup-1",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "replay_strict",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-term-cleanup-1",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-term-cleanup-1",
+    },
+    startupCallId: "call-cleanup-1",
+  })
+  assert.ok(start)
+
+  const cleaned = await trustedLocalExecutionDriver.cleanupTerminalSessions?.({
+    cleanupId: "cleanup-present-1",
+    scope: "single",
+    sessionIds: ["term-local-cleanup-1"],
+    signal: null,
+  })
+  assert.ok(cleaned)
+  assert.deepEqual(cleaned?.cleaned_session_ids, ["term-local-cleanup-1"])
+  const snapshotAfterCleanup = await trustedLocalExecutionDriver.snapshotTerminalRegistry?.()
+  assert.ok((snapshotAfterCleanup?.ended_session_ids ?? []).includes("term-local-cleanup-1"))
+
+  const cleanedAgain = await trustedLocalExecutionDriver.cleanupTerminalSessions?.({
+    cleanupId: "cleanup-present-2",
+    scope: "single",
+    sessionIds: ["term-local-cleanup-1"],
+    signal: null,
+  })
+  assert.ok(cleanedAgain)
+  assert.deepEqual(cleanedAgain?.cleaned_session_ids, [])
+  assert.deepEqual(cleanedAgain?.failed_session_ids, ["term-local-cleanup-1"])
+})
