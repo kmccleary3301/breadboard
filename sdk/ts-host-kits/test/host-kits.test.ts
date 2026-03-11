@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import {
+  buildSupportClaimView,
   buildBackboneEffectiveToolSurfaceAnalysisView,
   buildBackboneTerminalCleanupView,
   buildBackboneTerminalOutputView,
@@ -108,6 +109,23 @@ test("normalizeHostKitSupportClaim preserves the base claim while applying expli
   assert.equal(claim.summary, "Fallback required")
   assert.deepEqual(claim.unsupportedFields, ["images"])
   assert.equal(claim.executionProfile.id, "trusted_local")
+})
+
+test("buildSupportClaimView projects host-facing support metadata cleanly", () => {
+  const view = buildSupportClaimView({
+    ...supportedClaim,
+    terminalSupport: {
+      canStart: true,
+      canInteract: true,
+      canPoll: true,
+      canList: true,
+      canCleanup: true,
+      streamMode: "pipes",
+    },
+  })
+  assert.equal(view.executionProfileId, "trusted_local")
+  assert.equal(view.terminalSupport?.canInteract, true)
+  assert.equal(view.recommendedHostMode, supportedClaim.recommendedHostMode)
 })
 
 test("buildFallbackHostKitInvocation emits a fallback-mode invocation with normalized support metadata", () => {

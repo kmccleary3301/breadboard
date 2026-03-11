@@ -17,6 +17,7 @@ It standardizes:
 This package does not own host-specific request schemas by itself. It provides the reusable abstraction layer that concrete host kits, such as OpenClaw, should implement.
 
 It now also includes public product-layer helpers for:
+- support-claim projection into a stable host-facing view
 - terminal-registry projection
 - terminal cleanup result construction through Backbone
 - effective tool-surface projection through Backbone

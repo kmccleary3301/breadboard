@@ -99,6 +99,21 @@ terminal_sessions:
     assert conf["terminal_sessions"]["continuation_tool"] == "write_stdin"
 
 
+def test_v2_loader_preserves_phase14_firecrawl_toolpack_example(monkeypatch):
+    cfg = Path(__file__).resolve().parents[1] / "agent_configs" / "misc" / "firecrawl_local_toolpack_phase14_v1.yaml"
+    monkeypatch.setenv("AGENT_SCHEMA_V2_ENABLED", "1")
+    conf = load_agent_config(str(cfg))
+    assert conf["tool_packs"]["firecrawl-local"]["tool_ids"] == [
+        "firecrawl.search",
+        "firecrawl.scrape",
+        "firecrawl.map",
+    ]
+    assert conf["tool_bindings"][0]["binding_kind"] == "service"
+    assert conf["tool_bindings"][0]["environment_selector"]["service_ids"] == ["firecrawl-local"]
+    assert conf["tool_bindings"][2]["binding_kind"] == "delegated"
+    assert conf["tool_bindings"][3]["exposure"] == "hidden_provider_native"
+
+
 def test_v2_loader_legacy_fallback(tmp_path, monkeypatch):
     legacy = tmp_path / "legacy.yaml"
     legacy.write_text("providers: {}\n")

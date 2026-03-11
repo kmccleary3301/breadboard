@@ -126,3 +126,9 @@ Current product-layer note:
 - the Host Kit surface now exposes a richer effective-tool-surface analysis view
 - hosts do not need to infer fallback selection from binding ids alone
 - this keeps the system inspectable enough for dossier-grade configs and parity analysis
+
+Tracked example note:
+
+- `agent_configs/misc/firecrawl_local_toolpack_phase14_v1.yaml` is now the first heavily
+  commented Phase 14 reference config for a service-backed local tool pack with delegated
+  fallback and a hidden provider-native binding

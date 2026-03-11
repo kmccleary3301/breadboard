@@ -27,6 +27,18 @@ export interface HostKitClassification<Request> {
   readonly request: Request
 }
 
+export interface SupportClaimView {
+  readonly level: SupportClaim["level"]
+  readonly summary: string
+  readonly executionProfileId: string
+  readonly executionProfileSummary: string
+  readonly recommendedHostMode: SupportClaim["recommendedHostMode"]
+  readonly confidence: SupportClaim["confidence"]
+  readonly fallbackAvailable: boolean
+  readonly unsupportedFields: readonly string[]
+  readonly terminalSupport: SupportClaim["terminalSupport"] | null
+}
+
 export interface HostKitInvocation<Result, Invocation> {
   readonly mode: HostKitMode
   readonly result: Result
@@ -202,6 +214,24 @@ export function normalizeHostKitSupportClaim(
     ...claim,
     ...overrides,
     unsupportedFields: [...(overrides.unsupportedFields ?? claim.unsupportedFields)],
+  }
+}
+
+/**
+ * Project a runtime-facing SupportClaim into a smaller host/product-facing view that is easy to
+ * log, render, and compare across host integrations.
+ */
+export function buildSupportClaimView(claim: SupportClaim): SupportClaimView {
+  return {
+    level: claim.level,
+    summary: claim.summary,
+    executionProfileId: claim.executionProfileId,
+    executionProfileSummary: claim.executionProfile.summary,
+    recommendedHostMode: claim.recommendedHostMode,
+    confidence: claim.confidence,
+    fallbackAvailable: claim.fallbackAvailable,
+    unsupportedFields: claim.unsupportedFields,
+    terminalSupport: claim.terminalSupport ?? null,
   }
 }
 

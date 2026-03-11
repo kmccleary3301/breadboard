@@ -1,0 +1,121 @@
+version: 2
+profile:
+  name: firecrawl-local-toolpack-phase14-v1
+
+# This is a Phase 14 demonstration config for custom tool injection.
+#
+# It is intentionally not a public top-level dossier like the main E4 files.
+# Instead, it is a heavily commented reference for how a serious project can
+# inject a service-backed local tool pack into BreadBoard while preserving:
+# - canonical tool identity
+# - explicit environment-aware bindings
+# - inspectable effective tool surfaces
+# - support/fallback semantics that hosts can reason about
+
+workspace:
+  root: ./agent_ws
+  sandbox:
+    driver: process
+
+providers:
+  default_model: openai/gpt-5.1-codex-mini
+  models:
+  - id: openai/gpt-5.1-codex-mini
+    adapter: openai
+
+modes:
+  - name: build
+    # The point of this file is the tool-pack/binding surface, not mode design.
+    # We still include the minimal v2 loop scaffold so the file is a real
+    # loadable BreadBoard config rather than a prose-only reference artifact.
+    prompt: You are testing service-backed local tool-pack injection.
+
+loop:
+  sequence:
+    - mode: build
+
+tool_packs:
+  firecrawl-local:
+    # This pack groups the tools conceptually. The pack itself is not the
+    # execution contract; the binding layer below is.
+    description: local FireCrawl deployment tools
+    tool_ids:
+    - firecrawl.search
+    - firecrawl.scrape
+    - firecrawl.map
+    exposure: provider_native
+    support_status: phase14_reference
+
+tool_bindings:
+  - id: firecrawl.local.service
+    tool_id: firecrawl.search
+    binding_kind: service
+    execution_profile: trusted_local
+    placement: local_service
+    exposure: provider_native
+    support_status: phase14_reference
+    # The environment selector is the real gate:
+    # this binding is only active when the local FireCrawl service is present.
+    environment_selector:
+      profile_ids:
+      - trusted_local
+      service_ids:
+      - firecrawl-local
+
+  - id: firecrawl.local.scrape
+    tool_id: firecrawl.scrape
+    binding_kind: service
+    execution_profile: trusted_local
+    placement: local_service
+    exposure: provider_native
+    support_status: phase14_reference
+    environment_selector:
+      profile_ids:
+      - trusted_local
+      service_ids:
+      - firecrawl-local
+
+  - id: firecrawl.remote.fallback
+    tool_id: firecrawl.search
+    binding_kind: delegated
+    execution_profile: remote_isolated
+    placement: remote_worker
+    exposure: provider_native
+    support_status: phase14_reference
+    # If the local daemon is unavailable, the same canonical tool can still
+    # resolve through a different binding. Hosts should see this as a fallback.
+    environment_selector:
+      profile_ids:
+      - remote_isolated
+
+  - id: firecrawl.local.map
+    tool_id: firecrawl.map
+    binding_kind: service
+    execution_profile: trusted_local
+    placement: local_service
+    exposure: hidden_provider_native
+    support_status: phase14_reference
+    # This is an example of a bound tool that is intentionally not surfaced to
+    # the model under some provider projections. It still exists in the binding
+    # layer and should show up in the effective tool-surface analysis as hidden.
+    environment_selector:
+      profile_ids:
+      - trusted_local
+      service_ids:
+      - firecrawl-local
+
+features:
+  # The effective surface resolver should consider these when deciding whether
+  # a pack or binding is actually active.
+  enabled:
+  - local_services
+  - tool_packs
+  - effective_tool_surface_analysis
+
+# Notes for developers:
+# - `tool_packs` describe conceptual grouping and expected exposure.
+# - `tool_bindings` describe how the tool is actually satisfied.
+# - environment selectors are the crucial bridge between an abstract tool and
+#   a concrete coding/sandbox/service environment.
+# - this pattern is intended to scale to CUDA profilers, trace tools, custom
+#   local daemons, and other environment-specific capabilities.
