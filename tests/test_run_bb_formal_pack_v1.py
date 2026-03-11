@@ -45,7 +45,12 @@ def test_numbertheory_exk2pow_prompt_includes_prime_power_guidance() -> None:
     assert "(Nat.dvd_prime_pow Nat.prime_two).mp hu_dvd" in prompt
     assert "simpa [u, v] using hk" in prompt
     assert "v - u = (b - a) * (a + b - 1)" in prompt
-    assert "obtain ⟨t, rfl⟩ := Nat.exists_eq_add_of_lt hmn_lt" in prompt
+    assert "obtain ⟨t, ht⟩ := Nat.exists_eq_add_of_lt hmn_lt" in prompt
+    assert "have hv_eq_mul : v = u * 2^(t + 1) := by" in prompt
+    assert "use `exact hv_eq_mul`, not `hv_eq_mul.symm`" in prompt
+    assert "exact (Nat.not_lt_of_ge hu_le) hltu" in prompt
+    assert "exact Nat.mul_comm a (a + 1)" in prompt
+    assert "prove `b - a < b` by `Nat.sub_lt hb0 ha0`" in prompt
     assert "Avoid introducing `htpos : 0 < t`" in prompt
     assert "Prefer a short contradiction proof" in prompt
 
