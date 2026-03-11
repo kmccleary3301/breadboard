@@ -84,6 +84,9 @@ The first-pass schema set should likely include:
 - `bb.execution_capability.v1` and `bb.execution_placement.v1` still describe where/how a session may run
 - `bb.sandbox_request.v1` / `bb.sandbox_result.v1` remain the one-shot command family
 - task/subagent contracts should reference terminal sessions by lineage or wake-condition refs
+- host-facing terminal interaction failures should be shaped through `bb.unsupported_case.v1`
+  rather than leaking raw driver/runtime exceptions when the session is already gone or the
+  current backend cannot satisfy the requested interaction
 - public dossiers/configs should expose terminal-session shape explicitly through a
   `terminal_sessions:` section, even when a given lane is only documenting rather than freezing
   that surface
@@ -118,7 +121,19 @@ Phase 14 now also includes the first Codex-shaped parity-prep evidence bundle fo
 - multi-session listing
 - cleanup
 
-Those fixtures are still `draft-semantic`, but they mean the surface has moved beyond "planned".
+The generic reference fixtures remain `draft-semantic`, but the Codex-shaped lanes now include
+several `reference-engine` rows for:
+
+- start
+- stdin continuation
+- poll
+- no-output poll
+- list / registry projection
+- multi-session listing
+- cleanup
+- dead-session interaction failure shaping
+
+That means the surface has moved beyond "planned" and beyond pure parity-prep shape checking.
 
 ## Conformance status
 

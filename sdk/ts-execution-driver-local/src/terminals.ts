@@ -218,7 +218,12 @@ export class LocalTerminalSessionManager {
     for (const sessionId of targetIds) {
       const record = this.sessions.get(sessionId)
       if (!record) {
-        failed.push(sessionId)
+        if (this.endedSessionIds.includes(sessionId)) {
+          cleaned.push(sessionId)
+          this.rememberEndedSession(sessionId)
+        } else {
+          failed.push(sessionId)
+        }
         continue
       }
       record.child.kill(normalizeSignal(input.signal))

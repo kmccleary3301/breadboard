@@ -39,6 +39,7 @@ import type {
   BackboneTerminalGetResult,
   BackboneTerminalInteractionInput,
   BackboneTerminalInteractionResult,
+  BackboneTerminalListViewResult,
   BackboneTerminalSessionView,
   BackboneTerminalStartInput,
   BackboneTerminalStartResult,
@@ -56,6 +57,22 @@ type InternalTerminalSessionView = BackboneTerminalSessionView & {
   applyInteractionResult(result: BackboneTerminalInteractionResult): void
   applySnapshot(snapshot: TerminalRegistrySnapshotV1 | null): void
   markEndedIfMissing(end: TerminalSessionEndV1): void
+  mergeEnd(end: TerminalSessionEndV1): void
+}
+
+function terminalEndPrecedence(state: TerminalSessionEndV1["terminal_state"]): number {
+  switch (state) {
+    case "cleaned_up":
+      return 5
+    case "cancelled":
+      return 4
+    case "failed":
+      return 3
+    case "completed":
+      return 2
+    case "backend_lost":
+      return 1
+  }
 }
 
 function createTerminalSessionView(options: {
@@ -133,6 +150,11 @@ function createTerminalSessionView(options: {
     markEndedIfMissing(end) {
       lastEnd = lastEnd ?? end
     },
+    mergeEnd(end) {
+      if (!lastEnd || terminalEndPrecedence(end.terminal_state) >= terminalEndPrecedence(lastEnd.terminal_state)) {
+        lastEnd = end
+      }
+    },
     summary() {
       return buildSummary()
     },
@@ -142,19 +164,25 @@ function createTerminalSessionView(options: {
       })
       applySnapshot(result.snapshot)
       if (result.snapshot?.ended_session_ids?.includes(options.descriptor.terminal_session_id)) {
-        lastEnd =
-          lastEnd ??
-          ({
-            schema_version: "bb.terminal_session_end.v1",
-            terminal_session_id: options.descriptor.terminal_session_id,
-            startup_call_id: options.descriptor.startup_call_id ?? null,
-            causing_call_id: null,
-            terminal_state: "completed",
-            exit_code: null,
-            duration_ms: 0,
-            artifact_refs: [],
-            evidence_refs: [],
-          } as const)
+        const completedEnd: TerminalSessionEndV1 = {
+          schema_version: "bb.terminal_session_end.v1",
+          terminal_session_id: options.descriptor.terminal_session_id,
+          startup_call_id: options.descriptor.startup_call_id ?? null,
+          causing_call_id: null,
+          terminal_state: "completed",
+          exit_code: null,
+          duration_ms: 0,
+          artifact_refs: [],
+          evidence_refs: [],
+        }
+        if (!lastEnd) {
+          lastEnd = completedEnd
+        } else {
+          lastEnd =
+            terminalEndPrecedence(lastEnd.terminal_state) >= terminalEndPrecedence(completedEnd.terminal_state)
+              ? lastEnd
+              : completedEnd
+        }
       }
       return result
     },
@@ -336,16 +364,18 @@ function buildTerminalSupportClaim(options: {
 function buildUnsupportedTerminalCase(options: {
   profileId: ExecutionProfileId
   summary: string
+  reasonCode?: string
+  metadata?: Record<string, unknown>
 }): UnsupportedCaseV1 {
   return assertValid<UnsupportedCaseV1>("unsupportedCase", {
     schema_version: "bb.unsupported_case.v1",
-    reason_code: "unsupported_terminal_driver",
+    reason_code: options.reasonCode ?? "unsupported_terminal_driver",
     summary: options.summary,
     contract_family: "bb.terminal_session_descriptor.v1",
     fallback_allowed: false,
     fallback_taken: false,
     evidence_refs: [],
-    metadata: { execution_profile_id: options.profileId },
+    metadata: { execution_profile_id: options.profileId, ...(options.metadata ?? {}) },
   })
 }
 
@@ -442,7 +472,7 @@ export function createBackboneTerminalApi(options: {
           end: viewOptions.initialEnd,
         })
       } else if (viewOptions.initialEnd) {
-        existing.markEndedIfMissing(viewOptions.initialEnd)
+        existing.mergeEnd(viewOptions.initialEnd)
       }
       return rememberSessionView(existing)
     }
@@ -487,13 +517,13 @@ export function createBackboneTerminalApi(options: {
       const view = sessionViews.get(endedSessionId)
       if (view) {
         view.applySnapshot(snapshot)
-        view.markEndedIfMissing(buildSyntheticEndedState(view.descriptor, "completed"))
+        view.mergeEnd(buildSyntheticEndedState(view.descriptor, "completed"))
       }
     }
     for (const [sessionId, view] of sessionViews.entries()) {
       if (view.status === "running" && !activeIds.has(sessionId) && endedSessionIds.includes(sessionId)) {
         view.applySnapshot(snapshot)
-        view.markEndedIfMissing(buildSyntheticEndedState(view.descriptor, "completed"))
+        view.mergeEnd(buildSyntheticEndedState(view.descriptor, "completed"))
       }
     }
   }
@@ -589,15 +619,37 @@ export function createBackboneTerminalApi(options: {
           end: undefined,
         }
       }
-      const result = await resolved.driver.interactTerminalSession({
-        terminalSessionId: input.terminalSessionId,
-        interactionKind: input.interactionKind,
-        causingCallId: input.causingCallId ?? null,
-        inputText: input.inputText ?? null,
-        inputB64: input.inputB64 ?? null,
-        signal: input.signal ?? null,
-        settleMs: input.settleMs,
-      })
+      let result
+      try {
+        result = await resolved.driver.interactTerminalSession({
+          terminalSessionId: input.terminalSessionId,
+          interactionKind: input.interactionKind,
+          causingCallId: input.causingCallId ?? null,
+          inputText: input.inputText ?? null,
+          inputB64: input.inputB64 ?? null,
+          signal: input.signal ?? null,
+          settleMs: input.settleMs,
+        })
+      } catch (error) {
+        return {
+          supportClaim: resolved.claim,
+          unsupportedCase: buildUnsupportedTerminalCase({
+            profileId: executionProfileId,
+            reasonCode: "terminal_interaction_failed",
+            summary:
+              error instanceof Error
+                ? error.message
+                : `Terminal interaction failed for ${input.terminalSessionId}.`,
+            metadata: {
+              terminal_session_id: input.terminalSessionId,
+              interaction_kind: input.interactionKind,
+            },
+          }),
+          interaction: null,
+          outputDeltas: [],
+          end: undefined,
+        }
+      }
       const sessionView = sessionViews.get(input.terminalSessionId)
       sessionView?.applyInteractionResult({
         supportClaim: resolved.claim,
@@ -616,11 +668,34 @@ export function createBackboneTerminalApi(options: {
       const snapshotResult = await api.snapshot({
         executionProfileId: input.executionProfileId,
       })
+      const snapshot = snapshotResult.snapshot
+      const existingView = sessionViews.get(input.terminalSessionId) ?? null
+      const activeDescriptor =
+        snapshot?.active_sessions.find((item) => item.terminal_session_id === input.terminalSessionId) ?? null
+      const sessionView =
+        existingView ??
+        (activeDescriptor
+          ? buildSessionView({
+              descriptor: activeDescriptor,
+              supportClaim: snapshotResult.supportClaim,
+              executionProfileId: input.executionProfileId ?? options.workspace.defaultExecutionProfileId,
+            })
+          : null)
+      const endedSessionIds = snapshot?.ended_session_ids ?? []
+      const unsupportedCase =
+        !sessionView && snapshot && endedSessionIds.includes(input.terminalSessionId)
+          ? buildUnsupportedTerminalCase({
+              profileId: input.executionProfileId ?? options.workspace.defaultExecutionProfileId,
+              reasonCode: "terminal_session_ended",
+              summary: `Terminal session ${input.terminalSessionId} has already ended.`,
+              metadata: { terminal_session_id: input.terminalSessionId },
+            })
+          : snapshotResult.unsupportedCase
       return {
         supportClaim: snapshotResult.supportClaim,
-        unsupportedCase: snapshotResult.unsupportedCase,
-        snapshot: snapshotResult.snapshot,
-        session: sessionViews.get(input.terminalSessionId) ?? null,
+        unsupportedCase,
+        snapshot,
+        session: sessionView,
       }
     },
     async snapshot(input) {
@@ -652,6 +727,35 @@ export function createBackboneTerminalApi(options: {
     async list(input) {
       return api.snapshot(input)
     },
+    async listViews(input): Promise<BackboneTerminalListViewResult> {
+      const result = await api.snapshot(input)
+      const sessions: BackboneTerminalSessionView[] = []
+      const seen = new Set<string>()
+      if (result.snapshot) {
+        for (const descriptor of result.snapshot.active_sessions) {
+          const session = buildSessionView({
+            descriptor,
+            supportClaim: result.supportClaim,
+            executionProfileId: input?.executionProfileId ?? options.workspace.defaultExecutionProfileId,
+          })
+          sessions.push(session)
+          seen.add(descriptor.terminal_session_id)
+        }
+        for (const sessionId of result.snapshot.ended_session_ids ?? []) {
+          const session = sessionViews.get(sessionId)
+          if (session && !seen.has(sessionId)) {
+            sessions.push(session)
+            seen.add(sessionId)
+          }
+        }
+      }
+      return {
+        supportClaim: result.supportClaim,
+        unsupportedCase: result.unsupportedCase,
+        snapshot: result.snapshot,
+        sessions,
+      }
+    },
     async cleanup(input) {
       const executionProfileId = input.executionProfileId ?? options.workspace.defaultExecutionProfileId
       const resolved = resolveTerminalDriver({
@@ -677,9 +781,28 @@ export function createBackboneTerminalApi(options: {
         sessionIds: input.sessionIds,
         signal: input.signal ?? null,
       }
-      return {
-        supportClaim: resolved.claim,
-        result: await resolved.driver.cleanupTerminalSessions(cleanupInput),
+      try {
+        return {
+          supportClaim: resolved.claim,
+          result: await resolved.driver.cleanupTerminalSessions(cleanupInput),
+        }
+      } catch (error) {
+        return {
+          supportClaim: resolved.claim,
+          unsupportedCase: buildUnsupportedTerminalCase({
+            profileId: executionProfileId,
+            reasonCode: "terminal_cleanup_failed",
+            summary:
+              error instanceof Error
+                ? error.message
+                : `Terminal cleanup failed for ${executionProfileId}.`,
+            metadata: {
+              scope: input.scope,
+              session_ids: input.sessionIds ?? [],
+            },
+          }),
+          result: null,
+        }
       }
     },
   }
@@ -690,7 +813,7 @@ export function createBackboneTerminalApi(options: {
       for (const sessionId of result.result.cleaned_session_ids) {
         const view = sessionViews.get(sessionId)
         if (view) {
-          view.markEndedIfMissing(buildSyntheticEndedState(view.descriptor, "cleaned_up"))
+          view.mergeEnd(buildSyntheticEndedState(view.descriptor, "cleaned_up"))
         }
       }
     }

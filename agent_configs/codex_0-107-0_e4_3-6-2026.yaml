@@ -180,7 +180,8 @@ tool_packs:
     # Phase 14 status:
     # - contracts are real
     # - trusted-local runtime slice is real
-    # - parity-prep conformance fixtures now exist
+    # - Codex-shaped reference-engine lanes now exist for start/write/poll/list/cleanup and
+    #   dead-session interaction failure shaping
     # - full frozen E4 parity is still not claimed
     description: upstream Codex persistent terminal-session surface
     tool_ids:
@@ -228,6 +229,10 @@ tool_bindings:
     placement: workspace_local
     exposure: interactive_terminal_protocol
     support_status: parity_prep_not_frozen
+    # Dead-session interaction failures are now expected to project through
+    # `bb.unsupported_case.v1` rather than leaking raw backend exceptions. This keeps the
+    # failure surface interpretable and lets different harness projections render the same
+    # underlying semantics differently.
     # Backed today by the new persistent terminal-session primitives and the
     # trusted-local driver lane. This is now parity-prep, not just planned.
   - id: codex.terminal.stdin_continuation
@@ -275,6 +280,13 @@ terminal_sessions:
     # follow-up terminal interaction when no new stdin payload is supplied.
     kernel_kind: poll
     codex_rendering: empty_write_or_poll_equivalent
+  failure_projection:
+    # Dead/unknown session interactions should not escape as raw driver exceptions on the public
+    # host path. BreadBoard now shapes them through `bb.unsupported_case.v1`, carrying the
+    # session id and attempted interaction kind so Codex-style hosts can present a coherent
+    # "that background process is gone" story without losing inspectability.
+    dead_session_contract: bb.unsupported_case.v1
+    host_summary: explicit
   registry_projection:
     # Registry/listing is derived host projection rather than kernel truth. That distinction is
     # what lets us support Codex `/ps` semantics cleanly without baking host UI concerns into the

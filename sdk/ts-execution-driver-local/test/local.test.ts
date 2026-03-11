@@ -264,6 +264,6 @@ test("trusted local driver cleanup is stable for missing or already cleaned sess
     signal: null,
   })
   assert.ok(cleanedAgain)
-  assert.deepEqual(cleanedAgain?.cleaned_session_ids, [])
-  assert.deepEqual(cleanedAgain?.failed_session_ids, ["term-local-cleanup-1"])
+  assert.deepEqual(cleanedAgain?.cleaned_session_ids, ["term-local-cleanup-1"])
+  assert.deepEqual(cleanedAgain?.failed_session_ids, [])
 })

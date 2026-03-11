@@ -16,7 +16,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
-    "test": "npm --prefix ../ts-kernel-contracts run build && npm --prefix ../ts-execution-drivers run build && npm install ../ts-kernel-contracts ../ts-execution-drivers >/dev/null && node --test dist/ts-execution-driver-local/test/local.test.js"
+    "test": "npm --prefix ../ts-kernel-contracts run build && npm --prefix ../ts-execution-drivers run build && npm install ../ts-kernel-contracts ../ts-execution-drivers >/dev/null && npm run build && node --test dist/ts-execution-driver-local/test/local.test.js"
   },
   "dependencies": {
     "@breadboard/execution-drivers": "file:../ts-execution-drivers",

@@ -157,6 +157,13 @@ export interface BackboneTerminalCleanupResult {
   readonly result: TerminalCleanupResultV1 | null
 }
 
+export interface BackboneTerminalListViewResult {
+  readonly supportClaim: SupportClaim
+  readonly unsupportedCase?: UnsupportedCaseV1
+  readonly snapshot: TerminalRegistrySnapshotV1 | null
+  readonly sessions: readonly BackboneTerminalSessionView[]
+}
+
 export interface BackboneTerminalSessionSummary {
   readonly terminalSessionId: string
   readonly commandSummary: string
@@ -239,6 +246,7 @@ export interface BackboneTerminalApi {
   get(input: { terminalSessionId: string; executionProfileId?: ExecutionProfileId }): Promise<BackboneTerminalGetResult>
   snapshot(input?: { executionProfileId?: ExecutionProfileId }): Promise<BackboneTerminalSnapshotResult>
   list(input?: { executionProfileId?: ExecutionProfileId }): Promise<BackboneTerminalSnapshotResult>
+  listViews(input?: { executionProfileId?: ExecutionProfileId }): Promise<BackboneTerminalListViewResult>
   cleanup(input: BackboneTerminalCleanupInput): Promise<BackboneTerminalCleanupResult>
 }
 

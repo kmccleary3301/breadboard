@@ -284,7 +284,66 @@ test("BackboneSession terminals can get and list multiple sessions with mixed st
   assert.equal(fetchedAfterCleanup.session?.status, "ended")
   assert.equal(fetchedAfterCleanup.session?.summary().lastEndState, "cleaned_up")
 
+  const listViewsAfterCleanup = await session.terminals.listViews()
+  assert.ok(listViewsAfterCleanup.snapshot)
+  assert.equal(listViewsAfterCleanup.sessions.length, 2)
+  const cleanedView = listViewsAfterCleanup.sessions.find(
+    (item) => item.descriptor.terminal_session_id === firstStarted.descriptor!.terminal_session_id,
+  )
+  const runningView = listViewsAfterCleanup.sessions.find(
+    (item) => item.descriptor.terminal_session_id === secondStarted.descriptor!.terminal_session_id,
+  )
+  assert.ok(cleanedView)
+  assert.ok(runningView)
+  assert.equal(cleanedView?.status, "ended")
+  assert.equal(cleanedView?.summary().lastEndState, "cleaned_up")
+  assert.equal(runningView?.status, "running")
+
   const cleanedSecond = await secondStarted.session.cleanup()
   assert.ok(cleanedSecond.result)
   assert.deepEqual(cleanedSecond.result?.cleaned_session_ids, [secondStarted.descriptor.terminal_session_id])
+})
+
+test("BackboneSession terminal interactions shape ended-session failures as unsupported cases", async () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-4",
+    rootDir: "/tmp",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({ workspace })
+  const session = backbone.openSession({ sessionId: "s-4", workspaceRoot: "/tmp" })
+  await session.terminals.cleanup({ scope: "all" })
+
+  const started = await session.terminals.start({
+    command: ["/bin/bash", "-lc", "printf 'done\\n'; exit 0"],
+  })
+  assert.ok(started.session)
+  assert.ok(started.descriptor)
+  if (!started.session || !started.descriptor) {
+    throw new Error("expected started terminal session")
+  }
+
+  await started.session.poll({ settleMs: 25 })
+  const cleaned = await started.session.cleanup()
+  assert.ok(cleaned.result)
+
+  const interaction = await session.terminals.interact({
+    terminalSessionId: started.descriptor.terminal_session_id,
+    interactionKind: "stdin",
+    inputText: "status\n",
+  })
+  assert.equal(interaction.interaction, null)
+  assert.equal(interaction.outputDeltas.length, 0)
+  assert.equal(interaction.unsupportedCase?.reason_code, "terminal_interaction_failed")
+  assert.equal(
+    interaction.unsupportedCase?.metadata?.terminal_session_id,
+    started.descriptor.terminal_session_id,
+  )
+
+  const ended = await session.terminals.get({
+    terminalSessionId: started.descriptor.terminal_session_id,
+  })
+  assert.ok(ended.session)
+  assert.equal(ended.session?.status, "ended")
+  assert.equal(ended.session?.summary().lastEndState, "cleaned_up")
 })

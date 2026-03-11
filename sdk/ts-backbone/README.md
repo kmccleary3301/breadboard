@@ -18,7 +18,7 @@ Current scope:
 - support-claim generation
 - execution-profile-aware support classification
 - projection-profile exposure
-- terminal registry reduction and cleanup result construction through `BackboneSession.terminals`
+- terminal session lifecycle, registry reduction, session lookup/listing, and cleanup result construction through `BackboneSession.terminals`
 - effective tool-surface construction through `BackboneSession.tools`
 
 Hosts should treat `SupportClaim` as the public truth for:
@@ -29,7 +29,7 @@ Hosts should treat `SupportClaim` as the public truth for:
 
 Hosts should treat:
 - `BackboneSession.terminals`
-  as the public product-layer entrypoint for persistent terminal registry reduction and cleanup result construction
+  as the public product-layer entrypoint for persistent terminal session lifecycle, registry/listing views, and cleanup result construction
 - `BackboneSession.tools`
   as the public product-layer entrypoint for effective tool-surface construction
 

@@ -651,6 +651,17 @@
         "effective_tool_surface/codex_background_hidden_terminal_surface_fixture.json"
       ],
       "notes": "Codex-shaped effective tool surface where terminal tools are hidden by execution-profile or driver support."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "codex_background_dead_session_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "unsupported_case/codex_background_dead_session_fixture.json"
+      ],
+      "notes": "Codex-style dead-session interaction failure shaped through the public unsupported-case contract instead of a raw driver exception."
     }
   ]
 }
