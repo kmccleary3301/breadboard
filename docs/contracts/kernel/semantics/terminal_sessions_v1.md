@@ -143,6 +143,7 @@ several `reference-engine` rows for:
 - mixed-state listing
 - cleanup
 - cleanup after exit
+- unknown-session lookup failure shaping
 - dead-session interaction failure shaping
 - running-summary projection with one active session and multiple recently ended sessions
 

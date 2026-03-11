@@ -709,6 +709,13 @@ export function createBackboneTerminalApi(options: {
               summary: `Terminal session ${input.terminalSessionId} has already ended.`,
               metadata: { terminal_session_id: input.terminalSessionId },
             })
+          : !sessionView
+            ? buildUnsupportedTerminalCase({
+                profileId: input.executionProfileId ?? options.workspace.defaultExecutionProfileId,
+                reasonCode: "terminal_session_not_found",
+                summary: `Terminal session ${input.terminalSessionId} was not found in the current registry view.`,
+                metadata: { terminal_session_id: input.terminalSessionId },
+              })
           : snapshotResult.unsupportedCase
       return {
         supportClaim: snapshotResult.supportClaim,

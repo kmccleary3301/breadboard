@@ -350,3 +350,22 @@ test("BackboneSession terminal interactions shape ended-session failures as unsu
   assert.equal(ended.session?.status, "ended")
   assert.equal(ended.session?.summary().lastEndState, "cleaned_up")
 })
+
+test("BackboneSession terminal lookup shapes unknown sessions as unsupported cases", async () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-5",
+    rootDir: "/tmp",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({ workspace })
+  const session = backbone.openSession({ sessionId: "s-5", workspaceRoot: "/tmp" })
+  await session.terminals.cleanup({ scope: "all" })
+
+  const missing = await session.terminals.get({
+    terminalSessionId: "term-missing-1",
+  })
+  assert.equal(missing.session, null)
+  assert.equal(missing.snapshot?.active_sessions.length, 0)
+  assert.equal(missing.unsupportedCase?.reason_code, "terminal_session_not_found")
+  assert.equal(missing.unsupportedCase?.metadata?.terminal_session_id, "term-missing-1")
+})

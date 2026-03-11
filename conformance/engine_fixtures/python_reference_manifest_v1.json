@@ -666,6 +666,17 @@
     {
       "engineFamily": "python_reference",
       "engineRef": "working-tree",
+      "scenarioId": "codex_background_unknown_session_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "unsupported_case/codex_background_unknown_session_fixture.json"
+      ],
+      "notes": "Codex-style unknown-session lookup failure shaped through the public unsupported-case contract rather than a null/opaque host response."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
       "scenarioId": "codex_background_terminal_mixed_state_list_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "projection-equal",

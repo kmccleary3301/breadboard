@@ -114,6 +114,22 @@ def test_v2_loader_preserves_phase14_firecrawl_toolpack_example(monkeypatch):
     assert conf["tool_bindings"][3]["exposure"] == "hidden_provider_native"
 
 
+def test_v2_loader_preserves_phase14_cuda_toolpack_example(monkeypatch):
+    cfg = Path(__file__).resolve().parents[1] / "agent_configs" / "misc" / "cuda_profiler_toolpack_phase14_v1.yaml"
+    monkeypatch.setenv("AGENT_SCHEMA_V2_ENABLED", "1")
+    conf = load_agent_config(str(cfg))
+    assert conf["tool_packs"]["cuda-profiler"]["tool_ids"] == [
+        "cuda.trace",
+        "cuda.flamegraph",
+        "cuda.memcheck",
+    ]
+    assert conf["tool_bindings"][0]["binding_kind"] == "sandbox"
+    assert conf["tool_bindings"][0]["fallback_binding_ids"] == ["cuda.trace.sidecar_fallback"]
+    assert conf["tool_bindings"][2]["binding_kind"] == "sandbox"
+    assert conf["tool_bindings"][3]["binding_kind"] == "delegated"
+    assert conf["tool_bindings"][4]["exposure"] == "hidden_provider_native"
+
+
 def test_v2_loader_legacy_fallback(tmp_path, monkeypatch):
     legacy = tmp_path / "legacy.yaml"
     legacy.write_text("providers: {}\n")

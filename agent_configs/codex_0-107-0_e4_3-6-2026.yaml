@@ -300,7 +300,8 @@ terminal_sessions:
     # Dead/unknown session interactions should not escape as raw driver exceptions on the public
     # host path. BreadBoard now shapes them through `bb.unsupported_case.v1`, carrying the
     # session id and attempted interaction kind so Codex-style hosts can present a coherent
-    # "that background process is gone" story without losing inspectability.
+    # "that background process is gone" story without losing inspectability. Unknown-session
+    # lookups are frozen the same way instead of silently returning a null-ish product surface.
     dead_session_contract: bb.unsupported_case.v1
     host_summary: explicit
   registry_projection:
@@ -317,6 +318,7 @@ terminal_sessions:
   # - list
   # - multi-session list
   # - cleanup
+  # - unknown-session lookup failure shaping
   # - conformance/engine_fixtures/terminal_session/codex_background_*_fixture.json
   # - conformance/engine_fixtures/effective_tool_surface/codex_background_terminal_surface_fixture.json
 

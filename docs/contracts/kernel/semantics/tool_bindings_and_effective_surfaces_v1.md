@@ -136,3 +136,5 @@ Tracked example note:
 - `agent_configs/misc/cuda_profiler_toolpack_phase14_v1.yaml` is now the parallel
   sandbox-oriented reference config for CUDA tracing / flamegraph tooling with delegated fallback
   and execution-profile-sensitive visibility
+- both examples are now schema-loader validated so they function as real reference configs,
+  not just prose-oriented sketches
