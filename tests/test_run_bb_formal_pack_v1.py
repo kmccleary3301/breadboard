@@ -49,6 +49,8 @@ def test_numbertheory_exk2pow_prompt_includes_prime_power_guidance() -> None:
     assert "have hu_eq_mul : u = v * 2^(t + 1) := by" in prompt
     assert "use `exact hu_eq_mul`, not `hu_eq_mul.symm`" in prompt
     assert "exact (Nat.not_lt_of_ge hv_le) hltv" in prompt
+    assert "Do not use `sq_lt_sq.mpr` on naturals" in prompt
+    assert "have ha2_lt_hb2 : a^2 < b^2 := by gcongr" in prompt
     assert "exact Nat.mul_comm a (a + 1)" in prompt
     assert "Do not rebuild the evenness witnesses manually" in prompt
     assert "simp [pow_succ, even_iff_two_dvd]" in prompt
