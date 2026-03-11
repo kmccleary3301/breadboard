@@ -418,6 +418,8 @@ test("Host Kit can build terminal and tool-surface views", () => {
   assert.equal(terminalView.activeSessions[0]?.commandSummary, "bash -lc sleep 30")
   assert.equal(terminalView.activeCount, 1)
   assert.equal(terminalView.endedCount, 1)
+  assert.equal(terminalView.sessionCount, 1)
+  assert.deepEqual(terminalView.activeSessionIds, ["term-1"])
   assert.equal(terminalView.support?.canList, true)
 
   const workspace = createWorkspace({
@@ -755,7 +757,7 @@ test("Host Kit can derive a live terminal registry view from Backbone", async ()
     ...session,
     terminals: {
       ...session.terminals,
-      async list() {
+      async listViews() {
         return {
           supportClaim: session.terminals.classify({}),
           unsupportedCase: undefined,
@@ -772,8 +774,98 @@ test("Host Kit can derive a live terminal registry view from Backbone", async ()
                 continuation_scope: "model" as const,
               },
             ],
-            ended_session_ids: [],
+            ended_session_ids: ["term-live-2"],
           },
+          sessions: [
+            {
+              descriptor: {
+                schema_version: "bb.terminal_session_descriptor.v1" as const,
+                terminal_session_id: "term-live-1",
+                command: ["node", "-e", "console.log('ready')"],
+                stream_mode: "pipes" as const,
+                persistence_scope: "thread" as const,
+                continuation_scope: "model" as const,
+              },
+              supportClaim: session.terminals.classify({}),
+              executionProfileId: "trusted_local" as const,
+              status: "running" as const,
+              lastSnapshot: null,
+              lastEnd: null,
+              summary() {
+                return {
+                  terminalSessionId: "term-live-1",
+                  commandSummary: "node -e console.log('ready')",
+                  status: "running" as const,
+                  publicHandles: [],
+                  outputPreview: "ready",
+                  outputChunkCount: 1,
+                  persistenceScope: "thread" as const,
+                  continuationScope: "model" as const,
+                  lastSnapshotId: "snap-live-1",
+                  lastEndState: null,
+                  exitCode: null,
+                  durationMs: null,
+                  artifactRefCount: 0,
+                  evidenceRefCount: 0,
+                }
+              },
+              async refresh() { throw new Error("not used in test") },
+              async poll() { throw new Error("not used in test") },
+              async writeStdin() { throw new Error("not used in test") },
+              async sendSignal() { throw new Error("not used in test") },
+              async snapshot() { throw new Error("not used in test") },
+              async cleanup() { throw new Error("not used in test") },
+            },
+            {
+              descriptor: {
+                schema_version: "bb.terminal_session_descriptor.v1" as const,
+                terminal_session_id: "term-live-2",
+                command: ["bash", "-lc", "sleep 0.1"],
+                stream_mode: "pipes" as const,
+                persistence_scope: "thread" as const,
+                continuation_scope: "both" as const,
+              },
+              supportClaim: session.terminals.classify({}),
+              executionProfileId: "trusted_local" as const,
+              status: "ended" as const,
+              lastSnapshot: null,
+              lastEnd: {
+                schema_version: "bb.terminal_session_end.v1" as const,
+                terminal_session_id: "term-live-2",
+                startup_call_id: null,
+                causing_call_id: null,
+                terminal_state: "completed" as const,
+                exit_code: 0,
+                duration_ms: 100,
+                artifact_refs: [],
+                evidence_refs: [],
+              },
+              summary() {
+                return {
+                  terminalSessionId: "term-live-2",
+                  commandSummary: "bash -lc sleep 0.1",
+                  status: "ended" as const,
+                  publicHandles: [],
+                  outputPreview: "",
+                  outputChunkCount: 0,
+                  persistenceScope: "thread" as const,
+                  continuationScope: "both" as const,
+                  lastSnapshotId: "snap-live-1",
+                  lastEndState: "completed" as const,
+                  exitCode: 0,
+                  durationMs: 100,
+                  artifactRefCount: 0,
+                  evidenceRefCount: 0,
+                }
+              },
+              async refresh() { throw new Error("not used in test") },
+              async poll() { throw new Error("not used in test") },
+              async writeStdin() { throw new Error("not used in test") },
+              async sendSignal() { throw new Error("not used in test") },
+              async snapshot() { throw new Error("not used in test") },
+              async cleanup() { throw new Error("not used in test") },
+            },
+          ],
         }
       },
     },
@@ -786,10 +878,15 @@ test("Host Kit can derive a live terminal registry view from Backbone", async ()
   }
   assert.ok(liveView.activeSessions.length >= 1)
   assert.equal(liveView.activeSessions[0]?.terminalSessionId, "term-live-1")
-  assert.equal(liveView.activeSessions[0]?.support, null)
+  assert.equal(liveView.activeSessions[0]?.support?.level, "supported")
   assert.equal(liveView.support?.canList, true)
   assert.equal(liveView.activeCount, 1)
-  assert.equal(liveView.endedCount, 0)
+  assert.equal(liveView.endedCount, 1)
+  assert.equal(liveView.sessionCount, 2)
+  assert.deepEqual(liveView.activeSessionIds, ["term-live-1"])
+  assert.deepEqual(liveView.endedSessionIds, ["term-live-2"])
+  assert.equal(liveView.sessions.length, 2)
+  assert.equal(liveView.endedSessions[0]?.terminalSessionId, "term-live-2")
 })
 
 test("Host Kit can resolve terminal session, output, and cleanup views consistently", () => {

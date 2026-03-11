@@ -123,6 +123,14 @@ Phase 14 now also includes the first Codex-shaped parity-prep evidence bundle fo
 - cleanup
 - cleanup after exit
 
+The shipped host/product layer now goes beyond raw registry reduction:
+
+- `@breadboard/backbone` can return live terminal session objects and multi-session views
+- `@breadboard/host-kits` can project live registry views that preserve both active session
+  summaries and recently ended session summaries
+- `@breadboard/workspace` can shape terminal end payloads into artifact/evidence-friendly
+  product views
+
 The generic reference fixtures remain `draft-semantic`, but the Codex-shaped lanes now include
 several `reference-engine` rows for:
 
@@ -136,6 +144,7 @@ several `reference-engine` rows for:
 - cleanup
 - cleanup after exit
 - dead-session interaction failure shaping
+- running-summary projection with one active session and multiple recently ended sessions
 
 That means the surface has moved beyond "planned" and beyond pure parity-prep shape checking.
 

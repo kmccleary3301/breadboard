@@ -184,6 +184,8 @@ tool_packs:
     #   dead-session interaction failure shaping
     # - mixed-state list and cleanup-after-exit rows are also frozen as reference-engine
     #   semantic lanes so hosts can reason about "recently ended" sessions without guessing
+    # - a running-summary lane is now frozen too, so the projection surface can represent one
+    #   active session while still carrying multiple recently ended sessions in a stable way
     # - full frozen E4 parity is still not claimed
     description: upstream Codex persistent terminal-session surface
     tool_ids:
@@ -278,6 +280,13 @@ terminal_sessions:
     # - `startup_call_id` groups the session under the originating exec-style tool call
     # - `causing_call_id` records the interaction that produced a later write/poll/signal event
     # This is how BreadBoard stays general while still being able to project Codex-style grouping.
+  host_projection:
+    # The public product layer now exposes:
+    # - live multi-session views through Backbone
+    # - host-friendly registry/session/end summaries through Host Kit
+    # - shaped artifact/evidence references through Workspace
+    # This keeps terminal UX/product logic inspectable without turning host projections into
+    # kernel truth.
     startup_call_grouping: explicit
     causal_interaction_ref: explicit
   poll_projection:

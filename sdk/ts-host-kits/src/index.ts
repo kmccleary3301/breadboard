@@ -194,7 +194,11 @@ export interface HostTerminalRegistryView {
   readonly snapshotId: string
   readonly activeCount: number
   readonly endedCount: number
+  readonly sessionCount: number
+  readonly sessions: HostTerminalSessionView[]
   readonly activeSessions: HostTerminalSessionView[]
+  readonly endedSessions: HostTerminalSessionView[]
+  readonly activeSessionIds: readonly string[]
   readonly endedSessionIds: readonly string[]
   readonly support: HostTerminalSupportSummaryView | null
 }
@@ -504,13 +508,23 @@ export function buildTerminalRegistryView(
   snapshot: TerminalRegistrySnapshotV1,
   options: {
     readonly support?: HostTerminalSupportSummaryView | null
+    readonly sessions?: readonly HostTerminalSessionView[]
   } = {},
 ): HostTerminalRegistryView {
+  const projectedSessions = options.sessions
+    ? [...options.sessions]
+    : snapshot.active_sessions.map((session) => buildTerminalSessionView(session))
+  const activeSessions = projectedSessions.filter((session) => session.status === "running")
+  const endedSessions = projectedSessions.filter((session) => session.status === "ended")
   return {
     snapshotId: snapshot.snapshot_id,
     activeCount: snapshot.active_sessions.length,
     endedCount: (snapshot.ended_session_ids ?? []).length,
-    activeSessions: snapshot.active_sessions.map((session) => buildTerminalSessionView(session)),
+    sessionCount: projectedSessions.length,
+    sessions: projectedSessions,
+    activeSessions,
+    endedSessions,
+    activeSessionIds: activeSessions.map((session) => session.terminalSessionId),
     endedSessionIds: snapshot.ended_session_ids ?? [],
     support: options.support ?? null,
   }
@@ -764,9 +778,14 @@ export async function buildBackboneLiveTerminalRegistryView(
   session: BackboneSession,
   input?: { executionProfileId?: import("@breadboard/workspace").ExecutionProfileId },
 ): Promise<HostTerminalRegistryView | null> {
-  const result = await session.terminals.list(input)
+  const result = await session.terminals.listViews(input)
   const support = buildTerminalSupportSummaryView(result.supportClaim)
-  return result.snapshot ? buildTerminalRegistryView(result.snapshot, { support }) : null
+  return result.snapshot
+    ? buildTerminalRegistryView(result.snapshot, {
+        support,
+        sessions: result.sessions.map((sessionView) => buildBackboneTerminalSessionView(sessionView)),
+      })
+    : null
 }
 
 /**

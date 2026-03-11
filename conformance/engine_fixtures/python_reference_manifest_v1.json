@@ -688,6 +688,17 @@
     {
       "engineFamily": "python_reference",
       "engineRef": "working-tree",
+      "scenarioId": "codex_background_running_summary_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "projection-equal",
+      "evidence": [
+        "terminal_session/codex_background_running_summary_fixture.json"
+      ],
+      "notes": "Codex-shaped running summary lane with one active session and multiple recently ended sessions."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
       "scenarioId": "codex_background_fallback_terminal_surface_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "projection-equal",
