@@ -71,6 +71,19 @@ export function shapeTerminalOutput(
   }
 }
 
+export function shapeTerminalOutputDeltas(
+  outputDeltas: readonly { readonly chunk_b64: string }[],
+  options: ToolOutputShaperOptions = {},
+): TerminalOutputShape {
+  const text = outputDeltas
+    .map((delta) => Buffer.from(delta.chunk_b64, "base64").toString("utf8"))
+    .join("")
+  return shapeTerminalOutput(text, {
+    ...options,
+    chunkCount: outputDeltas.length,
+  })
+}
+
 function defaultProfileForCapabilities(capabilities: WorkspaceCapabilitySet): ExecutionProfileId {
   if (capabilities.canRunRemoteIsolated) return "remote_isolated"
   if (capabilities.canRunSandboxedLocal) return "sandboxed_local"
@@ -150,6 +163,12 @@ export function createWorkspace(options: WorkspaceOptions): Workspace {
     },
     shapeTerminalOutput(text: string, shapeOptions?: ToolOutputShaperOptions & { chunkCount?: number }): TerminalOutputShape {
       return shapeTerminalOutput(text, shapeOptions)
+    },
+    shapeTerminalOutputDeltas(
+      outputDeltas: readonly { readonly chunk_b64: string }[],
+      shapeOptions?: ToolOutputShaperOptions,
+    ): TerminalOutputShape {
+      return shapeTerminalOutputDeltas(outputDeltas, shapeOptions)
     },
     supportsProfile(profileId: ExecutionProfileId): boolean {
       return supportsExecutionProfile(options.capabilitySet, profileId)

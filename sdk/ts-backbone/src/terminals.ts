@@ -44,16 +44,95 @@ import type {
 } from "./types.js"
 import { buildSupportClaim } from "./support.js"
 
+function decodeTerminalOutputText(outputDeltas: readonly TerminalOutputDeltaV1[]): string {
+  return outputDeltas
+    .map((delta) => Buffer.from(delta.chunk_b64, "base64").toString("utf8"))
+    .join("")
+}
+
 function createTerminalSessionView(options: {
   api: BackboneTerminalApi
   descriptor: TerminalSessionDescriptorV1
   supportClaim: SupportClaim
   executionProfileId: ExecutionProfileId
+  workspace: Workspace
+  initialOutputDeltas?: readonly TerminalOutputDeltaV1[]
+  initialEnd?: import("@breadboard/kernel-contracts").TerminalSessionEndV1 | undefined
 }): BackboneTerminalSessionView {
+  let lastSnapshot: TerminalRegistrySnapshotV1 | null = null
+  let lastEnd = options.initialEnd ?? null
+  let outputText = decodeTerminalOutputText(options.initialOutputDeltas ?? [])
+  let outputChunkCount = options.initialOutputDeltas?.length ?? 0
+
+  function appendOutput(outputDeltas: readonly TerminalOutputDeltaV1[]): void {
+    if (outputDeltas.length === 0) return
+    outputText += decodeTerminalOutputText(outputDeltas)
+    outputChunkCount += outputDeltas.length
+  }
+
+  function applySnapshot(snapshot: TerminalRegistrySnapshotV1 | null): void {
+    lastSnapshot = snapshot
+  }
+
+  function buildSummary() {
+    const status: "running" | "ended" = lastEnd ? "ended" : "running"
+    const outputPreview =
+      outputText.length === 0
+        ? ""
+        : options.workspace.shapeTerminalOutput(outputText, {
+            chunkCount: outputChunkCount,
+          }).userVisibleText
+    return {
+      terminalSessionId: options.descriptor.terminal_session_id,
+      commandSummary: options.descriptor.command.join(" "),
+      status,
+      outputPreview,
+      outputChunkCount,
+      persistenceScope: options.descriptor.persistence_scope,
+      continuationScope: options.descriptor.continuation_scope,
+      lastSnapshotId: lastSnapshot?.snapshot_id ?? null,
+      lastEndState: lastEnd?.terminal_state ?? null,
+    }
+  }
+
   return {
     descriptor: options.descriptor,
     supportClaim: options.supportClaim,
     executionProfileId: options.executionProfileId,
+    get status() {
+      return lastEnd ? "ended" : "running"
+    },
+    get lastSnapshot() {
+      return lastSnapshot
+    },
+    get lastEnd() {
+      return lastEnd
+    },
+    summary() {
+      return buildSummary()
+    },
+    async refresh() {
+      const result = await options.api.snapshot({
+        executionProfileId: options.executionProfileId,
+      })
+      applySnapshot(result.snapshot)
+      if (result.snapshot?.ended_session_ids?.includes(options.descriptor.terminal_session_id)) {
+        lastEnd =
+          lastEnd ??
+          ({
+            schema_version: "bb.terminal_session_end.v1",
+            terminal_session_id: options.descriptor.terminal_session_id,
+            startup_call_id: options.descriptor.startup_call_id ?? null,
+            causing_call_id: null,
+            terminal_state: "completed",
+            exit_code: null,
+            duration_ms: 0,
+            artifact_refs: [],
+            evidence_refs: [],
+          } as const)
+      }
+      return result
+    },
     poll(input = {}) {
       return options.api.interact({
         terminalSessionId: options.descriptor.terminal_session_id,
@@ -61,6 +140,12 @@ function createTerminalSessionView(options: {
         interactionKind: "poll",
         settleMs: input.settleMs,
         causingCallId: input.causingCallId ?? null,
+      }).then((result) => {
+        appendOutput(result.outputDeltas)
+        if (result.end) {
+          lastEnd = result.end
+        }
+        return result
       })
     },
     writeStdin(inputText, input = {}) {
@@ -71,6 +156,12 @@ function createTerminalSessionView(options: {
         inputText,
         causingCallId: input.causingCallId ?? null,
         settleMs: input.settleMs,
+      }).then((result) => {
+        appendOutput(result.outputDeltas)
+        if (result.end) {
+          lastEnd = result.end
+        }
+        return result
       })
     },
     sendSignal(signal, input = {}) {
@@ -80,11 +171,20 @@ function createTerminalSessionView(options: {
         interactionKind: "signal",
         signal,
         causingCallId: input.causingCallId ?? null,
+      }).then((result) => {
+        appendOutput(result.outputDeltas)
+        if (result.end) {
+          lastEnd = result.end
+        }
+        return result
       })
     },
     snapshot() {
       return options.api.snapshot({
         executionProfileId: options.executionProfileId,
+      }).then((result) => {
+        applySnapshot(result.snapshot)
+        return result
       })
     },
     cleanup(input = {}) {
@@ -93,6 +193,23 @@ function createTerminalSessionView(options: {
         executionProfileId: options.executionProfileId,
         sessionIds: [options.descriptor.terminal_session_id],
         signal: input.signal ?? null,
+      }).then((result) => {
+        if (result.result?.cleaned_session_ids.includes(options.descriptor.terminal_session_id)) {
+          lastEnd =
+            lastEnd ??
+            ({
+              schema_version: "bb.terminal_session_end.v1",
+              terminal_session_id: options.descriptor.terminal_session_id,
+              startup_call_id: options.descriptor.startup_call_id ?? null,
+              causing_call_id: null,
+              terminal_state: "cleaned_up",
+              exit_code: null,
+              duration_ms: 0,
+              artifact_refs: [],
+              evidence_refs: [],
+            } as const)
+        }
+        return result
       })
     },
   }
@@ -341,6 +458,9 @@ export function createBackboneTerminalApi(options: {
           descriptor: result.descriptor,
           supportClaim: resolved.claim,
           executionProfileId,
+          workspace: options.workspace,
+          initialOutputDeltas: result.outputDeltas,
+          initialEnd: result.end,
         }),
       }
     },
@@ -404,6 +524,9 @@ export function createBackboneTerminalApi(options: {
         supportClaim: resolved.claim,
         snapshot: await resolved.driver.snapshotTerminalRegistry(),
       }
+    },
+    async list(input) {
+      return api.snapshot(input)
     },
     async cleanup(input) {
       const executionProfileId = input.executionProfileId ?? options.workspace.defaultExecutionProfileId

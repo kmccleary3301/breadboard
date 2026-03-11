@@ -65,6 +65,10 @@ export interface Workspace {
   readonly defaultExecutionProfile: ExecutionProfile
   shapeToolOutput(text: string, options?: ToolOutputShaperOptions): ToolOutputShape
   shapeTerminalOutput(text: string, options?: ToolOutputShaperOptions & { chunkCount?: number }): TerminalOutputShape
+  shapeTerminalOutputDeltas(
+    outputDeltas: readonly { readonly chunk_b64: string }[],
+    options?: ToolOutputShaperOptions,
+  ): TerminalOutputShape
   supportsProfile(profileId: ExecutionProfileId): boolean
   getExecutionProfile(profileId?: ExecutionProfileId): ExecutionProfile
 }

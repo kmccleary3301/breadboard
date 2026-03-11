@@ -181,17 +181,41 @@ test("BackboneSession can classify and drive a local terminal session lifecycle"
   })
   assert.ok(started.descriptor)
   assert.ok(started.session)
-  assert.equal(started.session?.descriptor.terminal_session_id, started.descriptor?.terminal_session_id)
-  assert.equal(started.session?.supportClaim.level, "supported")
-  assert.equal(started.session?.executionProfileId, "trusted_local")
+  if (!started.session) {
+    throw new Error("expected terminal session view")
+  }
+  const terminalSession = started.session
+  assert.equal(terminalSession.descriptor.terminal_session_id, started.descriptor?.terminal_session_id)
+  assert.equal(terminalSession.supportClaim.level, "supported")
+  assert.equal(terminalSession.executionProfileId, "trusted_local")
+  assert.equal(terminalSession.status, "running")
+  assert.equal(terminalSession.lastSnapshot, null)
+  assert.equal(terminalSession.lastEnd, null)
+  assert.equal(terminalSession.summary().status, "running")
+  assert.match(terminalSession.summary().commandSummary, /printf 'ready/)
 
-  const interacted = await started.session!.poll({ settleMs: 25 })
+  const interacted = await terminalSession.poll({ settleMs: 25 })
   assert.ok(interacted.outputDeltas.length >= 1)
+  assert.equal(terminalSession.summary().outputChunkCount, interacted.outputDeltas.length)
+  assert.match(terminalSession.summary().outputPreview, /ready/)
 
-  const snapshot = await started.session!.snapshot()
+  const snapshot = await terminalSession.snapshot()
   assert.ok(snapshot.snapshot)
+  if (!snapshot.snapshot) {
+    throw new Error("expected terminal snapshot")
+  }
+  assert.equal(terminalSession.summary().lastSnapshotId, snapshot.snapshot.snapshot_id)
+  const listed = await session.terminals.list()
+  assert.ok(listed.snapshot)
+  assert.ok(listed.snapshot?.active_sessions.some((item) => item.terminal_session_id === terminalSession.descriptor.terminal_session_id))
 
-  const cleanup = await started.session!.cleanup()
+  const refreshed = await terminalSession.refresh()
+  assert.equal(refreshed.snapshot?.snapshot_id, terminalSession.summary().lastSnapshotId)
+
+  const cleanup = await terminalSession.cleanup()
   assert.ok(cleanup.result)
-  assert.deepEqual(cleanup.result.cleaned_session_ids, [started.session!.descriptor.terminal_session_id])
+  assert.deepEqual(cleanup.result.cleaned_session_ids, [terminalSession.descriptor.terminal_session_id])
+  assert.equal(terminalSession.status, "ended")
+  assert.equal(terminalSession.summary().status, "ended")
+  assert.equal(terminalSession.summary().lastEndState, "cleaned_up")
 })

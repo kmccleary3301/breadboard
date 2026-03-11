@@ -150,10 +150,27 @@ export interface BackboneTerminalCleanupResult {
   readonly result: TerminalCleanupResultV1 | null
 }
 
+export interface BackboneTerminalSessionSummary {
+  readonly terminalSessionId: string
+  readonly commandSummary: string
+  readonly status: "running" | "ended"
+  readonly outputPreview: string
+  readonly outputChunkCount: number
+  readonly persistenceScope: TerminalSessionDescriptorV1["persistence_scope"]
+  readonly continuationScope: TerminalSessionDescriptorV1["continuation_scope"]
+  readonly lastSnapshotId: string | null
+  readonly lastEndState: import("@breadboard/kernel-contracts").TerminalSessionEndV1["terminal_state"] | null
+}
+
 export interface BackboneTerminalSessionView {
   readonly descriptor: TerminalSessionDescriptorV1
   readonly supportClaim: SupportClaim
   readonly executionProfileId: ExecutionProfileId
+  readonly status: "running" | "ended"
+  readonly lastSnapshot: TerminalRegistrySnapshotV1 | null
+  readonly lastEnd: import("@breadboard/kernel-contracts").TerminalSessionEndV1 | null
+  summary(): BackboneTerminalSessionSummary
+  refresh(): Promise<BackboneTerminalSnapshotResult>
   poll(options?: { settleMs?: number; causingCallId?: string | null }): Promise<BackboneTerminalInteractionResult>
   writeStdin(
     inputText: string,
@@ -189,6 +206,7 @@ export interface BackboneTerminalApi {
   start(input: BackboneTerminalStartInput): Promise<BackboneTerminalStartResult>
   interact(input: BackboneTerminalInteractionInput): Promise<BackboneTerminalInteractionResult>
   snapshot(input?: { executionProfileId?: ExecutionProfileId }): Promise<BackboneTerminalSnapshotResult>
+  list(input?: { executionProfileId?: ExecutionProfileId }): Promise<BackboneTerminalSnapshotResult>
   cleanup(input: BackboneTerminalCleanupInput): Promise<BackboneTerminalCleanupResult>
 }
 

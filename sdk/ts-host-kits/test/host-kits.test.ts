@@ -5,6 +5,8 @@ import {
   buildBackboneTerminalCleanupView,
   buildBackboneTerminalOutputView,
   buildBackboneEffectiveToolSurfaceView,
+  buildBackboneTerminalSessionView,
+  buildBackboneLiveTerminalRegistryView,
   buildBackboneTerminalCleanupResult,
   buildBackboneTerminalRegistryView,
   buildTerminalCleanupView,
@@ -145,6 +147,9 @@ test("createProviderHostSession preserves transcript continuity and projection s
           throw new Error("not used in this test")
         },
         async snapshot() {
+          throw new Error("not used in this test")
+        },
+        async list() {
           throw new Error("not used in this test")
         },
         async cleanup() {
@@ -427,6 +432,60 @@ test("Host Kit can project terminal and tool surfaces through Backbone", () => {
   assert.equal(outputView.text, "ready\\n")
   assert.equal(outputView.shape?.chunkCount, 1)
 
+  const view = buildBackboneTerminalSessionView({
+    descriptor: {
+      schema_version: "bb.terminal_session_descriptor.v1",
+      terminal_session_id: "term-1",
+      command: ["python", "-m", "http.server"],
+      stream_mode: "pipes",
+      persistence_scope: "thread",
+      continuation_scope: "both",
+    },
+    supportClaim: session.terminals.classify({}),
+    executionProfileId: "trusted_local",
+    status: "running",
+    lastSnapshot: {
+      schema_version: "bb.terminal_registry_snapshot.v1",
+      snapshot_id: "snap-1",
+      active_sessions: [],
+      ended_session_ids: [],
+    },
+    lastEnd: null,
+    summary() {
+      return {
+        terminalSessionId: "term-1",
+        commandSummary: "python -m http.server",
+        status: "running",
+        outputPreview: "ready",
+        outputChunkCount: 1,
+        persistenceScope: "thread",
+        continuationScope: "both",
+        lastSnapshotId: "snap-1",
+        lastEndState: null,
+      }
+    },
+    async refresh() {
+      throw new Error("not used in this test")
+    },
+    async poll() {
+      throw new Error("not used in this test")
+    },
+    async writeStdin() {
+      throw new Error("not used in this test")
+    },
+    async sendSignal() {
+      throw new Error("not used in this test")
+    },
+    async snapshot() {
+      throw new Error("not used in this test")
+    },
+    async cleanup() {
+      throw new Error("not used in this test")
+    },
+  })
+  assert.equal(view.outputPreview, "ready")
+  assert.equal(view.lastSnapshotId, "snap-1")
+
   const surfaceView = buildBackboneEffectiveToolSurfaceView(session, {
     surfaceId: "surface-1",
     bindings: [
@@ -449,6 +508,52 @@ test("Host Kit can project terminal and tool surfaces through Backbone", () => {
     ],
   })
   assert.deepEqual(surfaceView.visibleToolIds, ["firecrawl.local"])
+})
+
+test("Host Kit can derive a live terminal registry view from Backbone", async () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-live-term",
+    rootDir: "/tmp/project",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({ workspace })
+  const session = backbone.openSession({ sessionId: "session-live-term" })
+
+  const testSession = {
+    ...session,
+    terminals: {
+      ...session.terminals,
+      async list() {
+        return {
+          supportClaim: session.terminals.classify({}),
+          unsupportedCase: undefined,
+          snapshot: {
+            schema_version: "bb.terminal_registry_snapshot.v1" as const,
+            snapshot_id: "snap-live-1",
+            active_sessions: [
+              {
+                schema_version: "bb.terminal_session_descriptor.v1" as const,
+                terminal_session_id: "term-live-1",
+                command: ["node", "-e", "console.log('ready')"],
+                stream_mode: "pipes" as const,
+                persistence_scope: "thread" as const,
+                continuation_scope: "model" as const,
+              },
+            ],
+            ended_session_ids: [],
+          },
+        }
+      },
+    },
+  }
+
+  const liveView = await buildBackboneLiveTerminalRegistryView(testSession)
+  assert.ok(liveView)
+  if (!liveView) {
+    throw new Error("expected terminal registry view")
+  }
+  assert.ok(liveView.activeSessions.length >= 1)
+  assert.equal(liveView.activeSessions[0]?.terminalSessionId, "term-live-1")
 })
 
 test("Host Kit can resolve terminal session, output, and cleanup views consistently", () => {

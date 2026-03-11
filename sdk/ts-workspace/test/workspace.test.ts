@@ -71,3 +71,17 @@ test("workspace exposes terminal output shaping", () => {
   assert.equal(shaped.userVisibleText, "hello")
   assert.equal(shaped.modelVisibleText, "hello")
 })
+
+test("workspace exposes terminal output delta shaping", () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-4",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const shaped = workspace.shapeTerminalOutputDeltas([
+    { chunk_b64: Buffer.from("hello\n", "utf8").toString("base64") },
+    { chunk_b64: Buffer.from("world\n", "utf8").toString("base64") },
+  ])
+  assert.equal(shaped.chunkCount, 2)
+  assert.equal(shaped.userVisibleText, "hello\nworld\n")
+  assert.equal(shaped.modelVisibleText, "hello\nworld\n")
+})

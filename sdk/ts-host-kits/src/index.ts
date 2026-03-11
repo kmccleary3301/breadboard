@@ -116,8 +116,13 @@ export interface HostResultMeta {
 export interface HostTerminalSessionView {
   readonly terminalSessionId: string
   readonly commandSummary: string
+  readonly status: "running" | "ended"
+  readonly outputPreview?: string | null
+  readonly outputChunkCount?: number
   readonly persistenceScope: string
   readonly continuationScope: string
+  readonly lastSnapshotId?: string | null
+  readonly lastEndState?: string | null
 }
 
 export interface HostTerminalOutputView {
@@ -389,12 +394,24 @@ export function buildTerminalRegistryView(
 
 export function buildTerminalSessionView(
   descriptor: TerminalSessionDescriptorV1,
+  options: {
+    readonly status?: "running" | "ended"
+    readonly outputPreview?: string | null
+    readonly outputChunkCount?: number
+    readonly lastSnapshotId?: string | null
+    readonly lastEndState?: string | null
+  } = {},
 ): HostTerminalSessionView {
   return {
     terminalSessionId: descriptor.terminal_session_id,
     commandSummary: descriptor.command.join(" "),
+    status: options.status ?? "running",
+    outputPreview: options.outputPreview ?? null,
+    outputChunkCount: options.outputChunkCount ?? 0,
     persistenceScope: descriptor.persistence_scope,
     continuationScope: descriptor.continuation_scope,
+    lastSnapshotId: options.lastSnapshotId ?? null,
+    lastEndState: options.lastEndState ?? null,
   }
 }
 
@@ -423,9 +440,23 @@ export function buildBackboneTerminalOutputView(
   session: BackboneSession,
   outputDeltas: readonly TerminalOutputDeltaV1[],
 ): HostTerminalOutputView {
-  return buildTerminalOutputView({
-    outputDeltas,
-    workspace: session.workspace,
+  const text = decodeTerminalOutputText(outputDeltas)
+  return {
+    text,
+    shape: session.workspace.shapeTerminalOutputDeltas(outputDeltas),
+  }
+}
+
+export function buildBackboneTerminalSessionView(
+  sessionView: import("@breadboard/backbone").BackboneTerminalSessionView,
+): HostTerminalSessionView {
+  const summary = sessionView.summary()
+  return buildTerminalSessionView(sessionView.descriptor, {
+    status: summary.status,
+    outputPreview: summary.outputPreview,
+    outputChunkCount: summary.outputChunkCount,
+    lastSnapshotId: summary.lastSnapshotId,
+    lastEndState: summary.lastEndState,
   })
 }
 
@@ -465,6 +496,14 @@ export function buildBackboneTerminalRegistryView(
   events: readonly import("@breadboard/kernel-contracts").KernelEventV1[],
 ): HostTerminalRegistryView {
   return buildTerminalRegistryView(session.terminals.reduceRegistry(events))
+}
+
+export async function buildBackboneLiveTerminalRegistryView(
+  session: BackboneSession,
+  input?: { executionProfileId?: import("@breadboard/workspace").ExecutionProfileId },
+): Promise<HostTerminalRegistryView | null> {
+  const result = await session.terminals.list(input)
+  return result.snapshot ? buildTerminalRegistryView(result.snapshot) : null
 }
 
 /**
