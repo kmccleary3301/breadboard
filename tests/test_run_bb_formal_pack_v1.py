@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import sys
+import tempfile
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run_bb_formal_pack_v1.py"
@@ -42,7 +43,9 @@ def test_numbertheory_exk2pow_prompt_includes_prime_power_guidance() -> None:
     )
 
     assert "(Nat.dvd_prime_pow Nat.prime_two).mp hu_dvd" in prompt
+    assert "simpa [u, v] using hk" in prompt
     assert "v - u = (b - a) * (a + b - 1)" in prompt
+    assert "write `n = m + t + 1`" in prompt
     assert "Prefer a short contradiction proof" in prompt
 
 
@@ -54,6 +57,33 @@ def test_other_tasks_do_not_get_numbertheory_specific_hint() -> None:
 
     assert "pow_dvd_pow_of_dvd" not in prompt
     assert "Do not use `rfl` to case-split" not in prompt
+
+
+def test_prompt_includes_repair_seed_and_error_context() -> None:
+    prompt = runner._build_prompt(
+        "mathd_algebra_171",
+        "import Mathlib\n\ntheorem mathd_algebra_171 : True := by\n  trivial\n",
+        prior_candidate="theorem mathd_algebra_171 : True := by\n  simp",
+        prior_error="unsolved goals\nx : ℕ\n⊢ True",
+    )
+
+    assert "Previous near-miss proof to repair instead of restarting from scratch" in prompt
+    assert "Most relevant Lean errors from the previous attempt" in prompt
+    assert "theorem mathd_algebra_171 : True := by" in prompt
+    assert "unsolved goals" in prompt
+
+
+def test_load_repair_seed_handles_missing_and_present_files() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        seed_dir = Path(tmpdir)
+        assert runner._load_repair_seed(seed_dir, "missing_task", ".lean") is None
+
+        proof_path = seed_dir / "mathd_algebra_171.lean"
+        proof_path.write_text("theorem mathd_algebra_171 : True := by\n  trivial\n", encoding="utf-8")
+
+        loaded = runner._load_repair_seed(seed_dir, "mathd_algebra_171", ".lean")
+        assert loaded is not None
+        assert "trivial" in loaded
 
 
 def test_workspace_root_is_forced_under_tmp() -> None:

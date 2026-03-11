@@ -45,8 +45,11 @@ TASK_HINTS = {
         "- Do not call `Nat.dvd_prime_pow` as if it took `hu_dvd` as a direct final argument; use the `.mp` form above.\n"
         "- Prefer a short contradiction proof, not a large parity/subgoal tree.\n"
         "- A clean route is by cases on `hab : a = b`.\n"
+        "- For `hu_dvd` and `hv_dvd`, use `hk` in the forward direction. `hk : 2^k = u * v`, so `refine ⟨v, ?_⟩; simpa [u, v] using hk` and `refine ⟨u, ?_⟩; simpa [u, v, Nat.mul_comm] using hk`.\n"
         "- When `u` and `v` are local `let` bindings, unfold them with `dsimp [u, v]` or `simpa [u, v]`; do not `rw [u, v]` because they are definitions, not rewrite lemmas.\n"
         "- In the equal case, rewrite `u = 2^m` to `a * (a + 1) = 2^m`. Then prove `a ∣ 2^m` and `a + 1 ∣ 2^m`, obtain `a = 2^i` and `a + 1 = 2^j`, and conclude `a = 1` because otherwise both `a` and `a + 1` are even.\n"
+        "- In that equal case, avoid brittle `simpa` on `a + a^2`; instead prove `a + a^2 = a * (a + 1)` separately with `ring` and then rewrite.\n"
+        "- For `a + 1 ∣ 2^m`, do not use `dvd_mul_left a (a + 1)` directly. Either use `dvd_mul_right (a + 1) a` with `Nat.mul_comm`, or give the witness `a` explicitly.\n"
         "- For the unequal case, first prove `Even a ↔ Even b` from the parity of `u` and `v`. Useful square-parity facts are:\n"
         "  `have hb2_even : Even (b^2) := by simpa [pow_two] using hb_even.mul_left b`\n"
         "  `have hb_even : Even b := by`\n"
@@ -56,9 +59,13 @@ TASK_HINTS = {
         "  `  exact (Nat.not_even_iff_odd.mpr hbo2) hb2`\n"
         "- To avoid broken `Even.sub` terms, use `Nat.even_add` as an equivalence. For example, `have h_even_u : Even a ↔ Even (b^2) := by simpa [u, Nat.even_add] using hu_even`.\n"
         "- Once `Even a ↔ Even b`, deduce `Even (a + b)` and therefore `¬ 2 ∣ a + b - 1` by a two-witness `omega` contradiction.\n"
-        "- Do not use `even_two.pow`; to prove `Even (2^m)` for positive `m`, rewrite `m = t + 1` with `Nat.exists_eq_succ_of_ne_zero` and then `simp [pow_succ, even_iff_two_dvd]`.\n"
+        "- First prove `1 < u` and `1 < v` from `a,b > 0`. Use these to rule out `m = 0` or `n = 0`; then rewrite `m = t + 1` and `n = t + 1` with `Nat.exists_eq_succ_of_ne_zero` before proving `Even (2^m)` and `Even (2^n)`.\n"
+        "- Build coprimality with `exact Nat.prime_two.coprime_iff_not_dvd.mpr hnot_two_dvd`; do not rewrite with `Nat.coprime_two_right`.\n"
         "- Then compare `u` and `v` by subtracting: `v - u = (b - a) * (a + b - 1)` when `a < b`, and symmetrically otherwise.\n"
         "- Split the unequal case directly with `lt_or_gt_of_ne hab`; do not use `wlog`.\n"
+        "- If `a < b`, first prove `m < n`; a safe route is contradiction from `n ≤ m` using `Nat.pow_le_pow_right (by omega)`, `u = 2^m`, `v = 2^n`, and `u < v`.\n"
+        "- Do not try `Nat.dvd_sub' hu_dvd hv_dvd` directly; those hypotheses only show divisibility into `2^k`. First derive the smaller power divides the larger one from the exponent gap. If `a < b`, write `n = m + t + 1`, prove `v = u * 2^(t+1)`, obtain `hu_dvd_v : u ∣ v`, then use `Nat.dvd_sub' hu_dvd_v (dvd_refl u)` on `v - u`. Do the symmetric construction when `b < a`.\n"
+        "- If you need `u ≤ u * t` or `v ≤ v * t`, use `simpa [Nat.mul_comm] using Nat.le_mul_of_pos_left u htpos` and the analogous form for `v`.\n"
         "- If `a < b`, use `u = 2^m` and `v = 2^n` to show `u ∣ v - u`. Since `Nat.Coprime 2 (a + b - 1)` and `u = 2^m`, use `hcop.pow_left m` and `hcop_u.dvd_of_dvd_mul_right` to conclude `u ∣ (b - a)`, contradicting `b - a < u`.\n"
         "- Handle `b < a` symmetrically. Conclude the unequal case is impossible.\n"
         "- Keep the proof statement-preserving and avoid the earlier broken route around `Odd 2`, field-style notation on `Even`, or direct-argument calls to `Nat.dvd_prime_pow`.\n"
@@ -148,7 +155,13 @@ def _result_cost_usd(run_dir: Path) -> float:
         return 0.0
 
 
-def _build_prompt(task_id: str, full_file: str) -> str:
+def _build_prompt(
+    task_id: str,
+    full_file: str,
+    *,
+    prior_candidate: Optional[str] = None,
+    prior_error: Optional[str] = None,
+) -> str:
     hint = TASK_HINTS.get(task_id, "")
     prefix = (
         f"Task id: {task_id}\n"
@@ -159,6 +172,23 @@ def _build_prompt(task_id: str, full_file: str) -> str:
     )
     if hint:
         prefix += f"{hint}\n"
+    if prior_candidate:
+        prefix += (
+            "\nPrevious near-miss proof to repair instead of restarting from scratch:\n"
+            "```lean\n"
+            f"{prior_candidate.strip()}\n"
+            "```\n"
+        )
+    if prior_error:
+        clipped_error = prior_error.strip()
+        if len(clipped_error) > 4000:
+            clipped_error = clipped_error[:4000].rstrip() + "\n...[truncated]"
+        prefix += (
+            "\nMost relevant Lean errors from the previous attempt:\n"
+            "```\n"
+            f"{clipped_error}\n"
+            "```\n"
+        )
     return prefix + (
         "Starter file:\n"
         "```lean\n"
@@ -173,6 +203,18 @@ def _workspace_root(run_id: str, task_id: str) -> Path:
     return REPO_ROOT / "tmp" / "bb_formal_pack_workspaces" / safe_run_id / safe_task_id
 
 
+def _load_repair_seed(seed_dir: Optional[Path], task_id: str, suffix: str) -> Optional[str]:
+    if seed_dir is None:
+        return None
+    path = seed_dir / f"{task_id}{suffix}"
+    if not path.exists():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return None
+
+
 def run_pack(
     *,
     manifest_path: Path,
@@ -184,6 +226,8 @@ def run_pack(
     verifier_base_url: str,
     max_iterations: int,
     config_path: Path,
+    repair_seed_proof_dir: Optional[Path] = None,
+    repair_seed_raw_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     _read_env_key()
     os.environ.setdefault("RAY_SCE_LOCAL_MODE", "1")
@@ -207,6 +251,14 @@ def run_pack(
             shutil.rmtree(workspace)
         workspace.mkdir(parents=True, exist_ok=True)
         result_json = workspace / "result.json"
+        prior_candidate = _load_repair_seed(repair_seed_proof_dir, task_id, ".lean")
+        prior_error = _load_repair_seed(repair_seed_raw_dir, task_id, ".json")
+        if prior_error:
+            try:
+                prior_error_payload = json.loads(prior_error)
+                prior_error = str(prior_error_payload.get("verify_error") or prior_error_payload.get("stderr_tail") or "")
+            except Exception:
+                pass
         cmd = [
             "python",
             "main.py",
@@ -214,7 +266,7 @@ def run_pack(
             "--workspace",
             str(workspace),
             "--task",
-            _build_prompt(task_id, input_text),
+            _build_prompt(task_id, input_text, prior_candidate=prior_candidate, prior_error=prior_error),
             "--max-iterations",
             str(max_iterations),
             "--result-json",
@@ -310,6 +362,8 @@ def main() -> int:
     parser.add_argument("--verifier-url", default="http://127.0.0.1:18001/")
     parser.add_argument("--config", default="agent_configs/atp_hilbert_like_gpt54_v2.yaml")
     parser.add_argument("--max-iterations", type=int, default=8)
+    parser.add_argument("--repair-seed-proof-dir")
+    parser.add_argument("--repair-seed-raw-dir")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     summary = run_pack(
@@ -322,6 +376,8 @@ def main() -> int:
         verifier_base_url=str(args.verifier_url).rstrip("/"),
         max_iterations=int(args.max_iterations),
         config_path=(REPO_ROOT / args.config).resolve(),
+        repair_seed_proof_dir=Path(args.repair_seed_proof_dir).resolve() if args.repair_seed_proof_dir else None,
+        repair_seed_raw_dir=Path(args.repair_seed_raw_dir).resolve() if args.repair_seed_raw_dir else None,
     )
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
