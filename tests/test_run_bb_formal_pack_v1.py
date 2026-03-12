@@ -58,6 +58,21 @@ def test_imo_1959_p1_prompt_includes_gcd_helper_guidance() -> None:
     assert "3 * (14 * n + 3) = 2 * (21 * n + 4) + 1" in prompt
     assert "Tactic.NormNum.nat_gcd_helper_1'" in prompt
     assert "Do not introduce factor witnesses or divisibility case splits" in prompt
+
+
+def test_numbertheory_2pownm1prime_nprime_prompt_includes_direct_mersenne_guidance() -> None:
+    prompt = runner._build_prompt(
+        "numbertheory_2pownm1prime_nprime",
+        "import Mathlib\n\ntheorem numbertheory_2pownm1prime_nprime : True := by\n  trivial\n",
+    )
+
+    assert "Nat.prime_of_pow_sub_one_prime" in prompt
+    assert "have hpair : 2 = 2 ∧ Nat.Prime n := Nat.prime_of_pow_sub_one_prime hne1 h₁" in prompt
+    assert "exact hpair.2" in prompt
+    assert "Do not call `Nat.exists_dvd_of_not_prime2`" in prompt
+    assert "Do not try `Nat.Prime.mersenne`" in prompt
+
+
 def test_mathd_algebra_452_prompt_includes_midpoint_guidance() -> None:
     prompt = runner._build_prompt(
         "mathd_algebra_452",
@@ -69,6 +84,20 @@ def test_mathd_algebra_452_prompt_includes_midpoint_guidance() -> None:
     assert "have h78 : a 9 - a 8 = a 8 - a 7 := by simpa using h₀ 7" in prompt
     assert "have hmid : a 9 + a 1 = 2 * a 5 := by linarith" in prompt
     assert "avoid introducing `a 0`" in prompt
+
+
+def test_mathd_numbertheory_427_prompt_includes_closed_form_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_427",
+        "import Mathlib\n\ntheorem mathd_numbertheory_427 : True := by\n  trivial\n",
+    )
+
+    assert "have hs : (∑ k in Nat.divisors 500, k) = 1092 := by native_decide" in prompt
+    assert "rw [h₀, hs]" in prompt
+    assert "native_decide" in prompt
+    assert "Do not use `subst h₀`" in prompt
+
+
 def test_mathd_algebra_156_prompt_includes_case_split_guidance() -> None:
     prompt = runner._build_prompt(
         "mathd_algebra_156",

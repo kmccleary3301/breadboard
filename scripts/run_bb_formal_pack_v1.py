@@ -65,6 +65,30 @@ TASK_HINTS = {
         "- Finish with `simpa [Nat.gcd] using hg` if the theorem head uses `nat.gcd`; otherwise use `simpa using hg`.\n"
         "- Do not introduce factor witnesses or divisibility case splits; the helper lemma is the intended route.\n"
     ),
+    "numbertheory_2pownm1prime_nprime": (
+        "Task-specific guidance:\n"
+        "- Do not build a composite-factor contradiction tree. This theorem has a direct Mathlib route.\n"
+        "- First prove `hne1 : n ≠ 1` by contradiction: `intro hn1; subst hn1; norm_num at h₁`.\n"
+        "- Then use the exact theorem `Nat.prime_of_pow_sub_one_prime`; it returns a conjunction, not just primality.\n"
+        "- The stable pattern is:\n"
+        "  `have hpair : 2 = 2 ∧ Nat.Prime n := Nat.prime_of_pow_sub_one_prime hne1 h₁`\n"
+        "  `exact hpair.2`\n"
+        "- Do not call `Nat.exists_dvd_of_not_prime2`; it expects `2 ≤ n` and leads the model into an unnecessary decomposition route.\n"
+        "- Do not try `Nat.Prime.mersenne`; that constant does not exist in this environment.\n"
+    ),
+    "mathd_numbertheory_427": (
+        "Task-specific guidance:\n"
+        "- Do not use `subst h₀` followed by `norm_num [Nat.divisors, Finset.filter]`; that leaves a large multiset goal.\n"
+        "- Instead collapse the closed arithmetic expression first:\n"
+        "  `have hs : (∑ k in Nat.divisors 500, k) = 1092 := by native_decide`\n"
+        "- Then rewrite the theorem target directly, not by substitution:\n"
+        "  `rw [h₀, hs]`\n"
+        "- Finish the closed goal with `native_decide`.\n"
+        "- The intended proof is only three steps:\n"
+        "  `have hs : (∑ k in Nat.divisors 500, k) = 1092 := by native_decide`\n"
+        "  `rw [h₀, hs]`\n"
+        "  `native_decide`\n"
+    ),
     "mathd_algebra_452": (
         "Task-specific guidance:\n"
         "- Do not introduce a recurrence with `n - 1`; that route breaks on `Nat.succ_le_iff`.\n"

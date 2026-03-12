@@ -65,9 +65,32 @@ Read:
   - Mersenne-prime-to-prime-exponent theorem routing
   - divisors/filter arithmetic normalization for `mathd_numbertheory_427`
 
-## Next Step
-- Keep the split packs and stop spending on the mixed six-task Pack D tranche.
-- Next focused ATP work should prioritize the number-theory core pack, specifically:
+## Number theory core focused rerun
+- Added theorem-local runner guidance for:
   - `numbertheory_2pownm1prime_nprime`
   - `mathd_numbertheory_427`
-- Only revisit the induction subpack after adding theorem-local guidance, because current pack-scale reruns there are not differentiating either system.
+- Refreshed BreadBoard artifacts:
+  - `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_d_numbertheory_core_minif2f_v1/bb_hilbert_like_slice_summary_v2.json`
+  - `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_d_numbertheory_core_minif2f_v1/cross_system_pilot_report_v2.json`
+  - `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_d_numbertheory_core_minif2f_v1/cross_system_validation_report_v2.json`
+
+Updated outcome:
+- BreadBoard: `4/4`
+- Maintained Hilbert: `1/4`
+- BreadBoard-only:
+  - `imo_1959_p1`
+  - `numbertheory_2pownm1prime_nprime`
+  - `mathd_numbertheory_427`
+- Both solved:
+  - `mathd_algebra_452`
+
+Read:
+- The number-theory split is now a strong BreadBoard-favorable lane under the current bounded settings.
+- The two targeted theorem-local fixes were enough to close both remaining shared failures on the BreadBoard side without changing the Hilbert baseline.
+
+## Next Step
+- Keep the split packs and stop spending on the mixed six-task Pack D tranche.
+- The next focused ATP work should move back to the induction split, because the number-theory split is now saturated at the current breadth.
+- If we stay on Pack D, the relevant remaining work is theorem-local induction guidance for:
+  - `induction_sumkexp3eqsumksq`
+  - `induction_12dvd4expnp1p20`
