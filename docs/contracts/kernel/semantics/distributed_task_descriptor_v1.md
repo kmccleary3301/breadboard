@@ -36,6 +36,7 @@ The descriptor should cover:
 - placement preferences
 - checkpoint strategy
 - wake conditions
+- wake subscriptions
 - join policy
 - retry policy
 - priority
@@ -44,6 +45,21 @@ The descriptor should cover:
 - artifact refs
 
 This is the semantic description of the task, not the queue record or workflow history implementation.
+
+---
+
+## Wake semantics in the coordination tranche
+
+`wake_conditions` remains part of the descriptor because it still carries legacy and non-signal wake behavior, especially timer-like conditions.
+
+The coordination-primitives tranche adds `wake_subscriptions` beside it.
+
+The intended split is:
+
+- `wake_conditions`: legacy strings and non-signal wakes
+- `wake_subscriptions`: typed signal-based wakes scoped by signal code and task lineage
+
+This keeps the migration additive instead of forcing every wake path into one new abstraction before the thin slice is proven.
 
 ---
 

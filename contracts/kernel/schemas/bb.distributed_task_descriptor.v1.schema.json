@@ -13,6 +13,38 @@
     "placement_preferences": {"type": "array", "items": {"type": "string"}},
     "checkpoint_strategy": {"type": ["string", "null"]},
     "wake_conditions": {"type": "array", "items": {"type": "string"}},
+    "wake_subscriptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schema_version", "subscription_id", "on_codes", "action"],
+        "properties": {
+          "schema_version": {"const": "bb.wake_subscription.v1"},
+          "subscription_id": {"type": "string", "minLength": 1},
+          "on_codes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "enum": [
+                "partial_complete",
+                "merge_ready",
+                "complete",
+                "blocked",
+                "no_progress",
+                "retryable_failure",
+                "catastrophic_failure",
+                "human_required"
+              ]
+            }
+          },
+          "action": {"const": "resume"},
+          "from_task_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "include_descendants": {"type": "boolean"},
+          "coalesce_window_ms": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
     "join_policy": {"type": ["string", "null"]},
     "retry_policy": {"type": ["object", "null"], "additionalProperties": true},
     "priority": {"type": ["integer", "null"]},

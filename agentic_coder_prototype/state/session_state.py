@@ -29,6 +29,7 @@ CANONICAL_KERNEL_EVENT_TYPES: dict[str, dict[str, str]] = {
     "permission_request": {"family": "permission.requested", "actor": "service", "visibility": "host"},
     "permission_response": {"family": "permission.decided", "actor": "service", "visibility": "host"},
     "task_event": {"family": "task.progress", "actor": "subagent", "visibility": "host"},
+    "coordination_signal": {"family": "coordination.signal", "actor": "engine", "visibility": "host"},
     "turn_start": {"family": "turn.started", "actor": "engine", "visibility": "audit"},
     "guardrail_event": {"family": "warning.guardrail", "actor": "service", "visibility": "audit"},
     "lifecycle_event": {"family": "run.lifecycle", "actor": "engine", "visibility": "audit"},
@@ -72,6 +73,7 @@ class SessionState:
         self.current_native_tools = []
         self.current_text_based_tools = []
         self.completion_summary: Dict[str, Any] = {}
+        self.coordination_signals: List[Dict[str, Any]] = []
         self.provider_metadata: Dict[str, Any] = {}
         self.reasoning_traces = ReasoningTraceStore()
         self.ir_events: List[IRDeltaEvent] = []
@@ -265,6 +267,22 @@ class SessionState:
         """Emit a multi-agent/task lifecycle event to observers."""
         enriched = self.build_task_record(payload)
         self._emit_event("task_event", enriched, turn=self._active_turn_index)
+
+    def record_coordination_signal(
+        self,
+        signal: Dict[str, Any],
+        *,
+        turn: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Record a validated coordination signal as canonical runtime truth."""
+        entry = dict(signal or {})
+        if turn is None:
+            turn = self._active_turn_index
+        self.coordination_signals.append(entry)
+        seq = self._emit_event("coordination_signal", entry, turn=turn)
+        if isinstance(seq, int):
+            entry.setdefault("seq", seq)
+        return entry
 
     def emit_permission_event(self, event_type: str, payload: Dict[str, Any]) -> None:
         """Emit permission request/response events to observers."""

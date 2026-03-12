@@ -102,6 +102,7 @@ At minimum, the event family must cover:
 - tool call lifecycle
 - permission request/decision
 - task/subagent/background lifecycle
+- coordination signal lifecycle
 - compaction/memory lifecycle where applicable
 - checkpoint/save/restore lifecycle
 - warning/limit/update surfaces
@@ -147,6 +148,7 @@ The current first-pass recommended family set is:
 - `task.joined`
 - `task.completed`
 - `task.failed`
+- `coordination.signal`
 - `compaction.started`
 - `compaction.completed`
 - `checkpoint.saved`

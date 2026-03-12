@@ -14,6 +14,9 @@ MANIFEST_PATH = FIXTURE_DIR / "python_reference_manifest_v1.json"
 
 EXAMPLE_SCHEMA_MAP = {
     "kernel_event_minimal.json": "bb.kernel_event.v1.schema.json",
+    "signal_complete_minimal.json": "bb.signal.v1.schema.json",
+    "signal_blocked_minimal.json": "bb.signal.v1.schema.json",
+    "wake_subscription_minimal.json": "bb.wake_subscription.v1.schema.json",
     "session_transcript_minimal.json": "bb.session_transcript.v1.schema.json",
     "tool_call_minimal.json": "bb.tool_call.v1.schema.json",
     "run_request_minimal.json": "bb.run_request.v1.schema.json",
