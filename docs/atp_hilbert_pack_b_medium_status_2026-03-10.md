@@ -6,7 +6,9 @@ Important follow-up:
 - `mathd_numbertheory_780` is now treated as invalid for active comparison packs.
 - Counterexample under the extracted `ℕ` theorem semantics: `m = 11`, `x = 2`.
 - Reason: `Nat` subtraction truncates, so `(2 - 36) % 11 = 0`, which makes the hypotheses true while the conclusion `m = 43` is false.
-- The historical `2/8` Pack B medium result is stale. The corrected rerun below uses the filtered 7-task slice.
+- `aime_1984_p5` is also excluded under current Mathlib `Real.logb` semantics: `a = -64`, `b = 8` satisfies the hypotheses but gives `a * b = -512`.
+- `amc12a_2019_p12` is also excluded as unsound: `x = 2^(3 + sqrt 5)`, `y = 2^(3 - sqrt 5)` satisfies the hypotheses but gives `log(x / y) / log 2 = 2 * sqrt 5`, not `20`.
+- The historical `2/8`, `4/7`, and `5/7` Pack B medium results are stale. The valid active slice is the filtered 5-task pack below.
 
 ## Pack
 
@@ -24,10 +26,10 @@ Tasks:
 
 ## Corrected Result
 
-- BreadBoard (`bb_hilbert_like`): `5/7`
-- Hilbert maintained fork (`hilbert_roselab`): `3/7`
+- BreadBoard (`bb_hilbert_like`): `5/5`
+- Hilbert maintained fork (`hilbert_roselab`): `3/5`
 - both solved: `3`
-- both unsolved: `2`
+- both unsolved: `0`
 - BreadBoard-only: `2`
 - Hilbert-only: `0`
 
@@ -40,13 +42,9 @@ BreadBoard-only:
 - `mathd_algebra_156`
 - `numbertheory_exk2powkeqapb2mulbpa2_aeq1`
 
-Unsolved by both:
-- `aime_1984_p5`
-- `amc12a_2019_p12`
-
 Reference artifacts:
-- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_medium_noimo530_minif2f_v1/cross_system_pilot_report_v6.json`
-- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_medium_noimo530_minif2f_v1/cross_system_validation_report_v6.json`
+- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_medium_noimo530_minif2f_v1/cross_system_pilot_report_v7.json`
+- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_medium_noimo530_minif2f_v1/cross_system_validation_report_v7.json`
 - `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_medium_noimo530_minif2f_v1/pack_metadata.json`
 
 ## Spend
@@ -65,7 +63,7 @@ BreadBoard exact provider-side spend is not available from the current direct fo
 - The `numbertheory_2dvd4expn` gap closed after adding task-local runner guidance in `scripts/run_bb_formal_pack_v1.py`.
 - A direct-formal-runner workspace-root bug also surfaced during rerun work: workspace paths must live under `tmp/`, not under `artifacts/`. That is now fixed in `scripts/run_bb_formal_pack_v1.py`.
 - `mathd_algebra_156` flipped in BreadBoard's favor after adding theorem-specific case-split guidance.
-- The next ATP targets from this rerun are the two shared unsolved tasks: `aime_1984_p5` and `amc12a_2019_p12`.
+- There are no remaining valid shared-unsolved tasks in this Pack B medium slice.
 
 ## Focused Follow-up — `numbertheory_exk2powkeqapb2mulbpa2_aeq1`
 

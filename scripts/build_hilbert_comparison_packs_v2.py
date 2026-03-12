@@ -58,6 +58,14 @@ EXCLUDED_TASKS = {
         "Unsound under extracted ℕ semantics: m=11, x=2 satisfies the hypotheses "
         "because Nat subtraction truncates (2 - 36) to 0, but the conclusion m = 43 is false."
     ),
+    "aime_1984_p5": (
+        "Unsound under current Mathlib `Real.logb` semantics (`logb b x = log |x| / log b` for x < 0): "
+        "a = -64, b = 8 satisfies h₀ and h₁, but a * b = -512."
+    ),
+    "amc12a_2019_p12": (
+        "Unsound under the extracted real-log statement: taking x = 2^(3 + sqrt 5) and "
+        "y = 2^(3 - sqrt 5) satisfies h₁ and h₂, but log(x / y) / log 2 = 2 * sqrt 5, not 20."
+    ),
 }
 
 

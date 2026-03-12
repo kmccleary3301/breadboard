@@ -18,12 +18,13 @@ def test_known_unsound_task_is_excluded_from_medium_pack(tmp_path: Path) -> None
     summary = packs.build_pack("pack_b_medium_noimo530_minif2f_v1", tmp_path)
 
     assert "mathd_numbertheory_780" not in summary["task_ids"]
-    assert summary["task_count"] == 7
+    assert "aime_1984_p5" not in summary["task_ids"]
+    assert "amc12a_2019_p12" not in summary["task_ids"]
+    assert summary["task_count"] == 5
     assert summary["excluded_tasks"] == [
-        {
-            "task_id": "mathd_numbertheory_780",
-            "reason": packs.EXCLUDED_TASKS["mathd_numbertheory_780"],
-        }
+        {"task_id": "mathd_numbertheory_780", "reason": packs.EXCLUDED_TASKS["mathd_numbertheory_780"]},
+        {"task_id": "aime_1984_p5", "reason": packs.EXCLUDED_TASKS["aime_1984_p5"]},
+        {"task_id": "amc12a_2019_p12", "reason": packs.EXCLUDED_TASKS["amc12a_2019_p12"]},
     ]
 
     metadata = json.loads((tmp_path / "pack_b_medium_noimo530_minif2f_v1" / "pack_metadata.json").read_text())
@@ -37,3 +38,15 @@ def test_known_unsound_counterexample_description_is_present() -> None:
     assert "m=11" in reason
     assert "x=2" in reason
     assert "Nat subtraction truncates" in reason
+
+
+def test_aime_unsound_counterexample_description_is_present() -> None:
+    reason = packs.EXCLUDED_TASKS["aime_1984_p5"]
+    assert "a = -64, b = 8" in reason
+    assert "a * b = -512" in reason
+
+
+def test_amc_unsound_counterexample_description_is_present() -> None:
+    reason = packs.EXCLUDED_TASKS["amc12a_2019_p12"]
+    assert "2^(3 + sqrt 5)" in reason
+    assert "2 * sqrt 5" in reason
