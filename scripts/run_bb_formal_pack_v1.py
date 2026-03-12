@@ -15,6 +15,23 @@ from _cross_system_eval_v1 import dump_json, load_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TASK_HINTS = {
+    "mathd_numbertheory_530": (
+        "Task-specific guidance:\n"
+        "- Normalize with `obtain ⟨g, a, b, hg0, hab_coprime, hn_eq, hk_eq⟩ := Nat.exists_coprime' (m := n) (n := k) (Nat.gcd_pos_of_pos_left k hn0)`.\n"
+        "- Keep the orientation from `Nat.exists_coprime'`: it gives `n = a * g` and `k = b * g`, not `g * a` and `g * b`.\n"
+        "- Do not use the broken `b = 1` route. From `5 < (a : ℝ) / b` and `(a : ℝ) / b < 6`, the correct normalized target is `22 ≤ a * b`, not `b = 1`.\n"
+        "- After `rw [hn_eq, hk_eq] at h_lt h_gt`, first create cast-clean versions with `simpa [Nat.cast_mul]`; then use `have hmul : (a : ℝ) * g < 6 * ((b : ℝ) * g) := (div_lt_iff hbg_pos_real).mp hlt'` and `have hmul : 5 * ((b : ℝ) * g) < (a : ℝ) * g := (lt_div_iff hbg_pos_real).mp hgt'`.\n"
+        "- Prove `hb_pos : 0 < b` from `hk_eq`; then use `nlinarith` to derive `ha_gt_5b : 5 * b < a` and `ha_lt_6b : a < 6 * b`.\n"
+        "- Next prove `hb_ge_two : 2 ≤ b`. A clean contradiction is: if `b = 1`, then `5 < a` and `a < 6`, impossible in `ℕ`.\n"
+        "- Split `hb_cases : b = 2 ∨ 3 ≤ b := by omega`.\n"
+        "- In the `b = 2` branch, use `10 < a` and `a < 12` to force `a = 11`, then conclude `22 ≤ a * b` by `omega`.\n"
+        "- In the `3 ≤ b` branch, combine `ha_gt_5b` with `hb_ge_three : 3 ≤ b` to get `a ≥ 5 * b + 1`, then `have hab_ge : (5 * b + 1) * b ≤ a * b := Nat.mul_le_mul_right b ha_ge`; finish `22 ≤ a * b` from `22 ≤ (5 * b + 1) * b`.\n"
+        "- For the target itself, use the exact normalized identities:\n"
+        "  `have hlcm : Nat.lcm n k = a * b * g := by rw [hn_eq, hk_eq, Nat.lcm_mul_right, hab_coprime.lcm_eq_mul]`\n"
+        "  `have hgcd : Nat.gcd n k = g := by rw [hn_eq, hk_eq, Nat.gcd_mul_right, hab_coprime.gcd_eq_one]; simp`\n"
+        "  `have hdiv : (a * b * g) / g = a * b := by simpa [Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm] using Nat.mul_div_right (a * b) hg0`\n"
+        "- Avoid the nonexistent `Nat.coprime_mul_lcm_eq_left`, avoid the wrong signature for `Nat.coprime_div_gcd_div_gcd`, and do not try the invalid one-argument form of `Nat.div_eq_iff_eq_mul_left`.\n"
+    ),
     "mathd_algebra_156": (
         "Task-specific guidance:\n"
         "- First derive `hx : x^4 = 5 * x^2 - 6` and `hy : y^4 = 5 * y^2 - 6` from the hypotheses.\n"

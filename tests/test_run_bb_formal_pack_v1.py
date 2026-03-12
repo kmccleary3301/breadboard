@@ -25,6 +25,26 @@ def test_numbertheory_2dvd4expn_prompt_includes_task_guidance() -> None:
     assert "Do not stop at `simp`" in prompt
 
 
+def test_mathd_numbertheory_530_prompt_includes_normalization_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_530",
+        "import Mathlib\n\ntheorem mathd_numbertheory_530 : True := by\n  trivial\n",
+    )
+
+    assert "Nat.exists_coprime'" in prompt
+    assert "Do not use the broken `b = 1` route" in prompt
+    assert "it gives `n = a * g` and `k = b * g`" in prompt
+    assert "hb_ge_two : 2 ≤ b" in prompt
+    assert "b = 2 ∨ 3 ≤ b" in prompt
+    assert "22 ≤ a * b" in prompt
+    assert "simpa [Nat.cast_mul]" in prompt
+    assert "(lt_div_iff hbg_pos_real).mp hgt'" in prompt
+    assert "Nat.lcm_mul_right" in prompt
+    assert "Nat.gcd_mul_right" in prompt
+    assert "Nat.mul_div_right (a * b) hg0" in prompt
+    assert "Nat.coprime_mul_lcm_eq_left" in prompt
+
+
 def test_mathd_algebra_156_prompt_includes_case_split_guidance() -> None:
     prompt = runner._build_prompt(
         "mathd_algebra_156",

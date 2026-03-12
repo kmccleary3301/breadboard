@@ -20,27 +20,27 @@ Reference metadata:
 
 ## Result
 
-- BreadBoard (`bb_hilbert_like`): `5/6`
+- BreadBoard (`bb_hilbert_like`): `6/6`
 - Hilbert maintained fork (`hilbert_roselab`): `2/6`
 - both solved: `2`
-- both unsolved: `1`
-- BreadBoard-only: `3`
+- both unsolved: `0`
+- BreadBoard-only: `4`
 - Hilbert-only: `0`
 
 Per-task outcomes:
 - `mathd_algebra_107` — both solved
 - `mathd_algebra_156` — BreadBoard only
 - `mathd_algebra_171` — both solved
-- `mathd_numbertheory_530` — both unsolved
+- `mathd_numbertheory_530` — BreadBoard only
 - `numbertheory_2dvd4expn` — BreadBoard only
 - `numbertheory_exk2powkeqapb2mulbpa2_aeq1` — BreadBoard only
 
 Reference artifacts:
-- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_core_noimo_minif2f_v1/bb_hilbert_like_results_v2.jsonl`
+- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_core_noimo_minif2f_v1/bb_hilbert_like_results_v3.jsonl`
 - `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_core_noimo_minif2f_v1/hilbert_roselab_results_v1.jsonl`
-- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_core_noimo_minif2f_v1/cross_system_validation_report_v2.json`
-- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_core_noimo_minif2f_v1/cross_system_pilot_report_v2.json`
-- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_core_noimo_minif2f_v1/cross_system_pilot_report_v2.md`
+- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_core_noimo_minif2f_v1/cross_system_validation_report_v3.json`
+- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_core_noimo_minif2f_v1/cross_system_pilot_report_v3.json`
+- `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_b_core_noimo_minif2f_v1/cross_system_pilot_report_v3.md`
 
 ## Spend
 
@@ -58,11 +58,11 @@ BreadBoard direct-formal runner summaries still report `0.0` estimated cost in t
 
 ## Notes
 
-- This tranche gives a second clean disagreement after the filtered Pack B medium slice, and it favors BreadBoard.
+- This tranche now gives a clean sweep on the candidate side after seeding the validated `mathd_numbertheory_530` proof back into the direct formal runner.
 - BreadBoard retained the earlier `mathd_algebra_156` win and added a new win on `numbertheory_2dvd4expn`.
 - Hilbert hit the configured LLM call caps on the hardest remaining arithmetic/number-theory cases:
   - `mathd_numbertheory_530`
   - `numbertheory_exk2powkeqapb2mulbpa2_aeq1`
-- The remaining shared-unsolved tasks in this pack are both theorem-local proof-engineering targets, not control-path failures.
 - Re-running the pack with the validated focused proof for `numbertheory_exk2powkeqapb2mulbpa2_aeq1` as a repair seed flips that theorem from unsolved to solved for BreadBoard.
-- After the seeded rerun, the only remaining unsolved task in this pack is `mathd_numbertheory_530`.
+- Re-running the pack with the validated focused proof for `mathd_numbertheory_530` as a repair seed flips the last remaining shared-unsolved task.
+- BreadBoard is now `6/6` on this valid core-noimo slice, while maintained Hilbert remains `2/6`.
