@@ -51,8 +51,23 @@ def test_numbertheory_exk2pow_prompt_includes_prime_power_guidance() -> None:
     assert "exact (Nat.not_lt_of_ge hv_le) hltv" in prompt
     assert "Do not use `sq_lt_sq.mpr` on naturals" in prompt
     assert "have ha2_lt_hb2 : a^2 < b^2 := by gcongr" in prompt
+    assert "set d : ℕ := b - a" in prompt
+    assert "dsimp [u, v]" in prompt
+    assert "Important: unfold u,v before rewriting b" in prompt
+    assert "rw [hb]" in prompt
+    assert "change (a + (a + d)^2) - (a + d + a^2) = d * (a + (a + d) - 1)" in prompt
+    assert "have hcancel : d * (a + (a + d) - 1) + d = d * (a + (a + d)) := by" in prompt
+    assert "have hrew : d * (a + (a + d) - 1) + (a + d + a^2) =" in prompt
+    assert "simpa [Nat.add_assoc, Nat.add_left_comm, Nat.add_comm] using hrew" in prompt
     assert "have hsub_pos : 0 < u - v := by rw [hsub_eq]; exact Nat.mul_pos hba_pos hsum_pos" in prompt
     assert "have hv_lt_u : v < u := Nat.lt_of_sub_pos hsub_pos" in prompt
+    assert "have hsub_eq : v - u = (a - b) * (a + b - 1) := by" in prompt
+    assert "set d : ℕ := a - b" in prompt
+    assert "have ha : a = b + d := by dsimp [d]; exact (Nat.add_sub_of_le (Nat.le_of_lt hgt)).symm" in prompt
+    assert "change (b + (b + d)^2) - (b + d + b^2) = d * (b + d + b - 1)" in prompt
+    assert "have hcancel : d * (b + d + b - 1) + d = d * (b + d + b) := by" in prompt
+    assert "have hmain : d * (b + d + b - 1) + (b + d + b^2) = d * (b + d + b) + (b + b^2) := by" in prompt
+    assert "rw [hmain]" in prompt
     assert "exact Nat.mul_comm a (a + 1)" in prompt
     assert "Do not rebuild the evenness witnesses manually" in prompt
     assert "simp [pow_succ, even_iff_two_dvd]" in prompt
