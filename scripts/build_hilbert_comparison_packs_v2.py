@@ -52,6 +52,9 @@ PACKS = {
         "numbertheory_2dvd4expn",
         "mathd_algebra_107",
     ],
+    "pack_c_imo1977_p6_stress_minif2f_v1": [
+        "imo_1977_p6",
+    ],
 }
 EXCLUDED_TASKS = {
     "mathd_numbertheory_780": (

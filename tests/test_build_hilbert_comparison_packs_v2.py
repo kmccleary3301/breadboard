@@ -50,3 +50,15 @@ def test_amc_unsound_counterexample_description_is_present() -> None:
     reason = packs.EXCLUDED_TASKS["amc12a_2019_p12"]
     assert "2^(3 + sqrt 5)" in reason
     assert "2 * sqrt 5" in reason
+
+
+def test_imo_stress_pack_is_single_valid_task(tmp_path: Path) -> None:
+    summary = packs.build_pack("pack_c_imo1977_p6_stress_minif2f_v1", tmp_path)
+
+    assert summary["task_count"] == 1
+    assert summary["task_ids"] == ["imo_1977_p6"]
+    assert summary["excluded_tasks"] == []
+
+    metadata = json.loads((tmp_path / "pack_c_imo1977_p6_stress_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == ["imo_1977_p6"]
+    assert metadata["included_task_ids"] == ["imo_1977_p6"]
