@@ -65,7 +65,7 @@ BreadBoard exact provider-side spend is not available from the current direct fo
 - The `numbertheory_2dvd4expn` gap closed after adding task-local runner guidance in `scripts/run_bb_formal_pack_v1.py`.
 - A direct-formal-runner workspace-root bug also surfaced during rerun work: workspace paths must live under `tmp/`, not under `artifacts/`. That is now fixed in `scripts/run_bb_formal_pack_v1.py`.
 - `mathd_algebra_156` flipped in BreadBoard's favor after adding theorem-specific case-split guidance.
-- The next ATP targets from this rerun are the three shared unsolved tasks: `numbertheory_exk2powkeqapb2mulbpa2_aeq1`, `aime_1984_p5`, and `amc12a_2019_p12`.
+- The next ATP targets from this rerun are the two shared unsolved tasks: `aime_1984_p5` and `amc12a_2019_p12`.
 
 ## Focused Follow-up — `numbertheory_exk2powkeqapb2mulbpa2_aeq1`
 
