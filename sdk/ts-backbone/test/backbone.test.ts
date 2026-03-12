@@ -369,3 +369,40 @@ test("BackboneSession terminal lookup shapes unknown sessions as unsupported cas
   assert.equal(missing.unsupportedCase?.reason_code, "terminal_session_not_found")
   assert.equal(missing.unsupportedCase?.metadata?.terminal_session_id, "term-missing-1")
 })
+
+test("BackboneSession can signal a running terminal session and preserve cancelled end state", async () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-6",
+    rootDir: "/tmp",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({ workspace })
+  const session = backbone.openSession({ sessionId: "s-6", workspaceRoot: "/tmp" })
+  await session.terminals.cleanup({ scope: "all" })
+
+  const started = await session.terminals.start({
+    command: ["/bin/bash", "-lc", "sleep 5"],
+  })
+  assert.ok(started.session)
+  assert.ok(started.descriptor)
+  if (!started.session || !started.descriptor) {
+    throw new Error("expected started terminal session")
+  }
+
+  const signaled = await started.session.sendSignal("SIGTERM", {
+    causingCallId: "call-signal-1",
+  })
+  assert.ok(signaled.interaction)
+  assert.equal(signaled.interaction?.interaction_kind, "signal")
+  assert.equal(signaled.interaction?.signal, "SIGTERM")
+
+  const settled = await started.session.poll({ settleMs: 50 })
+  assert.equal(settled.end?.terminal_state, "cancelled")
+
+  const ended = await session.terminals.get({
+    terminalSessionId: started.descriptor.terminal_session_id,
+  })
+  assert.ok(ended.session)
+  assert.equal(ended.session?.status, "ended")
+  assert.equal(ended.session?.summary().lastEndState, "cancelled")
+})

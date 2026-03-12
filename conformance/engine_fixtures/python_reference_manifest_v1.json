@@ -710,6 +710,17 @@
     {
       "engineFamily": "python_reference",
       "engineRef": "working-tree",
+      "scenarioId": "codex_background_signal_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "terminal_session/codex_background_signal_fixture.json"
+      ],
+      "notes": "Codex-shaped signal/control interaction lane over a persistent background terminal session."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
       "scenarioId": "codex_background_fallback_terminal_surface_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "projection-equal",

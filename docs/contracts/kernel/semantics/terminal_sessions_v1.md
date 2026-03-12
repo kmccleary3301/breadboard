@@ -141,6 +141,7 @@ several `reference-engine` rows for:
 - list / registry projection
 - multi-session listing
 - mixed-state listing
+- signal/control interaction
 - cleanup
 - cleanup after exit
 - unknown-session lookup failure shaping

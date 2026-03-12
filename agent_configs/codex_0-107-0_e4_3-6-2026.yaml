@@ -315,6 +315,7 @@ terminal_sessions:
   # - write
   # - poll
   # - no-output poll
+  # - signal/control interaction
   # - list
   # - multi-session list
   # - cleanup

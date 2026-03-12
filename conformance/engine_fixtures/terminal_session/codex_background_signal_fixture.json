@@ -1,0 +1,15 @@
+{
+  "fixture_family": "terminal_session",
+  "fixture_id": "codex_background_signal_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "reference-engine",
+  "contract": "bb.terminal_interaction.v1",
+  "reference_output": {
+    "schema_version": "bb.terminal_interaction.v1",
+    "terminal_session_id": "codex_term_bg_04",
+    "startup_call_id": "call_exec_background_codex_04",
+    "causing_call_id": "call_signal_background_codex_04",
+    "interaction_kind": "signal",
+    "signal": "SIGTERM"
+  }
+}
