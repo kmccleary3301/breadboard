@@ -320,6 +320,7 @@ terminal_sessions:
   # - multi-session list
   # - cleanup
   # - unknown-session lookup failure shaping
+  # - dead-session signal failure shaping
   # - conformance/engine_fixtures/terminal_session/codex_background_*_fixture.json
   # - conformance/engine_fixtures/effective_tool_surface/codex_background_terminal_surface_fixture.json
 

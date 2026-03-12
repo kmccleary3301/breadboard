@@ -1,0 +1,20 @@
+{
+  "fixture_family": "unsupported_case",
+  "fixture_id": "codex_background_dead_signal_reference",
+  "comparator_class": "shape-equal",
+  "support_tier": "reference-engine",
+  "contract": "bb.unsupported_case.v1",
+  "reference_output": {
+    "schema_version": "bb.unsupported_case.v1",
+    "reason_code": "terminal_interaction_failed",
+    "summary": "Unknown remote terminal session: codex_term_bg_dead_signal_01",
+    "contract_family": "bb.terminal_session_descriptor.v1",
+    "fallback_allowed": false,
+    "fallback_taken": false,
+    "evidence_refs": [],
+    "metadata": {
+      "terminal_session_id": "codex_term_bg_dead_signal_01",
+      "interaction_kind": "signal"
+    }
+  }
+}

@@ -666,6 +666,17 @@
     {
       "engineFamily": "python_reference",
       "engineRef": "working-tree",
+      "scenarioId": "codex_background_dead_signal_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "shape-equal",
+      "evidence": [
+        "unsupported_case/codex_background_dead_signal_fixture.json"
+      ],
+      "notes": "Codex-style dead-session signal failure shaped through the public unsupported-case contract instead of a raw driver exception."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
       "scenarioId": "codex_background_unknown_session_reference",
       "supportTier": "reference-engine",
       "comparatorClass": "shape-equal",

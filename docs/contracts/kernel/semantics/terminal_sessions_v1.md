@@ -144,6 +144,7 @@ several `reference-engine` rows for:
 - signal/control interaction
 - cleanup
 - cleanup after exit
+- dead-session signal failure shaping
 - unknown-session lookup failure shaping
 - dead-session interaction failure shaping
 - running-summary projection with one active session and multiple recently ended sessions

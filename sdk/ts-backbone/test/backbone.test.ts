@@ -406,3 +406,36 @@ test("BackboneSession can signal a running terminal session and preserve cancell
   assert.equal(ended.session?.status, "ended")
   assert.equal(ended.session?.summary().lastEndState, "cancelled")
 })
+
+test("BackboneSession terminal signal on an ended session shapes an unsupported case", async () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-7",
+    rootDir: "/tmp",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({ workspace })
+  const session = backbone.openSession({ sessionId: "s-7", workspaceRoot: "/tmp" })
+  await session.terminals.cleanup({ scope: "all" })
+
+  const started = await session.terminals.start({
+    command: ["/bin/bash", "-lc", "printf 'done\\n'; exit 0"],
+  })
+  assert.ok(started.session)
+  assert.ok(started.descriptor)
+  if (!started.session || !started.descriptor) {
+    throw new Error("expected started terminal session")
+  }
+
+  await started.session.poll({ settleMs: 25 })
+  const cleaned = await started.session.cleanup()
+  assert.ok(cleaned.result)
+
+  const interaction = await started.session.sendSignal("SIGTERM", {
+    causingCallId: "call-signal-dead-1",
+  })
+  assert.equal(interaction.interaction, null)
+  assert.equal(interaction.outputDeltas.length, 0)
+  assert.equal(interaction.unsupportedCase?.reason_code, "terminal_interaction_failed")
+  assert.equal(interaction.unsupportedCase?.metadata?.terminal_session_id, started.descriptor.terminal_session_id)
+  assert.equal(interaction.unsupportedCase?.metadata?.interaction_kind, "signal")
+})
