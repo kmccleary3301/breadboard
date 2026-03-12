@@ -89,6 +89,17 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [RLM_MODE_QUICKSTART.md](RLM_MODE_QUICKSTART.md) | RLM mode quickstart |
 | [RLM_PHASE2_EVAL_RUNBOOK.md](RLM_PHASE2_EVAL_RUNBOOK.md) | Phase 2 eval runbook |
 
+### Optimization
+
+| Doc | What it covers |
+|-----|----------------|
+| [concepts/optimization-v1-substrate.md](concepts/optimization-v1-substrate.md) | Optimization V1 substrate primitives, bounded overlays, and the canonical codex dossier example |
+| [concepts/optimization-v1-datasets.md](concepts/optimization-v1-datasets.md) | Optimization V1 dataset, ground-truth, and correctness-rationale records with anti-slop guidance |
+| [concepts/optimization-v1-evaluation.md](concepts/optimization-v1-evaluation.md) | Optimization V1 evaluation records, diagnostics, wrongness taxonomy, and the canonical evaluation example |
+| [concepts/optimization-v1-backend.md](concepts/optimization-v1-backend.md) | Optimization V1 reflective backend, objective vector, bounded mutation policy, and non-dominated portfolio retention |
+| [concepts/optimization-v1-promotion.md](concepts/optimization-v1-promotion.md) | Optimization V1 promotion state machine, replay/conformance gates, support-envelope gating, and canonical promotion outcomes |
+| [concepts/optimization-v1-runtime-context.md](concepts/optimization-v1-runtime-context.md) | Optimization V1 environment-aware sample model, tool-pack-aware optimization inputs, runtime compatibility checks, and DARWIN boundary |
+
 ### Governance and change policy
 
 | Doc | What it covers |
