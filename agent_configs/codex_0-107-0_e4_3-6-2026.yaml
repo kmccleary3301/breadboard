@@ -186,7 +186,9 @@ tool_packs:
     #   semantic lanes so hosts can reason about "recently ended" sessions without guessing
     # - a running-summary lane is now frozen too, so the projection surface can represent one
     #   active session while still carrying multiple recently ended sessions in a stable way
-    # - full frozen E4 parity is still not claimed
+    # - a future dedicated Codex-background-terminal parity program could still strengthen the
+    #   claim beyond these reference-engine semantic lanes, but that is follow-on scope rather
+    #   than unfinished Phase 14 work
     description: upstream Codex persistent terminal-session surface
     tool_ids:
     - exec_command
@@ -239,8 +241,9 @@ tool_bindings:
     # underlying semantics differently. The current semantic lanes also freeze cleanup-after-exit
     # and mixed-state listing behavior around this binding family.
     # Backed today by the new persistent terminal-session primitives and the
-    # trusted-local driver lane. This is now reference-engine frozen for the
-    # scoped semantic lanes, though still not a full E4 parity claim.
+    # local / OCI / remote driver family. This is reference-engine frozen for
+    # the scoped Phase 14 semantic lanes; anything stricter would be a future
+    # parity-strengthening program rather than missing Phase 14 support.
   - id: codex.terminal.stdin_continuation
     tool_id: write_stdin
     binding_kind: sandbox
@@ -256,10 +259,10 @@ tool_bindings:
     # can remain visible while swapping binding strategy.
 
 terminal_sessions:
-  # This section is intentionally present before the strict lane reaches full E4 parity. We want
-  # the dossier to already reveal the *shape* of the target surface, while being totally honest
-  # that the remaining gap is now about the final parity claim, not about whether the semantic
-  # lane exists at all.
+  # This section is intentionally explicit even though the top-level Codex lane remains labeled
+  # `reference_engine_frozen_not_e4`. Phase 14 already freezes the semantic/runtime/product
+  # surface here; any future broader parity claim would be a separate program rather than missing
+  # core primitives or product surfaces.
   enabled: false
   support_status: reference_engine_frozen_not_e4
   startup_tool: exec_command
@@ -309,8 +312,9 @@ terminal_sessions:
     # what lets us support Codex `/ps` semantics cleanly without baking host UI concerns into the
     # event ontology.
     derived_projection: true
-  # The strict public lane is still not full E4 here, but the surface is no longer just a plan
-  # or a draft semantic sketch. Phase 14 now has reference-engine semantic lanes for:
+  # The strict public lane remains tagged `reference_engine_frozen_not_e4`, but the surface is no
+  # longer just a plan or a draft semantic sketch. Phase 14 now has reference-engine semantic
+  # lanes for:
   # - start
   # - write
   # - poll

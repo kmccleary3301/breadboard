@@ -113,7 +113,9 @@ background-terminal pair:
 - explicit projection profile
 - a fallback-selected remote binding lane that preserves the same canonical tool surface
 
-This is now reference-engine semantic evidence, not yet a frozen E4 claim.
+This is now reference-engine semantic evidence. A future stricter parity program could add broader
+or more exact harness claims on top of it, but the Phase 14 tool-binding/effective-surface work
+itself is already shipped at the intended semantic/reference-engine level.
 
 Visibility note:
 

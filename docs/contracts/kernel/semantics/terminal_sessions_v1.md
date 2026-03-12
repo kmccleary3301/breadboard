@@ -105,11 +105,13 @@ The first shipped runtime tranche now includes:
 - workspace terminal shaping helpers that turn terminal end payloads into host-usable
   artifact/evidence references without changing kernel truth
 
-This is intentionally the first runtime slice, not the final parity claim:
+This is the shipped Phase 14 runtime slice:
 
-- the trusted-local path is pipes-backed rather than PTY-backed
-- stronger OCI / remote session drivers remain follow-on work
-- Codex-background-terminal E4 claims still require frozen golden/conformance lanes on top of these primitives
+- the trusted-local path is still pipes-backed rather than PTY-backed
+- local, OCI, and remote session drivers now exist for the scoped terminal family
+- the public Backbone / Host Kit / Workspace product surfaces are real
+- any stricter future Codex-background-terminal parity claim would be a follow-on program layered
+  on top of these shipped primitives rather than missing runtime support inside Phase 14
 
 Phase 14 now also includes a Codex-shaped reference-engine semantic evidence bundle for:
 
@@ -164,7 +166,8 @@ The first Phase 14 conformance tranche now includes explicit terminal-session fi
 - cleanup projection
 
 These fixtures are now stronger than parity-prep shape checks: they are reference-engine semantic
-lanes, but they are still not final Codex E4 goldens.
+lanes. A future dedicated Codex-background-terminal E4 program could still add stricter goldens on
+top of them, but that is follow-on scope rather than unfinished Phase 14 work.
 
 Codex-specific projection note:
 
