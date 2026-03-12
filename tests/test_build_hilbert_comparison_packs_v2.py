@@ -83,6 +83,38 @@ def test_pack_d_mixed_induction_numbertheory_tasks(tmp_path: Path) -> None:
     assert metadata["included_task_ids"] == summary["task_ids"]
 
 
+def test_pack_d_induction_core_tasks(tmp_path: Path) -> None:
+    summary = packs.build_pack("pack_d_induction_core_minif2f_v1", tmp_path)
+
+    assert summary["task_count"] == 2
+    assert summary["task_ids"] == [
+        "induction_sumkexp3eqsumksq",
+        "induction_12dvd4expnp1p20",
+    ]
+    assert summary["excluded_tasks"] == []
+
+    metadata = json.loads((tmp_path / "pack_d_induction_core_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == summary["task_ids"]
+    assert metadata["included_task_ids"] == summary["task_ids"]
+
+
+def test_pack_d_numbertheory_core_tasks(tmp_path: Path) -> None:
+    summary = packs.build_pack("pack_d_numbertheory_core_minif2f_v1", tmp_path)
+
+    assert summary["task_count"] == 4
+    assert summary["task_ids"] == [
+        "imo_1959_p1",
+        "numbertheory_2pownm1prime_nprime",
+        "mathd_numbertheory_427",
+        "mathd_algebra_452",
+    ]
+    assert summary["excluded_tasks"] == []
+
+    metadata = json.loads((tmp_path / "pack_d_numbertheory_core_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == summary["task_ids"]
+    assert metadata["included_task_ids"] == summary["task_ids"]
+
+
 def test_legacy_nat_and_finset_names_are_canonicalized() -> None:
     statement = (
         "theorem sample\n"

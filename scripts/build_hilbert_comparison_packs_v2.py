@@ -63,6 +63,16 @@ PACKS = {
         "mathd_numbertheory_427",
         "mathd_algebra_452",
     ],
+    "pack_d_induction_core_minif2f_v1": [
+        "induction_sumkexp3eqsumksq",
+        "induction_12dvd4expnp1p20",
+    ],
+    "pack_d_numbertheory_core_minif2f_v1": [
+        "imo_1959_p1",
+        "numbertheory_2pownm1prime_nprime",
+        "mathd_numbertheory_427",
+        "mathd_algebra_452",
+    ],
 }
 EXCLUDED_TASKS = {
     "mathd_numbertheory_780": (
