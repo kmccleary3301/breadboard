@@ -45,6 +45,30 @@ def test_mathd_numbertheory_530_prompt_includes_normalization_guidance() -> None
     assert "Nat.coprime_mul_lcm_eq_left" in prompt
 
 
+
+
+
+
+def test_imo_1959_p1_prompt_includes_gcd_helper_guidance() -> None:
+    prompt = runner._build_prompt(
+        "imo_1959_p1",
+        "import Mathlib\n\ntheorem imo_1959_p1 : True := by\n  trivial\n",
+    )
+
+    assert "3 * (14 * n + 3) = 2 * (21 * n + 4) + 1" in prompt
+    assert "Tactic.NormNum.nat_gcd_helper_1'" in prompt
+    assert "Do not introduce factor witnesses or divisibility case splits" in prompt
+def test_mathd_algebra_452_prompt_includes_midpoint_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_algebra_452",
+        "import Mathlib\n\ntheorem mathd_algebra_452 : True := by\n  trivial\n",
+    )
+
+    assert "Do not introduce a recurrence with `n - 1`" in prompt
+    assert "have h12 : a 3 - a 2 = a 2 - a 1 := by simpa using h₀ 1" in prompt
+    assert "have h78 : a 9 - a 8 = a 8 - a 7 := by simpa using h₀ 7" in prompt
+    assert "have hmid : a 9 + a 1 = 2 * a 5 := by linarith" in prompt
+    assert "avoid introducing `a 0`" in prompt
 def test_mathd_algebra_156_prompt_includes_case_split_guidance() -> None:
     prompt = runner._build_prompt(
         "mathd_algebra_156",

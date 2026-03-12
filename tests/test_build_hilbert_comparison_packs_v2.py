@@ -62,3 +62,44 @@ def test_imo_stress_pack_is_single_valid_task(tmp_path: Path) -> None:
     metadata = json.loads((tmp_path / "pack_c_imo1977_p6_stress_minif2f_v1" / "pack_metadata.json").read_text())
     assert metadata["requested_task_ids"] == ["imo_1977_p6"]
     assert metadata["included_task_ids"] == ["imo_1977_p6"]
+
+
+def test_pack_d_mixed_induction_numbertheory_tasks(tmp_path: Path) -> None:
+    summary = packs.build_pack("pack_d_mixed_induction_numbertheory_minif2f_v1", tmp_path)
+
+    assert summary["task_count"] == 6
+    assert summary["task_ids"] == [
+        "imo_1959_p1",
+        "induction_sumkexp3eqsumksq",
+        "induction_12dvd4expnp1p20",
+        "numbertheory_2pownm1prime_nprime",
+        "mathd_numbertheory_427",
+        "mathd_algebra_452",
+    ]
+    assert summary["excluded_tasks"] == []
+
+    metadata = json.loads((tmp_path / "pack_d_mixed_induction_numbertheory_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == summary["task_ids"]
+    assert metadata["included_task_ids"] == summary["task_ids"]
+
+
+def test_legacy_nat_and_finset_names_are_canonicalized() -> None:
+    statement = (
+        "theorem sample\n"
+        "  (a : ℕ)\n"
+        "  (h₀ : a = (∑ k in (nat.divisors 500), k)) :\n"
+        "  ∑ k in finset.filter (λ x, nat.prime x) (nat.divisors a) = nat.gcd a 1 := by\n"
+    )
+
+    canonical = packs._canonicalize_formal_statement("sample", statement)
+
+    assert "nat.divisors" not in canonical
+    assert "nat.prime" not in canonical
+    assert "nat.gcd" not in canonical
+    assert "finset.filter" not in canonical
+    assert "Nat.divisors" in canonical
+    assert "Nat.Prime" in canonical
+    assert "Nat.gcd" in canonical
+    assert "Finset.filter" in canonical
+    assert "λ x," not in canonical
+    assert "fun x =>" in canonical

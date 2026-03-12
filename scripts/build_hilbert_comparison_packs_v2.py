@@ -55,6 +55,14 @@ PACKS = {
     "pack_c_imo1977_p6_stress_minif2f_v1": [
         "imo_1977_p6",
     ],
+    "pack_d_mixed_induction_numbertheory_minif2f_v1": [
+        "imo_1959_p1",
+        "induction_sumkexp3eqsumksq",
+        "induction_12dvd4expnp1p20",
+        "numbertheory_2pownm1prime_nprime",
+        "mathd_numbertheory_427",
+        "mathd_algebra_452",
+    ],
 }
 EXCLUDED_TASKS = {
     "mathd_numbertheory_780": (
@@ -108,6 +116,10 @@ def _canonical_starter_file(header: str, formal_statement: str) -> str:
 
 
 def _canonicalize_formal_statement(task_id: str, formal_statement: str) -> str:
+    formal_statement = re.sub(r"\bnat\.", "Nat.", formal_statement)
+    formal_statement = re.sub(r"\bfinset\.", "Finset.", formal_statement)
+    formal_statement = re.sub(r"λ\s+([A-Za-z_][A-Za-z0-9_]*)\s*,", r"fun \1 =>", formal_statement)
+    formal_statement = formal_statement.replace("Nat.prime", "Nat.Prime")
     if task_id == "mathd_numbertheory_530":
         return (
             "theorem mathd_numbertheory_530\n"

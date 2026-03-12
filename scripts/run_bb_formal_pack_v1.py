@@ -55,6 +55,33 @@ TASK_HINTS = {
         "- Finish with `exact dvd_trans h₄ h₂`.\n"
         "- Do not stop at `simp` if the remaining goal is `2 ∣ 4 ^ k * 4`; close it with divisibility lemmas.\n"
     ),
+    "imo_1959_p1": (
+        "Task-specific guidance:\n"
+        "- Do not search for a general Euclidean-algorithm proof. Use the explicit linear combination `3 * (14 * n + 3) = 2 * (21 * n + 4) + 1`.\n"
+        "- First prove the arithmetic identity exactly: `have hlin : (14 * n + 3) * 3 = (21 * n + 4) * 2 + 1 := by ring`.\n"
+        "- Then apply `Tactic.NormNum.nat_gcd_helper_1'` directly: \n"
+        "  `have hg : Nat.gcd (21 * n + 4) (14 * n + 3) = 1 := by\n"
+        "     exact Tactic.NormNum.nat_gcd_helper_1' (21 * n + 4) (14 * n + 3) 2 3 hlin`\n"
+        "- Finish with `simpa [Nat.gcd] using hg` if the theorem head uses `nat.gcd`; otherwise use `simpa using hg`.\n"
+        "- Do not introduce factor witnesses or divisibility case splits; the helper lemma is the intended route.\n"
+    ),
+    "mathd_algebra_452": (
+        "Task-specific guidance:\n"
+        "- Do not introduce a recurrence with `n - 1`; that route breaks on `Nat.succ_le_iff`.\n"
+        "- Use the given second-difference hypothesis only at concrete indices: \n"
+        "  `have h12 : a 3 - a 2 = a 2 - a 1 := by simpa using h₀ 1`\n"
+        "  `have h23 : a 4 - a 3 = a 3 - a 2 := by simpa using h₀ 2`\n"
+        "  `have h34 : a 5 - a 4 = a 4 - a 3 := by simpa using h₀ 3`\n"
+        "  `have h45 : a 6 - a 5 = a 5 - a 4 := by simpa using h₀ 4`\n"
+        "  `have h56 : a 7 - a 6 = a 6 - a 5 := by simpa using h₀ 5`\n"
+        "  `have h67 : a 8 - a 7 = a 7 - a 6 := by simpa using h₀ 6`\n"
+        "  `have h78 : a 9 - a 8 = a 8 - a 7 := by simpa using h₀ 7`\n"
+        "- From those equalities, derive the midpoint identity directly with `linarith`: \n"
+        "  `have hmid : a 9 + a 1 = 2 * a 5 := by linarith [h12, h23, h34, h45, h56, h67, h78]`\n"
+        "- Then rewrite `a 5 = (a 1 + a 9) / 2` via `have hfive : a 5 = (a 1 + a 9) / 2 := by linarith [hmid]`.\n"
+        "- Finish with `rw [hfive, h₁, h₂]` and `norm_num`.\n"
+        "- Keep the theorem statement unchanged and avoid introducing `a 0`.\n"
+    ),
     "numbertheory_exk2powkeqapb2mulbpa2_aeq1": (
         "Task-specific guidance:\n"
         "- Let `u := a + b^2` and `v := b + a^2`. From the product hypothesis, prove both `u ∣ 2^k` and `v ∣ 2^k`.\n"
