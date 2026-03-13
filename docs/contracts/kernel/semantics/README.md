@@ -93,6 +93,14 @@ The V2 tranche now adds:
 - `unsupported_case_v1.md`
 - `execution_driver_policy_and_evidence_v1.md`
 
+The coordination follow-on tranche now adds:
+
+- `coordination_signals_v1.md`
+- `coordination_reviews_v1.md`
+- `coordination_directives_v1.md`
+- `coordination_intervention_v1.md`
+- `coordination_verification_v1.md`
+
 The first V3 tranche now adds:
 
 - `backbone_api_v1.md`

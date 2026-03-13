@@ -72,6 +72,20 @@ test("kernel validator rejects malformed run request", () => {
   assert.equal(kernelValidators.runRequest({ schema_version: "bb.run_request.v1", request_id: "r1", entry_mode: "interactive" }), false)
 })
 
+test("kernel validator accepts a coordination verification result payload", () => {
+  assert.doesNotThrow(() =>
+    assertValid("coordinationVerificationResult", {
+      schema_version: "bb.coordination_verification_result.v1",
+      subject_signal_id: "signal_worker_complete_1",
+      subject_task_id: "task_worker_1",
+      validator_task_id: "task_verifier_1",
+      status: "pass",
+      verification_artifact_refs: ["artifact://verification/pass.json"],
+      summary: "Verifier confirmed worker deliverable.",
+    }),
+  )
+})
+
 test("kernel validator accepts tracked engine conformance manifest", () => {
   assert.doesNotThrow(() =>
     assertValid(

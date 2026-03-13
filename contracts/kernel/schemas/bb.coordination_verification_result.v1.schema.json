@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_verification_result.v1.schema.json",
+  "title": "bb.coordination_verification_result.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "subject_signal_id",
+    "subject_task_id",
+    "validator_task_id",
+    "status",
+    "verification_artifact_refs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.coordination_verification_result.v1"
+    },
+    "subject_signal_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subject_task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "validator_task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "pass",
+        "fail",
+        "soft_fail"
+      ]
+    },
+    "verification_artifact_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "summary": {
+      "type": "string"
+    }
+  }
+}

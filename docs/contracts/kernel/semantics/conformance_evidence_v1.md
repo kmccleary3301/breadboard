@@ -142,6 +142,30 @@ For the longrun/escalation tranche, evidence should additionally preserve:
 - any resulting directive truth
 - stop reason and longrun summary without collapsing those layers together
 
+For the delegated-verification tranche, evidence should additionally preserve:
+
+- worker result signal as the verified subject
+- verifier signal carrying a verification-result contract
+- subject-signal lineage inside that verification bundle
+- supervisor review over verifier output
+- any directive issued back to the verifier when verification fails
+
+For the hardened intervention tranche, evidence should additionally preserve:
+
+- the effective reviewer role profile used for review truth
+- whether host intervention required a prior supervisor `escalate`
+- any `support_claim_ref` that narrowed the allowed host action set
+- the effective `allowed_host_actions` exposed in inspection
+
+## E4 closure note
+
+For current E4-facing public dossiers, coordination should remain narrow:
+
+- mission ownership stays explicit
+- reviewer roles stay named and small
+- host override stays directive-based
+- support-aware narrowing stays visible in policy/config rather than hidden in UI behavior
+
 ---
 
 ## Known ambiguities

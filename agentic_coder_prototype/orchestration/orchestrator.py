@@ -175,6 +175,46 @@ class MultiAgentOrchestrator:
             mvi_payload=self.bus_adapter.format_wakeup(payload),
         )
 
+    def coordination_inspection_snapshot(self) -> Dict[str, Any]:
+        """Return a read-only coordination snapshot derived from durable event-log truth."""
+        signals = [
+            dict(event.payload or {})
+            for event in self.event_log.events
+            if event.type == "coordination.signal"
+        ]
+        review_verdicts = [
+            dict(event.payload or {})
+            for event in self.event_log.events
+            if event.type == "coordination.review_verdict"
+        ]
+        directives = [
+            dict(event.payload or {})
+            for event in self.event_log.events
+            if event.type == "coordination.directive"
+        ]
+        return {
+            "signals": signals,
+            "review_verdicts": review_verdicts,
+            "directives": directives,
+            "latest_signal_by_code": {
+                str(item.get("code") or ""): dict(item)
+                for item in signals
+                if isinstance(item, dict) and str(item.get("code") or "").strip()
+            },
+            "unresolved_interventions": self._derive_interventions(
+                signals=signals,
+                review_verdicts=review_verdicts,
+                directives=directives,
+                resolved=False,
+            ),
+            "resolved_interventions": self._derive_interventions(
+                signals=signals,
+                review_verdicts=review_verdicts,
+                directives=directives,
+                resolved=True,
+            ),
+        }
+
     def subscription_cursors(self, job_id: str) -> Dict[str, Dict[str, Any]]:
         return {
             key: dict(value)
@@ -233,7 +273,20 @@ class MultiAgentOrchestrator:
         deliverable_refs = [str(item) for item in (payload.get("deliverable_refs") or []) if str(item).strip()]
         done_policy = self.team_config.coordination.done
         review_policy = self.team_config.coordination.review
+        reviewer_role = str(self.team_config.coordination.mission_owner_role or "supervisor").strip()
+        allowed_reviewer_roles = {
+            str(item).strip()
+            for item in (review_policy.allowed_reviewer_roles or [])
+            if str(item).strip()
+        }
+        if reviewer_role not in allowed_reviewer_roles:
+            raise ValueError(f"mission_owner_role {reviewer_role!r} is not allowed to issue review verdicts")
+        code = str(signal.get("code") or "")
         aggregate_validation = self._validate_aggregate_result_contract(payload)
+        verification_validation = self._validate_verification_result_contract(
+            payload,
+            signal_code=code,
+        )
         if done_policy.require_deliverable_refs and not required_refs and not deliverable_refs:
             required_refs = ["deliverable_ref_required"]
         missing_deliverable_refs = [item for item in required_refs if item not in deliverable_refs]
@@ -247,7 +300,6 @@ class MultiAgentOrchestrator:
             if str(item).strip()
         }
 
-        code = str(signal.get("code") or "")
         recommended_next_action = str(payload.get("recommended_next_action") or "").strip().lower()
         blocking_reason = str(payload.get("blocking_reason") or "").strip()
         blocked_action: Optional[str] = None
@@ -255,7 +307,11 @@ class MultiAgentOrchestrator:
         mission_completed = False
 
         if code == "complete":
-            if missing_deliverable_refs or aggregate_validation["invalid"]:
+            if (
+                missing_deliverable_refs
+                or aggregate_validation["invalid"]
+                or verification_validation["invalid"]
+            ):
                 verdict_code = "pending_validation"
             else:
                 verdict_code = "validated"
@@ -270,7 +326,7 @@ class MultiAgentOrchestrator:
         decision_payload = validate_review_verdict(
             build_review_verdict(
                 reviewer_task_id=self._task_id_for_job(supervisor_job),
-                reviewer_role=str(self.team_config.coordination.mission_owner_role or "supervisor"),
+                reviewer_role=reviewer_role,
                 subject_signal=signal,
                 verdict_code=verdict_code,
                 verdict_id=(
@@ -300,6 +356,23 @@ class MultiAgentOrchestrator:
                     "aggregate_contract_received": aggregate_validation["received_contract"],
                     "aggregate_missing_worker_task_ids": list(aggregate_validation["missing_worker_task_ids"]),
                     "aggregate_artifact_refs": list(aggregate_validation["aggregate_artifact_refs"]),
+                    "verification_contract_required": verification_validation["required_contract"],
+                    "verification_contract_received": verification_validation["received_contract"],
+                    "verification_status": verification_validation["verification_status"],
+                    "verification_subject_signal_id": verification_validation["subject_signal_id"],
+                    "verification_subject_signal_found": verification_validation["subject_signal_found"],
+                    "verification_subject_signal_code": verification_validation["subject_signal_code"],
+                    "verification_subject_task_id": verification_validation["subject_task_id"],
+                    "verification_artifact_refs": list(verification_validation["verification_artifact_refs"]),
+                    "allowed_host_actions": self._allowed_host_intervention_actions(
+                        {
+                            "support_claim_ref": str(payload.get("support_claim_ref") or "") or None,
+                        }
+                    ),
+                    "require_supervisor_escalate": bool(
+                        self.team_config.coordination.intervention.require_supervisor_escalate
+                    ),
+                    "review_role_profile": sorted(allowed_reviewer_roles),
                     "legacy_decision": self._legacy_supervisor_decision_name(
                         code=code,
                         verdict_code=verdict_code,
@@ -414,15 +487,27 @@ class MultiAgentOrchestrator:
                 return event
         return None
 
-    def _existing_directive(self, based_on_verdict_id: str) -> Optional[Event]:
-        verdict_id_text = str(based_on_verdict_id or "").strip()
+    def _review_event_by_verdict_id(self, verdict_id: str) -> Optional[Event]:
+        verdict_id_text = str(verdict_id or "").strip()
         if not verdict_id_text:
+            return None
+        for event in reversed(self.event_log.events):
+            if event.type != "coordination.review_verdict":
+                continue
+            payload = dict(event.payload or {})
+            if str(payload.get("verdict_id") or "") == verdict_id_text:
+                return event
+        return None
+
+    def _directive_by_id(self, directive_id: str) -> Optional[Event]:
+        directive_id_text = str(directive_id or "").strip()
+        if not directive_id_text:
             return None
         for event in reversed(self.event_log.events):
             if event.type != "coordination.directive":
                 continue
             payload = dict(event.payload or {})
-            if str(payload.get("based_on_verdict_id") or "") == verdict_id_text:
+            if str(payload.get("directive_id") or "") == directive_id_text:
                 return event
         return None
 
@@ -438,8 +523,8 @@ class MultiAgentOrchestrator:
         subject = verdict.get("subject") if isinstance(verdict.get("subject"), dict) else {}
         source_task_id = str(subject.get("source_task_id") or "")
         based_on_verdict_id = str(verdict.get("verdict_id") or "")
-        if not based_on_verdict_id or self._existing_directive(based_on_verdict_id) is not None:
-            return self._existing_directive(based_on_verdict_id)
+        if not based_on_verdict_id:
+            return None
 
         directive_code: Optional[str] = None
         target_task_id: Optional[str] = None
@@ -462,6 +547,11 @@ class MultiAgentOrchestrator:
         if not directive_code or not target_task_id:
             return None
 
+        directive_id = f"directive_{self._task_id_for_job(supervisor_job)}_{based_on_verdict_id}"
+        existing = self._directive_by_id(directive_id)
+        if existing is not None:
+            return existing
+
         target_job = self._job_for_task_id(target_task_id)
         directive = validate_directive(
             build_directive(
@@ -471,7 +561,7 @@ class MultiAgentOrchestrator:
                 target_task_id=target_task_id,
                 target_job_id=target_job.job_id if target_job is not None else None,
                 based_on_verdict=verdict,
-                directive_id=f"directive_{self._task_id_for_job(supervisor_job)}_{based_on_verdict_id}",
+                directive_id=directive_id,
                 payload={
                     "wake_target": wake_target,
                     "recommended_next_action": verdict.get("recommended_next_action"),
@@ -503,6 +593,144 @@ class MultiAgentOrchestrator:
                 causal_parent_event_id=event.event_id,
             )
         return event
+
+    def issue_host_intervention_directive(
+        self,
+        *,
+        based_on_verdict_id: str,
+        directive_code: str,
+        evidence_refs: Optional[Iterable[str]] = None,
+        note: Optional[str] = None,
+    ) -> Event:
+        verdict_id_text = str(based_on_verdict_id or "").strip()
+        if not verdict_id_text:
+            raise ValueError("missing based_on_verdict_id")
+
+        action = str(directive_code or "").strip().lower()
+        evidence = [str(item) for item in (evidence_refs or []) if str(item).strip()]
+        if self.team_config.coordination.intervention.require_evidence_refs and not evidence:
+            raise ValueError("host intervention requires evidence_refs")
+
+        review_event = self._review_event_by_verdict_id(verdict_id_text)
+        if review_event is None:
+            raise ValueError(f"missing review verdict {verdict_id_text}")
+        verdict = dict(review_event.payload or {})
+        if str(verdict.get("verdict_code") or "") != "human_required":
+            raise ValueError("host intervention requires a human_required review verdict")
+        reviewer_role = str(verdict.get("reviewer_role") or "").strip().lower()
+        allowed_reviewer_roles = {
+            str(item).strip().lower()
+            for item in (self.team_config.coordination.review.allowed_reviewer_roles or [])
+            if str(item).strip()
+        }
+        if reviewer_role not in allowed_reviewer_roles:
+            raise ValueError(f"reviewer_role {reviewer_role!r} is not allowed for host intervention")
+        if self.team_config.coordination.intervention.require_supervisor_escalate and not self._has_supervisor_escalate_for_verdict(
+            verdict_id_text
+        ):
+            raise ValueError("host intervention requires a prior supervisor escalate directive")
+        allowed_actions = self._allowed_host_intervention_actions(verdict)
+        if action not in allowed_actions:
+            raise ValueError(f"directive_code {action!r} not allowed for host intervention")
+
+        metadata = verdict.get("metadata") if isinstance(verdict.get("metadata"), dict) else {}
+        supervisor_job_id = str(metadata.get("job_id") or "")
+        supervisor_job = self.job_manager.get(supervisor_job_id) if supervisor_job_id else None
+        if supervisor_job is None:
+            raise ValueError(f"missing supervisor job for review verdict {verdict_id_text}")
+
+        subject = verdict.get("subject") if isinstance(verdict.get("subject"), dict) else {}
+        target_task_id = str(subject.get("source_task_id") or "")
+        if not target_task_id:
+            raise ValueError(f"review verdict {verdict_id_text} is missing source_task_id")
+
+        wake_target = action in {"continue", "checkpoint"}
+        target_job = self._job_for_task_id(target_task_id)
+        if wake_target and target_job is None:
+            raise ValueError(f"missing target job for task {target_task_id}")
+
+        supervisor_task_id = self._task_id_for_job(supervisor_job)
+        directive_id = f"directive_host_{supervisor_task_id}_{action}_{verdict_id_text}"
+        existing = self._directive_by_id(directive_id)
+        if existing is not None:
+            return existing
+
+        directive = validate_directive(
+            build_directive(
+                directive_code=action,
+                issuer_task_id=f"host::{supervisor_task_id}",
+                issuer_role="host",
+                target_task_id=target_task_id,
+                target_job_id=target_job.job_id if target_job is not None else None,
+                based_on_verdict=verdict,
+                directive_id=directive_id,
+                payload={
+                    "wake_target": wake_target,
+                    "note": str(note or "").strip() or None,
+                    "intervention_response": True,
+                },
+                evidence_refs=evidence,
+                metadata={
+                    "review_event_id": int(review_event.event_id),
+                    "trigger_signal_id": str(subject.get("trigger_signal_id") or subject.get("signal_id") or ""),
+                    "coordination_origin": "host.intervention",
+                    "response_to_human_required": True,
+                },
+            )
+        )
+        event = self.event_log.add(
+            "coordination.directive",
+            agent_id=supervisor_job.agent_id,
+            parent_agent_id=supervisor_job.owner_agent,
+            causal_parent_event_id=review_event.event_id,
+            payload=directive,
+        )
+        if wake_target and target_job is not None:
+            self.emit_wakeup(
+                target_job,
+                reason=f"directive:{action}",
+                message=self._default_directive_message(directive),
+                source_task_id=f"host::{supervisor_task_id}",
+                directive_id=str(directive.get("directive_id") or ""),
+                directive_code=action,
+                based_on_verdict_id=verdict_id_text,
+                causal_parent_event_id=event.event_id,
+            )
+        return event
+
+    def _allowed_host_intervention_actions(self, verdict: Dict[str, Any]) -> list[str]:
+        intervention_policy = self.team_config.coordination.intervention
+        allowed_actions = [
+            str(item).strip().lower()
+            for item in (intervention_policy.host_allowed_actions or [])
+            if str(item).strip()
+        ]
+        support_claim_ref = str(verdict.get("support_claim_ref") or "").strip()
+        if not support_claim_ref:
+            return allowed_actions
+        limited_actions = [
+            str(item).strip().lower()
+            for item in (intervention_policy.support_claim_limited_actions or [])
+            if str(item).strip()
+        ]
+        intersection = [item for item in allowed_actions if item in set(limited_actions)]
+        return intersection or limited_actions
+
+    def _has_supervisor_escalate_for_verdict(self, verdict_id: str) -> bool:
+        verdict_id_text = str(verdict_id or "").strip()
+        if not verdict_id_text:
+            return False
+        for event in self.event_log.events:
+            if event.type != "coordination.directive":
+                continue
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            if str(payload.get("based_on_verdict_id") or "").strip() != verdict_id_text:
+                continue
+            if str(payload.get("issuer_role") or "").strip() != "supervisor":
+                continue
+            if str(payload.get("directive_code") or "").strip() == "escalate":
+                return True
+        return False
 
     def _job_for_task_id(self, task_id: str) -> Optional[JobRef]:
         task_id_text = str(task_id or "").strip()
@@ -547,6 +775,144 @@ class MultiAgentOrchestrator:
             "missing_worker_task_ids": missing_worker_task_ids,
             "aggregate_artifact_refs": aggregate_artifact_refs,
         }
+
+    def _validate_verification_result_contract(
+        self,
+        payload: Dict[str, Any],
+        *,
+        signal_code: str,
+    ) -> Dict[str, Any]:
+        review_policy = self.team_config.coordination.review
+        required_contract = str(review_policy.verification_result_contract or "").strip()
+        verification_result = (
+            payload.get("verification_result") if isinstance(payload.get("verification_result"), dict) else {}
+        )
+        received_contract = str(payload.get("verification_result_contract") or "").strip()
+        verification_status = str(verification_result.get("status") or "").strip().lower()
+        subject_signal_id = str(verification_result.get("subject_signal_id") or "").strip()
+        subject_task_id = str(verification_result.get("subject_task_id") or "").strip()
+        verification_artifact_refs = [
+            str(item) for item in (verification_result.get("verification_artifact_refs") or []) if str(item).strip()
+        ]
+
+        applies = bool(required_contract)
+        invalid = False
+        subject_signal_found = False
+        subject_signal_code: Optional[str] = None
+        if applies:
+            subject_signal_event = self._signal_event_by_id(subject_signal_id)
+            if subject_signal_event is not None:
+                subject_signal_found = True
+                subject_payload = dict(subject_signal_event.payload or {})
+                subject_signal_code = str(subject_payload.get("code") or "").strip() or None
+                subject_validation = (
+                    subject_payload.get("validation") if isinstance(subject_payload.get("validation"), dict) else {}
+                )
+                if not subject_task_id:
+                    subject_task_id = str(subject_payload.get("task_id") or "").strip()
+                elif subject_task_id != str(subject_payload.get("task_id") or "").strip():
+                    invalid = True
+                if not bool(subject_validation.get("accepted")):
+                    invalid = True
+            invalid = invalid or (
+                received_contract != required_contract
+                or not verification_result
+                or verification_status not in {"pass", "fail", "soft_fail"}
+                or not subject_signal_id
+                or not subject_signal_found
+                or subject_signal_code != "complete"
+                or not verification_artifact_refs
+            )
+            if signal_code == "complete" and verification_status != "pass":
+                invalid = True
+            if signal_code == "blocked" and verification_status not in {"fail", "soft_fail"}:
+                invalid = True
+
+        return {
+            "applies": applies,
+            "invalid": invalid,
+            "required_contract": required_contract or None,
+            "received_contract": received_contract or None,
+            "verification_status": verification_status or None,
+            "subject_signal_id": subject_signal_id or None,
+            "subject_signal_found": subject_signal_found,
+            "subject_signal_code": subject_signal_code,
+            "subject_task_id": subject_task_id or None,
+            "verification_artifact_refs": verification_artifact_refs,
+        }
+
+    def _derive_interventions(
+        self,
+        *,
+        signals: Iterable[Dict[str, Any]],
+        review_verdicts: Iterable[Dict[str, Any]],
+        directives: Iterable[Dict[str, Any]],
+        resolved: bool,
+    ) -> list[Dict[str, Any]]:
+        signal_by_id = {
+            str(item.get("signal_id") or ""): dict(item)
+            for item in signals
+            if isinstance(item, dict) and str(item.get("signal_id") or "").strip()
+        }
+        directives_by_verdict: Dict[str, list[Dict[str, Any]]] = {}
+        host_directives_by_verdict: Dict[str, list[Dict[str, Any]]] = {}
+        for directive in directives:
+            if not isinstance(directive, dict):
+                continue
+            verdict_id = str(directive.get("based_on_verdict_id") or "").strip()
+            if not verdict_id:
+                continue
+            directive_copy = dict(directive)
+            directives_by_verdict.setdefault(verdict_id, []).append(directive_copy)
+            if str(directive.get("issuer_role") or "") == "host":
+                host_directives_by_verdict.setdefault(verdict_id, []).append(directive_copy)
+
+        snapshots: list[Dict[str, Any]] = []
+        for verdict in review_verdicts:
+            if not isinstance(verdict, dict):
+                continue
+            if str(verdict.get("verdict_code") or "") != "human_required":
+                continue
+            verdict_id = str(verdict.get("verdict_id") or "").strip()
+            if not verdict_id:
+                continue
+            host_responses = host_directives_by_verdict.get(verdict_id) or []
+            is_resolved = bool(host_responses)
+            if is_resolved != resolved:
+                continue
+            subject = verdict.get("subject") if isinstance(verdict.get("subject"), dict) else {}
+            signal_id = str(subject.get("signal_id") or "")
+            signal = signal_by_id.get(signal_id) or {}
+            payload = signal.get("payload") if isinstance(signal.get("payload"), dict) else {}
+            metadata = verdict.get("metadata") if isinstance(verdict.get("metadata"), dict) else {}
+            allowed_host_actions = [
+                str(item)
+                for item in (
+                    metadata.get("allowed_host_actions")
+                    if isinstance(metadata.get("allowed_host_actions"), list)
+                    else self.team_config.coordination.intervention.host_allowed_actions
+                )
+                if str(item).strip()
+            ]
+            snapshots.append(
+                {
+                    "intervention_id": f"intervention_{verdict_id}",
+                    "status": "resolved" if is_resolved else "pending",
+                    "review_verdict_id": verdict_id,
+                    "signal_id": signal_id,
+                    "source_task_id": str(subject.get("source_task_id") or ""),
+                    "mission_task_id": str(subject.get("mission_task_id") or "") or None,
+                    "required_input": str(payload.get("required_input") or "").strip() or None,
+                    "blocking_reason": str(verdict.get("blocking_reason") or payload.get("blocking_reason") or "").strip()
+                    or None,
+                    "allowed_host_actions": allowed_host_actions,
+                    "review_verdict": dict(verdict),
+                    "signal": dict(signal) if signal else None,
+                    "directives": [dict(item) for item in (directives_by_verdict.get(verdict_id) or [])],
+                    "host_responses": [dict(item) for item in host_responses],
+                }
+            )
+        return snapshots
 
     @staticmethod
     def _default_directive_message(directive: Dict[str, Any]) -> str:

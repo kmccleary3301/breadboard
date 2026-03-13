@@ -76,6 +76,7 @@ The currently widened live slice now also proves:
 - reviewed `no_progress` -> `checkpoint`
 - reviewed `retryable_failure` -> `retry`
 - reviewed `human_required` -> `escalate`
+- reviewed `human_required` + host response -> host-issued `continue` / `checkpoint` / `terminate`
 
 Those are still deliberately narrow and policy-shaped.
 
@@ -114,3 +115,23 @@ That is enough to prove fan-in action intent without inventing routing or channe
 Read-only inspection may expose directive truth and directive lineage, but it should not become a mutation surface.
 
 Directive creation remains below projection and above review truth.
+
+## Host intervention note
+
+The first host/human response loop does not add a new kernel intervention primitive.
+
+Instead:
+
+- the supervisor may issue `escalate` from reviewed `human_required`
+- the host may later issue `continue`, `checkpoint`, or `terminate`
+- pending/resolved intervention state is derived from directive lineage
+
+That keeps host action on the same durable directive truth surface as supervisory action.
+
+## Delegated verification note
+
+In the delegated-verification slice, directive truth still stays narrow:
+
+- verifier `blocked` + reviewed checkpoint -> `checkpoint` directive to the verifier task
+
+The verifier pattern therefore extends the existing action language rather than requiring a new verification-control primitive.

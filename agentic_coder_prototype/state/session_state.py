@@ -330,15 +330,79 @@ class SessionState:
 
     def coordination_inspection_snapshot(self) -> Dict[str, Any]:
         """Return a read-only coordination snapshot derived from canonical runtime truth."""
+        signals = [dict(item) for item in self.coordination_signals]
+        review_verdicts = [dict(item) for item in self.coordination_review_verdicts]
+        directives = [dict(item) for item in self.coordination_directives]
+        signal_by_id = {
+            str(item.get("signal_id") or ""): dict(item)
+            for item in signals
+            if isinstance(item, dict) and str(item.get("signal_id") or "").strip()
+        }
+        directives_by_verdict: Dict[str, List[Dict[str, Any]]] = {}
+        host_directives_by_verdict: Dict[str, List[Dict[str, Any]]] = {}
+        for directive in directives:
+            verdict_id = str(directive.get("based_on_verdict_id") or "").strip()
+            if not verdict_id:
+                continue
+            directive_copy = dict(directive)
+            directives_by_verdict.setdefault(verdict_id, []).append(directive_copy)
+            if str(directive.get("issuer_role") or "") == "host":
+                host_directives_by_verdict.setdefault(verdict_id, []).append(directive_copy)
+
+        unresolved_interventions: List[Dict[str, Any]] = []
+        resolved_interventions: List[Dict[str, Any]] = []
+        for verdict in review_verdicts:
+            if str(verdict.get("verdict_code") or "") != "human_required":
+                continue
+            verdict_id = str(verdict.get("verdict_id") or "").strip()
+            if not verdict_id:
+                continue
+            subject = verdict.get("subject") if isinstance(verdict.get("subject"), dict) else {}
+            signal_id = str(subject.get("signal_id") or "")
+            signal = signal_by_id.get(signal_id) or {}
+            payload = signal.get("payload") if isinstance(signal.get("payload"), dict) else {}
+            metadata = verdict.get("metadata") if isinstance(verdict.get("metadata"), dict) else {}
+            allowed_host_actions = [
+                str(item)
+                for item in (
+                    metadata.get("allowed_host_actions")
+                    if isinstance(metadata.get("allowed_host_actions"), list)
+                    else (payload.get("allowed_host_actions") or [])
+                )
+                if str(item).strip()
+            ]
+            host_responses = [dict(item) for item in (host_directives_by_verdict.get(verdict_id) or [])]
+            snapshot = {
+                "intervention_id": f"intervention_{verdict_id}",
+                "status": "resolved" if host_responses else "pending",
+                "review_verdict_id": verdict_id,
+                "signal_id": signal_id,
+                "source_task_id": str(subject.get("source_task_id") or ""),
+                "mission_task_id": str(subject.get("mission_task_id") or "") or None,
+                "required_input": str(payload.get("required_input") or "").strip() or None,
+                "blocking_reason": str(verdict.get("blocking_reason") or payload.get("blocking_reason") or "").strip()
+                or None,
+                "allowed_host_actions": allowed_host_actions,
+                "review_verdict": dict(verdict),
+                "signal": dict(signal) if signal else None,
+                "directives": [dict(item) for item in (directives_by_verdict.get(verdict_id) or [])],
+                "host_responses": host_responses,
+            }
+            if host_responses:
+                resolved_interventions.append(snapshot)
+            else:
+                unresolved_interventions.append(snapshot)
         return {
-            "signals": [dict(item) for item in self.coordination_signals],
-            "review_verdicts": [dict(item) for item in self.coordination_review_verdicts],
-            "directives": [dict(item) for item in self.coordination_directives],
+            "signals": signals,
+            "review_verdicts": review_verdicts,
+            "directives": directives,
             "latest_signal_by_code": {
                 str(item.get("code") or ""): dict(item)
-                for item in self.coordination_signals
+                for item in signals
                 if isinstance(item, dict) and str(item.get("code") or "").strip()
             },
+            "unresolved_interventions": unresolved_interventions,
+            "resolved_interventions": resolved_interventions,
         }
 
     def emit_permission_event(self, event_type: str, payload: Dict[str, Any]) -> None:

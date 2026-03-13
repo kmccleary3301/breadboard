@@ -60,6 +60,7 @@ That distinction is what keeps mission ownership explicit.
 
 The current small review-policy expansion is:
 
+- `coordination.review.allowed_reviewer_roles`
 - `coordination.review.no_progress_action`
 - `coordination.review.retryable_failure_action`
 
@@ -157,5 +158,27 @@ That keeps fan-in explicit without overproducing ontology.
 The current justified inspection surface is intentionally read-only:
 
 - session/runtime snapshots may expose accepted signals, review verdicts, directives, and latest-by-code summaries
+- session/runtime snapshots may also derive pending and resolved intervention views from reviewed `human_required` truth
 - those snapshots are projections over durable truth, not a second semantic layer
 - hosts and TS surfaces should inspect them, not mutate them
+
+## Intervention handoff note
+
+The first operational host-response loop is deliberately narrow:
+
+- reviewed `human_required` remains verdict truth
+- any later host answer is represented as a host-issued `bb.directive.v1`
+- only configured reviewer roles may produce the reviewed truth the host is allowed to answer
+- the pending/resolved intervention view is derived projection, not new kernel truth
+
+That keeps the request/response loop on the same coordination stack without adding a new primitive family.
+
+## Delegated verification note
+
+The next justified higher-order widening is delegated verification:
+
+- worker signal truth remains the producer fact
+- verifier signal truth carries a small verification-result contract
+- supervisor review is performed over the verifier signal
+
+That keeps verification evidence explicit without turning review metadata into a hidden comparison language.

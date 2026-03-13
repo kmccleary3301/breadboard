@@ -52,4 +52,5 @@ For the current coordination slice:
 - review verdicts and directives remain kernel/orchestration truth
 - Backbone may surface wake-derived session updates or callbacks
 - Backbone may surface read-only coordination inspection snapshots
+- `BackboneSession.inspectCoordination(...)` is a projection helper over kernel events or prior snapshots, not a write-side coordination API
 - mission-completion ownership stays below Backbone and above raw transport

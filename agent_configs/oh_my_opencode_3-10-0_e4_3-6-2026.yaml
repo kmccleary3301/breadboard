@@ -394,8 +394,16 @@ multi_agent:
         - provider_finish
         preserve_legacy_wake_conditions: true
         review:
+          allowed_reviewer_roles:
+          - supervisor
+          - system
           no_progress_action: checkpoint
           retryable_failure_action: retry
+        intervention:
+          require_supervisor_escalate: true
+          support_claim_limited_actions:
+          - checkpoint
+          - terminate
       bus:
         model_visible_topics:
         - tool_result

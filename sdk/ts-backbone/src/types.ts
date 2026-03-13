@@ -1,4 +1,5 @@
 import type {
+  CoordinationInspectionSnapshotV1,
   KernelEventV1,
   ProviderExchangeV1,
   RunRequestV1,
@@ -60,9 +61,15 @@ export interface BackboneTurnResult {
   readonly runContextId: string
   readonly transcript: SessionTranscriptV1
   readonly events: readonly KernelEventV1[]
+  readonly coordinationInspection: CoordinationInspectionSnapshotV1
   readonly providerTurn?: ProviderTextTurnResult
   readonly driverTurn?: DriverMediatedToolTurnResult
   readonly unsupportedCase?: UnsupportedCaseV1
+}
+
+export interface CoordinationInspectionInput {
+  readonly snapshot?: CoordinationInspectionSnapshotV1 | null
+  readonly events?: readonly KernelEventV1[]
 }
 
 export interface BackboneSession {
@@ -73,6 +80,7 @@ export interface BackboneSession {
   classifyToolTurn(input: ToolTurnInput): SupportClaim
   runProviderTurn(input: ProviderTurnInput): Promise<BackboneTurnResult>
   runToolTurn(input: ToolTurnInput): Promise<BackboneTurnResult>
+  inspectCoordination(input?: CoordinationInspectionInput): CoordinationInspectionSnapshotV1
 }
 
 export interface BackboneOptions {

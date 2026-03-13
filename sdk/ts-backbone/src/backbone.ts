@@ -4,12 +4,19 @@ import {
   executeProviderTextTurn,
 } from "@breadboard/kernel-core"
 import type { Backbone, BackboneOptions, BackboneSession, HostSessionDescriptor, ProviderTurnInput, ToolTurnInput } from "./types.js"
-import { buildBackboneTurnResult, buildProjectionProfile, buildSupportClaim, buildToolTurnSupportClaim } from "./support.js"
+import {
+  buildBackboneTurnResult,
+  buildCoordinationInspectionSnapshot,
+  buildProjectionProfile,
+  buildSupportClaim,
+  buildToolTurnSupportClaim,
+} from "./support.js"
 
 function makeBackboneSession(options: BackboneOptions, descriptor: HostSessionDescriptor): BackboneSession {
   const projectionProfile = buildProjectionProfile(
     descriptor.projectionProfileId ?? options.defaultProjectionProfileId ?? "host_callbacks",
   )
+  let coordinationInspection = buildCoordinationInspectionSnapshot()
   return {
     descriptor,
     workspace: options.workspace,
@@ -44,7 +51,7 @@ function makeBackboneSession(options: BackboneOptions, descriptor: HostSessionDe
             providerExchange: input.providerExchange,
             assistantText: input.assistantText,
           })
-      return buildBackboneTurnResult({
+      const result = buildBackboneTurnResult({
         supportClaim,
         projectionProfile,
         runContextId: providerTurn.runContext.request_id,
@@ -52,6 +59,8 @@ function makeBackboneSession(options: BackboneOptions, descriptor: HostSessionDe
         events: providerTurn.events,
         providerTurn,
       })
+      coordinationInspection = result.coordinationInspection
+      return result
     },
     async runToolTurn(input: ToolTurnInput) {
       const supportClaim = buildToolTurnSupportClaim(options.workspace, input)
@@ -69,7 +78,7 @@ function makeBackboneSession(options: BackboneOptions, descriptor: HostSessionDe
         assistantText: input.assistantText ?? null,
         workspaceRef: descriptor.workspaceRoot ?? options.workspace.rootDir ?? null,
       })
-      return buildBackboneTurnResult({
+      const result = buildBackboneTurnResult({
         supportClaim,
         projectionProfile,
         runContextId: driverTurn.runContext.request_id,
@@ -77,6 +86,15 @@ function makeBackboneSession(options: BackboneOptions, descriptor: HostSessionDe
         events: driverTurn.events,
         driverTurn,
       })
+      coordinationInspection = result.coordinationInspection
+      return result
+    },
+    inspectCoordination(input) {
+      coordinationInspection = buildCoordinationInspectionSnapshot({
+        snapshot: input?.events ? input?.snapshot : (input?.snapshot ?? coordinationInspection),
+        events: input?.events,
+      })
+      return coordinationInspection
     },
   }
 }

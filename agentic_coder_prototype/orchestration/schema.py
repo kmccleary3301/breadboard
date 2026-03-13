@@ -74,15 +74,24 @@ class CoordinationConfig:
     @dataclass(frozen=True)
     class ReviewConfig:
         explicit_verdicts: bool = True
+        allowed_reviewer_roles: List[str] = field(default_factory=lambda: ["supervisor", "system"])
         allowed_blocked_actions: List[str] = field(
             default_factory=lambda: ["retry", "checkpoint", "escalate", "human_required"]
         )
         no_progress_action: str = "checkpoint"
         retryable_failure_action: str = "retry"
+        verification_result_contract: Optional[str] = None
 
     @dataclass(frozen=True)
     class MergeConfig:
         reducer_result_contract: Optional[str] = None
+
+    @dataclass(frozen=True)
+    class InterventionConfig:
+        host_allowed_actions: List[str] = field(default_factory=lambda: ["continue", "checkpoint", "terminate"])
+        require_evidence_refs: bool = False
+        require_supervisor_escalate: bool = True
+        support_claim_limited_actions: List[str] = field(default_factory=lambda: ["checkpoint", "terminate"])
 
     mission_owner_role: str = "supervisor"
     legacy_completion_sources: List[str] = field(
@@ -92,6 +101,7 @@ class CoordinationConfig:
     done: DoneConfig = field(default_factory=DoneConfig)
     review: ReviewConfig = field(default_factory=ReviewConfig)
     merge: MergeConfig = field(default_factory=MergeConfig)
+    intervention: InterventionConfig = field(default_factory=InterventionConfig)
 
 
 @dataclass(frozen=True)
@@ -194,6 +204,7 @@ class TeamConfig:
         done_raw = coordination_raw.get("done") or {}
         review_raw = coordination_raw.get("review") or {}
         merge_raw = coordination_raw.get("merge") or {}
+        intervention_raw = coordination_raw.get("intervention") or {}
         coordination = CoordinationConfig(
             mission_owner_role=str(coordination_raw.get("mission_owner_role") or "supervisor"),
             legacy_completion_sources=[
@@ -214,6 +225,12 @@ class TeamConfig:
             ),
             review=CoordinationConfig.ReviewConfig(
                 explicit_verdicts=bool(review_raw.get("explicit_verdicts", True)),
+                allowed_reviewer_roles=[
+                    str(item)
+                    for item in (review_raw.get("allowed_reviewer_roles") or [])
+                    if str(item).strip()
+                ]
+                or ["supervisor", "system"],
                 allowed_blocked_actions=[
                     str(item)
                     for item in (review_raw.get("allowed_blocked_actions") or [])
@@ -222,6 +239,12 @@ class TeamConfig:
                 or ["retry", "checkpoint", "escalate", "human_required"],
                 no_progress_action=str(review_raw.get("no_progress_action") or "checkpoint"),
                 retryable_failure_action=str(review_raw.get("retryable_failure_action") or "retry"),
+                verification_result_contract=(
+                    str(review_raw.get("verification_result_contract")).strip()
+                    if review_raw.get("verification_result_contract") is not None
+                    and str(review_raw.get("verification_result_contract")).strip()
+                    else None
+                ),
             ),
             merge=CoordinationConfig.MergeConfig(
                 reducer_result_contract=(
@@ -231,7 +254,34 @@ class TeamConfig:
                     else None
                 )
             ),
+            intervention=CoordinationConfig.InterventionConfig(
+                host_allowed_actions=[
+                    str(item)
+                    for item in (intervention_raw.get("host_allowed_actions") or [])
+                    if str(item).strip()
+                ]
+                or ["continue", "checkpoint", "terminate"],
+                require_evidence_refs=bool(intervention_raw.get("require_evidence_refs", False)),
+                require_supervisor_escalate=bool(intervention_raw.get("require_supervisor_escalate", True)),
+                support_claim_limited_actions=[
+                    str(item)
+                    for item in (intervention_raw.get("support_claim_limited_actions") or [])
+                    if str(item).strip()
+                ]
+                or ["checkpoint", "terminate"],
+            ),
         )
+
+        mission_owner_role = str(coordination.mission_owner_role or "").strip() or "supervisor"
+        allowed_reviewer_roles = {
+            str(item).strip()
+            for item in (coordination.review.allowed_reviewer_roles or [])
+            if str(item).strip()
+        }
+        if mission_owner_role not in allowed_reviewer_roles:
+            raise ValueError(
+                "coordination.mission_owner_role must be included in coordination.review.allowed_reviewer_roles"
+            )
 
         workspace_raw = team.get("workspace") or {}
         workspace = WorkspaceConfig(

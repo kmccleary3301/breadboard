@@ -14,6 +14,7 @@ from agentic_coder_prototype.conductor_execution import (
 )
 from agentic_coder_prototype.orchestration.coordination import (
     build_blocked_signal_proposal,
+    build_human_required_signal_proposal,
     build_signal_proposal,
     validate_signal_proposal,
 )
@@ -87,6 +88,42 @@ def _coordination_longrun_fixture_output(
         "events": list(coordination.get("events") or []),
     }
     return _zero_validation_timestamps(_normalize_fixture_value(output, replacements))
+
+
+def _coordination_intervention_team() -> TeamConfig:
+    return TeamConfig.from_dict(
+        {
+            "team": {
+                "id": "coord-fixture-intervention",
+                "coordination": {
+                    "intervention": {
+                        "host_allowed_actions": ["continue", "checkpoint", "terminate"],
+                        "require_evidence_refs": False,
+                    }
+                },
+            }
+        }
+    )
+
+
+def _coordination_verification_team() -> TeamConfig:
+    return TeamConfig.from_dict(
+        {
+            "team": {
+                "id": "coord-fixture-verification",
+                "coordination": {
+                    "mission_owner_role": "supervisor",
+                    "done": {
+                        "require_deliverable_refs": True,
+                        "require_all_required_refs": True,
+                    },
+                    "review": {
+                        "verification_result_contract": "bb.coordination_verification_result.v1",
+                    },
+                },
+            }
+        }
+    )
 
 
 def _coordination_descriptor(task_id: str, *, parent_task_id: str | None = None, subscribed: bool = False) -> Dict[str, Any]:
@@ -814,6 +851,380 @@ def _build_coordination_longrun_human_required_fixture() -> Dict[str, Any]:
     }
 
 
+def _build_coordination_intervention_continue_fixture() -> Dict[str, Any]:
+    orchestrator = MultiAgentOrchestrator(_coordination_intervention_team())
+    supervisor = orchestrator.spawn_subagent(
+        owner_agent="root",
+        agent_id="supervisor",
+        payload={"role": "supervisor"},
+        task_descriptor={
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_supervisor_1",
+            "task_kind": "background",
+            "wake_subscriptions": [
+                {
+                    "schema_version": "bb.wake_subscription.v1",
+                    "subscription_id": "sub_worker_human_required",
+                    "on_codes": ["human_required"],
+                    "action": "resume",
+                    "from_task_ids": ["task_worker_1"],
+                    "include_descendants": False,
+                    "coalesce_window_ms": 0,
+                }
+            ],
+        },
+    )
+    worker = orchestrator.spawn_subagent(
+        owner_agent="supervisor",
+        agent_id="worker",
+        payload={"role": "worker"},
+        task_descriptor={
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_worker_1",
+            "parent_task_id": "task_supervisor_1",
+            "task_kind": "background",
+        },
+    )
+
+    signal = validate_signal_proposal(
+        build_human_required_signal_proposal(
+            task_id="task_worker_1",
+            parent_task_id="task_supervisor_1",
+            mission_task_id="task_supervisor_1",
+            required_input="Approve rerun after guarded failure",
+            blocking_reason="Operator approval required before continuing",
+            source_kind="runtime",
+            emitter_role="runtime",
+            evidence_refs=["evidence://human-required/worker-1"],
+        ),
+        mission_owner_role="supervisor",
+    )
+    signal["signal_id"] = "signal_human_required_intervention"
+    signal["validation"]["validated_at"] = 0.0
+    orchestrator.emit_coordination_signal(worker.job, signal)
+    verdict = orchestrator.supervisor_review_signal(supervisor.job)
+    verdict.payload["validation"]["validated_at"] = 0.0
+    unresolved = orchestrator.coordination_inspection_snapshot()["unresolved_interventions"]
+    host_directive = orchestrator.issue_host_intervention_directive(
+        based_on_verdict_id=str(verdict.payload.get("verdict_id") or ""),
+        directive_code="continue",
+    )
+    host_directive.payload["validation"]["validated_at"] = 0.0
+    resolved = orchestrator.coordination_inspection_snapshot()["resolved_interventions"]
+    supervisor_directive = next(
+        event
+        for event in orchestrator.event_log.events
+        if event.type == "coordination.directive"
+        and str((event.payload or {}).get("issuer_role") or "") == "supervisor"
+    )
+    supervisor_directive.payload["validation"]["validated_at"] = 0.0
+
+    reference_output = _normalize_fixture_value(
+        {
+            "schema_version": "bb.coordination_intervention_reference_slice.v1",
+            "scenario_id": "coordination_intervention_continue_python_reference",
+            "supervisor_task_id": "task_supervisor_1",
+            "worker_task_id": "task_worker_1",
+            "signal": signal,
+            "review_verdict": dict(verdict.payload or {}),
+            "supervisor_directive": dict(supervisor_directive.payload or {}),
+            "host_directive": dict(host_directive.payload or {}),
+            "unresolved_interventions_before": unresolved,
+            "resolved_interventions_after": resolved,
+            "events": _serialize_events(orchestrator),
+        },
+        {
+            supervisor.job.job_id: "job_supervisor_1",
+            worker.job.job_id: "job_worker_1",
+        },
+    )
+    return {
+        "fixture_family": "coordination",
+        "fixture_id": "coord_intervention_continue_python_reference",
+        "comparator_class": "normalized-trace-equal",
+        "support_tier": "reference-engine",
+        "contract": "bb.coordination_intervention_reference_slice.v1",
+        "reference_output": reference_output,
+    }
+
+
+def _build_coordination_delegated_verification_pass_fixture() -> Dict[str, Any]:
+    orchestrator = MultiAgentOrchestrator(_coordination_verification_team())
+    supervisor = orchestrator.spawn_subagent(
+        owner_agent="root",
+        agent_id="supervisor",
+        payload={"role": "supervisor"},
+        task_descriptor={
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_supervisor_1",
+            "task_kind": "background",
+            "wake_subscriptions": [
+                {
+                    "schema_version": "bb.wake_subscription.v1",
+                    "subscription_id": "sub_verifier_state",
+                    "on_codes": ["complete", "blocked"],
+                    "action": "resume",
+                    "from_task_ids": ["task_verifier_1"],
+                    "include_descendants": False,
+                    "coalesce_window_ms": 0,
+                }
+            ],
+        },
+    )
+    verifier = orchestrator.spawn_subagent(
+        owner_agent="supervisor",
+        agent_id="verifier",
+        payload={"role": "verifier"},
+        task_descriptor={
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_verifier_1",
+            "parent_task_id": "task_supervisor_1",
+            "task_kind": "background",
+            "wake_subscriptions": [
+                {
+                    "schema_version": "bb.wake_subscription.v1",
+                    "subscription_id": "sub_worker_complete",
+                    "on_codes": ["complete"],
+                    "action": "resume",
+                    "from_task_ids": ["task_worker_1"],
+                    "include_descendants": False,
+                    "coalesce_window_ms": 0,
+                }
+            ],
+        },
+    )
+    worker = orchestrator.spawn_subagent(
+        owner_agent="supervisor",
+        agent_id="worker",
+        payload={"role": "worker"},
+        task_descriptor={
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_worker_1",
+            "parent_task_id": "task_supervisor_1",
+            "task_kind": "background",
+        },
+    )
+
+    worker_signal = validate_signal_proposal(
+        build_signal_proposal(
+            code="complete",
+            task_id="task_worker_1",
+            parent_task_id="task_supervisor_1",
+            mission_task_id="task_supervisor_1",
+            source_kind="worker",
+            emitter_role="worker",
+            signal_id="signal_worker_complete_1",
+            evidence_refs=["artifact://deliverables/worker-report.md"],
+            payload={
+                "deliverable_refs": ["artifact://deliverables/worker-report.md"],
+                "completion_reason": "worker_done",
+            },
+        ),
+        mission_owner_role="supervisor",
+    )
+    worker_signal["validation"]["validated_at"] = 0.0
+    orchestrator.emit_coordination_signal(worker.job, worker_signal)
+
+    verifier_signal = validate_signal_proposal(
+        build_signal_proposal(
+            code="complete",
+            task_id="task_verifier_1",
+            parent_task_id="task_supervisor_1",
+            mission_task_id="task_supervisor_1",
+            source_kind="worker",
+            emitter_role="worker",
+            signal_id="signal_verifier_complete_1",
+            evidence_refs=["artifact://verification/pass.json"],
+            payload={
+                "deliverable_refs": ["artifact://deliverables/worker-report.md"],
+                "verification_result_contract": "bb.coordination_verification_result.v1",
+                "verification_result": {
+                    "schema_version": "bb.coordination_verification_result.v1",
+                    "subject_signal_id": "signal_worker_complete_1",
+                    "subject_task_id": "task_worker_1",
+                    "validator_task_id": "task_verifier_1",
+                    "status": "pass",
+                    "verification_artifact_refs": ["artifact://verification/pass.json"],
+                    "summary": "Verifier confirmed worker deliverable.",
+                },
+            },
+        ),
+        mission_owner_role="supervisor",
+    )
+    verifier_signal["validation"]["validated_at"] = 0.0
+    orchestrator.emit_coordination_signal(verifier.job, verifier_signal)
+    verdict = orchestrator.supervisor_review_signal(
+        supervisor.job,
+        required_deliverable_refs=["artifact://deliverables/worker-report.md"],
+    )
+    verdict.payload["validation"]["validated_at"] = 0.0
+
+    reference_output = _normalize_fixture_value(
+        {
+            "schema_version": "bb.coordination_delegated_verification_reference_slice.v1",
+            "scenario_id": "coordination_delegated_verification_pass_python_reference",
+            "supervisor_task_id": "task_supervisor_1",
+            "worker_task_id": "task_worker_1",
+            "verifier_task_id": "task_verifier_1",
+            "worker_signal": worker_signal,
+            "verifier_signal": verifier_signal,
+            "review_verdict": dict(verdict.payload or {}),
+            "directive": None,
+            "events": _serialize_events(orchestrator),
+        },
+        {
+            supervisor.job.job_id: "job_supervisor_1",
+            verifier.job.job_id: "job_verifier_1",
+            worker.job.job_id: "job_worker_1",
+        },
+    )
+    return {
+        "fixture_family": "coordination",
+        "fixture_id": "coord_delegated_verification_pass_python_reference",
+        "comparator_class": "normalized-trace-equal",
+        "support_tier": "reference-engine",
+        "contract": "bb.coordination_delegated_verification_reference_slice.v1",
+        "reference_output": reference_output,
+    }
+
+
+def _build_coordination_delegated_verification_fail_fixture() -> Dict[str, Any]:
+    orchestrator = MultiAgentOrchestrator(_coordination_verification_team())
+    supervisor = orchestrator.spawn_subagent(
+        owner_agent="root",
+        agent_id="supervisor",
+        payload={"role": "supervisor"},
+        task_descriptor={
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_supervisor_1",
+            "task_kind": "background",
+            "wake_subscriptions": [
+                {
+                    "schema_version": "bb.wake_subscription.v1",
+                    "subscription_id": "sub_verifier_state",
+                    "on_codes": ["complete", "blocked"],
+                    "action": "resume",
+                    "from_task_ids": ["task_verifier_1"],
+                    "include_descendants": False,
+                    "coalesce_window_ms": 0,
+                }
+            ],
+        },
+    )
+    verifier = orchestrator.spawn_subagent(
+        owner_agent="supervisor",
+        agent_id="verifier",
+        payload={"role": "verifier"},
+        task_descriptor={
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_verifier_1",
+            "parent_task_id": "task_supervisor_1",
+            "task_kind": "background",
+            "wake_subscriptions": [
+                {
+                    "schema_version": "bb.wake_subscription.v1",
+                    "subscription_id": "sub_worker_complete",
+                    "on_codes": ["complete"],
+                    "action": "resume",
+                    "from_task_ids": ["task_worker_1"],
+                    "include_descendants": False,
+                    "coalesce_window_ms": 0,
+                }
+            ],
+        },
+    )
+    worker = orchestrator.spawn_subagent(
+        owner_agent="supervisor",
+        agent_id="worker",
+        payload={"role": "worker"},
+        task_descriptor={
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_worker_1",
+            "parent_task_id": "task_supervisor_1",
+            "task_kind": "background",
+        },
+    )
+
+    worker_signal = validate_signal_proposal(
+        build_signal_proposal(
+            code="complete",
+            task_id="task_worker_1",
+            parent_task_id="task_supervisor_1",
+            mission_task_id="task_supervisor_1",
+            source_kind="worker",
+            emitter_role="worker",
+            signal_id="signal_worker_complete_1",
+            evidence_refs=["artifact://deliverables/worker-report.md"],
+            payload={
+                "deliverable_refs": ["artifact://deliverables/worker-report.md"],
+                "completion_reason": "worker_done",
+            },
+        ),
+        mission_owner_role="supervisor",
+    )
+    worker_signal["validation"]["validated_at"] = 0.0
+    orchestrator.emit_coordination_signal(worker.job, worker_signal)
+
+    verifier_signal = validate_signal_proposal(
+        build_blocked_signal_proposal(
+            task_id="task_verifier_1",
+            parent_task_id="task_supervisor_1",
+            mission_task_id="task_supervisor_1",
+            blocking_reason="verification failed on diff mismatch",
+            recommended_next_action="checkpoint",
+            evidence_refs=["artifact://verification/fail.json"],
+            payload={
+                "verification_result_contract": "bb.coordination_verification_result.v1",
+                "verification_result": {
+                    "schema_version": "bb.coordination_verification_result.v1",
+                    "subject_signal_id": "signal_worker_complete_1",
+                    "subject_task_id": "task_worker_1",
+                    "validator_task_id": "task_verifier_1",
+                    "status": "fail",
+                    "verification_artifact_refs": ["artifact://verification/fail.json"],
+                    "summary": "Verifier found a blocking mismatch.",
+                },
+            },
+        ),
+        mission_owner_role="supervisor",
+    )
+    verifier_signal["signal_id"] = "signal_verifier_blocked_1"
+    verifier_signal["validation"]["validated_at"] = 0.0
+    orchestrator.emit_coordination_signal(verifier.job, verifier_signal)
+    verdict = orchestrator.supervisor_review_signal(supervisor.job)
+    verdict.payload["validation"]["validated_at"] = 0.0
+    directive = next(event for event in orchestrator.event_log.events if event.type == "coordination.directive")
+    directive.payload["validation"]["validated_at"] = 0.0
+
+    reference_output = _normalize_fixture_value(
+        {
+            "schema_version": "bb.coordination_delegated_verification_reference_slice.v1",
+            "scenario_id": "coordination_delegated_verification_fail_python_reference",
+            "supervisor_task_id": "task_supervisor_1",
+            "worker_task_id": "task_worker_1",
+            "verifier_task_id": "task_verifier_1",
+            "worker_signal": worker_signal,
+            "verifier_signal": verifier_signal,
+            "review_verdict": dict(verdict.payload or {}),
+            "directive": dict(directive.payload or {}),
+            "events": _serialize_events(orchestrator),
+        },
+        {
+            supervisor.job.job_id: "job_supervisor_1",
+            verifier.job.job_id: "job_verifier_1",
+            worker.job.job_id: "job_worker_1",
+        },
+    )
+    return {
+        "fixture_family": "coordination",
+        "fixture_id": "coord_delegated_verification_fail_python_reference",
+        "comparator_class": "normalized-trace-equal",
+        "support_tier": "reference-engine",
+        "contract": "bb.coordination_delegated_verification_reference_slice.v1",
+        "reference_output": reference_output,
+    }
+
+
 def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
     state = SessionState("/tmp/ws", "python-dev:latest", {})
     state.set_provider_metadata("session_id", "sess-ref-1")
@@ -1204,6 +1615,9 @@ def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
         "coordination/longrun_no_progress_fixture.json": _build_coordination_longrun_no_progress_fixture(),
         "coordination/longrun_retryable_failure_fixture.json": _build_coordination_longrun_retryable_failure_fixture(),
         "coordination/longrun_human_required_fixture.json": _build_coordination_longrun_human_required_fixture(),
+        "coordination/intervention_continue_fixture.json": _build_coordination_intervention_continue_fixture(),
+        "coordination/delegated_verification_pass_fixture.json": _build_coordination_delegated_verification_pass_fixture(),
+        "coordination/delegated_verification_fail_fixture.json": _build_coordination_delegated_verification_fail_fixture(),
     }
 
 

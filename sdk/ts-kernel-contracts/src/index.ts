@@ -361,6 +361,41 @@ export interface DirectiveV1 {
   validation?: DirectiveValidationV1 | null
 }
 
+export interface CoordinationVerificationResultV1 {
+  schema_version: "bb.coordination_verification_result.v1"
+  subject_signal_id: string
+  subject_task_id: string
+  validator_task_id: string
+  status: "pass" | "fail" | "soft_fail"
+  verification_artifact_refs: string[]
+  summary?: string
+}
+
+export interface CoordinationInterventionSnapshotV1 {
+  intervention_id: string
+  status: "pending" | "resolved"
+  review_verdict_id: string
+  signal_id: string
+  source_task_id: string
+  mission_task_id?: string | null
+  required_input?: string | null
+  blocking_reason?: string | null
+  allowed_host_actions?: DirectiveCodeV1[]
+  review_verdict: ReviewVerdictV1
+  signal: SignalV1 | null
+  directives: DirectiveV1[]
+  host_responses: DirectiveV1[]
+}
+
+export interface CoordinationInspectionSnapshotV1 {
+  signals: SignalV1[]
+  review_verdicts: ReviewVerdictV1[]
+  directives: DirectiveV1[]
+  latest_signal_by_code: Partial<Record<SignalCodeV1, SignalV1>>
+  unresolved_interventions: CoordinationInterventionSnapshotV1[]
+  resolved_interventions: CoordinationInterventionSnapshotV1[]
+}
+
 export interface DistributedTaskDescriptorV1 {
   schema_version: "bb.distributed_task_descriptor.v1"
   task_id: string
@@ -499,6 +534,7 @@ const sandboxResultSchema = loadTrackedSchema("bb.sandbox_result.v1.schema.json"
 const signalSchema = loadTrackedSchema("bb.signal.v1.schema.json")
 const reviewVerdictSchema = loadTrackedSchema("bb.review_verdict.v1.schema.json")
 const directiveSchema = loadTrackedSchema("bb.directive.v1.schema.json")
+const coordinationVerificationResultSchema = loadTrackedSchema("bb.coordination_verification_result.v1.schema.json")
 const wakeSubscriptionSchema = loadTrackedSchema("bb.wake_subscription.v1.schema.json")
 const distributedTaskDescriptorSchema = loadTrackedSchema("bb.distributed_task_descriptor.v1.schema.json")
 const transcriptContinuationPatchSchema = loadTrackedSchema("bb.transcript_continuation_patch.v1.schema.json")
@@ -529,6 +565,7 @@ const validators = {
   signal: ajv.compile(signalSchema),
   reviewVerdict: ajv.compile(reviewVerdictSchema),
   directive: ajv.compile(directiveSchema),
+  coordinationVerificationResult: ajv.compile(coordinationVerificationResultSchema),
   wakeSubscription: ajv.compile(wakeSubscriptionSchema),
   distributedTaskDescriptor: ajv.compile(distributedTaskDescriptorSchema),
   transcriptContinuationPatch: ajv.compile(transcriptContinuationPatchSchema),
@@ -557,6 +594,7 @@ export const kernelSchemas = {
   signal: signalSchema,
   reviewVerdict: reviewVerdictSchema,
   directive: directiveSchema,
+  coordinationVerificationResult: coordinationVerificationResultSchema,
   wakeSubscription: wakeSubscriptionSchema,
   distributedTaskDescriptor: distributedTaskDescriptorSchema,
   transcriptContinuationPatch: transcriptContinuationPatchSchema,

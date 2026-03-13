@@ -42,4 +42,5 @@ Host Kits may project coordination outcomes outward, but they should treat them 
 - review verdicts and directives are kernel/orchestration truth
 - wake messages shown to a host are projections
 - read-only coordination inspection snapshots are projections over that truth, not mutation APIs
+- host-facing coordination projection helpers may reduce those snapshots for UI/product use, but they must remain read-only and derivative
 - a host may present blocked or completion state, but it should not invent mission authority rules on its own
