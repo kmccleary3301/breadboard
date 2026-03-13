@@ -101,6 +101,10 @@ EXCLUDED_TASKS = {
         "Unsound under the extracted real-log statement: taking x = 2^(3 + sqrt 5) and "
         "y = 2^(3 - sqrt 5) satisfies h₁ and h₂, but log(x / y) / log 2 = 2 * sqrt 5, not 20."
     ),
+    "mathd_algebra_77": (
+        "Unsound under the extracted polynomial statement: taking a = -1/2, b = -1/2 and "
+        "f x = x^2 + a*x + b satisfies h₀, h₁, h₂, and h₃, but the conclusion a = 1 ∧ b = -2 is false."
+    ),
 }
 
 

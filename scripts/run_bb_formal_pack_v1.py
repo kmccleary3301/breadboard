@@ -152,10 +152,10 @@ TASK_HINTS = {
         "  `  · right; linarith`\n"
         "  `  · left; linarith`\n"
         "- In the contradiction branch `a = -1 / 2`, derive `hb : b = -1 / 2` by `linarith [hsum, ha]`.\n"
-        "- Then prove the explicit value and contradiction using equalities, not a `≠` goal:\n"
-        "  `have hfval : f (-1 / 2) = -1 / 4 := by rw [h₁ (-1 / 2)]; norm_num [hb, ha, pow_two]`\n"
+        "- Then prove the contradiction by rewriting the zero fact, not by constructing a separate `≠` witness:\n"
         "  `have hfzero : f (-1 / 2) = 0 := by simpa [ha] using h₂`\n"
-        "  `linarith [hfval, hfzero]`\n"
+        "  `rw [h₁ (-1 / 2)] at hfzero`\n"
+        "  `nlinarith [hfzero, ha, hb]`\n"
         "- Do not rewrite directly inside a `≠` goal.\n"
     ),
     "mathd_algebra_131": (

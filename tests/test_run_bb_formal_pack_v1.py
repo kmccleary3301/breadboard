@@ -169,7 +169,9 @@ def test_mathd_algebra_77_prompt_includes_calc_and_sum_guidance() -> None:
     assert "(mul_eq_zero.mp hb_factor).resolve_left hb0" in prompt
     assert "Do not ask `nlinarith` for a disjunction" in prompt
     assert "have hfactor : (2 * a + 1) * (a - 1) = 0 := by nlinarith [hmain]" in prompt
-    assert "have hfval : f (-1 / 2) = -1 / 4 := by" in prompt
+    assert "have hfzero : f (-1 / 2) = 0 := by simpa [ha] using h₂" in prompt
+    assert "rw [h₁ (-1 / 2)] at hfzero" in prompt
+    assert "nlinarith [hfzero, ha, hb]" in prompt
     assert "Do not rewrite directly inside a `≠` goal" in prompt
 
 

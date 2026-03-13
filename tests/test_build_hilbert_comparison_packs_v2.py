@@ -118,8 +118,18 @@ def test_pack_d_numbertheory_core_tasks(tmp_path: Path) -> None:
 def test_pack_e_algebra_core_tasks(tmp_path: Path) -> None:
     summary = packs.build_pack("pack_e_algebra_core_minif2f_v1", tmp_path)
 
-    assert summary["task_count"] == 6
+    assert summary["task_count"] == 5
     assert summary["task_ids"] == [
+        "mathd_algebra_48",
+        "mathd_algebra_101",
+        "mathd_algebra_410",
+        "mathd_algebra_73",
+        "mathd_algebra_131",
+    ]
+    assert [item["task_id"] for item in summary["excluded_tasks"]] == ["mathd_algebra_77"]
+
+    metadata = json.loads((tmp_path / "pack_e_algebra_core_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == [
         "mathd_algebra_48",
         "mathd_algebra_101",
         "mathd_algebra_410",
@@ -127,27 +137,27 @@ def test_pack_e_algebra_core_tasks(tmp_path: Path) -> None:
         "mathd_algebra_77",
         "mathd_algebra_131",
     ]
-    assert summary["excluded_tasks"] == []
-
-    metadata = json.loads((tmp_path / "pack_e_algebra_core_minif2f_v1" / "pack_metadata.json").read_text())
-    assert metadata["requested_task_ids"] == summary["task_ids"]
     assert metadata["included_task_ids"] == summary["task_ids"]
 
 
 def test_pack_e_algebra_focus_tasks(tmp_path: Path) -> None:
     summary = packs.build_pack("pack_e_algebra_focus_minif2f_v1", tmp_path)
 
-    assert summary["task_count"] == 4
+    assert summary["task_count"] == 3
     assert summary["task_ids"] == [
+        "mathd_algebra_48",
+        "mathd_algebra_73",
+        "mathd_algebra_131",
+    ]
+    assert [item["task_id"] for item in summary["excluded_tasks"]] == ["mathd_algebra_77"]
+
+    metadata = json.loads((tmp_path / "pack_e_algebra_focus_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == [
         "mathd_algebra_48",
         "mathd_algebra_73",
         "mathd_algebra_77",
         "mathd_algebra_131",
     ]
-    assert summary["excluded_tasks"] == []
-
-    metadata = json.loads((tmp_path / "pack_e_algebra_focus_minif2f_v1" / "pack_metadata.json").read_text())
-    assert metadata["requested_task_ids"] == summary["task_ids"]
     assert metadata["included_task_ids"] == summary["task_ids"]
 
 
