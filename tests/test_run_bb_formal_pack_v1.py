@@ -134,6 +134,57 @@ def test_mathd_algebra_156_prompt_includes_case_split_guidance() -> None:
     assert "Finish every branch with `nlinarith" in prompt
 
 
+def test_mathd_algebra_48_prompt_includes_complex_namespace_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_algebra_48",
+        "import Mathlib\n\ntheorem mathd_algebra_48 : True := by\n  trivial\n",
+    )
+
+    assert "Complex.I" in prompt
+    assert "norm_num" in prompt
+    assert "Do not use `Complex.ext_iff`" in prompt
+
+
+def test_mathd_algebra_73_prompt_includes_ring_factorization_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_algebra_73",
+        "import Mathlib\n\ntheorem mathd_algebra_73 : True := by\n  trivial\n",
+    )
+
+    assert "Do not use `linarith` or `nlinarith` on complex-valued equalities" in prompt
+    assert "have hfactor_id" in prompt
+    assert "exact sub_eq_zero.mpr h₀" in prompt
+    assert "sub_ne_zero.mpr h₁" in prompt
+    assert "sub_eq_zero.mp hsum" in prompt
+
+
+def test_mathd_algebra_77_prompt_includes_calc_and_sum_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_algebra_77",
+        "import Mathlib\n\ntheorem mathd_algebra_77 : True := by\n  trivial\n",
+    )
+
+    assert "Do not rewrite `h₂` and `h₃` backwards" in prompt
+    assert "calc" in prompt
+    assert "(mul_eq_zero.mp hb_factor).resolve_left hb0" in prompt
+    assert "Do not ask `nlinarith` for a disjunction" in prompt
+    assert "have hfactor : (2 * a + 1) * (a - 1) = 0 := by nlinarith [hmain]" in prompt
+    assert "have hfval : f (-1 / 2) = -1 / 4 := by" in prompt
+    assert "Do not rewrite directly inside a `≠` goal" in prompt
+
+
+def test_mathd_algebra_131_prompt_includes_vieta_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_algebra_131",
+        "import Mathlib\n\ntheorem mathd_algebra_131 : True := by\n  trivial\n",
+    )
+
+    assert "Keep the current Vieta route" in prompt
+    assert "have hdiff : (2 * a^2 - 7 * a + 2) - (2 * b^2 - 7 * b + 2) = 0 := by nlinarith [ha0, hb0]" in prompt
+    assert "ring_nf at hdiff ⊢" in prompt
+    assert "field_simp [ha1, hb1]" in prompt
+
+
 def test_numbertheory_exk2pow_prompt_includes_prime_power_guidance() -> None:
     prompt = runner._build_prompt(
         "numbertheory_exk2powkeqapb2mulbpa2_aeq1",

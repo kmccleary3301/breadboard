@@ -81,6 +81,12 @@ PACKS = {
         "mathd_algebra_77",
         "mathd_algebra_131",
     ],
+    "pack_e_algebra_focus_minif2f_v1": [
+        "mathd_algebra_48",
+        "mathd_algebra_73",
+        "mathd_algebra_77",
+        "mathd_algebra_131",
+    ],
 }
 EXCLUDED_TASKS = {
     "mathd_numbertheory_780": (
@@ -136,6 +142,7 @@ def _canonical_starter_file(header: str, formal_statement: str) -> str:
 def _canonicalize_formal_statement(task_id: str, formal_statement: str) -> str:
     formal_statement = re.sub(r"\bnat\.", "Nat.", formal_statement)
     formal_statement = re.sub(r"\bfinset\.", "Finset.", formal_statement)
+    formal_statement = re.sub(r"\bcomplex\.", "Complex.", formal_statement)
     formal_statement = re.sub(r"λ\s+([A-Za-z_][A-Za-z0-9_]*)\s*,", r"fun \1 =>", formal_statement)
     formal_statement = formal_statement.replace("Nat.prime", "Nat.Prime")
     if task_id == "mathd_numbertheory_530":

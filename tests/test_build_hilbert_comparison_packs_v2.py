@@ -134,6 +134,23 @@ def test_pack_e_algebra_core_tasks(tmp_path: Path) -> None:
     assert metadata["included_task_ids"] == summary["task_ids"]
 
 
+def test_pack_e_algebra_focus_tasks(tmp_path: Path) -> None:
+    summary = packs.build_pack("pack_e_algebra_focus_minif2f_v1", tmp_path)
+
+    assert summary["task_count"] == 4
+    assert summary["task_ids"] == [
+        "mathd_algebra_48",
+        "mathd_algebra_73",
+        "mathd_algebra_77",
+        "mathd_algebra_131",
+    ]
+    assert summary["excluded_tasks"] == []
+
+    metadata = json.loads((tmp_path / "pack_e_algebra_focus_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == summary["task_ids"]
+    assert metadata["included_task_ids"] == summary["task_ids"]
+
+
 def test_legacy_nat_and_finset_names_are_canonicalized() -> None:
     statement = (
         "theorem sample\n"
@@ -154,3 +171,17 @@ def test_legacy_nat_and_finset_names_are_canonicalized() -> None:
     assert "Finset.filter" in canonical
     assert "λ x," not in canonical
     assert "fun x =>" in canonical
+
+
+def test_complex_namespace_is_canonicalized() -> None:
+    statement = (
+        "theorem mathd_algebra_48\n"
+        "  (q e : ℂ)\n"
+        "  (h₀ : q = 9 - 4 * complex.I)\n"
+        "  (h₁ : e = -3 - 4 * complex.I) : q - e = 12 := by\n"
+    )
+
+    canonical = packs._canonicalize_formal_statement("mathd_algebra_48", statement)
+
+    assert "Complex.I" in canonical
+    assert "complex.I" not in canonical
