@@ -73,6 +73,14 @@ PACKS = {
         "mathd_numbertheory_427",
         "mathd_algebra_452",
     ],
+    "pack_e_algebra_core_minif2f_v1": [
+        "mathd_algebra_48",
+        "mathd_algebra_101",
+        "mathd_algebra_410",
+        "mathd_algebra_73",
+        "mathd_algebra_77",
+        "mathd_algebra_131",
+    ],
 }
 EXCLUDED_TASKS = {
     "mathd_numbertheory_780": (

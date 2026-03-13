@@ -115,6 +115,25 @@ def test_pack_d_numbertheory_core_tasks(tmp_path: Path) -> None:
     assert metadata["included_task_ids"] == summary["task_ids"]
 
 
+def test_pack_e_algebra_core_tasks(tmp_path: Path) -> None:
+    summary = packs.build_pack("pack_e_algebra_core_minif2f_v1", tmp_path)
+
+    assert summary["task_count"] == 6
+    assert summary["task_ids"] == [
+        "mathd_algebra_48",
+        "mathd_algebra_101",
+        "mathd_algebra_410",
+        "mathd_algebra_73",
+        "mathd_algebra_77",
+        "mathd_algebra_131",
+    ]
+    assert summary["excluded_tasks"] == []
+
+    metadata = json.loads((tmp_path / "pack_e_algebra_core_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == summary["task_ids"]
+    assert metadata["included_task_ids"] == summary["task_ids"]
+
+
 def test_legacy_nat_and_finset_names_are_canonicalized() -> None:
     statement = (
         "theorem sample\n"
