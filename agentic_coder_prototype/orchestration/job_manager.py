@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 import threading
 import uuid
 
@@ -16,6 +16,7 @@ class JobRef:
     kind: str
     state: str = "accepted"  # accepted|running|completed|failed|killed
     seq: int = 0
+    task_descriptor: Optional[Dict[str, Any]] = None
 
 
 class JobManager:
@@ -24,13 +25,33 @@ class JobManager:
         self._lock = threading.Lock()
         self._next_seq = 1
 
-    def create_job(self, *, agent_id: str, owner_agent: str, kind: str) -> JobRef:
+    def create_job(
+        self,
+        *,
+        agent_id: str,
+        owner_agent: str,
+        kind: str,
+        task_descriptor: Optional[Dict[str, Any]] = None,
+    ) -> JobRef:
         with self._lock:
             job_id = uuid.uuid4().hex[:12]
             seq = self._next_seq
             self._next_seq += 1
-            job = JobRef(job_id=job_id, agent_id=agent_id, owner_agent=owner_agent, kind=kind, seq=seq)
+            job = JobRef(
+                job_id=job_id,
+                agent_id=agent_id,
+                owner_agent=owner_agent,
+                kind=kind,
+                seq=seq,
+                task_descriptor=dict(task_descriptor or {}) or None,
+            )
             self._jobs[job_id] = job
+            return job
+
+    def restore_job(self, job: JobRef) -> JobRef:
+        with self._lock:
+            self._jobs[job.job_id] = job
+            self._next_seq = max(self._next_seq, int(job.seq or 0) + 1)
             return job
 
     def get(self, job_id: str) -> Optional[JobRef]:

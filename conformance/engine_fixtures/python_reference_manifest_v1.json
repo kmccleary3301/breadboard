@@ -431,6 +431,28 @@
         "distributed_task/reference_fixture.json"
       ],
       "notes": "Distributed task descriptor reference aligned with the Temporal adapter path."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coordination_supervisor_complete_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/reference_complete_fixture.json"
+      ],
+      "notes": "Sparse supervisor-worker complete path proving accepted signal truth, wake projection, and supervisor-owned mission completion."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coordination_supervisor_blocked_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/reference_blocked_fixture.json"
+      ],
+      "notes": "Sparse supervisor-worker blocked path proving structured blockage, wake projection, and supervisor escalation/checkpoint decisions."
     }
   ]
 }

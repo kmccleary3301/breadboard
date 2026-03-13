@@ -33,3 +33,11 @@ The repo now has:
 - reusable host-facing result metadata helpers for bridge/package result envelopes
 
 That means Host Kit is no longer just a design direction. It is now part of the public TS product layer, with OpenClaw serving as the first hard-runtime proving ground.
+
+## Coordination projection boundary
+
+Host Kits may project coordination outcomes outward, but they should treat them as downstream facts:
+
+- accepted typed signals are kernel/orchestration truth
+- wake messages shown to a host are projections
+- a host may present blocked or completion state, but it should not invent mission authority rules on its own

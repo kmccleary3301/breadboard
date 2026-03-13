@@ -605,7 +605,12 @@ class OpenAIConductor:
         ]
         if not new_events:
             return
-        new_events.sort(key=lambda ev: (int((getattr(ev, "payload", {}) or {}).get("seq") or 0), int(getattr(ev, "event_id", 0) or 0)))
+        new_events.sort(
+            key=lambda ev: (
+                int((getattr(ev, "payload", {}) or {}).get("cursor_event_id") or (getattr(ev, "payload", {}) or {}).get("seq") or 0),
+                int(getattr(ev, "event_id", 0) or 0),
+            )
+        )
 
         for ev in new_events:
             payload = getattr(ev, "payload", {}) or {}
@@ -4898,6 +4903,18 @@ class OpenAIConductor:
         orchestrator = self._get_multi_agent_orchestrator()
         if orchestrator is not None:
             try:
+                session_state.set_provider_metadata(
+                    "completion_owner_role",
+                    orchestrator.team_config.coordination.mission_owner_role,
+                )
+                session_state.set_provider_metadata(
+                    "coordination_legacy_completion_sources",
+                    list(orchestrator.team_config.coordination.legacy_completion_sources),
+                )
+                session_state.set_provider_metadata(
+                    "coordination_preserve_legacy_wake_conditions",
+                    bool(orchestrator.team_config.coordination.preserve_legacy_wake_conditions),
+                )
                 session_state.set_provider_metadata("multi_agent_ordering", "total_event_id")
                 orchestrator.event_log.add(
                     "run.started",

@@ -64,6 +64,15 @@ class BusConfig:
 
 
 @dataclass(frozen=True)
+class CoordinationConfig:
+    mission_owner_role: str = "supervisor"
+    legacy_completion_sources: List[str] = field(
+        default_factory=lambda: ["text_sentinel", "tool_call", "provider_finish"]
+    )
+    preserve_legacy_wake_conditions: bool = True
+
+
+@dataclass(frozen=True)
 class WorkspaceConfig:
     sharing: Dict[str, Any] = field(default_factory=dict)
     isolation: Dict[str, Any] = field(default_factory=dict)
@@ -84,6 +93,7 @@ class TeamConfig:
     topology: TopologyConfig = field(default_factory=TopologyConfig)
     orchestration: OrchestrationConfig = field(default_factory=OrchestrationConfig)
     bus: BusConfig = field(default_factory=BusConfig)
+    coordination: CoordinationConfig = field(default_factory=CoordinationConfig)
     workspace: WorkspaceConfig = field(default_factory=WorkspaceConfig)
     budgets: BudgetConfig = field(default_factory=BudgetConfig)
 
@@ -158,6 +168,20 @@ class TeamConfig:
             retention=dict(bus_raw.get("retention") or {}),
         )
 
+        coordination_raw = team.get("coordination") or {}
+        coordination = CoordinationConfig(
+            mission_owner_role=str(coordination_raw.get("mission_owner_role") or "supervisor"),
+            legacy_completion_sources=[
+                str(item)
+                for item in (coordination_raw.get("legacy_completion_sources") or [])
+                if str(item).strip()
+            ]
+            or ["text_sentinel", "tool_call", "provider_finish"],
+            preserve_legacy_wake_conditions=bool(
+                coordination_raw.get("preserve_legacy_wake_conditions", True)
+            ),
+        )
+
         workspace_raw = team.get("workspace") or {}
         workspace = WorkspaceConfig(
             sharing=dict(workspace_raw.get("sharing") or {}),
@@ -178,6 +202,7 @@ class TeamConfig:
             topology=TopologyConfig(edges=edges),
             orchestration=orchestration,
             bus=bus,
+            coordination=coordination,
             workspace=workspace,
             budgets=budgets,
         )

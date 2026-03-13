@@ -43,6 +43,7 @@ LEGACY_COMPLETION_SOURCE_KINDS = frozenset(
 )
 
 DEFAULT_REQUIRE_EVIDENCE_FOR = frozenset({"merge_ready", "catastrophic_failure", "human_required"})
+BLOCKED_RECOMMENDED_ACTIONS = frozenset({"retry", "checkpoint", "escalate", "human_required"})
 
 
 def _clean_string(value: Any) -> Optional[str]:
@@ -163,6 +164,39 @@ def build_tool_completion_signal_proposal(
     )
 
 
+def build_blocked_signal_proposal(
+    *,
+    task_id: str,
+    blocking_reason: str,
+    recommended_next_action: str,
+    parent_task_id: Optional[str] = None,
+    mission_task_id: Optional[str] = None,
+    emitter_role: str = "worker",
+    authority_scope: str = "task",
+    support_claim_ref: Optional[str] = None,
+    source_kind: str = "worker",
+    evidence_refs: Optional[Iterable[str]] = None,
+    payload: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    action = str(recommended_next_action or "").strip().lower()
+    blocked_payload = dict(payload or {})
+    blocked_payload["blocking_reason"] = str(blocking_reason or "").strip()
+    blocked_payload["recommended_next_action"] = action
+    if support_claim_ref:
+        blocked_payload["support_claim_ref"] = str(support_claim_ref)
+    return build_signal_proposal(
+        code="blocked",
+        task_id=task_id,
+        parent_task_id=parent_task_id,
+        mission_task_id=mission_task_id,
+        source_kind=source_kind,
+        emitter_role=emitter_role,
+        authority_scope=authority_scope,
+        evidence_refs=evidence_refs,
+        payload=blocked_payload,
+    )
+
+
 def validate_signal_proposal(
     proposal: Mapping[str, Any],
     *,
@@ -182,6 +216,7 @@ def validate_signal_proposal(
     source_kind = str(source.get("kind") or "")
     emitter_role = str(source.get("emitter_role") or "")
     evidence_refs = signal.get("evidence_refs") if isinstance(signal.get("evidence_refs"), list) else []
+    payload = signal.get("payload") if isinstance(signal.get("payload"), Mapping) else {}
 
     if code not in SIGNAL_CODES:
         reasons.append(f"unknown_signal_code:{code or 'missing'}")
@@ -193,6 +228,15 @@ def validate_signal_proposal(
         reasons.append(f"invalid_source_kind:{source_kind or 'missing'}")
     if emitter_role not in EMITTER_ROLES:
         reasons.append(f"invalid_emitter_role:{emitter_role or 'missing'}")
+    if code == "blocked":
+        blocking_reason = _clean_string(payload.get("blocking_reason"))
+        recommended_next_action = str(payload.get("recommended_next_action") or "").strip().lower()
+        if not blocking_reason:
+            reasons.append("missing_blocking_reason")
+        if recommended_next_action not in BLOCKED_RECOMMENDED_ACTIONS:
+            reasons.append(
+                f"invalid_recommended_next_action:{recommended_next_action or 'missing'}"
+            )
 
     required = {str(item) for item in (require_evidence_for or DEFAULT_REQUIRE_EVIDENCE_FOR) if str(item).strip()}
     if code in required and not evidence_refs:

@@ -17,6 +17,17 @@ const backgroundTask: DistributedTaskDescriptorV1 = {
   placement_preferences: ["remote_worker", "delegated_oci"],
   checkpoint_strategy: "every_step",
   wake_conditions: ["child_complete", "timer:30s"],
+  wake_subscriptions: [
+    {
+      schema_version: "bb.wake_subscription.v1",
+      subscription_id: "sub:bg:complete",
+      on_codes: ["complete", "blocked"],
+      action: "resume",
+      from_task_ids: ["task:child:1"],
+      include_descendants: false,
+      coalesce_window_ms: 0,
+    },
+  ],
   join_policy: "all_children",
   retry_policy: { max_attempts: 3 },
   priority: 2,
@@ -51,14 +62,19 @@ test("temporal adapter maps distributed task descriptor into a start descriptor"
   assert.equal(descriptor.taskQueue, "breadboard-background")
   assert.equal(descriptor.searchAttributes.parentTaskId, "task:root:1")
   assert.deepEqual(descriptor.memo.wakeConditions, ["child_complete", "timer:30s"])
+  assert.equal(Array.isArray(descriptor.memo.wakeSubscriptions), true)
   assert.deepEqual(descriptor.retryPolicy, { max_attempts: 3 })
 })
 
 test("temporal adapter derives workflow control-plane descriptors", () => {
   const controlPlane = buildTemporalTaskControlPlaneDescriptor(backgroundTask)
-  assert.equal(controlPlane.signalDescriptors[0]?.signalName, "breadboard.wake")
+  assert.equal(controlPlane.signalDescriptors[0]?.signalName, "breadboard.coordinationSignal")
   assert.equal(controlPlane.signalDescriptors[1]?.signalName, "breadboard.childComplete")
   assert.equal(controlPlane.signalDescriptors[2]?.signalName, "breadboard.timerWake")
+  assert.deepEqual(controlPlane.signalDescriptors[0]?.payload, {
+    taskId: "task:bg:1",
+    wakeSubscriptions: backgroundTask.wake_subscriptions,
+  })
   assert.deepEqual(controlPlane.queryNames, [
     "breadboard.getState",
     "breadboard.getCheckpoint",
@@ -73,10 +89,22 @@ test("temporal adapter builds a resume update descriptor with transcript continu
     descriptor: backgroundTask,
     transcriptPatch,
     resumeReason: "timer_wake",
+    coordination: {
+      subscriptionId: "sub:bg:complete",
+      triggerSignalId: "signal_complete_1",
+      triggerCode: "complete",
+      cursorEventId: 17,
+    },
   })
   assert.equal(descriptor.workflowId, backgroundTask.task_id)
   assert.equal(descriptor.updateName, "breadboard.resume")
   assert.equal(descriptor.payload.taskId, backgroundTask.task_id)
   assert.equal(descriptor.payload.resumeReason, "timer_wake")
+  assert.deepEqual(descriptor.payload.coordination, {
+    subscriptionId: "sub:bg:complete",
+    triggerSignalId: "signal_complete_1",
+    triggerCode: "complete",
+    cursorEventId: 17,
+  })
   assert.deepEqual(descriptor.payload.transcriptPatch, transcriptPatch)
 })

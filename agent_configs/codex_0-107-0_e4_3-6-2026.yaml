@@ -284,6 +284,15 @@ multi_agent:
             - receiver_thread_ids
         join_policy:
           default: block_until_complete
+      coordination:
+        # This block is intentionally small. It makes completion ownership explicit without
+        # turning the public dossier into a full coordination ontology.
+        mission_owner_role: supervisor
+        legacy_completion_sources:
+        - text_sentinel
+        - tool_call
+        - provider_finish
+        preserve_legacy_wake_conditions: true
       bus:
         model_visible_topics:
         - tool_result

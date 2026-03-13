@@ -60,3 +60,40 @@ def test_wakeup_injected_in_seq_order_and_deduped() -> None:
     conductor._inject_multi_agent_wakeups(state, logger)
     injected2 = [m for m in state.messages if m.get("role") == "system"]
     assert len(injected2) == 2
+
+
+def test_signal_backed_wakeup_prefers_cursor_order_when_present() -> None:
+    conductor = _make_conductor(model_visible_topics=["wakeup"])
+    orchestrator = conductor._multi_agent_orchestrator
+
+    spawn_a = orchestrator.spawn_subagent(owner_agent="main", agent_id="repo-scanner", async_mode=True)
+    spawn_b = orchestrator.spawn_subagent(owner_agent="main", agent_id="grep-summarizer", async_mode=True)
+    orchestrator.emit_wakeup(
+        spawn_b.job,
+        reason="signal:blocked",
+        message="B",
+        subscription_id="sub_b",
+        trigger_signal_id="signal_b",
+        trigger_code="blocked",
+        resume_reason="signal:blocked",
+        cursor_event_id=20,
+        source_task_id="task_b",
+    )
+    orchestrator.emit_wakeup(
+        spawn_a.job,
+        reason="signal:complete",
+        message="A",
+        subscription_id="sub_a",
+        trigger_signal_id="signal_a",
+        trigger_code="complete",
+        resume_reason="signal:complete",
+        cursor_event_id=10,
+        source_task_id="task_a",
+    )
+
+    state = _make_session_state()
+    logger = MarkdownLogger()
+    conductor._inject_multi_agent_wakeups(state, logger)
+
+    injected = [m for m in state.messages if m.get("role") == "system"]
+    assert [str(m.get("content")) for m in injected] == ["A", "B"]

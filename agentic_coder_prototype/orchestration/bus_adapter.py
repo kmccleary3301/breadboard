@@ -17,7 +17,20 @@ class BusAdapter:
     def format_wakeup(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(payload, dict):
             return {}
-        keys = ("job_id", "agent_id", "owner_agent", "seq", "reason", "message")
+        keys = (
+            "job_id",
+            "agent_id",
+            "owner_agent",
+            "seq",
+            "reason",
+            "message",
+            "subscription_id",
+            "trigger_signal_id",
+            "trigger_code",
+            "resume_reason",
+            "cursor_event_id",
+            "source_task_id",
+        )
         return {key: payload.get(key) for key in keys if key in payload}
 
     def format_tool_result(self, payload: Dict[str, Any]) -> Dict[str, Any]:

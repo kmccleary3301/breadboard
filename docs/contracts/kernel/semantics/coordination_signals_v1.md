@@ -94,6 +94,52 @@ The split is:
 
 Temporal, longrun controllers, and host/UI projections can compile or display these signals, but they do not define the semantics.
 
+### 6. Public config stays narrow
+
+The first public dossier/config surface should stay small:
+
+- `coordination.mission_owner_role`
+- `coordination.legacy_completion_sources`
+- `coordination.preserve_legacy_wake_conditions`
+
+That is enough to make ownership and additive migration explicit without introducing directives, channels, or broader authority frameworks too early.
+
+---
+
+## Compatibility mapping
+
+### `completion.*` is ingress
+
+The current completion surface remains real, but it is compatibility ingress:
+
+- `completion.text_sentinels` -> may yield `text_sentinel` signal proposals
+- `completion.tool_finish` / `mark_task_complete` -> may yield `tool_call` signal proposals
+- `completion.provider_signals` -> may yield `provider_finish` signal proposals
+
+Those settings do not become durable coordination truth by themselves.
+
+### `multi_agent.bus.model_visible_topics` is projection
+
+`multi_agent.bus.model_visible_topics` controls projection, not semantics.
+
+In practice:
+
+- accepted signals may produce wake-derived projection events
+- the `wakeup` topic may inject model-visible messages
+- that visibility remains downstream of accepted signal truth
+
+The bus is therefore a host/model-visible surface, not the source of coordination authority.
+
+### `wake_conditions` remains additive
+
+`wake_conditions` is still preserved for:
+
+- timers
+- legacy string wakes
+- non-signal wake semantics
+
+`wake_subscriptions` is where typed signal-based wake truth now lives.
+
 ---
 
 ## First-tranche freeze
@@ -129,7 +175,6 @@ That would make deeper hierarchy work brittle and hard to replay honestly.
 
 ## Immediate next steps
 
-1. freeze `bb.signal.v1` and `bb.wake_subscription.v1`
-2. extend `bb.distributed_task_descriptor.v1` additively with `wake_subscriptions`
-3. convert completion ingress into signal proposals plus validation
-4. wire accepted signals into sparse supervisor wake behavior in the next tranche
+1. keep the public `coordination:` surface narrow and explicit
+2. map compatibility from `completion`, `multi_agent.bus`, and `wake_conditions` without blurring ownership
+3. promote the sparse supervisor-worker evidence into manifest-backed conformance rows

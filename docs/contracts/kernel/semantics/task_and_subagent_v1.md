@@ -33,6 +33,7 @@ A conforming engine must preserve:
 - whether events are model-visible, host-visible, or audit-only
 - join / wait semantics where applicable
 - branch / longrun linkage where such features are enabled
+- supervisor ownership of mission completion when worker tasks only propose completion
 
 ---
 
@@ -51,8 +52,49 @@ The contract must make a strong distinction between:
 - may continue after the initiating turn
 - may re-enter later through wakeup or merge semantics
 - may be primarily host-visible rather than model-visible
+- may be resumed because an accepted typed coordination signal matched a subscribed wake condition
 
 This distinction is critical for cross-engine correctness.
+
+---
+
+## Sparse supervisor-worker reference slice
+
+The current coordination reference lane proves one narrow but important pattern:
+
+- one supervisor task owns the mission outcome
+- one worker task owns the dense local loop
+- the worker may emit accepted typed `complete` or `blocked` signals
+- the supervisor wakes only when a typed `wake_subscription` matches those accepted signals
+- the worker cannot finalize mission completion by itself
+
+This is intentionally narrower than a full future coordination ontology. It is the first portable truth slice that must survive replay and backend adaptation.
+
+### Completion ownership
+
+The worker may truthfully say:
+
+- `my task is complete`
+- `I am blocked`
+- `I require human attention`
+
+The worker may not truthfully finalize:
+
+- `the mission is complete`
+
+In the reference lane, mission completion becomes durable truth only after the supervisor validates required deliverables or evidence and records a supervisor-side decision.
+
+### Blocked is not generic failure
+
+`blocked` is a typed coordination fact, not merely a failed step.
+
+The reference lane carries structured blocked payloads such as:
+
+- `blocking_reason`
+- `recommended_next_action`
+- optional `support_claim_ref`
+
+That allows a sparse supervisor to choose retry, checkpoint, escalation, or human review without collapsing everything into plain-text failure output.
 
 ---
 
@@ -105,6 +147,8 @@ Representative evidence already exists in:
 - `tests/test_task_streaming_events.py`
 - `tests/test_rlm_hybrid_integration.py`
 - multi-agent and wakeup tests
+- `tests/test_supervisor_worker_reference_slice.py`
+- `tests/test_worker_cannot_self_terminate_mission.py`
 - replay/parity lanes for harnesses with subagent support
 
 ---
@@ -121,6 +165,6 @@ Still unresolved:
 
 ## Immediate next steps
 
-1. add `bb.task.v1.schema.json`
-2. add a minimal task example
-3. include task lifecycle comparator rules in engine fixtures
+1. keep the sparse supervisor-worker lane replayable across engines
+2. add conservative public config surfacing for coordination without widening ontology too early
+3. promote the tracked coordination evidence bundle into manifest-backed conformance rows once the public surface is frozen

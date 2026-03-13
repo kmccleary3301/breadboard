@@ -1,0 +1,267 @@
+{
+  "fixture_family": "coordination",
+  "fixture_id": "coordination_supervisor_complete_python_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "reference-engine",
+  "contract": "bb.coordination_reference_slice.v1",
+  "reference_output": {
+    "schema_version": "bb.coordination_reference_slice.v1",
+    "scenario_id": "coordination_supervisor_complete_python_reference",
+    "supervisor_task_id": "task_supervisor_1",
+    "worker_task_id": "task_worker_1",
+    "subscription_id": "sub_worker_state",
+    "accepted_signal": {
+      "schema_version": "bb.signal.v1",
+      "signal_id": "signal_complete_reference",
+      "code": "complete",
+      "task_id": "task_worker_1",
+      "parent_task_id": "task_supervisor_1",
+      "mission_task_id": "task_supervisor_1",
+      "authority_scope": "task",
+      "status": "accepted",
+      "source": {
+        "kind": "worker",
+        "emitter_role": "worker",
+        "detail": null
+      },
+      "evidence_refs": [
+        "artifact://deliverables/worker-report.md"
+      ],
+      "payload": {
+        "deliverable_refs": [
+          "artifact://deliverables/worker-report.md"
+        ],
+        "completion_reason": "worker_done"
+      },
+      "validation": {
+        "accepted": true,
+        "reasons": [
+          "signal_valid"
+        ],
+        "validated_by": "engine",
+        "validated_at": 0.0
+      }
+    },
+    "wakeup_payload": {
+      "job_id": "job_supervisor_1",
+      "agent_id": "supervisor",
+      "owner_agent": "root",
+      "seq": 1,
+      "reason": "signal:complete",
+      "message": "Task task_worker_1 signaled complete.",
+      "subscription_id": "sub_worker_state",
+      "trigger_signal_id": "signal_complete_reference",
+      "trigger_code": "complete",
+      "resume_reason": "signal:complete",
+      "cursor_event_id": 3,
+      "source_task_id": "task_worker_1"
+    },
+    "supervisor_decision": {
+      "job_id": "job_supervisor_1",
+      "supervisor_task_id": "task_supervisor_1",
+      "subscription_id": "sub_worker_state",
+      "trigger_signal_id": "signal_complete_reference",
+      "trigger_event_id": 3,
+      "trigger_code": "complete",
+      "source_task_id": "task_worker_1",
+      "decision": "mission_complete_validated",
+      "mission_completed": true,
+      "required_deliverable_refs": [
+        "artifact://deliverables/worker-report.md"
+      ],
+      "deliverable_refs": [
+        "artifact://deliverables/worker-report.md"
+      ],
+      "missing_deliverable_refs": [],
+      "blocking_reason": null,
+      "recommended_next_action": null,
+      "blocked_action": null,
+      "support_claim_ref": null,
+      "signal_evidence_refs": [
+        "artifact://deliverables/worker-report.md"
+      ]
+    },
+    "completion_payload": {
+      "decision": "mission_complete_validated",
+      "mission_completed": true,
+      "trigger_signal_id": "signal_complete_reference",
+      "trigger_event_id": 3,
+      "job_id": "job_supervisor_1",
+      "agent_id": "supervisor",
+      "state": "completed",
+      "seq": 1
+    },
+    "events": [
+      {
+        "event_id": 1,
+        "type": "agent.spawned",
+        "agent_id": "supervisor",
+        "parent_agent_id": "root",
+        "causal_parent_event_id": null,
+        "payload": {
+          "role": "supervisor",
+          "job_id": "job_supervisor_1",
+          "agent_id": "supervisor",
+          "owner_agent": "root",
+          "kind": "agent",
+          "seq": 1,
+          "task_descriptor": {
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_supervisor_1",
+            "task_kind": "background",
+            "wake_conditions": [
+              "timer:30s"
+            ],
+            "wake_subscriptions": [
+              {
+                "schema_version": "bb.wake_subscription.v1",
+                "subscription_id": "sub_worker_state",
+                "on_codes": [
+                  "complete",
+                  "blocked"
+                ],
+                "action": "resume",
+                "from_task_ids": [
+                  "task_worker_1"
+                ],
+                "include_descendants": false,
+                "coalesce_window_ms": 0
+              }
+            ]
+          }
+        }
+      },
+      {
+        "event_id": 2,
+        "type": "agent.spawned",
+        "agent_id": "worker",
+        "parent_agent_id": "supervisor",
+        "causal_parent_event_id": null,
+        "payload": {
+          "role": "worker",
+          "job_id": "job_worker_1",
+          "agent_id": "worker",
+          "owner_agent": "supervisor",
+          "kind": "agent",
+          "seq": 2,
+          "task_descriptor": {
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_worker_1",
+            "task_kind": "background",
+            "wake_conditions": [],
+            "parent_task_id": "task_supervisor_1"
+          }
+        }
+      },
+      {
+        "event_id": 3,
+        "type": "coordination.signal",
+        "agent_id": "worker",
+        "parent_agent_id": "supervisor",
+        "causal_parent_event_id": null,
+        "payload": {
+          "schema_version": "bb.signal.v1",
+          "signal_id": "signal_complete_reference",
+          "code": "complete",
+          "task_id": "task_worker_1",
+          "parent_task_id": "task_supervisor_1",
+          "mission_task_id": "task_supervisor_1",
+          "authority_scope": "task",
+          "status": "accepted",
+          "source": {
+            "kind": "worker",
+            "emitter_role": "worker",
+            "detail": null
+          },
+          "evidence_refs": [
+            "artifact://deliverables/worker-report.md"
+          ],
+          "payload": {
+            "deliverable_refs": [
+              "artifact://deliverables/worker-report.md"
+            ],
+            "completion_reason": "worker_done"
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "signal_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        }
+      },
+      {
+        "event_id": 4,
+        "type": "agent.wakeup_emitted",
+        "agent_id": "supervisor",
+        "parent_agent_id": "root",
+        "causal_parent_event_id": 3,
+        "payload": {
+          "job_id": "job_supervisor_1",
+          "agent_id": "supervisor",
+          "owner_agent": "root",
+          "seq": 1,
+          "reason": "signal:complete",
+          "message": "Task task_worker_1 signaled complete.",
+          "subscription_id": "sub_worker_state",
+          "trigger_signal_id": "signal_complete_reference",
+          "trigger_code": "complete",
+          "resume_reason": "signal:complete",
+          "cursor_event_id": 3,
+          "source_task_id": "task_worker_1"
+        }
+      },
+      {
+        "event_id": 5,
+        "type": "coordination.supervisor_decision",
+        "agent_id": "supervisor",
+        "parent_agent_id": "root",
+        "causal_parent_event_id": 3,
+        "payload": {
+          "job_id": "job_supervisor_1",
+          "supervisor_task_id": "task_supervisor_1",
+          "subscription_id": "sub_worker_state",
+          "trigger_signal_id": "signal_complete_reference",
+          "trigger_event_id": 3,
+          "trigger_code": "complete",
+          "source_task_id": "task_worker_1",
+          "decision": "mission_complete_validated",
+          "mission_completed": true,
+          "required_deliverable_refs": [
+            "artifact://deliverables/worker-report.md"
+          ],
+          "deliverable_refs": [
+            "artifact://deliverables/worker-report.md"
+          ],
+          "missing_deliverable_refs": [],
+          "blocking_reason": null,
+          "recommended_next_action": null,
+          "blocked_action": null,
+          "support_claim_ref": null,
+          "signal_evidence_refs": [
+            "artifact://deliverables/worker-report.md"
+          ]
+        }
+      },
+      {
+        "event_id": 6,
+        "type": "agent.job_completed",
+        "agent_id": "supervisor",
+        "parent_agent_id": "root",
+        "causal_parent_event_id": null,
+        "payload": {
+          "decision": "mission_complete_validated",
+          "mission_completed": true,
+          "trigger_signal_id": "signal_complete_reference",
+          "trigger_event_id": 3,
+          "job_id": "job_supervisor_1",
+          "agent_id": "supervisor",
+          "state": "completed",
+          "seq": 1
+        }
+      }
+    ]
+  }
+}

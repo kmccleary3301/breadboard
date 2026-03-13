@@ -26,11 +26,24 @@ test("kernel validators accept tracked examples", () => {
   assert.doesNotThrow(() =>
     assertValid("sandboxResult", loadJson("../../contracts/kernel/examples/sandbox_result_minimal.json")),
   )
+  assert.doesNotThrow(() => assertValid("signal", loadJson("../../contracts/kernel/examples/signal_complete_minimal.json")))
+  assert.doesNotThrow(() =>
+    assertValid("wakeSubscription", loadJson("../../contracts/kernel/examples/wake_subscription_minimal.json")),
+  )
   assert.doesNotThrow(() =>
     assertValid(
       "distributedTaskDescriptor",
       loadJson("../../contracts/kernel/examples/distributed_task_descriptor_minimal.json"),
     ),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("signal", loadJson("../../contracts/kernel/examples/signal_complete_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("signal", loadJson("../../contracts/kernel/examples/signal_blocked_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("wakeSubscription", loadJson("../../contracts/kernel/examples/wake_subscription_minimal.json")),
   )
   assert.doesNotThrow(() =>
     assertValid(

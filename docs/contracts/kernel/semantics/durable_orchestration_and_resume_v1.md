@@ -13,6 +13,7 @@ The kernel-visible durable orchestration surface includes:
 - task identity
 - parent/child lineage
 - wake conditions
+- typed wake subscriptions
 - join policy
 - retry intent
 - checkpoint strategy
@@ -28,6 +29,9 @@ A resumed task must preserve:
 - lineage
 - checkpoint strategy
 - reason for wake/resume
+- trigger signal id / code when resume was signal-driven
+- subscription cursor state for typed signal wakes
+- source task id and subscription id when the resume came from a subscribed worker signal
 - backend-visible resume metadata only as audit/supporting data
 
 ## Wake/join semantics
@@ -38,8 +42,18 @@ Examples:
 
 - wake when a child task completes
 - wake when a timer fires
+- wake when an accepted coordination signal matches a typed wake subscription
 - join after all required children complete
 - fail fast when a required child fails
+
+In the current sparse supervisor-worker reference lane, the wake chain must remain inspectable:
+
+1. worker emits accepted typed `complete` or `blocked`
+2. subscription match produces a derived wake event for the supervisor
+3. wake metadata carries `subscription_id`, `trigger_signal_id`, `trigger_code`, `cursor_event_id`, and `source_task_id`
+4. supervisor review records the mission-level decision separately from the worker signal itself
+
+That separation is what keeps completion truth durable without making backend wakeup transport itself the semantic source of truth.
 
 ## Retry semantics
 

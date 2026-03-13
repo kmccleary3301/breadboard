@@ -41,3 +41,13 @@ Backbone does not:
 - own app routing
 - own delivery-channel semantics
 - redefine kernel contracts
+
+## Coordination boundary
+
+Backbone may expose coordination-derived projections, but it does not become the source of coordination truth.
+
+For the current coordination slice:
+
+- typed signals and wake subscriptions remain kernel/orchestration truth
+- Backbone may surface wake-derived session updates or callbacks
+- mission-completion ownership stays below Backbone and above raw transport

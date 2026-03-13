@@ -100,6 +100,20 @@ Current evidence is project-wide rather than centralized:
 
 The gap is not evidence scarcity. It is evidence standardization for the engine-contract program.
 
+## Coordination evidence expectation
+
+For the current coordination tranche, a conformance bundle should make the causal chain inspectable rather than merely summarizing the outcome.
+
+The sparse supervisor-worker evidence should include:
+
+- the accepted coordination signal
+- the derived wake payload
+- trigger lineage (`subscription_id`, `trigger_signal_id`, `trigger_code`, `source_task_id`)
+- the supervisor decision record
+- mission completion output when the supervisor validated `complete`
+
+That keeps projection, coordination truth, and mission authority separable in the evidence itself.
+
 ---
 
 ## Known ambiguities

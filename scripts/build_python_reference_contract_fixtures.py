@@ -11,12 +11,197 @@ from agentic_coder_prototype.conductor_execution import (
     build_tool_execution_outcome_record,
     build_tool_model_render_record,
 )
+from agentic_coder_prototype.orchestration.coordination import (
+    build_blocked_signal_proposal,
+    build_signal_proposal,
+    validate_signal_proposal,
+)
+from agentic_coder_prototype.orchestration.orchestrator import MultiAgentOrchestrator
+from agentic_coder_prototype.orchestration.schema import TeamConfig
 from agentic_coder_prototype.provider_invoker import ProviderInvoker
 from agentic_coder_prototype.provider_runtime import ProviderResult
 from agentic_coder_prototype.state.session_state import SessionState
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = ROOT / "conformance" / "engine_fixtures"
+
+
+def _coordination_team() -> TeamConfig:
+    return TeamConfig.from_dict({"team": {"id": "coord-fixture"}})
+
+
+def _coordination_descriptor(task_id: str, *, parent_task_id: str | None = None, subscribed: bool = False) -> Dict[str, Any]:
+    descriptor: Dict[str, Any] = {
+        "schema_version": "bb.distributed_task_descriptor.v1",
+        "task_id": task_id,
+        "task_kind": "background",
+        "wake_conditions": ["timer:30s"] if subscribed else [],
+    }
+    if parent_task_id:
+        descriptor["parent_task_id"] = parent_task_id
+    if subscribed:
+        descriptor["wake_subscriptions"] = [
+            {
+                "schema_version": "bb.wake_subscription.v1",
+                "subscription_id": "sub_worker_state",
+                "on_codes": ["complete", "blocked"],
+                "action": "resume",
+                "from_task_ids": ["task_worker_1"],
+                "include_descendants": False,
+                "coalesce_window_ms": 0,
+            }
+        ]
+    return descriptor
+
+
+def _serialize_events(orchestrator: MultiAgentOrchestrator) -> list[Dict[str, Any]]:
+    return [
+        {
+            "event_id": event.event_id,
+            "type": event.type,
+            "agent_id": event.agent_id,
+            "parent_agent_id": event.parent_agent_id,
+            "causal_parent_event_id": event.causal_parent_event_id,
+            "payload": dict(event.payload or {}),
+        }
+        for event in orchestrator.event_log.events
+    ]
+
+
+def _normalize_fixture_value(value: Any, replacements: Dict[str, str]) -> Any:
+    if isinstance(value, dict):
+        return {key: _normalize_fixture_value(item, replacements) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_fixture_value(item, replacements) for item in value]
+    if isinstance(value, str):
+        return replacements.get(value, value)
+    return value
+
+
+def _build_coordination_reference_complete_fixture() -> Dict[str, Any]:
+    orchestrator = MultiAgentOrchestrator(_coordination_team())
+    supervisor = orchestrator.spawn_subagent(
+        owner_agent="root",
+        agent_id="supervisor",
+        payload={"role": "supervisor"},
+        task_descriptor=_coordination_descriptor("task_supervisor_1", subscribed=True),
+    )
+    worker = orchestrator.spawn_subagent(
+        owner_agent="supervisor",
+        agent_id="worker",
+        payload={"role": "worker"},
+        task_descriptor=_coordination_descriptor("task_worker_1", parent_task_id="task_supervisor_1"),
+    )
+
+    deliverable_ref = "artifact://deliverables/worker-report.md"
+    signal = validate_signal_proposal(
+        build_signal_proposal(
+            code="complete",
+            task_id="task_worker_1",
+            parent_task_id="task_supervisor_1",
+            mission_task_id="task_supervisor_1",
+            source_kind="worker",
+            emitter_role="worker",
+            signal_id="signal_complete_reference",
+            evidence_refs=[deliverable_ref],
+            payload={"deliverable_refs": [deliverable_ref], "completion_reason": "worker_done"},
+        ),
+        mission_owner_role="supervisor",
+    )
+    signal["validation"]["validated_at"] = 0.0
+    orchestrator.emit_coordination_signal(worker.job, signal)
+    decision = orchestrator.supervisor_review_signal(
+        supervisor.job,
+        required_deliverable_refs=[deliverable_ref],
+    )
+    wakeup = next(event for event in orchestrator.event_log.events if event.type == "agent.wakeup_emitted")
+    completion = next(event for event in orchestrator.event_log.events if event.type == "agent.job_completed")
+    reference_output = {
+        "schema_version": "bb.coordination_reference_slice.v1",
+        "scenario_id": "coordination_supervisor_complete_python_reference",
+        "supervisor_task_id": "task_supervisor_1",
+        "worker_task_id": "task_worker_1",
+        "subscription_id": "sub_worker_state",
+        "accepted_signal": signal,
+        "wakeup_payload": dict(wakeup.payload or {}),
+        "supervisor_decision": dict(decision.payload or {}),
+        "completion_payload": dict(completion.payload or {}),
+        "events": _serialize_events(orchestrator),
+    }
+    reference_output = _normalize_fixture_value(
+        reference_output,
+        {
+            supervisor.job.job_id: "job_supervisor_1",
+            worker.job.job_id: "job_worker_1",
+        },
+    )
+    return {
+        "fixture_family": "coordination",
+        "fixture_id": "coordination_supervisor_complete_python_reference",
+        "comparator_class": "normalized-trace-equal",
+        "support_tier": "reference-engine",
+        "contract": "bb.coordination_reference_slice.v1",
+        "reference_output": reference_output,
+    }
+
+
+def _build_coordination_reference_blocked_fixture() -> Dict[str, Any]:
+    orchestrator = MultiAgentOrchestrator(_coordination_team())
+    supervisor = orchestrator.spawn_subagent(
+        owner_agent="root",
+        agent_id="supervisor",
+        payload={"role": "supervisor"},
+        task_descriptor=_coordination_descriptor("task_supervisor_1", subscribed=True),
+    )
+    worker = orchestrator.spawn_subagent(
+        owner_agent="supervisor",
+        agent_id="worker",
+        payload={"role": "worker"},
+        task_descriptor=_coordination_descriptor("task_worker_1", parent_task_id="task_supervisor_1"),
+    )
+
+    signal = validate_signal_proposal(
+        build_blocked_signal_proposal(
+            task_id="task_worker_1",
+            parent_task_id="task_supervisor_1",
+            mission_task_id="task_supervisor_1",
+            blocking_reason="provider quota exhausted",
+            recommended_next_action="checkpoint",
+            evidence_refs=["evidence://quota/worker-1"],
+        ),
+        mission_owner_role="supervisor",
+    )
+    signal["signal_id"] = "signal_blocked_reference"
+    signal["validation"]["validated_at"] = 0.0
+    orchestrator.emit_coordination_signal(worker.job, signal)
+    decision = orchestrator.supervisor_review_signal(supervisor.job)
+    wakeup = next(event for event in orchestrator.event_log.events if event.type == "agent.wakeup_emitted")
+    reference_output = {
+        "schema_version": "bb.coordination_reference_slice.v1",
+        "scenario_id": "coordination_supervisor_blocked_python_reference",
+        "supervisor_task_id": "task_supervisor_1",
+        "worker_task_id": "task_worker_1",
+        "subscription_id": "sub_worker_state",
+        "accepted_signal": signal,
+        "wakeup_payload": dict(wakeup.payload or {}),
+        "supervisor_decision": dict(decision.payload or {}),
+        "events": _serialize_events(orchestrator),
+    }
+    reference_output = _normalize_fixture_value(
+        reference_output,
+        {
+            supervisor.job.job_id: "job_supervisor_1",
+            worker.job.job_id: "job_worker_1",
+        },
+    )
+    return {
+        "fixture_family": "coordination",
+        "fixture_id": "coordination_supervisor_blocked_python_reference",
+        "comparator_class": "normalized-trace-equal",
+        "support_tier": "reference-engine",
+        "contract": "bb.coordination_reference_slice.v1",
+        "reference_output": reference_output,
+    }
 
 
 def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
@@ -399,6 +584,8 @@ def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
             "contract": "bb.replay_session.v1",
             "reference_output": replay_session_reference,
         },
+        "coordination/reference_complete_fixture.json": _build_coordination_reference_complete_fixture(),
+        "coordination/reference_blocked_fixture.json": _build_coordination_reference_blocked_fixture(),
     }
 
 
