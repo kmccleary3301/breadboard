@@ -9,50 +9,47 @@
   - `mathd_algebra_101`
   - `mathd_algebra_410`
   - `mathd_algebra_73`
-  - `mathd_algebra_77`
   - `mathd_algebra_131`
+- Excluded invalid task:
+  - `mathd_algebra_77`
 
 ### Result
 
-- BreadBoard Hilbert-like: `2 / 6`
-- Maintained Hilbert: `2 / 6`
-- Discordant pairs: `0`
+- BreadBoard Hilbert-like: `5 / 5`
+- Maintained Hilbert: `3 / 5`
+- BreadBoard-only wins: `mathd_algebra_73`, `mathd_algebra_131`
 
 Paired artifacts:
 
-- report: `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_e_algebra_core_minif2f_v1/cross_system_pilot_report_v1.json`
-- validation: `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_e_algebra_core_minif2f_v1/cross_system_validation_report_v1.json`
+- report: `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_e_algebra_core_minif2f_v1/cross_system_pilot_report_v2.json`
+- validation: `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_e_algebra_core_minif2f_v1/cross_system_validation_report_v2.json`
 
 ### Per-task outcome
 
+- `mathd_algebra_48` — both solved
 - `mathd_algebra_101` — both solved
 - `mathd_algebra_410` — both solved
-- `mathd_algebra_48` — both unsolved
-- `mathd_algebra_73` — both unsolved
-- `mathd_algebra_77` — both unsolved
-- `mathd_algebra_131` — both unsolved
+- `mathd_algebra_73` — BreadBoard only
+- `mathd_algebra_131` — BreadBoard only
 
 ### Spend
 
-Maintained Hilbert exact telemetry from proof stats:
+Maintained Hilbert exact telemetry from the merged valid-task proof stats:
 
-- input tokens: `90,466`
-- output tokens: `21,852`
-- estimated cost at OpenRouter `openai/gpt-5.4` list pricing: `~$0.553945`
+- input tokens: `29,790`
+- output tokens: `11,005`
+- estimated cost at OpenRouter `openai/gpt-5.4` list pricing: `~$0.239550`
 
 BreadBoard direct-formal runner still does not emit a usable provider-side spend ledger in this path.
 
 ### Read
 
-- Pack E is a clean algebra family cross-check, but it does not differentiate the systems under current bounded settings.
-- Both systems are strong on the two easiest tasks and fail on the same four harder algebra tasks.
-- The highest-yield follow-up is theorem-local algebra guidance for:
-  - `mathd_algebra_48` (`Complex.I` / statement-normalization issues)
-  - `mathd_algebra_131` (near-miss root/sum-product route)
-  - `mathd_algebra_73`
-  - `mathd_algebra_77`
+- On the valid five-task slice, Pack E now clearly favors BreadBoard.
+- The `Complex.I` normalization fix was necessary to make `mathd_algebra_48` a fair comparator.
+- `mathd_algebra_73` and `mathd_algebra_131` are now BreadBoard-only wins.
+- `mathd_algebra_77` is not a remaining ATP gap; it is invalid under the extracted statement and is excluded from active packs.
 
 ### Recommendation
 
-- Treat Pack E as completed baseline evidence, not an optimization target yet.
-- If we want more algebra signal, create a focused follow-up tranche for the four shared-unsolved tasks instead of broadening immediately.
+- Treat Pack E core as completed evidence of a BreadBoard advantage on the valid algebra family slice.
+- The next algebra step is a new valid tranche beyond Pack E, not more work on `mathd_algebra_77`.
