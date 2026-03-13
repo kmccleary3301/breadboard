@@ -147,6 +147,82 @@ def test_mathd_numbertheory_33_prompt_includes_interval_cases_guidance() -> None
     assert "Do not use `Nat.modEq_iff_dvd'`" in prompt
 
 
+def test_mathd_numbertheory_5_prompt_includes_cube_square_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_5",
+        "import Mathlib\n\ntheorem mathd_numbertheory_5 : True := by\n  trivial\n",
+    )
+
+    assert "rcases h₂ with ⟨t, rfl⟩" in prompt
+    assert "have ht_ge3 : 3 ≤ t := by" in prompt
+    assert "interval_cases t <;> norm_num at h₀" in prompt
+    assert "have ht_ne_3 : t ≠ 3 := by" in prompt
+    assert "interval_cases x <;> norm_num at hx" in prompt
+    assert "have hpow : 4 ^ 3 ≤ t ^ 3 := by gcongr" in prompt
+    assert "Do not try `nlinarith` directly on the cubic goal" in prompt
+
+
+def test_mathd_numbertheory_353_prompt_includes_direct_closed_sum_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_353",
+        "import Mathlib\n\ntheorem mathd_numbertheory_353 : True := by\n  trivial\n",
+    )
+
+    assert "Do not use `subst h₀`" in prompt
+    assert "`rw [h₀]`" in prompt
+    assert "`native_decide`" in prompt
+    assert "Do not expand `Finset.sum_Icc_eq_sum_range`" in prompt
+
+
+def test_mathd_numbertheory_430_prompt_includes_linear_compression_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_430",
+        "import Mathlib\n\ntheorem mathd_numbertheory_430 : True := by\n  trivial\n",
+    )
+
+    assert "Do not brute-force all three digits" in prompt
+    assert "have hb_eq : b = 3 * a := by omega" in prompt
+    assert "have hc_eq : c = 4 * a := by omega" in prompt
+    assert "rw [hb_eq, hc_eq] at h₈" in prompt
+    assert "nlinarith [h₈]" in prompt
+    assert "Do not convert to `ℤ`" in prompt
+
+
+def test_mathd_numbertheory_24_prompt_includes_native_decide_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_24",
+        "import Mathlib\n\ntheorem mathd_numbertheory_24 : True := by\n  trivial\n",
+    )
+
+    assert "`native_decide`" in prompt
+    assert "Do not use `norm_num`" in prompt
+
+
+def test_mathd_numbertheory_99_prompt_includes_residue_search_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_99",
+        "import Mathlib\n\ntheorem mathd_numbertheory_99 : True := by\n  trivial\n",
+    )
+
+    assert "have hmod : (2 * (n % 47)) % 47 = 15 := by" in prompt
+    assert "Nat.mod_lt _ (by norm_num)" in prompt
+    assert "interval_cases h : n % 47 <;> norm_num at hmod hn ⊢" in prompt
+    assert "Do not introduce divisibility witnesses or modular inverses manually" in prompt
+
+
+def test_mathd_numbertheory_109_prompt_includes_closed_sum_native_decide_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_109",
+        "import Mathlib\n\ntheorem mathd_numbertheory_109 : True := by\n  trivial\n",
+    )
+
+    assert "have hv : (∑ k in Finset.Icc 1 100, v k) = ∑ k in Finset.Icc 1 100, (2 * k - 1) := by" in prompt
+    assert "refine Finset.sum_congr rfl ?_" in prompt
+    assert "rw [hv]" in prompt
+    assert "native_decide" in prompt
+    assert "Do not use `norm_num` as the final step" in prompt
+
+
 def test_amc12a_2015_p10_prompt_includes_factorization_and_interval_guidance() -> None:
     prompt = runner._build_prompt(
         "amc12a_2015_p10",
@@ -176,11 +252,26 @@ def test_aime_1991_p1_prompt_includes_bounded_product_guidance() -> None:
     assert "have hsum_le_prod : x + y ≤ x * y + 1 := by" in prompt
     assert "Nat.exists_eq_succ_of_ne_zero (Nat.ne_of_gt hx0)" in prompt
     assert "have hxy_ge : 35 ≤ x * y := by nlinarith [h₁, hsum_le_prod]" in prompt
-    assert "have hdiv : x * y ∣ 880 := by" in prompt
-    assert "simpa [Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm] using hfac.symm" in prompt
+    assert "have hpquad : x * y * (71 - x * y) = 880 := by" in prompt
+    assert "have hsum : x + y = 71 - x * y := by omega" in prompt
+    assert "simpa [hsum, Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm] using hfac" in prompt
     assert "have hxy : x * y = 55 := by" in prompt
-    assert "interval_cases hxy : x * y <;> norm_num at hdiv h₁ hxy hxy_ge hxy_lt ⊢" in prompt
+    assert "interval_cases hxy : x * y <;> norm_num at hpquad hxy hxy_ge hxy_lt ⊢" in prompt
     assert "have hsq : (x + y)^2 = x^2 + y^2 + 2 * (x * y) := by ring" in prompt
+
+
+def test_amc12a_2008_p4_prompt_includes_rational_eval_guidance() -> None:
+    prompt = runner._build_prompt(
+        "amc12a_2008_p4",
+        "import Mathlib\n\ntheorem amc12a_2008_p4 : True := by\n  trivial\n",
+    )
+
+    assert "Do not use `Finset.prod_range_div`" in prompt
+    assert "((4 : ℚ) * k + 4) / (4 * k)" in prompt
+    assert "native_decide" in prompt
+    assert "have hcast := congrArg (fun z : ℚ => (z : ℝ)) hq" in prompt
+    assert "simpa using hcast" in prompt
+    assert "Do not try `exact_mod_cast` directly" in prompt
 
 
 def test_mathd_algebra_156_prompt_includes_case_split_guidance() -> None:

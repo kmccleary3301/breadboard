@@ -95,6 +95,22 @@ PACKS = {
         "mathd_numbertheory_48",
         "mathd_numbertheory_33",
     ],
+    "pack_g_arithmetic_sanity_minif2f_v1": [
+        "mathd_numbertheory_3",
+        "mathd_numbertheory_12",
+        "mathd_numbertheory_237",
+        "mathd_numbertheory_299",
+        "mathd_numbertheory_353",
+        "mathd_numbertheory_430",
+    ],
+    "pack_h_modular_closedform_minif2f_v1": [
+        "mathd_numbertheory_5",
+        "mathd_numbertheory_24",
+        "mathd_numbertheory_45",
+        "mathd_numbertheory_66",
+        "mathd_numbertheory_99",
+        "mathd_numbertheory_109",
+    ],
 }
 EXCLUDED_TASKS = {
     "mathd_numbertheory_780": (

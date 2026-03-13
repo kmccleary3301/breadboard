@@ -180,6 +180,44 @@ def test_pack_f_discrete_arithmetic_mix_tasks(tmp_path: Path) -> None:
     assert metadata["included_task_ids"] == summary["task_ids"]
 
 
+def test_pack_g_arithmetic_sanity_tasks(tmp_path: Path) -> None:
+    summary = packs.build_pack("pack_g_arithmetic_sanity_minif2f_v1", tmp_path)
+
+    assert summary["task_count"] == 6
+    assert summary["task_ids"] == [
+        "mathd_numbertheory_3",
+        "mathd_numbertheory_12",
+        "mathd_numbertheory_237",
+        "mathd_numbertheory_299",
+        "mathd_numbertheory_353",
+        "mathd_numbertheory_430",
+    ]
+    assert summary["excluded_tasks"] == []
+
+    metadata = json.loads((tmp_path / "pack_g_arithmetic_sanity_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == summary["task_ids"]
+    assert metadata["included_task_ids"] == summary["task_ids"]
+
+
+def test_pack_h_modular_closedform_tasks(tmp_path: Path) -> None:
+    summary = packs.build_pack("pack_h_modular_closedform_minif2f_v1", tmp_path)
+
+    assert summary["task_count"] == 6
+    assert summary["task_ids"] == [
+        "mathd_numbertheory_5",
+        "mathd_numbertheory_24",
+        "mathd_numbertheory_45",
+        "mathd_numbertheory_66",
+        "mathd_numbertheory_99",
+        "mathd_numbertheory_109",
+    ]
+    assert summary["excluded_tasks"] == []
+
+    metadata = json.loads((tmp_path / "pack_h_modular_closedform_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == summary["task_ids"]
+    assert metadata["included_task_ids"] == summary["task_ids"]
+
+
 def test_legacy_nat_and_finset_names_are_canonicalized() -> None:
     statement = (
         "theorem sample\n"
