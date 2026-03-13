@@ -154,12 +154,33 @@ def test_amc12a_2015_p10_prompt_includes_factorization_and_interval_guidance() -
     )
 
     assert "have hfac : (x + 1) * (y + 1) = 81 := by nlinarith [h₂]" in prompt
+    assert "have hy2 : 2 ≤ y + 1 := by linarith" in prompt
     assert "have hy1_le : y + 1 ≤ 9 := by" in prompt
     assert "have hbig : 110 ≤ (x + 1) * (y + 1) := by nlinarith" in prompt
+    assert "simpa [mul_comm] using hfac.symm" in prompt
+    assert "normalize the divisibility fact `hdiv`, not the factorization `hfac`" in prompt
     assert "have hy_cases : y + 1 = 3 ∨ y + 1 = 9 := by" in prompt
-    assert "interval_cases hy : y + 1 <;> norm_num at hfac h₀ h₁ hy1_le ⊢" in prompt
+    assert "interval_cases hy : y + 1 <;> norm_num at hdiv hy2 h₀ h₁ hy1_le ⊢" in prompt
     assert "have hx27 : x + 1 = 27 := by nlinarith [hfac, hy3]" in prompt
     assert "have hx9 : x + 1 = 9 := by nlinarith [hfac, hy9]" in prompt
+
+
+def test_aime_1991_p1_prompt_includes_bounded_product_guidance() -> None:
+    prompt = runner._build_prompt(
+        "aime_1991_p1",
+        "import Mathlib\n\ntheorem aime_1991_p1 : True := by\n  trivial\n",
+    )
+
+    assert "Do not use `Nat.eq_div_of_mul_eq_left`" in prompt
+    assert "have hfac : x * y * (x + y) = 880 := by" in prompt
+    assert "have hsum_le_prod : x + y ≤ x * y + 1 := by" in prompt
+    assert "Nat.exists_eq_succ_of_ne_zero (Nat.ne_of_gt hx0)" in prompt
+    assert "have hxy_ge : 35 ≤ x * y := by nlinarith [h₁, hsum_le_prod]" in prompt
+    assert "have hdiv : x * y ∣ 880 := by" in prompt
+    assert "simpa [Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm] using hfac.symm" in prompt
+    assert "have hxy : x * y = 55 := by" in prompt
+    assert "interval_cases hxy : x * y <;> norm_num at hdiv h₁ hxy hxy_ge hxy_lt ⊢" in prompt
+    assert "have hsq : (x + y)^2 = x^2 + y^2 + 2 * (x * y) := by ring" in prompt
 
 
 def test_mathd_algebra_156_prompt_includes_case_split_guidance() -> None:

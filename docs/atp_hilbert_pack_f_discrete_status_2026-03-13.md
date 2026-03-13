@@ -47,21 +47,22 @@ Focused repair artifacts:
 
 ### Current paired result
 
-- BreadBoard Hilbert-like: `3 / 6`
+- BreadBoard Hilbert-like: `4 / 6`
 - Maintained Hilbert: `3 / 6`
 - Both solved:
   - `mathd_numbertheory_48`
   - `amc12_2001_p9`
   - `mathd_numbertheory_33`
-- Shared unsolved:
+- BreadBoard-only:
   - `amc12a_2015_p10`
+- Shared unsolved:
   - `aime_1991_p1`
   - `amc12a_2008_p4`
 
 Current paired artifacts:
 
-- report: `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_f_discrete_arithmetic_mix_minif2f_v1/cross_system_pilot_report_v2.json`
-- validation: `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_f_discrete_arithmetic_mix_minif2f_v1/cross_system_validation_report_v2.json`
+- report: `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_f_discrete_arithmetic_mix_minif2f_v1/cross_system_pilot_report_v3.json`
+- validation: `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_f_discrete_arithmetic_mix_minif2f_v1/cross_system_validation_report_v3.json`
 
 ### Spend
 
@@ -76,10 +77,10 @@ BreadBoard direct-formal runner still does not emit a usable provider-side spend
 ### Notes
 
 - A full-pack BreadBoard rerun with repair seeds regressed solved tasks and is intentionally not treated as canonical evidence.
-- The canonical BreadBoard result for Pack F is the merged `v3` rowset:
+- The canonical BreadBoard result for Pack F is the merged `v4` rowset:
   - base full-pack `v1` rows
   - focused repairs for `amc12_2001_p9` and `mathd_numbertheory_33`
+  - focused repair for `amc12a_2015_p10`
 - The next useful work is theorem-local focus on the remaining shared-unsolved trio:
-  - `amc12a_2015_p10`
   - `aime_1991_p1`
   - `amc12a_2008_p4`
