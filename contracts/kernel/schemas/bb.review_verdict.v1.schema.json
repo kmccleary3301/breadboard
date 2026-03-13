@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.review_verdict.v1.schema.json",
+  "title": "bb.review_verdict.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "verdict_id",
+    "reviewer_task_id",
+    "reviewer_role",
+    "subject",
+    "verdict_code",
+    "mission_completed",
+    "required_deliverable_refs",
+    "deliverable_refs",
+    "missing_deliverable_refs",
+    "signal_evidence_refs",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": {"const": "bb.review_verdict.v1"},
+    "verdict_id": {"type": "string", "minLength": 1},
+    "reviewer_task_id": {"type": "string", "minLength": 1},
+    "reviewer_role": {"enum": ["supervisor", "host", "system"]},
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "signal_id",
+        "signal_code",
+        "source_task_id"
+      ],
+      "properties": {
+        "kind": {"const": "signal"},
+        "signal_id": {"type": "string", "minLength": 1},
+        "signal_event_id": {"type": ["integer", "null"], "minimum": 1},
+        "signal_code": {
+          "enum": [
+            "partial_complete",
+            "merge_ready",
+            "complete",
+            "blocked",
+            "no_progress",
+            "retryable_failure",
+            "catastrophic_failure",
+            "human_required"
+          ]
+        },
+        "source_task_id": {"type": "string", "minLength": 1},
+        "mission_task_id": {"type": ["string", "null"]},
+        "subscription_id": {"type": ["string", "null"]},
+        "trigger_signal_id": {"type": ["string", "null"]},
+        "trigger_event_id": {"type": ["integer", "null"], "minimum": 1},
+        "trigger_code": {
+          "type": ["string", "null"],
+          "enum": [
+            "partial_complete",
+            "merge_ready",
+            "complete",
+            "blocked",
+            "no_progress",
+            "retryable_failure",
+            "catastrophic_failure",
+            "human_required",
+            null
+          ]
+        }
+      }
+    },
+    "verdict_code": {
+      "enum": [
+        "validated",
+        "pending_validation",
+        "retry",
+        "checkpoint",
+        "escalate",
+        "human_required",
+        "noted"
+      ]
+    },
+    "mission_completed": {"type": "boolean"},
+    "required_deliverable_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "deliverable_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "missing_deliverable_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "blocking_reason": {"type": ["string", "null"]},
+    "recommended_next_action": {
+      "type": ["string", "null"],
+      "enum": ["retry", "checkpoint", "escalate", "human_required", null]
+    },
+    "support_claim_ref": {"type": ["string", "null"]},
+    "signal_evidence_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "validation": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["accepted", "reasons", "validated_by"],
+      "properties": {
+        "accepted": {"type": "boolean"},
+        "reasons": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "validated_by": {"type": "string", "minLength": 1},
+        "validated_at": {"type": ["number", "null"]}
+      }
+    }
+  }
+}

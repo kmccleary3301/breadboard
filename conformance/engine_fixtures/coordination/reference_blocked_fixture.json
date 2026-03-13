@@ -197,30 +197,108 @@
       },
       {
         "event_id": 5,
-        "type": "coordination.supervisor_decision",
+        "type": "coordination.review_verdict",
         "agent_id": "supervisor",
         "parent_agent_id": "root",
         "causal_parent_event_id": 3,
         "payload": {
-          "job_id": "job_supervisor_1",
-          "supervisor_task_id": "task_supervisor_1",
-          "subscription_id": "sub_worker_state",
-          "trigger_signal_id": "signal_blocked_reference",
-          "trigger_event_id": 3,
-          "trigger_code": "blocked",
-          "source_task_id": "task_worker_1",
-          "decision": "blocked_checkpoint_requested",
+          "schema_version": "bb.review_verdict.v1",
+          "verdict_id": "review_task_supervisor_1_signal_blocked_reference",
+          "reviewer_task_id": "task_supervisor_1",
+          "reviewer_role": "supervisor",
+          "subject": {
+            "kind": "signal",
+            "signal_id": "signal_blocked_reference",
+            "signal_event_id": 3,
+            "signal_code": "blocked",
+            "source_task_id": "task_worker_1",
+            "mission_task_id": "task_supervisor_1",
+            "subscription_id": "sub_worker_state",
+            "trigger_signal_id": "signal_blocked_reference",
+            "trigger_event_id": 3,
+            "trigger_code": "blocked"
+          },
+          "verdict_code": "checkpoint",
           "mission_completed": false,
           "required_deliverable_refs": [],
           "deliverable_refs": [],
           "missing_deliverable_refs": [],
           "blocking_reason": "provider quota exhausted",
           "recommended_next_action": "checkpoint",
-          "blocked_action": "checkpoint",
           "support_claim_ref": null,
           "signal_evidence_refs": [
             "evidence://quota/worker-1"
-          ]
+          ],
+          "metadata": {
+            "job_id": "job_supervisor_1",
+            "blocked_action": "checkpoint",
+            "legacy_decision": "blocked_checkpoint_requested"
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "review_verdict_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        }
+      },
+      {
+        "event_id": 6,
+        "type": "coordination.directive",
+        "agent_id": "supervisor",
+        "parent_agent_id": "root",
+        "causal_parent_event_id": 5,
+        "payload": {
+          "schema_version": "bb.directive.v1",
+          "directive_id": "directive_task_supervisor_1_review_task_supervisor_1_signal_blocked_reference",
+          "directive_code": "checkpoint",
+          "issuer_task_id": "task_supervisor_1",
+          "issuer_role": "supervisor",
+          "target_task_id": "task_worker_1",
+          "target_job_id": "job_worker_1",
+          "based_on_verdict_id": "review_task_supervisor_1_signal_blocked_reference",
+          "based_on_signal_id": "signal_blocked_reference",
+          "payload": {
+            "wake_target": true,
+            "recommended_next_action": "checkpoint",
+            "blocking_reason": "provider quota exhausted"
+          },
+          "evidence_refs": [
+            "evidence://quota/worker-1"
+          ],
+          "metadata": {
+            "review_event_id": 5,
+            "trigger_signal_id": "signal_blocked_reference"
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "directive_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        }
+      },
+      {
+        "event_id": 7,
+        "type": "agent.wakeup_emitted",
+        "agent_id": "worker",
+        "parent_agent_id": "supervisor",
+        "causal_parent_event_id": 6,
+        "payload": {
+          "job_id": "job_worker_1",
+          "agent_id": "worker",
+          "owner_agent": "supervisor",
+          "seq": 2,
+          "reason": "directive:checkpoint",
+          "message": "Checkpoint requested for task task_worker_1.",
+          "source_task_id": "task_supervisor_1",
+          "directive_id": "directive_task_supervisor_1_review_task_supervisor_1_signal_blocked_reference",
+          "directive_code": "checkpoint",
+          "based_on_verdict_id": "review_task_supervisor_1_signal_blocked_reference"
         }
       }
     ]

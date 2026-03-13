@@ -96,17 +96,19 @@ def test_supervisor_validates_complete_separately_from_worker_done() -> None:
     assert wakeups[0].payload["job_id"] == supervisor.job.job_id
     assert orchestrator.job_manager.get(supervisor.job.job_id).state == "accepted"
 
-    decision = orchestrator.supervisor_review_signal(
+    verdict = orchestrator.supervisor_review_signal(
         supervisor.job,
         required_deliverable_refs=[deliverable_ref],
     )
 
-    assert decision.payload["decision"] == "mission_complete_validated"
-    assert decision.payload["mission_completed"] is True
-    assert decision.payload["trigger_signal_id"] == "signal_complete_reference"
-    assert decision.payload["deliverable_refs"] == [deliverable_ref]
-    assert decision.payload["missing_deliverable_refs"] == []
+    assert verdict.type == "coordination.review_verdict"
+    assert verdict.payload["verdict_code"] == "validated"
+    assert verdict.payload["mission_completed"] is True
+    assert verdict.payload["subject"]["trigger_signal_id"] == "signal_complete_reference"
+    assert verdict.payload["deliverable_refs"] == [deliverable_ref]
+    assert verdict.payload["missing_deliverable_refs"] == []
     assert orchestrator.job_manager.get(supervisor.job.job_id).state == "completed"
+    assert [event for event in orchestrator.event_log.events if event.type == "coordination.directive"] == []
 
     completion_events = [event for event in orchestrator.event_log.events if event.type == "agent.job_completed"]
     assert completion_events
@@ -133,15 +135,19 @@ def test_supervisor_keeps_worker_complete_pending_when_required_deliverable_miss
     )
 
     orchestrator.emit_coordination_signal(worker.job, signal)
-    decision = orchestrator.supervisor_review_signal(
+    verdict = orchestrator.supervisor_review_signal(
         supervisor.job,
         required_deliverable_refs=["artifact://deliverables/worker-report.md"],
     )
 
-    assert decision.payload["decision"] == "worker_complete_pending_validation"
-    assert decision.payload["mission_completed"] is False
-    assert decision.payload["missing_deliverable_refs"] == ["artifact://deliverables/worker-report.md"]
+    assert verdict.payload["verdict_code"] == "pending_validation"
+    assert verdict.payload["mission_completed"] is False
+    assert verdict.payload["missing_deliverable_refs"] == ["artifact://deliverables/worker-report.md"]
     assert orchestrator.job_manager.get(supervisor.job.job_id).state == "accepted"
+    directives = [event for event in orchestrator.event_log.events if event.type == "coordination.directive"]
+    assert len(directives) == 1
+    assert directives[0].payload["directive_code"] == "continue"
+    assert directives[0].payload["target_task_id"] == "task_worker_1"
 
 
 def test_blocked_signal_wakes_supervisor_and_preserves_structured_payload() -> None:
@@ -182,13 +188,23 @@ def test_blocked_signal_wakes_supervisor_and_preserves_structured_payload() -> N
     assert wakeups[0].payload["trigger_code"] == "blocked"
     assert wakeups[0].payload["source_task_id"] == "task_worker_1"
 
-    decision = orchestrator.supervisor_review_signal(supervisor.job)
-    assert decision.payload["decision"] == "blocked_retry_requested"
-    assert decision.payload["mission_completed"] is False
-    assert decision.payload["blocked_action"] == "retry"
-    assert decision.payload["blocking_reason"] == "missing sandbox capability"
-    assert decision.payload["support_claim_ref"] == "support://sandbox/capability/bash"
+    verdict = orchestrator.supervisor_review_signal(supervisor.job)
+    assert verdict.payload["verdict_code"] == "retry"
+    assert verdict.payload["mission_completed"] is False
+    assert verdict.payload["metadata"]["blocked_action"] == "retry"
+    assert verdict.payload["blocking_reason"] == "missing sandbox capability"
+    assert verdict.payload["support_claim_ref"] == "support://sandbox/capability/bash"
     assert orchestrator.job_manager.get(supervisor.job.job_id).state == "accepted"
+    directives = [event for event in orchestrator.event_log.events if event.type == "coordination.directive"]
+    assert len(directives) == 1
+    assert directives[0].payload["directive_code"] == "retry"
+    assert directives[0].payload["target_task_id"] == "task_worker_1"
+    directive_wakeups = [
+        event
+        for event in orchestrator.event_log.events
+        if event.type == "agent.wakeup_emitted" and str((event.payload or {}).get("directive_code") or "") == "retry"
+    ]
+    assert len(directive_wakeups) == 1
 
 
 def test_blocked_signal_resume_is_idempotent_across_reload(tmp_path: Path) -> None:
@@ -211,7 +227,7 @@ def test_blocked_signal_resume_is_idempotent_across_reload(tmp_path: Path) -> No
     blocked_signal["signal_id"] = "signal_blocked_reload"
 
     orchestrator.emit_coordination_signal(worker.job, blocked_signal)
-    first_decision = orchestrator.supervisor_review_signal(supervisor.job)
+    first_verdict = orchestrator.supervisor_review_signal(supervisor.job)
     orchestrator.persist_event_log()
 
     reloaded = MultiAgentOrchestrator(_make_team(), event_log=load_event_log(str(log_path)))
@@ -222,13 +238,15 @@ def test_blocked_signal_resume_is_idempotent_across_reload(tmp_path: Path) -> No
 
     reloaded.emit_coordination_signal(reloaded_worker, blocked_signal)
     wakeups_after = [event for event in reloaded.event_log.events if event.type == "agent.wakeup_emitted"]
-    assert len(wakeups_after) == 1
+    assert len(wakeups_after) == 2
 
-    second_decision = reloaded.supervisor_review_signal(reloaded_supervisor)
+    second_verdict = reloaded.supervisor_review_signal(reloaded_supervisor)
     decision_events = [
-        event for event in reloaded.event_log.events if event.type == "coordination.supervisor_decision"
+        event for event in reloaded.event_log.events if event.type == "coordination.review_verdict"
     ]
     assert len(decision_events) == 1
-    assert second_decision.payload["decision"] == "blocked_checkpoint_requested"
-    assert second_decision.payload["trigger_signal_id"] == "signal_blocked_reload"
-    assert second_decision.payload == first_decision.payload
+    assert second_verdict.payload["verdict_code"] == "checkpoint"
+    assert second_verdict.payload["subject"]["trigger_signal_id"] == "signal_blocked_reload"
+    assert second_verdict.payload == first_verdict.payload
+    directive_events = [event for event in reloaded.event_log.events if event.type == "coordination.directive"]
+    assert len(directive_events) == 1

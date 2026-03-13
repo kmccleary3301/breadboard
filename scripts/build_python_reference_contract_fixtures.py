@@ -68,6 +68,31 @@ def _serialize_events(orchestrator: MultiAgentOrchestrator) -> list[Dict[str, An
     ]
 
 
+def _project_review_verdict_as_supervisor_decision(verdict: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(verdict or {})
+    subject = payload.get("subject") if isinstance(payload.get("subject"), dict) else {}
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    return {
+        "job_id": str(metadata.get("job_id") or ""),
+        "supervisor_task_id": str(payload.get("reviewer_task_id") or ""),
+        "subscription_id": str(subject.get("subscription_id") or ""),
+        "trigger_signal_id": str(subject.get("trigger_signal_id") or subject.get("signal_id") or ""),
+        "trigger_event_id": subject.get("trigger_event_id"),
+        "trigger_code": str(subject.get("trigger_code") or subject.get("signal_code") or ""),
+        "source_task_id": str(subject.get("source_task_id") or ""),
+        "decision": str(metadata.get("legacy_decision") or payload.get("verdict_code") or ""),
+        "mission_completed": bool(payload.get("mission_completed")),
+        "required_deliverable_refs": list(payload.get("required_deliverable_refs") or []),
+        "deliverable_refs": list(payload.get("deliverable_refs") or []),
+        "missing_deliverable_refs": list(payload.get("missing_deliverable_refs") or []),
+        "blocking_reason": payload.get("blocking_reason"),
+        "recommended_next_action": payload.get("recommended_next_action"),
+        "blocked_action": metadata.get("blocked_action"),
+        "support_claim_ref": payload.get("support_claim_ref"),
+        "signal_evidence_refs": list(payload.get("signal_evidence_refs") or []),
+    }
+
+
 def _normalize_fixture_value(value: Any, replacements: Dict[str, str]) -> Any:
     if isinstance(value, dict):
         return {key: _normalize_fixture_value(item, replacements) for key, item in value.items()}
@@ -110,10 +135,11 @@ def _build_coordination_reference_complete_fixture() -> Dict[str, Any]:
     )
     signal["validation"]["validated_at"] = 0.0
     orchestrator.emit_coordination_signal(worker.job, signal)
-    decision = orchestrator.supervisor_review_signal(
+    verdict = orchestrator.supervisor_review_signal(
         supervisor.job,
         required_deliverable_refs=[deliverable_ref],
     )
+    verdict.payload["validation"]["validated_at"] = 0.0
     wakeup = next(event for event in orchestrator.event_log.events if event.type == "agent.wakeup_emitted")
     completion = next(event for event in orchestrator.event_log.events if event.type == "agent.job_completed")
     reference_output = {
@@ -124,7 +150,7 @@ def _build_coordination_reference_complete_fixture() -> Dict[str, Any]:
         "subscription_id": "sub_worker_state",
         "accepted_signal": signal,
         "wakeup_payload": dict(wakeup.payload or {}),
-        "supervisor_decision": dict(decision.payload or {}),
+        "supervisor_decision": _project_review_verdict_as_supervisor_decision(dict(verdict.payload or {})),
         "completion_payload": dict(completion.payload or {}),
         "events": _serialize_events(orchestrator),
     }
@@ -174,7 +200,10 @@ def _build_coordination_reference_blocked_fixture() -> Dict[str, Any]:
     signal["signal_id"] = "signal_blocked_reference"
     signal["validation"]["validated_at"] = 0.0
     orchestrator.emit_coordination_signal(worker.job, signal)
-    decision = orchestrator.supervisor_review_signal(supervisor.job)
+    verdict = orchestrator.supervisor_review_signal(supervisor.job)
+    verdict.payload["validation"]["validated_at"] = 0.0
+    directive = next(event for event in orchestrator.event_log.events if event.type == "coordination.directive")
+    directive.payload["validation"]["validated_at"] = 0.0
     wakeup = next(event for event in orchestrator.event_log.events if event.type == "agent.wakeup_emitted")
     reference_output = {
         "schema_version": "bb.coordination_reference_slice.v1",
@@ -184,7 +213,7 @@ def _build_coordination_reference_blocked_fixture() -> Dict[str, Any]:
         "subscription_id": "sub_worker_state",
         "accepted_signal": signal,
         "wakeup_payload": dict(wakeup.payload or {}),
-        "supervisor_decision": dict(decision.payload or {}),
+        "supervisor_decision": _project_review_verdict_as_supervisor_decision(dict(verdict.payload or {})),
         "events": _serialize_events(orchestrator),
     }
     reference_output = _normalize_fixture_value(
@@ -200,6 +229,157 @@ def _build_coordination_reference_blocked_fixture() -> Dict[str, Any]:
         "comparator_class": "normalized-trace-equal",
         "support_tier": "reference-engine",
         "contract": "bb.coordination_reference_slice.v1",
+        "reference_output": reference_output,
+    }
+
+
+def _build_coordination_reviewed_complete_fixture() -> Dict[str, Any]:
+    orchestrator = MultiAgentOrchestrator(_coordination_team())
+    supervisor = orchestrator.spawn_subagent(
+        owner_agent="root",
+        agent_id="supervisor",
+        payload={"role": "supervisor"},
+        task_descriptor=_coordination_descriptor("task_supervisor_1", subscribed=True),
+    )
+    worker = orchestrator.spawn_subagent(
+        owner_agent="supervisor",
+        agent_id="worker",
+        payload={"role": "worker"},
+        task_descriptor=_coordination_descriptor("task_worker_1", parent_task_id="task_supervisor_1"),
+    )
+
+    deliverable_ref = "artifact://deliverables/worker-report.md"
+    signal = validate_signal_proposal(
+        build_signal_proposal(
+            code="complete",
+            task_id="task_worker_1",
+            parent_task_id="task_supervisor_1",
+            mission_task_id="task_supervisor_1",
+            source_kind="worker",
+            emitter_role="worker",
+            signal_id="signal_complete_reviewed",
+            evidence_refs=[deliverable_ref],
+            payload={"deliverable_refs": [deliverable_ref], "completion_reason": "worker_done"},
+        ),
+        mission_owner_role="supervisor",
+    )
+    signal["validation"]["validated_at"] = 0.0
+    orchestrator.emit_coordination_signal(worker.job, signal)
+    verdict = orchestrator.supervisor_review_signal(
+        supervisor.job,
+        required_deliverable_refs=[deliverable_ref],
+    )
+    verdict.payload["validation"]["validated_at"] = 0.0
+    reference_output = _normalize_fixture_value(
+        dict(verdict.payload or {}),
+        {
+            supervisor.job.job_id: "job_supervisor_1",
+            worker.job.job_id: "job_worker_1",
+        },
+    )
+    return {
+        "fixture_family": "coordination",
+        "fixture_id": "coord_reviewed_complete_python_reference",
+        "comparator_class": "normalized-trace-equal",
+        "support_tier": "reference-engine",
+        "contract": "bb.review_verdict.v1",
+        "reference_output": reference_output,
+    }
+
+
+def _build_coordination_reviewed_blocked_fixture() -> Dict[str, Any]:
+    orchestrator = MultiAgentOrchestrator(_coordination_team())
+    supervisor = orchestrator.spawn_subagent(
+        owner_agent="root",
+        agent_id="supervisor",
+        payload={"role": "supervisor"},
+        task_descriptor=_coordination_descriptor("task_supervisor_1", subscribed=True),
+    )
+    worker = orchestrator.spawn_subagent(
+        owner_agent="supervisor",
+        agent_id="worker",
+        payload={"role": "worker"},
+        task_descriptor=_coordination_descriptor("task_worker_1", parent_task_id="task_supervisor_1"),
+    )
+
+    signal = validate_signal_proposal(
+        build_blocked_signal_proposal(
+            task_id="task_worker_1",
+            parent_task_id="task_supervisor_1",
+            mission_task_id="task_supervisor_1",
+            blocking_reason="provider quota exhausted",
+            recommended_next_action="checkpoint",
+            evidence_refs=["evidence://quota/worker-1"],
+        ),
+        mission_owner_role="supervisor",
+    )
+    signal["signal_id"] = "signal_blocked_reviewed"
+    signal["validation"]["validated_at"] = 0.0
+    orchestrator.emit_coordination_signal(worker.job, signal)
+    verdict = orchestrator.supervisor_review_signal(supervisor.job)
+    verdict.payload["validation"]["validated_at"] = 0.0
+    reference_output = _normalize_fixture_value(
+        dict(verdict.payload or {}),
+        {
+            supervisor.job.job_id: "job_supervisor_1",
+            worker.job.job_id: "job_worker_1",
+        },
+    )
+    return {
+        "fixture_family": "coordination",
+        "fixture_id": "coord_reviewed_blocked_python_reference",
+        "comparator_class": "normalized-trace-equal",
+        "support_tier": "reference-engine",
+        "contract": "bb.review_verdict.v1",
+        "reference_output": reference_output,
+    }
+
+
+def _build_coordination_directive_retry_fixture() -> Dict[str, Any]:
+    orchestrator = MultiAgentOrchestrator(_coordination_team())
+    supervisor = orchestrator.spawn_subagent(
+        owner_agent="root",
+        agent_id="supervisor",
+        payload={"role": "supervisor"},
+        task_descriptor=_coordination_descriptor("task_supervisor_1", subscribed=True),
+    )
+    worker = orchestrator.spawn_subagent(
+        owner_agent="supervisor",
+        agent_id="worker",
+        payload={"role": "worker"},
+        task_descriptor=_coordination_descriptor("task_worker_1", parent_task_id="task_supervisor_1"),
+    )
+
+    signal = validate_signal_proposal(
+        build_blocked_signal_proposal(
+            task_id="task_worker_1",
+            parent_task_id="task_supervisor_1",
+            mission_task_id="task_supervisor_1",
+            blocking_reason="provider quota exhausted",
+            recommended_next_action="retry",
+            evidence_refs=["evidence://quota/worker-1"],
+        ),
+        mission_owner_role="supervisor",
+    )
+    signal["signal_id"] = "signal_blocked_directive"
+    signal["validation"]["validated_at"] = 0.0
+    orchestrator.emit_coordination_signal(worker.job, signal)
+    orchestrator.supervisor_review_signal(supervisor.job)
+    directive = next(event for event in orchestrator.event_log.events if event.type == "coordination.directive")
+    directive.payload["validation"]["validated_at"] = 0.0
+    reference_output = _normalize_fixture_value(
+        dict(directive.payload or {}),
+        {
+            supervisor.job.job_id: "job_supervisor_1",
+            worker.job.job_id: "job_worker_1",
+        },
+    )
+    return {
+        "fixture_family": "coordination",
+        "fixture_id": "coord_directive_retry_python_reference",
+        "comparator_class": "normalized-trace-equal",
+        "support_tier": "reference-engine",
+        "contract": "bb.directive.v1",
         "reference_output": reference_output,
     }
 
@@ -586,6 +766,9 @@ def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
         },
         "coordination/reference_complete_fixture.json": _build_coordination_reference_complete_fixture(),
         "coordination/reference_blocked_fixture.json": _build_coordination_reference_blocked_fixture(),
+        "coordination/reviewed_complete_fixture.json": _build_coordination_reviewed_complete_fixture(),
+        "coordination/reviewed_blocked_fixture.json": _build_coordination_reviewed_blocked_fixture(),
+        "coordination/directive_retry_fixture.json": _build_coordination_directive_retry_fixture(),
     }
 
 

@@ -30,6 +30,16 @@ CANONICAL_KERNEL_EVENT_TYPES: dict[str, dict[str, str]] = {
     "permission_response": {"family": "permission.decided", "actor": "service", "visibility": "host"},
     "task_event": {"family": "task.progress", "actor": "subagent", "visibility": "host"},
     "coordination_signal": {"family": "coordination.signal", "actor": "engine", "visibility": "host"},
+    "coordination_review_verdict": {
+        "family": "coordination.review_verdict",
+        "actor": "engine",
+        "visibility": "host",
+    },
+    "coordination_directive": {
+        "family": "coordination.directive",
+        "actor": "engine",
+        "visibility": "host",
+    },
     "turn_start": {"family": "turn.started", "actor": "engine", "visibility": "audit"},
     "guardrail_event": {"family": "warning.guardrail", "actor": "service", "visibility": "audit"},
     "lifecycle_event": {"family": "run.lifecycle", "actor": "engine", "visibility": "audit"},
@@ -74,6 +84,8 @@ class SessionState:
         self.current_text_based_tools = []
         self.completion_summary: Dict[str, Any] = {}
         self.coordination_signals: List[Dict[str, Any]] = []
+        self.coordination_review_verdicts: List[Dict[str, Any]] = []
+        self.coordination_directives: List[Dict[str, Any]] = []
         self.provider_metadata: Dict[str, Any] = {}
         self.reasoning_traces = ReasoningTraceStore()
         self.ir_events: List[IRDeltaEvent] = []
@@ -280,6 +292,38 @@ class SessionState:
             turn = self._active_turn_index
         self.coordination_signals.append(entry)
         seq = self._emit_event("coordination_signal", entry, turn=turn)
+        if isinstance(seq, int):
+            entry.setdefault("seq", seq)
+        return entry
+
+    def record_coordination_review_verdict(
+        self,
+        verdict: Dict[str, Any],
+        *,
+        turn: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Record a validated coordination review/verdict as canonical runtime truth."""
+        entry = dict(verdict or {})
+        if turn is None:
+            turn = self._active_turn_index
+        self.coordination_review_verdicts.append(entry)
+        seq = self._emit_event("coordination_review_verdict", entry, turn=turn)
+        if isinstance(seq, int):
+            entry.setdefault("seq", seq)
+        return entry
+
+    def record_coordination_directive(
+        self,
+        directive: Dict[str, Any],
+        *,
+        turn: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Record a validated coordination directive as canonical runtime truth."""
+        entry = dict(directive or {})
+        if turn is None:
+            turn = self._active_turn_index
+        self.coordination_directives.append(entry)
+        seq = self._emit_event("coordination_directive", entry, turn=turn)
         if isinstance(seq, int):
             entry.setdefault("seq", seq)
         return entry

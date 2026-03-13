@@ -83,6 +83,7 @@ The worker may not truthfully finalize:
 - `the mission is complete`
 
 In the reference lane, mission completion becomes durable truth only after the supervisor validates required deliverables or evidence and records a supervisor-side decision.
+In the next reviewed-result tranche, that supervisor-side outcome should be a first-class review verdict, not a stringly runtime-private decision.
 
 ### Blocked is not generic failure
 
@@ -166,5 +167,6 @@ Still unresolved:
 ## Immediate next steps
 
 1. keep the sparse supervisor-worker lane replayable across engines
-2. add conservative public config surfacing for coordination without widening ontology too early
-3. promote the tracked coordination evidence bundle into manifest-backed conformance rows once the public surface is frozen
+2. extract supervisor review into explicit reviewed-result truth before adding broader coordination patterns
+3. add conservative public config surfacing for coordination without widening ontology too early
+4. promote the tracked coordination evidence bundle into manifest-backed conformance rows once the public surface is frozen

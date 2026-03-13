@@ -30,6 +30,9 @@ class BusAdapter:
             "resume_reason",
             "cursor_event_id",
             "source_task_id",
+            "directive_id",
+            "directive_code",
+            "based_on_verdict_id",
         )
         return {key: payload.get(key) for key in keys if key in payload}
 

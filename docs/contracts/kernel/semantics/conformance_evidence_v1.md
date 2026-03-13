@@ -109,10 +109,23 @@ The sparse supervisor-worker evidence should include:
 - the accepted coordination signal
 - the derived wake payload
 - trigger lineage (`subscription_id`, `trigger_signal_id`, `trigger_code`, `source_task_id`)
-- the supervisor decision record
+- the review verdict record
 - mission completion output when the supervisor validated `complete`
 
 That keeps projection, coordination truth, and mission authority separable in the evidence itself.
+
+For the reviewed-result tranche, evidence should now make four layers inspectable:
+
+- signal truth
+- review/verdict truth
+- any completion output or later directive truth
+- projections such as wakeup notices
+
+For the directive tranche, evidence should additionally preserve:
+
+- the directive object itself
+- the review-verdict-to-directive lineage
+- whether the directive produced a downstream wake or remained control-only
 
 ---
 

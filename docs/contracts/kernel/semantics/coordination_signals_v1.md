@@ -159,6 +159,8 @@ The following remain explicitly deferred:
 - rendezvous / merge objects
 - large coordination APIs
 
+The next layer above this contract family is now `bb.review_verdict.v1`, which records reviewer-owned outcomes without replacing signal truth.
+
 ---
 
 ## Why this matters
@@ -173,8 +175,9 @@ That would make deeper hierarchy work brittle and hard to replay honestly.
 
 ---
 
-## Follow-on work outside V2 closure
+## Follow-on work after V2 closure
 
-1. keep future `coordination:` growth narrower than the underlying coordination ontology
-2. add additional engines or host layers against the manifest-backed coordination evidence rows
-3. preserve the distinction between coordination truth and projection if Backbone or Host Kit surfaces grow richer
+1. extract reviewed outcomes into explicit `bb.review_verdict.v1` truth instead of orchestrator-private decision strings
+2. keep future `coordination:` growth narrower than the underlying coordination ontology
+3. add additional engines or host layers against the manifest-backed coordination evidence rows
+4. preserve the distinction between coordination truth and projection if Backbone or Host Kit surfaces grow richer

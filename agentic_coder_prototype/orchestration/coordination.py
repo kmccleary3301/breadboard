@@ -17,6 +17,23 @@ SIGNAL_CODES = frozenset(
     }
 )
 
+REVIEW_VERDICT_CODES = frozenset(
+    {
+        "validated",
+        "pending_validation",
+        "retry",
+        "checkpoint",
+        "escalate",
+        "human_required",
+        "noted",
+    }
+)
+
+REVIEW_SUBJECT_KINDS = frozenset({"signal"})
+REVIEWER_ROLES = frozenset({"supervisor", "host", "system"})
+DIRECTIVE_CODES = frozenset({"continue", "retry", "checkpoint", "escalate", "terminate"})
+DIRECTIVE_ISSUER_ROLES = frozenset({"supervisor", "host", "system"})
+
 SOURCE_KINDS = frozenset(
     {
         "assistant_content",
@@ -197,6 +214,63 @@ def build_blocked_signal_proposal(
     )
 
 
+def build_review_verdict(
+    *,
+    reviewer_task_id: str,
+    reviewer_role: str,
+    subject_signal: Mapping[str, Any],
+    verdict_code: str,
+    subject_event_id: Optional[int] = None,
+    subscription_id: Optional[str] = None,
+    trigger_signal_id: Optional[str] = None,
+    trigger_event_id: Optional[int] = None,
+    trigger_code: Optional[str] = None,
+    mission_completed: bool = False,
+    required_deliverable_refs: Optional[Iterable[str]] = None,
+    deliverable_refs: Optional[Iterable[str]] = None,
+    missing_deliverable_refs: Optional[Iterable[str]] = None,
+    blocking_reason: Optional[str] = None,
+    recommended_next_action: Optional[str] = None,
+    support_claim_ref: Optional[str] = None,
+    signal_evidence_refs: Optional[Iterable[str]] = None,
+    verdict_id: Optional[str] = None,
+    metadata: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    signal = dict(subject_signal or {})
+    return {
+        "schema_version": "bb.review_verdict.v1",
+        "verdict_id": str(verdict_id or f"review_{uuid.uuid4().hex}"),
+        "reviewer_task_id": str(reviewer_task_id or ""),
+        "reviewer_role": str(reviewer_role or ""),
+        "subject": {
+            "kind": "signal",
+            "signal_id": str(signal.get("signal_id") or ""),
+            "signal_event_id": subject_event_id,
+            "signal_code": str(signal.get("code") or ""),
+            "source_task_id": str(signal.get("task_id") or ""),
+            "mission_task_id": _clean_string(signal.get("mission_task_id")),
+            "subscription_id": _clean_string(subscription_id),
+            "trigger_signal_id": _clean_string(trigger_signal_id or signal.get("signal_id")),
+            "trigger_event_id": trigger_event_id if trigger_event_id is not None else subject_event_id,
+            "trigger_code": _clean_string(trigger_code or signal.get("code")),
+        },
+        "verdict_code": str(verdict_code or ""),
+        "mission_completed": bool(mission_completed),
+        "required_deliverable_refs": [
+            str(item) for item in (required_deliverable_refs or []) if str(item).strip()
+        ],
+        "deliverable_refs": [str(item) for item in (deliverable_refs or []) if str(item).strip()],
+        "missing_deliverable_refs": [
+            str(item) for item in (missing_deliverable_refs or []) if str(item).strip()
+        ],
+        "blocking_reason": _clean_string(blocking_reason),
+        "recommended_next_action": _clean_string(recommended_next_action),
+        "support_claim_ref": _clean_string(support_claim_ref),
+        "signal_evidence_refs": [str(item) for item in (signal_evidence_refs or []) if str(item).strip()],
+        "metadata": dict(metadata or {}),
+    }
+
+
 def validate_signal_proposal(
     proposal: Mapping[str, Any],
     *,
@@ -263,8 +337,170 @@ def validate_signal_proposal(
     return signal
 
 
+def validate_review_verdict(
+    verdict: Mapping[str, Any],
+    *,
+    validated_by: str = "engine",
+) -> Dict[str, Any]:
+    record = dict(verdict or {})
+    reasons: list[str] = []
+
+    if str(record.get("schema_version") or "") != "bb.review_verdict.v1":
+        reasons.append("invalid_schema_version")
+    if not _clean_string(record.get("verdict_id")):
+        reasons.append("missing_verdict_id")
+    if not _clean_string(record.get("reviewer_task_id")):
+        reasons.append("missing_reviewer_task_id")
+
+    reviewer_role = str(record.get("reviewer_role") or "")
+    if reviewer_role not in REVIEWER_ROLES:
+        reasons.append(f"invalid_reviewer_role:{reviewer_role or 'missing'}")
+
+    subject = record.get("subject") if isinstance(record.get("subject"), Mapping) else {}
+    if str(subject.get("kind") or "") not in REVIEW_SUBJECT_KINDS:
+        reasons.append(f"invalid_subject_kind:{str(subject.get('kind') or '') or 'missing'}")
+    if not _clean_string(subject.get("signal_id")):
+        reasons.append("missing_subject_signal_id")
+    if str(subject.get("signal_code") or "") not in SIGNAL_CODES:
+        reasons.append(f"invalid_subject_signal_code:{str(subject.get('signal_code') or '') or 'missing'}")
+    if not _clean_string(subject.get("source_task_id")):
+        reasons.append("missing_subject_source_task_id")
+
+    verdict_code = str(record.get("verdict_code") or "")
+    if verdict_code not in REVIEW_VERDICT_CODES:
+        reasons.append(f"invalid_verdict_code:{verdict_code or 'missing'}")
+
+    required_deliverable_refs = [
+        str(item) for item in (record.get("required_deliverable_refs") or []) if str(item).strip()
+    ]
+    deliverable_refs = [str(item) for item in (record.get("deliverable_refs") or []) if str(item).strip()]
+    missing_deliverable_refs = [
+        str(item) for item in (record.get("missing_deliverable_refs") or []) if str(item).strip()
+    ]
+    mission_completed = bool(record.get("mission_completed"))
+
+    if verdict_code == "validated":
+        if missing_deliverable_refs:
+            reasons.append("validated_verdict_cannot_have_missing_deliverable_refs")
+        if required_deliverable_refs and not deliverable_refs:
+            reasons.append("validated_verdict_missing_deliverable_refs")
+        if not mission_completed:
+            reasons.append("validated_verdict_requires_mission_completed")
+    elif mission_completed:
+        reasons.append("only_validated_verdict_may_complete_mission")
+
+    if verdict_code == "pending_validation":
+        if not missing_deliverable_refs:
+            reasons.append("pending_validation_requires_missing_deliverable_refs")
+
+    blocking_reason = _clean_string(record.get("blocking_reason"))
+    recommended_next_action = _clean_string(record.get("recommended_next_action"))
+    if verdict_code in {"retry", "checkpoint", "escalate", "human_required"}:
+        signal_code = str(subject.get("signal_code") or "")
+        if signal_code not in {"blocked", "human_required"}:
+            reasons.append("review_action_verdict_requires_blocked_or_human_required_signal")
+        if verdict_code != "human_required" and signal_code == "blocked" and not blocking_reason:
+            reasons.append("blocked_review_verdict_requires_blocking_reason")
+        if verdict_code in {"retry", "checkpoint", "escalate"} and recommended_next_action not in BLOCKED_RECOMMENDED_ACTIONS:
+            reasons.append("review_action_verdict_requires_recommended_next_action")
+
+    record["validation"] = {
+        "accepted": not reasons,
+        "reasons": reasons or ["review_verdict_valid"],
+        "validated_by": str(validated_by or "engine"),
+        "validated_at": time.time(),
+    }
+    return record
+
+
+def build_directive(
+    *,
+    directive_code: str,
+    issuer_task_id: str,
+    issuer_role: str,
+    target_task_id: str,
+    based_on_verdict: Mapping[str, Any],
+    target_job_id: Optional[str] = None,
+    directive_id: Optional[str] = None,
+    payload: Optional[Mapping[str, Any]] = None,
+    evidence_refs: Optional[Iterable[str]] = None,
+    metadata: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    verdict = dict(based_on_verdict or {})
+    subject = verdict.get("subject") if isinstance(verdict.get("subject"), Mapping) else {}
+    return {
+        "schema_version": "bb.directive.v1",
+        "directive_id": str(directive_id or f"directive_{uuid.uuid4().hex}"),
+        "directive_code": str(directive_code or ""),
+        "issuer_task_id": str(issuer_task_id or ""),
+        "issuer_role": str(issuer_role or ""),
+        "target_task_id": str(target_task_id or ""),
+        "target_job_id": _clean_string(target_job_id),
+        "based_on_verdict_id": str(verdict.get("verdict_id") or ""),
+        "based_on_signal_id": str(subject.get("signal_id") or ""),
+        "payload": dict(payload or {}),
+        "evidence_refs": [str(item) for item in (evidence_refs or []) if str(item).strip()],
+        "metadata": dict(metadata or {}),
+    }
+
+
+def validate_directive(
+    directive: Mapping[str, Any],
+    *,
+    validated_by: str = "engine",
+) -> Dict[str, Any]:
+    record = dict(directive or {})
+    reasons: list[str] = []
+
+    if str(record.get("schema_version") or "") != "bb.directive.v1":
+        reasons.append("invalid_schema_version")
+    if not _clean_string(record.get("directive_id")):
+        reasons.append("missing_directive_id")
+    directive_code = str(record.get("directive_code") or "")
+    if directive_code not in DIRECTIVE_CODES:
+        reasons.append(f"invalid_directive_code:{directive_code or 'missing'}")
+    if not _clean_string(record.get("issuer_task_id")):
+        reasons.append("missing_issuer_task_id")
+    issuer_role = str(record.get("issuer_role") or "")
+    if issuer_role not in DIRECTIVE_ISSUER_ROLES:
+        reasons.append(f"invalid_issuer_role:{issuer_role or 'missing'}")
+    if not _clean_string(record.get("target_task_id")):
+        reasons.append("missing_target_task_id")
+    if not _clean_string(record.get("based_on_verdict_id")):
+        reasons.append("missing_based_on_verdict_id")
+    if not _clean_string(record.get("based_on_signal_id")):
+        reasons.append("missing_based_on_signal_id")
+
+    payload = record.get("payload") if isinstance(record.get("payload"), Mapping) else {}
+    wake_target = bool(payload.get("wake_target"))
+    if directive_code in {"continue", "retry", "checkpoint"} and not wake_target:
+        reasons.append("directive_requires_wake_target")
+
+    record["validation"] = {
+        "accepted": not reasons,
+        "reasons": reasons or ["directive_valid"],
+        "validated_by": str(validated_by or "engine"),
+        "validated_at": time.time(),
+    }
+    return record
+
+
 def is_accepted_signal(signal: Mapping[str, Any]) -> bool:
     validation = signal.get("validation")
     if isinstance(validation, Mapping) and "accepted" in validation:
         return bool(validation.get("accepted"))
     return str(signal.get("status") or "") == "accepted"
+
+
+def is_accepted_review_verdict(verdict: Mapping[str, Any]) -> bool:
+    validation = verdict.get("validation")
+    if isinstance(validation, Mapping) and "accepted" in validation:
+        return bool(validation.get("accepted"))
+    return False
+
+
+def is_accepted_directive(directive: Mapping[str, Any]) -> bool:
+    validation = directive.get("validation")
+    if isinstance(validation, Mapping) and "accepted" in validation:
+        return bool(validation.get("accepted"))
+    return False

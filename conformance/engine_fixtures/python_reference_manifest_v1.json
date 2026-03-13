@@ -453,6 +453,39 @@
         "coordination/reference_blocked_fixture.json"
       ],
       "notes": "Sparse supervisor-worker blocked path proving structured blockage, wake projection, and supervisor escalation/checkpoint decisions."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.reviewed_complete.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/reviewed_complete_fixture.json"
+      ],
+      "notes": "Reviewed-result complete path proving explicit review/verdict truth separate from accepted signal and wake projection."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.reviewed_blocked.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/reviewed_blocked_fixture.json"
+      ],
+      "notes": "Reviewed-result blocked path proving explicit supervisor review/verdict truth separate from accepted signal and wake projection."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.directive_retry.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/directive_retry_fixture.json"
+      ],
+      "notes": "Directive retry path proving durable supervisory action intent derived from reviewed blocked truth."
     }
   ]
 }

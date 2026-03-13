@@ -1,8 +1,9 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import type { DistributedTaskDescriptorV1, TranscriptContinuationPatchV1 } from "@breadboard/kernel-contracts"
+import type { DirectiveV1, DistributedTaskDescriptorV1, TranscriptContinuationPatchV1 } from "@breadboard/kernel-contracts"
 import {
+  buildTemporalDirectiveUpdateDescriptor,
   buildTemporalResumeUpdateDescriptor,
   buildTemporalTaskControlPlaneDescriptor,
   buildTemporalTaskQueue,
@@ -49,6 +50,32 @@ const transcriptPatch: TranscriptContinuationPatchV1 = {
   post_state_digest: "sha256:temporal-patch-1",
   lineage_updates: [{ task_id: "task:bg:1", status: "resumed" }],
   lossiness_flags: [],
+}
+
+const retryDirective: DirectiveV1 = {
+  schema_version: "bb.directive.v1",
+  directive_id: "directive_retry_1",
+  directive_code: "retry",
+  issuer_task_id: "task:supervisor:1",
+  issuer_role: "supervisor",
+  target_task_id: "task:child:1",
+  target_job_id: "job:child:1",
+  based_on_verdict_id: "review_blocked_retry_1",
+  based_on_signal_id: "signal_blocked_1",
+  payload: {
+    wake_target: true,
+    recommended_next_action: "retry",
+    blocking_reason: "provider quota exhausted",
+  },
+  evidence_refs: ["evidence://quota/worker-1"],
+  metadata: {
+    review_event_id: 19,
+  },
+  validation: {
+    accepted: true,
+    reasons: ["directive_valid"],
+    validated_by: "engine",
+  },
 }
 
 test("temporal adapter derives task queues from task kind", () => {
@@ -107,4 +134,31 @@ test("temporal adapter builds a resume update descriptor with transcript continu
     cursorEventId: 17,
   })
   assert.deepEqual(descriptor.payload.transcriptPatch, transcriptPatch)
+})
+
+test("temporal adapter builds a directive update descriptor", () => {
+  const descriptor = buildTemporalDirectiveUpdateDescriptor({
+    directive: retryDirective,
+  })
+  assert.equal(descriptor.workflowId, "task:child:1")
+  assert.equal(descriptor.updateName, "breadboard.applyDirective")
+  assert.deepEqual(descriptor.payload, {
+    directiveId: "directive_retry_1",
+    directiveCode: "retry",
+    issuerTaskId: "task:supervisor:1",
+    issuerRole: "supervisor",
+    targetTaskId: "task:child:1",
+    targetJobId: "job:child:1",
+    basedOnVerdictId: "review_blocked_retry_1",
+    basedOnSignalId: "signal_blocked_1",
+    payload: {
+      wake_target: true,
+      recommended_next_action: "retry",
+      blocking_reason: "provider quota exhausted",
+    },
+    evidenceRefs: ["evidence://quota/worker-1"],
+    metadata: {
+      review_event_id: 19,
+    },
+  })
 })

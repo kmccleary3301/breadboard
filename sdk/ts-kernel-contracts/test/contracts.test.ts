@@ -28,6 +28,15 @@ test("kernel validators accept tracked examples", () => {
   )
   assert.doesNotThrow(() => assertValid("signal", loadJson("../../contracts/kernel/examples/signal_complete_minimal.json")))
   assert.doesNotThrow(() =>
+    assertValid("reviewVerdict", loadJson("../../contracts/kernel/examples/review_verdict_complete_validated.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("reviewVerdict", loadJson("../../contracts/kernel/examples/review_verdict_blocked_retry.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("directive", loadJson("../../contracts/kernel/examples/directive_retry_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
     assertValid("wakeSubscription", loadJson("../../contracts/kernel/examples/wake_subscription_minimal.json")),
   )
   assert.doesNotThrow(() =>

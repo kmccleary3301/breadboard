@@ -1,0 +1,53 @@
+{
+  "fixture_family": "coordination",
+  "fixture_id": "coord_reviewed_complete_python_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "reference-engine",
+  "contract": "bb.review_verdict.v1",
+  "reference_output": {
+    "schema_version": "bb.review_verdict.v1",
+    "verdict_id": "review_task_supervisor_1_signal_complete_reviewed",
+    "reviewer_task_id": "task_supervisor_1",
+    "reviewer_role": "supervisor",
+    "subject": {
+      "kind": "signal",
+      "signal_id": "signal_complete_reviewed",
+      "signal_event_id": 3,
+      "signal_code": "complete",
+      "source_task_id": "task_worker_1",
+      "mission_task_id": "task_supervisor_1",
+      "subscription_id": "sub_worker_state",
+      "trigger_signal_id": "signal_complete_reviewed",
+      "trigger_event_id": 3,
+      "trigger_code": "complete"
+    },
+    "verdict_code": "validated",
+    "mission_completed": true,
+    "required_deliverable_refs": [
+      "artifact://deliverables/worker-report.md"
+    ],
+    "deliverable_refs": [
+      "artifact://deliverables/worker-report.md"
+    ],
+    "missing_deliverable_refs": [],
+    "blocking_reason": null,
+    "recommended_next_action": null,
+    "support_claim_ref": null,
+    "signal_evidence_refs": [
+      "artifact://deliverables/worker-report.md"
+    ],
+    "metadata": {
+      "job_id": "job_supervisor_1",
+      "blocked_action": null,
+      "legacy_decision": "mission_complete_validated"
+    },
+    "validation": {
+      "accepted": true,
+      "reasons": [
+        "review_verdict_valid"
+      ],
+      "validated_by": "engine",
+      "validated_at": 0.0
+    }
+  }
+}

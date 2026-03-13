@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json",
+  "title": "bb.directive.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "directive_id",
+    "directive_code",
+    "issuer_task_id",
+    "issuer_role",
+    "target_task_id",
+    "based_on_verdict_id",
+    "based_on_signal_id",
+    "payload",
+    "evidence_refs",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": {"const": "bb.directive.v1"},
+    "directive_id": {"type": "string", "minLength": 1},
+    "directive_code": {
+      "enum": ["continue", "retry", "checkpoint", "escalate", "terminate"]
+    },
+    "issuer_task_id": {"type": "string", "minLength": 1},
+    "issuer_role": {"enum": ["supervisor", "host", "system"]},
+    "target_task_id": {"type": "string", "minLength": 1},
+    "target_job_id": {"type": ["string", "null"]},
+    "based_on_verdict_id": {"type": "string", "minLength": 1},
+    "based_on_signal_id": {"type": "string", "minLength": 1},
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "validation": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["accepted", "reasons", "validated_by"],
+      "properties": {
+        "accepted": {"type": "boolean"},
+        "reasons": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "validated_by": {"type": "string", "minLength": 1},
+        "validated_at": {"type": ["number", "null"]}
+      }
+    }
+  }
+}

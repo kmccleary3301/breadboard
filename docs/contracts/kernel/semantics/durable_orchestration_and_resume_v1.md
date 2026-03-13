@@ -51,7 +51,7 @@ In the current sparse supervisor-worker reference lane, the wake chain must rema
 1. worker emits accepted typed `complete` or `blocked`
 2. subscription match produces a derived wake event for the supervisor
 3. wake metadata carries `subscription_id`, `trigger_signal_id`, `trigger_code`, `cursor_event_id`, and `source_task_id`
-4. supervisor review records the mission-level decision separately from the worker signal itself
+4. supervisor review records a durable review verdict separately from the worker signal itself
 
 That separation is what keeps completion truth durable without making backend wakeup transport itself the semantic source of truth.
 

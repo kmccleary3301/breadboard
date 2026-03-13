@@ -65,11 +65,31 @@ class BusConfig:
 
 @dataclass(frozen=True)
 class CoordinationConfig:
+    @dataclass(frozen=True)
+    class DoneConfig:
+        require_deliverable_refs: bool = False
+        require_all_required_refs: bool = True
+        require_no_open_required_children: bool = False
+
+    @dataclass(frozen=True)
+    class ReviewConfig:
+        explicit_verdicts: bool = True
+        allowed_blocked_actions: List[str] = field(
+            default_factory=lambda: ["retry", "checkpoint", "escalate", "human_required"]
+        )
+
+    @dataclass(frozen=True)
+    class MergeConfig:
+        reducer_result_contract: Optional[str] = None
+
     mission_owner_role: str = "supervisor"
     legacy_completion_sources: List[str] = field(
         default_factory=lambda: ["text_sentinel", "tool_call", "provider_finish"]
     )
     preserve_legacy_wake_conditions: bool = True
+    done: DoneConfig = field(default_factory=DoneConfig)
+    review: ReviewConfig = field(default_factory=ReviewConfig)
+    merge: MergeConfig = field(default_factory=MergeConfig)
 
 
 @dataclass(frozen=True)
@@ -169,6 +189,9 @@ class TeamConfig:
         )
 
         coordination_raw = team.get("coordination") or {}
+        done_raw = coordination_raw.get("done") or {}
+        review_raw = coordination_raw.get("review") or {}
+        merge_raw = coordination_raw.get("merge") or {}
         coordination = CoordinationConfig(
             mission_owner_role=str(coordination_raw.get("mission_owner_role") or "supervisor"),
             legacy_completion_sources=[
@@ -179,6 +202,30 @@ class TeamConfig:
             or ["text_sentinel", "tool_call", "provider_finish"],
             preserve_legacy_wake_conditions=bool(
                 coordination_raw.get("preserve_legacy_wake_conditions", True)
+            ),
+            done=CoordinationConfig.DoneConfig(
+                require_deliverable_refs=bool(done_raw.get("require_deliverable_refs", False)),
+                require_all_required_refs=bool(done_raw.get("require_all_required_refs", True)),
+                require_no_open_required_children=bool(
+                    done_raw.get("require_no_open_required_children", False)
+                ),
+            ),
+            review=CoordinationConfig.ReviewConfig(
+                explicit_verdicts=bool(review_raw.get("explicit_verdicts", True)),
+                allowed_blocked_actions=[
+                    str(item)
+                    for item in (review_raw.get("allowed_blocked_actions") or [])
+                    if str(item).strip()
+                ]
+                or ["retry", "checkpoint", "escalate", "human_required"],
+            ),
+            merge=CoordinationConfig.MergeConfig(
+                reducer_result_contract=(
+                    str(merge_raw.get("reducer_result_contract")).strip()
+                    if merge_raw.get("reducer_result_contract") is not None
+                    and str(merge_raw.get("reducer_result_contract")).strip()
+                    else None
+                )
             ),
         )
 

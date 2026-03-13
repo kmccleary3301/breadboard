@@ -284,6 +284,83 @@ export interface WakeSubscriptionV1 {
   coalesce_window_ms?: number
 }
 
+export type ReviewVerdictCodeV1 =
+  | "validated"
+  | "pending_validation"
+  | "retry"
+  | "checkpoint"
+  | "escalate"
+  | "human_required"
+  | "noted"
+
+export type ReviewVerdictReviewerRoleV1 = "supervisor" | "host" | "system"
+
+export interface ReviewVerdictSubjectV1 {
+  kind: "signal"
+  signal_id: string
+  signal_event_id?: number | null
+  signal_code: SignalCodeV1
+  source_task_id: string
+  mission_task_id?: string | null
+  subscription_id?: string | null
+  trigger_signal_id?: string | null
+  trigger_event_id?: number | null
+  trigger_code?: SignalCodeV1 | null
+}
+
+export interface ReviewVerdictValidationV1 {
+  accepted: boolean
+  reasons: string[]
+  validated_by: string
+  validated_at?: number | null
+}
+
+export interface ReviewVerdictV1 {
+  schema_version: "bb.review_verdict.v1"
+  verdict_id: string
+  reviewer_task_id: string
+  reviewer_role: ReviewVerdictReviewerRoleV1
+  subject: ReviewVerdictSubjectV1
+  verdict_code: ReviewVerdictCodeV1
+  mission_completed: boolean
+  required_deliverable_refs: string[]
+  deliverable_refs: string[]
+  missing_deliverable_refs: string[]
+  blocking_reason?: string | null
+  recommended_next_action?: "retry" | "checkpoint" | "escalate" | "human_required" | null
+  support_claim_ref?: string | null
+  signal_evidence_refs: string[]
+  metadata: Record<string, unknown>
+  validation?: ReviewVerdictValidationV1 | null
+}
+
+export type DirectiveCodeV1 = "continue" | "retry" | "checkpoint" | "escalate" | "terminate"
+
+export type DirectiveIssuerRoleV1 = "supervisor" | "host" | "system"
+
+export interface DirectiveValidationV1 {
+  accepted: boolean
+  reasons: string[]
+  validated_by: string
+  validated_at?: number | null
+}
+
+export interface DirectiveV1 {
+  schema_version: "bb.directive.v1"
+  directive_id: string
+  directive_code: DirectiveCodeV1
+  issuer_task_id: string
+  issuer_role: DirectiveIssuerRoleV1
+  target_task_id: string
+  target_job_id?: string | null
+  based_on_verdict_id: string
+  based_on_signal_id: string
+  payload: Record<string, unknown>
+  evidence_refs: string[]
+  metadata: Record<string, unknown>
+  validation?: DirectiveValidationV1 | null
+}
+
 export interface DistributedTaskDescriptorV1 {
   schema_version: "bb.distributed_task_descriptor.v1"
   task_id: string
@@ -420,6 +497,8 @@ const executionPlacementSchema = loadTrackedSchema("bb.execution_placement.v1.sc
 const sandboxRequestSchema = loadTrackedSchema("bb.sandbox_request.v1.schema.json")
 const sandboxResultSchema = loadTrackedSchema("bb.sandbox_result.v1.schema.json")
 const signalSchema = loadTrackedSchema("bb.signal.v1.schema.json")
+const reviewVerdictSchema = loadTrackedSchema("bb.review_verdict.v1.schema.json")
+const directiveSchema = loadTrackedSchema("bb.directive.v1.schema.json")
 const wakeSubscriptionSchema = loadTrackedSchema("bb.wake_subscription.v1.schema.json")
 const distributedTaskDescriptorSchema = loadTrackedSchema("bb.distributed_task_descriptor.v1.schema.json")
 const transcriptContinuationPatchSchema = loadTrackedSchema("bb.transcript_continuation_patch.v1.schema.json")
@@ -448,6 +527,8 @@ const validators = {
   sandboxRequest: ajv.compile(sandboxRequestSchema),
   sandboxResult: ajv.compile(sandboxResultSchema),
   signal: ajv.compile(signalSchema),
+  reviewVerdict: ajv.compile(reviewVerdictSchema),
+  directive: ajv.compile(directiveSchema),
   wakeSubscription: ajv.compile(wakeSubscriptionSchema),
   distributedTaskDescriptor: ajv.compile(distributedTaskDescriptorSchema),
   transcriptContinuationPatch: ajv.compile(transcriptContinuationPatchSchema),
@@ -474,6 +555,8 @@ export const kernelSchemas = {
   sandboxRequest: sandboxRequestSchema,
   sandboxResult: sandboxResultSchema,
   signal: signalSchema,
+  reviewVerdict: reviewVerdictSchema,
+  directive: directiveSchema,
   wakeSubscription: wakeSubscriptionSchema,
   distributedTaskDescriptor: distributedTaskDescriptorSchema,
   transcriptContinuationPatch: transcriptContinuationPatchSchema,

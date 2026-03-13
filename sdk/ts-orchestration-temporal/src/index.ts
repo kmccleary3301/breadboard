@@ -1,5 +1,6 @@
 import {
   assertValid,
+  type DirectiveV1,
   type DistributedTaskDescriptorV1,
   type TranscriptContinuationPatchV1,
   type WakeSubscriptionV1,
@@ -34,6 +35,12 @@ export interface TemporalTaskControlPlaneDescriptor {
 export interface TemporalResumeUpdateDescriptor {
   workflowId: string
   updateName: "breadboard.resume"
+  payload: Record<string, unknown>
+}
+
+export interface TemporalDirectiveUpdateDescriptor {
+  workflowId: string
+  updateName: "breadboard.applyDirective"
   payload: Record<string, unknown>
 }
 
@@ -198,6 +205,29 @@ export function buildTemporalResumeUpdateDescriptor(input: {
           }
         : null,
       transcriptPatch,
+    },
+  }
+}
+
+export function buildTemporalDirectiveUpdateDescriptor(input: {
+  directive: DirectiveV1
+}): TemporalDirectiveUpdateDescriptor {
+  const directive = assertValid<DirectiveV1>("directive", input.directive)
+  return {
+    workflowId: directive.target_task_id,
+    updateName: "breadboard.applyDirective",
+    payload: {
+      directiveId: directive.directive_id,
+      directiveCode: directive.directive_code,
+      issuerTaskId: directive.issuer_task_id,
+      issuerRole: directive.issuer_role,
+      targetTaskId: directive.target_task_id,
+      targetJobId: directive.target_job_id ?? null,
+      basedOnVerdictId: directive.based_on_verdict_id,
+      basedOnSignalId: directive.based_on_signal_id,
+      payload: directive.payload,
+      evidenceRefs: directive.evidence_refs,
+      metadata: directive.metadata,
     },
   }
 }

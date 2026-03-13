@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Optional, Tuple
 
+from .coordination import build_directive, build_review_verdict, validate_directive, validate_review_verdict
 from .schema import TeamConfig
 from .event_log import Event, EventLog
 from .job_manager import JobManager, JobRef
@@ -134,6 +135,9 @@ class MultiAgentOrchestrator:
         resume_reason: Optional[str] = None,
         cursor_event_id: Optional[int] = None,
         source_task_id: Optional[str] = None,
+        directive_id: Optional[str] = None,
+        directive_code: Optional[str] = None,
+        based_on_verdict_id: Optional[str] = None,
         causal_parent_event_id: Optional[int] = None,
     ) -> None:
         payload = {
@@ -156,6 +160,12 @@ class MultiAgentOrchestrator:
             payload["cursor_event_id"] = int(cursor_event_id)
         if source_task_id:
             payload["source_task_id"] = source_task_id
+        if directive_id:
+            payload["directive_id"] = directive_id
+        if directive_code:
+            payload["directive_code"] = directive_code
+        if based_on_verdict_id:
+            payload["based_on_verdict_id"] = based_on_verdict_id
         self.event_log.add(
             "agent.wakeup_emitted",
             agent_id=job.agent_id,
@@ -209,7 +219,7 @@ class MultiAgentOrchestrator:
         if signal_event is None:
             raise ValueError(f"missing signal event for trigger_signal_id={trigger_signal_id}")
 
-        existing = self._existing_supervisor_decision(supervisor_job.job_id, trigger_signal_id)
+        existing = self._existing_review_verdict(supervisor_job.job_id, trigger_signal_id)
         if existing is not None:
             return existing
 
@@ -221,10 +231,18 @@ class MultiAgentOrchestrator:
         payload = signal.get("payload") if isinstance(signal.get("payload"), dict) else {}
         required_refs = [str(item) for item in (required_deliverable_refs or []) if str(item).strip()]
         deliverable_refs = [str(item) for item in (payload.get("deliverable_refs") or []) if str(item).strip()]
+        done_policy = self.team_config.coordination.done
+        review_policy = self.team_config.coordination.review
+        if done_policy.require_deliverable_refs and not required_refs and not deliverable_refs:
+            required_refs = ["deliverable_ref_required"]
         missing_deliverable_refs = [item for item in required_refs if item not in deliverable_refs]
         allowed_actions = {
             str(item).strip().lower()
-            for item in (allowed_blocked_actions or ("retry", "checkpoint", "escalate", "human_required"))
+            for item in (
+                allowed_blocked_actions
+                or review_policy.allowed_blocked_actions
+                or ("retry", "checkpoint", "escalate", "human_required")
+            )
             if str(item).strip()
         }
 
@@ -232,49 +250,60 @@ class MultiAgentOrchestrator:
         recommended_next_action = str(payload.get("recommended_next_action") or "").strip().lower()
         blocking_reason = str(payload.get("blocking_reason") or "").strip()
         blocked_action: Optional[str] = None
-        decision = "signal_reviewed"
+        verdict_code = "noted"
         mission_completed = False
 
         if code == "complete":
             if missing_deliverable_refs:
-                decision = "worker_complete_pending_validation"
+                verdict_code = "pending_validation"
             else:
-                decision = "mission_complete_validated"
+                verdict_code = "validated"
                 mission_completed = True
         elif code == "blocked":
             blocked_action = recommended_next_action if recommended_next_action in allowed_actions else "escalate"
-            decision_map = {
-                "retry": "blocked_retry_requested",
-                "checkpoint": "blocked_checkpoint_requested",
-                "escalate": "blocked_escalated",
-                "human_required": "human_review_required",
-            }
-            decision = decision_map.get(blocked_action, "blocked_escalated")
+            verdict_code = blocked_action if blocked_action in allowed_actions else "escalate"
         elif code == "human_required":
             blocked_action = "human_required"
-            decision = "human_review_required"
+            verdict_code = "human_required"
 
-        decision_payload = {
-            "job_id": supervisor_job.job_id,
-            "supervisor_task_id": self._task_id_for_job(supervisor_job),
-            "subscription_id": str(cursor.get("subscription_id") or ""),
-            "trigger_signal_id": trigger_signal_id,
-            "trigger_event_id": trigger_event_id,
-            "trigger_code": str(cursor.get("trigger_code") or code),
-            "source_task_id": str(cursor.get("source_task_id") or signal.get("task_id") or ""),
-            "decision": decision,
-            "mission_completed": mission_completed,
-            "required_deliverable_refs": required_refs,
-            "deliverable_refs": deliverable_refs,
-            "missing_deliverable_refs": missing_deliverable_refs,
-            "blocking_reason": blocking_reason or None,
-            "recommended_next_action": recommended_next_action or None,
-            "blocked_action": blocked_action,
-            "support_claim_ref": str(payload.get("support_claim_ref") or "") or None,
-            "signal_evidence_refs": [str(item) for item in (signal.get("evidence_refs") or []) if str(item).strip()],
-        }
+        decision_payload = validate_review_verdict(
+            build_review_verdict(
+                reviewer_task_id=self._task_id_for_job(supervisor_job),
+                reviewer_role=str(self.team_config.coordination.mission_owner_role or "supervisor"),
+                subject_signal=signal,
+                verdict_code=verdict_code,
+                verdict_id=(
+                    f"review_{self._task_id_for_job(supervisor_job)}_{trigger_signal_id}"
+                    if trigger_signal_id
+                    else None
+                ),
+                subject_event_id=signal_event.event_id,
+                subscription_id=str(cursor.get("subscription_id") or ""),
+                trigger_signal_id=trigger_signal_id,
+                trigger_event_id=trigger_event_id,
+                trigger_code=str(cursor.get("trigger_code") or code),
+                mission_completed=mission_completed,
+                required_deliverable_refs=required_refs,
+                deliverable_refs=deliverable_refs,
+                missing_deliverable_refs=missing_deliverable_refs,
+                blocking_reason=blocking_reason or None,
+                recommended_next_action=recommended_next_action or None,
+                support_claim_ref=str(payload.get("support_claim_ref") or "") or None,
+                signal_evidence_refs=[
+                    str(item) for item in (signal.get("evidence_refs") or []) if str(item).strip()
+                ],
+                metadata={
+                    "job_id": supervisor_job.job_id,
+                    "blocked_action": blocked_action,
+                    "legacy_decision": self._legacy_supervisor_decision_name(
+                        code=code,
+                        verdict_code=verdict_code,
+                    ),
+                },
+            )
+        )
         event = self.event_log.add(
-            "coordination.supervisor_decision",
+            "coordination.review_verdict",
             agent_id=supervisor_job.agent_id,
             parent_agent_id=supervisor_job.owner_agent,
             causal_parent_event_id=signal_event.event_id,
@@ -284,12 +313,17 @@ class MultiAgentOrchestrator:
             self.mark_job_completed(
                 supervisor_job.job_id,
                 result_payload={
-                    "decision": decision,
+                    "verdict_code": verdict_code,
                     "mission_completed": True,
                     "trigger_signal_id": trigger_signal_id,
                     "trigger_event_id": trigger_event_id,
                 },
             )
+        self._issue_directive_from_review_verdict(
+            supervisor_job=supervisor_job,
+            review_event=event,
+            review_verdict=decision_payload,
+        )
         return event
 
     def _task_id_for_job(self, job: JobRef) -> str:
@@ -357,21 +391,156 @@ class MultiAgentOrchestrator:
                 return event
         return None
 
-    def _existing_supervisor_decision(self, job_id: str, trigger_signal_id: str) -> Optional[Event]:
+    def _existing_review_verdict(self, job_id: str, trigger_signal_id: str) -> Optional[Event]:
         job_id_text = str(job_id or "").strip()
         signal_id_text = str(trigger_signal_id or "").strip()
         if not job_id_text or not signal_id_text:
             return None
         for event in reversed(self.event_log.events):
-            if event.type != "coordination.supervisor_decision":
+            if event.type != "coordination.review_verdict":
                 continue
             payload = dict(event.payload or {})
+            metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+            subject = payload.get("subject") if isinstance(payload.get("subject"), dict) else {}
             if (
-                str(payload.get("job_id") or "") == job_id_text
-                and str(payload.get("trigger_signal_id") or "") == signal_id_text
+                str(metadata.get("job_id") or "") == job_id_text
+                and str(subject.get("trigger_signal_id") or subject.get("signal_id") or "") == signal_id_text
             ):
                 return event
         return None
+
+    def _existing_directive(self, based_on_verdict_id: str) -> Optional[Event]:
+        verdict_id_text = str(based_on_verdict_id or "").strip()
+        if not verdict_id_text:
+            return None
+        for event in reversed(self.event_log.events):
+            if event.type != "coordination.directive":
+                continue
+            payload = dict(event.payload or {})
+            if str(payload.get("based_on_verdict_id") or "") == verdict_id_text:
+                return event
+        return None
+
+    def _issue_directive_from_review_verdict(
+        self,
+        *,
+        supervisor_job: JobRef,
+        review_event: Event,
+        review_verdict: Dict[str, Any],
+    ) -> Optional[Event]:
+        verdict = dict(review_verdict or {})
+        verdict_code = str(verdict.get("verdict_code") or "")
+        subject = verdict.get("subject") if isinstance(verdict.get("subject"), dict) else {}
+        source_task_id = str(subject.get("source_task_id") or "")
+        based_on_verdict_id = str(verdict.get("verdict_id") or "")
+        if not based_on_verdict_id or self._existing_directive(based_on_verdict_id) is not None:
+            return self._existing_directive(based_on_verdict_id)
+
+        directive_code: Optional[str] = None
+        target_task_id: Optional[str] = None
+        wake_target = False
+        if verdict_code == "pending_validation":
+            directive_code = "continue"
+            target_task_id = source_task_id
+            wake_target = True
+        elif verdict_code in {"retry", "checkpoint"}:
+            directive_code = verdict_code
+            target_task_id = source_task_id
+            wake_target = True
+        elif verdict_code in {"escalate", "human_required"}:
+            directive_code = "escalate"
+            target_task_id = self._task_id_for_job(supervisor_job)
+            wake_target = False
+        elif verdict_code == "validated":
+            return None
+
+        if not directive_code or not target_task_id:
+            return None
+
+        target_job = self._job_for_task_id(target_task_id)
+        directive = validate_directive(
+            build_directive(
+                directive_code=directive_code,
+                issuer_task_id=self._task_id_for_job(supervisor_job),
+                issuer_role=str(self.team_config.coordination.mission_owner_role or "supervisor"),
+                target_task_id=target_task_id,
+                target_job_id=target_job.job_id if target_job is not None else None,
+                based_on_verdict=verdict,
+                directive_id=f"directive_{self._task_id_for_job(supervisor_job)}_{based_on_verdict_id}",
+                payload={
+                    "wake_target": wake_target,
+                    "recommended_next_action": verdict.get("recommended_next_action"),
+                    "blocking_reason": verdict.get("blocking_reason"),
+                },
+                evidence_refs=[str(item) for item in (verdict.get("signal_evidence_refs") or []) if str(item).strip()],
+                metadata={
+                    "review_event_id": int(review_event.event_id),
+                    "trigger_signal_id": str(subject.get("trigger_signal_id") or subject.get("signal_id") or ""),
+                },
+            )
+        )
+        event = self.event_log.add(
+            "coordination.directive",
+            agent_id=supervisor_job.agent_id,
+            parent_agent_id=supervisor_job.owner_agent,
+            causal_parent_event_id=review_event.event_id,
+            payload=directive,
+        )
+        if wake_target and target_job is not None:
+            self.emit_wakeup(
+                target_job,
+                reason=f"directive:{directive_code}",
+                message=self._default_directive_message(directive),
+                source_task_id=self._task_id_for_job(supervisor_job),
+                directive_id=str(directive.get("directive_id") or ""),
+                directive_code=directive_code,
+                based_on_verdict_id=based_on_verdict_id,
+                causal_parent_event_id=event.event_id,
+            )
+        return event
+
+    def _job_for_task_id(self, task_id: str) -> Optional[JobRef]:
+        task_id_text = str(task_id or "").strip()
+        if not task_id_text:
+            return None
+        for job in self.job_manager.all_jobs().values():
+            if self._task_id_for_job(job) == task_id_text:
+                return job
+        return None
+
+    @staticmethod
+    def _default_directive_message(directive: Dict[str, Any]) -> str:
+        code = str(directive.get("directive_code") or "").strip()
+        task_id = str(directive.get("target_task_id") or "unknown-task")
+        if code == "retry":
+            return f"Retry requested for task {task_id}."
+        if code == "checkpoint":
+            return f"Checkpoint requested for task {task_id}."
+        if code == "continue":
+            return f"Continue requested for task {task_id}."
+        if code == "escalate":
+            return f"Escalation requested for task {task_id}."
+        if code == "terminate":
+            return f"Terminate requested for task {task_id}."
+        return f"Directive {code} issued for task {task_id}."
+
+    @staticmethod
+    def _legacy_supervisor_decision_name(*, code: str, verdict_code: str) -> str:
+        signal_code = str(code or "").strip()
+        review_code = str(verdict_code or "").strip()
+        if signal_code == "complete" and review_code == "validated":
+            return "mission_complete_validated"
+        if signal_code == "complete" and review_code == "pending_validation":
+            return "worker_complete_pending_validation"
+        if signal_code == "blocked" and review_code == "retry":
+            return "blocked_retry_requested"
+        if signal_code == "blocked" and review_code == "checkpoint":
+            return "blocked_checkpoint_requested"
+        if signal_code == "blocked" and review_code == "escalate":
+            return "blocked_escalated"
+        if review_code == "human_required":
+            return "human_review_required"
+        return "signal_reviewed"
 
     def _handled_signal_key(self, job_id: str, subscription_id: str, signal_id: str) -> Tuple[str, str]:
         return (f"{job_id}:{subscription_id}", signal_id)

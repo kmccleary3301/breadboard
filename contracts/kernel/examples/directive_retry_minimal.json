@@ -1,0 +1,28 @@
+{
+  "schema_version": "bb.directive.v1",
+  "directive_id": "directive_retry_1",
+  "directive_code": "retry",
+  "issuer_task_id": "task_supervisor_1",
+  "issuer_role": "supervisor",
+  "target_task_id": "task_worker_1",
+  "target_job_id": "job_worker_1",
+  "based_on_verdict_id": "review_blocked_retry_1",
+  "based_on_signal_id": "signal_blocked_1",
+  "payload": {
+    "wake_target": true,
+    "recommended_next_action": "retry",
+    "blocking_reason": "missing sandbox capability"
+  },
+  "evidence_refs": [
+    "support://sandbox/capability/bash"
+  ],
+  "metadata": {
+    "review_event_id": 19,
+    "trigger_signal_id": "signal_blocked_1"
+  },
+  "validation": {
+    "accepted": true,
+    "reasons": ["directive_valid"],
+    "validated_by": "engine"
+  }
+}
