@@ -173,8 +173,8 @@ That would make deeper hierarchy work brittle and hard to replay honestly.
 
 ---
 
-## Immediate next steps
+## Follow-on work outside V2 closure
 
-1. keep the public `coordination:` surface narrow and explicit
-2. map compatibility from `completion`, `multi_agent.bus`, and `wake_conditions` without blurring ownership
-3. promote the sparse supervisor-worker evidence into manifest-backed conformance rows
+1. keep future `coordination:` growth narrower than the underlying coordination ontology
+2. add additional engines or host layers against the manifest-backed coordination evidence rows
+3. preserve the distinction between coordination truth and projection if Backbone or Host Kit surfaces grow richer
