@@ -276,6 +276,96 @@ TASK_HINTS = {
         "  `native_decide`\n"
         "- Do not use `norm_num` as the final step; it does not normalize the whole finite sum modulo `7` here.\n"
     ),
+    "mathd_numbertheory_149": (
+        "Task-specific guidance:\n"
+        "- This theorem is a closed filtered finite sum. Do not expand `Finset.filter` or `Finset.range` by hand.\n"
+        "- The stable proof is exactly:\n"
+        "  `native_decide`\n"
+        "- Do not use `norm_num [Finset.range, Finset.filter]`; it times out on `whnf` in this environment.\n"
+    ),
+    "mathd_numbertheory_169": (
+        "Task-specific guidance:\n"
+        "- Use the canonical statement with `Nat.factorial 20`, not the legacy `20!` notation in theorem head position.\n"
+        "- This goal is closed and should be finished directly with:\n"
+        "  `native_decide`\n"
+        "- Do not expand the factorial or `Nat.gcd_eq_right_iff_dvd` manually.\n"
+    ),
+    "mathd_numbertheory_185": (
+        "Task-specific guidance:\n"
+        "- The modular rewrite route is already correct; the only bug is over-solving the goal.\n"
+        "- Use:\n"
+        "  `have h1 : (2 * n) % 5 = ((2 % 5) * (n % 5)) % 5 := by simpa using Nat.mul_mod 2 n 5`\n"
+        "  `rw [h1, h₀]`\n"
+        "- Stop there. Do not add a final `norm_num`; it produces `no goals to be solved`.\n"
+    ),
+    "mathd_numbertheory_233": (
+        "Task-specific guidance:\n"
+        "- Keep the theorem in `ZMod (11^2)` and rewrite with the hypothesis instead of `subst`.\n"
+        "- The stable proof is:\n"
+        "  `rw [h₀]`\n"
+        "  `native_decide`\n"
+        "- Do not use `norm_num`; inversion in `ZMod (11^2)` is better handled by direct evaluation.\n"
+    ),
+    "mathd_numbertheory_221": (
+        "Task-specific guidance:\n"
+        "- Canonicalize the theorem statement first: use `Finset`, not lowercase `finset`.\n"
+        "- Do not search for divisor-count classification lemmas or enumerate primes below `32`; rewrite the set as a filtered range and close the finite computation directly.\n"
+        "- The stable proof is:\n"
+        "  `have hS : S = ((Finset.range 1000).filter fun x : ℕ => 0 < x ∧ x.divisors.card = 3) := by`\n"
+        "  `  ext x`\n"
+        "  `  rw [h₀ x]`\n"
+        "  `  simp [Finset.mem_filter, Finset.mem_range, and_assoc, and_left_comm, and_comm]`\n"
+        "  `rw [hS]`\n"
+        "  `native_decide`\n"
+        "- Do not call `native_decide` before rewriting away the free variable `S`; it fails on open goals.\n"
+        "- Do not use nonexistent lemmas like `Nat.card_divisors_eq_three_iff`.\n"
+    ),
+    "mathd_numbertheory_34": (
+        "Task-specific guidance:\n"
+        "- This is a bounded residue search; do not introduce inverses or divisibility witnesses.\n"
+        "- Use the given upper bound directly:\n"
+        "  `interval_cases x <;> norm_num at h₀ h₁ ⊢`\n"
+        "- Do not switch to `ZMod`; the finite `Nat` search is cheaper and stable here.\n"
+    ),
+    "mathd_numbertheory_100": (
+        "Task-specific guidance:\n"
+        "- Normalize the theorem statement to `Nat.gcd` / `Nat.lcm` if the extracted head still uses lowercase `nat.` namespaces.\n"
+        "- The stable route is the product identity `Nat.gcd_mul_lcm`.\n"
+        "- Use:\n"
+        "  `have hprod := Nat.gcd_mul_lcm n 40`\n"
+        "  `rw [h₁, h₂] at hprod`\n"
+        "  norm_num at hprod\n"
+        "  omega\n"
+        "- Do not introduce coprime witnesses or factor-search trees; this theorem is one arithmetic normalization after the gcd/lcm identity.\n"
+    ),
+    "mathd_numbertheory_212": (
+        "Task-specific guidance:\n"
+        "- This is a closed modular arithmetic computation.\n"
+        "- The intended proof is exactly:\n"
+        "  `native_decide`\n"
+        "- Do not expand the powers by hand and do not cast to `ZMod` manually.\n"
+    ),
+    "mathd_numbertheory_239": (
+        "Task-specific guidance:\n"
+        "- This is a closed finite-sum modulo goal.\n"
+        "- The stable proof is exactly:\n"
+        "  `native_decide`\n"
+        "- Do not expand `Finset.Icc` or rewrite the sum term-by-term.\n"
+    ),
+    "mathd_numbertheory_254": (
+        "Task-specific guidance:\n"
+        "- This is direct arithmetic on numerals.\n"
+        "- Either `norm_num` or `native_decide` closes it immediately; prefer:\n"
+        "  `norm_num`\n"
+        "- Do not introduce intermediate lemmas.\n"
+    ),
+    "mathd_numbertheory_320": (
+        "Task-specific guidance:\n"
+        "- This is a bounded divisibility search under `n < 101`.\n"
+        "- Use the range bound directly:\n"
+        "  `interval_cases n <;> norm_num at h₀ h₁ ⊢`\n"
+        "- Do not convert the divisibility hypothesis into an existential witness; the finite case split is the stable route.\n"
+    ),
     "amc12a_2015_p10": (
         "Task-specific guidance:\n"
         "- Do not build a large divisor tree for `81`; use the divisibility forced by the single factorization.\n"

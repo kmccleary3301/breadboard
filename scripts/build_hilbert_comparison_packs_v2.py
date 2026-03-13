@@ -111,6 +111,22 @@ PACKS = {
         "mathd_numbertheory_99",
         "mathd_numbertheory_109",
     ],
+    "pack_i_divisors_modmix_minif2f_v1": [
+        "mathd_numbertheory_127",
+        "mathd_numbertheory_149",
+        "mathd_numbertheory_169",
+        "mathd_numbertheory_185",
+        "mathd_numbertheory_221",
+        "mathd_numbertheory_233",
+    ],
+    "pack_j_residue_gcd_mix_minif2f_v1": [
+        "mathd_numbertheory_34",
+        "mathd_numbertheory_100",
+        "mathd_numbertheory_212",
+        "mathd_numbertheory_239",
+        "mathd_numbertheory_254",
+        "mathd_numbertheory_320",
+    ],
 }
 EXCLUDED_TASKS = {
     "mathd_numbertheory_780": (
@@ -170,7 +186,9 @@ def _canonical_starter_file(header: str, formal_statement: str) -> str:
 def _canonicalize_formal_statement(task_id: str, formal_statement: str) -> str:
     formal_statement = re.sub(r"\bnat\.", "Nat.", formal_statement)
     formal_statement = re.sub(r"\bfinset\.", "Finset.", formal_statement)
+    formal_statement = re.sub(r"(?<!\.)\bfinset\b", "Finset", formal_statement)
     formal_statement = re.sub(r"\bcomplex\.", "Complex.", formal_statement)
+    formal_statement = re.sub(r"\bzmod\b", "ZMod", formal_statement)
     formal_statement = re.sub(r"λ\s+([A-Za-z_][A-Za-z0-9_]*)\s*,", r"fun \1 =>", formal_statement)
     formal_statement = formal_statement.replace("Nat.prime", "Nat.Prime")
     if task_id == "mathd_numbertheory_530":
@@ -181,6 +199,11 @@ def _canonicalize_formal_statement(task_id: str, formal_statement: str) -> str:
             "  (h_lt : (n : ℝ) / k < 6)\n"
             "  (h_gt : (5 : ℝ) < n / k) :\n"
             "  22 ≤ (Nat.lcm n k) / (Nat.gcd n k) := by\n"
+        )
+    if task_id == "mathd_numbertheory_169":
+        return (
+            "theorem mathd_numbertheory_169 :\n"
+            "  Nat.gcd (Nat.factorial 20) 200000 = 40000 := by\n"
         )
     return formal_statement
 

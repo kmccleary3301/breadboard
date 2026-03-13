@@ -223,6 +223,124 @@ def test_mathd_numbertheory_109_prompt_includes_closed_sum_native_decide_guidanc
     assert "Do not use `norm_num` as the final step" in prompt
 
 
+def test_mathd_numbertheory_149_prompt_includes_native_decide_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_149",
+        "import Mathlib\n\ntheorem mathd_numbertheory_149 : True := by\n  trivial\n",
+    )
+
+    assert "`native_decide`" in prompt
+    assert "Do not use `norm_num [Finset.range, Finset.filter]`" in prompt
+
+
+def test_mathd_numbertheory_169_prompt_includes_factorial_native_decide_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_169",
+        "import Mathlib\n\ntheorem mathd_numbertheory_169 : True := by\n  trivial\n",
+    )
+
+    assert "Nat.factorial 20" in prompt
+    assert "`native_decide`" in prompt
+    assert "Do not expand the factorial" in prompt
+
+
+def test_mathd_numbertheory_185_prompt_includes_stop_after_rewrite_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_185",
+        "import Mathlib\n\ntheorem mathd_numbertheory_185 : True := by\n  trivial\n",
+    )
+
+    assert "Nat.mul_mod 2 n 5" in prompt
+    assert "Stop there" in prompt
+    assert "Do not add a final `norm_num`" in prompt
+
+
+def test_mathd_numbertheory_233_prompt_includes_zmod_native_decide_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_233",
+        "import Mathlib\n\ntheorem mathd_numbertheory_233 : True := by\n  trivial\n",
+    )
+
+    assert "ZMod (11^2)" in prompt
+    assert "rw [h₀]" in prompt
+    assert "native_decide" in prompt
+    assert "Do not use `norm_num`" in prompt
+
+
+def test_mathd_numbertheory_221_prompt_includes_filtered_range_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_221",
+        "import Mathlib\n\ntheorem mathd_numbertheory_221 : True := by\n  trivial\n",
+    )
+
+    assert "use `Finset`, not lowercase `finset`" in prompt
+    assert "have hS : S = ((Finset.range 1000).filter fun x : ℕ => 0 < x ∧ x.divisors.card = 3) := by" in prompt
+    assert "simp [Finset.mem_filter, Finset.mem_range, and_assoc, and_left_comm, and_comm]" in prompt
+    assert "rw [hS]" in prompt
+    assert "native_decide" in prompt
+
+
+def test_mathd_numbertheory_34_prompt_includes_interval_search_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_34",
+        "import Mathlib\n\ntheorem mathd_numbertheory_34 : True := by\n  trivial\n",
+    )
+
+    assert "interval_cases x <;> norm_num at h₀ h₁ ⊢" in prompt
+    assert "Do not switch to `ZMod`" in prompt
+
+
+def test_mathd_numbertheory_100_prompt_includes_gcd_lcm_identity_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_100",
+        "import Mathlib\n\ntheorem mathd_numbertheory_100 : True := by\n  trivial\n",
+    )
+
+    assert "have hprod := Nat.gcd_mul_lcm n 40" in prompt
+    assert "rw [h₁, h₂] at hprod" in prompt
+    assert "omega" in prompt
+
+
+def test_mathd_numbertheory_212_prompt_includes_native_decide_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_212",
+        "import Mathlib\n\ntheorem mathd_numbertheory_212 : True := by\n  trivial\n",
+    )
+
+    assert "`native_decide`" in prompt
+    assert "Do not expand the powers by hand" in prompt
+
+
+def test_mathd_numbertheory_239_prompt_includes_closed_sum_native_decide_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_239",
+        "import Mathlib\n\ntheorem mathd_numbertheory_239 : True := by\n  trivial\n",
+    )
+
+    assert "`native_decide`" in prompt
+    assert "Do not expand `Finset.Icc`" in prompt
+
+
+def test_mathd_numbertheory_254_prompt_includes_norm_num_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_254",
+        "import Mathlib\n\ntheorem mathd_numbertheory_254 : True := by\n  trivial\n",
+    )
+
+    assert "`norm_num`" in prompt
+    assert "Do not introduce intermediate lemmas" in prompt
+
+
+def test_mathd_numbertheory_320_prompt_includes_interval_search_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_320",
+        "import Mathlib\n\ntheorem mathd_numbertheory_320 : True := by\n  trivial\n",
+    )
+
+    assert "interval_cases n <;> norm_num at h₀ h₁ ⊢" in prompt
+    assert "Do not convert the divisibility hypothesis into an existential witness" in prompt
+
+
 def test_amc12a_2015_p10_prompt_includes_factorization_and_interval_guidance() -> None:
     prompt = runner._build_prompt(
         "amc12a_2015_p10",

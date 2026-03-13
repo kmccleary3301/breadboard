@@ -218,6 +218,44 @@ def test_pack_h_modular_closedform_tasks(tmp_path: Path) -> None:
     assert metadata["included_task_ids"] == summary["task_ids"]
 
 
+def test_pack_i_divisors_modmix_tasks(tmp_path: Path) -> None:
+    summary = packs.build_pack("pack_i_divisors_modmix_minif2f_v1", tmp_path)
+
+    assert summary["task_count"] == 6
+    assert summary["task_ids"] == [
+        "mathd_numbertheory_127",
+        "mathd_numbertheory_149",
+        "mathd_numbertheory_169",
+        "mathd_numbertheory_185",
+        "mathd_numbertheory_221",
+        "mathd_numbertheory_233",
+    ]
+    assert summary["excluded_tasks"] == []
+
+    metadata = json.loads((tmp_path / "pack_i_divisors_modmix_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == summary["task_ids"]
+    assert metadata["included_task_ids"] == summary["task_ids"]
+
+
+def test_pack_j_residue_gcd_mix_tasks(tmp_path: Path) -> None:
+    summary = packs.build_pack("pack_j_residue_gcd_mix_minif2f_v1", tmp_path)
+
+    assert summary["task_count"] == 6
+    assert summary["task_ids"] == [
+        "mathd_numbertheory_34",
+        "mathd_numbertheory_100",
+        "mathd_numbertheory_212",
+        "mathd_numbertheory_239",
+        "mathd_numbertheory_254",
+        "mathd_numbertheory_320",
+    ]
+    assert summary["excluded_tasks"] == []
+
+    metadata = json.loads((tmp_path / "pack_j_residue_gcd_mix_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == summary["task_ids"]
+    assert metadata["included_task_ids"] == summary["task_ids"]
+
+
 def test_legacy_nat_and_finset_names_are_canonicalized() -> None:
     statement = (
         "theorem sample\n"
@@ -252,3 +290,41 @@ def test_complex_namespace_is_canonicalized() -> None:
 
     assert "Complex.I" in canonical
     assert "complex.I" not in canonical
+
+
+def test_zmod_namespace_is_canonicalized() -> None:
+    statement = (
+        "theorem sample\n"
+        "  (b : zmod (11^2))\n"
+        "  (h₀ : b = 24⁻¹) : b = 116 := by\n"
+    )
+
+    canonical = packs._canonicalize_formal_statement("sample", statement)
+
+    assert "ZMod" in canonical
+    assert "zmod" not in canonical
+
+
+def test_mathd_numbertheory_169_is_canonicalized_to_factorial_function() -> None:
+    statement = (
+        "theorem mathd_numbertheory_169 :\n"
+        "  Nat.gcd 20! 200000 = 40000 := by\n"
+    )
+
+    canonical = packs._canonicalize_formal_statement("mathd_numbertheory_169", statement)
+
+    assert "Nat.factorial 20" in canonical
+    assert "20!" not in canonical
+
+
+def test_standalone_finset_token_is_canonicalized() -> None:
+    statement = (
+        "theorem mathd_numbertheory_221\n"
+        "  (S : finset ℕ)\n"
+        "  (h₀ : ∀ (x : ℕ), x ∈ S ↔ 0 < x ∧ x < 1000 ∧ x.divisors.card = 3) :\n"
+        "  S.card = 11 := by\n"
+    )
+
+    canonical = packs._canonicalize_formal_statement("mathd_numbertheory_221", statement)
+
+    assert "(S : Finset ℕ)" in canonical
