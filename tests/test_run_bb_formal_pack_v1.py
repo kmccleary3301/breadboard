@@ -86,6 +86,31 @@ def test_mathd_algebra_452_prompt_includes_midpoint_guidance() -> None:
     assert "avoid introducing `a 0`" in prompt
 
 
+def test_induction_12dvd_prompt_includes_helper_guidance() -> None:
+    prompt = runner._build_prompt(
+        "induction_12dvd4expnp1p20",
+        "import Mathlib\n\ntheorem induction_12dvd4expnp1p20 : True := by\n  trivial\n",
+    )
+
+    assert "dvd_of_dvd_add_mul_left" in prompt
+    assert "rw [pow_succ, Nat.mul_comm]" in prompt
+    assert "apply dvd_of_dvd_add_mul_left 12 (4 * 4 ^ (k + 1) + 20) 5" in prompt
+    assert "Do not introduce subtraction identities or `ring_nf`" in prompt
+
+
+def test_induction_sum_prompt_includes_finset_and_congrarg_guidance() -> None:
+    prompt = runner._build_prompt(
+        "induction_sumkexp3eqsumksq",
+        "import Mathlib\n\ntheorem induction_sumkexp3eqsumksq : True := by\n  trivial\n",
+    )
+
+    assert "Finset.sum_range_id_mul_two" in prompt
+    assert "Nat.sum_range_id_mul_two" in prompt
+    assert "congrArg (fun t => (∑ k in Finset.range j, k^3) + t) hcube" in prompt
+    assert "do not try `rw [hcube]` directly" in prompt
+    assert "Avoid `omega` here" in prompt
+
+
 def test_mathd_numbertheory_427_prompt_includes_closed_form_guidance() -> None:
     prompt = runner._build_prompt(
         "mathd_numbertheory_427",

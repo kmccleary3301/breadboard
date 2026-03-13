@@ -73,3 +73,25 @@ Per-task result on corrected inputs:
   - induction-focused subpack: `induction_sumkexp3eqsumksq`, `induction_12dvd4expnp1p20`
   - number-theory-focused subpack: `numbertheory_2pownm1prime_nprime`, `mathd_numbertheory_427`
 - Do not spend more on the full mixed six-task tranche; it is now informative enough.
+
+## Final split roll-up
+- The split follow-up work is now complete and supersedes the old mixed-tranche result.
+- Combined paired artifacts from the split packs:
+  - `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_d_mixed_induction_numbertheory_minif2f_v1/cross_system_pilot_report_v4.json`
+  - `artifacts/benchmarks/hilbert_comparison_packs_v2/pack_d_mixed_induction_numbertheory_minif2f_v1/cross_system_validation_report_v4.json`
+
+Final roll-up outcome across the same six Pack D tasks:
+- BreadBoard: `6/6`
+- Maintained Hilbert: `1/6`
+- BreadBoard-only:
+  - `imo_1959_p1`
+  - `induction_sumkexp3eqsumksq`
+  - `induction_12dvd4expnp1p20`
+  - `numbertheory_2pownm1prime_nprime`
+  - `mathd_numbertheory_427`
+- Both solved:
+  - `mathd_algebra_452`
+
+Read:
+- The old mixed Pack D result (`2/6` vs `1/6`) should now be treated as superseded by the split-pack reruns.
+- Pack D is fully saturated at the current bounded settings. The next step is a new comparison tranche, not more Pack D work.
