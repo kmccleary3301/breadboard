@@ -486,6 +486,61 @@
         "coordination/directive_retry_fixture.json"
       ],
       "notes": "Directive retry path proving durable supervisory action intent derived from reviewed blocked truth."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.multi_worker_complete.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/multi_worker_complete_fixture.json"
+      ],
+      "notes": "Reducer-style multi-worker complete path proving shard fan-in, aggregate result contract validation, and supervisor review over reducer output."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.multi_worker_blocked.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/multi_worker_blocked_fixture.json"
+      ],
+      "notes": "Reducer-style blocked-shard path proving reducer wake, supervisor review, and directive issuance without channels or rendezvous."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.longrun_no_progress.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/longrun_no_progress_fixture.json"
+      ],
+      "notes": "Longrun no-progress lane proving runtime stall detection emits reviewed checkpoint-worthy coordination truth rather than private stop-only metadata."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.longrun_retryable_failure.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/longrun_retryable_failure_fixture.json"
+      ],
+      "notes": "Longrun retryable-failure lane proving retry intent is explicit durable coordination truth and not just recovery-policy side effect."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.longrun_human_required.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/longrun_human_required_fixture.json"
+      ],
+      "notes": "Longrun human-required lane proving escalation flows through signal truth, review truth, and directive truth before projection."
     }
   ]
 }

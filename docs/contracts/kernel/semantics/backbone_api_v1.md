@@ -49,5 +49,7 @@ Backbone may expose coordination-derived projections, but it does not become the
 For the current coordination slice:
 
 - typed signals and wake subscriptions remain kernel/orchestration truth
+- review verdicts and directives remain kernel/orchestration truth
 - Backbone may surface wake-derived session updates or callbacks
+- Backbone may surface read-only coordination inspection snapshots
 - mission-completion ownership stays below Backbone and above raw transport

@@ -293,6 +293,9 @@ multi_agent:
         - tool_call
         - provider_finish
         preserve_legacy_wake_conditions: true
+        review:
+          no_progress_action: checkpoint
+          retryable_failure_action: retry
       bus:
         model_visible_topics:
         - tool_result

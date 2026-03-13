@@ -33,6 +33,8 @@ Signals still say what happened or what was proposed:
 
 - a worker signaled `complete`
 - a worker signaled `blocked`
+- longrun/runtime signaled `no_progress`
+- longrun/runtime signaled `retryable_failure`
 - a worker signaled `human_required`
 
 Review verdicts do not replace that fact layer.
@@ -55,6 +57,13 @@ That distinction is what keeps mission ownership explicit.
 `coordination.done`, `coordination.review`, and `coordination.merge` are public contract/policy surfaces.
 
 `bb.review_verdict.v1` is the durable record of what actually happened when those policies were applied.
+
+The current small review-policy expansion is:
+
+- `coordination.review.no_progress_action`
+- `coordination.review.retryable_failure_action`
+
+Those are narrow mappings, not a general workflow DSL.
 
 ### 4. Review and directive stay separate
 
@@ -79,6 +88,13 @@ The narrow R1 verdict vocabulary is:
 - `noted`
 
 This is intentionally smaller than a future approval or control-plane ontology.
+
+The currently live actionable mappings are now:
+
+- `blocked` -> `retry` / `checkpoint` / `escalate`
+- `no_progress` -> currently narrowed by policy to `checkpoint` by default
+- `retryable_failure` -> currently narrowed by policy to `retry` by default
+- `human_required` -> reviewed `human_required`
 
 ---
 
@@ -117,3 +133,29 @@ This dossier does not yet define:
 1. keep review/verdict truth narrower than directive truth
 2. keep directive truth narrower than the future multi-worker coordination ontology
 3. prove a reducer-style multi-worker aggregation slice before entertaining richer coordination ontology
+
+## Reducer-style aggregation note
+
+The next valid widening after sparse supervisor-worker is not channels or rendezvous.
+
+It is:
+
+- one supervisor
+- two shard workers
+- one reducer/aggregator
+
+In that slice:
+
+- shard signals remain ordinary signal truth
+- reducer output becomes the reviewed subject the supervisor validates
+- aggregate result shape is governed by `coordination.merge.reducer_result_contract`
+
+That keeps fan-in explicit without overproducing ontology.
+
+## Read-only inspection note
+
+The current justified inspection surface is intentionally read-only:
+
+- session/runtime snapshots may expose accepted signals, review verdicts, directives, and latest-by-code summaries
+- those snapshots are projections over durable truth, not a second semantic layer
+- hosts and TS surfaces should inspect them, not mutate them

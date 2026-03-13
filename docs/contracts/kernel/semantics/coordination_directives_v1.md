@@ -71,6 +71,14 @@ The first coded slice should prove:
 
 That is enough to make action intent explicit without widening the ontology.
 
+The currently widened live slice now also proves:
+
+- reviewed `no_progress` -> `checkpoint`
+- reviewed `retryable_failure` -> `retry`
+- reviewed `human_required` -> `escalate`
+
+Those are still deliberately narrow and policy-shaped.
+
 ---
 
 ## Non-goals
@@ -91,3 +99,18 @@ This dossier does not yet define:
 1. keep directives narrower than the eventual coordination ontology
 2. prove directives replay cleanly through the same evidence lane as signals and review verdicts
 3. use directives in the reducer-style multi-worker slice before considering richer coordination patterns
+
+## Reducer slice implication
+
+In the reducer-style multi-worker slice, directives should still stay narrow:
+
+- continue the reducer when aggregation is incomplete
+- retry or checkpoint the reducer when a blocked shard forces a supervisory decision
+
+That is enough to prove fan-in action intent without inventing routing or channel DSLs.
+
+## Inspection boundary
+
+Read-only inspection may expose directive truth and directive lineage, but it should not become a mutation surface.
+
+Directive creation remains below projection and above review truth.

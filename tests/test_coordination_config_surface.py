@@ -23,6 +23,8 @@ def test_team_config_parses_minimal_coordination_surface() -> None:
                     "review": {
                         "explicit_verdicts": True,
                         "allowed_blocked_actions": ["retry", "checkpoint", "escalate", "human_required"],
+                        "no_progress_action": "checkpoint",
+                        "retryable_failure_action": "retry",
                     },
                     "merge": {
                         "reducer_result_contract": "shard_aggregate_v1",
@@ -48,6 +50,8 @@ def test_team_config_parses_minimal_coordination_surface() -> None:
         "escalate",
         "human_required",
     ]
+    assert team.coordination.review.no_progress_action == "checkpoint"
+    assert team.coordination.review.retryable_failure_action == "retry"
     assert team.coordination.merge.reducer_result_contract == "shard_aggregate_v1"
 
 
@@ -70,4 +74,6 @@ def test_team_config_coordination_defaults_stay_narrow() -> None:
         "escalate",
         "human_required",
     ]
+    assert team.coordination.review.no_progress_action == "checkpoint"
+    assert team.coordination.review.retryable_failure_action == "retry"
     assert team.coordination.merge.reducer_result_contract is None

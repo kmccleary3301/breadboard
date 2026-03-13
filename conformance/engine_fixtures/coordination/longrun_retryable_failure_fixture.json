@@ -1,0 +1,242 @@
+{
+  "fixture_family": "coordination",
+  "fixture_id": "coord_longrun_retryable_failure_python_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "reference-engine",
+  "contract": "bb.coordination_longrun_reference_slice.v1",
+  "reference_output": {
+    "schema_version": "bb.coordination_longrun_reference_slice.v1",
+    "scenario_id": "coordination_longrun_retryable_failure_python_reference",
+    "stop_reason": "episode_completed",
+    "episodes_run": 1,
+    "signals": [
+      {
+        "schema_version": "bb.signal.v1",
+        "signal_id": "signal_longrun_1",
+        "code": "retryable_failure",
+        "task_id": "longrun_controller",
+        "parent_task_id": null,
+        "mission_task_id": null,
+        "authority_scope": "task",
+        "status": "accepted",
+        "source": {
+          "kind": "runtime",
+          "emitter_role": "runtime",
+          "detail": null
+        },
+        "evidence_refs": [
+          "artifact://meta/longrun_state.json"
+        ],
+        "payload": {
+          "failure_summary": "provider timeout",
+          "retry_basis": "provider_error_retry",
+          "attempt_count": 1,
+          "backoff_seconds": 0.01,
+          "error_type": "RuntimeError"
+        },
+        "validation": {
+          "accepted": true,
+          "reasons": [
+            "signal_valid"
+          ],
+          "validated_by": "engine",
+          "validated_at": 0.0
+        }
+      }
+    ],
+    "review_verdicts": [
+      {
+        "schema_version": "bb.review_verdict.v1",
+        "verdict_id": "review_longrun_1",
+        "reviewer_task_id": "longrun_controller",
+        "reviewer_role": "system",
+        "subject": {
+          "kind": "signal",
+          "signal_id": "signal_longrun_1",
+          "signal_event_id": 1,
+          "signal_code": "retryable_failure",
+          "source_task_id": "longrun_controller",
+          "mission_task_id": null,
+          "subscription_id": null,
+          "trigger_signal_id": "signal_longrun_1",
+          "trigger_event_id": 1,
+          "trigger_code": "retryable_failure"
+        },
+        "verdict_code": "retry",
+        "mission_completed": false,
+        "required_deliverable_refs": [],
+        "deliverable_refs": [],
+        "missing_deliverable_refs": [],
+        "blocking_reason": "provider timeout",
+        "recommended_next_action": "retry",
+        "support_claim_ref": null,
+        "signal_evidence_refs": [
+          "artifact://meta/longrun_state.json"
+        ],
+        "metadata": {
+          "retry_basis": "provider_error_retry",
+          "attempt_count": 1
+        },
+        "validation": {
+          "accepted": true,
+          "reasons": [
+            "review_verdict_valid"
+          ],
+          "validated_by": "engine",
+          "validated_at": 0.0
+        }
+      }
+    ],
+    "directives": [
+      {
+        "schema_version": "bb.directive.v1",
+        "directive_id": "directive_longrun_1",
+        "directive_code": "retry",
+        "issuer_task_id": "longrun_controller",
+        "issuer_role": "system",
+        "target_task_id": "longrun_controller",
+        "target_job_id": null,
+        "based_on_verdict_id": "review_longrun_1",
+        "based_on_signal_id": "signal_longrun_1",
+        "payload": {
+          "wake_target": true,
+          "coordination_origin": "longrun.retryable_failure"
+        },
+        "evidence_refs": [
+          "artifact://meta/longrun_state.json"
+        ],
+        "metadata": {
+          "review_event_id": 2
+        },
+        "validation": {
+          "accepted": true,
+          "reasons": [
+            "directive_valid"
+          ],
+          "validated_by": "engine",
+          "validated_at": 0.0
+        }
+      }
+    ],
+    "events": [
+      {
+        "event_id": 1,
+        "type": "coordination.signal",
+        "payload": {
+          "schema_version": "bb.signal.v1",
+          "signal_id": "signal_longrun_1",
+          "code": "retryable_failure",
+          "task_id": "longrun_controller",
+          "parent_task_id": null,
+          "mission_task_id": null,
+          "authority_scope": "task",
+          "status": "accepted",
+          "source": {
+            "kind": "runtime",
+            "emitter_role": "runtime",
+            "detail": null
+          },
+          "evidence_refs": [
+            "artifact://meta/longrun_state.json"
+          ],
+          "payload": {
+            "failure_summary": "provider timeout",
+            "retry_basis": "provider_error_retry",
+            "attempt_count": 1,
+            "backoff_seconds": 0.01,
+            "error_type": "RuntimeError"
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "signal_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        },
+        "causal_parent_event_id": null
+      },
+      {
+        "event_id": 2,
+        "type": "coordination.review_verdict",
+        "payload": {
+          "schema_version": "bb.review_verdict.v1",
+          "verdict_id": "review_longrun_1",
+          "reviewer_task_id": "longrun_controller",
+          "reviewer_role": "system",
+          "subject": {
+            "kind": "signal",
+            "signal_id": "signal_longrun_1",
+            "signal_event_id": 1,
+            "signal_code": "retryable_failure",
+            "source_task_id": "longrun_controller",
+            "mission_task_id": null,
+            "subscription_id": null,
+            "trigger_signal_id": "signal_longrun_1",
+            "trigger_event_id": 1,
+            "trigger_code": "retryable_failure"
+          },
+          "verdict_code": "retry",
+          "mission_completed": false,
+          "required_deliverable_refs": [],
+          "deliverable_refs": [],
+          "missing_deliverable_refs": [],
+          "blocking_reason": "provider timeout",
+          "recommended_next_action": "retry",
+          "support_claim_ref": null,
+          "signal_evidence_refs": [
+            "artifact://meta/longrun_state.json"
+          ],
+          "metadata": {
+            "retry_basis": "provider_error_retry",
+            "attempt_count": 1
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "review_verdict_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        },
+        "causal_parent_event_id": 1
+      },
+      {
+        "event_id": 3,
+        "type": "coordination.directive",
+        "payload": {
+          "schema_version": "bb.directive.v1",
+          "directive_id": "directive_longrun_1",
+          "directive_code": "retry",
+          "issuer_task_id": "longrun_controller",
+          "issuer_role": "system",
+          "target_task_id": "longrun_controller",
+          "target_job_id": null,
+          "based_on_verdict_id": "review_longrun_1",
+          "based_on_signal_id": "signal_longrun_1",
+          "payload": {
+            "wake_target": true,
+            "coordination_origin": "longrun.retryable_failure"
+          },
+          "evidence_refs": [
+            "artifact://meta/longrun_state.json"
+          ],
+          "metadata": {
+            "review_event_id": 2
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "directive_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        },
+        "causal_parent_event_id": 2
+      }
+    ]
+  }
+}

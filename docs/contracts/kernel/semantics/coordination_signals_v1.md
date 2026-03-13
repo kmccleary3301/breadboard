@@ -46,6 +46,14 @@ The first frozen codes are:
 
 Not every code needs to be exercised on day one, but the vocabulary should be explicit.
 
+The currently live widened set is now:
+
+- sparse supervisor/worker `complete`
+- sparse supervisor/worker `blocked`
+- longrun/runtime `no_progress`
+- longrun/runtime `retryable_failure`
+- longrun/runtime `human_required`
+
 ### `bb.wake_subscription.v1`
 
 Typed wake rule embedded on a distributed task descriptor.
@@ -101,8 +109,10 @@ The first public dossier/config surface should stay small:
 - `coordination.mission_owner_role`
 - `coordination.legacy_completion_sources`
 - `coordination.preserve_legacy_wake_conditions`
+- `coordination.review.no_progress_action`
+- `coordination.review.retryable_failure_action`
 
-That is enough to make ownership and additive migration explicit without introducing directives, channels, or broader authority frameworks too early.
+That is enough to make ownership and additive migration explicit without introducing channels, authority packages, or broader routing frameworks.
 
 ---
 
@@ -142,14 +152,17 @@ The bus is therefore a host/model-visible surface, not the source of coordinatio
 
 ---
 
-## First-tranche freeze
+## Current live posture
 
-The first live coded slice should prove:
+The first live coded slices now prove:
 
 - typed `complete` and `blocked` signals
 - additive `wake_subscriptions`
 - accepted vs rejected validation results
 - sparse supervisor wake behavior downstream of accepted signals
+- bounded longrun/runtime `no_progress`
+- bounded longrun/runtime `retryable_failure`
+- bounded reviewed `human_required`
 
 The following remain explicitly deferred:
 
@@ -160,6 +173,18 @@ The following remain explicitly deferred:
 - large coordination APIs
 
 The next layer above this contract family is now `bb.review_verdict.v1`, which records reviewer-owned outcomes without replacing signal truth.
+
+## Longrun integration note
+
+Longrun now uses the same signal language rather than a separate private stall/error vocabulary.
+
+Specifically:
+
+- bounded stall detection emits `no_progress`
+- retry-worthy provider/runtime failures emit `retryable_failure`
+- explicit operator-needed outcomes emit `human_required`
+
+Those are still signal truth, not verdicts and not directives.
 
 ---
 

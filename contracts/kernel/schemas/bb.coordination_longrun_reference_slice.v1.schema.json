@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_longrun_reference_slice.v1.schema.json",
+  "title": "bb.coordination_longrun_reference_slice.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scenario_id",
+    "stop_reason",
+    "episodes_run",
+    "signals",
+    "review_verdicts",
+    "directives",
+    "events"
+  ],
+  "properties": {
+    "schema_version": {"const": "bb.coordination_longrun_reference_slice.v1"},
+    "scenario_id": {"type": "string", "minLength": 1},
+    "stop_reason": {"type": "string", "minLength": 1},
+    "episodes_run": {"type": "integer", "minimum": 0},
+    "signals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["schema_version", "signal_id", "code", "task_id", "status"],
+        "properties": {
+          "schema_version": {"const": "bb.signal.v1"},
+          "signal_id": {"type": "string", "minLength": 1},
+          "code": {"type": "string", "minLength": 1},
+          "task_id": {"type": "string", "minLength": 1},
+          "status": {"enum": ["accepted", "rejected", "proposed"]}
+        }
+      }
+    },
+    "review_verdicts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["schema_version", "verdict_id", "verdict_code", "subject"],
+        "properties": {
+          "schema_version": {"const": "bb.review_verdict.v1"},
+          "verdict_id": {"type": "string", "minLength": 1},
+          "verdict_code": {"type": "string", "minLength": 1},
+          "subject": {"type": "object", "additionalProperties": true}
+        }
+      }
+    },
+    "directives": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["schema_version", "directive_id", "directive_code", "target_task_id"],
+        "properties": {
+          "schema_version": {"const": "bb.directive.v1"},
+          "directive_id": {"type": "string", "minLength": 1},
+          "directive_code": {"type": "string", "minLength": 1},
+          "target_task_id": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["event_id", "type", "payload"],
+        "properties": {
+          "event_id": {"type": "integer", "minimum": 1},
+          "type": {"type": "string", "minLength": 1},
+          "payload": {"type": "object", "additionalProperties": true}
+        }
+      }
+    }
+  }
+}

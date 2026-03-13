@@ -1,0 +1,238 @@
+{
+  "fixture_family": "coordination",
+  "fixture_id": "coord_longrun_human_required_python_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "reference-engine",
+  "contract": "bb.coordination_longrun_reference_slice.v1",
+  "reference_output": {
+    "schema_version": "bb.coordination_longrun_reference_slice.v1",
+    "scenario_id": "coordination_longrun_human_required_python_reference",
+    "stop_reason": "human_required",
+    "episodes_run": 1,
+    "signals": [
+      {
+        "schema_version": "bb.signal.v1",
+        "signal_id": "signal_longrun_1",
+        "code": "human_required",
+        "task_id": "longrun_controller",
+        "parent_task_id": null,
+        "mission_task_id": null,
+        "authority_scope": "task",
+        "status": "accepted",
+        "source": {
+          "kind": "runtime",
+          "emitter_role": "runtime",
+          "detail": null
+        },
+        "evidence_refs": [
+          "artifact://meta/operator_note.json"
+        ],
+        "payload": {
+          "observed_episode_index": 0,
+          "completion_reason": "human_required",
+          "required_input": "operator_confirmation",
+          "blocking_reason": "needs approval before continuing"
+        },
+        "validation": {
+          "accepted": true,
+          "reasons": [
+            "signal_valid"
+          ],
+          "validated_by": "engine",
+          "validated_at": 0.0
+        }
+      }
+    ],
+    "review_verdicts": [
+      {
+        "schema_version": "bb.review_verdict.v1",
+        "verdict_id": "review_longrun_1",
+        "reviewer_task_id": "longrun_controller",
+        "reviewer_role": "system",
+        "subject": {
+          "kind": "signal",
+          "signal_id": "signal_longrun_1",
+          "signal_event_id": 1,
+          "signal_code": "human_required",
+          "source_task_id": "longrun_controller",
+          "mission_task_id": null,
+          "subscription_id": null,
+          "trigger_signal_id": "signal_longrun_1",
+          "trigger_event_id": 1,
+          "trigger_code": "human_required"
+        },
+        "verdict_code": "human_required",
+        "mission_completed": false,
+        "required_deliverable_refs": [],
+        "deliverable_refs": [],
+        "missing_deliverable_refs": [],
+        "blocking_reason": "needs approval before continuing",
+        "recommended_next_action": "human_required",
+        "support_claim_ref": null,
+        "signal_evidence_refs": [
+          "artifact://meta/operator_note.json"
+        ],
+        "metadata": {
+          "required_input": "operator_confirmation"
+        },
+        "validation": {
+          "accepted": true,
+          "reasons": [
+            "review_verdict_valid"
+          ],
+          "validated_by": "engine",
+          "validated_at": 0.0
+        }
+      }
+    ],
+    "directives": [
+      {
+        "schema_version": "bb.directive.v1",
+        "directive_id": "directive_longrun_1",
+        "directive_code": "escalate",
+        "issuer_task_id": "longrun_controller",
+        "issuer_role": "system",
+        "target_task_id": "longrun_controller",
+        "target_job_id": null,
+        "based_on_verdict_id": "review_longrun_1",
+        "based_on_signal_id": "signal_longrun_1",
+        "payload": {
+          "wake_target": false,
+          "coordination_origin": "longrun.human_required"
+        },
+        "evidence_refs": [
+          "artifact://meta/operator_note.json"
+        ],
+        "metadata": {
+          "review_event_id": 2
+        },
+        "validation": {
+          "accepted": true,
+          "reasons": [
+            "directive_valid"
+          ],
+          "validated_by": "engine",
+          "validated_at": 0.0
+        }
+      }
+    ],
+    "events": [
+      {
+        "event_id": 1,
+        "type": "coordination.signal",
+        "payload": {
+          "schema_version": "bb.signal.v1",
+          "signal_id": "signal_longrun_1",
+          "code": "human_required",
+          "task_id": "longrun_controller",
+          "parent_task_id": null,
+          "mission_task_id": null,
+          "authority_scope": "task",
+          "status": "accepted",
+          "source": {
+            "kind": "runtime",
+            "emitter_role": "runtime",
+            "detail": null
+          },
+          "evidence_refs": [
+            "artifact://meta/operator_note.json"
+          ],
+          "payload": {
+            "observed_episode_index": 0,
+            "completion_reason": "human_required",
+            "required_input": "operator_confirmation",
+            "blocking_reason": "needs approval before continuing"
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "signal_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        },
+        "causal_parent_event_id": null
+      },
+      {
+        "event_id": 2,
+        "type": "coordination.review_verdict",
+        "payload": {
+          "schema_version": "bb.review_verdict.v1",
+          "verdict_id": "review_longrun_1",
+          "reviewer_task_id": "longrun_controller",
+          "reviewer_role": "system",
+          "subject": {
+            "kind": "signal",
+            "signal_id": "signal_longrun_1",
+            "signal_event_id": 1,
+            "signal_code": "human_required",
+            "source_task_id": "longrun_controller",
+            "mission_task_id": null,
+            "subscription_id": null,
+            "trigger_signal_id": "signal_longrun_1",
+            "trigger_event_id": 1,
+            "trigger_code": "human_required"
+          },
+          "verdict_code": "human_required",
+          "mission_completed": false,
+          "required_deliverable_refs": [],
+          "deliverable_refs": [],
+          "missing_deliverable_refs": [],
+          "blocking_reason": "needs approval before continuing",
+          "recommended_next_action": "human_required",
+          "support_claim_ref": null,
+          "signal_evidence_refs": [
+            "artifact://meta/operator_note.json"
+          ],
+          "metadata": {
+            "required_input": "operator_confirmation"
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "review_verdict_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        },
+        "causal_parent_event_id": 1
+      },
+      {
+        "event_id": 3,
+        "type": "coordination.directive",
+        "payload": {
+          "schema_version": "bb.directive.v1",
+          "directive_id": "directive_longrun_1",
+          "directive_code": "escalate",
+          "issuer_task_id": "longrun_controller",
+          "issuer_role": "system",
+          "target_task_id": "longrun_controller",
+          "target_job_id": null,
+          "based_on_verdict_id": "review_longrun_1",
+          "based_on_signal_id": "signal_longrun_1",
+          "payload": {
+            "wake_target": false,
+            "coordination_origin": "longrun.human_required"
+          },
+          "evidence_refs": [
+            "artifact://meta/operator_note.json"
+          ],
+          "metadata": {
+            "review_event_id": 2
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "directive_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        },
+        "causal_parent_event_id": 2
+      }
+    ]
+  }
+}

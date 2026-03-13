@@ -201,6 +201,9 @@ def test_session_state_event_family_registry_covers_public_runtime_event_types()
         "permission_request": ("canonical", "permission.requested"),
         "permission_response": ("canonical", "permission.decided"),
         "task_event": ("canonical", "task.progress"),
+        "coordination_signal": ("canonical", "coordination.signal"),
+        "coordination_review_verdict": ("canonical", "coordination.review_verdict"),
+        "coordination_directive": ("canonical", "coordination.directive"),
         "turn_start": ("canonical", "turn.started"),
         "todo_event": ("projection_only", "projection.todo_snapshot"),
         "ctree_snapshot": ("projection_only", "projection.ctree_snapshot"),
@@ -210,6 +213,19 @@ def test_session_state_event_family_registry_covers_public_runtime_event_types()
     for event_type, (classification, family) in expected.items():
         assert registry[event_type]["classification"] == classification
         assert registry[event_type]["family"] == family
+
+
+def test_session_state_coordination_inspection_snapshot_is_read_only() -> None:
+    state = SessionState("ws", "image", {})
+    signal = state.record_coordination_signal({"signal_id": "sig-1", "code": "blocked"})
+    state.record_coordination_review_verdict({"verdict_id": "rev-1", "verdict_code": "checkpoint"})
+    state.record_coordination_directive({"directive_id": "dir-1", "directive_code": "checkpoint"})
+
+    snapshot = state.coordination_inspection_snapshot()
+    assert snapshot["latest_signal_by_code"]["blocked"]["signal_id"] == "sig-1"
+
+    signal["signal_id"] = "mutated"
+    assert snapshot["signals"][0]["signal_id"] == "sig-1"
 
 
 def test_cli_bridge_runtime_event_sets_match_kernel_vs_projection_boundary() -> None:

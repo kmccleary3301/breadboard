@@ -39,5 +39,7 @@ That means Host Kit is no longer just a design direction. It is now part of the 
 Host Kits may project coordination outcomes outward, but they should treat them as downstream facts:
 
 - accepted typed signals are kernel/orchestration truth
+- review verdicts and directives are kernel/orchestration truth
 - wake messages shown to a host are projections
+- read-only coordination inspection snapshots are projections over that truth, not mutation APIs
 - a host may present blocked or completion state, but it should not invent mission authority rules on its own

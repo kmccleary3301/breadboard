@@ -127,6 +127,21 @@ For the directive tranche, evidence should additionally preserve:
 - the review-verdict-to-directive lineage
 - whether the directive produced a downstream wake or remained control-only
 
+For the reducer-style multi-worker tranche, evidence should also preserve:
+
+- shard signals as separate producer truth
+- reducer signal as the fan-in subject
+- aggregate contract metadata or validation outcome
+- supervisor review over reducer output
+- directive lineage when blocked shard handling requires action intent
+
+For the longrun/escalation tranche, evidence should additionally preserve:
+
+- runtime-emitted `no_progress`, `retryable_failure`, or `human_required` signal truth
+- the review verdict recorded over that runtime signal
+- any resulting directive truth
+- stop reason and longrun summary without collapsing those layers together
+
 ---
 
 ## Known ambiguities

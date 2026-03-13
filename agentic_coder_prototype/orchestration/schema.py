@@ -77,6 +77,8 @@ class CoordinationConfig:
         allowed_blocked_actions: List[str] = field(
             default_factory=lambda: ["retry", "checkpoint", "escalate", "human_required"]
         )
+        no_progress_action: str = "checkpoint"
+        retryable_failure_action: str = "retry"
 
     @dataclass(frozen=True)
     class MergeConfig:
@@ -218,6 +220,8 @@ class TeamConfig:
                     if str(item).strip()
                 ]
                 or ["retry", "checkpoint", "escalate", "human_required"],
+                no_progress_action=str(review_raw.get("no_progress_action") or "checkpoint"),
+                retryable_failure_action=str(review_raw.get("retryable_failure_action") or "retry"),
             ),
             merge=CoordinationConfig.MergeConfig(
                 reducer_result_contract=(

@@ -5478,6 +5478,11 @@ class OpenAIConductor:
                         timeout_seconds=timeout_seconds,
                         context=context,
                     ),
+                    coordination_signal_emitter=lambda payload: session_state.record_coordination_signal(payload),
+                    coordination_review_verdict_emitter=lambda payload: session_state.record_coordination_review_verdict(
+                        payload
+                    ),
+                    coordination_directive_emitter=lambda payload: session_state.record_coordination_directive(payload),
                 )
 
                 def _episode_runner(episode_index: int) -> Dict[str, Any]:

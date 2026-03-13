@@ -70,6 +70,12 @@ The current coordination reference lane proves one narrow but important pattern:
 
 This is intentionally narrower than a full future coordination ontology. It is the first portable truth slice that must survive replay and backend adaptation.
 
+The next portable slice after this is reducer-shaped rather than channel-shaped:
+
+- one reducer subscribes to shard worker outcomes
+- one supervisor reviews the reducer outcome
+- aggregate result validation stays explicit and narrow
+
 ### Completion ownership
 
 The worker may truthfully say:

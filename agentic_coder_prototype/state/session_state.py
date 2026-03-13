@@ -328,6 +328,19 @@ class SessionState:
             entry.setdefault("seq", seq)
         return entry
 
+    def coordination_inspection_snapshot(self) -> Dict[str, Any]:
+        """Return a read-only coordination snapshot derived from canonical runtime truth."""
+        return {
+            "signals": [dict(item) for item in self.coordination_signals],
+            "review_verdicts": [dict(item) for item in self.coordination_review_verdicts],
+            "directives": [dict(item) for item in self.coordination_directives],
+            "latest_signal_by_code": {
+                str(item.get("code") or ""): dict(item)
+                for item in self.coordination_signals
+                if isinstance(item, dict) and str(item.get("code") or "").strip()
+            },
+        }
+
     def emit_permission_event(self, event_type: str, payload: Dict[str, Any]) -> None:
         """Emit permission request/response events to observers."""
         normalized = self.build_permission_record(event_type, payload)

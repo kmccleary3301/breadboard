@@ -71,4 +71,24 @@ def test_review_verdict_rejects_retry_verdict_for_complete_signal() -> None:
     )
 
     assert verdict["validation"]["accepted"] is False
-    assert "review_action_verdict_requires_blocked_or_human_required_signal" in verdict["validation"]["reasons"]
+    assert "review_action_verdict_requires_actionable_signal" in verdict["validation"]["reasons"]
+
+
+def test_review_verdict_accepts_retryable_failure_retry_verdict() -> None:
+    verdict = validate_review_verdict(
+        build_review_verdict(
+            reviewer_task_id="task_longrun_controller",
+            reviewer_role="system",
+            subject_signal={
+                "signal_id": "signal_retryable_failure_1",
+                "code": "retryable_failure",
+                "task_id": "task_longrun_controller",
+            },
+            verdict_code="retry",
+            blocking_reason="provider timeout",
+            recommended_next_action="retry",
+        )
+    )
+
+    assert verdict["validation"]["accepted"] is True
+    assert verdict["verdict_code"] == "retry"

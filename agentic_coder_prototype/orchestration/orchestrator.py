@@ -233,6 +233,7 @@ class MultiAgentOrchestrator:
         deliverable_refs = [str(item) for item in (payload.get("deliverable_refs") or []) if str(item).strip()]
         done_policy = self.team_config.coordination.done
         review_policy = self.team_config.coordination.review
+        aggregate_validation = self._validate_aggregate_result_contract(payload)
         if done_policy.require_deliverable_refs and not required_refs and not deliverable_refs:
             required_refs = ["deliverable_ref_required"]
         missing_deliverable_refs = [item for item in required_refs if item not in deliverable_refs]
@@ -254,7 +255,7 @@ class MultiAgentOrchestrator:
         mission_completed = False
 
         if code == "complete":
-            if missing_deliverable_refs:
+            if missing_deliverable_refs or aggregate_validation["invalid"]:
                 verdict_code = "pending_validation"
             else:
                 verdict_code = "validated"
@@ -295,6 +296,10 @@ class MultiAgentOrchestrator:
                 metadata={
                     "job_id": supervisor_job.job_id,
                     "blocked_action": blocked_action,
+                    "aggregate_contract_required": aggregate_validation["required_contract"],
+                    "aggregate_contract_received": aggregate_validation["received_contract"],
+                    "aggregate_missing_worker_task_ids": list(aggregate_validation["missing_worker_task_ids"]),
+                    "aggregate_artifact_refs": list(aggregate_validation["aggregate_artifact_refs"]),
                     "legacy_decision": self._legacy_supervisor_decision_name(
                         code=code,
                         verdict_code=verdict_code,
@@ -507,6 +512,41 @@ class MultiAgentOrchestrator:
             if self._task_id_for_job(job) == task_id_text:
                 return job
         return None
+
+    def _validate_aggregate_result_contract(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        merge_policy = self.team_config.coordination.merge
+        required_contract = str(merge_policy.reducer_result_contract or "").strip()
+        aggregate_result = payload.get("aggregate_result") if isinstance(payload.get("aggregate_result"), dict) else {}
+        received_contract = str(payload.get("aggregate_result_contract") or "").strip()
+        required_worker_task_ids = [
+            str(item) for item in (aggregate_result.get("required_worker_task_ids") or []) if str(item).strip()
+        ]
+        completed_worker_task_ids = [
+            str(item) for item in (aggregate_result.get("completed_worker_task_ids") or []) if str(item).strip()
+        ]
+        aggregate_artifact_refs = [
+            str(item) for item in (aggregate_result.get("aggregate_artifact_refs") or []) if str(item).strip()
+        ]
+        missing_worker_task_ids = [
+            task_id for task_id in required_worker_task_ids if task_id not in completed_worker_task_ids
+        ]
+        applies = bool(required_contract)
+        invalid = False
+        if applies:
+            invalid = (
+                received_contract != required_contract
+                or not aggregate_result
+                or not aggregate_artifact_refs
+                or bool(missing_worker_task_ids)
+            )
+        return {
+            "applies": applies,
+            "invalid": invalid,
+            "required_contract": required_contract or None,
+            "received_contract": received_contract or None,
+            "missing_worker_task_ids": missing_worker_task_ids,
+            "aggregate_artifact_refs": aggregate_artifact_refs,
+        }
 
     @staticmethod
     def _default_directive_message(directive: Dict[str, Any]) -> str:

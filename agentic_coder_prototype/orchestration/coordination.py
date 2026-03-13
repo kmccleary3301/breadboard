@@ -61,6 +61,7 @@ LEGACY_COMPLETION_SOURCE_KINDS = frozenset(
 
 DEFAULT_REQUIRE_EVIDENCE_FOR = frozenset({"merge_ready", "catastrophic_failure", "human_required"})
 BLOCKED_RECOMMENDED_ACTIONS = frozenset({"retry", "checkpoint", "escalate", "human_required"})
+REVIEW_ACTION_SIGNAL_CODES = frozenset({"blocked", "human_required", "no_progress", "retryable_failure"})
 
 
 def _clean_string(value: Any) -> Optional[str]:
@@ -211,6 +212,132 @@ def build_blocked_signal_proposal(
         authority_scope=authority_scope,
         evidence_refs=evidence_refs,
         payload=blocked_payload,
+    )
+
+
+def build_no_progress_signal_proposal(
+    *,
+    task_id: str,
+    stall_reason: str,
+    observed_episode_index: int,
+    no_progress_streak: int,
+    failure_signature_streak: int,
+    last_activity_marker: Optional[str] = None,
+    current_item_id: Optional[str] = None,
+    retry_streak: Optional[int] = None,
+    parent_task_id: Optional[str] = None,
+    mission_task_id: Optional[str] = None,
+    authority_scope: str = "task",
+    source_kind: str = "runtime",
+    emitter_role: str = "runtime",
+    evidence_refs: Optional[Iterable[str]] = None,
+    payload: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    signal_payload = dict(payload or {})
+    signal_payload.update(
+        {
+            "stall_reason": str(stall_reason or "").strip(),
+            "observed_episode_index": int(observed_episode_index),
+            "no_progress_streak": int(no_progress_streak),
+            "failure_signature_streak": int(failure_signature_streak),
+        }
+    )
+    if last_activity_marker:
+        signal_payload["last_activity_marker"] = str(last_activity_marker)
+    if current_item_id:
+        signal_payload["current_item_id"] = str(current_item_id)
+    if retry_streak is not None:
+        signal_payload["retry_streak"] = int(retry_streak)
+    return build_signal_proposal(
+        code="no_progress",
+        task_id=task_id,
+        parent_task_id=parent_task_id,
+        mission_task_id=mission_task_id,
+        source_kind=source_kind,
+        emitter_role=emitter_role,
+        authority_scope=authority_scope,
+        evidence_refs=evidence_refs,
+        payload=signal_payload,
+    )
+
+
+def build_retryable_failure_signal_proposal(
+    *,
+    task_id: str,
+    failure_summary: str,
+    retry_basis: str,
+    attempt_count: int,
+    parent_task_id: Optional[str] = None,
+    mission_task_id: Optional[str] = None,
+    authority_scope: str = "task",
+    source_kind: str = "runtime",
+    emitter_role: str = "runtime",
+    current_item_id: Optional[str] = None,
+    backoff_seconds: Optional[float] = None,
+    error_type: Optional[str] = None,
+    evidence_refs: Optional[Iterable[str]] = None,
+    payload: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    signal_payload = dict(payload or {})
+    signal_payload.update(
+        {
+            "failure_summary": str(failure_summary or "").strip(),
+            "retry_basis": str(retry_basis or "").strip(),
+            "attempt_count": int(attempt_count),
+        }
+    )
+    if current_item_id:
+        signal_payload["current_item_id"] = str(current_item_id)
+    if backoff_seconds is not None:
+        signal_payload["backoff_seconds"] = float(backoff_seconds)
+    if error_type:
+        signal_payload["error_type"] = str(error_type)
+    return build_signal_proposal(
+        code="retryable_failure",
+        task_id=task_id,
+        parent_task_id=parent_task_id,
+        mission_task_id=mission_task_id,
+        source_kind=source_kind,
+        emitter_role=emitter_role,
+        authority_scope=authority_scope,
+        evidence_refs=evidence_refs,
+        payload=signal_payload,
+    )
+
+
+def build_human_required_signal_proposal(
+    *,
+    task_id: str,
+    required_input: str,
+    blocking_reason: str,
+    parent_task_id: Optional[str] = None,
+    mission_task_id: Optional[str] = None,
+    authority_scope: str = "task",
+    source_kind: str = "runtime",
+    emitter_role: str = "runtime",
+    current_item_id: Optional[str] = None,
+    evidence_refs: Optional[Iterable[str]] = None,
+    payload: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    signal_payload = dict(payload or {})
+    signal_payload.update(
+        {
+            "required_input": str(required_input or "").strip(),
+            "blocking_reason": str(blocking_reason or "").strip(),
+        }
+    )
+    if current_item_id:
+        signal_payload["current_item_id"] = str(current_item_id)
+    return build_signal_proposal(
+        code="human_required",
+        task_id=task_id,
+        parent_task_id=parent_task_id,
+        mission_task_id=mission_task_id,
+        source_kind=source_kind,
+        emitter_role=emitter_role,
+        authority_scope=authority_scope,
+        evidence_refs=evidence_refs,
+        payload=signal_payload,
     )
 
 
@@ -397,11 +524,17 @@ def validate_review_verdict(
     recommended_next_action = _clean_string(record.get("recommended_next_action"))
     if verdict_code in {"retry", "checkpoint", "escalate", "human_required"}:
         signal_code = str(subject.get("signal_code") or "")
-        if signal_code not in {"blocked", "human_required"}:
-            reasons.append("review_action_verdict_requires_blocked_or_human_required_signal")
-        if verdict_code != "human_required" and signal_code == "blocked" and not blocking_reason:
+        if signal_code not in REVIEW_ACTION_SIGNAL_CODES:
+            reasons.append("review_action_verdict_requires_actionable_signal")
+        if signal_code == "blocked" and verdict_code != "human_required" and not blocking_reason:
             reasons.append("blocked_review_verdict_requires_blocking_reason")
-        if verdict_code in {"retry", "checkpoint", "escalate"} and recommended_next_action not in BLOCKED_RECOMMENDED_ACTIONS:
+        if signal_code == "human_required" and verdict_code != "human_required":
+            reasons.append("human_required_signal_requires_human_required_verdict")
+        if (
+            verdict_code in {"retry", "checkpoint", "escalate"}
+            and signal_code in {"blocked", "no_progress", "retryable_failure"}
+            and recommended_next_action not in BLOCKED_RECOMMENDED_ACTIONS
+        ):
             reasons.append("review_action_verdict_requires_recommended_next_action")
 
     record["validation"] = {

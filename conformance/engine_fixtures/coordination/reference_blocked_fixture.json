@@ -232,6 +232,10 @@
           "metadata": {
             "job_id": "job_supervisor_1",
             "blocked_action": "checkpoint",
+            "aggregate_contract_required": null,
+            "aggregate_contract_received": null,
+            "aggregate_missing_worker_task_ids": [],
+            "aggregate_artifact_refs": [],
             "legacy_decision": "blocked_checkpoint_requested"
           },
           "validation": {
