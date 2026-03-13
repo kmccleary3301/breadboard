@@ -127,6 +127,28 @@ PACKS = {
         "mathd_numbertheory_254",
         "mathd_numbertheory_320",
     ],
+    "pack_k_moddigit_closedform_minif2f_v1": [
+        "mathd_numbertheory_1124",
+        "mathd_numbertheory_293",
+        "mathd_numbertheory_328",
+        "mathd_numbertheory_175",
+        "mathd_numbertheory_728",
+        "mathd_numbertheory_769",
+    ],
+    "pack_l_algebra_linear_equiv_minif2f_v1": [
+        "mathd_algebra_141",
+        "mathd_algebra_209",
+        "mathd_algebra_33",
+        "mathd_algebra_398",
+        "mathd_algebra_459",
+        "mathd_algebra_137",
+    ],
+    "pack_m_boundary_olympiad_mix_minif2f_v1": [
+        "imo_1960_p2",
+        "imo_1963_p5",
+        "induction_nfactltnexpnm1ngt3",
+        "numbertheory_fxeq4powxp6powxp9powx_f2powmdvdf2pown",
+    ],
 }
 EXCLUDED_TASKS = {
     "mathd_numbertheory_780": (
@@ -144,6 +166,10 @@ EXCLUDED_TASKS = {
     "mathd_algebra_77": (
         "Unsound under the extracted polynomial statement: taking a = -1/2, b = -1/2 and "
         "f x = x^2 + a*x + b satisfies h₀, h₁, h₂, and h₃, but the conclusion a = 1 ∧ b = -2 is false."
+    ),
+    "mathd_numbertheory_728": (
+        "Unsound closed arithmetic target: direct evaluation gives "
+        "(29^13 - 5^13) % 7 = 3, not 0."
     ),
 }
 
@@ -187,10 +213,13 @@ def _canonicalize_formal_statement(task_id: str, formal_statement: str) -> str:
     formal_statement = re.sub(r"\bnat\.", "Nat.", formal_statement)
     formal_statement = re.sub(r"\bfinset\.", "Finset.", formal_statement)
     formal_statement = re.sub(r"(?<!\.)\bfinset\b", "Finset", formal_statement)
+    formal_statement = re.sub(r"(?<!\.)\bequiv\b", "Equiv", formal_statement)
+    formal_statement = re.sub(r"\breal\.", "Real.", formal_statement)
     formal_statement = re.sub(r"\bcomplex\.", "Complex.", formal_statement)
     formal_statement = re.sub(r"\bzmod\b", "ZMod", formal_statement)
     formal_statement = re.sub(r"λ\s+([A-Za-z_][A-Za-z0-9_]*)\s*,", r"fun \1 =>", formal_statement)
     formal_statement = formal_statement.replace("Nat.prime", "Nat.Prime")
+    formal_statement = formal_statement.replace(".denom", ".den")
     if task_id == "mathd_numbertheory_530":
         return (
             "theorem mathd_numbertheory_530\n"

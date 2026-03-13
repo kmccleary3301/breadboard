@@ -14,6 +14,12 @@ from _cross_system_eval_v1 import dump_json, load_manifest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+OPENROUTER_PRICING_PER_MILLION = {
+    "openrouter/openai/gpt-5.4": {"input": 2.5, "output": 15.0},
+    "openai/gpt-5.4": {"input": 2.5, "output": 15.0},
+    "openrouter/openai/gpt-5-mini": {"input": 0.25, "output": 2.0},
+    "openai/gpt-5-mini": {"input": 0.25, "output": 2.0},
+}
 TASK_HINTS = {
     "mathd_numbertheory_530": (
         "Task-specific guidance:\n"
@@ -175,6 +181,60 @@ TASK_HINTS = {
         "- For `a - 1 ≠ 0` and `b - 1 ≠ 0`, a direct contradiction route is enough: assume `a = 1` or `b = 1`, use `hsum` and `hprod`, and contradict `h₃`.\n"
         "- After `field_simp [ha1, hb1]`, finish with `nlinarith [hsum, hprod]`.\n"
         "- If a rewritten side condition becomes `0 = 0` or `0 - 0 = 0`, close it immediately with `ring_nf` or `norm_num` instead of leaving it open.\n"
+    ),
+    "mathd_algebra_141": (
+        "Task-specific guidance:\n"
+        "- Follow the extracted starter proof shape; this theorem is a direct sum-product identity.\n"
+        "- First normalize the sum hypothesis exactly:\n"
+        "  `replace h₂ : a + b = 27 := by linarith`\n"
+        "- Then introduce the standard square expansion:\n"
+        "  `have h₃ : a^2 + b^2 = (a + b)^2 - 2 * (a * b) := by ring`\n"
+        "- Finish with `nlinarith [h₁, h₂, h₃]`.\n"
+        "- Do not expand everything with `ring_nf` before using the product and sum facts; the direct identity is shorter and stabler.\n"
+    ),
+    "mathd_algebra_209": (
+        "Task-specific guidance:\n"
+        "- Use the inverse equations by applying `σ.1` to the given `σ.2` equalities.\n"
+        "- The stable route is:\n"
+        "  `have h10 : σ.1 10 = 2 := by simpa using (congrArg σ.1 h₀).symm`\n"
+        "  `have h2 : σ.1 2 = 1 := by simpa using (congrArg σ.1 h₂).symm`\n"
+        "  `calc`\n"
+        "  `  σ.1 (σ.1 10) = σ.1 2 := by rw [h10]`\n"
+        "  `  _ = 1 := h2`\n"
+        "- Do not try to use `σ.left_inv` on the wrong side; the givens are already enough after `congrArg σ.1`.\n"
+    ),
+    "mathd_algebra_33": (
+        "Task-specific guidance:\n"
+        "- This is a direct linear fraction normalization.\n"
+        "- Use:\n"
+        "  `field_simp [h₀]`\n"
+        "  `nlinarith [h₁, h₂]`\n"
+        "- Do not introduce auxiliary ratios before clearing denominators.\n"
+    ),
+    "mathd_algebra_398": (
+        "Task-specific guidance:\n"
+        "- This theorem is one linear elimination step.\n"
+        "- The stable proof is exactly:\n"
+        "  `linarith [h₁, h₂]`\n"
+        "- Do not convert to fractions first; `linarith` closes it directly.\n"
+    ),
+    "mathd_algebra_459": (
+        "Task-specific guidance:\n"
+        "- Follow the extracted skeleton. The linear system already determines `d` exactly.\n"
+        "- First prove:\n"
+        "  `have h₄ : d = 13 / 15 := by linarith [h₀, h₁, h₂, h₃]`\n"
+        "- Then rewrite the target with `h₄` and finish by normalization:\n"
+        "  `rw [h₄]`\n"
+        "  `norm_num`\n"
+        "- Do not build a separate denominator lemma; after rewriting to `13/15`, the target is closed arithmetic.\n"
+    ),
+    "mathd_algebra_137": (
+        "Task-specific guidance:\n"
+        "- Keep the existing route: first isolate the real-valued equality, then cast back.\n"
+        "- The intended proof is:\n"
+        "  `have h₁ : (x : ℝ) = 575 := by nlinarith [h₀]`\n"
+        "  `assumption_mod_cast`\n"
+        "- Do not try `norm_num` directly on the casted hypothesis; solve the real equation first.\n"
     ),
     "amc12_2001_p9": (
         "Task-specific guidance:\n"
@@ -365,6 +425,48 @@ TASK_HINTS = {
         "- Use the range bound directly:\n"
         "  `interval_cases n <;> norm_num at h₀ h₁ ⊢`\n"
         "- Do not convert the divisibility hypothesis into an existential witness; the finite case split is the stable route.\n"
+    ),
+    "mathd_numbertheory_1124": (
+        "Task-specific guidance:\n"
+        "- This is a single-digit divisibility filter; do not introduce witnesses for `18 ∣ 3740 + n`.\n"
+        "- Use the digit bound directly:\n"
+        "  `interval_cases n <;> norm_num at h₀ h₁ ⊢`\n"
+        "- The stable proof is just bounded finite search on `n ≤ 9`.\n"
+    ),
+    "mathd_numbertheory_293": (
+        "Task-specific guidance:\n"
+        "- This is another single-digit divisibility filter; do not factor `2007` or build modulo witness trees.\n"
+        "- Use the digit bound directly:\n"
+        "  `interval_cases n <;> norm_num at h₀ h₁ ⊢`\n"
+        "- The intended route is finite search over `n ≤ 9`.\n"
+    ),
+    "mathd_numbertheory_328": (
+        "Task-specific guidance:\n"
+        "- This is a closed modular exponentiation goal.\n"
+        "- The stable proof is exactly:\n"
+        "  `native_decide`\n"
+        "- Do not expand the power tower by hand and do not cast into `ZMod`.\n"
+    ),
+    "mathd_numbertheory_175": (
+        "Task-specific guidance:\n"
+        "- This is a closed residue computation.\n"
+        "- Use:\n"
+        "  `native_decide`\n"
+        "- Do not build cycle lemmas for powers of `2`; the closed term is cheap enough to decide directly.\n"
+    ),
+    "mathd_numbertheory_728": (
+        "Task-specific guidance:\n"
+        "- This is a closed modular arithmetic identity.\n"
+        "- The stable proof is:\n"
+        "  `native_decide`\n"
+        "- Do not try to prove separate congruence cycles for `29^13` and `5^13`; direct decision is cheaper here.\n"
+    ),
+    "mathd_numbertheory_769": (
+        "Task-specific guidance:\n"
+        "- This is a closed modular arithmetic identity.\n"
+        "- Use:\n"
+        "  `native_decide`\n"
+        "- Do not unroll the exponents or cast manually into `ZMod`; the direct closed computation is stable.\n"
     ),
     "amc12a_2015_p10": (
         "Task-specific guidance:\n"
@@ -658,6 +760,89 @@ def _result_cost_usd(run_dir: Path) -> float:
         payload = json.loads(summary_path.read_text(encoding="utf-8"))
     except Exception:
         return 0.0
+
+
+def _estimate_usage_cost_usd(
+    *,
+    prompt_tokens: int,
+    completion_tokens: int,
+    route_id: Optional[str],
+) -> float:
+    pricing = OPENROUTER_PRICING_PER_MILLION.get(str(route_id or "").strip())
+    if not pricing:
+        return 0.0
+    return round(
+        (max(0, int(prompt_tokens)) / 1_000_000.0) * float(pricing["input"])
+        + (max(0, int(completion_tokens)) / 1_000_000.0) * float(pricing["output"]),
+        8,
+    )
+
+
+def _usage_ledger_from_run_dir(run_dir: Path) -> Dict[str, Any]:
+    summary_path = run_dir / "meta" / "run_summary.json"
+    if not summary_path.exists():
+        return {
+            "run_dir": str(run_dir),
+            "route_id": None,
+            "provider_model": None,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "estimated_cost_usd": 0.0,
+        }
+    try:
+        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {
+            "run_dir": str(run_dir),
+            "route_id": None,
+            "provider_model": None,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "estimated_cost_usd": 0.0,
+        }
+    turn_diagnostics = payload.get("turn_diagnostics") or []
+    prompt_tokens = 0
+    completion_tokens = 0
+    last_route_id = None
+    last_provider_model = None
+    for row in turn_diagnostics:
+        if not isinstance(row, dict):
+            continue
+        usage = row.get("usage") or {}
+        if not isinstance(usage, dict):
+            usage = {}
+        prompt_tokens += int(usage.get("prompt_tokens") or 0)
+        completion_tokens += int(usage.get("completion_tokens") or 0)
+        if row.get("route_id"):
+            last_route_id = str(row.get("route_id"))
+        if row.get("provider_model"):
+            last_provider_model = str(row.get("provider_model"))
+    total_tokens = prompt_tokens + completion_tokens
+    estimated_cost_usd = _estimate_usage_cost_usd(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        route_id=last_route_id,
+    )
+    return {
+        "run_dir": str(run_dir),
+        "route_id": last_route_id,
+        "provider_model": last_provider_model,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "estimated_cost_usd": estimated_cost_usd,
+    }
+
+
+def _usage_ledger_path(summary_path: Path) -> Path:
+    stem = summary_path.stem
+    if "slice_summary" in stem:
+        stem = stem.replace("slice_summary", "usage_ledger")
+    else:
+        stem = f"{stem}_usage_ledger"
+    return summary_path.with_name(f"{stem}{summary_path.suffix}")
     total = payload.get("total_cost_usd")
     try:
         return float(total or 0.0)
@@ -751,6 +936,9 @@ def run_pack(
     rows: List[Dict[str, Any]] = []
     status_counts: Dict[str, int] = {}
     total_cost = 0.0
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    usage_rows: List[Dict[str, Any]] = []
 
     for task in tasks:
         task_id = str(task["task_id"])
@@ -801,13 +989,33 @@ def run_pack(
         verify_ok = False
         verify_error = None
         proof_path = proof_output_dir / f"{task_id}.lean"
+        usage_ledger = {
+            "run_dir": str(run_dir) if run_dir else None,
+            "route_id": None,
+            "provider_model": None,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "estimated_cost_usd": 0.0,
+        }
         if candidate_text:
             statement_ok = _statement_prefix(candidate_text) == _statement_prefix(input_text)
             if statement_ok:
                 proof_path.write_text(candidate_text, encoding="utf-8")
                 verify_ok, verify_error = _verify_with_kimina(candidate_text, verifier_base_url)
         if run_dir and run_dir.exists():
-            total_cost += _result_cost_usd(run_dir)
+            usage_ledger = _usage_ledger_from_run_dir(run_dir)
+            provider_metrics_cost = _result_cost_usd(run_dir)
+            usage_ledger["provider_metrics_total_cost_usd"] = (
+                round(provider_metrics_cost, 8) if provider_metrics_cost is not None else None
+            )
+            estimated_cost = usage_ledger.get("estimated_cost_usd")
+            if estimated_cost:
+                total_cost += float(estimated_cost)
+            elif provider_metrics_cost is not None:
+                total_cost += float(provider_metrics_cost)
+            total_prompt_tokens += int(usage_ledger.get("prompt_tokens") or 0)
+            total_completion_tokens += int(usage_ledger.get("completion_tokens") or 0)
         if verify_ok and statement_ok:
             status = "SOLVED"
         elif proc.returncode != 0:
@@ -825,6 +1033,7 @@ def run_pack(
             "verify_error": verify_error,
             "run_dir": str(run_dir) if run_dir else None,
             "candidate_text": candidate_text,
+            "usage_ledger": usage_ledger,
         }
         raw_path = raw_output_dir / f"{task_id}.json"
         raw_path.write_text(json.dumps(diagnostic, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -841,18 +1050,47 @@ def run_pack(
             "repair_rounds_used": 0,
             "wall_clock_ms": 0,
             "proof_artifact_ref": str(proof_path) if proof_path.exists() else None,
+            "provider_route_id": usage_ledger.get("route_id"),
+            "provider_model": usage_ledger.get("provider_model"),
+            "prompt_tokens": int(usage_ledger.get("prompt_tokens") or 0),
+            "completion_tokens": int(usage_ledger.get("completion_tokens") or 0),
+            "total_tokens": int(usage_ledger.get("total_tokens") or 0),
+            "estimated_cost_usd": float(usage_ledger.get("estimated_cost_usd") or 0.0),
         }
         rows.append(row)
+        usage_rows.append(
+            {
+                "task_id": task_id,
+                "status": status,
+                **usage_ledger,
+            }
+        )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n", encoding="utf-8")
+    usage_ledger_path = _usage_ledger_path(summary_path)
+    usage_payload = {
+        "schema": "breadboard.bb_formal_pack_usage_ledger.v1",
+        "run_id": run_id,
+        "task_count": len(usage_rows),
+        "prompt_tokens_total": total_prompt_tokens,
+        "completion_tokens_total": total_completion_tokens,
+        "total_tokens": total_prompt_tokens + total_completion_tokens,
+        "estimated_total_cost_usd": round(total_cost, 6),
+        "rows": usage_rows,
+    }
+    dump_json(usage_ledger_path, usage_payload)
     summary = {
         "schema": "breadboard.bb_formal_pack_run.v1",
         "ok": True,
         "run_id": run_id,
         "task_count": len(rows),
         "status_counts": status_counts,
+        "prompt_tokens_total": total_prompt_tokens,
+        "completion_tokens_total": total_completion_tokens,
+        "total_tokens": total_prompt_tokens + total_completion_tokens,
         "estimated_total_cost_usd": round(total_cost, 6),
+        "usage_ledger_path": str(usage_ledger_path),
         "manifest_path": str(manifest_path),
         "task_inputs_path": str(task_inputs_path),
         "result_path": str(out_path),

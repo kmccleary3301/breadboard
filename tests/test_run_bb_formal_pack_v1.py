@@ -255,6 +255,50 @@ def test_mathd_numbertheory_185_prompt_includes_stop_after_rewrite_guidance() ->
     assert "Do not add a final `norm_num`" in prompt
 
 
+def test_usage_ledger_from_run_dir_estimates_cost_from_turn_diagnostics(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    meta = run_dir / "meta"
+    meta.mkdir(parents=True)
+    (meta / "run_summary.json").write_text(
+        """
+        {
+          "turn_diagnostics": [
+            {
+              "route_id": "openrouter/openai/gpt-5.4",
+              "provider_model": "openai/gpt-5.4-20260305",
+              "usage": {
+                "prompt_tokens": 1000,
+                "completion_tokens": 200
+              }
+            },
+            {
+              "route_id": "openrouter/openai/gpt-5.4",
+              "provider_model": "openai/gpt-5.4-20260305",
+              "usage": {
+                "prompt_tokens": 500,
+                "completion_tokens": 50
+              }
+            }
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+    ledger = runner._usage_ledger_from_run_dir(run_dir)
+    assert ledger["route_id"] == "openrouter/openai/gpt-5.4"
+    assert ledger["provider_model"] == "openai/gpt-5.4-20260305"
+    assert ledger["prompt_tokens"] == 1500
+    assert ledger["completion_tokens"] == 250
+    assert ledger["total_tokens"] == 1750
+    assert ledger["estimated_cost_usd"] == 0.0075
+
+
+def test_usage_ledger_path_rewrites_slice_summary_name() -> None:
+    summary_path = Path("/tmp/example/bb_hilbert_like_slice_summary_v2.json")
+    ledger_path = runner._usage_ledger_path(summary_path)
+    assert ledger_path.name == "bb_hilbert_like_usage_ledger_v2.json"
+
+
 def test_mathd_numbertheory_233_prompt_includes_zmod_native_decide_guidance() -> None:
     prompt = runner._build_prompt(
         "mathd_numbertheory_233",
@@ -339,6 +383,59 @@ def test_mathd_numbertheory_320_prompt_includes_interval_search_guidance() -> No
 
     assert "interval_cases n <;> norm_num at h₀ h₁ ⊢" in prompt
     assert "Do not convert the divisibility hypothesis into an existential witness" in prompt
+
+
+def test_mathd_numbertheory_1124_prompt_includes_digit_search_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_1124",
+        "import Mathlib\n\ntheorem mathd_numbertheory_1124 : True := by\n  trivial\n",
+    )
+
+    assert "single-digit divisibility filter" in prompt
+    assert "interval_cases n <;> norm_num at h₀ h₁ ⊢" in prompt
+
+
+def test_mathd_numbertheory_293_prompt_includes_digit_search_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_293",
+        "import Mathlib\n\ntheorem mathd_numbertheory_293 : True := by\n  trivial\n",
+    )
+
+    assert "single-digit divisibility filter" in prompt
+    assert "interval_cases n <;> norm_num at h₀ h₁ ⊢" in prompt
+
+
+def test_mathd_numbertheory_closed_mod_prompts_use_native_decide() -> None:
+    for task_id in [
+        "mathd_numbertheory_328",
+        "mathd_numbertheory_175",
+        "mathd_numbertheory_728",
+        "mathd_numbertheory_769",
+    ]:
+        prompt = runner._build_prompt(
+            task_id,
+            f"import Mathlib\n\ntheorem {task_id} : True := by\n  trivial\n",
+        )
+
+        assert "`native_decide`" in prompt
+        assert "Do not" in prompt
+
+
+def test_pack_l_algebra_prompts_include_direct_guidance() -> None:
+    expectations = {
+        "mathd_algebra_141": "a^2 + b^2 = (a + b)^2 - 2 * (a * b)",
+        "mathd_algebra_209": "(congrArg σ.1 h₀).symm",
+        "mathd_algebra_33": "field_simp [h₀]",
+        "mathd_algebra_398": "linarith [h₁, h₂]",
+        "mathd_algebra_459": "have h₄ : d = 13 / 15 := by linarith [h₀, h₁, h₂, h₃]",
+        "mathd_algebra_137": "assumption_mod_cast",
+    }
+    for task_id, needle in expectations.items():
+        prompt = runner._build_prompt(
+            task_id,
+            f"import Mathlib\n\ntheorem {task_id} : True := by\n  trivial\n",
+        )
+        assert needle in prompt
 
 
 def test_amc12a_2015_p10_prompt_includes_factorization_and_interval_guidance() -> None:

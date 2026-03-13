@@ -34,6 +34,12 @@ def convert(
 ) -> Dict[str, Any]:
     manifest = load_manifest(manifest_path)
     task_hashes = _load_task_hashes(task_inputs_path)
+    allowed_task_ids = {
+        str(task_id)
+        for task_id in manifest.get("benchmark", {})
+        .get("slice", {})
+        .get("task_ids", [])
+    }
     payload = json.loads(hilbert_result_path.read_text(encoding="utf-8"))
     successes = payload.get("successes", {})
     proofs = payload.get("proofs", {})
@@ -43,6 +49,8 @@ def convert(
     problem_ids = payload.get("problem_ids", [])
     if not problem_ids and isinstance(successes, dict):
         problem_ids = list(successes.keys())
+    if allowed_task_ids:
+        problem_ids = [str(task_id) for task_id in problem_ids if str(task_id) in allowed_task_ids]
     budget_class = manifest["budget"]["class"]
     toolchain = manifest["toolchain"]
     run_id = str(manifest.get("run_id") or "hilbert-pack")

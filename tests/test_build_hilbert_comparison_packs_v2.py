@@ -52,6 +52,12 @@ def test_amc_unsound_counterexample_description_is_present() -> None:
     assert "2 * sqrt 5" in reason
 
 
+def test_mathd_numbertheory_728_unsound_description_is_present() -> None:
+    reason = packs.EXCLUDED_TASKS["mathd_numbertheory_728"]
+    assert "(29^13 - 5^13) % 7 = 3" in reason
+    assert "not 0" in reason
+
+
 def test_imo_stress_pack_is_single_valid_task(tmp_path: Path) -> None:
     summary = packs.build_pack("pack_c_imo1977_p6_stress_minif2f_v1", tmp_path)
 
@@ -256,6 +262,76 @@ def test_pack_j_residue_gcd_mix_tasks(tmp_path: Path) -> None:
     assert metadata["included_task_ids"] == summary["task_ids"]
 
 
+def test_pack_m_boundary_olympiad_mix_tasks(tmp_path: Path) -> None:
+    summary = packs.build_pack("pack_m_boundary_olympiad_mix_minif2f_v1", tmp_path)
+
+    assert summary["task_count"] == 4
+    assert summary["task_ids"] == [
+        "imo_1960_p2",
+        "imo_1963_p5",
+        "induction_nfactltnexpnm1ngt3",
+        "numbertheory_fxeq4powxp6powxp9powx_f2powmdvdf2pown",
+    ]
+    assert summary["excluded_tasks"] == []
+
+    metadata = json.loads((tmp_path / "pack_m_boundary_olympiad_mix_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == summary["task_ids"]
+    assert metadata["included_task_ids"] == summary["task_ids"]
+
+
+def test_real_namespace_is_canonicalized() -> None:
+    original = "theorem t : real.cos x = real.sqrt y := by\n"
+    rewritten = packs._canonicalize_formal_statement("dummy", original)
+    assert "Real.cos" in rewritten
+    assert "Real.sqrt" in rewritten
+
+
+def test_pack_k_moddigit_closedform_tasks(tmp_path: Path) -> None:
+    summary = packs.build_pack("pack_k_moddigit_closedform_minif2f_v1", tmp_path)
+
+    assert summary["task_count"] == 5
+    assert summary["task_ids"] == [
+        "mathd_numbertheory_1124",
+        "mathd_numbertheory_293",
+        "mathd_numbertheory_328",
+        "mathd_numbertheory_175",
+        "mathd_numbertheory_769",
+    ]
+    assert summary["excluded_tasks"] == [
+        {"task_id": "mathd_numbertheory_728", "reason": packs.EXCLUDED_TASKS["mathd_numbertheory_728"]},
+    ]
+
+    metadata = json.loads((tmp_path / "pack_k_moddigit_closedform_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == [
+        "mathd_numbertheory_1124",
+        "mathd_numbertheory_293",
+        "mathd_numbertheory_328",
+        "mathd_numbertheory_175",
+        "mathd_numbertheory_728",
+        "mathd_numbertheory_769",
+    ]
+    assert metadata["included_task_ids"] == summary["task_ids"]
+
+
+def test_pack_l_algebra_linear_equiv_tasks(tmp_path: Path) -> None:
+    summary = packs.build_pack("pack_l_algebra_linear_equiv_minif2f_v1", tmp_path)
+
+    assert summary["task_count"] == 6
+    assert summary["task_ids"] == [
+        "mathd_algebra_141",
+        "mathd_algebra_209",
+        "mathd_algebra_33",
+        "mathd_algebra_398",
+        "mathd_algebra_459",
+        "mathd_algebra_137",
+    ]
+    assert summary["excluded_tasks"] == []
+
+    metadata = json.loads((tmp_path / "pack_l_algebra_linear_equiv_minif2f_v1" / "pack_metadata.json").read_text())
+    assert metadata["requested_task_ids"] == summary["task_ids"]
+    assert metadata["included_task_ids"] == summary["task_ids"]
+
+
 def test_legacy_nat_and_finset_names_are_canonicalized() -> None:
     statement = (
         "theorem sample\n"
@@ -328,3 +404,17 @@ def test_standalone_finset_token_is_canonicalized() -> None:
     canonical = packs._canonicalize_formal_statement("mathd_numbertheory_221", statement)
 
     assert "(S : Finset ℕ)" in canonical
+
+
+def test_equiv_and_rat_denom_are_canonicalized() -> None:
+    statement = (
+        "theorem sample\n"
+        "  (σ : equiv ℝ ℝ)\n"
+        "  (d : ℚ) : ↑d.denom + d.num = 28 := by\n"
+    )
+
+    canonical = packs._canonicalize_formal_statement("sample", statement)
+
+    assert "(σ : Equiv ℝ ℝ)" in canonical
+    assert ".denom" not in canonical
+    assert ".den" in canonical
