@@ -123,6 +123,45 @@ def test_mathd_numbertheory_427_prompt_includes_closed_form_guidance() -> None:
     assert "Do not use `subst h₀`" in prompt
 
 
+def test_amc12_2001_p9_prompt_includes_one_step_substitution_guidance() -> None:
+    prompt = runner._build_prompt(
+        "amc12_2001_p9",
+        "import Mathlib\n\ntheorem amc12_2001_p9 : True := by\n  trivial\n",
+    )
+
+    assert "have hcalc := h₀ 500" in prompt
+    assert "have hm : (500 : ℝ) * ((6 : ℝ) / 5) = 600 := by norm_num" in prompt
+    assert "have h600 : f 600 = f 500 / ((6 : ℝ) / 5) := by simpa [hm] using hcalc" in prompt
+    assert "Do not rewrite `h₁` inside `hcalc`" in prompt
+    assert "_ = 5 / 2 := by norm_num" in prompt
+
+
+def test_mathd_numbertheory_33_prompt_includes_interval_cases_guidance() -> None:
+    prompt = runner._build_prompt(
+        "mathd_numbertheory_33",
+        "import Mathlib\n\ntheorem mathd_numbertheory_33 : True := by\n  trivial\n",
+    )
+
+    assert "interval_cases n <;> norm_num at h₁ ⊢" in prompt
+    assert "Do not insert an extra bound lemma like `have hn : n ≤ 397 := ...`" in prompt
+    assert "Do not use `Nat.modEq_iff_dvd'`" in prompt
+
+
+def test_amc12a_2015_p10_prompt_includes_factorization_and_interval_guidance() -> None:
+    prompt = runner._build_prompt(
+        "amc12a_2015_p10",
+        "import Mathlib\n\ntheorem amc12a_2015_p10 : True := by\n  trivial\n",
+    )
+
+    assert "have hfac : (x + 1) * (y + 1) = 81 := by nlinarith [h₂]" in prompt
+    assert "have hy1_le : y + 1 ≤ 9 := by" in prompt
+    assert "have hbig : 110 ≤ (x + 1) * (y + 1) := by nlinarith" in prompt
+    assert "have hy_cases : y + 1 = 3 ∨ y + 1 = 9 := by" in prompt
+    assert "interval_cases hy : y + 1 <;> norm_num at hfac h₀ h₁ hy1_le ⊢" in prompt
+    assert "have hx27 : x + 1 = 27 := by nlinarith [hfac, hy3]" in prompt
+    assert "have hx9 : x + 1 = 9 := by nlinarith [hfac, hy9]" in prompt
+
+
 def test_mathd_algebra_156_prompt_includes_case_split_guidance() -> None:
     prompt = runner._build_prompt(
         "mathd_algebra_156",

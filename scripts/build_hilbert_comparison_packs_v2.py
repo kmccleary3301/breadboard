@@ -87,6 +87,14 @@ PACKS = {
         "mathd_algebra_77",
         "mathd_algebra_131",
     ],
+    "pack_f_discrete_arithmetic_mix_minif2f_v1": [
+        "amc12a_2015_p10",
+        "aime_1991_p1",
+        "amc12a_2008_p4",
+        "amc12_2001_p9",
+        "mathd_numbertheory_48",
+        "mathd_numbertheory_33",
+    ],
 }
 EXCLUDED_TASKS = {
     "mathd_numbertheory_780": (
