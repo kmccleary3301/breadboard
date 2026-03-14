@@ -40,6 +40,13 @@ Phase-1 T0 freezes:
 - `registries/lane_registry_v0.json`
 - `registries/policy_registry_v0.json`
 
+### Bootstrap / T1 emitters
+
+- `scripts/bootstrap_darwin_campaign_specs_v0.py`
+- `scripts/build_darwin_topology_family_runner_v0.py`
+- `scripts/run_darwin_t1_baseline_scorecard_v1.py`
+- `scripts/build_darwin_weekly_packet_v1.py`
+
 ## Legacy compatibility
 
 DARWIN is the canonical program name. Existing stable `evolake` runtime identifiers, artifact keys, and extension names remain valid until a dedicated migration tranche lands. This pack therefore introduces DARWIN contracts without breaking the existing EvoLake bridge layer.

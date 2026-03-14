@@ -1,0 +1,137 @@
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_BOOTSTRAP_MANIFEST = ROOT / "artifacts" / "darwin" / "bootstrap" / "bootstrap_manifest_v0.json"
+DEFAULT_TOPOLOGY_MANIFEST = ROOT / "artifacts" / "darwin" / "topology" / "topology_family_runner_v0.json"
+DEFAULT_OUT_DIR = ROOT / "artifacts" / "darwin" / "scorecards"
+
+
+PREREQUISITE_CHECKS: dict[str, dict[str, str]] = {
+    "lane.atp": {
+        "corrected_benchmark_stack": "docs/contracts/atp/README.md",
+        "frozen_slice_policy": "docs/contracts/benchmarks/ATP_HILBERT_TRANCHE_SELECTION_POLICY_V1.md",
+        "artifact_complete_replay": "docs/atp_phase1_completion_gate_2026-03-13.md",
+    },
+    "lane.harness": {
+        "parity_runner": "tests/test_parity_runner.py",
+        "drift_audit": "tests/test_audit_e4_target_drift.py",
+        "replay_bundle": "scripts/run_phase5_replay_reliability_bundle.sh",
+    },
+    "lane.systems": {
+        "compiler_or_runtime": "agentic_coder_prototype",
+        "benchmark_harness": "scripts/build_ink_publication_benchmark_pack.py",
+        "budget_class_enforcement": "docs/contracts/policies/P3_SPEND_ATTRIBUTION_BASELINE_V1.md",
+    },
+}
+
+
+def _load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _exists(rel_path: str) -> bool:
+    return (ROOT / rel_path).exists()
+
+
+def build_scorecard(
+    bootstrap_manifest_path: Path = DEFAULT_BOOTSTRAP_MANIFEST,
+    topology_manifest_path: Path = DEFAULT_TOPOLOGY_MANIFEST,
+) -> dict:
+    bootstrap = _load_json(bootstrap_manifest_path)
+    topology = _load_json(topology_manifest_path)
+
+    topology_counts: dict[str, int] = {}
+    for row in topology.get("matrix") or []:
+        lane_id = str(row["lane_id"])
+        topology_counts[lane_id] = topology_counts.get(lane_id, 0) + 1
+
+    lane_rows: list[dict] = []
+    for row in bootstrap.get("specs") or []:
+        spec = _load_json(ROOT / row["path"])
+        lane_id = spec["lane_id"]
+        prereq_checks = PREREQUISITE_CHECKS.get(lane_id, {})
+        prereq_results = {name: _exists(path) for name, path in prereq_checks.items()}
+        campaign_spec_valid = True
+        policy_present = True
+        topology_family_count = topology_counts.get(lane_id, 0)
+        components = {
+            "campaign_spec_valid": campaign_spec_valid,
+            "policy_present": policy_present,
+            "topology_families_present": topology_family_count >= 3,
+            "prerequisites_passed": all(prereq_results.values()) if prereq_results else False,
+        }
+        score = sum(1.0 for ok in components.values() if ok) / len(components)
+        lane_rows.append(
+            {
+                "lane_id": lane_id,
+                "campaign_id": spec["campaign_id"],
+                "normalized_score": round(score, 6),
+                "status": "ready" if score >= 1.0 else "partial",
+                "topology_family_count": topology_family_count,
+                "components": components,
+                "prerequisites": prereq_results,
+            }
+        )
+
+    mean_score = sum(row["normalized_score"] for row in lane_rows) / len(lane_rows) if lane_rows else 0.0
+    overall_ok = all(row["status"] == "ready" for row in lane_rows)
+    return {
+        "schema": "breadboard.darwin.t1_baseline_scorecard.v1",
+        "score_type": "structural_bootstrap_readiness",
+        "overall_ok": overall_ok,
+        "mean_normalized_score": round(mean_score, 6),
+        "lane_count": len(lane_rows),
+        "lanes": lane_rows,
+    }
+
+
+def _to_markdown(payload: dict) -> str:
+    lines = [
+        "# DARWIN T1 Baseline Scorecard v1",
+        "",
+        f"- overall_ok: `{str(payload['overall_ok']).lower()}`",
+        f"- mean_normalized_score: `{payload['mean_normalized_score']}`",
+        "",
+        "| lane | status | normalized_score | topology_families |",
+        "| --- | --- | ---: | ---: |",
+    ]
+    for lane in payload.get("lanes") or []:
+        lines.append(
+            f"| `{lane['lane_id']}` | `{lane['status']}` | `{lane['normalized_score']}` | `{lane['topology_family_count']}` |"
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def write_scorecard(out_dir: Path = DEFAULT_OUT_DIR) -> dict:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    payload = build_scorecard()
+    out_json = out_dir / "t1_baseline_scorecard.latest.json"
+    out_md = out_dir / "t1_baseline_scorecard.latest.md"
+    out_json.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    out_md.write_text(_to_markdown(payload), encoding="utf-8")
+    return {"out_json": str(out_json), "out_md": str(out_md), "overall_ok": payload["overall_ok"]}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Emit the DARWIN T1 structural baseline scorecard.")
+    parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    summary = write_scorecard(Path(args.out_dir))
+    if args.json:
+        print(json.dumps(summary, indent=2, sort_keys=True))
+    else:
+        print(f"scorecard_json={summary['out_json']}")
+        print(f"scorecard_md={summary['out_md']}")
+        print(f"overall_ok={summary['overall_ok']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
