@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/effective_config_v0.schema.json",
+  "title": "DarwinEffectiveConfigV0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "campaign_id",
+    "lane_id",
+    "candidate_id",
+    "trial_label",
+    "shadow_mode",
+    "runtime_consumed",
+    "compiled_from",
+    "compiled_bindings",
+    "override_policy",
+    "digests"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.effective_config.v0" },
+    "campaign_id": { "type": "string", "minLength": 1 },
+    "lane_id": { "type": "string", "minLength": 1 },
+    "candidate_id": { "type": "string", "minLength": 1 },
+    "trial_label": { "type": "string", "minLength": 1 },
+    "shadow_mode": { "type": "boolean" },
+    "runtime_consumed": { "type": "boolean" },
+    "compiled_from": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["campaign_spec_ref", "lane_registry_ref", "policy_registry_ref"],
+      "properties": {
+        "campaign_spec_ref": { "type": "string", "minLength": 1 },
+        "lane_registry_ref": { "type": "string", "minLength": 1 },
+        "policy_registry_ref": { "type": "string", "minLength": 1 }
+      }
+    },
+    "compiled_bindings": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "task_id",
+        "topology_id",
+        "policy_bundle_id",
+        "budget_class",
+        "memory_policy_id",
+        "environment_digest",
+        "allowed_tools",
+        "command"
+      ],
+      "properties": {
+        "task_id": { "type": "string", "minLength": 1 },
+        "topology_id": { "type": "string", "minLength": 1 },
+        "policy_bundle_id": { "type": "string", "minLength": 1 },
+        "budget_class": { "type": "string", "minLength": 1 },
+        "memory_policy_id": { "type": "string", "minLength": 1 },
+        "environment_digest": { "type": "string", "minLength": 1 },
+        "allowed_tools": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "override_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "applied_overrides", "rejected_overrides"],
+      "properties": {
+        "mode": { "const": "allowlist_only" },
+        "applied_overrides": { "type": "array", "items": { "type": "string" } },
+        "rejected_overrides": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "digests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authored_input_sha256", "command_sha256", "compiled_inputs_sha256"],
+      "properties": {
+        "authored_input_sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "command_sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "compiled_inputs_sha256": { "type": "string", "minLength": 64, "maxLength": 64 }
+      }
+    }
+  }
+}
