@@ -2,6 +2,8 @@
 
 Date: 2026-03-14
 
+> Superseded as the current execution anchor by `docs/darwin_phase1_repo_swe_search_status_2026-03-14.md` and `docs/darwin_phase1_execution_board_2026-03-14.md`.
+
 ## Scope completed
 
 - DARWIN / EvoLake compatibility posture frozen

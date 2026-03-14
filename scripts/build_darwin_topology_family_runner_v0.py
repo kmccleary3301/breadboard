@@ -29,6 +29,111 @@ TOPOLOGY_FAMILIES = [
     },
 ]
 
+TOPOLOGY_COMPATIBILITY = {
+    "lane.atp": {
+        "policy.topology.single_v0": {
+            "supported": True,
+            "execution_descriptor": "single agent baseline with verifier-rich evaluator",
+            "note": "ATP baseline comparator",
+        },
+        "policy.topology.pev_v0": {
+            "supported": True,
+            "execution_descriptor": "planner executor verifier loop",
+            "note": "shadow-approved for structured proof search",
+        },
+        "policy.topology.pwrv_v0": {
+            "supported": True,
+            "execution_descriptor": "planner workers referee verifier",
+            "note": "kept shadow until higher-tier evidence exists",
+        },
+    },
+    "lane.harness": {
+        "policy.topology.single_v0": {
+            "supported": True,
+            "execution_descriptor": "single agent harness baseline",
+            "note": "baseline comparator",
+        },
+        "policy.topology.pev_v0": {
+            "supported": True,
+            "execution_descriptor": "planner executor verifier loop",
+            "note": "first search-enabled lane",
+        },
+        "policy.topology.pwrv_v0": {
+            "supported": False,
+            "execution_descriptor": "planner workers referee verifier",
+            "note": "deferred until repo-scale evidence exists",
+        },
+    },
+    "lane.systems": {
+        "policy.topology.single_v0": {
+            "supported": True,
+            "execution_descriptor": "single agent systems baseline",
+            "note": "baseline comparator",
+        },
+        "policy.topology.pev_v0": {
+            "supported": True,
+            "execution_descriptor": "planner executor verifier loop",
+            "note": "allowed for bounded systems tuning",
+        },
+        "policy.topology.pwrv_v0": {
+            "supported": True,
+            "execution_descriptor": "planner workers referee verifier",
+            "note": "shadow-supported for systems-only bakeoffs",
+        },
+    },
+    "lane.repo_swe": {
+        "policy.topology.single_v0": {
+            "supported": True,
+            "execution_descriptor": "single agent patch-and-test baseline",
+            "note": "Phase-1 baseline comparator",
+        },
+        "policy.topology.pev_v0": {
+            "supported": True,
+            "execution_descriptor": "planner executor verifier patch loop",
+            "note": "first repo-scale search topology",
+        },
+        "policy.topology.pwrv_v0": {
+            "supported": True,
+            "execution_descriptor": "planner workers referee verifier patch loop",
+            "note": "allowed but not yet promoted",
+        },
+    },
+    "lane.scheduling": {
+        "policy.topology.single_v0": {
+            "supported": True,
+            "execution_descriptor": "single agent schedule constructor",
+            "note": "placeholder only",
+        },
+        "policy.topology.pev_v0": {
+            "supported": True,
+            "execution_descriptor": "planner executor verifier scheduler",
+            "note": "placeholder only",
+        },
+        "policy.topology.pwrv_v0": {
+            "supported": False,
+            "execution_descriptor": "planner workers referee verifier scheduler",
+            "note": "deferred until scenario-pack exists",
+        },
+    },
+    "lane.research": {
+        "policy.topology.single_v0": {
+            "supported": True,
+            "execution_descriptor": "single agent evidence synthesis baseline",
+            "note": "placeholder only",
+        },
+        "policy.topology.pev_v0": {
+            "supported": False,
+            "execution_descriptor": "planner executor verifier evidence synthesis",
+            "note": "deferred until citation checker exists",
+        },
+        "policy.topology.pwrv_v0": {
+            "supported": False,
+            "execution_descriptor": "planner workers referee verifier evidence synthesis",
+            "note": "deferred until adversarial review harness exists",
+        },
+    },
+}
+
 
 def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -50,6 +155,14 @@ def build_topology_runner_manifest(
     matrix: list[dict] = []
     for spec in specs:
         for family in TOPOLOGY_FAMILIES:
+            compatibility = TOPOLOGY_COMPATIBILITY.get(spec["lane_id"], {}).get(
+                family["topology_id"],
+                {
+                    "supported": False,
+                    "execution_descriptor": family["label"],
+                    "note": "no compatibility policy recorded",
+                },
+            )
             matrix.append(
                 {
                     "campaign_id": spec["campaign_id"],
@@ -57,6 +170,9 @@ def build_topology_runner_manifest(
                     "topology_id": family["topology_id"],
                     "label": family["label"],
                     "policy_bundle_present": family["required_policy_bundle_id"] in approved_bundles,
+                    "supported": compatibility["supported"],
+                    "execution_descriptor": compatibility["execution_descriptor"],
+                    "compatibility_note": compatibility["note"],
                     "budget_class": spec["budget_class"],
                 }
             )

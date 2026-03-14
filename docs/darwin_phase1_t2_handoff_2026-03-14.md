@@ -2,6 +2,8 @@
 
 Date: 2026-03-14
 
+> This handoff note is now partially superseded by live typed-search execution in `docs/darwin_phase1_repo_swe_search_status_2026-03-14.md`.
+
 The next tranche after live T1 baselines is **T2: typed search and transfer**.
 
 ## Priority order

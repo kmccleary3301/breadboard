@@ -25,6 +25,9 @@ Phase-1 T0 freezes:
 - `DARWIN_COMPATIBILITY_MAP_V0.md`
 - `DARWIN_ARCHITECTURE_BOUNDARY_V0.md`
 - `DARWIN_ARTIFACT_LAYOUT_V0.md`
+- `DARWIN_REPO_SWE_BASELINE_V0.md`
+- `DARWIN_TOPOLOGY_COMPATIBILITY_V1.md`
+- `DARWIN_TYPED_SEARCH_CORE_V1.md`
 
 ### Machine-readable schemas
 
@@ -54,6 +57,12 @@ Phase-1 T0 freezes:
 - `scripts/build_darwin_bootstrap_rollup_v0.py`
 - `scripts/check_darwin_lane_readiness_v0.py`
 - `scripts/run_darwin_t1_smoke_v1.py`
+- `scripts/build_darwin_future_lane_placeholders_v0.py`
+- `scripts/build_darwin_typed_search_core_v1.py`
+- `scripts/run_darwin_t2_search_smoke_v1.py`
+- `scripts/build_darwin_invalid_comparison_ledger_v1.py`
+- `scripts/emit_darwin_search_evidence_v1.py`
+- `scripts/run_darwin_phase1_orchestration_v1.py`
 
 ## Legacy compatibility
 

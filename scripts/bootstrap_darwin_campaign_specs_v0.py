@@ -62,6 +62,13 @@ def build_bootstrap_specs() -> list[dict]:
             suite_id="suite.systems.algorithms.phase1.v0",
             allowed_tools=["python", "benchmark_runner", "filesystem_read"],
         ),
+        _base_campaign(
+            campaign_id="camp.darwin.phase1.repo_swe.bootstrap.v0",
+            lane_id="lane.repo_swe",
+            objective_id="objective.repo_swe.patch_and_workspace_baseline",
+            suite_id="suite.repo_swe.patch_workspace.phase1.v0",
+            allowed_tools=["pytest", "patch_apply", "git_diff", "filesystem_read"],
+        ),
     ]
 
 

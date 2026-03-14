@@ -11,6 +11,7 @@ DEFAULT_TOPOLOGY_MANIFEST = ROOT / "artifacts" / "darwin" / "topology" / "topolo
 DEFAULT_LIVE_SUMMARY = ROOT / "artifacts" / "darwin" / "live_baselines" / "live_baseline_summary_v1.json"
 DEFAULT_CLAIM_LEDGER = ROOT / "artifacts" / "darwin" / "claims" / "claim_ledger_v1.json"
 DEFAULT_EVIDENCE_BUNDLE = ROOT / "artifacts" / "darwin" / "evidence" / "darwin_phase1_t1_live_baselines_bundle_v1.json"
+DEFAULT_SEARCH_SUMMARY = ROOT / "artifacts" / "darwin" / "search" / "search_smoke_summary_v1.json"
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "darwin" / "scorecards"
 
 
@@ -30,6 +31,11 @@ PREREQUISITE_CHECKS: dict[str, dict[str, str]] = {
         "benchmark_harness": "scripts/build_ink_publication_benchmark_pack.py",
         "budget_class_enforcement": "docs/contracts/policies/P3_SPEND_ATTRIBUTION_BASELINE_V1.md",
     },
+    "lane.repo_swe": {
+        "repo_snapshotting": "docs/contracts/darwin/DARWIN_REPO_SWE_BASELINE_V0.md",
+        "test_harness": "tests/test_opencode_patch_apply_codex.py",
+        "contamination_controls": "docs/contracts/darwin/DARWIN_CLAIM_LADDER_V0.md",
+    },
 }
 
 
@@ -44,6 +50,8 @@ def _exists(rel_path: str) -> bool:
 def build_scorecard(
     bootstrap_manifest_path: Path = DEFAULT_BOOTSTRAP_MANIFEST,
     topology_manifest_path: Path = DEFAULT_TOPOLOGY_MANIFEST,
+    *,
+    include_search: bool = False,
 ) -> dict:
     bootstrap = _load_json(bootstrap_manifest_path)
     topology = _load_json(topology_manifest_path)
@@ -54,6 +62,10 @@ def build_scorecard(
         claim_ledger = _load_json(DEFAULT_CLAIM_LEDGER)
         claim_ids = {claim["claim_id"] for claim in claim_ledger.get("claims") or []}
     evidence_present = DEFAULT_EVIDENCE_BUNDLE.exists()
+    search_by_lane: dict[str, dict] = {}
+    if include_search and DEFAULT_SEARCH_SUMMARY.exists():
+        search_summary = _load_json(DEFAULT_SEARCH_SUMMARY)
+        search_by_lane = {row["lane_id"]: row for row in search_summary.get("lanes") or []}
 
     topology_counts: dict[str, int] = {}
     for row in topology.get("matrix") or []:
@@ -80,6 +92,7 @@ def build_scorecard(
             "claim_present": f"claim.darwin.phase1.{lane_id}.live_baseline.v1" in claim_ids,
         }
         score = sum(1.0 for ok in components.values() if ok) / len(components)
+        search_row = search_by_lane.get(lane_id, {})
         lane_rows.append(
             {
                 "lane_id": lane_id,
@@ -88,6 +101,12 @@ def build_scorecard(
                 "status": "ready" if score >= 1.0 else "partial",
                 "topology_family_count": topology_family_count,
                 "live_primary_score": live_lane.get("primary_score") if live_lane else None,
+                "search_enabled": bool(search_row),
+                "mutation_trial_count": int(search_row.get("mutation_trial_count") or 0),
+                "baseline_primary_score": search_row.get("baseline_primary_score"),
+                "best_mutated_score": search_row.get("best_mutated_score"),
+                "comparative_delta": search_row.get("comparative_delta"),
+                "best_candidate_id": search_row.get("best_candidate_id"),
                 "components": components,
                 "prerequisites": prereq_results,
             }
@@ -97,7 +116,7 @@ def build_scorecard(
     overall_ok = all(row["status"] == "ready" for row in lane_rows)
     return {
         "schema": "breadboard.darwin.t1_baseline_scorecard.v1",
-        "score_type": "structural_bootstrap_readiness",
+        "score_type": "live_comparative_readiness" if include_search else "structural_bootstrap_readiness",
         "overall_ok": overall_ok,
         "mean_normalized_score": round(mean_score, 6),
         "lane_count": len(lane_rows),
@@ -112,19 +131,19 @@ def _to_markdown(payload: dict) -> str:
         f"- overall_ok: `{str(payload['overall_ok']).lower()}`",
         f"- mean_normalized_score: `{payload['mean_normalized_score']}`",
         "",
-        "| lane | status | normalized_score | topology_families |",
-        "| --- | --- | ---: | ---: |",
+        "| lane | status | normalized_score | topology_families | search_trials | delta |",
+        "| --- | --- | ---: | ---: | ---: | ---: |",
     ]
     for lane in payload.get("lanes") or []:
         lines.append(
-            f"| `{lane['lane_id']}` | `{lane['status']}` | `{lane['normalized_score']}` | `{lane['topology_family_count']}` |"
+            f"| `{lane['lane_id']}` | `{lane['status']}` | `{lane['normalized_score']}` | `{lane['topology_family_count']}` | `{lane.get('mutation_trial_count', 0)}` | `{lane.get('comparative_delta', 'n/a')}` |"
         )
     return "\n".join(lines).rstrip() + "\n"
 
 
-def write_scorecard(out_dir: Path = DEFAULT_OUT_DIR) -> dict:
+def write_scorecard(out_dir: Path = DEFAULT_OUT_DIR, *, include_search: bool = False) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
-    payload = build_scorecard()
+    payload = build_scorecard(include_search=include_search)
     out_json = out_dir / "t1_baseline_scorecard.latest.json"
     out_md = out_dir / "t1_baseline_scorecard.latest.md"
     out_json.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -136,9 +155,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Emit the DARWIN T1 structural baseline scorecard.")
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--include-search", action="store_true")
     args = parser.parse_args()
 
-    summary = write_scorecard(Path(args.out_dir))
+    summary = write_scorecard(Path(args.out_dir), include_search=args.include_search)
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:

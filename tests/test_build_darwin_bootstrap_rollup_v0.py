@@ -19,4 +19,4 @@ def test_build_darwin_bootstrap_rollup_reports_live_inputs() -> None:
     summary = write_rollup()
     payload = json.loads(open(summary["out_path"], "r", encoding="utf-8").read())
     assert payload["live_baseline_present"] is True
-    assert payload["bootstrap_spec_count"] == 3
+    assert payload["bootstrap_spec_count"] == 4

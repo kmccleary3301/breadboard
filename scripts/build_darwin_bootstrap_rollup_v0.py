@@ -14,6 +14,10 @@ INPUTS = {
     "scorecard": ROOT / "artifacts" / "darwin" / "scorecards" / "t1_baseline_scorecard.latest.json",
     "weekly_packet": ROOT / "artifacts" / "darwin" / "weekly" / "weekly_evidence_packet.latest.json",
     "live_baseline_summary": ROOT / "artifacts" / "darwin" / "live_baselines" / "live_baseline_summary_v1.json",
+    "future_lane_placeholders": ROOT / "artifacts" / "darwin" / "bootstrap" / "future_lane_placeholders_v0.json",
+    "mutation_registry": ROOT / "artifacts" / "darwin" / "search" / "mutation_operator_registry_v1.json",
+    "search_summary": ROOT / "artifacts" / "darwin" / "search" / "search_smoke_summary_v1.json",
+    "archive_snapshot": ROOT / "artifacts" / "darwin" / "search" / "archive_snapshot_v1.json",
     "lane_registry": ROOT / "docs" / "contracts" / "darwin" / "registries" / "lane_registry_v0.json",
     "policy_registry": ROOT / "docs" / "contracts" / "darwin" / "registries" / "policy_registry_v0.json",
 }
@@ -34,6 +38,10 @@ def build_rollup() -> dict:
         "scorecard_present": "scorecard" in loaded,
         "weekly_packet_present": "weekly_packet" in loaded,
         "live_baseline_present": "live_baseline_summary" in loaded,
+        "future_lane_placeholder_count": len((loaded.get("future_lane_placeholders") or {}).get("lanes") or []),
+        "mutation_operator_count": len((loaded.get("mutation_registry") or {}).get("operators") or []),
+        "search_summary_present": "search_summary" in loaded,
+        "archive_snapshot_present": "archive_snapshot" in loaded,
         "inputs": {name: str(path.relative_to(ROOT)) for name, path in INPUTS.items() if path.exists()},
     }
 

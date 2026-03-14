@@ -15,7 +15,7 @@ def test_build_weekly_packet_validates_against_contract() -> None:
     write_scorecard()
     packet = build_weekly_packet()
     assert packet["schema"] == "breadboard.darwin.weekly_evidence_packet.v0"
-    assert len(packet["lane_summaries"]) == 3
+    assert len(packet["lane_summaries"]) == 4
 
 
 def test_write_weekly_packet_emits_json_and_markdown(tmp_path: Path) -> None:
@@ -24,5 +24,5 @@ def test_write_weekly_packet_emits_json_and_markdown(tmp_path: Path) -> None:
     write_scorecard()
     summary = write_weekly_packet(tmp_path)
     payload = json.loads((tmp_path / "weekly_evidence_packet.latest.json").read_text(encoding="utf-8"))
-    assert summary["lane_count"] == 3
+    assert summary["lane_count"] == 4
     assert payload["scorecard_refs"]

@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from breadboard_ext.darwin.contracts import (
 
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "darwin" / "live_baselines"
 DEFAULT_BOOTSTRAP_MANIFEST = ROOT / "artifacts" / "darwin" / "bootstrap" / "bootstrap_manifest_v0.json"
+ACTIVE_LANES = ["lane.atp", "lane.harness", "lane.systems", "lane.repo_swe"]
 
 
 LANE_COMMANDS = {
@@ -61,6 +63,21 @@ LANE_COMMANDS = {
         "result_path": None,
         "task_id": "task.darwin.systems.reward_smoke",
     },
+    "lane.repo_swe": {
+        "command": [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "tests/test_opencode_patch_apply_codex.py",
+            "tests/test_workspace_tracker.py",
+            "tests/test_diff_terminal_semantics.py",
+            "tests/test_langflow_patch.py",
+        ],
+        "kind": "pytest_pass_ratio",
+        "result_path": None,
+        "task_id": "task.darwin.repo_swe.patch_workspace_smoke",
+    },
 }
 
 
@@ -100,10 +117,25 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _run_lane(lane_id: str, spec: dict, out_dir: Path) -> dict:
+def run_named_lane(
+    lane_id: str,
+    spec: dict,
+    out_dir: Path,
+    *,
+    candidate_id: str | None = None,
+    mutation_operator: str = "baseline_seed",
+    topology_id: str | None = None,
+    policy_bundle_id: str | None = None,
+    budget_class: str | None = None,
+    perturbation_group: str = "nominal",
+    task_id: str | None = None,
+    trial_label: str = "baseline",
+) -> dict:
     lane_dir = out_dir / lane_id
     lane_dir.mkdir(parents=True, exist_ok=True)
     lane_cfg = LANE_COMMANDS[lane_id]
+    started_at = _iso_now()
+    started_monotonic = time.perf_counter()
     proc = subprocess.run(
         lane_cfg["command"],
         cwd=str(ROOT),
@@ -111,6 +143,7 @@ def _run_lane(lane_id: str, spec: dict, out_dir: Path) -> dict:
         text=True,
         check=False,
     )
+    wall_clock_ms = int(round((time.perf_counter() - started_monotonic) * 1000))
 
     stdout_path = lane_dir / "stdout.txt"
     stderr_path = lane_dir / "stderr.txt"
@@ -136,34 +169,46 @@ def _run_lane(lane_id: str, spec: dict, out_dir: Path) -> dict:
 
     candidate = {
         "schema": "breadboard.darwin.candidate_artifact.v0",
-        "candidate_id": f"cand.{lane_id}.baseline.v1",
+        "candidate_id": candidate_id or f"cand.{lane_id}.{trial_label}.v1",
         "campaign_id": spec["campaign_id"],
         "lane_id": lane_id,
         "parent_ids": [],
         "artifact_type": "config",
-        "artifact_ref": f"artifacts/darwin/live_baselines/{lane_id}/baseline_candidate_v1.json",
-        "mutation_operator": "baseline_seed",
+        "artifact_ref": f"artifacts/darwin/live_baselines/{lane_id}/{trial_label}_candidate_v1.json",
+        "mutation_operator": mutation_operator,
         "novelty_score": 0.0,
         "estimated_potential": primary_score,
         "tool_scope": spec["allowed_tools"],
-        "state_hash": _sha256_text(json.dumps(spec, sort_keys=True)),
+        "state_hash": _sha256_text(
+            json.dumps(
+                {
+                    "spec": spec,
+                    "lane_id": lane_id,
+                    "mutation_operator": mutation_operator,
+                    "topology_id": topology_id or spec["topology_family"],
+                    "policy_bundle_id": policy_bundle_id or spec["policy_bundle_id"],
+                    "budget_class": budget_class or spec["budget_class"],
+                },
+                sort_keys=True,
+            )
+        ),
     }
     eval_record = {
         "schema": "breadboard.darwin.evaluation_record.v0",
         "candidate_id": candidate["candidate_id"],
-        "task_id": lane_cfg["task_id"],
+        "task_id": task_id or lane_cfg["task_id"],
         "verifier_status": verifier_status,
         "primary_score": round(primary_score, 6),
         "secondary_metrics": secondary_metrics,
-        "budget_used": {"wall_time_s": None, "class": spec["budget_class"]},
-        "wall_clock_ms": 0,
+        "budget_used": {"wall_time_s": round(wall_clock_ms / 1000.0, 6), "class": budget_class or spec["budget_class"]},
+        "wall_clock_ms": wall_clock_ms,
         "token_counts": {},
         "cost_estimate": 0.0,
         "artifact_refs": [
             str(stdout_path.relative_to(ROOT)),
             str(stderr_path.relative_to(ROOT)),
         ],
-        "perturbation_group": "nominal",
+        "perturbation_group": perturbation_group,
         "error_taxonomy": [] if proc.returncode == 0 else ["subprocess_nonzero"],
         "confidence_record": {
             "support_n": 1,
@@ -179,27 +224,33 @@ def _run_lane(lane_id: str, spec: dict, out_dir: Path) -> dict:
         parts = [f"{issue.path}: {issue.message}" for issue in candidate_issues + evaluation_issues]
         raise ValueError(f"invalid live baseline DARWIN artifacts for {lane_id}: {'; '.join(parts)}")
 
-    candidate_path = ROOT / "artifacts" / "darwin" / "candidates" / f"{lane_id}.baseline_candidate_v1.json"
-    evaluation_path = ROOT / "artifacts" / "darwin" / "evaluations" / f"{lane_id}.baseline_evaluation_v1.json"
+    candidate_path = ROOT / "artifacts" / "darwin" / "candidates" / f"{candidate['candidate_id']}.json"
+    evaluation_path = ROOT / "artifacts" / "darwin" / "evaluations" / f"{candidate['candidate_id']}.evaluation_v1.json"
     _write_json(candidate_path, candidate)
     _write_json(evaluation_path, eval_record)
 
     return {
         "lane_id": lane_id,
         "campaign_id": spec["campaign_id"],
+        "candidate_id": candidate["candidate_id"],
         "candidate_ref": str(candidate_path.relative_to(ROOT)),
         "evaluation_ref": str(evaluation_path.relative_to(ROOT)),
         "primary_score": eval_record["primary_score"],
         "verifier_status": verifier_status,
         "status": "ready" if proc.returncode == 0 else "partial",
         "command": lane_cfg["command"],
-        "run_started_at": _iso_now(),
+        "run_started_at": started_at,
+        "topology_id": topology_id or spec["topology_family"],
+        "policy_bundle_id": policy_bundle_id or spec["policy_bundle_id"],
+        "budget_class": budget_class or spec["budget_class"],
+        "mutation_operator": mutation_operator,
+        "wall_clock_ms": wall_clock_ms,
     }
 
 
 def run_live_baselines(out_dir: Path = DEFAULT_OUT_DIR) -> dict:
     campaigns = _campaign_lookup()
-    lane_rows = [_run_lane(lane_id, campaigns[lane_id], out_dir) for lane_id in ["lane.atp", "lane.harness", "lane.systems"]]
+    lane_rows = [run_named_lane(lane_id, campaigns[lane_id], out_dir, trial_label="baseline") for lane_id in ACTIVE_LANES]
     payload = {
         "schema": "breadboard.darwin.live_baseline_summary.v1",
         "generated_at": _iso_now(),
