@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.conductor_loop import build_rlm_summary
+from agentic_coder_prototype.conductor_loop import build_ctree_runtime_payload, build_rlm_summary
+from agentic_coder_prototype.state.session_state import SessionState
 
 
 def test_build_rlm_summary_from_provider_metadata() -> None:
@@ -40,3 +41,35 @@ def test_build_rlm_summary_from_provider_metadata() -> None:
 def test_build_rlm_summary_returns_none_when_empty() -> None:
     assert build_rlm_summary({}) is None
     assert build_rlm_summary(None) is None
+
+
+def test_build_ctree_runtime_payload_collects_ctree_surfaces() -> None:
+    state = SessionState("ws", "image", {}, event_emitter=None)
+    root_id = state.ctree_store.record("objective", {"title": "Phase 9"}, turn=1)
+    state.ctree_store.record(
+        "task",
+        {
+            "title": "Implement store",
+            "parent_id": root_id,
+            "targets": ["ctrees/store.py"],
+            "constraints": [{"summary": "Preserve replay determinism"}],
+        },
+        turn=2,
+    )
+
+    payload = build_ctree_runtime_payload(
+        {"ctrees": {"runner": {"enabled": True, "branches": 3}}},
+        state,
+        prompt_summary={"section_count": 2},
+    )
+
+    assert payload is not None
+    assert payload["snapshot"]["node_count"] == 2
+    assert payload["compiler"]["kind"] == "htsg_r_preview"
+    assert payload["collapse"]["kind"] == "tranche1_collapse"
+    assert payload["retrieval_substrate"]["schema_version"] == "ctree_retrieval_substrate_v1"
+    assert payload["rehydration_bundle"]["schema_version"] == "ctree_support_bundle_v1"
+    assert payload["prompt_planes"]["schema_version"] == "ctree_prompt_planes_v2"
+    assert payload["prompt_planes"]["active_path"]
+    assert payload["prompt_planes"]["support_bundle"]["support_node_ids"]
+    assert payload["runner"]["branches"] == 3

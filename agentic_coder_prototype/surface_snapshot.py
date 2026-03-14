@@ -232,6 +232,27 @@ def build_surface_snapshot(
         pass
 
     try:
+        ctrees_retrieval_substrate = session_state.get_provider_metadata("ctrees_retrieval_substrate")
+        if ctrees_retrieval_substrate:
+            snapshot["ctrees_retrieval_substrate"] = ctrees_retrieval_substrate
+    except Exception:
+        pass
+
+    try:
+        ctrees_rehydration_bundle = session_state.get_provider_metadata("ctrees_rehydration_bundle")
+        if ctrees_rehydration_bundle:
+            snapshot["ctrees_rehydration_bundle"] = ctrees_rehydration_bundle
+    except Exception:
+        pass
+
+    try:
+        ctrees_prompt_planes = session_state.get_provider_metadata("ctrees_prompt_planes")
+        if ctrees_prompt_planes:
+            snapshot["ctrees_prompt_planes"] = ctrees_prompt_planes
+    except Exception:
+        pass
+
+    try:
         ctrees_runner = session_state.get_provider_metadata("ctrees_runner")
         if ctrees_runner:
             snapshot["ctrees_runner"] = ctrees_runner
