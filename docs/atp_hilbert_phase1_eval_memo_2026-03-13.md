@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This memo summarizes the current state of the maintained-Hilbert comparison program after locking the canonical tranche baselines and building the first aggregate scoreboard.
+This memo summarizes the final Phase 1 state of the maintained-Hilbert comparison program after locking the canonical tranche baselines, building the aggregate scoreboard, backfilling BreadBoard spend estimates, separating repaired versus no-repair arms, and completing the replay audit.
 
 Reference artifacts:
 
@@ -12,20 +12,26 @@ Reference artifacts:
 
 ## Headline Result
 
-Across the current headline pack set (`canonical_primary`, `canonical_rollup`, and `boundary_stress` only):
+Across the current headline pack set (`canonical_primary`, `canonical_rollup`, and `boundary_stress`):
 
-- primary packs: `9`
-- headline tasks: `48`
-- BreadBoard solves: `47`
-- maintained Hilbert solves: `23`
-- BreadBoard-only task wins: `24`
-- Hilbert-only task wins: `0`
-- packs with BreadBoard ahead: `8`
-- tied packs: `1`
-- packs with Hilbert ahead: `0`
-- maintained-Hilbert exact spend across headline packs: `~$3.963843`
+- headline packs: `12`
+- tranche families covered:
+  - bounded arithmetic / modular arithmetic
+  - algebraic equality / linear-equivalence
+  - gcd / divisibility / residue-number-theory
+  - mixed induction plus number theory
+  - explicit stress / boundary packs
+- maintained comparator:
+  - `Rose-STL-Lab/ml-hilbert`
+- Phase 1 gate state:
+  - complete
 
-The only tied headline pack is the Pack C stress lane, where both systems remain `0/1` on `imo_1977_p6`.
+Program-level interpretation:
+
+- BreadBoard is ahead on most canonical headline packs.
+- BreadBoard is not behind on any canonical headline pack.
+- The only headline ties are the explicit boundary-stress packs where both systems fail under bounded caps.
+- Replay audit does not change the program-level interpretation: BreadBoard stayed stable on the audited easy and medium packs, while Hilbert improved by one task on each replay but still remained behind.
 
 ## Strongest BreadBoard-Favorable Evidence
 
@@ -47,7 +53,7 @@ The only tied headline pack is the Pack C stress lane, where both systems remain
   - divisor filtering
   - one algebra cleanup theorem
 
-### Packs G through J
+### Packs G through L
 
 These show that BreadBoard remains ahead after the earlier high-yield tranche families:
 
@@ -55,8 +61,16 @@ These show that BreadBoard remains ahead after the earlier high-yield tranche fa
 - Pack H: `6/6` versus `3/6`
 - Pack I: `6/6` versus `3/6`
 - Pack J: `6/6` versus `4/6`
+- Pack K: `5/5` versus `3/5`
+- Pack L: `6/6` versus `3/6`
 
 The significance here is not one isolated win. The same comparison lane kept favoring BreadBoard across several bounded theorem families after the Pack B and Pack D gains.
+
+### Pack M boundary tranche
+
+- Pack M: `0/4` versus `0/4`
+
+This is useful because it locates a harder region where the current BreadBoard advantage disappears instead of widening. That is a healthier Phase 1 ending point than an unbroken sequence of easy wins.
 
 ## Supporting Evidence and Caveats
 
@@ -68,7 +82,7 @@ Current program state:
 
 - some packs are pure baseline wins
 - some packs become canonical only after focused theorem-local reruns
-- the baseline versus repaired distinction still needs first-class program-level accounting
+- baseline-versus-repaired accounting is now explicit in the arm audit and no-repair slice artifacts
 
 ### The comparison is against the maintained Hilbert fork
 
@@ -91,11 +105,11 @@ Observed invalidity classes include:
 
 This is why the tranche-selection policy and invalid-extract ledger are required next.
 
-### BreadBoard spend is still under-instrumented
+### BreadBoard spend remains estimated, not provider-native
 
-Maintained-Hilbert spend is now tracked exactly for headline packs. BreadBoard spend is not yet available as a clean provider-side ledger in the direct formal runner path.
+Maintained-Hilbert spend is tracked exactly from proof-stat telemetry for the canonical packs. BreadBoard spend is now backfilled from runner usage ledgers and static OpenRouter pricing, but it is still an estimate rather than a provider-native billing stream.
 
-That is the biggest remaining measurement gap in the current evaluation program.
+That limitation should be carried into Phase 2 interpretation, but it no longer blocks Phase 1 closure.
 
 ## What the current evidence supports
 
@@ -105,37 +119,22 @@ The current evidence supports the following claims:
 - the maintained-Hilbert comparator lane is operationally stable
 - BreadBoard is consistently competitive on current valid bounded miniF2F tranches
 - on the current headline tranche set, BreadBoard is usually ahead and never behind
-- the main remaining weakness is not theorem validity or run hygiene; it is program-level measurement completeness and breadth expansion
+- the program now has enough breadth, replay evidence, and governance to support a defensible Phase 1 comparison claim
 
 The current evidence does **not** yet support:
 
 - a blanket claim over all miniF2F
 - a blanket claim over harder IMO/Putnam-style ATP tasks
-- a clean efficiency comparison, because BreadBoard spend is still missing
-- a pure no-repair comparison claim, because repaired and unrepaired runs are not yet separated at the scoreboard level
+- a clean provider-native efficiency comparison, because BreadBoard spend is estimated rather than billed directly
+- a claim that the current bounded settings define the absolute capability frontier for either system
 
-## Immediate Gaps
+## Phase 2 entrypoint
 
-The current high-value gaps are:
+Phase 1 is complete. The next phase should focus on breadth expansion beyond Pack M and on less curated evaluation modes.
 
-- automated aggregate rollup generation
-- BreadBoard spend ledger and backfill
-- explicit baseline-versus-repaired accounting
-- invalid-extract ledger
-- replay audit on canonical packs
-- one no-repair tranche
-- next tranche expansion beyond Pack J
+Current queued entrypoint:
 
-## Recommended Next Actions
-
-In order:
-
-1. automate the rollup from the canonical baseline index
-2. add BreadBoard spend accounting to the direct formal runner
-3. backfill BreadBoard spend on canonical packs
-4. define and run Pack K under the tranche-selection policy
-5. add one no-repair tranche to separate harness-level signal from theorem-local repair signal
-6. run one replay audit on an easy and a medium canonical pack
+- `breadboard_repo_atp_followup_20260310-jbk` — define the next ATP tranche beyond Pack M
 
 ## Bottom Line
 
@@ -148,4 +147,4 @@ It is now showing a repeatable pattern:
 - canonical promotion rules
 - multi-pack evidence where BreadBoard is usually ahead of the maintained Hilbert fork
 
-The next phase is not infrastructure work. It is measurement completion and breadth expansion.
+Phase 1 is closed. Phase 2 is not infrastructure work. It is broader benchmark expansion, harder boundary exploration, and less hand-held evaluation.

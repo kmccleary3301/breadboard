@@ -16,10 +16,10 @@ It standardizes:
 
 ## Preconditions
 
-- repo root: `/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_atp_followup_20260310`
-- maintained comparator repo: `/shared_folders/querylake_server/ray_testing/ray_SCE/other_harness_refs/ml-hilbert`
+- repo root: current BreadBoard checkout root
+- maintained comparator repo: local checkout of `other_harness_refs/ml-hilbert`
 - verifier is reachable
-- `OPENROUTER_API_KEY` is available in `breadboard_repo/.env`
+- `OPENROUTER_API_KEY` is available in the BreadBoard repo `.env`
 
 Current comparison identities:
 
@@ -43,7 +43,7 @@ Policy and baseline locks:
 Example for a new pack:
 
 ```bash
-cd /shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_atp_followup_20260310
+cd <repo_root>
 python scripts/build_hilbert_comparison_packs_v2.py --pack pack_k_your_new_pack_here
 ```
 
@@ -63,7 +63,7 @@ Minimum required artifacts:
 Direct formal runner:
 
 ```bash
-cd /shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_atp_followup_20260310
+cd <repo_root>
 python scripts/run_bb_formal_pack_v1.py \
   --manifest artifacts/benchmarks/hilbert_comparison_packs_v2/<pack_id>/cross_system_manifest.json \
   --task-inputs artifacts/benchmarks/hilbert_comparison_packs_v2/<pack_id>/bb_task_inputs.json \
@@ -89,13 +89,13 @@ Use bounded settings and sequential processing.
 Example:
 
 ```bash
-cd /shared_folders/querylake_server/ray_testing/ray_SCE/other_harness_refs/ml-hilbert
-set -a && source /shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_atp_followup_20260310/.env && set +a
+cd <hilbert_repo_root>
+set -a && source <repo_root>/.env && set +a
 OPENAI_API_KEY="$OPENROUTER_API_KEY" python -m src.run \
   data.name=<pack_id> \
-  data.file_path=/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_atp_followup_20260310/artifacts/benchmarks/hilbert_comparison_packs_v2/<pack_id>/hilbert_dataset.jsonl \
-  results_dir=/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_atp_followup_20260310/artifacts/benchmarks/hilbert_runs/<hilbert_run_id>/results \
-  experiment.proof_save_dir=/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_atp_followup_20260310/artifacts/benchmarks/hilbert_runs/<hilbert_run_id>/proofs \
+  data.file_path=<repo_root>/artifacts/benchmarks/hilbert_comparison_packs_v2/<pack_id>/hilbert_dataset.jsonl \
+  results_dir=<repo_root>/artifacts/benchmarks/hilbert_runs/<hilbert_run_id>/results \
+  experiment.proof_save_dir=<repo_root>/artifacts/benchmarks/hilbert_runs/<hilbert_run_id>/proofs \
   experiment.prover_llm.base_url=https://openrouter.ai/api/v1 \
   experiment.prover_llm.llm_name=openai/gpt-5.4 \
   experiment.informal_llm.base_url=https://openrouter.ai/api/v1 \
@@ -117,7 +117,7 @@ OPENAI_API_KEY="$OPENROUTER_API_KEY" python -m src.run \
 ## Step 4 — Convert maintained-Hilbert results
 
 ```bash
-cd /shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_atp_followup_20260310
+cd <repo_root>
 python scripts/convert_hilbert_results_to_cross_system_v2.py \
   --manifest artifacts/benchmarks/hilbert_comparison_packs_v2/<pack_id>/cross_system_manifest.json \
   --hilbert-result-json artifacts/benchmarks/hilbert_runs/<hilbert_run_id>/results/async_hilbert/<result_file>.json \
@@ -128,7 +128,7 @@ python scripts/convert_hilbert_results_to_cross_system_v2.py \
 ## Step 5 — Validate and build paired report
 
 ```bash
-cd /shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_atp_followup_20260310
+cd <repo_root>
 python scripts/validate_cross_system_run_v1.py \
   --manifest artifacts/benchmarks/hilbert_comparison_packs_v2/<pack_id>/cross_system_manifest.json \
   --results artifacts/benchmarks/hilbert_comparison_packs_v2/<pack_id>/hilbert_roselab_results_v1.jsonl \
@@ -161,7 +161,7 @@ For every new canonical or supporting tranche, add one note in `docs/` that reco
 After canonical promotion or support-pack changes:
 
 ```bash
-cd /shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_atp_followup_20260310
+cd <repo_root>
 python scripts/build_atp_hilbert_rollup_v1.py
 python scripts/build_atp_invalid_extract_ledger_v1.py
 python scripts/build_atp_hilbert_no_repair_slice_v1.py

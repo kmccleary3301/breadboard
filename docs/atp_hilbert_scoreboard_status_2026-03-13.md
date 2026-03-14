@@ -15,5 +15,6 @@ Interpretation:
 
 - Headline totals count only `canonical_primary`, `canonical_rollup`, and `boundary_stress` entries.
 - Supporting filtered/split/focus lanes remain visible in the scoreboard but are not counted in the headline totals, which prevents double-counting Pack D and Pack E follow-up work.
-- Hilbert spend in the scoreboard is exact only where the status notes provide an exact maintained-Hilbert figure.
-- BreadBoard spend remains absent from the program-level scoreboard until the direct formal runner emits a usable provider-side ledger.
+- Hilbert spend in the scoreboard is exact where the status notes provide maintained-Hilbert proof-stat telemetry.
+- BreadBoard spend in the scoreboard is backfilled from runner usage ledgers and static OpenRouter pricing.
+- BreadBoard spend in the scoreboard is therefore estimated, not provider-authoritative.
