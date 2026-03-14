@@ -46,6 +46,9 @@ _KNOWN_SURFACE_DETERMINISM: Dict[str, str] = {
     "ctrees_snapshot": "deterministic",
     "ctrees_compiler": "deterministic",
     "ctrees_collapse": "deterministic",
+    "ctrees_retrieval_substrate": "deterministic",
+    "ctrees_rehydration_bundle": "deterministic",
+    "ctrees_prompt_planes": "deterministic",
     "ctrees_runner": "deterministic",
 }
 
@@ -207,6 +210,27 @@ def build_surface_manifest(
         if not classified:
             unclassified.append("ctrees_collapse")
         surfaces.append(_surface_entry("ctrees_collapse", ctrees_collapse, determinism=determinism))
+
+    ctrees_retrieval_substrate = snapshot.get("ctrees_retrieval_substrate")
+    if isinstance(ctrees_retrieval_substrate, dict) and ctrees_retrieval_substrate:
+        determinism, classified = _determinism_for_surface("ctrees_retrieval_substrate", ctrees_retrieval_substrate)
+        if not classified:
+            unclassified.append("ctrees_retrieval_substrate")
+        surfaces.append(_surface_entry("ctrees_retrieval_substrate", ctrees_retrieval_substrate, determinism=determinism))
+
+    ctrees_rehydration_bundle = snapshot.get("ctrees_rehydration_bundle")
+    if isinstance(ctrees_rehydration_bundle, dict) and ctrees_rehydration_bundle:
+        determinism, classified = _determinism_for_surface("ctrees_rehydration_bundle", ctrees_rehydration_bundle)
+        if not classified:
+            unclassified.append("ctrees_rehydration_bundle")
+        surfaces.append(_surface_entry("ctrees_rehydration_bundle", ctrees_rehydration_bundle, determinism=determinism))
+
+    ctrees_prompt_planes = snapshot.get("ctrees_prompt_planes")
+    if isinstance(ctrees_prompt_planes, dict) and ctrees_prompt_planes:
+        determinism, classified = _determinism_for_surface("ctrees_prompt_planes", ctrees_prompt_planes)
+        if not classified:
+            unclassified.append("ctrees_prompt_planes")
+        surfaces.append(_surface_entry("ctrees_prompt_planes", ctrees_prompt_planes, determinism=determinism))
 
     ctrees_runner = snapshot.get("ctrees_runner")
     if isinstance(ctrees_runner, dict) and ctrees_runner:
