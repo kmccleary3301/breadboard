@@ -176,6 +176,38 @@ def test_ctree_prompt_planes_use_support_bundle_contract() -> None:
     assert planes["live_session_delta"]["prompt_summary"]["turn_count"] == 2
 
 
+def test_ctree_helper_subtree_summaries_are_opt_in() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Helper subtree"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Blocked child",
+            "parent_id": root_id,
+            "blocker_refs": ["dep-schema"],
+            "artifact_refs": ["schema_spec.md"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Active child",
+            "parent_id": root_id,
+            "artifact_refs": ["replacement_schema.md"],
+        },
+        turn=3,
+    )
+
+    baseline = compile_ctree(store)
+    helper = compile_ctree(store, helper_summary_enabled=True)
+
+    assert "subtree_summary_proposals" not in baseline["prompt_planes"]
+    assert helper["stages"]["SPEC"]["helper_subtree_summaries"]
+    assert helper["prompt_planes"]["subtree_summary_proposals"]
+    assert helper["stages"]["FROZEN"]["helper_summary_digest"]
+
+
 def test_ctree_dependency_lookup_surfaces_direct_blocker_graph_support() -> None:
     store = CTreeStore()
     root_id = store.record("objective", {"title": "Dependency lookup"}, turn=1)

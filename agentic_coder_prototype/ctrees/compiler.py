@@ -5,6 +5,7 @@ import json
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional
 
+from .helper_subtree_summary import build_helper_subtree_summary_input, build_helper_subtree_summary_proposal
 from .policy import active_path_node_ids, build_rehydration_plan, build_retrieval_substrate
 from .store import CTreeStore
 from .schema import CTREE_SCHEMA_VERSION
@@ -115,6 +116,7 @@ def _build_prompt_planes(
     parent_reductions: List[Dict[str, Any]],
     retrieval_substrate: Dict[str, Any],
     rehydration_bundle: Dict[str, Any],
+    helper_subtree_summaries: Optional[List[Dict[str, Any]]],
     prompt_summary: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     active_path = active_path_node_ids(store)
@@ -174,6 +176,8 @@ def _build_prompt_planes(
         "reduced_task_state": reduced_task_state,
         "support_bundle": dict(rehydration_bundle or {}),
     }
+    if helper_subtree_summaries:
+        prompt_planes["subtree_summary_proposals"] = [dict(item) for item in helper_subtree_summaries]
     if prompt_summary:
         prompt_planes["live_session_delta"] = {
             "prompt_summary": prompt_summary,
@@ -182,7 +186,12 @@ def _build_prompt_planes(
     return prompt_planes
 
 
-def compile_ctree(store: CTreeStore, *, prompt_summary: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def compile_ctree(
+    store: CTreeStore,
+    *,
+    prompt_summary: Optional[Dict[str, Any]] = None,
+    helper_summary_enabled: bool = False,
+) -> Dict[str, Any]:
     """Compile the current task-state surface into stable staged payloads."""
 
     hashes = store.hashes()
@@ -219,6 +228,23 @@ def compile_ctree(store: CTreeStore, *, prompt_summary: Optional[Dict[str, Any]]
         child_states = [_reduce_local_state(child) for child in children]
         parent_reductions.append(_reduce_parent_state(node, child_states))
 
+    helper_subtree_summaries: List[Dict[str, Any]] = []
+    if helper_summary_enabled:
+        for node in nodes:
+            children = children_by_parent.get(str(node.get("id") or ""), [])
+            if not children:
+                continue
+            child_states = [_reduce_local_state(child) for child in children]
+            reduction = next((item for item in parent_reductions if str(item.get("node_id") or "") == str(node.get("id") or "")), None)
+            if not isinstance(reduction, dict):
+                continue
+            helper_input = build_helper_subtree_summary_input(
+                parent_node=node,
+                parent_reduction=reduction,
+                child_states=child_states,
+            )
+            helper_subtree_summaries.append(build_helper_subtree_summary_proposal(helper_input))
+
     top_level_ids = [str(node.get("id")) for node in store.top_level_nodes()]
     status_counts = Counter(str(node.get("status") or "unknown") for node in nodes)
     retrieval_substrate = build_retrieval_substrate(store, mode="active_continuation")
@@ -230,6 +256,7 @@ def compile_ctree(store: CTreeStore, *, prompt_summary: Optional[Dict[str, Any]]
         parent_reductions=parent_reductions,
         retrieval_substrate=retrieval_substrate,
         rehydration_bundle=rehydration_bundle,
+        helper_subtree_summaries=helper_subtree_summaries,
         prompt_summary=prompt_summary,
     )
 
@@ -241,6 +268,7 @@ def compile_ctree(store: CTreeStore, *, prompt_summary: Optional[Dict[str, Any]]
         "snapshot": stable_snapshot,
         "local_states": local_states,
         "parent_reductions": parent_reductions,
+        "helper_subtree_summaries": helper_subtree_summaries,
         "retrieval_substrate": retrieval_substrate,
         "rehydration_bundle": rehydration_bundle,
         "prompt_planes": prompt_planes,
@@ -257,6 +285,7 @@ def compile_ctree(store: CTreeStore, *, prompt_summary: Optional[Dict[str, Any]]
         "ready_node_ids": [str(node.get("id")) for node in ready_nodes],
         "status_counts": dict(status_counts),
         "parent_reductions": parent_reductions,
+        "helper_subtree_summaries": helper_subtree_summaries,
         "retrieval_substrate": retrieval_substrate,
         "rehydration_bundle": rehydration_bundle,
         "prompt_planes": prompt_planes,
@@ -278,6 +307,7 @@ def compile_ctree(store: CTreeStore, *, prompt_summary: Optional[Dict[str, Any]]
         "ready_node_ids": [str(node.get("id")) for node in ready_nodes],
         "top_level_ids": top_level_ids,
         "parent_digest": _hash_payload(parent_reductions),
+        "helper_summary_digest": _hash_payload(helper_subtree_summaries),
         "prompt_plane_digest": _hash_payload(prompt_planes),
     }
 

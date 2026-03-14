@@ -438,3 +438,55 @@ def run_helper_dependency_lookup_probe() -> Dict[str, Any]:
         "helper_proposal": helper.get("helper_proposal") or {},
         "helper_artifact_refs": (helper.get("rehydration_bundle") or {}).get("artifact_refs") or [],
     }
+
+
+def build_subtree_summary_store() -> CTreeStore:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Subtree summary probe"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Blocked child",
+            "parent_id": root_id,
+            "blocker_refs": ["dep-schema"],
+            "artifact_refs": ["schema_spec.md"],
+            "targets": ["ctrees/schema.py"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Superseded child",
+            "parent_id": root_id,
+            "status": "superseded",
+            "artifact_refs": ["legacy_schema.md"],
+            "targets": ["ctrees/schema.py"],
+        },
+        turn=3,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Active child",
+            "parent_id": root_id,
+            "artifact_refs": ["replacement_schema.md"],
+            "targets": ["ctrees/compiler.py"],
+        },
+        turn=4,
+    )
+    return store
+
+
+def run_helper_subtree_summary_probe() -> Dict[str, Any]:
+    store = build_subtree_summary_store()
+    baseline = compile_ctree(store)
+    helper = compile_ctree(store, helper_summary_enabled=True)
+    proposals = (helper.get("stages", {}).get("SPEC", {}).get("helper_subtree_summaries") or [])
+    first = proposals[0] if proposals else {}
+    return {
+        "probe": "helper_subtree_summary",
+        "baseline_parent_reduction": (baseline.get("stages", {}).get("SPEC", {}).get("parent_reductions") or [None])[0],
+        "helper_summary": first,
+        "helper_prompt_plane_has_summaries": "subtree_summary_proposals" in (helper.get("prompt_planes") or {}),
+    }
