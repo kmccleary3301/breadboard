@@ -26,6 +26,7 @@ Date: 2026-03-14
 
 - `docs/darwin_phase1_signoff_2026-03-14.md`
 - `docs/darwin_phase1_completion_gate_2026-03-14.md`
+- `docs/darwin_phase1_main_verification_2026-03-14.md`
 - `docs/darwin_phase2_handoff_2026-03-14.md`
 - `docs/darwin_phase1_comparative_dossier_v1_2026-03-14.md`
 

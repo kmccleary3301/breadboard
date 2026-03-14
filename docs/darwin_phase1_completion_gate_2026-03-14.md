@@ -20,7 +20,7 @@ Date: 2026-03-14
 - [x] Final program claim ledger updated
 - [x] Phase-1 signoff memo written
 - [x] Phase-2 handoff memo written
-- [ ] Merged-state verification on `main`
+- [x] Merged-state verification on `main`
 - [ ] Final merged-state push complete
 
 ## Gate rule
