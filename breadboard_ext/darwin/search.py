@@ -23,9 +23,9 @@ def build_mutation_operator_registry() -> dict:
                 "operator_class": "topology",
                 "input_scope": "campaign.topology_family",
                 "output_scope": "candidate.topology_id",
-                "supported_lanes": ["lane.harness", "lane.repo_swe", "lane.atp", "lane.systems", "lane.scheduling"],
+                "supported_lanes": ["lane.harness", "lane.repo_swe", "lane.atp", "lane.systems", "lane.scheduling", "lane.research"],
                 "experimental_lanes": [],
-                "prohibited_lanes": ["lane.research"],
+                "prohibited_lanes": [],
                 "reversible": True,
                 "safety_constraints": ["policy_bundle_must_exist", "lane_topology_must_be_supported"],
             },
@@ -56,9 +56,9 @@ def build_mutation_operator_registry() -> dict:
                 "operator_class": "prompt",
                 "input_scope": "candidate.prompt_profile",
                 "output_scope": "candidate.prompt_profile",
-                "supported_lanes": ["lane.harness", "lane.repo_swe"],
+                "supported_lanes": ["lane.harness", "lane.repo_swe", "lane.research"],
                 "experimental_lanes": ["lane.scheduling"],
-                "prohibited_lanes": ["lane.atp", "lane.systems", "lane.research"],
+                "prohibited_lanes": ["lane.atp", "lane.systems"],
                 "reversible": True,
                 "safety_constraints": ["claim_tier_cannot_increase_without_replay"],
             },
@@ -95,6 +95,17 @@ def build_mutation_operator_registry() -> dict:
                 "reversible": True,
                 "safety_constraints": ["scenario_pack_must_match", "constraint_checker_must_match"],
             },
+            {
+                "operator_id": "mut.scheduler.strategy_hybrid_v1",
+                "operator_class": "scheduler_strategy",
+                "input_scope": "candidate.scheduler_strategy",
+                "output_scope": "candidate.scheduler_strategy",
+                "supported_lanes": ["lane.scheduling"],
+                "experimental_lanes": [],
+                "prohibited_lanes": ["lane.atp", "lane.harness", "lane.systems", "lane.repo_swe", "lane.research"],
+                "reversible": True,
+                "safety_constraints": ["scenario_pack_must_match", "constraint_checker_must_match", "promotion_history_required"],
+            },
         ],
     }
 
@@ -127,6 +138,16 @@ def build_search_enabled_lane_selection() -> dict:
                 "preferred_operators": [
                     "mut.scheduler.strategy_value_density_v1",
                     "mut.scheduler.strategy_slack_v1",
+                    "mut.scheduler.strategy_hybrid_v1",
+                ],
+            },
+            {
+                "lane_id": "lane.research",
+                "why": "bounded evidence synthesis is the next lane for proving transfer discipline beyond software-like objectives",
+                "allowed_topologies": ["policy.topology.single_v0", "policy.topology.pev_v0"],
+                "preferred_operators": [
+                    "mut.prompt.tighten_acceptance_v1",
+                    "mut.topology.single_to_pev_v1",
                 ],
             },
         ],
@@ -148,9 +169,9 @@ def validate_budget_usage(budget_class: str, wall_clock_ms: int, cost_estimate: 
     }
 
 
-def build_archive_snapshot(*, baseline_rows: list[dict], mutation_rows: list[dict]) -> dict:
+def build_archive_snapshot(*, candidate_rows: list[dict]) -> dict:
     rows = []
-    for row in baseline_rows + mutation_rows:
+    for row in candidate_rows:
         rows.append(
             {
                 "candidate_id": row["candidate_id"],
@@ -173,6 +194,19 @@ def build_archive_snapshot(*, baseline_rows: list[dict], mutation_rows: list[dic
         "generated_at": _now(),
         "candidate_count": len(rows),
         "rows": rows,
+    }
+
+
+def build_promotion_history(*, lane_id: str, baseline_candidate_id: str, cycle_records: list[dict], active_candidate_id: str, active_primary_score: float) -> dict:
+    promotion_depth = sum(1 for cycle in cycle_records if cycle["decision"] == "promote_mutation")
+    return {
+        "lane_id": lane_id,
+        "baseline_candidate_id": baseline_candidate_id,
+        "cycle_count": len(cycle_records),
+        "promotion_history_depth": promotion_depth,
+        "active_candidate_id": active_candidate_id,
+        "active_primary_score": active_primary_score,
+        "cycle_records": cycle_records,
     }
 
 

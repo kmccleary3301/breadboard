@@ -16,8 +16,11 @@ def test_run_search_smoke_emits_promotion_cycles() -> None:
     write_typed_search_core()
     summary = run_search_smoke()
     payload = json.loads(open(summary["summary_path"], "r", encoding="utf-8").read())
-    assert payload["lane_count"] == 3
-    assert payload["mutation_trial_count"] == 6
-    assert {row["lane_id"] for row in payload["lanes"]} == {"lane.harness", "lane.repo_swe", "lane.scheduling"}
+    assert payload["lane_count"] == 4
+    assert payload["mutation_trial_count"] == 9
+    assert {row["lane_id"] for row in payload["lanes"]} == {"lane.harness", "lane.repo_swe", "lane.scheduling", "lane.research"}
     scheduling = next(row for row in payload["lanes"] if row["lane_id"] == "lane.scheduling")
+    research = next(row for row in payload["lanes"] if row["lane_id"] == "lane.research")
     assert scheduling["promotion_status"] == "promote_mutation"
+    assert scheduling["promotion_history_depth"] == 2
+    assert research["successful_transfer_count"] == 1

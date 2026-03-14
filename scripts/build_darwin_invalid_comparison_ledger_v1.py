@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SEARCH_SUMMARY = ROOT / "artifacts" / "darwin" / "search" / "search_smoke_summary_v1.json"
 ARCHIVE_SNAPSHOT = ROOT / "artifacts" / "darwin" / "search" / "archive_snapshot_v1.json"
+TRANSFER_LEDGER = ROOT / "artifacts" / "darwin" / "search" / "transfer_ledger_v1.json"
 OUT_PATH = ROOT / "artifacts" / "darwin" / "search" / "invalid_comparison_ledger_v1.json"
 
 
@@ -18,6 +19,7 @@ def _load_json(path: Path) -> dict:
 def build_invalid_comparison_ledger() -> dict:
     payload = _load_json(SEARCH_SUMMARY)
     archive = _load_json(ARCHIVE_SNAPSHOT)
+    transfer = _load_json(TRANSFER_LEDGER) if TRANSFER_LEDGER.exists() else {"attempts": []}
     invalid_rows = []
     archive_rows = archive.get("rows") or []
     baseline_by_lane = {
@@ -42,6 +44,11 @@ def build_invalid_comparison_ledger() -> dict:
             continue
         if row.get("budget_class") != baseline.get("budget_class"):
             invalid_rows.append({"lane_id": row["lane_id"], "candidate_id": row["candidate_id"], "reason": "budget_class_mismatch"})
+    for row in transfer.get("attempts") or []:
+        if not row.get("comparison_valid"):
+            invalid_rows.append({"lane_id": row["target_lane_id"], "candidate_id": row["target_candidate_id"], "reason": "transfer_comparison_invalid"})
+        elif row.get("replay_required") and not row.get("replay_stable"):
+            invalid_rows.append({"lane_id": row["target_lane_id"], "candidate_id": row["target_candidate_id"], "reason": "transfer_replay_drift"})
     return {
         "schema": "breadboard.darwin.invalid_comparison_ledger.v1",
         "invalid_count": len(invalid_rows),

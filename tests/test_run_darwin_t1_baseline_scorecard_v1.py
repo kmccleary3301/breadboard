@@ -8,12 +8,12 @@ from scripts.build_darwin_topology_family_runner_v0 import write_topology_runner
 from scripts.run_darwin_t1_baseline_scorecard_v1 import build_scorecard, write_scorecard
 
 
-def test_build_scorecard_reports_five_lanes() -> None:
+def test_build_scorecard_reports_six_lanes() -> None:
     write_bootstrap_specs()
     write_topology_runner_manifest()
     payload = build_scorecard()
-    assert payload["lane_count"] == 5
-    assert {row["lane_id"] for row in payload["lanes"]} == {"lane.atp", "lane.harness", "lane.systems", "lane.repo_swe", "lane.scheduling"}
+    assert payload["lane_count"] == 6
+    assert {row["lane_id"] for row in payload["lanes"]} == {"lane.atp", "lane.harness", "lane.systems", "lane.repo_swe", "lane.scheduling", "lane.research"}
     assert payload["mean_normalized_score"] > 0
 
 

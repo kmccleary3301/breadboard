@@ -20,6 +20,8 @@ DEFAULT_EVIDENCE_MANIFEST = ROOT / "artifacts" / "darwin" / "evidence" / "eviden
 DEFAULT_SEARCH_SUMMARY = ROOT / "artifacts" / "darwin" / "search" / "search_smoke_summary_v1.json"
 DEFAULT_ARCHIVE_SNAPSHOT = ROOT / "artifacts" / "darwin" / "search" / "archive_snapshot_v1.json"
 DEFAULT_INVALID_LEDGER = ROOT / "artifacts" / "darwin" / "search" / "invalid_comparison_ledger_v1.json"
+DEFAULT_PROMOTION_HISTORY = ROOT / "artifacts" / "darwin" / "search" / "promotion_history_v1.json"
+DEFAULT_TRANSFER_LEDGER = ROOT / "artifacts" / "darwin" / "search" / "transfer_ledger_v1.json"
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "darwin" / "weekly"
 
 
@@ -60,7 +62,7 @@ def build_weekly_packet(scorecard_path: Path = DEFAULT_SCORECARD, *, include_sea
         if path.exists():
             scorecard_refs.append(str(path.relative_to(ROOT)))
     if include_search:
-        for path in [DEFAULT_SEARCH_SUMMARY, DEFAULT_ARCHIVE_SNAPSHOT, DEFAULT_INVALID_LEDGER]:
+        for path in [DEFAULT_SEARCH_SUMMARY, DEFAULT_ARCHIVE_SNAPSHOT, DEFAULT_INVALID_LEDGER, DEFAULT_PROMOTION_HISTORY, DEFAULT_TRANSFER_LEDGER]:
             if path.exists():
                 scorecard_refs.append(str(path.relative_to(ROOT)))
     budget_burn = {
@@ -80,9 +82,9 @@ def build_weekly_packet(scorecard_path: Path = DEFAULT_SCORECARD, *, include_sea
         "drift_refs": [],
         "incident_refs": [],
         "next_actions": [
-            "promote scheduling lane from bounded scenario pack to richer simulator-backed baseline",
-            "extend promotion-capable search to one additional lane beyond harness/repo_swe/scheduling",
-            "prepare research lane bootstrap without launching public-facing claims"
+            "prepare compute-normalized Darwin scorecards across live and promoted candidates",
+            "run stronger cross-lane transfer cycles beyond the initial harness-to-research protocol",
+            "prepare Phase-1 comparative dossier and exit-review evidence packet"
         ],
     }
     if claim_ledger.get("claims"):

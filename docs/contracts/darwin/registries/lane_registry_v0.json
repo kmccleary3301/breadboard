@@ -71,8 +71,8 @@
       "name": "Research and Evidence Synthesis",
       "objective_class": "evidence_synthesis",
       "evaluator_type": "reviewer_audit",
-      "launch_phase": 2,
-      "claim_eligible": false,
+      "launch_phase": 1,
+      "claim_eligible": true,
       "readiness_prerequisites": [
         "citation_checker",
         "adversarial_review",

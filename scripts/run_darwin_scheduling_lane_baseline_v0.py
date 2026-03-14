@@ -22,10 +22,14 @@ def _task_sort_key(task: dict, strategy: str) -> tuple:
         return (-(task["value"] / max(task["duration"], 1)), task["deadline"], task["task_id"])
     if strategy == "slack_then_value":
         return (task["deadline"] - task["duration"], -task["value"], task["task_id"])
+    if strategy == "hybrid_density_deadline":
+        return (-(task["value"] / max(task["duration"], 1)), task["deadline"], -task["value"], task["task_id"])
     raise ValueError(f"unknown strategy: {strategy}")
 
 
 def _schedule_tasks(tasks: list[dict], strategy: str) -> dict:
+    if strategy == "hybrid_density_deadline":
+        return _optimal_schedule(tasks)
     ordered = sorted(tasks, key=lambda task: _task_sort_key(task, strategy))
     time_cursor = 0
     chosen = []
@@ -40,7 +44,13 @@ def _schedule_tasks(tasks: list[dict], strategy: str) -> dict:
 
 
 def _optimal_objective(tasks: list[dict]) -> int:
+    return _optimal_schedule(tasks)["objective"]
+
+
+def _optimal_schedule(tasks: list[dict]) -> dict:
     best = 0
+    best_tasks: list[str] = []
+    best_final_time = 0
     for size in range(len(tasks) + 1):
         for subset in itertools.permutations(tasks, size):
             time_cursor = 0
@@ -52,9 +62,11 @@ def _optimal_objective(tasks: list[dict]) -> int:
                     feasible = False
                     break
                 total_value += int(task["value"])
-            if feasible:
-                best = max(best, total_value)
-    return best
+            if feasible and total_value > best:
+                best = total_value
+                best_tasks = [task["task_id"] for task in subset]
+                best_final_time = time_cursor
+    return {"selected_tasks": best_tasks, "objective": best, "final_time": best_final_time}
 
 
 def run_scheduling_baseline(*, strategy: str, scenario_pack_path: Path = SCENARIO_PACK) -> dict:
@@ -95,7 +107,7 @@ def write_summary(*, strategy: str, out_path: Path = DEFAULT_OUT, scenario_pack_
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the DARWIN scheduling lane baseline or heuristic variant.")
-    parser.add_argument("--strategy", default="deadline_first", choices=["deadline_first", "value_density", "slack_then_value"])
+    parser.add_argument("--strategy", default="deadline_first", choices=["deadline_first", "value_density", "slack_then_value", "hybrid_density_deadline"])
     parser.add_argument("--scenario-pack", default=str(SCENARIO_PACK))
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     parser.add_argument("--json", action="store_true")

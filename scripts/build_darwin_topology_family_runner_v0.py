@@ -101,30 +101,30 @@ TOPOLOGY_COMPATIBILITY = {
     "lane.scheduling": {
         "policy.topology.single_v0": {
             "supported": True,
-            "execution_descriptor": "single agent schedule constructor",
-            "note": "placeholder only",
+            "execution_descriptor": "single agent schedule constructor with exact objective checker",
+            "note": "Phase-1 baseline comparator",
         },
         "policy.topology.pev_v0": {
             "supported": True,
-            "execution_descriptor": "planner executor verifier scheduler",
-            "note": "placeholder only",
+            "execution_descriptor": "planner executor verifier scheduler on fixed scenario pack",
+            "note": "search-enabled bounded mutation lane",
         },
         "policy.topology.pwrv_v0": {
             "supported": False,
             "execution_descriptor": "planner workers referee verifier scheduler",
-            "note": "deferred until scenario-pack exists",
+            "note": "deferred until richer simulator-backed scenarios exist",
         },
     },
     "lane.research": {
         "policy.topology.single_v0": {
             "supported": True,
             "execution_descriptor": "single agent evidence synthesis baseline",
-            "note": "placeholder only",
+            "note": "Phase-1 baseline comparator",
         },
         "policy.topology.pev_v0": {
-            "supported": False,
+            "supported": True,
             "execution_descriptor": "planner executor verifier evidence synthesis",
-            "note": "deferred until citation checker exists",
+            "note": "search-enabled on bounded citation scorer",
         },
         "policy.topology.pwrv_v0": {
             "supported": False,

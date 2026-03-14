@@ -22,7 +22,7 @@ from breadboard_ext.darwin.contracts import (
 
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "darwin" / "live_baselines"
 DEFAULT_BOOTSTRAP_MANIFEST = ROOT / "artifacts" / "darwin" / "bootstrap" / "bootstrap_manifest_v0.json"
-ACTIVE_LANES = ["lane.atp", "lane.harness", "lane.systems", "lane.repo_swe", "lane.scheduling"]
+ACTIVE_LANES = ["lane.atp", "lane.harness", "lane.systems", "lane.repo_swe", "lane.scheduling", "lane.research"]
 
 
 LANE_COMMANDS = {
@@ -90,6 +90,19 @@ LANE_COMMANDS = {
         "kind": "json_overall_ok",
         "result_path": "artifacts/darwin/live_baselines/lane.scheduling/scheduling_baseline.json",
         "task_id": "task.darwin.scheduling.constraint_objective_smoke",
+    },
+    "lane.research": {
+        "command": [
+            sys.executable,
+            "scripts/run_darwin_research_lane_baseline_v0.py",
+            "--strategy",
+            "precision_first",
+            "--out",
+            "artifacts/darwin/live_baselines/lane.research/research_baseline.json",
+        ],
+        "kind": "json_overall_ok",
+        "result_path": "artifacts/darwin/live_baselines/lane.research/research_baseline.json",
+        "task_id": "task.darwin.research.evidence_synthesis_smoke",
     },
 }
 
@@ -284,7 +297,7 @@ def run_live_baselines(out_dir: Path = DEFAULT_OUT_DIR) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run DARWIN T1 live micro baselines for ATP/harness/systems.")
+    parser = argparse.ArgumentParser(description="Run DARWIN T1 live micro baselines for all active Phase-1 lanes.")
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()

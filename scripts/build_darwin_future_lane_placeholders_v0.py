@@ -15,20 +15,8 @@ def _load_json(path: Path) -> dict:
 
 
 def build_future_lane_placeholders() -> dict:
-    registry = _load_json(LANE_REGISTRY)
-    rows = []
-    for lane in registry.get("lanes") or []:
-        if lane["lane_id"] not in {"lane.scheduling", "lane.research"}:
-            continue
-        rows.append(
-            {
-                "lane_id": lane["lane_id"],
-                "launch_phase": lane["launch_phase"],
-                "objective_class": lane["objective_class"],
-                "readiness_prerequisites": lane["readiness_prerequisites"],
-                "placeholder_reason": "Prepared for the next DARWIN tranche but intentionally not activated in the >60% execution slice.",
-            }
-        )
+    _ = _load_json(LANE_REGISTRY)
+    rows: list[dict] = []
     return {
         "schema": "breadboard.darwin.future_lane_placeholders.v0",
         "lane_count": len(rows),

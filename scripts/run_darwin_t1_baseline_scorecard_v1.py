@@ -12,6 +12,7 @@ DEFAULT_LIVE_SUMMARY = ROOT / "artifacts" / "darwin" / "live_baselines" / "live_
 DEFAULT_CLAIM_LEDGER = ROOT / "artifacts" / "darwin" / "claims" / "claim_ledger_v1.json"
 DEFAULT_EVIDENCE_BUNDLE = ROOT / "artifacts" / "darwin" / "evidence" / "darwin_phase1_t1_live_baselines_bundle_v1.json"
 DEFAULT_SEARCH_SUMMARY = ROOT / "artifacts" / "darwin" / "search" / "search_smoke_summary_v1.json"
+DEFAULT_TRANSFER_LEDGER = ROOT / "artifacts" / "darwin" / "search" / "transfer_ledger_v1.json"
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "darwin" / "scorecards"
 
 
@@ -41,6 +42,11 @@ PREREQUISITE_CHECKS: dict[str, dict[str, str]] = {
         "constraint_checker": "scripts/run_darwin_scheduling_lane_baseline_v0.py",
         "budget_curves": "docs/contracts/darwin/DARWIN_TYPED_SEARCH_CORE_V1.md",
     },
+    "lane.research": {
+        "citation_checker": "scripts/run_darwin_research_lane_baseline_v0.py",
+        "adversarial_review": "docs/contracts/darwin/DARWIN_TRANSFER_PROTOCOL_V1.md",
+        "search_time_contamination_guard": "docs/contracts/darwin/DARWIN_CLAIM_LADDER_V0.md",
+    },
 }
 
 
@@ -68,9 +74,19 @@ def build_scorecard(
         claim_ids = {claim["claim_id"] for claim in claim_ledger.get("claims") or []}
     evidence_present = DEFAULT_EVIDENCE_BUNDLE.exists()
     search_by_lane: dict[str, dict] = {}
+    transfer_counts: dict[str, dict[str, int]] = {}
     if include_search and DEFAULT_SEARCH_SUMMARY.exists():
         search_summary = _load_json(DEFAULT_SEARCH_SUMMARY)
         search_by_lane = {row["lane_id"]: row for row in search_summary.get("lanes") or []}
+        if DEFAULT_TRANSFER_LEDGER.exists():
+            transfer_payload = _load_json(DEFAULT_TRANSFER_LEDGER)
+            for row in transfer_payload.get("attempts") or []:
+                counts = transfer_counts.setdefault(row["target_lane_id"], {"attempt_count": 0, "valid_count": 0, "success_count": 0})
+                counts["attempt_count"] += 1
+                if row.get("comparison_valid"):
+                    counts["valid_count"] += 1
+                if row.get("result") == "improved":
+                    counts["success_count"] += 1
 
     topology_counts: dict[str, int] = {}
     for row in topology.get("matrix") or []:
@@ -115,7 +131,13 @@ def build_scorecard(
                 "promotion_status": search_row.get("promotion_status"),
                 "archive_size": search_row.get("archive_size"),
                 "invalid_comparison_count": search_row.get("invalid_comparison_count", 0),
-                "search_maturity": "promotion_capable" if search_row else "baseline_only",
+                "search_maturity": "transfer_capable" if transfer_counts.get(lane_id, {}).get("attempt_count") else ("promotion_capable" if search_row else "baseline_only"),
+                "promotion_cycle_count": search_row.get("promotion_cycle_count", 0),
+                "active_promoted_candidate_id": search_row.get("active_promoted_candidate_id"),
+                "promotion_history_depth": search_row.get("promotion_history_depth", 0),
+                "transfer_attempt_count": transfer_counts.get(lane_id, {}).get("attempt_count", 0),
+                "valid_transfer_count": transfer_counts.get(lane_id, {}).get("valid_count", 0),
+                "successful_transfer_count": transfer_counts.get(lane_id, {}).get("success_count", 0),
                 "components": components,
                 "prerequisites": prereq_results,
             }

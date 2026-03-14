@@ -12,7 +12,7 @@ SCORECARD = ROOT / "artifacts" / "darwin" / "scorecards" / "t1_baseline_scorecar
 LIVE = ROOT / "artifacts" / "darwin" / "live_baselines" / "live_baseline_summary_v1.json"
 CLAIMS = ROOT / "artifacts" / "darwin" / "claims" / "claim_ledger_v1.json"
 SEARCH = ROOT / "artifacts" / "darwin" / "search" / "search_smoke_summary_v1.json"
-SEARCH_ENABLED_LANES = {"lane.harness", "lane.repo_swe", "lane.scheduling"}
+SEARCH_ENABLED_LANES = {"lane.harness", "lane.repo_swe", "lane.scheduling", "lane.research"}
 
 
 def _load_json(path: Path) -> dict:

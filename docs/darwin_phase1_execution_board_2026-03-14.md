@@ -5,20 +5,19 @@ Date: 2026-03-14
 ## Completed
 
 - T0 contract pack
-- T1 live baselines for ATP / harness / systems / repo_swe / scheduling
+- T1 live baselines for ATP / harness / systems / repo_swe / scheduling / research
 - topology compatibility policy
 - typed search core v1
-- first comparative scorecard / weekly packet / archive / promotion / claim stack
+- first comparative scorecard / weekly packet / archive / promotion / transfer / claim stack
 
 ## Active boundary
 
-- next live lane after scheduling: `lane.research` remains deferred
-- next DARWIN systems step: lineage promotion logic beyond single-tranche archive updates
-- next search step: cross-lane transfer and stronger comparative cycles
+- next Darwin step: stronger comparative cycles beyond the first transfer and promotion-history tranche
+- next systems step: multi-tranche lineage promotion logic and richer archive policy
+- next evidence step: compute-normalized scorecards and final Phase-1 evidence packet
 
 ## Deferred
 
-- research lane activation
-- transfer experiments
-- claim-bearing comparative dossiers
+- broader transfer families
+- compute-normalized claim-bearing dossiers
 - mandatory C-Trees promotion

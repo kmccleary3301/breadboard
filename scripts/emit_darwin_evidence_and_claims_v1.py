@@ -64,7 +64,7 @@ def emit_evidence_and_claims() -> dict:
         "contamination_audit_ref": "docs/contracts/darwin/DARWIN_CLAIM_LADDER_V0.md",
         "reproduction_instructions_ref": "scripts/run_darwin_t1_smoke_v1.py",
         "reviewer_signoffs": [{"reviewer": "darwin.internal", "status": "approved"}],
-        "limitations_memo_ref": "docs/darwin_phase1_live_baseline_status_2026-03-14.md",
+        "limitations_memo_ref": "docs/darwin_phase1_research_transfer_status_2026-03-14.md",
     }
     issues = validate_evidence_bundle(bundle)
     if issues:
@@ -87,7 +87,7 @@ def emit_evidence_and_claims() -> dict:
             "status": "approved",
             "summary": f"{lane['lane_id']} emitted live baseline artifacts with status {lane['status']}.",
             "confidence_statement": "Controlled internal baseline only; no comparative claim.",
-            "limitations_ref": "docs/darwin_phase1_live_baseline_status_2026-03-14.md",
+            "limitations_ref": "docs/darwin_phase1_research_transfer_status_2026-03-14.md",
             "approved_by": ["darwin.internal"],
         }
         claim_issues = validate_claim_record(claim)
@@ -97,15 +97,15 @@ def emit_evidence_and_claims() -> dict:
 
     aggregate_claim = {
         "schema": "breadboard.darwin.claim_record.v0",
-        "claim_id": "claim.darwin.phase1.three_lane_live_baseline.v1",
+        "claim_id": "claim.darwin.phase1.six_lane_live_baseline.v1",
         "evidence_bundle_id": bundle["evidence_bundle_id"],
         "claim_target": "internal",
         "claim_tier": "t1",
-        "scope": "DARWIN T1 three-lane live baseline",
+        "scope": "DARWIN T1 six-lane live baseline",
         "status": "approved",
-        "summary": f"ATP, harness, and systems now emit shared DARWIN live baseline artifacts; mean score {scorecard['mean_normalized_score']}.",
+        "summary": f"ATP, harness, systems, repo_swe, scheduling, and research now emit shared DARWIN live baseline artifacts; mean score {scorecard['mean_normalized_score']}.",
         "confidence_statement": "Structural-plus-live internal readiness only.",
-        "limitations_ref": "docs/darwin_phase1_live_baseline_status_2026-03-14.md",
+        "limitations_ref": "docs/darwin_phase1_research_transfer_status_2026-03-14.md",
         "approved_by": ["darwin.internal"],
     }
     claim_records.append(aggregate_claim)

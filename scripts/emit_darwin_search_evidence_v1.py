@@ -21,6 +21,8 @@ ARCHIVE_SNAPSHOT = ROOT / "artifacts" / "darwin" / "search" / "archive_snapshot_
 INVALID_LEDGER = ROOT / "artifacts" / "darwin" / "search" / "invalid_comparison_ledger_v1.json"
 PROMOTION_DECISIONS = ROOT / "artifacts" / "darwin" / "search" / "promotion_decisions_v1.json"
 REPLAY_AUDIT = ROOT / "artifacts" / "darwin" / "search" / "promotion_replay_audit_v1.json"
+PROMOTION_HISTORY = ROOT / "artifacts" / "darwin" / "search" / "promotion_history_v1.json"
+TRANSFER_LEDGER = ROOT / "artifacts" / "darwin" / "search" / "transfer_ledger_v1.json"
 SCORECARD = ROOT / "artifacts" / "darwin" / "scorecards" / "t1_baseline_scorecard.latest.json"
 WEEKLY = ROOT / "artifacts" / "darwin" / "weekly" / "weekly_evidence_packet.latest.json"
 CLAIMS_LEDGER = ROOT / "artifacts" / "darwin" / "claims" / "claim_ledger_v1.json"
@@ -58,6 +60,8 @@ def emit_search_evidence() -> dict:
             str(ARCHIVE_SNAPSHOT.relative_to(ROOT)),
             str(PROMOTION_DECISIONS.relative_to(ROOT)),
             str(REPLAY_AUDIT.relative_to(ROOT)),
+            str(PROMOTION_HISTORY.relative_to(ROOT)),
+            str(TRANSFER_LEDGER.relative_to(ROOT)),
             str(INVALID_LEDGER.relative_to(ROOT)),
         ],
         "benchmark_slice_digest": hashlib.sha256(json.dumps(search_summary, sort_keys=True).encode("utf-8")).hexdigest(),
@@ -68,7 +72,7 @@ def emit_search_evidence() -> dict:
         "contamination_audit_ref": str(INVALID_LEDGER.relative_to(ROOT)),
         "reproduction_instructions_ref": "scripts/run_darwin_phase1_orchestration_v1.py",
         "reviewer_signoffs": [{"reviewer": "darwin.internal", "status": "approved"}],
-        "limitations_memo_ref": "docs/darwin_phase1_repo_swe_search_status_2026-03-14.md",
+        "limitations_memo_ref": "docs/darwin_phase1_research_transfer_status_2026-03-14.md",
     }
     issues = validate_evidence_bundle(bundle)
     if issues:
@@ -121,6 +125,21 @@ def emit_search_evidence() -> dict:
             "summary": "Promotion decisions, rollback targets, and replay audit are operational for the current DARWIN tranche.",
             "confidence_statement": "Operational control-path claim only.",
             "limitations_ref": "docs/contracts/darwin/DARWIN_PROMOTION_CONTROL_V1.md",
+            "approved_by": ["darwin.internal"],
+        }
+    )
+    claim_records.append(
+        {
+            "schema": "breadboard.darwin.claim_record.v0",
+            "claim_id": "claim.darwin.phase1.transfer_protocol_operational.v1",
+            "evidence_bundle_id": bundle["evidence_bundle_id"],
+            "claim_target": "internal",
+            "claim_tier": "t1",
+            "scope": "DARWIN transfer protocol operational",
+            "status": "approved",
+            "summary": "Cross-lane transfer attempts are recorded with validity checks, replay discipline, and bounded internal claims.",
+            "confidence_statement": "Operational transfer-path claim only.",
+            "limitations_ref": "docs/contracts/darwin/DARWIN_TRANSFER_PROTOCOL_V1.md",
             "approved_by": ["darwin.internal"],
         }
     )
@@ -197,6 +216,20 @@ def emit_search_evidence() -> dict:
                 "sha256": _sha256_file(REPLAY_AUDIT),
                 "mime": "application/json",
                 "size_bytes": REPLAY_AUDIT.stat().st_size,
+            },
+            {
+                "artifact_id": "promotion_history",
+                "path": str(PROMOTION_HISTORY.relative_to(ROOT)),
+                "sha256": _sha256_file(PROMOTION_HISTORY),
+                "mime": "application/json",
+                "size_bytes": PROMOTION_HISTORY.stat().st_size,
+            },
+            {
+                "artifact_id": "transfer_ledger",
+                "path": str(TRANSFER_LEDGER.relative_to(ROOT)),
+                "sha256": _sha256_file(TRANSFER_LEDGER),
+                "mime": "application/json",
+                "size_bytes": TRANSFER_LEDGER.stat().st_size,
             },
             {
                 "artifact_id": "search_evidence_bundle",

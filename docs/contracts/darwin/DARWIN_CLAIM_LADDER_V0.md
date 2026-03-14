@@ -69,3 +69,9 @@ Promotion-path claims may support only:
 - selected winner under bounded protocol
 - rollback target recorded
 - replay audit completed for the audited promotion
+
+Transfer-path claims may support only:
+
+- transfer protocol operational
+- transfer attempt valid or invalid
+- replay-audited transfer attempt improved or did not improve the target lane

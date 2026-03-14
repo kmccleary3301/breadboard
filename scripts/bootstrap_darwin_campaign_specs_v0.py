@@ -76,6 +76,13 @@ def build_bootstrap_specs() -> list[dict]:
             suite_id="suite.scheduling.phase1.v0",
             allowed_tools=["python", "constraint_checker", "filesystem_read"],
         ),
+        _base_campaign(
+            campaign_id="camp.darwin.phase1.research.bootstrap.v0",
+            lane_id="lane.research",
+            objective_id="objective.research.evidence_synthesis_baseline",
+            suite_id="suite.research.phase1.v0",
+            allowed_tools=["python", "citation_checker", "filesystem_read"],
+        ),
     ]
 
 

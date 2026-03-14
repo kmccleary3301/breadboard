@@ -5,8 +5,8 @@ import json
 from scripts.build_darwin_future_lane_placeholders_v0 import write_future_lane_placeholders
 
 
-def test_write_future_lane_placeholders_emits_scheduling_and_research() -> None:
+def test_write_future_lane_placeholders_is_empty_after_research_launch() -> None:
     summary = write_future_lane_placeholders()
     payload = json.loads(open(summary["out_path"], "r", encoding="utf-8").read())
-    assert payload["lane_count"] == 2
-    assert {row["lane_id"] for row in payload["lanes"]} == {"lane.scheduling", "lane.research"}
+    assert payload["lane_count"] == 0
+    assert payload["lanes"] == []
