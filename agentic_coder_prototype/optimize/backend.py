@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from .context import (
@@ -1346,4 +1346,38 @@ class ReflectiveParetoBackend:
 
 def run_reflective_pareto_backend(request: ReflectiveParetoBackendRequest) -> ReflectiveParetoBackendResult:
     backend = ReflectiveParetoBackend()
+    return backend.run(request)
+
+
+class SingleLocusGreedyBackend(ReflectiveParetoBackend):
+    """A narrower backend family that only keeps the first proposed repair."""
+
+    backend_id = "single_locus_greedy.v1"
+
+    def __init__(
+        self,
+        *,
+        reflection_policy: Optional[WrongnessGuidedReflectionPolicy] = None,
+        mutation_policy: Optional[TypedOverlayMutationPolicy] = None,
+    ) -> None:
+        super().__init__(
+            reflection_policy=reflection_policy,
+            mutation_policy=mutation_policy,
+        )
+
+    def run(self, request: ReflectiveParetoBackendRequest) -> ReflectiveParetoBackendResult:
+        limited_request = replace(
+            request,
+            max_proposals=1,
+            metadata={**request.metadata, "backend_family": self.backend_id, "proposal_limit": 1},
+        )
+        result = super().run(limited_request)
+        return replace(
+            result,
+            metadata={**result.metadata, "backend_family": self.backend_id, "proposal_limit": 1},
+        )
+
+
+def run_single_locus_greedy_backend(request: ReflectiveParetoBackendRequest) -> ReflectiveParetoBackendResult:
+    backend = SingleLocusGreedyBackend()
     return backend.run(request)

@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 import pytest
 
 from agentic_coder_prototype.optimize import (
+    BenchmarkRunManifest,
+    CandidateComparisonResult,
+    EvaluationRecord,
     GateResult,
     PromotionDecision,
+    PromotionEvidenceSummary,
     PromotionRecord,
     build_codex_dossier_promotion_examples,
     build_codex_dossier_promotion_examples_payload,
+    build_promotion_evidence_summary,
+    build_support_execution_benchmark_example,
     create_promotion_record,
+    promote_candidate,
 )
 
 
@@ -107,3 +117,182 @@ def test_promotion_terminal_state_behavior_is_explicit() -> None:
 
     assert archived.state == "archived"
     assert archived.state_history[-2:] == ["rejected", "archived"]
+
+
+def _clone_manifest(manifest: BenchmarkRunManifest, **updates: object) -> BenchmarkRunManifest:
+    payload = manifest.to_dict()
+    payload.update(updates)
+    return BenchmarkRunManifest.from_dict(payload)
+
+
+def _clone_comparison(
+    comparison: CandidateComparisonResult,
+    **updates: object,
+) -> CandidateComparisonResult:
+    payload = comparison.to_dict()
+    payload.update(updates)
+    return CandidateComparisonResult.from_dict(payload)
+
+
+def _clone_evaluation(evaluation: EvaluationRecord, **updates: object) -> EvaluationRecord:
+    payload = evaluation.to_dict()
+    payload.update(updates)
+    if "evaluation_id" in updates and "normalized_diagnostics" not in updates:
+        evaluation_id = str(updates["evaluation_id"])
+        payload["normalized_diagnostics"] = [
+            {**bundle, "evaluation_id": evaluation_id}
+            for bundle in payload.get("normalized_diagnostics", [])
+        ]
+    return EvaluationRecord.from_dict(payload)
+
+
+def _support_execution_evaluation(example: Mapping[str, Any]) -> EvaluationRecord:
+    promotable = build_codex_dossier_promotion_examples()["promotable"]
+    return _clone_evaluation(
+        promotable["evaluation"],
+        evaluation_id=f"eval.{example['child_candidate'].candidate_id}",
+        target_id=example["target"].target_id,
+        candidate_id=example["child_candidate"].candidate_id,
+        dataset_id=example["dataset"].dataset_id,
+        dataset_version=example["dataset"].dataset_version,
+        sample_id=example["dataset"].samples[1].sample_id,
+        evaluation_input_compatibility={
+            **example["child_materialized_candidate"].evaluation_input_compatibility,
+            "conformance_bundle": "codex-e4",
+        },
+        support_envelope_snapshot=example["target"].support_envelope.to_dict(),
+    )
+
+
+def _evidence_summary_from_record(record: PromotionRecord) -> PromotionEvidenceSummary:
+    metadata: Mapping[str, Any] = record.evidence.metadata
+    payload = metadata.get("evidence_summary")
+    assert isinstance(payload, Mapping)
+    return PromotionEvidenceSummary.from_dict(payload)
+
+
+def test_build_promotion_evidence_summary_round_trips() -> None:
+    example = build_support_execution_benchmark_example()
+    summary = build_promotion_evidence_summary(
+        summary_id="evidence_summary.support_execution.001",
+        candidate_id=example["child_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+        review_required=True,
+        metadata={"lane": "support_execution"},
+    )
+
+    round_tripped = PromotionEvidenceSummary.from_dict(summary.to_dict())
+
+    assert round_tripped.summary_id == summary.summary_id
+    assert round_tripped.manifest_ids == [example["manifest"].manifest_id]
+    assert round_tripped.held_out_sample_ids == ["sample.support_execution.hold.001"]
+    assert round_tripped.regression_sample_ids == ["sample.support_execution.regression.001"]
+    assert round_tripped.compared_regression_sample_ids == ["sample.support_execution.regression.001"]
+    assert round_tripped.outcome_counts == {"win": 1}
+    assert round_tripped.review_required is True
+
+
+def test_promote_candidate_includes_evidence_summary_for_benchmark_backed_lane() -> None:
+    example = build_support_execution_benchmark_example()
+    evaluation = _support_execution_evaluation(example)
+    record, decision = promote_candidate(
+        record_id="promotion.support_execution.001",
+        target=example["target"],
+        materialized_candidate=example["child_materialized_candidate"],
+        evaluation=evaluation,
+        created_at="2026-03-14T10:00:00.000Z",
+        gated_at="2026-03-14T10:00:01.000Z",
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+    )
+
+    summary = _evidence_summary_from_record(record)
+
+    assert record.state == "promotable"
+    assert decision.next_state == "promotable"
+    assert summary.manifest_ids == [example["manifest"].manifest_id]
+    assert summary.outcome_counts == {"win": 1}
+    assert summary.review_required is True
+
+
+def test_promote_candidate_keeps_inconclusive_comparison_on_frontier() -> None:
+    example = build_support_execution_benchmark_example()
+    evaluation = _support_execution_evaluation(example)
+    comparison = _clone_comparison(
+        example["comparison_result"],
+        comparison_id="comparison.support_execution.inconclusive",
+        outcome="inconclusive",
+        better_candidate_id=None,
+    )
+
+    record, decision = promote_candidate(
+        record_id="promotion.support_execution.inconclusive",
+        target=example["target"],
+        materialized_candidate=example["child_materialized_candidate"],
+        evaluation=evaluation,
+        created_at="2026-03-14T10:05:00.000Z",
+        gated_at="2026-03-14T10:05:01.000Z",
+        benchmark_manifest=example["manifest"],
+        comparison_results=[comparison],
+    )
+
+    assert record.state == "frontier"
+    assert decision.next_state == "frontier"
+    assert "comparison" in decision.blocked_by_gate_kinds
+    summary = _evidence_summary_from_record(record)
+    assert summary.outcome_counts == {"inconclusive": 1}
+
+
+def test_promote_candidate_rejects_regression_loss() -> None:
+    example = build_support_execution_benchmark_example()
+    evaluation = _support_execution_evaluation(example)
+    comparison = _clone_comparison(
+        example["comparison_result"],
+        comparison_id="comparison.support_execution.loss",
+        outcome="loss",
+        better_candidate_id=example["parent_candidate"].candidate_id,
+    )
+
+    record, decision = promote_candidate(
+        record_id="promotion.support_execution.loss",
+        target=example["target"],
+        materialized_candidate=example["child_materialized_candidate"],
+        evaluation=evaluation,
+        created_at="2026-03-14T10:10:00.000Z",
+        gated_at="2026-03-14T10:10:01.000Z",
+        benchmark_manifest=example["manifest"],
+        comparison_results=[comparison],
+    )
+
+    assert record.state == "rejected"
+    assert decision.next_state == "rejected"
+    assert decision.blocked_by_gate_kinds == ["comparison"]
+
+
+def test_promote_candidate_requires_more_trials_for_stochastic_manifest() -> None:
+    example = build_support_execution_benchmark_example()
+    evaluation = _support_execution_evaluation(example)
+    stochastic_manifest = _clone_manifest(
+        example["manifest"],
+        stochasticity_class="seeded_stochastic",
+        rerun_policy={"max_trials": 3, "flake_on_nonrepeatable": True},
+    )
+
+    record, decision = promote_candidate(
+        record_id="promotion.support_execution.stochastic",
+        target=example["target"],
+        materialized_candidate=example["child_materialized_candidate"],
+        evaluation=evaluation,
+        created_at="2026-03-14T10:15:00.000Z",
+        gated_at="2026-03-14T10:15:01.000Z",
+        benchmark_manifest=stochastic_manifest,
+        comparison_results=[example["comparison_result"]],
+    )
+
+    assert record.state == "frontier"
+    assert decision.next_state == "frontier"
+    summary = _evidence_summary_from_record(record)
+    assert summary.stochasticity_class == "seeded_stochastic"
+    assert summary.minimum_required_trials == 3
+    assert summary.observed_trial_count == 1

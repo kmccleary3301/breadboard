@@ -1,5 +1,16 @@
 """Optimization helpers and typed substrate primitives."""
 
+from .benchmark import (
+    ALLOWED_COMPARISON_OUTCOMES,
+    ALLOWED_SPLIT_VISIBILITY,
+    ALLOWED_STOCHASTICITY_CLASSES,
+    BackendComparisonResult,
+    BenchmarkRunManifest,
+    BenchmarkRunResult,
+    BenchmarkSplit,
+    CandidateComparisonResult,
+    build_paired_candidate_comparison,
+)
 from .backend import (
     OBJECTIVE_DIRECTIONS,
     CandidatePortfolio,
@@ -15,9 +26,11 @@ from .backend import (
     ReflectiveParetoBackend,
     ReflectiveParetoBackendRequest,
     ReflectiveParetoBackendResult,
+    SingleLocusGreedyBackend,
     TypedOverlayMutationPolicy,
     WrongnessGuidedReflectionPolicy,
     run_reflective_pareto_backend,
+    run_single_locus_greedy_backend,
     validate_bounded_candidate,
 )
 from .context import (
@@ -41,6 +54,8 @@ from .dataset import (
 from .diagnostics import DiagnosticBundle, DiagnosticEntry
 from .evaluation import EvaluationRecord
 from .examples import (
+    build_backend_comparison_example,
+    build_backend_comparison_example_payload,
     build_codex_dossier_dataset_example,
     build_codex_dossier_dataset_example_payload,
     build_codex_dossier_backend_example,
@@ -53,6 +68,12 @@ from .examples import (
     build_codex_dossier_runtime_context_examples_payload,
     build_codex_dossier_promotion_examples,
     build_codex_dossier_promotion_examples_payload,
+    build_coding_overlay_benchmark_example,
+    build_coding_overlay_benchmark_example_payload,
+    build_support_execution_benchmark_example,
+    build_support_execution_benchmark_example_payload,
+    build_tool_guidance_benchmark_example,
+    build_tool_guidance_benchmark_example_payload,
 )
 from .optuna_config import load_optuna_config
 from .promotion import (
@@ -61,11 +82,14 @@ from .promotion import (
     GateResult,
     PromotionDecision,
     PromotionEvidence,
+    PromotionEvidenceSummary,
     PromotionRecord,
     ReplayConformanceGateInput,
     SupportEnvelopeGateInput,
     build_promotion_evidence,
+    build_promotion_evidence_summary,
     create_promotion_record,
+    evaluate_comparison_gate,
     evaluate_conformance_gate,
     evaluate_promotion_gates,
     evaluate_replay_gate,
@@ -88,9 +112,17 @@ from .wrongness import WrongnessReport
 
 __all__ = [
     "ALLOWED_TRANSITIONS",
+    "ALLOWED_COMPARISON_OUTCOMES",
+    "ALLOWED_SPLIT_VISIBILITY",
+    "ALLOWED_STOCHASTICITY_CLASSES",
     "ArtifactRef",
+    "BackendComparisonResult",
+    "BenchmarkRunManifest",
+    "BenchmarkRunResult",
+    "BenchmarkSplit",
     "CandidateBundle",
     "CandidateChange",
+    "CandidateComparisonResult",
     "CandidatePortfolio",
     "CorrectnessRationale",
     "DiagnosticBundle",
@@ -117,6 +149,7 @@ __all__ = [
     "PortfolioEntry",
     "PromotionDecision",
     "PromotionEvidence",
+    "PromotionEvidenceSummary",
     "PromotionRecord",
     "ReflectionDecision",
     "ReflectionFinding",
@@ -125,6 +158,7 @@ __all__ = [
     "ReflectiveParetoBackend",
     "ReflectiveParetoBackendRequest",
     "ReflectiveParetoBackendResult",
+    "SingleLocusGreedyBackend",
     "RuntimeCompatibilityIssue",
     "RuntimeCompatibilityResult",
     "SandboxContextRequirement",
@@ -138,6 +172,8 @@ __all__ = [
     "TypedOverlayMutationPolicy",
     "WrongnessGuidedReflectionPolicy",
     "WrongnessReport",
+    "build_backend_comparison_example",
+    "build_backend_comparison_example_payload",
     "build_codex_dossier_backend_example",
     "build_codex_dossier_backend_example_payload",
     "build_codex_dossier_dataset_example",
@@ -150,9 +186,18 @@ __all__ = [
     "build_codex_dossier_promotion_examples_payload",
     "build_codex_dossier_runtime_context_examples",
     "build_codex_dossier_runtime_context_examples_payload",
+    "build_coding_overlay_benchmark_example",
+    "build_coding_overlay_benchmark_example_payload",
+    "build_paired_candidate_comparison",
     "build_promotion_evidence",
+    "build_promotion_evidence_summary",
+    "build_support_execution_benchmark_example",
+    "build_support_execution_benchmark_example_payload",
+    "build_tool_guidance_benchmark_example",
+    "build_tool_guidance_benchmark_example_payload",
     "build_stub_episode",
     "create_promotion_record",
+    "evaluate_comparison_gate",
     "evaluate_conformance_gate",
     "evaluate_promotion_gates",
     "evaluate_replay_gate",
@@ -161,6 +206,7 @@ __all__ = [
     "materialize_candidate",
     "promote_candidate",
     "run_reflective_pareto_backend",
+    "run_single_locus_greedy_backend",
     "validate_bounded_candidate",
     "validate_prompt_mutation",
 ]

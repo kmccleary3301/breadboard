@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from agentic_coder_prototype.optimize import (
+    BenchmarkRunManifest,
+    CandidateComparisonResult,
     EvaluationRecord,
     MaterializedCandidate,
     ReplayConformanceGateInput,
     SupportEnvelope,
     SupportEnvelopeGateInput,
     build_codex_dossier_promotion_examples,
+    build_support_execution_benchmark_example,
     evaluate_conformance_gate,
+    evaluate_comparison_gate,
     evaluate_promotion_gates,
     evaluate_replay_gate,
     evaluate_support_envelope_gate,
@@ -268,3 +272,117 @@ def test_combined_promotion_gates_keep_candidate_out_of_promotable_when_unresolv
     assert statuses["replay"] == "insufficient_evidence"
     assert statuses["conformance"] == "insufficient_evidence"
     assert frontier["record"].state != "promotable"
+
+
+def _clone_manifest(manifest: BenchmarkRunManifest, **updates: object) -> BenchmarkRunManifest:
+    payload = manifest.to_dict()
+    payload.update(updates)
+    return BenchmarkRunManifest.from_dict(payload)
+
+
+def _clone_comparison(
+    comparison: CandidateComparisonResult,
+    **updates: object,
+) -> CandidateComparisonResult:
+    payload = comparison.to_dict()
+    payload.update(updates)
+    return CandidateComparisonResult.from_dict(payload)
+
+
+def test_comparison_gate_passes_on_regression_and_hold_coverage() -> None:
+    example = build_support_execution_benchmark_example()
+    result = evaluate_comparison_gate(
+        target=example["target"],
+        candidate_id=example["child_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+    )
+
+    assert result.gate_kind == "comparison"
+    assert result.status == "pass"
+    assert result.metadata["manifest_id"] == example["manifest"].manifest_id
+    assert result.metadata["missing_regression_sample_ids"] == []
+
+
+def test_comparison_gate_requires_regression_coverage() -> None:
+    example = build_support_execution_benchmark_example()
+    manifest = example["manifest"]
+    comparison = _clone_comparison(
+        example["comparison_result"],
+        comparison_id="comparison.support_execution.missing_regression",
+        compared_sample_ids=[
+            sample_id
+            for sample_id in example["comparison_result"].compared_sample_ids
+            if sample_id != "sample.support_execution.regression.001"
+        ],
+    )
+
+    result = evaluate_comparison_gate(
+        target=example["target"],
+        candidate_id=example["child_candidate"].candidate_id,
+        benchmark_manifest=manifest,
+        comparison_results=[comparison],
+    )
+
+    assert result.status == "insufficient_evidence"
+    assert result.metadata["missing_regression_sample_ids"] == ["sample.support_execution.regression.001"]
+
+
+def test_comparison_gate_requires_rerun_policy_for_stochastic_manifests() -> None:
+    example = build_support_execution_benchmark_example()
+    manifest = _clone_manifest(
+        example["manifest"],
+        stochasticity_class="seeded_stochastic",
+        rerun_policy={"max_trials": 3, "flake_on_nonrepeatable": True},
+    )
+
+    result = evaluate_comparison_gate(
+        target=example["target"],
+        candidate_id=example["child_candidate"].candidate_id,
+        benchmark_manifest=manifest,
+        comparison_results=[example["comparison_result"]],
+    )
+
+    assert result.status == "insufficient_evidence"
+    assert result.metadata["minimum_required_trials"] == 3
+    assert result.metadata["observed_trial_count"] == 1
+
+
+def test_comparison_gate_treats_inconclusive_outcomes_as_non_promotable() -> None:
+    example = build_support_execution_benchmark_example()
+    comparison = _clone_comparison(
+        example["comparison_result"],
+        comparison_id="comparison.support_execution.inconclusive",
+        outcome="inconclusive",
+        better_candidate_id=None,
+    )
+
+    result = evaluate_comparison_gate(
+        target=example["target"],
+        candidate_id=example["child_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[comparison],
+    )
+
+    assert result.status == "insufficient_evidence"
+    assert result.metadata["outcomes"] == ["inconclusive"]
+
+
+def test_comparison_gate_fails_when_child_loses_to_parent() -> None:
+    example = build_support_execution_benchmark_example()
+    comparison = _clone_comparison(
+        example["comparison_result"],
+        comparison_id="comparison.support_execution.loss",
+        outcome="loss",
+        better_candidate_id=example["parent_candidate"].candidate_id,
+    )
+
+    result = evaluate_comparison_gate(
+        target=example["target"],
+        candidate_id=example["child_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[comparison],
+    )
+
+    assert result.status == "fail"
+    assert "not better than its parent baseline" in result.reason
