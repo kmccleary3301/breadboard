@@ -1,17 +1,22 @@
-# DARWIN Phase-1 Repo-SWE and Typed Search Status
+# DARWIN Phase-1 Repo-SWE, Scheduling, and Typed Search Status
 
 Date: 2026-03-14
 
 ## Scope completed
 
 - `lane.repo_swe` added as a live DARWIN baseline lane
+- `lane.scheduling` added as a live DARWIN baseline lane
 - repo_swe baseline evaluator slice frozen
+- scheduling baseline evaluator slice frozen
 - typed mutation registry emitted
 - first search-enabled lane selection frozen
-- first typed-search smoke executed on:
+- first promotion-capable typed-search cycles executed on:
   - `lane.harness`
   - `lane.repo_swe`
+  - `lane.scheduling`
 - archive snapshot emitted
+- promotion decision records emitted
+- replay audit emitted for the promoted scheduling candidate
 - invalid comparison ledger emitted
 - second internal DARWIN evidence bundle emitted for typed search
 
@@ -27,17 +32,17 @@ Date: 2026-03-14
 
 ## Current read
 
-- DARWIN now has four live lanes:
+- DARWIN now has five live lanes:
   - ATP
   - harness
   - systems
   - repo_swe
-- typed search is operational on two lanes
+  - scheduling
+- typed search is operational on three lanes
 - weekly packet and scorecard can now consume comparative search outputs
 
 ## Still deferred
 
-- scheduling live baseline
 - research live baseline
 - cross-lane transfer
-- lineage-driven promotion logic beyond archive snapshots
+- lineage promotion logic beyond single-tranche archive updates

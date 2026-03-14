@@ -36,6 +36,11 @@ PREREQUISITE_CHECKS: dict[str, dict[str, str]] = {
         "test_harness": "tests/test_opencode_patch_apply_codex.py",
         "contamination_controls": "docs/contracts/darwin/DARWIN_CLAIM_LADDER_V0.md",
     },
+    "lane.scheduling": {
+        "scenario_pack": "docs/contracts/darwin/fixtures/scheduling_scenario_pack_v0.json",
+        "constraint_checker": "scripts/run_darwin_scheduling_lane_baseline_v0.py",
+        "budget_curves": "docs/contracts/darwin/DARWIN_TYPED_SEARCH_CORE_V1.md",
+    },
 }
 
 
@@ -107,6 +112,10 @@ def build_scorecard(
                 "best_mutated_score": search_row.get("best_mutated_score"),
                 "comparative_delta": search_row.get("comparative_delta"),
                 "best_candidate_id": search_row.get("best_candidate_id"),
+                "promotion_status": search_row.get("promotion_status"),
+                "archive_size": search_row.get("archive_size"),
+                "invalid_comparison_count": search_row.get("invalid_comparison_count", 0),
+                "search_maturity": "promotion_capable" if search_row else "baseline_only",
                 "components": components,
                 "prerequisites": prereq_results,
             }

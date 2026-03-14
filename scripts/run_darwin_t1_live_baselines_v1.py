@@ -22,7 +22,7 @@ from breadboard_ext.darwin.contracts import (
 
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "darwin" / "live_baselines"
 DEFAULT_BOOTSTRAP_MANIFEST = ROOT / "artifacts" / "darwin" / "bootstrap" / "bootstrap_manifest_v0.json"
-ACTIVE_LANES = ["lane.atp", "lane.harness", "lane.systems", "lane.repo_swe"]
+ACTIVE_LANES = ["lane.atp", "lane.harness", "lane.systems", "lane.repo_swe", "lane.scheduling"]
 
 
 LANE_COMMANDS = {
@@ -78,6 +78,19 @@ LANE_COMMANDS = {
         "result_path": None,
         "task_id": "task.darwin.repo_swe.patch_workspace_smoke",
     },
+    "lane.scheduling": {
+        "command": [
+            sys.executable,
+            "scripts/run_darwin_scheduling_lane_baseline_v0.py",
+            "--strategy",
+            "deadline_first",
+            "--out",
+            "artifacts/darwin/live_baselines/lane.scheduling/scheduling_baseline.json",
+        ],
+        "kind": "json_overall_ok",
+        "result_path": "artifacts/darwin/live_baselines/lane.scheduling/scheduling_baseline.json",
+        "task_id": "task.darwin.scheduling.constraint_objective_smoke",
+    },
 }
 
 
@@ -130,14 +143,20 @@ def run_named_lane(
     perturbation_group: str = "nominal",
     task_id: str | None = None,
     trial_label: str = "baseline",
+    command_override: list[str] | None = None,
+    result_path_override: str | None = None,
+    kind_override: str | None = None,
 ) -> dict:
     lane_dir = out_dir / lane_id
     lane_dir.mkdir(parents=True, exist_ok=True)
     lane_cfg = LANE_COMMANDS[lane_id]
     started_at = _iso_now()
     started_monotonic = time.perf_counter()
+    command = command_override or lane_cfg["command"]
+    result_path = result_path_override or lane_cfg.get("result_path")
+    kind = kind_override or lane_cfg["kind"]
     proc = subprocess.run(
-        lane_cfg["command"],
+        command,
         cwd=str(ROOT),
         capture_output=True,
         text=True,
@@ -150,13 +169,15 @@ def run_named_lane(
     stdout_path.write_text(proc.stdout or "", encoding="utf-8")
     stderr_path.write_text(proc.stderr or "", encoding="utf-8")
 
-    if lane_cfg["kind"] == "json_overall_ok":
-        result_payload = _load_json(ROOT / lane_cfg["result_path"])
-        primary_score = 1.0 if bool(result_payload.get("overall_ok")) else 0.0
+    if kind == "json_overall_ok":
+        result_payload = _load_json(ROOT / result_path)
+        primary_score = float(result_payload.get("primary_score") if result_payload.get("primary_score") is not None else (1.0 if bool(result_payload.get("overall_ok")) else 0.0))
         verifier_status = "passed" if bool(result_payload.get("overall_ok")) else "failed"
         secondary_metrics = {
             "decision_state": result_payload.get("decision_state"),
             "missing_count": result_payload.get("missing_count"),
+            "strategy": result_payload.get("strategy"),
+            "scenario_count": result_payload.get("scenario_count"),
             "returncode": proc.returncode,
         }
     else:
@@ -238,7 +259,7 @@ def run_named_lane(
         "primary_score": eval_record["primary_score"],
         "verifier_status": verifier_status,
         "status": "ready" if proc.returncode == 0 else "partial",
-        "command": lane_cfg["command"],
+        "command": command,
         "run_started_at": started_at,
         "topology_id": topology_id or spec["topology_family"],
         "policy_bundle_id": policy_bundle_id or spec["policy_bundle_id"],

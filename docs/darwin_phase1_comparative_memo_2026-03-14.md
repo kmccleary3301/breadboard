@@ -4,10 +4,10 @@ Date: 2026-03-14
 
 ## What DARWIN now demonstrates
 
-- common control/evaluation contracts across four lanes
-- first multi-lane weekly packet with live and comparative refs
-- first typed-search smoke with lineage and archive outputs
-- first internal search-bearing claims with explicit ladder limits
+- common control/evaluation contracts across five lanes
+- first multi-lane weekly packet with live, comparative, and promotion refs
+- first typed-search promotion cycles with lineage and archive outputs
+- first internal promotion-capable DARWIN claims with explicit ladder limits
 
 ## What DARWIN does not yet demonstrate
 
@@ -18,4 +18,4 @@ Date: 2026-03-14
 
 ## Interpretation
 
-The current tranche proves DARWIN is now more than a baseline shell. It can run live multi-lane baselines, emit shared evidence and claims, and run a bounded typed-search smoke on selected lanes with archive and budget discipline.
+The current tranche proves DARWIN is now more than a baseline shell. It can run live multi-lane baselines, emit shared evidence and claims, and run bounded promotion-capable typed-search cycles on selected lanes with archive, budget, and replay discipline.

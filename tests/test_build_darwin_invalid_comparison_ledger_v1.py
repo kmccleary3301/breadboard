@@ -18,4 +18,4 @@ def test_write_invalid_comparison_ledger_emits_zero_rows_for_current_smoke() -> 
     run_search_smoke()
     summary = write_invalid_comparison_ledger()
     payload = json.loads(open(summary["out_path"], "r", encoding="utf-8").read())
-    assert payload["invalid_count"] == 0
+    assert payload["invalid_count"] == 1

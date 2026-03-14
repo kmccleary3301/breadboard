@@ -1,0 +1,29 @@
+{
+  "schema": "breadboard.darwin.scheduling_scenario_pack.v0",
+  "scenarios": [
+    {
+      "scenario_id": "sched.scenario.001",
+      "tasks": [
+        {"task_id": "a", "duration": 2, "deadline": 2, "value": 2},
+        {"task_id": "b", "duration": 2, "deadline": 4, "value": 3},
+        {"task_id": "c", "duration": 3, "deadline": 5, "value": 10}
+      ]
+    },
+    {
+      "scenario_id": "sched.scenario.002",
+      "tasks": [
+        {"task_id": "d", "duration": 1, "deadline": 1, "value": 1},
+        {"task_id": "e", "duration": 3, "deadline": 4, "value": 4},
+        {"task_id": "f", "duration": 2, "deadline": 5, "value": 8}
+      ]
+    },
+    {
+      "scenario_id": "sched.scenario.003",
+      "tasks": [
+        {"task_id": "g", "duration": 2, "deadline": 2, "value": 1},
+        {"task_id": "h", "duration": 2, "deadline": 4, "value": 6},
+        {"task_id": "i", "duration": 1, "deadline": 5, "value": 4}
+      ]
+    }
+  ]
+}

@@ -47,7 +47,7 @@ def build_weekly_packet(scorecard_path: Path = DEFAULT_SCORECARD, *, include_sea
         search_row = search_by_lane.get(lane["lane_id"])
         search_note = ""
         if search_row:
-            search_note = f" best_mutated={search_row.get('best_mutated_score')} delta={search_row.get('comparative_delta')}"
+            search_note = f" promoted={search_row.get('best_candidate_id')} status={search_row.get('promotion_status')} delta={search_row.get('comparative_delta')}"
         lane_summaries.append(
             {
                 "lane_id": lane["lane_id"],
@@ -80,9 +80,9 @@ def build_weekly_packet(scorecard_path: Path = DEFAULT_SCORECARD, *, include_sea
         "drift_refs": [],
         "incident_refs": [],
         "next_actions": [
-            "promote repo_swe baseline from micro evaluator to richer patch-and-test benchmark",
-            "expand typed search from harness/repo_swe to one additional lane",
-            "launch scheduling lane baseline after scenario-pack is frozen"
+            "promote scheduling lane from bounded scenario pack to richer simulator-backed baseline",
+            "extend promotion-capable search to one additional lane beyond harness/repo_swe/scheduling",
+            "prepare research lane bootstrap without launching public-facing claims"
         ],
     }
     if claim_ledger.get("claims"):

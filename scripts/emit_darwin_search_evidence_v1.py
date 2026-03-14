@@ -19,6 +19,8 @@ from breadboard_ext.darwin.contracts import validate_claim_record, validate_evid
 SEARCH_SUMMARY = ROOT / "artifacts" / "darwin" / "search" / "search_smoke_summary_v1.json"
 ARCHIVE_SNAPSHOT = ROOT / "artifacts" / "darwin" / "search" / "archive_snapshot_v1.json"
 INVALID_LEDGER = ROOT / "artifacts" / "darwin" / "search" / "invalid_comparison_ledger_v1.json"
+PROMOTION_DECISIONS = ROOT / "artifacts" / "darwin" / "search" / "promotion_decisions_v1.json"
+REPLAY_AUDIT = ROOT / "artifacts" / "darwin" / "search" / "promotion_replay_audit_v1.json"
 SCORECARD = ROOT / "artifacts" / "darwin" / "scorecards" / "t1_baseline_scorecard.latest.json"
 WEEKLY = ROOT / "artifacts" / "darwin" / "weekly" / "weekly_evidence_packet.latest.json"
 CLAIMS_LEDGER = ROOT / "artifacts" / "darwin" / "claims" / "claim_ledger_v1.json"
@@ -46,18 +48,20 @@ def emit_search_evidence() -> dict:
     _ = _load_json(SCORECARD)
     bundle = {
         "schema": "breadboard.darwin.evidence_bundle.v0",
-        "evidence_bundle_id": "bundle.darwin.phase1.t2.search_smoke.v1",
-        "campaign_id": "camp.darwin.phase1.multi_lane.search_smoke",
+        "evidence_bundle_id": "bundle.darwin.phase1.t2.promotion_cycles.v1",
+        "campaign_id": "camp.darwin.phase1.multi_lane.promotion_cycles",
         "bundle_tier": "t1",
         "run_manifest_ref": str(SEARCH_SUMMARY.relative_to(ROOT)),
         "result_table_refs": [
             str(SCORECARD.relative_to(ROOT)),
             str(WEEKLY.relative_to(ROOT)),
             str(ARCHIVE_SNAPSHOT.relative_to(ROOT)),
+            str(PROMOTION_DECISIONS.relative_to(ROOT)),
+            str(REPLAY_AUDIT.relative_to(ROOT)),
             str(INVALID_LEDGER.relative_to(ROOT)),
         ],
         "benchmark_slice_digest": hashlib.sha256(json.dumps(search_summary, sort_keys=True).encode("utf-8")).hexdigest(),
-        "environment_digests": ["sha256:darwin-phase1-search-smoke-env"],
+        "environment_digests": ["sha256:darwin-phase1-promotion-cycles-env"],
         "ablation_refs": [],
         "perturbation_refs": [str(SEARCH_SUMMARY.relative_to(ROOT))],
         "statistical_summary_ref": str(SCORECARD.relative_to(ROOT)),
@@ -83,7 +87,7 @@ def emit_search_evidence() -> dict:
             "claim_tier": "t1",
             "scope": "DARWIN typed search core operational on selected lanes",
             "status": "approved",
-            "summary": "Mutation registry, archive snapshot, budget enforcement, and comparative scorecard are live for the initial DARWIN search smoke.",
+            "summary": "Mutation registry, archive snapshot, promotion decisions, budget enforcement, and comparative scorecard are live for the initial DARWIN promotion cycles.",
             "confidence_statement": "Internal operational claim only; no superiority claim.",
             "limitations_ref": "docs/contracts/darwin/DARWIN_CLAIM_LADDER_V0.md",
             "approved_by": ["darwin.internal"],
@@ -93,18 +97,33 @@ def emit_search_evidence() -> dict:
         claim_records.append(
             {
                 "schema": "breadboard.darwin.claim_record.v0",
-                "claim_id": f"claim.darwin.phase1.{row['lane_id']}.search_smoke.v1",
+                "claim_id": f"claim.darwin.phase1.{row['lane_id']}.promotion_cycle.v1",
                 "evidence_bundle_id": bundle["evidence_bundle_id"],
                 "claim_target": "internal",
                 "claim_tier": "t1",
-                "scope": f"{row['lane_id']} typed-search smoke",
+                "scope": f"{row['lane_id']} typed-search promotion cycle",
                 "status": "approved",
-                "summary": f"{row['lane_id']} emitted baseline-vs-mutation comparative DARWIN artifacts.",
-                "confidence_statement": "Internal operational claim only; improvement claims require higher-tier replay.",
+                "summary": f"{row['lane_id']} emitted baseline-vs-mutation comparative DARWIN artifacts with promotion status {row.get('promotion_status')}.",
+                "confidence_statement": "Internal operational claim only; promotion claims require replay and remain non-superiority claims.",
                 "limitations_ref": "docs/contracts/darwin/DARWIN_CLAIM_LADDER_V0.md",
                 "approved_by": ["darwin.internal"],
             }
         )
+    claim_records.append(
+        {
+            "schema": "breadboard.darwin.claim_record.v0",
+            "claim_id": "claim.darwin.phase1.promotion_control_operational.v1",
+            "evidence_bundle_id": bundle["evidence_bundle_id"],
+            "claim_target": "internal",
+            "claim_tier": "t1",
+            "scope": "DARWIN promotion control operational",
+            "status": "approved",
+            "summary": "Promotion decisions, rollback targets, and replay audit are operational for the current DARWIN tranche.",
+            "confidence_statement": "Operational control-path claim only.",
+            "limitations_ref": "docs/contracts/darwin/DARWIN_PROMOTION_CONTROL_V1.md",
+            "approved_by": ["darwin.internal"],
+        }
+    )
     for claim in claim_records:
         issues = validate_claim_record(claim)
         if issues:
@@ -164,6 +183,20 @@ def emit_search_evidence() -> dict:
                 "sha256": _sha256_file(ARCHIVE_SNAPSHOT),
                 "mime": "application/json",
                 "size_bytes": ARCHIVE_SNAPSHOT.stat().st_size,
+            },
+            {
+                "artifact_id": "promotion_decisions",
+                "path": str(PROMOTION_DECISIONS.relative_to(ROOT)),
+                "sha256": _sha256_file(PROMOTION_DECISIONS),
+                "mime": "application/json",
+                "size_bytes": PROMOTION_DECISIONS.stat().st_size,
+            },
+            {
+                "artifact_id": "promotion_replay_audit",
+                "path": str(REPLAY_AUDIT.relative_to(ROOT)),
+                "sha256": _sha256_file(REPLAY_AUDIT),
+                "mime": "application/json",
+                "size_bytes": REPLAY_AUDIT.stat().st_size,
             },
             {
                 "artifact_id": "search_evidence_bundle",

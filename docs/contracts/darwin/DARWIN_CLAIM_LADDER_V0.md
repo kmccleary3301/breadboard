@@ -63,3 +63,9 @@ They may not support:
 - transfer claims
 
 unless replay-complete evidence exists beyond the bounded search smoke.
+
+Promotion-path claims may support only:
+
+- selected winner under bounded protocol
+- rollback target recorded
+- replay audit completed for the audited promotion

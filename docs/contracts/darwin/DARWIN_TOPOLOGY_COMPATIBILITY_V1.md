@@ -9,9 +9,13 @@ This document freezes which topology families are valid per lane during the curr
 - `lane.systems`: `single`, `pev`, `pwrv`
 - `lane.repo_swe`: `single`, `pev`, `pwrv`
 
-## Deferred lanes
+## Scheduling lane
 
 - `lane.scheduling`: `single`, `pev`; `pwrv` deferred
+- current evaluator slice is valid only when the scenario pack and exact checker are unchanged
+
+## Deferred lanes
+
 - `lane.research`: `single` only; multi-role topologies deferred
 
 ## Rule

@@ -69,6 +69,13 @@ def build_bootstrap_specs() -> list[dict]:
             suite_id="suite.repo_swe.patch_workspace.phase1.v0",
             allowed_tools=["pytest", "patch_apply", "git_diff", "filesystem_read"],
         ),
+        _base_campaign(
+            campaign_id="camp.darwin.phase1.scheduling.bootstrap.v0",
+            lane_id="lane.scheduling",
+            objective_id="objective.scheduling.constraint_objective_baseline",
+            suite_id="suite.scheduling.phase1.v0",
+            allowed_tools=["python", "constraint_checker", "filesystem_read"],
+        ),
     ]
 
 

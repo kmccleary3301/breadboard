@@ -23,4 +23,4 @@ def test_emit_search_evidence_writes_bundle_and_claims() -> None:
     emit_evidence_and_claims()
     write_invalid_comparison_ledger()
     summary = emit_search_evidence()
-    assert summary["claim_count"] == 3
+    assert summary["claim_count"] == 5

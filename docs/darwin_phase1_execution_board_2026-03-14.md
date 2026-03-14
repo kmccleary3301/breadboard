@@ -5,16 +5,16 @@ Date: 2026-03-14
 ## Completed
 
 - T0 contract pack
-- T1 live baselines for ATP / harness / systems / repo_swe
+- T1 live baselines for ATP / harness / systems / repo_swe / scheduling
 - topology compatibility policy
 - typed search core v1
-- first comparative scorecard / weekly packet / archive / claim stack
+- first comparative scorecard / weekly packet / archive / promotion / claim stack
 
 ## Active boundary
 
-- next live lane after repo_swe: `lane.scheduling`
-- next DARWIN systems step: lineage promotion logic beyond archive snapshots
-- next search step: extend typed-search smoke to one additional lane
+- next live lane after scheduling: `lane.research` remains deferred
+- next DARWIN systems step: lineage promotion logic beyond single-tranche archive updates
+- next search step: cross-lane transfer and stronger comparative cycles
 
 ## Deferred
 
