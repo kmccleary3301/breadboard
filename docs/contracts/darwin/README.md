@@ -31,6 +31,7 @@ Phase-1 T0 freezes:
 - `DARWIN_TOPOLOGY_COMPATIBILITY_V1.md`
 - `DARWIN_TYPED_SEARCH_CORE_V1.md`
 - `DARWIN_TRANSFER_PROTOCOL_V1.md`
+- `DARWIN_COMPUTE_NORMALIZED_SCORECARD_V1.md`
 
 ### Machine-readable schemas
 
@@ -67,6 +68,8 @@ Phase-1 T0 freezes:
 - `scripts/build_darwin_compute_normalized_view_v1.py`
 - `scripts/build_darwin_comparative_dossier_v1.py`
 - `scripts/emit_darwin_search_evidence_v1.py`
+- `scripts/run_darwin_phase1_replay_audit_v1.py`
+- `scripts/emit_darwin_phase1_final_evidence_v1.py`
 - `scripts/run_darwin_phase1_orchestration_v1.py`
 - `scripts/run_darwin_research_lane_baseline_v0.py`
 
