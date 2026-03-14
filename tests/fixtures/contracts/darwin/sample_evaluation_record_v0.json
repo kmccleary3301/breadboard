@@ -1,0 +1,32 @@
+{
+  "schema": "breadboard.darwin.evaluation_record.v0",
+  "candidate_id": "cand.harness.001",
+  "task_id": "task.harness.parity.001",
+  "verifier_status": "passed",
+  "primary_score": 0.88,
+  "secondary_metrics": {
+    "latency_ms": 512,
+    "artifact_completeness": 1.0
+  },
+  "budget_used": {
+    "tokens": 12000,
+    "wall_time_s": 18.4
+  },
+  "wall_clock_ms": 18412,
+  "token_counts": {
+    "input": 9000,
+    "output": 3000
+  },
+  "cost_estimate": 0.42,
+  "artifact_refs": [
+    "artifacts/darwin/evals/task.harness.parity.001.json"
+  ],
+  "perturbation_group": "nominal",
+  "error_taxonomy": [],
+  "confidence_record": {
+    "support_n": 32,
+    "ci_low": 0.79,
+    "ci_high": 0.94,
+    "claim_tier": "t1"
+  }
+}

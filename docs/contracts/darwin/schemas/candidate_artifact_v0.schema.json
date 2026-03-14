@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/candidate_artifact_v0.schema.json",
+  "title": "DarwinCandidateArtifactV0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "candidate_id",
+    "campaign_id",
+    "lane_id",
+    "parent_ids",
+    "artifact_type",
+    "artifact_ref",
+    "mutation_operator",
+    "novelty_score",
+    "estimated_potential",
+    "tool_scope",
+    "state_hash"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.candidate_artifact.v0" },
+    "candidate_id": { "type": "string", "minLength": 1 },
+    "campaign_id": { "type": "string", "minLength": 1 },
+    "lane_id": { "type": "string", "minLength": 1 },
+    "parent_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "artifact_type": {
+      "type": "string",
+      "enum": ["prompt", "topology", "code", "config", "memory_summary", "composite"]
+    },
+    "artifact_ref": { "type": "string", "minLength": 1 },
+    "mutation_operator": { "type": "string", "minLength": 1 },
+    "novelty_score": { "type": "number" },
+    "estimated_potential": { "type": "number" },
+    "tool_scope": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "state_hash": { "type": "string", "minLength": 1 }
+  }
+}

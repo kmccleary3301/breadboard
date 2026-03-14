@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/evaluation_record_v0.schema.json",
+  "title": "DarwinEvaluationRecordV0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "candidate_id",
+    "task_id",
+    "verifier_status",
+    "primary_score",
+    "secondary_metrics",
+    "budget_used",
+    "wall_clock_ms",
+    "token_counts",
+    "cost_estimate",
+    "artifact_refs",
+    "perturbation_group",
+    "error_taxonomy",
+    "confidence_record"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.evaluation_record.v0" },
+    "candidate_id": { "type": "string", "minLength": 1 },
+    "task_id": { "type": "string", "minLength": 1 },
+    "verifier_status": { "type": "string", "enum": ["passed", "failed", "error", "unknown"] },
+    "primary_score": { "type": ["number", "boolean"] },
+    "secondary_metrics": { "type": "object", "additionalProperties": true },
+    "budget_used": { "type": "object", "additionalProperties": true },
+    "wall_clock_ms": { "type": "integer", "minimum": 0 },
+    "token_counts": { "type": "object", "additionalProperties": true },
+    "cost_estimate": { "type": "number", "minimum": 0 },
+    "artifact_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "perturbation_group": { "type": "string", "minLength": 1 },
+    "error_taxonomy": { "type": "array", "items": { "type": "string" } },
+    "confidence_record": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["support_n", "ci_low", "ci_high", "claim_tier"],
+      "properties": {
+        "support_n": { "type": "integer", "minimum": 0 },
+        "ci_low": { "type": "number" },
+        "ci_high": { "type": "number" },
+        "claim_tier": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

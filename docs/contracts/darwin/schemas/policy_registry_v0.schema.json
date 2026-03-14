@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/policy_registry_v0.schema.json",
+  "title": "DarwinPolicyRegistryV0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "bundles"],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.policy_registry.v0" },
+    "bundles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "policy_bundle_id",
+          "policy_class",
+          "status",
+          "applies_to_lanes",
+          "change_control"
+        ],
+        "properties": {
+          "policy_bundle_id": { "type": "string", "minLength": 1 },
+          "policy_class": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["draft", "shadow", "approved", "deprecated"] },
+          "applies_to_lanes": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "change_control": {
+            "type": "object",
+            "required": ["versioning_rule", "rollback_target"],
+            "properties": {
+              "versioning_rule": { "type": "string", "minLength": 1 },
+              "rollback_target": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/campaign_spec_v0.schema.json",
+  "title": "DarwinCampaignSpecV0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "campaign_id",
+    "lane_id",
+    "objective_id",
+    "benchmark_or_eval_suite_id",
+    "budget_class",
+    "seed_set",
+    "topology_family",
+    "policy_bundle_id",
+    "memory_policy_id",
+    "environment_digest",
+    "allowed_tools",
+    "promotion_rules",
+    "rollback_rules",
+    "claim_target"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.campaign_spec.v0" },
+    "campaign_id": { "type": "string", "minLength": 1 },
+    "lane_id": { "type": "string", "minLength": 1 },
+    "objective_id": { "type": "string", "minLength": 1 },
+    "benchmark_or_eval_suite_id": { "type": "string", "minLength": 1 },
+    "budget_class": { "type": "string", "enum": ["class_a", "class_b", "class_c"] },
+    "seed_set": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "integer" }
+    },
+    "topology_family": { "type": "string", "minLength": 1 },
+    "policy_bundle_id": { "type": "string", "minLength": 1 },
+    "memory_policy_id": { "type": "string", "minLength": 1 },
+    "environment_digest": { "type": "string", "minLength": 1 },
+    "allowed_tools": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "promotion_rules": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["promotion_metric", "min_retention"],
+      "properties": {
+        "promotion_metric": { "type": "string" },
+        "min_retention": { "type": "number", "minimum": 0 }
+      }
+    },
+    "rollback_rules": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["artifact_completeness_floor", "max_budget_overrun_ratio"],
+      "properties": {
+        "artifact_completeness_floor": { "type": "number", "minimum": 0, "maximum": 1 },
+        "max_budget_overrun_ratio": { "type": "number", "minimum": 1 }
+      }
+    },
+    "claim_target": {
+      "type": "string",
+      "enum": ["debug", "internal", "comparative", "frontier"]
+    }
+  }
+}

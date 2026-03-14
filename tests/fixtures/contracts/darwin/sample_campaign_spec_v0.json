@@ -1,0 +1,23 @@
+{
+  "schema": "breadboard.darwin.campaign_spec.v0",
+  "campaign_id": "camp.darwin.phase1.harness.001",
+  "lane_id": "lane.harness",
+  "objective_id": "objective.harness.parity",
+  "benchmark_or_eval_suite_id": "suite.harness.phase1",
+  "budget_class": "class_a",
+  "seed_set": [11, 17, 23],
+  "topology_family": "policy.topology.single_v0",
+  "policy_bundle_id": "policy.topology.single_v0",
+  "memory_policy_id": "policy.memory.flat_v0",
+  "environment_digest": "sha256:env-harness-001",
+  "allowed_tools": ["diff", "pytest", "validator"],
+  "promotion_rules": {
+    "promotion_metric": "mean_normalized_score",
+    "min_retention": 0.9
+  },
+  "rollback_rules": {
+    "artifact_completeness_floor": 0.99,
+    "max_budget_overrun_ratio": 1.5
+  },
+  "claim_target": "internal"
+}

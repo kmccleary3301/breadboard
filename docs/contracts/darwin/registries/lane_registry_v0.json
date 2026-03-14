@@ -1,0 +1,83 @@
+{
+  "schema": "breadboard.darwin.lane_registry.v0",
+  "lanes": [
+    {
+      "lane_id": "lane.atp",
+      "name": "ATP",
+      "objective_class": "formal_verification",
+      "evaluator_type": "verifier_rich",
+      "launch_phase": 1,
+      "claim_eligible": true,
+      "readiness_prerequisites": [
+        "corrected_benchmark_stack",
+        "frozen_slice_policy",
+        "artifact_complete_replay"
+      ]
+    },
+    {
+      "lane_id": "lane.harness",
+      "name": "Harness Optimization",
+      "objective_class": "harness_conformance",
+      "evaluator_type": "objective_regression",
+      "launch_phase": 1,
+      "claim_eligible": true,
+      "readiness_prerequisites": [
+        "parity_runner",
+        "drift_audit",
+        "replay_bundle"
+      ]
+    },
+    {
+      "lane_id": "lane.systems",
+      "name": "Systems Optimization",
+      "objective_class": "algorithm_or_systems_optimization",
+      "evaluator_type": "benchmark_harness",
+      "launch_phase": 1,
+      "claim_eligible": true,
+      "readiness_prerequisites": [
+        "compiler_or_runtime",
+        "benchmark_harness",
+        "budget_class_enforcement"
+      ]
+    },
+    {
+      "lane_id": "lane.repo_swe",
+      "name": "Repository-Scale SWE",
+      "objective_class": "code_repair",
+      "evaluator_type": "test_and_build",
+      "launch_phase": 1,
+      "claim_eligible": true,
+      "readiness_prerequisites": [
+        "repo_snapshotting",
+        "test_harness",
+        "contamination_controls"
+      ]
+    },
+    {
+      "lane_id": "lane.scheduling",
+      "name": "Quantitative Scheduling",
+      "objective_class": "planning_optimization",
+      "evaluator_type": "simulator_or_exact_checker",
+      "launch_phase": 1,
+      "claim_eligible": true,
+      "readiness_prerequisites": [
+        "scenario_pack",
+        "constraint_checker",
+        "budget_curves"
+      ]
+    },
+    {
+      "lane_id": "lane.research",
+      "name": "Research and Evidence Synthesis",
+      "objective_class": "evidence_synthesis",
+      "evaluator_type": "reviewer_audit",
+      "launch_phase": 2,
+      "claim_eligible": false,
+      "readiness_prerequisites": [
+        "citation_checker",
+        "adversarial_review",
+        "search_time_contamination_guard"
+      ]
+    }
+  ]
+}

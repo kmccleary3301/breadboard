@@ -1,0 +1,31 @@
+{
+  "schema": "breadboard.darwin.evidence_bundle.v0",
+  "evidence_bundle_id": "bundle.phase1.week1.001",
+  "campaign_id": "camp.darwin.phase1.harness.001",
+  "bundle_tier": "t1",
+  "run_manifest_ref": "artifacts/darwin/manifests/camp.darwin.phase1.harness.001.json",
+  "result_table_refs": [
+    "artifacts/darwin/results/harness_week1.jsonl"
+  ],
+  "benchmark_slice_digest": "sha256:harness-slice-001",
+  "environment_digests": [
+    "sha256:container-001",
+    "sha256:tools-001"
+  ],
+  "ablation_refs": [
+    "artifacts/darwin/ablations/harness_single_vs_pev.json"
+  ],
+  "perturbation_refs": [
+    "artifacts/darwin/perturbations/harness_irrelevant_context.json"
+  ],
+  "statistical_summary_ref": "artifacts/darwin/stats/harness_week1_summary.json",
+  "contamination_audit_ref": "artifacts/darwin/audits/harness_week1_contamination.json",
+  "reproduction_instructions_ref": "docs/contracts/darwin/DARWIN_WEEKLY_EVIDENCE_PACKET_V0.md",
+  "reviewer_signoffs": [
+    {
+      "reviewer": "eval.lead",
+      "status": "approved"
+    }
+  ],
+  "limitations_memo_ref": "docs/contracts/darwin/DARWIN_CLAIM_LADDER_V0.md"
+}

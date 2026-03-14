@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/weekly_evidence_packet_v0.schema.json",
+  "title": "DarwinWeeklyEvidencePacketV0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "packet_id",
+    "week_start_utc",
+    "lane_summaries",
+    "scorecard_refs",
+    "budget_burn",
+    "drift_refs",
+    "incident_refs",
+    "next_actions"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.weekly_evidence_packet.v0" },
+    "packet_id": { "type": "string", "minLength": 1 },
+    "week_start_utc": { "type": "string", "minLength": 1 },
+    "lane_summaries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["lane_id", "status"],
+        "properties": {
+          "lane_id": { "type": "string" },
+          "status": { "type": "string" },
+          "headline": { "type": "string" }
+        }
+      }
+    },
+    "scorecard_refs": { "type": "array", "items": { "type": "string" } },
+    "budget_burn": { "type": "object", "additionalProperties": true },
+    "drift_refs": { "type": "array", "items": { "type": "string" } },
+    "incident_refs": { "type": "array", "items": { "type": "string" } },
+    "next_actions": { "type": "array", "items": { "type": "string" } }
+  }
+}

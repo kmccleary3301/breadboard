@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/claim_record_v0.schema.json",
+  "title": "DarwinClaimRecordV0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "claim_id",
+    "evidence_bundle_id",
+    "claim_target",
+    "claim_tier",
+    "scope",
+    "status",
+    "summary",
+    "confidence_statement",
+    "limitations_ref",
+    "approved_by"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.claim_record.v0" },
+    "claim_id": { "type": "string", "minLength": 1 },
+    "evidence_bundle_id": { "type": "string", "minLength": 1 },
+    "claim_target": { "type": "string", "enum": ["debug", "internal", "comparative", "frontier"] },
+    "claim_tier": { "type": "string", "enum": ["t0", "t1", "t2", "t3", "t4"] },
+    "scope": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["draft", "approved", "retracted"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "confidence_statement": { "type": "string", "minLength": 1 },
+    "limitations_ref": { "type": "string", "minLength": 1 },
+    "approved_by": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

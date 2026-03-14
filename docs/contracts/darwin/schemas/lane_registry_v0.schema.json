@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/lane_registry_v0.schema.json",
+  "title": "DarwinLaneRegistryV0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "lanes"],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.lane_registry.v0" },
+    "lanes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "lane_id",
+          "name",
+          "objective_class",
+          "evaluator_type",
+          "launch_phase",
+          "claim_eligible",
+          "readiness_prerequisites"
+        ],
+        "properties": {
+          "lane_id": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 },
+          "objective_class": { "type": "string", "minLength": 1 },
+          "evaluator_type": { "type": "string", "minLength": 1 },
+          "launch_phase": { "type": "integer", "minimum": 1 },
+          "claim_eligible": { "type": "boolean" },
+          "readiness_prerequisites": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

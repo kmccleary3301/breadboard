@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/evidence_bundle_v0.schema.json",
+  "title": "DarwinEvidenceBundleV0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "evidence_bundle_id",
+    "campaign_id",
+    "bundle_tier",
+    "run_manifest_ref",
+    "result_table_refs",
+    "benchmark_slice_digest",
+    "environment_digests",
+    "ablation_refs",
+    "perturbation_refs",
+    "statistical_summary_ref",
+    "contamination_audit_ref",
+    "reproduction_instructions_ref",
+    "reviewer_signoffs",
+    "limitations_memo_ref"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.evidence_bundle.v0" },
+    "evidence_bundle_id": { "type": "string", "minLength": 1 },
+    "campaign_id": { "type": "string", "minLength": 1 },
+    "bundle_tier": { "type": "string", "enum": ["t0", "t1", "t2", "t3", "t4"] },
+    "run_manifest_ref": { "type": "string", "minLength": 1 },
+    "result_table_refs": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "benchmark_slice_digest": { "type": "string", "minLength": 1 },
+    "environment_digests": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "ablation_refs": { "type": "array", "items": { "type": "string" } },
+    "perturbation_refs": { "type": "array", "items": { "type": "string" } },
+    "statistical_summary_ref": { "type": "string", "minLength": 1 },
+    "contamination_audit_ref": { "type": "string", "minLength": 1 },
+    "reproduction_instructions_ref": { "type": "string", "minLength": 1 },
+    "reviewer_signoffs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["reviewer", "status"],
+        "properties": {
+          "reviewer": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
+        }
+      }
+    },
+    "limitations_memo_ref": { "type": "string", "minLength": 1 }
+  }
+}
