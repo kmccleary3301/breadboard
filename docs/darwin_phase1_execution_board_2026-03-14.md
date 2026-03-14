@@ -16,6 +16,7 @@ Date: 2026-03-14
 - next systems step: multi-tranche lineage promotion logic and richer archive policy
 - next evidence step: compute-normalized scorecards and final Phase-1 evidence packet
 - tranche-1 execution plan now lives at `docs/darwin_phase2_tranche1_execution_plan_2026-03-14.md`
+- tranche-1 ADR set now lives at `docs/darwin_phase2_tranche1_adr_set_2026-03-14.md`
 
 ## Deferred
 

@@ -116,6 +116,10 @@ Includes:
 
 The following ADRs should be written before or during tranche 1.
 
+Current ADR set reference:
+
+- `docs/darwin_phase2_tranche1_adr_set_2026-03-14.md`
+
 ### ADR-01 — `ExecutionPlan` boundary
 
 Answer:
