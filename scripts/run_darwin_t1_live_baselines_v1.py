@@ -15,8 +15,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from breadboard_ext.darwin.contracts import (
+    validate_effective_config,
+    validate_execution_plan,
     validate_candidate_artifact,
     validate_evaluation_record,
+)
+from breadboard_ext.darwin.phase2 import (
+    build_effective_config,
+    build_execution_plan,
+    should_emit_shadow_artifacts,
 )
 
 
@@ -143,6 +150,10 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _join_issue_messages(*issue_groups: list) -> str:
+    return "; ".join(f"{issue.path}: {issue.message}" for group in issue_groups for issue in group)
+
+
 def run_named_lane(
     lane_id: str,
     spec: dict,
@@ -163,6 +174,9 @@ def run_named_lane(
     lane_dir = out_dir / lane_id
     lane_dir.mkdir(parents=True, exist_ok=True)
     lane_cfg = LANE_COMMANDS[lane_id]
+    campaign_spec_ref = next(
+        row["path"] for row in _load_json(DEFAULT_BOOTSTRAP_MANIFEST).get("specs") or [] if row["lane_id"] == lane_id
+    )
     started_at = _iso_now()
     started_monotonic = time.perf_counter()
     command = command_override or lane_cfg["command"]
@@ -252,14 +266,63 @@ def run_named_lane(
         },
     }
 
-    candidate_issues = validate_candidate_artifact(candidate)
-    evaluation_issues = validate_evaluation_record(eval_record)
-    if candidate_issues or evaluation_issues:
-        parts = [f"{issue.path}: {issue.message}" for issue in candidate_issues + evaluation_issues]
-        raise ValueError(f"invalid live baseline DARWIN artifacts for {lane_id}: {'; '.join(parts)}")
-
     candidate_path = ROOT / "artifacts" / "darwin" / "candidates" / f"{candidate['candidate_id']}.json"
     evaluation_path = ROOT / "artifacts" / "darwin" / "evaluations" / f"{candidate['candidate_id']}.evaluation_v1.json"
+    candidate_ref = str(candidate_path.relative_to(ROOT))
+    evaluation_ref = str(evaluation_path.relative_to(ROOT))
+
+    shadow_refs: dict[str, str] = {}
+    if should_emit_shadow_artifacts(lane_id):
+        effective_config = build_effective_config(
+            spec=spec,
+            lane_id=lane_id,
+            candidate_id=candidate["candidate_id"],
+            trial_label=trial_label,
+            task_id=task_id or lane_cfg["task_id"],
+            command=command,
+            campaign_spec_ref=campaign_spec_ref,
+            topology_id=topology_id or spec["topology_family"],
+            policy_bundle_id=policy_bundle_id or spec["policy_bundle_id"],
+            budget_class=budget_class or spec["budget_class"],
+        )
+        effective_config_path = lane_dir / f"{trial_label}_effective_config_v0.json"
+        _write_json(effective_config_path, effective_config)
+        shadow_refs["effective_config"] = str(effective_config_path.relative_to(ROOT))
+
+        execution_plan = build_execution_plan(
+            spec=spec,
+            lane_id=lane_id,
+            candidate_id=candidate["candidate_id"],
+            trial_label=trial_label,
+            task_id=task_id or lane_cfg["task_id"],
+            command=command,
+            topology_id=topology_id or spec["topology_family"],
+            budget_class=budget_class or spec["budget_class"],
+            effective_config_ref=shadow_refs["effective_config"],
+            candidate_ref=candidate_ref,
+            evaluation_ref=evaluation_ref,
+            stdout_ref=str(stdout_path.relative_to(ROOT)),
+            stderr_ref=str(stderr_path.relative_to(ROOT)),
+            out_dir=str(lane_dir.relative_to(ROOT)),
+        )
+        execution_plan_path = lane_dir / f"{trial_label}_execution_plan_v0.json"
+        _write_json(execution_plan_path, execution_plan)
+        shadow_refs["execution_plan"] = str(execution_plan_path.relative_to(ROOT))
+
+        effective_config_issues = validate_effective_config(effective_config)
+        execution_plan_issues = validate_execution_plan(execution_plan)
+    else:
+        effective_config_issues = []
+        execution_plan_issues = []
+
+    candidate_issues = validate_candidate_artifact(candidate)
+    evaluation_issues = validate_evaluation_record(eval_record)
+    if candidate_issues or evaluation_issues or effective_config_issues or execution_plan_issues:
+        raise ValueError(
+            f"invalid live baseline DARWIN artifacts for {lane_id}: "
+            f"{_join_issue_messages(candidate_issues, evaluation_issues, effective_config_issues, execution_plan_issues)}"
+        )
+
     _write_json(candidate_path, candidate)
     _write_json(evaluation_path, eval_record)
 
@@ -267,8 +330,9 @@ def run_named_lane(
         "lane_id": lane_id,
         "campaign_id": spec["campaign_id"],
         "candidate_id": candidate["candidate_id"],
-        "candidate_ref": str(candidate_path.relative_to(ROOT)),
-        "evaluation_ref": str(evaluation_path.relative_to(ROOT)),
+        "candidate_ref": candidate_ref,
+        "evaluation_ref": evaluation_ref,
+        "shadow_artifact_refs": shadow_refs,
         "primary_score": eval_record["primary_score"],
         "verifier_status": verifier_status,
         "status": "ready" if proc.returncode == 0 else "partial",

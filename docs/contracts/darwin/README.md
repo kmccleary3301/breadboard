@@ -39,6 +39,8 @@ Phase-1 T0 freezes:
 - `schemas/policy_bundle_v0.schema.json`
 - `schemas/candidate_artifact_v0.schema.json`
 - `schemas/evaluation_record_v0.schema.json`
+- `schemas/effective_config_v0.schema.json`
+- `schemas/execution_plan_v0.schema.json`
 - `schemas/evidence_bundle_v0.schema.json`
 - `schemas/claim_record_v0.schema.json`
 - `schemas/lane_registry_v0.schema.json`
