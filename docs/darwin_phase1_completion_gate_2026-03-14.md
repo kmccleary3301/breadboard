@@ -21,7 +21,7 @@ Date: 2026-03-14
 - [x] Phase-1 signoff memo written
 - [x] Phase-2 handoff memo written
 - [x] Merged-state verification on `main`
-- [ ] Final merged-state push complete
+- [x] Final merged-state push complete
 
 ## Gate rule
 
