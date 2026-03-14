@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from .benchmark import BenchmarkRunManifest, CandidateComparisonResult
 from .evaluation import EvaluationRecord
 from .substrate import ArtifactRef, MaterializedCandidate, OptimizationTarget, SupportEnvelope
 
@@ -19,7 +20,7 @@ PROMOTION_STATES = {
 }
 TERMINAL_PROMOTION_STATES = {"promoted", "rejected", "archived"}
 ALLOWED_GATE_STATUSES = {"pass", "fail", "not_applicable", "insufficient_evidence"}
-ALLOWED_GATE_KINDS = {"replay", "conformance", "support_envelope"}
+ALLOWED_GATE_KINDS = {"replay", "conformance", "support_envelope", "comparison"}
 ALLOWED_TRANSITIONS = {
     "draft": {"evaluated", "archived"},
     "evaluated": {"frontier", "rejected", "archived"},
@@ -134,6 +135,90 @@ class PromotionEvidence:
             evaluation_ids=list(data.get("evaluation_ids") or []),
             raw_evidence_refs=[ArtifactRef.from_dict(item) for item in data.get("raw_evidence_refs") or []],
             gate_evidence_refs=[ArtifactRef.from_dict(item) for item in data.get("gate_evidence_refs") or []],
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
+class PromotionEvidenceSummary:
+    summary_id: str
+    candidate_id: str
+    comparison_ids: List[str] = field(default_factory=list)
+    manifest_ids: List[str] = field(default_factory=list)
+    held_out_sample_ids: List[str] = field(default_factory=list)
+    regression_sample_ids: List[str] = field(default_factory=list)
+    compared_regression_sample_ids: List[str] = field(default_factory=list)
+    stochasticity_class: Optional[str] = None
+    minimum_required_trials: Optional[int] = None
+    observed_trial_count: Optional[int] = None
+    outcome_counts: Dict[str, int] = field(default_factory=dict)
+    review_required: bool = False
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "summary_id", _require_text(self.summary_id, "summary_id"))
+        object.__setattr__(self, "candidate_id", _require_text(self.candidate_id, "candidate_id"))
+        object.__setattr__(self, "comparison_ids", _copy_text_list(self.comparison_ids))
+        object.__setattr__(self, "manifest_ids", _copy_text_list(self.manifest_ids))
+        object.__setattr__(self, "held_out_sample_ids", _copy_text_list(self.held_out_sample_ids))
+        object.__setattr__(self, "regression_sample_ids", _copy_text_list(self.regression_sample_ids))
+        object.__setattr__(self, "compared_regression_sample_ids", _copy_text_list(self.compared_regression_sample_ids))
+        object.__setattr__(self, "stochasticity_class", str(self.stochasticity_class).strip() if self.stochasticity_class else None)
+        if self.minimum_required_trials is not None and int(self.minimum_required_trials) <= 0:
+            raise ValueError("minimum_required_trials must be positive when provided")
+        if self.observed_trial_count is not None and int(self.observed_trial_count) <= 0:
+            raise ValueError("observed_trial_count must be positive when provided")
+        object.__setattr__(
+            self,
+            "minimum_required_trials",
+            int(self.minimum_required_trials) if self.minimum_required_trials is not None else None,
+        )
+        object.__setattr__(
+            self,
+            "observed_trial_count",
+            int(self.observed_trial_count) if self.observed_trial_count is not None else None,
+        )
+        outcome_counts = {str(key): int(value) for key, value in (self.outcome_counts or {}).items()}
+        object.__setattr__(self, "outcome_counts", outcome_counts)
+        object.__setattr__(self, "review_required", bool(self.review_required))
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = {
+            "summary_id": self.summary_id,
+            "candidate_id": self.candidate_id,
+            "comparison_ids": list(self.comparison_ids),
+            "manifest_ids": list(self.manifest_ids),
+            "held_out_sample_ids": list(self.held_out_sample_ids),
+            "regression_sample_ids": list(self.regression_sample_ids),
+            "compared_regression_sample_ids": list(self.compared_regression_sample_ids),
+            "outcome_counts": dict(self.outcome_counts),
+            "review_required": self.review_required,
+            "metadata": dict(self.metadata),
+        }
+        if self.stochasticity_class:
+            payload["stochasticity_class"] = self.stochasticity_class
+        if self.minimum_required_trials is not None:
+            payload["minimum_required_trials"] = self.minimum_required_trials
+        if self.observed_trial_count is not None:
+            payload["observed_trial_count"] = self.observed_trial_count
+        return payload
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "PromotionEvidenceSummary":
+        return PromotionEvidenceSummary(
+            summary_id=data.get("summary_id") or data.get("id") or "",
+            candidate_id=data.get("candidate_id") or "",
+            comparison_ids=list(data.get("comparison_ids") or []),
+            manifest_ids=list(data.get("manifest_ids") or []),
+            held_out_sample_ids=list(data.get("held_out_sample_ids") or []),
+            regression_sample_ids=list(data.get("regression_sample_ids") or []),
+            compared_regression_sample_ids=list(data.get("compared_regression_sample_ids") or []),
+            stochasticity_class=data.get("stochasticity_class"),
+            minimum_required_trials=data.get("minimum_required_trials"),
+            observed_trial_count=data.get("observed_trial_count"),
+            outcome_counts=dict(data.get("outcome_counts") or {}),
+            review_required=bool(data.get("review_required")),
             metadata=dict(data.get("metadata") or {}),
         )
 
@@ -509,6 +594,59 @@ def build_promotion_evidence(
     )
 
 
+def build_promotion_evidence_summary(
+    *,
+    summary_id: str,
+    candidate_id: str,
+    benchmark_manifest: Optional[BenchmarkRunManifest] = None,
+    comparison_results: Sequence[CandidateComparisonResult] | None = None,
+    review_required: bool = False,
+    metadata: Optional[Mapping[str, Any]] = None,
+) -> PromotionEvidenceSummary:
+    comparison_results = list(comparison_results or [])
+    manifests = [benchmark_manifest] if benchmark_manifest is not None else []
+    outcome_counts: Dict[str, int] = {}
+    comparison_ids: List[str] = []
+    held_out_sample_ids: List[str] = []
+    observed_trial_count = 0
+    for comparison in comparison_results:
+        comparison_ids.append(comparison.comparison_id)
+        held_out_sample_ids.extend(comparison.held_out_sample_ids)
+        outcome_counts[comparison.outcome] = outcome_counts.get(comparison.outcome, 0) + 1
+        observed_trial_count = max(observed_trial_count, int(comparison.trial_count))
+    regression_ids: List[str] = []
+    compared_regression_ids: List[str] = []
+    minimum_required_trials: Optional[int] = None
+    stochasticity_class: Optional[str] = None
+    manifest_ids: List[str] = []
+    for manifest in manifests:
+        manifest_ids.append(manifest.manifest_id)
+        stochasticity_class = manifest.stochasticity_class
+        minimum_required_trials = int(manifest.rerun_policy.get("max_trials") or 1)
+        for split in manifest.splits:
+            if split.split_name == "regression":
+                regression_ids.extend(split.sample_ids)
+        for comparison in comparison_results:
+            compared_regression_ids.extend(
+                sample_id for sample_id in comparison.compared_sample_ids if sample_id in set(regression_ids)
+            )
+    return PromotionEvidenceSummary(
+        summary_id=summary_id,
+        candidate_id=candidate_id,
+        comparison_ids=comparison_ids,
+        manifest_ids=manifest_ids,
+        held_out_sample_ids=held_out_sample_ids,
+        regression_sample_ids=regression_ids,
+        compared_regression_sample_ids=compared_regression_ids,
+        stochasticity_class=stochasticity_class,
+        minimum_required_trials=minimum_required_trials,
+        observed_trial_count=observed_trial_count or None,
+        outcome_counts=outcome_counts,
+        review_required=review_required,
+        metadata=dict(metadata or {}),
+    )
+
+
 def create_promotion_record(
     *,
     record_id: str,
@@ -706,12 +844,140 @@ def evaluate_support_envelope_gate(gate_input: SupportEnvelopeGateInput) -> Gate
     )
 
 
+def evaluate_comparison_gate(
+    *,
+    target: OptimizationTarget,
+    candidate_id: str,
+    benchmark_manifest: BenchmarkRunManifest,
+    comparison_results: Sequence[CandidateComparisonResult],
+) -> GateResult:
+    comparison_results = [item for item in comparison_results if item.child_candidate_id == candidate_id]
+    if not comparison_results:
+        return GateResult(
+            gate_id=f"gate.comparison.{candidate_id}",
+            gate_kind="comparison",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="no benchmark comparison evidence was recorded for this candidate",
+            evidence_refs=[],
+            metadata={"manifest_id": benchmark_manifest.manifest_id},
+        )
+    evidence_refs: List[ArtifactRef] = []
+    compared_ids: set[str] = set()
+    outcomes: set[str] = set()
+    max_trial_count = 0
+    for comparison in comparison_results:
+        evidence_refs.extend(comparison.evidence_refs)
+        compared_ids.update(comparison.compared_sample_ids)
+        outcomes.add(comparison.outcome)
+        max_trial_count = max(max_trial_count, comparison.trial_count)
+
+    regression_ids = {
+        sample_id
+        for split in benchmark_manifest.splits
+        if split.split_name == "regression"
+        for sample_id in split.sample_ids
+    }
+    missing_regressions = sorted(regression_ids - compared_ids)
+    minimum_required_trials = int(benchmark_manifest.rerun_policy.get("max_trials") or 1)
+    metadata = {
+        "manifest_id": benchmark_manifest.manifest_id,
+        "stochasticity_class": benchmark_manifest.stochasticity_class,
+        "minimum_required_trials": minimum_required_trials,
+        "observed_trial_count": max_trial_count,
+        "missing_regression_sample_ids": missing_regressions,
+        "outcomes": sorted(outcomes),
+    }
+    if missing_regressions:
+        return GateResult(
+            gate_id=f"gate.comparison.{candidate_id}",
+            gate_kind="comparison",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="comparison evidence is missing one or more regression samples required for promotion",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if benchmark_manifest.stochasticity_class != "deterministic" and max_trial_count < minimum_required_trials:
+        return GateResult(
+            gate_id=f"gate.comparison.{candidate_id}",
+            gate_kind="comparison",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="stochastic benchmark evidence did not satisfy the minimum rerun policy for promotion",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if "blocked" in outcomes:
+        return GateResult(
+            gate_id=f"gate.comparison.{candidate_id}",
+            gate_kind="comparison",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="comparison evidence is blocked and does not yet support promotion",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if "inconclusive" in outcomes or "tie" in outcomes:
+        return GateResult(
+            gate_id=f"gate.comparison.{candidate_id}",
+            gate_kind="comparison",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="comparison evidence is inconclusive for promotion purposes",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    for comparison in comparison_results:
+        if comparison.outcome == "loss" or (
+            comparison.outcome == "win" and comparison.better_candidate_id != candidate_id
+        ):
+            return GateResult(
+                gate_id=f"gate.comparison.{candidate_id}",
+                gate_kind="comparison",
+                status="fail",
+                target_id=target.target_id,
+                candidate_id=candidate_id,
+                reason="comparison evidence indicates the candidate is not better than its parent baseline",
+                evidence_refs=evidence_refs,
+                metadata=metadata,
+            )
+    if any(comparison.outcome in {"win", "non_inferior"} for comparison in comparison_results):
+        return GateResult(
+            gate_id=f"gate.comparison.{candidate_id}",
+            gate_kind="comparison",
+            status="pass",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="comparison evidence supports promotion on held-out and regression coverage",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    return GateResult(
+        gate_id=f"gate.comparison.{candidate_id}",
+        gate_kind="comparison",
+        status="insufficient_evidence",
+        target_id=target.target_id,
+        candidate_id=candidate_id,
+        reason="comparison evidence did not produce a promotable outcome",
+        evidence_refs=evidence_refs,
+        metadata=metadata,
+    )
+
+
 def evaluate_promotion_gates(
     *,
     target: OptimizationTarget,
     materialized_candidate: MaterializedCandidate,
     evaluation: EvaluationRecord,
     prior_state: Optional[PromotionRecord] = None,
+    benchmark_manifest: Optional[BenchmarkRunManifest] = None,
+    comparison_results: Optional[Sequence[CandidateComparisonResult]] = None,
 ) -> List[GateResult]:
     replay_input = ReplayConformanceGateInput(
         target=target,
@@ -724,11 +990,21 @@ def evaluate_promotion_gates(
         materialized_candidate=materialized_candidate,
         evaluation=evaluation,
     )
-    return [
+    gate_results = [
         evaluate_replay_gate(replay_input),
         evaluate_conformance_gate(replay_input),
         evaluate_support_envelope_gate(support_input),
     ]
+    if benchmark_manifest is not None:
+        gate_results.append(
+            evaluate_comparison_gate(
+                target=target,
+                candidate_id=materialized_candidate.candidate_id,
+                benchmark_manifest=benchmark_manifest,
+                comparison_results=comparison_results or [],
+            )
+        )
+    return gate_results
 
 
 def promote_candidate(
@@ -739,6 +1015,8 @@ def promote_candidate(
     evaluation: EvaluationRecord,
     created_at: str,
     gated_at: str,
+    benchmark_manifest: Optional[BenchmarkRunManifest] = None,
+    comparison_results: Optional[Sequence[CandidateComparisonResult]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
 ) -> tuple[PromotionRecord, PromotionDecision]:
     record = create_promotion_record(
@@ -769,7 +1047,19 @@ def promote_candidate(
         materialized_candidate=materialized_candidate,
         evaluation=evaluation,
         prior_state=record,
+        benchmark_manifest=benchmark_manifest,
+        comparison_results=comparison_results,
     )
+    evidence_summary = None
+    if benchmark_manifest is not None:
+        evidence_summary = build_promotion_evidence_summary(
+            summary_id=f"evidence_summary.{materialized_candidate.candidate_id}",
+            candidate_id=materialized_candidate.candidate_id,
+            benchmark_manifest=benchmark_manifest,
+            comparison_results=comparison_results or [],
+            review_required=bool((benchmark_manifest.promotion_relevance or {}).get("requires_support_sensitive_review")),
+            metadata={"phase": "v1_5"},
+        )
     blocked = [result.gate_kind for result in gate_results if result.status != "pass" and result.status != "not_applicable"]
     evidence = build_promotion_evidence(
         evidence_id=f"evidence.{materialized_candidate.candidate_id}.gated",
@@ -777,6 +1067,11 @@ def promote_candidate(
         candidate_id=materialized_candidate.candidate_id,
         evaluations=[evaluation],
         gate_results=gate_results,
+        metadata=(
+            {"evidence_summary": evidence_summary.to_dict()}
+            if evidence_summary is not None
+            else {}
+        ),
     )
     record = record.move_to_gated(
         transitioned_at=gated_at,

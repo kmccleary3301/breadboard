@@ -10,11 +10,13 @@ from agentic_coder_prototype.optimize import (
     ReflectionPolicyInput,
     ReflectiveParetoBackendRequest,
     ReflectiveParetoBackendResult,
+    SingleLocusGreedyBackend,
     SupportEnvelope,
     WrongnessGuidedReflectionPolicy,
     build_codex_dossier_backend_example,
     build_codex_dossier_backend_example_payload,
     build_codex_dossier_evaluation_example,
+    run_single_locus_greedy_backend,
     validate_bounded_candidate,
 )
 
@@ -39,6 +41,29 @@ def test_backend_example_produces_tradeoff_candidates() -> None:
     assert len(result.portfolio.entries) == 2
     assert any(entry.score_kind == "predicted" for entry in result.portfolio.entries)
     assert sorted(len(proposal.candidate.applied_loci) for proposal in result.proposals) == [1, 2]
+
+
+def test_single_locus_greedy_backend_limits_proposals() -> None:
+    example = build_codex_dossier_backend_example()
+    request = example["request"]
+
+    result = run_single_locus_greedy_backend(request)
+
+    assert isinstance(result, ReflectiveParetoBackendResult)
+    assert result.backend_id == "single_locus_greedy.v1"
+    assert len(result.proposals) == 1
+    assert len(result.portfolio.entries) <= 2
+    assert result.metadata["proposal_limit"] == 1
+
+
+def test_single_locus_greedy_backend_class_uses_same_result_contract() -> None:
+    example = build_codex_dossier_backend_example()
+    backend = SingleLocusGreedyBackend()
+
+    result = backend.run(example["request"])
+
+    assert isinstance(result, ReflectiveParetoBackendResult)
+    assert result.backend_id == "single_locus_greedy.v1"
 
 
 def test_reflection_policy_uses_wrongness_not_only_outcome() -> None:

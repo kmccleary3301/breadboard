@@ -99,6 +99,7 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [concepts/optimization-v1-backend.md](concepts/optimization-v1-backend.md) | Optimization V1 reflective backend, objective vector, bounded mutation policy, and non-dominated portfolio retention |
 | [concepts/optimization-v1-promotion.md](concepts/optimization-v1-promotion.md) | Optimization V1 promotion state machine, replay/conformance gates, support-envelope gating, and canonical promotion outcomes |
 | [concepts/optimization-v1-runtime-context.md](concepts/optimization-v1-runtime-context.md) | Optimization V1 environment-aware sample model, tool-pack-aware optimization inputs, runtime compatibility checks, and DARWIN boundary |
+| [concepts/optimization-v1-5-evidence-integration.md](concepts/optimization-v1-5-evidence-integration.md) | Optimization V1.5 benchmark manifests, candidate comparison results, benchmark run results, and the first support/execution evidence slice |
 
 ### Governance and change policy
 
