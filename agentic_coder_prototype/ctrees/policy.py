@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
+from .helper_rehydration import build_helper_rehydration_input, build_helper_rehydration_proposal
 from .store import CTreeStore
 
 
@@ -68,6 +69,40 @@ def _clip_candidates(candidates: List[Dict[str, Any]], limit: int) -> List[Dict[
         ),
     )
     return ordered[: max(limit, 0)]
+
+
+def _candidate_preference(candidate: Dict[str, Any]) -> tuple[int, int, int]:
+    lane = str(candidate.get("lane") or "")
+    reason = str(candidate.get("reason") or "")
+    graph_type = str(candidate.get("graph_type") or "")
+
+    lane_weight = {
+        "graph_link": 4,
+        "graph_neighborhood": 3,
+        "lexical": 2,
+        "structural": 1,
+    }.get(lane, 0)
+    reason_weight = {
+        "focus_node": 5,
+        "active_path": 4,
+        "direct_validates_link": 4,
+        "direct_blocker_node": 4,
+        "neighbor_supersedes_link": 4,
+        "neighbor_validates_link": 4,
+        "lexical_overlap": 3,
+        "ancestor": 2,
+        "neighbor_blocker_ref": 2,
+        "ready_neighbor": 1,
+        "external_blocker_ref": 1,
+    }.get(reason, 0)
+    graph_weight = {
+        "validates": 3,
+        "supersedes": 3,
+        "blocks": 2,
+        "waits_for": 1,
+        "conditional_blocks": 1,
+    }.get(graph_type, 0)
+    return (lane_weight, reason_weight, graph_weight)
 
 
 def _focus_terms(store: CTreeStore, focus_node_id: Optional[str], active_path: List[str]) -> List[str]:
@@ -516,6 +551,7 @@ def build_rehydration_plan(
     token_budget: Optional[int] = None,
     graph_enabled: bool = True,
     graph_neighborhood_enabled: bool = False,
+    helper_enabled: bool = False,
 ) -> Dict[str, Any]:
     retrieval_substrate = build_retrieval_substrate(
         store,
@@ -546,6 +582,7 @@ def build_rehydration_plan(
     seen_validations = set()
     seen_graph_neighbor_ids = set()
     seen_superseded_source_ids = set()
+    candidate_lookup: Dict[str, Dict[str, Any]] = {}
 
     for node_id in active_path:
         node = _node_by_id(store, str(node_id))
@@ -589,52 +626,85 @@ def build_rehydration_plan(
         artifact_refs = artifact_refs[:3]
         workspace_scope = workspace_scope[:1]
 
-    promoted_candidates: List[Dict[str, Any]] = []
-    seen_candidate_ids = set()
+    candidate_order: List[str] = []
     for lane in ("structural", "lexical", "graph_link", "graph_neighborhood"):
         for candidate in list((retrieval_substrate.get("candidate_support") or {}).get(lane) or []):
             node_id = str(candidate.get("node_id") or "")
-            if mode == "dependency_lookup":
-                blocker_text = str(candidate.get("blocker_ref") or "").strip()
-                if blocker_text and blocker_text not in seen_blocker_refs:
-                    seen_blocker_refs.add(blocker_text)
-                    blocker_refs.append(blocker_text)
-                graph_type = str(candidate.get("graph_type") or "")
-                if graph_type == "validates" and node_id not in seen_validations:
-                    seen_validations.add(node_id)
-                    validations.append(node_id)
-                if lane == "graph_neighborhood" and node_id and node_id not in seen_graph_neighbor_ids:
-                    seen_graph_neighbor_ids.add(node_id)
-                    graph_neighbor_ids.append(node_id)
-                if lane == "graph_neighborhood" and graph_type == "supersedes":
-                    source_id = str(candidate.get("neighbor_source_id") or "").strip()
-                    if source_id and source_id not in seen_superseded_source_ids:
-                        seen_superseded_source_ids.add(source_id)
-                        superseded_source_ids.append(source_id)
-                for artifact in list(candidate.get("artifact_refs") or []):
-                    text = str(artifact).strip()
-                    if text and text not in seen_artifacts:
-                        seen_artifacts.add(text)
-                        artifact_refs.append(text)
-                for target in list(candidate.get("targets") or []):
-                    text = str(target).strip()
-                    if text and text not in seen_targets:
-                        seen_targets.add(text)
-                        targets.append(text)
-            if not node_id or node_id in seen_candidate_ids:
+            if not node_id:
                 continue
-            seen_candidate_ids.add(node_id)
-            promoted_candidates.append(
-                {
-                    "node_id": node_id,
-                    "lane": str(candidate.get("lane") or lane),
-                    "reason": str(candidate.get("reason") or ""),
-                    "score": int(candidate.get("score") or 0),
-                }
-            )
+            payload = dict(candidate)
+            payload.setdefault("lane", str(lane))
+            if node_id not in candidate_lookup:
+                candidate_order.append(node_id)
+                candidate_lookup[node_id] = payload
+                continue
+            if _candidate_preference(payload) > _candidate_preference(candidate_lookup[node_id]):
+                candidate_lookup[node_id] = payload
+
+    promoted_candidates: List[Dict[str, Any]] = [
+        {
+            "node_id": node_id,
+            "lane": str((candidate_lookup.get(node_id) or {}).get("lane") or ""),
+            "reason": str((candidate_lookup.get(node_id) or {}).get("reason") or ""),
+            "score": int((candidate_lookup.get(node_id) or {}).get("score") or 0),
+        }
+        for node_id in candidate_order
+        if node_id in candidate_lookup
+    ]
 
     if mode == "pivot":
         promoted_candidates = promoted_candidates[:4]
+
+    helper_proposal = None
+    selected_candidates = list(promoted_candidates)
+    if helper_enabled:
+        helper_input = build_helper_rehydration_input(
+            store,
+            mode=mode,
+            retrieval_substrate=retrieval_substrate,
+        )
+        helper_proposal = build_helper_rehydration_proposal(store, helper_input)
+        selected_candidates = [
+            {
+                "node_id": node_id,
+                "lane": str((candidate_lookup.get(node_id) or {}).get("lane") or ""),
+                "reason": str((candidate_lookup.get(node_id) or {}).get("reason") or ""),
+                "score": int((candidate_lookup.get(node_id) or {}).get("score") or 0),
+            }
+            for node_id in list(helper_proposal.get("selected_support_node_ids") or [])
+            if str(node_id) in candidate_lookup
+        ]
+
+    for item in selected_candidates:
+        node_id = str(item.get("node_id") or "")
+        candidate = candidate_lookup.get(node_id) or {}
+        if mode == "dependency_lookup":
+            blocker_text = str(candidate.get("blocker_ref") or "").strip()
+            if blocker_text and blocker_text not in seen_blocker_refs:
+                seen_blocker_refs.add(blocker_text)
+                blocker_refs.append(blocker_text)
+            graph_type = str(candidate.get("graph_type") or "")
+            if graph_type == "validates" and node_id not in seen_validations:
+                seen_validations.add(node_id)
+                validations.append(node_id)
+            if str(candidate.get("lane") or "") == "graph_neighborhood" and node_id and node_id not in seen_graph_neighbor_ids:
+                seen_graph_neighbor_ids.add(node_id)
+                graph_neighbor_ids.append(node_id)
+            if str(candidate.get("lane") or "") == "graph_neighborhood" and graph_type == "supersedes":
+                source_id = str(candidate.get("neighbor_source_id") or "").strip()
+                if source_id and source_id not in seen_superseded_source_ids:
+                    seen_superseded_source_ids.add(source_id)
+                    superseded_source_ids.append(source_id)
+            for artifact in list(candidate.get("artifact_refs") or []):
+                text = str(artifact).strip()
+                if text and text not in seen_artifacts:
+                    seen_artifacts.add(text)
+                    artifact_refs.append(text)
+            for target in list(candidate.get("targets") or []):
+                text = str(target).strip()
+                if text and text not in seen_targets:
+                    seen_targets.add(text)
+                    targets.append(text)
 
     if mode == "dependency_lookup" and superseded_source_ids:
         superseded_artifacts = set()
@@ -665,7 +735,7 @@ def build_rehydration_plan(
             "validations": validations,
             "graph_neighbor_ids": graph_neighbor_ids,
             "superseded_source_ids": superseded_source_ids,
-            "promoted_candidates": promoted_candidates,
+            "promoted_candidates": selected_candidates,
         },
         "retrieval_substrate": retrieval_substrate,
         "rehydration_bundle": {
@@ -673,7 +743,7 @@ def build_rehydration_plan(
             "mode": mode,
             "focus_node_id": focus_node_id,
             "active_path_node_ids": list(retrieval_policy.get("active_path_node_ids") or []),
-            "support_node_ids": [item["node_id"] for item in promoted_candidates],
+            "support_node_ids": [item["node_id"] for item in selected_candidates],
             "constraints": constraints,
             "targets": targets,
             "workspace_scope": workspace_scope,
@@ -682,8 +752,9 @@ def build_rehydration_plan(
             "validations": validations,
             "graph_neighbor_ids": graph_neighbor_ids,
             "superseded_source_ids": superseded_source_ids,
-            "candidate_provenance": promoted_candidates,
+            "candidate_provenance": selected_candidates,
         },
+        "helper_proposal": helper_proposal,
         "retrieval_policy": retrieval_policy,
     }
 

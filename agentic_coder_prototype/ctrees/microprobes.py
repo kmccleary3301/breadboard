@@ -395,3 +395,46 @@ def run_graph_neighborhood_probe() -> Dict[str, Any]:
         "graph_neighbor_bundle_ids": bundle.get("graph_neighbor_ids") or [],
         "support_node_ids": bundle.get("support_node_ids") or [],
     }
+
+
+def run_helper_resume_probe() -> Dict[str, Any]:
+    store = build_probe_store()
+    baseline = build_rehydration_plan(store, mode="resume")
+    helper = build_rehydration_plan(store, mode="resume", helper_enabled=True)
+    return {
+        "probe": "helper_resume",
+        "baseline_support_node_ids": (baseline.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "helper_support_node_ids": (helper.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "helper_proposal": helper.get("helper_proposal") or {},
+    }
+
+
+def run_helper_false_neighbor_probe() -> Dict[str, Any]:
+    store = build_false_neighbor_store()
+    baseline = build_rehydration_plan(store, mode="active_continuation")
+    helper = build_rehydration_plan(store, mode="active_continuation", helper_enabled=True)
+    return {
+        "probe": "helper_false_neighbor",
+        "baseline_support_node_ids": (baseline.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "helper_support_node_ids": (helper.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "helper_proposal": helper.get("helper_proposal") or {},
+        "helper_artifact_refs": (helper.get("rehydration_bundle") or {}).get("artifact_refs") or [],
+    }
+
+
+def run_helper_dependency_lookup_probe() -> Dict[str, Any]:
+    store = build_graph_neighborhood_store()
+    baseline = build_rehydration_plan(store, mode="dependency_lookup", graph_neighborhood_enabled=True)
+    helper = build_rehydration_plan(
+        store,
+        mode="dependency_lookup",
+        graph_neighborhood_enabled=True,
+        helper_enabled=True,
+    )
+    return {
+        "probe": "helper_dependency_lookup",
+        "baseline_support_node_ids": (baseline.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "helper_support_node_ids": (helper.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "helper_proposal": helper.get("helper_proposal") or {},
+        "helper_artifact_refs": (helper.get("rehydration_bundle") or {}).get("artifact_refs") or [],
+    }

@@ -6,6 +6,9 @@ from agentic_coder_prototype.ctrees.microprobes import (
     run_dependency_lookup_probe,
     run_false_neighbor_probe,
     run_graph_neighborhood_probe,
+    run_helper_dependency_lookup_probe,
+    run_helper_false_neighbor_probe,
+    run_helper_resume_probe,
     run_pivot_probe,
     run_pivot_minimality_probe,
     run_resume_probe,
@@ -116,3 +119,30 @@ def test_ctree_graph_neighborhood_probe_surfaces_one_hop_neighbor_support() -> N
     assert payload["neighbor_source_ids"]
     assert "schema_validation.md" in payload["artifact_refs"]
     assert payload["graph_neighbor_bundle_ids"]
+
+
+def test_ctree_helper_resume_probe_prunes_baseline_support() -> None:
+    payload = run_helper_resume_probe()
+
+    assert payload["probe"] == "helper_resume"
+    assert len(payload["helper_support_node_ids"]) < len(payload["baseline_support_node_ids"])
+    assert payload["helper_proposal"]["selected_support_node_ids"] == payload["helper_support_node_ids"]
+
+
+def test_ctree_helper_false_neighbor_probe_keeps_relevant_and_drops_irrelevant_nodes() -> None:
+    payload = run_helper_false_neighbor_probe()
+
+    assert payload["probe"] == "helper_false_neighbor"
+    assert len(payload["helper_support_node_ids"]) < len(payload["baseline_support_node_ids"])
+    assert "retrieval_contract.md" in payload["helper_artifact_refs"]
+    assert payload["helper_proposal"]["selected_support_node_ids"] == payload["helper_support_node_ids"]
+
+
+def test_ctree_helper_dependency_lookup_probe_keeps_dependency_grounding() -> None:
+    payload = run_helper_dependency_lookup_probe()
+
+    assert payload["probe"] == "helper_dependency_lookup"
+    assert len(payload["helper_support_node_ids"]) < len(payload["baseline_support_node_ids"])
+    assert "schema_validation.md" in payload["helper_artifact_refs"]
+    assert "replacement_schema.md" in payload["helper_artifact_refs"]
+    assert payload["helper_proposal"]["selected_support_node_ids"] == payload["helper_support_node_ids"]

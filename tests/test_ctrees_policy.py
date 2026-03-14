@@ -262,3 +262,55 @@ def test_ctree_dependency_lookup_graph_neighborhood_is_opt_in_and_bounded() -> N
     assert any(item["reason"] == "neighbor_validates_link" for item in widened_neighbors)
     assert validation_id in widened_bundle["graph_neighbor_ids"]
     assert "schema_validation.md" in widened_bundle["artifact_refs"]
+
+
+def test_ctree_helper_rehydration_is_opt_in_and_prunes_structural_spillover() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Helper pruning"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Relevant retrieval contract work",
+            "parent_id": root_id,
+            "targets": ["ctrees/policy.py"],
+            "artifact_refs": ["retrieval_contract.md"],
+            "workspace_scope": ["agentic_coder_prototype/ctrees"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Irrelevant batch router audit",
+            "parent_id": root_id,
+            "targets": ["router/audit.py"],
+            "artifact_refs": ["batch_router.md"],
+            "workspace_scope": ["agentic_coder_prototype/router"],
+        },
+        turn=3,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Continue retrieval contract work",
+            "parent_id": root_id,
+            "targets": ["ctrees/policy.py"],
+            "artifact_refs": ["retrieval_contract.md"],
+            "constraints": [{"summary": "Suppress false lexical neighbors"}],
+        },
+        turn=4,
+    )
+
+    baseline = build_rehydration_plan(store, mode="active_continuation")
+    helper = build_rehydration_plan(store, mode="active_continuation", helper_enabled=True)
+
+    baseline_ids = (baseline.get("rehydration_bundle") or {}).get("support_node_ids") or []
+    helper_ids = (helper.get("rehydration_bundle") or {}).get("support_node_ids") or []
+    proposal = helper.get("helper_proposal") or {}
+
+    assert helper.get("helper_proposal") is not None
+    assert len(helper_ids) < len(baseline_ids)
+    assert str(root_id) in baseline_ids
+    assert str(root_id) not in helper_ids
+    assert "retrieval_contract.md" in (helper.get("rehydration_bundle") or {}).get("artifact_refs") or []
+    assert proposal["selected_support_node_ids"] == helper_ids
