@@ -4,6 +4,9 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+from atp_hilbert_fixture_utils import install_minif2f_fixture
+
 MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "build_hilbert_comparison_packs_v2.py"
 import sys
 
@@ -12,6 +15,11 @@ spec = importlib.util.spec_from_file_location("build_hilbert_comparison_packs_v2
 assert spec and spec.loader
 packs = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(packs)
+
+
+@pytest.fixture(autouse=True)
+def _minif2f_fixture(tmp_path: Path) -> None:
+    install_minif2f_fixture(packs, tmp_path)
 
 
 def test_known_unsound_task_is_excluded_from_medium_pack(tmp_path: Path) -> None:
