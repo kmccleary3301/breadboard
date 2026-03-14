@@ -513,6 +513,43 @@ def build_summary_coupling_store() -> CTreeStore:
     return store
 
 
+def build_dense_retrieval_store() -> CTreeStore:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Dense retrieval probe"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Router audit note",
+            "parent_id": root_id,
+            "artifact_refs": ["router_audit.md"],
+            "targets": ["router/audit.py"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Compilation packet",
+            "parent_id": root_id,
+            "status": "active",
+            "artifact_refs": ["compile_validation.md"],
+            "constraints": [{"summary": "Validated build interface", "scope": "task"}],
+        },
+        turn=3,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Verify compiler contract",
+            "parent_id": root_id,
+            "artifact_refs": ["rewrite_plan.md"],
+            "targets": ["ctrees/compiler.py"],
+        },
+        turn=4,
+    )
+    return store
+
+
 def run_helper_subtree_summary_probe() -> Dict[str, Any]:
     store = build_subtree_summary_store()
     baseline = compile_ctree(store)
@@ -542,4 +579,22 @@ def run_helper_summary_coupling_probe() -> Dict[str, Any]:
         "coupled_support_node_ids": (coupled.get("rehydration_bundle") or {}).get("support_node_ids") or [],
         "summary_support": (coupled.get("rehydration_bundle") or {}).get("summary_support") or [],
         "helper_proposal": coupled.get("helper_proposal") or {},
+    }
+
+
+def run_dense_retrieval_probe() -> Dict[str, Any]:
+    store = build_dense_retrieval_store()
+    baseline = build_rehydration_plan(store, mode="active_continuation", helper_enabled=True)
+    dense = build_rehydration_plan(
+        store,
+        mode="active_continuation",
+        dense_enabled=True,
+        helper_enabled=True,
+    )
+    return {
+        "probe": "dense_retrieval",
+        "baseline_support_node_ids": (baseline.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "dense_support_node_ids": (dense.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "dense_candidate_support": ((dense.get("retrieval_substrate") or {}).get("candidate_support") or {}).get("dense") or [],
+        "helper_proposal": dense.get("helper_proposal") or {},
     }

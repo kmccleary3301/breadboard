@@ -4,6 +4,7 @@ from agentic_coder_prototype.ctrees.microprobes import (
     run_blocker_clearance_probe,
     run_continuation_probe,
     run_dependency_lookup_probe,
+    run_dense_retrieval_probe,
     run_false_neighbor_probe,
     run_graph_neighborhood_probe,
     run_helper_dependency_lookup_probe,
@@ -167,3 +168,13 @@ def test_ctree_helper_summary_coupling_probe_surfaces_summary_support() -> None:
     assert payload["baseline_support_node_ids"] == ["ctn_000004"]
     assert payload["coupled_support_node_ids"] == ["ctn_000004", "ctn_000003"]
     assert payload["helper_proposal"]["summary_coupling_parent_ids"]
+
+
+def test_ctree_dense_retrieval_probe_recovers_semantic_support() -> None:
+    payload = run_dense_retrieval_probe()
+
+    assert payload["probe"] == "dense_retrieval"
+    assert payload["baseline_support_node_ids"] == ["ctn_000004"]
+    assert payload["dense_support_node_ids"] == ["ctn_000004", "ctn_000003"]
+    assert payload["dense_candidate_support"]
+    assert payload["helper_proposal"]["selected_support_node_ids"] == payload["dense_support_node_ids"]

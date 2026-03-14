@@ -132,6 +132,10 @@ def build_helper_rehydration_proposal(
             helper_score += 20
             helper_reasons.append("lexical_support")
 
+        if lane == "dense":
+            helper_score += 30
+            helper_reasons.append("dense_support")
+
         if lane == "graph_link":
             helper_score += 35
             helper_reasons.append("direct_graph_support")

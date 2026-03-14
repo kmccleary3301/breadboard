@@ -17,6 +17,37 @@ _GENERIC_LEXICAL_TERMS = {
     "phase",
     "work",
 }
+_DENSE_TERM_ALIASES = {
+    "verify": "validate",
+    "verified": "validate",
+    "verification": "validate",
+    "validate": "validate",
+    "validated": "validate",
+    "validates": "validate",
+    "validation": "validate",
+    "check": "validate",
+    "checks": "validate",
+    "checked": "validate",
+    "compiler": "compile",
+    "compile": "compile",
+    "compiling": "compile",
+    "compiled": "compile",
+    "compilation": "compile",
+    "continuation": "resume",
+    "continue": "resume",
+    "continued": "resume",
+    "continuing": "resume",
+    "resume": "resume",
+    "resumed": "resume",
+    "rehydrate": "resume",
+    "rehydration": "resume",
+    "restore": "resume",
+    "restored": "resume",
+    "restoration": "resume",
+    "planner": "plan",
+    "planning": "plan",
+}
+_DENSE_SUFFIXES = ("ation", "tion", "ment", "ing", "ers", "ies", "ied", "ed", "er", "or", "ly", "es", "s")
 
 
 def _sort_node_ids(ids: List[str]) -> List[str]:
@@ -150,6 +181,7 @@ def _candidate_preference(candidate: Dict[str, Any]) -> tuple[int, int, int]:
 
     lane_weight = {
         "graph_link": 4,
+        "dense": 3,
         "graph_neighborhood": 3,
         "lexical": 2,
         "structural": 1,
@@ -162,6 +194,7 @@ def _candidate_preference(candidate: Dict[str, Any]) -> tuple[int, int, int]:
         "neighbor_supersedes_link": 4,
         "neighbor_validates_link": 4,
         "lexical_overlap": 3,
+        "semantic_overlap": 3,
         "ancestor": 2,
         "neighbor_blocker_ref": 2,
         "ready_neighbor": 1,
@@ -204,6 +237,36 @@ def _focus_terms(store: CTreeStore, focus_node_id: Optional[str], active_path: L
             seen.add(text)
             terms.append(text)
     return terms
+
+
+def _normalize_dense_term(term: str) -> str:
+    text = re.sub(r"[^a-z0-9]+", "", str(term).strip().lower())
+    if not text:
+        return ""
+    alias = _DENSE_TERM_ALIASES.get(text)
+    if alias:
+        return alias
+    for suffix in _DENSE_SUFFIXES:
+        if len(text) > len(suffix) + 2 and text.endswith(suffix):
+            text = text[: -len(suffix)]
+            break
+    return _DENSE_TERM_ALIASES.get(text, text)
+
+
+def _dense_terms_from_tokens(tokens: List[str]) -> List[str]:
+    seen = set()
+    dense_terms: List[str] = []
+    for token in tokens:
+        normalized = _normalize_dense_term(token)
+        if not normalized or normalized in seen:
+            continue
+        if normalized in _GENERIC_LEXICAL_TERMS:
+            continue
+        if len(normalized) <= 3:
+            continue
+        seen.add(normalized)
+        dense_terms.append(normalized)
+    return dense_terms
 
 
 def _collect_structural_candidates(
@@ -275,6 +338,49 @@ def _collect_lexical_candidates(
             {
                 **_candidate_item(node, lane="lexical", reason="lexical_overlap", score=score),
                 "matched_terms": overlap,
+            }
+        )
+    return candidates
+
+
+def _collect_dense_candidates(
+    store: CTreeStore,
+    *,
+    focus_node_id: Optional[str],
+    active_path: List[str],
+) -> List[Dict[str, Any]]:
+    focus_raw_terms = set(_focus_terms(store, focus_node_id, active_path))
+    focus_dense_terms = set(_dense_terms_from_tokens(list(focus_raw_terms)))
+    if not focus_dense_terms:
+        return []
+
+    candidates: List[Dict[str, Any]] = []
+    normalized_focus_raw = {_normalize_dense_term(term) for term in focus_raw_terms if _normalize_dense_term(term)}
+    for node in list(getattr(store, "nodes", []) or []):
+        node_id = str(node.get("id") or "")
+        if focus_node_id and node_id == str(focus_node_id):
+            continue
+        raw_terms = {str(term).strip().lower() for term in list(node.get("lexical_terms") or []) if str(term).strip()}
+        exact_overlap = sorted(focus_raw_terms & raw_terms)
+        dense_terms = set(_dense_terms_from_tokens(list(raw_terms)))
+        dense_overlap = sorted(focus_dense_terms & dense_terms)
+        semantic_only = [term for term in dense_overlap if term not in normalized_focus_raw or term not in exact_overlap]
+        if not semantic_only:
+            continue
+        score = 24 + (len(semantic_only) * 12)
+        if list(node.get("artifact_refs") or []):
+            score += 6
+        if list(node.get("constraints") or []):
+            score += 6
+        if str(node.get("status") or "") in {"superseded", "abandoned", "archived"}:
+            score -= 18
+        if score < 30:
+            continue
+        candidates.append(
+            {
+                **_candidate_item(node, lane="dense", reason="semantic_overlap", score=score),
+                "matched_dense_terms": semantic_only,
+                "matched_exact_terms": exact_overlap,
             }
         )
     return candidates
@@ -508,6 +614,7 @@ def resolve_retrieval_policy(
     token_budget: Optional[int] = None,
     graph_enabled: bool = True,
     graph_neighborhood_enabled: bool = False,
+    dense_enabled: bool = False,
 ) -> Dict[str, Any]:
     active_path = active_path_node_ids(store)
     snapshot = store.snapshot()
@@ -515,6 +622,7 @@ def resolve_retrieval_policy(
     last_node_id = str(last_node.get("id") or "") if isinstance(last_node, dict) else None
     structural_sources = ["active_node", "ancestors", "latest_child_summaries"]
     lexical_sources = ["constraints", "targets", "workspace_scope", "artifact_refs", "titles", "paths"]
+    dense_sources = ["normalized_titles", "normalized_constraints", "normalized_artifacts", "normalized_targets"]
     graph_sources = ["blockers", "validates", "supersedes", "duplicates", "relates_to", "replies_to"]
 
     enabled_lanes = ["structural", "lexical"]
@@ -549,6 +657,11 @@ def resolve_retrieval_policy(
         if graph_enabled and graph_neighborhood_enabled:
             restore_targets.append("neighbor_context")
 
+    if dense_enabled and mode in {"active_continuation", "resume", "pivot"}:
+        enabled_lanes.append("dense")
+        lane_limits["dense"] = 4
+        allowed_sources["dense"] = dense_sources
+
     effective_budget = token_budget if token_budget is not None and token_budget > 0 else 1200
     return {
         "schema_version": "ctree_retrieval_policy_v1",
@@ -570,6 +683,7 @@ def build_retrieval_substrate(
     token_budget: Optional[int] = None,
     graph_enabled: bool = True,
     graph_neighborhood_enabled: bool = False,
+    dense_enabled: bool = False,
 ) -> Dict[str, Any]:
     retrieval_policy = resolve_retrieval_policy(
         store,
@@ -577,6 +691,7 @@ def build_retrieval_substrate(
         token_budget=token_budget,
         graph_enabled=graph_enabled,
         graph_neighborhood_enabled=graph_neighborhood_enabled,
+        dense_enabled=dense_enabled,
     )
     active_path = list(retrieval_policy.get("active_path_node_ids") or [])
     focus_node_id = retrieval_policy.get("focus_node_id")
@@ -590,6 +705,10 @@ def build_retrieval_substrate(
     if "lexical" in list(retrieval_policy.get("enabled_lanes") or []):
         lexical = _collect_lexical_candidates(store, focus_node_id=focus_node_id, active_path=active_path)
         candidate_support["lexical"] = _clip_candidates(lexical, int(lane_limits.get("lexical") or 0))
+
+    if "dense" in list(retrieval_policy.get("enabled_lanes") or []):
+        dense = _collect_dense_candidates(store, focus_node_id=focus_node_id, active_path=active_path)
+        candidate_support["dense"] = _clip_candidates(dense, int(lane_limits.get("dense") or 0))
 
     if "graph_link" in list(retrieval_policy.get("enabled_lanes") or []):
         graph_candidates = _collect_graph_link_candidates(store, focus_node_id=focus_node_id, active_path=active_path)
@@ -623,6 +742,7 @@ def build_rehydration_plan(
     token_budget: Optional[int] = None,
     graph_enabled: bool = True,
     graph_neighborhood_enabled: bool = False,
+    dense_enabled: bool = False,
     helper_enabled: bool = False,
     helper_summary_coupling_enabled: bool = False,
 ) -> Dict[str, Any]:
@@ -632,6 +752,7 @@ def build_rehydration_plan(
         token_budget=token_budget,
         graph_enabled=graph_enabled,
         graph_neighborhood_enabled=graph_neighborhood_enabled,
+        dense_enabled=dense_enabled,
     )
     retrieval_policy = retrieval_substrate.get("retrieval_policy") or {}
     snapshot = store.snapshot()
@@ -700,7 +821,7 @@ def build_rehydration_plan(
         workspace_scope = workspace_scope[:1]
 
     candidate_order: List[str] = []
-    for lane in ("structural", "lexical", "graph_link", "graph_neighborhood"):
+    for lane in ("structural", "lexical", "dense", "graph_link", "graph_neighborhood"):
         for candidate in list((retrieval_substrate.get("candidate_support") or {}).get(lane) or []):
             node_id = str(candidate.get("node_id") or "")
             if not node_id:

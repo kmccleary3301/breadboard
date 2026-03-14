@@ -382,3 +382,41 @@ def test_ctree_helper_summary_coupling_is_opt_in() -> None:
     assert not (helper.get("rehydration_bundle") or {}).get("summary_support")
     assert (coupled.get("rehydration_bundle") or {}).get("summary_support")
     assert (coupled.get("helper_proposal") or {}).get("summary_coupling_parent_ids")
+
+
+def test_ctree_dense_retrieval_is_opt_in() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Dense retrieval"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Compilation packet",
+            "parent_id": root_id,
+            "status": "active",
+            "artifact_refs": ["compile_validation.md"],
+            "constraints": [{"summary": "Validated build interface", "scope": "task"}],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Verify compiler contract",
+            "parent_id": root_id,
+            "artifact_refs": ["rewrite_plan.md"],
+            "targets": ["ctrees/compiler.py"],
+        },
+        turn=3,
+    )
+
+    baseline = build_rehydration_plan(store, mode="active_continuation", helper_enabled=True)
+    dense = build_rehydration_plan(
+        store,
+        mode="active_continuation",
+        dense_enabled=True,
+        helper_enabled=True,
+    )
+
+    assert not ((baseline.get("retrieval_substrate") or {}).get("candidate_support") or {}).get("dense")
+    assert ((dense.get("retrieval_substrate") or {}).get("candidate_support") or {}).get("dense")
+    assert (dense.get("helper_proposal") or {}).get("selected_support_node_ids") == ["ctn_000003", "ctn_000002"]
