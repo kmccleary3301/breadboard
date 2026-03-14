@@ -22,6 +22,9 @@ Phase-1 T0 freezes:
 - `DARWIN_POLICY_REGISTRY_V0.md`
 - `DARWIN_CLAIM_LADDER_V0.md`
 - `DARWIN_WEEKLY_EVIDENCE_PACKET_V0.md`
+- `DARWIN_COMPATIBILITY_MAP_V0.md`
+- `DARWIN_ARCHITECTURE_BOUNDARY_V0.md`
+- `DARWIN_ARTIFACT_LAYOUT_V0.md`
 
 ### Machine-readable schemas
 
@@ -46,6 +49,11 @@ Phase-1 T0 freezes:
 - `scripts/build_darwin_topology_family_runner_v0.py`
 - `scripts/run_darwin_t1_baseline_scorecard_v1.py`
 - `scripts/build_darwin_weekly_packet_v1.py`
+- `scripts/run_darwin_t1_live_baselines_v1.py`
+- `scripts/emit_darwin_evidence_and_claims_v1.py`
+- `scripts/build_darwin_bootstrap_rollup_v0.py`
+- `scripts/check_darwin_lane_readiness_v0.py`
+- `scripts/run_darwin_t1_smoke_v1.py`
 
 ## Legacy compatibility
 

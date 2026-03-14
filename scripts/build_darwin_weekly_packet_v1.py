@@ -14,6 +14,9 @@ from breadboard_ext.darwin.contracts import validate_weekly_evidence_packet
 
 
 DEFAULT_SCORECARD = ROOT / "artifacts" / "darwin" / "scorecards" / "t1_baseline_scorecard.latest.json"
+DEFAULT_LIVE_SUMMARY = ROOT / "artifacts" / "darwin" / "live_baselines" / "live_baseline_summary_v1.json"
+DEFAULT_CLAIM_LEDGER = ROOT / "artifacts" / "darwin" / "claims" / "claim_ledger_v1.json"
+DEFAULT_EVIDENCE_MANIFEST = ROOT / "artifacts" / "darwin" / "evidence" / "evidence_bundle_manifest_v2.json"
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "darwin" / "weekly"
 
 
@@ -30,13 +33,17 @@ def _week_start_utc() -> str:
 
 def build_weekly_packet(scorecard_path: Path = DEFAULT_SCORECARD) -> dict:
     scorecard = _load_json(scorecard_path)
+    live_summary = _load_json(DEFAULT_LIVE_SUMMARY) if DEFAULT_LIVE_SUMMARY.exists() else {"lanes": []}
+    claim_ledger = _load_json(DEFAULT_CLAIM_LEDGER) if DEFAULT_CLAIM_LEDGER.exists() else {"claims": []}
     lane_summaries = []
+    live_by_lane = {row["lane_id"]: row for row in live_summary.get("lanes") or []}
     for lane in scorecard.get("lanes") or []:
+        live_row = live_by_lane.get(lane["lane_id"])
         lane_summaries.append(
             {
                 "lane_id": lane["lane_id"],
                 "status": lane["status"],
-                "headline": f"{lane['lane_id']} structural readiness score {lane['normalized_score']}",
+                "headline": f"{lane['lane_id']} readiness {lane['normalized_score']} live_score {live_row.get('primary_score') if live_row else 'n/a'}",
             }
         )
     packet = {
@@ -44,20 +51,27 @@ def build_weekly_packet(scorecard_path: Path = DEFAULT_SCORECARD) -> dict:
         "packet_id": f"packet.{datetime.now(timezone.utc).strftime('%Yw%W')}",
         "week_start_utc": _week_start_utc(),
         "lane_summaries": lane_summaries,
-        "scorecard_refs": [str(scorecard_path.relative_to(ROOT))],
+        "scorecard_refs": [
+            str(scorecard_path.relative_to(ROOT)),
+            str(DEFAULT_LIVE_SUMMARY.relative_to(ROOT)) if DEFAULT_LIVE_SUMMARY.exists() else "",
+            str(DEFAULT_EVIDENCE_MANIFEST.relative_to(ROOT)) if DEFAULT_EVIDENCE_MANIFEST.exists() else "",
+        ],
         "budget_burn": {
             "class_a_usd": 0.0,
             "class_b_usd": 0.0,
-            "note": "bootstrap structural packet only; no live campaign spend attributed yet"
+            "note": "live micro-baseline packet; spend is structural or zero-cost local execution only"
         },
         "drift_refs": [],
         "incident_refs": [],
         "next_actions": [
-            "launch first shared topology-family baseline runs",
-            "materialize DARWIN evidence bundle writer",
-            "start harness and systems lane baseline execution"
+            "bind first non-ATP comparative lane to real evaluator-rich benchmark",
+            "upgrade ATP lane from ops-digest baseline to benchmark baseline import",
+            "start repo_swe lane bootstrap"
         ],
     }
+    packet["scorecard_refs"] = [ref for ref in packet["scorecard_refs"] if ref]
+    if claim_ledger.get("claims"):
+        packet["incident_refs"].append(str(DEFAULT_CLAIM_LEDGER.relative_to(ROOT)))
     issues = validate_weekly_evidence_packet(packet)
     if issues:
         joined = "; ".join(f"{issue.path}: {issue.message}" for issue in issues)

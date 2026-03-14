@@ -8,6 +8,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BOOTSTRAP_MANIFEST = ROOT / "artifacts" / "darwin" / "bootstrap" / "bootstrap_manifest_v0.json"
 DEFAULT_TOPOLOGY_MANIFEST = ROOT / "artifacts" / "darwin" / "topology" / "topology_family_runner_v0.json"
+DEFAULT_LIVE_SUMMARY = ROOT / "artifacts" / "darwin" / "live_baselines" / "live_baseline_summary_v1.json"
+DEFAULT_CLAIM_LEDGER = ROOT / "artifacts" / "darwin" / "claims" / "claim_ledger_v1.json"
+DEFAULT_EVIDENCE_BUNDLE = ROOT / "artifacts" / "darwin" / "evidence" / "darwin_phase1_t1_live_baselines_bundle_v1.json"
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "darwin" / "scorecards"
 
 
@@ -44,6 +47,13 @@ def build_scorecard(
 ) -> dict:
     bootstrap = _load_json(bootstrap_manifest_path)
     topology = _load_json(topology_manifest_path)
+    live_summary = _load_json(DEFAULT_LIVE_SUMMARY) if DEFAULT_LIVE_SUMMARY.exists() else {"lanes": []}
+    live_by_lane = {row["lane_id"]: row for row in live_summary.get("lanes") or []}
+    claim_ids = set()
+    if DEFAULT_CLAIM_LEDGER.exists():
+        claim_ledger = _load_json(DEFAULT_CLAIM_LEDGER)
+        claim_ids = {claim["claim_id"] for claim in claim_ledger.get("claims") or []}
+    evidence_present = DEFAULT_EVIDENCE_BUNDLE.exists()
 
     topology_counts: dict[str, int] = {}
     for row in topology.get("matrix") or []:
@@ -59,11 +69,15 @@ def build_scorecard(
         campaign_spec_valid = True
         policy_present = True
         topology_family_count = topology_counts.get(lane_id, 0)
+        live_lane = live_by_lane.get(lane_id)
         components = {
             "campaign_spec_valid": campaign_spec_valid,
             "policy_present": policy_present,
             "topology_families_present": topology_family_count >= 3,
             "prerequisites_passed": all(prereq_results.values()) if prereq_results else False,
+            "live_baseline_passed": bool(live_lane and live_lane.get("verifier_status") == "passed"),
+            "evidence_bundle_present": evidence_present,
+            "claim_present": f"claim.darwin.phase1.{lane_id}.live_baseline.v1" in claim_ids,
         }
         score = sum(1.0 for ok in components.values() if ok) / len(components)
         lane_rows.append(
@@ -73,6 +87,7 @@ def build_scorecard(
                 "normalized_score": round(score, 6),
                 "status": "ready" if score >= 1.0 else "partial",
                 "topology_family_count": topology_family_count,
+                "live_primary_score": live_lane.get("primary_score") if live_lane else None,
                 "components": components,
                 "prerequisites": prereq_results,
             }
