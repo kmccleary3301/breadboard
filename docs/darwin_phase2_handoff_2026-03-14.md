@@ -19,6 +19,7 @@ Phase-1 is closed as the internal operational baseline.
 ## Current tranche-1 execution reference
 
 - `docs/darwin_phase2_tranche1_execution_plan_2026-03-14.md`
+- `docs/darwin_phase2_tranche1_adr_set_2026-03-14.md`
 
 ## What Phase-2 should not reopen
 
