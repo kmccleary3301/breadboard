@@ -35,6 +35,14 @@ The narrow V1 directive vocabulary is:
 
 This is not a general workflow DSL.
 
+The vocabulary is now intentionally frozen for the current coordination center.
+
+That means:
+
+- do not widen directive codes casually
+- do not add host/product action words to durable truth unless repeated pressure proves they belong there
+- guardrails in config parsing and directive validation should reject accidental vocabulary creep
+
 ---
 
 ## Core semantics

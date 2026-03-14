@@ -61,6 +61,11 @@ def _coordination_longrun_fixture_output(
     macro_summary = controller_out.get("macro_summary") if isinstance(controller_out, dict) else {}
     macro_summary = macro_summary if isinstance(macro_summary, dict) else {}
     coordination = macro_summary.get("coordination") if isinstance(macro_summary.get("coordination"), dict) else {}
+    coordination_event_trace = (
+        macro_summary.get("coordination_event_trace")
+        if isinstance(macro_summary.get("coordination_event_trace"), list)
+        else coordination.get("events")
+    )
     replacements: Dict[str, str] = {}
     for idx, signal in enumerate(coordination.get("signals") or [], start=1):
         if isinstance(signal, dict):
@@ -85,7 +90,7 @@ def _coordination_longrun_fixture_output(
         "signals": list(coordination.get("signals") or []),
         "review_verdicts": list(coordination.get("review_verdicts") or []),
         "directives": list(coordination.get("directives") or []),
-        "events": list(coordination.get("events") or []),
+        "events": list(coordination_event_trace or []),
     }
     return _zero_validation_timestamps(_normalize_fixture_value(output, replacements))
 
@@ -255,6 +260,9 @@ def _build_coordination_reference_complete_fixture() -> Dict[str, Any]:
         "scenario_id": "coordination_supervisor_complete_python_reference",
         "supervisor_task_id": "task_supervisor_1",
         "worker_task_id": "task_worker_1",
+        "compatibility_notes": [
+            "supervisor_decision is a compatibility projection over review_verdict truth, not a new coordination primitive."
+        ],
         "subscription_id": "sub_worker_state",
         "accepted_signal": signal,
         "wakeup_payload": dict(wakeup.payload or {}),
@@ -318,6 +326,9 @@ def _build_coordination_reference_blocked_fixture() -> Dict[str, Any]:
         "scenario_id": "coordination_supervisor_blocked_python_reference",
         "supervisor_task_id": "task_supervisor_1",
         "worker_task_id": "task_worker_1",
+        "compatibility_notes": [
+            "supervisor_decision is a compatibility projection over review_verdict truth, not a new coordination primitive."
+        ],
         "subscription_id": "sub_worker_state",
         "accepted_signal": signal,
         "wakeup_payload": dict(wakeup.payload or {}),
@@ -919,24 +930,26 @@ def _build_coordination_intervention_continue_fixture() -> Dict[str, Any]:
     )
     supervisor_directive.payload["validation"]["validated_at"] = 0.0
 
-    reference_output = _normalize_fixture_value(
-        {
-            "schema_version": "bb.coordination_intervention_reference_slice.v1",
-            "scenario_id": "coordination_intervention_continue_python_reference",
-            "supervisor_task_id": "task_supervisor_1",
-            "worker_task_id": "task_worker_1",
-            "signal": signal,
-            "review_verdict": dict(verdict.payload or {}),
-            "supervisor_directive": dict(supervisor_directive.payload or {}),
-            "host_directive": dict(host_directive.payload or {}),
-            "unresolved_interventions_before": unresolved,
-            "resolved_interventions_after": resolved,
-            "events": _serialize_events(orchestrator),
-        },
-        {
-            supervisor.job.job_id: "job_supervisor_1",
-            worker.job.job_id: "job_worker_1",
-        },
+    reference_output = _zero_validation_timestamps(
+        _normalize_fixture_value(
+            {
+                "schema_version": "bb.coordination_intervention_reference_slice.v1",
+                "scenario_id": "coordination_intervention_continue_python_reference",
+                "supervisor_task_id": "task_supervisor_1",
+                "worker_task_id": "task_worker_1",
+                "signal": signal,
+                "review_verdict": dict(verdict.payload or {}),
+                "supervisor_directive": dict(supervisor_directive.payload or {}),
+                "host_directive": dict(host_directive.payload or {}),
+                "unresolved_interventions_before": unresolved,
+                "resolved_interventions_after": resolved,
+                "events": _serialize_events(orchestrator),
+            },
+            {
+                supervisor.job.job_id: "job_supervisor_1",
+                worker.job.job_id: "job_worker_1",
+            },
+        )
     )
     return {
         "fixture_family": "coordination",

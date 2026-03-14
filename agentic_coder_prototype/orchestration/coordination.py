@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 SIGNAL_CODES = frozenset(
     {
@@ -67,6 +67,122 @@ REVIEW_ACTION_SIGNAL_CODES = frozenset({"blocked", "human_required", "no_progres
 def _clean_string(value: Any) -> Optional[str]:
     text = str(value or "").strip()
     return text or None
+
+
+def _clone_json_like(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _clone_json_like(val) for key, val in value.items()}
+    if isinstance(value, list):
+        return [_clone_json_like(item) for item in value]
+    return value
+
+
+def _normalize_allowed_host_actions(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    actions = [str(item).strip() for item in value if str(item).strip()]
+    return actions
+
+
+def _derive_intervention_snapshots(
+    *,
+    signals: Sequence[Mapping[str, Any]],
+    review_verdicts: Sequence[Mapping[str, Any]],
+    directives: Sequence[Mapping[str, Any]],
+    resolved: bool,
+) -> List[Dict[str, Any]]:
+    signal_by_id = {
+        str(item.get("signal_id") or ""): _clone_json_like(dict(item))
+        for item in signals
+        if str(item.get("signal_id") or "").strip()
+    }
+    directives_by_verdict: Dict[str, List[Dict[str, Any]]] = {}
+    host_directives_by_verdict: Dict[str, List[Dict[str, Any]]] = {}
+    for directive in directives:
+        verdict_id = str(directive.get("based_on_verdict_id") or "").strip()
+        if not verdict_id:
+            continue
+        directive_copy = _clone_json_like(dict(directive))
+        directives_by_verdict.setdefault(verdict_id, []).append(directive_copy)
+        if str(directive.get("issuer_role") or "") == "host":
+            host_directives_by_verdict.setdefault(verdict_id, []).append(directive_copy)
+
+    snapshots: List[Dict[str, Any]] = []
+    for verdict in review_verdicts:
+        if str(verdict.get("verdict_code") or "") != "human_required":
+            continue
+        verdict_id = str(verdict.get("verdict_id") or "").strip()
+        if not verdict_id:
+            continue
+        subject = verdict.get("subject") if isinstance(verdict.get("subject"), Mapping) else {}
+        signal_id = str(subject.get("signal_id") or "").strip()
+        signal = signal_by_id.get(signal_id)
+        payload = signal.get("payload") if isinstance(signal, Mapping) and isinstance(signal.get("payload"), Mapping) else {}
+        metadata = verdict.get("metadata") if isinstance(verdict.get("metadata"), Mapping) else {}
+        host_responses = host_directives_by_verdict.get(verdict_id) or []
+        is_resolved = bool(host_responses)
+        if is_resolved != resolved:
+            continue
+        snapshots.append(
+            {
+                "intervention_id": f"intervention_{verdict_id}",
+                "status": "resolved" if is_resolved else "pending",
+                "review_verdict_id": verdict_id,
+                "signal_id": signal_id,
+                "source_task_id": str(subject.get("source_task_id") or ""),
+                "mission_task_id": _clean_string(subject.get("mission_task_id")),
+                "required_input": _clean_string(payload.get("required_input")),
+                "blocking_reason": _clean_string(
+                    verdict.get("blocking_reason") or payload.get("blocking_reason")
+                ),
+                "allowed_host_actions": _normalize_allowed_host_actions(
+                    metadata.get("allowed_host_actions") if isinstance(metadata, Mapping) else payload.get("allowed_host_actions")
+                ),
+                "review_verdict": _clone_json_like(dict(verdict)),
+                "signal": _clone_json_like(dict(signal)) if isinstance(signal, Mapping) else None,
+                "directives": [_clone_json_like(item) for item in directives_by_verdict.get(verdict_id, [])],
+                "host_responses": [_clone_json_like(item) for item in host_responses],
+            }
+        )
+    return snapshots
+
+
+def build_coordination_inspection_snapshot(
+    *,
+    signals: Iterable[Mapping[str, Any]],
+    review_verdicts: Iterable[Mapping[str, Any]],
+    directives: Iterable[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    normalized_signals = [_clone_json_like(dict(item)) for item in signals if isinstance(item, Mapping)]
+    normalized_review_verdicts = [
+        _clone_json_like(dict(item)) for item in review_verdicts if isinstance(item, Mapping)
+    ]
+    normalized_directives = [_clone_json_like(dict(item)) for item in directives if isinstance(item, Mapping)]
+
+    latest_signal_by_code: Dict[str, Dict[str, Any]] = {}
+    for signal in normalized_signals:
+        code = str(signal.get("code") or "").strip()
+        if code:
+            latest_signal_by_code[code] = _clone_json_like(signal)
+
+    return {
+        "signals": normalized_signals,
+        "review_verdicts": normalized_review_verdicts,
+        "directives": normalized_directives,
+        "latest_signal_by_code": latest_signal_by_code,
+        "unresolved_interventions": _derive_intervention_snapshots(
+            signals=normalized_signals,
+            review_verdicts=normalized_review_verdicts,
+            directives=normalized_directives,
+            resolved=False,
+        ),
+        "resolved_interventions": _derive_intervention_snapshots(
+            signals=normalized_signals,
+            review_verdicts=normalized_review_verdicts,
+            directives=normalized_directives,
+            resolved=True,
+        ),
+    }
 
 
 def build_signal_proposal(

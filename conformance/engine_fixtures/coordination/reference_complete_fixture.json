@@ -9,6 +9,9 @@
     "scenario_id": "coordination_supervisor_complete_python_reference",
     "supervisor_task_id": "task_supervisor_1",
     "worker_task_id": "task_worker_1",
+    "compatibility_notes": [
+      "supervisor_decision is a compatibility projection over review_verdict truth, not a new coordination primitive."
+    ],
     "subscription_id": "sub_worker_state",
     "accepted_signal": {
       "schema_version": "bb.signal.v1",

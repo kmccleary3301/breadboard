@@ -114,6 +114,14 @@ The sparse supervisor-worker evidence should include:
 
 That keeps projection, coordination truth, and mission authority separable in the evidence itself.
 
+The older sparse `supervisor_decision` fixture field remains acceptable only as compatibility-oriented explanatory evidence.
+
+It should be interpreted as:
+
+- a projection over the underlying `review_verdict` truth
+- useful for legacy reference readability
+- not a new durable coordination object
+
 For the reviewed-result tranche, evidence should now make four layers inspectable:
 
 - signal truth
@@ -141,6 +149,8 @@ For the longrun/escalation tranche, evidence should additionally preserve:
 - the review verdict recorded over that runtime signal
 - any resulting directive truth
 - stop reason and longrun summary without collapsing those layers together
+
+When longrun summaries expose coordination state, they should prefer the shared read-only coordination inspection snapshot and keep raw event traces separate as evidence, not fold those traces into a custom summary-specific coordination shape.
 
 For the delegated-verification tranche, evidence should additionally preserve:
 

@@ -8,6 +8,7 @@ from types import MappingProxyType
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from ..orchestration.coordination import (
+    build_coordination_inspection_snapshot,
     build_directive,
     build_human_required_signal_proposal,
     build_no_progress_signal_proposal,
@@ -471,7 +472,8 @@ class LongRunController:
             "resume_state_path": state.get("resume_state_path"),
             "policy_profile": state.get("policy_profile", self._policy_profile),
             "rlm_usage": state.get("rlm_usage"),
-            "coordination": self._coordination_snapshot(state),
+            "coordination": self._coordination_inspection_snapshot(state),
+            "coordination_event_trace": self._coordination_event_trace(state),
         }
         self._write_summary(summary)
 
@@ -1189,27 +1191,30 @@ class LongRunController:
             )
         return "human_required"
 
-    def _coordination_snapshot(self, state: Mapping[str, Any]) -> Dict[str, Any]:
+    def _coordination_inspection_snapshot(self, state: Mapping[str, Any]) -> Dict[str, Any]:
         events = state.get("coordination_events")
         if not isinstance(events, list):
             events = []
-        signals = []
-        review_verdicts = []
-        directives = []
-        for event in events:
-            if not isinstance(event, Mapping):
-                continue
-            event_type = str(event.get("type") or "")
-            payload = dict(event.get("payload") or {}) if isinstance(event.get("payload"), Mapping) else {}
-            if event_type == "coordination.signal":
-                signals.append(payload)
-            elif event_type == "coordination.review_verdict":
-                review_verdicts.append(payload)
-            elif event_type == "coordination.directive":
-                directives.append(payload)
-        return {
-            "signals": signals,
-            "review_verdicts": review_verdicts,
-            "directives": directives,
-            "events": [dict(event) for event in events if isinstance(event, Mapping)],
-        }
+        return build_coordination_inspection_snapshot(
+            signals=(
+                dict(event.get("payload") or {})
+                for event in events
+                if isinstance(event, Mapping) and str(event.get("type") or "") == "coordination.signal"
+            ),
+            review_verdicts=(
+                dict(event.get("payload") or {})
+                for event in events
+                if isinstance(event, Mapping) and str(event.get("type") or "") == "coordination.review_verdict"
+            ),
+            directives=(
+                dict(event.get("payload") or {})
+                for event in events
+                if isinstance(event, Mapping) and str(event.get("type") or "") == "coordination.directive"
+            ),
+        )
+
+    def _coordination_event_trace(self, state: Mapping[str, Any]) -> List[Dict[str, Any]]:
+        events = state.get("coordination_events")
+        if not isinstance(events, list):
+            return []
+        return [dict(event) for event in events if isinstance(event, Mapping)]

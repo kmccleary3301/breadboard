@@ -106,6 +106,10 @@ Read-only inspection may expose:
 
 It must not become a mutation API or a second semantic layer.
 
+The current inspection snapshot should now be treated as the stable cross-lane read-only projection shape.
+
+Adjacent lanes such as longrun summaries, Backbone inspection, and Host Kit projection helpers should consume that shared shape rather than deriving ad hoc coordination views of their own.
+
 ---
 
 ## Non-goals

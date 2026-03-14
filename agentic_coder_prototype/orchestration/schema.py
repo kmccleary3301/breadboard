@@ -5,6 +5,53 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from .coordination import BLOCKED_RECOMMENDED_ACTIONS, DIRECTIVE_CODES, REVIEWER_ROLES
+
+
+_COORDINATION_ALLOWED_KEYS = frozenset(
+    {
+        "mission_owner_role",
+        "legacy_completion_sources",
+        "preserve_legacy_wake_conditions",
+        "done",
+        "review",
+        "merge",
+        "intervention",
+    }
+)
+_COORDINATION_DONE_ALLOWED_KEYS = frozenset(
+    {
+        "require_deliverable_refs",
+        "require_all_required_refs",
+        "require_no_open_required_children",
+    }
+)
+_COORDINATION_REVIEW_ALLOWED_KEYS = frozenset(
+    {
+        "explicit_verdicts",
+        "allowed_reviewer_roles",
+        "allowed_blocked_actions",
+        "no_progress_action",
+        "retryable_failure_action",
+        "verification_result_contract",
+    }
+)
+_COORDINATION_MERGE_ALLOWED_KEYS = frozenset({"reducer_result_contract"})
+_COORDINATION_INTERVENTION_ALLOWED_KEYS = frozenset(
+    {
+        "host_allowed_actions",
+        "require_evidence_refs",
+        "require_supervisor_escalate",
+        "support_claim_limited_actions",
+    }
+)
+
+
+def _reject_unknown_keys(raw: Dict[str, Any], *, section: str, allowed: frozenset[str]) -> None:
+    unknown = sorted(str(key) for key in raw.keys() if str(key) not in allowed)
+    if unknown:
+        raise ValueError(f"{section} contains unsupported keys: {', '.join(unknown)}")
+
 
 @dataclass(frozen=True)
 class AgentConfigRef:
@@ -201,10 +248,40 @@ class TeamConfig:
         )
 
         coordination_raw = team.get("coordination") or {}
+        coordination_raw = coordination_raw if isinstance(coordination_raw, dict) else {}
+        _reject_unknown_keys(
+            coordination_raw,
+            section="coordination",
+            allowed=_COORDINATION_ALLOWED_KEYS,
+        )
         done_raw = coordination_raw.get("done") or {}
+        done_raw = done_raw if isinstance(done_raw, dict) else {}
+        _reject_unknown_keys(
+            done_raw,
+            section="coordination.done",
+            allowed=_COORDINATION_DONE_ALLOWED_KEYS,
+        )
         review_raw = coordination_raw.get("review") or {}
+        review_raw = review_raw if isinstance(review_raw, dict) else {}
+        _reject_unknown_keys(
+            review_raw,
+            section="coordination.review",
+            allowed=_COORDINATION_REVIEW_ALLOWED_KEYS,
+        )
         merge_raw = coordination_raw.get("merge") or {}
+        merge_raw = merge_raw if isinstance(merge_raw, dict) else {}
+        _reject_unknown_keys(
+            merge_raw,
+            section="coordination.merge",
+            allowed=_COORDINATION_MERGE_ALLOWED_KEYS,
+        )
         intervention_raw = coordination_raw.get("intervention") or {}
+        intervention_raw = intervention_raw if isinstance(intervention_raw, dict) else {}
+        _reject_unknown_keys(
+            intervention_raw,
+            section="coordination.intervention",
+            allowed=_COORDINATION_INTERVENTION_ALLOWED_KEYS,
+        )
         coordination = CoordinationConfig(
             mission_owner_role=str(coordination_raw.get("mission_owner_role") or "supervisor"),
             legacy_completion_sources=[
@@ -282,6 +359,48 @@ class TeamConfig:
             raise ValueError(
                 "coordination.mission_owner_role must be included in coordination.review.allowed_reviewer_roles"
             )
+        invalid_reviewer_roles = sorted(role for role in allowed_reviewer_roles if role not in REVIEWER_ROLES)
+        if invalid_reviewer_roles:
+            raise ValueError(
+                "coordination.review.allowed_reviewer_roles contains unsupported roles: "
+                + ", ".join(invalid_reviewer_roles)
+            )
+        allowed_blocked_actions = {
+            str(item).strip()
+            for item in (coordination.review.allowed_blocked_actions or [])
+            if str(item).strip()
+        }
+        invalid_blocked_actions = sorted(
+            action for action in allowed_blocked_actions if action not in BLOCKED_RECOMMENDED_ACTIONS
+        )
+        if invalid_blocked_actions:
+            raise ValueError(
+                "coordination.review.allowed_blocked_actions contains unsupported actions: "
+                + ", ".join(invalid_blocked_actions)
+            )
+        for field_name, field_value in (
+            ("coordination.review.no_progress_action", coordination.review.no_progress_action),
+            ("coordination.review.retryable_failure_action", coordination.review.retryable_failure_action),
+        ):
+            action = str(field_value or "").strip()
+            if action and action not in BLOCKED_RECOMMENDED_ACTIONS:
+                raise ValueError(f"{field_name} must stay within the narrow blocked-action vocabulary")
+        for field_name, actions in (
+            ("coordination.intervention.host_allowed_actions", coordination.intervention.host_allowed_actions),
+            (
+                "coordination.intervention.support_claim_limited_actions",
+                coordination.intervention.support_claim_limited_actions,
+            ),
+        ):
+            invalid_directives = sorted(
+                action
+                for action in {str(item).strip() for item in actions if str(item).strip()}
+                if action not in DIRECTIVE_CODES
+            )
+            if invalid_directives:
+                raise ValueError(
+                    f"{field_name} contains unsupported directive codes: {', '.join(invalid_directives)}"
+                )
 
         workspace_raw = team.get("workspace") or {}
         workspace = WorkspaceConfig(

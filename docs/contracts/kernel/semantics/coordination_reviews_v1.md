@@ -27,6 +27,17 @@ It is durable reviewed truth, not a model-visible summary and not a hidden runti
 
 ## Core semantics
 
+### Freeze note
+
+The current review/verdict layer is now part of the frozen coordination center.
+
+That means:
+
+- reviewed outcome truth stays on `bb.review_verdict.v1`
+- future product or evidence conveniences must remain projection or compatibility layers
+- older sparse reference conveniences such as `supervisor_decision` must not be mistaken for a new durable truth layer
+- if comparison/adjudication pressure later re-opens coordination, it should first appear as a non-kernel result-contract family, not as a replacement for review/verdict truth
+
 ### 1. Signals remain the fact substrate
 
 Signals still say what happened or what was proposed:
@@ -161,6 +172,16 @@ The current justified inspection surface is intentionally read-only:
 - session/runtime snapshots may also derive pending and resolved intervention views from reviewed `human_required` truth
 - those snapshots are projections over durable truth, not a second semantic layer
 - hosts and TS surfaces should inspect them, not mutate them
+
+## Compatibility evidence note
+
+The sparse supervisor-worker reference fixtures still expose a `supervisor_decision` object.
+
+That field is now compatibility-only evidence:
+
+- it is a projection of `bb.review_verdict.v1` for legacy sparse-reference readability
+- it is not a new coordination primitive
+- new consumers should center `review_verdict` truth first and treat `supervisor_decision` as explanatory scaffolding only
 
 ## Intervention handoff note
 

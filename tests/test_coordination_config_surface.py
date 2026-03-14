@@ -124,3 +124,66 @@ def test_team_config_rejects_mission_owner_role_outside_allowed_reviewer_roles()
                 }
             }
         )
+
+
+def test_team_config_rejects_unknown_coordination_keys() -> None:
+    with pytest.raises(ValueError, match="coordination contains unsupported keys"):
+        TeamConfig.from_dict(
+            {
+                "team": {
+                    "id": "coord-invalid-extra-key",
+                    "coordination": {
+                        "mission_owner_role": "supervisor",
+                        "routing_tree": {"kind": "do-not-add"},
+                    },
+                }
+            }
+        )
+
+
+def test_team_config_rejects_unknown_coordination_section_keys() -> None:
+    with pytest.raises(ValueError, match="coordination.review contains unsupported keys"):
+        TeamConfig.from_dict(
+            {
+                "team": {
+                    "id": "coord-invalid-review-key",
+                    "coordination": {
+                        "review": {
+                            "explicit_verdicts": True,
+                            "approval_chain": ["host"],
+                        }
+                    },
+                }
+            }
+        )
+
+
+def test_team_config_rejects_unsupported_directive_and_reviewer_vocab() -> None:
+    with pytest.raises(ValueError, match="allowed_reviewer_roles contains unsupported roles"):
+        TeamConfig.from_dict(
+            {
+                "team": {
+                    "id": "coord-invalid-reviewer-vocab",
+                    "coordination": {
+                        "mission_owner_role": "supervisor",
+                        "review": {
+                            "allowed_reviewer_roles": ["supervisor", "approver"],
+                        },
+                    },
+                }
+            }
+        )
+
+    with pytest.raises(ValueError, match="host_allowed_actions contains unsupported directive codes"):
+        TeamConfig.from_dict(
+            {
+                "team": {
+                    "id": "coord-invalid-host-action",
+                    "coordination": {
+                        "intervention": {
+                            "host_allowed_actions": ["continue", "approve"],
+                        }
+                    },
+                }
+            }
+        )

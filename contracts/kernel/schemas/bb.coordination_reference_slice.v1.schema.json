@@ -31,6 +31,13 @@
       "type": "string",
       "minLength": 1
     },
+    "compatibility_notes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
     "subscription_id": {
       "type": "string",
       "minLength": 1

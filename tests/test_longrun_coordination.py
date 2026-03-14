@@ -48,7 +48,15 @@ def test_longrun_controller_emits_no_progress_coordination_trace() -> None:
     assert [item["verdict_code"] for item in reviews] == ["checkpoint"]
     assert [item["directive_code"] for item in directives] == ["checkpoint"]
     assert summary["coordination"]["signals"][0]["payload"]["stall_reason"] == "no_progress_threshold_reached"
-    assert len(summary["coordination"]["events"]) == 3
+    assert set(summary["coordination"].keys()) == {
+        "signals",
+        "review_verdicts",
+        "directives",
+        "latest_signal_by_code",
+        "unresolved_interventions",
+        "resolved_interventions",
+    }
+    assert len(summary["coordination_event_trace"]) == 3
 
 
 def test_longrun_controller_emits_retryable_failure_coordination_trace() -> None:
@@ -123,6 +131,8 @@ def test_longrun_controller_emits_reviewed_human_required_trace() -> None:
     assert [item["code"] for item in signals] == ["human_required"]
     assert [item["verdict_code"] for item in reviews] == ["human_required"]
     assert [item["directive_code"] for item in directives] == ["escalate"]
+    assert len(summary["coordination"]["unresolved_interventions"]) == 1
+    assert summary["coordination"]["resolved_interventions"] == []
 
 
 def test_longrun_controller_resume_restores_coordination_trace(tmp_path) -> None:
@@ -165,3 +175,4 @@ def test_longrun_controller_resume_restores_coordination_trace(tmp_path) -> None
     assert summary["stop_reason"] == "max_episodes_reached"
     assert [item["code"] for item in summary["coordination"]["signals"]] == ["human_required"]
     assert [item["directive_code"] for item in summary["coordination"]["directives"]] == ["escalate"]
+    assert len(summary["coordination_event_trace"]) == 3
