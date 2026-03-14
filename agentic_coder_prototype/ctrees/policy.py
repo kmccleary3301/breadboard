@@ -4,6 +4,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from .helper_rehydration import build_helper_rehydration_input, build_helper_rehydration_proposal
+from .helper_subtree_summary import build_helper_subtree_summary_input, build_helper_subtree_summary_proposal
 from .store import CTreeStore
 
 
@@ -41,6 +42,77 @@ def _node_by_id(store: CTreeStore, node_id: str) -> Optional[Dict[str, Any]]:
         if isinstance(node, dict) and str(node.get("id") or "") == str(node_id):
             return node
     return None
+
+
+def _simple_child_state(node: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "node_id": str(node.get("id") or ""),
+        "title": str(node.get("title") or ""),
+        "status": str(node.get("status") or ""),
+        "artifact_refs": list(node.get("artifact_refs") or []),
+        "targets": list(node.get("targets") or []),
+        "blocker_refs": list(node.get("blocker_refs") or []),
+        "final_spec_present": node.get("final_spec") is not None,
+    }
+
+
+def _simple_parent_reduction(parent_node: Dict[str, Any], child_states: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "node_id": str(parent_node.get("id") or ""),
+        "title": str(parent_node.get("title") or ""),
+        "unresolved_blocker_set": sorted(
+            {
+                str(blocker)
+                for child in child_states
+                for blocker in list(child.get("blocker_refs") or [])
+                if str(blocker)
+            }
+        ),
+        "artifact_summary": sorted(
+            {
+                str(artifact)
+                for child in child_states
+                for artifact in list(child.get("artifact_refs") or [])
+                if str(artifact)
+            }
+        ),
+        "active_target_set": sorted(
+            {
+                str(target)
+                for child in child_states
+                for target in list(child.get("targets") or [])
+                if str(target)
+            }
+        ),
+    }
+
+
+def _build_active_path_subtree_summary_proposals(store: CTreeStore, active_path: List[str]) -> List[Dict[str, Any]]:
+    children_by_parent: Dict[str, List[Dict[str, Any]]] = {}
+    for node in list(getattr(store, "nodes", []) or []):
+        if not isinstance(node, dict):
+            continue
+        parent_id = str(node.get("parent_id") or "").strip()
+        if not parent_id:
+            continue
+        children_by_parent.setdefault(parent_id, []).append(node)
+
+    proposals: List[Dict[str, Any]] = []
+    for node_id in active_path:
+        children = children_by_parent.get(str(node_id), [])
+        if not children:
+            continue
+        parent_node = _node_by_id(store, str(node_id))
+        if not isinstance(parent_node, dict):
+            continue
+        child_states = [_simple_child_state(child) for child in children]
+        helper_input = build_helper_subtree_summary_input(
+            parent_node=parent_node,
+            parent_reduction=_simple_parent_reduction(parent_node, child_states),
+            child_states=child_states,
+        )
+        proposals.append(build_helper_subtree_summary_proposal(helper_input))
+    return proposals
 
 
 def _candidate_item(node: Dict[str, Any], *, lane: str, reason: str, score: int) -> Dict[str, Any]:
@@ -552,6 +624,7 @@ def build_rehydration_plan(
     graph_enabled: bool = True,
     graph_neighborhood_enabled: bool = False,
     helper_enabled: bool = False,
+    helper_summary_coupling_enabled: bool = False,
 ) -> Dict[str, Any]:
     retrieval_substrate = build_retrieval_substrate(
         store,
@@ -656,12 +729,25 @@ def build_rehydration_plan(
         promoted_candidates = promoted_candidates[:4]
 
     helper_proposal = None
+    summary_support: List[Dict[str, Any]] = []
     selected_candidates = list(promoted_candidates)
     if helper_enabled:
+        subtree_summary_proposals: List[Dict[str, Any]] = []
+        if helper_summary_coupling_enabled:
+            subtree_summary_proposals = _build_active_path_subtree_summary_proposals(store, active_path)
+            summary_support = [
+                {
+                    "parent_node_id": str(item.get("parent_node_id") or ""),
+                    "header_summary": str(item.get("header_summary") or ""),
+                    "selected_child_ids": list(item.get("selected_child_ids") or []),
+                }
+                for item in subtree_summary_proposals
+            ]
         helper_input = build_helper_rehydration_input(
             store,
             mode=mode,
             retrieval_substrate=retrieval_substrate,
+            subtree_summary_proposals=subtree_summary_proposals,
         )
         helper_proposal = build_helper_rehydration_proposal(store, helper_input)
         selected_candidates = [
@@ -736,6 +822,7 @@ def build_rehydration_plan(
             "graph_neighbor_ids": graph_neighbor_ids,
             "superseded_source_ids": superseded_source_ids,
             "promoted_candidates": selected_candidates,
+            "summary_support": summary_support,
         },
         "retrieval_substrate": retrieval_substrate,
         "rehydration_bundle": {
@@ -753,6 +840,7 @@ def build_rehydration_plan(
             "graph_neighbor_ids": graph_neighbor_ids,
             "superseded_source_ids": superseded_source_ids,
             "candidate_provenance": selected_candidates,
+            "summary_support": summary_support,
         },
         "helper_proposal": helper_proposal,
         "retrieval_policy": retrieval_policy,

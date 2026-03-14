@@ -346,3 +346,39 @@ def test_ctree_helper_rehydration_is_opt_in_and_prunes_structural_spillover() ->
     assert str(root_id) not in helper_ids
     assert "retrieval_contract.md" in (helper.get("rehydration_bundle") or {}).get("artifact_refs") or []
     assert proposal["selected_support_node_ids"] == helper_ids
+
+
+def test_ctree_helper_summary_coupling_is_opt_in() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Summary coupling"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Blocked child",
+            "parent_id": root_id,
+            "blocker_refs": ["dep-schema"],
+            "artifact_refs": ["schema_spec.md"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Active child",
+            "parent_id": root_id,
+            "artifact_refs": ["replacement_schema.md"],
+        },
+        turn=3,
+    )
+
+    helper = build_rehydration_plan(store, mode="active_continuation", helper_enabled=True)
+    coupled = build_rehydration_plan(
+        store,
+        mode="active_continuation",
+        helper_enabled=True,
+        helper_summary_coupling_enabled=True,
+    )
+
+    assert not (helper.get("rehydration_bundle") or {}).get("summary_support")
+    assert (coupled.get("rehydration_bundle") or {}).get("summary_support")
+    assert (coupled.get("helper_proposal") or {}).get("summary_coupling_parent_ids")

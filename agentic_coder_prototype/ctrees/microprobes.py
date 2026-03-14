@@ -478,6 +478,41 @@ def build_subtree_summary_store() -> CTreeStore:
     return store
 
 
+def build_summary_coupling_store() -> CTreeStore:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Summary coupling probe"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Irrelevant root note",
+            "parent_id": root_id,
+            "targets": ["docs/plan.md"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Schema validation packet",
+            "parent_id": root_id,
+            "status": "active",
+            "artifact_refs": ["schema_check.md"],
+        },
+        turn=3,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Continue compiler rewrite",
+            "parent_id": root_id,
+            "artifact_refs": ["rewrite_plan.md"],
+            "targets": ["ctrees/compiler.py"],
+        },
+        turn=4,
+    )
+    return store
+
+
 def run_helper_subtree_summary_probe() -> Dict[str, Any]:
     store = build_subtree_summary_store()
     baseline = compile_ctree(store)
@@ -489,4 +524,22 @@ def run_helper_subtree_summary_probe() -> Dict[str, Any]:
         "baseline_parent_reduction": (baseline.get("stages", {}).get("SPEC", {}).get("parent_reductions") or [None])[0],
         "helper_summary": first,
         "helper_prompt_plane_has_summaries": "subtree_summary_proposals" in (helper.get("prompt_planes") or {}),
+    }
+
+
+def run_helper_summary_coupling_probe() -> Dict[str, Any]:
+    store = build_summary_coupling_store()
+    baseline = build_rehydration_plan(store, mode="active_continuation", helper_enabled=True)
+    coupled = build_rehydration_plan(
+        store,
+        mode="active_continuation",
+        helper_enabled=True,
+        helper_summary_coupling_enabled=True,
+    )
+    return {
+        "probe": "helper_summary_coupling",
+        "baseline_support_node_ids": (baseline.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "coupled_support_node_ids": (coupled.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "summary_support": (coupled.get("rehydration_bundle") or {}).get("summary_support") or [],
+        "helper_proposal": coupled.get("helper_proposal") or {},
     }

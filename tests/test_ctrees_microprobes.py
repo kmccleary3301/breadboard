@@ -9,6 +9,7 @@ from agentic_coder_prototype.ctrees.microprobes import (
     run_helper_dependency_lookup_probe,
     run_helper_false_neighbor_probe,
     run_helper_resume_probe,
+    run_helper_summary_coupling_probe,
     run_helper_subtree_summary_probe,
     run_pivot_probe,
     run_pivot_minimality_probe,
@@ -156,3 +157,13 @@ def test_ctree_helper_subtree_summary_probe_surfaces_grounded_summary() -> None:
     assert payload["helper_prompt_plane_has_summaries"] is True
     assert payload["helper_summary"]["selected_child_ids"]
     assert "Blocked child" in payload["helper_summary"]["header_summary"]
+
+
+def test_ctree_helper_summary_coupling_probe_surfaces_summary_support() -> None:
+    payload = run_helper_summary_coupling_probe()
+
+    assert payload["probe"] == "helper_summary_coupling"
+    assert payload["summary_support"]
+    assert payload["baseline_support_node_ids"] == ["ctn_000004"]
+    assert payload["coupled_support_node_ids"] == ["ctn_000004", "ctn_000003"]
+    assert payload["helper_proposal"]["summary_coupling_parent_ids"]

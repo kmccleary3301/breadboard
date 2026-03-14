@@ -35,6 +35,7 @@ def build_helper_rehydration_input(
     *,
     mode: str,
     retrieval_substrate: Dict[str, Any],
+    subtree_summary_proposals: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     active_path_node_ids = list(retrieval_substrate.get("active_path_node_ids") or [])
     active_target_set: List[str] = []
@@ -76,6 +77,7 @@ def build_helper_rehydration_input(
             "needs_resolution": bool(unresolved_blocker_refs),
         },
         "retrieval_substrate": retrieval_substrate,
+        "subtree_summary_proposals": [dict(item) for item in list(subtree_summary_proposals or []) if isinstance(item, dict)],
         "candidate_count": sum(len(list(items or [])) for items in list((retrieval_substrate.get("candidate_support") or {}).values())),
     }
 
@@ -91,6 +93,13 @@ def build_helper_rehydration_proposal(
     unresolved_blockers = {str(item) for item in list(reduced_state.get("unresolved_blocker_refs") or []) if str(item)}
     conflict_node_ids = {str(item) for item in list(reduced_state.get("conflict_node_ids") or []) if str(item)}
     candidates = _flatten_candidates(helper_input.get("retrieval_substrate") or {})
+    subtree_summary_proposals = [dict(item) for item in list(helper_input.get("subtree_summary_proposals") or []) if isinstance(item, dict)]
+    subtree_selected_child_ids = {
+        str(child_id)
+        for proposal in subtree_summary_proposals
+        for child_id in list(proposal.get("selected_child_ids") or [])
+        if str(child_id)
+    }
 
     limit_map = {
         "active_continuation": 2,
@@ -155,6 +164,10 @@ def build_helper_rehydration_proposal(
         if list(candidate.get("artifact_refs") or []):
             helper_score += 10
             helper_reasons.append("artifact_support")
+
+        if node_id in subtree_selected_child_ids:
+            helper_score += 50
+            helper_reasons.append("subtree_summary_selected_child")
 
         if list(candidate.get("blocker_refs") or []):
             helper_score += 10
@@ -254,6 +267,11 @@ def build_helper_rehydration_proposal(
         "focus_node_id": focus_node_id or None,
         "selected_support_node_ids": selected_node_ids,
         "selected_limit": selected_limit,
+        "summary_coupling_parent_ids": [
+            str(item.get("parent_node_id") or "")
+            for item in subtree_summary_proposals
+            if str(item.get("parent_node_id") or "")
+        ],
         "decisions": decisions,
         "ranked_candidates": ranked,
     }
