@@ -20,6 +20,7 @@ Date: 2026-03-14
 - tranche-1 implementation status now lives at `docs/darwin_phase2_tranche1_status_2026-03-18.md`
 - tranche-1 hard-gate skeleton now lives at `docs/darwin_phase2_tranche1_hard_gate_skeleton_2026-03-18.md`
 - tranche-1 hard-gate review now lives at `docs/darwin_phase2_tranche1_hard_gate_review_2026-03-18.md`
+- selected next-tranche decision now lives at `docs/darwin_phase2_next_tranche_decision_2026-03-18.md`
 
 ## Deferred
 

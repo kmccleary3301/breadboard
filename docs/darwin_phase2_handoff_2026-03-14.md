@@ -24,6 +24,10 @@ Phase-1 is closed as the internal operational baseline.
 - `docs/darwin_phase2_tranche1_hard_gate_skeleton_2026-03-18.md`
 - `docs/darwin_phase2_tranche1_hard_gate_review_2026-03-18.md`
 
+## Current next-tranche decision
+
+- `docs/darwin_phase2_next_tranche_decision_2026-03-18.md`
+
 ## What Phase-2 should not reopen
 
 - basic DARWIN contract scaffolding

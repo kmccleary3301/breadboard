@@ -84,6 +84,10 @@ The next correct tranche-1 move is:
 - keep runtime expansion blocked
 - only after later review, consider whether any ledger dual-write is justified
 
+Current next-tranche decision:
+
+- `docs/darwin_phase2_next_tranche_decision_2026-03-18.md`
+
 ## Secondary audit coverage
 
 Secondary audit-only packaging now exists for:
