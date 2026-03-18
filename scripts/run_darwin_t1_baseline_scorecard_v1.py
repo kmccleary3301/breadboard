@@ -13,6 +13,8 @@ DEFAULT_CLAIM_LEDGER = ROOT / "artifacts" / "darwin" / "claims" / "claim_ledger_
 DEFAULT_EVIDENCE_BUNDLE = ROOT / "artifacts" / "darwin" / "evidence" / "darwin_phase1_t1_live_baselines_bundle_v1.json"
 DEFAULT_SEARCH_SUMMARY = ROOT / "artifacts" / "darwin" / "search" / "search_smoke_summary_v1.json"
 DEFAULT_TRANSFER_LEDGER = ROOT / "artifacts" / "darwin" / "search" / "transfer_ledger_v1.json"
+DEFAULT_COMPUTE_VIEW_V2 = ROOT / "artifacts" / "darwin" / "scorecards" / "compute_normalized_view_v2.json"
+DEFAULT_COMPUTE_VIEW_V1 = ROOT / "artifacts" / "darwin" / "scorecards" / "compute_normalized_view_v1.json"
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "darwin" / "scorecards"
 
 
@@ -75,6 +77,16 @@ def build_scorecard(
     evidence_present = DEFAULT_EVIDENCE_BUNDLE.exists()
     search_by_lane: dict[str, dict] = {}
     transfer_counts: dict[str, dict[str, int]] = {}
+    compute_rows_by_lane: dict[str, dict] = {}
+    compute_view_ref: str | None = None
+    compute_view_schema: str | None = None
+    if include_search:
+        compute_view_path = DEFAULT_COMPUTE_VIEW_V2 if DEFAULT_COMPUTE_VIEW_V2.exists() else DEFAULT_COMPUTE_VIEW_V1
+        if compute_view_path.exists():
+            compute_view = _load_json(compute_view_path)
+            compute_rows_by_lane = {row["lane_id"]: row for row in compute_view.get("lanes") or []}
+            compute_view_ref = str(compute_view_path.relative_to(ROOT))
+            compute_view_schema = compute_view.get("schema")
     if include_search and DEFAULT_SEARCH_SUMMARY.exists():
         search_summary = _load_json(DEFAULT_SEARCH_SUMMARY)
         search_by_lane = {row["lane_id"]: row for row in search_summary.get("lanes") or []}
@@ -114,6 +126,7 @@ def build_scorecard(
         }
         score = sum(1.0 for ok in components.values() if ok) / len(components)
         search_row = search_by_lane.get(lane_id, {})
+        compute_row = compute_rows_by_lane.get(lane_id, {})
         lane_rows.append(
             {
                 "lane_id": lane_id,
@@ -138,6 +151,18 @@ def build_scorecard(
                 "transfer_attempt_count": transfer_counts.get(lane_id, {}).get("attempt_count", 0),
                 "valid_transfer_count": transfer_counts.get(lane_id, {}).get("valid_count", 0),
                 "successful_transfer_count": transfer_counts.get(lane_id, {}).get("success_count", 0),
+                "compute_view_ref": compute_view_ref,
+                "compute_view_schema": compute_view_schema,
+                "baseline_runtime_score_per_second": compute_row.get("baseline_runtime_score_per_second", compute_row.get("baseline_score_per_second")),
+                "active_runtime_score_per_second": compute_row.get("active_runtime_score_per_second", compute_row.get("active_score_per_second")),
+                "runtime_rate_delta": compute_row.get("runtime_rate_delta", compute_row.get("rate_delta")),
+                "baseline_local_cost_classification": compute_row.get("baseline_local_cost_classification"),
+                "active_local_cost_classification": compute_row.get("active_local_cost_classification"),
+                "baseline_local_cost_score_per_usd": compute_row.get("baseline_local_cost_score_per_usd"),
+                "active_local_cost_score_per_usd": compute_row.get("active_local_cost_score_per_usd"),
+                "comparison_status": compute_row.get("comparison_status"),
+                "comparison_valid": compute_row.get("comparison_valid"),
+                "interpretation_flags": compute_row.get("interpretation_flags", []),
                 "components": components,
                 "prerequisites": prereq_results,
             }
@@ -151,6 +176,8 @@ def build_scorecard(
         "overall_ok": overall_ok,
         "mean_normalized_score": round(mean_score, 6),
         "lane_count": len(lane_rows),
+        "compute_view_ref": compute_view_ref,
+        "compute_view_schema": compute_view_schema,
         "lanes": lane_rows,
     }
 
@@ -161,13 +188,14 @@ def _to_markdown(payload: dict) -> str:
         "",
         f"- overall_ok: `{str(payload['overall_ok']).lower()}`",
         f"- mean_normalized_score: `{payload['mean_normalized_score']}`",
+        f"- compute_view_ref: `{payload.get('compute_view_ref') or 'n/a'}`",
         "",
-        "| lane | status | normalized_score | topology_families | search_trials | delta |",
-        "| --- | --- | ---: | ---: | ---: | ---: |",
+        "| lane | status | normalized_score | topology_families | search_trials | delta | runtime_delta | comparison_status |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for lane in payload.get("lanes") or []:
         lines.append(
-            f"| `{lane['lane_id']}` | `{lane['status']}` | `{lane['normalized_score']}` | `{lane['topology_family_count']}` | `{lane.get('mutation_trial_count', 0)}` | `{lane.get('comparative_delta', 'n/a')}` |"
+            f"| `{lane['lane_id']}` | `{lane['status']}` | `{lane['normalized_score']}` | `{lane['topology_family_count']}` | `{lane.get('mutation_trial_count', 0)}` | `{lane.get('comparative_delta', 'n/a')}` | `{lane.get('runtime_rate_delta', 'n/a')}` | `{lane.get('comparison_status', 'n/a')}` |"
         )
     return "\n".join(lines).rstrip() + "\n"
 
