@@ -116,3 +116,7 @@ The correct next move is:
 - freeze tranche-1 additive surfaces as coherent
 - start a new scoped additive tranche on comparative normalization
 - defer broader transfer families and external-safe evidence until that tranche lands
+
+Current execution-plan reference:
+
+- `docs/darwin_phase2_compute_normalized_execution_plan_2026-03-18.md`
