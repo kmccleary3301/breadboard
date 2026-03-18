@@ -43,6 +43,9 @@ Phase-1 T0 freezes:
 - `schemas/execution_plan_v0.schema.json`
 - `schemas/effective_policy_v0.schema.json`
 - `schemas/evaluator_pack_v0.schema.json`
+- `schemas/component_ref_v0.schema.json`
+- `schemas/decision_record_v0.schema.json`
+- `schemas/evolution_ledger_v0.schema.json`
 - `schemas/evidence_bundle_v0.schema.json`
 - `schemas/claim_record_v0.schema.json`
 - `schemas/lane_registry_v0.schema.json`
@@ -69,6 +72,7 @@ Phase-1 T0 freezes:
 - `scripts/build_darwin_typed_search_core_v1.py`
 - `scripts/run_darwin_t2_search_smoke_v1.py`
 - `scripts/build_darwin_invalid_comparison_ledger_v1.py`
+- `scripts/build_darwin_evolution_ledger_v0.py`
 - `scripts/build_darwin_compute_normalized_view_v1.py`
 - `scripts/build_darwin_comparative_dossier_v1.py`
 - `scripts/emit_darwin_search_evidence_v1.py`

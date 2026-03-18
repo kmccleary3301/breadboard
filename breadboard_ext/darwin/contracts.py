@@ -94,3 +94,15 @@ def validate_effective_policy(payload: dict[str, Any]) -> list[ValidationIssue]:
 
 def validate_evaluator_pack(payload: dict[str, Any]) -> list[ValidationIssue]:
     return _validate("evaluator_pack_v0.schema.json", payload)
+
+
+def validate_component_ref(payload: dict[str, Any]) -> list[ValidationIssue]:
+    return _validate("component_ref_v0.schema.json", payload)
+
+
+def validate_decision_record(payload: dict[str, Any]) -> list[ValidationIssue]:
+    return _validate("decision_record_v0.schema.json", payload)
+
+
+def validate_evolution_ledger(payload: dict[str, Any]) -> list[ValidationIssue]:
+    return _validate("evolution_ledger_v0.schema.json", payload)

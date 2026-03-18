@@ -52,10 +52,30 @@ What is now done:
 What is not done yet:
 
 - claim-bearing consumption of `EvaluatorPack`
-- secondary confirmation on `lane.scheduling`
+- full secondary confirmation on `lane.scheduling`
 - audit-only packaging on `lane.atp`
-- `EvolutionLedger` / reconstruction work
 - tranche-1 hard-gate review memo
+
+## EvolutionLedger status
+
+The tranche-1 `EvolutionLedger` layer now exists as a reconstruction-first DARWIN surface.
+
+Current reconstructed outputs:
+
+- typed `component_ref`
+- typed `decision_record`
+- `EvolutionLedger` container artifact
+- representative Phase-1 case reconstruction for:
+  - scheduling promotion history
+  - harness → research transfer
+  - repo_swe search/deprecation review
+
+Current truth boundary:
+
+- runtime truth remains outside the ledger
+- archive snapshot remains derived-only
+- promotion / transfer runtime artifacts remain their existing Phase-1 outputs
+- ledger is reconstruction-first and not runtime-consumed
 
 ## Next move
 
@@ -63,4 +83,5 @@ The next correct tranche-1 move is:
 
 - secondary confirmation on `lane.scheduling`
 - audit-only `PolicyPack` / `EvaluatorPack` shape review for `lane.atp`
-- then move into `EvolutionLedger` and Phase-1 case reconstruction only after the proving-lane semantics remain stable
+- tranche-1 hard-gate review skeleton and artifact completeness pass
+- only after that, consider whether any ledger dual-write is justified

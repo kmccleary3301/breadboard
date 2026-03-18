@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/component_ref_v0.schema.json",
+  "title": "DarwinComponentRefV0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "component_kind",
+    "component_id",
+    "lane_scope",
+    "source_ref",
+    "source_digest",
+    "status"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.component_ref.v0" },
+    "component_kind": {
+      "type": "string",
+      "enum": ["topology", "policy", "operator", "evaluator_pack"]
+    },
+    "component_id": { "type": "string", "minLength": 1 },
+    "lane_scope": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "source_ref": { "type": "string", "minLength": 1 },
+    "source_digest": { "type": "string", "minLength": 64, "maxLength": 64 },
+    "status": { "type": "string", "enum": ["approved", "shadow", "derived"] },
+    "metadata": { "type": "object", "additionalProperties": true }
+  }
+}

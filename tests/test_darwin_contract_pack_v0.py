@@ -8,8 +8,11 @@ from jsonschema import Draft202012Validator
 
 from breadboard_ext.darwin.contracts import (
     validate_campaign_spec,
+    validate_component_ref,
+    validate_decision_record,
     validate_effective_config,
     validate_effective_policy,
+    validate_evolution_ledger,
     validate_evaluator_pack,
 )
 from scripts.validate_darwin_contract_pack_v0 import SCHEMA_CASES, build_report
@@ -68,5 +71,35 @@ def test_validate_evaluator_pack_reports_missing_required_field() -> None:
         "campaign_id": "camp",
     }
     issues = validate_evaluator_pack(payload)
+    assert issues
+    assert any(issue.path == "$" for issue in issues)
+
+
+def test_validate_component_ref_reports_missing_required_field() -> None:
+    payload = {
+        "schema": "breadboard.darwin.component_ref.v0",
+        "component_id": "cmp",
+    }
+    issues = validate_component_ref(payload)
+    assert issues
+    assert any(issue.path == "$" for issue in issues)
+
+
+def test_validate_decision_record_reports_missing_required_field() -> None:
+    payload = {
+        "schema": "breadboard.darwin.decision_record.v0",
+        "decision_id": "decision",
+    }
+    issues = validate_decision_record(payload)
+    assert issues
+    assert any(issue.path == "$" for issue in issues)
+
+
+def test_validate_evolution_ledger_reports_missing_required_field() -> None:
+    payload = {
+        "schema": "breadboard.darwin.evolution_ledger.v0",
+        "generated_at": "2026-03-18T00:00:00+00:00",
+    }
+    issues = validate_evolution_ledger(payload)
     assert issues
     assert any(issue.path == "$" for issue in issues)
