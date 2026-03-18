@@ -22,6 +22,7 @@ Date: 2026-03-14
 - tranche-1 hard-gate review now lives at `docs/darwin_phase2_tranche1_hard_gate_review_2026-03-18.md`
 - selected next-tranche decision now lives at `docs/darwin_phase2_next_tranche_decision_2026-03-18.md`
 - compute-normalized tranche execution plan now lives at `docs/darwin_phase2_compute_normalized_execution_plan_2026-03-18.md`
+- compute-normalized tranche status now lives at `docs/darwin_phase2_compute_normalized_status_2026-03-18.md`
 
 ## Deferred
 

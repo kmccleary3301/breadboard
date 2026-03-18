@@ -12,7 +12,7 @@ from scripts.run_darwin_t2_search_smoke_v1 import run_search_smoke
 from scripts.build_darwin_invalid_comparison_ledger_v1 import write_invalid_comparison_ledger
 from scripts.emit_darwin_evidence_and_claims_v1 import emit_evidence_and_claims
 from scripts.emit_darwin_search_evidence_v1 import emit_search_evidence
-from scripts.build_darwin_compute_normalized_view_v1 import write_compute_normalized_view
+from scripts.build_darwin_compute_normalized_view_v2 import write_compute_normalized_view_v2
 from scripts.build_darwin_comparative_dossier_v1 import write_dossier
 
 
@@ -27,9 +27,10 @@ def test_write_dossier_emits_transfer_and_promotion_summary() -> None:
     emit_evidence_and_claims()
     write_invalid_comparison_ledger()
     emit_search_evidence()
-    write_compute_normalized_view()
+    write_compute_normalized_view_v2()
     summary = write_dossier()
     payload = json.loads(open(summary["out_json"], "r", encoding="utf-8").read())
     assert payload["live_lane_count"] == 6
     assert payload["search_enabled_lane_count"] == 4
     assert payload["successful_transfer_count"] == 1
+    assert payload["compute_view_ref"].endswith("compute_normalized_view_v2.json")

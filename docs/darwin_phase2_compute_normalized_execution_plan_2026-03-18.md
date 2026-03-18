@@ -274,3 +274,7 @@ This tranche is intentionally narrower than the broader Phase-2 ambitions.
 That is correct.
 
 The point is to make comparative reasoning stronger before we expand transfer families or evidence packaging.
+
+Current tranche status reference:
+
+- `docs/darwin_phase2_compute_normalized_status_2026-03-18.md`
