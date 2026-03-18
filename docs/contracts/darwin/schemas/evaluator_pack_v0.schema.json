@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/evaluator_pack_v0.schema.json",
+  "title": "DarwinEvaluatorPackV0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "campaign_id",
+    "lane_id",
+    "candidate_id",
+    "trial_label",
+    "shadow_mode",
+    "runtime_consumed",
+    "evaluator_identity",
+    "metric_semantics",
+    "invalid_comparison_rules",
+    "control_pack",
+    "claim_constraints"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.evaluator_pack.v0" },
+    "campaign_id": { "type": "string", "minLength": 1 },
+    "lane_id": { "type": "string", "minLength": 1 },
+    "candidate_id": { "type": "string", "minLength": 1 },
+    "trial_label": { "type": "string", "minLength": 1 },
+    "shadow_mode": { "type": "boolean" },
+    "runtime_consumed": { "type": "boolean" },
+    "evaluator_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluator_type", "task_id", "runner_kind"],
+      "properties": {
+        "evaluator_type": { "type": "string", "minLength": 1 },
+        "task_id": { "type": "string", "minLength": 1 },
+        "runner_kind": { "type": "string", "minLength": 1 }
+      }
+    },
+    "metric_semantics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary_metric", "higher_is_better", "score_unit", "success_condition"],
+      "properties": {
+        "primary_metric": { "type": "string", "minLength": 1 },
+        "higher_is_better": { "type": "boolean" },
+        "score_unit": { "type": "string", "minLength": 1 },
+        "success_condition": { "type": "string", "minLength": 1 }
+      }
+    },
+    "invalid_comparison_rules": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "control_pack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_perturbation_group", "required_invariants"],
+      "properties": {
+        "required_perturbation_group": { "type": "string", "minLength": 1 },
+        "required_invariants": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "claim_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_target", "comparability_requirements"],
+      "properties": {
+        "claim_target": { "type": "string", "minLength": 1 },
+        "comparability_requirements": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-from breadboard_ext.darwin.contracts import validate_campaign_spec, validate_effective_config
+from breadboard_ext.darwin.contracts import (
+    validate_campaign_spec,
+    validate_effective_config,
+    validate_effective_policy,
+    validate_evaluator_pack,
+)
 from scripts.validate_darwin_contract_pack_v0 import SCHEMA_CASES, build_report
 
 
@@ -43,5 +48,25 @@ def test_validate_effective_config_reports_missing_required_field() -> None:
         "campaign_id": "camp",
     }
     issues = validate_effective_config(payload)
+    assert issues
+    assert any(issue.path == "$" for issue in issues)
+
+
+def test_validate_effective_policy_reports_missing_required_field() -> None:
+    payload = {
+        "schema": "breadboard.darwin.effective_policy.v0",
+        "campaign_id": "camp",
+    }
+    issues = validate_effective_policy(payload)
+    assert issues
+    assert any(issue.path == "$" for issue in issues)
+
+
+def test_validate_evaluator_pack_reports_missing_required_field() -> None:
+    payload = {
+        "schema": "breadboard.darwin.evaluator_pack.v0",
+        "campaign_id": "camp",
+    }
+    issues = validate_evaluator_pack(payload)
     assert issues
     assert any(issue.path == "$" for issue in issues)

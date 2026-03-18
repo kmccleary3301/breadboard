@@ -1,0 +1,33 @@
+{
+  "schema": "breadboard.darwin.evaluator_pack.v0",
+  "campaign_id": "camp.darwin.phase2.harness.shadow.v0",
+  "lane_id": "lane.harness",
+  "candidate_id": "cand.lane.harness.baseline.v1",
+  "trial_label": "baseline",
+  "shadow_mode": true,
+  "runtime_consumed": false,
+  "evaluator_identity": {
+    "evaluator_type": "objective_regression",
+    "task_id": "task.darwin.harness.parity_smoke",
+    "runner_kind": "pytest_pass_ratio"
+  },
+  "metric_semantics": {
+    "primary_metric": "pytest_pass_ratio",
+    "higher_is_better": true,
+    "score_unit": "ratio",
+    "success_condition": "subprocess_returncode_zero"
+  },
+  "invalid_comparison_rules": [
+    "test_target_set_must_match",
+    "topology_lane_pair_must_be_supported",
+    "budget_class_must_match"
+  ],
+  "control_pack": {
+    "required_perturbation_group": "nominal",
+    "required_invariants": ["same_test_selection", "same_command_shape"]
+  },
+  "claim_constraints": {
+    "claim_target": "internal",
+    "comparability_requirements": ["same_task_id", "same_budget_class", "same_lane_id"]
+  }
+}

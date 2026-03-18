@@ -1,0 +1,39 @@
+{
+  "schema": "breadboard.darwin.effective_policy.v0",
+  "campaign_id": "camp.darwin.phase2.harness.shadow.v0",
+  "lane_id": "lane.harness",
+  "candidate_id": "cand.lane.harness.baseline.v1",
+  "trial_label": "baseline",
+  "shadow_mode": true,
+  "runtime_consumed": false,
+  "policy_inputs": {
+    "policy_bundle_id": "policy.topology.single_v0",
+    "memory_policy_id": "policy.memory.flat_v0",
+    "budget_class": "class_a",
+    "claim_target": "internal"
+  },
+  "resolved_policy_bundle_refs": {
+    "topology_bundle_ids": ["policy.topology.single_v0", "policy.topology.pev_v0"],
+    "memory_bundle_id": "policy.memory.flat_v0",
+    "budget_bundle_id": "policy.budget.class_a_v0"
+  },
+  "topology_support": {
+    "requested_topology_id": "policy.topology.single_v0",
+    "allowed_topology_ids": ["policy.topology.single_v0", "policy.topology.pev_v0"],
+    "is_supported": true
+  },
+  "operator_eligibility": {
+    "supported_operator_ids": ["mut.topology.single_to_pev_v1", "mut.prompt.tighten_acceptance_v1"],
+    "experimental_operator_ids": [],
+    "prohibited_operator_ids": ["mut.budget.class_a_to_class_b_v1", "mut.tool_scope.add_git_diff_v1"]
+  },
+  "tool_policy": {
+    "allowed_tools": ["pytest", "diff", "filesystem_read"],
+    "claim_target": "internal"
+  },
+  "digests": {
+    "policy_inputs_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "operator_view_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "compiled_policy_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  }
+}

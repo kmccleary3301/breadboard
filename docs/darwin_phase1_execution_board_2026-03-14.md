@@ -17,6 +17,7 @@ Date: 2026-03-14
 - next evidence step: compute-normalized scorecards and final Phase-1 evidence packet
 - tranche-1 execution plan now lives at `docs/darwin_phase2_tranche1_execution_plan_2026-03-14.md`
 - tranche-1 ADR set now lives at `docs/darwin_phase2_tranche1_adr_set_2026-03-14.md`
+- tranche-1 implementation status now lives at `docs/darwin_phase2_tranche1_status_2026-03-18.md`
 
 ## Deferred
 

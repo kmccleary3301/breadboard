@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from breadboard_ext.darwin.phase2 import build_effective_policy
 from scripts.bootstrap_darwin_campaign_specs_v0 import write_bootstrap_specs
 from scripts.run_darwin_t1_live_baselines_v1 import run_live_baselines
 
@@ -18,7 +19,44 @@ def test_run_live_baselines_emits_six_lane_summary() -> None:
         refs = rows[lane_id]["shadow_artifact_refs"]
         assert refs["effective_config"].endswith("_effective_config_v0.json")
         assert refs["execution_plan"].endswith("_execution_plan_v0.json")
+        assert refs["effective_policy"].endswith("_effective_policy_v0.json")
+        assert refs["evaluator_pack"].endswith("_evaluator_pack_v0.json")
         assert Path(refs["effective_config"]).exists()
         assert Path(refs["execution_plan"]).exists()
+        assert Path(refs["effective_policy"]).exists()
+        assert Path(refs["evaluator_pack"]).exists()
+    harness_policy = json.loads(Path(rows["lane.harness"]["shadow_artifact_refs"]["effective_policy"]).read_text(encoding="utf-8"))
+    assert harness_policy["topology_support"]["allowed_topology_ids"] == ["policy.topology.single_v0", "policy.topology.pev_v0"]
+    assert harness_policy["topology_support"]["is_supported"] is True
+    assert "mut.topology.single_to_pev_v1" in harness_policy["operator_eligibility"]["supported_operator_ids"]
+    assert "mut.budget.class_a_to_class_b_v1" in harness_policy["operator_eligibility"]["prohibited_operator_ids"]
     for lane_id in ("lane.atp", "lane.systems", "lane.scheduling", "lane.research"):
         assert rows[lane_id]["shadow_artifact_refs"] == {}
+
+
+def test_effective_policy_builder_supports_secondary_audit_lanes() -> None:
+    write_bootstrap_specs()
+    atp_spec = json.loads(Path("artifacts/darwin/bootstrap/camp.darwin.phase1.atp.bootstrap.v0.json").read_text(encoding="utf-8"))
+    scheduling_spec = json.loads(Path("artifacts/darwin/bootstrap/camp.darwin.phase1.scheduling.bootstrap.v0.json").read_text(encoding="utf-8"))
+
+    atp_policy = build_effective_policy(
+        spec=atp_spec,
+        lane_id="lane.atp",
+        candidate_id="cand.lane.atp.audit.v1",
+        trial_label="audit",
+        topology_id=atp_spec["topology_family"],
+        policy_bundle_id=atp_spec["policy_bundle_id"],
+        budget_class=atp_spec["budget_class"],
+    )
+    scheduling_policy = build_effective_policy(
+        spec=scheduling_spec,
+        lane_id="lane.scheduling",
+        candidate_id="cand.lane.scheduling.audit.v1",
+        trial_label="audit",
+        topology_id=scheduling_spec["topology_family"],
+        policy_bundle_id=scheduling_spec["policy_bundle_id"],
+        budget_class=scheduling_spec["budget_class"],
+    )
+
+    assert "policy.topology.pwrv_v0" in atp_policy["topology_support"]["allowed_topology_ids"]
+    assert scheduling_policy["topology_support"]["allowed_topology_ids"] == ["policy.topology.single_v0", "policy.topology.pev_v0"]

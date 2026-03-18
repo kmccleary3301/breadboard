@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/effective_policy_v0.schema.json",
+  "title": "DarwinEffectivePolicyV0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "campaign_id",
+    "lane_id",
+    "candidate_id",
+    "trial_label",
+    "shadow_mode",
+    "runtime_consumed",
+    "policy_inputs",
+    "resolved_policy_bundle_refs",
+    "topology_support",
+    "operator_eligibility",
+    "tool_policy",
+    "digests"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.effective_policy.v0" },
+    "campaign_id": { "type": "string", "minLength": 1 },
+    "lane_id": { "type": "string", "minLength": 1 },
+    "candidate_id": { "type": "string", "minLength": 1 },
+    "trial_label": { "type": "string", "minLength": 1 },
+    "shadow_mode": { "type": "boolean" },
+    "runtime_consumed": { "type": "boolean" },
+    "policy_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_bundle_id", "memory_policy_id", "budget_class", "claim_target"],
+      "properties": {
+        "policy_bundle_id": { "type": "string", "minLength": 1 },
+        "memory_policy_id": { "type": "string", "minLength": 1 },
+        "budget_class": { "type": "string", "minLength": 1 },
+        "claim_target": { "type": "string", "minLength": 1 }
+      }
+    },
+    "resolved_policy_bundle_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["topology_bundle_ids", "memory_bundle_id", "budget_bundle_id"],
+      "properties": {
+        "topology_bundle_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "memory_bundle_id": { "type": "string", "minLength": 1 },
+        "budget_bundle_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "topology_support": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested_topology_id", "allowed_topology_ids", "is_supported"],
+      "properties": {
+        "requested_topology_id": { "type": "string", "minLength": 1 },
+        "allowed_topology_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "is_supported": { "type": "boolean" }
+      }
+    },
+    "operator_eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported_operator_ids", "experimental_operator_ids", "prohibited_operator_ids"],
+      "properties": {
+        "supported_operator_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "experimental_operator_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "prohibited_operator_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "tool_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_tools", "claim_target"],
+      "properties": {
+        "allowed_tools": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "claim_target": { "type": "string", "minLength": 1 }
+      }
+    },
+    "digests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_inputs_sha256", "operator_view_sha256", "compiled_policy_sha256"],
+      "properties": {
+        "policy_inputs_sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "operator_view_sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "compiled_policy_sha256": { "type": "string", "minLength": 64, "maxLength": 64 }
+      }
+    }
+  }
+}

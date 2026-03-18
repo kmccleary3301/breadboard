@@ -16,12 +16,16 @@ if str(ROOT) not in sys.path:
 
 from breadboard_ext.darwin.contracts import (
     validate_effective_config,
+    validate_effective_policy,
+    validate_evaluator_pack,
     validate_execution_plan,
     validate_candidate_artifact,
     validate_evaluation_record,
 )
 from breadboard_ext.darwin.phase2 import (
     build_effective_config,
+    build_effective_policy,
+    build_evaluator_pack,
     build_execution_plan,
     should_emit_shadow_artifacts,
 )
@@ -311,16 +315,46 @@ def run_named_lane(
 
         effective_config_issues = validate_effective_config(effective_config)
         execution_plan_issues = validate_execution_plan(execution_plan)
+
+        effective_policy = build_effective_policy(
+            spec=spec,
+            lane_id=lane_id,
+            candidate_id=candidate["candidate_id"],
+            trial_label=trial_label,
+            topology_id=topology_id or spec["topology_family"],
+            policy_bundle_id=policy_bundle_id or spec["policy_bundle_id"],
+            budget_class=budget_class or spec["budget_class"],
+        )
+        effective_policy_path = lane_dir / f"{trial_label}_effective_policy_v0.json"
+        _write_json(effective_policy_path, effective_policy)
+        shadow_refs["effective_policy"] = str(effective_policy_path.relative_to(ROOT))
+
+        evaluator_pack = build_evaluator_pack(
+            spec=spec,
+            lane_id=lane_id,
+            candidate_id=candidate["candidate_id"],
+            trial_label=trial_label,
+            task_id=task_id or lane_cfg["task_id"],
+            budget_class=budget_class or spec["budget_class"],
+        )
+        evaluator_pack_path = lane_dir / f"{trial_label}_evaluator_pack_v0.json"
+        _write_json(evaluator_pack_path, evaluator_pack)
+        shadow_refs["evaluator_pack"] = str(evaluator_pack_path.relative_to(ROOT))
+
+        effective_policy_issues = validate_effective_policy(effective_policy)
+        evaluator_pack_issues = validate_evaluator_pack(evaluator_pack)
     else:
         effective_config_issues = []
         execution_plan_issues = []
+        effective_policy_issues = []
+        evaluator_pack_issues = []
 
     candidate_issues = validate_candidate_artifact(candidate)
     evaluation_issues = validate_evaluation_record(eval_record)
-    if candidate_issues or evaluation_issues or effective_config_issues or execution_plan_issues:
+    if candidate_issues or evaluation_issues or effective_config_issues or execution_plan_issues or effective_policy_issues or evaluator_pack_issues:
         raise ValueError(
             f"invalid live baseline DARWIN artifacts for {lane_id}: "
-            f"{_join_issue_messages(candidate_issues, evaluation_issues, effective_config_issues, execution_plan_issues)}"
+            f"{_join_issue_messages(candidate_issues, evaluation_issues, effective_config_issues, execution_plan_issues, effective_policy_issues, evaluator_pack_issues)}"
         )
 
     _write_json(candidate_path, candidate)

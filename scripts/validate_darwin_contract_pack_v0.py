@@ -17,6 +17,8 @@ SCHEMA_CASES: list[tuple[str, list[str]]] = [
     ("docs/contracts/darwin/schemas/evaluation_record_v0.schema.json", ["tests/fixtures/contracts/darwin/sample_evaluation_record_v0.json"]),
     ("docs/contracts/darwin/schemas/effective_config_v0.schema.json", ["tests/fixtures/contracts/darwin/sample_effective_config_v0.json"]),
     ("docs/contracts/darwin/schemas/execution_plan_v0.schema.json", ["tests/fixtures/contracts/darwin/sample_execution_plan_v0.json"]),
+    ("docs/contracts/darwin/schemas/effective_policy_v0.schema.json", ["tests/fixtures/contracts/darwin/sample_effective_policy_v0.json"]),
+    ("docs/contracts/darwin/schemas/evaluator_pack_v0.schema.json", ["tests/fixtures/contracts/darwin/sample_evaluator_pack_v0.json"]),
     ("docs/contracts/darwin/schemas/evidence_bundle_v0.schema.json", ["tests/fixtures/contracts/darwin/sample_evidence_bundle_v0.json"]),
     ("docs/contracts/darwin/schemas/claim_record_v0.schema.json", ["tests/fixtures/contracts/darwin/sample_claim_record_v0.json"]),
     ("docs/contracts/darwin/schemas/lane_registry_v0.schema.json", ["docs/contracts/darwin/registries/lane_registry_v0.json"]),

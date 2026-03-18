@@ -1,8 +1,12 @@
 # DARWIN Phase-2 Tranche-1 Execution Plan
 
 Date: 2026-03-14
-Status: proposed execution plan
+Status: in progress
 Scope: first build tranche after DARWIN Phase-1 closure
+
+Current tranche status reference:
+
+- `docs/darwin_phase2_tranche1_status_2026-03-18.md`
 
 ## 1. Purpose
 
