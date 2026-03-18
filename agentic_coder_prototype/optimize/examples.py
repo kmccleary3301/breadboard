@@ -37,6 +37,13 @@ from .promotion import (
     PromotionRecord,
     promote_candidate,
 )
+from .suites import (
+    EvaluationSuiteManifest,
+    ObjectiveBreakdownResult,
+    ObjectiveSuiteManifest,
+    SearchSpaceManifest,
+    TargetFamilyManifest,
+)
 from .substrate import (
     ArtifactRef,
     CandidateBundle,
@@ -1350,6 +1357,166 @@ def build_support_execution_benchmark_example() -> Dict[str, object]:
         metadata={"lane": "support_execution", "role": "child"},
     )
 
+    evaluation_suite = EvaluationSuiteManifest(
+        suite_id="evalsuite.support_execution.v2",
+        suite_kind="support_execution_family",
+        evaluator_stack=[
+            "support_claim_checker.v1",
+            "execution_profile_checker.v1",
+            "promotion_readiness_slice.v1",
+        ],
+        split_visibility={
+            "train": "mutation_visible",
+            "validation": "comparison_visible",
+            "hold": "hidden_hold",
+            "regression": "comparison_visible",
+        },
+        stochasticity_class="deterministic",
+        rerun_policy={"max_trials": 1, "flake_on_nonrepeatable": False},
+        capture_requirements=[
+            "support_honesty_delta",
+            "execution_profile_selection",
+            "review_path_required_action",
+            "hidden_hold_preservation",
+        ],
+        adjudication_requirements={
+            "requires_hidden_hold_review": True,
+            "requires_regression_coverage": True,
+            "reject_support_widening": True,
+        },
+        comparison_protocol_defaults={
+            "protocol_id": "paired_parent_child.v1",
+            "minimum_trial_count": 1,
+            "requires_hidden_hold_bucket": True,
+        },
+        artifact_requirements=[
+            "paired_eval_json",
+            "benchmark_summary_json",
+        ],
+        metadata={"lane": "support_execution", "phase": "v2"},
+    )
+
+    objective_suite = ObjectiveSuiteManifest(
+        suite_id="objsuite.support_execution.v2",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_channels={
+            "support_honesty": {
+                "direction": "maximize",
+                "source_metric": "support_honesty_delta",
+                "promotion_sensitive": True,
+            },
+            "execution_profile_fidelity": {
+                "direction": "maximize",
+                "source_metric": "execution_profile_match",
+                "promotion_sensitive": True,
+            },
+            "mutation_cost": {
+                "direction": "minimize",
+                "source_metric": "cost_delta_usd",
+                "promotion_sensitive": False,
+            },
+        },
+        penalties={
+            "support_widening": {
+                "kind": "hard_block",
+                "reason": "support widening invalidates the family objective",
+            },
+            "hidden_hold_regression": {
+                "kind": "hard_block",
+                "reason": "hidden hold regressions are not admissible wins",
+            },
+        },
+        aggregation_rules={
+            "per_sample": "weighted_sum",
+            "per_bucket": "minimum_bucket_floor",
+            "global": "support_sensitive_first",
+        },
+        uncertainty_policy={
+            "stochasticity_class": "deterministic",
+            "blocked_when_missing_hidden_hold": True,
+            "blocked_when_missing_regression_bucket": True,
+        },
+        frontier_dimensions=[
+            "support_honesty",
+            "execution_profile_fidelity",
+            "mutation_cost",
+        ],
+        promotion_annotations={
+            "requires_support_sensitive_review": True,
+            "review_class": "support_honesty",
+        },
+        visibility_annotations={
+            "hidden_hold_channels": ["support_honesty", "execution_profile_fidelity"],
+        },
+        metadata={"lane": "support_execution", "phase": "v2"},
+    )
+
+    target_family = TargetFamilyManifest(
+        family_id="family.support_execution.v2",
+        family_kind="support_execution_policy_family",
+        target_ids=[target.target_id],
+        family_scope="Support-claim limiting and execution-profile heuristics for replay-safe workspace tasks.",
+        mutable_loci_ids=[locus.locus_id for locus in target.mutable_loci],
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_suite_id=objective_suite.suite_id,
+        review_class="support_honesty",
+        runtime_context_assumptions={
+            "environment_selector_profile": "workspace-write",
+            "requires_replay_safe_lane": True,
+            "network_access": False,
+            "tool_pack_profile": "codex-dossier-default",
+        },
+        promotion_class="support_sensitive_family_change",
+        artifact_refs=[
+            ArtifactRef(
+                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                media_type="text/yaml",
+                metadata={"surface": "public_dossier"},
+            )
+        ],
+        metadata={"lane": "support_execution", "phase": "v2"},
+    )
+
+    search_space = SearchSpaceManifest(
+        search_space_id="searchspace.support_execution.v2",
+        family_id=target_family.family_id,
+        allowed_loci=[locus.locus_id for locus in target.mutable_loci],
+        mutation_kinds_by_locus={
+            "policy.support_claim_limited_actions": ["replace"],
+            "policy.execution_profile.selection": ["replace"],
+        },
+        value_domains_by_locus={
+            "policy.support_claim_limited_actions": {
+                "allowed_actions_subset_of": ["checkpoint", "terminate", "continue"],
+                "forbid_unbounded_new_actions": True,
+            },
+            "policy.execution_profile.selection": {
+                "preferred_profiles": ["workspace-write", "replay-safe"],
+                "fallback_profiles": ["workspace-write", "replay-safe"],
+                "require_boolean_flag": "require_replay_safe_lane",
+            },
+        },
+        semantic_constraints={
+            "policy.support_claim_limited_actions": {
+                "must_preserve_honesty": True,
+                "must_not_add_unreviewed_continue_path": True,
+            },
+            "policy.execution_profile.selection": {
+                "must_preserve_replay_safe_lane": True,
+                "must_not_hide_workspace_write_requirement": True,
+            },
+        },
+        invariants=[
+            "bounded-overlay-only",
+            "support-envelope-preserved",
+        ],
+        unsafe_expansion_notes=[
+            "Adding new intervention actions is out of scope for this family.",
+            "Changing providers, models, or tool surfaces is out of scope for this family.",
+        ],
+        metadata={"lane": "support_execution", "phase": "v2"},
+    )
+
     manifest = BenchmarkRunManifest(
         manifest_id="manifest.support_execution.v1",
         benchmark_kind="support_execution_heuristic_pack",
@@ -1408,7 +1575,14 @@ def build_support_execution_benchmark_example() -> Dict[str, object]:
                 media_type="text/yaml",
             )
         ],
-        metadata={"lane": "support_execution", "phase": "v1_5"},
+        metadata={
+            "lane": "support_execution",
+            "phase": "v1_5",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "target_family_id": target_family.family_id,
+            "search_space_id": search_space.search_space_id,
+        },
     )
 
     comparison = build_paired_candidate_comparison(
@@ -1445,6 +1619,68 @@ def build_support_execution_benchmark_example() -> Dict[str, object]:
         metadata={"lane": "support_execution"},
     )
 
+    objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreakdown.support_execution.child.001",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=manifest.manifest_id,
+        candidate_id=child_candidate.candidate_id,
+        per_sample_components={
+            train_sample.sample_id: {
+                "support_honesty": 1.0,
+                "execution_profile_fidelity": 1.0,
+                "mutation_cost": 0.03,
+            },
+            validation_sample.sample_id: {
+                "support_honesty": 1.0,
+                "execution_profile_fidelity": 1.0,
+                "mutation_cost": 0.02,
+            },
+            hold_sample.sample_id: {
+                "support_honesty": 1.0,
+                "execution_profile_fidelity": 1.0,
+                "mutation_cost": 0.02,
+            },
+            regression_sample.sample_id: {
+                "support_honesty": 1.0,
+                "execution_profile_fidelity": 0.95,
+                "mutation_cost": 0.01,
+            },
+        },
+        per_bucket_components={
+            "support-sensitive": {
+                "support_honesty": 1.0,
+                "execution_profile_fidelity": 1.0,
+            },
+            "regression": {
+                "support_honesty": 1.0,
+                "execution_profile_fidelity": 0.95,
+            },
+        },
+        aggregate_objectives={
+            "support_honesty": 1.0,
+            "execution_profile_fidelity": 0.9875,
+            "mutation_cost": 0.02,
+            "eligible_for_promotion": False,
+        },
+        uncertainty_summary={
+            "stochasticity_class": "deterministic",
+            "trial_count": 1,
+            "blocked_for_uncertainty": False,
+        },
+        blocked_components={},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/support_execution/objective_breakdown_child.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "support_execution",
+            "family_id": target_family.family_id,
+            "search_space_id": search_space.search_space_id,
+        },
+    )
+
     result = BenchmarkRunResult(
         run_id="benchmark_run.support_execution.001",
         manifest_id=manifest.manifest_id,
@@ -1476,8 +1712,18 @@ def build_support_execution_benchmark_example() -> Dict[str, object]:
             "eligible_for_promotion": False,
             "requires_review": True,
             "blocked_reason": "support-sensitive heuristic changes require explicit review",
+            "objective_breakdown_result_id": objective_breakdown.result_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "target_family_id": target_family.family_id,
         },
-        metadata={"lane": "support_execution", "phase": "v1_5"},
+        metadata={
+            "lane": "support_execution",
+            "phase": "v1_5",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "target_family_id": target_family.family_id,
+            "search_space_id": search_space.search_space_id,
+        },
     )
 
     assert isinstance(manifest, BenchmarkRunManifest)
@@ -1491,8 +1737,13 @@ def build_support_execution_benchmark_example() -> Dict[str, object]:
         "child_candidate": child_candidate,
         "parent_materialized_candidate": parent_materialized,
         "child_materialized_candidate": child_materialized,
+        "evaluation_suite": evaluation_suite,
+        "objective_suite": objective_suite,
+        "target_family": target_family,
+        "search_space": search_space,
         "manifest": manifest,
         "comparison_result": comparison,
+        "objective_breakdown_result": objective_breakdown,
         "benchmark_result": result,
     }
 
@@ -1506,8 +1757,13 @@ def build_support_execution_benchmark_example_payload() -> Dict[str, object]:
         "child_candidate": example["child_candidate"].to_dict(),
         "parent_materialized_candidate": example["parent_materialized_candidate"].to_dict(),
         "child_materialized_candidate": example["child_materialized_candidate"].to_dict(),
+        "evaluation_suite": example["evaluation_suite"].to_dict(),
+        "objective_suite": example["objective_suite"].to_dict(),
+        "target_family": example["target_family"].to_dict(),
+        "search_space": example["search_space"].to_dict(),
         "manifest": example["manifest"].to_dict(),
         "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
         "benchmark_result": example["benchmark_result"].to_dict(),
     }
 

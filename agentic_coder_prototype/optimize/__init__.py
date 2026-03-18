@@ -96,6 +96,13 @@ from .promotion import (
     evaluate_support_envelope_gate,
     promote_candidate,
 )
+from .suites import (
+    EvaluationSuiteManifest,
+    ObjectiveBreakdownResult,
+    ObjectiveSuiteManifest,
+    SearchSpaceManifest,
+    TargetFamilyManifest,
+)
 from .substrate import (
     ArtifactRef,
     CandidateBundle,
@@ -128,6 +135,7 @@ __all__ = [
     "DiagnosticBundle",
     "DiagnosticEntry",
     "EnvironmentSelector",
+    "EvaluationSuiteManifest",
     "EvaluationRecord",
     "GateResult",
     "GroundTruthPackage",
@@ -138,6 +146,8 @@ __all__ = [
     "MutationPolicyInput",
     "MutationProposal",
     "OBJECTIVE_DIRECTIONS",
+    "ObjectiveBreakdownResult",
+    "ObjectiveSuiteManifest",
     "ObjectiveVector",
     "OptimizationDataset",
     "OptimizationExecutionContext",
@@ -162,9 +172,11 @@ __all__ = [
     "RuntimeCompatibilityIssue",
     "RuntimeCompatibilityResult",
     "SandboxContextRequirement",
+    "SearchSpaceManifest",
     "ServiceContextRequirement",
     "SupportEnvelope",
     "SupportEnvelopeGateInput",
+    "TargetFamilyManifest",
     "ToolPackContext",
     "ToolRequirement",
     "TrajectoryEpisode",
