@@ -8,6 +8,7 @@ Current tranche status reference:
 
 - `docs/darwin_phase2_tranche1_status_2026-03-18.md`
 - `docs/darwin_phase2_tranche1_hard_gate_skeleton_2026-03-18.md`
+- `docs/darwin_phase2_tranche1_hard_gate_review_2026-03-18.md`
 
 ## 1. Purpose
 

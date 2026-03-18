@@ -52,9 +52,8 @@ What is now done:
 What is not done yet:
 
 - claim-bearing consumption of `EvaluatorPack`
-- full secondary confirmation on `lane.scheduling`
-- audit-only packaging on `lane.atp`
-- tranche-1 hard-gate review memo
+- later dual-write consideration, if justified
+- eventual tranche-end go/no-go on any runtime dependency change
 
 ## EvolutionLedger status
 
@@ -81,7 +80,15 @@ Current truth boundary:
 
 The next correct tranche-1 move is:
 
-- secondary confirmation on `lane.scheduling`
-- audit-only `PolicyPack` / `EvaluatorPack` shape review for `lane.atp`
-- tranche-1 hard-gate review skeleton and artifact completeness pass
-- only after that, consider whether any ledger dual-write is justified
+- continue additive-only work under the tranche-1 hard-gate review
+- keep runtime expansion blocked
+- only after later review, consider whether any ledger dual-write is justified
+
+## Secondary audit coverage
+
+Secondary audit-only packaging now exists for:
+
+- `lane.scheduling`
+- `lane.atp`
+
+These artifacts confirm that the current `PolicyPack` / `EvaluatorPack` shapes extend beyond the two proving lanes without changing runtime behavior.

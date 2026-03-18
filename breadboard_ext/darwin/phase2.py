@@ -21,6 +21,19 @@ TOPOLOGY_COMPATIBILITY = {
     "lane.systems": ["policy.topology.single_v0", "policy.topology.pev_v0", "policy.topology.pwrv_v0"],
 }
 EVALUATOR_RULES = {
+    "lane.atp": {
+        "evaluator_type": "verifier_rich",
+        "runner_kind": "json_overall_ok",
+        "invalid_comparison_rules": [
+            "ops_digest_task_shape_must_match",
+            "topology_lane_pair_must_be_supported",
+            "budget_class_must_match",
+        ],
+        "control_pack": {
+            "required_perturbation_group": "nominal",
+            "required_invariants": ["same_digest_scope", "same_budget_class"],
+        },
+    },
     "lane.harness": {
         "evaluator_type": "objective_regression",
         "runner_kind": "pytest_pass_ratio",
@@ -46,6 +59,20 @@ EVALUATOR_RULES = {
         "control_pack": {
             "required_perturbation_group": "nominal",
             "required_invariants": ["same_workspace_shape", "same_test_selection", "same_command_shape"],
+        },
+    },
+    "lane.scheduling": {
+        "evaluator_type": "simulator_or_exact_checker",
+        "runner_kind": "json_overall_ok",
+        "invalid_comparison_rules": [
+            "scenario_pack_must_match",
+            "constraint_checker_must_match",
+            "budget_class_must_match",
+            "topology_lane_pair_must_be_supported",
+        ],
+        "control_pack": {
+            "required_perturbation_group": "nominal",
+            "required_invariants": ["same_scenario_pack", "same_constraint_checker"],
         },
     },
 }
