@@ -4503,6 +4503,249 @@ def build_support_execution_coding_overlay_composition_example_payload() -> Dict
     }
 
 
+def build_support_execution_coding_overlay_verifier_follow_on_example() -> Dict[str, object]:
+    """Build one narrow verifier-assisted follow-on on the bounded E4 composed lane."""
+
+    example = build_support_execution_coding_overlay_composition_example()
+    composed_candidate = example["composed_candidate"]
+    composition = example["family_composition"]
+    evaluation_suite = example["evaluation_suite"]
+    objective_suite = example["objective_suite"]
+    search_space = example["search_space"]
+    manifest = example["manifest"]
+    assert isinstance(composed_candidate, CandidateBundle)
+    assert isinstance(composition, FamilyCompositionManifest)
+    assert isinstance(evaluation_suite, EvaluationSuiteManifest)
+    assert isinstance(objective_suite, ObjectiveSuiteManifest)
+    assert isinstance(search_space, SearchSpaceManifest)
+    assert isinstance(manifest, BenchmarkRunManifest)
+
+    refined_candidate = CandidateBundle(
+        candidate_id="cand.support_execution_coding_overlay.verifier_refined.001",
+        source_target_id=example["target"].target_id,
+        applied_loci=[
+            "prompt.section.planning_policy",
+            "prompt.section.editing_policy",
+        ],
+        changes=[
+            CandidateChange(
+                locus_id="prompt.section.planning_policy",
+                value={
+                    "text": (
+                        "Plan the smallest replay-safe support-sensitive change first, and keep apply_patch "
+                        "as the default path when prompt/config edits interact."
+                    )
+                },
+                rationale=(
+                    "Verifier-guided refinement tightens the support-sensitive planning language without "
+                    "touching undeclared loci."
+                ),
+            ),
+            CandidateChange(
+                locus_id="prompt.section.editing_policy",
+                value={
+                    "text": (
+                        "Prefer apply_patch and narrow diffs; if support-sensitive policy wording changes, "
+                        "make the bounded review burden explicit rather than implying broader edits."
+                    )
+                },
+                rationale=(
+                    "Make the coupled support/editing invariant more explicit on the hidden-hold slice "
+                    "without widening the search space."
+                ),
+            ),
+        ],
+        provenance={
+            "kind": "composed_verifier_follow_on",
+            "baseline_candidate_id": composed_candidate.candidate_id,
+            "composition_id": composition.composition_id,
+        },
+        metadata={
+            "lane": "support_execution_coding_overlay_composed",
+            "role": "verifier_follow_on",
+            "composition_id": composition.composition_id,
+            "non_kernel": True,
+        },
+    )
+
+    comparison = build_paired_candidate_comparison(
+        manifest,
+        comparison_id="comparison.support_execution_coding_overlay.composed_vs_verifier_refined.001",
+        parent_candidate_id=composed_candidate.candidate_id,
+        child_candidate_id=refined_candidate.candidate_id,
+        outcome="win",
+        compared_sample_ids=manifest.sample_ids(),
+        held_out_sample_ids=manifest.hidden_hold_sample_ids(),
+        trial_count=1,
+        rationale=(
+            "The verifier-assisted refinement improves support-sensitive planning and editing coupling on the "
+            "composed hidden-hold slice without introducing new loci or loosening replay-safe boundaries."
+        ),
+        evidence_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/support_execution_coding_overlay/verifier_follow_on_eval.json",
+                media_type="application/json",
+            )
+        ],
+        metric_deltas={
+            "planning_quality_delta": 0.04,
+            "diff_hygiene_delta": 0.03,
+            "held_out_support_sensitive_win": True,
+            "verifier_confirmed": True,
+        },
+        better_candidate_id=refined_candidate.candidate_id,
+        metadata={
+            "lane": "support_execution_coding_overlay_composed",
+            "composition_id": composition.composition_id,
+            "experiment_kind": "verifier_augmented_composed_refinement",
+            "model_policy": "nano_first",
+        },
+    )
+
+    refined_objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreakdown.support_execution_coding_overlay.verifier_refined.001",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=manifest.manifest_id,
+        candidate_id=refined_candidate.candidate_id,
+        per_sample_components={
+            "sample.support_execution_coding_overlay.train.001": {
+                "support_honesty": 1.0,
+                "execution_profile_fidelity": 1.0,
+                "planning_quality": 0.8,
+                "diff_hygiene": 0.97,
+                "mutation_cost": 0.0,
+            },
+            "sample.support_execution_coding_overlay.validation.001": {
+                "support_honesty": 0.97,
+                "execution_profile_fidelity": 0.96,
+                "planning_quality": 0.85,
+                "diff_hygiene": 0.96,
+                "mutation_cost": 0.0,
+            },
+            "sample.support_execution_coding_overlay.hold.001": {
+                "support_honesty": 1.0,
+                "execution_profile_fidelity": 1.0,
+                "planning_quality": 0.78,
+                "diff_hygiene": 1.0,
+                "mutation_cost": 0.0,
+            },
+            "sample.support_execution_coding_overlay.regression.001": {
+                "support_honesty": 0.98,
+                "execution_profile_fidelity": 0.98,
+                "planning_quality": 0.74,
+                "diff_hygiene": 1.0,
+                "mutation_cost": 0.0,
+            },
+        },
+        per_bucket_components={
+            "support-sensitive": {"support_honesty": 1.0, "execution_profile_fidelity": 1.0},
+            "apply-patch": {"planning_quality": 0.74, "diff_hygiene": 1.0},
+        },
+        aggregate_objectives={
+            "support_honesty": 0.9875,
+            "execution_profile_fidelity": 0.985,
+            "planning_quality": 0.7925,
+            "diff_hygiene": 0.9825,
+            "mutation_cost": 0.0,
+            "eligible_for_promotion": False,
+        },
+        uncertainty_summary={
+            "stochasticity_class": "deterministic",
+            "trial_count": 1,
+            "blocked_for_uncertainty": False,
+            "mini_escalation_considered": True,
+            "mini_escalation_triggered": False,
+        },
+        blocked_components={},
+        member_family_breakdowns={
+            "family.support_execution.v2": {"support_honesty": 0.9875, "execution_profile_fidelity": 0.985},
+            "family.coding_overlay.v2": {"planning_quality": 0.7925, "diff_hygiene": 0.9825},
+        },
+        cross_family_blocked_components={},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/support_execution_coding_overlay/objective_breakdown_verifier_refined.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "support_execution_coding_overlay_composed",
+            "composition_id": composition.composition_id,
+            "search_space_id": search_space.search_space_id,
+            "experiment_kind": "verifier_augmented_composed_refinement",
+            "composed_follow_on": True,
+        },
+    )
+
+    verifier_experiment = VerifierAugmentedExperimentResult(
+        experiment_id="verifier_experiment.support_execution_coding_overlay.v3",
+        experiment_kind="verifier_augmented_composed_refinement",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_suite_id=objective_suite.suite_id,
+        target_family_id="family.coding_overlay.v2",
+        search_space_id=search_space.search_space_id,
+        baseline_candidate_id=composed_candidate.candidate_id,
+        refined_candidate_id=refined_candidate.candidate_id,
+        verifier_stack=[
+            *evaluation_suite.evaluator_stack,
+            "bounded_support_coupling_verifier.v1",
+        ],
+        focus_sample_ids=manifest.hidden_hold_sample_ids() or manifest.sample_ids(),
+        comparison_result_id=comparison.comparison_id,
+        objective_breakdown_result_id=refined_objective_breakdown.result_id,
+        outcome="accepted",
+        rationale=(
+            "This narrow follow-on keeps the verifier experiment inside the existing composed dossier lane, "
+            "specializing the coding-overlay member family while preserving support-sensitive honesty and "
+            "the declared family composition boundary."
+        ),
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/support_execution_coding_overlay/verifier_follow_on_summary.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "support_execution_coding_overlay_composed",
+            "phase": "v3",
+            "backend_only": True,
+            "non_kernel": True,
+            "darwin_boundary": "not_reopened",
+            "family_bound": True,
+            "composition_id": composition.composition_id,
+            "member_family_ids": list(composition.member_family_ids),
+            "specialization_scope": "coding_overlay_member_inside_composed_lane",
+            "model_policy": "nano_first",
+        },
+    )
+
+    return {
+        "composition_example": example,
+        "refined_candidate": refined_candidate,
+        "comparison_result": comparison,
+        "objective_breakdown_result": refined_objective_breakdown,
+        "verifier_experiment": verifier_experiment,
+    }
+
+
+def build_support_execution_coding_overlay_verifier_follow_on_example_payload() -> Dict[str, object]:
+    example = build_support_execution_coding_overlay_verifier_follow_on_example()
+    return {
+        "composition_example": {
+            "evaluation_suite": example["composition_example"]["evaluation_suite"].to_dict(),
+            "objective_suite": example["composition_example"]["objective_suite"].to_dict(),
+            "family_composition": example["composition_example"]["family_composition"].to_dict(),
+            "search_space": example["composition_example"]["search_space"].to_dict(),
+            "manifest": example["composition_example"]["manifest"].to_dict(),
+            "composed_candidate": example["composition_example"]["composed_candidate"].to_dict(),
+        },
+        "refined_candidate": example["refined_candidate"].to_dict(),
+        "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
+        "verifier_experiment": example["verifier_experiment"].to_dict(),
+    }
+
+
 def _clone_comparison_result(
     comparison: CandidateComparisonResult,
     **updates: object,

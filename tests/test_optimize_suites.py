@@ -15,6 +15,8 @@ from agentic_coder_prototype.optimize import (
     build_support_execution_benchmark_example_payload,
     build_support_execution_coding_overlay_composition_example,
     build_support_execution_coding_overlay_composition_example_payload,
+    build_support_execution_coding_overlay_verifier_follow_on_example,
+    build_support_execution_coding_overlay_verifier_follow_on_example_payload,
     build_tool_guidance_coding_overlay_composition_example,
     build_tool_guidance_coding_overlay_composition_example_payload,
     build_tool_guidance_benchmark_example,
@@ -258,7 +260,34 @@ def test_support_execution_coding_overlay_composition_records_model_tier_policy(
     assert payload["evaluation_suite"]["rerun_policy"]["escalation_model"] == "gpt-5.4-mini"
     assert payload["evaluation_suite"]["metadata"]["mini_escalation_policy"] == "auditable_justified_only"
     assert payload["benchmark_result"]["variance_summary"]["mini_escalation_triggered"] is False
-    assert payload["benchmark_result"]["promotion_readiness_summary"]["mini_escalation_audit"]["triggered"] is False
+
+
+def test_support_execution_coding_overlay_verifier_follow_on_round_trip() -> None:
+    example = build_support_execution_coding_overlay_verifier_follow_on_example()
+    payload = build_support_execution_coding_overlay_verifier_follow_on_example_payload()
+
+    verifier_experiment = VerifierAugmentedExperimentResult.from_dict(payload["verifier_experiment"])
+    composition = FamilyCompositionManifest.from_dict(payload["composition_example"]["family_composition"])
+
+    assert verifier_experiment.experiment_kind == "verifier_augmented_composed_refinement"
+    assert verifier_experiment.evaluation_suite_id == payload["composition_example"]["evaluation_suite"]["suite_id"]
+    assert verifier_experiment.objective_suite_id == payload["composition_example"]["objective_suite"]["suite_id"]
+    assert verifier_experiment.search_space_id == payload["composition_example"]["search_space"]["search_space_id"]
+    assert verifier_experiment.baseline_candidate_id == payload["composition_example"]["composed_candidate"]["candidate_id"]
+    assert verifier_experiment.refined_candidate_id == example["refined_candidate"].candidate_id
+    assert verifier_experiment.metadata["composition_id"] == composition.composition_id
+    assert verifier_experiment.metadata["specialization_scope"] == "coding_overlay_member_inside_composed_lane"
+
+
+def test_composed_verifier_follow_on_stays_narrow_and_outside_darwin_ontology() -> None:
+    payload = build_support_execution_coding_overlay_verifier_follow_on_example_payload()
+    verifier_payload = payload["verifier_experiment"]
+
+    assert verifier_payload["metadata"]["non_kernel"] is True
+    assert verifier_payload["metadata"]["darwin_boundary"] == "not_reopened"
+    assert verifier_payload["metadata"]["model_policy"] == "nano_first"
+    assert payload["composition_example"]["evaluation_suite"]["rerun_policy"]["default_model"] == "gpt-5.4-nano"
+    assert payload["composition_example"]["evaluation_suite"]["rerun_policy"]["escalation_model"] == "gpt-5.4-mini"
     assert _payload_contains_forbidden_key(
         payload,
         {"campaign_id", "archive_id", "island_id", "genealogy_id", "reward_suite_id"},

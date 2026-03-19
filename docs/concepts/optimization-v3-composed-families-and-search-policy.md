@@ -212,6 +212,12 @@ In practice, that means the staged optimizer may record private search-policy tr
 
 Those traces are implementation evidence, not new public optimize truth.
 
+The optional follow-on stays equally narrow. The live V3 follow-on reuses the existing
+`VerifierAugmentedExperimentResult` shape on the `support_execution + coding_overlay` composed lane
+instead of minting a second composed-experiment ontology. Composition identity stays explicit in
+metadata, the specialization scope stays explicit, and the declared composed search space remains
+unchanged.
+
 ## What V3 still does not do
 
 V3 does **not** introduce:

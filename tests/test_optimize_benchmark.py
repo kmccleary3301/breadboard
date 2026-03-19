@@ -16,6 +16,8 @@ from agentic_coder_prototype.optimize import (
     build_support_execution_benchmark_example_payload,
     build_support_execution_coding_overlay_composition_example,
     build_support_execution_coding_overlay_composition_example_payload,
+    build_support_execution_coding_overlay_verifier_follow_on_example,
+    build_support_execution_coding_overlay_verifier_follow_on_example_payload,
     build_tool_guidance_coding_overlay_composition_example,
     build_tool_guidance_coding_overlay_composition_example_payload,
     build_tool_guidance_benchmark_example,
@@ -195,3 +197,16 @@ def test_support_execution_coding_overlay_composition_payload_round_trips() -> N
     assert result.metadata["composition_id"] == example["family_composition"].composition_id
     assert result.variance_summary["default_model"] == "gpt-5.4-nano"
     assert result.variance_summary["mini_escalation_triggered"] is False
+
+
+def test_support_execution_coding_overlay_verifier_follow_on_payload_round_trips() -> None:
+    example = build_support_execution_coding_overlay_verifier_follow_on_example()
+    payload = build_support_execution_coding_overlay_verifier_follow_on_example_payload()
+
+    manifest = BenchmarkRunManifest.from_dict(payload["composition_example"]["manifest"])
+    comparison = CandidateComparisonResult.from_dict(payload["comparison_result"])
+
+    assert comparison.manifest_id == manifest.manifest_id
+    assert comparison.parent_candidate_id == payload["composition_example"]["composed_candidate"]["candidate_id"]
+    assert comparison.better_candidate_id == example["refined_candidate"].candidate_id
+    assert comparison.metadata["experiment_kind"] == "verifier_augmented_composed_refinement"
