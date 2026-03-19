@@ -205,3 +205,4 @@ That slice should focus on:
 Current tranche-1 slice reference:
 
 - `docs/darwin_stage3_tranche1_slice_2026-03-19.md`
+- `docs/darwin_stage3_tranche1_canary_status_2026-03-19.md`
