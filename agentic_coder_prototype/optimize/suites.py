@@ -7,6 +7,9 @@ from .benchmark import ALLOWED_SPLIT_VISIBILITY, ALLOWED_STOCHASTICITY_CLASSES
 from .substrate import ArtifactRef
 
 
+ALLOWED_VERIFIER_EXPERIMENT_OUTCOMES = {"accepted", "rejected", "blocked", "inconclusive"}
+
+
 def _require_text(value: Any, field_name: str) -> str:
     text = str(value or "").strip()
     if not text:
@@ -382,5 +385,102 @@ class SearchSpaceManifest:
             semantic_constraints=_copy_nested_mapping(data.get("semantic_constraints") or {}),
             invariants=list(data.get("invariants") or []),
             unsafe_expansion_notes=list(data.get("unsafe_expansion_notes") or []),
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
+class VerifierAugmentedExperimentResult:
+    experiment_id: str
+    experiment_kind: str
+    evaluation_suite_id: str
+    objective_suite_id: str
+    target_family_id: str
+    search_space_id: str
+    baseline_candidate_id: str
+    refined_candidate_id: str
+    verifier_stack: List[str]
+    focus_sample_ids: List[str]
+    comparison_result_id: str
+    objective_breakdown_result_id: str
+    outcome: str
+    rationale: str
+    artifact_refs: List[ArtifactRef] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "experiment_id", _require_text(self.experiment_id, "experiment_id"))
+        object.__setattr__(self, "experiment_kind", _require_text(self.experiment_kind, "experiment_kind"))
+        object.__setattr__(self, "evaluation_suite_id", _require_text(self.evaluation_suite_id, "evaluation_suite_id"))
+        object.__setattr__(self, "objective_suite_id", _require_text(self.objective_suite_id, "objective_suite_id"))
+        object.__setattr__(self, "target_family_id", _require_text(self.target_family_id, "target_family_id"))
+        object.__setattr__(self, "search_space_id", _require_text(self.search_space_id, "search_space_id"))
+        object.__setattr__(self, "baseline_candidate_id", _require_text(self.baseline_candidate_id, "baseline_candidate_id"))
+        object.__setattr__(self, "refined_candidate_id", _require_text(self.refined_candidate_id, "refined_candidate_id"))
+        object.__setattr__(self, "verifier_stack", _copy_text_list(self.verifier_stack))
+        object.__setattr__(self, "focus_sample_ids", _copy_text_list(self.focus_sample_ids))
+        object.__setattr__(self, "comparison_result_id", _require_text(self.comparison_result_id, "comparison_result_id"))
+        object.__setattr__(
+            self,
+            "objective_breakdown_result_id",
+            _require_text(self.objective_breakdown_result_id, "objective_breakdown_result_id"),
+        )
+        outcome = _require_text(self.outcome, "outcome").lower()
+        if outcome not in ALLOWED_VERIFIER_EXPERIMENT_OUTCOMES:
+            raise ValueError(
+                f"outcome must be one of: {sorted(ALLOWED_VERIFIER_EXPERIMENT_OUTCOMES)}"
+            )
+        object.__setattr__(self, "outcome", outcome)
+        object.__setattr__(self, "rationale", _require_text(self.rationale, "rationale"))
+        object.__setattr__(
+            self,
+            "artifact_refs",
+            [item if isinstance(item, ArtifactRef) else ArtifactRef.from_dict(item) for item in self.artifact_refs],
+        )
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+
+        if not self.verifier_stack:
+            raise ValueError("verifier_stack must contain at least one verifier id")
+        if not self.focus_sample_ids:
+            raise ValueError("focus_sample_ids must contain at least one sample id")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "experiment_id": self.experiment_id,
+            "experiment_kind": self.experiment_kind,
+            "evaluation_suite_id": self.evaluation_suite_id,
+            "objective_suite_id": self.objective_suite_id,
+            "target_family_id": self.target_family_id,
+            "search_space_id": self.search_space_id,
+            "baseline_candidate_id": self.baseline_candidate_id,
+            "refined_candidate_id": self.refined_candidate_id,
+            "verifier_stack": list(self.verifier_stack),
+            "focus_sample_ids": list(self.focus_sample_ids),
+            "comparison_result_id": self.comparison_result_id,
+            "objective_breakdown_result_id": self.objective_breakdown_result_id,
+            "outcome": self.outcome,
+            "rationale": self.rationale,
+            "artifact_refs": [item.to_dict() for item in self.artifact_refs],
+            "metadata": dict(self.metadata),
+        }
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "VerifierAugmentedExperimentResult":
+        return VerifierAugmentedExperimentResult(
+            experiment_id=data.get("experiment_id") or data.get("id") or "",
+            experiment_kind=data.get("experiment_kind") or "",
+            evaluation_suite_id=data.get("evaluation_suite_id") or "",
+            objective_suite_id=data.get("objective_suite_id") or "",
+            target_family_id=data.get("target_family_id") or "",
+            search_space_id=data.get("search_space_id") or "",
+            baseline_candidate_id=data.get("baseline_candidate_id") or "",
+            refined_candidate_id=data.get("refined_candidate_id") or "",
+            verifier_stack=list(data.get("verifier_stack") or []),
+            focus_sample_ids=list(data.get("focus_sample_ids") or []),
+            comparison_result_id=data.get("comparison_result_id") or "",
+            objective_breakdown_result_id=data.get("objective_breakdown_result_id") or "",
+            outcome=data.get("outcome") or "",
+            rationale=data.get("rationale") or "",
+            artifact_refs=[ArtifactRef.from_dict(item) for item in data.get("artifact_refs") or []],
             metadata=dict(data.get("metadata") or {}),
         )

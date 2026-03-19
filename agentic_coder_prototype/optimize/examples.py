@@ -45,6 +45,7 @@ from .suites import (
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
     TargetFamilyManifest,
+    VerifierAugmentedExperimentResult,
 )
 from .substrate import (
     ArtifactRef,
@@ -2896,6 +2897,191 @@ def build_coding_overlay_benchmark_example_payload() -> Dict[str, object]:
         "comparison_result": example["comparison_result"].to_dict(),
         "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
         "benchmark_result": example["benchmark_result"].to_dict(),
+    }
+
+
+def build_coding_overlay_verifier_experiment_example() -> Dict[str, object]:
+    """Build a narrow verifier-augmented refinement experiment over the live coding-overlay family."""
+
+    example = build_coding_overlay_benchmark_example()
+    child_candidate = example["child_candidate"]
+    manifest = example["manifest"]
+    evaluation_suite = example["evaluation_suite"]
+    objective_suite = example["objective_suite"]
+    target_family = example["target_family"]
+    search_space = example["search_space"]
+    assert isinstance(child_candidate, CandidateBundle)
+    assert isinstance(manifest, BenchmarkRunManifest)
+    assert isinstance(evaluation_suite, EvaluationSuiteManifest)
+    assert isinstance(objective_suite, ObjectiveSuiteManifest)
+    assert isinstance(target_family, TargetFamilyManifest)
+    assert isinstance(search_space, SearchSpaceManifest)
+
+    refined_candidate = CandidateBundle(
+        candidate_id="cand.coding_overlay.verifier_refined.001",
+        source_target_id=child_candidate.source_target_id,
+        applied_loci=["prompt.section.editing_policy"],
+        changes=[
+            CandidateChange(
+                locus_id="prompt.section.editing_policy",
+                value={
+                    "text": "Prefer apply_patch and narrow diffs; verify bounded edit scope against diff-hygiene checks before broader rewrites."
+                },
+                rationale="Makes the diff-hygiene verifier loop explicit without widening the coding overlay family scope.",
+            )
+        ],
+        provenance={
+            "kind": "verifier_augmented_refinement",
+            "base_candidate_id": child_candidate.candidate_id,
+        },
+        metadata={"lane": "coding_overlay", "role": "verifier_refined"},
+    )
+
+    comparison = build_paired_candidate_comparison(
+        manifest,
+        comparison_id="comparison.coding_overlay.child_vs_verifier_refined.001",
+        parent_candidate_id=child_candidate.candidate_id,
+        child_candidate_id=refined_candidate.candidate_id,
+        outcome="win",
+        compared_sample_ids=manifest.sample_ids(),
+        held_out_sample_ids=manifest.hidden_hold_sample_ids(),
+        trial_count=1,
+        rationale="The verifier-augmented refinement preserves bounded-edit discipline and improves hidden-hold diff hygiene without expanding the family search space.",
+        evidence_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/coding_overlay/verifier_refinement_eval.json",
+                media_type="application/json",
+            )
+        ],
+        metric_deltas={
+            "planning_quality_delta": 0.02,
+            "diff_hygiene_delta": 0.09,
+            "held_out_blast_radius_guard": True,
+            "verifier_confirmed": True,
+        },
+        better_candidate_id=refined_candidate.candidate_id,
+        metadata={
+            "lane": "coding_overlay",
+            "experiment_kind": "verifier_augmented_refinement",
+            "family_id": target_family.family_id,
+        },
+    )
+
+    objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreakdown.coding_overlay.verifier_refined.001",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=manifest.manifest_id,
+        candidate_id=refined_candidate.candidate_id,
+        per_sample_components={
+            "sample.coding_overlay.train.001": {
+                "planning_quality": 0.81,
+                "diff_hygiene": 0.96,
+                "mutation_cost": 0.0,
+            },
+            "sample.coding_overlay.validation.001": {
+                "planning_quality": 0.75,
+                "diff_hygiene": 0.94,
+                "mutation_cost": 0.0,
+            },
+            "sample.coding_overlay.hold.001": {
+                "planning_quality": 0.72,
+                "diff_hygiene": 1.0,
+                "mutation_cost": 0.0,
+            },
+            "sample.coding_overlay.regression.001": {
+                "planning_quality": 0.69,
+                "diff_hygiene": 1.0,
+                "mutation_cost": 0.0,
+            },
+        },
+        per_bucket_components={
+            "small-edit": {"planning_quality": 0.81, "diff_hygiene": 0.96},
+            "blast-radius": {"planning_quality": 0.72, "diff_hygiene": 1.0},
+        },
+        aggregate_objectives={
+            "planning_quality": 0.7425,
+            "diff_hygiene": 0.975,
+            "mutation_cost": 0.0,
+            "eligible_for_promotion": True,
+        },
+        uncertainty_summary={
+            "stochasticity_class": evaluation_suite.stochasticity_class,
+            "trial_count": 1,
+            "blocked_for_uncertainty": False,
+        },
+        blocked_components={},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/coding_overlay/objective_breakdown_verifier_refined.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "coding_overlay",
+            "family_id": target_family.family_id,
+            "search_space_id": search_space.search_space_id,
+            "experiment_kind": "verifier_augmented_refinement",
+        },
+    )
+
+    experiment = VerifierAugmentedExperimentResult(
+        experiment_id="verifier_experiment.coding_overlay.v2",
+        experiment_kind="verifier_augmented_refinement",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_suite_id=objective_suite.suite_id,
+        target_family_id=target_family.family_id,
+        search_space_id=search_space.search_space_id,
+        baseline_candidate_id=child_candidate.candidate_id,
+        refined_candidate_id=refined_candidate.candidate_id,
+        verifier_stack=[
+            *evaluation_suite.evaluator_stack,
+            "bounded_edit_scope_verifier.v1",
+        ],
+        focus_sample_ids=manifest.hidden_hold_sample_ids() or manifest.sample_ids(),
+        comparison_result_id=comparison.comparison_id,
+        objective_breakdown_result_id=objective_breakdown.result_id,
+        outcome="accepted",
+        rationale="Verifier-guided refinement is kept inside the coding-overlay family and uses the declared suite and search-space constraints to improve hidden-hold diff hygiene.",
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/coding_overlay/verifier_experiment_summary.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "coding_overlay",
+            "phase": "v2",
+            "backend_only": True,
+            "non_kernel": True,
+            "darwin_boundary": "not_reopened",
+            "family_bound": True,
+        },
+    )
+
+    return {
+        "family_example": example,
+        "refined_candidate": refined_candidate,
+        "comparison_result": comparison,
+        "objective_breakdown_result": objective_breakdown,
+        "verifier_experiment": experiment,
+    }
+
+
+def build_coding_overlay_verifier_experiment_example_payload() -> Dict[str, object]:
+    example = build_coding_overlay_verifier_experiment_example()
+    return {
+        "family_example": {
+            "evaluation_suite": example["family_example"]["evaluation_suite"].to_dict(),
+            "objective_suite": example["family_example"]["objective_suite"].to_dict(),
+            "target_family": example["family_example"]["target_family"].to_dict(),
+            "search_space": example["family_example"]["search_space"].to_dict(),
+            "manifest": example["family_example"]["manifest"].to_dict(),
+            "child_candidate": example["family_example"]["child_candidate"].to_dict(),
+        },
+        "refined_candidate": example["refined_candidate"].to_dict(),
+        "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
+        "verifier_experiment": example["verifier_experiment"].to_dict(),
     }
 
 

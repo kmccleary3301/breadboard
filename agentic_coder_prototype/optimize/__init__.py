@@ -74,6 +74,8 @@ from .examples import (
     build_codex_dossier_promotion_examples_payload,
     build_coding_overlay_benchmark_example,
     build_coding_overlay_benchmark_example_payload,
+    build_coding_overlay_verifier_experiment_example,
+    build_coding_overlay_verifier_experiment_example_payload,
     build_support_execution_benchmark_example,
     build_support_execution_benchmark_example_payload,
     build_staged_backend_comparison_example,
@@ -109,6 +111,7 @@ from .suites import (
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
     TargetFamilyManifest,
+    VerifierAugmentedExperimentResult,
 )
 from .substrate import (
     ArtifactRef,
@@ -192,6 +195,7 @@ __all__ = [
     "TrajectoryEpisode",
     "TrajectoryStep",
     "TypedOverlayMutationPolicy",
+    "VerifierAugmentedExperimentResult",
     "WrongnessGuidedReflectionPolicy",
     "WrongnessReport",
     "build_backend_comparison_example",
@@ -210,6 +214,8 @@ __all__ = [
     "build_codex_dossier_runtime_context_examples_payload",
     "build_coding_overlay_benchmark_example",
     "build_coding_overlay_benchmark_example_payload",
+    "build_coding_overlay_verifier_experiment_example",
+    "build_coding_overlay_verifier_experiment_example_payload",
     "build_paired_candidate_comparison",
     "build_promotion_evidence",
     "build_promotion_evidence_summary",

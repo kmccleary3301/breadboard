@@ -234,6 +234,40 @@ Support-heavy families remain explicit review cases.
 
 Non-review-heavy families can pass with `win` or `non_inferior` evidence if hidden-hold and regression coverage are real.
 
+## Optional verifier-augmented follow-on
+
+The current V2 follow-on experiment stays intentionally narrow.
+
+It does **not** add a new backend family, campaign loop, or public verifier workflow.
+
+Instead it adds one suite-driven verifier-augmented refinement example:
+
+- `VerifierAugmentedExperimentResult`
+- `build_coding_overlay_verifier_experiment_example`
+
+This experiment is tied directly to the live `coding_overlay` family and reuses its declared:
+
+- evaluation suite
+- objective suite
+- target family
+- search space
+
+The refinement is narrow:
+
+- it starts from the existing coding-overlay child candidate
+- it applies one verifier-guided edit-policy refinement
+- it compares that refinement on the existing manifest
+- it records the result as a non-kernel experiment artifact
+
+This keeps the boundary clear:
+
+- verifier experimentation is allowed
+- family/search-space discipline remains primary
+- no DARWIN campaign state is introduced
+- no archive, island, or genealogy ontology is introduced
+
+The experiment exists to prove that verifier-shaped follow-ons can remain subordinate to the declared V2 methodology instead of becoming a second optimizer architecture.
+
 ## Why this layer exists
 
 V1.5 could tell us:
@@ -276,5 +310,6 @@ For the smallest end-to-end V2 walkthrough, read:
 6. `build_support_execution_benchmark_example`
 7. `build_tool_guidance_benchmark_example`
 8. `build_coding_overlay_benchmark_example`
+9. `build_coding_overlay_verifier_experiment_example`
 
 That sequence shows the first real family/suite bindings on top of the completed V1.5 evidence stack.

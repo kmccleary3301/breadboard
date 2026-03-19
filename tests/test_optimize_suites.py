@@ -8,8 +8,11 @@ from agentic_coder_prototype.optimize import (
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
     TargetFamilyManifest,
+    VerifierAugmentedExperimentResult,
     build_coding_overlay_benchmark_example,
     build_coding_overlay_benchmark_example_payload,
+    build_coding_overlay_verifier_experiment_example,
+    build_coding_overlay_verifier_experiment_example_payload,
     build_support_execution_benchmark_example,
     build_support_execution_benchmark_example_payload,
     build_tool_guidance_benchmark_example,
@@ -103,3 +106,44 @@ def test_search_space_rejects_unknown_locus_constraints() -> None:
             value_domains_by_locus={"locus.allowed": {"kind": "enum"}},
             semantic_constraints={"locus.unknown": {"must_preserve_honesty": True}},
         )
+
+
+def _payload_contains_forbidden_key(value: object, forbidden_keys: set[str]) -> bool:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if str(key) in forbidden_keys:
+                return True
+            if _payload_contains_forbidden_key(nested, forbidden_keys):
+                return True
+    if isinstance(value, list):
+        return any(_payload_contains_forbidden_key(item, forbidden_keys) for item in value)
+    return False
+
+
+def test_coding_overlay_verifier_experiment_round_trip() -> None:
+    example = build_coding_overlay_verifier_experiment_example()
+    payload = build_coding_overlay_verifier_experiment_example_payload()
+
+    verifier_experiment = VerifierAugmentedExperimentResult.from_dict(payload["verifier_experiment"])
+    family_example = example["family_example"]
+
+    assert verifier_experiment.experiment_kind == "verifier_augmented_refinement"
+    assert verifier_experiment.evaluation_suite_id == family_example["evaluation_suite"].suite_id
+    assert verifier_experiment.objective_suite_id == family_example["objective_suite"].suite_id
+    assert verifier_experiment.target_family_id == family_example["target_family"].family_id
+    assert verifier_experiment.search_space_id == family_example["search_space"].search_space_id
+    assert verifier_experiment.baseline_candidate_id == family_example["child_candidate"].candidate_id
+    assert verifier_experiment.refined_candidate_id == example["refined_candidate"].candidate_id
+    assert "bounded_edit_scope_verifier.v1" in verifier_experiment.verifier_stack
+
+
+def test_coding_overlay_verifier_experiment_stays_family_bound_without_darwin_ontology() -> None:
+    payload = build_coding_overlay_verifier_experiment_example_payload()
+    verifier_payload = payload["verifier_experiment"]
+
+    assert verifier_payload["metadata"]["non_kernel"] is True
+    assert verifier_payload["metadata"]["darwin_boundary"] == "not_reopened"
+    assert _payload_contains_forbidden_key(
+        payload,
+        {"campaign_id", "archive_id", "island_id", "genealogy_id"},
+    ) is False
