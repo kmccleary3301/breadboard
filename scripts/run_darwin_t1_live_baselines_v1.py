@@ -265,28 +265,9 @@ def run_named_lane(
         _write_json(effective_policy_path, effective_policy)
         shadow_refs["effective_policy"] = str(effective_policy_path.relative_to(ROOT))
 
-        evaluator_pack = build_evaluator_pack(
-            spec=spec,
-            lane_id=lane_id,
-            candidate_id=candidate_id_value,
-            trial_label=trial_label,
-            task_id=task_id or lane_cfg["task_id"],
-            budget_class=budget_class or spec["budget_class"],
-        )
-        evaluator_pack["budget_envelope"] = build_stage3_budget_envelope(
-            budget_class=budget_class or spec["budget_class"],
-            wall_clock_ms=0,
-            token_counts={},
-            cost_estimate=0.0,
-        )
-        evaluator_pack_path = lane_dir / f"{trial_label}_evaluator_pack_v0.json"
-        _write_json(evaluator_pack_path, evaluator_pack)
-        shadow_refs["evaluator_pack"] = str(evaluator_pack_path.relative_to(ROOT))
-
         effective_config_issues = validate_effective_config(effective_config)
         execution_plan_issues = validate_execution_plan(execution_plan)
         effective_policy_issues = validate_effective_policy(effective_policy)
-        evaluator_pack_issues = validate_evaluator_pack(evaluator_pack)
 
     if lane_id in STAGE3_TARGETABLE_LANES:
         stage3_target = build_stage3_optimization_target(
@@ -382,6 +363,26 @@ def run_named_lane(
             "claim_tier": "t1",
         },
     }
+
+    if should_emit_shadow_artifacts(lane_id):
+        evaluator_pack = build_evaluator_pack(
+            spec=spec,
+            lane_id=lane_id,
+            candidate_id=candidate["candidate_id"],
+            trial_label=trial_label,
+            task_id=task_id or lane_cfg["task_id"],
+            budget_class=budget_class or spec["budget_class"],
+        )
+        evaluator_pack["budget_envelope"] = build_stage3_budget_envelope(
+            budget_class=budget_class or spec["budget_class"],
+            wall_clock_ms=wall_clock_ms,
+            token_counts=eval_record["token_counts"],
+            cost_estimate=eval_record["cost_estimate"],
+        )
+        evaluator_pack_path = lane_dir / f"{trial_label}_evaluator_pack_v0.json"
+        _write_json(evaluator_pack_path, evaluator_pack)
+        shadow_refs["evaluator_pack"] = str(evaluator_pack_path.relative_to(ROOT))
+        evaluator_pack_issues = validate_evaluator_pack(evaluator_pack)
 
     candidate_issues = validate_candidate_artifact(candidate)
     evaluation_issues = validate_evaluation_record(eval_record)

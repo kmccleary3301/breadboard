@@ -167,14 +167,37 @@ def build_stage3_budget_envelope(
     wall_clock_ms: int,
     token_counts: Mapping[str, Any] | None = None,
     cost_estimate: float | int = 0.0,
+    route_id: str | None = None,
+    provider_model: str | None = None,
+    comparison_class: str = "bounded_internal",
     replication_reserve_fraction: float = 0.2,
     control_reserve_fraction: float = 0.1,
 ) -> dict[str, Any]:
+    token_counts_payload = dict(token_counts or {})
+    prompt_tokens = int(token_counts_payload.get("prompt_tokens") or token_counts_payload.get("prompt") or 0)
+    completion_tokens = int(token_counts_payload.get("completion_tokens") or token_counts_payload.get("completion") or 0)
+    total_tokens = int(token_counts_payload.get("total_tokens") or (prompt_tokens + completion_tokens))
+    normalized_token_counts = {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+    }
+    normalized_cost = float(cost_estimate)
+    normalized_route = str(route_id).strip() if route_id else None
+    normalized_model = str(provider_model).strip() if provider_model else None
+    if normalized_route or normalized_model or total_tokens > 0:
+        cost_classification = "estimated_route_priced" if normalized_cost > 0 else "usage_present_zero_cost"
+    else:
+        cost_classification = "exact_local_zero" if normalized_cost == 0.0 else "estimated_local_nonzero"
     return {
         "budget_class": str(budget_class),
         "wall_clock_ms": int(wall_clock_ms),
-        "token_counts": dict(token_counts or {}),
-        "cost_estimate": float(cost_estimate),
+        "token_counts": normalized_token_counts,
+        "cost_estimate": normalized_cost,
+        "cost_classification": cost_classification,
+        "comparison_class": str(comparison_class),
+        "route_id": normalized_route,
+        "provider_model": normalized_model,
         "replication_reserve_fraction": float(replication_reserve_fraction),
         "control_reserve_fraction": float(control_reserve_fraction),
     }

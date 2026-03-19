@@ -42,6 +42,10 @@ def test_run_live_baselines_emits_six_lane_summary() -> None:
     assert harness_policy["topology_support"]["is_supported"] is True
     assert "mut.topology.single_to_pev_v1" in harness_policy["operator_eligibility"]["supported_operator_ids"]
     assert "mut.budget.class_a_to_class_b_v1" in harness_policy["operator_eligibility"]["prohibited_operator_ids"]
+    harness_evaluator_pack = json.loads(Path(rows["lane.harness"]["shadow_artifact_refs"]["evaluator_pack"]).read_text(encoding="utf-8"))
+    assert harness_evaluator_pack["budget_envelope"]["cost_classification"] == "exact_local_zero"
+    assert harness_evaluator_pack["budget_envelope"]["comparison_class"] == "bounded_internal"
+    assert harness_evaluator_pack["budget_envelope"]["wall_clock_ms"] == rows["lane.harness"]["wall_clock_ms"]
     assert rows["lane.repo_swe"]["shadow_artifact_refs"]["optimization_target"].endswith("_optimization_target_v1.json")
     repo_target = json.loads(Path(rows["lane.repo_swe"]["shadow_artifact_refs"]["optimization_target"]).read_text(encoding="utf-8"))
     assert repo_target["target_kind"] == "repo_patch_workspace"

@@ -212,3 +212,4 @@ Current tranche-1 slice reference:
 - `docs/darwin_stage3_optimize_object_mapping_2026-03-19.md`
 - `docs/darwin_stage3_tranche1_uptake_review_2026-03-19.md`
 - `docs/darwin_stage3_tranche1_uptake_gate_2026-03-19.md`
+- `docs/darwin_stage3_tranche1_budget_ledger_status_2026-03-19.md`

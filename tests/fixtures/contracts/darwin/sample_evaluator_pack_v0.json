@@ -29,5 +29,21 @@
   "claim_constraints": {
     "claim_target": "internal",
     "comparability_requirements": ["same_task_id", "same_budget_class", "same_lane_id"]
+  },
+  "budget_envelope": {
+    "budget_class": "budget.class_a_v0",
+    "wall_clock_ms": 1250,
+    "token_counts": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    },
+    "cost_estimate": 0.0,
+    "cost_classification": "exact_local_zero",
+    "comparison_class": "bounded_internal",
+    "route_id": null,
+    "provider_model": null,
+    "replication_reserve_fraction": 0.2,
+    "control_reserve_fraction": 0.1
   }
 }

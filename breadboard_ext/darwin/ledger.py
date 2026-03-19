@@ -455,6 +455,17 @@ def build_evolution_ledger() -> dict[str, Any]:
     return {
         "schema": "breadboard.darwin.evolution_ledger.v0",
         "generated_at": _now(),
+        "decision_truth_scope": {
+            "canonical_decision_types": ["promotion", "rollback", "transfer", "deprecation", "retained_baseline"],
+            "runtime_truth_owned_by": "breadboard_runtime",
+            "archive_is_derived": True,
+            "derived_view_ids": [
+                "archive_snapshot_v1",
+                "compute_normalized_view_v2",
+                "comparative_dossier_v1",
+                "external_safe_packet_v0",
+            ],
+        },
         "source_artifact_refs": {
             "live_summary_ref": str(LIVE_SUMMARY.relative_to(ROOT)),
             "search_summary_ref": str(SEARCH_SUMMARY.relative_to(ROOT)),

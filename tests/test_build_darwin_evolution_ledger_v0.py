@@ -23,6 +23,8 @@ def test_write_evolution_ledger_reconstructs_target_cases() -> None:
     summary = write_evolution_ledger()
     payload = json.loads(open(summary["out_path"], "r", encoding="utf-8").read())
     assert payload["archive_snapshot_is_derived"] is True
+    assert payload["decision_truth_scope"]["runtime_truth_owned_by"] == "breadboard_runtime"
+    assert "transfer" in payload["decision_truth_scope"]["canonical_decision_types"]
     assert len(payload["component_refs"]) >= 10
     assert {row["decision_type"] for row in payload["decision_records"]} >= {
         "promotion",

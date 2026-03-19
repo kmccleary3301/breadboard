@@ -70,10 +70,14 @@ def test_stage3_budget_envelope_contains_budget_and_reserves() -> None:
         wall_clock_ms=1250,
         token_counts={"prompt": 10, "completion": 4},
         cost_estimate=0.125,
+        route_id="openrouter/openai/gpt-5.4-mini",
+        provider_model="openai/gpt-5.4-mini-20260317",
     )
     assert envelope["budget_class"] == "budget.class_a"
     assert envelope["wall_clock_ms"] == 1250
-    assert envelope["token_counts"]["prompt"] == 10
+    assert envelope["token_counts"]["prompt_tokens"] == 10
+    assert envelope["token_counts"]["total_tokens"] == 14
+    assert envelope["cost_classification"] == "estimated_route_priced"
+    assert envelope["route_id"] == "openrouter/openai/gpt-5.4-mini"
     assert envelope["replication_reserve_fraction"] == 0.2
     assert envelope["control_reserve_fraction"] == 0.1
-
