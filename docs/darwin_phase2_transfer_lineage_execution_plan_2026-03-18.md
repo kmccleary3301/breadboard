@@ -20,6 +20,7 @@ This tranche is explicitly downstream of:
 - `docs/darwin_phase2_tranche1_execution_plan_2026-03-14.md`
 - `docs/darwin_phase2_compute_normalized_execution_plan_2026-03-18.md`
 - `docs/darwin_phase2_compute_normalized_tranche_decision_2026-03-18.md`
+- `docs/contracts/darwin/DARWIN_MODEL_ROUTING_POLICY_V0.md`
 
 ## 2. Why this tranche is next
 
@@ -50,6 +51,7 @@ The mission of this tranche is:
 - define richer multi-tranche lineage, promotion, rollback, and supersession policy
 - improve derived archive and decision views so they are easier to reason about
 - prove the work on a narrow lane set
+- use DARWIN-local model routing defaults if real inference enters this tranche
 
 ### Must not do
 
@@ -59,6 +61,7 @@ The mission of this tranche is:
 - no new lane expansion
 - no external-safe evidence packet work
 - no public or superiority-style transfer claims
+- no repo-wide provider-default retuning as part of this tranche
 
 ## 5. Primary proving shape
 
