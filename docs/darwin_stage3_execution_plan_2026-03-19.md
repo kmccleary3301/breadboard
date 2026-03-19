@@ -6,6 +6,7 @@ Scope: Stage-3 doctrine freeze, ADR freeze, and first implementation tranche pla
 References:
 - `docs/darwin_stage3_doctrine_2026-03-19.md`
 - `docs/darwin_stage3_adr_set_2026-03-19.md`
+- `docs/darwin_stage3_tranche1_slice_2026-03-19.md`
 - `docs_tmp/DARWIN/BB_DARWIN_PHASE_3_PLANNER_RESPONSE.md`
 
 ## 1. Purpose
@@ -201,3 +202,6 @@ That slice should focus on:
 - stronger evaluator closure
 - cost telemetry hooks
 
+Current tranche-1 slice reference:
+
+- `docs/darwin_stage3_tranche1_slice_2026-03-19.md`

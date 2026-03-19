@@ -50,3 +50,4 @@ Date: 2026-03-14
 - doctrine entrypoint: `docs/darwin_stage3_doctrine_2026-03-19.md`
 - execution entrypoint: `docs/darwin_stage3_execution_plan_2026-03-19.md`
 - ADR entrypoint: `docs/darwin_stage3_adr_set_2026-03-19.md`
+- tranche-1 slice entrypoint: `docs/darwin_stage3_tranche1_slice_2026-03-19.md`

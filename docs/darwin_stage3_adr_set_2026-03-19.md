@@ -5,6 +5,7 @@ Status: proposed ADR set for Stage 3
 References:
 - `docs/darwin_stage3_doctrine_2026-03-19.md`
 - `docs/darwin_stage3_execution_plan_2026-03-19.md`
+- `docs/darwin_stage3_tranche1_slice_2026-03-19.md`
 - `docs_tmp/DARWIN/BB_DARWIN_PHASE_3_PLANNER_RESPONSE.md`
 
 ## Purpose
@@ -341,4 +342,3 @@ Every Stage-3 tranche should require:
 
 - blast-radius rules are referenced by the execution plan
 - Stage-3 changes can be classified and gated consistently
-
