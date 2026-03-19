@@ -7,6 +7,9 @@ References:
 - `docs/darwin_stage3_doctrine_2026-03-19.md`
 - `docs/darwin_stage3_execution_plan_2026-03-19.md`
 - `docs/darwin_stage3_adr_set_2026-03-19.md`
+- `docs/darwin_stage3_optimize_object_mapping_2026-03-19.md`
+- `docs/darwin_stage3_tranche1_uptake_review_2026-03-19.md`
+- `docs/darwin_stage3_tranche1_uptake_gate_2026-03-19.md`
 
 ## 1. Purpose
 
@@ -301,4 +304,3 @@ That code tranche should stay narrowly focused on:
 - substrate uptake
 - limited `ExecutionPlan` consumption
 - evaluator/budget closure on the proving lanes
-

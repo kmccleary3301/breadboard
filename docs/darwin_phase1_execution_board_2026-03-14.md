@@ -51,3 +51,7 @@ Date: 2026-03-14
 - execution entrypoint: `docs/darwin_stage3_execution_plan_2026-03-19.md`
 - ADR entrypoint: `docs/darwin_stage3_adr_set_2026-03-19.md`
 - tranche-1 slice entrypoint: `docs/darwin_stage3_tranche1_slice_2026-03-19.md`
+- tranche-1 canary status: `docs/darwin_stage3_tranche1_canary_status_2026-03-19.md`
+- optimize-object mapping: `docs/darwin_stage3_optimize_object_mapping_2026-03-19.md`
+- uptake review: `docs/darwin_stage3_tranche1_uptake_review_2026-03-19.md`
+- uptake gate: `docs/darwin_stage3_tranche1_uptake_gate_2026-03-19.md`
