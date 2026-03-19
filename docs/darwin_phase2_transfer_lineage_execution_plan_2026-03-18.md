@@ -219,6 +219,18 @@ Success test:
 
 - the next move is clear and justified
 
+## 9. Current status
+
+Implemented in this tranche:
+
+- `docs/contracts/darwin/DARWIN_TRANSFER_FAMILY_POLICY_V0.md`
+- `docs/contracts/darwin/DARWIN_LINEAGE_POLICY_V0.md`
+- `scripts/build_darwin_transfer_family_view_v0.py`
+- `scripts/build_darwin_lineage_review_v0.py`
+- `scripts/build_darwin_transfer_lineage_proving_review_v0.py`
+- `docs/darwin_phase2_transfer_lineage_status_2026-03-19.md`
+- `docs/darwin_phase2_transfer_lineage_tranche_review_2026-03-19.md`
+
 ## 9. ADR candidates for this tranche
 
 ### ADR-TL-01 — Transfer-family boundary
@@ -274,3 +286,7 @@ This tranche should remain narrower than it may first appear.
 The goal is not to “solve transfer” in one pass.
 
 The goal is to make transfer and lineage policy disciplined enough that later evidence work has a sound substrate.
+
+Current tranche status reference:
+
+- `docs/darwin_phase2_transfer_lineage_status_2026-03-19.md`

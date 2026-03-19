@@ -24,7 +24,12 @@ def test_write_evolution_ledger_reconstructs_target_cases() -> None:
     payload = json.loads(open(summary["out_path"], "r", encoding="utf-8").read())
     assert payload["archive_snapshot_is_derived"] is True
     assert len(payload["component_refs"]) >= 10
-    assert {row["decision_type"] for row in payload["decision_records"]} >= {"promotion", "transfer", "deprecation"}
+    assert {row["decision_type"] for row in payload["decision_records"]} >= {
+        "promotion",
+        "transfer",
+        "deprecation",
+        "retained_baseline",
+    }
     assert {row["case_id"] for row in payload["reconstructed_cases"]} == {
         "case.promotion.lane.scheduling.v1",
         "case.transfer.harness_to_research.v1",

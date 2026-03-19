@@ -174,6 +174,7 @@ def build_component_refs() -> list[dict[str, Any]]:
 
 def build_decision_records(*, component_index: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     promotion = _load_json(PROMOTION_DECISIONS)
+    promotion_history = _load_json(PROMOTION_HISTORY)
     transfer = _load_json(TRANSFER_LEDGER)
     replay = _load_json(REPLAY_AUDIT)
     invalid = _load_json(INVALID_LEDGER)
@@ -181,6 +182,66 @@ def build_decision_records(*, component_index: dict[str, dict[str, Any]]) -> lis
     replay_rows = {row["candidate_id"]: row for row in replay.get("audits") or []}
 
     rows: list[dict[str, Any]] = []
+
+    harness_history = next(row for row in promotion_history.get("lanes") or [] if row["lane_id"] == "lane.harness")
+    harness_cycle = harness_history["cycle_records"][0]
+    rows.append(
+        {
+            "schema": "breadboard.darwin.decision_record.v0",
+            "decision_id": "decision.retain.lane.harness.cycle1.v1",
+            "decision_type": "retained_baseline",
+            "lane_id": "lane.harness",
+            "candidate_ids": [harness_cycle["baseline_candidate_id"], *harness_cycle["candidate_ids"]],
+            "component_ids": [
+                "mut.topology.single_to_pev_v1",
+                "mut.prompt.tighten_acceptance_v1",
+                "evaluator.lane.harness.shadow.v0",
+            ],
+            "evidence_refs": [
+                str(PROMOTION_HISTORY.relative_to(ROOT)),
+                str(ARCHIVE_SNAPSHOT.relative_to(ROOT)),
+            ],
+            "replay_refs": [],
+            "decision_basis": {
+                "reason_code": "score_saturated_retain_baseline",
+                "lineage_state": "retained_baseline",
+                "rollback_candidate_id": harness_cycle["rollback_candidate_id"],
+                "rejected_candidate_ids": harness_cycle["candidate_ids"],
+            },
+            "decided_at": _now(),
+        }
+    )
+
+    repo_swe_history = next(row for row in promotion_history.get("lanes") or [] if row["lane_id"] == "lane.repo_swe")
+    repo_swe_cycle = repo_swe_history["cycle_records"][0]
+    rows.append(
+        {
+            "schema": "breadboard.darwin.decision_record.v0",
+            "decision_id": "decision.retain.lane.repo_swe.cycle1.v1",
+            "decision_type": "retained_baseline",
+            "lane_id": "lane.repo_swe",
+            "candidate_ids": [repo_swe_cycle["baseline_candidate_id"], *repo_swe_cycle["candidate_ids"]],
+            "component_ids": [
+                "mut.topology.single_to_pev_v1",
+                "mut.budget.class_a_to_class_b_v1",
+                "evaluator.lane.repo_swe.shadow.v0",
+            ],
+            "evidence_refs": [
+                str(PROMOTION_HISTORY.relative_to(ROOT)),
+                str(INVALID_LEDGER.relative_to(ROOT)),
+                str(ARCHIVE_SNAPSHOT.relative_to(ROOT)),
+            ],
+            "replay_refs": [str(REPLAY_AUDIT.relative_to(ROOT))],
+            "decision_basis": {
+                "reason_code": "valid_baseline_retained_with_invalid_trial_pressure",
+                "lineage_state": "retained_baseline",
+                "rollback_candidate_id": repo_swe_cycle["rollback_candidate_id"],
+                "invalid_candidate_ids": ["cand.lane.repo_swe.mut.class_b.v1"],
+                "rejected_candidate_ids": repo_swe_cycle["candidate_ids"],
+            },
+            "decided_at": _now(),
+        }
+    )
 
     scheduling_cycle1 = next(
         row for row in promotion["decisions"] if row["lane_id"] == "lane.scheduling" and row["cycle_index"] == 1
@@ -203,8 +264,10 @@ def build_decision_records(*, component_index: dict[str, dict[str, Any]]) -> lis
             "replay_refs": [],
             "decision_basis": {
                 "reason_code": "positive_retention_gain",
+                "lineage_state": "promoted",
                 "improvement": scheduling_cycle1["improvement"],
                 "rollback_candidate_id": scheduling_cycle1["rollback_candidate_id"],
+                "supersedes_candidate_ids": [scheduling_cycle1["baseline_candidate_id"]],
             },
             "decided_at": _now(),
         }
@@ -232,8 +295,10 @@ def build_decision_records(*, component_index: dict[str, dict[str, Any]]) -> lis
             "replay_refs": [str(REPLAY_AUDIT.relative_to(ROOT))],
             "decision_basis": {
                 "reason_code": "positive_retention_gain",
+                "lineage_state": "promoted",
                 "improvement": scheduling_cycle2["improvement"],
                 "rollback_candidate_id": scheduling_cycle2["rollback_candidate_id"],
+                "supersedes_candidate_ids": [scheduling_cycle2["baseline_candidate_id"]],
             },
             "decided_at": _now(),
         }
@@ -257,8 +322,14 @@ def build_decision_records(*, component_index: dict[str, dict[str, Any]]) -> lis
             "replay_refs": [str(REPLAY_AUDIT.relative_to(ROOT))],
             "decision_basis": {
                 "reason_code": transfer_row["validity_reason"],
+                "lineage_state": "promoted",
+                "transfer_family": "cross_lane_prompt_family_transfer",
                 "promotion_status": transfer_row["promotion_status"],
                 "result": transfer_row["result"],
+                "result_class": "valid_improved",
+                "descriptive_only": True,
+                "replay_required": transfer_row["replay_required"],
+                "replay_stable": transfer_row["replay_stable"],
             },
             "decided_at": _now(),
         }
@@ -283,6 +354,8 @@ def build_decision_records(*, component_index: dict[str, dict[str, Any]]) -> lis
             "replay_refs": [],
             "decision_basis": {
                 "reason_code": invalid_rows["cand.lane.repo_swe.mut.class_b.v1"]["reason"],
+                "lineage_state": "deprecated",
+                "transfer_reuse_allowed": False,
             },
             "decided_at": _now(),
         }
@@ -304,7 +377,9 @@ def build_decision_records(*, component_index: dict[str, dict[str, Any]]) -> lis
             "replay_refs": [str(REPLAY_AUDIT.relative_to(ROOT))],
             "decision_basis": {
                 "reason_code": "no_improvement_over_baseline",
+                "lineage_state": "deprecated",
                 "replay_stable": replay_rows["cand.lane.repo_swe.mut.pev.v1"]["stable"],
+                "transfer_reuse_allowed": False,
             },
             "decided_at": _now(),
         }
@@ -360,6 +435,7 @@ def build_reconstructed_cases() -> list[dict[str, Any]]:
                 "evaluator.lane.repo_swe.shadow.v0",
             ],
             "decision_ids": [
+                "decision.retain.lane.repo_swe.cycle1.v1",
                 "decision.deprecate.lane.repo_swe.mut.class_b.v1",
                 "decision.deprecate.lane.repo_swe.mut.pev.v1",
             ],

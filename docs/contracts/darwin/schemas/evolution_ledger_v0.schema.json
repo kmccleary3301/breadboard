@@ -55,7 +55,7 @@
         "decision_id": { "type": "string", "minLength": 1 },
         "decision_type": {
           "type": "string",
-          "enum": ["promotion", "rollback", "transfer", "deprecation"]
+          "enum": ["promotion", "rollback", "transfer", "deprecation", "retained_baseline"]
         },
         "lane_id": { "type": "string", "minLength": 1 },
         "candidate_ids": {

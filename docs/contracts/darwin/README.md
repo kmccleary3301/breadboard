@@ -35,6 +35,8 @@ Phase-1 T0 freezes:
 - `DARWIN_COMPUTE_NORMALIZED_SCORECARD_V2.md`
 - `DARWIN_COST_ACCOUNTING_CLASSIFICATION_V0.md`
 - `DARWIN_MODEL_ROUTING_POLICY_V0.md`
+- `DARWIN_TRANSFER_FAMILY_POLICY_V0.md`
+- `DARWIN_LINEAGE_POLICY_V0.md`
 
 ### Machine-readable schemas
 
@@ -80,6 +82,11 @@ Phase-1 T0 freezes:
 - `scripts/build_darwin_compute_normalized_view_v2.py`
 - `scripts/build_darwin_compute_normalized_review_v0.py`
 - `scripts/build_darwin_compute_normalized_memo_v0.py`
+- `scripts/build_darwin_transfer_family_view_v0.py`
+- `scripts/build_darwin_lineage_review_v0.py`
+- `scripts/build_darwin_transfer_lineage_proving_review_v0.py`
+- `scripts/build_darwin_transfer_family_view_v0.py`
+- `scripts/build_darwin_lineage_review_v0.py`
 - `scripts/build_darwin_comparative_dossier_v1.py`
 - `scripts/emit_darwin_search_evidence_v1.py`
 - `scripts/run_darwin_phase1_replay_audit_v1.py`
