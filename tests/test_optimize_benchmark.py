@@ -16,6 +16,8 @@ from agentic_coder_prototype.optimize import (
     build_support_execution_benchmark_example_payload,
     build_support_execution_coding_overlay_composition_example,
     build_support_execution_coding_overlay_composition_example_payload,
+    build_support_execution_tool_guidance_coding_overlay_package_example,
+    build_support_execution_tool_guidance_coding_overlay_package_example_payload,
     build_support_execution_coding_overlay_verifier_follow_on_example,
     build_support_execution_coding_overlay_verifier_follow_on_example_payload,
     build_tool_guidance_coding_overlay_composition_example,
@@ -210,3 +212,23 @@ def test_support_execution_coding_overlay_verifier_follow_on_payload_round_trips
     assert comparison.parent_candidate_id == payload["composition_example"]["composed_candidate"]["candidate_id"]
     assert comparison.better_candidate_id == example["refined_candidate"].candidate_id
     assert comparison.metadata["experiment_kind"] == "verifier_augmented_composed_refinement"
+
+
+def test_support_execution_tool_guidance_coding_overlay_package_payload_round_trips() -> None:
+    example = build_support_execution_tool_guidance_coding_overlay_package_example()
+    payload = build_support_execution_tool_guidance_coding_overlay_package_example_payload()
+
+    manifest = BenchmarkRunManifest.from_dict(payload["manifest"])
+    comparison = CandidateComparisonResult.from_dict(payload["comparison_result"])
+    result = BenchmarkRunResult.from_dict(payload["benchmark_result"])
+
+    assert example["family_composition"].composition_id == "composition.support_execution_tool_guidance_coding_overlay.v4"
+    assert len(manifest.transfer_slices) == 3
+    assert manifest.hidden_hold_sample_ids() == ["sample.support_execution_tool_guidance_coding_overlay.hold.001"]
+    assert comparison.manifest_id == manifest.manifest_id
+    assert comparison.metadata["baseline_kind"] == "v3_composed_baseline"
+    assert result.promotion_readiness_summary["transfer_slice_ids"] == [
+        "environment.workspace_write_replay_safe",
+        "model_tier.nano_first_openai",
+        "package.codex_dossier.current",
+    ]

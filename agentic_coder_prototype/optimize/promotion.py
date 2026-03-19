@@ -12,6 +12,7 @@ from .suites import (
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
     TargetFamilyManifest,
+    TransferSliceManifest,
 )
 from .substrate import ArtifactRef, MaterializedCandidate, OptimizationTarget, SupportEnvelope
 
@@ -59,6 +60,18 @@ def _copy_text_list(values: Sequence[Any] | None) -> List[str]:
         if text:
             copied.append(text)
     return copied
+
+
+def _infer_transfer_slice_kind(slice_id: str) -> str:
+    prefix = str(slice_id).split(".", 1)[0]
+    return {
+        "package": "package",
+        "model_tier": "model_tier",
+        "provider_model": "provider_model",
+        "environment": "environment",
+        "tool_pack": "tool_pack",
+        "repo_family": "repo_family",
+    }.get(prefix, "package")
 
 
 def _envelope_expansion_details(
@@ -175,6 +188,8 @@ class PromotionEvidenceSummary:
     member_family_coverage: Dict[str, Any] = field(default_factory=dict)
     coupling_risk_summary: Dict[str, Any] = field(default_factory=dict)
     transfer_slice_ids: List[str] = field(default_factory=list)
+    transfer_slices: List[TransferSliceManifest] = field(default_factory=list)
+    model_tier_audit: Dict[str, Any] = field(default_factory=dict)
     review_class: Optional[str] = None
     objective_breakdown_status: Optional[str] = None
     review_required: bool = False
@@ -204,6 +219,15 @@ class PromotionEvidenceSummary:
         object.__setattr__(self, "member_family_coverage", _copy_mapping(self.member_family_coverage))
         object.__setattr__(self, "coupling_risk_summary", _copy_mapping(self.coupling_risk_summary))
         object.__setattr__(self, "transfer_slice_ids", _copy_text_list(self.transfer_slice_ids))
+        object.__setattr__(
+            self,
+            "transfer_slices",
+            [
+                item if isinstance(item, TransferSliceManifest) else TransferSliceManifest.from_dict(item)
+                for item in self.transfer_slices
+            ],
+        )
+        object.__setattr__(self, "model_tier_audit", _copy_mapping(self.model_tier_audit))
         object.__setattr__(self, "review_class", str(self.review_class).strip() if self.review_class else None)
         object.__setattr__(
             self,
@@ -254,6 +278,8 @@ class PromotionEvidenceSummary:
             "member_family_coverage": dict(self.member_family_coverage),
             "coupling_risk_summary": dict(self.coupling_risk_summary),
             "transfer_slice_ids": list(self.transfer_slice_ids),
+            "transfer_slices": [item.to_dict() for item in self.transfer_slices],
+            "model_tier_audit": dict(self.model_tier_audit),
             "review_class": self.review_class,
             "objective_breakdown_status": self.objective_breakdown_status,
             "review_required": self.review_required,
@@ -296,6 +322,8 @@ class PromotionEvidenceSummary:
             member_family_coverage=dict(data.get("member_family_coverage") or {}),
             coupling_risk_summary=dict(data.get("coupling_risk_summary") or {}),
             transfer_slice_ids=list(data.get("transfer_slice_ids") or []),
+            transfer_slices=[TransferSliceManifest.from_dict(item) for item in data.get("transfer_slices") or []],
+            model_tier_audit=dict(data.get("model_tier_audit") or {}),
             review_class=data.get("review_class"),
             objective_breakdown_status=data.get("objective_breakdown_status"),
             review_required=bool(data.get("review_required")),
@@ -734,18 +762,26 @@ def build_promotion_evidence_summary(
     composition_ids: List[str] = []
     member_family_ids: List[str] = []
     coupling_risk_summary: Dict[str, Any] = {}
-    transfer_slice_ids = _copy_text_list(
-        (
-            ((benchmark_manifest.metadata or {}).get("transfer_slice_ids"))
-            if benchmark_manifest
-            else []
-        )
-    )
+    transfer_slices: List[TransferSliceManifest] = []
     if benchmark_manifest is not None:
-        transfer_slice_ids.extend(
-            _copy_text_list((benchmark_manifest.promotion_relevance or {}).get("transfer_slice_ids"))
-        )
-    transfer_slice_ids = sorted(set(transfer_slice_ids))
+        transfer_slices.extend(list(benchmark_manifest.transfer_slices))
+        legacy_ids = _copy_text_list((benchmark_manifest.metadata or {}).get("transfer_slice_ids"))
+        legacy_ids.extend(_copy_text_list((benchmark_manifest.promotion_relevance or {}).get("transfer_slice_ids")))
+        seen_slice_ids = {item.slice_id for item in transfer_slices}
+        for slice_id in legacy_ids:
+            if slice_id in seen_slice_ids:
+                continue
+            transfer_slices.append(
+                TransferSliceManifest(
+                    slice_id=slice_id,
+                    slice_kind=_infer_transfer_slice_kind(slice_id),
+                    selector={"legacy_transfer_slice_id": slice_id},
+                    promotion_role="claim_supporting",
+                    visibility="comparison_visible",
+                    metadata={"legacy_bridge": True},
+                )
+            )
+    transfer_slice_ids = sorted({item.slice_id for item in transfer_slices})
     if family_composition is not None:
         composition_ids = [family_composition.composition_id]
         member_family_ids = list(family_composition.member_family_ids)
@@ -815,6 +851,14 @@ def build_promotion_evidence_summary(
         member_family_coverage=member_family_coverage,
         coupling_risk_summary=coupling_risk_summary,
         transfer_slice_ids=transfer_slice_ids,
+        transfer_slices=transfer_slices,
+        model_tier_audit=_copy_mapping(
+            (
+                ((benchmark_manifest.promotion_relevance or {}).get("mini_escalation_audit"))
+                if benchmark_manifest is not None
+                else {}
+            )
+        ),
         review_class=(
             target_family.review_class
             if target_family is not None

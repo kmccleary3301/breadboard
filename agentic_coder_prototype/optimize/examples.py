@@ -37,6 +37,7 @@ from .evaluation import EvaluationRecord
 from .promotion import (
     PromotionDecision,
     PromotionRecord,
+    build_promotion_evidence_summary,
     promote_candidate,
 )
 from .suites import (
@@ -46,6 +47,7 @@ from .suites import (
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
     TargetFamilyManifest,
+    TransferSliceManifest,
     VerifierAugmentedExperimentResult,
 )
 from .substrate import (
@@ -4743,6 +4745,742 @@ def build_support_execution_coding_overlay_verifier_follow_on_example_payload() 
         "comparison_result": example["comparison_result"].to_dict(),
         "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
         "verifier_experiment": example["verifier_experiment"].to_dict(),
+    }
+
+
+def build_support_execution_tool_guidance_coding_overlay_package_example() -> Dict[str, object]:
+    """Build the first V4 mixed-evidence triplet lane on the current dossier package."""
+
+    support_coding = build_support_execution_coding_overlay_composition_example()
+    tool = build_tool_guidance_benchmark_example()
+    support_target = support_coding["target"]
+    tool_target = tool["target"]
+    support_composed_candidate = support_coding["composed_candidate"]
+    tool_child_candidate = tool["child_candidate"]
+    assert isinstance(support_target, OptimizationTarget)
+    assert isinstance(tool_target, OptimizationTarget)
+    assert isinstance(support_composed_candidate, CandidateBundle)
+    assert isinstance(tool_child_candidate, CandidateBundle)
+    support_family = build_support_execution_benchmark_example()["target_family"]
+    coding_family = build_coding_overlay_benchmark_example()["target_family"]
+    tool_family = tool["target_family"]
+    assert isinstance(support_family, TargetFamilyManifest)
+    assert isinstance(coding_family, TargetFamilyManifest)
+    assert isinstance(tool_family, TargetFamilyManifest)
+
+    package_target = OptimizationTarget(
+        target_id="target.codex_dossier.support_execution_tool_guidance_coding_overlay.v4",
+        target_kind="agent_config_overlay_package",
+        baseline_artifact_refs=list(support_target.baseline_artifact_refs),
+        mutable_loci=list(support_target.mutable_loci) + list(tool_target.mutable_loci),
+        support_envelope=support_target.support_envelope,
+        invariants=list(support_target.invariants),
+        metadata={
+            "lane": "support_execution_tool_guidance_coding_overlay_package",
+            "phase": "v4",
+            "member_family_ids": [
+                support_family.family_id,
+                tool_family.family_id,
+                coding_family.family_id,
+            ],
+        },
+    )
+
+    support_dataset = build_support_execution_benchmark_example()["dataset"]
+    tool_dataset = tool["dataset"]
+    coding_dataset = build_coding_overlay_benchmark_example()["dataset"]
+    assert isinstance(support_dataset, OptimizationDataset)
+    assert isinstance(tool_dataset, OptimizationDataset)
+    assert isinstance(coding_dataset, OptimizationDataset)
+
+    dataset = OptimizationDataset(
+        dataset_id="dataset.support_execution_tool_guidance_coding_overlay.v4",
+        dataset_version="2026-03-19.v4",
+        samples=[
+            _clone_sample_for_composed_target(
+                support_dataset.samples[0],
+                sample_id="sample.support_execution_tool_guidance_coding_overlay.train.001",
+                target_id=package_target.target_id,
+                prompt_input=(
+                    "Improve support-sensitive planning, tool wording, and bounded editing guidance together "
+                    "without widening the package support envelope."
+                ),
+                expected_checks=[
+                    "support_envelope_preserved",
+                    "clarity_improved",
+                    "planning_quality_improved",
+                    "apply_patch_preserved",
+                ],
+            ),
+            _clone_sample_for_composed_target(
+                tool_dataset.samples[1],
+                sample_id="sample.support_execution_tool_guidance_coding_overlay.validation.001",
+                target_id=package_target.target_id,
+                prompt_input=(
+                    "Optimize tool clarity and replay-safe support-sensitive guidance on the same bounded dossier package."
+                ),
+                expected_checks=[
+                    "support_envelope_preserved",
+                    "clarity_improved",
+                    "replay_guidance_preserved",
+                    "tool_guidance_coherent",
+                ],
+            ),
+            _clone_sample_for_composed_target(
+                coding_dataset.samples[2],
+                sample_id="sample.support_execution_tool_guidance_coding_overlay.hold.001",
+                target_id=package_target.target_id,
+                prompt_input=(
+                    "Catch package candidates that sound better but loosen support honesty, replay-safe fallback, or bounded-edit doctrine."
+                ),
+                expected_checks=[
+                    "hidden_hold_package_guard",
+                    "support_envelope_preserved",
+                    "apply_patch_preserved",
+                    "support_sensitive_review_preserved",
+                ],
+            ),
+            _clone_sample_for_composed_target(
+                coding_dataset.samples[3],
+                sample_id="sample.support_execution_tool_guidance_coding_overlay.regression.001",
+                target_id=package_target.target_id,
+                prompt_input=(
+                    "Preserve narrow diffs, replay-safe behavior, and tool wording discipline on legacy repo tasks."
+                ),
+                expected_checks=[
+                    "regression_clean",
+                    "apply_patch_preserved",
+                    "support_envelope_preserved",
+                    "clarity_improved",
+                ],
+            ),
+        ],
+        rationale_catalog=(
+            list(support_dataset.rationale_catalog)
+            + list(tool_dataset.rationale_catalog)
+            + list(coding_dataset.rationale_catalog)
+        ),
+        metadata={"lane": "support_execution_tool_guidance_coding_overlay_package", "phase": "v4"},
+    )
+
+    baseline_candidate = CandidateBundle(
+        candidate_id="cand.support_execution_tool_guidance_coding_overlay.v3_baseline.001",
+        source_target_id=package_target.target_id,
+        applied_loci=[
+            "policy.support_claim_limited_actions",
+            "policy.execution_profile.selection",
+            "tool.render.exec_command",
+            "prompt.section.optimization_guidance",
+            "prompt.section.planning_policy",
+            "prompt.section.editing_policy",
+        ],
+        changes=[
+            *[
+                CandidateChange(
+                    locus_id=change.locus_id,
+                    value=change.value,
+                    rationale=change.rationale,
+                )
+                for change in support_composed_candidate.changes
+            ],
+            CandidateChange(
+                locus_id="tool.render.exec_command",
+                value={"description": tool_child_candidate.changes[0].value["description"]},
+                rationale="Carry forward the existing tool-guidance improvement as the V3 baseline extension.",
+            ),
+            CandidateChange(
+                locus_id="prompt.section.optimization_guidance",
+                value={"text": tool_child_candidate.changes[1].value["text"]},
+                rationale="Carry forward the atomic optimization-guidance wording as the V3 baseline extension.",
+            ),
+        ],
+        provenance={
+            "kind": "v3_composed_plus_atomic_tool_guidance",
+            "member_family_ids": [support_family.family_id, tool_family.family_id, coding_family.family_id],
+        },
+        metadata={"lane": "support_execution_tool_guidance_coding_overlay_package", "role": "v3_baseline"},
+    )
+
+    package_candidate = CandidateBundle(
+        candidate_id="cand.support_execution_tool_guidance_coding_overlay.package.001",
+        source_target_id=package_target.target_id,
+        applied_loci=list(baseline_candidate.applied_loci),
+        changes=[
+            CandidateChange(
+                locus_id="policy.support_claim_limited_actions",
+                value={
+                    "allowed_actions": ["checkpoint", "continue", "terminate"],
+                    "review_note": "support-sensitive changes require explicit bounded review",
+                },
+                rationale="Keep the support-action surface bounded and honest in the triplet package lane.",
+            ),
+            CandidateChange(
+                locus_id="policy.execution_profile.selection",
+                value={
+                    "preferred_profile": "workspace-write",
+                    "fallback_profile": "replay-safe",
+                    "require_replay_safe_lane": True,
+                },
+                rationale="Make replay-safe fallback explicit while preserving the declared environment envelope.",
+            ),
+            CandidateChange(
+                locus_id="tool.render.exec_command",
+                value={
+                    "description": (
+                        "Run shell commands inside the declared support envelope, then summarize results clearly "
+                        "without implying broader write scope or looser review burden."
+                    )
+                },
+                rationale="Compose tool clarity directly with support-sensitive and bounded-edit constraints.",
+            ),
+            CandidateChange(
+                locus_id="prompt.section.optimization_guidance",
+                value={
+                    "text": (
+                        "Prefer narrow overlays, preserve replay-safe behavior, and keep support, tool, and "
+                        "editing guidance aligned around bounded package changes."
+                    )
+                },
+                rationale="Raise package-level coherence across all three member families.",
+            ),
+            CandidateChange(
+                locus_id="prompt.section.planning_policy",
+                value={
+                    "text": (
+                        "Start with the smallest support-sensitive, replay-safe plan; treat tool wording and "
+                        "edit scope as coupled package surfaces."
+                    )
+                },
+                rationale="Make package-scoped planning quality depend on both support and tool context.",
+            ),
+            CandidateChange(
+                locus_id="prompt.section.editing_policy",
+                value={
+                    "text": (
+                        "Prefer apply_patch and narrow diffs; clearer tool guidance must not imply broader rewrites, "
+                        "looser support boundaries, or weaker review obligations."
+                    )
+                },
+                rationale="Make bounded-edit doctrine explicit under triplet composition.",
+            ),
+        ],
+        provenance={
+            "kind": "mixed_evidence_triplet_package_candidate",
+            "baseline_candidate_id": baseline_candidate.candidate_id,
+            "member_family_ids": [support_family.family_id, tool_family.family_id, coding_family.family_id],
+        },
+        metadata={"lane": "support_execution_tool_guidance_coding_overlay_package", "role": "package_triplet"},
+    )
+
+    transfer_slices = [
+        TransferSliceManifest(
+            slice_id="package.codex_dossier.current",
+            slice_kind="package",
+            selector={"artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml"},
+            promotion_role="required",
+            visibility="hidden_hold",
+            metadata={"lane": "support_execution_tool_guidance_coding_overlay_package"},
+        ),
+        TransferSliceManifest(
+            slice_id="model_tier.nano_first_openai",
+            slice_kind="model_tier",
+            selector={"default_model": "gpt-5.4-nano", "escalation_model": "gpt-5.4-mini"},
+            promotion_role="claim_supporting",
+            visibility="comparison_visible",
+            metadata={"lane": "support_execution_tool_guidance_coding_overlay_package"},
+        ),
+        TransferSliceManifest(
+            slice_id="environment.workspace_write_replay_safe",
+            slice_kind="environment",
+            selector={"environment_domain": "workspace-write/replay-safe"},
+            promotion_role="required",
+            visibility="comparison_visible",
+            metadata={"lane": "support_execution_tool_guidance_coding_overlay_package"},
+        ),
+    ]
+
+    evaluation_suite = EvaluationSuiteManifest(
+        suite_id="evalsuite.support_execution_tool_guidance_coding_overlay.v4",
+        suite_kind="mixed_evidence_package_triplet",
+        evaluator_stack=[
+            "support_execution_checker.v2",
+            "tool_guidance_checker.v2",
+            "coding_overlay_checker.v2",
+            "package_coherence_verifier.v1",
+        ],
+        split_visibility={
+            "train": "mutation_visible",
+            "validation": "comparison_visible",
+            "hold": "hidden_hold",
+            "regression": "comparison_visible",
+        },
+        stochasticity_class="deterministic",
+        rerun_policy={
+            "max_trials": 1,
+            "default_model": "gpt-5.4-nano",
+            "escalation_model": "gpt-5.4-mini",
+            "audit_escalations": True,
+        },
+        capture_requirements=[
+            "support_envelope_preserved",
+            "clarity_improved",
+            "planning_quality_improved",
+            "apply_patch_preserved",
+            "package_coherence_verified",
+        ],
+        signal_channels={
+            "executable_checks": {
+                "source_kind": "executable_check",
+                "authority": "primary",
+                "used_for": ["support_honesty", "execution_profile_fidelity", "diff_hygiene"],
+            },
+            "diagnostic_wrongness": {
+                "source_kind": "diagnostic_bundle",
+                "authority": "supporting",
+                "used_for": ["planning_quality", "tool_clarity"],
+            },
+            "semantic_judge": {
+                "source_kind": "model_judge",
+                "authority": "advisory",
+                "used_for": ["tool_clarity", "package_coherence"],
+            },
+            "review_gate": {
+                "source_kind": "review_gate",
+                "authority": "hard_gate",
+                "used_for": ["promotion_only"],
+            },
+        },
+        adjudication_requirements={
+            "requires_hidden_hold_review": True,
+            "requires_regression_coverage": True,
+            "model_policy": "nano_only",
+        },
+        comparison_protocol_defaults={
+            "protocol_id": "paired_v3_baseline_vs_package_triplet.v1",
+            "minimum_trial_count": 1,
+            "requires_hidden_hold_bucket": True,
+        },
+        artifact_requirements=["paired_eval_json", "benchmark_summary_json", "promotion_summary_json"],
+        metadata={
+            "lane": "support_execution_tool_guidance_coding_overlay_package",
+            "phase": "v4",
+            "model_policy": "nano_only",
+        },
+    )
+
+    objective_suite = ObjectiveSuiteManifest(
+        suite_id="objsuite.support_execution_tool_guidance_coding_overlay.v4",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_channels={
+            "support_honesty": {"direction": "maximize", "source_metric": "support_envelope_preserved", "promotion_sensitive": True},
+            "execution_profile_fidelity": {"direction": "maximize", "source_metric": "replay_guidance_preserved", "promotion_sensitive": True},
+            "tool_clarity": {"direction": "maximize", "source_metric": "clarity_improved", "promotion_sensitive": True},
+            "planning_quality": {"direction": "maximize", "source_metric": "planning_quality_improved", "promotion_sensitive": True},
+            "diff_hygiene": {"direction": "maximize", "source_metric": "apply_patch_preserved", "promotion_sensitive": True},
+            "package_coherence": {"direction": "maximize", "source_metric": "package_coherence_verified", "promotion_sensitive": True},
+            "mutation_cost": {"direction": "minimize", "source_metric": "cost_delta_usd", "promotion_sensitive": False},
+        },
+        penalties={
+            "support_scope_drift": {"kind": "hard_block", "reason": "package triplet may not imply broader support"},
+            "broad_rewrite_drift": {"kind": "hard_block", "reason": "package triplet may not weaken bounded-edit doctrine"},
+        },
+        aggregation_rules={"per_sample": "weighted_sum", "global": "mixed_evidence_package_first"},
+        uncertainty_policy={"stochasticity_class": "deterministic", "blocked_when_missing_hidden_hold": True},
+        blocked_channel_annotations={
+            "package_coherence": {"blocked_when_missing": ["semantic_judge", "review_gate"]},
+        },
+        channel_dependencies={
+            "package_coherence": ["support_honesty", "tool_clarity", "planning_quality"],
+        },
+        frontier_dimensions=[
+            "support_honesty",
+            "execution_profile_fidelity",
+            "tool_clarity",
+            "planning_quality",
+            "diff_hygiene",
+            "package_coherence",
+            "mutation_cost",
+        ],
+        promotion_annotations={"requires_support_sensitive_review": True, "review_class": "support_sensitive_package_triplet"},
+        visibility_annotations={"hidden_hold_channels": ["support_honesty", "tool_clarity", "package_coherence"]},
+        metadata={"lane": "support_execution_tool_guidance_coding_overlay_package", "phase": "v4"},
+    )
+
+    composition = FamilyCompositionManifest(
+        composition_id="composition.support_execution_tool_guidance_coding_overlay.v4",
+        member_family_ids=[support_family.family_id, tool_family.family_id, coding_family.family_id],
+        composition_kind="staged",
+        shared_target_scope="codex_dossier_package",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_suite_id=objective_suite.suite_id,
+        search_space_id="searchspace.support_execution_tool_guidance_coding_overlay.v4",
+        review_class="support_sensitive_package_triplet",
+        promotion_class="bounded_package_triplet_change",
+        applicability_scope={
+            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "tool_pack_profile": "codex-dossier-default",
+            "environment_profile": "workspace-write/replay-safe",
+        },
+        cross_family_invariants=[
+            "bounded-overlay-only",
+            "support-envelope-preserved",
+            "apply-patch-preserved",
+            "package-coherence-may-not-weaken-review-burden",
+        ],
+        runtime_context_requirements={
+            "requires_apply_patch_tool": True,
+            "requires_replay_safe_lane": True,
+            "model_policy": "nano_only",
+        },
+        metadata={"lane": "support_execution_tool_guidance_coding_overlay_package", "phase": "v4"},
+    )
+
+    search_space = SearchSpaceManifest(
+        search_space_id=composition.search_space_id,
+        composition_id=composition.composition_id,
+        allowed_loci=[locus.locus_id for locus in package_target.mutable_loci],
+        mutation_kinds_by_locus={
+            "policy.support_claim_limited_actions": ["replace"],
+            "policy.execution_profile.selection": ["replace"],
+            "tool.render.exec_command": ["replace"],
+            "prompt.section.optimization_guidance": ["replace"],
+            "prompt.section.planning_policy": ["replace"],
+            "prompt.section.editing_policy": ["replace"],
+        },
+        value_domains_by_locus={
+            "policy.support_claim_limited_actions": {"forbid_unbounded_new_actions": True},
+            "policy.execution_profile.selection": {"require_replay_safe_lane": True},
+            "tool.render.exec_command": {"must_preserve_support_boundaries": True, "must_preserve_bounded_edits": True},
+            "prompt.section.optimization_guidance": {"must_reference_bounded_package_changes": True},
+            "prompt.section.planning_policy": {"must_remain_small_plan_first": True},
+            "prompt.section.editing_policy": {"must_preserve_apply_patch": True, "must_discourage_broad_rewrites": True},
+        },
+        semantic_constraints={
+            "policy.support_claim_limited_actions": {"must_preserve_honesty": True},
+            "tool.render.exec_command": {"must_not_imply_new_tools": True},
+            "prompt.section.editing_policy": {"must_keep_blast_radius_bounded": True},
+        },
+        coupled_loci_groups={
+            "support_tool_editing": [
+                "policy.support_claim_limited_actions",
+                "tool.render.exec_command",
+                "prompt.section.editing_policy",
+            ],
+            "replay_guidance_planning": [
+                "policy.execution_profile.selection",
+                "prompt.section.optimization_guidance",
+                "prompt.section.planning_policy",
+            ],
+        },
+        stage_partitions={
+            "support_tool_seed": [
+                "policy.support_claim_limited_actions",
+                "policy.execution_profile.selection",
+                "tool.render.exec_command",
+            ],
+            "prompt_overlay_refine": [
+                "prompt.section.optimization_guidance",
+                "prompt.section.planning_policy",
+                "prompt.section.editing_policy",
+            ],
+        },
+        cross_family_constraints={
+            "support_tool_guidance_coding_overlay": {
+                "member_family_ids": [support_family.family_id, tool_family.family_id, coding_family.family_id],
+                "must_preserve_support_boundaries_if_tool_wording_changes": True,
+                "must_preserve_apply_patch_if_support_policy_changes": True,
+            }
+        },
+        invariants=[
+            "bounded-overlay-only",
+            "support-envelope-preserved",
+            "apply-patch-preserved",
+        ],
+        unsafe_expansion_notes=[
+            "Changing tool surfaces beyond exec_command wording is out of scope.",
+            "Adding new intervention actions is out of scope.",
+            "Whole-file rewrite guidance is out of scope.",
+        ],
+        metadata={"lane": "support_execution_tool_guidance_coding_overlay_package", "phase": "v4"},
+    )
+
+    manifest = BenchmarkRunManifest(
+        manifest_id="manifest.support_execution_tool_guidance_coding_overlay.v4",
+        benchmark_kind="mixed_evidence_package_triplet_pack",
+        target_id=package_target.target_id,
+        dataset_id=dataset.dataset_id,
+        dataset_version=dataset.dataset_version,
+        baseline_candidate_id=baseline_candidate.candidate_id,
+        environment_domain="workspace-write/replay-safe",
+        evaluator_stack=list(evaluation_suite.evaluator_stack),
+        comparison_protocol="paired_v3_baseline_vs_package_triplet.v1",
+        splits=[
+            BenchmarkSplit("train", ["sample.support_execution_tool_guidance_coding_overlay.train.001"], "mutation_visible"),
+            BenchmarkSplit("validation", ["sample.support_execution_tool_guidance_coding_overlay.validation.001"], "comparison_visible"),
+            BenchmarkSplit("hold", ["sample.support_execution_tool_guidance_coding_overlay.hold.001"], "hidden_hold"),
+            BenchmarkSplit("regression", ["sample.support_execution_tool_guidance_coding_overlay.regression.001"], "comparison_visible"),
+        ],
+        bucket_tags={
+            "sample.support_execution_tool_guidance_coding_overlay.train.001": ["support-sensitive", "tool-clarity", "small-edit"],
+            "sample.support_execution_tool_guidance_coding_overlay.validation.001": ["tool-guidance", "replay-safe"],
+            "sample.support_execution_tool_guidance_coding_overlay.hold.001": ["hidden-hold", "package-transfer"],
+            "sample.support_execution_tool_guidance_coding_overlay.regression.001": ["regression", "apply-patch"],
+        },
+        stochasticity_class="deterministic",
+        rerun_policy={"max_trials": 1, "default_model": "gpt-5.4-nano"},
+        contamination_notes=[
+            "Triplet lane A remains Nano-only in tranche 1.",
+            "Transfer slices are not visible to mutation-time search policy.",
+        ],
+        transfer_slices=transfer_slices,
+        promotion_relevance={
+            "requires_support_sensitive_review": True,
+            "review_class": composition.review_class,
+            "mini_escalation_audit": {
+                "default_model": "gpt-5.4-nano",
+                "escalation_model": "gpt-5.4-mini",
+                "triggered": False,
+                "trigger_reason": None,
+            },
+        },
+        artifact_refs=[ArtifactRef(ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
+        metadata={
+            "lane": "support_execution_tool_guidance_coding_overlay_package",
+            "phase": "v4",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "composition_id": composition.composition_id,
+            "search_space_id": search_space.search_space_id,
+            "model_policy": "nano_only",
+        },
+    )
+
+    comparison = build_paired_candidate_comparison(
+        manifest,
+        comparison_id="comparison.support_execution_tool_guidance_coding_overlay.v3_baseline_vs_package.001",
+        parent_candidate_id=baseline_candidate.candidate_id,
+        child_candidate_id=package_candidate.candidate_id,
+        outcome="win",
+        compared_sample_ids=manifest.sample_ids(),
+        held_out_sample_ids=manifest.hidden_hold_sample_ids(),
+        trial_count=1,
+        rationale=(
+            "The package-level triplet candidate improves support-sensitive planning, tool clarity, and bounded "
+            "editing coherence together without widening support scope or package blast radius."
+        ),
+        evidence_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/support_execution_tool_guidance_coding_overlay/package_triplet_eval.json",
+                media_type="application/json",
+            )
+        ],
+        metric_deltas={
+            "support_honesty_delta": 0.01,
+            "tool_clarity_delta": 0.12,
+            "planning_quality_delta": 0.09,
+            "package_coherence_delta": 0.15,
+            "held_out_package_guard": True,
+        },
+        better_candidate_id=package_candidate.candidate_id,
+        metadata={
+            "lane": "support_execution_tool_guidance_coding_overlay_package",
+            "composition_id": composition.composition_id,
+            "baseline_kind": "v3_composed_baseline",
+            "model_policy": "nano_only",
+        },
+    )
+
+    objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreakdown.support_execution_tool_guidance_coding_overlay.package.001",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=manifest.manifest_id,
+        candidate_id=package_candidate.candidate_id,
+        per_sample_components={
+            "sample.support_execution_tool_guidance_coding_overlay.train.001": {
+                "support_honesty": 1.0,
+                "execution_profile_fidelity": 1.0,
+                "tool_clarity": 0.88,
+                "planning_quality": 0.81,
+                "diff_hygiene": 0.96,
+                "package_coherence": 0.87,
+                "mutation_cost": 0.0,
+            },
+            "sample.support_execution_tool_guidance_coding_overlay.validation.001": {
+                "support_honesty": 0.98,
+                "execution_profile_fidelity": 0.97,
+                "tool_clarity": 0.9,
+                "planning_quality": 0.77,
+                "diff_hygiene": 0.95,
+                "package_coherence": 0.85,
+                "mutation_cost": 0.0,
+            },
+            "sample.support_execution_tool_guidance_coding_overlay.hold.001": {
+                "support_honesty": 1.0,
+                "execution_profile_fidelity": 1.0,
+                "tool_clarity": 0.84,
+                "planning_quality": 0.74,
+                "diff_hygiene": 1.0,
+                "package_coherence": 0.88,
+                "mutation_cost": 0.0,
+            },
+            "sample.support_execution_tool_guidance_coding_overlay.regression.001": {
+                "support_honesty": 0.99,
+                "execution_profile_fidelity": 0.99,
+                "tool_clarity": 0.83,
+                "planning_quality": 0.72,
+                "diff_hygiene": 1.0,
+                "package_coherence": 0.83,
+                "mutation_cost": 0.0,
+            },
+        },
+        per_bucket_components={
+            "support-sensitive": {"support_honesty": 1.0, "execution_profile_fidelity": 1.0},
+            "tool-guidance": {"tool_clarity": 0.9, "package_coherence": 0.85},
+            "apply-patch": {"planning_quality": 0.72, "diff_hygiene": 1.0},
+        },
+        aggregate_objectives={
+            "support_honesty": 0.9925,
+            "execution_profile_fidelity": 0.99,
+            "tool_clarity": 0.8625,
+            "planning_quality": 0.76,
+            "diff_hygiene": 0.9775,
+            "package_coherence": 0.8575,
+            "mutation_cost": 0.0,
+            "eligible_for_promotion": False,
+        },
+        uncertainty_summary={"stochasticity_class": "deterministic", "trial_count": 1, "blocked_for_uncertainty": False},
+        blocked_components={},
+        signal_status={
+            "executable_checks": {"status": "pass", "authority": "primary"},
+            "diagnostic_wrongness": {"status": "pass", "authority": "supporting"},
+            "semantic_judge": {"status": "pass", "authority": "advisory"},
+            "review_gate": {"status": "required", "authority": "hard_gate"},
+        },
+        slice_status={
+            "package.codex_dossier.current": {"status": "pass", "promotion_role": "required"},
+            "model_tier.nano_first_openai": {"status": "pass", "promotion_role": "claim_supporting"},
+            "environment.workspace_write_replay_safe": {"status": "pass", "promotion_role": "required"},
+        },
+        member_family_breakdowns={
+            support_family.family_id: {"support_honesty": 0.9925, "execution_profile_fidelity": 0.99},
+            tool_family.family_id: {"tool_clarity": 0.8625},
+            coding_family.family_id: {"planning_quality": 0.76, "diff_hygiene": 0.9775},
+        },
+        cross_family_blocked_components={},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/support_execution_tool_guidance_coding_overlay/objective_breakdown_package_triplet.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "support_execution_tool_guidance_coding_overlay_package",
+            "composition_id": composition.composition_id,
+            "search_space_id": search_space.search_space_id,
+            "model_policy": "nano_only",
+        },
+    )
+
+    promotion_summary = build_promotion_evidence_summary(
+        summary_id="summary.support_execution_tool_guidance_coding_overlay.package.001",
+        candidate_id=package_candidate.candidate_id,
+        benchmark_manifest=manifest,
+        comparison_results=[comparison],
+        evaluation_suite=evaluation_suite,
+        objective_suite=objective_suite,
+        family_composition=composition,
+        search_space=search_space,
+        objective_breakdown_results=[objective_breakdown],
+        review_required=True,
+        metadata={"lane": "support_execution_tool_guidance_coding_overlay_package", "phase": "v4"},
+    )
+
+    benchmark_result = BenchmarkRunResult(
+        run_id="benchmark_run.support_execution_tool_guidance_coding_overlay.v4",
+        manifest_id=manifest.manifest_id,
+        candidate_ids=[baseline_candidate.candidate_id, package_candidate.candidate_id],
+        comparison_results=[comparison],
+        aggregate_metrics={
+            "v3_baseline_score": 0.79,
+            "package_triplet_score": 0.89,
+            "mixed_evidence_complete": True,
+        },
+        bucket_outcomes={
+            "support-sensitive": {"outcome": "child_win"},
+            "tool-guidance": {"outcome": "child_win"},
+            "apply-patch": {"outcome": "child_win"},
+        },
+        variance_summary={
+            "trial_count": 1,
+            "stochasticity_class": "deterministic",
+            "default_model": "gpt-5.4-nano",
+            "mini_escalation_triggered": False,
+        },
+        cost_support_evidence_slices={
+            "support_honesty_delta": 0.01,
+            "apply_patch_preserved": True,
+            "model_policy": "nano_only",
+        },
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/support_execution_tool_guidance_coding_overlay/benchmark_summary.json",
+                media_type="application/json",
+            )
+        ],
+        promotion_readiness_summary={
+            "promotion_summary_id": promotion_summary.summary_id,
+            "eligible_for_promotion": False,
+            "requires_review": True,
+            "blocked_reason": "support-sensitive package triplet changes require explicit review",
+            "transfer_slice_ids": sorted(slice_item.slice_id for slice_item in transfer_slices),
+            "mini_escalation_audit": promotion_summary.model_tier_audit,
+        },
+        metadata={
+            "lane": "support_execution_tool_guidance_coding_overlay_package",
+            "phase": "v4",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "composition_id": composition.composition_id,
+            "search_space_id": search_space.search_space_id,
+            "model_policy": "nano_only",
+        },
+    )
+
+    return {
+        "target": package_target,
+        "dataset": dataset,
+        "baseline_candidate": baseline_candidate,
+        "package_candidate": package_candidate,
+        "evaluation_suite": evaluation_suite,
+        "objective_suite": objective_suite,
+        "family_composition": composition,
+        "search_space": search_space,
+        "transfer_slices": transfer_slices,
+        "manifest": manifest,
+        "comparison_result": comparison,
+        "objective_breakdown_result": objective_breakdown,
+        "promotion_summary": promotion_summary,
+        "benchmark_result": benchmark_result,
+    }
+
+
+def build_support_execution_tool_guidance_coding_overlay_package_example_payload() -> Dict[str, object]:
+    example = build_support_execution_tool_guidance_coding_overlay_package_example()
+    return {
+        "target": example["target"].to_dict(),
+        "dataset": example["dataset"].to_dict(),
+        "baseline_candidate": example["baseline_candidate"].to_dict(),
+        "package_candidate": example["package_candidate"].to_dict(),
+        "evaluation_suite": example["evaluation_suite"].to_dict(),
+        "objective_suite": example["objective_suite"].to_dict(),
+        "family_composition": example["family_composition"].to_dict(),
+        "search_space": example["search_space"].to_dict(),
+        "transfer_slices": [item.to_dict() for item in example["transfer_slices"]],
+        "manifest": example["manifest"].to_dict(),
+        "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
+        "promotion_summary": example["promotion_summary"].to_dict(),
+        "benchmark_result": example["benchmark_result"].to_dict(),
     }
 
 

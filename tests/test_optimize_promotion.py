@@ -20,6 +20,7 @@ from agentic_coder_prototype.optimize import (
     build_promotion_evidence_summary,
     build_support_execution_benchmark_example,
     build_support_execution_coding_overlay_composition_example,
+    build_support_execution_tool_guidance_coding_overlay_package_example,
     build_tool_guidance_benchmark_example,
     create_promotion_record,
     evaluate_family_promotion_gate,
@@ -416,6 +417,32 @@ def test_promote_candidate_keeps_review_sensitive_composed_lane_on_frontier() ->
         "model_tier.nano_first_openai",
         "package.codex_dossier.prompt_config",
     ]
+
+
+def test_build_promotion_evidence_summary_captures_typed_transfer_slices_and_model_tier_audit() -> None:
+    example = build_support_execution_tool_guidance_coding_overlay_package_example()
+    summary = build_promotion_evidence_summary(
+        summary_id="evidence_summary.support_execution_tool_guidance_coding_overlay.v4",
+        candidate_id=example["package_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        family_composition=example["family_composition"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[example["objective_breakdown_result"]],
+        review_required=True,
+        metadata={"lane": "support_execution_tool_guidance_coding_overlay_package"},
+    )
+
+    assert summary.transfer_slice_ids == [
+        "environment.workspace_write_replay_safe",
+        "model_tier.nano_first_openai",
+        "package.codex_dossier.current",
+    ]
+    assert [item.slice_kind for item in summary.transfer_slices] == ["package", "model_tier", "environment"]
+    assert summary.model_tier_audit["default_model"] == "gpt-5.4-nano"
+    assert summary.model_tier_audit["triggered"] is False
     assert summary.family_risk_summary["composed_family"] is True
 
 

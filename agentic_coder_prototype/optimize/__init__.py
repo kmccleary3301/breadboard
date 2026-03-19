@@ -74,6 +74,8 @@ from .examples import (
     build_support_execution_benchmark_example_payload,
     build_support_execution_coding_overlay_composition_example,
     build_support_execution_coding_overlay_composition_example_payload,
+    build_support_execution_tool_guidance_coding_overlay_package_example,
+    build_support_execution_tool_guidance_coding_overlay_package_example_payload,
     build_support_execution_coding_overlay_verifier_follow_on_example,
     build_support_execution_coding_overlay_verifier_follow_on_example_payload,
     build_tool_guidance_coding_overlay_composition_example,
@@ -110,6 +112,7 @@ from .suites import (
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
     TargetFamilyManifest,
+    TransferSliceManifest,
 )
 from .substrate import (
     ArtifactRef,
@@ -185,6 +188,7 @@ __all__ = [
     "SupportEnvelopeGateInput",
     "TargetFamilyManifest",
     "FamilyCompositionManifest",
+    "TransferSliceManifest",
     "ToolPackContext",
     "ToolRequirement",
     "TypedOverlayMutationPolicy",
@@ -213,6 +217,8 @@ __all__ = [
     "build_support_execution_benchmark_example_payload",
     "build_support_execution_coding_overlay_composition_example",
     "build_support_execution_coding_overlay_composition_example_payload",
+    "build_support_execution_tool_guidance_coding_overlay_package_example",
+    "build_support_execution_tool_guidance_coding_overlay_package_example_payload",
     "build_support_execution_coding_overlay_verifier_follow_on_example",
     "build_support_execution_coding_overlay_verifier_follow_on_example_payload",
     "build_tool_guidance_coding_overlay_composition_example",

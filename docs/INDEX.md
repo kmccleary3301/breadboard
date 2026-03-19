@@ -102,6 +102,7 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [concepts/optimization-v1-5-evidence-integration.md](concepts/optimization-v1-5-evidence-integration.md) | Optimization V1.5 benchmark manifests, candidate comparison results, benchmark run results, and the first support/execution evidence slice |
 | [concepts/optimization-v2-suites-and-target-families.md](concepts/optimization-v2-suites-and-target-families.md) | Optimization V2 evaluation suites, objective suites, target families, bounded search spaces, and the first live support/execution family binding |
 | [concepts/optimization-v3-composed-families-and-search-policy.md](concepts/optimization-v3-composed-families-and-search-policy.md) | Optimization V3 family composition, composition-aware search-space constraints, reward-boundary doctrine, and Nano/Mini cost policy |
+| [concepts/optimization-v4-mixed-evidence-package-lanes.md](concepts/optimization-v4-mixed-evidence-package-lanes.md) | Optimization V4 transfer slices, mixed-evidence suite extensions, package-scoped triplet lanes, and the reward-boundary doctrine after V3 |
 
 ### Governance and change policy
 

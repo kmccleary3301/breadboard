@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from .suites import TransferSliceManifest
 from .substrate import ArtifactRef
 
 
@@ -92,6 +93,7 @@ class BenchmarkRunManifest:
     stochasticity_class: str = "deterministic"
     rerun_policy: Dict[str, Any] = field(default_factory=dict)
     contamination_notes: List[str] = field(default_factory=list)
+    transfer_slices: List[TransferSliceManifest] = field(default_factory=list)
     promotion_relevance: Dict[str, Any] = field(default_factory=dict)
     artifact_refs: List[ArtifactRef] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -122,6 +124,14 @@ class BenchmarkRunManifest:
         object.__setattr__(self, "stochasticity_class", stochasticity)
         object.__setattr__(self, "rerun_policy", _copy_mapping(self.rerun_policy))
         object.__setattr__(self, "contamination_notes", _copy_text_list(self.contamination_notes))
+        object.__setattr__(
+            self,
+            "transfer_slices",
+            [
+                item if isinstance(item, TransferSliceManifest) else TransferSliceManifest.from_dict(item)
+                for item in self.transfer_slices
+            ],
+        )
         object.__setattr__(self, "promotion_relevance", _copy_mapping(self.promotion_relevance))
         object.__setattr__(
             self,
@@ -148,6 +158,9 @@ class BenchmarkRunManifest:
             raise ValueError("benchmark manifest must include a train split")
         if not any(split.visibility == "hidden_hold" for split in self.splits):
             raise ValueError("benchmark manifest must include at least one hidden_hold split")
+        transfer_slice_ids = [item.slice_id for item in self.transfer_slices]
+        if len(transfer_slice_ids) != len(set(transfer_slice_ids)):
+            raise ValueError("transfer_slices contains duplicate slice_id values")
 
         unknown_bucket_ids = sorted(set(self.bucket_tags) - set(all_sample_ids))
         if unknown_bucket_ids:
@@ -182,6 +195,7 @@ class BenchmarkRunManifest:
             "stochasticity_class": self.stochasticity_class,
             "rerun_policy": dict(self.rerun_policy),
             "contamination_notes": list(self.contamination_notes),
+            "transfer_slices": [item.to_dict() for item in self.transfer_slices],
             "promotion_relevance": dict(self.promotion_relevance),
             "artifact_refs": [item.to_dict() for item in self.artifact_refs],
             "metadata": dict(self.metadata),
@@ -204,6 +218,7 @@ class BenchmarkRunManifest:
             stochasticity_class=data.get("stochasticity_class") or "deterministic",
             rerun_policy=dict(data.get("rerun_policy") or {}),
             contamination_notes=list(data.get("contamination_notes") or []),
+            transfer_slices=[TransferSliceManifest.from_dict(item) for item in data.get("transfer_slices") or []],
             promotion_relevance=dict(data.get("promotion_relevance") or {}),
             artifact_refs=[ArtifactRef.from_dict(item) for item in data.get("artifact_refs") or []],
             metadata=dict(data.get("metadata") or {}),

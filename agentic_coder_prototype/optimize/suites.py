@@ -3,12 +3,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Sequence
 
-from .benchmark import ALLOWED_SPLIT_VISIBILITY, ALLOWED_STOCHASTICITY_CLASSES
 from .substrate import ArtifactRef
 
 
 ALLOWED_VERIFIER_EXPERIMENT_OUTCOMES = {"accepted", "rejected", "blocked", "inconclusive"}
 ALLOWED_COMPOSITION_KINDS = {"staged", "joint", "verifier_follow_on"}
+ALLOWED_SPLIT_VISIBILITY = {"mutation_visible", "comparison_visible", "hidden_hold"}
+ALLOWED_STOCHASTICITY_CLASSES = {"deterministic", "seeded_stochastic", "environment_volatile"}
+ALLOWED_TRANSFER_SLICE_KINDS = {
+    "package",
+    "model_tier",
+    "provider_model",
+    "environment",
+    "tool_pack",
+    "repo_family",
+}
+ALLOWED_TRANSFER_SLICE_PROMOTION_ROLES = {"required", "advisory", "claim_supporting"}
 
 
 def _require_text(value: Any, field_name: str) -> str:
@@ -48,6 +58,7 @@ class EvaluationSuiteManifest:
     stochasticity_class: str
     rerun_policy: Dict[str, Any] = field(default_factory=dict)
     capture_requirements: List[str] = field(default_factory=list)
+    signal_channels: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     adjudication_requirements: Dict[str, Any] = field(default_factory=dict)
     comparison_protocol_defaults: Dict[str, Any] = field(default_factory=dict)
     artifact_requirements: List[str] = field(default_factory=list)
@@ -68,6 +79,7 @@ class EvaluationSuiteManifest:
         object.__setattr__(self, "stochasticity_class", stochasticity_class)
         object.__setattr__(self, "rerun_policy", _copy_mapping(self.rerun_policy))
         object.__setattr__(self, "capture_requirements", _copy_text_list(self.capture_requirements))
+        object.__setattr__(self, "signal_channels", _copy_nested_mapping(self.signal_channels))
         object.__setattr__(self, "adjudication_requirements", _copy_mapping(self.adjudication_requirements))
         object.__setattr__(self, "comparison_protocol_defaults", _copy_mapping(self.comparison_protocol_defaults))
         object.__setattr__(self, "artifact_requirements", _copy_text_list(self.artifact_requirements))
@@ -91,6 +103,7 @@ class EvaluationSuiteManifest:
             "stochasticity_class": self.stochasticity_class,
             "rerun_policy": dict(self.rerun_policy),
             "capture_requirements": list(self.capture_requirements),
+            "signal_channels": {key: dict(value) for key, value in self.signal_channels.items()},
             "adjudication_requirements": dict(self.adjudication_requirements),
             "comparison_protocol_defaults": dict(self.comparison_protocol_defaults),
             "artifact_requirements": list(self.artifact_requirements),
@@ -107,6 +120,7 @@ class EvaluationSuiteManifest:
             stochasticity_class=data.get("stochasticity_class") or "",
             rerun_policy=dict(data.get("rerun_policy") or {}),
             capture_requirements=list(data.get("capture_requirements") or []),
+            signal_channels=_copy_nested_mapping(data.get("signal_channels") or {}),
             adjudication_requirements=dict(data.get("adjudication_requirements") or {}),
             comparison_protocol_defaults=dict(data.get("comparison_protocol_defaults") or {}),
             artifact_requirements=list(data.get("artifact_requirements") or []),
@@ -122,6 +136,8 @@ class ObjectiveSuiteManifest:
     penalties: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     aggregation_rules: Dict[str, Any] = field(default_factory=dict)
     uncertainty_policy: Dict[str, Any] = field(default_factory=dict)
+    blocked_channel_annotations: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    channel_dependencies: Dict[str, List[str]] = field(default_factory=dict)
     frontier_dimensions: List[str] = field(default_factory=list)
     promotion_annotations: Dict[str, Any] = field(default_factory=dict)
     visibility_annotations: Dict[str, Any] = field(default_factory=dict)
@@ -134,6 +150,8 @@ class ObjectiveSuiteManifest:
         object.__setattr__(self, "penalties", _copy_nested_mapping(self.penalties))
         object.__setattr__(self, "aggregation_rules", _copy_mapping(self.aggregation_rules))
         object.__setattr__(self, "uncertainty_policy", _copy_mapping(self.uncertainty_policy))
+        object.__setattr__(self, "blocked_channel_annotations", _copy_nested_mapping(self.blocked_channel_annotations))
+        object.__setattr__(self, "channel_dependencies", _copy_nested_text_mapping(self.channel_dependencies))
         object.__setattr__(self, "frontier_dimensions", _copy_text_list(self.frontier_dimensions))
         object.__setattr__(self, "promotion_annotations", _copy_mapping(self.promotion_annotations))
         object.__setattr__(self, "visibility_annotations", _copy_mapping(self.visibility_annotations))
@@ -148,6 +166,19 @@ class ObjectiveSuiteManifest:
             raise ValueError(
                 f"frontier_dimensions references unknown objective channels: {unknown_frontier_dimensions}"
             )
+        unknown_blocked_annotations = sorted(set(self.blocked_channel_annotations) - set(self.objective_channels))
+        if unknown_blocked_annotations:
+            raise ValueError(
+                f"blocked_channel_annotations references unknown objective channels: {unknown_blocked_annotations}"
+            )
+        for channel, dependencies in self.channel_dependencies.items():
+            if channel not in self.objective_channels:
+                raise ValueError(f"channel_dependencies references unknown objective channel: {channel}")
+            unknown_dependencies = sorted(set(dependencies) - set(self.objective_channels))
+            if unknown_dependencies:
+                raise ValueError(
+                    f"channel_dependencies for {channel} references unknown channels: {unknown_dependencies}"
+                )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -157,6 +188,10 @@ class ObjectiveSuiteManifest:
             "penalties": {key: dict(value) for key, value in self.penalties.items()},
             "aggregation_rules": dict(self.aggregation_rules),
             "uncertainty_policy": dict(self.uncertainty_policy),
+            "blocked_channel_annotations": {
+                key: dict(value) for key, value in self.blocked_channel_annotations.items()
+            },
+            "channel_dependencies": {key: list(value) for key, value in self.channel_dependencies.items()},
             "frontier_dimensions": list(self.frontier_dimensions),
             "promotion_annotations": dict(self.promotion_annotations),
             "visibility_annotations": dict(self.visibility_annotations),
@@ -172,6 +207,8 @@ class ObjectiveSuiteManifest:
             penalties=_copy_nested_mapping(data.get("penalties") or {}),
             aggregation_rules=dict(data.get("aggregation_rules") or {}),
             uncertainty_policy=dict(data.get("uncertainty_policy") or {}),
+            blocked_channel_annotations=_copy_nested_mapping(data.get("blocked_channel_annotations") or {}),
+            channel_dependencies=_copy_nested_text_mapping(data.get("channel_dependencies") or {}),
             frontier_dimensions=list(data.get("frontier_dimensions") or []),
             promotion_annotations=dict(data.get("promotion_annotations") or {}),
             visibility_annotations=dict(data.get("visibility_annotations") or {}),
@@ -190,6 +227,8 @@ class ObjectiveBreakdownResult:
     aggregate_objectives: Dict[str, Any]
     uncertainty_summary: Dict[str, Any] = field(default_factory=dict)
     blocked_components: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    signal_status: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    slice_status: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     member_family_breakdowns: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     cross_family_blocked_components: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     artifact_refs: List[ArtifactRef] = field(default_factory=list)
@@ -205,6 +244,8 @@ class ObjectiveBreakdownResult:
         object.__setattr__(self, "aggregate_objectives", _copy_mapping(self.aggregate_objectives))
         object.__setattr__(self, "uncertainty_summary", _copy_mapping(self.uncertainty_summary))
         object.__setattr__(self, "blocked_components", _copy_nested_mapping(self.blocked_components))
+        object.__setattr__(self, "signal_status", _copy_nested_mapping(self.signal_status))
+        object.__setattr__(self, "slice_status", _copy_nested_mapping(self.slice_status))
         object.__setattr__(self, "member_family_breakdowns", _copy_nested_mapping(self.member_family_breakdowns))
         object.__setattr__(
             self,
@@ -234,6 +275,8 @@ class ObjectiveBreakdownResult:
             "aggregate_objectives": dict(self.aggregate_objectives),
             "uncertainty_summary": dict(self.uncertainty_summary),
             "blocked_components": {key: dict(value) for key, value in self.blocked_components.items()},
+            "signal_status": {key: dict(value) for key, value in self.signal_status.items()},
+            "slice_status": {key: dict(value) for key, value in self.slice_status.items()},
             "member_family_breakdowns": {key: dict(value) for key, value in self.member_family_breakdowns.items()},
             "cross_family_blocked_components": {
                 key: dict(value) for key, value in self.cross_family_blocked_components.items()
@@ -254,6 +297,8 @@ class ObjectiveBreakdownResult:
             aggregate_objectives=dict(data.get("aggregate_objectives") or {}),
             uncertainty_summary=dict(data.get("uncertainty_summary") or {}),
             blocked_components=_copy_nested_mapping(data.get("blocked_components") or {}),
+            signal_status=_copy_nested_mapping(data.get("signal_status") or {}),
+            slice_status=_copy_nested_mapping(data.get("slice_status") or {}),
             member_family_breakdowns=_copy_nested_mapping(data.get("member_family_breakdowns") or {}),
             cross_family_blocked_components=_copy_nested_mapping(data.get("cross_family_blocked_components") or {}),
             artifact_refs=[ArtifactRef.from_dict(item) for item in data.get("artifact_refs") or []],
@@ -404,6 +449,58 @@ class FamilyCompositionManifest:
             applicability_scope=dict(data.get("applicability_scope") or {}),
             cross_family_invariants=list(data.get("cross_family_invariants") or []),
             runtime_context_requirements=dict(data.get("runtime_context_requirements") or {}),
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
+class TransferSliceManifest:
+    slice_id: str
+    slice_kind: str
+    selector: Dict[str, Any]
+    promotion_role: str
+    visibility: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "slice_id", _require_text(self.slice_id, "slice_id"))
+        slice_kind = _require_text(self.slice_kind, "slice_kind").lower()
+        if slice_kind not in ALLOWED_TRANSFER_SLICE_KINDS:
+            raise ValueError(f"slice_kind must be one of: {sorted(ALLOWED_TRANSFER_SLICE_KINDS)}")
+        promotion_role = _require_text(self.promotion_role, "promotion_role").lower()
+        if promotion_role not in ALLOWED_TRANSFER_SLICE_PROMOTION_ROLES:
+            raise ValueError(
+                f"promotion_role must be one of: {sorted(ALLOWED_TRANSFER_SLICE_PROMOTION_ROLES)}"
+            )
+        visibility = _require_text(self.visibility, "visibility").lower()
+        if visibility not in ALLOWED_SPLIT_VISIBILITY:
+            raise ValueError(f"visibility must be one of: {sorted(ALLOWED_SPLIT_VISIBILITY)}")
+        object.__setattr__(self, "slice_kind", slice_kind)
+        object.__setattr__(self, "selector", _copy_mapping(self.selector))
+        object.__setattr__(self, "promotion_role", promotion_role)
+        object.__setattr__(self, "visibility", visibility)
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+        if not self.selector:
+            raise ValueError("selector must contain at least one binding")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "slice_id": self.slice_id,
+            "slice_kind": self.slice_kind,
+            "selector": dict(self.selector),
+            "promotion_role": self.promotion_role,
+            "visibility": self.visibility,
+            "metadata": dict(self.metadata),
+        }
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "TransferSliceManifest":
+        return TransferSliceManifest(
+            slice_id=data.get("slice_id") or data.get("id") or "",
+            slice_kind=data.get("slice_kind") or "",
+            selector=dict(data.get("selector") or {}),
+            promotion_role=data.get("promotion_role") or "",
+            visibility=data.get("visibility") or "",
             metadata=dict(data.get("metadata") or {}),
         )
 

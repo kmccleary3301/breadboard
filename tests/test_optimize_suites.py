@@ -15,6 +15,8 @@ from agentic_coder_prototype.optimize import (
     build_support_execution_benchmark_example_payload,
     build_support_execution_coding_overlay_composition_example,
     build_support_execution_coding_overlay_composition_example_payload,
+    build_support_execution_tool_guidance_coding_overlay_package_example,
+    build_support_execution_tool_guidance_coding_overlay_package_example_payload,
     build_support_execution_coding_overlay_verifier_follow_on_example,
     build_support_execution_coding_overlay_verifier_follow_on_example_payload,
     build_tool_guidance_coding_overlay_composition_example,
@@ -26,7 +28,7 @@ from agentic_coder_prototype.optimize.examples import (
     build_coding_overlay_verifier_experiment_example,
     build_coding_overlay_verifier_experiment_example_payload,
 )
-from agentic_coder_prototype.optimize.suites import VerifierAugmentedExperimentResult
+from agentic_coder_prototype.optimize.suites import TransferSliceManifest, VerifierAugmentedExperimentResult
 
 
 def test_support_execution_v2_suite_family_artifacts_round_trip() -> None:
@@ -292,3 +294,42 @@ def test_composed_verifier_follow_on_stays_narrow_and_outside_darwin_ontology() 
         payload,
         {"campaign_id", "archive_id", "island_id", "genealogy_id", "reward_suite_id"},
     ) is False
+
+
+def test_transfer_slice_manifest_round_trip() -> None:
+    slice_manifest = TransferSliceManifest(
+        slice_id="package.codex_dossier.current",
+        slice_kind="package",
+        selector={"artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml"},
+        promotion_role="required",
+        visibility="hidden_hold",
+        metadata={"phase": "v4"},
+    )
+
+    round_tripped = TransferSliceManifest.from_dict(slice_manifest.to_dict())
+
+    assert round_tripped.slice_id == slice_manifest.slice_id
+    assert round_tripped.slice_kind == "package"
+    assert round_tripped.visibility == "hidden_hold"
+
+
+def test_support_execution_tool_guidance_coding_overlay_package_round_trip() -> None:
+    example = build_support_execution_tool_guidance_coding_overlay_package_example()
+    payload = build_support_execution_tool_guidance_coding_overlay_package_example_payload()
+
+    composition = FamilyCompositionManifest.from_dict(payload["family_composition"])
+    evaluation_suite = EvaluationSuiteManifest.from_dict(payload["evaluation_suite"])
+    objective_suite = ObjectiveSuiteManifest.from_dict(payload["objective_suite"])
+    search_space = SearchSpaceManifest.from_dict(payload["search_space"])
+    objective_breakdown = ObjectiveBreakdownResult.from_dict(payload["objective_breakdown_result"])
+    transfer_slices = [TransferSliceManifest.from_dict(item) for item in payload["transfer_slices"]]
+
+    assert composition.composition_id == "composition.support_execution_tool_guidance_coding_overlay.v4"
+    assert len(composition.member_family_ids) == 3
+    assert evaluation_suite.signal_channels["semantic_judge"]["source_kind"] == "model_judge"
+    assert "package_coherence" in objective_suite.channel_dependencies
+    assert search_space.composition_id == composition.composition_id
+    assert objective_breakdown.signal_status["review_gate"]["status"] == "required"
+    assert objective_breakdown.slice_status["package.codex_dossier.current"]["status"] == "pass"
+    assert [item.slice_kind for item in transfer_slices] == ["package", "model_tier", "environment"]
+    assert example["promotion_summary"].transfer_slice_ids == sorted(item.slice_id for item in transfer_slices)
