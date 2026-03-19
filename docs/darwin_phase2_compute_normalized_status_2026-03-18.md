@@ -17,6 +17,8 @@ Primary issue: `breadboard_repo_darwin_phase1_20260313-8xc`
 - proving review artifact now exists:
   - `artifacts/darwin/reviews/compute_normalized_review_v0.json`
   - `artifacts/darwin/reviews/compute_normalized_review_v0.md`
+- tranche review note now exists:
+  - `docs/darwin_phase2_compute_normalized_tranche_review_2026-03-18.md`
 
 ## What changed semantically
 
@@ -51,3 +53,8 @@ The new normalized view is also emitted across all current active lanes as a der
 - no new kernel-truth primitive
 - no runtime consumption of tranche-1 compiled artifacts
 - no broader transfer-family expansion in this slice
+
+## Current tranche decision read
+
+- continue the compute-normalized tranche
+- do not unlock broader transfer families yet

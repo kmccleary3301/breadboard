@@ -278,3 +278,4 @@ The point is to make comparative reasoning stronger before we expand transfer fa
 Current tranche status reference:
 
 - `docs/darwin_phase2_compute_normalized_status_2026-03-18.md`
+- `docs/darwin_phase2_compute_normalized_tranche_review_2026-03-18.md`
