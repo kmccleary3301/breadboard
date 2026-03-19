@@ -77,6 +77,29 @@ V4 adds:
 
 That makes package-level evidence inspectable without promoting search-time scalarization into the public surface.
 
+## Slice-aware promotion and generalization
+
+Once V4 has more than one real package lane, promotion cannot stay “package win therefore promote.”
+
+Promotion has to stay explicit about:
+
+- which typed transfer slices were actually covered
+- which slices were blocked or inconclusive
+- whether model-tier escalation happened
+- whether the package claim stayed inside the declared applicability scope
+- whether higher-risk wins include bounded member-family attribution
+
+This remains evidence-first, not reward-first:
+
+- slice status is public and inspectable
+- applicability scope is public and inspectable
+- promotion remains blocked when optimistic scope expansion appears
+- higher-risk package wins remain frontier-only unless attribution and slice coverage are real
+
+The key rule is simple:
+
+> a package-level win only applies where the declared transfer slices, package scope, and model-tier audit actually support it.
+
 ## Reward boundary
 
 BreadBoard still has two value-adjacent lanes:
@@ -112,6 +135,25 @@ This is the safest first package lane because it is:
 - still Nano-valid
 - rich enough to force package-level mixed evidence and transfer/applicability handling
 
+## Second V4 package lane
+
+The second V4 lane should stay equally bounded and move to a distinct E4 package rather than widening
+the first dossier lane indefinitely.
+
+The live proving target is OpenCode `1.2.17`, composed from:
+
+- one prompt-pack family
+- one bounded config family
+- one tool-guidance / tool-pack family
+
+This lane matters because it forces V4 to prove that mixed-evidence package optimization is not
+just a Codex-dossier trick. It also gives the repo a clean place to exercise:
+
+- typed package transfer slices
+- tool-pack-specific applicability claims
+- Nano-first experimentation with auditable Mini escalation
+- promotion evidence that stays explicit about package scope
+
 ## Cost policy
 
 V4 keeps the same doctrine:
@@ -122,7 +164,15 @@ V4 keeps the same doctrine:
 For tranche 1:
 
 - triplet lane A stays Nano-only
-- any Mini path must remain separate, auditable, and justified
+- triplet lane B may escalate to Mini only after Nano on ambiguous or close-margin evidence
+- any Mini path must remain explicit, auditable, and justified
+
+That means:
+
+- Nano remains the default search and comparison tier
+- Mini is an escalation path, not the default proving path
+- promotion evidence must record whether Mini was actually used
+- backend-private search traces may react to Mini audit, but public optimize truth does not become search-policy truth
 
 ## What stays private
 
@@ -135,7 +185,47 @@ The following remain private:
 - candidate scheduling
 - search-policy traces
 
+In the current V4 tranche, private search policy now includes:
+
+- transfer-slice-sensitive penalties
+- blocked and inconclusive slice handling
+- uncertainty penalties
+- auditable Nano→Mini escalation decisions
+- a private record of whether escalation changed the final stage winner
+
+All of that stays backend-private.
+
+The public optimize center remains:
+
+- evaluation suites
+- objective suites
+- transfer slices
+- comparison results
+- promotion evidence
+
 These can become more capable in V4, but they do not become public optimize truth.
+
+## Optional narrow follow-on
+
+The current V4 follow-on stays intentionally narrow.
+
+It reuses the existing `VerifierAugmentedExperimentResult` shape on the bounded OpenCode package
+lane instead of minting a second package-experiment ontology.
+
+The live follow-on:
+
+- starts from the existing `prompt + bounded config + tool-guidance/tool-pack` package candidate
+- applies one verifier-assisted refinement inside already-declared package loci
+- keeps transfer slices, package scope, and Nano-first policy explicit in metadata
+- remains backend-only and non-kernel
+
+This proves that package-scoped specialization can stay subordinate to:
+
+- the declared evaluation and objective suites
+- the declared family composition and search space
+- the declared transfer/applicability slices
+
+without reopening reward ontology, search-policy ontology, or DARWIN semantics.
 
 ## What V4 still does not do
 

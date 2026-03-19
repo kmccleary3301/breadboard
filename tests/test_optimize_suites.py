@@ -11,6 +11,10 @@ from agentic_coder_prototype.optimize import (
     TargetFamilyManifest,
     build_coding_overlay_benchmark_example,
     build_coding_overlay_benchmark_example_payload,
+    build_opencode_prompt_config_tool_guidance_package_example,
+    build_opencode_prompt_config_tool_guidance_package_example_payload,
+    build_opencode_prompt_config_tool_guidance_verifier_follow_on_example,
+    build_opencode_prompt_config_tool_guidance_verifier_follow_on_example_payload,
     build_support_execution_benchmark_example,
     build_support_execution_benchmark_example_payload,
     build_support_execution_coding_overlay_composition_example,
@@ -333,3 +337,73 @@ def test_support_execution_tool_guidance_coding_overlay_package_round_trip() -> 
     assert objective_breakdown.slice_status["package.codex_dossier.current"]["status"] == "pass"
     assert [item.slice_kind for item in transfer_slices] == ["package", "model_tier", "environment"]
     assert example["promotion_summary"].transfer_slice_ids == sorted(item.slice_id for item in transfer_slices)
+    assert example["promotion_summary"].attribution_summary["present"] is True
+
+
+def test_opencode_prompt_config_tool_guidance_package_round_trip() -> None:
+    example = build_opencode_prompt_config_tool_guidance_package_example()
+    payload = build_opencode_prompt_config_tool_guidance_package_example_payload()
+
+    composition = FamilyCompositionManifest.from_dict(payload["family_composition"])
+    evaluation_suite = EvaluationSuiteManifest.from_dict(payload["evaluation_suite"])
+    objective_suite = ObjectiveSuiteManifest.from_dict(payload["objective_suite"])
+    search_space = SearchSpaceManifest.from_dict(payload["search_space"])
+    objective_breakdown = ObjectiveBreakdownResult.from_dict(payload["objective_breakdown_result"])
+    transfer_slices = [TransferSliceManifest.from_dict(item) for item in payload["transfer_slices"]]
+
+    assert composition.composition_id == "composition.opencode_prompt_config_tool_guidance.v4"
+    assert len(composition.member_family_ids) == 3
+    assert evaluation_suite.rerun_policy["default_model"] == "gpt-5.4-nano"
+    assert evaluation_suite.rerun_policy["escalation_model"] == "gpt-5.4-mini"
+    assert evaluation_suite.signal_channels["model_tier_audit"]["source_kind"] == "model_policy_audit"
+    assert "package_transfer" in objective_suite.channel_dependencies
+    assert search_space.composition_id == composition.composition_id
+    assert search_space.stage_partitions["prompt_seed"] == [
+        "prompt.pack.base.system",
+        "prompt.pack.base.builder",
+    ]
+    assert objective_breakdown.slice_status["package.opencode_1_2_17.current"]["status"] == "pass"
+    assert objective_breakdown.signal_status["model_tier_audit"]["status"] == "audited_pass"
+    assert [item.slice_kind for item in transfer_slices] == [
+        "package",
+        "model_tier",
+        "tool_pack",
+        "provider_model",
+    ]
+    assert example["promotion_summary"].model_tier_audit["triggered"] is True
+    assert example["promotion_summary"].attribution_summary["present"] is True
+    assert payload["staged_result"]["metadata"]["search_policy_trace"][-1]["model_tier"] == "gpt-5.4-mini"
+
+
+def test_opencode_package_verifier_follow_on_round_trip() -> None:
+    example = build_opencode_prompt_config_tool_guidance_verifier_follow_on_example()
+    payload = build_opencode_prompt_config_tool_guidance_verifier_follow_on_example_payload()
+
+    verifier_experiment = VerifierAugmentedExperimentResult.from_dict(payload["verifier_experiment"])
+    composition = FamilyCompositionManifest.from_dict(payload["package_example"]["family_composition"])
+    transfer_slices = [TransferSliceManifest.from_dict(item) for item in payload["package_example"]["transfer_slices"]]
+
+    assert verifier_experiment.experiment_kind == "verifier_augmented_package_refinement"
+    assert verifier_experiment.evaluation_suite_id == payload["package_example"]["evaluation_suite"]["suite_id"]
+    assert verifier_experiment.objective_suite_id == payload["package_example"]["objective_suite"]["suite_id"]
+    assert verifier_experiment.search_space_id == payload["package_example"]["search_space"]["search_space_id"]
+    assert verifier_experiment.baseline_candidate_id == payload["package_example"]["package_candidate"]["candidate_id"]
+    assert verifier_experiment.refined_candidate_id == example["refined_candidate"].candidate_id
+    assert verifier_experiment.metadata["composition_id"] == composition.composition_id
+    assert verifier_experiment.metadata["specialization_scope"] == "prompt_pack_and_bounded_config_members_inside_package_lane"
+    assert verifier_experiment.metadata["transfer_slice_ids"] == [item.slice_id for item in transfer_slices]
+
+
+def test_opencode_package_verifier_follow_on_stays_narrow_and_outside_darwin_ontology() -> None:
+    payload = build_opencode_prompt_config_tool_guidance_verifier_follow_on_example_payload()
+    verifier_payload = payload["verifier_experiment"]
+
+    assert verifier_payload["metadata"]["non_kernel"] is True
+    assert verifier_payload["metadata"]["darwin_boundary"] == "not_reopened"
+    assert verifier_payload["metadata"]["model_policy"] == "nano_first"
+    assert payload["package_example"]["evaluation_suite"]["rerun_policy"]["default_model"] == "gpt-5.4-nano"
+    assert payload["package_example"]["evaluation_suite"]["rerun_policy"]["escalation_model"] == "gpt-5.4-mini"
+    assert _payload_contains_forbidden_key(
+        payload,
+        {"campaign_id", "archive_id", "island_id", "genealogy_id", "reward_suite_id"},
+    ) is False

@@ -16,8 +16,10 @@ from agentic_coder_prototype.optimize import (
     build_codex_dossier_backend_example,
     build_codex_dossier_backend_example_payload,
     build_codex_dossier_evaluation_example,
+    build_opencode_prompt_config_tool_guidance_package_example,
     build_support_execution_benchmark_example,
     build_support_execution_coding_overlay_composition_example,
+    build_support_execution_tool_guidance_coding_overlay_package_example,
     run_single_locus_greedy_backend,
     validate_bounded_candidate,
 )
@@ -267,3 +269,29 @@ def test_staged_optimizer_private_model_escalation_is_auditable() -> None:
     assert trace[-1]["escalation_triggered"] is True
     assert trace[-1]["escalation_reason"] == "ambiguous_hidden_hold"
     assert trace[-1]["model_tier"] == "gpt-5.4-mini"
+
+
+def test_staged_optimizer_records_private_search_policy_trace_for_v4_codex_package_lane() -> None:
+    example = build_support_execution_tool_guidance_coding_overlay_package_example()
+
+    result = run_staged_optimizer(example["staged_request"])
+    trace = result.metadata["search_policy_trace"]
+
+    assert trace
+    assert trace[-1]["metadata"]["transfer_slice_status"]["package.codex_dossier.current"]["status"] == "pass"
+    assert "model_tier_audit_active" not in trace[-1]["metadata"]["slice_penalties"]
+    assert trace[-1]["metadata"]["unfair_mixed_tier_backend_comparison_forbidden"] is False
+
+
+def test_staged_optimizer_records_private_search_policy_trace_for_v4_opencode_package_lane() -> None:
+    example = build_opencode_prompt_config_tool_guidance_package_example()
+
+    result = run_staged_optimizer(example["staged_request"])
+    trace = result.metadata["search_policy_trace"]
+
+    assert trace
+    assert trace[-1]["escalation_triggered"] is True
+    assert trace[-1]["escalation_reason"] == "ambiguous_hidden_hold"
+    assert trace[-1]["metadata"]["transfer_slice_status"]["model_tier.nano_first_openai"]["status"] == "audited_pass"
+    assert "model_tier_audit_active" in trace[-1]["metadata"]["slice_penalties"]
+    assert "hidden_hold_deferred" in trace[-1]["blocked_components"]

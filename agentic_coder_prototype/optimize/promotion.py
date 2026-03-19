@@ -62,6 +62,10 @@ def _copy_text_list(values: Sequence[Any] | None) -> List[str]:
     return copied
 
 
+def _copy_nested_mapping(value: Mapping[str, Mapping[str, Any]] | None) -> Dict[str, Dict[str, Any]]:
+    return {str(key): dict(inner) for key, inner in (value or {}).items()}
+
+
 def _infer_transfer_slice_kind(slice_id: str) -> str:
     prefix = str(slice_id).split(".", 1)[0]
     return {
@@ -189,7 +193,12 @@ class PromotionEvidenceSummary:
     coupling_risk_summary: Dict[str, Any] = field(default_factory=dict)
     transfer_slice_ids: List[str] = field(default_factory=list)
     transfer_slices: List[TransferSliceManifest] = field(default_factory=list)
+    transfer_slice_status: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    blocked_transfer_slice_ids: List[str] = field(default_factory=list)
+    inconclusive_transfer_slice_ids: List[str] = field(default_factory=list)
     model_tier_audit: Dict[str, Any] = field(default_factory=dict)
+    attribution_summary: Dict[str, Any] = field(default_factory=dict)
+    optimistic_scope_blocked: bool = False
     review_class: Optional[str] = None
     objective_breakdown_status: Optional[str] = None
     review_required: bool = False
@@ -227,7 +236,12 @@ class PromotionEvidenceSummary:
                 for item in self.transfer_slices
             ],
         )
+        object.__setattr__(self, "transfer_slice_status", _copy_nested_mapping(self.transfer_slice_status))
+        object.__setattr__(self, "blocked_transfer_slice_ids", _copy_text_list(self.blocked_transfer_slice_ids))
+        object.__setattr__(self, "inconclusive_transfer_slice_ids", _copy_text_list(self.inconclusive_transfer_slice_ids))
         object.__setattr__(self, "model_tier_audit", _copy_mapping(self.model_tier_audit))
+        object.__setattr__(self, "attribution_summary", _copy_mapping(self.attribution_summary))
+        object.__setattr__(self, "optimistic_scope_blocked", bool(self.optimistic_scope_blocked))
         object.__setattr__(self, "review_class", str(self.review_class).strip() if self.review_class else None)
         object.__setattr__(
             self,
@@ -279,7 +293,12 @@ class PromotionEvidenceSummary:
             "coupling_risk_summary": dict(self.coupling_risk_summary),
             "transfer_slice_ids": list(self.transfer_slice_ids),
             "transfer_slices": [item.to_dict() for item in self.transfer_slices],
+            "transfer_slice_status": {key: dict(value) for key, value in self.transfer_slice_status.items()},
+            "blocked_transfer_slice_ids": list(self.blocked_transfer_slice_ids),
+            "inconclusive_transfer_slice_ids": list(self.inconclusive_transfer_slice_ids),
             "model_tier_audit": dict(self.model_tier_audit),
+            "attribution_summary": dict(self.attribution_summary),
+            "optimistic_scope_blocked": self.optimistic_scope_blocked,
             "review_class": self.review_class,
             "objective_breakdown_status": self.objective_breakdown_status,
             "review_required": self.review_required,
@@ -323,7 +342,12 @@ class PromotionEvidenceSummary:
             coupling_risk_summary=dict(data.get("coupling_risk_summary") or {}),
             transfer_slice_ids=list(data.get("transfer_slice_ids") or []),
             transfer_slices=[TransferSliceManifest.from_dict(item) for item in data.get("transfer_slices") or []],
+            transfer_slice_status=_copy_nested_mapping(data.get("transfer_slice_status") or {}),
+            blocked_transfer_slice_ids=list(data.get("blocked_transfer_slice_ids") or []),
+            inconclusive_transfer_slice_ids=list(data.get("inconclusive_transfer_slice_ids") or []),
             model_tier_audit=dict(data.get("model_tier_audit") or {}),
+            attribution_summary=dict(data.get("attribution_summary") or {}),
+            optimistic_scope_blocked=bool(data.get("optimistic_scope_blocked")),
             review_class=data.get("review_class"),
             objective_breakdown_status=data.get("objective_breakdown_status"),
             review_required=bool(data.get("review_required")),
@@ -717,6 +741,41 @@ def build_promotion_evidence_summary(
     review_required: bool = False,
     metadata: Optional[Mapping[str, Any]] = None,
 ) -> PromotionEvidenceSummary:
+    def _merge_slice_status(
+        results: Sequence[ObjectiveBreakdownResult],
+    ) -> Dict[str, Dict[str, Any]]:
+        priority = {
+            "blocked": 4,
+            "missing": 3,
+            "inconclusive": 2,
+            "audited_pass": 1,
+            "pass": 0,
+        }
+        merged: Dict[str, Dict[str, Any]] = {}
+        for result in results:
+            for slice_id, payload in result.slice_status.items():
+                status_payload = dict(payload)
+                status_value = str(status_payload.get("status") or "missing").strip().lower()
+                current = merged.get(slice_id)
+                if current is None or priority.get(status_value, 0) >= priority.get(str(current.get("status") or "").lower(), 0):
+                    merged[slice_id] = status_payload
+        return merged
+
+    def _attribution_required(
+        *,
+        results: Sequence[ObjectiveBreakdownResult],
+        member_family_ids: Sequence[str],
+        model_tier_audit: Mapping[str, Any],
+    ) -> bool:
+        if bool(model_tier_audit.get("triggered")):
+            return True
+        if len(member_family_ids) > 2:
+            return True
+        for result in results:
+            if "package_transfer" in result.aggregate_objectives or "package_coherence" in result.aggregate_objectives:
+                return True
+        return False
+
     comparison_results = list(comparison_results or [])
     objective_breakdown_results = list(objective_breakdown_results or [])
     manifests = [benchmark_manifest] if benchmark_manifest is not None else []
@@ -782,6 +841,33 @@ def build_promotion_evidence_summary(
                 )
             )
     transfer_slice_ids = sorted({item.slice_id for item in transfer_slices})
+    transfer_slice_status = _merge_slice_status(objective_breakdown_results)
+    for slice_item in transfer_slices:
+        transfer_slice_status.setdefault(
+            slice_item.slice_id,
+            {
+                "status": "missing",
+                "promotion_role": slice_item.promotion_role,
+                "slice_kind": slice_item.slice_kind,
+            },
+        )
+    blocked_transfer_slice_ids = sorted(
+        slice_id
+        for slice_id, payload in transfer_slice_status.items()
+        if str(payload.get("status") or "").lower() == "blocked"
+    )
+    inconclusive_transfer_slice_ids = sorted(
+        slice_id
+        for slice_id, payload in transfer_slice_status.items()
+        if str(payload.get("status") or "").lower() == "inconclusive"
+    )
+    model_tier_audit = _copy_mapping(
+        (
+            ((benchmark_manifest.promotion_relevance or {}).get("mini_escalation_audit"))
+            if benchmark_manifest is not None
+            else {}
+        )
+    )
     if family_composition is not None:
         composition_ids = [family_composition.composition_id]
         member_family_ids = list(family_composition.member_family_ids)
@@ -804,6 +890,25 @@ def build_promotion_evidence_summary(
             "stage_partitions": sorted((search_space.stage_partitions or {}).keys()) if search_space is not None else [],
             "review_class": family_composition.review_class,
         }
+    attribution_payload: Dict[str, Any] = {}
+    for result in objective_breakdown_results:
+        if result.metadata.get("member_family_attribution"):
+            attribution_payload = dict(result.metadata.get("member_family_attribution") or {})
+            break
+    attribution_required = _attribution_required(
+        results=objective_breakdown_results,
+        member_family_ids=member_family_ids,
+        model_tier_audit=model_tier_audit,
+    )
+    attribution_summary = {
+        "required": attribution_required,
+        "present": bool(attribution_payload),
+        "member_family_attribution": attribution_payload,
+    }
+    optimistic_scope_blocked = any(
+        str(result.metadata.get("applicability_scope_status") or "bounded").strip().lower() == "expanded"
+        for result in objective_breakdown_results
+    )
     return PromotionEvidenceSummary(
         summary_id=summary_id,
         candidate_id=candidate_id,
@@ -833,6 +938,10 @@ def build_promotion_evidence_summary(
             "member_family_ids": member_family_ids,
             "target_ids": list(target_family.target_ids) if target_family is not None else [],
             "mutable_loci_ids": list(target_family.mutable_loci_ids) if target_family is not None else [],
+            "composition_scope": dict(family_composition.applicability_scope) if family_composition is not None else {},
+            "transfer_slice_selectors": {
+                item.slice_id: dict(item.selector) for item in transfer_slices
+            },
         },
         family_risk_summary={
             "review_required": review_required,
@@ -847,18 +956,20 @@ def build_promotion_evidence_summary(
             "hidden_hold_covered": bool(held_out_sample_ids),
             "regression_covered": bool(regression_ids and compared_regression_ids),
             "transfer_slice_ids": transfer_slice_ids,
+            "optimistic_scope_blocked": optimistic_scope_blocked,
+            "attribution_required": attribution_required,
+            "attribution_present": bool(attribution_payload),
         },
         member_family_coverage=member_family_coverage,
         coupling_risk_summary=coupling_risk_summary,
         transfer_slice_ids=transfer_slice_ids,
         transfer_slices=transfer_slices,
-        model_tier_audit=_copy_mapping(
-            (
-                ((benchmark_manifest.promotion_relevance or {}).get("mini_escalation_audit"))
-                if benchmark_manifest is not None
-                else {}
-            )
-        ),
+        transfer_slice_status=transfer_slice_status,
+        blocked_transfer_slice_ids=blocked_transfer_slice_ids,
+        inconclusive_transfer_slice_ids=inconclusive_transfer_slice_ids,
+        model_tier_audit=model_tier_audit,
+        attribution_summary=attribution_summary,
+        optimistic_scope_blocked=optimistic_scope_blocked,
         review_class=(
             target_family.review_class
             if target_family is not None
@@ -1206,6 +1317,26 @@ def evaluate_family_promotion_gate(
     search_space: Optional[SearchSpaceManifest] = None,
     objective_breakdown_results: Sequence[ObjectiveBreakdownResult] | None = None,
 ) -> GateResult:
+    def _merge_slice_status(
+        results: Sequence[ObjectiveBreakdownResult],
+    ) -> Dict[str, Dict[str, Any]]:
+        priority = {
+            "blocked": 4,
+            "missing": 3,
+            "inconclusive": 2,
+            "audited_pass": 1,
+            "pass": 0,
+        }
+        merged: Dict[str, Dict[str, Any]] = {}
+        for result in results:
+            for slice_id, payload in result.slice_status.items():
+                status_payload = dict(payload)
+                status_value = str(status_payload.get("status") or "missing").strip().lower()
+                current = merged.get(slice_id)
+                if current is None or priority.get(status_value, 0) >= priority.get(str(current.get("status") or "").lower(), 0):
+                    merged[slice_id] = status_payload
+        return merged
+
     objective_breakdown_results = list(objective_breakdown_results or [])
     evidence_refs: List[ArtifactRef] = []
     for comparison in comparison_results:
@@ -1323,6 +1454,20 @@ def evaluate_family_promotion_gate(
             evidence_refs=evidence_refs,
             metadata=metadata,
         )
+    if any(
+        str(result.metadata.get("applicability_scope_status") or "bounded").strip().lower() == "expanded"
+        for result in candidate_breakdowns
+    ):
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="fail",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="family-level applicability scope expanded beyond the declared package or slice boundary",
+            evidence_refs=evidence_refs,
+            metadata={**metadata, "applicability_scope_status": "expanded"},
+        )
     if family_composition is not None:
         covered_member_ids = {
             family_id
@@ -1342,6 +1487,83 @@ def evaluate_family_promotion_gate(
                 evidence_refs=evidence_refs,
                 metadata=metadata,
             )
+        mini_audit = _copy_mapping((benchmark_manifest.promotion_relevance or {}).get("mini_escalation_audit"))
+        attribution_required = bool(mini_audit.get("triggered")) or len(family_composition.member_family_ids) > 2 or any(
+            "package_transfer" in result.aggregate_objectives or "package_coherence" in result.aggregate_objectives
+            for result in candidate_breakdowns
+        )
+        attribution_payload: Optional[Mapping[str, Any]] = None
+        for result in candidate_breakdowns:
+            if result.metadata.get("member_family_attribution"):
+                attribution_payload = result.metadata.get("member_family_attribution")
+                break
+        metadata["attribution_required"] = attribution_required
+        metadata["attribution_present"] = bool(attribution_payload)
+        if attribution_required and not attribution_payload:
+            return GateResult(
+                gate_id=f"gate.family_promotion.{candidate_id}",
+                gate_kind="family_promotion",
+                status="insufficient_evidence",
+                target_id=target.target_id,
+                candidate_id=candidate_id,
+                reason="family composition promotion requires explicit member-family attribution for higher-risk wins",
+                evidence_refs=evidence_refs,
+                metadata=metadata,
+            )
+    slice_status = _merge_slice_status(candidate_breakdowns)
+    required_transfer_slices = [
+        item for item in benchmark_manifest.transfer_slices if item.promotion_role == "required"
+    ]
+    missing_required_slice_ids = [
+        item.slice_id for item in required_transfer_slices if item.slice_id not in slice_status
+    ]
+    blocked_slice_ids = [
+        slice_id
+        for slice_id, payload in slice_status.items()
+        if str(payload.get("status") or "").lower() == "blocked"
+    ]
+    inconclusive_slice_ids = [
+        slice_id
+        for slice_id, payload in slice_status.items()
+        if str(payload.get("status") or "").lower() == "inconclusive"
+    ]
+    metadata["required_transfer_slice_ids"] = [item.slice_id for item in required_transfer_slices]
+    metadata["blocked_transfer_slice_ids"] = blocked_slice_ids
+    metadata["inconclusive_transfer_slice_ids"] = inconclusive_slice_ids
+    if missing_required_slice_ids:
+        metadata["missing_required_transfer_slice_ids"] = missing_required_slice_ids
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="family-level promotion requires explicit required transfer-slice coverage",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if blocked_slice_ids:
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="family-level promotion is blocked on one or more required transfer slices",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if inconclusive_slice_ids:
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="family-level promotion remains inconclusive on one or more transfer slices",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
     candidate_comparisons = [item for item in comparison_results if item.child_candidate_id == candidate_id]
     compared_ids = {
         sample_id

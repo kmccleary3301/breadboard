@@ -3104,6 +3104,59 @@ def _clone_sample_for_composed_target(
     return OptimizationSample.from_dict(payload)
 
 
+def _clone_sample_for_package_target(
+    sample: OptimizationSample,
+    *,
+    sample_id: str,
+    target_id: str,
+    prompt_input: str,
+    expected_checks: List[str],
+    tool_pack_profile: str,
+    required_tools: List[str],
+    environment_profile: str,
+    model_policy: str,
+) -> OptimizationSample:
+    payload = sample.to_dict()
+    payload["sample_id"] = sample_id
+    payload["target_id"] = target_id
+    payload["prompt_input"] = prompt_input
+    payload["expected_checks"] = expected_checks
+    payload["bound_tool_requirements"] = list(required_tools)
+    payload["service_contexts"] = []
+    payload["mcp_context"] = None
+
+    environment_requirements = dict(payload.get("environment_requirements") or {})
+    environment_requirements["workspace_mode"] = environment_profile
+    environment_requirements["tool_pack_profile"] = tool_pack_profile
+    payload["environment_requirements"] = environment_requirements
+
+    if payload.get("environment_selector"):
+        payload["environment_selector"] = {
+            **dict(payload["environment_selector"]),
+            "environment_kind": environment_profile,
+            "profile": environment_profile,
+            "required_capabilities": [environment_profile, "replay-safe"],
+        }
+    if payload.get("tool_pack_context"):
+        payload["tool_pack_context"] = {
+            **dict(payload["tool_pack_context"]),
+            "pack_id": f"toolpack.{sample_id}",
+            "profile": tool_pack_profile,
+            "required_tools": [{"tool_name": tool_name} for tool_name in required_tools],
+            "metadata": {
+                **dict(payload["tool_pack_context"].get("metadata") or {}),
+                "package_lane": True,
+                "model_policy": model_policy,
+            },
+        }
+    payload["metadata"] = {
+        **dict(payload.get("metadata") or {}),
+        "tool_pack_profile": tool_pack_profile,
+        "model_policy": model_policy,
+    }
+    return OptimizationSample.from_dict(payload)
+
+
 def build_tool_guidance_coding_overlay_composition_example() -> Dict[str, object]:
     """Build the first low-risk V3 composed-family lane over the Codex dossier package."""
 
@@ -4972,6 +5025,29 @@ def build_support_execution_tool_guidance_coding_overlay_package_example() -> Di
         metadata={"lane": "support_execution_tool_guidance_coding_overlay_package", "role": "package_triplet"},
     )
 
+    baseline_materialized = materialize_candidate(
+        package_target,
+        baseline_candidate,
+        effective_artifact={
+            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "overlay": {"package_role": "v3_baseline_extension"},
+        },
+        effective_tool_surface={"tools": ["exec_command", "apply_patch", "spawn_agent"], "exposed_count": 3},
+        evaluation_input_compatibility={"replay": True, "schema": 4},
+        metadata={"lane": "support_execution_tool_guidance_coding_overlay_package", "role": "v3_baseline"},
+    )
+    package_materialized = materialize_candidate(
+        package_target,
+        package_candidate,
+        effective_artifact={
+            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "overlay": {"package_role": "mixed_evidence_triplet"},
+        },
+        effective_tool_surface={"tools": ["exec_command", "apply_patch", "spawn_agent"], "exposed_count": 3},
+        evaluation_input_compatibility={"replay": True, "schema": 4},
+        metadata={"lane": "support_execution_tool_guidance_coding_overlay_package", "role": "package_triplet"},
+    )
+
     transfer_slices = [
         TransferSliceManifest(
             slice_id="package.codex_dossier.current",
@@ -5378,6 +5454,18 @@ def build_support_execution_tool_guidance_coding_overlay_package_example() -> Di
             "composition_id": composition.composition_id,
             "search_space_id": search_space.search_space_id,
             "model_policy": "nano_only",
+            "applicability_scope_status": "bounded",
+            "member_family_attribution": {
+                "family.support_execution.v2": {
+                    "status": "present",
+                    "drivers": ["support_honesty", "execution_profile_fidelity"],
+                },
+                "family.tool_guidance.v2": {"status": "present", "drivers": ["tool_clarity"]},
+                "family.coding_overlay.v2": {
+                    "status": "present",
+                    "drivers": ["planning_quality", "diff_hygiene", "package_coherence"],
+                },
+            },
         },
     )
 
@@ -5446,11 +5534,44 @@ def build_support_execution_tool_guidance_coding_overlay_package_example() -> Di
         },
     )
 
+    staged_request = _build_backend_request_for_package_example(
+        {
+            "target": package_target,
+            "dataset": dataset,
+            "baseline_candidate": baseline_candidate,
+            "baseline_materialized_candidate": baseline_materialized,
+        },
+        request_id="backend_request.support_execution_tool_guidance_coding_overlay.v4",
+        evaluation_id="eval.backend.support_execution_tool_guidance_coding_overlay.v4",
+        evaluator_id="mixed_evidence_package_triplet_checker.v4",
+        wrongness_class="correctness.result_mismatch",
+        likely_repair_locus="prompt.section.optimization_guidance",
+    )
+    staged_optimizer_request = StagedOptimizerRequest(
+        request_id="staged_request.support_execution_tool_guidance_coding_overlay.v4",
+        backend_request=staged_request,
+        evaluation_suite=evaluation_suite,
+        objective_suite=objective_suite,
+        search_space=search_space,
+        family_composition=composition,
+        metadata={
+            "lane": "support_execution_tool_guidance_coding_overlay_package",
+            "phase": "v4",
+            "search_policy_signal": "",
+            "transfer_slice_status": objective_breakdown.slice_status,
+            "model_tier_audit": promotion_summary.model_tier_audit,
+            "optimistic_scope_blocked": False,
+        },
+    )
+    staged_result = run_staged_optimizer(staged_optimizer_request)
+
     return {
         "target": package_target,
         "dataset": dataset,
         "baseline_candidate": baseline_candidate,
         "package_candidate": package_candidate,
+        "baseline_materialized_candidate": baseline_materialized,
+        "package_materialized_candidate": package_materialized,
         "evaluation_suite": evaluation_suite,
         "objective_suite": objective_suite,
         "family_composition": composition,
@@ -5461,6 +5582,8 @@ def build_support_execution_tool_guidance_coding_overlay_package_example() -> Di
         "objective_breakdown_result": objective_breakdown,
         "promotion_summary": promotion_summary,
         "benchmark_result": benchmark_result,
+        "staged_request": staged_optimizer_request,
+        "staged_result": staged_result,
     }
 
 
@@ -5471,6 +5594,8 @@ def build_support_execution_tool_guidance_coding_overlay_package_example_payload
         "dataset": example["dataset"].to_dict(),
         "baseline_candidate": example["baseline_candidate"].to_dict(),
         "package_candidate": example["package_candidate"].to_dict(),
+        "baseline_materialized_candidate": example["baseline_materialized_candidate"].to_dict(),
+        "package_materialized_candidate": example["package_materialized_candidate"].to_dict(),
         "evaluation_suite": example["evaluation_suite"].to_dict(),
         "objective_suite": example["objective_suite"].to_dict(),
         "family_composition": example["family_composition"].to_dict(),
@@ -5481,6 +5606,1309 @@ def build_support_execution_tool_guidance_coding_overlay_package_example_payload
         "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
         "promotion_summary": example["promotion_summary"].to_dict(),
         "benchmark_result": example["benchmark_result"].to_dict(),
+        "staged_request": example["staged_request"].to_dict(),
+        "staged_result": example["staged_result"].to_dict(),
+    }
+
+
+def build_opencode_prompt_config_tool_guidance_package_example() -> Dict[str, object]:
+    """Build the second V4 mixed-evidence package lane on the OpenCode 1.2.17 dossier."""
+
+    tool_example = build_tool_guidance_benchmark_example()
+    coding_example = build_coding_overlay_benchmark_example()
+    tool_target = tool_example["target"]
+    assert isinstance(tool_target, OptimizationTarget)
+
+    package_target = OptimizationTarget(
+        target_id="target.opencode_prompt_config_tool_guidance.v4",
+        target_kind="agent_config_overlay_package",
+        baseline_artifact_refs=[
+            ArtifactRef(
+                ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                media_type="text/yaml",
+                metadata={"surface": "public_dossier", "package": "opencode_1_2_17"},
+            )
+        ],
+        mutable_loci=[
+            MutableLocus(
+                locus_id="prompt.pack.base.system",
+                locus_kind="prompt_pack_section",
+                selector="prompts.packs.base.system",
+                artifact_ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                mutation_kind="replace",
+                constraints={"must_preserve_single_system_envelope": True},
+            ),
+            MutableLocus(
+                locus_id="prompt.pack.base.builder",
+                locus_kind="prompt_pack_section",
+                selector="prompts.packs.base.builder",
+                artifact_ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                mutation_kind="replace",
+                constraints={"must_preserve_plan_build_shape": True},
+            ),
+            MutableLocus(
+                locus_id="guardrails.diff_policy.patch_splitting",
+                locus_kind="bounded_config_policy",
+                selector="enhanced_tools.diff_policy.patch_splitting",
+                artifact_ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                mutation_kind="replace",
+                constraints={"must_preserve_single_file_patch_boundary": True},
+            ),
+            MutableLocus(
+                locus_id="guardrails.validation.read_before_edit",
+                locus_kind="bounded_config_policy",
+                selector="enhanced_tools.validation.rule_config.read_before_edit",
+                artifact_ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                mutation_kind="replace",
+                constraints={"must_preserve_read_before_edit_signal": True},
+            ),
+            MutableLocus(
+                locus_id="tool.registry.include",
+                locus_kind="tool_pack_policy",
+                selector="tools.registry.include",
+                artifact_ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                mutation_kind="replace",
+                constraints={"must_remain_bounded_visible_tool_surface": True},
+            ),
+            MutableLocus(
+                locus_id="provider_tools.responses_use_developer_role",
+                locus_kind="tool_pack_policy",
+                selector="provider_tools.responses_use_developer_role",
+                artifact_ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                mutation_kind="replace",
+                constraints={"must_preserve_responses_native_posture": True},
+            ),
+        ],
+        support_envelope=SupportEnvelope(
+            tools=["read_file", "list_dir", "bash", "write"],
+            execution_profiles=["workspace-write", "replay-safe"],
+            environments=["workspace-write"],
+            providers=["openai"],
+            models=["gpt-5.4-nano", "gpt-5.4-mini"],
+            assumptions={
+                "use_native_responses": True,
+                "tool_pack_profile": "opencode-native-responses",
+                "nano_default": True,
+                "mini_requires_audit": True,
+                "package_scope": "opencode_1_2_17",
+            },
+        ),
+        invariants=[
+            OptimizationInvariant(
+                invariant_id="bounded-overlay-only",
+                description="candidate may only modify declared package loci",
+            ),
+            OptimizationInvariant(
+                invariant_id="native-responses-posture-preserved",
+                description="candidate may not weaken the OpenCode native Responses posture",
+            ),
+            OptimizationInvariant(
+                invariant_id="single-file-patch-boundary-preserved",
+                description="candidate may not weaken the single-file patch splitting policy",
+            ),
+        ],
+        metadata={
+            "lane": "opencode_prompt_config_tool_guidance_package",
+            "phase": "v4",
+            "package": "opencode_1_2_17",
+            "member_family_ids": [
+                "family.opencode_prompt_pack.v4",
+                "family.opencode_bounded_config.v4",
+                "family.opencode_tool_guidance_pack.v4",
+            ],
+        },
+    )
+
+    tool_dataset = tool_example["dataset"]
+    coding_dataset = coding_example["dataset"]
+    assert isinstance(tool_dataset, OptimizationDataset)
+    assert isinstance(coding_dataset, OptimizationDataset)
+
+    dataset = OptimizationDataset(
+        dataset_id="dataset.opencode_prompt_config_tool_guidance.v4",
+        dataset_version="2026-03-19.v4",
+        samples=[
+            _clone_sample_for_package_target(
+                tool_dataset.samples[0],
+                sample_id="sample.opencode_prompt_config_tool_guidance.train.001",
+                target_id=package_target.target_id,
+                prompt_input=(
+                    "Improve the OpenCode prompt pack, bounded config, and visible tool-pack guidance together "
+                    "without weakening the native Responses posture or patch boundaries."
+                ),
+                expected_checks=[
+                    "prompt_pack_coherence",
+                    "bounded_config_preserved",
+                    "tool_pack_clarity_improved",
+                    "native_responses_posture_preserved",
+                ],
+                tool_pack_profile="opencode-native-responses",
+                required_tools=["read_file", "list_dir", "bash", "write"],
+                environment_profile="workspace-write",
+                model_policy="nano_first",
+            ),
+            _clone_sample_for_package_target(
+                tool_dataset.samples[1],
+                sample_id="sample.opencode_prompt_config_tool_guidance.validation.001",
+                target_id=package_target.target_id,
+                prompt_input=(
+                    "Refine OpenCode 1.2.17 prompt and tool-pack phrasing while keeping the bounded config "
+                    "guardrails readable and package-scoped."
+                ),
+                expected_checks=[
+                    "prompt_pack_coherence",
+                    "tool_pack_clarity_improved",
+                    "mini_escalation_audit_clean",
+                    "package_transfer_claim_supported",
+                ],
+                tool_pack_profile="opencode-native-responses",
+                required_tools=["read_file", "list_dir", "bash", "write"],
+                environment_profile="workspace-write",
+                model_policy="nano_first",
+            ),
+            _clone_sample_for_package_target(
+                coding_dataset.samples[2],
+                sample_id="sample.opencode_prompt_config_tool_guidance.hold.001",
+                target_id=package_target.target_id,
+                prompt_input=(
+                    "Catch candidates that sound more polished but loosen patch splitting, read-before-edit "
+                    "signals, or OpenCode's native developer-role tool posture."
+                ),
+                expected_checks=[
+                    "hidden_hold_package_guard",
+                    "bounded_config_preserved",
+                    "native_responses_posture_preserved",
+                    "tool_pack_scope_preserved",
+                ],
+                tool_pack_profile="opencode-native-responses",
+                required_tools=["read_file", "list_dir", "bash", "write"],
+                environment_profile="workspace-write",
+                model_policy="nano_first",
+            ),
+            _clone_sample_for_package_target(
+                coding_dataset.samples[3],
+                sample_id="sample.opencode_prompt_config_tool_guidance.regression.001",
+                target_id=package_target.target_id,
+                prompt_input=(
+                    "Preserve the OpenCode package's visible patch, validation, and tool-pack boundaries on replay-style coding tasks."
+                ),
+                expected_checks=[
+                    "regression_clean",
+                    "bounded_config_preserved",
+                    "prompt_pack_coherence",
+                    "tool_pack_scope_preserved",
+                ],
+                tool_pack_profile="opencode-native-responses",
+                required_tools=["read_file", "list_dir", "bash", "write"],
+                environment_profile="workspace-write",
+                model_policy="nano_first",
+            ),
+        ],
+        rationale_catalog=list(tool_dataset.rationale_catalog) + list(coding_dataset.rationale_catalog),
+        metadata={
+            "lane": "opencode_prompt_config_tool_guidance_package",
+            "phase": "v4",
+            "package": "opencode_1_2_17",
+        },
+    )
+
+    baseline_candidate = CandidateBundle(
+        candidate_id="cand.opencode_prompt_config_tool_guidance.atomic_baseline.001",
+        source_target_id=package_target.target_id,
+        applied_loci=[
+            "prompt.pack.base.system",
+            "prompt.pack.base.builder",
+            "guardrails.diff_policy.patch_splitting",
+            "guardrails.validation.read_before_edit",
+            "tool.registry.include",
+            "provider_tools.responses_use_developer_role",
+        ],
+        changes=[
+            CandidateChange(
+                locus_id="prompt.pack.base.system",
+                value={"text": "Preserve the single durable OpenCode system envelope and make package constraints explicit."},
+                rationale="Carry forward a minimal prompt-pack coherence improvement without cross-family coupling.",
+            ),
+            CandidateChange(
+                locus_id="prompt.pack.base.builder",
+                value={"text": "Keep the build stage compact, package-scoped, and aligned to visible tool posture."},
+                rationale="Carry forward a bounded builder prompt improvement as the atomic baseline.",
+            ),
+            CandidateChange(
+                locus_id="guardrails.diff_policy.patch_splitting",
+                value={"policy": "auto_split", "max_files_per_patch": 1, "on_violation": "warn_and_split"},
+                rationale="Preserve the current single-file patch boundary without broader config tightening.",
+            ),
+            CandidateChange(
+                locus_id="guardrails.validation.read_before_edit",
+                value={"mode": "relaxed", "require_fresh_read": False, "max_age_seconds": 1800},
+                rationale="Preserve the existing read-before-edit posture as a bounded baseline.",
+            ),
+            CandidateChange(
+                locus_id="tool.registry.include",
+                value={"visible_tools": ["bash", "write"]},
+                rationale="Keep the public OpenCode visible tool surface narrow and readable.",
+            ),
+            CandidateChange(
+                locus_id="provider_tools.responses_use_developer_role",
+                value={"enabled": True},
+                rationale="Preserve the native developer-role shaping as the atomic baseline.",
+            ),
+        ],
+        provenance={"kind": "atomic_sequential_package_baseline", "package": "opencode_1_2_17"},
+        metadata={"lane": "opencode_prompt_config_tool_guidance_package", "role": "atomic_baseline"},
+    )
+
+    package_candidate = CandidateBundle(
+        candidate_id="cand.opencode_prompt_config_tool_guidance.package.001",
+        source_target_id=package_target.target_id,
+        applied_loci=list(baseline_candidate.applied_loci),
+        changes=[
+            CandidateChange(
+                locus_id="prompt.pack.base.system",
+                value={
+                    "text": (
+                        "Keep one durable OpenCode system envelope, make the native Responses posture explicit, "
+                        "and treat patch boundaries plus visible tool scope as package-level invariants."
+                    )
+                },
+                rationale="Tie package-level prompt coherence directly to the bounded config and tool-pack surfaces.",
+            ),
+            CandidateChange(
+                locus_id="prompt.pack.base.builder",
+                value={
+                    "text": (
+                        "Prefer the smallest package-scoped build step first, keep tool guidance visible, and avoid "
+                        "changes that imply broader write scope or relaxed patch boundaries."
+                    )
+                },
+                rationale="Couple builder guidance to the bounded config and tool-pack invariants.",
+            ),
+            CandidateChange(
+                locus_id="guardrails.diff_policy.patch_splitting",
+                value={
+                    "policy": "auto_split",
+                    "max_files_per_patch": 1,
+                    "on_violation": "warn_and_split",
+                    "package_note": "keep public OpenCode diffs single-file by default",
+                },
+                rationale="Make the single-file patch boundary more legible without widening config scope.",
+            ),
+            CandidateChange(
+                locus_id="guardrails.validation.read_before_edit",
+                value={
+                    "mode": "relaxed",
+                    "require_fresh_read": False,
+                    "max_age_seconds": 1200,
+                    "package_note": "prompt-pack refinements should still read nearby files first when editing",
+                },
+                rationale="Tighten bounded config behavior just enough to support the package claim honestly.",
+            ),
+            CandidateChange(
+                locus_id="tool.registry.include",
+                value={
+                    "visible_tools": ["bash", "write"],
+                    "tool_guidance_note": "expose only the narrow public OpenCode tool surface on the top-level dossier",
+                },
+                rationale="Keep tool-pack guidance narrow while making the visible surface more explicit.",
+            ),
+            CandidateChange(
+                locus_id="provider_tools.responses_use_developer_role",
+                value={
+                    "enabled": True,
+                    "package_note": "Mini escalation may inspect ambiguous package candidates, but must preserve developer-role shaping",
+                },
+                rationale="Keep the native Responses posture explicit under audited Mini escalation.",
+            ),
+        ],
+        provenance={
+            "kind": "mixed_evidence_package_triplet_candidate",
+            "baseline_candidate_id": baseline_candidate.candidate_id,
+            "package": "opencode_1_2_17",
+            "member_family_ids": [
+                "family.opencode_prompt_pack.v4",
+                "family.opencode_bounded_config.v4",
+                "family.opencode_tool_guidance_pack.v4",
+            ],
+        },
+        metadata={"lane": "opencode_prompt_config_tool_guidance_package", "role": "package_triplet"},
+    )
+
+    baseline_materialized = materialize_candidate(
+        package_target,
+        baseline_candidate,
+        effective_artifact={
+            "artifact_ref": "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+            "overlay": {"package_role": "atomic_baseline"},
+        },
+        effective_tool_surface={"tools": ["read_file", "list_dir", "bash", "write"], "exposed_count": 4},
+        evaluation_input_compatibility={"replay": True, "schema": 4},
+        metadata={"lane": "opencode_prompt_config_tool_guidance_package", "role": "atomic_baseline"},
+    )
+    package_materialized = materialize_candidate(
+        package_target,
+        package_candidate,
+        effective_artifact={
+            "artifact_ref": "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+            "overlay": {"package_role": "mixed_evidence_triplet"},
+        },
+        effective_tool_surface={"tools": ["read_file", "list_dir", "bash", "write"], "exposed_count": 4},
+        evaluation_input_compatibility={"replay": True, "schema": 4},
+        metadata={"lane": "opencode_prompt_config_tool_guidance_package", "role": "package_triplet"},
+    )
+
+    transfer_slices = [
+        TransferSliceManifest(
+            slice_id="package.opencode_1_2_17.current",
+            slice_kind="package",
+            selector={"artifact_ref": "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml"},
+            promotion_role="required",
+            visibility="hidden_hold",
+            metadata={"lane": "opencode_prompt_config_tool_guidance_package"},
+        ),
+        TransferSliceManifest(
+            slice_id="model_tier.nano_first_openai",
+            slice_kind="model_tier",
+            selector={"default_model": "gpt-5.4-nano", "escalation_model": "gpt-5.4-mini"},
+            promotion_role="required",
+            visibility="comparison_visible",
+            metadata={"lane": "opencode_prompt_config_tool_guidance_package"},
+        ),
+        TransferSliceManifest(
+            slice_id="tool_pack.opencode_native_responses",
+            slice_kind="tool_pack",
+            selector={"tool_pack_profile": "opencode-native-responses", "visible_tools": ["bash", "write"]},
+            promotion_role="required",
+            visibility="comparison_visible",
+            metadata={"lane": "opencode_prompt_config_tool_guidance_package"},
+        ),
+        TransferSliceManifest(
+            slice_id="provider_model.openai_gpt_5_4_pair",
+            slice_kind="provider_model",
+            selector={"provider": "openai", "models": ["gpt-5.4-nano", "gpt-5.4-mini"]},
+            promotion_role="claim_supporting",
+            visibility="comparison_visible",
+            metadata={"lane": "opencode_prompt_config_tool_guidance_package"},
+        ),
+    ]
+
+    evaluation_suite = EvaluationSuiteManifest(
+        suite_id="evalsuite.opencode_prompt_config_tool_guidance.v4",
+        suite_kind="mixed_evidence_opencode_package_triplet",
+        evaluator_stack=[
+            "opencode_prompt_pack_checker.v1",
+            "opencode_bounded_config_checker.v1",
+            "opencode_tool_pack_checker.v1",
+            "package_transfer_verifier.v1",
+        ],
+        split_visibility={
+            "train": "mutation_visible",
+            "validation": "comparison_visible",
+            "hold": "hidden_hold",
+            "regression": "comparison_visible",
+        },
+        stochasticity_class="deterministic",
+        rerun_policy={
+            "max_trials": 1,
+            "default_model": "gpt-5.4-nano",
+            "escalation_model": "gpt-5.4-mini",
+            "escalation_policy": "ambiguous_hidden_hold_or_close_margin_only",
+            "audit_escalations": True,
+        },
+        capture_requirements=[
+            "prompt_pack_coherence",
+            "bounded_config_preserved",
+            "tool_pack_clarity_improved",
+            "native_responses_posture_preserved",
+            "package_transfer_claim_supported",
+        ],
+        signal_channels={
+            "executable_checks": {
+                "source_kind": "executable_check",
+                "authority": "primary",
+                "used_for": ["bounded_config_fidelity", "tool_pack_scope"],
+            },
+            "verifier_outputs": {
+                "source_kind": "verifier_output",
+                "authority": "supporting",
+                "used_for": ["package_coherence", "prompt_pack_coherence"],
+            },
+            "semantic_judge": {
+                "source_kind": "model_judge",
+                "authority": "advisory",
+                "used_for": ["tool_pack_clarity", "prompt_pack_coherence"],
+            },
+            "model_tier_audit": {
+                "source_kind": "model_policy_audit",
+                "authority": "hard_gate",
+                "used_for": ["promotion_only"],
+            },
+        },
+        adjudication_requirements={
+            "requires_hidden_hold_review": True,
+            "requires_regression_coverage": True,
+            "mini_escalation_requires_justification": True,
+            "mini_escalation_triggers": ["inconclusive_hidden_hold", "close_validation_margin"],
+        },
+        comparison_protocol_defaults={
+            "protocol_id": "paired_atomic_vs_package_triplet.v1",
+            "minimum_trial_count": 1,
+            "requires_hidden_hold_bucket": True,
+        },
+        artifact_requirements=["paired_eval_json", "benchmark_summary_json", "model_tier_audit_json"],
+        metadata={
+            "lane": "opencode_prompt_config_tool_guidance_package",
+            "phase": "v4",
+            "package": "opencode_1_2_17",
+            "model_policy": "nano_first",
+            "mini_escalation_policy": "auditable_justified_only",
+        },
+    )
+
+    objective_suite = ObjectiveSuiteManifest(
+        suite_id="objsuite.opencode_prompt_config_tool_guidance.v4",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_channels={
+            "prompt_pack_coherence": {
+                "direction": "maximize",
+                "source_metric": "prompt_pack_coherence",
+                "promotion_sensitive": True,
+            },
+            "bounded_config_fidelity": {
+                "direction": "maximize",
+                "source_metric": "bounded_config_preserved",
+                "promotion_sensitive": True,
+            },
+            "tool_pack_clarity": {
+                "direction": "maximize",
+                "source_metric": "tool_pack_clarity_improved",
+                "promotion_sensitive": True,
+            },
+            "package_transfer": {
+                "direction": "maximize",
+                "source_metric": "package_transfer_claim_supported",
+                "promotion_sensitive": True,
+            },
+            "mutation_cost": {
+                "direction": "minimize",
+                "source_metric": "cost_delta_usd",
+                "promotion_sensitive": False,
+            },
+        },
+        penalties={
+            "native_posture_drift": {
+                "kind": "hard_block",
+                "reason": "the OpenCode package may not weaken native Responses posture",
+            },
+            "patch_boundary_drift": {
+                "kind": "hard_block",
+                "reason": "the package may not weaken the single-file patch boundary",
+            },
+        },
+        aggregation_rules={"per_sample": "weighted_sum", "global": "package_transfer_first"},
+        uncertainty_policy={
+            "stochasticity_class": "deterministic",
+            "blocked_when_missing_hidden_hold": True,
+            "mini_escalation_on_ambiguity_only": True,
+        },
+        blocked_channel_annotations={
+            "package_transfer": {"blocked_when_missing": ["model_tier_audit", "verifier_outputs"]},
+        },
+        channel_dependencies={
+            "package_transfer": ["prompt_pack_coherence", "bounded_config_fidelity", "tool_pack_clarity"],
+        },
+        frontier_dimensions=[
+            "prompt_pack_coherence",
+            "bounded_config_fidelity",
+            "tool_pack_clarity",
+            "package_transfer",
+            "mutation_cost",
+        ],
+        promotion_annotations={
+            "requires_support_sensitive_review": False,
+            "review_class": "bounded_e4_package_triplet",
+        },
+        visibility_annotations={
+            "hidden_hold_channels": [
+                "prompt_pack_coherence",
+                "bounded_config_fidelity",
+                "package_transfer",
+            ],
+        },
+        metadata={
+            "lane": "opencode_prompt_config_tool_guidance_package",
+            "phase": "v4",
+            "package": "opencode_1_2_17",
+        },
+    )
+
+    prompt_family = TargetFamilyManifest(
+        family_id="family.opencode_prompt_pack.v4",
+        family_kind="prompt_pack_family",
+        target_ids=[package_target.target_id],
+        family_scope="OpenCode 1.2.17 prompt-pack coherence on the public dossier package.",
+        mutable_loci_ids=["prompt.pack.base.system", "prompt.pack.base.builder"],
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_suite_id=objective_suite.suite_id,
+        review_class="bounded_e4_package_triplet",
+        runtime_context_assumptions={
+            "tool_pack_profile": "opencode-native-responses",
+            "provider_model_policy": "nano_first",
+        },
+        promotion_class="bounded_package_prompt_change",
+        artifact_refs=list(package_target.baseline_artifact_refs),
+        metadata={"lane": "opencode_prompt_config_tool_guidance_package", "family_role": "prompt_pack"},
+    )
+    config_family = TargetFamilyManifest(
+        family_id="family.opencode_bounded_config.v4",
+        family_kind="bounded_config_family",
+        target_ids=[package_target.target_id],
+        family_scope="OpenCode 1.2.17 bounded config surface for patch splitting and read-before-edit policy.",
+        mutable_loci_ids=[
+            "guardrails.diff_policy.patch_splitting",
+            "guardrails.validation.read_before_edit",
+        ],
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_suite_id=objective_suite.suite_id,
+        review_class="bounded_e4_package_triplet",
+        runtime_context_assumptions={
+            "environment_profile": "workspace-write",
+            "requires_single_file_patch_boundary": True,
+        },
+        promotion_class="bounded_package_config_change",
+        artifact_refs=list(package_target.baseline_artifact_refs),
+        metadata={"lane": "opencode_prompt_config_tool_guidance_package", "family_role": "bounded_config"},
+    )
+    tool_pack_family = TargetFamilyManifest(
+        family_id="family.opencode_tool_guidance_pack.v4",
+        family_kind="tool_guidance_pack_family",
+        target_ids=[package_target.target_id],
+        family_scope="OpenCode 1.2.17 visible tool-pack and developer-role guidance on the public dossier package.",
+        mutable_loci_ids=["tool.registry.include", "provider_tools.responses_use_developer_role"],
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_suite_id=objective_suite.suite_id,
+        review_class="bounded_e4_package_triplet",
+        runtime_context_assumptions={
+            "tool_pack_profile": "opencode-native-responses",
+            "visible_tools": ["bash", "write"],
+        },
+        promotion_class="bounded_package_tool_pack_change",
+        artifact_refs=list(package_target.baseline_artifact_refs),
+        metadata={"lane": "opencode_prompt_config_tool_guidance_package", "family_role": "tool_pack"},
+    )
+
+    composition = FamilyCompositionManifest(
+        composition_id="composition.opencode_prompt_config_tool_guidance.v4",
+        member_family_ids=[
+            prompt_family.family_id,
+            config_family.family_id,
+            tool_pack_family.family_id,
+        ],
+        composition_kind="staged",
+        shared_target_scope="opencode_1_2_17_package",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_suite_id=objective_suite.suite_id,
+        search_space_id="searchspace.opencode_prompt_config_tool_guidance.v4",
+        review_class="bounded_e4_package_triplet",
+        promotion_class="bounded_e4_package_triplet_change",
+        applicability_scope={
+            "artifact_ref": "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+            "tool_pack_profile": "opencode-native-responses",
+            "environment_profile": "workspace-write",
+            "provider_model_family": "openai-gpt-5.4",
+        },
+        cross_family_invariants=[
+            "bounded-overlay-only",
+            "native-responses-posture-preserved",
+            "single-file-patch-boundary-preserved",
+            "tool-pack-clarity-may-not-weaken-package-boundaries",
+        ],
+        runtime_context_requirements={
+            "tool_pack_profile": "opencode-native-responses",
+            "model_policy": "nano_first",
+            "mini_escalation_policy": "auditable_justified_only",
+        },
+        metadata={"lane": "opencode_prompt_config_tool_guidance_package", "phase": "v4"},
+    )
+
+    search_space = SearchSpaceManifest(
+        search_space_id=composition.search_space_id,
+        composition_id=composition.composition_id,
+        allowed_loci=[locus.locus_id for locus in package_target.mutable_loci],
+        mutation_kinds_by_locus={locus.locus_id: ["replace"] for locus in package_target.mutable_loci},
+        value_domains_by_locus={
+            "prompt.pack.base.system": {"must_preserve_single_system_envelope": True},
+            "prompt.pack.base.builder": {"must_preserve_plan_build_shape": True},
+            "guardrails.diff_policy.patch_splitting": {"max_files_per_patch": 1, "must_warn_and_split": True},
+            "guardrails.validation.read_before_edit": {"mode": "relaxed", "max_age_seconds_max": 1800},
+            "tool.registry.include": {"allowed_visible_tools_subset_of": ["bash", "write"]},
+            "provider_tools.responses_use_developer_role": {"must_remain_true": True},
+        },
+        semantic_constraints={
+            "guardrails.diff_policy.patch_splitting": {"must_preserve_single_file_patch_boundary": True},
+            "tool.registry.include": {"must_not_expose_new_tool_kinds": True},
+            "provider_tools.responses_use_developer_role": {"must_preserve_native_responses_posture": True},
+        },
+        coupled_loci_groups={
+            "prompt_and_tool_pack": [
+                "prompt.pack.base.system",
+                "prompt.pack.base.builder",
+                "tool.registry.include",
+            ],
+            "config_and_responses_posture": [
+                "guardrails.diff_policy.patch_splitting",
+                "guardrails.validation.read_before_edit",
+                "provider_tools.responses_use_developer_role",
+            ],
+        },
+        stage_partitions={
+            "prompt_seed": ["prompt.pack.base.system", "prompt.pack.base.builder"],
+            "bounded_config_refine": [
+                "guardrails.diff_policy.patch_splitting",
+                "guardrails.validation.read_before_edit",
+            ],
+            "tool_pack_finish": [
+                "tool.registry.include",
+                "provider_tools.responses_use_developer_role",
+            ],
+        },
+        cross_family_constraints={
+            "opencode_prompt_config_tool_guidance": {
+                "member_family_ids": [
+                    prompt_family.family_id,
+                    config_family.family_id,
+                    tool_pack_family.family_id,
+                ],
+                "must_preserve_native_responses_posture_if_tool_pack_changes": True,
+                "must_preserve_patch_boundary_if_prompt_pack_changes": True,
+            }
+        },
+        invariants=[
+            "bounded-overlay-only",
+            "native-responses-posture-preserved",
+            "single-file-patch-boundary-preserved",
+        ],
+        unsafe_expansion_notes=[
+            "Adding new visible tools is out of scope.",
+            "Switching away from native Responses posture is out of scope.",
+            "Cross-package prompt synthesis is out of scope.",
+        ],
+        metadata={"lane": "opencode_prompt_config_tool_guidance_package", "phase": "v4"},
+    )
+
+    manifest = BenchmarkRunManifest(
+        manifest_id="manifest.opencode_prompt_config_tool_guidance.v4",
+        benchmark_kind="mixed_evidence_opencode_package_triplet_pack",
+        target_id=package_target.target_id,
+        dataset_id=dataset.dataset_id,
+        dataset_version=dataset.dataset_version,
+        baseline_candidate_id=baseline_candidate.candidate_id,
+        environment_domain="workspace-write/opencode-native-responses",
+        evaluator_stack=list(evaluation_suite.evaluator_stack),
+        comparison_protocol="paired_atomic_vs_package_triplet.v1",
+        splits=[
+            BenchmarkSplit("train", ["sample.opencode_prompt_config_tool_guidance.train.001"], "mutation_visible"),
+            BenchmarkSplit("validation", ["sample.opencode_prompt_config_tool_guidance.validation.001"], "comparison_visible"),
+            BenchmarkSplit("hold", ["sample.opencode_prompt_config_tool_guidance.hold.001"], "hidden_hold"),
+            BenchmarkSplit("regression", ["sample.opencode_prompt_config_tool_guidance.regression.001"], "comparison_visible"),
+        ],
+        bucket_tags={
+            "sample.opencode_prompt_config_tool_guidance.train.001": ["prompt-pack", "tool-pack", "bounded-config"],
+            "sample.opencode_prompt_config_tool_guidance.validation.001": ["package-transfer", "model-tier"],
+            "sample.opencode_prompt_config_tool_guidance.hold.001": ["hidden-hold", "package-transfer"],
+            "sample.opencode_prompt_config_tool_guidance.regression.001": ["regression", "bounded-config"],
+        },
+        stochasticity_class="deterministic",
+        rerun_policy={
+            "max_trials": 1,
+            "default_model": "gpt-5.4-nano",
+            "escalation_model": "gpt-5.4-mini",
+            "escalation_policy": "ambiguous_hidden_hold_or_close_margin_only",
+            "audit_escalations": True,
+        },
+        contamination_notes=[
+            "Nano is the default mutation and comparison tier for this OpenCode package lane.",
+            "Mini may only be used after Nano on ambiguous hidden-hold or close-margin results and must remain auditable.",
+        ],
+        transfer_slices=transfer_slices,
+        promotion_relevance={
+            "requires_support_sensitive_review": False,
+            "review_class": composition.review_class,
+            "mini_escalation_audit": {
+                "default_model": "gpt-5.4-nano",
+                "escalation_model": "gpt-5.4-mini",
+                "triggered": True,
+                "trigger_reason": "ambiguous_hidden_hold_prompt_tool_pack_margin",
+            },
+        },
+        artifact_refs=list(package_target.baseline_artifact_refs),
+        metadata={
+            "lane": "opencode_prompt_config_tool_guidance_package",
+            "phase": "v4",
+            "package": "opencode_1_2_17",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "composition_id": composition.composition_id,
+            "search_space_id": search_space.search_space_id,
+            "model_policy": "nano_first",
+        },
+    )
+
+    comparison = build_paired_candidate_comparison(
+        manifest,
+        comparison_id="comparison.opencode_prompt_config_tool_guidance.atomic_vs_package.001",
+        parent_candidate_id=baseline_candidate.candidate_id,
+        child_candidate_id=package_candidate.candidate_id,
+        outcome="win",
+        compared_sample_ids=manifest.sample_ids(),
+        held_out_sample_ids=manifest.hidden_hold_sample_ids(),
+        trial_count=2,
+        rationale=(
+            "The OpenCode package candidate improves prompt-pack coherence, bounded config clarity, and visible "
+            "tool-pack guidance together while preserving native Responses posture and single-file patch boundaries."
+        ),
+        evidence_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/opencode_prompt_config_tool_guidance/package_triplet_eval.json",
+                media_type="application/json",
+            )
+        ],
+        metric_deltas={
+            "prompt_pack_coherence_delta": 0.1,
+            "bounded_config_fidelity_delta": 0.04,
+            "tool_pack_clarity_delta": 0.12,
+            "package_transfer_delta": 0.08,
+            "mini_escalation_confirmed_hold": True,
+        },
+        better_candidate_id=package_candidate.candidate_id,
+        metadata={
+            "lane": "opencode_prompt_config_tool_guidance_package",
+            "composition_id": composition.composition_id,
+            "baseline_kind": "atomic_sequential_baseline",
+            "model_policy": "nano_first",
+            "mini_escalation_triggered": True,
+            "mini_escalation_reason": "ambiguous_hidden_hold_prompt_tool_pack_margin",
+        },
+    )
+
+    objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreakdown.opencode_prompt_config_tool_guidance.package.001",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=manifest.manifest_id,
+        candidate_id=package_candidate.candidate_id,
+        per_sample_components={
+            "sample.opencode_prompt_config_tool_guidance.train.001": {
+                "prompt_pack_coherence": 0.86,
+                "bounded_config_fidelity": 0.96,
+                "tool_pack_clarity": 0.88,
+                "package_transfer": 0.82,
+                "mutation_cost": 0.0,
+            },
+            "sample.opencode_prompt_config_tool_guidance.validation.001": {
+                "prompt_pack_coherence": 0.84,
+                "bounded_config_fidelity": 0.95,
+                "tool_pack_clarity": 0.9,
+                "package_transfer": 0.8,
+                "mutation_cost": 0.0,
+            },
+            "sample.opencode_prompt_config_tool_guidance.hold.001": {
+                "prompt_pack_coherence": 0.81,
+                "bounded_config_fidelity": 0.97,
+                "tool_pack_clarity": 0.84,
+                "package_transfer": 0.79,
+                "mutation_cost": 0.0,
+            },
+            "sample.opencode_prompt_config_tool_guidance.regression.001": {
+                "prompt_pack_coherence": 0.8,
+                "bounded_config_fidelity": 0.96,
+                "tool_pack_clarity": 0.83,
+                "package_transfer": 0.78,
+                "mutation_cost": 0.0,
+            },
+        },
+        per_bucket_components={
+            "prompt-pack": {"prompt_pack_coherence": 0.86, "tool_pack_clarity": 0.88},
+            "package-transfer": {"package_transfer": 0.8, "bounded_config_fidelity": 0.95},
+        },
+        aggregate_objectives={
+            "prompt_pack_coherence": 0.8275,
+            "bounded_config_fidelity": 0.96,
+            "tool_pack_clarity": 0.8625,
+            "package_transfer": 0.7975,
+            "mutation_cost": 0.0,
+            "eligible_for_promotion": False,
+        },
+        uncertainty_summary={
+            "stochasticity_class": "deterministic",
+            "trial_count": 2,
+            "blocked_for_uncertainty": False,
+            "mini_escalation_considered": True,
+            "mini_escalation_triggered": True,
+        },
+        blocked_components={},
+        signal_status={
+            "executable_checks": {"status": "pass", "authority": "primary"},
+            "verifier_outputs": {"status": "pass", "authority": "supporting"},
+            "semantic_judge": {"status": "pass", "authority": "advisory"},
+            "model_tier_audit": {"status": "audited_pass", "authority": "hard_gate"},
+        },
+        slice_status={
+            "package.opencode_1_2_17.current": {"status": "pass", "promotion_role": "required"},
+            "model_tier.nano_first_openai": {"status": "audited_pass", "promotion_role": "required"},
+            "tool_pack.opencode_native_responses": {"status": "pass", "promotion_role": "required"},
+            "provider_model.openai_gpt_5_4_pair": {"status": "pass", "promotion_role": "claim_supporting"},
+        },
+        member_family_breakdowns={
+            prompt_family.family_id: {"prompt_pack_coherence": 0.8275},
+            config_family.family_id: {"bounded_config_fidelity": 0.96},
+            tool_pack_family.family_id: {"tool_pack_clarity": 0.8625, "package_transfer": 0.7975},
+        },
+        cross_family_blocked_components={},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/opencode_prompt_config_tool_guidance/objective_breakdown_package_triplet.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "opencode_prompt_config_tool_guidance_package",
+            "composition_id": composition.composition_id,
+            "search_space_id": search_space.search_space_id,
+            "model_policy": "nano_first",
+            "applicability_scope_status": "bounded",
+            "member_family_attribution": {
+                "family.opencode_prompt_pack.v4": {
+                    "status": "present",
+                    "drivers": ["prompt_pack_coherence"],
+                },
+                "family.opencode_bounded_config.v4": {
+                    "status": "present",
+                    "drivers": ["bounded_config_fidelity"],
+                },
+                "family.opencode_tool_guidance_pack.v4": {
+                    "status": "present",
+                    "drivers": ["tool_pack_clarity", "package_transfer"],
+                },
+            },
+        },
+    )
+
+    promotion_summary = build_promotion_evidence_summary(
+        summary_id="summary.opencode_prompt_config_tool_guidance.package.001",
+        candidate_id=package_candidate.candidate_id,
+        benchmark_manifest=manifest,
+        comparison_results=[comparison],
+        evaluation_suite=evaluation_suite,
+        objective_suite=objective_suite,
+        family_composition=composition,
+        search_space=search_space,
+        objective_breakdown_results=[objective_breakdown],
+        review_required=True,
+        metadata={"lane": "opencode_prompt_config_tool_guidance_package", "phase": "v4"},
+    )
+
+    benchmark_result = BenchmarkRunResult(
+        run_id="benchmark_run.opencode_prompt_config_tool_guidance.v4",
+        manifest_id=manifest.manifest_id,
+        candidate_ids=[baseline_candidate.candidate_id, package_candidate.candidate_id],
+        comparison_results=[comparison],
+        aggregate_metrics={
+            "atomic_baseline_score": 0.76,
+            "package_triplet_score": 0.87,
+            "mixed_evidence_complete": True,
+        },
+        bucket_outcomes={
+            "prompt-pack": {"outcome": "child_win"},
+            "package-transfer": {"outcome": "child_win"},
+        },
+        variance_summary={
+            "trial_count": 2,
+            "stochasticity_class": "deterministic",
+            "default_model": "gpt-5.4-nano",
+            "escalation_model": "gpt-5.4-mini",
+            "mini_escalation_triggered": True,
+            "mini_escalation_reason": "ambiguous_hidden_hold_prompt_tool_pack_margin",
+        },
+        cost_support_evidence_slices={
+            "bounded_config_preserved": True,
+            "tool_pack_scope_preserved": True,
+            "model_policy": "nano_first",
+        },
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/opencode_prompt_config_tool_guidance/benchmark_summary.json",
+                media_type="application/json",
+            )
+        ],
+        promotion_readiness_summary={
+            "promotion_summary_id": promotion_summary.summary_id,
+            "eligible_for_promotion": False,
+            "requires_review": True,
+            "blocked_reason": "package triplet wins with audited Mini escalation require explicit review before promotion",
+            "transfer_slice_ids": sorted(slice_item.slice_id for slice_item in transfer_slices),
+            "mini_escalation_audit": promotion_summary.model_tier_audit,
+        },
+        metadata={
+            "lane": "opencode_prompt_config_tool_guidance_package",
+            "phase": "v4",
+            "package": "opencode_1_2_17",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "composition_id": composition.composition_id,
+            "search_space_id": search_space.search_space_id,
+            "model_policy": "nano_first",
+        },
+    )
+
+    staged_request = _build_backend_request_for_package_example(
+        {
+            "target": package_target,
+            "dataset": dataset,
+            "baseline_candidate": baseline_candidate,
+            "baseline_materialized_candidate": baseline_materialized,
+        },
+        request_id="backend_request.opencode_prompt_config_tool_guidance.v4",
+        evaluation_id="eval.backend.opencode_prompt_config_tool_guidance.v4",
+        evaluator_id="opencode_mixed_evidence_package_checker.v4",
+        wrongness_class="correctness.result_mismatch",
+        likely_repair_locus="prompt.pack.base.system",
+    )
+    staged_optimizer_request = StagedOptimizerRequest(
+        request_id="staged_request.opencode_prompt_config_tool_guidance.v4",
+        backend_request=staged_request,
+        evaluation_suite=evaluation_suite,
+        objective_suite=objective_suite,
+        search_space=search_space,
+        family_composition=composition,
+        metadata={
+            "lane": "opencode_prompt_config_tool_guidance_package",
+            "phase": "v4",
+            "search_policy_signal": "ambiguous_hidden_hold",
+            "transfer_slice_status": objective_breakdown.slice_status,
+            "model_tier_audit": promotion_summary.model_tier_audit,
+            "optimistic_scope_blocked": False,
+        },
+    )
+    staged_result = run_staged_optimizer(staged_optimizer_request)
+
+    return {
+        "target": package_target,
+        "dataset": dataset,
+        "baseline_candidate": baseline_candidate,
+        "package_candidate": package_candidate,
+        "baseline_materialized_candidate": baseline_materialized,
+        "package_materialized_candidate": package_materialized,
+        "evaluation_suite": evaluation_suite,
+        "objective_suite": objective_suite,
+        "family_composition": composition,
+        "search_space": search_space,
+        "transfer_slices": transfer_slices,
+        "manifest": manifest,
+        "comparison_result": comparison,
+        "objective_breakdown_result": objective_breakdown,
+        "promotion_summary": promotion_summary,
+        "benchmark_result": benchmark_result,
+        "staged_request": staged_optimizer_request,
+        "staged_result": staged_result,
+    }
+
+
+def build_opencode_prompt_config_tool_guidance_package_example_payload() -> Dict[str, object]:
+    example = build_opencode_prompt_config_tool_guidance_package_example()
+    return {
+        "target": example["target"].to_dict(),
+        "dataset": example["dataset"].to_dict(),
+        "baseline_candidate": example["baseline_candidate"].to_dict(),
+        "package_candidate": example["package_candidate"].to_dict(),
+        "baseline_materialized_candidate": example["baseline_materialized_candidate"].to_dict(),
+        "package_materialized_candidate": example["package_materialized_candidate"].to_dict(),
+        "evaluation_suite": example["evaluation_suite"].to_dict(),
+        "objective_suite": example["objective_suite"].to_dict(),
+        "family_composition": example["family_composition"].to_dict(),
+        "search_space": example["search_space"].to_dict(),
+        "transfer_slices": [item.to_dict() for item in example["transfer_slices"]],
+        "manifest": example["manifest"].to_dict(),
+        "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
+        "promotion_summary": example["promotion_summary"].to_dict(),
+        "benchmark_result": example["benchmark_result"].to_dict(),
+        "staged_request": example["staged_request"].to_dict(),
+        "staged_result": example["staged_result"].to_dict(),
+    }
+
+
+def build_opencode_prompt_config_tool_guidance_verifier_follow_on_example() -> Dict[str, object]:
+    """Build one narrow verifier-assisted follow-on on the bounded OpenCode V4 package lane."""
+
+    example = build_opencode_prompt_config_tool_guidance_package_example()
+    package_candidate = example["package_candidate"]
+    composition = example["family_composition"]
+    evaluation_suite = example["evaluation_suite"]
+    objective_suite = example["objective_suite"]
+    search_space = example["search_space"]
+    manifest = example["manifest"]
+    transfer_slices = example["transfer_slices"]
+    assert isinstance(package_candidate, CandidateBundle)
+    assert isinstance(composition, FamilyCompositionManifest)
+    assert isinstance(evaluation_suite, EvaluationSuiteManifest)
+    assert isinstance(objective_suite, ObjectiveSuiteManifest)
+    assert isinstance(search_space, SearchSpaceManifest)
+    assert isinstance(manifest, BenchmarkRunManifest)
+
+    refined_candidate = CandidateBundle(
+        candidate_id="cand.opencode_prompt_config_tool_guidance.verifier_refined.001",
+        source_target_id=example["target"].target_id,
+        applied_loci=[
+            "prompt.pack.base.builder",
+            "guardrails.validation.read_before_edit",
+        ],
+        changes=[
+            CandidateChange(
+                locus_id="prompt.pack.base.builder",
+                value={
+                    "text": (
+                        "Keep the build stage compact, package-scoped, and explicitly aligned to native "
+                        "Responses posture, single-file patch boundaries, and read-before-edit validation."
+                    )
+                },
+                rationale=(
+                    "Verifier-guided refinement tightens prompt-pack coherence on the held package slice "
+                    "without widening the OpenCode package scope."
+                ),
+            ),
+            CandidateChange(
+                locus_id="guardrails.validation.read_before_edit",
+                value={"mode": "strict", "require_fresh_read": True, "max_age_seconds": 900},
+                rationale=(
+                    "Specialize the bounded config member to strengthen hidden-hold package safety while "
+                    "remaining inside the declared config locus."
+                ),
+            ),
+        ],
+        provenance={
+            "kind": "package_verifier_follow_on",
+            "baseline_candidate_id": package_candidate.candidate_id,
+            "composition_id": composition.composition_id,
+        },
+        metadata={
+            "lane": "opencode_prompt_config_tool_guidance_package",
+            "role": "verifier_follow_on",
+            "composition_id": composition.composition_id,
+            "package": "opencode_1_2_17",
+            "non_kernel": True,
+        },
+    )
+
+    comparison = build_paired_candidate_comparison(
+        manifest,
+        comparison_id="comparison.opencode_prompt_config_tool_guidance.package_vs_verifier_refined.001",
+        parent_candidate_id=package_candidate.candidate_id,
+        child_candidate_id=refined_candidate.candidate_id,
+        outcome="win",
+        compared_sample_ids=manifest.sample_ids(),
+        held_out_sample_ids=manifest.hidden_hold_sample_ids(),
+        trial_count=1,
+        rationale=(
+            "The verifier-assisted follow-on improves prompt-pack coherence and read-before-edit safety on "
+            "the bounded OpenCode package slice without widening tool-pack scope or relaxing native Responses posture."
+        ),
+        evidence_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/opencode_prompt_config_tool_guidance/verifier_follow_on_eval.json",
+                media_type="application/json",
+            )
+        ],
+        metric_deltas={
+            "prompt_pack_coherence_delta": 0.05,
+            "bounded_config_fidelity_delta": 0.03,
+            "package_transfer_delta": 0.02,
+            "held_out_package_guard": True,
+            "verifier_confirmed": True,
+        },
+        better_candidate_id=refined_candidate.candidate_id,
+        metadata={
+            "lane": "opencode_prompt_config_tool_guidance_package",
+            "composition_id": composition.composition_id,
+            "experiment_kind": "verifier_augmented_package_refinement",
+            "model_policy": "nano_first",
+        },
+    )
+
+    refined_objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreakdown.opencode_prompt_config_tool_guidance.verifier_refined.001",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=manifest.manifest_id,
+        candidate_id=refined_candidate.candidate_id,
+        per_sample_components={
+            "sample.opencode_prompt_config_tool_guidance.train.001": {
+                "prompt_pack_coherence": 0.89,
+                "bounded_config_fidelity": 0.98,
+                "tool_pack_clarity": 0.88,
+                "package_transfer": 0.84,
+                "mutation_cost": 0.0,
+            },
+            "sample.opencode_prompt_config_tool_guidance.validation.001": {
+                "prompt_pack_coherence": 0.87,
+                "bounded_config_fidelity": 0.97,
+                "tool_pack_clarity": 0.89,
+                "package_transfer": 0.82,
+                "mutation_cost": 0.0,
+            },
+            "sample.opencode_prompt_config_tool_guidance.hold.001": {
+                "prompt_pack_coherence": 0.85,
+                "bounded_config_fidelity": 0.98,
+                "tool_pack_clarity": 0.84,
+                "package_transfer": 0.81,
+                "mutation_cost": 0.0,
+            },
+            "sample.opencode_prompt_config_tool_guidance.regression.001": {
+                "prompt_pack_coherence": 0.82,
+                "bounded_config_fidelity": 0.97,
+                "tool_pack_clarity": 0.83,
+                "package_transfer": 0.79,
+                "mutation_cost": 0.0,
+            },
+        },
+        per_bucket_components={
+            "prompt-pack": {"prompt_pack_coherence": 0.89, "tool_pack_clarity": 0.88},
+            "package-transfer": {"package_transfer": 0.82, "bounded_config_fidelity": 0.97},
+        },
+        aggregate_objectives={
+            "prompt_pack_coherence": 0.8575,
+            "bounded_config_fidelity": 0.975,
+            "tool_pack_clarity": 0.86,
+            "package_transfer": 0.815,
+            "mutation_cost": 0.0,
+            "eligible_for_promotion": False,
+        },
+        uncertainty_summary={
+            "stochasticity_class": evaluation_suite.stochasticity_class,
+            "trial_count": 1,
+            "blocked_for_uncertainty": False,
+            "mini_escalation_considered": True,
+            "mini_escalation_triggered": False,
+        },
+        blocked_components={},
+        signal_status={
+            "executable_checks": {"status": "pass", "authority": "primary"},
+            "verifier_outputs": {"status": "pass", "authority": "supporting"},
+            "semantic_judge": {"status": "pass", "authority": "advisory"},
+            "model_tier_audit": {"status": "audited_pass", "authority": "hard_gate"},
+        },
+        slice_status={
+            "package.opencode_1_2_17.current": {"status": "pass", "promotion_role": "required"},
+            "model_tier.nano_first_openai": {"status": "audited_pass", "promotion_role": "required"},
+            "tool_pack.opencode_native_responses": {"status": "pass", "promotion_role": "required"},
+            "provider_model.openai_gpt_5_4_pair": {"status": "pass", "promotion_role": "claim_supporting"},
+        },
+        member_family_breakdowns={
+            "family.opencode_prompt_pack.v4": {"prompt_pack_coherence": 0.8575},
+            "family.opencode_bounded_config.v4": {"bounded_config_fidelity": 0.975},
+            "family.opencode_tool_guidance_pack.v4": {
+                "tool_pack_clarity": 0.86,
+                "package_transfer": 0.815,
+            },
+        },
+        cross_family_blocked_components={},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/opencode_prompt_config_tool_guidance/objective_breakdown_verifier_refined.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "opencode_prompt_config_tool_guidance_package",
+            "composition_id": composition.composition_id,
+            "search_space_id": search_space.search_space_id,
+            "experiment_kind": "verifier_augmented_package_refinement",
+            "package_follow_on": True,
+            "applicability_scope_status": "bounded",
+            "member_family_attribution": {
+                "family.opencode_prompt_pack.v4": {
+                    "status": "present",
+                    "drivers": ["prompt_pack_coherence"],
+                },
+                "family.opencode_bounded_config.v4": {
+                    "status": "present",
+                    "drivers": ["bounded_config_fidelity"],
+                },
+                "family.opencode_tool_guidance_pack.v4": {
+                    "status": "present",
+                    "drivers": ["tool_pack_clarity", "package_transfer"],
+                },
+            },
+        },
+    )
+
+    verifier_experiment = VerifierAugmentedExperimentResult(
+        experiment_id="verifier_experiment.opencode_prompt_config_tool_guidance.v4",
+        experiment_kind="verifier_augmented_package_refinement",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_suite_id=objective_suite.suite_id,
+        target_family_id="family.opencode_bounded_config.v4",
+        search_space_id=search_space.search_space_id,
+        baseline_candidate_id=package_candidate.candidate_id,
+        refined_candidate_id=refined_candidate.candidate_id,
+        verifier_stack=[
+            *evaluation_suite.evaluator_stack,
+            "opencode_package_scope_verifier.v1",
+        ],
+        focus_sample_ids=manifest.hidden_hold_sample_ids() or manifest.sample_ids(),
+        comparison_result_id=comparison.comparison_id,
+        objective_breakdown_result_id=refined_objective_breakdown.result_id,
+        outcome="accepted",
+        rationale=(
+            "This narrow follow-on stays inside the bounded OpenCode package lane, specializing the prompt-pack "
+            "and bounded-config members while preserving transfer-slice discipline, native Responses posture, "
+            "and the declared package scope."
+        ),
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/opencode_prompt_config_tool_guidance/verifier_follow_on_summary.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "opencode_prompt_config_tool_guidance_package",
+            "phase": "v4",
+            "backend_only": True,
+            "non_kernel": True,
+            "darwin_boundary": "not_reopened",
+            "family_bound": True,
+            "composition_id": composition.composition_id,
+            "member_family_ids": list(composition.member_family_ids),
+            "transfer_slice_ids": [item.slice_id for item in transfer_slices],
+            "specialization_scope": "prompt_pack_and_bounded_config_members_inside_package_lane",
+            "model_policy": "nano_first",
+            "package": "opencode_1_2_17",
+        },
+    )
+
+    return {
+        "package_example": example,
+        "refined_candidate": refined_candidate,
+        "comparison_result": comparison,
+        "objective_breakdown_result": refined_objective_breakdown,
+        "verifier_experiment": verifier_experiment,
+    }
+
+
+def build_opencode_prompt_config_tool_guidance_verifier_follow_on_example_payload() -> Dict[str, object]:
+    example = build_opencode_prompt_config_tool_guidance_verifier_follow_on_example()
+    return {
+        "package_example": {
+            "evaluation_suite": example["package_example"]["evaluation_suite"].to_dict(),
+            "objective_suite": example["package_example"]["objective_suite"].to_dict(),
+            "family_composition": example["package_example"]["family_composition"].to_dict(),
+            "search_space": example["package_example"]["search_space"].to_dict(),
+            "transfer_slices": [item.to_dict() for item in example["package_example"]["transfer_slices"]],
+            "manifest": example["package_example"]["manifest"].to_dict(),
+            "package_candidate": example["package_example"]["package_candidate"].to_dict(),
+        },
+        "refined_candidate": example["refined_candidate"].to_dict(),
+        "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
+        "verifier_experiment": example["verifier_experiment"].to_dict(),
     }
 
 
@@ -5612,6 +7040,115 @@ def _build_backend_request_for_family_example(
         mutation_bounds=MutationBounds(max_changed_loci=2, max_changed_artifacts=1, max_total_value_bytes=1600),
         max_proposals=2,
         metadata={"family_bound": True},
+    )
+
+
+def _build_backend_request_for_package_example(
+    example: Dict[str, object],
+    *,
+    request_id: str,
+    evaluation_id: str,
+    evaluator_id: str,
+    wrongness_class: str,
+    likely_repair_locus: str,
+) -> ReflectiveParetoBackendRequest:
+    target = example["target"]
+    dataset = example["dataset"]
+    baseline_candidate = example["baseline_candidate"]
+    baseline_materialized_candidate = example["baseline_materialized_candidate"]
+    assert isinstance(target, OptimizationTarget)
+    assert isinstance(dataset, OptimizationDataset)
+    assert isinstance(baseline_candidate, CandidateBundle)
+    assert isinstance(baseline_materialized_candidate, MaterializedCandidate)
+    sample = dataset.samples[0]
+    evaluation = EvaluationRecord(
+        evaluation_id=evaluation_id,
+        target_id=target.target_id,
+        candidate_id=baseline_candidate.candidate_id,
+        dataset_id=dataset.dataset_id,
+        dataset_version=dataset.dataset_version,
+        sample_id=sample.sample_id,
+        evaluator_id=evaluator_id,
+        evaluator_version="v4",
+        status="completed",
+        outcome="failed",
+        started_at="2026-03-19T14:00:00.000Z",
+        completed_at="2026-03-19T14:00:02.000Z",
+        duration_ms=2000,
+        raw_evidence_refs=[
+            ArtifactRef(
+                ref=f"artifacts/optimization/{request_id}/baseline_eval.json",
+                media_type="application/json",
+            )
+        ],
+        normalized_diagnostics=[
+            DiagnosticBundle(
+                bundle_id=f"bundle.{evaluation_id}",
+                evaluation_id=evaluation_id,
+                evaluator_mode="replay",
+                determinism_class="deterministic",
+                entries=[
+                    DiagnosticEntry(
+                        diagnostic_id=f"diag.{evaluation_id}",
+                        kind="wrongness",
+                        severity="error",
+                        message="baseline package candidate still exposes a bounded mixed-evidence repair opportunity",
+                        locus_id=likely_repair_locus,
+                        evidence_refs=[
+                            ArtifactRef(
+                                ref=f"artifacts/optimization/{request_id}/diagnostic.json",
+                                media_type="application/json",
+                            )
+                        ],
+                    )
+                ],
+                cache_identity={"key": f"cache.{evaluation_id}", "version": "1"},
+                retry_policy_hint={"max_trials": 1},
+                reproducibility_notes={"package_bound": True},
+            )
+        ],
+        wrongness_reports=[
+            WrongnessReport(
+                wrongness_id=f"wrongness.{evaluation_id}",
+                wrongness_class=wrongness_class,
+                failure_locus=likely_repair_locus,
+                explanation="baseline package candidate still exposes a bounded mixed-evidence package repair locus",
+                confidence=0.9,
+                supporting_evidence_refs=[
+                    ArtifactRef(
+                        ref=f"artifacts/optimization/{request_id}/wrongness.json",
+                        media_type="application/json",
+                    )
+                ],
+                likely_repair_locus=likely_repair_locus,
+            )
+        ],
+        support_envelope_snapshot=target.support_envelope,
+        evaluation_input_compatibility={
+            **baseline_materialized_candidate.evaluation_input_compatibility,
+            "conformance_bundle": "codex-e4",
+        },
+        gate_results={"replay_gate_green": True, "conformance_gate_green": True},
+        metadata={"package_bound": True, "request_id": request_id},
+    )
+    return ReflectiveParetoBackendRequest(
+        request_id=request_id,
+        target=target,
+        baseline_candidate=baseline_candidate,
+        baseline_materialized_candidate=baseline_materialized_candidate,
+        dataset=dataset,
+        evaluations=[evaluation],
+        active_sample_id=sample.sample_id,
+        execution_context=OptimizationExecutionContext(
+            target_id=target.target_id,
+            sample_id=sample.sample_id,
+            runtime_context=sample.runtime_context(),
+            evaluation_input_compatibility=baseline_materialized_candidate.evaluation_input_compatibility,
+            metadata={"package_bound": True, "dataset_id": dataset.dataset_id},
+        ),
+        mutation_bounds=MutationBounds(max_changed_loci=3, max_changed_artifacts=1, max_total_value_bytes=2600),
+        max_proposals=3,
+        metadata={"package_bound": True},
     )
 
 

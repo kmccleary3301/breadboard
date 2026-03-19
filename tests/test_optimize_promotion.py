@@ -17,6 +17,7 @@ from agentic_coder_prototype.optimize import (
     build_codex_dossier_promotion_examples,
     build_codex_dossier_promotion_examples_payload,
     build_coding_overlay_benchmark_example,
+    build_opencode_prompt_config_tool_guidance_package_example,
     build_promotion_evidence_summary,
     build_support_execution_benchmark_example,
     build_support_execution_coding_overlay_composition_example,
@@ -443,7 +444,43 @@ def test_build_promotion_evidence_summary_captures_typed_transfer_slices_and_mod
     assert [item.slice_kind for item in summary.transfer_slices] == ["package", "model_tier", "environment"]
     assert summary.model_tier_audit["default_model"] == "gpt-5.4-nano"
     assert summary.model_tier_audit["triggered"] is False
+    assert summary.transfer_slice_status["package.codex_dossier.current"]["status"] == "pass"
+    assert summary.blocked_transfer_slice_ids == []
+    assert summary.inconclusive_transfer_slice_ids == []
+    assert summary.attribution_summary["required"] is True
+    assert summary.attribution_summary["present"] is True
+
+
+def test_build_promotion_evidence_summary_tracks_opencode_package_tier_audit() -> None:
+    example = build_opencode_prompt_config_tool_guidance_package_example()
+    summary = build_promotion_evidence_summary(
+        summary_id="evidence_summary.opencode_prompt_config_tool_guidance.001",
+        candidate_id=example["package_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        family_composition=example["family_composition"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[example["objective_breakdown_result"]],
+        review_required=True,
+        metadata={"lane": "opencode_prompt_config_tool_guidance_package"},
+    )
+
+    assert summary.transfer_slice_ids == [
+        "model_tier.nano_first_openai",
+        "package.opencode_1_2_17.current",
+        "provider_model.openai_gpt_5_4_pair",
+        "tool_pack.opencode_native_responses",
+    ]
+    assert summary.model_tier_audit["default_model"] == "gpt-5.4-nano"
+    assert summary.model_tier_audit["escalation_model"] == "gpt-5.4-mini"
+    assert summary.model_tier_audit["triggered"] is True
+    assert summary.model_tier_audit["trigger_reason"] == "ambiguous_hidden_hold_prompt_tool_pack_margin"
     assert summary.family_risk_summary["composed_family"] is True
+    assert summary.transfer_slice_status["model_tier.nano_first_openai"]["status"] == "audited_pass"
+    assert summary.attribution_summary["required"] is True
+    assert summary.attribution_summary["present"] is True
 
 
 def test_promote_candidate_requires_more_trials_for_stochastic_manifest() -> None:
@@ -545,3 +582,111 @@ def test_family_promotion_gate_blocks_partial_objective_breakdown() -> None:
 
     assert result.status == "insufficient_evidence"
     assert "partially blocked" in result.reason
+
+
+def test_family_promotion_gate_blocks_blocked_transfer_slice_on_package_lane() -> None:
+    example = build_support_execution_tool_guidance_coding_overlay_package_example()
+    blocked_breakdown = _clone_objective_breakdown(
+        example["objective_breakdown_result"],
+        slice_status={
+            **example["objective_breakdown_result"].slice_status,
+            "package.codex_dossier.current": {"status": "blocked", "promotion_role": "required"},
+        },
+    )
+
+    result = evaluate_family_promotion_gate(
+        target=example["target"],
+        candidate_id=example["package_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        family_composition=example["family_composition"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[blocked_breakdown],
+    )
+
+    assert result.status == "insufficient_evidence"
+    assert "transfer slices" in result.reason
+    assert result.metadata["blocked_transfer_slice_ids"] == ["package.codex_dossier.current"]
+
+
+def test_family_promotion_gate_blocks_inconclusive_transfer_slice_on_package_lane() -> None:
+    example = build_opencode_prompt_config_tool_guidance_package_example()
+    inconclusive_breakdown = _clone_objective_breakdown(
+        example["objective_breakdown_result"],
+        slice_status={
+            **example["objective_breakdown_result"].slice_status,
+            "model_tier.nano_first_openai": {"status": "inconclusive", "promotion_role": "required"},
+        },
+    )
+
+    result = evaluate_family_promotion_gate(
+        target=example["target"],
+        candidate_id=example["package_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        family_composition=example["family_composition"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[inconclusive_breakdown],
+    )
+
+    assert result.status == "insufficient_evidence"
+    assert "inconclusive" in result.reason
+    assert result.metadata["inconclusive_transfer_slice_ids"] == ["model_tier.nano_first_openai"]
+
+
+def test_family_promotion_gate_blocks_optimistic_scope_expansion() -> None:
+    example = build_opencode_prompt_config_tool_guidance_package_example()
+    expanded_breakdown = _clone_objective_breakdown(
+        example["objective_breakdown_result"],
+        metadata={
+            **example["objective_breakdown_result"].metadata,
+            "applicability_scope_status": "expanded",
+        },
+    )
+
+    result = evaluate_family_promotion_gate(
+        target=example["target"],
+        candidate_id=example["package_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        family_composition=example["family_composition"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[expanded_breakdown],
+    )
+
+    assert result.status == "fail"
+    assert "expanded beyond the declared package" in result.reason
+
+
+def test_family_promotion_gate_requires_member_family_attribution_when_triggered() -> None:
+    example = build_opencode_prompt_config_tool_guidance_package_example()
+    unattributed_breakdown = _clone_objective_breakdown(
+        example["objective_breakdown_result"],
+        metadata={
+            **example["objective_breakdown_result"].metadata,
+            "member_family_attribution": {},
+        },
+    )
+
+    result = evaluate_family_promotion_gate(
+        target=example["target"],
+        candidate_id=example["package_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        family_composition=example["family_composition"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[unattributed_breakdown],
+    )
+
+    assert result.status == "insufficient_evidence"
+    assert "member-family attribution" in result.reason
+    assert result.metadata["attribution_required"] is True
+    assert result.metadata["attribution_present"] is False

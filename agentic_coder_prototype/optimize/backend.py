@@ -1654,6 +1654,60 @@ class StagedOptimizer(ReflectiveParetoBackend):
 
     backend_id = "staged_optimizer.v1"
 
+    def _private_transfer_slice_status(
+        self,
+        request: StagedOptimizerRequest,
+    ) -> Dict[str, Dict[str, Any]]:
+        raw_status = request.metadata.get("transfer_slice_status") or {}
+        if not isinstance(raw_status, Mapping):
+            return {}
+        return {
+            str(slice_id): dict(payload)
+            for slice_id, payload in raw_status.items()
+            if isinstance(payload, Mapping)
+        }
+
+    def _private_transfer_slice_penalties(
+        self,
+        request: StagedOptimizerRequest,
+    ) -> Dict[str, float]:
+        penalties: Dict[str, float] = {}
+        for slice_id, payload in self._private_transfer_slice_status(request).items():
+            status = str(payload.get("status") or "").strip().lower()
+            if status == "blocked":
+                penalties[f"slice_blocked:{slice_id}"] = 0.22
+            elif status == "inconclusive":
+                penalties[f"slice_inconclusive:{slice_id}"] = 0.11
+            elif status == "missing":
+                penalties[f"slice_missing:{slice_id}"] = 0.14
+        model_tier_audit = request.metadata.get("model_tier_audit") or {}
+        if isinstance(model_tier_audit, Mapping) and bool(model_tier_audit.get("triggered")):
+            penalties["model_tier_audit_active"] = 0.03
+        return penalties
+
+    def _private_candidate_bonus(
+        self,
+        request: StagedOptimizerRequest,
+        stage: StagePlanStep,
+        entry: "PortfolioEntry",
+        *,
+        escalation_triggered: bool,
+    ) -> float:
+        if not escalation_triggered:
+            return 0.0
+        if request.family_composition is None:
+            return 0.0
+        if entry.metadata.get("role") == "baseline":
+            return 0.0
+        applied_count = len(entry.candidate.applied_loci)
+        if applied_count <= 1:
+            return 0.0
+        stage_plan = self.build_stage_plan(request)
+        is_final_stage = bool(stage_plan) and stage.stage_id == stage_plan[-1].stage_id
+        if not is_final_stage:
+            return 0.0
+        return 0.04
+
     def _private_uncertainty_penalties(
         self,
         request: StagedOptimizerRequest,
@@ -1676,6 +1730,7 @@ class StagedOptimizer(ReflectiveParetoBackend):
             penalties["review_sensitive_penalty"] = 0.12
         if len(stage.allowed_loci) > 1:
             penalties["multi_locus_penalty"] = 0.05
+        penalties.update(self._private_transfer_slice_penalties(request))
         return penalties
 
     def _private_blocked_components(
@@ -1699,6 +1754,12 @@ class StagedOptimizer(ReflectiveParetoBackend):
             blocked.append("review_required")
         if stage.allowed_split_visibilities == ["comparison_visible"]:
             blocked.append("mutation_visibility_closed")
+        for slice_id, payload in self._private_transfer_slice_status(request).items():
+            status = str(payload.get("status") or "").strip().lower()
+            if status in {"blocked", "inconclusive", "missing"}:
+                blocked.append(f"transfer_slice:{slice_id}:{status}")
+        if bool(request.metadata.get("optimistic_scope_blocked")):
+            blocked.append("optimistic_scope_blocked")
         return blocked
 
     def _private_model_tier_for_stage(
@@ -1727,6 +1788,7 @@ class StagedOptimizer(ReflectiveParetoBackend):
         self,
         entry: "PortfolioEntry",
         penalties: Mapping[str, float],
+        candidate_bonus: float = 0.0,
     ) -> float:
         vector = entry.objective_vector
         score = float(vector.correctness_score)
@@ -1734,6 +1796,7 @@ class StagedOptimizer(ReflectiveParetoBackend):
         score -= float(vector.mutation_cost)
         score -= float(vector.instability_penalty)
         score -= sum(float(value) for value in penalties.values())
+        score += float(candidate_bonus)
         return score
 
     def _select_stage_winner(
@@ -1746,6 +1809,18 @@ class StagedOptimizer(ReflectiveParetoBackend):
         penalties = self._private_uncertainty_penalties(request, stage)
         blocked_components = self._private_blocked_components(request, stage)
         model_tier, considered, triggered, reason = self._private_model_tier_for_stage(request, stage)
+        def _entry_score(entry: "PortfolioEntry", *, triggered_now: bool) -> float:
+            return self._policy_score_for_entry(
+                entry,
+                penalties,
+                candidate_bonus=self._private_candidate_bonus(
+                    request,
+                    stage,
+                    entry,
+                    escalation_triggered=triggered_now,
+                ),
+            )
+
         if not compatible_entries:
             return PrivateSearchPolicyDecision(
                 stage_id=stage.stage_id,
@@ -1759,19 +1834,23 @@ class StagedOptimizer(ReflectiveParetoBackend):
                 escalation_reason=reason,
                 blocked_components=blocked_components + ["no_compatible_proposals"],
                 uncertainty_penalties=penalties,
-                score_table={current_baseline_entry.candidate.candidate_id: self._policy_score_for_entry(current_baseline_entry, penalties)},
+                score_table={current_baseline_entry.candidate.candidate_id: _entry_score(current_baseline_entry, triggered_now=triggered)},
                 metadata={
                     "search_space_id": request.search_space.search_space_id,
                     "evaluation_suite_id": request.evaluation_suite.suite_id,
                     "objective_suite_id": request.objective_suite.suite_id,
                     "fallback_to_baseline": True,
+                    "transfer_slice_status": self._private_transfer_slice_status(request),
+                    "slice_penalties": self._private_transfer_slice_penalties(request),
+                    "unfair_mixed_tier_backend_comparison_forbidden": bool(
+                        request.evaluation_suite.rerun_policy.get("mixed_tier_backend_comparison_forbidden")
+                    ),
+                    "escalation_changed_order": False,
                 },
             )
-        best_entry = max(
-            compatible_entries,
-            key=lambda entry: self._policy_score_for_entry(entry, penalties),
-        )
-        best_score = self._policy_score_for_entry(best_entry, penalties)
+        pre_escalation_best = max(compatible_entries, key=lambda entry: _entry_score(entry, triggered_now=False))
+        best_entry = max(compatible_entries, key=lambda entry: _entry_score(entry, triggered_now=triggered))
+        best_score = _entry_score(best_entry, triggered_now=triggered)
         proposal_id = str(best_entry.metadata.get("proposal_id") or best_entry.candidate.candidate_id)
         return PrivateSearchPolicyDecision(
             stage_id=stage.stage_id,
@@ -1785,11 +1864,23 @@ class StagedOptimizer(ReflectiveParetoBackend):
             escalation_reason=reason,
             blocked_components=blocked_components,
             uncertainty_penalties=penalties,
-            score_table={best_entry.candidate.candidate_id: best_score},
+            score_table={
+                entry.candidate.candidate_id: _entry_score(entry, triggered_now=triggered)
+                for entry in compatible_entries
+            },
             metadata={
                 "search_space_id": request.search_space.search_space_id,
                 "evaluation_suite_id": request.evaluation_suite.suite_id,
                 "objective_suite_id": request.objective_suite.suite_id,
+                "transfer_slice_status": self._private_transfer_slice_status(request),
+                "slice_penalties": self._private_transfer_slice_penalties(request),
+                "unfair_mixed_tier_backend_comparison_forbidden": bool(
+                    request.evaluation_suite.rerun_policy.get("mixed_tier_backend_comparison_forbidden")
+                ),
+                "escalation_changed_order": (
+                    triggered and pre_escalation_best.candidate.candidate_id != best_entry.candidate.candidate_id
+                ),
+                "selected_score": best_score,
             },
         )
 
