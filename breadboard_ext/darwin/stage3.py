@@ -4,12 +4,24 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from agentic_coder_prototype.optimize import ArtifactRef, MutableLocus, OptimizationInvariant, OptimizationTarget, SupportEnvelope
+from agentic_coder_prototype.optimize import (
+    ArtifactRef,
+    CandidateBundle,
+    CandidateChange,
+    MutationBounds,
+    MutableLocus,
+    OptimizationInvariant,
+    OptimizationTarget,
+    SupportEnvelope,
+    materialize_candidate,
+    validate_bounded_candidate,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
 STAGE3_TARGETABLE_LANES = {"lane.repo_swe", "lane.systems"}
 STAGE3_CONSUMED_LANES = {"lane.harness", "lane.repo_swe"}
+STAGE3_MUTATION_CANARY_LANES = {"lane.repo_swe"}
 
 _TARGET_KINDS = {
     "lane.repo_swe": "repo_patch_workspace",
@@ -43,6 +55,13 @@ _MUTABLE_LOCI = {
             locus_id="policy.bundle",
             locus_kind="policy_bundle_ref",
             selector="effective_policy.resolved_policy_bundle_refs",
+            mutation_kind="replace",
+            metadata={"component_kind": "policy"},
+        ),
+        MutableLocus(
+            locus_id="budget.class",
+            locus_kind="budget_class_ref",
+            selector="evaluator_pack.budget_envelope.budget_class",
             mutation_kind="replace",
             metadata={"component_kind": "policy"},
         ),
@@ -225,3 +244,131 @@ def consume_execution_plan_bindings(execution_plan: Mapping[str, Any]) -> dict[s
 def dump_stage3_optimization_target(path: Path, target: OptimizationTarget) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(target.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _stage3_mutation_locus_for_operator(*, lane_id: str, mutation_operator: str) -> str | None:
+    if lane_id != "lane.repo_swe":
+        return None
+    mapping = {
+        "mut.topology.single_to_pev_v1": "topology.params",
+        "mut.budget.class_a_to_class_b_v1": "budget.class",
+        "mut.tool_scope.add_git_diff_v1": "tool.scope",
+        "mut.policy.shadow_memory_enable_v1": "policy.bundle",
+    }
+    return mapping.get(mutation_operator)
+
+
+def _stage3_change_value_for_operator(*, mutation_operator: str, mutation_cfg: Mapping[str, Any]) -> dict[str, Any]:
+    if mutation_operator == "mut.topology.single_to_pev_v1":
+        return {"topology_id": mutation_cfg["topology_id"]}
+    if mutation_operator == "mut.budget.class_a_to_class_b_v1":
+        return {"budget_class": mutation_cfg["budget_class"]}
+    if mutation_operator == "mut.tool_scope.add_git_diff_v1":
+        return {"tool_scope_delta": "enable_git_diff"}
+    if mutation_operator == "mut.policy.shadow_memory_enable_v1":
+        return {"policy_bundle_id": mutation_cfg["policy_bundle_id"], "shadow_memory": True}
+    raise ValueError(f"unsupported Stage-3 mutation canary operator: {mutation_operator}")
+
+
+def supports_stage3_mutation_canary(*, lane_id: str, mutation_operator: str) -> bool:
+    return lane_id in STAGE3_MUTATION_CANARY_LANES and _stage3_mutation_locus_for_operator(
+        lane_id=lane_id,
+        mutation_operator=mutation_operator,
+    ) is not None
+
+
+def build_stage3_mutation_canary(
+    *,
+    lane_id: str,
+    spec: Mapping[str, Any],
+    parent_candidate_id: str,
+    parent_candidate_ref: str,
+    mutation_cfg: Mapping[str, Any],
+    candidate_ref: str,
+    evaluation_ref: str,
+    task_id: str,
+) -> dict[str, Any]:
+    mutation_operator = str(mutation_cfg["mutation_operator"])
+    locus_id = _stage3_mutation_locus_for_operator(lane_id=lane_id, mutation_operator=mutation_operator)
+    if not locus_id:
+        raise ValueError(f"Stage-3 mutation canary is not supported for {lane_id}:{mutation_operator}")
+
+    target = build_stage3_optimization_target(
+        lane_id=lane_id,
+        spec=spec,
+        baseline_artifact_ref=parent_candidate_ref,
+        task_id=task_id,
+        topology_id=str(mutation_cfg["topology_id"]),
+        policy_bundle_id=str(mutation_cfg["policy_bundle_id"]),
+    )
+    change = CandidateChange(
+        locus_id=locus_id,
+        value=_stage3_change_value_for_operator(mutation_operator=mutation_operator, mutation_cfg=mutation_cfg),
+        rationale=f"bounded Stage-3 canary mutation for {mutation_operator}",
+        metadata={
+            "mutation_operator": mutation_operator,
+            "overlay_only": True,
+            "lane_id": lane_id,
+        },
+    )
+    candidate = CandidateBundle(
+        candidate_id=f"{mutation_cfg['candidate_id']}.substrate.v1",
+        source_target_id=target.target_id,
+        applied_loci=[locus_id],
+        changes=[change],
+        change_set_refs=[
+            ArtifactRef(
+                ref=candidate_ref,
+                media_type="application/json",
+                metadata={"lane_id": lane_id, "task_id": task_id},
+            )
+        ],
+        provenance={
+            "stage": "stage3",
+            "lane_id": lane_id,
+            "task_id": task_id,
+            "mutation_operator": mutation_operator,
+            "baseline_candidate_id": parent_candidate_id,
+            "candidate_ref": candidate_ref,
+            "evaluation_ref": evaluation_ref,
+        },
+        metadata={
+            "canary": True,
+            "trial_label": mutation_cfg["trial_label"],
+        },
+    )
+    bounds = MutationBounds(
+        max_changed_loci=1,
+        max_changed_artifacts=1,
+        max_total_value_bytes=512,
+        metadata={"source": "darwin_stage3_tranche1_canary"},
+    )
+    materialized = materialize_candidate(
+        target,
+        candidate,
+        effective_artifact={
+            "candidate_ref": candidate_ref,
+            "evaluation_ref": evaluation_ref,
+            "mutation_operator": mutation_operator,
+            "topology_id": mutation_cfg["topology_id"],
+            "policy_bundle_id": mutation_cfg["policy_bundle_id"],
+            "budget_class": mutation_cfg["budget_class"],
+            "task_id": task_id,
+        },
+        effective_tool_surface={"allowed_tools": list(spec.get("allowed_tools") or [])},
+        evaluation_input_compatibility={
+            "lane_id": lane_id,
+            "task_id": task_id,
+            "budget_class": mutation_cfg["budget_class"],
+        },
+        metadata={"canary": True, "trial_label": mutation_cfg["trial_label"]},
+    )
+    blast_radius = validate_bounded_candidate(target, candidate, bounds, materialized=materialized)
+    return {
+        "target": target.to_dict(),
+        "candidate_bundle": candidate.to_dict(),
+        "materialized_candidate": materialized.to_dict(),
+        "mutation_bounds": bounds.to_dict(),
+        "blast_radius": blast_radius,
+        "selected_locus_id": locus_id,
+    }

@@ -7,8 +7,10 @@ from breadboard_ext.darwin.stage3 import (
     STAGE3_CONSUMED_LANES,
     STAGE3_TARGETABLE_LANES,
     build_stage3_budget_envelope,
+    build_stage3_mutation_canary,
     build_stage3_optimization_target,
     consume_execution_plan_bindings,
+    supports_stage3_mutation_canary,
 )
 from scripts.bootstrap_darwin_campaign_specs_v0 import write_bootstrap_specs
 
@@ -31,7 +33,7 @@ def test_build_stage3_optimization_target_for_repo_swe() -> None:
     assert "lane.repo_swe" in STAGE3_TARGETABLE_LANES
     assert target.target_kind == "repo_patch_workspace"
     assert target.support_envelope.models == ["gpt-5.4-mini", "gpt-5.4-nano"]
-    assert target.locus_ids() == ["topology.params", "operator.family", "tool.scope", "policy.bundle"]
+    assert target.locus_ids() == ["topology.params", "operator.family", "tool.scope", "policy.bundle", "budget.class"]
 
 
 def test_build_stage3_optimization_target_for_systems() -> None:
@@ -81,3 +83,33 @@ def test_stage3_budget_envelope_contains_budget_and_reserves() -> None:
     assert envelope["route_id"] == "openrouter/openai/gpt-5.4-mini"
     assert envelope["replication_reserve_fraction"] == 0.2
     assert envelope["control_reserve_fraction"] == 0.1
+
+
+def test_build_stage3_mutation_canary_for_repo_swe_budget_mutation() -> None:
+    write_bootstrap_specs()
+    spec = _load_spec("artifacts/darwin/bootstrap/camp.darwin.phase1.repo_swe.bootstrap.v0.json")
+    canary = build_stage3_mutation_canary(
+        lane_id="lane.repo_swe",
+        spec=spec,
+        parent_candidate_id="cand.lane.repo_swe.baseline.v1",
+        parent_candidate_ref="artifacts/darwin/candidates/cand.lane.repo_swe.baseline.v1.json",
+        mutation_cfg={
+            "candidate_id": "cand.lane.repo_swe.mut.class_b.v1",
+            "mutation_operator": "mut.budget.class_a_to_class_b_v1",
+            "topology_id": "policy.topology.pev_v0",
+            "policy_bundle_id": "policy.topology.pev_v0",
+            "budget_class": "class_b",
+            "trial_label": "mut_class_b",
+        },
+        candidate_ref="artifacts/darwin/candidates/cand.lane.repo_swe.mut.class_b.v1.json",
+        evaluation_ref="artifacts/darwin/evaluations/cand.lane.repo_swe.mut.class_b.v1.evaluation_v1.json",
+        task_id="task.darwin.repo_swe.patch_workspace_smoke.search",
+    )
+    assert supports_stage3_mutation_canary(
+        lane_id="lane.repo_swe",
+        mutation_operator="mut.budget.class_a_to_class_b_v1",
+    )
+    assert canary["selected_locus_id"] == "budget.class"
+    assert canary["candidate_bundle"]["applied_loci"] == ["budget.class"]
+    assert canary["materialized_candidate"]["evaluation_input_compatibility"]["budget_class"] == "class_b"
+    assert canary["blast_radius"]["changed_loci_count"] == 1
