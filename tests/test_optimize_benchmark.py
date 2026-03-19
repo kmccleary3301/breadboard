@@ -14,6 +14,8 @@ from agentic_coder_prototype.optimize import (
     build_coding_overlay_benchmark_example_payload,
     build_support_execution_benchmark_example,
     build_support_execution_benchmark_example_payload,
+    build_support_execution_coding_overlay_composition_example,
+    build_support_execution_coding_overlay_composition_example_payload,
     build_tool_guidance_coding_overlay_composition_example,
     build_tool_guidance_coding_overlay_composition_example_payload,
     build_tool_guidance_benchmark_example,
@@ -176,3 +178,20 @@ def test_tool_guidance_coding_overlay_composition_payload_round_trips() -> None:
     assert comparison.manifest_id == manifest.manifest_id
     assert comparison.metadata["model_policy"] == "nano_only"
     assert result.metadata["composition_id"] == example["family_composition"].composition_id
+
+
+def test_support_execution_coding_overlay_composition_payload_round_trips() -> None:
+    example = build_support_execution_coding_overlay_composition_example()
+    payload = build_support_execution_coding_overlay_composition_example_payload()
+
+    manifest = BenchmarkRunManifest.from_dict(payload["manifest"])
+    comparison = CandidateComparisonResult.from_dict(payload["comparison_result"])
+    result = BenchmarkRunResult.from_dict(payload["benchmark_result"])
+
+    assert example["family_composition"].composition_id == "composition.support_execution_coding_overlay.v3"
+    assert manifest.hidden_hold_sample_ids() == ["sample.support_execution_coding_overlay.hold.001"]
+    assert comparison.manifest_id == manifest.manifest_id
+    assert comparison.metadata["model_policy"] == "nano_first"
+    assert result.metadata["composition_id"] == example["family_composition"].composition_id
+    assert result.variance_summary["default_model"] == "gpt-5.4-nano"
+    assert result.variance_summary["mini_escalation_triggered"] is False

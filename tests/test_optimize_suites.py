@@ -13,6 +13,8 @@ from agentic_coder_prototype.optimize import (
     build_coding_overlay_benchmark_example_payload,
     build_support_execution_benchmark_example,
     build_support_execution_benchmark_example_payload,
+    build_support_execution_coding_overlay_composition_example,
+    build_support_execution_coding_overlay_composition_example_payload,
     build_tool_guidance_coding_overlay_composition_example,
     build_tool_guidance_coding_overlay_composition_example_payload,
     build_tool_guidance_benchmark_example,
@@ -220,6 +222,43 @@ def test_composition_payload_stays_outside_darwin_and_public_reward_ontology() -
     payload = build_tool_guidance_coding_overlay_composition_example_payload()
 
     assert payload["evaluation_suite"]["metadata"]["model_policy"] == "nano_only"
+    assert _payload_contains_forbidden_key(
+        payload,
+        {"campaign_id", "archive_id", "island_id", "genealogy_id", "reward_suite_id"},
+    ) is False
+
+
+def test_support_execution_coding_overlay_composition_round_trip() -> None:
+    example = build_support_execution_coding_overlay_composition_example()
+    payload = build_support_execution_coding_overlay_composition_example_payload()
+
+    composition = FamilyCompositionManifest.from_dict(payload["family_composition"])
+    search_space = SearchSpaceManifest.from_dict(payload["search_space"])
+    objective_breakdown = ObjectiveBreakdownResult.from_dict(payload["objective_breakdown_result"])
+
+    assert composition.composition_id == "composition.support_execution_coding_overlay.v3"
+    assert composition.member_family_ids == [
+        "family.support_execution.v2",
+        "family.coding_overlay.v2",
+    ]
+    assert search_space.composition_id == composition.composition_id
+    assert search_space.stage_partitions["support_config_seed"] == [
+        "policy.support_claim_limited_actions",
+        "policy.execution_profile.selection",
+    ]
+    assert objective_breakdown.member_family_breakdowns["family.support_execution.v2"]["support_honesty"] == 0.9875
+    assert example["staged_result"].metadata["composition_id"] == composition.composition_id
+    assert example["benchmark_result"].metadata["model_policy"] == "nano_first"
+
+
+def test_support_execution_coding_overlay_composition_records_model_tier_policy() -> None:
+    payload = build_support_execution_coding_overlay_composition_example_payload()
+
+    assert payload["evaluation_suite"]["rerun_policy"]["default_model"] == "gpt-5.4-nano"
+    assert payload["evaluation_suite"]["rerun_policy"]["escalation_model"] == "gpt-5.4-mini"
+    assert payload["evaluation_suite"]["metadata"]["mini_escalation_policy"] == "auditable_justified_only"
+    assert payload["benchmark_result"]["variance_summary"]["mini_escalation_triggered"] is False
+    assert payload["benchmark_result"]["promotion_readiness_summary"]["mini_escalation_audit"]["triggered"] is False
     assert _payload_contains_forbidden_key(
         payload,
         {"campaign_id", "archive_id", "island_id", "genealogy_id", "reward_suite_id"},

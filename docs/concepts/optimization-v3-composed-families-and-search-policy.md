@@ -124,6 +124,48 @@ This is the safest first composition because:
 - it is Nano-valid
 - it exercises real cross-family coupling without touching the riskiest families first
 
+## Second live composed lane
+
+The second V3 lane should prove a bounded E4 dossier prompt+config composition:
+
+- support / execution family
+- coding-overlay family
+
+This lane matters because it forces V3 to handle:
+
+- one config-like family
+- one prompt-like family
+- support-sensitive review burden
+- bounded coding-harness discipline
+- one shared dossier package with explicit runtime-context assumptions
+
+The point is not broader search. The point is to prove that V3 can compose a real E4 dossier lane without losing:
+
+- replay-safe execution-profile honesty
+- apply_patch-centered bounded editing
+- hidden-hold discipline
+- cost discipline
+
+### Model-tier policy for the bounded E4 lane
+
+This lane should run:
+
+- `GPT-5.4 Nano` by default
+- `GPT-5.4 Mini` only by explicit escalation policy
+
+The escalation policy should be:
+
+- auditable
+- justified by ambiguity or close hidden-hold margin
+- disallowed as a silent backend advantage
+
+So a clean first implementation should record:
+
+- Nano as the default model tier
+- whether Mini escalation was considered
+- whether it triggered
+- why it did or did not trigger
+
 ## What stays private
 
 The following remain backend-private or experimental:
@@ -146,4 +188,3 @@ V3 does **not** introduce:
 - generic co-optimization workflow products
 
 The point of V3 is to prove bounded composition cleanly, not to reopen the whole optimizer architecture.
-
