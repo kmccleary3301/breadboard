@@ -33,6 +33,10 @@ Date: 2026-03-14
 - external-safe evidence tranche status now lives at `docs/darwin_phase2_external_safe_status_2026-03-19.md`
 - external-safe evidence tranche review now lives at `docs/darwin_phase2_external_safe_tranche_review_2026-03-19.md`
 - current-program closeout note now lives at `docs/darwin_phase2_current_program_closeout_note_2026-03-19.md`
+- current-program signoff now lives at `docs/darwin_current_program_signoff_2026-03-19.md`
+- current-program completion gate now lives at `docs/darwin_current_program_completion_gate_2026-03-19.md`
+- current-program canonical artifacts now live at `docs/darwin_current_program_canonical_artifacts_2026-03-19.md`
+- current-program merged-state verification note now lives at `docs/darwin_current_program_main_verification_2026-03-19.md`
 
 ## Deferred
 

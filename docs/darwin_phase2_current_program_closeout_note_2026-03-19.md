@@ -14,6 +14,13 @@ After the external-safe evidence tranche, the current scoped DARWIN program appe
 - final canonical artifact freeze for the current scoped DARWIN program
 - final merged-state verification on `main` once the branch is landed
 
+## Current closeout docs
+
+- `docs/darwin_current_program_signoff_2026-03-19.md`
+- `docs/darwin_current_program_completion_gate_2026-03-19.md`
+- `docs/darwin_current_program_canonical_artifacts_2026-03-19.md`
+- `docs/darwin_current_program_main_verification_2026-03-19.md`
+
 ## Not part of current-program closure
 
 The following are future-roadmap or later-phase items and should not be silently folded into current-program closure:
