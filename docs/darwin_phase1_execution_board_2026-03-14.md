@@ -25,6 +25,7 @@ Date: 2026-03-14
 - compute-normalized tranche status now lives at `docs/darwin_phase2_compute_normalized_status_2026-03-18.md`
 - compute-normalized tranche review now lives at `docs/darwin_phase2_compute_normalized_tranche_review_2026-03-18.md`
 - compute-normalized tranche decision now lives at `docs/darwin_phase2_compute_normalized_tranche_decision_2026-03-18.md`
+- transfer/lineage tranche execution plan now lives at `docs/darwin_phase2_transfer_lineage_execution_plan_2026-03-18.md`
 
 ## Deferred
 
