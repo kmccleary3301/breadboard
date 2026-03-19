@@ -17,6 +17,9 @@ Primary issue: `breadboard_repo_darwin_phase1_20260313-8xc`
 - proving review artifact now exists:
   - `artifacts/darwin/reviews/compute_normalized_review_v0.json`
   - `artifacts/darwin/reviews/compute_normalized_review_v0.md`
+- comparative memo artifact now exists:
+  - `artifacts/darwin/memos/compute_normalized_memo_v0.json`
+  - `artifacts/darwin/memos/compute_normalized_memo_v0.md`
 - tranche review note now exists:
   - `docs/darwin_phase2_compute_normalized_tranche_review_2026-03-18.md`
 
@@ -44,8 +47,10 @@ The new normalized view is also emitted across all current active lanes as a der
 - `pytest -q tests/test_build_darwin_compute_normalized_view_v2.py tests/test_build_darwin_comparative_dossier_v1.py`
 - `pytest -q tests/test_run_darwin_t1_baseline_scorecard_v1.py`
 - `pytest -q tests/test_build_darwin_compute_normalized_review_v0.py`
+- `pytest -q tests/test_build_darwin_compute_normalized_memo_v0.py`
 - `python scripts/build_darwin_compute_normalized_view_v2.py --json`
 - `python scripts/build_darwin_compute_normalized_review_v0.py --json`
+- `python scripts/build_darwin_compute_normalized_memo_v0.py --json`
 
 ## Boundary
 

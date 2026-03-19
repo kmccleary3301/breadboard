@@ -78,6 +78,7 @@ Phase-1 T0 freezes:
 - `scripts/build_darwin_compute_normalized_view_v1.py`
 - `scripts/build_darwin_compute_normalized_view_v2.py`
 - `scripts/build_darwin_compute_normalized_review_v0.py`
+- `scripts/build_darwin_compute_normalized_memo_v0.py`
 - `scripts/build_darwin_comparative_dossier_v1.py`
 - `scripts/emit_darwin_search_evidence_v1.py`
 - `scripts/run_darwin_phase1_replay_audit_v1.py`
