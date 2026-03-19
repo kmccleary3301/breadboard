@@ -41,6 +41,7 @@ from .promotion import (
 )
 from .suites import (
     EvaluationSuiteManifest,
+    FamilyCompositionManifest,
     ObjectiveBreakdownResult,
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
@@ -3082,6 +3083,643 @@ def build_coding_overlay_verifier_experiment_example_payload() -> Dict[str, obje
         "comparison_result": example["comparison_result"].to_dict(),
         "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
         "verifier_experiment": example["verifier_experiment"].to_dict(),
+    }
+
+
+def _clone_sample_for_composed_target(
+    sample: OptimizationSample,
+    *,
+    sample_id: str,
+    target_id: str,
+    prompt_input: str,
+    expected_checks: List[str],
+) -> OptimizationSample:
+    payload = sample.to_dict()
+    payload["sample_id"] = sample_id
+    payload["target_id"] = target_id
+    payload["prompt_input"] = prompt_input
+    payload["expected_checks"] = expected_checks
+    return OptimizationSample.from_dict(payload)
+
+
+def build_tool_guidance_coding_overlay_composition_example() -> Dict[str, object]:
+    """Build the first low-risk V3 composed-family lane over the Codex dossier package."""
+
+    tool = build_tool_guidance_benchmark_example()
+    coding = build_coding_overlay_benchmark_example()
+    tool_target = tool["target"]
+    coding_target = coding["target"]
+    tool_family = tool["target_family"]
+    coding_family = coding["target_family"]
+    assert isinstance(tool_target, OptimizationTarget)
+    assert isinstance(coding_target, OptimizationTarget)
+    assert isinstance(tool_family, TargetFamilyManifest)
+    assert isinstance(coding_family, TargetFamilyManifest)
+
+    composed_target = OptimizationTarget(
+        target_id="target.codex_dossier.tool_guidance_coding_overlay.v3",
+        target_kind="agent_config_overlay_package",
+        baseline_artifact_refs=list(tool_target.baseline_artifact_refs),
+        mutable_loci=list(tool_target.mutable_loci) + list(coding_target.mutable_loci),
+        support_envelope=tool_target.support_envelope,
+        invariants=list(tool_target.invariants),
+        metadata={
+            "lane": "tool_guidance_coding_overlay_composed",
+            "phase": "v3",
+            "member_family_ids": [tool_family.family_id, coding_family.family_id],
+        },
+    )
+
+    tool_train = tool["dataset"].samples[0]
+    coding_validation = coding["dataset"].samples[1]
+    tool_hold = tool["dataset"].samples[2]
+    coding_regression = coding["dataset"].samples[3]
+
+    dataset = OptimizationDataset(
+        dataset_id="dataset.tool_guidance_coding_overlay.v3",
+        dataset_version="2026-03-19.v3",
+        samples=[
+            _clone_sample_for_composed_target(
+                tool_train,
+                sample_id="sample.tool_guidance_coding_overlay.train.001",
+                target_id=composed_target.target_id,
+                prompt_input=(
+                    "Clarify exec_command guidance while keeping bounded-edit and apply_patch discipline explicit."
+                ),
+                expected_checks=[
+                    "clarity_improved",
+                    "support_envelope_preserved",
+                    "narrow_diff_bias_preserved",
+                    "apply_patch_preserved",
+                ],
+            ),
+            _clone_sample_for_composed_target(
+                coding_validation,
+                sample_id="sample.tool_guidance_coding_overlay.validation.001",
+                target_id=composed_target.target_id,
+                prompt_input=(
+                    "Improve planning and editing guidance without weakening tool-surface boundaries or replay-safe wording."
+                ),
+                expected_checks=[
+                    "clarity_improved",
+                    "planning_quality_improved",
+                    "replay_guidance_preserved",
+                    "apply_patch_preserved",
+                ],
+            ),
+            _clone_sample_for_composed_target(
+                tool_hold,
+                sample_id="sample.tool_guidance_coding_overlay.hold.001",
+                target_id=composed_target.target_id,
+                prompt_input=(
+                    "Catch candidates that sound clearer but quietly imply broader capability or looser edit scope."
+                ),
+                expected_checks=[
+                    "clarity_improved",
+                    "support_envelope_preserved",
+                    "held_out_blast_radius_guard",
+                    "apply_patch_preserved",
+                ],
+            ),
+            _clone_sample_for_composed_target(
+                coding_regression,
+                sample_id="sample.tool_guidance_coding_overlay.regression.001",
+                target_id=composed_target.target_id,
+                prompt_input=(
+                    "Preserve apply_patch-centered editing discipline and bounded overlay language on legacy repo tasks."
+                ),
+                expected_checks=[
+                    "clarity_improved",
+                    "narrow_diff_bias_preserved",
+                    "apply_patch_preserved",
+                    "replay_guidance_preserved",
+                ],
+            ),
+        ],
+        rationale_catalog=list(tool["dataset"].rationale_catalog) + list(coding["dataset"].rationale_catalog),
+        metadata={"lane": "tool_guidance_coding_overlay_composed", "phase": "v3"},
+    )
+
+    atomic_candidate = CandidateBundle(
+        candidate_id="cand.tool_guidance_coding_overlay.atomic_union.001",
+        source_target_id=composed_target.target_id,
+        applied_loci=[
+            "tool.render.exec_command",
+            "prompt.section.optimization_guidance",
+            "prompt.section.planning_policy",
+            "prompt.section.editing_policy",
+        ],
+        changes=[
+            CandidateChange(
+                locus_id="tool.render.exec_command",
+                value={"description": tool["child_candidate"].changes[0].value["description"]},
+                rationale="Carry forward the atomic tool-guidance improvement.",
+            ),
+            CandidateChange(
+                locus_id="prompt.section.optimization_guidance",
+                value={"text": tool["child_candidate"].changes[1].value["text"]},
+                rationale="Carry forward the atomic optimization-guidance improvement.",
+            ),
+            CandidateChange(
+                locus_id="prompt.section.planning_policy",
+                value={"text": coding["child_candidate"].changes[0].value["text"]},
+                rationale="Carry forward the atomic planning-policy improvement.",
+            ),
+            CandidateChange(
+                locus_id="prompt.section.editing_policy",
+                value={"text": coding["child_candidate"].changes[1].value["text"]},
+                rationale="Carry forward the atomic editing-policy improvement.",
+            ),
+        ],
+        provenance={
+            "kind": "atomic_family_union",
+            "member_family_ids": [tool_family.family_id, coding_family.family_id],
+        },
+        metadata={"lane": "tool_guidance_coding_overlay_composed", "role": "atomic_union"},
+    )
+
+    composed_candidate = CandidateBundle(
+        candidate_id="cand.tool_guidance_coding_overlay.composed.001",
+        source_target_id=composed_target.target_id,
+        applied_loci=[
+            "tool.render.exec_command",
+            "prompt.section.optimization_guidance",
+            "prompt.section.planning_policy",
+            "prompt.section.editing_policy",
+        ],
+        changes=[
+            CandidateChange(
+                locus_id="tool.render.exec_command",
+                value={
+                    "description": "Run shell commands inside the declared support envelope, then summarize results clearly without implying broader edit or execution scope."
+                },
+                rationale="Compose clarity with bounded-edit constraints instead of optimizing tool wording in isolation.",
+            ),
+            CandidateChange(
+                locus_id="prompt.section.optimization_guidance",
+                value={
+                    "text": "Prefer narrow overlays, preserve replay-safe behavior, and keep tool and editing guidance aligned around bounded changes."
+                },
+                rationale="Link optimization guidance to the bounded-edit doctrine explicitly.",
+            ),
+            CandidateChange(
+                locus_id="prompt.section.planning_policy",
+                value={
+                    "text": "Sketch the smallest viable plan first, especially when tool wording and edit scope interact."
+                },
+                rationale="Tie planning policy to the composed tool+editing surface.",
+            ),
+            CandidateChange(
+                locus_id="prompt.section.editing_policy",
+                value={
+                    "text": "Prefer apply_patch and narrow diffs; do not let clearer tool guidance imply broader rewrites or looser support boundaries."
+                },
+                rationale="Make the cross-family bounded-edit invariant explicit.",
+            ),
+        ],
+        provenance={
+            "kind": "family_composition_child_candidate",
+            "member_family_ids": [tool_family.family_id, coding_family.family_id],
+            "composition_kind": "joint",
+        },
+        metadata={"lane": "tool_guidance_coding_overlay_composed", "role": "composed_child"},
+    )
+
+    atomic_materialized = materialize_candidate(
+        composed_target,
+        atomic_candidate,
+        effective_artifact={"artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
+        effective_tool_surface={"tools": ["exec_command", "apply_patch", "spawn_agent"], "exposed_count": 3},
+        evaluation_input_compatibility={"replay": True, "schema": 3},
+        metadata={"lane": "tool_guidance_coding_overlay_composed", "role": "atomic_union"},
+    )
+    composed_materialized = materialize_candidate(
+        composed_target,
+        composed_candidate,
+        effective_artifact={"artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
+        effective_tool_surface={"tools": ["exec_command", "apply_patch", "spawn_agent"], "exposed_count": 3},
+        evaluation_input_compatibility={"replay": True, "schema": 3},
+        metadata={"lane": "tool_guidance_coding_overlay_composed", "role": "composed_child"},
+    )
+
+    evaluation_suite = EvaluationSuiteManifest(
+        suite_id="evalsuite.tool_guidance_coding_overlay.v3",
+        suite_kind="composed_tool_guidance_coding_overlay_family",
+        evaluator_stack=[
+            "tool_guidance_checker.v1",
+            "coding_overlay_checker.v1",
+            "diff_hygiene_checker.v1",
+            "replay_guard_checker.v1",
+        ],
+        split_visibility={
+            "train": "mutation_visible",
+            "validation": "comparison_visible",
+            "hold": "hidden_hold",
+            "regression": "comparison_visible",
+        },
+        stochasticity_class="deterministic",
+        rerun_policy={"max_trials": 1, "model_policy": "gpt-5.4-nano"},
+        capture_requirements=[
+            "clarity_improved",
+            "planning_quality_improved",
+            "apply_patch_preserved",
+            "support_envelope_preserved",
+        ],
+        adjudication_requirements={
+            "requires_hidden_hold_review": True,
+            "requires_regression_coverage": True,
+            "model_policy": "nano_first",
+        },
+        comparison_protocol_defaults={
+            "protocol_id": "paired_atomic_vs_composed.v1",
+            "minimum_trial_count": 1,
+            "requires_hidden_hold_bucket": True,
+        },
+        artifact_requirements=["paired_eval_json", "benchmark_summary_json"],
+        metadata={
+            "lane": "tool_guidance_coding_overlay_composed",
+            "phase": "v3",
+            "model_policy": "nano_only",
+        },
+    )
+
+    objective_suite = ObjectiveSuiteManifest(
+        suite_id="objsuite.tool_guidance_coding_overlay.v3",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_channels={
+            "tool_clarity": {"direction": "maximize", "source_metric": "clarity_improved", "promotion_sensitive": True},
+            "planning_quality": {"direction": "maximize", "source_metric": "planning_quality_improved", "promotion_sensitive": True},
+            "diff_hygiene": {"direction": "maximize", "source_metric": "apply_patch_preserved", "promotion_sensitive": True},
+            "mutation_cost": {"direction": "minimize", "source_metric": "cost_delta_usd", "promotion_sensitive": False},
+        },
+        penalties={
+            "support_scope_drift": {"kind": "hard_block", "reason": "tool clarity may not imply wider support scope"},
+            "broad_rewrite_drift": {"kind": "hard_block", "reason": "composed family may not weaken bounded-edit doctrine"},
+        },
+        aggregation_rules={"per_sample": "weighted_sum", "global": "bounded_composed_first"},
+        uncertainty_policy={"stochasticity_class": "deterministic", "blocked_when_missing_hidden_hold": True},
+        frontier_dimensions=["tool_clarity", "planning_quality", "diff_hygiene", "mutation_cost"],
+        promotion_annotations={"requires_support_sensitive_review": False, "review_class": "composed_guidance_overlay"},
+        visibility_annotations={"hidden_hold_channels": ["tool_clarity", "planning_quality", "diff_hygiene"]},
+        metadata={"lane": "tool_guidance_coding_overlay_composed", "phase": "v3"},
+    )
+
+    composition = FamilyCompositionManifest(
+        composition_id="composition.tool_guidance_coding_overlay.v3",
+        member_family_ids=[tool_family.family_id, coding_family.family_id],
+        composition_kind="joint",
+        shared_target_scope="codex_dossier_package",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_suite_id=objective_suite.suite_id,
+        search_space_id="searchspace.tool_guidance_coding_overlay.v3",
+        review_class="composed_guidance_overlay",
+        promotion_class="bounded_composed_dossier_change",
+        applicability_scope={
+            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "tool_pack_profile": "codex-dossier-default",
+            "environment_profile": "workspace-write",
+        },
+        cross_family_invariants=[
+            "bounded-overlay-only",
+            "support-envelope-preserved",
+            "tool-clarity-may-not-imply-broader-edit-scope",
+        ],
+        runtime_context_requirements={
+            "requires_apply_patch_tool": True,
+            "requires_replay_safe_lane": True,
+            "model_policy": "nano_only",
+        },
+        metadata={"lane": "tool_guidance_coding_overlay_composed", "phase": "v3"},
+    )
+
+    search_space = SearchSpaceManifest(
+        search_space_id=composition.search_space_id,
+        composition_id=composition.composition_id,
+        allowed_loci=[locus.locus_id for locus in composed_target.mutable_loci],
+        mutation_kinds_by_locus={
+            "tool.render.exec_command": ["replace"],
+            "prompt.section.optimization_guidance": ["replace"],
+            "prompt.section.planning_policy": ["replace"],
+            "prompt.section.editing_policy": ["replace"],
+        },
+        value_domains_by_locus={
+            "tool.render.exec_command": {"must_preserve_support_boundaries": True, "must_preserve_bounded_edits": True},
+            "prompt.section.optimization_guidance": {"must_reference_replay_safe": True, "must_reference_bounded_changes": True},
+            "prompt.section.planning_policy": {"must_remain_small_plan_first": True},
+            "prompt.section.editing_policy": {"must_preserve_apply_patch": True, "must_discourage_broad_rewrites": True},
+        },
+        semantic_constraints={
+            "tool.render.exec_command": {"must_not_imply_new_tools": True},
+            "prompt.section.editing_policy": {"must_keep_blast_radius_bounded": True},
+        },
+        coupled_loci_groups={
+            "tool_and_editing": ["tool.render.exec_command", "prompt.section.editing_policy"],
+            "guidance_and_planning": ["prompt.section.optimization_guidance", "prompt.section.planning_policy"],
+        },
+        stage_partitions={
+            "seed_guidance_pair": ["tool.render.exec_command", "prompt.section.optimization_guidance"],
+            "expand_edit_pair": ["prompt.section.planning_policy", "prompt.section.editing_policy"],
+        },
+        cross_family_constraints={
+            "tool_guidance_coding_overlay": {
+                "member_family_ids": [tool_family.family_id, coding_family.family_id],
+                "must_preserve_apply_patch_if_tool_clarity_changes": True,
+                "must_preserve_support_boundaries_if_editing_policy_changes": True,
+            }
+        },
+        invariants=["bounded-overlay-only", "support-envelope-preserved"],
+        unsafe_expansion_notes=[
+            "Changing tool surfaces beyond exec_command wording is out of scope.",
+            "Whole-file rewrite guidance is out of scope.",
+        ],
+        metadata={"lane": "tool_guidance_coding_overlay_composed", "phase": "v3"},
+    )
+
+    manifest = BenchmarkRunManifest(
+        manifest_id="manifest.tool_guidance_coding_overlay.v3",
+        benchmark_kind="tool_guidance_coding_overlay_composed_pack",
+        target_id=composed_target.target_id,
+        dataset_id=dataset.dataset_id,
+        dataset_version=dataset.dataset_version,
+        baseline_candidate_id=atomic_candidate.candidate_id,
+        environment_domain="workspace-write/replay-safe",
+        evaluator_stack=list(evaluation_suite.evaluator_stack),
+        comparison_protocol="paired_atomic_vs_composed.v1",
+        splits=[
+            BenchmarkSplit("train", ["sample.tool_guidance_coding_overlay.train.001"], "mutation_visible"),
+            BenchmarkSplit("validation", ["sample.tool_guidance_coding_overlay.validation.001"], "comparison_visible"),
+            BenchmarkSplit("hold", ["sample.tool_guidance_coding_overlay.hold.001"], "hidden_hold"),
+            BenchmarkSplit("regression", ["sample.tool_guidance_coding_overlay.regression.001"], "comparison_visible"),
+        ],
+        bucket_tags={
+            "sample.tool_guidance_coding_overlay.train.001": ["tool-clarity", "bounded-edit"],
+            "sample.tool_guidance_coding_overlay.validation.001": ["planning", "replay-safe"],
+            "sample.tool_guidance_coding_overlay.hold.001": ["hidden-hold", "scope-boundary"],
+            "sample.tool_guidance_coding_overlay.regression.001": ["regression", "apply-patch"],
+        },
+        stochasticity_class="deterministic",
+        rerun_policy={"max_trials": 1, "model_policy": "gpt-5.4-nano"},
+        contamination_notes=[
+            "Composition search stays Nano-only in the first tranche and may not use hidden-hold details at mutation time."
+        ],
+        promotion_relevance={"requires_support_sensitive_review": False, "composition_id": composition.composition_id},
+        artifact_refs=[ArtifactRef(ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
+        metadata={
+            "lane": "tool_guidance_coding_overlay_composed",
+            "phase": "v3",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "composition_id": composition.composition_id,
+            "search_space_id": search_space.search_space_id,
+            "model_policy": "nano_only",
+        },
+    )
+
+    comparison = build_paired_candidate_comparison(
+        manifest,
+        comparison_id="comparison.tool_guidance_coding_overlay.atomic_vs_composed.001",
+        parent_candidate_id=atomic_candidate.candidate_id,
+        child_candidate_id=composed_candidate.candidate_id,
+        outcome="win",
+        compared_sample_ids=manifest.sample_ids(),
+        held_out_sample_ids=manifest.hidden_hold_sample_ids(),
+        trial_count=1,
+        rationale="The composed candidate improves tool clarity and bounded-edit planning jointly without widening support scope or edit blast radius.",
+        evidence_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/tool_guidance_coding_overlay/paired_atomic_vs_composed_eval.json",
+                media_type="application/json",
+            )
+        ],
+        metric_deltas={
+            "tool_clarity_delta": 0.18,
+            "planning_quality_delta": 0.11,
+            "diff_hygiene_delta": 0.06,
+            "held_out_scope_guard": True,
+        },
+        better_candidate_id=composed_candidate.candidate_id,
+        metadata={
+            "lane": "tool_guidance_coding_overlay_composed",
+            "composition_id": composition.composition_id,
+            "baseline_kind": "atomic_family_union",
+            "model_policy": "nano_only",
+        },
+    )
+
+    objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreakdown.tool_guidance_coding_overlay.composed.001",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=manifest.manifest_id,
+        candidate_id=composed_candidate.candidate_id,
+        per_sample_components={
+            "sample.tool_guidance_coding_overlay.train.001": {"tool_clarity": 0.92, "planning_quality": 0.74, "diff_hygiene": 0.96, "mutation_cost": 0.0},
+            "sample.tool_guidance_coding_overlay.validation.001": {"tool_clarity": 0.86, "planning_quality": 0.81, "diff_hygiene": 0.95, "mutation_cost": 0.0},
+            "sample.tool_guidance_coding_overlay.hold.001": {"tool_clarity": 0.83, "planning_quality": 0.76, "diff_hygiene": 1.0, "mutation_cost": 0.0},
+            "sample.tool_guidance_coding_overlay.regression.001": {"tool_clarity": 0.8, "planning_quality": 0.73, "diff_hygiene": 1.0, "mutation_cost": 0.0},
+        },
+        per_bucket_components={
+            "tool-clarity": {"tool_clarity": 0.92, "diff_hygiene": 0.96},
+            "scope-boundary": {"tool_clarity": 0.83, "planning_quality": 0.76, "diff_hygiene": 1.0},
+        },
+        aggregate_objectives={
+            "tool_clarity": 0.8525,
+            "planning_quality": 0.76,
+            "diff_hygiene": 0.9775,
+            "mutation_cost": 0.0,
+            "eligible_for_promotion": True,
+        },
+        uncertainty_summary={"stochasticity_class": "deterministic", "trial_count": 1, "blocked_for_uncertainty": False},
+        blocked_components={},
+        member_family_breakdowns={
+            tool_family.family_id: {"tool_clarity": 0.8525, "support_scope_guard": True},
+            coding_family.family_id: {"planning_quality": 0.76, "diff_hygiene": 0.9775},
+        },
+        cross_family_blocked_components={},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/tool_guidance_coding_overlay/objective_breakdown_composed.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "tool_guidance_coding_overlay_composed",
+            "composition_id": composition.composition_id,
+            "search_space_id": search_space.search_space_id,
+        },
+    )
+
+    result = BenchmarkRunResult(
+        run_id="benchmark_run.tool_guidance_coding_overlay.v3",
+        manifest_id=manifest.manifest_id,
+        candidate_ids=[atomic_candidate.candidate_id, composed_candidate.candidate_id],
+        comparison_results=[comparison],
+        aggregate_metrics={"atomic_union_score": 0.71, "composed_score": 0.84},
+        bucket_outcomes={"tool-clarity": {"outcome": "child_win"}, "scope-boundary": {"outcome": "child_win"}},
+        variance_summary={"trial_count": 1, "stochasticity_class": "deterministic", "model_policy": "nano_only"},
+        cost_support_evidence_slices={"nano_only": True, "support_envelope_preserved": True, "apply_patch_preserved": True},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/tool_guidance_coding_overlay/benchmark_summary.json",
+                media_type="application/json",
+            )
+        ],
+        promotion_readiness_summary={
+            "eligible_for_promotion": True,
+            "requires_review": False,
+            "objective_breakdown_result_id": objective_breakdown.result_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "composition_id": composition.composition_id,
+            "model_policy": "nano_only",
+        },
+        metadata={
+            "lane": "tool_guidance_coding_overlay_composed",
+            "phase": "v3",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "composition_id": composition.composition_id,
+            "search_space_id": search_space.search_space_id,
+            "model_policy": "nano_only",
+        },
+    )
+
+    staged_request = StagedOptimizerRequest(
+        request_id="staged_request.tool_guidance_coding_overlay.v3",
+        backend_request=ReflectiveParetoBackendRequest(
+            request_id="backend_request.tool_guidance_coding_overlay.v3",
+            target=composed_target,
+            baseline_candidate=atomic_candidate,
+            baseline_materialized_candidate=atomic_materialized,
+            dataset=dataset,
+            evaluations=[
+                EvaluationRecord(
+                    evaluation_id="eval.tool_guidance_coding_overlay.baseline.001",
+                    target_id=composed_target.target_id,
+                    candidate_id=atomic_candidate.candidate_id,
+                    dataset_id=dataset.dataset_id,
+                    dataset_version=dataset.dataset_version,
+                    sample_id=dataset.samples[0].sample_id,
+                    evaluator_id="composed_family_checker.v1",
+                    evaluator_version="v3",
+                    status="completed",
+                    outcome="failed",
+                    started_at="2026-03-19T09:00:00.000Z",
+                    completed_at="2026-03-19T09:00:01.000Z",
+                    duration_ms=1000,
+                    raw_evidence_refs=[
+                        ArtifactRef(
+                            ref="artifacts/optimization/tool_guidance_coding_overlay/baseline_eval.json",
+                            media_type="application/json",
+                        )
+                    ],
+                    normalized_diagnostics=[
+                        DiagnosticBundle(
+                            bundle_id="bundle.eval.tool_guidance_coding_overlay.baseline.001",
+                            evaluation_id="eval.tool_guidance_coding_overlay.baseline.001",
+                            evaluator_mode="replay",
+                            determinism_class="deterministic",
+                            entries=[
+                                DiagnosticEntry(
+                                    diagnostic_id="diag.tool_guidance_coding_overlay.baseline.001",
+                                    kind="wrongness",
+                                    severity="error",
+                                    message="atomic family union still leaves coupled tool/edit guidance under-optimized",
+                                    locus_id="prompt.section.editing_policy",
+                                    evidence_refs=[
+                                        ArtifactRef(
+                                            ref="artifacts/optimization/tool_guidance_coding_overlay/diagnostic.json",
+                                            media_type="application/json",
+                                        )
+                                    ],
+                                )
+                            ],
+                            cache_identity={"key": "cache.tool_guidance_coding_overlay.v3", "version": "1"},
+                            retry_policy_hint={"max_trials": 1},
+                            reproducibility_notes={"family_bound": True, "model_policy": "nano_only"},
+                        )
+                    ],
+                    wrongness_reports=[
+                        WrongnessReport(
+                            wrongness_id="wrongness.tool_guidance_coding_overlay.001",
+                            wrongness_class="correctness.result_mismatch",
+                            failure_locus="prompt.section.editing_policy",
+                            explanation=(
+                                "Atomic family union leaves the cross-family tool-wording and editing-policy coupling unresolved, "
+                                "so the composed lane still exposes a bounded repair opportunity."
+                            ),
+                            confidence=0.85,
+                            supporting_evidence_refs=[
+                                ArtifactRef(
+                                    ref="artifacts/optimization/tool_guidance_coding_overlay/wrongness.json",
+                                    media_type="application/json",
+                                )
+                            ],
+                            likely_repair_locus="prompt.section.editing_policy",
+                        )
+                    ],
+                    metadata={"composition_id": composition.composition_id, "model_policy": "nano_only"},
+                )
+            ],
+            active_sample_id=dataset.samples[0].sample_id,
+            execution_context=OptimizationExecutionContext(
+                target_id=composed_target.target_id,
+                sample_id=dataset.samples[0].sample_id,
+                runtime_context=dataset.samples[0].runtime_context(),
+                evaluation_input_compatibility=atomic_materialized.evaluation_input_compatibility,
+                metadata={"composition_id": composition.composition_id, "model_policy": "nano_only"},
+            ),
+            mutation_bounds=MutationBounds(max_changed_loci=4, max_changed_artifacts=1, max_total_value_bytes=2400),
+            max_proposals=3,
+            metadata={"family_composition": composition.composition_id, "model_policy": "nano_only"},
+        ),
+        evaluation_suite=evaluation_suite,
+        objective_suite=objective_suite,
+        search_space=search_space,
+        family_composition=composition,
+        metadata={"lane": "tool_guidance_coding_overlay_composed", "model_policy": "nano_only"},
+    )
+    staged_result = run_staged_optimizer(staged_request)
+
+    return {
+        "tool_family_example": tool,
+        "coding_family_example": coding,
+        "target": composed_target,
+        "dataset": dataset,
+        "atomic_candidate": atomic_candidate,
+        "composed_candidate": composed_candidate,
+        "atomic_materialized_candidate": atomic_materialized,
+        "composed_materialized_candidate": composed_materialized,
+        "evaluation_suite": evaluation_suite,
+        "objective_suite": objective_suite,
+        "family_composition": composition,
+        "search_space": search_space,
+        "manifest": manifest,
+        "comparison_result": comparison,
+        "objective_breakdown_result": objective_breakdown,
+        "benchmark_result": result,
+        "staged_request": staged_request,
+        "staged_result": staged_result,
+    }
+
+
+def build_tool_guidance_coding_overlay_composition_example_payload() -> Dict[str, object]:
+    example = build_tool_guidance_coding_overlay_composition_example()
+    return {
+        "target": example["target"].to_dict(),
+        "dataset": example["dataset"].to_dict(),
+        "atomic_candidate": example["atomic_candidate"].to_dict(),
+        "composed_candidate": example["composed_candidate"].to_dict(),
+        "atomic_materialized_candidate": example["atomic_materialized_candidate"].to_dict(),
+        "composed_materialized_candidate": example["composed_materialized_candidate"].to_dict(),
+        "evaluation_suite": example["evaluation_suite"].to_dict(),
+        "objective_suite": example["objective_suite"].to_dict(),
+        "family_composition": example["family_composition"].to_dict(),
+        "search_space": example["search_space"].to_dict(),
+        "manifest": example["manifest"].to_dict(),
+        "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
+        "benchmark_result": example["benchmark_result"].to_dict(),
+        "staged_request": example["staged_request"].to_dict(),
+        "staged_result": example["staged_result"].to_dict(),
     }
 
 

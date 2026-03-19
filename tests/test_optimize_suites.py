@@ -4,20 +4,25 @@ import pytest
 
 from agentic_coder_prototype.optimize import (
     EvaluationSuiteManifest,
+    FamilyCompositionManifest,
     ObjectiveBreakdownResult,
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
     TargetFamilyManifest,
-    VerifierAugmentedExperimentResult,
     build_coding_overlay_benchmark_example,
     build_coding_overlay_benchmark_example_payload,
-    build_coding_overlay_verifier_experiment_example,
-    build_coding_overlay_verifier_experiment_example_payload,
     build_support_execution_benchmark_example,
     build_support_execution_benchmark_example_payload,
+    build_tool_guidance_coding_overlay_composition_example,
+    build_tool_guidance_coding_overlay_composition_example_payload,
     build_tool_guidance_benchmark_example,
     build_tool_guidance_benchmark_example_payload,
 )
+from agentic_coder_prototype.optimize.examples import (
+    build_coding_overlay_verifier_experiment_example,
+    build_coding_overlay_verifier_experiment_example_payload,
+)
+from agentic_coder_prototype.optimize.suites import VerifierAugmentedExperimentResult
 
 
 def test_support_execution_v2_suite_family_artifacts_round_trip() -> None:
@@ -108,6 +113,45 @@ def test_search_space_rejects_unknown_locus_constraints() -> None:
         )
 
 
+def test_family_composition_manifest_requires_unique_members() -> None:
+    with pytest.raises(ValueError, match="duplicate"):
+        FamilyCompositionManifest(
+            composition_id="composition.bad",
+            member_family_ids=["family.one", "family.one"],
+            composition_kind="joint",
+            shared_target_scope="shared_scope",
+            evaluation_suite_id="evalsuite.bad",
+            objective_suite_id="objsuite.bad",
+            search_space_id="searchspace.bad",
+            review_class="bounded",
+            promotion_class="bounded_change",
+        )
+
+
+def test_search_space_requires_exactly_one_scope_binding() -> None:
+    with pytest.raises(ValueError, match="exactly one of family_id or composition_id"):
+        SearchSpaceManifest(
+            search_space_id="searchspace.bad.scope",
+            family_id="family.bad",
+            composition_id="composition.bad",
+            allowed_loci=["locus.allowed"],
+            mutation_kinds_by_locus={"locus.allowed": ["replace"]},
+            value_domains_by_locus={"locus.allowed": {"kind": "enum"}},
+        )
+
+
+def test_search_space_rejects_unknown_coupled_loci() -> None:
+    with pytest.raises(ValueError, match="coupled_loci_groups references unknown loci"):
+        SearchSpaceManifest(
+            search_space_id="searchspace.bad.groups",
+            family_id="family.bad",
+            allowed_loci=["locus.allowed"],
+            mutation_kinds_by_locus={"locus.allowed": ["replace"]},
+            value_domains_by_locus={"locus.allowed": {"kind": "enum"}},
+            coupled_loci_groups={"bad_group": ["locus.unknown"]},
+        )
+
+
 def _payload_contains_forbidden_key(value: object, forbidden_keys: set[str]) -> bool:
     if isinstance(value, dict):
         for key, nested in value.items():
@@ -146,4 +190,37 @@ def test_coding_overlay_verifier_experiment_stays_family_bound_without_darwin_on
     assert _payload_contains_forbidden_key(
         payload,
         {"campaign_id", "archive_id", "island_id", "genealogy_id"},
+    ) is False
+
+
+def test_tool_guidance_coding_overlay_composition_round_trip() -> None:
+    example = build_tool_guidance_coding_overlay_composition_example()
+    payload = build_tool_guidance_coding_overlay_composition_example_payload()
+
+    composition = FamilyCompositionManifest.from_dict(payload["family_composition"])
+    search_space = SearchSpaceManifest.from_dict(payload["search_space"])
+    objective_breakdown = ObjectiveBreakdownResult.from_dict(payload["objective_breakdown_result"])
+
+    assert composition.composition_id == "composition.tool_guidance_coding_overlay.v3"
+    assert composition.member_family_ids == [
+        "family.tool_guidance.v2",
+        "family.coding_overlay.v2",
+    ]
+    assert search_space.composition_id == composition.composition_id
+    assert search_space.stage_partitions["seed_guidance_pair"] == [
+        "tool.render.exec_command",
+        "prompt.section.optimization_guidance",
+    ]
+    assert objective_breakdown.member_family_breakdowns["family.tool_guidance.v2"]["tool_clarity"] == 0.8525
+    assert example["staged_result"].metadata["composition_id"] == composition.composition_id
+    assert example["benchmark_result"].metadata["model_policy"] == "nano_only"
+
+
+def test_composition_payload_stays_outside_darwin_and_public_reward_ontology() -> None:
+    payload = build_tool_guidance_coding_overlay_composition_example_payload()
+
+    assert payload["evaluation_suite"]["metadata"]["model_policy"] == "nano_only"
+    assert _payload_contains_forbidden_key(
+        payload,
+        {"campaign_id", "archive_id", "island_id", "genealogy_id", "reward_suite_id"},
     ) is False

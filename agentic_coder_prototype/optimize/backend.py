@@ -13,6 +13,7 @@ from .dataset import OptimizationDataset
 from .evaluation import EvaluationRecord
 from .suites import (
     EvaluationSuiteManifest,
+    FamilyCompositionManifest,
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
     TargetFamilyManifest,
@@ -822,8 +823,9 @@ class StagedOptimizerRequest:
     backend_request: ReflectiveParetoBackendRequest
     evaluation_suite: EvaluationSuiteManifest
     objective_suite: ObjectiveSuiteManifest
-    target_family: TargetFamilyManifest
     search_space: SearchSpaceManifest
+    target_family: Optional[TargetFamilyManifest] = None
+    family_composition: Optional[FamilyCompositionManifest] = None
     stage_strategy: str = "family_risk_split_v1"
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -853,9 +855,24 @@ class StagedOptimizerRequest:
         object.__setattr__(
             self,
             "target_family",
-            self.target_family
-            if isinstance(self.target_family, TargetFamilyManifest)
-            else TargetFamilyManifest.from_dict(self.target_family),
+            None
+            if self.target_family is None
+            else (
+                self.target_family
+                if isinstance(self.target_family, TargetFamilyManifest)
+                else TargetFamilyManifest.from_dict(self.target_family)
+            ),
+        )
+        object.__setattr__(
+            self,
+            "family_composition",
+            None
+            if self.family_composition is None
+            else (
+                self.family_composition
+                if isinstance(self.family_composition, FamilyCompositionManifest)
+                else FamilyCompositionManifest.from_dict(self.family_composition)
+            ),
         )
         object.__setattr__(
             self,
@@ -868,35 +885,56 @@ class StagedOptimizerRequest:
         object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
         target = self.backend_request.target
         family = self.target_family
+        composition = self.family_composition
         search_space = self.search_space
-        if target.target_id not in set(family.target_ids):
-            raise ValueError("backend request target must belong to the declared target family")
+        if family is None and composition is None:
+            raise ValueError("either target_family or family_composition must be provided")
+        if family is not None and composition is not None:
+            raise ValueError("target_family and family_composition are mutually exclusive")
         target_loci = set(target.locus_ids())
-        family_loci = set(family.mutable_loci_ids)
-        if not family_loci.issubset(target_loci):
-            raise ValueError("target family mutable loci must be declared on the optimization target")
-        if search_space.family_id != family.family_id:
-            raise ValueError("search space family_id must match the target family")
-        if family.evaluation_suite_id != self.evaluation_suite.suite_id:
-            raise ValueError("target family evaluation_suite_id must match the evaluation suite")
-        if family.objective_suite_id != self.objective_suite.suite_id:
-            raise ValueError("target family objective_suite_id must match the objective suite")
+        if family is not None:
+            if target.target_id not in set(family.target_ids):
+                raise ValueError("backend request target must belong to the declared target family")
+            family_loci = set(family.mutable_loci_ids)
+            if not family_loci.issubset(target_loci):
+                raise ValueError("target family mutable loci must be declared on the optimization target")
+            if search_space.family_id != family.family_id:
+                raise ValueError("search space family_id must match the target family")
+            if family.evaluation_suite_id != self.evaluation_suite.suite_id:
+                raise ValueError("target family evaluation_suite_id must match the evaluation suite")
+            if family.objective_suite_id != self.objective_suite.suite_id:
+                raise ValueError("target family objective_suite_id must match the objective suite")
+            if set(search_space.allowed_loci) != family_loci:
+                raise ValueError("search space allowed_loci must match the target family mutable loci")
+        if composition is not None:
+            if search_space.composition_id != composition.composition_id:
+                raise ValueError("search space composition_id must match the family composition")
+            if composition.evaluation_suite_id != self.evaluation_suite.suite_id:
+                raise ValueError("family composition evaluation_suite_id must match the evaluation suite")
+            if composition.objective_suite_id != self.objective_suite.suite_id:
+                raise ValueError("family composition objective_suite_id must match the objective suite")
+            if composition.search_space_id != search_space.search_space_id:
+                raise ValueError("family composition search_space_id must match the search space")
+            if not set(search_space.allowed_loci).issubset(target_loci):
+                raise ValueError("composition search space allowed_loci must be declared on the optimization target")
         if self.objective_suite.evaluation_suite_id != self.evaluation_suite.suite_id:
             raise ValueError("objective suite must bind to the declared evaluation suite")
-        if set(search_space.allowed_loci) != family_loci:
-            raise ValueError("search space allowed_loci must match the target family mutable loci")
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        payload = {
             "request_id": self.request_id,
             "backend_request": self.backend_request.to_dict(),
             "evaluation_suite": self.evaluation_suite.to_dict(),
             "objective_suite": self.objective_suite.to_dict(),
-            "target_family": self.target_family.to_dict(),
             "search_space": self.search_space.to_dict(),
             "stage_strategy": self.stage_strategy,
             "metadata": dict(self.metadata),
         }
+        if self.target_family is not None:
+            payload["target_family"] = self.target_family.to_dict()
+        if self.family_composition is not None:
+            payload["family_composition"] = self.family_composition.to_dict()
+        return payload
 
     @staticmethod
     def from_dict(data: Mapping[str, Any]) -> "StagedOptimizerRequest":
@@ -905,7 +943,12 @@ class StagedOptimizerRequest:
             backend_request=ReflectiveParetoBackendRequest.from_dict(data.get("backend_request") or {}),
             evaluation_suite=EvaluationSuiteManifest.from_dict(data.get("evaluation_suite") or {}),
             objective_suite=ObjectiveSuiteManifest.from_dict(data.get("objective_suite") or {}),
-            target_family=TargetFamilyManifest.from_dict(data.get("target_family") or {}),
+            target_family=None
+            if not data.get("target_family")
+            else TargetFamilyManifest.from_dict(data.get("target_family") or {}),
+            family_composition=None
+            if not data.get("family_composition")
+            else FamilyCompositionManifest.from_dict(data.get("family_composition") or {}),
             search_space=SearchSpaceManifest.from_dict(data.get("search_space") or {}),
             stage_strategy=data.get("stage_strategy") or "family_risk_split_v1",
             metadata=dict(data.get("metadata") or {}),
@@ -1554,8 +1597,33 @@ class StagedOptimizer(ReflectiveParetoBackend):
 
     def build_stage_plan(self, request: StagedOptimizerRequest) -> List[StagePlanStep]:
         family = request.target_family
+        composition = request.family_composition
         objective_suite = request.objective_suite
         split_visibility = request.evaluation_suite.split_visibility
+        scope_id = family.family_id if family is not None else composition.composition_id
+        review_class = family.review_class if family is not None else composition.review_class
+        if request.search_space.stage_partitions:
+            stage_plan: List[StagePlanStep] = []
+            allowed_visibilities = ["mutation_visible", "comparison_visible"]
+            for index, (partition_id, loci) in enumerate(request.search_space.stage_partitions.items(), start=1):
+                primary_channels = list(objective_suite.frontier_dimensions[: max(1, min(2, len(objective_suite.frontier_dimensions)))])
+                stage_plan.append(
+                    StagePlanStep(
+                        stage_id=f"stage.{scope_id}.{index:02d}",
+                        stage_kind=partition_id,
+                        allowed_loci=list(loci),
+                        primary_objective_channels=primary_channels,
+                        allowed_split_visibilities=allowed_visibilities if index == 1 else ["comparison_visible"],
+                        metadata={
+                            "scope_id": scope_id,
+                            "review_class": review_class,
+                            "composition_id": None if composition is None else composition.composition_id,
+                            "member_family_ids": [] if composition is None else list(composition.member_family_ids),
+                        },
+                    )
+                )
+            return stage_plan
+        assert family is not None
         primary_locus = family.mutable_loci_ids[0]
         primary_channel = objective_suite.frontier_dimensions[0]
         comparison_visible_splits = [
@@ -1564,26 +1632,26 @@ class StagedOptimizer(ReflectiveParetoBackend):
             if visibility == "comparison_visible"
         ]
         stage_one = StagePlanStep(
-            stage_id=f"stage.{family.family_id}.01",
+            stage_id=f"stage.{scope_id}.01",
             stage_kind="seed_primary_locus",
             allowed_loci=[primary_locus],
             primary_objective_channels=[primary_channel],
             allowed_split_visibilities=["mutation_visible", "comparison_visible"],
             metadata={
-                "family_id": family.family_id,
-                "review_class": family.review_class,
+                "family_id": scope_id,
+                "review_class": review_class,
                 "split_names": ["train"] + comparison_visible_splits,
             },
         )
         stage_two = StagePlanStep(
-            stage_id=f"stage.{family.family_id}.02",
+            stage_id=f"stage.{scope_id}.02",
             stage_kind="family_bounded_expansion",
             allowed_loci=list(family.mutable_loci_ids),
             primary_objective_channels=list(objective_suite.frontier_dimensions[: max(2, len(objective_suite.frontier_dimensions))]),
             allowed_split_visibilities=["comparison_visible"],
             metadata={
-                "family_id": family.family_id,
-                "review_class": family.review_class,
+                "family_id": scope_id,
+                "review_class": review_class,
                 "split_names": comparison_visible_splits,
             },
         )
@@ -1593,6 +1661,21 @@ class StagedOptimizer(ReflectiveParetoBackend):
         base_request = request.backend_request
         stage_plan = self.build_stage_plan(request)
         assert base_request.execution_context is not None
+        scope_id = (
+            request.target_family.family_id
+            if request.target_family is not None
+            else request.family_composition.composition_id
+        )
+        review_class = (
+            request.target_family.review_class
+            if request.target_family is not None
+            else request.family_composition.review_class
+        )
+        search_scope_metadata = {
+            "scope_id": scope_id,
+            "family_id": None if request.target_family is None else request.target_family.family_id,
+            "composition_id": None if request.family_composition is None else request.family_composition.composition_id,
+        }
 
         baseline_compatibility = self.evaluate_runtime_compatibility(
             execution_context=base_request.execution_context,
@@ -1629,22 +1712,22 @@ class StagedOptimizer(ReflectiveParetoBackend):
                             metadata={
                                 "role": "baseline",
                                 "runtime_compatibility": baseline_compatibility.to_dict(),
-                                "family_id": request.target_family.family_id,
+                                **search_scope_metadata,
                             },
                         )
                     ],
-                    metadata={"backend_id": self.backend_id, "family_id": request.target_family.family_id},
+                    metadata={"backend_id": self.backend_id, **search_scope_metadata},
                 ),
                 compatibility_results=compatibility_results,
                 metadata={
                     "objective_directions": dict(OBJECTIVE_DIRECTIONS),
                     "stage_plan": [item.to_dict() for item in stage_plan],
                     "stage_strategy": request.stage_strategy,
-                    "family_id": request.target_family.family_id,
+                    **search_scope_metadata,
                     "search_space_id": request.search_space.search_space_id,
                     "evaluation_suite_id": request.evaluation_suite.suite_id,
                     "objective_suite_id": request.objective_suite.suite_id,
-                    "review_class": request.target_family.review_class,
+                    "review_class": review_class,
                 },
             )
 
@@ -1658,8 +1741,8 @@ class StagedOptimizer(ReflectiveParetoBackend):
                 mutation_bounds=base_request.mutation_bounds,
                 metadata={
                     "backend_id": self.backend_id,
-                    "family_id": request.target_family.family_id,
-                    "review_class": request.target_family.review_class,
+                    **search_scope_metadata,
+                    "review_class": review_class,
                 },
             )
         )
@@ -1667,7 +1750,7 @@ class StagedOptimizer(ReflectiveParetoBackend):
         portfolio = CandidatePortfolio(
             metadata={
                 "backend_id": self.backend_id,
-                "family_id": request.target_family.family_id,
+                **search_scope_metadata,
                 "objective_suite_id": request.objective_suite.suite_id,
             }
         )
@@ -1684,7 +1767,7 @@ class StagedOptimizer(ReflectiveParetoBackend):
             metadata={
                 "role": "baseline",
                 "runtime_compatibility": baseline_compatibility.to_dict(),
-                "family_id": request.target_family.family_id,
+                **search_scope_metadata,
                 "search_space_id": request.search_space.search_space_id,
             },
         )
@@ -1726,7 +1809,7 @@ class StagedOptimizer(ReflectiveParetoBackend):
                         **proposal.metadata,
                         "stage_id": stage.stage_id,
                         "stage_kind": stage.stage_kind,
-                        "family_id": request.target_family.family_id,
+                        **search_scope_metadata,
                         "search_space_id": request.search_space.search_space_id,
                         "evaluation_suite_id": request.evaluation_suite.suite_id,
                         "objective_suite_id": request.objective_suite.suite_id,
@@ -1758,7 +1841,7 @@ class StagedOptimizer(ReflectiveParetoBackend):
                         "proposal_id": proposal.proposal_id,
                         "runtime_compatibility": proposal_compatibility.to_dict(),
                         "stage_id": stage.stage_id,
-                        "family_id": request.target_family.family_id,
+                        **search_scope_metadata,
                         "search_space_id": request.search_space.search_space_id,
                         "evaluation_suite_id": request.evaluation_suite.suite_id,
                         "objective_suite_id": request.objective_suite.suite_id,
@@ -1779,11 +1862,11 @@ class StagedOptimizer(ReflectiveParetoBackend):
                 "backend_family": self.backend_id,
                 "stage_plan": [item.to_dict() for item in stage_plan],
                 "stage_strategy": request.stage_strategy,
-                "family_id": request.target_family.family_id,
+                **search_scope_metadata,
                 "search_space_id": request.search_space.search_space_id,
                 "evaluation_suite_id": request.evaluation_suite.suite_id,
                 "objective_suite_id": request.objective_suite.suite_id,
-                "review_class": request.target_family.review_class,
+                "review_class": review_class,
             },
         )
 

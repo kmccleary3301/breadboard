@@ -8,6 +8,7 @@ from .substrate import ArtifactRef
 
 
 ALLOWED_VERIFIER_EXPERIMENT_OUTCOMES = {"accepted", "rejected", "blocked", "inconclusive"}
+ALLOWED_COMPOSITION_KINDS = {"staged", "joint", "verifier_follow_on"}
 
 
 def _require_text(value: Any, field_name: str) -> str:
@@ -32,6 +33,10 @@ def _copy_text_list(values: Sequence[Any] | None) -> List[str]:
 
 def _copy_nested_mapping(value: Mapping[str, Mapping[str, Any]] | None) -> Dict[str, Dict[str, Any]]:
     return {str(key): dict(inner) for key, inner in (value or {}).items()}
+
+
+def _copy_nested_text_mapping(value: Mapping[str, Sequence[Any]] | None) -> Dict[str, List[str]]:
+    return {str(key): _copy_text_list(inner) for key, inner in (value or {}).items()}
 
 
 @dataclass(frozen=True)
@@ -185,6 +190,8 @@ class ObjectiveBreakdownResult:
     aggregate_objectives: Dict[str, Any]
     uncertainty_summary: Dict[str, Any] = field(default_factory=dict)
     blocked_components: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    member_family_breakdowns: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    cross_family_blocked_components: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     artifact_refs: List[ArtifactRef] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -198,6 +205,12 @@ class ObjectiveBreakdownResult:
         object.__setattr__(self, "aggregate_objectives", _copy_mapping(self.aggregate_objectives))
         object.__setattr__(self, "uncertainty_summary", _copy_mapping(self.uncertainty_summary))
         object.__setattr__(self, "blocked_components", _copy_nested_mapping(self.blocked_components))
+        object.__setattr__(self, "member_family_breakdowns", _copy_nested_mapping(self.member_family_breakdowns))
+        object.__setattr__(
+            self,
+            "cross_family_blocked_components",
+            _copy_nested_mapping(self.cross_family_blocked_components),
+        )
         object.__setattr__(
             self,
             "artifact_refs",
@@ -221,6 +234,10 @@ class ObjectiveBreakdownResult:
             "aggregate_objectives": dict(self.aggregate_objectives),
             "uncertainty_summary": dict(self.uncertainty_summary),
             "blocked_components": {key: dict(value) for key, value in self.blocked_components.items()},
+            "member_family_breakdowns": {key: dict(value) for key, value in self.member_family_breakdowns.items()},
+            "cross_family_blocked_components": {
+                key: dict(value) for key, value in self.cross_family_blocked_components.items()
+            },
             "artifact_refs": [item.to_dict() for item in self.artifact_refs],
             "metadata": dict(self.metadata),
         }
@@ -237,6 +254,8 @@ class ObjectiveBreakdownResult:
             aggregate_objectives=dict(data.get("aggregate_objectives") or {}),
             uncertainty_summary=dict(data.get("uncertainty_summary") or {}),
             blocked_components=_copy_nested_mapping(data.get("blocked_components") or {}),
+            member_family_breakdowns=_copy_nested_mapping(data.get("member_family_breakdowns") or {}),
+            cross_family_blocked_components=_copy_nested_mapping(data.get("cross_family_blocked_components") or {}),
             artifact_refs=[ArtifactRef.from_dict(item) for item in data.get("artifact_refs") or []],
             metadata=dict(data.get("metadata") or {}),
         )
@@ -315,20 +334,100 @@ class TargetFamilyManifest:
 
 
 @dataclass(frozen=True)
+class FamilyCompositionManifest:
+    composition_id: str
+    member_family_ids: List[str]
+    composition_kind: str
+    shared_target_scope: str
+    evaluation_suite_id: str
+    objective_suite_id: str
+    search_space_id: str
+    review_class: str
+    promotion_class: str
+    applicability_scope: Dict[str, Any] = field(default_factory=dict)
+    cross_family_invariants: List[str] = field(default_factory=list)
+    runtime_context_requirements: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "composition_id", _require_text(self.composition_id, "composition_id"))
+        object.__setattr__(self, "member_family_ids", _copy_text_list(self.member_family_ids))
+        composition_kind = _require_text(self.composition_kind, "composition_kind").lower()
+        if composition_kind not in ALLOWED_COMPOSITION_KINDS:
+            raise ValueError(f"composition_kind must be one of: {sorted(ALLOWED_COMPOSITION_KINDS)}")
+        object.__setattr__(self, "composition_kind", composition_kind)
+        object.__setattr__(self, "shared_target_scope", _require_text(self.shared_target_scope, "shared_target_scope"))
+        object.__setattr__(self, "evaluation_suite_id", _require_text(self.evaluation_suite_id, "evaluation_suite_id"))
+        object.__setattr__(self, "objective_suite_id", _require_text(self.objective_suite_id, "objective_suite_id"))
+        object.__setattr__(self, "search_space_id", _require_text(self.search_space_id, "search_space_id"))
+        object.__setattr__(self, "review_class", _require_text(self.review_class, "review_class"))
+        object.__setattr__(self, "promotion_class", _require_text(self.promotion_class, "promotion_class"))
+        object.__setattr__(self, "applicability_scope", _copy_mapping(self.applicability_scope))
+        object.__setattr__(self, "cross_family_invariants", _copy_text_list(self.cross_family_invariants))
+        object.__setattr__(self, "runtime_context_requirements", _copy_mapping(self.runtime_context_requirements))
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+
+        if not self.member_family_ids:
+            raise ValueError("member_family_ids must contain at least one family id")
+        if len(self.member_family_ids) != len(set(self.member_family_ids)):
+            raise ValueError("member_family_ids contains duplicate values")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "composition_id": self.composition_id,
+            "member_family_ids": list(self.member_family_ids),
+            "composition_kind": self.composition_kind,
+            "shared_target_scope": self.shared_target_scope,
+            "evaluation_suite_id": self.evaluation_suite_id,
+            "objective_suite_id": self.objective_suite_id,
+            "search_space_id": self.search_space_id,
+            "review_class": self.review_class,
+            "promotion_class": self.promotion_class,
+            "applicability_scope": dict(self.applicability_scope),
+            "cross_family_invariants": list(self.cross_family_invariants),
+            "runtime_context_requirements": dict(self.runtime_context_requirements),
+            "metadata": dict(self.metadata),
+        }
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "FamilyCompositionManifest":
+        return FamilyCompositionManifest(
+            composition_id=data.get("composition_id") or data.get("id") or "",
+            member_family_ids=list(data.get("member_family_ids") or []),
+            composition_kind=data.get("composition_kind") or "",
+            shared_target_scope=data.get("shared_target_scope") or "",
+            evaluation_suite_id=data.get("evaluation_suite_id") or "",
+            objective_suite_id=data.get("objective_suite_id") or "",
+            search_space_id=data.get("search_space_id") or "",
+            review_class=data.get("review_class") or "",
+            promotion_class=data.get("promotion_class") or "",
+            applicability_scope=dict(data.get("applicability_scope") or {}),
+            cross_family_invariants=list(data.get("cross_family_invariants") or []),
+            runtime_context_requirements=dict(data.get("runtime_context_requirements") or {}),
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
 class SearchSpaceManifest:
     search_space_id: str
-    family_id: str
     allowed_loci: List[str]
     mutation_kinds_by_locus: Dict[str, List[str]]
     value_domains_by_locus: Dict[str, Dict[str, Any]]
+    family_id: str = ""
+    composition_id: str = ""
     semantic_constraints: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    coupled_loci_groups: Dict[str, List[str]] = field(default_factory=dict)
+    stage_partitions: Dict[str, List[str]] = field(default_factory=dict)
+    cross_family_constraints: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     invariants: List[str] = field(default_factory=list)
     unsafe_expansion_notes: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "search_space_id", _require_text(self.search_space_id, "search_space_id"))
-        object.__setattr__(self, "family_id", _require_text(self.family_id, "family_id"))
+        object.__setattr__(self, "family_id", str(self.family_id or "").strip())
+        object.__setattr__(self, "composition_id", str(self.composition_id or "").strip())
         object.__setattr__(self, "allowed_loci", _copy_text_list(self.allowed_loci))
         object.__setattr__(
             self,
@@ -337,10 +436,15 @@ class SearchSpaceManifest:
         )
         object.__setattr__(self, "value_domains_by_locus", _copy_nested_mapping(self.value_domains_by_locus))
         object.__setattr__(self, "semantic_constraints", _copy_nested_mapping(self.semantic_constraints))
+        object.__setattr__(self, "coupled_loci_groups", _copy_nested_text_mapping(self.coupled_loci_groups))
+        object.__setattr__(self, "stage_partitions", _copy_nested_text_mapping(self.stage_partitions))
+        object.__setattr__(self, "cross_family_constraints", _copy_nested_mapping(self.cross_family_constraints))
         object.__setattr__(self, "invariants", _copy_text_list(self.invariants))
         object.__setattr__(self, "unsafe_expansion_notes", _copy_text_list(self.unsafe_expansion_notes))
         object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
 
+        if bool(self.family_id) == bool(self.composition_id):
+            raise ValueError("exactly one of family_id or composition_id must be provided")
         if not self.allowed_loci:
             raise ValueError("allowed_loci must contain at least one locus id")
         unknown_mutation_loci = sorted(set(self.mutation_kinds_by_locus) - set(self.allowed_loci))
@@ -358,31 +462,66 @@ class SearchSpaceManifest:
         missing_value_domains = sorted(set(self.allowed_loci) - set(self.value_domains_by_locus))
         if missing_value_domains:
             raise ValueError(f"allowed_loci missing value domain declarations: {missing_value_domains}")
+        unknown_group_loci = sorted(
+            {
+                locus
+                for loci in self.coupled_loci_groups.values()
+                for locus in loci
+                if locus not in set(self.allowed_loci)
+            }
+        )
+        if unknown_group_loci:
+            raise ValueError(f"coupled_loci_groups references unknown loci: {unknown_group_loci}")
+        unknown_partition_loci = sorted(
+            {
+                locus
+                for loci in self.stage_partitions.values()
+                for locus in loci
+                if locus not in set(self.allowed_loci)
+            }
+        )
+        if unknown_partition_loci:
+            raise ValueError(f"stage_partitions references unknown loci: {unknown_partition_loci}")
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        payload = {
             "search_space_id": self.search_space_id,
-            "family_id": self.family_id,
             "allowed_loci": list(self.allowed_loci),
             "mutation_kinds_by_locus": {key: list(value) for key, value in self.mutation_kinds_by_locus.items()},
             "value_domains_by_locus": {key: dict(value) for key, value in self.value_domains_by_locus.items()},
             "semantic_constraints": {key: dict(value) for key, value in self.semantic_constraints.items()},
+            "coupled_loci_groups": {key: list(value) for key, value in self.coupled_loci_groups.items()},
+            "stage_partitions": {key: list(value) for key, value in self.stage_partitions.items()},
+            "cross_family_constraints": {key: dict(value) for key, value in self.cross_family_constraints.items()},
             "invariants": list(self.invariants),
             "unsafe_expansion_notes": list(self.unsafe_expansion_notes),
             "metadata": dict(self.metadata),
         }
+        if self.family_id:
+            payload["family_id"] = self.family_id
+        if self.composition_id:
+            payload["composition_id"] = self.composition_id
+        return payload
 
     @staticmethod
     def from_dict(data: Mapping[str, Any]) -> "SearchSpaceManifest":
         return SearchSpaceManifest(
             search_space_id=data.get("search_space_id") or data.get("id") or "",
             family_id=data.get("family_id") or "",
+            composition_id=data.get("composition_id") or "",
             allowed_loci=list(data.get("allowed_loci") or []),
             mutation_kinds_by_locus={
                 str(key): list(value) for key, value in (data.get("mutation_kinds_by_locus") or {}).items()
             },
             value_domains_by_locus=_copy_nested_mapping(data.get("value_domains_by_locus") or {}),
             semantic_constraints=_copy_nested_mapping(data.get("semantic_constraints") or {}),
+            coupled_loci_groups={
+                str(key): list(value) for key, value in (data.get("coupled_loci_groups") or {}).items()
+            },
+            stage_partitions={
+                str(key): list(value) for key, value in (data.get("stage_partitions") or {}).items()
+            },
+            cross_family_constraints=_copy_nested_mapping(data.get("cross_family_constraints") or {}),
             invariants=list(data.get("invariants") or []),
             unsafe_expansion_notes=list(data.get("unsafe_expansion_notes") or []),
             metadata=dict(data.get("metadata") or {}),

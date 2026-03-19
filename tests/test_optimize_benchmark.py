@@ -14,10 +14,14 @@ from agentic_coder_prototype.optimize import (
     build_coding_overlay_benchmark_example_payload,
     build_support_execution_benchmark_example,
     build_support_execution_benchmark_example_payload,
-    build_staged_backend_comparison_example,
-    build_staged_backend_comparison_example_payload,
+    build_tool_guidance_coding_overlay_composition_example,
+    build_tool_guidance_coding_overlay_composition_example_payload,
     build_tool_guidance_benchmark_example,
     build_tool_guidance_benchmark_example_payload,
+)
+from agentic_coder_prototype.optimize.examples import (
+    build_staged_backend_comparison_example,
+    build_staged_backend_comparison_example_payload,
 )
 
 
@@ -157,3 +161,18 @@ def test_staged_backend_comparison_payload_round_trips() -> None:
     assert len(payload["reflective_results"]) == 3
     assert len(payload["staged_results"]) == 3
     assert len(payload["family_requests"]) == 3
+
+
+def test_tool_guidance_coding_overlay_composition_payload_round_trips() -> None:
+    example = build_tool_guidance_coding_overlay_composition_example()
+    payload = build_tool_guidance_coding_overlay_composition_example_payload()
+
+    manifest = BenchmarkRunManifest.from_dict(payload["manifest"])
+    comparison = CandidateComparisonResult.from_dict(payload["comparison_result"])
+    result = BenchmarkRunResult.from_dict(payload["benchmark_result"])
+
+    assert example["family_composition"].composition_id == "composition.tool_guidance_coding_overlay.v3"
+    assert manifest.hidden_hold_sample_ids() == ["sample.tool_guidance_coding_overlay.hold.001"]
+    assert comparison.manifest_id == manifest.manifest_id
+    assert comparison.metadata["model_policy"] == "nano_only"
+    assert result.metadata["composition_id"] == example["family_composition"].composition_id

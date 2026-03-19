@@ -11,19 +11,17 @@ from agentic_coder_prototype.optimize import (
     ReflectiveParetoBackendRequest,
     ReflectiveParetoBackendResult,
     SingleLocusGreedyBackend,
-    StagedOptimizer,
-    StagedOptimizerRequest,
     SupportEnvelope,
     WrongnessGuidedReflectionPolicy,
     build_codex_dossier_backend_example,
     build_codex_dossier_backend_example_payload,
     build_codex_dossier_evaluation_example,
     build_support_execution_benchmark_example,
-    build_staged_backend_comparison_example,
-    run_staged_optimizer,
     run_single_locus_greedy_backend,
     validate_bounded_candidate,
 )
+from agentic_coder_prototype.optimize.backend import StagedOptimizer, StagedOptimizerRequest, run_staged_optimizer
+from agentic_coder_prototype.optimize.examples import build_staged_backend_comparison_example
 
 
 def test_backend_example_round_trip() -> None:

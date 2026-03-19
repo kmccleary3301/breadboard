@@ -27,14 +27,10 @@ from .backend import (
     ReflectiveParetoBackendRequest,
     ReflectiveParetoBackendResult,
     SingleLocusGreedyBackend,
-    StagePlanStep,
-    StagedOptimizer,
-    StagedOptimizerRequest,
     TypedOverlayMutationPolicy,
     WrongnessGuidedReflectionPolicy,
     run_reflective_pareto_backend,
     run_single_locus_greedy_backend,
-    run_staged_optimizer,
     validate_bounded_candidate,
 )
 from .context import (
@@ -74,12 +70,10 @@ from .examples import (
     build_codex_dossier_promotion_examples_payload,
     build_coding_overlay_benchmark_example,
     build_coding_overlay_benchmark_example_payload,
-    build_coding_overlay_verifier_experiment_example,
-    build_coding_overlay_verifier_experiment_example_payload,
     build_support_execution_benchmark_example,
     build_support_execution_benchmark_example_payload,
-    build_staged_backend_comparison_example,
-    build_staged_backend_comparison_example_payload,
+    build_tool_guidance_coding_overlay_composition_example,
+    build_tool_guidance_coding_overlay_composition_example_payload,
     build_tool_guidance_benchmark_example,
     build_tool_guidance_benchmark_example_payload,
 )
@@ -107,11 +101,11 @@ from .promotion import (
 )
 from .suites import (
     EvaluationSuiteManifest,
+    FamilyCompositionManifest,
     ObjectiveBreakdownResult,
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
     TargetFamilyManifest,
-    VerifierAugmentedExperimentResult,
 )
 from .substrate import (
     ArtifactRef,
@@ -124,7 +118,6 @@ from .substrate import (
     SupportEnvelope,
     materialize_candidate,
 )
-from .trajectory_ir import TrajectoryEpisode, TrajectoryStep, build_stub_episode
 from .wrongness import WrongnessReport
 
 __all__ = [
@@ -179,9 +172,6 @@ __all__ = [
     "ReflectiveParetoBackendRequest",
     "ReflectiveParetoBackendResult",
     "SingleLocusGreedyBackend",
-    "StagePlanStep",
-    "StagedOptimizer",
-    "StagedOptimizerRequest",
     "RuntimeCompatibilityIssue",
     "RuntimeCompatibilityResult",
     "SandboxContextRequirement",
@@ -190,12 +180,10 @@ __all__ = [
     "SupportEnvelope",
     "SupportEnvelopeGateInput",
     "TargetFamilyManifest",
+    "FamilyCompositionManifest",
     "ToolPackContext",
     "ToolRequirement",
-    "TrajectoryEpisode",
-    "TrajectoryStep",
     "TypedOverlayMutationPolicy",
-    "VerifierAugmentedExperimentResult",
     "WrongnessGuidedReflectionPolicy",
     "WrongnessReport",
     "build_backend_comparison_example",
@@ -214,18 +202,15 @@ __all__ = [
     "build_codex_dossier_runtime_context_examples_payload",
     "build_coding_overlay_benchmark_example",
     "build_coding_overlay_benchmark_example_payload",
-    "build_coding_overlay_verifier_experiment_example",
-    "build_coding_overlay_verifier_experiment_example_payload",
     "build_paired_candidate_comparison",
     "build_promotion_evidence",
     "build_promotion_evidence_summary",
     "build_support_execution_benchmark_example",
     "build_support_execution_benchmark_example_payload",
-    "build_staged_backend_comparison_example",
-    "build_staged_backend_comparison_example_payload",
+    "build_tool_guidance_coding_overlay_composition_example",
+    "build_tool_guidance_coding_overlay_composition_example_payload",
     "build_tool_guidance_benchmark_example",
     "build_tool_guidance_benchmark_example_payload",
-    "build_stub_episode",
     "create_promotion_record",
     "evaluate_comparison_gate",
     "evaluate_family_promotion_gate",
@@ -238,7 +223,6 @@ __all__ = [
     "promote_candidate",
     "run_reflective_pareto_backend",
     "run_single_locus_greedy_backend",
-    "run_staged_optimizer",
     "validate_bounded_candidate",
     "validate_prompt_mutation",
 ]
