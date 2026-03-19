@@ -22,6 +22,8 @@ Primary issue: `breadboard_repo_darwin_phase1_20260313-8xc`
   - `artifacts/darwin/memos/compute_normalized_memo_v0.md`
 - tranche review note now exists:
   - `docs/darwin_phase2_compute_normalized_tranche_review_2026-03-18.md`
+- tranche decision note now exists:
+  - `docs/darwin_phase2_compute_normalized_tranche_decision_2026-03-18.md`
 
 ## What changed semantically
 
@@ -61,5 +63,6 @@ The new normalized view is also emitted across all current active lanes as a der
 
 ## Current tranche decision read
 
-- continue the compute-normalized tranche
-- do not unlock broader transfer families yet
+- compute-normalized tranche is now strong enough for its current scope
+- broader transfer families / lineage policy can now be unlocked as the next scoped tranche
+- external-safe evidence remains deferred
