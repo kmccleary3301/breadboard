@@ -1,8 +1,8 @@
 # DARWIN Stage-3 Execution Plan
 
 Date: 2026-03-19
-Status: entrypoint ready
-Scope: Stage-3 doctrine freeze, ADR freeze, and first implementation tranche planning
+Status: tranche-1 hard gate passed
+Scope: Stage-3 doctrine freeze, tranche-1 substrate uptake, and bounded real-inference entry conditions
 References:
 - `docs/darwin_stage3_doctrine_2026-03-19.md`
 - `docs/darwin_stage3_adr_set_2026-03-19.md`
@@ -194,16 +194,17 @@ Every Stage-3 tranche should require:
 
 ## 9. Next step
 
-The next correct move after this entrypoint is:
+The next correct move after tranche-1 hard-gate passage is:
 
-- use the ADR set to define the smallest tranche-1 implementation slice
+- start the bounded real-inference entry tranche
 
-That slice should focus on:
+That tranche should focus on:
 
-- optimization substrate uptake
-- limited `ExecutionPlan` consumption
-- stronger evaluator closure
-- cost telemetry hooks
+- `lane.repo_swe` and `lane.systems` as primary lanes
+- `gpt-5.4-mini` as the default worker model
+- `gpt-5.4-nano` for bulk/filter/repetition roles
+- fixed replication and control reserve behavior
+- operator expected-value reporting under matched bounded budgets
 
 Current tranche-1 slice reference:
 
@@ -214,3 +215,14 @@ Current tranche-1 slice reference:
 - `docs/darwin_stage3_tranche1_uptake_gate_2026-03-19.md`
 - `docs/darwin_stage3_tranche1_budget_ledger_status_2026-03-19.md`
 - `docs/darwin_stage3_tranche1_mutation_canary_status_2026-03-19.md`
+- `docs/darwin_stage3_tranche1_boundary_2026-03-19.md`
+- `docs/darwin_stage3_mutation_canary_review_2026-03-19.md`
+- `docs/darwin_stage3_mutation_canary_gate_2026-03-19.md`
+- `docs/darwin_stage3_substrate_ownership_note_2026-03-19.md`
+- `docs/darwin_stage3_systems_mutation_canary_status_2026-03-19.md`
+- `docs/darwin_stage3_cost_routing_readiness_2026-03-19.md`
+- `docs/darwin_stage3_secondary_lane_confirmation_2026-03-19.md`
+- `docs/darwin_stage3_atp_audit_note_2026-03-19.md`
+- `docs/darwin_stage3_tranche1_verification_bundle_2026-03-19.md`
+- `docs/darwin_stage3_tranche1_hard_gate_2026-03-19.md`
+- `docs/darwin_stage3_real_inference_entry_conditions_2026-03-19.md`

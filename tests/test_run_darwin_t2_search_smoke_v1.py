@@ -17,8 +17,8 @@ def test_run_search_smoke_emits_promotion_cycles() -> None:
     summary = run_search_smoke()
     payload = json.loads(open(summary["summary_path"], "r", encoding="utf-8").read())
     assert payload["lane_count"] == 4
-    assert payload["mutation_trial_count"] == 9
-    assert payload["stage3_substrate_backed_trial_count"] == 2
+    assert payload["mutation_trial_count"] == 11
+    assert payload["stage3_substrate_backed_trial_count"] == 4
     assert payload["stage3_substrate_lane_ids"] == ["lane.repo_swe"]
     assert {row["lane_id"] for row in payload["lanes"]} == {"lane.harness", "lane.repo_swe", "lane.scheduling", "lane.research"}
     scheduling = next(row for row in payload["lanes"] if row["lane_id"] == "lane.scheduling")
@@ -34,3 +34,11 @@ def test_run_search_smoke_emits_promotion_cycles() -> None:
         ).read()
     )
     assert canary_bundle["applied_loci"] == ["budget.class"]
+    tool_bundle = json.loads(
+        open(
+            "artifacts/darwin/search/substrate/lane.repo_swe/mut_git_diff_candidate_bundle_v1.json",
+            "r",
+            encoding="utf-8",
+        ).read()
+    )
+    assert tool_bundle["applied_loci"] == ["tool.scope"]

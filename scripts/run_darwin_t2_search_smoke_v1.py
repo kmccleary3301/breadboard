@@ -95,6 +95,26 @@ def _mutation_cycles() -> dict[str, list[list[dict]]]:
                 "task_id": "task.darwin.repo_swe.patch_workspace_smoke.search",
                 "trial_label": "mut_class_b",
             },
+            {
+                "candidate_id": "cand.lane.repo_swe.mut.git_diff.v1",
+                "mutation_operator": "mut.tool_scope.add_git_diff_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "perturbation_group": "tool_scope_mutation",
+                "task_id": "task.darwin.repo_swe.patch_workspace_smoke.search",
+                "trial_label": "mut_git_diff",
+            },
+            {
+                "candidate_id": "cand.lane.repo_swe.mut.shadow_memory.v1",
+                "mutation_operator": "mut.policy.shadow_memory_enable_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "perturbation_group": "policy_bundle_mutation",
+                "task_id": "task.darwin.repo_swe.patch_workspace_smoke.search",
+                "trial_label": "mut_shadow_memory",
+            },
         ]],
         "lane.scheduling": [
             [

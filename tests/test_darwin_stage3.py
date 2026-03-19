@@ -48,7 +48,7 @@ def test_build_stage3_optimization_target_for_systems() -> None:
         policy_bundle_id=spec["policy_bundle_id"],
     )
     assert target.target_kind == "systems_reward_runtime"
-    assert "evaluator.control" in target.locus_ids()
+    assert target.locus_ids() == ["topology.params", "operator.family", "policy.bundle", "evaluator.control", "budget.class"]
 
 
 def test_consume_execution_plan_bindings_returns_narrow_runtime_fields() -> None:
@@ -56,6 +56,8 @@ def test_consume_execution_plan_bindings_returns_narrow_runtime_fields() -> None
         "bindings": {
             "cwd": "/tmp/example",
             "out_dir": "artifacts/out",
+            "tool_bindings": ["shell", "git_diff"],
+            "budget_class": "class_a",
             "command": ["python", "-m", "pytest", "-q"],
         }
     }
@@ -63,7 +65,15 @@ def test_consume_execution_plan_bindings_returns_narrow_runtime_fields() -> None
     assert consumed["cwd"] == "/tmp/example"
     assert consumed["out_dir"] == "artifacts/out"
     assert consumed["command"] == ["python", "-m", "pytest", "-q"]
-    assert consumed["consumed_fields"] == ["bindings.command", "bindings.cwd", "bindings.out_dir"]
+    assert consumed["tool_bindings"] == ["shell", "git_diff"]
+    assert consumed["budget_class"] == "class_a"
+    assert consumed["consumed_fields"] == [
+        "bindings.command",
+        "bindings.cwd",
+        "bindings.out_dir",
+        "bindings.tool_bindings",
+        "bindings.budget_class",
+    ]
 
 
 def test_stage3_budget_envelope_contains_budget_and_reserves() -> None:
@@ -113,3 +123,31 @@ def test_build_stage3_mutation_canary_for_repo_swe_budget_mutation() -> None:
     assert canary["candidate_bundle"]["applied_loci"] == ["budget.class"]
     assert canary["materialized_candidate"]["evaluation_input_compatibility"]["budget_class"] == "class_b"
     assert canary["blast_radius"]["changed_loci_count"] == 1
+
+
+def test_build_stage3_mutation_canary_for_systems_topology_mutation() -> None:
+    write_bootstrap_specs()
+    spec = _load_spec("artifacts/darwin/bootstrap/camp.darwin.phase1.systems.bootstrap.v0.json")
+    canary = build_stage3_mutation_canary(
+        lane_id="lane.systems",
+        spec=spec,
+        parent_candidate_id="cand.lane.systems.baseline.v1",
+        parent_candidate_ref="artifacts/darwin/candidates/cand.lane.systems.baseline.v1.json",
+        mutation_cfg={
+            "candidate_id": "cand.lane.systems.mut.pev.v1",
+            "mutation_operator": "mut.topology.single_to_pev_v1",
+            "topology_id": "policy.topology.pev_v0",
+            "policy_bundle_id": "policy.topology.pev_v0",
+            "budget_class": "class_a",
+            "trial_label": "mut_pev",
+        },
+        candidate_ref="artifacts/darwin/candidates/cand.lane.systems.mut.pev.v1.json",
+        evaluation_ref="artifacts/darwin/evaluations/cand.lane.systems.mut.pev.v1.evaluation_v1.json",
+        task_id="task.darwin.systems.reward_smoke.search",
+    )
+    assert supports_stage3_mutation_canary(
+        lane_id="lane.systems",
+        mutation_operator="mut.topology.single_to_pev_v1",
+    )
+    assert canary["selected_locus_id"] == "topology.params"
+    assert canary["materialized_candidate"]["effective_artifact"]["topology_id"] == "policy.topology.pev_v0"

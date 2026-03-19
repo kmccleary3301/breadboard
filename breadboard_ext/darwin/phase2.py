@@ -75,6 +75,20 @@ EVALUATOR_RULES = {
             "required_invariants": ["same_scenario_pack", "same_constraint_checker"],
         },
     },
+    "lane.systems": {
+        "evaluator_type": "reward_regression",
+        "runner_kind": "pytest_pass_ratio",
+        "invalid_comparison_rules": [
+            "reward_contract_must_match",
+            "metric_recorder_shape_must_match",
+            "budget_class_must_match",
+            "topology_lane_pair_must_be_supported",
+        ],
+        "control_pack": {
+            "required_perturbation_group": "nominal",
+            "required_invariants": ["same_reward_contract", "same_metric_recorder_shape", "same_command_shape"],
+        },
+    },
 }
 
 

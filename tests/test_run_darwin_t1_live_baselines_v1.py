@@ -29,6 +29,8 @@ def test_run_live_baselines_emits_six_lane_summary() -> None:
             "bindings.command",
             "bindings.cwd",
             "bindings.out_dir",
+            "bindings.tool_bindings",
+            "bindings.budget_class",
         ]
         execution_plan = json.loads(Path(refs["execution_plan"]).read_text(encoding="utf-8"))
         assert execution_plan["runtime_consumed"] is True
@@ -36,7 +38,11 @@ def test_run_live_baselines_emits_six_lane_summary() -> None:
             "bindings.command",
             "bindings.cwd",
             "bindings.out_dir",
+            "bindings.tool_bindings",
+            "bindings.budget_class",
         ]
+        assert rows[lane_id]["stage3_execution_plan_consumption"]["budget_class"] == rows[lane_id]["budget_class"]
+        assert rows[lane_id]["stage3_execution_plan_consumption"]["tool_bindings"]
     harness_policy = json.loads(Path(rows["lane.harness"]["shadow_artifact_refs"]["effective_policy"]).read_text(encoding="utf-8"))
     assert harness_policy["topology_support"]["allowed_topology_ids"] == ["policy.topology.single_v0", "policy.topology.pev_v0"]
     assert harness_policy["topology_support"]["is_supported"] is True

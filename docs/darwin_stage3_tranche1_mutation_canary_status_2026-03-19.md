@@ -16,6 +16,8 @@ References:
 - the canary currently covers:
   - topology mutation
   - budget-class mutation
+  - tool-scope mutation
+  - policy-bundle mutation
 - each canary mutation is validated through the shared optimize substrate with:
   - one selected mutable locus
   - bounded candidate validation

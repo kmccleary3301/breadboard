@@ -58,6 +58,11 @@ def _policy_registry_lookup() -> dict[str, dict[str, Any]]:
     return {row["policy_bundle_id"]: row for row in payload.get("bundles") or []}
 
 
+def _archive_rows_by_candidate() -> dict[str, dict[str, Any]]:
+    payload = _load_json(ARCHIVE_SNAPSHOT)
+    return {row["candidate_id"]: row for row in payload.get("rows") or []}
+
+
 def _component_ref(
     *,
     component_kind: str,
@@ -178,6 +183,7 @@ def build_decision_records(*, component_index: dict[str, dict[str, Any]]) -> lis
     transfer = _load_json(TRANSFER_LEDGER)
     replay = _load_json(REPLAY_AUDIT)
     invalid = _load_json(INVALID_LEDGER)
+    archive_rows = _archive_rows_by_candidate()
     invalid_rows = {row.get("candidate_id"): row for row in invalid.get("rows") or [] if row.get("candidate_id")}
     replay_rows = {row["candidate_id"]: row for row in replay.get("audits") or []}
 
@@ -238,6 +244,11 @@ def build_decision_records(*, component_index: dict[str, dict[str, Any]]) -> lis
                 "rollback_candidate_id": repo_swe_cycle["rollback_candidate_id"],
                 "invalid_candidate_ids": ["cand.lane.repo_swe.mut.class_b.v1"],
                 "rejected_candidate_ids": repo_swe_cycle["candidate_ids"],
+                "stage3_substrate_candidate_ids": [
+                    row["candidate_id"]
+                    for row in [archive_rows.get("cand.lane.repo_swe.mut.pev.v1"), archive_rows.get("cand.lane.repo_swe.mut.class_b.v1")]
+                    if row and row.get("stage3_substrate")
+                ],
             },
             "decided_at": _now(),
         }
@@ -350,12 +361,14 @@ def build_decision_records(*, component_index: dict[str, dict[str, Any]]) -> lis
             "evidence_refs": [
                 str(PROMOTION_DECISIONS.relative_to(ROOT)),
                 str(INVALID_LEDGER.relative_to(ROOT)),
+                *(archive_rows["cand.lane.repo_swe.mut.class_b.v1"].get("stage3_substrate") or {}).get("artifact_refs", {}).values(),
             ],
             "replay_refs": [],
             "decision_basis": {
                 "reason_code": invalid_rows["cand.lane.repo_swe.mut.class_b.v1"]["reason"],
                 "lineage_state": "deprecated",
                 "transfer_reuse_allowed": False,
+                "stage3_selected_locus_id": (archive_rows["cand.lane.repo_swe.mut.class_b.v1"].get("stage3_substrate") or {}).get("selected_locus_id"),
             },
             "decided_at": _now(),
         }
@@ -380,6 +393,7 @@ def build_decision_records(*, component_index: dict[str, dict[str, Any]]) -> lis
                 "lineage_state": "deprecated",
                 "replay_stable": replay_rows["cand.lane.repo_swe.mut.pev.v1"]["stable"],
                 "transfer_reuse_allowed": False,
+                "stage3_selected_locus_id": (archive_rows["cand.lane.repo_swe.mut.pev.v1"].get("stage3_substrate") or {}).get("selected_locus_id"),
             },
             "decided_at": _now(),
         }
@@ -389,6 +403,7 @@ def build_decision_records(*, component_index: dict[str, dict[str, Any]]) -> lis
 
 
 def build_reconstructed_cases() -> list[dict[str, Any]]:
+    archive_rows = _archive_rows_by_candidate()
     return [
         {
             "case_id": "case.promotion.lane.scheduling.v1",
@@ -443,6 +458,9 @@ def build_reconstructed_cases() -> list[dict[str, Any]]:
                 str(PROMOTION_DECISIONS.relative_to(ROOT)),
                 str(INVALID_LEDGER.relative_to(ROOT)),
                 str(REPLAY_AUDIT.relative_to(ROOT)),
+                *(
+                    archive_rows.get("cand.lane.repo_swe.mut.class_b.v1", {}).get("stage3_substrate", {}).get("artifact_refs", {}).values()
+                ),
             ],
         },
     ]

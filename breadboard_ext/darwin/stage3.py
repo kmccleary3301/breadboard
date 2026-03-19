@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 STAGE3_TARGETABLE_LANES = {"lane.repo_swe", "lane.systems"}
 STAGE3_CONSUMED_LANES = {"lane.harness", "lane.repo_swe"}
-STAGE3_MUTATION_CANARY_LANES = {"lane.repo_swe"}
+STAGE3_MUTATION_CANARY_LANES = {"lane.repo_swe", "lane.systems"}
 
 _TARGET_KINDS = {
     "lane.repo_swe": "repo_patch_workspace",
@@ -94,6 +94,13 @@ _MUTABLE_LOCI = {
             selector="evaluator_pack.control_pack",
             mutation_kind="replace",
             metadata={"component_kind": "evaluator_pack"},
+        ),
+        MutableLocus(
+            locus_id="budget.class",
+            locus_kind="budget_class_ref",
+            selector="evaluator_pack.budget_envelope.budget_class",
+            mutation_kind="replace",
+            metadata={"component_kind": "policy"},
         ),
     ],
 }
@@ -227,17 +234,29 @@ def consume_execution_plan_bindings(execution_plan: Mapping[str, Any]) -> dict[s
     command = [str(item) for item in bindings.get("command") or []]
     cwd = str(bindings.get("cwd") or "").strip()
     out_dir = str(bindings.get("out_dir") or "").strip()
+    tool_bindings = [str(item) for item in bindings.get("tool_bindings") or [] if str(item or "").strip()]
+    budget_class = str(bindings.get("budget_class") or "").strip()
     if not command:
         raise ValueError("execution plan bindings.command must be non-empty")
     if not cwd:
         raise ValueError("execution plan bindings.cwd must be non-empty")
     if not out_dir:
         raise ValueError("execution plan bindings.out_dir must be non-empty")
+    if not budget_class:
+        raise ValueError("execution plan bindings.budget_class must be non-empty")
     return {
         "command": command,
         "cwd": cwd,
         "out_dir": out_dir,
-        "consumed_fields": ["bindings.command", "bindings.cwd", "bindings.out_dir"],
+        "tool_bindings": tool_bindings,
+        "budget_class": budget_class,
+        "consumed_fields": [
+            "bindings.command",
+            "bindings.cwd",
+            "bindings.out_dir",
+            "bindings.tool_bindings",
+            "bindings.budget_class",
+        ],
     }
 
 
@@ -247,15 +266,20 @@ def dump_stage3_optimization_target(path: Path, target: OptimizationTarget) -> N
 
 
 def _stage3_mutation_locus_for_operator(*, lane_id: str, mutation_operator: str) -> str | None:
-    if lane_id != "lane.repo_swe":
-        return None
-    mapping = {
-        "mut.topology.single_to_pev_v1": "topology.params",
-        "mut.budget.class_a_to_class_b_v1": "budget.class",
-        "mut.tool_scope.add_git_diff_v1": "tool.scope",
-        "mut.policy.shadow_memory_enable_v1": "policy.bundle",
+    mappings = {
+        "lane.repo_swe": {
+            "mut.topology.single_to_pev_v1": "topology.params",
+            "mut.budget.class_a_to_class_b_v1": "budget.class",
+            "mut.tool_scope.add_git_diff_v1": "tool.scope",
+            "mut.policy.shadow_memory_enable_v1": "policy.bundle",
+        },
+        "lane.systems": {
+            "mut.topology.single_to_pev_v1": "topology.params",
+            "mut.budget.class_a_to_class_b_v1": "budget.class",
+            "mut.policy.shadow_memory_enable_v1": "policy.bundle",
+        },
     }
-    return mapping.get(mutation_operator)
+    return mappings.get(lane_id, {}).get(mutation_operator)
 
 
 def _stage3_change_value_for_operator(*, mutation_operator: str, mutation_cfg: Mapping[str, Any]) -> dict[str, Any]:
