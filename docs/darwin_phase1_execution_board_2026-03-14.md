@@ -43,3 +43,10 @@ Date: 2026-03-14
 - broader transfer families
 - compute-normalized claim-bearing dossiers
 - mandatory C-Trees promotion
+
+## Stage-3 entrypoint
+
+- Stage 3 is now a new scoped program rather than continuation of current-program closeout
+- doctrine entrypoint: `docs/darwin_stage3_doctrine_2026-03-19.md`
+- execution entrypoint: `docs/darwin_stage3_execution_plan_2026-03-19.md`
+- ADR entrypoint: `docs/darwin_stage3_adr_set_2026-03-19.md`

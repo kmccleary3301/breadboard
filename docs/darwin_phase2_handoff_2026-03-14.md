@@ -45,6 +45,12 @@ Phase-1 is closed as the internal operational baseline.
 - `docs/darwin_phase2_transfer_lineage_status_2026-03-19.md`
 - `docs/contracts/darwin/DARWIN_MODEL_ROUTING_POLICY_V0.md`
 
+## Stage-3 entrypoint
+
+- `docs/darwin_stage3_doctrine_2026-03-19.md`
+- `docs/darwin_stage3_execution_plan_2026-03-19.md`
+- `docs/darwin_stage3_adr_set_2026-03-19.md`
+
 ## What Phase-2 should not reopen
 
 - basic DARWIN contract scaffolding
