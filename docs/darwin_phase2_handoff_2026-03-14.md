@@ -16,6 +16,35 @@ Phase-1 is closed as the internal operational baseline.
 - `breadboard_repo_darwin_phase1_20260313-yna`
 - `breadboard_repo_darwin_phase1_20260313-i7v`
 
+## Current tranche-1 execution reference
+
+- `docs/darwin_phase2_tranche1_execution_plan_2026-03-14.md`
+- `docs/darwin_phase2_tranche1_adr_set_2026-03-14.md`
+- `docs/darwin_phase2_tranche1_status_2026-03-18.md`
+- `docs/darwin_phase2_tranche1_hard_gate_skeleton_2026-03-18.md`
+- `docs/darwin_phase2_tranche1_hard_gate_review_2026-03-18.md`
+
+## Current next-tranche decision
+
+- `docs/darwin_phase2_next_tranche_decision_2026-03-18.md`
+- `docs/darwin_phase2_compute_normalized_execution_plan_2026-03-18.md`
+- `docs/darwin_phase2_compute_normalized_status_2026-03-18.md`
+- `docs/darwin_phase2_compute_normalized_tranche_review_2026-03-18.md`
+- `docs/darwin_phase2_compute_normalized_tranche_decision_2026-03-18.md`
+- `docs/darwin_phase2_transfer_lineage_execution_plan_2026-03-18.md`
+- `docs/darwin_phase2_transfer_lineage_status_2026-03-19.md`
+- `docs/darwin_phase2_transfer_lineage_tranche_review_2026-03-19.md`
+- `docs/darwin_phase2_external_safe_execution_plan_2026-03-19.md`
+- `docs/darwin_phase2_external_safe_status_2026-03-19.md`
+- `docs/darwin_phase2_external_safe_tranche_review_2026-03-19.md`
+- `docs/darwin_phase2_current_program_closeout_note_2026-03-19.md`
+- `docs/darwin_current_program_signoff_2026-03-19.md`
+- `docs/darwin_current_program_completion_gate_2026-03-19.md`
+- `docs/darwin_current_program_canonical_artifacts_2026-03-19.md`
+- `docs/darwin_current_program_main_verification_2026-03-19.md`
+- `docs/darwin_phase2_transfer_lineage_status_2026-03-19.md`
+- `docs/contracts/darwin/DARWIN_MODEL_ROUTING_POLICY_V0.md`
+
 ## What Phase-2 should not reopen
 
 - basic DARWIN contract scaffolding

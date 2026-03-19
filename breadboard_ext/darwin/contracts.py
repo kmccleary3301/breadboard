@@ -78,3 +78,31 @@ def validate_policy_registry(payload: dict[str, Any]) -> list[ValidationIssue]:
 
 def validate_weekly_evidence_packet(payload: dict[str, Any]) -> list[ValidationIssue]:
     return _validate("weekly_evidence_packet_v0.schema.json", payload)
+
+
+def validate_effective_config(payload: dict[str, Any]) -> list[ValidationIssue]:
+    return _validate("effective_config_v0.schema.json", payload)
+
+
+def validate_execution_plan(payload: dict[str, Any]) -> list[ValidationIssue]:
+    return _validate("execution_plan_v0.schema.json", payload)
+
+
+def validate_effective_policy(payload: dict[str, Any]) -> list[ValidationIssue]:
+    return _validate("effective_policy_v0.schema.json", payload)
+
+
+def validate_evaluator_pack(payload: dict[str, Any]) -> list[ValidationIssue]:
+    return _validate("evaluator_pack_v0.schema.json", payload)
+
+
+def validate_component_ref(payload: dict[str, Any]) -> list[ValidationIssue]:
+    return _validate("component_ref_v0.schema.json", payload)
+
+
+def validate_decision_record(payload: dict[str, Any]) -> list[ValidationIssue]:
+    return _validate("decision_record_v0.schema.json", payload)
+
+
+def validate_evolution_ledger(payload: dict[str, Any]) -> list[ValidationIssue]:
+    return _validate("evolution_ledger_v0.schema.json", payload)

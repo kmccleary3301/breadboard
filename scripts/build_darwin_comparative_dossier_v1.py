@@ -7,7 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCORECARD = ROOT / "artifacts" / "darwin" / "scorecards" / "t1_baseline_scorecard.latest.json"
-COMPUTE_VIEW = ROOT / "artifacts" / "darwin" / "scorecards" / "compute_normalized_view_v1.json"
+COMPUTE_VIEW_V2 = ROOT / "artifacts" / "darwin" / "scorecards" / "compute_normalized_view_v2.json"
+COMPUTE_VIEW_V1 = ROOT / "artifacts" / "darwin" / "scorecards" / "compute_normalized_view_v1.json"
 TRANSFER_LEDGER = ROOT / "artifacts" / "darwin" / "search" / "transfer_ledger_v1.json"
 PROMOTION_HISTORY = ROOT / "artifacts" / "darwin" / "search" / "promotion_history_v1.json"
 WEEKLY = ROOT / "artifacts" / "darwin" / "weekly" / "weekly_evidence_packet.latest.json"
@@ -20,7 +21,8 @@ def _load_json(path: Path) -> dict:
 
 def build_dossier() -> dict:
     scorecard = _load_json(SCORECARD)
-    compute_view = _load_json(COMPUTE_VIEW)
+    compute_view_path = COMPUTE_VIEW_V2 if COMPUTE_VIEW_V2.exists() else COMPUTE_VIEW_V1
+    compute_view = _load_json(compute_view_path)
     transfer = _load_json(TRANSFER_LEDGER)
     history = _load_json(PROMOTION_HISTORY)
     weekly = _load_json(WEEKLY)
@@ -35,7 +37,8 @@ def build_dossier() -> dict:
         "max_promotion_history_depth": deepest_history,
         "weekly_packet_ref": str(WEEKLY.relative_to(ROOT)),
         "scorecard_ref": str(SCORECARD.relative_to(ROOT)),
-        "compute_view_ref": str(COMPUTE_VIEW.relative_to(ROOT)),
+        "compute_view_ref": str(compute_view_path.relative_to(ROOT)),
+        "compute_view_schema": compute_view.get("schema"),
         "lane_rows": [
             {
                 "lane_id": row["lane_id"],

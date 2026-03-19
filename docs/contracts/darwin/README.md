@@ -32,6 +32,12 @@ Phase-1 T0 freezes:
 - `DARWIN_TYPED_SEARCH_CORE_V1.md`
 - `DARWIN_TRANSFER_PROTOCOL_V1.md`
 - `DARWIN_COMPUTE_NORMALIZED_SCORECARD_V1.md`
+- `DARWIN_COMPUTE_NORMALIZED_SCORECARD_V2.md`
+- `DARWIN_COST_ACCOUNTING_CLASSIFICATION_V0.md`
+- `DARWIN_MODEL_ROUTING_POLICY_V0.md`
+- `DARWIN_TRANSFER_FAMILY_POLICY_V0.md`
+- `DARWIN_LINEAGE_POLICY_V0.md`
+- `DARWIN_EXTERNAL_SAFE_EVIDENCE_POLICY_V0.md`
 
 ### Machine-readable schemas
 
@@ -39,6 +45,13 @@ Phase-1 T0 freezes:
 - `schemas/policy_bundle_v0.schema.json`
 - `schemas/candidate_artifact_v0.schema.json`
 - `schemas/evaluation_record_v0.schema.json`
+- `schemas/effective_config_v0.schema.json`
+- `schemas/execution_plan_v0.schema.json`
+- `schemas/effective_policy_v0.schema.json`
+- `schemas/evaluator_pack_v0.schema.json`
+- `schemas/component_ref_v0.schema.json`
+- `schemas/decision_record_v0.schema.json`
+- `schemas/evolution_ledger_v0.schema.json`
 - `schemas/evidence_bundle_v0.schema.json`
 - `schemas/claim_record_v0.schema.json`
 - `schemas/lane_registry_v0.schema.json`
@@ -65,7 +78,21 @@ Phase-1 T0 freezes:
 - `scripts/build_darwin_typed_search_core_v1.py`
 - `scripts/run_darwin_t2_search_smoke_v1.py`
 - `scripts/build_darwin_invalid_comparison_ledger_v1.py`
+- `scripts/build_darwin_evolution_ledger_v0.py`
 - `scripts/build_darwin_compute_normalized_view_v1.py`
+- `scripts/build_darwin_compute_normalized_view_v2.py`
+- `scripts/build_darwin_compute_normalized_review_v0.py`
+- `scripts/build_darwin_compute_normalized_memo_v0.py`
+- `scripts/build_darwin_transfer_family_view_v0.py`
+- `scripts/build_darwin_lineage_review_v0.py`
+- `scripts/build_darwin_transfer_lineage_proving_review_v0.py`
+- `scripts/build_darwin_external_safe_claim_subset_v0.py`
+- `scripts/build_darwin_external_safe_invalidity_summary_v0.py`
+- `scripts/build_darwin_external_safe_reviewer_summary_v0.py`
+- `scripts/build_darwin_external_safe_memo_v0.py`
+- `scripts/build_darwin_external_safe_packet_v0.py`
+- `scripts/build_darwin_transfer_family_view_v0.py`
+- `scripts/build_darwin_lineage_review_v0.py`
 - `scripts/build_darwin_comparative_dossier_v1.py`
 - `scripts/emit_darwin_search_evidence_v1.py`
 - `scripts/run_darwin_phase1_replay_audit_v1.py`

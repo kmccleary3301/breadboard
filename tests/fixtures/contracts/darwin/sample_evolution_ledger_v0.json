@@ -1,0 +1,52 @@
+{
+  "schema": "breadboard.darwin.evolution_ledger.v0",
+  "generated_at": "2026-03-18T00:00:00+00:00",
+  "source_artifact_refs": {
+    "live_summary_ref": "artifacts/darwin/live_baselines/live_baseline_summary_v1.json",
+    "search_summary_ref": "artifacts/darwin/search/search_smoke_summary_v1.json",
+    "archive_snapshot_ref": "artifacts/darwin/search/archive_snapshot_v1.json",
+    "promotion_decisions_ref": "artifacts/darwin/search/promotion_decisions_v1.json",
+    "promotion_history_ref": "artifacts/darwin/search/promotion_history_v1.json",
+    "transfer_ledger_ref": "artifacts/darwin/search/transfer_ledger_v1.json",
+    "replay_audit_ref": "artifacts/darwin/search/phase1_replay_audit_v1.json",
+    "invalid_comparison_ledger_ref": "artifacts/darwin/search/invalid_comparison_ledger_v1.json"
+  },
+  "archive_snapshot_is_derived": true,
+  "component_refs": [
+    {
+      "schema": "breadboard.darwin.component_ref.v0",
+      "component_kind": "operator",
+      "component_id": "mut.prompt.tighten_acceptance_v1",
+      "lane_scope": ["lane.harness", "lane.research"],
+      "source_ref": "artifacts/darwin/search/mutation_operator_registry_v1.json#mut.prompt.tighten_acceptance_v1",
+      "source_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+      "status": "approved"
+    }
+  ],
+  "decision_records": [
+    {
+      "schema": "breadboard.darwin.decision_record.v0",
+      "decision_id": "decision.transfer.sample.v1",
+      "decision_type": "transfer",
+      "lane_id": "lane.research",
+      "candidate_ids": ["cand.lane.research.mut.prompt.v1"],
+      "component_ids": ["mut.prompt.tighten_acceptance_v1"],
+      "evidence_refs": ["artifacts/darwin/search/transfer_ledger_v1.json"],
+      "replay_refs": ["artifacts/darwin/search/phase1_replay_audit_v1.json"],
+      "decision_basis": {
+        "reason_code": "shared_prompt_operator"
+      },
+      "decided_at": "2026-03-18T00:00:00+00:00"
+    }
+  ],
+  "reconstructed_cases": [
+    {
+      "case_id": "case.transfer.harness_to_research.v1",
+      "lane_id": "lane.research",
+      "case_kind": "transfer",
+      "component_ids": ["mut.prompt.tighten_acceptance_v1"],
+      "decision_ids": ["decision.transfer.sample.v1"],
+      "source_refs": ["artifacts/darwin/search/transfer_ledger_v1.json"]
+    }
+  ]
+}

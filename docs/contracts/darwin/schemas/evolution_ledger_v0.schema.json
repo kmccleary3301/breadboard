@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/evolution_ledger_v0.schema.json",
+  "title": "DarwinEvolutionLedgerV0",
+  "type": "object",
+  "additionalProperties": true,
+  "$defs": {
+    "component_ref": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "schema",
+        "component_kind",
+        "component_id",
+        "lane_scope",
+        "source_ref",
+        "source_digest",
+        "status"
+      ],
+      "properties": {
+        "schema": { "const": "breadboard.darwin.component_ref.v0" },
+        "component_kind": {
+          "type": "string",
+          "enum": ["topology", "policy", "operator", "evaluator_pack"]
+        },
+        "component_id": { "type": "string", "minLength": 1 },
+        "lane_scope": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "source_ref": { "type": "string", "minLength": 1 },
+        "source_digest": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "status": { "type": "string", "enum": ["approved", "shadow", "derived"] },
+        "metadata": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "decision_record": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "schema",
+        "decision_id",
+        "decision_type",
+        "lane_id",
+        "candidate_ids",
+        "component_ids",
+        "evidence_refs",
+        "replay_refs",
+        "decision_basis",
+        "decided_at"
+      ],
+      "properties": {
+        "schema": { "const": "breadboard.darwin.decision_record.v0" },
+        "decision_id": { "type": "string", "minLength": 1 },
+        "decision_type": {
+          "type": "string",
+          "enum": ["promotion", "rollback", "transfer", "deprecation", "retained_baseline"]
+        },
+        "lane_id": { "type": "string", "minLength": 1 },
+        "candidate_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "component_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "replay_refs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "decision_basis": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["reason_code"],
+          "properties": {
+            "reason_code": { "type": "string", "minLength": 1 }
+          }
+        },
+        "decided_at": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "generated_at",
+    "source_artifact_refs",
+    "archive_snapshot_is_derived",
+    "component_refs",
+    "decision_records",
+    "reconstructed_cases"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.evolution_ledger.v0" },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "source_artifact_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "live_summary_ref",
+        "search_summary_ref",
+        "archive_snapshot_ref",
+        "promotion_decisions_ref",
+        "promotion_history_ref",
+        "transfer_ledger_ref",
+        "replay_audit_ref",
+        "invalid_comparison_ledger_ref"
+      ],
+      "properties": {
+        "live_summary_ref": { "type": "string", "minLength": 1 },
+        "search_summary_ref": { "type": "string", "minLength": 1 },
+        "archive_snapshot_ref": { "type": "string", "minLength": 1 },
+        "promotion_decisions_ref": { "type": "string", "minLength": 1 },
+        "promotion_history_ref": { "type": "string", "minLength": 1 },
+        "transfer_ledger_ref": { "type": "string", "minLength": 1 },
+        "replay_audit_ref": { "type": "string", "minLength": 1 },
+        "invalid_comparison_ledger_ref": { "type": "string", "minLength": 1 }
+      }
+    },
+    "archive_snapshot_is_derived": { "type": "boolean" },
+    "component_refs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/component_ref" }
+    },
+    "decision_records": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/decision_record" }
+    },
+    "reconstructed_cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["case_id", "lane_id", "case_kind", "component_ids", "decision_ids", "source_refs"],
+        "properties": {
+          "case_id": { "type": "string", "minLength": 1 },
+          "lane_id": { "type": "string", "minLength": 1 },
+          "case_kind": { "type": "string", "enum": ["promotion_history", "transfer", "search_review"] },
+          "component_ids": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "decision_ids": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "source_refs": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  }
+}
