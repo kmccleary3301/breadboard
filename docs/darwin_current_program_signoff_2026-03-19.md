@@ -1,7 +1,7 @@
 # DARWIN Current-Program Signoff
 
 Date: 2026-03-19
-Status: feature-branch signoff; pending merged-state verification on `main`
+Status: merged-state signoff on `main`
 
 ## Scope
 
@@ -25,6 +25,7 @@ The current scoped DARWIN program now includes:
 - DARWIN has a coherent bounded external-safe evidence layer for technical review
 - the current DARWIN comparative and transfer/lineage story is packaged with explicit replay and invalidity caveats
 - the current scoped program is ready for final merged-state closeout once landed to `main`
+- the current scoped DARWIN program is fully closed on `main`
 
 ## What is not claimable now
 
@@ -36,9 +37,4 @@ The current scoped DARWIN program now includes:
 
 ## Boundary
 
-What remains is closeout, not new capability work:
-
-- merged-state verification on `main`
-- final merged-state push on `main`
-
-Anything broader than that should be treated as future DARWIN roadmap work.
+Anything broader than this point should be treated as future DARWIN roadmap work rather than unfinished current-program work.

@@ -1,7 +1,7 @@
 # DARWIN Current-Program Canonical Artifacts
 
 Date: 2026-03-19
-Status: frozen on feature branch; pending merged-state confirmation on `main`
+Status: frozen on `main`
 
 ## Canonical comparative artifacts
 
@@ -37,8 +37,8 @@ Status: frozen on feature branch; pending merged-state confirmation on `main`
 
 ## Read
 
-This is the canonical current-program closure set on the feature branch.
+This is the canonical current-program closure set on `main`.
 
 Historical tranche notes remain useful context, but they are not the canonical closeout reference.
 
-Merged-state verification is still required before this freeze is considered final on `main`.
+Merged-state verification for this closure set completed on `main`.

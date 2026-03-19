@@ -10,9 +10,9 @@ Date: 2026-03-19
 - [x] Current-program canonical artifact set frozen on branch
 - [x] Current-program signoff memo written
 - [x] Current-program closeout note written
-- [ ] Merged-state verification on `main`
-- [ ] Final merged-state push on `main`
+- [x] Merged-state verification on `main`
+- [x] Final merged-state push on `main`
 
 ## Gate rule
 
-The current scoped DARWIN program is closeout-ready on the feature branch, but not fully complete until the last two merged-state items are checked on `main`.
+The current scoped DARWIN program is complete only when the merged-state verification and push are both completed on `main`.

@@ -1,13 +1,13 @@
 # DARWIN Current-Program Merged-State Verification
 
 Date: 2026-03-19
-Status: pending branch landing to `main`
+Status: completed on `main`
 
-## Intended verification target
+## Verification target
 
-Branch to verify once landed: `main`
+Branch verified: `main`
 
-## Intended validation commands
+## Validation commands
 
 - `pytest -q tests/test_build_darwin_external_safe_claim_subset_v0.py tests/test_build_darwin_external_safe_invalidity_summary_v0.py tests/test_build_darwin_external_safe_reviewer_summary_v0.py tests/test_build_darwin_external_safe_memo_v0.py tests/test_build_darwin_external_safe_packet_v0.py`
 - `python scripts/build_darwin_external_safe_claim_subset_v0.py --json`
@@ -16,8 +16,11 @@ Branch to verify once landed: `main`
 - `python scripts/build_darwin_external_safe_memo_v0.py --json`
 - `python scripts/build_darwin_external_safe_packet_v0.py --json`
 
-## Current read
+## Results
 
-This verification document is intentionally not checked complete on the feature branch.
-
-It exists so the merged-state verification step is explicit and reproducible once the branch is landed to `main`.
+- `5` external-safe DARWIN tests passed on merged `main`.
+- external-safe claim subset emitted `5` included claims.
+- external-safe invalidity summary emitted `4` caveats.
+- external-safe reviewer summary emitted `5` lane rows.
+- external-safe evidence memo and packet both emitted successfully.
+- contract-pack validation remained `ok: true`.
