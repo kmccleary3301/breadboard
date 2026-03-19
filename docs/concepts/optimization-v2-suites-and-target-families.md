@@ -139,11 +139,15 @@ The first tranche rejects:
 
 That keeps search-space growth explicit instead of ambient.
 
-## First live family: support and execution heuristics
+## First live families
 
-The first V2 proving family is the existing support/execution lane from V1.5, now rebound through the new suite/family layer in `build_support_execution_benchmark_example`.
+The initial V2 tranche now binds three real proving families through the new suite/family layer:
 
-That example now includes:
+- support and execution heuristics in `build_support_execution_benchmark_example`
+- tool guidance and tool-pack wording in `build_tool_guidance_benchmark_example`
+- bounded coding-harness overlays in `build_coding_overlay_benchmark_example`
+
+Each example now includes:
 
 - `evaluation_suite`
 - `objective_suite`
@@ -164,7 +168,71 @@ The promotion-readiness slice now includes:
 
 This is deliberate.
 
-The first V2 tranche is not a new optimizer yet. It is the point where a real optimization lane becomes suite-bound and family-bound rather than remaining only benchmark-bound.
+The first V2 tranche is not a new optimizer yet. It is the point where three real optimization lanes become suite-bound and family-bound rather than remaining only benchmark-bound.
+
+## Backend-only staged optimizer
+
+The next V2 tranche adds a backend-private staged optimizer in `agentic_coder_prototype/optimize/backend.py`:
+
+- `StagePlanStep`
+- `StagedOptimizerRequest`
+- `StagedOptimizer`
+- `run_staged_optimizer(...)`
+
+This backend is deliberately **not** a new public architecture center.
+
+It operates over:
+
+- an existing reflective backend request
+- one declared evaluation suite
+- one declared objective suite
+- one declared target family
+- one declared search space
+
+The stage plan stays small and deterministic.
+
+Each stage declares:
+
+- allowed loci
+- primary objective channels
+- allowed split visibilities
+
+Hidden holds remain out of bounds for mutation-time optimization.
+
+They stay comparison and promotion evidence only.
+
+The canonical comparison proof is `build_staged_backend_comparison_example`, which compares the staged optimizer against the reflective backend on the same three live family manifests.
+
+## Family-level promotion evidence
+
+V2 also extends the existing promotion layer rather than creating a second one.
+
+`PromotionEvidenceSummary` now carries suite and family scope directly:
+
+- evaluation suite ids
+- objective suite ids
+- target family ids
+- search space ids
+- objective breakdown result ids
+- family bucket coverage
+- hidden-hold and regression bucket coverage
+- applicability scope
+- family risk summary
+- review class
+- objective breakdown status
+
+The family-aware gate is `evaluate_family_promotion_gate(...)`.
+
+This keeps the promotion doctrine intact:
+
+- benchmark comparison still matters
+- family scope still matters
+- review class still matters
+- objective breakdown completeness still matters
+
+Support-heavy families remain explicit review cases.
+
+Non-review-heavy families can pass with `win` or `non_inferior` evidence if hidden-hold and regression coverage are real.
 
 ## Why this layer exists
 
@@ -192,7 +260,7 @@ This first V2 tranche does not introduce:
 - online self-tuning
 - a public reward DSL
 - a public optimizer workflow product surface
-- a staged optimizer backend
+- a canonical staged optimizer architecture
 
 Those later phases are still deferred until suite and family contracts are real across multiple lanes.
 
@@ -206,6 +274,7 @@ For the smallest end-to-end V2 walkthrough, read:
 4. `TargetFamilyManifest`
 5. `SearchSpaceManifest`
 6. `build_support_execution_benchmark_example`
-7. `build_support_execution_benchmark_example_payload`
+7. `build_tool_guidance_benchmark_example`
+8. `build_coding_overlay_benchmark_example`
 
-That sequence shows the first real family/suite binding on top of the completed V1.5 evidence stack.
+That sequence shows the first real family/suite bindings on top of the completed V1.5 evidence stack.

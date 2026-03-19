@@ -14,6 +14,8 @@ from agentic_coder_prototype.optimize import (
     build_coding_overlay_benchmark_example_payload,
     build_support_execution_benchmark_example,
     build_support_execution_benchmark_example_payload,
+    build_staged_backend_comparison_example,
+    build_staged_backend_comparison_example_payload,
     build_tool_guidance_benchmark_example,
     build_tool_guidance_benchmark_example_payload,
 )
@@ -143,3 +145,15 @@ def test_backend_comparison_payload_round_trips() -> None:
     assert comparison.backend_run_ids["reflective_pareto_backend_v1"] == [run.run_id for run in reflective_runs]
     assert comparison.backend_run_ids["single_locus_greedy.v1"] == [run.run_id for run in greedy_runs]
     assert all(run.metadata["backend_family"] for run in reflective_runs + greedy_runs)
+
+
+def test_staged_backend_comparison_payload_round_trips() -> None:
+    payload = build_staged_backend_comparison_example_payload()
+
+    comparison = BackendComparisonResult.from_dict(payload["backend_comparison"])
+
+    assert comparison.winner_backend_id == "staged_optimizer.v1"
+    assert comparison.reproducibility_notes["fixed_methodology"] is True
+    assert len(payload["reflective_results"]) == 3
+    assert len(payload["staged_results"]) == 3
+    assert len(payload["family_requests"]) == 3

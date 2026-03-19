@@ -5,6 +5,13 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from .benchmark import BenchmarkRunManifest, CandidateComparisonResult
 from .evaluation import EvaluationRecord
+from .suites import (
+    EvaluationSuiteManifest,
+    ObjectiveBreakdownResult,
+    ObjectiveSuiteManifest,
+    SearchSpaceManifest,
+    TargetFamilyManifest,
+)
 from .substrate import ArtifactRef, MaterializedCandidate, OptimizationTarget, SupportEnvelope
 
 
@@ -20,7 +27,7 @@ PROMOTION_STATES = {
 }
 TERMINAL_PROMOTION_STATES = {"promoted", "rejected", "archived"}
 ALLOWED_GATE_STATUSES = {"pass", "fail", "not_applicable", "insufficient_evidence"}
-ALLOWED_GATE_KINDS = {"replay", "conformance", "support_envelope", "comparison"}
+ALLOWED_GATE_KINDS = {"replay", "conformance", "support_envelope", "comparison", "family_promotion"}
 ALLOWED_TRANSITIONS = {
     "draft": {"evaluated", "archived"},
     "evaluated": {"frontier", "rejected", "archived"},
@@ -152,6 +159,18 @@ class PromotionEvidenceSummary:
     minimum_required_trials: Optional[int] = None
     observed_trial_count: Optional[int] = None
     outcome_counts: Dict[str, int] = field(default_factory=dict)
+    evaluation_suite_ids: List[str] = field(default_factory=list)
+    objective_suite_ids: List[str] = field(default_factory=list)
+    target_family_ids: List[str] = field(default_factory=list)
+    search_space_ids: List[str] = field(default_factory=list)
+    objective_breakdown_result_ids: List[str] = field(default_factory=list)
+    family_bucket_ids: List[str] = field(default_factory=list)
+    hidden_hold_bucket_ids: List[str] = field(default_factory=list)
+    regression_bucket_ids: List[str] = field(default_factory=list)
+    applicability_scope: Dict[str, Any] = field(default_factory=dict)
+    family_risk_summary: Dict[str, Any] = field(default_factory=dict)
+    review_class: Optional[str] = None
+    objective_breakdown_status: Optional[str] = None
     review_required: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -164,6 +183,22 @@ class PromotionEvidenceSummary:
         object.__setattr__(self, "regression_sample_ids", _copy_text_list(self.regression_sample_ids))
         object.__setattr__(self, "compared_regression_sample_ids", _copy_text_list(self.compared_regression_sample_ids))
         object.__setattr__(self, "stochasticity_class", str(self.stochasticity_class).strip() if self.stochasticity_class else None)
+        object.__setattr__(self, "evaluation_suite_ids", _copy_text_list(self.evaluation_suite_ids))
+        object.__setattr__(self, "objective_suite_ids", _copy_text_list(self.objective_suite_ids))
+        object.__setattr__(self, "target_family_ids", _copy_text_list(self.target_family_ids))
+        object.__setattr__(self, "search_space_ids", _copy_text_list(self.search_space_ids))
+        object.__setattr__(self, "objective_breakdown_result_ids", _copy_text_list(self.objective_breakdown_result_ids))
+        object.__setattr__(self, "family_bucket_ids", _copy_text_list(self.family_bucket_ids))
+        object.__setattr__(self, "hidden_hold_bucket_ids", _copy_text_list(self.hidden_hold_bucket_ids))
+        object.__setattr__(self, "regression_bucket_ids", _copy_text_list(self.regression_bucket_ids))
+        object.__setattr__(self, "applicability_scope", _copy_mapping(self.applicability_scope))
+        object.__setattr__(self, "family_risk_summary", _copy_mapping(self.family_risk_summary))
+        object.__setattr__(self, "review_class", str(self.review_class).strip() if self.review_class else None)
+        object.__setattr__(
+            self,
+            "objective_breakdown_status",
+            str(self.objective_breakdown_status).strip() if self.objective_breakdown_status else None,
+        )
         if self.minimum_required_trials is not None and int(self.minimum_required_trials) <= 0:
             raise ValueError("minimum_required_trials must be positive when provided")
         if self.observed_trial_count is not None and int(self.observed_trial_count) <= 0:
@@ -193,6 +228,18 @@ class PromotionEvidenceSummary:
             "regression_sample_ids": list(self.regression_sample_ids),
             "compared_regression_sample_ids": list(self.compared_regression_sample_ids),
             "outcome_counts": dict(self.outcome_counts),
+            "evaluation_suite_ids": list(self.evaluation_suite_ids),
+            "objective_suite_ids": list(self.objective_suite_ids),
+            "target_family_ids": list(self.target_family_ids),
+            "search_space_ids": list(self.search_space_ids),
+            "objective_breakdown_result_ids": list(self.objective_breakdown_result_ids),
+            "family_bucket_ids": list(self.family_bucket_ids),
+            "hidden_hold_bucket_ids": list(self.hidden_hold_bucket_ids),
+            "regression_bucket_ids": list(self.regression_bucket_ids),
+            "applicability_scope": dict(self.applicability_scope),
+            "family_risk_summary": dict(self.family_risk_summary),
+            "review_class": self.review_class,
+            "objective_breakdown_status": self.objective_breakdown_status,
             "review_required": self.review_required,
             "metadata": dict(self.metadata),
         }
@@ -218,6 +265,18 @@ class PromotionEvidenceSummary:
             minimum_required_trials=data.get("minimum_required_trials"),
             observed_trial_count=data.get("observed_trial_count"),
             outcome_counts=dict(data.get("outcome_counts") or {}),
+            evaluation_suite_ids=list(data.get("evaluation_suite_ids") or []),
+            objective_suite_ids=list(data.get("objective_suite_ids") or []),
+            target_family_ids=list(data.get("target_family_ids") or []),
+            search_space_ids=list(data.get("search_space_ids") or []),
+            objective_breakdown_result_ids=list(data.get("objective_breakdown_result_ids") or []),
+            family_bucket_ids=list(data.get("family_bucket_ids") or []),
+            hidden_hold_bucket_ids=list(data.get("hidden_hold_bucket_ids") or []),
+            regression_bucket_ids=list(data.get("regression_bucket_ids") or []),
+            applicability_scope=dict(data.get("applicability_scope") or {}),
+            family_risk_summary=dict(data.get("family_risk_summary") or {}),
+            review_class=data.get("review_class"),
+            objective_breakdown_status=data.get("objective_breakdown_status"),
             review_required=bool(data.get("review_required")),
             metadata=dict(data.get("metadata") or {}),
         )
@@ -600,10 +659,16 @@ def build_promotion_evidence_summary(
     candidate_id: str,
     benchmark_manifest: Optional[BenchmarkRunManifest] = None,
     comparison_results: Sequence[CandidateComparisonResult] | None = None,
+    evaluation_suite: Optional[EvaluationSuiteManifest] = None,
+    objective_suite: Optional[ObjectiveSuiteManifest] = None,
+    target_family: Optional[TargetFamilyManifest] = None,
+    search_space: Optional[SearchSpaceManifest] = None,
+    objective_breakdown_results: Sequence[ObjectiveBreakdownResult] | None = None,
     review_required: bool = False,
     metadata: Optional[Mapping[str, Any]] = None,
 ) -> PromotionEvidenceSummary:
     comparison_results = list(comparison_results or [])
+    objective_breakdown_results = list(objective_breakdown_results or [])
     manifests = [benchmark_manifest] if benchmark_manifest is not None else []
     outcome_counts: Dict[str, int] = {}
     comparison_ids: List[str] = []
@@ -619,17 +684,30 @@ def build_promotion_evidence_summary(
     minimum_required_trials: Optional[int] = None
     stochasticity_class: Optional[str] = None
     manifest_ids: List[str] = []
+    family_bucket_ids: List[str] = []
+    hidden_hold_bucket_ids: List[str] = []
+    regression_bucket_ids: List[str] = []
     for manifest in manifests:
         manifest_ids.append(manifest.manifest_id)
         stochasticity_class = manifest.stochasticity_class
         minimum_required_trials = int(manifest.rerun_policy.get("max_trials") or 1)
+        for bucket_values in manifest.bucket_tags.values():
+            family_bucket_ids.extend(bucket_values)
         for split in manifest.splits:
             if split.split_name == "regression":
                 regression_ids.extend(split.sample_ids)
+                for sample_id in split.sample_ids:
+                    regression_bucket_ids.extend(manifest.bucket_tags.get(sample_id) or [])
+            if split.visibility == "hidden_hold":
+                for sample_id in split.sample_ids:
+                    hidden_hold_bucket_ids.extend(manifest.bucket_tags.get(sample_id) or [])
         for comparison in comparison_results:
             compared_regression_ids.extend(
                 sample_id for sample_id in comparison.compared_sample_ids if sample_id in set(regression_ids)
             )
+    objective_breakdown_status = "complete" if objective_breakdown_results else None
+    if any(result.blocked_components for result in objective_breakdown_results):
+        objective_breakdown_status = "partial"
     return PromotionEvidenceSummary(
         summary_id=summary_id,
         candidate_id=candidate_id,
@@ -642,6 +720,29 @@ def build_promotion_evidence_summary(
         minimum_required_trials=minimum_required_trials,
         observed_trial_count=observed_trial_count or None,
         outcome_counts=outcome_counts,
+        evaluation_suite_ids=[evaluation_suite.suite_id] if evaluation_suite is not None else [],
+        objective_suite_ids=[objective_suite.suite_id] if objective_suite is not None else [],
+        target_family_ids=[target_family.family_id] if target_family is not None else [],
+        search_space_ids=[search_space.search_space_id] if search_space is not None else [],
+        objective_breakdown_result_ids=[result.result_id for result in objective_breakdown_results],
+        family_bucket_ids=family_bucket_ids,
+        hidden_hold_bucket_ids=hidden_hold_bucket_ids,
+        regression_bucket_ids=regression_bucket_ids,
+        applicability_scope={
+            "manifest_ids": manifest_ids,
+            "family_ids": [target_family.family_id] if target_family is not None else [],
+            "target_ids": list(target_family.target_ids) if target_family is not None else [],
+            "mutable_loci_ids": list(target_family.mutable_loci_ids) if target_family is not None else [],
+        },
+        family_risk_summary={
+            "review_required": review_required,
+            "review_class": target_family.review_class if target_family is not None else None,
+            "multi_locus_change": bool(target_family and len(target_family.mutable_loci_ids) > 1),
+            "hidden_hold_covered": bool(held_out_sample_ids),
+            "regression_covered": bool(regression_ids and compared_regression_ids),
+        },
+        review_class=target_family.review_class if target_family is not None else None,
+        objective_breakdown_status=objective_breakdown_status,
         review_required=review_required,
         metadata=dict(metadata or {}),
     )
@@ -970,6 +1071,201 @@ def evaluate_comparison_gate(
     )
 
 
+def evaluate_family_promotion_gate(
+    *,
+    target: OptimizationTarget,
+    candidate_id: str,
+    benchmark_manifest: BenchmarkRunManifest,
+    comparison_results: Sequence[CandidateComparisonResult],
+    evaluation_suite: Optional[EvaluationSuiteManifest] = None,
+    objective_suite: Optional[ObjectiveSuiteManifest] = None,
+    target_family: Optional[TargetFamilyManifest] = None,
+    search_space: Optional[SearchSpaceManifest] = None,
+    objective_breakdown_results: Sequence[ObjectiveBreakdownResult] | None = None,
+) -> GateResult:
+    objective_breakdown_results = list(objective_breakdown_results or [])
+    evidence_refs: List[ArtifactRef] = []
+    for comparison in comparison_results:
+        evidence_refs.extend(comparison.evidence_refs)
+    for result in objective_breakdown_results:
+        evidence_refs.extend(result.artifact_refs)
+    metadata = {
+        "manifest_id": benchmark_manifest.manifest_id,
+        "evaluation_suite_id": evaluation_suite.suite_id if evaluation_suite is not None else None,
+        "objective_suite_id": objective_suite.suite_id if objective_suite is not None else None,
+        "target_family_id": target_family.family_id if target_family is not None else None,
+        "search_space_id": search_space.search_space_id if search_space is not None else None,
+    }
+    if evaluation_suite is None or objective_suite is None or target_family is None or search_space is None:
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="family-level promotion requires declared suite and family manifests",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if target.target_id not in set(target_family.target_ids):
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="fail",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="family-level applicability scope does not include the optimization target",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if search_space.family_id != target_family.family_id:
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="fail",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="search space does not match the declared target family",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if objective_suite.evaluation_suite_id != evaluation_suite.suite_id:
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="fail",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="objective suite does not match the declared evaluation suite",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    candidate_breakdowns = [result for result in objective_breakdown_results if result.candidate_id == candidate_id]
+    if not candidate_breakdowns:
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="family-level promotion requires candidate objective breakdown evidence",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if any(result.blocked_components for result in candidate_breakdowns):
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="objective breakdown evidence is partially blocked for the candidate",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    candidate_comparisons = [item for item in comparison_results if item.child_candidate_id == candidate_id]
+    compared_ids = {
+        sample_id
+        for comparison in candidate_comparisons
+        for sample_id in comparison.compared_sample_ids
+    }
+    regression_ids = {
+        sample_id
+        for split in benchmark_manifest.splits
+        if split.split_name == "regression"
+        for sample_id in split.sample_ids
+    }
+    hidden_hold_ids = set(benchmark_manifest.hidden_hold_sample_ids())
+    if not regression_ids.issubset(compared_ids):
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="family-level promotion is missing regression coverage",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if not hidden_hold_ids.issubset(compared_ids):
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="family-level promotion is missing hidden-hold coverage",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    outcomes = {comparison.outcome for comparison in candidate_comparisons}
+    if "blocked" in outcomes:
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="family-level comparison outcome is blocked",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if "inconclusive" in outcomes or "tie" in outcomes:
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="family-level comparison outcome is inconclusive",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if any(comparison.outcome == "loss" for comparison in candidate_comparisons):
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="fail",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="family-level comparison evidence indicates a loss against the baseline",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if target_family.review_class in {"support_honesty"}:
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="review-heavy family still requires explicit review for promotion",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if any(comparison.outcome in {"win", "non_inferior"} for comparison in candidate_comparisons):
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="pass",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="family-level comparison and objective breakdown evidence support promotion",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    return GateResult(
+        gate_id=f"gate.family_promotion.{candidate_id}",
+        gate_kind="family_promotion",
+        status="insufficient_evidence",
+        target_id=target.target_id,
+        candidate_id=candidate_id,
+        reason="family-level evidence did not produce a promotable outcome",
+        evidence_refs=evidence_refs,
+        metadata=metadata,
+    )
+
+
 def evaluate_promotion_gates(
     *,
     target: OptimizationTarget,
@@ -978,6 +1274,11 @@ def evaluate_promotion_gates(
     prior_state: Optional[PromotionRecord] = None,
     benchmark_manifest: Optional[BenchmarkRunManifest] = None,
     comparison_results: Optional[Sequence[CandidateComparisonResult]] = None,
+    evaluation_suite: Optional[EvaluationSuiteManifest] = None,
+    objective_suite: Optional[ObjectiveSuiteManifest] = None,
+    target_family: Optional[TargetFamilyManifest] = None,
+    search_space: Optional[SearchSpaceManifest] = None,
+    objective_breakdown_results: Optional[Sequence[ObjectiveBreakdownResult]] = None,
 ) -> List[GateResult]:
     replay_input = ReplayConformanceGateInput(
         target=target,
@@ -1004,6 +1305,26 @@ def evaluate_promotion_gates(
                 comparison_results=comparison_results or [],
             )
         )
+    if benchmark_manifest is not None and (
+        evaluation_suite is not None
+        or objective_suite is not None
+        or target_family is not None
+        or search_space is not None
+        or objective_breakdown_results
+    ):
+        gate_results.append(
+            evaluate_family_promotion_gate(
+                target=target,
+                candidate_id=materialized_candidate.candidate_id,
+                benchmark_manifest=benchmark_manifest,
+                comparison_results=comparison_results or [],
+                evaluation_suite=evaluation_suite,
+                objective_suite=objective_suite,
+                target_family=target_family,
+                search_space=search_space,
+                objective_breakdown_results=objective_breakdown_results or [],
+            )
+        )
     return gate_results
 
 
@@ -1017,6 +1338,11 @@ def promote_candidate(
     gated_at: str,
     benchmark_manifest: Optional[BenchmarkRunManifest] = None,
     comparison_results: Optional[Sequence[CandidateComparisonResult]] = None,
+    evaluation_suite: Optional[EvaluationSuiteManifest] = None,
+    objective_suite: Optional[ObjectiveSuiteManifest] = None,
+    target_family: Optional[TargetFamilyManifest] = None,
+    search_space: Optional[SearchSpaceManifest] = None,
+    objective_breakdown_results: Optional[Sequence[ObjectiveBreakdownResult]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
 ) -> tuple[PromotionRecord, PromotionDecision]:
     record = create_promotion_record(
@@ -1049,6 +1375,11 @@ def promote_candidate(
         prior_state=record,
         benchmark_manifest=benchmark_manifest,
         comparison_results=comparison_results,
+        evaluation_suite=evaluation_suite,
+        objective_suite=objective_suite,
+        target_family=target_family,
+        search_space=search_space,
+        objective_breakdown_results=objective_breakdown_results,
     )
     evidence_summary = None
     if benchmark_manifest is not None:
@@ -1057,6 +1388,11 @@ def promote_candidate(
             candidate_id=materialized_candidate.candidate_id,
             benchmark_manifest=benchmark_manifest,
             comparison_results=comparison_results or [],
+            evaluation_suite=evaluation_suite,
+            objective_suite=objective_suite,
+            target_family=target_family,
+            search_space=search_space,
+            objective_breakdown_results=objective_breakdown_results or [],
             review_required=bool((benchmark_manifest.promotion_relevance or {}).get("requires_support_sensitive_review")),
             metadata={"phase": "v1_5"},
         )

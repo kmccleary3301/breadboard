@@ -11,6 +11,12 @@ from .context import (
 )
 from .dataset import OptimizationDataset
 from .evaluation import EvaluationRecord
+from .suites import (
+    EvaluationSuiteManifest,
+    ObjectiveSuiteManifest,
+    SearchSpaceManifest,
+    TargetFamilyManifest,
+)
 from .substrate import (
     CandidateBundle,
     CandidateChange,
@@ -75,6 +81,21 @@ def _find_locus(target: OptimizationTarget, locus_id: str) -> MutableLocus:
         if locus.locus_id == locus_id:
             return locus
     raise ValueError(f"unknown locus_id: {locus_id}")
+
+
+def _validate_candidate_against_search_space(
+    candidate: CandidateBundle,
+    search_space: "SearchSpaceManifest",
+) -> None:
+    allowed_loci = set(search_space.allowed_loci)
+    candidate_loci = set(candidate.applied_loci)
+    unknown_loci = sorted(candidate_loci - allowed_loci)
+    if unknown_loci:
+        raise ValueError(f"candidate uses loci outside the declared search space: {unknown_loci}")
+    for change in candidate.changes:
+        allowed_mutation_kinds = set(search_space.mutation_kinds_by_locus.get(change.locus_id) or [])
+        if "replace" not in allowed_mutation_kinds:
+            raise ValueError(f"search space does not allow replace mutations for locus {change.locus_id}")
 
 
 def _envelope_widens(baseline: SupportEnvelope, candidate: SupportEnvelope) -> bool:
@@ -749,6 +770,149 @@ class ReflectiveParetoBackendRequest:
 
 
 @dataclass(frozen=True)
+class StagePlanStep:
+    stage_id: str
+    stage_kind: str
+    allowed_loci: List[str]
+    primary_objective_channels: List[str]
+    allowed_split_visibilities: List[str]
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "stage_id", _require_text(self.stage_id, "stage_id"))
+        object.__setattr__(self, "stage_kind", _require_text(self.stage_kind, "stage_kind"))
+        object.__setattr__(self, "allowed_loci", _copy_text_list(self.allowed_loci))
+        object.__setattr__(self, "primary_objective_channels", _copy_text_list(self.primary_objective_channels))
+        object.__setattr__(self, "allowed_split_visibilities", _copy_text_list(self.allowed_split_visibilities))
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+        if not self.allowed_loci:
+            raise ValueError("allowed_loci must contain at least one locus id")
+        if not self.primary_objective_channels:
+            raise ValueError("primary_objective_channels must contain at least one channel id")
+        if not self.allowed_split_visibilities:
+            raise ValueError("allowed_split_visibilities must contain at least one visibility class")
+        if "hidden_hold" in set(self.allowed_split_visibilities):
+            raise ValueError("staged optimizer may not optimize directly against hidden_hold splits")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "stage_id": self.stage_id,
+            "stage_kind": self.stage_kind,
+            "allowed_loci": list(self.allowed_loci),
+            "primary_objective_channels": list(self.primary_objective_channels),
+            "allowed_split_visibilities": list(self.allowed_split_visibilities),
+            "metadata": dict(self.metadata),
+        }
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "StagePlanStep":
+        return StagePlanStep(
+            stage_id=data.get("stage_id") or data.get("id") or "",
+            stage_kind=data.get("stage_kind") or "",
+            allowed_loci=list(data.get("allowed_loci") or []),
+            primary_objective_channels=list(data.get("primary_objective_channels") or []),
+            allowed_split_visibilities=list(data.get("allowed_split_visibilities") or []),
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
+class StagedOptimizerRequest:
+    request_id: str
+    backend_request: ReflectiveParetoBackendRequest
+    evaluation_suite: EvaluationSuiteManifest
+    objective_suite: ObjectiveSuiteManifest
+    target_family: TargetFamilyManifest
+    search_space: SearchSpaceManifest
+    stage_strategy: str = "family_risk_split_v1"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "request_id", _require_text(self.request_id, "request_id"))
+        object.__setattr__(
+            self,
+            "backend_request",
+            self.backend_request
+            if isinstance(self.backend_request, ReflectiveParetoBackendRequest)
+            else ReflectiveParetoBackendRequest.from_dict(self.backend_request),
+        )
+        object.__setattr__(
+            self,
+            "evaluation_suite",
+            self.evaluation_suite
+            if isinstance(self.evaluation_suite, EvaluationSuiteManifest)
+            else EvaluationSuiteManifest.from_dict(self.evaluation_suite),
+        )
+        object.__setattr__(
+            self,
+            "objective_suite",
+            self.objective_suite
+            if isinstance(self.objective_suite, ObjectiveSuiteManifest)
+            else ObjectiveSuiteManifest.from_dict(self.objective_suite),
+        )
+        object.__setattr__(
+            self,
+            "target_family",
+            self.target_family
+            if isinstance(self.target_family, TargetFamilyManifest)
+            else TargetFamilyManifest.from_dict(self.target_family),
+        )
+        object.__setattr__(
+            self,
+            "search_space",
+            self.search_space
+            if isinstance(self.search_space, SearchSpaceManifest)
+            else SearchSpaceManifest.from_dict(self.search_space),
+        )
+        object.__setattr__(self, "stage_strategy", _require_text(self.stage_strategy, "stage_strategy"))
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+        target = self.backend_request.target
+        family = self.target_family
+        search_space = self.search_space
+        if target.target_id not in set(family.target_ids):
+            raise ValueError("backend request target must belong to the declared target family")
+        target_loci = set(target.locus_ids())
+        family_loci = set(family.mutable_loci_ids)
+        if not family_loci.issubset(target_loci):
+            raise ValueError("target family mutable loci must be declared on the optimization target")
+        if search_space.family_id != family.family_id:
+            raise ValueError("search space family_id must match the target family")
+        if family.evaluation_suite_id != self.evaluation_suite.suite_id:
+            raise ValueError("target family evaluation_suite_id must match the evaluation suite")
+        if family.objective_suite_id != self.objective_suite.suite_id:
+            raise ValueError("target family objective_suite_id must match the objective suite")
+        if self.objective_suite.evaluation_suite_id != self.evaluation_suite.suite_id:
+            raise ValueError("objective suite must bind to the declared evaluation suite")
+        if set(search_space.allowed_loci) != family_loci:
+            raise ValueError("search space allowed_loci must match the target family mutable loci")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "request_id": self.request_id,
+            "backend_request": self.backend_request.to_dict(),
+            "evaluation_suite": self.evaluation_suite.to_dict(),
+            "objective_suite": self.objective_suite.to_dict(),
+            "target_family": self.target_family.to_dict(),
+            "search_space": self.search_space.to_dict(),
+            "stage_strategy": self.stage_strategy,
+            "metadata": dict(self.metadata),
+        }
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "StagedOptimizerRequest":
+        return StagedOptimizerRequest(
+            request_id=data.get("request_id") or "",
+            backend_request=ReflectiveParetoBackendRequest.from_dict(data.get("backend_request") or {}),
+            evaluation_suite=EvaluationSuiteManifest.from_dict(data.get("evaluation_suite") or {}),
+            objective_suite=ObjectiveSuiteManifest.from_dict(data.get("objective_suite") or {}),
+            target_family=TargetFamilyManifest.from_dict(data.get("target_family") or {}),
+            search_space=SearchSpaceManifest.from_dict(data.get("search_space") or {}),
+            stage_strategy=data.get("stage_strategy") or "family_risk_split_v1",
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
 class ReflectiveParetoBackendResult:
     request_id: str
     backend_id: str
@@ -1380,4 +1544,250 @@ class SingleLocusGreedyBackend(ReflectiveParetoBackend):
 
 def run_single_locus_greedy_backend(request: ReflectiveParetoBackendRequest) -> ReflectiveParetoBackendResult:
     backend = SingleLocusGreedyBackend()
+    return backend.run(request)
+
+
+class StagedOptimizer(ReflectiveParetoBackend):
+    """A backend-only staged optimizer over declared families and search spaces."""
+
+    backend_id = "staged_optimizer.v1"
+
+    def build_stage_plan(self, request: StagedOptimizerRequest) -> List[StagePlanStep]:
+        family = request.target_family
+        objective_suite = request.objective_suite
+        split_visibility = request.evaluation_suite.split_visibility
+        primary_locus = family.mutable_loci_ids[0]
+        primary_channel = objective_suite.frontier_dimensions[0]
+        comparison_visible_splits = [
+            split_name
+            for split_name, visibility in split_visibility.items()
+            if visibility == "comparison_visible"
+        ]
+        stage_one = StagePlanStep(
+            stage_id=f"stage.{family.family_id}.01",
+            stage_kind="seed_primary_locus",
+            allowed_loci=[primary_locus],
+            primary_objective_channels=[primary_channel],
+            allowed_split_visibilities=["mutation_visible", "comparison_visible"],
+            metadata={
+                "family_id": family.family_id,
+                "review_class": family.review_class,
+                "split_names": ["train"] + comparison_visible_splits,
+            },
+        )
+        stage_two = StagePlanStep(
+            stage_id=f"stage.{family.family_id}.02",
+            stage_kind="family_bounded_expansion",
+            allowed_loci=list(family.mutable_loci_ids),
+            primary_objective_channels=list(objective_suite.frontier_dimensions[: max(2, len(objective_suite.frontier_dimensions))]),
+            allowed_split_visibilities=["comparison_visible"],
+            metadata={
+                "family_id": family.family_id,
+                "review_class": family.review_class,
+                "split_names": comparison_visible_splits,
+            },
+        )
+        return [stage_one, stage_two]
+
+    def run(self, request: StagedOptimizerRequest) -> ReflectiveParetoBackendResult:
+        base_request = request.backend_request
+        stage_plan = self.build_stage_plan(request)
+        assert base_request.execution_context is not None
+
+        baseline_compatibility = self.evaluate_runtime_compatibility(
+            execution_context=base_request.execution_context,
+            support_envelope=base_request.baseline_materialized_candidate.support_envelope,
+            candidate_id=base_request.baseline_candidate.candidate_id,
+        )
+        compatibility_results: List[RuntimeCompatibilityResult] = [baseline_compatibility]
+        if baseline_compatibility.status != "compatible":
+            return ReflectiveParetoBackendResult(
+                request_id=request.request_id,
+                backend_id=self.backend_id,
+                execution_context=base_request.execution_context,
+                reflection_decision=ReflectionDecision(
+                    decision_id=f"decision.{base_request.baseline_candidate.candidate_id}",
+                    target_candidate_id=base_request.baseline_candidate.candidate_id,
+                    should_mutate=False,
+                    findings=[],
+                    declined_reason="runtime context is incompatible with the current candidate support envelope",
+                    metadata={"backend_id": self.backend_id, "stage_strategy": request.stage_strategy},
+                ),
+                proposals=[],
+                portfolio=CandidatePortfolio(
+                    entries=[
+                        PortfolioEntry(
+                            candidate=base_request.baseline_candidate,
+                            materialized_candidate=base_request.baseline_materialized_candidate,
+                            objective_vector=self._observed_objective_vector(
+                                base_request.baseline_candidate,
+                                base_request.evaluations,
+                                base_request.mutation_bounds,
+                            ),
+                            evidence_lineage=[evaluation.evaluation_id for evaluation in base_request.evaluations],
+                            score_kind="observed",
+                            metadata={
+                                "role": "baseline",
+                                "runtime_compatibility": baseline_compatibility.to_dict(),
+                                "family_id": request.target_family.family_id,
+                            },
+                        )
+                    ],
+                    metadata={"backend_id": self.backend_id, "family_id": request.target_family.family_id},
+                ),
+                compatibility_results=compatibility_results,
+                metadata={
+                    "objective_directions": dict(OBJECTIVE_DIRECTIONS),
+                    "stage_plan": [item.to_dict() for item in stage_plan],
+                    "stage_strategy": request.stage_strategy,
+                    "family_id": request.target_family.family_id,
+                    "search_space_id": request.search_space.search_space_id,
+                    "evaluation_suite_id": request.evaluation_suite.suite_id,
+                    "objective_suite_id": request.objective_suite.suite_id,
+                    "review_class": request.target_family.review_class,
+                },
+            )
+
+        reflection_decision = self.reflection_policy.reflect(
+            ReflectionPolicyInput(
+                target=base_request.target,
+                baseline_candidate=base_request.baseline_candidate,
+                baseline_materialized_candidate=base_request.baseline_materialized_candidate,
+                dataset=base_request.dataset,
+                evaluations=list(base_request.evaluations),
+                mutation_bounds=base_request.mutation_bounds,
+                metadata={
+                    "backend_id": self.backend_id,
+                    "family_id": request.target_family.family_id,
+                    "review_class": request.target_family.review_class,
+                },
+            )
+        )
+
+        portfolio = CandidatePortfolio(
+            metadata={
+                "backend_id": self.backend_id,
+                "family_id": request.target_family.family_id,
+                "objective_suite_id": request.objective_suite.suite_id,
+            }
+        )
+        baseline_entry = PortfolioEntry(
+            candidate=base_request.baseline_candidate,
+            materialized_candidate=base_request.baseline_materialized_candidate,
+            objective_vector=self._observed_objective_vector(
+                base_request.baseline_candidate,
+                base_request.evaluations,
+                base_request.mutation_bounds,
+            ),
+            evidence_lineage=[evaluation.evaluation_id for evaluation in base_request.evaluations],
+            score_kind="observed",
+            metadata={
+                "role": "baseline",
+                "runtime_compatibility": baseline_compatibility.to_dict(),
+                "family_id": request.target_family.family_id,
+                "search_space_id": request.search_space.search_space_id,
+            },
+        )
+        portfolio = portfolio.retain_entry(baseline_entry)
+
+        proposals: List[MutationProposal] = []
+        for stage in stage_plan:
+            stage_request = replace(
+                base_request,
+                max_proposals=min(base_request.max_proposals, max(1, len(stage.allowed_loci))),
+                metadata={
+                    **base_request.metadata,
+                    "backend_family": self.backend_id,
+                    "family_id": request.target_family.family_id,
+                    "stage_id": stage.stage_id,
+                    "primary_objective_channels": list(stage.primary_objective_channels),
+                },
+            )
+            stage_proposals = self.mutation_policy.propose(
+                MutationPolicyInput(
+                    target=stage_request.target,
+                    baseline_candidate=stage_request.baseline_candidate,
+                    baseline_materialized_candidate=stage_request.baseline_materialized_candidate,
+                    reflection_decision=reflection_decision,
+                    mutation_bounds=stage_request.mutation_bounds,
+                    metadata={"backend_id": self.backend_id, "stage_id": stage.stage_id},
+                ),
+                max_proposals=stage_request.max_proposals,
+            )
+
+            for proposal in stage_proposals:
+                proposal_loci = set(proposal.candidate.applied_loci)
+                if not proposal_loci.issubset(set(stage.allowed_loci)):
+                    continue
+                _validate_candidate_against_search_space(proposal.candidate, request.search_space)
+                proposal = replace(
+                    proposal,
+                    metadata={
+                        **proposal.metadata,
+                        "stage_id": stage.stage_id,
+                        "stage_kind": stage.stage_kind,
+                        "family_id": request.target_family.family_id,
+                        "search_space_id": request.search_space.search_space_id,
+                        "evaluation_suite_id": request.evaluation_suite.suite_id,
+                        "objective_suite_id": request.objective_suite.suite_id,
+                        "primary_objective_channels": list(stage.primary_objective_channels),
+                    },
+                )
+                materialized = self._materialize_proposal(stage_request, proposal)
+                proposal_compatibility = self.evaluate_runtime_compatibility(
+                    execution_context=stage_request.execution_context,
+                    support_envelope=materialized.support_envelope,
+                    candidate_id=proposal.candidate.candidate_id,
+                )
+                compatibility_results.append(proposal_compatibility)
+                proposals.append(proposal)
+                if proposal_compatibility.status != "compatible":
+                    continue
+                proposal_entry = PortfolioEntry(
+                    candidate=proposal.candidate,
+                    materialized_candidate=materialized,
+                    objective_vector=self._predicted_objective_vector(
+                        baseline=baseline_entry.objective_vector,
+                        proposal=proposal,
+                        reflection_decision=reflection_decision,
+                        mutation_bounds=stage_request.mutation_bounds,
+                    ),
+                    evidence_lineage=[evaluation.evaluation_id for evaluation in stage_request.evaluations],
+                    score_kind="predicted",
+                    metadata={
+                        "proposal_id": proposal.proposal_id,
+                        "runtime_compatibility": proposal_compatibility.to_dict(),
+                        "stage_id": stage.stage_id,
+                        "family_id": request.target_family.family_id,
+                        "search_space_id": request.search_space.search_space_id,
+                        "evaluation_suite_id": request.evaluation_suite.suite_id,
+                        "objective_suite_id": request.objective_suite.suite_id,
+                    },
+                )
+                portfolio = portfolio.retain_entry(proposal_entry)
+
+        return ReflectiveParetoBackendResult(
+            request_id=request.request_id,
+            backend_id=self.backend_id,
+            execution_context=base_request.execution_context,
+            reflection_decision=reflection_decision,
+            proposals=proposals,
+            portfolio=portfolio,
+            compatibility_results=compatibility_results,
+            metadata={
+                "objective_directions": dict(OBJECTIVE_DIRECTIONS),
+                "backend_family": self.backend_id,
+                "stage_plan": [item.to_dict() for item in stage_plan],
+                "stage_strategy": request.stage_strategy,
+                "family_id": request.target_family.family_id,
+                "search_space_id": request.search_space.search_space_id,
+                "evaluation_suite_id": request.evaluation_suite.suite_id,
+                "objective_suite_id": request.objective_suite.suite_id,
+                "review_class": request.target_family.review_class,
+            },
+        )
+
+
+def run_staged_optimizer(request: StagedOptimizerRequest) -> ReflectiveParetoBackendResult:
+    backend = StagedOptimizer()
     return backend.run(request)

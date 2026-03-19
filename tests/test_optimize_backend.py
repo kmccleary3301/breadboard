@@ -11,11 +11,16 @@ from agentic_coder_prototype.optimize import (
     ReflectiveParetoBackendRequest,
     ReflectiveParetoBackendResult,
     SingleLocusGreedyBackend,
+    StagedOptimizer,
+    StagedOptimizerRequest,
     SupportEnvelope,
     WrongnessGuidedReflectionPolicy,
     build_codex_dossier_backend_example,
     build_codex_dossier_backend_example_payload,
     build_codex_dossier_evaluation_example,
+    build_support_execution_benchmark_example,
+    build_staged_backend_comparison_example,
+    run_staged_optimizer,
     run_single_locus_greedy_backend,
     validate_bounded_candidate,
 )
@@ -160,3 +165,73 @@ def test_validate_bounded_candidate_rejects_support_drift() -> None:
             request.mutation_bounds,
             materialized=broadened,
         )
+
+
+def _build_staged_request() -> StagedOptimizerRequest:
+    example = build_support_execution_benchmark_example()
+    staged_example = build_staged_backend_comparison_example()
+    backend_request = staged_example["family_requests"][0]
+    first_family = staged_example["family_examples"][0]
+    assert first_family["target_family"].family_id == example["target_family"].family_id
+    return StagedOptimizerRequest(
+        request_id="staged_request.backend_test.001",
+        backend_request=backend_request,
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        target_family=example["target_family"],
+        search_space=example["search_space"],
+    )
+
+
+def test_staged_optimizer_builds_deterministic_stage_plan() -> None:
+    request = _build_staged_request()
+    backend = StagedOptimizer()
+
+    left = backend.build_stage_plan(request)
+    right = backend.build_stage_plan(request)
+
+    assert [item.to_dict() for item in left] == [item.to_dict() for item in right]
+    assert left[0].allowed_loci == ["policy.support_claim_limited_actions"]
+    assert "hidden_hold" not in left[0].allowed_split_visibilities
+
+
+def test_staged_optimizer_request_rejects_search_space_mismatch() -> None:
+    example = build_support_execution_benchmark_example()
+    staged_example = build_staged_backend_comparison_example()
+    backend_request = staged_example["family_requests"][0]
+    bad_search_space = example["search_space"].from_dict(
+        {
+            **example["search_space"].to_dict(),
+            "family_id": "family.bad",
+        }
+    )
+
+    with pytest.raises(ValueError, match="search space family_id"):
+        StagedOptimizerRequest(
+            request_id="staged_request.bad.001",
+            backend_request=backend_request,
+            evaluation_suite=example["evaluation_suite"],
+            objective_suite=example["objective_suite"],
+            target_family=example["target_family"],
+            search_space=bad_search_space,
+        )
+
+
+def test_staged_backend_comparison_example_is_fixed_methodology() -> None:
+    example = build_staged_backend_comparison_example()
+    comparison = example["backend_comparison"]
+
+    assert comparison.winner_backend_id == "staged_optimizer.v1"
+    assert len(example["reflective_results"]) == 3
+    assert len(example["staged_results"]) == 3
+    assert set(comparison.manifest_ids) == {
+        "manifest.support_execution.v1",
+        "manifest.tool_guidance.v1_5",
+        "manifest.coding_overlay.v1_5",
+    }
+    assert comparison.reproducibility_notes["fixed_methodology"] is True
+    assert comparison.metadata["family_ids"] == [
+        "family.support_execution.v2",
+        "family.tool_guidance.v2",
+        "family.coding_overlay.v2",
+    ]

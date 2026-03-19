@@ -10,14 +10,18 @@ from agentic_coder_prototype.optimize import (
     CandidateComparisonResult,
     EvaluationRecord,
     GateResult,
+    ObjectiveBreakdownResult,
     PromotionDecision,
     PromotionEvidenceSummary,
     PromotionRecord,
     build_codex_dossier_promotion_examples,
     build_codex_dossier_promotion_examples_payload,
+    build_coding_overlay_benchmark_example,
     build_promotion_evidence_summary,
     build_support_execution_benchmark_example,
+    build_tool_guidance_benchmark_example,
     create_promotion_record,
+    evaluate_family_promotion_gate,
     promote_candidate,
 )
 
@@ -178,6 +182,11 @@ def test_build_promotion_evidence_summary_round_trips() -> None:
         candidate_id=example["child_candidate"].candidate_id,
         benchmark_manifest=example["manifest"],
         comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        target_family=example["target_family"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[example["objective_breakdown_result"]],
         review_required=True,
         metadata={"lane": "support_execution"},
     )
@@ -190,6 +199,13 @@ def test_build_promotion_evidence_summary_round_trips() -> None:
     assert round_tripped.regression_sample_ids == ["sample.support_execution.regression.001"]
     assert round_tripped.compared_regression_sample_ids == ["sample.support_execution.regression.001"]
     assert round_tripped.outcome_counts == {"win": 1}
+    assert round_tripped.evaluation_suite_ids == [example["evaluation_suite"].suite_id]
+    assert round_tripped.objective_suite_ids == [example["objective_suite"].suite_id]
+    assert round_tripped.target_family_ids == [example["target_family"].family_id]
+    assert round_tripped.search_space_ids == [example["search_space"].search_space_id]
+    assert round_tripped.objective_breakdown_result_ids == [example["objective_breakdown_result"].result_id]
+    assert round_tripped.review_class == "support_honesty"
+    assert round_tripped.objective_breakdown_status == "complete"
     assert round_tripped.review_required is True
 
 
@@ -205,15 +221,21 @@ def test_promote_candidate_includes_evidence_summary_for_benchmark_backed_lane()
         gated_at="2026-03-14T10:00:01.000Z",
         benchmark_manifest=example["manifest"],
         comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        target_family=example["target_family"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[example["objective_breakdown_result"]],
     )
 
     summary = _evidence_summary_from_record(record)
 
-    assert record.state == "promotable"
-    assert decision.next_state == "promotable"
+    assert record.state == "frontier"
+    assert decision.next_state == "frontier"
     assert summary.manifest_ids == [example["manifest"].manifest_id]
     assert summary.outcome_counts == {"win": 1}
     assert summary.review_required is True
+    assert "family_promotion" in decision.blocked_by_gate_kinds
 
 
 def test_promote_candidate_keeps_inconclusive_comparison_on_frontier() -> None:
@@ -235,6 +257,11 @@ def test_promote_candidate_keeps_inconclusive_comparison_on_frontier() -> None:
         gated_at="2026-03-14T10:05:01.000Z",
         benchmark_manifest=example["manifest"],
         comparison_results=[comparison],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        target_family=example["target_family"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[example["objective_breakdown_result"]],
     )
 
     assert record.state == "frontier"
@@ -263,11 +290,16 @@ def test_promote_candidate_rejects_regression_loss() -> None:
         gated_at="2026-03-14T10:10:01.000Z",
         benchmark_manifest=example["manifest"],
         comparison_results=[comparison],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        target_family=example["target_family"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[example["objective_breakdown_result"]],
     )
 
     assert record.state == "rejected"
     assert decision.next_state == "rejected"
-    assert decision.blocked_by_gate_kinds == ["comparison"]
+    assert decision.blocked_by_gate_kinds == ["comparison", "family_promotion"]
 
 
 def test_promote_candidate_requires_more_trials_for_stochastic_manifest() -> None:
@@ -288,6 +320,11 @@ def test_promote_candidate_requires_more_trials_for_stochastic_manifest() -> Non
         gated_at="2026-03-14T10:15:01.000Z",
         benchmark_manifest=stochastic_manifest,
         comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        target_family=example["target_family"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[example["objective_breakdown_result"]],
     )
 
     assert record.state == "frontier"
@@ -296,3 +333,71 @@ def test_promote_candidate_requires_more_trials_for_stochastic_manifest() -> Non
     assert summary.stochasticity_class == "seeded_stochastic"
     assert summary.minimum_required_trials == 3
     assert summary.observed_trial_count == 1
+
+
+def test_family_promotion_gate_passes_for_tool_guidance_family() -> None:
+    example = build_tool_guidance_benchmark_example()
+
+    result = evaluate_family_promotion_gate(
+        target=example["target"],
+        candidate_id=example["child_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        target_family=example["target_family"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[example["objective_breakdown_result"]],
+    )
+
+    assert result.status == "pass"
+    assert result.gate_kind == "family_promotion"
+
+
+def test_family_promotion_gate_treats_non_inferior_as_promotable_for_non_review_heavy_family() -> None:
+    example = build_coding_overlay_benchmark_example()
+    comparison = _clone_comparison(
+        example["comparison_result"],
+        comparison_id="comparison.coding_overlay.non_inferior",
+        outcome="non_inferior",
+        better_candidate_id=None,
+    )
+
+    result = evaluate_family_promotion_gate(
+        target=example["target"],
+        candidate_id=example["child_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[comparison],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        target_family=example["target_family"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[example["objective_breakdown_result"]],
+    )
+
+    assert result.status == "pass"
+
+
+def test_family_promotion_gate_blocks_partial_objective_breakdown() -> None:
+    example = build_tool_guidance_benchmark_example()
+    blocked_breakdown = ObjectiveBreakdownResult.from_dict(
+        {
+            **example["objective_breakdown_result"].to_dict(),
+            "blocked_components": {"guardrail_preservation": {"reason": "missing replay evidence"}},
+        }
+    )
+
+    result = evaluate_family_promotion_gate(
+        target=example["target"],
+        candidate_id=example["child_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        target_family=example["target_family"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[blocked_breakdown],
+    )
+
+    assert result.status == "insufficient_evidence"
+    assert "partially blocked" in result.reason

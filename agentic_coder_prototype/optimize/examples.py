@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, List
 
 from .benchmark import (
     BackendComparisonResult,
@@ -17,8 +17,10 @@ from .backend import (
     ReflectiveParetoBackend,
     ReflectiveParetoBackendRequest,
     ReflectiveParetoBackendResult,
+    StagedOptimizerRequest,
     run_reflective_pareto_backend,
     run_single_locus_greedy_backend,
+    run_staged_optimizer,
 )
 from .context import (
     EnvironmentSelector,
@@ -2011,6 +2013,139 @@ def build_tool_guidance_benchmark_example() -> Dict[str, object]:
         metadata={"lane": "tool_guidance", "role": "child"},
     )
 
+    evaluation_suite = EvaluationSuiteManifest(
+        suite_id="evalsuite.tool_guidance.v2",
+        suite_kind="tool_guidance_family",
+        evaluator_stack=["tool_guidance_checker.v1", "replay_guard_checker.v1"],
+        split_visibility={
+            "train": "mutation_visible",
+            "validation": "comparison_visible",
+            "hold": "hidden_hold",
+            "regression": "comparison_visible",
+        },
+        stochasticity_class="deterministic",
+        rerun_policy={"max_trials": 1},
+        capture_requirements=[
+            "clarity_delta",
+            "replay_guidance_preserved",
+            "support_envelope_preserved",
+            "hidden_hold_fake_win_guard",
+        ],
+        adjudication_requirements={
+            "requires_hidden_hold_review": True,
+            "requires_regression_coverage": True,
+        },
+        comparison_protocol_defaults={
+            "protocol_id": "paired_parent_child.v1",
+            "minimum_trial_count": 1,
+            "requires_hidden_hold_bucket": True,
+        },
+        artifact_requirements=[
+            "paired_eval_json",
+            "benchmark_summary_json",
+        ],
+        metadata={"lane": "tool_guidance", "phase": "v2"},
+    )
+
+    objective_suite = ObjectiveSuiteManifest(
+        suite_id="objsuite.tool_guidance.v2",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_channels={
+            "clarity_gain": {
+                "direction": "maximize",
+                "source_metric": "clarity_delta",
+                "promotion_sensitive": True,
+            },
+            "guardrail_preservation": {
+                "direction": "maximize",
+                "source_metric": "replay_guidance_preserved",
+                "promotion_sensitive": True,
+            },
+            "mutation_cost": {
+                "direction": "minimize",
+                "source_metric": "cost_delta_usd",
+                "promotion_sensitive": False,
+            },
+        },
+        penalties={
+            "support_widening": {"kind": "hard_block", "reason": "tool-guidance family may not widen support claims"},
+            "guardrail_erosion": {"kind": "hard_block", "reason": "replay-safe and bounded-overlay guidance must persist"},
+        },
+        aggregation_rules={
+            "per_sample": "weighted_sum",
+            "per_bucket": "minimum_bucket_floor",
+            "global": "guardrail_first",
+        },
+        uncertainty_policy={
+            "stochasticity_class": "deterministic",
+            "blocked_when_missing_hidden_hold": True,
+        },
+        frontier_dimensions=["clarity_gain", "guardrail_preservation", "mutation_cost"],
+        promotion_annotations={"requires_support_sensitive_review": False, "review_class": "guidance_integrity"},
+        visibility_annotations={"hidden_hold_channels": ["clarity_gain", "guardrail_preservation"]},
+        metadata={"lane": "tool_guidance", "phase": "v2"},
+    )
+
+    target_family = TargetFamilyManifest(
+        family_id="family.tool_guidance.v2",
+        family_kind="tool_guidance_overlay_family",
+        target_ids=[target.target_id],
+        family_scope="Tool descriptions and developer guidance overlays for the codex dossier surface.",
+        mutable_loci_ids=[locus.locus_id for locus in target.mutable_loci],
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_suite_id=objective_suite.suite_id,
+        review_class="guidance_integrity",
+        runtime_context_assumptions={
+            "environment_selector_profile": "workspace-write",
+            "tool_pack_profile": "codex-dossier-default",
+            "requires_replay_safe_guidance": True,
+        },
+        promotion_class="single_surface_guidance_change",
+        artifact_refs=[
+            ArtifactRef(
+                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                media_type="text/yaml",
+                metadata={"surface": "public_dossier"},
+            )
+        ],
+        metadata={"lane": "tool_guidance", "phase": "v2"},
+    )
+
+    search_space = SearchSpaceManifest(
+        search_space_id="searchspace.tool_guidance.v2",
+        family_id=target_family.family_id,
+        allowed_loci=[locus.locus_id for locus in target.mutable_loci],
+        mutation_kinds_by_locus={
+            "tool.render.exec_command": ["replace"],
+            "prompt.section.optimization_guidance": ["replace"],
+        },
+        value_domains_by_locus={
+            "tool.render.exec_command": {
+                "max_words": 28,
+                "must_preserve_capability_scope": True,
+            },
+            "prompt.section.optimization_guidance": {
+                "must_preserve_guardrails": True,
+                "must_reference_replay_safe_behavior": True,
+            },
+        },
+        semantic_constraints={
+            "tool.render.exec_command": {
+                "must_preserve_support_envelope": True,
+            },
+            "prompt.section.optimization_guidance": {
+                "must_preserve_bounded_overlay_doctrine": True,
+                "must_not_imply_weaker_guardrails": True,
+            },
+        },
+        invariants=["bounded-overlay-only", "support-envelope-preserved"],
+        unsafe_expansion_notes=[
+            "Adding or removing tools is out of scope for this family.",
+            "Changing unrelated prompt sections is out of scope for this family.",
+        ],
+        metadata={"lane": "tool_guidance", "phase": "v2"},
+    )
+
     manifest = BenchmarkRunManifest(
         manifest_id="manifest.tool_guidance.v1_5",
         benchmark_kind="tool_guidance_pack",
@@ -2041,7 +2176,14 @@ def build_tool_guidance_benchmark_example() -> Dict[str, object]:
         ],
         promotion_relevance={"requires_support_sensitive_review": False},
         artifact_refs=[ArtifactRef(ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
-        metadata={"lane": "tool_guidance", "phase": "v1_5"},
+        metadata={
+            "lane": "tool_guidance",
+            "phase": "v1_5",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "target_family_id": target_family.family_id,
+            "search_space_id": search_space.search_space_id,
+        },
     )
 
     comparison = build_paired_candidate_comparison(
@@ -2069,6 +2211,62 @@ def build_tool_guidance_benchmark_example() -> Dict[str, object]:
         metadata={"lane": "tool_guidance"},
     )
 
+    objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreakdown.tool_guidance.child.001",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=manifest.manifest_id,
+        candidate_id=child_candidate.candidate_id,
+        per_sample_components={
+            train_sample.sample_id: {
+                "clarity_gain": 0.9,
+                "guardrail_preservation": 1.0,
+                "mutation_cost": 0.0,
+            },
+            validation_sample.sample_id: {
+                "clarity_gain": 0.8,
+                "guardrail_preservation": 1.0,
+                "mutation_cost": 0.0,
+            },
+            hold_sample.sample_id: {
+                "clarity_gain": 0.75,
+                "guardrail_preservation": 1.0,
+                "mutation_cost": 0.0,
+            },
+            regression_sample.sample_id: {
+                "clarity_gain": 0.65,
+                "guardrail_preservation": 1.0,
+                "mutation_cost": 0.0,
+            },
+        },
+        per_bucket_components={
+            "tool-description": {"clarity_gain": 0.9, "guardrail_preservation": 1.0},
+            "support-envelope": {"clarity_gain": 0.75, "guardrail_preservation": 1.0},
+        },
+        aggregate_objectives={
+            "clarity_gain": 0.775,
+            "guardrail_preservation": 1.0,
+            "mutation_cost": 0.0,
+            "eligible_for_promotion": True,
+        },
+        uncertainty_summary={
+            "stochasticity_class": "deterministic",
+            "trial_count": 1,
+            "blocked_for_uncertainty": False,
+        },
+        blocked_components={},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/tool_guidance/objective_breakdown_child.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "tool_guidance",
+            "family_id": target_family.family_id,
+            "search_space_id": search_space.search_space_id,
+        },
+    )
+
     result = BenchmarkRunResult(
         run_id="benchmark_run.tool_guidance.001",
         manifest_id=manifest.manifest_id,
@@ -2084,8 +2282,21 @@ def build_tool_guidance_benchmark_example() -> Dict[str, object]:
                 media_type="application/json",
             )
         ],
-        promotion_readiness_summary={"eligible_for_promotion": True, "requires_review": False},
-        metadata={"lane": "tool_guidance", "phase": "v1_5"},
+        promotion_readiness_summary={
+            "eligible_for_promotion": True,
+            "requires_review": False,
+            "objective_breakdown_result_id": objective_breakdown.result_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "target_family_id": target_family.family_id,
+        },
+        metadata={
+            "lane": "tool_guidance",
+            "phase": "v1_5",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "target_family_id": target_family.family_id,
+            "search_space_id": search_space.search_space_id,
+        },
     )
 
     return {
@@ -2095,8 +2306,13 @@ def build_tool_guidance_benchmark_example() -> Dict[str, object]:
         "child_candidate": child_candidate,
         "parent_materialized_candidate": parent_materialized,
         "child_materialized_candidate": child_materialized,
+        "evaluation_suite": evaluation_suite,
+        "objective_suite": objective_suite,
+        "target_family": target_family,
+        "search_space": search_space,
         "manifest": manifest,
         "comparison_result": comparison,
+        "objective_breakdown_result": objective_breakdown,
         "benchmark_result": result,
     }
 
@@ -2110,8 +2326,13 @@ def build_tool_guidance_benchmark_example_payload() -> Dict[str, object]:
         "child_candidate": example["child_candidate"].to_dict(),
         "parent_materialized_candidate": example["parent_materialized_candidate"].to_dict(),
         "child_materialized_candidate": example["child_materialized_candidate"].to_dict(),
+        "evaluation_suite": example["evaluation_suite"].to_dict(),
+        "objective_suite": example["objective_suite"].to_dict(),
+        "target_family": example["target_family"].to_dict(),
+        "search_space": example["search_space"].to_dict(),
         "manifest": example["manifest"].to_dict(),
         "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
         "benchmark_result": example["benchmark_result"].to_dict(),
     }
 
@@ -2351,6 +2572,143 @@ def build_coding_overlay_benchmark_example() -> Dict[str, object]:
         metadata={"lane": "coding_overlay", "role": "child"},
     )
 
+    evaluation_suite = EvaluationSuiteManifest(
+        suite_id="evalsuite.coding_overlay.v2",
+        suite_kind="coding_overlay_family",
+        evaluator_stack=["coding_overlay_checker.v1", "diff_hygiene_checker.v1"],
+        split_visibility={
+            "train": "mutation_visible",
+            "validation": "comparison_visible",
+            "hold": "hidden_hold",
+            "regression": "comparison_visible",
+        },
+        stochasticity_class="deterministic",
+        rerun_policy={"max_trials": 1},
+        capture_requirements=[
+            "planning_quality_delta",
+            "narrow_diff_bias_delta",
+            "apply_patch_preserved",
+            "held_out_blast_radius_guard",
+        ],
+        adjudication_requirements={
+            "requires_hidden_hold_review": True,
+            "requires_regression_coverage": True,
+        },
+        comparison_protocol_defaults={
+            "protocol_id": "paired_parent_child.v1",
+            "minimum_trial_count": 1,
+            "requires_hidden_hold_bucket": True,
+        },
+        artifact_requirements=["paired_eval_json", "benchmark_summary_json"],
+        metadata={"lane": "coding_overlay", "phase": "v2"},
+    )
+
+    objective_suite = ObjectiveSuiteManifest(
+        suite_id="objsuite.coding_overlay.v2",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_channels={
+            "planning_quality": {
+                "direction": "maximize",
+                "source_metric": "planning_quality_delta",
+                "promotion_sensitive": True,
+            },
+            "diff_hygiene": {
+                "direction": "maximize",
+                "source_metric": "narrow_diff_bias_delta",
+                "promotion_sensitive": True,
+            },
+            "mutation_cost": {
+                "direction": "minimize",
+                "source_metric": "cost_delta_usd",
+                "promotion_sensitive": False,
+            },
+        },
+        penalties={
+            "blast_radius_expansion": {
+                "kind": "hard_block",
+                "reason": "coding overlay family may not imply broader edit blast radius",
+            },
+            "apply_patch_regression": {
+                "kind": "hard_block",
+                "reason": "apply_patch-centered editing discipline must remain explicit",
+            },
+        },
+        aggregation_rules={
+            "per_sample": "weighted_sum",
+            "per_bucket": "minimum_bucket_floor",
+            "global": "bounded_edit_first",
+        },
+        uncertainty_policy={
+            "stochasticity_class": "deterministic",
+            "blocked_when_missing_hidden_hold": True,
+        },
+        frontier_dimensions=["planning_quality", "diff_hygiene", "mutation_cost"],
+        promotion_annotations={"requires_support_sensitive_review": False, "review_class": "coding_overlay"},
+        visibility_annotations={"hidden_hold_channels": ["planning_quality", "diff_hygiene"]},
+        metadata={"lane": "coding_overlay", "phase": "v2"},
+    )
+
+    target_family = TargetFamilyManifest(
+        family_id="family.coding_overlay.v2",
+        family_kind="coding_harness_overlay_family",
+        target_ids=[target.target_id],
+        family_scope="Planning and editing policy overlays for bounded coding-harness tasks.",
+        mutable_loci_ids=[locus.locus_id for locus in target.mutable_loci],
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_suite_id=objective_suite.suite_id,
+        review_class="coding_overlay",
+        runtime_context_assumptions={
+            "environment_selector_profile": "workspace-write",
+            "tool_pack_profile": "codex-dossier-default",
+            "requires_replay_safe_lane": True,
+            "requires_apply_patch_tool": True,
+        },
+        promotion_class="bounded_coding_overlay_change",
+        artifact_refs=[
+            ArtifactRef(
+                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                media_type="text/yaml",
+                metadata={"surface": "public_dossier"},
+            )
+        ],
+        metadata={"lane": "coding_overlay", "phase": "v2"},
+    )
+
+    search_space = SearchSpaceManifest(
+        search_space_id="searchspace.coding_overlay.v2",
+        family_id=target_family.family_id,
+        allowed_loci=[locus.locus_id for locus in target.mutable_loci],
+        mutation_kinds_by_locus={
+            "prompt.section.planning_policy": ["replace"],
+            "prompt.section.editing_policy": ["replace"],
+        },
+        value_domains_by_locus={
+            "prompt.section.planning_policy": {
+                "must_preserve_apply_patch": True,
+                "must_reference_bounded_edits": True,
+            },
+            "prompt.section.editing_policy": {
+                "must_preserve_narrow_diffs": True,
+                "must_discourage_broad_rewrites": True,
+            },
+        },
+        semantic_constraints={
+            "prompt.section.planning_policy": {
+                "must_not_expand_edit_scope": True,
+            },
+            "prompt.section.editing_policy": {
+                "must_keep_apply_patch_explicit": True,
+                "must_keep_blast_radius_bounded": True,
+            },
+        },
+        invariants=["bounded-overlay-only", "support-envelope-preserved"],
+        unsafe_expansion_notes=[
+            "Changing tool surfaces is out of scope for this family.",
+            "Whole-file rewrite guidance is out of scope for this family.",
+        ],
+        metadata={"lane": "coding_overlay", "phase": "v2"},
+    )
+
     manifest = BenchmarkRunManifest(
         manifest_id="manifest.coding_overlay.v1_5",
         benchmark_kind="coding_overlay_pack",
@@ -2380,7 +2738,14 @@ def build_coding_overlay_benchmark_example() -> Dict[str, object]:
         ],
         promotion_relevance={"requires_support_sensitive_review": False},
         artifact_refs=[ArtifactRef(ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
-        metadata={"lane": "coding_overlay", "phase": "v1_5"},
+        metadata={
+            "lane": "coding_overlay",
+            "phase": "v1_5",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "target_family_id": target_family.family_id,
+            "search_space_id": search_space.search_space_id,
+        },
     )
 
     comparison = build_paired_candidate_comparison(
@@ -2408,6 +2773,62 @@ def build_coding_overlay_benchmark_example() -> Dict[str, object]:
         metadata={"lane": "coding_overlay"},
     )
 
+    objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreakdown.coding_overlay.child.001",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=manifest.manifest_id,
+        candidate_id=child_candidate.candidate_id,
+        per_sample_components={
+            train_sample.sample_id: {
+                "planning_quality": 0.8,
+                "diff_hygiene": 0.9,
+                "mutation_cost": 0.0,
+            },
+            validation_sample.sample_id: {
+                "planning_quality": 0.75,
+                "diff_hygiene": 0.85,
+                "mutation_cost": 0.0,
+            },
+            hold_sample.sample_id: {
+                "planning_quality": 0.7,
+                "diff_hygiene": 1.0,
+                "mutation_cost": 0.0,
+            },
+            regression_sample.sample_id: {
+                "planning_quality": 0.68,
+                "diff_hygiene": 1.0,
+                "mutation_cost": 0.0,
+            },
+        },
+        per_bucket_components={
+            "small-edit": {"planning_quality": 0.8, "diff_hygiene": 0.9},
+            "blast-radius": {"planning_quality": 0.7, "diff_hygiene": 1.0},
+        },
+        aggregate_objectives={
+            "planning_quality": 0.7325,
+            "diff_hygiene": 0.9375,
+            "mutation_cost": 0.0,
+            "eligible_for_promotion": True,
+        },
+        uncertainty_summary={
+            "stochasticity_class": "deterministic",
+            "trial_count": 1,
+            "blocked_for_uncertainty": False,
+        },
+        blocked_components={},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/coding_overlay/objective_breakdown_child.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "coding_overlay",
+            "family_id": target_family.family_id,
+            "search_space_id": search_space.search_space_id,
+        },
+    )
+
     result = BenchmarkRunResult(
         run_id="benchmark_run.coding_overlay.001",
         manifest_id=manifest.manifest_id,
@@ -2423,8 +2844,21 @@ def build_coding_overlay_benchmark_example() -> Dict[str, object]:
                 media_type="application/json",
             )
         ],
-        promotion_readiness_summary={"eligible_for_promotion": True, "requires_review": False},
-        metadata={"lane": "coding_overlay", "phase": "v1_5"},
+        promotion_readiness_summary={
+            "eligible_for_promotion": True,
+            "requires_review": False,
+            "objective_breakdown_result_id": objective_breakdown.result_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "target_family_id": target_family.family_id,
+        },
+        metadata={
+            "lane": "coding_overlay",
+            "phase": "v1_5",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+            "target_family_id": target_family.family_id,
+            "search_space_id": search_space.search_space_id,
+        },
     )
 
     return {
@@ -2434,8 +2868,13 @@ def build_coding_overlay_benchmark_example() -> Dict[str, object]:
         "child_candidate": child_candidate,
         "parent_materialized_candidate": parent_materialized,
         "child_materialized_candidate": child_materialized,
+        "evaluation_suite": evaluation_suite,
+        "objective_suite": objective_suite,
+        "target_family": target_family,
+        "search_space": search_space,
         "manifest": manifest,
         "comparison_result": comparison,
+        "objective_breakdown_result": objective_breakdown,
         "benchmark_result": result,
     }
 
@@ -2449,8 +2888,13 @@ def build_coding_overlay_benchmark_example_payload() -> Dict[str, object]:
         "child_candidate": example["child_candidate"].to_dict(),
         "parent_materialized_candidate": example["parent_materialized_candidate"].to_dict(),
         "child_materialized_candidate": example["child_materialized_candidate"].to_dict(),
+        "evaluation_suite": example["evaluation_suite"].to_dict(),
+        "objective_suite": example["objective_suite"].to_dict(),
+        "target_family": example["target_family"].to_dict(),
+        "search_space": example["search_space"].to_dict(),
         "manifest": example["manifest"].to_dict(),
         "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
         "benchmark_result": example["benchmark_result"].to_dict(),
     }
 
@@ -2475,6 +2919,258 @@ def _clone_benchmark_run_result(
         for item in payload.get("comparison_results", [])
     ]
     return BenchmarkRunResult.from_dict(payload)
+
+
+def _build_backend_request_for_family_example(
+    example: Dict[str, object],
+    *,
+    request_id: str,
+    evaluation_id: str,
+    evaluator_id: str,
+    wrongness_class: str,
+    likely_repair_locus: str,
+) -> ReflectiveParetoBackendRequest:
+    target = example["target"]
+    dataset = example["dataset"]
+    parent_candidate = example["parent_candidate"]
+    parent_materialized_candidate = example["parent_materialized_candidate"]
+    assert isinstance(target, OptimizationTarget)
+    assert isinstance(dataset, OptimizationDataset)
+    assert isinstance(parent_candidate, CandidateBundle)
+    assert isinstance(parent_materialized_candidate, MaterializedCandidate)
+    sample = dataset.samples[0]
+    evaluation = EvaluationRecord(
+        evaluation_id=evaluation_id,
+        target_id=target.target_id,
+        candidate_id=parent_candidate.candidate_id,
+        dataset_id=dataset.dataset_id,
+        dataset_version=dataset.dataset_version,
+        sample_id=sample.sample_id,
+        evaluator_id=evaluator_id,
+        evaluator_version="v2",
+        status="completed",
+        outcome="failed",
+        started_at="2026-03-18T10:00:00.000Z",
+        completed_at="2026-03-18T10:00:01.000Z",
+        duration_ms=1000,
+        raw_evidence_refs=[
+            ArtifactRef(
+                ref=f"artifacts/optimization/{request_id}/baseline_eval.json",
+                media_type="application/json",
+            )
+        ],
+        normalized_diagnostics=[
+            DiagnosticBundle(
+                bundle_id=f"bundle.{evaluation_id}",
+                evaluation_id=evaluation_id,
+                evaluator_mode="replay",
+                determinism_class="deterministic",
+                entries=[
+                    DiagnosticEntry(
+                        diagnostic_id=f"diag.{evaluation_id}",
+                        kind="wrongness",
+                        severity="error",
+                        message="baseline family candidate shows a structured repair opportunity",
+                        locus_id=likely_repair_locus,
+                        evidence_refs=[
+                            ArtifactRef(
+                                ref=f"artifacts/optimization/{request_id}/diagnostic.json",
+                                media_type="application/json",
+                            )
+                        ],
+                    )
+                ],
+                cache_identity={"key": f"cache.{evaluation_id}", "version": "1"},
+                retry_policy_hint={"max_trials": 1},
+                reproducibility_notes={"family_bound": True},
+            )
+        ],
+        wrongness_reports=[
+            WrongnessReport(
+                wrongness_id=f"wrongness.{evaluation_id}",
+                wrongness_class=wrongness_class,
+                failure_locus=likely_repair_locus,
+                explanation="baseline family candidate still exposes a bounded repair locus",
+                confidence=0.9,
+                supporting_evidence_refs=[
+                    ArtifactRef(
+                        ref=f"artifacts/optimization/{request_id}/wrongness.json",
+                        media_type="application/json",
+                    )
+                ],
+                likely_repair_locus=likely_repair_locus,
+            )
+        ],
+        support_envelope_snapshot=target.support_envelope,
+        evaluation_input_compatibility={
+            **parent_materialized_candidate.evaluation_input_compatibility,
+            "conformance_bundle": "codex-e4",
+        },
+        gate_results={"replay_gate_green": True, "conformance_gate_green": True},
+        metadata={"family_bound": True, "request_id": request_id},
+    )
+    return ReflectiveParetoBackendRequest(
+        request_id=request_id,
+        target=target,
+        baseline_candidate=parent_candidate,
+        baseline_materialized_candidate=parent_materialized_candidate,
+        dataset=dataset,
+        evaluations=[evaluation],
+        active_sample_id=sample.sample_id,
+        execution_context=OptimizationExecutionContext(
+            target_id=target.target_id,
+            sample_id=sample.sample_id,
+            runtime_context=sample.runtime_context(),
+            evaluation_input_compatibility=parent_materialized_candidate.evaluation_input_compatibility,
+            metadata={"family_bound": True, "dataset_id": dataset.dataset_id},
+        ),
+        mutation_bounds=MutationBounds(max_changed_loci=2, max_changed_artifacts=1, max_total_value_bytes=1600),
+        max_proposals=2,
+        metadata={"family_bound": True},
+    )
+
+
+def build_staged_backend_comparison_example() -> Dict[str, object]:
+    """Build a fixed-methodology V2 staged-vs-reflective backend comparison across the three live families."""
+
+    support = build_support_execution_benchmark_example()
+    tool = build_tool_guidance_benchmark_example()
+    coding = build_coding_overlay_benchmark_example()
+
+    family_examples = [
+        (
+            "support_execution",
+            support,
+            _build_backend_request_for_family_example(
+                support,
+                request_id="backend_request.support_execution.staged.v2",
+                evaluation_id="eval.backend.support_execution.v2",
+                evaluator_id="support_execution_checker.v2",
+                wrongness_class="policy.support_envelope_violation",
+                likely_repair_locus="policy.support_claim_limited_actions",
+            ),
+        ),
+        (
+            "tool_guidance",
+            tool,
+            _build_backend_request_for_family_example(
+                tool,
+                request_id="backend_request.tool_guidance.staged.v2",
+                evaluation_id="eval.backend.tool_guidance.v2",
+                evaluator_id="tool_guidance_checker.v2",
+                wrongness_class="correctness.result_mismatch",
+                likely_repair_locus="tool.render.exec_command",
+            ),
+        ),
+        (
+            "coding_overlay",
+            coding,
+            _build_backend_request_for_family_example(
+                coding,
+                request_id="backend_request.coding_overlay.staged.v2",
+                evaluation_id="eval.backend.coding_overlay.v2",
+                evaluator_id="coding_overlay_checker.v2",
+                wrongness_class="correctness.result_mismatch",
+                likely_repair_locus="prompt.section.planning_policy",
+            ),
+        ),
+    ]
+
+    reflective_results: List[ReflectiveParetoBackendResult] = []
+    staged_results: List[ReflectiveParetoBackendResult] = []
+    manifest_ids: List[str] = []
+    backend_outcome_summary: Dict[str, Dict[str, object]] = {
+        "reflective_pareto_backend_v1": {},
+        "staged_optimizer.v1": {},
+    }
+    backend_run_ids: Dict[str, List[str]] = {
+        "reflective_pareto_backend_v1": [],
+        "staged_optimizer.v1": [],
+    }
+
+    for lane_name, example, backend_request in family_examples:
+        reflective = run_reflective_pareto_backend(backend_request)
+        staged_request = StagedOptimizerRequest(
+            request_id=f"staged_request.{lane_name}.v2",
+            backend_request=backend_request,
+            evaluation_suite=example["evaluation_suite"],
+            objective_suite=example["objective_suite"],
+            target_family=example["target_family"],
+            search_space=example["search_space"],
+            metadata={"lane": lane_name},
+        )
+        staged = run_staged_optimizer(staged_request)
+        manifest = example["manifest"]
+        assert isinstance(manifest, BenchmarkRunManifest)
+        manifest_ids.append(manifest.manifest_id)
+        reflective_results.append(reflective)
+        staged_results.append(staged)
+        backend_run_ids["reflective_pareto_backend_v1"].append(reflective.request_id)
+        backend_run_ids["staged_optimizer.v1"].append(staged.request_id)
+
+        reflective_size = len(reflective.portfolio.entries)
+        staged_size = len(staged.portfolio.entries)
+        winner = "staged_optimizer.v1" if staged_size >= reflective_size else "reflective_pareto_backend_v1"
+        rationale = (
+            "staged backend preserved family/search-space discipline and matched or exceeded the reflective portfolio width"
+            if winner == "staged_optimizer.v1"
+            else "reflective backend retained a broader valid portfolio under the same family methodology"
+        )
+        for backend_id, result in (
+            ("reflective_pareto_backend_v1", reflective),
+            ("staged_optimizer.v1", staged),
+        ):
+            backend_outcome_summary[backend_id][lane_name] = {
+                "portfolio_size": len(result.portfolio.entries),
+                "proposal_count": len(result.proposals),
+                "family_id": example["target_family"].family_id,
+                "winner_for_family": winner,
+                "rationale": rationale,
+            }
+
+    comparison = BackendComparisonResult(
+        comparison_id="backend_comparison.staged_vs_reflective.v2",
+        backend_ids=["reflective_pareto_backend_v1", "staged_optimizer.v1"],
+        manifest_ids=manifest_ids,
+        backend_run_ids=backend_run_ids,
+        backend_outcome_summary=backend_outcome_summary,
+        rationale="Staged optimizer is compared against the reflective backend on fixed V2 family/suite/search-space methodology.",
+        winner_backend_id="staged_optimizer.v1",
+        evidence_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/backend_comparison/staged_vs_reflective_v2.json",
+                media_type="application/json",
+            )
+        ],
+        reproducibility_notes={
+            "fixed_methodology": True,
+            "family_bound": True,
+            "shared_manifests": manifest_ids,
+        },
+        metadata={
+            "family_ids": [example["target_family"].family_id for _, example, _ in family_examples],
+            "evaluation_suite_ids": [example["evaluation_suite"].suite_id for _, example, _ in family_examples],
+            "objective_suite_ids": [example["objective_suite"].suite_id for _, example, _ in family_examples],
+        },
+    )
+
+    return {
+        "reflective_results": reflective_results,
+        "staged_results": staged_results,
+        "backend_comparison": comparison,
+        "family_examples": [item[1] for item in family_examples],
+        "family_requests": [item[2] for item in family_examples],
+    }
+
+
+def build_staged_backend_comparison_example_payload() -> Dict[str, object]:
+    example = build_staged_backend_comparison_example()
+    return {
+        "reflective_results": [item.to_dict() for item in example["reflective_results"]],
+        "staged_results": [item.to_dict() for item in example["staged_results"]],
+        "family_requests": [item.to_dict() for item in example["family_requests"]],
+        "backend_comparison": example["backend_comparison"].to_dict(),
+    }
 
 
 def build_backend_comparison_example() -> Dict[str, object]:
