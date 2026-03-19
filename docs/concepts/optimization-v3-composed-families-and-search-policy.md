@@ -166,6 +166,32 @@ So a clean first implementation should record:
 - whether it triggered
 - why it did or did not trigger
 
+## Composition-aware promotion and generalization
+
+Once composed lanes are real, promotion evidence can no longer stay atomic-family-shaped.
+
+V3 therefore needs composition-aware promotion evidence that carries:
+
+- `composition_id`
+- member-family coverage
+- coupling-risk summary
+- composition-specific hidden-hold and regression coverage
+- transfer-slice identifiers where the lane actually spans package or model-tier boundaries
+
+This is still promotion discipline, not new ontology.
+
+It should remain:
+
+- non-kernel
+- review-sensitive
+- derived from benchmark, comparison, and objective-breakdown evidence
+
+It should not become:
+
+- a generic transfer-learning framework
+- a reward-led promotion system
+- an excuse to auto-promote support-sensitive composed lanes
+
 ## What stays private
 
 The following remain backend-private or experimental:

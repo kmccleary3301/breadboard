@@ -4182,6 +4182,7 @@ def build_support_execution_coding_overlay_composition_example() -> Dict[str, ob
             "requires_support_sensitive_review": True,
             "review_class": composition.review_class,
             "composition_id": composition.composition_id,
+            "transfer_slice_ids": ["package.codex_dossier.prompt_config", "model_tier.nano_first_openai"],
         },
         artifact_refs=[ArtifactRef(ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
         metadata={
@@ -4192,6 +4193,7 @@ def build_support_execution_coding_overlay_composition_example() -> Dict[str, ob
             "composition_id": composition.composition_id,
             "search_space_id": search_space.search_space_id,
             "model_policy": "nano_first",
+            "transfer_slice_ids": ["package.codex_dossier.prompt_config", "model_tier.nano_first_openai"],
         },
     )
 

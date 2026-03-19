@@ -19,6 +19,7 @@ from agentic_coder_prototype.optimize import (
     build_coding_overlay_benchmark_example,
     build_promotion_evidence_summary,
     build_support_execution_benchmark_example,
+    build_support_execution_coding_overlay_composition_example,
     build_tool_guidance_benchmark_example,
     create_promotion_record,
     evaluate_family_promotion_gate,
@@ -150,6 +151,12 @@ def _clone_evaluation(evaluation: EvaluationRecord, **updates: object) -> Evalua
     return EvaluationRecord.from_dict(payload)
 
 
+def _clone_objective_breakdown(result: ObjectiveBreakdownResult, **updates: object) -> ObjectiveBreakdownResult:
+    payload = result.to_dict()
+    payload.update(updates)
+    return ObjectiveBreakdownResult.from_dict(payload)
+
+
 def _support_execution_evaluation(example: Mapping[str, Any]) -> EvaluationRecord:
     promotable = build_codex_dossier_promotion_examples()["promotable"]
     return _clone_evaluation(
@@ -162,6 +169,24 @@ def _support_execution_evaluation(example: Mapping[str, Any]) -> EvaluationRecor
         sample_id=example["dataset"].samples[1].sample_id,
         evaluation_input_compatibility={
             **example["child_materialized_candidate"].evaluation_input_compatibility,
+            "conformance_bundle": "codex-e4",
+        },
+        support_envelope_snapshot=example["target"].support_envelope.to_dict(),
+    )
+
+
+def _composition_evaluation(example: Mapping[str, Any]) -> EvaluationRecord:
+    promotable = build_codex_dossier_promotion_examples()["promotable"]
+    return _clone_evaluation(
+        promotable["evaluation"],
+        evaluation_id=f"eval.{example['composed_candidate'].candidate_id}",
+        target_id=example["target"].target_id,
+        candidate_id=example["composed_candidate"].candidate_id,
+        dataset_id=example["dataset"].dataset_id,
+        dataset_version=example["dataset"].dataset_version,
+        sample_id=example["dataset"].samples[1].sample_id,
+        evaluation_input_compatibility={
+            **example["composed_materialized_candidate"].evaluation_input_compatibility,
             "conformance_bundle": "codex-e4",
         },
         support_envelope_snapshot=example["target"].support_envelope.to_dict(),
@@ -207,6 +232,40 @@ def test_build_promotion_evidence_summary_round_trips() -> None:
     assert round_tripped.review_class == "support_honesty"
     assert round_tripped.objective_breakdown_status == "complete"
     assert round_tripped.review_required is True
+
+
+def test_build_promotion_evidence_summary_captures_composed_family_metadata() -> None:
+    example = build_support_execution_coding_overlay_composition_example()
+    summary = build_promotion_evidence_summary(
+        summary_id="evidence_summary.support_execution_coding_overlay.001",
+        candidate_id=example["composed_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        family_composition=example["family_composition"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[example["objective_breakdown_result"]],
+        review_required=True,
+        metadata={"lane": "support_execution_coding_overlay_composed"},
+    )
+
+    assert summary.composition_ids == [example["family_composition"].composition_id]
+    assert summary.member_family_ids == [
+        "family.support_execution.v2",
+        "family.coding_overlay.v2",
+    ]
+    assert summary.member_family_coverage["family.support_execution.v2"]["present"] is True
+    assert summary.member_family_coverage["family.coding_overlay.v2"]["present"] is True
+    assert set(summary.coupling_risk_summary["coupled_loci_groups"]) == {
+        "replay_and_planning",
+        "support_and_editing",
+    }
+    assert summary.transfer_slice_ids == [
+        "model_tier.nano_first_openai",
+        "package.codex_dossier.prompt_config",
+    ]
+    assert summary.review_class == "support_sensitive_coding_overlay"
 
 
 def test_promote_candidate_includes_evidence_summary_for_benchmark_backed_lane() -> None:
@@ -300,6 +359,64 @@ def test_promote_candidate_rejects_regression_loss() -> None:
     assert record.state == "rejected"
     assert decision.next_state == "rejected"
     assert decision.blocked_by_gate_kinds == ["comparison", "family_promotion"]
+
+
+def test_evaluate_family_promotion_gate_requires_member_family_coverage_for_composition() -> None:
+    example = build_support_execution_coding_overlay_composition_example()
+    broken_breakdown = _clone_objective_breakdown(
+        example["objective_breakdown_result"],
+        member_family_breakdowns={"family.support_execution.v2": {"support_honesty": 0.9875}},
+    )
+
+    gate = evaluate_family_promotion_gate(
+        target=example["target"],
+        candidate_id=example["composed_candidate"].candidate_id,
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        family_composition=example["family_composition"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[broken_breakdown],
+    )
+
+    assert gate.status == "insufficient_evidence"
+    assert "member-family coverage" in gate.reason
+    assert gate.metadata["missing_member_family_ids"] == ["family.coding_overlay.v2"]
+
+
+def test_promote_candidate_keeps_review_sensitive_composed_lane_on_frontier() -> None:
+    example = build_support_execution_coding_overlay_composition_example()
+    evaluation = _composition_evaluation(example)
+
+    record, decision = promote_candidate(
+        record_id="promotion.support_execution_coding_overlay.001",
+        target=example["target"],
+        materialized_candidate=example["composed_materialized_candidate"],
+        evaluation=evaluation,
+        created_at="2026-03-19T11:00:00.000Z",
+        gated_at="2026-03-19T11:00:01.000Z",
+        benchmark_manifest=example["manifest"],
+        comparison_results=[example["comparison_result"]],
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        family_composition=example["family_composition"],
+        search_space=example["search_space"],
+        objective_breakdown_results=[example["objective_breakdown_result"]],
+    )
+
+    summary = _evidence_summary_from_record(record)
+
+    assert record.state == "frontier"
+    assert decision.next_state == "frontier"
+    assert "family_promotion" in decision.blocked_by_gate_kinds
+    assert summary.composition_ids == [example["family_composition"].composition_id]
+    assert summary.member_family_ids == list(example["family_composition"].member_family_ids)
+    assert summary.transfer_slice_ids == [
+        "model_tier.nano_first_openai",
+        "package.codex_dossier.prompt_config",
+    ]
+    assert summary.family_risk_summary["composed_family"] is True
 
 
 def test_promote_candidate_requires_more_trials_for_stochastic_manifest() -> None:

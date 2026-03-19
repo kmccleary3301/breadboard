@@ -7,6 +7,7 @@ from .benchmark import BenchmarkRunManifest, CandidateComparisonResult
 from .evaluation import EvaluationRecord
 from .suites import (
     EvaluationSuiteManifest,
+    FamilyCompositionManifest,
     ObjectiveBreakdownResult,
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
@@ -162,6 +163,8 @@ class PromotionEvidenceSummary:
     evaluation_suite_ids: List[str] = field(default_factory=list)
     objective_suite_ids: List[str] = field(default_factory=list)
     target_family_ids: List[str] = field(default_factory=list)
+    composition_ids: List[str] = field(default_factory=list)
+    member_family_ids: List[str] = field(default_factory=list)
     search_space_ids: List[str] = field(default_factory=list)
     objective_breakdown_result_ids: List[str] = field(default_factory=list)
     family_bucket_ids: List[str] = field(default_factory=list)
@@ -169,6 +172,9 @@ class PromotionEvidenceSummary:
     regression_bucket_ids: List[str] = field(default_factory=list)
     applicability_scope: Dict[str, Any] = field(default_factory=dict)
     family_risk_summary: Dict[str, Any] = field(default_factory=dict)
+    member_family_coverage: Dict[str, Any] = field(default_factory=dict)
+    coupling_risk_summary: Dict[str, Any] = field(default_factory=dict)
+    transfer_slice_ids: List[str] = field(default_factory=list)
     review_class: Optional[str] = None
     objective_breakdown_status: Optional[str] = None
     review_required: bool = False
@@ -186,6 +192,8 @@ class PromotionEvidenceSummary:
         object.__setattr__(self, "evaluation_suite_ids", _copy_text_list(self.evaluation_suite_ids))
         object.__setattr__(self, "objective_suite_ids", _copy_text_list(self.objective_suite_ids))
         object.__setattr__(self, "target_family_ids", _copy_text_list(self.target_family_ids))
+        object.__setattr__(self, "composition_ids", _copy_text_list(self.composition_ids))
+        object.__setattr__(self, "member_family_ids", _copy_text_list(self.member_family_ids))
         object.__setattr__(self, "search_space_ids", _copy_text_list(self.search_space_ids))
         object.__setattr__(self, "objective_breakdown_result_ids", _copy_text_list(self.objective_breakdown_result_ids))
         object.__setattr__(self, "family_bucket_ids", _copy_text_list(self.family_bucket_ids))
@@ -193,6 +201,9 @@ class PromotionEvidenceSummary:
         object.__setattr__(self, "regression_bucket_ids", _copy_text_list(self.regression_bucket_ids))
         object.__setattr__(self, "applicability_scope", _copy_mapping(self.applicability_scope))
         object.__setattr__(self, "family_risk_summary", _copy_mapping(self.family_risk_summary))
+        object.__setattr__(self, "member_family_coverage", _copy_mapping(self.member_family_coverage))
+        object.__setattr__(self, "coupling_risk_summary", _copy_mapping(self.coupling_risk_summary))
+        object.__setattr__(self, "transfer_slice_ids", _copy_text_list(self.transfer_slice_ids))
         object.__setattr__(self, "review_class", str(self.review_class).strip() if self.review_class else None)
         object.__setattr__(
             self,
@@ -231,6 +242,8 @@ class PromotionEvidenceSummary:
             "evaluation_suite_ids": list(self.evaluation_suite_ids),
             "objective_suite_ids": list(self.objective_suite_ids),
             "target_family_ids": list(self.target_family_ids),
+            "composition_ids": list(self.composition_ids),
+            "member_family_ids": list(self.member_family_ids),
             "search_space_ids": list(self.search_space_ids),
             "objective_breakdown_result_ids": list(self.objective_breakdown_result_ids),
             "family_bucket_ids": list(self.family_bucket_ids),
@@ -238,6 +251,9 @@ class PromotionEvidenceSummary:
             "regression_bucket_ids": list(self.regression_bucket_ids),
             "applicability_scope": dict(self.applicability_scope),
             "family_risk_summary": dict(self.family_risk_summary),
+            "member_family_coverage": dict(self.member_family_coverage),
+            "coupling_risk_summary": dict(self.coupling_risk_summary),
+            "transfer_slice_ids": list(self.transfer_slice_ids),
             "review_class": self.review_class,
             "objective_breakdown_status": self.objective_breakdown_status,
             "review_required": self.review_required,
@@ -268,6 +284,8 @@ class PromotionEvidenceSummary:
             evaluation_suite_ids=list(data.get("evaluation_suite_ids") or []),
             objective_suite_ids=list(data.get("objective_suite_ids") or []),
             target_family_ids=list(data.get("target_family_ids") or []),
+            composition_ids=list(data.get("composition_ids") or []),
+            member_family_ids=list(data.get("member_family_ids") or []),
             search_space_ids=list(data.get("search_space_ids") or []),
             objective_breakdown_result_ids=list(data.get("objective_breakdown_result_ids") or []),
             family_bucket_ids=list(data.get("family_bucket_ids") or []),
@@ -275,6 +293,9 @@ class PromotionEvidenceSummary:
             regression_bucket_ids=list(data.get("regression_bucket_ids") or []),
             applicability_scope=dict(data.get("applicability_scope") or {}),
             family_risk_summary=dict(data.get("family_risk_summary") or {}),
+            member_family_coverage=dict(data.get("member_family_coverage") or {}),
+            coupling_risk_summary=dict(data.get("coupling_risk_summary") or {}),
+            transfer_slice_ids=list(data.get("transfer_slice_ids") or []),
             review_class=data.get("review_class"),
             objective_breakdown_status=data.get("objective_breakdown_status"),
             review_required=bool(data.get("review_required")),
@@ -662,6 +683,7 @@ def build_promotion_evidence_summary(
     evaluation_suite: Optional[EvaluationSuiteManifest] = None,
     objective_suite: Optional[ObjectiveSuiteManifest] = None,
     target_family: Optional[TargetFamilyManifest] = None,
+    family_composition: Optional[FamilyCompositionManifest] = None,
     search_space: Optional[SearchSpaceManifest] = None,
     objective_breakdown_results: Sequence[ObjectiveBreakdownResult] | None = None,
     review_required: bool = False,
@@ -708,6 +730,44 @@ def build_promotion_evidence_summary(
     objective_breakdown_status = "complete" if objective_breakdown_results else None
     if any(result.blocked_components for result in objective_breakdown_results):
         objective_breakdown_status = "partial"
+    member_family_coverage: Dict[str, Any] = {}
+    composition_ids: List[str] = []
+    member_family_ids: List[str] = []
+    coupling_risk_summary: Dict[str, Any] = {}
+    transfer_slice_ids = _copy_text_list(
+        (
+            ((benchmark_manifest.metadata or {}).get("transfer_slice_ids"))
+            if benchmark_manifest
+            else []
+        )
+    )
+    if benchmark_manifest is not None:
+        transfer_slice_ids.extend(
+            _copy_text_list((benchmark_manifest.promotion_relevance or {}).get("transfer_slice_ids"))
+        )
+    transfer_slice_ids = sorted(set(transfer_slice_ids))
+    if family_composition is not None:
+        composition_ids = [family_composition.composition_id]
+        member_family_ids = list(family_composition.member_family_ids)
+        member_family_breakdown_keys = {
+            family_id
+            for result in objective_breakdown_results
+            for family_id in result.member_family_breakdowns
+        }
+        for family_id in member_family_ids:
+            member_data: Dict[str, Any] = {"present": family_id in member_family_breakdown_keys}
+            for result in objective_breakdown_results:
+                if family_id in result.member_family_breakdowns:
+                    member_data["objective_keys"] = sorted(result.member_family_breakdowns[family_id].keys())
+                    break
+            member_family_coverage[family_id] = member_data
+        coupling_risk_summary = {
+            "composition_kind": family_composition.composition_kind,
+            "cross_family_invariants": list(family_composition.cross_family_invariants),
+            "coupled_loci_groups": sorted((search_space.coupled_loci_groups or {}).keys()) if search_space is not None else [],
+            "stage_partitions": sorted((search_space.stage_partitions or {}).keys()) if search_space is not None else [],
+            "review_class": family_composition.review_class,
+        }
     return PromotionEvidenceSummary(
         summary_id=summary_id,
         candidate_id=candidate_id,
@@ -723,6 +783,8 @@ def build_promotion_evidence_summary(
         evaluation_suite_ids=[evaluation_suite.suite_id] if evaluation_suite is not None else [],
         objective_suite_ids=[objective_suite.suite_id] if objective_suite is not None else [],
         target_family_ids=[target_family.family_id] if target_family is not None else [],
+        composition_ids=composition_ids,
+        member_family_ids=member_family_ids,
         search_space_ids=[search_space.search_space_id] if search_space is not None else [],
         objective_breakdown_result_ids=[result.result_id for result in objective_breakdown_results],
         family_bucket_ids=family_bucket_ids,
@@ -731,17 +793,33 @@ def build_promotion_evidence_summary(
         applicability_scope={
             "manifest_ids": manifest_ids,
             "family_ids": [target_family.family_id] if target_family is not None else [],
+            "composition_ids": composition_ids,
+            "member_family_ids": member_family_ids,
             "target_ids": list(target_family.target_ids) if target_family is not None else [],
             "mutable_loci_ids": list(target_family.mutable_loci_ids) if target_family is not None else [],
         },
         family_risk_summary={
             "review_required": review_required,
-            "review_class": target_family.review_class if target_family is not None else None,
+            "review_class": (
+                target_family.review_class
+                if target_family is not None
+                else (family_composition.review_class if family_composition is not None else None)
+            ),
             "multi_locus_change": bool(target_family and len(target_family.mutable_loci_ids) > 1),
+            "composed_family": family_composition is not None,
+            "member_family_count": len(member_family_ids),
             "hidden_hold_covered": bool(held_out_sample_ids),
             "regression_covered": bool(regression_ids and compared_regression_ids),
+            "transfer_slice_ids": transfer_slice_ids,
         },
-        review_class=target_family.review_class if target_family is not None else None,
+        member_family_coverage=member_family_coverage,
+        coupling_risk_summary=coupling_risk_summary,
+        transfer_slice_ids=transfer_slice_ids,
+        review_class=(
+            target_family.review_class
+            if target_family is not None
+            else (family_composition.review_class if family_composition is not None else None)
+        ),
         objective_breakdown_status=objective_breakdown_status,
         review_required=review_required,
         metadata=dict(metadata or {}),
@@ -1080,6 +1158,7 @@ def evaluate_family_promotion_gate(
     evaluation_suite: Optional[EvaluationSuiteManifest] = None,
     objective_suite: Optional[ObjectiveSuiteManifest] = None,
     target_family: Optional[TargetFamilyManifest] = None,
+    family_composition: Optional[FamilyCompositionManifest] = None,
     search_space: Optional[SearchSpaceManifest] = None,
     objective_breakdown_results: Sequence[ObjectiveBreakdownResult] | None = None,
 ) -> GateResult:
@@ -1094,20 +1173,23 @@ def evaluate_family_promotion_gate(
         "evaluation_suite_id": evaluation_suite.suite_id if evaluation_suite is not None else None,
         "objective_suite_id": objective_suite.suite_id if objective_suite is not None else None,
         "target_family_id": target_family.family_id if target_family is not None else None,
+        "composition_id": family_composition.composition_id if family_composition is not None else None,
         "search_space_id": search_space.search_space_id if search_space is not None else None,
     }
-    if evaluation_suite is None or objective_suite is None or target_family is None or search_space is None:
+    if evaluation_suite is None or objective_suite is None or search_space is None or (
+        target_family is None and family_composition is None
+    ):
         return GateResult(
             gate_id=f"gate.family_promotion.{candidate_id}",
             gate_kind="family_promotion",
             status="insufficient_evidence",
             target_id=target.target_id,
             candidate_id=candidate_id,
-            reason="family-level promotion requires declared suite and family manifests",
+            reason="family-level promotion requires declared suite and family or composition manifests",
             evidence_refs=evidence_refs,
             metadata=metadata,
         )
-    if target.target_id not in set(target_family.target_ids):
+    if target_family is not None and target.target_id not in set(target_family.target_ids):
         return GateResult(
             gate_id=f"gate.family_promotion.{candidate_id}",
             gate_kind="family_promotion",
@@ -1118,7 +1200,7 @@ def evaluate_family_promotion_gate(
             evidence_refs=evidence_refs,
             metadata=metadata,
         )
-    if search_space.family_id != target_family.family_id:
+    if target_family is not None and search_space.family_id != target_family.family_id:
         return GateResult(
             gate_id=f"gate.family_promotion.{candidate_id}",
             gate_kind="family_promotion",
@@ -1129,6 +1211,29 @@ def evaluate_family_promotion_gate(
             evidence_refs=evidence_refs,
             metadata=metadata,
         )
+    if family_composition is not None:
+        if search_space.composition_id != family_composition.composition_id:
+            return GateResult(
+                gate_id=f"gate.family_promotion.{candidate_id}",
+                gate_kind="family_promotion",
+                status="fail",
+                target_id=target.target_id,
+                candidate_id=candidate_id,
+                reason="search space does not match the declared family composition",
+                evidence_refs=evidence_refs,
+                metadata=metadata,
+            )
+        if benchmark_manifest.metadata.get("composition_id") != family_composition.composition_id:
+            return GateResult(
+                gate_id=f"gate.family_promotion.{candidate_id}",
+                gate_kind="family_promotion",
+                status="fail",
+                target_id=target.target_id,
+                candidate_id=candidate_id,
+                reason="benchmark manifest does not match the declared family composition",
+                evidence_refs=evidence_refs,
+                metadata=metadata,
+            )
     if objective_suite.evaluation_suite_id != evaluation_suite.suite_id:
         return GateResult(
             gate_id=f"gate.family_promotion.{candidate_id}",
@@ -1163,6 +1268,36 @@ def evaluate_family_promotion_gate(
             evidence_refs=evidence_refs,
             metadata=metadata,
         )
+    if any(result.cross_family_blocked_components for result in candidate_breakdowns):
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="cross-family objective breakdown evidence is partially blocked for the candidate",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
+        )
+    if family_composition is not None:
+        covered_member_ids = {
+            family_id
+            for result in candidate_breakdowns
+            for family_id in result.member_family_breakdowns
+        }
+        missing_member_ids = sorted(set(family_composition.member_family_ids) - covered_member_ids)
+        metadata["missing_member_family_ids"] = missing_member_ids
+        if missing_member_ids:
+            return GateResult(
+                gate_id=f"gate.family_promotion.{candidate_id}",
+                gate_kind="family_promotion",
+                status="insufficient_evidence",
+                target_id=target.target_id,
+                candidate_id=candidate_id,
+                reason="family composition promotion requires explicit member-family coverage",
+                evidence_refs=evidence_refs,
+                metadata=metadata,
+            )
     candidate_comparisons = [item for item in comparison_results if item.child_candidate_id == candidate_id]
     compared_ids = {
         sample_id
@@ -1232,14 +1367,20 @@ def evaluate_family_promotion_gate(
             evidence_refs=evidence_refs,
             metadata=metadata,
         )
-    if target_family.review_class in {"support_honesty"}:
+    review_class = (
+        target_family.review_class
+        if target_family is not None
+        else (family_composition.review_class if family_composition is not None else None)
+    )
+    review_required = bool((benchmark_manifest.promotion_relevance or {}).get("requires_support_sensitive_review"))
+    if review_class in {"support_honesty", "support_sensitive_coding_overlay"} or review_required:
         return GateResult(
             gate_id=f"gate.family_promotion.{candidate_id}",
             gate_kind="family_promotion",
             status="insufficient_evidence",
             target_id=target.target_id,
             candidate_id=candidate_id,
-            reason="review-heavy family still requires explicit review for promotion",
+            reason="review-heavy family or composition still requires explicit review for promotion",
             evidence_refs=evidence_refs,
             metadata=metadata,
         )
@@ -1277,6 +1418,7 @@ def evaluate_promotion_gates(
     evaluation_suite: Optional[EvaluationSuiteManifest] = None,
     objective_suite: Optional[ObjectiveSuiteManifest] = None,
     target_family: Optional[TargetFamilyManifest] = None,
+    family_composition: Optional[FamilyCompositionManifest] = None,
     search_space: Optional[SearchSpaceManifest] = None,
     objective_breakdown_results: Optional[Sequence[ObjectiveBreakdownResult]] = None,
 ) -> List[GateResult]:
@@ -1321,6 +1463,7 @@ def evaluate_promotion_gates(
                 evaluation_suite=evaluation_suite,
                 objective_suite=objective_suite,
                 target_family=target_family,
+                family_composition=family_composition,
                 search_space=search_space,
                 objective_breakdown_results=objective_breakdown_results or [],
             )
@@ -1341,6 +1484,7 @@ def promote_candidate(
     evaluation_suite: Optional[EvaluationSuiteManifest] = None,
     objective_suite: Optional[ObjectiveSuiteManifest] = None,
     target_family: Optional[TargetFamilyManifest] = None,
+    family_composition: Optional[FamilyCompositionManifest] = None,
     search_space: Optional[SearchSpaceManifest] = None,
     objective_breakdown_results: Optional[Sequence[ObjectiveBreakdownResult]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
@@ -1378,6 +1522,7 @@ def promote_candidate(
         evaluation_suite=evaluation_suite,
         objective_suite=objective_suite,
         target_family=target_family,
+        family_composition=family_composition,
         search_space=search_space,
         objective_breakdown_results=objective_breakdown_results,
     )
@@ -1391,10 +1536,11 @@ def promote_candidate(
             evaluation_suite=evaluation_suite,
             objective_suite=objective_suite,
             target_family=target_family,
+            family_composition=family_composition,
             search_space=search_space,
             objective_breakdown_results=objective_breakdown_results or [],
             review_required=bool((benchmark_manifest.promotion_relevance or {}).get("requires_support_sensitive_review")),
-            metadata={"phase": "v1_5"},
+            metadata={"phase": "v1_5" if family_composition is None else "v3"},
         )
     blocked = [result.gate_kind for result in gate_results if result.status != "pass" and result.status != "not_applicable"]
     evidence = build_promotion_evidence(
