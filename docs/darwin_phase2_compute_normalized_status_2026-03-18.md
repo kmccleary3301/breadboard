@@ -14,6 +14,9 @@ Primary issue: `breadboard_repo_darwin_phase1_20260313-8xc`
   - `artifacts/darwin/scorecards/compute_normalized_view_v2.json`
 - dossier support now prefers the v2 normalized view when present
 - comparative scorecard now consumes the v2 normalized semantics when present
+- proving review artifact now exists:
+  - `artifacts/darwin/reviews/compute_normalized_review_v0.json`
+  - `artifacts/darwin/reviews/compute_normalized_review_v0.md`
 
 ## What changed semantically
 
@@ -38,7 +41,9 @@ The new normalized view is also emitted across all current active lanes as a der
 
 - `pytest -q tests/test_build_darwin_compute_normalized_view_v2.py tests/test_build_darwin_comparative_dossier_v1.py`
 - `pytest -q tests/test_run_darwin_t1_baseline_scorecard_v1.py`
+- `pytest -q tests/test_build_darwin_compute_normalized_review_v0.py`
 - `python scripts/build_darwin_compute_normalized_view_v2.py --json`
+- `python scripts/build_darwin_compute_normalized_review_v0.py --json`
 
 ## Boundary
 
