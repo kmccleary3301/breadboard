@@ -29,6 +29,10 @@ Date: 2026-03-14
 - transfer/lineage tranche status now lives at `docs/darwin_phase2_transfer_lineage_status_2026-03-19.md`
 - transfer/lineage tranche review now lives at `docs/darwin_phase2_transfer_lineage_tranche_review_2026-03-19.md`
 - transfer/lineage tranche status now lives at `docs/darwin_phase2_transfer_lineage_status_2026-03-19.md`
+- external-safe evidence tranche execution plan now lives at `docs/darwin_phase2_external_safe_execution_plan_2026-03-19.md`
+- external-safe evidence tranche status now lives at `docs/darwin_phase2_external_safe_status_2026-03-19.md`
+- external-safe evidence tranche review now lives at `docs/darwin_phase2_external_safe_tranche_review_2026-03-19.md`
+- current-program closeout note now lives at `docs/darwin_phase2_current_program_closeout_note_2026-03-19.md`
 
 ## Deferred
 

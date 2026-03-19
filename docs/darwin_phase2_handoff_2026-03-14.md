@@ -34,6 +34,10 @@ Phase-1 is closed as the internal operational baseline.
 - `docs/darwin_phase2_transfer_lineage_execution_plan_2026-03-18.md`
 - `docs/darwin_phase2_transfer_lineage_status_2026-03-19.md`
 - `docs/darwin_phase2_transfer_lineage_tranche_review_2026-03-19.md`
+- `docs/darwin_phase2_external_safe_execution_plan_2026-03-19.md`
+- `docs/darwin_phase2_external_safe_status_2026-03-19.md`
+- `docs/darwin_phase2_external_safe_tranche_review_2026-03-19.md`
+- `docs/darwin_phase2_current_program_closeout_note_2026-03-19.md`
 - `docs/darwin_phase2_transfer_lineage_status_2026-03-19.md`
 - `docs/contracts/darwin/DARWIN_MODEL_ROUTING_POLICY_V0.md`
 

@@ -37,6 +37,7 @@ Phase-1 T0 freezes:
 - `DARWIN_MODEL_ROUTING_POLICY_V0.md`
 - `DARWIN_TRANSFER_FAMILY_POLICY_V0.md`
 - `DARWIN_LINEAGE_POLICY_V0.md`
+- `DARWIN_EXTERNAL_SAFE_EVIDENCE_POLICY_V0.md`
 
 ### Machine-readable schemas
 
@@ -85,6 +86,11 @@ Phase-1 T0 freezes:
 - `scripts/build_darwin_transfer_family_view_v0.py`
 - `scripts/build_darwin_lineage_review_v0.py`
 - `scripts/build_darwin_transfer_lineage_proving_review_v0.py`
+- `scripts/build_darwin_external_safe_claim_subset_v0.py`
+- `scripts/build_darwin_external_safe_invalidity_summary_v0.py`
+- `scripts/build_darwin_external_safe_reviewer_summary_v0.py`
+- `scripts/build_darwin_external_safe_memo_v0.py`
+- `scripts/build_darwin_external_safe_packet_v0.py`
 - `scripts/build_darwin_transfer_family_view_v0.py`
 - `scripts/build_darwin_lineage_review_v0.py`
 - `scripts/build_darwin_comparative_dossier_v1.py`
