@@ -203,6 +203,15 @@ The following remain backend-private or experimental:
 
 V3 deliberately avoids implying that those are canonical public centers.
 
+In practice, that means the staged optimizer may record private search-policy traces such as:
+
+- stage winner selection
+- blocked-component handling
+- uncertainty penalties
+- whether Mini escalation was considered or triggered
+
+Those traces are implementation evidence, not new public optimize truth.
+
 ## What V3 still does not do
 
 V3 does **not** introduce:

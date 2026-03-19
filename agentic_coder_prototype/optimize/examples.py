@@ -3742,7 +3742,16 @@ def build_support_execution_coding_overlay_composition_example() -> Dict[str, ob
         target_kind="agent_config_overlay_package",
         baseline_artifact_refs=list(support_target.baseline_artifact_refs),
         mutable_loci=list(support_target.mutable_loci) + list(coding_target.mutable_loci),
-        support_envelope=support_target.support_envelope,
+        support_envelope=SupportEnvelope.from_dict(
+            {
+                **support_target.support_envelope.to_dict(),
+                "assumptions": {
+                    **support_target.support_envelope.assumptions,
+                    "service_selectors": {"repo_service": "workspace-write"},
+                    "mcp_servers": ["beads"],
+                },
+            }
+        ),
         invariants=list(support_target.invariants),
         metadata={
             "lane": "support_execution_coding_overlay_composed",

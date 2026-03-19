@@ -17,6 +17,7 @@ from agentic_coder_prototype.optimize import (
     build_codex_dossier_backend_example_payload,
     build_codex_dossier_evaluation_example,
     build_support_execution_benchmark_example,
+    build_support_execution_coding_overlay_composition_example,
     run_single_locus_greedy_backend,
     validate_bounded_candidate,
 )
@@ -233,3 +234,36 @@ def test_staged_backend_comparison_example_is_fixed_methodology() -> None:
         "family.tool_guidance.v2",
         "family.coding_overlay.v2",
     ]
+
+
+def test_staged_optimizer_records_private_search_policy_trace_for_composed_lane() -> None:
+    example = build_support_execution_coding_overlay_composition_example()
+
+    result = run_staged_optimizer(example["staged_request"])
+
+    trace = result.metadata["search_policy_trace"]
+
+    assert result.metadata["final_selected_candidate_id"] == trace[-1]["selected_candidate_id"]
+    assert len(trace) == 2
+    assert trace[0]["policy_kind"] == "bounded_composed_scalarization_v1"
+    assert trace[0]["model_tier"] == "gpt-5.4-nano"
+    assert "hidden_hold_deferred" in trace[0]["blocked_components"]
+    assert "review_required" in trace[1]["blocked_components"]
+
+
+def test_staged_optimizer_private_model_escalation_is_auditable() -> None:
+    example = build_support_execution_coding_overlay_composition_example()
+    request = StagedOptimizerRequest.from_dict(
+        {
+            **example["staged_request"].to_dict(),
+            "metadata": {"search_policy_signal": "ambiguous_hidden_hold"},
+        }
+    )
+
+    result = run_staged_optimizer(request)
+    trace = result.metadata["search_policy_trace"]
+
+    assert trace[-1]["escalation_considered"] is True
+    assert trace[-1]["escalation_triggered"] is True
+    assert trace[-1]["escalation_reason"] == "ambiguous_hidden_hold"
+    assert trace[-1]["model_tier"] == "gpt-5.4-mini"

@@ -818,6 +818,65 @@ class StagePlanStep:
 
 
 @dataclass(frozen=True)
+class PrivateSearchPolicyDecision:
+    stage_id: str
+    policy_id: str
+    policy_kind: str
+    selected_candidate_id: str
+    selected_proposal_id: str
+    model_tier: str
+    escalation_considered: bool
+    escalation_triggered: bool
+    escalation_reason: Optional[str] = None
+    blocked_components: List[str] = field(default_factory=list)
+    uncertainty_penalties: Dict[str, float] = field(default_factory=dict)
+    score_table: Dict[str, float] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "stage_id", _require_text(self.stage_id, "stage_id"))
+        object.__setattr__(self, "policy_id", _require_text(self.policy_id, "policy_id"))
+        object.__setattr__(self, "policy_kind", _require_text(self.policy_kind, "policy_kind"))
+        object.__setattr__(self, "selected_candidate_id", _require_text(self.selected_candidate_id, "selected_candidate_id"))
+        object.__setattr__(self, "selected_proposal_id", _require_text(self.selected_proposal_id, "selected_proposal_id"))
+        object.__setattr__(self, "model_tier", _require_text(self.model_tier, "model_tier"))
+        object.__setattr__(self, "escalation_considered", bool(self.escalation_considered))
+        object.__setattr__(self, "escalation_triggered", bool(self.escalation_triggered))
+        object.__setattr__(self, "escalation_reason", str(self.escalation_reason).strip() if self.escalation_reason else None)
+        object.__setattr__(self, "blocked_components", _copy_text_list(self.blocked_components))
+        object.__setattr__(
+            self,
+            "uncertainty_penalties",
+            {str(key): float(value) for key, value in (self.uncertainty_penalties or {}).items()},
+        )
+        object.__setattr__(
+            self,
+            "score_table",
+            {str(key): float(value) for key, value in (self.score_table or {}).items()},
+        )
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = {
+            "stage_id": self.stage_id,
+            "policy_id": self.policy_id,
+            "policy_kind": self.policy_kind,
+            "selected_candidate_id": self.selected_candidate_id,
+            "selected_proposal_id": self.selected_proposal_id,
+            "model_tier": self.model_tier,
+            "escalation_considered": self.escalation_considered,
+            "escalation_triggered": self.escalation_triggered,
+            "blocked_components": list(self.blocked_components),
+            "uncertainty_penalties": dict(self.uncertainty_penalties),
+            "score_table": dict(self.score_table),
+            "metadata": dict(self.metadata),
+        }
+        if self.escalation_reason:
+            payload["escalation_reason"] = self.escalation_reason
+        return payload
+
+
+@dataclass(frozen=True)
 class StagedOptimizerRequest:
     request_id: str
     backend_request: ReflectiveParetoBackendRequest
@@ -1595,6 +1654,145 @@ class StagedOptimizer(ReflectiveParetoBackend):
 
     backend_id = "staged_optimizer.v1"
 
+    def _private_uncertainty_penalties(
+        self,
+        request: StagedOptimizerRequest,
+        stage: StagePlanStep,
+    ) -> Dict[str, float]:
+        penalties: Dict[str, float] = {}
+        uncertainty_policy = dict(request.objective_suite.uncertainty_policy)
+        if uncertainty_policy.get("blocked_when_missing_hidden_hold"):
+            penalties["hidden_hold_deferred"] = 0.15
+        if uncertainty_policy.get("blocked_when_missing_regression_bucket"):
+            penalties["regression_deferred"] = 0.1
+        if request.evaluation_suite.stochasticity_class != "deterministic":
+            penalties["stochasticity_penalty"] = 0.1
+        review_class = (
+            request.target_family.review_class
+            if request.target_family is not None
+            else request.family_composition.review_class
+        )
+        if review_class in {"support_honesty", "support_sensitive_coding_overlay"}:
+            penalties["review_sensitive_penalty"] = 0.12
+        if len(stage.allowed_loci) > 1:
+            penalties["multi_locus_penalty"] = 0.05
+        return penalties
+
+    def _private_blocked_components(
+        self,
+        request: StagedOptimizerRequest,
+        stage: StagePlanStep,
+    ) -> List[str]:
+        blocked: List[str] = []
+        if request.objective_suite.uncertainty_policy.get("blocked_when_missing_hidden_hold"):
+            blocked.append("hidden_hold_deferred")
+        if request.objective_suite.uncertainty_policy.get("blocked_when_missing_regression_bucket"):
+            blocked.append("regression_deferred")
+        if request.family_composition is not None and request.search_space.cross_family_constraints:
+            blocked.append("cross_family_constraints_active")
+        review_class = (
+            request.target_family.review_class
+            if request.target_family is not None
+            else request.family_composition.review_class
+        )
+        if review_class in {"support_honesty", "support_sensitive_coding_overlay"}:
+            blocked.append("review_required")
+        if stage.allowed_split_visibilities == ["comparison_visible"]:
+            blocked.append("mutation_visibility_closed")
+        return blocked
+
+    def _private_model_tier_for_stage(
+        self,
+        request: StagedOptimizerRequest,
+        stage: StagePlanStep,
+    ) -> tuple[str, bool, bool, Optional[str]]:
+        rerun_policy = dict(request.evaluation_suite.rerun_policy)
+        default_model = str(rerun_policy.get("default_model") or rerun_policy.get("model_policy") or "gpt-5.4-nano")
+        escalation_model = str(rerun_policy.get("escalation_model") or "").strip()
+        considered = bool(escalation_model)
+        triggered = False
+        reason: Optional[str] = None
+        signal = str(request.metadata.get("search_policy_signal") or "").strip()
+        stage_plan = self.build_stage_plan(request)
+        is_final_stage = bool(stage_plan) and stage.stage_id == stage_plan[-1].stage_id
+        if considered and is_final_stage and signal in {"ambiguous_hidden_hold", "close_margin"}:
+            triggered = True
+            reason = signal
+        elif considered:
+            reason = "not_triggered"
+        model_tier = escalation_model if triggered and escalation_model else default_model
+        return model_tier, considered, triggered, reason
+
+    def _policy_score_for_entry(
+        self,
+        entry: "PortfolioEntry",
+        penalties: Mapping[str, float],
+    ) -> float:
+        vector = entry.objective_vector
+        score = float(vector.correctness_score)
+        score -= float(vector.wrongness_penalty)
+        score -= float(vector.mutation_cost)
+        score -= float(vector.instability_penalty)
+        score -= sum(float(value) for value in penalties.values())
+        return score
+
+    def _select_stage_winner(
+        self,
+        request: StagedOptimizerRequest,
+        stage: StagePlanStep,
+        compatible_entries: Sequence["PortfolioEntry"],
+        current_baseline_entry: "PortfolioEntry",
+    ) -> Optional[PrivateSearchPolicyDecision]:
+        penalties = self._private_uncertainty_penalties(request, stage)
+        blocked_components = self._private_blocked_components(request, stage)
+        model_tier, considered, triggered, reason = self._private_model_tier_for_stage(request, stage)
+        if not compatible_entries:
+            return PrivateSearchPolicyDecision(
+                stage_id=stage.stage_id,
+                policy_id=f"search_policy.{stage.stage_id}",
+                policy_kind="bounded_composed_scalarization_v1",
+                selected_candidate_id=current_baseline_entry.candidate.candidate_id,
+                selected_proposal_id=current_baseline_entry.candidate.candidate_id,
+                model_tier=model_tier,
+                escalation_considered=considered,
+                escalation_triggered=triggered,
+                escalation_reason=reason,
+                blocked_components=blocked_components + ["no_compatible_proposals"],
+                uncertainty_penalties=penalties,
+                score_table={current_baseline_entry.candidate.candidate_id: self._policy_score_for_entry(current_baseline_entry, penalties)},
+                metadata={
+                    "search_space_id": request.search_space.search_space_id,
+                    "evaluation_suite_id": request.evaluation_suite.suite_id,
+                    "objective_suite_id": request.objective_suite.suite_id,
+                    "fallback_to_baseline": True,
+                },
+            )
+        best_entry = max(
+            compatible_entries,
+            key=lambda entry: self._policy_score_for_entry(entry, penalties),
+        )
+        best_score = self._policy_score_for_entry(best_entry, penalties)
+        proposal_id = str(best_entry.metadata.get("proposal_id") or best_entry.candidate.candidate_id)
+        return PrivateSearchPolicyDecision(
+            stage_id=stage.stage_id,
+            policy_id=f"search_policy.{stage.stage_id}",
+            policy_kind="bounded_composed_scalarization_v1",
+            selected_candidate_id=best_entry.candidate.candidate_id,
+            selected_proposal_id=proposal_id,
+            model_tier=model_tier,
+            escalation_considered=considered,
+            escalation_triggered=triggered,
+            escalation_reason=reason,
+            blocked_components=blocked_components,
+            uncertainty_penalties=penalties,
+            score_table={best_entry.candidate.candidate_id: best_score},
+            metadata={
+                "search_space_id": request.search_space.search_space_id,
+                "evaluation_suite_id": request.evaluation_suite.suite_id,
+                "objective_suite_id": request.objective_suite.suite_id,
+            },
+        )
+
     def build_stage_plan(self, request: StagedOptimizerRequest) -> List[StagePlanStep]:
         family = request.target_family
         composition = request.family_composition
@@ -1723,6 +1921,8 @@ class StagedOptimizer(ReflectiveParetoBackend):
                     "objective_directions": dict(OBJECTIVE_DIRECTIONS),
                     "stage_plan": [item.to_dict() for item in stage_plan],
                     "stage_strategy": request.stage_strategy,
+                    "search_policy_trace": [],
+                    "final_selected_candidate_id": base_request.baseline_candidate.candidate_id,
                     **search_scope_metadata,
                     "search_space_id": request.search_space.search_space_id,
                     "evaluation_suite_id": request.evaluation_suite.suite_id,
@@ -1774,14 +1974,18 @@ class StagedOptimizer(ReflectiveParetoBackend):
         portfolio = portfolio.retain_entry(baseline_entry)
 
         proposals: List[MutationProposal] = []
+        search_policy_trace: List[PrivateSearchPolicyDecision] = []
+        current_request = base_request
+        current_baseline_entry = baseline_entry
         for stage in stage_plan:
             stage_request = replace(
-                base_request,
-                max_proposals=min(base_request.max_proposals, max(1, len(stage.allowed_loci))),
+                current_request,
+                max_proposals=min(current_request.max_proposals, max(1, len(stage.allowed_loci))),
                 metadata={
-                    **base_request.metadata,
+                    **current_request.metadata,
                     "backend_family": self.backend_id,
-                    "family_id": request.target_family.family_id,
+                    "family_id": None if request.target_family is None else request.target_family.family_id,
+                    "composition_id": None if request.family_composition is None else request.family_composition.composition_id,
                     "stage_id": stage.stage_id,
                     "primary_objective_channels": list(stage.primary_objective_channels),
                 },
@@ -1798,6 +2002,7 @@ class StagedOptimizer(ReflectiveParetoBackend):
                 max_proposals=stage_request.max_proposals,
             )
 
+            compatible_entries: List[PortfolioEntry] = []
             for proposal in stage_proposals:
                 proposal_loci = set(proposal.candidate.applied_loci)
                 if not proposal_loci.issubset(set(stage.allowed_loci)):
@@ -1830,7 +2035,7 @@ class StagedOptimizer(ReflectiveParetoBackend):
                     candidate=proposal.candidate,
                     materialized_candidate=materialized,
                     objective_vector=self._predicted_objective_vector(
-                        baseline=baseline_entry.objective_vector,
+                        baseline=current_baseline_entry.objective_vector,
                         proposal=proposal,
                         reflection_decision=reflection_decision,
                         mutation_bounds=stage_request.mutation_bounds,
@@ -1848,6 +2053,30 @@ class StagedOptimizer(ReflectiveParetoBackend):
                     },
                 )
                 portfolio = portfolio.retain_entry(proposal_entry)
+                compatible_entries.append(proposal_entry)
+
+            decision = self._select_stage_winner(request, stage, compatible_entries, current_baseline_entry)
+            if decision is None:
+                continue
+            search_policy_trace.append(decision)
+            if compatible_entries:
+                selected_entry = next(
+                    entry for entry in compatible_entries if entry.candidate.candidate_id == decision.selected_candidate_id
+                )
+            else:
+                selected_entry = current_baseline_entry
+            current_baseline_entry = selected_entry
+            current_request = replace(
+                current_request,
+                baseline_candidate=selected_entry.candidate,
+                baseline_materialized_candidate=selected_entry.materialized_candidate,
+                metadata={
+                    **current_request.metadata,
+                    "selected_stage_candidate_id": selected_entry.candidate.candidate_id,
+                    "selected_stage_model_tier": decision.model_tier,
+                    "search_policy_trace_count": len(search_policy_trace),
+                },
+            )
 
         return ReflectiveParetoBackendResult(
             request_id=request.request_id,
@@ -1862,6 +2091,8 @@ class StagedOptimizer(ReflectiveParetoBackend):
                 "backend_family": self.backend_id,
                 "stage_plan": [item.to_dict() for item in stage_plan],
                 "stage_strategy": request.stage_strategy,
+                "search_policy_trace": [item.to_dict() for item in search_policy_trace],
+                "final_selected_candidate_id": current_baseline_entry.candidate.candidate_id,
                 **search_scope_metadata,
                 "search_space_id": request.search_space.search_space_id,
                 "evaluation_suite_id": request.evaluation_suite.suite_id,
