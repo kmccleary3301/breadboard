@@ -14,6 +14,8 @@ from agentic_coder_prototype.optimize import (
     PromotionDecision,
     PromotionEvidenceSummary,
     PromotionRecord,
+    build_codex_opencode_live_replay_config_cell_example,
+    build_codex_opencode_live_transfer_cohort_cell_example,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
     build_codex_opencode_transfer_cohort_example,
     build_codex_dossier_promotion_examples,
@@ -719,6 +721,25 @@ def test_transfer_cohort_follow_on_reviewability_and_audit_are_explicit() -> Non
     assert codex_summary.claim_tier == "transfer_supported"
     assert opencode_summary.transfer_cohort_status[cohort_id]["mini_audit_triggered"] is True
     assert opencode_summary.metadata["follow_on"] is True
+
+
+def test_v6_live_transfer_cell_reporting_keeps_package_local_vs_transfer_supported_distinct() -> None:
+    example = build_codex_opencode_live_transfer_cohort_cell_example()
+    live_cell = example["live_cell"]
+
+    assert live_cell["claim_reporting"]["codex_dossier.current"]["local_claim_tier"] == "package_local"
+    assert live_cell["claim_reporting"]["codex_dossier.current"]["cell_claim_tier"] == "transfer_supported"
+    assert live_cell["claim_reporting"]["opencode_1_2_17.current"]["local_claim_tier"] == "package_local"
+    assert live_cell["claim_reporting"]["opencode_1_2_17.current"]["cell_claim_tier"] == "transfer_supported"
+
+
+def test_v6_live_replay_config_cell_keeps_audited_mini_bounded() -> None:
+    example = build_codex_opencode_live_replay_config_cell_example()
+    live_cell = example["live_cell"]
+
+    assert live_cell["metadata"]["mini_audit_triggered"] is True
+    assert "freeze_cell_if_mini_cap_exceeded_without_promotion_relevant_change" in live_cell["stopping_rules"]
+    assert live_cell["claim_reporting"]["opencode_1_2_17.current"]["model_policy"] == "nano_first_with_audited_mini"
 
 
 def test_package_examples_remain_explicitly_package_local() -> None:

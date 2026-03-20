@@ -10,6 +10,10 @@ from agentic_coder_prototype.optimize import (
     SearchSpaceManifest,
     TargetFamilyManifest,
     TransferCohortManifest,
+    build_codex_opencode_live_replay_config_cell_example,
+    build_codex_opencode_live_replay_config_cell_example_payload,
+    build_codex_opencode_live_transfer_cohort_cell_example,
+    build_codex_opencode_live_transfer_cohort_cell_example_payload,
     build_codex_opencode_transfer_cohort_verifier_follow_on_example,
     build_codex_opencode_transfer_cohort_verifier_follow_on_example_payload,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
@@ -530,3 +534,55 @@ def test_transfer_cohort_verifier_follow_on_stays_narrow_and_outside_darwin_onto
         payload,
         {"campaign_id", "archive_id", "island_id", "genealogy_id", "reward_suite_id"},
     ) is False
+
+
+def test_v6_live_transfer_cohort_cell_round_trip() -> None:
+    example = build_codex_opencode_live_transfer_cohort_cell_example()
+    payload = build_codex_opencode_live_transfer_cohort_cell_example_payload()
+
+    cohort = TransferCohortManifest.from_dict(payload["transfer_cohort_example"]["transfer_cohort"])
+
+    assert payload["live_cell"]["cell_id"] == "live_cell.codex_opencode.shared_transfer.v6"
+    assert payload["live_cell"]["proposal_model_policy"] == "nano_only"
+    assert payload["live_cell"]["public_artifact_additions_required"] is False
+    assert payload["live_cell"]["claim_reporting"]["codex_dossier.current"]["local_claim_tier"] == "package_local"
+    assert payload["live_cell"]["claim_reporting"]["opencode_1_2_17.current"]["cell_claim_tier"] == "transfer_supported"
+    assert example["transfer_cohort_example"]["codex_cell"]["promotion_summary"].transfer_cohort_ids == [cohort.cohort_id]
+
+
+def test_v6_live_transfer_cohort_cell_stays_narrow_and_freezes_public_boundary() -> None:
+    payload = build_codex_opencode_live_transfer_cohort_cell_example_payload()
+
+    assert payload["live_cell"]["metadata"]["evaluation_truth"] == "primary"
+    assert payload["live_cell"]["metadata"]["reward_like_ranking"] == "private_only"
+    assert _payload_contains_forbidden_key(
+        payload,
+        {
+            "reward_suite_id",
+            "search_policy_manifest_id",
+            "campaign_id",
+            "archive_id",
+            "package_graph_id",
+            "study_manager_id",
+        },
+    ) is False
+
+
+def test_v6_live_replay_config_cell_round_trip() -> None:
+    example = build_codex_opencode_live_replay_config_cell_example()
+    payload = build_codex_opencode_live_replay_config_cell_example_payload()
+
+    assert payload["live_cell"]["cell_id"] == "live_cell.codex_opencode.replay_config.v6"
+    assert payload["live_cell"]["proposal_model_policy"] == "nano_first"
+    assert payload["live_cell"]["metadata"]["mini_audit_triggered"] is True
+    assert payload["live_cell"]["baselines"][-1]["baseline_id"] == "v5_cohort_aware_staged_plus_verifier"
+    assert payload["verifier_follow_on"]["verifier_experiment"]["metadata"]["transfer_cohort_id"] == example["cohort_example"]["transfer_cohort"].cohort_id
+
+
+def test_v6_live_replay_config_cell_keeps_mini_and_verifier_bounded() -> None:
+    payload = build_codex_opencode_live_replay_config_cell_example_payload()
+
+    assert payload["live_cell"]["trial_plan"]["mini_budget_fraction_cap"] == 0.10
+    assert payload["live_cell"]["budget_guardrails"]["verifier_follow_on_cap"] == "top_10_15_percent_only"
+    assert payload["live_cell"]["claim_reporting"]["codex_dossier.current"]["model_policy"] == "nano_only"
+    assert payload["live_cell"]["claim_reporting"]["opencode_1_2_17.current"]["model_policy"] == "nano_first_with_audited_mini"

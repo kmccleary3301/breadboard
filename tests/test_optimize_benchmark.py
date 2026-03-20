@@ -9,6 +9,10 @@ from agentic_coder_prototype.optimize import (
     CandidateComparisonResult,
     build_backend_comparison_example,
     build_backend_comparison_example_payload,
+    build_codex_opencode_live_replay_config_cell_example,
+    build_codex_opencode_live_replay_config_cell_example_payload,
+    build_codex_opencode_live_transfer_cohort_cell_example,
+    build_codex_opencode_live_transfer_cohort_cell_example_payload,
     build_codex_opencode_transfer_cohort_verifier_follow_on_example,
     build_codex_opencode_transfer_cohort_verifier_follow_on_example_payload,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
@@ -329,3 +333,29 @@ def test_codex_opencode_transfer_cohort_verifier_follow_on_payload_round_trips()
     assert comparison.parent_candidate_id == payload["cohort_example"]["opencode_cell"]["cohort_candidate"]["candidate_id"]
     assert comparison.better_candidate_id == example["refined_candidate"].candidate_id
     assert comparison.metadata["experiment_kind"] == "verifier_augmented_transfer_cohort_refinement"
+
+
+def test_v6_live_transfer_cohort_cell_payload_round_trips() -> None:
+    example = build_codex_opencode_live_transfer_cohort_cell_example()
+    payload = build_codex_opencode_live_transfer_cohort_cell_example_payload()
+
+    codex_manifest = BenchmarkRunManifest.from_dict(payload["transfer_cohort_example"]["codex_cell"]["manifest"])
+    opencode_manifest = BenchmarkRunManifest.from_dict(payload["transfer_cohort_example"]["opencode_cell"]["manifest"])
+
+    assert payload["live_cell"]["status"] == "complete"
+    assert payload["live_cell"]["baselines"][0]["baseline_id"] == "atomic_sequential"
+    assert payload["live_cell"]["trial_plan"]["planned_nano_pairs"] == 8
+    assert codex_manifest.transfer_cohort_ids == [example["transfer_cohort_example"]["transfer_cohort"].cohort_id]
+    assert opencode_manifest.transfer_cohort_ids == [example["transfer_cohort_example"]["transfer_cohort"].cohort_id]
+
+
+def test_v6_live_replay_config_cell_payload_round_trips() -> None:
+    example = build_codex_opencode_live_replay_config_cell_example()
+    payload = build_codex_opencode_live_replay_config_cell_example_payload()
+
+    opencode_result = BenchmarkRunResult.from_dict(payload["cohort_example"]["opencode_cell"]["benchmark_result"])
+
+    assert payload["live_cell"]["status"] == "complete"
+    assert payload["live_cell"]["baselines"][-1]["baseline_id"] == "v5_cohort_aware_staged_plus_verifier"
+    assert payload["live_cell"]["trial_plan"]["paired_reevaluation_required_on_escalation"] is True
+    assert opencode_result.transfer_cohort_status[payload["cohort_example"]["transfer_cohort"]["cohort_id"]]["mini_audit_triggered"] is True

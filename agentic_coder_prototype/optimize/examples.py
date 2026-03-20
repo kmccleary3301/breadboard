@@ -9034,6 +9034,278 @@ def build_codex_opencode_transfer_cohort_verifier_follow_on_example_payload() ->
     }
 
 
+def build_codex_opencode_live_transfer_cohort_cell_example() -> Dict[str, object]:
+    """Build the first V6 live cohort-cell study on the existing Codex/OpenCode pair."""
+
+    example = build_codex_opencode_transfer_cohort_example()
+    cohort = example["transfer_cohort"]
+    codex_cell = example["codex_cell"]
+    opencode_cell = example["opencode_cell"]
+
+    live_cell = {
+        "cell_id": "live_cell.codex_opencode.shared_transfer.v6",
+        "cell_kind": "bounded_live_transfer_cohort_cell",
+        "status": "complete",
+        "phase": "v6",
+        "stability": "experimental_helper",
+        "public_artifact_additions_required": False,
+        "package_pair": ["codex_dossier.current", "opencode_1_2_17.current"],
+        "proposal_model_policy": "nano_only",
+        "shared_emphasis": [
+            "tool_guidance_clarity",
+            "bounded_edit_support_honesty",
+        ],
+        "baselines": [
+            {
+                "baseline_id": "atomic_sequential",
+                "source": "atomic_baseline",
+                "per_package_outcome": {
+                    "codex_dossier.current": "below_transfer_candidate",
+                    "opencode_1_2_17.current": "below_transfer_candidate",
+                },
+            },
+            {
+                "baseline_id": "v4_local_package",
+                "source": "package_candidate",
+                "per_package_outcome": {
+                    "codex_dossier.current": "win_but_package_local_only",
+                    "opencode_1_2_17.current": "win_but_package_local_only",
+                },
+            },
+            {
+                "baseline_id": "v5_cohort_aware_staged",
+                "source": "transfer_cohort_candidate",
+                "per_package_outcome": {
+                    "codex_dossier.current": "transfer_supported",
+                    "opencode_1_2_17.current": "transfer_supported_non_inferior",
+                },
+            },
+        ],
+        "trial_plan": {
+            "planned_nano_pairs": 8,
+            "max_nano_pairs": 10,
+            "mini_budget_fraction": 0.0,
+            "top_slice_follow_on_fraction": 0.15,
+            "repro_reruns_for_promotion_relevant_candidates": 1,
+        },
+        "budget_guardrails": {
+            "max_live_cohort_studies": 2,
+            "nano_token_share_target": "0.80-0.90",
+            "mini_token_share_cap": 0.10,
+        },
+        "claim_reporting": {
+            "codex_dossier.current": {
+                "local_claim_tier": "package_local",
+                "cell_claim_tier": codex_cell["promotion_summary"].claim_tier,
+            },
+            "opencode_1_2_17.current": {
+                "local_claim_tier": "package_local",
+                "cell_claim_tier": opencode_cell["promotion_summary"].claim_tier,
+            },
+        },
+        "stopping_rules": [
+            "stop_after_8_to_10_nano_pairs_without_credible_pattern",
+            "stop_if_required_transfer_slices_fail_on_both_packages",
+            "stop_if_package_local_success_remains_stronger_than_transfer_evidence",
+        ],
+        "contamination_rules": [
+            "no_hidden_cohort_identity_during_mutation",
+            "no_cross_package_gold_rationale_reuse_outside_allowed_splits",
+            "no_mini_only_evaluation_path",
+        ],
+        "metadata": {
+            "evaluation_truth": "primary",
+            "reward_like_ranking": "private_only",
+            "darwin_boundary": "not_reopened",
+            "transfer_cohort_id": cohort.cohort_id,
+        },
+    }
+
+    return {
+        "transfer_cohort_example": example,
+        "live_cell": live_cell,
+    }
+
+
+def build_codex_opencode_live_transfer_cohort_cell_example_payload() -> Dict[str, object]:
+    example = build_codex_opencode_live_transfer_cohort_cell_example()
+    base = example["transfer_cohort_example"]
+    return {
+        "transfer_cohort_example": {
+            "transfer_cohort": base["transfer_cohort"].to_dict(),
+            "evaluation_suite": base["evaluation_suite"].to_dict(),
+            "objective_suite": base["objective_suite"].to_dict(),
+            "codex_cell": {
+                "manifest": base["codex_cell"]["manifest"].to_dict(),
+                "cohort_candidate": base["codex_cell"]["cohort_candidate"].to_dict(),
+                "objective_breakdown_result": base["codex_cell"]["objective_breakdown_result"].to_dict(),
+                "promotion_summary": base["codex_cell"]["promotion_summary"].to_dict(),
+                "benchmark_result": base["codex_cell"]["benchmark_result"].to_dict(),
+                "staged_request": base["codex_cell"]["staged_request"].to_dict(),
+                "staged_result": base["codex_cell"]["staged_result"].to_dict(),
+            },
+            "opencode_cell": {
+                "manifest": base["opencode_cell"]["manifest"].to_dict(),
+                "cohort_candidate": base["opencode_cell"]["cohort_candidate"].to_dict(),
+                "objective_breakdown_result": base["opencode_cell"]["objective_breakdown_result"].to_dict(),
+                "promotion_summary": base["opencode_cell"]["promotion_summary"].to_dict(),
+                "benchmark_result": base["opencode_cell"]["benchmark_result"].to_dict(),
+                "staged_request": base["opencode_cell"]["staged_request"].to_dict(),
+                "staged_result": base["opencode_cell"]["staged_result"].to_dict(),
+            },
+            "cohort_rollup": dict(base["cohort_rollup"]),
+        },
+        "live_cell": dict(example["live_cell"]),
+    }
+
+
+def build_codex_opencode_live_replay_config_cell_example() -> Dict[str, object]:
+    """Build the second V6 live cohort cell on the same pair with audited Mini escalation."""
+
+    cohort_example = build_codex_opencode_replay_config_transfer_cohort_follow_on_example()
+    verifier_follow_on = build_codex_opencode_transfer_cohort_verifier_follow_on_example()
+    cohort = cohort_example["transfer_cohort"]
+    codex_cell = cohort_example["codex_cell"]
+    opencode_cell = cohort_example["opencode_cell"]
+
+    live_cell = {
+        "cell_id": "live_cell.codex_opencode.replay_config.v6",
+        "cell_kind": "bounded_live_transfer_follow_on_cell",
+        "status": "complete",
+        "phase": "v6",
+        "stability": "experimental_helper",
+        "public_artifact_additions_required": False,
+        "package_pair": ["codex_dossier.current", "opencode_1_2_17.current"],
+        "proposal_model_policy": "nano_first",
+        "shared_emphasis": [
+            "replay_safe_prompt_config_coherence",
+            "package_scope_integrity",
+        ],
+        "baselines": [
+            {
+                "baseline_id": "atomic_sequential",
+                "source": "atomic_baseline",
+                "per_package_outcome": {
+                    "codex_dossier.current": "below_follow_on_candidate",
+                    "opencode_1_2_17.current": "below_follow_on_candidate",
+                },
+            },
+            {
+                "baseline_id": "v4_local_package",
+                "source": "package_candidate",
+                "per_package_outcome": {
+                    "codex_dossier.current": "package_local_only",
+                    "opencode_1_2_17.current": "package_local_only",
+                },
+            },
+            {
+                "baseline_id": "v5_cohort_aware_staged",
+                "source": "transfer_follow_on_candidate",
+                "per_package_outcome": {
+                    "codex_dossier.current": "transfer_supported",
+                    "opencode_1_2_17.current": "transfer_supported_with_mini_audit",
+                },
+            },
+            {
+                "baseline_id": "v5_cohort_aware_staged_plus_verifier",
+                "source": "bounded_verifier_follow_on",
+                "per_package_outcome": {
+                    "codex_dossier.current": "not_applicable",
+                    "opencode_1_2_17.current": "top_slice_verifier_refinement",
+                },
+            },
+        ],
+        "trial_plan": {
+            "planned_nano_pairs": 8,
+            "max_nano_pairs": 10,
+            "mini_budget_fraction_cap": 0.10,
+            "top_slice_follow_on_fraction": 0.15,
+            "paired_reevaluation_required_on_escalation": True,
+        },
+        "budget_guardrails": {
+            "max_live_cohort_studies": 2,
+            "nano_token_share_target": "0.80-0.90",
+            "mini_token_share_cap": 0.10,
+            "verifier_follow_on_cap": "top_10_15_percent_only",
+        },
+        "claim_reporting": {
+            "codex_dossier.current": {
+                "local_claim_tier": "package_local",
+                "cell_claim_tier": codex_cell["promotion_summary"].claim_tier,
+                "model_policy": "nano_only",
+            },
+            "opencode_1_2_17.current": {
+                "local_claim_tier": "package_local",
+                "cell_claim_tier": opencode_cell["promotion_summary"].claim_tier,
+                "model_policy": "nano_first_with_audited_mini",
+            },
+        },
+        "stopping_rules": [
+            "stop_after_8_to_10_nano_pairs_without_credible_pattern",
+            "freeze_cell_if_mini_cap_exceeded_without_promotion_relevant_change",
+            "stop_if_ranking_depends_mainly_on_blocked_semantic_channels",
+        ],
+        "contamination_rules": [
+            "no_hidden_cohort_identity_during_mutation",
+            "no_promotion_only_scalarization_calibration",
+            "report_nano_only_and_escalated_results_separately",
+        ],
+        "metadata": {
+            "evaluation_truth": "primary",
+            "reward_like_ranking": "private_only",
+            "darwin_boundary": "not_reopened",
+            "transfer_cohort_id": cohort.cohort_id,
+            "mini_audit_triggered": True,
+            "verifier_follow_on_id": verifier_follow_on["verifier_experiment"].experiment_id,
+        },
+    }
+
+    return {
+        "cohort_example": cohort_example,
+        "verifier_follow_on": verifier_follow_on,
+        "live_cell": live_cell,
+    }
+
+
+def build_codex_opencode_live_replay_config_cell_example_payload() -> Dict[str, object]:
+    example = build_codex_opencode_live_replay_config_cell_example()
+    base = example["cohort_example"]
+    verifier = example["verifier_follow_on"]
+    return {
+        "cohort_example": {
+            "transfer_cohort": base["transfer_cohort"].to_dict(),
+            "evaluation_suite": base["evaluation_suite"].to_dict(),
+            "objective_suite": base["objective_suite"].to_dict(),
+            "codex_cell": {
+                "manifest": base["codex_cell"]["manifest"].to_dict(),
+                "cohort_candidate": base["codex_cell"]["cohort_candidate"].to_dict(),
+                "objective_breakdown_result": base["codex_cell"]["objective_breakdown_result"].to_dict(),
+                "promotion_summary": base["codex_cell"]["promotion_summary"].to_dict(),
+                "benchmark_result": base["codex_cell"]["benchmark_result"].to_dict(),
+                "staged_request": base["codex_cell"]["staged_request"].to_dict(),
+                "staged_result": base["codex_cell"]["staged_result"].to_dict(),
+            },
+            "opencode_cell": {
+                "manifest": base["opencode_cell"]["manifest"].to_dict(),
+                "cohort_candidate": base["opencode_cell"]["cohort_candidate"].to_dict(),
+                "objective_breakdown_result": base["opencode_cell"]["objective_breakdown_result"].to_dict(),
+                "promotion_summary": base["opencode_cell"]["promotion_summary"].to_dict(),
+                "benchmark_result": base["opencode_cell"]["benchmark_result"].to_dict(),
+                "staged_request": base["opencode_cell"]["staged_request"].to_dict(),
+                "staged_result": base["opencode_cell"]["staged_result"].to_dict(),
+            },
+            "cohort_rollup": dict(base["cohort_rollup"]),
+        },
+        "verifier_follow_on": {
+            "refined_candidate": verifier["refined_candidate"].to_dict(),
+            "comparison_result": verifier["comparison_result"].to_dict(),
+            "objective_breakdown_result": verifier["objective_breakdown_result"].to_dict(),
+            "verifier_experiment": verifier["verifier_experiment"].to_dict(),
+        },
+        "live_cell": dict(example["live_cell"]),
+    }
+
+
 def build_staged_backend_comparison_example() -> Dict[str, object]:
     """Build a fixed-methodology V2 staged-vs-reflective backend comparison across the three live families."""
 
