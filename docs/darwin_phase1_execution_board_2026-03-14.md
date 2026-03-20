@@ -64,3 +64,11 @@ Date: 2026-03-14
 - component-transfer status: `docs/darwin_stage3_component_transfer_status_2026-03-19.md`
 - component-transfer review: `docs/darwin_stage3_component_transfer_review_2026-03-19.md`
 - component-transfer gate: `docs/darwin_stage3_component_transfer_gate_2026-03-19.md`
+- comparative-consolidation execution plan: `docs/darwin_stage3_comparative_consolidation_execution_plan_2026-03-19.md`
+- comparative-consolidation status: `docs/darwin_stage3_comparative_consolidation_status_2026-03-19.md`
+- harness watchdog summary: `docs/darwin_stage3_harness_watchdog_summary_2026-03-19.md`
+- transfer comparability note: `docs/darwin_stage3_transfer_comparability_note_2026-03-19.md`
+- replay sufficiency note: `docs/darwin_stage3_replay_sufficiency_note_2026-03-19.md`
+- late review: `docs/darwin_stage3_late_review_2026-03-19.md`
+- late gate: `docs/darwin_stage3_late_gate_2026-03-19.md`
+- remaining-to-close note: `docs/darwin_stage3_remaining_to_close_2026-03-19.md`
