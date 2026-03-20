@@ -9306,6 +9306,122 @@ def build_codex_opencode_live_replay_config_cell_example_payload() -> Dict[str, 
     }
 
 
+def build_v6_live_result_boundary_example() -> Dict[str, object]:
+    """Build the explicit V6 boundary between live results and durable optimizer behavior."""
+
+    first_cell = build_codex_opencode_live_transfer_cohort_cell_example()
+    second_cell = build_codex_opencode_live_replay_config_cell_example()
+    first_base = first_cell["transfer_cohort_example"]
+    second_base = second_cell["cohort_example"]
+    verifier_follow_on = second_cell["verifier_follow_on"]
+
+    boundary = {
+        "boundary_id": "live_result_boundary.v6",
+        "phase": "v6",
+        "stability": "experimental_helper",
+        "classification_order": [
+            "experiment_only",
+            "private_heuristic_candidate",
+            "durable_backend_private_heuristic",
+            "durable_doctrine_default_change",
+        ],
+        "classification_rules": {
+            "experiment_only": {
+                "requires_replication": False,
+                "promotion_relevant_change_required": False,
+                "private_trace_only_is_insufficient": True,
+                "allowed_effect": "document_only",
+            },
+            "private_heuristic_candidate": {
+                "requires_replication": False,
+                "human_readable_rationale_required": True,
+                "hidden_hold_clean_required": True,
+                "allowed_effect": "private_candidate_only",
+            },
+            "durable_backend_private_heuristic": {
+                "requires_replication": True,
+                "minimum_confirming_cells": 2,
+                "cost_stability_required": True,
+                "allowed_effect": "backend_private_default",
+            },
+            "durable_doctrine_default_change": {
+                "requires_replication": True,
+                "human_review_required": True,
+                "claim_discipline_impact": "kernel_doctrine",
+                "allowed_effect": "documented_default_change",
+            },
+        },
+        "attribution_policy": {
+            "attribution_sufficient_when": [
+                "claim_width_is_package_local_or_transfer_supported",
+                "member_families_are_explicit",
+                "mini_escalation_did_not_create_the_win",
+            ],
+            "ablation_required_when": [
+                "claim_width_exceeds_package_local_or_transfer_supported",
+                "multiple_member_families_materially_changed",
+                "mini_escalation_is_decisive",
+                "doctrine_or_default_change_is_requested",
+            ],
+        },
+        "live_examples": [
+            {
+                "example_id": "result.codex_opencode.shared_transfer.v6",
+                "source_cell_id": first_cell["live_cell"]["cell_id"],
+                "candidate_id": first_base["codex_cell"]["cohort_candidate"].candidate_id,
+                "classification": "experiment_only",
+                "claim_tier": first_base["codex_cell"]["promotion_summary"].claim_tier,
+                "reason": "one live cell is not enough to change durable behavior",
+            },
+            {
+                "example_id": "result.codex_opencode.replay_config.opencode.v6",
+                "source_cell_id": second_cell["live_cell"]["cell_id"],
+                "candidate_id": second_base["opencode_cell"]["cohort_candidate"].candidate_id,
+                "classification": "private_heuristic_candidate",
+                "claim_tier": second_base["opencode_cell"]["promotion_summary"].claim_tier,
+                "reason": "audited Mini tie-break can inform a private heuristic candidate but not a public default change",
+            },
+            {
+                "example_id": "result.codex_opencode.repeated_cohort_stopping.v6",
+                "source_cell_id": second_cell["live_cell"]["cell_id"],
+                "candidate_id": second_base["opencode_cell"]["cohort_candidate"].candidate_id,
+                "classification": "durable_backend_private_heuristic",
+                "claim_tier": second_base["opencode_cell"]["promotion_summary"].claim_tier,
+                "reason": "repeated bounded cells justify private stopping or ranking behavior if cost and hidden-hold remain stable",
+            },
+            {
+                "example_id": "result.codex_opencode.live_doctrine.freeze.v6",
+                "source_cell_id": second_cell["live_cell"]["cell_id"],
+                "candidate_id": verifier_follow_on["refined_candidate"].candidate_id,
+                "classification": "durable_doctrine_default_change",
+                "claim_tier": second_base["opencode_cell"]["promotion_summary"].claim_tier,
+                "reason": "only fairness or claim-discipline doctrine should change stable defaults from live-study pressure",
+            },
+        ],
+        "metadata": {
+            "evaluation_truth": "primary",
+            "reward_like_ranking": "private_only",
+            "darwin_boundary": "not_reopened",
+            "public_artifact_additions_required": False,
+        },
+    }
+
+    return {
+        "first_live_cell": first_cell,
+        "second_live_cell": second_cell,
+        "boundary": boundary,
+    }
+
+
+def build_v6_live_result_boundary_example_payload() -> Dict[str, object]:
+    example = build_v6_live_result_boundary_example()
+    return {
+        "first_live_cell": build_codex_opencode_live_transfer_cohort_cell_example_payload(),
+        "second_live_cell": build_codex_opencode_live_replay_config_cell_example_payload(),
+        "boundary": dict(example["boundary"]),
+    }
+
+
 def build_staged_backend_comparison_example() -> Dict[str, object]:
     """Build a fixed-methodology V2 staged-vs-reflective backend comparison across the three live families."""
 

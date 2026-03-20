@@ -16,6 +16,7 @@ from agentic_coder_prototype.optimize import (
     PromotionRecord,
     build_codex_opencode_live_replay_config_cell_example,
     build_codex_opencode_live_transfer_cohort_cell_example,
+    build_v6_live_result_boundary_example,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
     build_codex_opencode_transfer_cohort_example,
     build_codex_dossier_promotion_examples,
@@ -740,6 +741,15 @@ def test_v6_live_replay_config_cell_keeps_audited_mini_bounded() -> None:
     assert live_cell["metadata"]["mini_audit_triggered"] is True
     assert "freeze_cell_if_mini_cap_exceeded_without_promotion_relevant_change" in live_cell["stopping_rules"]
     assert live_cell["claim_reporting"]["opencode_1_2_17.current"]["model_policy"] == "nano_first_with_audited_mini"
+
+
+def test_v6_live_result_boundary_makes_attribution_vs_ablation_explicit() -> None:
+    example = build_v6_live_result_boundary_example()
+    boundary = example["boundary"]
+
+    assert "claim_width_is_package_local_or_transfer_supported" in boundary["attribution_policy"]["attribution_sufficient_when"]
+    assert "doctrine_or_default_change_is_requested" in boundary["attribution_policy"]["ablation_required_when"]
+    assert boundary["classification_rules"]["durable_doctrine_default_change"]["human_review_required"] is True
 
 
 def test_package_examples_remain_explicitly_package_local() -> None:

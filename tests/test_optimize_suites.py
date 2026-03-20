@@ -14,6 +14,8 @@ from agentic_coder_prototype.optimize import (
     build_codex_opencode_live_replay_config_cell_example_payload,
     build_codex_opencode_live_transfer_cohort_cell_example,
     build_codex_opencode_live_transfer_cohort_cell_example_payload,
+    build_v6_live_result_boundary_example,
+    build_v6_live_result_boundary_example_payload,
     build_codex_opencode_transfer_cohort_verifier_follow_on_example,
     build_codex_opencode_transfer_cohort_verifier_follow_on_example_payload,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
@@ -586,3 +588,35 @@ def test_v6_live_replay_config_cell_keeps_mini_and_verifier_bounded() -> None:
     assert payload["live_cell"]["budget_guardrails"]["verifier_follow_on_cap"] == "top_10_15_percent_only"
     assert payload["live_cell"]["claim_reporting"]["codex_dossier.current"]["model_policy"] == "nano_only"
     assert payload["live_cell"]["claim_reporting"]["opencode_1_2_17.current"]["model_policy"] == "nano_first_with_audited_mini"
+
+
+def test_v6_live_result_boundary_round_trip() -> None:
+    example = build_v6_live_result_boundary_example()
+    payload = build_v6_live_result_boundary_example_payload()
+
+    assert payload["boundary"]["boundary_id"] == "live_result_boundary.v6"
+    assert payload["boundary"]["classification_order"] == [
+        "experiment_only",
+        "private_heuristic_candidate",
+        "durable_backend_private_heuristic",
+        "durable_doctrine_default_change",
+    ]
+    assert payload["boundary"]["live_examples"][0]["classification"] == "experiment_only"
+    assert payload["boundary"]["live_examples"][-1]["classification"] == "durable_doctrine_default_change"
+    assert example["boundary"]["metadata"]["public_artifact_additions_required"] is False
+
+
+def test_v6_live_result_boundary_stays_narrow_and_non_public() -> None:
+    payload = build_v6_live_result_boundary_example_payload()
+
+    assert payload["boundary"]["metadata"]["reward_like_ranking"] == "private_only"
+    assert _payload_contains_forbidden_key(
+        payload,
+        {
+            "reward_suite_id",
+            "search_policy_manifest_id",
+            "campaign_id",
+            "archive_id",
+            "study_manager_id",
+        },
+    ) is False

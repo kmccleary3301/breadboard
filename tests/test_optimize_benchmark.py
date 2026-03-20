@@ -13,6 +13,7 @@ from agentic_coder_prototype.optimize import (
     build_codex_opencode_live_replay_config_cell_example_payload,
     build_codex_opencode_live_transfer_cohort_cell_example,
     build_codex_opencode_live_transfer_cohort_cell_example_payload,
+    build_v6_live_result_boundary_example_payload,
     build_codex_opencode_transfer_cohort_verifier_follow_on_example,
     build_codex_opencode_transfer_cohort_verifier_follow_on_example_payload,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
@@ -359,3 +360,11 @@ def test_v6_live_replay_config_cell_payload_round_trips() -> None:
     assert payload["live_cell"]["baselines"][-1]["baseline_id"] == "v5_cohort_aware_staged_plus_verifier"
     assert payload["live_cell"]["trial_plan"]["paired_reevaluation_required_on_escalation"] is True
     assert opencode_result.transfer_cohort_status[payload["cohort_example"]["transfer_cohort"]["cohort_id"]]["mini_audit_triggered"] is True
+
+
+def test_v6_live_result_boundary_payload_keeps_classification_examples_explicit() -> None:
+    payload = build_v6_live_result_boundary_example_payload()
+
+    assert payload["boundary"]["live_examples"][1]["classification"] == "private_heuristic_candidate"
+    assert payload["boundary"]["live_examples"][2]["classification"] == "durable_backend_private_heuristic"
+    assert payload["boundary"]["classification_rules"]["durable_backend_private_heuristic"]["minimum_confirming_cells"] == 2
