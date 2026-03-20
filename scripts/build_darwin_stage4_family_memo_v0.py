@@ -30,12 +30,16 @@ def build_stage4_family_memo() -> dict[str, str]:
     scorecard = load_json(SCORECARD)
     second = load_json(SECOND)
     promoted = [row for row in promotion.get("rows") or [] if row["promotion_outcome"] == "promoted"]
+    withheld = [row for row in promotion.get("rows") or [] if row["promotion_outcome"] == "withheld"]
     retained = [row for row in transfer.get("rows") or [] if row["transfer_status"] == "retained"]
     payload = {
         "schema": "breadboard.darwin.stage4.family_memo.v0",
         "promoted_family_count": len(promoted),
+        "withheld_family_count": len(withheld),
         "retained_transfer_count": len(retained),
         "second_family_decision": second["decision"],
+        "promoted_family_ids": [row["family_id"] for row in promoted],
+        "withheld_family_ids": [row["family_id"] for row in withheld],
         "refs": {
             "promotion_report_ref": path_ref(PROMOTION),
             "family_registry_ref": path_ref(REGISTRY),
@@ -60,6 +64,7 @@ def build_stage4_family_memo() -> dict[str, str]:
         "# Stage-4 Family Memo",
         "",
         f"- promoted family count: `{len(promoted)}`",
+        f"- withheld family count: `{len(withheld)}`",
         f"- retained transfer count: `{len(retained)}`",
         f"- second-family decision: `{second['decision']}`",
         f"- failed transfer rows: `{failed['row_count']}`",

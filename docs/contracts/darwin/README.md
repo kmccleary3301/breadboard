@@ -139,6 +139,9 @@ Phase-1 T0 freezes:
 - `scripts/build_darwin_stage4_family_scorecard_v0.py`
 - `scripts/build_darwin_stage4_family_memo_v0.py`
 - `scripts/build_darwin_stage4_family_verification_bundle_v0.py`
+- `scripts/run_darwin_stage4_family_replay_audit_v0.py`
+- `scripts/build_darwin_stage4_canonical_artifact_index_v0.py`
+- `scripts/build_darwin_stage4_comparative_bundle_v0.py`
 
 ## Legacy compatibility
 

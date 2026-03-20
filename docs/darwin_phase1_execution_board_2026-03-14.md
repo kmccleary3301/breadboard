@@ -112,3 +112,15 @@ Date: 2026-03-14
 - ATP family audit note: `docs/darwin_stage4_atp_family_audit_note_2026-03-20.md`
 - multi-family review: `docs/darwin_stage4_multi_family_review_2026-03-20.md`
 - late comparative gate: `docs/darwin_stage4_late_comparative_gate_2026-03-20.md`
+- late comparative execution plan: `docs/darwin_stage4_late_comparative_execution_plan_2026-03-20.md`
+- canonical artifacts: `docs/darwin_stage4_canonical_artifacts_2026-03-20.md`
+- claim boundary: `docs/darwin_stage4_claim_boundary_2026-03-20.md`
+- registry integrity note: `docs/darwin_stage4_registry_integrity_note_2026-03-20.md`
+- transfer eligibility note: `docs/darwin_stage4_transfer_eligibility_note_2026-03-20.md`
+- replay sufficiency note: `docs/darwin_stage4_replay_sufficiency_note_2026-03-20.md`
+- transfer comparability note: `docs/darwin_stage4_transfer_comparability_note_2026-03-20.md`
+- route economics note: `docs/darwin_stage4_route_economics_note_2026-03-20.md`
+- strongest-withheld note: `docs/darwin_stage4_strongest_withheld_note_2026-03-20.md`
+- late comparative review: `docs/darwin_stage4_late_comparative_review_2026-03-20.md`
+- pre-closeout gate: `docs/darwin_stage4_precloseout_gate_2026-03-20.md`
+- remaining-to-close note: `docs/darwin_stage4_remaining_to_close_2026-03-20.md`

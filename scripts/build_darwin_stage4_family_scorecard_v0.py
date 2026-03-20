@@ -28,6 +28,12 @@ def build_stage4_family_scorecard() -> dict[str, str | int]:
     rows = []
     lines = ["# Stage-4 Family Scorecard", ""]
     for row in registry.get("rows") or []:
+        if row["lifecycle_status"] == "promoted":
+            interpretation_note = "canonical_stage4_family"
+        elif row["lifecycle_status"] == "withheld":
+            interpretation_note = "real_signal_but_not_canonical_family"
+        else:
+            interpretation_note = "non_promoted_family"
         score_row = {
             "family_id": row["family_id"],
             "lane_id": row["lane_id"],
@@ -38,11 +44,13 @@ def build_stage4_family_scorecard() -> dict[str, str | int]:
             "retained_transfer_status": retained_lookup.get(row["family_id"], "none"),
             "failed_transfer_count": failed_counts.get(row["family_id"], 0),
             "transfer_eligibility": row["transfer_eligibility"],
+            "interpretation_note": interpretation_note,
         }
         rows.append(score_row)
         lines.append(
             f"- `{score_row['lane_id']}` / `{score_row['family_id']}`: lifecycle=`{score_row['lifecycle_status']}`, "
-            f"retained_transfer=`{score_row['retained_transfer_status']}`, failed_transfer_count=`{score_row['failed_transfer_count']}`"
+            f"retained_transfer=`{score_row['retained_transfer_status']}`, failed_transfer_count=`{score_row['failed_transfer_count']}`, "
+            f"note=`{score_row['interpretation_note']}`"
         )
     payload = {
         "schema": "breadboard.darwin.stage4.family_scorecard.v0",
