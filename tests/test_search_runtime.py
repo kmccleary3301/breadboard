@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+from agentic_coder_prototype.search import (
+    SearchCandidate,
+    SearchCarryState,
+    SearchEvent,
+    SearchFrontier,
+    SearchMessage,
+    build_default_search_compaction_registry,
+    SearchRun,
+    build_rsa_search_runtime_example,
+    build_rsa_search_runtime_example_payload,
+    build_typed_compaction_registry_example,
+    build_typed_compaction_registry_example_payload,
+)
+
+
+def test_search_records_round_trip() -> None:
+    candidate = SearchCandidate(
+        candidate_id="search.test.candidate.1",
+        search_id="search.test",
+        frontier_id="search.test.frontier.0",
+        parent_ids=["search.test.parent.1", "search.test.parent.2"],
+        round_index=1,
+        depth=1,
+        payload_ref="artifacts/search/test/candidate_1.json",
+        score_vector={"correctness_score": 0.7},
+        usage={"prompt_tokens": 10},
+        status="active",
+    )
+    message = SearchMessage(
+        message_id="search.test.message.1",
+        schema_kind="summary.v1",
+        source_candidate_ids=["search.test.candidate.1"],
+        summary_payload={"summary": "candidate summary"},
+        confidence=0.8,
+    )
+    frontier = SearchFrontier(
+        frontier_id="search.test.frontier.1",
+        search_id="search.test",
+        round_index=1,
+        candidate_ids=[candidate.candidate_id],
+        status="active",
+    )
+    event = SearchEvent(
+        event_id="search.test.event.1",
+        search_id="search.test",
+        frontier_id=frontier.frontier_id,
+        round_index=1,
+        operator_kind="aggregate",
+        input_candidate_ids=["search.test.parent.1", "search.test.parent.2"],
+        output_candidate_ids=[candidate.candidate_id],
+        message_ids=[message.message_id],
+    )
+    run = SearchRun(
+        search_id="search.test",
+        recipe_kind="rsa_population_recombination",
+        candidates=[candidate],
+        frontiers=[frontier],
+        events=[event],
+        messages=[message],
+        selected_candidate_id=candidate.candidate_id,
+    )
+
+    assert SearchCandidate.from_dict(candidate.to_dict()) == candidate
+    assert SearchMessage.from_dict(message.to_dict()) == message
+    assert SearchFrontier.from_dict(frontier.to_dict()) == frontier
+    assert SearchEvent.from_dict(event.to_dict()) == event
+    assert SearchRun.from_dict(run.to_dict()) == run
+
+    carry_state = SearchCarryState(
+        state_id="search.test.carry.1",
+        search_id="search.test",
+        message_ids=[message.message_id],
+        artifact_refs=[candidate.payload_ref],
+        bounded_by="single_summary_message",
+        token_budget=128,
+    )
+    assert SearchCarryState.from_dict(carry_state.to_dict()) == carry_state
+
+
+def test_rsa_search_runtime_example_runs_end_to_end() -> None:
+    example = build_rsa_search_runtime_example()
+    run = example["run"]
+
+    assert run.recipe_kind == "rsa_population_recombination"
+    assert run.selected_candidate_id is not None
+    assert len(run.frontiers) == 3
+    assert len(run.events) == 3
+    assert run.metrics is not None
+    assert run.metrics.aggregability_gap > 0.0
+    assert run.metrics.mixing_rate > 0.0
+
+
+def test_rsa_search_runtime_payload_round_trips() -> None:
+    payload = build_rsa_search_runtime_example_payload()
+    run = SearchRun.from_dict(payload["run"])
+
+    assert payload["config"]["search_id"] == "search.rsa_mvp.v1"
+    assert payload["config"]["random_seed"] == 7
+    assert run.recipe_kind == "rsa_population_recombination"
+    assert run.metrics is not None
+    assert run.metrics.metadata["final_average_score"] >= run.metrics.metadata["initial_average_score"]
+    assert payload["run"]["selected_candidate_id"] == run.selected_candidate_id
+
+
+def test_typed_compaction_registry_example_is_bounded_and_inspectable() -> None:
+    example = build_typed_compaction_registry_example()
+    run = example["run"]
+    carry_state = example["carry_state"]
+    message = example["message"]
+
+    assert example["registry_backend_kinds"] == ["bounded_candidate_rollup.v1"]
+    assert len(run.carry_states) == 1
+    assert run.carry_states[0] == carry_state
+    assert carry_state.bounded_by == "single_summary_message"
+    assert carry_state.token_budget == 192
+    assert len(carry_state.message_ids) == 1
+    assert len(carry_state.artifact_refs) <= 3
+    assert message.schema_kind == "candidate_rollup.v1"
+    assert "full_reasoning_trace" in message.dropped_fields
+    assert any(item.operator_kind == "compact" for item in run.events)
+
+
+def test_typed_compaction_registry_payload_round_trips() -> None:
+    payload = build_typed_compaction_registry_example_payload()
+    run = SearchRun.from_dict(payload["run"])
+    carry_state = SearchCarryState.from_dict(payload["carry_state"])
+
+    assert payload["registry_backend_kinds"] == ["bounded_candidate_rollup.v1"]
+    assert len(run.carry_states) == 1
+    assert run.carry_states[0] == carry_state
+    assert carry_state.metadata["candidate_count"] > 0
+    assert payload["message"]["schema_kind"] == "candidate_rollup.v1"
+
+
+def test_compaction_registry_rejects_unknown_backend() -> None:
+    registry = build_default_search_compaction_registry()
+    example = build_rsa_search_runtime_example()
+    final_frontier = example["run"].frontiers[-1]
+    final_candidates = [
+        item for item in example["run"].candidates if item.frontier_id == final_frontier.frontier_id
+    ]
+
+    try:
+        registry.compact(
+            backend_kind="missing_backend",
+            search_id="search.test",
+            carry_state_id="search.test.carry.missing",
+            message_id="search.test.message.missing",
+            candidates=final_candidates,
+        )
+    except ValueError as exc:
+        assert "unknown compaction backend" in str(exc)
+    else:
+        raise AssertionError("expected unknown compaction backend to raise")
