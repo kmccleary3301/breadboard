@@ -16,6 +16,8 @@ from agentic_coder_prototype.optimize import (
     build_codex_opencode_live_transfer_cohort_cell_example_payload,
     build_v6_live_result_boundary_example,
     build_v6_live_result_boundary_example_payload,
+    build_v6_stop_go_synthesis_example,
+    build_v6_stop_go_synthesis_example_payload,
     build_codex_opencode_transfer_cohort_verifier_follow_on_example,
     build_codex_opencode_transfer_cohort_verifier_follow_on_example_payload,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
@@ -617,6 +619,34 @@ def test_v6_live_result_boundary_stays_narrow_and_non_public() -> None:
             "search_policy_manifest_id",
             "campaign_id",
             "archive_id",
+            "study_manager_id",
+        },
+    ) is False
+
+
+def test_v6_stop_go_synthesis_round_trip() -> None:
+    example = build_v6_stop_go_synthesis_example()
+    payload = build_v6_stop_go_synthesis_example_payload()
+
+    assert payload["synthesis"]["synthesis_id"] == "optimization_v6.stop_go.v1"
+    assert payload["synthesis"]["recommended_outcome"] == "use_platform"
+    assert payload["synthesis"]["v7_required"] is False
+    assert "many_cohort_orchestration" in payload["synthesis"]["darwin_handoff_signals"]
+    assert example["synthesis"]["metadata"]["boundary_classification_count"] == 4
+
+
+def test_v6_stop_go_synthesis_stays_outside_public_reward_and_darwin_ontology() -> None:
+    payload = build_v6_stop_go_synthesis_example_payload()
+
+    assert payload["synthesis"]["metadata"]["reward_like_ranking"] == "private_only"
+    assert _payload_contains_forbidden_key(
+        payload,
+        {
+            "reward_suite_id",
+            "search_policy_manifest_id",
+            "campaign_id",
+            "archive_id",
+            "package_graph_id",
             "study_manager_id",
         },
     ) is False

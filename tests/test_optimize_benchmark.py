@@ -16,6 +16,7 @@ from agentic_coder_prototype.optimize import (
     build_v6_live_result_boundary_example_payload,
     build_codex_opencode_transfer_cohort_verifier_follow_on_example,
     build_codex_opencode_transfer_cohort_verifier_follow_on_example_payload,
+    build_v6_stop_go_synthesis_example_payload,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example_payload,
     build_codex_opencode_transfer_cohort_example,
@@ -368,3 +369,11 @@ def test_v6_live_result_boundary_payload_keeps_classification_examples_explicit(
     assert payload["boundary"]["live_examples"][1]["classification"] == "private_heuristic_candidate"
     assert payload["boundary"]["live_examples"][2]["classification"] == "durable_backend_private_heuristic"
     assert payload["boundary"]["classification_rules"]["durable_backend_private_heuristic"]["minimum_confirming_cells"] == 2
+
+
+def test_v6_stop_go_synthesis_payload_keeps_no_v7_default_explicit() -> None:
+    payload = build_v6_stop_go_synthesis_example_payload()
+
+    assert payload["synthesis"]["recommended_outcome"] == "use_platform"
+    assert payload["synthesis"]["v7_required"] is False
+    assert "two_or_more_live_studies_expose_same_missing_public_shape" in payload["synthesis"]["v7_triggers"]

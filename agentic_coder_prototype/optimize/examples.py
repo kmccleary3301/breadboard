@@ -9486,6 +9486,79 @@ def build_v6_live_cell_private_search_policy_examples_payload() -> Dict[str, obj
     }
 
 
+def build_v6_stop_go_synthesis_example() -> Dict[str, object]:
+    """Build the explicit V6 stop/go decision note from the current live-study evidence."""
+
+    first_cell = build_codex_opencode_live_transfer_cohort_cell_example()
+    second_cell = build_codex_opencode_live_replay_config_cell_example()
+    boundary = build_v6_live_result_boundary_example()
+    private_policy = build_v6_live_cell_private_search_policy_examples()
+
+    synthesis = {
+        "synthesis_id": "optimization_v6.stop_go.v1",
+        "phase": "v6",
+        "evidence_sources": [
+            first_cell["live_cell"]["cell_id"],
+            second_cell["live_cell"]["cell_id"],
+            boundary["boundary"]["boundary_id"],
+            "private_search_policy.v6",
+        ],
+        "repeated_shape_gap_detected": False,
+        "recommended_outcome": "use_platform",
+        "v7_required": False,
+        "no_v7_criteria": [
+            "live_cells_run_without_schema_pain",
+            "no_repeated_public_artifact_gap",
+            "claim_tiers_remain_honest",
+            "mini_remains_rare_and_auditable",
+            "more_value_from_running_cells_than_extending_kernel",
+        ],
+        "v7_triggers": [
+            "two_or_more_live_studies_expose_same_missing_public_shape",
+            "private_search_duplication_becomes_maintenance_burden",
+            "claim_tier_or_generalization_reporting_breaks_repeatedly",
+        ],
+        "darwin_handoff_signals": [
+            "many_cohort_orchestration",
+            "adaptive_study_scheduling",
+            "persistent_cross_run_archive_state",
+            "diversity_or_novelty_search",
+            "async_candidate_fleets",
+        ],
+        "metadata": {
+            "evaluation_truth": "primary",
+            "reward_like_ranking": "private_only",
+            "darwin_boundary": "not_reopened",
+            "first_live_cell_status": first_cell["live_cell"]["status"],
+            "second_live_cell_status": second_cell["live_cell"]["status"],
+            "boundary_classification_count": len(boundary["boundary"]["classification_order"]),
+            "private_stop_reasons": [
+                private_policy["no_credible_pattern_case"]["staged_result"].metadata["early_stop_reason"],
+                private_policy["blocked_semantic_case"]["staged_result"].metadata["early_stop_reason"],
+            ],
+        },
+    }
+
+    return {
+        "first_live_cell": first_cell,
+        "second_live_cell": second_cell,
+        "boundary": boundary,
+        "private_policy": private_policy,
+        "synthesis": synthesis,
+    }
+
+
+def build_v6_stop_go_synthesis_example_payload() -> Dict[str, object]:
+    example = build_v6_stop_go_synthesis_example()
+    return {
+        "first_live_cell": build_codex_opencode_live_transfer_cohort_cell_example_payload(),
+        "second_live_cell": build_codex_opencode_live_replay_config_cell_example_payload(),
+        "boundary": build_v6_live_result_boundary_example_payload(),
+        "private_policy": build_v6_live_cell_private_search_policy_examples_payload(),
+        "synthesis": dict(example["synthesis"]),
+    }
+
+
 def build_staged_backend_comparison_example() -> Dict[str, object]:
     """Build a fixed-methodology V2 staged-vs-reflective backend comparison across the three live families."""
 

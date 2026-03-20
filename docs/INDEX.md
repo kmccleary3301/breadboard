@@ -105,6 +105,7 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [concepts/optimization-v4-mixed-evidence-package-lanes.md](concepts/optimization-v4-mixed-evidence-package-lanes.md) | Optimization V4 transfer slices, mixed-evidence suite extensions, package-scoped triplet lanes, and the reward-boundary doctrine after V3 |
 | [concepts/optimization-v5-transfer-cohorts-and-generalization-evidence.md](concepts/optimization-v5-transfer-cohorts-and-generalization-evidence.md) | Optimization V5 transfer cohorts, claim tiers, Codex↔OpenCode cohort methodology, and Nano-first generalization doctrine |
 | [concepts/optimization-v6-live-experiment-cells-and-kernel-freeze.md](concepts/optimization-v6-live-experiment-cells-and-kernel-freeze.md) | Optimization V6 public-kernel freeze, live cohort-cell doctrine, Nano/Mini fairness rules, and the explicit optimize ↔ reward boundary under repeated experiments |
+| [concepts/optimization-v6-stop-go-synthesis.md](concepts/optimization-v6-stop-go-synthesis.md) | Optimization V6 synthesis note: repeated-shape pressure review, no-V7 criteria, and explicit DARWIN handoff signals |
 
 ### Governance and change policy
 
