@@ -5,9 +5,12 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Any, Mapping
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 
 STAGE4_EXECUTION_ENVELOPE_LANES = {"lane.harness", "lane.repo_swe"}
+STAGE4_LIVE_AUTHORIZED_LANES = {"lane.repo_swe"}
 
 DEFAULT_STAGE4_WORKER_ROUTE = "openrouter/openai/gpt-5.4-mini"
 DEFAULT_STAGE4_FILTER_ROUTE = "openrouter/openai/gpt-5.4-nano"
@@ -17,15 +20,67 @@ _ROUTE_PROFILES = {
     DEFAULT_STAGE4_WORKER_ROUTE: {
         "route_class": "default_worker",
         "provider_model": "openai/gpt-5.4-mini",
+        "pricing_env_prefix": "DARWIN_STAGE4_GPT54_MINI",
     },
     DEFAULT_STAGE4_FILTER_ROUTE: {
         "route_class": "bulk_filter",
         "provider_model": "openai/gpt-5.4-nano",
+        "pricing_env_prefix": "DARWIN_STAGE4_GPT54_NANO",
     },
     DEFAULT_STAGE4_STRONG_ROUTE: {
         "route_class": "strong_exception",
         "provider_model": "openai/gpt-5.4",
+        "pricing_env_prefix": "DARWIN_STAGE4_GPT54_STRONG",
     },
+}
+
+_SEARCH_POLICY_PILOTS = {
+    "lane.repo_swe": {
+        "policy_id": "darwin.stage4.search_policy.repo_swe.v1",
+        "campaign_class": "C0 Scout",
+        "max_mutation_arms": 3,
+        "repetition_count": 2,
+        "topology_priors": [
+            {
+                "topology_id": "policy.topology.pev_v0",
+                "priority": 0.92,
+                "reason": "broadest reusable topology signal from Stage-3 repo_swe promotion",
+            },
+            {
+                "topology_id": "policy.topology.single_v0",
+                "priority": 0.55,
+                "reason": "retained control topology for matched-budget control arms",
+            },
+        ],
+        "operator_priors": [
+            {
+                "operator_id": "mut.topology.single_to_pev_v1",
+                "priority": 0.95,
+                "reason": "highest current family prior and strongest Stage-3 promotion evidence",
+            },
+            {
+                "operator_id": "mut.tool_scope.add_git_diff_v1",
+                "priority": 0.79,
+                "reason": "repo_swe-local leverage without widening runtime truth",
+            },
+            {
+                "operator_id": "mut.budget.class_a_to_class_b_v1",
+                "priority": 0.64,
+                "reason": "tests budget sensitivity under explicit reserve discipline",
+            },
+            {
+                "operator_id": "mut.policy.shadow_memory_enable_v1",
+                "priority": 0.31,
+                "reason": "kept below topology and tool scope until stronger replay-backed signal exists",
+            },
+        ],
+        "abort_conditions": [
+            "provider_telemetry_missing",
+            "support_envelope_digest_mismatch",
+            "claim_ineligible_live_rows",
+            "matched_budget_invalidity_rate_gt_0_25",
+        ],
+    }
 }
 
 
@@ -37,6 +92,14 @@ class Stage4MatchedBudgetCheck:
 
 def stage4_provider_ready() -> bool:
     return bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENROUTER_API_KEY"))
+
+
+def stage4_live_execution_requested() -> bool:
+    return str(os.environ.get("DARWIN_STAGE4_ENABLE_LIVE") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def stage4_live_lane_authorized(lane_id: str) -> bool:
+    return lane_id in STAGE4_LIVE_AUTHORIZED_LANES
 
 
 def resolve_stage4_route(
@@ -54,7 +117,6 @@ def resolve_stage4_route(
         route_id = DEFAULT_STAGE4_WORKER_ROUTE
     profile = _ROUTE_PROFILES[route_id]
     execution_mode = "live" if actual_provider_used and stage4_provider_ready() else "scaffold"
-    claim_eligible = execution_mode == "live"
     return {
         "route_id": route_id,
         "provider_model": profile["provider_model"],
@@ -63,7 +125,8 @@ def resolve_stage4_route(
         "provider_ready": stage4_provider_ready(),
         "actual_provider_used": bool(actual_provider_used),
         "execution_mode": execution_mode,
-        "claim_eligible": claim_eligible,
+        "claim_eligible": False,
+        "claim_eligibility_basis": "provider_backed_telemetry_required" if execution_mode == "live" else "execution_mode_not_live",
     }
 
 
@@ -223,3 +286,273 @@ def validate_stage4_claim_eligibility(row: Mapping[str, Any]) -> Stage4MatchedBu
     if str(row.get("cost_source") or "") not in {"provider_returned", "estimated_from_pricing_table"}:
         return Stage4MatchedBudgetCheck(ok=False, reason="cost_source_not_provider_backed")
     return Stage4MatchedBudgetCheck(ok=True, reason=None)
+
+
+def _stage4_pricing_fields(route_id: str) -> tuple[str, str]:
+    prefix = str(_ROUTE_PROFILES[route_id]["pricing_env_prefix"])
+    return (f"{prefix}_INPUT_COST_PER_1M", f"{prefix}_OUTPUT_COST_PER_1M")
+
+
+def estimate_stage4_route_cost(
+    *,
+    route_id: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+) -> tuple[float, str]:
+    input_env, output_env = _stage4_pricing_fields(route_id)
+    input_cost_raw = os.environ.get(input_env)
+    output_cost_raw = os.environ.get(output_env)
+    if input_cost_raw is None or output_cost_raw is None:
+        return 0.0, "provider_usage_only"
+    input_cost = float(input_cost_raw)
+    output_cost = float(output_cost_raw)
+    estimate = ((prompt_tokens / 1_000_000.0) * input_cost) + ((completion_tokens / 1_000_000.0) * output_cost)
+    return round(estimate, 8), "estimated_from_pricing_table"
+
+
+def _parse_openai_response_text(payload: Mapping[str, Any]) -> str:
+    direct = str(payload.get("output_text") or "").strip()
+    if direct:
+        return direct
+    for row in payload.get("output") or []:
+        for content in row.get("content") or []:
+            text = str(content.get("text") or "").strip()
+            if text:
+                return text
+    return ""
+
+
+def _perform_stage4_live_call(
+    *,
+    route: Mapping[str, Any],
+    prompt: str,
+    max_output_tokens: int = 256,
+    timeout_s: int = 60,
+) -> dict[str, Any]:
+    route_id = str(route["route_id"])
+    provider_model = str(route["provider_model"])
+    if route_id.startswith("openrouter/"):
+        api_key = os.environ["OPENROUTER_API_KEY"]
+        endpoint = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/chat/completions")
+        payload = {
+            "model": provider_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.2,
+            "max_tokens": int(max_output_tokens),
+        }
+        request_obj = urllib_request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib_request.urlopen(request_obj, timeout=timeout_s) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        choice = ((payload.get("choices") or [{}])[0].get("message") or {})
+        usage = payload.get("usage") or {}
+        return {
+            "response_id": payload.get("id"),
+            "text": str(choice.get("content") or "").strip(),
+            "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+            "completion_tokens": int(usage.get("completion_tokens") or 0),
+            "total_tokens": int(usage.get("total_tokens") or 0),
+            "provider_cost_usd": payload.get("total_cost"),
+        }
+    api_key = os.environ["OPENAI_API_KEY"]
+    endpoint = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1/responses")
+    model_name = provider_model.split("/", 1)[-1] if provider_model.startswith("openai/") else provider_model
+    payload = {
+        "model": model_name,
+        "input": prompt,
+        "max_output_tokens": int(max_output_tokens),
+    }
+    request_obj = urllib_request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib_request.urlopen(request_obj, timeout=timeout_s) as response:
+        response_payload = json.loads(response.read().decode("utf-8"))
+    usage = response_payload.get("usage") or {}
+    return {
+        "response_id": response_payload.get("id"),
+        "text": _parse_openai_response_text(response_payload),
+        "prompt_tokens": int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0),
+        "completion_tokens": int(usage.get("output_tokens") or usage.get("completion_tokens") or 0),
+        "total_tokens": int(usage.get("total_tokens") or 0),
+        "provider_cost_usd": response_payload.get("cost_usd"),
+    }
+
+
+def execute_stage4_provider_prompt(
+    *,
+    lane_id: str,
+    task_class: str,
+    prompt: str,
+    role: str = "worker",
+    stronger_tier: bool = False,
+    max_output_tokens: int = 256,
+) -> dict[str, Any]:
+    route = resolve_stage4_route(
+        task_class=task_class,
+        role=role,
+        stronger_tier=stronger_tier,
+        actual_provider_used=False,
+    )
+    if not stage4_live_execution_requested():
+        return {
+            **route,
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            "cost_estimate": 0.0,
+            "cost_source": "scaffold_placeholder",
+            "response_text": "",
+            "response_id": None,
+            "claim_ineligible_reason": "execution_mode_not_live",
+            "live_block_reason": "live_execution_not_requested",
+        }
+    if not stage4_provider_ready():
+        return {
+            **route,
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            "cost_estimate": 0.0,
+            "cost_source": "scaffold_placeholder",
+            "response_text": "",
+            "response_id": None,
+            "claim_ineligible_reason": "execution_mode_not_live",
+            "live_block_reason": "provider_not_ready",
+        }
+    if not stage4_live_lane_authorized(lane_id):
+        return {
+            **route,
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            "cost_estimate": 0.0,
+            "cost_source": "scaffold_placeholder",
+            "response_text": "",
+            "response_id": None,
+            "claim_ineligible_reason": "execution_mode_not_live",
+            "live_block_reason": "lane_not_authorized_for_live",
+        }
+    try:
+        live_call = _perform_stage4_live_call(
+            route=route,
+            prompt=prompt,
+            max_output_tokens=max_output_tokens,
+        )
+    except urllib_error.URLError as exc:
+        raise RuntimeError(f"stage4 live provider call failed: {exc}") from exc
+    live_route = resolve_stage4_route(
+        task_class=task_class,
+        role=role,
+        stronger_tier=stronger_tier,
+        actual_provider_used=True,
+    )
+    prompt_tokens = int(live_call["prompt_tokens"])
+    completion_tokens = int(live_call["completion_tokens"])
+    total_tokens = int(live_call["total_tokens"] or (prompt_tokens + completion_tokens))
+    provider_cost = live_call.get("provider_cost_usd")
+    if provider_cost is None:
+        cost_estimate, cost_source = estimate_stage4_route_cost(
+            route_id=live_route["route_id"],
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+    else:
+        cost_estimate = float(provider_cost)
+        cost_source = "provider_returned"
+    claim_check = validate_stage4_claim_eligibility(
+        {
+            "execution_mode": live_route["execution_mode"],
+            "cost_source": cost_source,
+        }
+    )
+    return {
+        **live_route,
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+        },
+        "cost_estimate": float(cost_estimate),
+        "cost_source": cost_source,
+        "response_text": str(live_call.get("text") or ""),
+        "response_id": live_call.get("response_id"),
+        "claim_eligible": claim_check.ok,
+        "claim_ineligible_reason": claim_check.reason,
+        "live_block_reason": None,
+    }
+
+
+def build_stage4_search_policy_v1(
+    *,
+    lane_id: str,
+    budget_class: str,
+) -> dict[str, Any]:
+    pilot = _SEARCH_POLICY_PILOTS[lane_id]
+    payload = {
+        "schema": "breadboard.darwin.stage4.search_policy.v1",
+        "policy_id": pilot["policy_id"],
+        "lane_id": lane_id,
+        "budget_class": budget_class,
+        "campaign_class": pilot["campaign_class"],
+        "worker_route_id": DEFAULT_STAGE4_WORKER_ROUTE,
+        "filter_route_id": DEFAULT_STAGE4_FILTER_ROUTE,
+        "max_mutation_arms": int(pilot["max_mutation_arms"]),
+        "repetition_count": int(pilot["repetition_count"]),
+        "topology_priors": list(pilot["topology_priors"]),
+        "operator_priors": list(pilot["operator_priors"]),
+        "abort_conditions": list(pilot["abort_conditions"]),
+    }
+    payload["policy_digest"] = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    return payload
+
+
+def select_stage4_search_policy_arms(
+    *,
+    search_policy: Mapping[str, Any],
+    candidate_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    lane_id = str(search_policy["lane_id"])
+    max_mutation_arms = int(search_policy["max_mutation_arms"])
+    priority_lookup = {
+        str(row["operator_id"]): float(row["priority"])
+        for row in search_policy.get("operator_priors") or []
+    }
+    lane_rows = [row for row in candidate_rows if row["lane_id"] == lane_id]
+    other_rows = [row for row in candidate_rows if row["lane_id"] != lane_id]
+    control_rows = [dict(row) for row in lane_rows if row["control_tag"] == "control"]
+    mutation_rows = [dict(row) for row in lane_rows if row["control_tag"] != "control"]
+    ranked_rows = sorted(
+        mutation_rows,
+        key=lambda row: (-priority_lookup.get(str(row["operator_id"]), -1.0), str(row["operator_id"])),
+    )
+    selected_rows: list[dict[str, Any]] = []
+    for row in control_rows:
+        row["search_policy_selection"] = {
+            "selected": True,
+            "selection_reason": "matched_budget_control",
+            "policy_id": search_policy["policy_id"],
+            "campaign_class": search_policy["campaign_class"],
+            "policy_digest": search_policy["policy_digest"],
+            "priority": 1.0,
+        }
+        selected_rows.append(row)
+    for row in ranked_rows[:max_mutation_arms]:
+        row["search_policy_selection"] = {
+            "selected": True,
+            "selection_reason": "operator_priority_rank",
+            "policy_id": search_policy["policy_id"],
+            "campaign_class": search_policy["campaign_class"],
+            "policy_digest": search_policy["policy_digest"],
+            "priority": priority_lookup.get(str(row["operator_id"]), 0.0),
+        }
+        selected_rows.append(row)
+    for row in other_rows:
+        selected_rows.append(dict(row))
+    return selected_rows

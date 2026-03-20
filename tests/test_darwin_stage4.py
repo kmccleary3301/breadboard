@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import pytest
+
 from breadboard_ext.darwin.stage4 import (
     build_stage4_budget_envelope,
+    build_stage4_search_policy_v1,
     build_stage4_support_envelope_digest,
     consume_execution_envelope_v2,
+    execute_stage4_provider_prompt,
     resolve_stage4_route,
+    select_stage4_search_policy_arms,
+    stage4_live_execution_requested,
     validate_stage4_claim_eligibility,
     validate_stage4_matched_budget_pair,
 )
@@ -113,3 +119,70 @@ def test_build_stage4_support_envelope_digest_is_stable() -> None:
         claim_target="internal",
     )
     assert digest_a == digest_b
+
+
+def test_stage4_live_execution_requested_uses_explicit_env_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DARWIN_STAGE4_ENABLE_LIVE", raising=False)
+    assert stage4_live_execution_requested() is False
+    monkeypatch.setenv("DARWIN_STAGE4_ENABLE_LIVE", "1")
+    assert stage4_live_execution_requested() is True
+
+
+def test_execute_stage4_provider_prompt_blocks_without_live_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DARWIN_STAGE4_ENABLE_LIVE", raising=False)
+    result = execute_stage4_provider_prompt(
+        lane_id="lane.repo_swe",
+        task_class="repo_patch_workspace",
+        prompt="propose a bounded mutation",
+    )
+    assert result["execution_mode"] == "scaffold"
+    assert result["live_block_reason"] == "live_execution_not_requested"
+    assert result["claim_eligible"] is False
+
+
+def test_execute_stage4_provider_prompt_accepts_real_provider_usage(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DARWIN_STAGE4_ENABLE_LIVE", "1")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_INPUT_COST_PER_1M", "0.20")
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_OUTPUT_COST_PER_1M", "0.80")
+    monkeypatch.setattr(
+        "breadboard_ext.darwin.stage4._perform_stage4_live_call",
+        lambda **_: {
+            "response_id": "resp_123",
+            "text": "bounded mutation proposal",
+            "prompt_tokens": 120,
+            "completion_tokens": 24,
+            "total_tokens": 144,
+            "provider_cost_usd": None,
+        },
+    )
+    result = execute_stage4_provider_prompt(
+        lane_id="lane.repo_swe",
+        task_class="repo_patch_workspace",
+        prompt="propose a bounded mutation",
+    )
+    assert result["execution_mode"] == "live"
+    assert result["cost_source"] == "estimated_from_pricing_table"
+    assert result["claim_eligible"] is True
+    assert result["usage"]["total_tokens"] == 144
+
+
+def test_select_stage4_search_policy_arms_picks_top_repo_swe_mutations() -> None:
+    policy = build_stage4_search_policy_v1(lane_id="lane.repo_swe", budget_class="class_a")
+    selected = select_stage4_search_policy_arms(
+        search_policy=policy,
+        candidate_rows=[
+            {"lane_id": "lane.repo_swe", "operator_id": "baseline_seed", "control_tag": "control"},
+            {"lane_id": "lane.repo_swe", "operator_id": "mut.topology.single_to_pev_v1", "control_tag": "mutation"},
+            {"lane_id": "lane.repo_swe", "operator_id": "mut.tool_scope.add_git_diff_v1", "control_tag": "mutation"},
+            {"lane_id": "lane.repo_swe", "operator_id": "mut.budget.class_a_to_class_b_v1", "control_tag": "mutation"},
+            {"lane_id": "lane.repo_swe", "operator_id": "mut.policy.shadow_memory_enable_v1", "control_tag": "mutation"},
+            {"lane_id": "lane.harness", "operator_id": "baseline_seed", "control_tag": "watchdog"},
+        ],
+    )
+    repo_swe_mutations = [row["operator_id"] for row in selected if row["lane_id"] == "lane.repo_swe" and row["control_tag"] != "control"]
+    assert repo_swe_mutations == [
+        "mut.topology.single_to_pev_v1",
+        "mut.tool_scope.add_git_diff_v1",
+        "mut.budget.class_a_to_class_b_v1",
+    ]
