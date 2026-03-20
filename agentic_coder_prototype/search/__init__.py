@@ -7,12 +7,20 @@ from .compaction import (
     build_default_search_compaction_registry,
 )
 from .examples import (
+    build_pacore_search_runtime_example,
+    build_pacore_search_runtime_example_payload,
     build_rsa_search_runtime_example,
     build_rsa_search_runtime_example_payload,
     build_typed_compaction_registry_example,
     build_typed_compaction_registry_example_payload,
 )
-from .runtime import AggregationProposal, BarrieredRoundScheduler, BarrieredSchedulerConfig
+from .runtime import (
+    AggregationProposal,
+    BarrieredRoundScheduler,
+    BarrieredSchedulerConfig,
+    BoundedMessagePassingScheduler,
+    MessagePassingSchedulerConfig,
+)
 from .schema import (
     ALLOWED_CANDIDATE_STATUSES,
     ALLOWED_FRONTIER_STATUSES,
@@ -33,7 +41,9 @@ __all__ = [
     "AggregationProposal",
     "BarrieredRoundScheduler",
     "BarrieredSchedulerConfig",
+    "BoundedMessagePassingScheduler",
     "CompactionOutput",
+    "MessagePassingSchedulerConfig",
     "RegisteredCompactionBackend",
     "SearchCandidate",
     "SearchCarryState",
@@ -44,6 +54,8 @@ __all__ = [
     "SearchMetrics",
     "SearchRun",
     "build_default_search_compaction_registry",
+    "build_pacore_search_runtime_example",
+    "build_pacore_search_runtime_example_payload",
     "build_rsa_search_runtime_example",
     "build_rsa_search_runtime_example_payload",
     "build_typed_compaction_registry_example",

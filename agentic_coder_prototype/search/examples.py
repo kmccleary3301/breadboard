@@ -3,7 +3,13 @@ from __future__ import annotations
 from typing import Dict, List, Sequence
 
 from .compaction import SearchCompactionRegistry, build_default_search_compaction_registry
-from .runtime import AggregationProposal, BarrieredRoundScheduler, BarrieredSchedulerConfig
+from .runtime import (
+    AggregationProposal,
+    BarrieredRoundScheduler,
+    BarrieredSchedulerConfig,
+    BoundedMessagePassingScheduler,
+    MessagePassingSchedulerConfig,
+)
 from .schema import SearchCandidate, SearchEvent, SearchMessage, SearchRun
 
 
@@ -178,4 +184,86 @@ def build_typed_compaction_registry_example_payload() -> Dict[str, object]:
         "run": example["run"].to_dict(),
         "message": example["message"].to_dict(),
         "carry_state": example["carry_state"].to_dict(),
+    }
+
+
+def build_pacore_search_runtime_example() -> Dict[str, object]:
+    search_id = "search.pacore_mvp.v1"
+    config = MessagePassingSchedulerConfig(
+        search_id=search_id,
+        max_rounds=2,
+        population_size=3,
+        subset_size=2,
+        compaction_backend_kind="bounded_candidate_rollup.v1",
+        random_seed=13,
+        recipe_kind="pacore_message_passing",
+        metadata={"phase": "dag_v1_phase3", "non_kernel": True, "scheduler_mode": "barriered"},
+    )
+    seeds = _seed_candidates(search_id)
+    registry: SearchCompactionRegistry = build_default_search_compaction_registry()
+
+    def _message_pass(
+        subset: Sequence[SearchCandidate],
+        carry_state,
+        round_index: int,
+        proposal_index: int,
+    ) -> AggregationProposal:
+        avg_score = sum(float(item.score_vector.get("correctness_score", 0.0)) for item in subset) / float(len(subset))
+        carry_bonus = 0.02 if carry_state is not None else 0.0
+        improved_score = min(1.0, avg_score + 0.05 + carry_bonus)
+        candidate = SearchCandidate(
+            candidate_id=f"{search_id}.cand.msg.r{round_index}.{proposal_index}",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.{round_index}",
+            parent_ids=[item.candidate_id for item in subset],
+            round_index=round_index,
+            depth=round_index,
+            payload_ref=f"artifacts/search/{search_id}/round_{round_index}_candidate_{proposal_index}.json",
+            message_ref=carry_state.message_ids[0] if carry_state is not None else None,
+            score_vector={"correctness_score": improved_score},
+            usage={
+                "prompt_tokens": 56 + (round_index * 9),
+                "completion_tokens": 27 + proposal_index,
+            },
+            status="active",
+            reasoning_summary_ref=f"artifacts/search/{search_id}/round_{round_index}_candidate_{proposal_index}.md",
+            metadata={
+                "recipe": "pacore",
+                "proposal_index": proposal_index,
+                "carry_state_id": carry_state.state_id if carry_state is not None else None,
+            },
+        )
+        return AggregationProposal(candidate=candidate)
+
+    run = BoundedMessagePassingScheduler(config, registry).run(
+        initial_candidates=seeds,
+        message_fn=_message_pass,
+    )
+    assert isinstance(run, SearchRun)
+    return {
+        "config": config,
+        "seeds": seeds,
+        "registry_backend_kinds": registry.list_backend_kinds(),
+        "run": run,
+    }
+
+
+def build_pacore_search_runtime_example_payload() -> Dict[str, object]:
+    example = build_pacore_search_runtime_example()
+    return {
+        "config": {
+            "search_id": example["config"].search_id,
+            "max_rounds": example["config"].max_rounds,
+            "population_size": example["config"].population_size,
+            "subset_size": example["config"].subset_size,
+            "compaction_backend_kind": example["config"].compaction_backend_kind,
+            "random_seed": example["config"].random_seed,
+            "max_active_carry_states": example["config"].max_active_carry_states,
+            "recipe_kind": example["config"].recipe_kind,
+            "scheduler_id": example["config"].scheduler_id,
+            "metadata": dict(example["config"].metadata),
+        },
+        "registry_backend_kinds": list(example["registry_backend_kinds"]),
+        "seeds": [item.to_dict() for item in example["seeds"]],
+        "run": example["run"].to_dict(),
     }

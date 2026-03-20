@@ -7,6 +7,8 @@ from agentic_coder_prototype.search import (
     SearchFrontier,
     SearchMessage,
     build_default_search_compaction_registry,
+    build_pacore_search_runtime_example,
+    build_pacore_search_runtime_example_payload,
     SearchRun,
     build_rsa_search_runtime_example,
     build_rsa_search_runtime_example_payload,
@@ -154,3 +156,30 @@ def test_compaction_registry_rejects_unknown_backend() -> None:
         assert "unknown compaction backend" in str(exc)
     else:
         raise AssertionError("expected unknown compaction backend to raise")
+
+
+def test_pacore_search_runtime_example_is_bounded_and_replayable() -> None:
+    example = build_pacore_search_runtime_example()
+    run = example["run"]
+
+    assert example["registry_backend_kinds"] == ["bounded_candidate_rollup.v1"]
+    assert run.recipe_kind == "pacore_message_passing"
+    assert len(run.carry_states) == 2
+    assert all(item.bounded_by == "single_summary_message" for item in run.carry_states)
+    assert sum(1 for item in run.events if item.operator_kind == "compact") == 2
+    assert run.selected_candidate_id == run.candidates[-1].candidate_id
+    assert run.candidates[-1].message_ref == run.carry_states[-1].message_ids[0]
+    assert run.metrics is not None
+    assert run.metrics.mixing_rate > 0.0
+
+
+def test_pacore_search_runtime_payload_round_trips() -> None:
+    payload = build_pacore_search_runtime_example_payload()
+    run = SearchRun.from_dict(payload["run"])
+
+    assert payload["config"]["search_id"] == "search.pacore_mvp.v1"
+    assert payload["config"]["compaction_backend_kind"] == "bounded_candidate_rollup.v1"
+    assert payload["registry_backend_kinds"] == ["bounded_candidate_rollup.v1"]
+    assert len(run.carry_states) == 2
+    assert run.recipe_kind == "pacore_message_passing"
+    assert run.carry_states[-1].metadata["candidate_count"] > 0
