@@ -4,7 +4,9 @@ import pytest
 from urllib import error as urllib_error
 
 from breadboard_ext.darwin.stage4 import (
+    advance_stage4_search_policy_v1,
     build_stage4_budget_envelope,
+    build_stage4_campaign_round_record,
     build_stage4_comparison_envelope_digest,
     build_stage4_search_policy_v1,
     build_stage4_support_envelope_digest,
@@ -306,6 +308,35 @@ def test_select_stage4_search_policy_arms_for_systems_picks_bounded_mutations() 
         "mut.topology.single_to_pev_v1",
         "mut.policy.shadow_memory_enable_v1",
     ]
+
+
+def test_advance_stage4_search_policy_promotes_discovery_after_positive_signal() -> None:
+    policy = build_stage4_search_policy_v1(lane_id="lane.repo_swe", budget_class="class_a")
+    updated = advance_stage4_search_policy_v1(
+        search_policy=policy,
+        comparison_rows=[
+            {
+                "lane_id": "lane.repo_swe",
+                "operator_id": "mut.topology.single_to_pev_v1",
+                "comparison_valid": True,
+                "positive_power_signal": True,
+            }
+        ],
+    )
+    assert updated["campaign_class"] == "C1 Discovery"
+    assert updated["repetition_count"] == 3
+
+
+def test_build_stage4_campaign_round_record_carries_round_metadata() -> None:
+    policy = build_stage4_search_policy_v1(lane_id="lane.systems", budget_class="class_a")
+    record = build_stage4_campaign_round_record(
+        round_id="round.lane.systems.r1",
+        lane_id="lane.systems",
+        search_policy=policy,
+        selected_arms=[{"campaign_arm_id": "arm.systems.control.stage4.v0", "operator_id": "baseline_seed", "control_tag": "control"}],
+    )
+    assert record["round_id"] == "round.lane.systems.r1"
+    assert record["campaign_class"] == policy["campaign_class"]
 
 
 def test_execute_stage4_provider_prompt_falls_back_to_openai_when_openrouter_is_unauthorized(

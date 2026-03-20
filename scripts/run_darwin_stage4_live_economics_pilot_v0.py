@@ -367,14 +367,15 @@ def build_stage4_live_comparisons(run_rows: list[dict]) -> list[dict]:
     return comparison_rows
 
 
-def run_stage4_live_pilot(
+def run_stage4_live_round(
     *,
     lane_id: str,
+    search_policy: dict,
     out_dir: Path,
+    round_id: str,
     include_watchdog: bool = True,
-) -> dict:
+) -> dict[str, object]:
     campaigns = _campaign_lookup()
-    search_policy = build_stage4_search_policy_v1(lane_id=lane_id, budget_class="class_a")
     selected_arms = select_stage4_search_policy_arms(
         search_policy=search_policy,
         candidate_rows=_candidate_universe(lane_id=lane_id, include_watchdog=include_watchdog),
@@ -383,6 +384,10 @@ def run_stage4_live_pilot(
     run_rows: list[dict] = []
     telemetry_rows: list[dict] = []
     for arm_cfg in selected_arms:
+        arm_cfg = dict(arm_cfg)
+        arm_cfg["repetition_count"] = int(search_policy["repetition_count"])
+        arm_cfg["campaign_round_id"] = round_id
+        arm_cfg["campaign_class"] = search_policy["campaign_class"]
         arm, arm_run_rows, arm_telemetry = _run_arm(
             arm_cfg=arm_cfg,
             spec=campaigns[arm_cfg["lane_id"]],
@@ -390,17 +395,54 @@ def run_stage4_live_pilot(
         )
         arm_rows.append(
             {
+                "campaign_round_id": round_id,
                 "campaign_arm_id": arm["campaign_arm_id"],
                 "lane_id": arm["lane_id"],
                 "operator_id": arm["operator_id"],
                 "budget_class": arm["budget_class"],
                 "control_tag": arm["control_tag"],
+                "campaign_class": search_policy["campaign_class"],
                 "selection": dict(arm.get("search_policy_selection") or {}),
             }
         )
+        for row in arm_run_rows:
+            row["campaign_round_id"] = round_id
+            row["campaign_class"] = search_policy["campaign_class"]
+        for row in arm_telemetry:
+            row["campaign_round_id"] = round_id
+            row["campaign_class"] = search_policy["campaign_class"]
         run_rows.extend(arm_run_rows)
         telemetry_rows.extend(arm_telemetry)
     comparison_rows = build_stage4_live_comparisons(run_rows)
+    for row in comparison_rows:
+        row["campaign_round_id"] = round_id
+        row["campaign_class"] = search_policy["campaign_class"]
+    return {
+        "selected_arms": arm_rows,
+        "run_rows": run_rows,
+        "telemetry_rows": telemetry_rows,
+        "comparison_rows": comparison_rows,
+    }
+
+
+def run_stage4_live_pilot(
+    *,
+    lane_id: str,
+    out_dir: Path,
+    include_watchdog: bool = True,
+) -> dict:
+    search_policy = build_stage4_search_policy_v1(lane_id=lane_id, budget_class="class_a")
+    round_payload = run_stage4_live_round(
+        lane_id=lane_id,
+        search_policy=search_policy,
+        out_dir=out_dir,
+        round_id=f"round.{lane_id}.r1",
+        include_watchdog=include_watchdog,
+    )
+    arm_rows = list(round_payload["selected_arms"])
+    run_rows = list(round_payload["run_rows"])
+    telemetry_rows = list(round_payload["telemetry_rows"])
+    comparison_rows = list(round_payload["comparison_rows"])
     policy_path = out_dir / "search_policy_v1.json"
     arms_path = out_dir / "selected_arms_v0.json"
     runs_path = out_dir / "campaign_runs_v0.json"

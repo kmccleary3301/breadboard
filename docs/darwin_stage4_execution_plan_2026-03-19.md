@@ -12,6 +12,13 @@ References:
 - `docs/darwin_stage4_comparison_envelope_slice_2026-03-20.md`
 - `docs/darwin_stage4_repo_swe_ev_refinement_slice_2026-03-20.md`
 - `docs/darwin_stage4_systems_live_slice_2026-03-20.md`
+- `docs/darwin_stage4_deep_live_search_execution_plan_2026-03-20.md`
+- `docs/darwin_stage4_deep_live_search_status_2026-03-20.md`
+- `docs/darwin_stage4_route_mix_note_2026-03-20.md`
+- `docs/darwin_stage4_strongest_families_note_2026-03-20.md`
+- `docs/darwin_stage4_replay_note_2026-03-20.md`
+- `docs/darwin_stage4_deep_live_search_review_2026-03-20.md`
+- `docs/darwin_stage4_promotion_entry_gate_2026-03-20.md`
 - `docs/darwin_stage4_systems_live_readiness_2026-03-20.md`
 - `docs/darwin_stage4_cross_primary_lane_review_2026-03-20.md`
 - `docs/darwin_stage4_deep_live_search_gate_2026-03-20.md`

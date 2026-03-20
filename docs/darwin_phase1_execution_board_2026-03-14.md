@@ -98,3 +98,10 @@ Date: 2026-03-14
 - SearchPolicy gate: `docs/darwin_stage4_search_policy_gate_2026-03-20.md`
 - cross-primary-lane review: `docs/darwin_stage4_cross_primary_lane_review_2026-03-20.md`
 - deep-live-search gate: `docs/darwin_stage4_deep_live_search_gate_2026-03-20.md`
+- deep-live-search execution plan: `docs/darwin_stage4_deep_live_search_execution_plan_2026-03-20.md`
+- deep-live-search status: `docs/darwin_stage4_deep_live_search_status_2026-03-20.md`
+- route-mix note: `docs/darwin_stage4_route_mix_note_2026-03-20.md`
+- strongest-families note: `docs/darwin_stage4_strongest_families_note_2026-03-20.md`
+- replay note: `docs/darwin_stage4_replay_note_2026-03-20.md`
+- deep-live-search review: `docs/darwin_stage4_deep_live_search_review_2026-03-20.md`
+- promotion-entry gate: `docs/darwin_stage4_promotion_entry_gate_2026-03-20.md`

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
+from collections import defaultdict
 from typing import Any, Mapping
 from urllib import error as urllib_error
 from urllib import request as urllib_request
@@ -135,6 +136,12 @@ _SEARCH_POLICY_PILOTS = {
             "matched_budget_invalidity_rate_gt_0_25",
         ],
     }
+}
+
+_CAMPAIGN_CLASS_RULES = {
+    "C0 Scout": {"max_mutation_arms": 3, "repetition_count": 2, "replication_reserve_fraction": 0.20, "control_reserve_fraction": 0.10},
+    "C1 Discovery": {"max_mutation_arms": 3, "repetition_count": 3, "replication_reserve_fraction": 0.25, "control_reserve_fraction": 0.10},
+    "C2 Validation": {"max_mutation_arms": 2, "repetition_count": 4, "replication_reserve_fraction": 0.30, "control_reserve_fraction": 0.15},
 }
 
 
@@ -436,6 +443,83 @@ def classify_stage4_power_signal(
     if float(delta_cost_usd) < 0.0:
         return Stage4PowerSignal(positive=True, signal_class="score_retained_cost_improved")
     return Stage4PowerSignal(positive=False, signal_class="no_signal")
+
+
+def build_stage4_campaign_round_record(
+    *,
+    round_id: str,
+    lane_id: str,
+    search_policy: Mapping[str, Any],
+    selected_arms: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    class_rules = _CAMPAIGN_CLASS_RULES[str(search_policy["campaign_class"])]
+    return {
+        "schema": "breadboard.darwin.stage4.campaign_round.v0",
+        "round_id": str(round_id),
+        "lane_id": str(lane_id),
+        "policy_id": str(search_policy["policy_id"]),
+        "policy_digest": str(search_policy["policy_digest"]),
+        "campaign_class": str(search_policy["campaign_class"]),
+        "max_mutation_arms": int(search_policy["max_mutation_arms"]),
+        "repetition_count": int(search_policy["repetition_count"]),
+        "replication_reserve_fraction": float(class_rules["replication_reserve_fraction"]),
+        "control_reserve_fraction": float(class_rules["control_reserve_fraction"]),
+        "selected_arm_ids": [str(row["campaign_arm_id"]) for row in selected_arms],
+        "selected_operator_ids": [
+            str(row["operator_id"]) for row in selected_arms if str(row.get("control_tag") or "") not in {"control", "watchdog"}
+        ],
+        "abort_conditions": list(search_policy.get("abort_conditions") or []),
+    }
+
+
+def advance_stage4_search_policy_v1(
+    *,
+    search_policy: Mapping[str, Any],
+    comparison_rows: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    next_policy = json.loads(json.dumps(dict(search_policy)))
+    lane_rows = [row for row in comparison_rows if str(row.get("lane_id") or "") == str(search_policy["lane_id"])]
+    buckets: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in lane_rows:
+        buckets[str(row["operator_id"])].append(row)
+
+    operator_priors = []
+    strong_operator_count = 0
+    for operator in next_policy.get("operator_priors") or []:
+        operator_id = str(operator["operator_id"])
+        rows = buckets.get(operator_id, [])
+        valid_rows = [row for row in rows if bool(row.get("comparison_valid"))]
+        positive_rows = [row for row in valid_rows if bool(row.get("positive_power_signal"))]
+        invalid_rows = [row for row in rows if not bool(row.get("comparison_valid"))]
+        priority = float(operator["priority"])
+        if positive_rows:
+            priority += 0.05
+        if rows and len(invalid_rows) / len(rows) > 0.25:
+            priority -= 0.08
+        priority = max(0.05, min(priority, 0.99))
+        if valid_rows and len(positive_rows) / len(valid_rows) >= 0.5:
+            strong_operator_count += 1
+        updated = dict(operator)
+        updated["priority"] = round(priority, 3)
+        updated["last_round_valid_count"] = len(valid_rows)
+        updated["last_round_positive_count"] = len(positive_rows)
+        updated["last_round_invalid_count"] = len(invalid_rows)
+        operator_priors.append(updated)
+
+    next_policy["operator_priors"] = sorted(operator_priors, key=lambda row: (-float(row["priority"]), str(row["operator_id"])))
+    current_class = str(next_policy["campaign_class"])
+    if current_class == "C0 Scout" and strong_operator_count >= 1:
+        next_class = "C1 Discovery"
+    elif current_class == "C1 Discovery" and strong_operator_count >= 2:
+        next_class = "C2 Validation"
+    else:
+        next_class = current_class
+    next_policy["campaign_class"] = next_class
+    class_rules = _CAMPAIGN_CLASS_RULES[next_class]
+    next_policy["max_mutation_arms"] = int(min(int(next_policy.get("max_mutation_arms") or class_rules["max_mutation_arms"]), class_rules["max_mutation_arms"]))
+    next_policy["repetition_count"] = int(class_rules["repetition_count"])
+    next_policy["policy_digest"] = hashlib.sha256(json.dumps(next_policy, sort_keys=True).encode("utf-8")).hexdigest()
+    return next_policy
 
 
 def _stage4_pricing_fields(route_id: str) -> tuple[str, str, str]:
