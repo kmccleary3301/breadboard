@@ -1,7 +1,7 @@
 # DARWIN Stage-4 Live-Economics Status
 
 Date: 2026-03-20
-Status: landed first live-economics/SearchPolicy pilot slice
+Status: landed first live-economics/SearchPolicy pilot slice and executed the first live provider-backed repo_swe run
 References:
 - `docs/darwin_stage4_live_economics_slice_2026-03-20.md`
 - `scripts/run_darwin_stage4_live_economics_pilot_v0.py`
@@ -17,21 +17,22 @@ References:
 
 ## Current workspace behavior
 
-In this workspace, the new pilot remains scaffold-mode unless:
+The default shell state is still scaffold-mode unless:
 
 - `DARWIN_STAGE4_ENABLE_LIVE=1`
 - `OPENAI_API_KEY` or `OPENROUTER_API_KEY` is present
 - the lane is explicitly authorized for live execution
 
-This keeps Stage-4 power claims honest while still exercising the live-economics path in scaffold mode.
+Using the repo-root `.env` plus `DARWIN_STAGE4_ENABLE_LIVE=1`, the Stage-4 repo_swe pilot now executes real provider-backed proposal calls on the default OpenRouter route.
 
 ## What is now true
 
 - scaffold-only rows remain claim-ineligible
-- live claim eligibility depends on an actual provider call
-- `SearchPolicyV1` now operationally selects the `lane.repo_swe` mutation arm set
-- repo_swe Stage-4 pilot artifacts are now distinct from Stage-3 bounded-inference artifacts
+- repo_swe rows can now execute with `execution_mode=live`
+- `SearchPolicyV1` operationally selects the `lane.repo_swe` mutation arm set
+- repo_swe Stage-4 pilot artifacts remain distinct from Stage-3 bounded-inference artifacts
+- live power claims are still blocked because the current run lacks provider-backed cost semantics and valid matched-budget comparisons
 
 ## Next step
 
-The next justified move is the first real provider-backed pilot run on `lane.repo_swe` when credentials and pricing inputs are available, followed by the first narrow `SearchPolicyV1` review/gate.
+The next justified move is to add the Stage-4 mini pricing inputs and then decide whether the current strict support-envelope digest should remain the comparison gate for topology/tool-scope mutations or be normalized for the next Stage-4 slice.

@@ -121,6 +121,20 @@ def test_build_stage4_support_envelope_digest_is_stable() -> None:
     assert digest_a == digest_b
 
 
+def test_stage4_evaluator_pack_version_normalizes_task_family() -> None:
+    from breadboard_ext.darwin.stage4 import stage4_evaluator_pack_version
+
+    baseline = stage4_evaluator_pack_version(
+        lane_id="lane.repo_swe",
+        task_id="task.stage4.lane.repo_swe.arm.repo_swe.control.stage4.v0",
+    )
+    candidate = stage4_evaluator_pack_version(
+        lane_id="lane.repo_swe",
+        task_id="task.stage4.lane.repo_swe.arm.repo_swe.topology.stage4.v0",
+    )
+    assert baseline == candidate
+
+
 def test_stage4_live_execution_requested_uses_explicit_env_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DARWIN_STAGE4_ENABLE_LIVE", raising=False)
     assert stage4_live_execution_requested() is False

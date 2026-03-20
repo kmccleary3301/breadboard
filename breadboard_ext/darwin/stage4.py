@@ -131,7 +131,16 @@ def resolve_stage4_route(
 
 
 def stage4_evaluator_pack_version(*, lane_id: str, task_id: str) -> str:
-    return f"stage4.evalpack.{lane_id}.{task_id}.v1"
+    normalized_task_id = str(task_id).strip()
+    parts = [part for part in normalized_task_id.split(".") if part]
+    if len(parts) >= 4 and parts[0] == "task" and parts[2] == "lane":
+        task_family = ".".join(parts[:4])
+    elif len(parts) >= 3 and parts[0] == "task":
+        task_family = ".".join(parts[:3])
+    else:
+        task_family = normalized_task_id
+    task_family = task_family.replace(".", "_").replace("-", "_")
+    return f"stage4.evalpack.{lane_id}.{task_family}.v1"
 
 
 def build_stage4_support_envelope_digest(
