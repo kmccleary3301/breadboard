@@ -79,3 +79,10 @@ Date: 2026-03-14
 - completion gate: `docs/darwin_stage3_completion_gate_2026-03-19.md`
 - future-roadmap handoff: `docs/darwin_stage3_future_roadmap_handoff_2026-03-19.md`
 - main verification note: `docs/darwin_stage3_main_verification_2026-03-19.md`
+
+## Stage-4 entrypoint
+
+- Stage 4 is now a new scoped program rather than continuation of Stage-3 closeout
+- doctrine entrypoint: `docs/darwin_stage4_doctrine_2026-03-19.md`
+- execution entrypoint: `docs/darwin_stage4_execution_plan_2026-03-19.md`
+- ADR entrypoint: `docs/darwin_stage4_adr_set_2026-03-19.md`
