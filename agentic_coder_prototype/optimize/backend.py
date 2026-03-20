@@ -1716,6 +1716,21 @@ class StagedOptimizer(ReflectiveParetoBackend):
             penalties["cohort_mini_audit_active"] = 0.02
         return penalties
 
+    def _private_live_cell_penalties(
+        self,
+        request: StagedOptimizerRequest,
+    ) -> Dict[str, float]:
+        penalties: Dict[str, float] = {}
+        if not bool(request.metadata.get("live_cell_context")):
+            return penalties
+        if bool(request.metadata.get("blocked_semantic_channels_dominant")):
+            penalties["blocked_semantic_channels_dominate"] = 0.18
+        if bool(request.metadata.get("credible_pattern_absent")):
+            penalties["no_credible_nano_pattern"] = 0.12
+        if bool(request.metadata.get("mini_audit_no_status_change")):
+            penalties["mini_audit_no_status_change"] = 0.08
+        return penalties
+
     def _private_candidate_bonus(
         self,
         request: StagedOptimizerRequest,
@@ -1763,6 +1778,7 @@ class StagedOptimizer(ReflectiveParetoBackend):
             penalties["multi_locus_penalty"] = 0.05
         penalties.update(self._private_transfer_slice_penalties(request))
         penalties.update(self._private_transfer_cohort_penalties(request))
+        penalties.update(self._private_live_cell_penalties(request))
         return penalties
 
     def _private_blocked_components(
@@ -1796,6 +1812,12 @@ class StagedOptimizer(ReflectiveParetoBackend):
                 blocked.append(f"transfer_cohort:{cohort_id}:{status}")
         if bool(request.metadata.get("optimistic_scope_blocked")):
             blocked.append("optimistic_scope_blocked")
+        if bool(request.metadata.get("blocked_semantic_channels_dominant")):
+            blocked.append("blocked_semantic_channels_dominate")
+        if bool(request.metadata.get("credible_pattern_absent")):
+            blocked.append("no_credible_nano_pattern")
+        if bool(request.metadata.get("mini_audit_no_status_change")):
+            blocked.append("mini_audit_no_status_change")
         return blocked
 
     def _private_early_stop_state(
@@ -1823,6 +1845,15 @@ class StagedOptimizer(ReflectiveParetoBackend):
             and not escalation_triggered
         ):
             return True, "mini_audit_not_needed"
+        if bool(request.metadata.get("live_cell_context")):
+            observed_pairs = int(request.metadata.get("nano_pairs_observed") or 0)
+            planned_pairs = int(request.metadata.get("max_nano_pairs") or 0)
+            if planned_pairs > 0 and observed_pairs >= planned_pairs and bool(request.metadata.get("credible_pattern_absent")):
+                return True, "no_credible_nano_pattern"
+            if bool(request.metadata.get("blocked_semantic_channels_dominant")):
+                return True, "blocked_semantic_channels_dominate"
+            if bool(request.metadata.get("mini_audit_no_status_change")):
+                return True, "mini_audit_no_status_change"
         return False, None
 
     def _private_model_tier_for_stage(

@@ -9422,6 +9422,70 @@ def build_v6_live_result_boundary_example_payload() -> Dict[str, object]:
     }
 
 
+def build_v6_live_cell_private_search_policy_examples() -> Dict[str, object]:
+    """Build V6 live-cell staged requests that exercise bounded private stop/rank behavior."""
+
+    first_cell = build_codex_opencode_live_transfer_cohort_cell_example()
+    second_cell = build_codex_opencode_live_replay_config_cell_example()
+
+    first_request_payload = first_cell["transfer_cohort_example"]["codex_cell"]["staged_request"].to_dict()
+    first_request_payload["metadata"] = {
+        **dict(first_request_payload.get("metadata") or {}),
+        "phase": "v6",
+        "live_cell_context": True,
+        "live_cell_id": first_cell["live_cell"]["cell_id"],
+        "nano_pairs_observed": 10,
+        "max_nano_pairs": 10,
+        "credible_pattern_absent": True,
+        "stopping_policy": "stop_after_8_to_10_nano_pairs_without_credible_pattern",
+    }
+    first_request = StagedOptimizerRequest.from_dict(first_request_payload)
+    first_result = run_staged_optimizer(first_request)
+
+    second_request_payload = second_cell["cohort_example"]["opencode_cell"]["staged_request"].to_dict()
+    second_request_payload["metadata"] = {
+        **dict(second_request_payload.get("metadata") or {}),
+        "phase": "v6",
+        "live_cell_context": True,
+        "live_cell_id": second_cell["live_cell"]["cell_id"],
+        "blocked_semantic_channels_dominant": True,
+        "mini_audit_no_status_change": True,
+        "max_nano_pairs": 10,
+        "nano_pairs_observed": 9,
+    }
+    second_request = StagedOptimizerRequest.from_dict(second_request_payload)
+    second_result = run_staged_optimizer(second_request)
+
+    return {
+        "no_credible_pattern_case": {
+            "live_cell": first_cell["live_cell"],
+            "staged_request": first_request,
+            "staged_result": first_result,
+        },
+        "blocked_semantic_case": {
+            "live_cell": second_cell["live_cell"],
+            "staged_request": second_request,
+            "staged_result": second_result,
+        },
+    }
+
+
+def build_v6_live_cell_private_search_policy_examples_payload() -> Dict[str, object]:
+    example = build_v6_live_cell_private_search_policy_examples()
+    return {
+        "no_credible_pattern_case": {
+            "live_cell": dict(example["no_credible_pattern_case"]["live_cell"]),
+            "staged_request": example["no_credible_pattern_case"]["staged_request"].to_dict(),
+            "staged_result": example["no_credible_pattern_case"]["staged_result"].to_dict(),
+        },
+        "blocked_semantic_case": {
+            "live_cell": dict(example["blocked_semantic_case"]["live_cell"]),
+            "staged_request": example["blocked_semantic_case"]["staged_request"].to_dict(),
+            "staged_result": example["blocked_semantic_case"]["staged_result"].to_dict(),
+        },
+    }
+
+
 def build_staged_backend_comparison_example() -> Dict[str, object]:
     """Build a fixed-methodology V2 staged-vs-reflective backend comparison across the three live families."""
 

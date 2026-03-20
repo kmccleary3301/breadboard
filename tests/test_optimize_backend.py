@@ -16,6 +16,8 @@ from agentic_coder_prototype.optimize import (
     build_codex_dossier_backend_example,
     build_codex_dossier_backend_example_payload,
     build_codex_dossier_evaluation_example,
+    build_v6_live_cell_private_search_policy_examples,
+    build_v6_live_cell_private_search_policy_examples_payload,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
     build_codex_opencode_transfer_cohort_example,
     build_opencode_prompt_config_tool_guidance_package_example,
@@ -349,3 +351,38 @@ def test_staged_optimizer_can_stop_early_on_unsupported_transfer_cohort_status()
     assert result.metadata["early_stopped"] is True
     assert result.metadata["early_stop_reason"] == "unsupported_transfer_cohort_status"
     assert any("transfer_cohort:" in item for item in result.metadata["search_policy_trace"][-1]["blocked_components"])
+
+
+def test_v6_private_search_policy_can_stop_after_dead_nano_sweep() -> None:
+    example = build_v6_live_cell_private_search_policy_examples()
+
+    result = example["no_credible_pattern_case"]["staged_result"]
+    trace = result.metadata["search_policy_trace"]
+
+    assert result.metadata["early_stopped"] is True
+    assert result.metadata["early_stop_reason"] == "no_credible_nano_pattern"
+    assert "no_credible_nano_pattern" in trace[-1]["blocked_components"]
+    assert "no_credible_nano_pattern" in trace[-1]["uncertainty_penalties"]
+
+
+def test_v6_private_search_policy_can_freeze_when_blocked_semantics_dominate() -> None:
+    example = build_v6_live_cell_private_search_policy_examples()
+
+    result = example["blocked_semantic_case"]["staged_result"]
+    trace = result.metadata["search_policy_trace"]
+
+    assert result.metadata["early_stopped"] is True
+    assert result.metadata["early_stop_reason"] == "blocked_semantic_channels_dominate"
+    assert "blocked_semantic_channels_dominate" in trace[-1]["blocked_components"]
+    assert "blocked_semantic_channels_dominate" in trace[-1]["uncertainty_penalties"]
+
+
+def test_v6_private_search_policy_payload_round_trips() -> None:
+    payload = build_v6_live_cell_private_search_policy_examples_payload()
+
+    no_pattern = payload["no_credible_pattern_case"]["staged_result"]["metadata"]
+    blocked_semantic = payload["blocked_semantic_case"]["staged_result"]["metadata"]
+
+    assert no_pattern["early_stopped"] is True
+    assert no_pattern["early_stop_reason"] == "no_credible_nano_pattern"
+    assert blocked_semantic["early_stop_reason"] == "blocked_semantic_channels_dominate"
