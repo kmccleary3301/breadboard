@@ -18,6 +18,10 @@ from breadboard_ext.darwin.search import (  # noqa: E402
     build_promotion_history,
     validate_budget_usage,
 )
+from breadboard_ext.darwin.stage3 import (  # noqa: E402
+    build_stage3_mutation_canary,
+    supports_stage3_mutation_canary,
+)
 from run_darwin_t1_live_baselines_v1 import run_named_lane  # noqa: E402
 
 
@@ -90,6 +94,26 @@ def _mutation_cycles() -> dict[str, list[list[dict]]]:
                 "perturbation_group": "budget_mutation",
                 "task_id": "task.darwin.repo_swe.patch_workspace_smoke.search",
                 "trial_label": "mut_class_b",
+            },
+            {
+                "candidate_id": "cand.lane.repo_swe.mut.git_diff.v1",
+                "mutation_operator": "mut.tool_scope.add_git_diff_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "perturbation_group": "tool_scope_mutation",
+                "task_id": "task.darwin.repo_swe.patch_workspace_smoke.search",
+                "trial_label": "mut_git_diff",
+            },
+            {
+                "candidate_id": "cand.lane.repo_swe.mut.shadow_memory.v1",
+                "mutation_operator": "mut.policy.shadow_memory_enable_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "perturbation_group": "policy_bundle_mutation",
+                "task_id": "task.darwin.repo_swe.patch_workspace_smoke.search",
+                "trial_label": "mut_shadow_memory",
             },
         ]],
         "lane.scheduling": [
@@ -258,6 +282,38 @@ def _execute_mutation(
     if mutation_cfg.get("transfer_source_lane_id"):
         row["transfer_source_lane_id"] = mutation_cfg["transfer_source_lane_id"]
         row["transfer_source_candidate_id"] = mutation_cfg["transfer_source_candidate_id"]
+    if supports_stage3_mutation_canary(
+        lane_id=lane_id,
+        mutation_operator=mutation_cfg["mutation_operator"],
+    ):
+        canary = build_stage3_mutation_canary(
+            lane_id=lane_id,
+            spec=spec,
+            parent_candidate_id=parent_row["candidate_id"],
+            parent_candidate_ref=parent_row["candidate_ref"],
+            mutation_cfg=mutation_cfg,
+            candidate_ref=row["candidate_ref"],
+            evaluation_ref=row["evaluation_ref"],
+            task_id=mutation_cfg["task_id"],
+        )
+        substrate_dir = out_dir / "substrate" / lane_id
+        substrate_dir.mkdir(parents=True, exist_ok=True)
+        target_path = substrate_dir / f"{mutation_cfg['trial_label']}_optimization_target_v1.json"
+        candidate_bundle_path = substrate_dir / f"{mutation_cfg['trial_label']}_candidate_bundle_v1.json"
+        materialized_path = substrate_dir / f"{mutation_cfg['trial_label']}_materialized_candidate_v1.json"
+        _write_json(target_path, canary["target"])
+        _write_json(candidate_bundle_path, canary["candidate_bundle"])
+        _write_json(materialized_path, canary["materialized_candidate"])
+        row["stage3_substrate"] = {
+            "selected_locus_id": canary["selected_locus_id"],
+            "blast_radius": canary["blast_radius"],
+            "mutation_bounds": canary["mutation_bounds"],
+            "artifact_refs": {
+                "optimization_target": str(target_path.relative_to(ROOT)),
+                "candidate_bundle": str(candidate_bundle_path.relative_to(ROOT)),
+                "materialized_candidate": str(materialized_path.relative_to(ROOT)),
+            },
+        }
     row["status"] = "candidate"
     row.setdefault("promotion_state", "candidate")
     return row
@@ -483,6 +539,8 @@ def run_search_smoke(out_dir: Path = OUT_DIR) -> dict:
         "schema": "breadboard.darwin.search_smoke_summary.v1",
         "lane_count": len(outcome_rows),
         "mutation_trial_count": len(mutation_rows),
+        "stage3_substrate_backed_trial_count": sum(1 for row in mutation_rows if row.get("stage3_substrate")),
+        "stage3_substrate_lane_ids": sorted({row["lane_id"] for row in mutation_rows if row.get("stage3_substrate")}),
         "lanes": outcome_rows,
         "mutation_refs": [row["candidate_ref"] for row in mutation_rows],
         "archive_snapshot_ref": str(archive_path.relative_to(ROOT)),

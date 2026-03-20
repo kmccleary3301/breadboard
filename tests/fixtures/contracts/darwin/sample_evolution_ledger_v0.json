@@ -1,6 +1,12 @@
 {
   "schema": "breadboard.darwin.evolution_ledger.v0",
   "generated_at": "2026-03-18T00:00:00+00:00",
+  "decision_truth_scope": {
+    "canonical_decision_types": ["promotion", "transfer", "deprecation", "retained_baseline"],
+    "runtime_truth_owned_by": "breadboard_runtime",
+    "archive_is_derived": true,
+    "derived_view_ids": ["archive_snapshot_v1", "compute_normalized_view_v2"]
+  },
   "source_artifact_refs": {
     "live_summary_ref": "artifacts/darwin/live_baselines/live_baseline_summary_v1.json",
     "search_summary_ref": "artifacts/darwin/search/search_smoke_summary_v1.json",

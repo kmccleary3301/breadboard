@@ -45,6 +45,41 @@ Phase-1 is closed as the internal operational baseline.
 - `docs/darwin_phase2_transfer_lineage_status_2026-03-19.md`
 - `docs/contracts/darwin/DARWIN_MODEL_ROUTING_POLICY_V0.md`
 
+## Stage-3 entrypoint
+
+- `docs/darwin_stage3_doctrine_2026-03-19.md`
+- `docs/darwin_stage3_execution_plan_2026-03-19.md`
+- `docs/darwin_stage3_adr_set_2026-03-19.md`
+- `docs/darwin_stage3_tranche1_slice_2026-03-19.md`
+- `docs/darwin_stage3_tranche1_canary_status_2026-03-19.md`
+- `docs/darwin_stage3_optimize_object_mapping_2026-03-19.md`
+- `docs/darwin_stage3_tranche1_uptake_review_2026-03-19.md`
+- `docs/darwin_stage3_tranche1_uptake_gate_2026-03-19.md`
+- `docs/darwin_stage3_bounded_inference_execution_plan_2026-03-19.md`
+- `docs/darwin_stage3_bounded_inference_status_2026-03-19.md`
+- `docs/darwin_stage3_bounded_inference_review_2026-03-19.md`
+- `docs/darwin_stage3_bounded_inference_replay_note_2026-03-19.md`
+- `docs/darwin_stage3_component_entry_gate_2026-03-19.md`
+- `docs/darwin_stage3_component_transfer_execution_plan_2026-03-19.md`
+- `docs/darwin_stage3_component_transfer_status_2026-03-19.md`
+- `docs/darwin_stage3_component_transfer_review_2026-03-19.md`
+- `docs/darwin_stage3_component_transfer_gate_2026-03-19.md`
+- `docs/darwin_stage3_comparative_consolidation_execution_plan_2026-03-19.md`
+- `docs/darwin_stage3_comparative_consolidation_status_2026-03-19.md`
+- `docs/darwin_stage3_harness_watchdog_summary_2026-03-19.md`
+- `docs/darwin_stage3_transfer_comparability_note_2026-03-19.md`
+- `docs/darwin_stage3_replay_sufficiency_note_2026-03-19.md`
+- `docs/darwin_stage3_late_review_2026-03-19.md`
+- `docs/darwin_stage3_late_gate_2026-03-19.md`
+- `docs/darwin_stage3_remaining_to_close_2026-03-19.md`
+- `docs/darwin_stage3_closeout_execution_plan_2026-03-19.md`
+- `docs/darwin_stage3_canonical_artifacts_2026-03-19.md`
+- `docs/darwin_stage3_claim_boundary_2026-03-19.md`
+- `docs/darwin_stage3_signoff_2026-03-19.md`
+- `docs/darwin_stage3_completion_gate_2026-03-19.md`
+- `docs/darwin_stage3_future_roadmap_handoff_2026-03-19.md`
+- `docs/darwin_stage3_main_verification_2026-03-19.md`
+
 ## What Phase-2 should not reopen
 
 - basic DARWIN contract scaffolding

@@ -38,6 +38,10 @@ Phase-1 T0 freezes:
 - `DARWIN_TRANSFER_FAMILY_POLICY_V0.md`
 - `DARWIN_LINEAGE_POLICY_V0.md`
 - `DARWIN_EXTERNAL_SAFE_EVIDENCE_POLICY_V0.md`
+- `DARWIN_STAGE3_COMPONENT_FAMILY_POLICY_V0.md`
+- `DARWIN_STAGE3_COMPONENT_PROMOTION_POLICY_V0.md`
+- `DARWIN_STAGE3_BOUNDED_TRANSFER_POLICY_V0.md`
+- `DARWIN_STAGE3_COMPONENT_LIFECYCLE_V0.md`
 
 ### Machine-readable schemas
 
@@ -99,6 +103,23 @@ Phase-1 T0 freezes:
 - `scripts/emit_darwin_phase1_final_evidence_v1.py`
 - `scripts/run_darwin_phase1_orchestration_v1.py`
 - `scripts/run_darwin_research_lane_baseline_v0.py`
+- `scripts/run_darwin_stage3_bounded_inference_campaign_v0.py`
+- `scripts/build_darwin_stage3_operator_ev_report_v0.py`
+- `scripts/build_darwin_stage3_topology_ev_report_v0.py`
+- `scripts/build_darwin_stage3_invalidity_summary_v0.py`
+- `scripts/build_darwin_stage3_verification_bundle_v0.py`
+- `scripts/build_darwin_stage3_component_candidates_v0.py`
+- `scripts/run_darwin_stage3_component_replay_v0.py`
+- `scripts/build_darwin_stage3_component_promotion_report_v0.py`
+- `scripts/build_darwin_stage3_bounded_transfer_outcomes_v0.py`
+- `scripts/build_darwin_stage3_failed_transfer_taxonomy_v0.py`
+- `scripts/build_darwin_stage3_component_transfer_verification_bundle_v0.py`
+- `scripts/build_darwin_stage3_component_registry_v0.py`
+- `scripts/build_darwin_stage3_promoted_family_artifact_v0.py`
+- `scripts/build_darwin_stage3_second_family_decision_v0.py`
+- `scripts/build_darwin_stage3_component_scorecard_v0.py`
+- `scripts/build_darwin_stage3_component_memo_v0.py`
+- `scripts/build_darwin_stage3_consolidated_verification_bundle_v0.py`
 
 ## Legacy compatibility
 

@@ -91,6 +91,7 @@
   "required": [
     "schema",
     "generated_at",
+    "decision_truth_scope",
     "source_artifact_refs",
     "archive_snapshot_is_derived",
     "component_refs",
@@ -100,6 +101,27 @@
   "properties": {
     "schema": { "const": "breadboard.darwin.evolution_ledger.v0" },
     "generated_at": { "type": "string", "minLength": 1 },
+    "decision_truth_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonical_decision_types", "runtime_truth_owned_by", "archive_is_derived", "derived_view_ids"],
+      "properties": {
+        "canonical_decision_types": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["promotion", "rollback", "transfer", "deprecation", "retained_baseline"]
+          }
+        },
+        "runtime_truth_owned_by": { "type": "string", "minLength": 1 },
+        "archive_is_derived": { "type": "boolean" },
+        "derived_view_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
     "source_artifact_refs": {
       "type": "object",
       "additionalProperties": false,

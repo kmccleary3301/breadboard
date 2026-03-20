@@ -16,7 +16,8 @@
     "metric_semantics",
     "invalid_comparison_rules",
     "control_pack",
-    "claim_constraints"
+    "claim_constraints",
+    "budget_envelope"
   ],
   "properties": {
     "schema": { "const": "breadboard.darwin.evaluator_pack.v0" },
@@ -73,6 +74,44 @@
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
         }
+      }
+    },
+    "budget_envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "budget_class",
+        "wall_clock_ms",
+        "token_counts",
+        "cost_estimate",
+        "cost_classification",
+        "comparison_class",
+        "replication_reserve_fraction",
+        "control_reserve_fraction"
+      ],
+      "properties": {
+        "budget_class": { "type": "string", "minLength": 1 },
+        "wall_clock_ms": { "type": "integer", "minimum": 0 },
+        "token_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["prompt_tokens", "completion_tokens", "total_tokens"],
+          "properties": {
+            "prompt_tokens": { "type": "integer", "minimum": 0 },
+            "completion_tokens": { "type": "integer", "minimum": 0 },
+            "total_tokens": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "cost_estimate": { "type": "number", "minimum": 0.0 },
+        "cost_classification": {
+          "type": "string",
+          "enum": ["exact_local_zero", "estimated_local_nonzero", "usage_present_zero_cost", "estimated_route_priced"]
+        },
+        "comparison_class": { "type": "string", "minLength": 1 },
+        "route_id": { "type": ["string", "null"] },
+        "provider_model": { "type": ["string", "null"] },
+        "replication_reserve_fraction": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "control_reserve_fraction": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
       }
     }
   }

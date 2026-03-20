@@ -43,3 +43,39 @@ Date: 2026-03-14
 - broader transfer families
 - compute-normalized claim-bearing dossiers
 - mandatory C-Trees promotion
+
+## Stage-3 entrypoint
+
+- Stage 3 is now a new scoped program rather than continuation of current-program closeout
+- doctrine entrypoint: `docs/darwin_stage3_doctrine_2026-03-19.md`
+- execution entrypoint: `docs/darwin_stage3_execution_plan_2026-03-19.md`
+- ADR entrypoint: `docs/darwin_stage3_adr_set_2026-03-19.md`
+- tranche-1 slice entrypoint: `docs/darwin_stage3_tranche1_slice_2026-03-19.md`
+- tranche-1 canary status: `docs/darwin_stage3_tranche1_canary_status_2026-03-19.md`
+- optimize-object mapping: `docs/darwin_stage3_optimize_object_mapping_2026-03-19.md`
+- uptake review: `docs/darwin_stage3_tranche1_uptake_review_2026-03-19.md`
+- uptake gate: `docs/darwin_stage3_tranche1_uptake_gate_2026-03-19.md`
+- bounded real-inference execution plan: `docs/darwin_stage3_bounded_inference_execution_plan_2026-03-19.md`
+- bounded real-inference status: `docs/darwin_stage3_bounded_inference_status_2026-03-19.md`
+- bounded real-inference review: `docs/darwin_stage3_bounded_inference_review_2026-03-19.md`
+- bounded real-inference replay note: `docs/darwin_stage3_bounded_inference_replay_note_2026-03-19.md`
+- component-entry gate: `docs/darwin_stage3_component_entry_gate_2026-03-19.md`
+- component-transfer execution plan: `docs/darwin_stage3_component_transfer_execution_plan_2026-03-19.md`
+- component-transfer status: `docs/darwin_stage3_component_transfer_status_2026-03-19.md`
+- component-transfer review: `docs/darwin_stage3_component_transfer_review_2026-03-19.md`
+- component-transfer gate: `docs/darwin_stage3_component_transfer_gate_2026-03-19.md`
+- comparative-consolidation execution plan: `docs/darwin_stage3_comparative_consolidation_execution_plan_2026-03-19.md`
+- comparative-consolidation status: `docs/darwin_stage3_comparative_consolidation_status_2026-03-19.md`
+- harness watchdog summary: `docs/darwin_stage3_harness_watchdog_summary_2026-03-19.md`
+- transfer comparability note: `docs/darwin_stage3_transfer_comparability_note_2026-03-19.md`
+- replay sufficiency note: `docs/darwin_stage3_replay_sufficiency_note_2026-03-19.md`
+- late review: `docs/darwin_stage3_late_review_2026-03-19.md`
+- late gate: `docs/darwin_stage3_late_gate_2026-03-19.md`
+- remaining-to-close note: `docs/darwin_stage3_remaining_to_close_2026-03-19.md`
+- closeout execution plan: `docs/darwin_stage3_closeout_execution_plan_2026-03-19.md`
+- canonical artifact freeze: `docs/darwin_stage3_canonical_artifacts_2026-03-19.md`
+- claim boundary: `docs/darwin_stage3_claim_boundary_2026-03-19.md`
+- final signoff: `docs/darwin_stage3_signoff_2026-03-19.md`
+- completion gate: `docs/darwin_stage3_completion_gate_2026-03-19.md`
+- future-roadmap handoff: `docs/darwin_stage3_future_roadmap_handoff_2026-03-19.md`
+- main verification note: `docs/darwin_stage3_main_verification_2026-03-19.md`
