@@ -8,6 +8,7 @@ from breadboard_ext.darwin.stage4 import (
     build_stage4_comparison_envelope_digest,
     build_stage4_search_policy_v1,
     build_stage4_support_envelope_digest,
+    classify_stage4_power_signal,
     consume_execution_envelope_v2,
     estimate_stage4_route_cost,
     execute_stage4_provider_prompt,
@@ -120,6 +121,30 @@ def test_validate_stage4_claim_eligibility_rejects_scaffold_rows() -> None:
     )
     assert result.ok is False
     assert result.reason == "execution_mode_not_live"
+
+
+def test_classify_stage4_power_signal_recognizes_score_retained_runtime_improvement() -> None:
+    result = classify_stage4_power_signal(
+        comparison_valid=True,
+        claim_eligible=True,
+        delta_score=0.0,
+        delta_runtime_ms=-45,
+        delta_cost_usd=0.0,
+    )
+    assert result.positive is True
+    assert result.signal_class == "score_retained_runtime_improved"
+
+
+def test_classify_stage4_power_signal_rejects_invalid_rows() -> None:
+    result = classify_stage4_power_signal(
+        comparison_valid=False,
+        claim_eligible=True,
+        delta_score=1.0,
+        delta_runtime_ms=-45,
+        delta_cost_usd=-0.0001,
+    )
+    assert result.positive is False
+    assert result.signal_class == "invalid_comparison"
 
 
 def test_build_stage4_support_envelope_digest_is_stable() -> None:

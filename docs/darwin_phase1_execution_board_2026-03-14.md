@@ -89,6 +89,7 @@ Date: 2026-03-14
 - tranche-1 slice entrypoint: `docs/darwin_stage4_tranche1_slice_2026-03-19.md`
 - tranche-1 canary status: `docs/darwin_stage4_tranche1_canary_status_2026-03-19.md`
 - live-economics slice: `docs/darwin_stage4_live_economics_slice_2026-03-20.md`
+- repo_swe EV refinement slice: `docs/darwin_stage4_repo_swe_ev_refinement_slice_2026-03-20.md`
 - live-economics status: `docs/darwin_stage4_live_economics_status_2026-03-20.md`
 - live readiness note: `docs/darwin_stage4_live_readiness_2026-03-20.md`
 - SearchPolicy review: `docs/darwin_stage4_search_policy_review_2026-03-20.md`

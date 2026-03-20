@@ -18,6 +18,7 @@ from breadboard_ext.darwin.stage4 import (  # noqa: E402
     build_stage4_comparison_envelope_digest,
     build_stage4_search_policy_v1,
     build_stage4_support_envelope_digest,
+    classify_stage4_power_signal,
     execute_stage4_provider_prompt,
     select_stage4_search_policy_arms,
     stage4_evaluator_pack_version,
@@ -271,15 +272,18 @@ def _run_arm(*, arm_cfg: dict, spec: dict, out_dir: Path) -> tuple[dict, list[di
 
 def build_stage4_live_comparisons(run_rows: list[dict]) -> list[dict]:
     control_lookup = {
-        row["lane_id"]: row
+        (row["lane_id"], int(row["repetition_index"])): row
         for row in run_rows
         if row["control_tag"] in {"control", "watchdog"} and row["repetition_index"] == 1
     }
+    for row in run_rows:
+        if row["control_tag"] in {"control", "watchdog"}:
+            control_lookup[(row["lane_id"], int(row["repetition_index"]))] = row
     comparison_rows: list[dict] = []
     for row in run_rows:
         if row["control_tag"] in {"control", "watchdog"}:
             continue
-        baseline = control_lookup[row["lane_id"]]
+        baseline = control_lookup[(row["lane_id"], int(row["repetition_index"]))]
         matched_check = validate_stage4_matched_budget_pair(baseline=baseline, candidate=row)
         claim_check = validate_stage4_claim_eligibility(
             {
@@ -287,18 +291,33 @@ def build_stage4_live_comparisons(run_rows: list[dict]) -> list[dict]:
                 "cost_source": row["cost_source"],
             }
         )
+        delta_score = round(float(row["primary_score"]) - float(baseline["primary_score"]), 6)
+        delta_runtime_ms = int(row["wall_clock_ms"]) - int(baseline["wall_clock_ms"])
+        delta_cost_usd = round(float(row["cost_estimate"]) - float(baseline["cost_estimate"]), 8)
+        power_signal = classify_stage4_power_signal(
+            comparison_valid=matched_check.ok and row["verifier_status"] == "passed",
+            claim_eligible=claim_check.ok,
+            delta_score=delta_score,
+            delta_runtime_ms=delta_runtime_ms,
+            delta_cost_usd=delta_cost_usd,
+        )
         comparison_rows.append(
             {
                 "lane_id": row["lane_id"],
                 "campaign_arm_id": row["campaign_arm_id"],
                 "baseline_campaign_arm_id": baseline["campaign_arm_id"],
+                "repetition_index": int(row["repetition_index"]),
                 "operator_id": row["operator_id"],
+                "topology_id": row["topology_id"],
                 "comparison_valid": matched_check.ok and row["verifier_status"] == "passed",
                 "invalid_reason": None if matched_check.ok else matched_check.reason,
                 "claim_eligible": claim_check.ok,
                 "claim_ineligible_reason": claim_check.reason,
-                "delta_score": round(float(row["primary_score"]) - float(baseline["primary_score"]), 6),
-                "delta_runtime_ms": int(row["wall_clock_ms"]) - int(baseline["wall_clock_ms"]),
+                "delta_score": delta_score,
+                "delta_runtime_ms": delta_runtime_ms,
+                "delta_cost_usd": delta_cost_usd,
+                "positive_power_signal": power_signal.positive,
+                "power_signal_class": power_signal.signal_class,
                 "search_policy_selection": dict(row.get("search_policy_selection") or {}),
             }
         )
@@ -353,6 +372,7 @@ def run_stage4_live_economics_pilot(out_dir: Path = OUT_DIR) -> dict:
         "comparison_count": len(comparison_rows),
         "execution_modes": sorted({row["execution_mode"] for row in run_rows}),
         "claim_eligible_comparison_count": sum(1 for row in comparison_rows if row["claim_eligible"]),
+        "positive_power_signal_count": sum(1 for row in comparison_rows if row["positive_power_signal"]),
         "selected_repo_swe_operator_ids": [
             row["operator_id"]
             for row in arm_rows

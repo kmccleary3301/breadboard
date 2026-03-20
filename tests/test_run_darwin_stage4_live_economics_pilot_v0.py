@@ -24,4 +24,5 @@ def test_run_stage4_live_economics_pilot_emits_policy_and_telemetry(monkeypatch:
         "mut.budget.class_a_to_class_b_v1",
     ]
     assert payload["claim_eligible_comparison_count"] == 0
+    assert payload["positive_power_signal_count"] == 0
     assert payload["execution_modes"] == ["scaffold"]

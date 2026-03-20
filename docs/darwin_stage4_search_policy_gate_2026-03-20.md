@@ -1,7 +1,7 @@
 # DARWIN Stage-4 SearchPolicy Gate
 
 Date: 2026-03-20
-Status: partially unblocked after pricing support and normalized comparison-envelope landing
+Status: unblocked for bounded repo_swe power evidence after EV refinement
 References:
 - `docs/darwin_stage4_search_policy_review_2026-03-20.md`
 - `docs/darwin_stage4_live_readiness_2026-03-20.md`
@@ -13,7 +13,7 @@ Can Stage 4 now count repo_swe SearchPolicy pilot outputs as live-provider power
 
 ## Decision
 
-No.
+Yes, in a bounded repo_swe sense.
 
 ## What is now satisfied
 
@@ -21,25 +21,25 @@ No.
 - cached-input pricing is modeled
 - the workspace is `ready_for_live_claims=true`
 - topology and tool-scope mutations now pass matched-budget comparison validity
+- repo_swe comparisons now pair against matching control repetitions
+- topology and tool-scope families now show positive power signals through retained-score runtime/cost improvement
 
 ## Why the gate is still blocked
 
-- current valid live comparisons still show `delta_score=0.0`
+- score does not improve in the current pilot
 - budget mutations still fail matched-budget comparison via `budget_class_mismatch`
-- there is still no positive repo_swe live expected-value signal
+- systems-lane live-provider behavior is still unproven
 
 ## What is authorized
 
-- treat the current repo_swe live pilot as a valid live-claim/readiness result
+- treat the current repo_swe live pilot as a bounded live-provider power result
 - keep the current repo_swe operator set for the next bounded slice
 - use topology and tool-scope families as valid matched-budget comparison families
 - keep budget-class mutation as intentionally unmatched
-- decide whether the next bounded Stage-4 slice is:
-  - repo_swe EV refinement
-  - or first narrow systems live-provider expansion
+- take the next bounded Stage-4 slice as the first narrow systems live-provider expansion
 
 ## What is not authorized
 
-- counting zero-delta live rows as Stage-4 power evidence
+- counting flat-score rows as broad Stage-4 compounding evidence without the bounded efficiency rule
 - treating budget-class mutation as matched-budget valid
 - widening Stage-4 into broad live campaigns from this pilot alone

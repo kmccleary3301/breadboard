@@ -108,6 +108,12 @@ class Stage4MatchedBudgetCheck:
     reason: str | None = None
 
 
+@dataclass(frozen=True)
+class Stage4PowerSignal:
+    positive: bool
+    signal_class: str
+
+
 def stage4_provider_ready() -> bool:
     return bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENROUTER_API_KEY"))
 
@@ -371,6 +377,29 @@ def validate_stage4_claim_eligibility(row: Mapping[str, Any]) -> Stage4MatchedBu
     if str(row.get("cost_source") or "") not in {"provider_returned", "estimated_from_pricing_table"}:
         return Stage4MatchedBudgetCheck(ok=False, reason="cost_source_not_provider_backed")
     return Stage4MatchedBudgetCheck(ok=True, reason=None)
+
+
+def classify_stage4_power_signal(
+    *,
+    comparison_valid: bool,
+    claim_eligible: bool,
+    delta_score: float,
+    delta_runtime_ms: int,
+    delta_cost_usd: float,
+) -> Stage4PowerSignal:
+    if not comparison_valid:
+        return Stage4PowerSignal(positive=False, signal_class="invalid_comparison")
+    if not claim_eligible:
+        return Stage4PowerSignal(positive=False, signal_class="not_claim_eligible")
+    if float(delta_score) > 0.0:
+        return Stage4PowerSignal(positive=True, signal_class="score_improved")
+    if float(delta_score) < 0.0:
+        return Stage4PowerSignal(positive=False, signal_class="score_degraded")
+    if int(delta_runtime_ms) < 0:
+        return Stage4PowerSignal(positive=True, signal_class="score_retained_runtime_improved")
+    if float(delta_cost_usd) < 0.0:
+        return Stage4PowerSignal(positive=True, signal_class="score_retained_cost_improved")
+    return Stage4PowerSignal(positive=False, signal_class="no_signal")
 
 
 def _stage4_pricing_fields(route_id: str) -> tuple[str, str, str]:

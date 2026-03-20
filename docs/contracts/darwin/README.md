@@ -123,6 +123,8 @@ Phase-1 T0 freezes:
 - `scripts/run_darwin_stage4_live_economics_pilot_v0.py`
 - `scripts/build_darwin_stage4_live_readiness_v0.py`
 - `scripts/build_darwin_stage4_matched_budget_view_v1.py`
+- `scripts/build_darwin_stage4_operator_ev_report_v0.py`
+- `scripts/build_darwin_stage4_topology_ev_report_v0.py`
 
 ## Legacy compatibility
 
