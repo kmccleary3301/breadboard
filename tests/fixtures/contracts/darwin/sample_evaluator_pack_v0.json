@@ -37,7 +37,9 @@
     "token_counts": {
       "prompt_tokens": 0,
       "completion_tokens": 0,
-      "total_tokens": 0
+      "total_tokens": 0,
+      "cached_input_tokens": 0,
+      "cache_write_tokens": 0
     },
     "cost_estimate": 0.0,
     "cost_classification": "exact_local_zero",
@@ -48,6 +50,7 @@
     "route_class": "local_baseline",
     "cost_source": "local_execution",
     "support_envelope_digest": "4444444444444444444444444444444444444444444444444444444444444444",
+    "comparison_envelope_digest": "5555555555555555555555555555555555555555555555555555555555555555",
     "evaluator_pack_version": "stage4.evalpack.lane.harness.task.darwin.harness.parity_smoke.v1",
     "replication_reserve_fraction": 0.2,
     "control_reserve_fraction": 0.1,

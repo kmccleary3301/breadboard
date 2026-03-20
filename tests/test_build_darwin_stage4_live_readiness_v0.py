@@ -14,6 +14,7 @@ def test_build_stage4_live_readiness_reports_missing_provider_inputs(monkeypatch
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("DARWIN_STAGE4_GPT54_MINI_INPUT_COST_PER_1M", raising=False)
     monkeypatch.delenv("DARWIN_STAGE4_GPT54_MINI_OUTPUT_COST_PER_1M", raising=False)
+    monkeypatch.delenv("DARWIN_STAGE4_GPT54_MINI_CACHED_INPUT_COST_PER_1M", raising=False)
     write_bootstrap_specs()
     run_stage4_live_economics_pilot()
     summary = build_stage4_live_readiness()

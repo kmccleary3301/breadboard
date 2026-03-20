@@ -15,9 +15,17 @@ STAGE4_LIVE_AUTHORIZED_LANES = {"lane.repo_swe"}
 DEFAULT_STAGE4_WORKER_ROUTE = "openrouter/openai/gpt-5.4-mini"
 DEFAULT_STAGE4_FILTER_ROUTE = "openrouter/openai/gpt-5.4-nano"
 DEFAULT_STAGE4_STRONG_ROUTE = "openrouter/openai/gpt-5.4"
+DEFAULT_STAGE4_DIRECT_WORKER_ROUTE = "openai/gpt-5.4-mini"
+DEFAULT_STAGE4_DIRECT_FILTER_ROUTE = "openai/gpt-5.4-nano"
+DEFAULT_STAGE4_DIRECT_STRONG_ROUTE = "openai/gpt-5.4"
 
 _ROUTE_PROFILES = {
     DEFAULT_STAGE4_WORKER_ROUTE: {
+        "route_class": "default_worker",
+        "provider_model": "openai/gpt-5.4-mini",
+        "pricing_env_prefix": "DARWIN_STAGE4_GPT54_MINI",
+    },
+    DEFAULT_STAGE4_DIRECT_WORKER_ROUTE: {
         "route_class": "default_worker",
         "provider_model": "openai/gpt-5.4-mini",
         "pricing_env_prefix": "DARWIN_STAGE4_GPT54_MINI",
@@ -27,7 +35,17 @@ _ROUTE_PROFILES = {
         "provider_model": "openai/gpt-5.4-nano",
         "pricing_env_prefix": "DARWIN_STAGE4_GPT54_NANO",
     },
+    DEFAULT_STAGE4_DIRECT_FILTER_ROUTE: {
+        "route_class": "bulk_filter",
+        "provider_model": "openai/gpt-5.4-nano",
+        "pricing_env_prefix": "DARWIN_STAGE4_GPT54_NANO",
+    },
     DEFAULT_STAGE4_STRONG_ROUTE: {
+        "route_class": "strong_exception",
+        "provider_model": "openai/gpt-5.4",
+        "pricing_env_prefix": "DARWIN_STAGE4_GPT54_STRONG",
+    },
+    DEFAULT_STAGE4_DIRECT_STRONG_ROUTE: {
         "route_class": "strong_exception",
         "provider_model": "openai/gpt-5.4",
         "pricing_env_prefix": "DARWIN_STAGE4_GPT54_STRONG",
@@ -130,6 +148,29 @@ def resolve_stage4_route(
     }
 
 
+def _resolve_stage4_fallback_route(route_id: str, *, task_class: str) -> dict[str, Any] | None:
+    fallback_lookup = {
+        DEFAULT_STAGE4_WORKER_ROUTE: DEFAULT_STAGE4_DIRECT_WORKER_ROUTE,
+        DEFAULT_STAGE4_FILTER_ROUTE: DEFAULT_STAGE4_DIRECT_FILTER_ROUTE,
+        DEFAULT_STAGE4_STRONG_ROUTE: DEFAULT_STAGE4_DIRECT_STRONG_ROUTE,
+    }
+    fallback_route_id = fallback_lookup.get(route_id)
+    if not fallback_route_id or not os.environ.get("OPENAI_API_KEY"):
+        return None
+    profile = _ROUTE_PROFILES[fallback_route_id]
+    return {
+        "route_id": fallback_route_id,
+        "provider_model": profile["provider_model"],
+        "route_class": profile["route_class"],
+        "task_class": task_class,
+        "provider_ready": stage4_provider_ready(),
+        "actual_provider_used": True,
+        "execution_mode": "live",
+        "claim_eligible": False,
+        "claim_eligibility_basis": "provider_backed_telemetry_required",
+    }
+
+
 def stage4_evaluator_pack_version(*, lane_id: str, task_id: str) -> str:
     normalized_task_id = str(task_id).strip()
     parts = [part for part in normalized_task_id.split(".") if part]
@@ -141,6 +182,16 @@ def stage4_evaluator_pack_version(*, lane_id: str, task_id: str) -> str:
         task_family = normalized_task_id
     task_family = task_family.replace(".", "_").replace("-", "_")
     return f"stage4.evalpack.{lane_id}.{task_family}.v1"
+
+
+def _stage4_task_family_id(task_id: str) -> str:
+    normalized_task_id = str(task_id).strip()
+    parts = [part for part in normalized_task_id.split(".") if part]
+    if len(parts) >= 4 and parts[0] == "task" and parts[2] == "lane":
+        return ".".join(parts[:4])
+    elif len(parts) >= 3 and parts[0] == "task":
+        return ".".join(parts[:3])
+    return normalized_task_id
 
 
 def build_stage4_support_envelope_digest(
@@ -167,6 +218,26 @@ def build_stage4_support_envelope_digest(
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
 
+def build_stage4_comparison_envelope_digest(
+    *,
+    lane_id: str,
+    task_id: str,
+    budget_class: str,
+    comparison_class: str,
+    environment_digest: str,
+    claim_target: str,
+) -> str:
+    payload = {
+        "lane_id": lane_id,
+        "task_family_id": _stage4_task_family_id(task_id),
+        "budget_class": budget_class,
+        "comparison_class": comparison_class,
+        "environment_digest": environment_digest,
+        "claim_target": claim_target,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+
 def build_stage4_budget_envelope(
     *,
     budget_class: str,
@@ -180,6 +251,7 @@ def build_stage4_budget_envelope(
     route_class: str,
     cost_source: str,
     support_envelope_digest: str,
+    comparison_envelope_digest: str | None,
     evaluator_pack_version: str,
     replication_reserve_fraction: float,
     control_reserve_fraction: float,
@@ -188,6 +260,8 @@ def build_stage4_budget_envelope(
     prompt_tokens = int(token_counts_payload.get("prompt_tokens") or token_counts_payload.get("prompt") or 0)
     completion_tokens = int(token_counts_payload.get("completion_tokens") or token_counts_payload.get("completion") or 0)
     total_tokens = int(token_counts_payload.get("total_tokens") or (prompt_tokens + completion_tokens))
+    cached_input_tokens = int(token_counts_payload.get("cached_input_tokens") or token_counts_payload.get("cached_tokens") or 0)
+    cache_write_tokens = int(token_counts_payload.get("cache_write_tokens") or 0)
     normalized_cost = float(cost_estimate)
     if execution_mode == "live":
         cost_classification = "estimated_route_priced" if normalized_cost > 0.0 else "usage_present_zero_cost"
@@ -200,6 +274,8 @@ def build_stage4_budget_envelope(
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": total_tokens,
+            "cached_input_tokens": cached_input_tokens,
+            "cache_write_tokens": cache_write_tokens,
         },
         "cost_estimate": normalized_cost,
         "cost_classification": cost_classification,
@@ -210,6 +286,7 @@ def build_stage4_budget_envelope(
         "route_class": str(route_class),
         "cost_source": str(cost_source),
         "support_envelope_digest": str(support_envelope_digest),
+        "comparison_envelope_digest": str(comparison_envelope_digest).strip() if comparison_envelope_digest else None,
         "evaluator_pack_version": str(evaluator_pack_version),
         "replication_reserve_fraction": float(replication_reserve_fraction),
         "control_reserve_fraction": float(control_reserve_fraction),
@@ -279,8 +356,7 @@ def validate_stage4_matched_budget_pair(
         "route_class",
         "execution_mode",
         "evaluator_pack_version",
-        "support_envelope_digest",
-        "task_id",
+        "comparison_envelope_digest",
         "control_reserve_policy",
     )
     for field_name in required_equal_fields:
@@ -297,9 +373,13 @@ def validate_stage4_claim_eligibility(row: Mapping[str, Any]) -> Stage4MatchedBu
     return Stage4MatchedBudgetCheck(ok=True, reason=None)
 
 
-def _stage4_pricing_fields(route_id: str) -> tuple[str, str]:
+def _stage4_pricing_fields(route_id: str) -> tuple[str, str, str]:
     prefix = str(_ROUTE_PROFILES[route_id]["pricing_env_prefix"])
-    return (f"{prefix}_INPUT_COST_PER_1M", f"{prefix}_OUTPUT_COST_PER_1M")
+    return (
+        f"{prefix}_INPUT_COST_PER_1M",
+        f"{prefix}_OUTPUT_COST_PER_1M",
+        f"{prefix}_CACHED_INPUT_COST_PER_1M",
+    )
 
 
 def estimate_stage4_route_cost(
@@ -307,16 +387,34 @@ def estimate_stage4_route_cost(
     route_id: str,
     prompt_tokens: int,
     completion_tokens: int,
+    cached_input_tokens: int = 0,
 ) -> tuple[float, str]:
-    input_env, output_env = _stage4_pricing_fields(route_id)
+    input_env, output_env, cached_input_env = _stage4_pricing_fields(route_id)
     input_cost_raw = os.environ.get(input_env)
     output_cost_raw = os.environ.get(output_env)
     if input_cost_raw is None or output_cost_raw is None:
         return 0.0, "provider_usage_only"
+    cached_input_tokens = max(int(cached_input_tokens), 0)
+    cached_input_cost_raw = os.environ.get(cached_input_env)
+    if cached_input_tokens > 0 and cached_input_cost_raw is None:
+        return 0.0, "cached_pricing_missing"
     input_cost = float(input_cost_raw)
     output_cost = float(output_cost_raw)
-    estimate = ((prompt_tokens / 1_000_000.0) * input_cost) + ((completion_tokens / 1_000_000.0) * output_cost)
+    cached_input_cost = float(cached_input_cost_raw) if cached_input_cost_raw is not None else input_cost
+    uncached_prompt_tokens = max(int(prompt_tokens) - cached_input_tokens, 0)
+    estimate = (
+        ((uncached_prompt_tokens / 1_000_000.0) * input_cost)
+        + ((cached_input_tokens / 1_000_000.0) * cached_input_cost)
+        + ((completion_tokens / 1_000_000.0) * output_cost)
+    )
     return round(estimate, 8), "estimated_from_pricing_table"
+
+
+def _extract_cached_usage_fields(usage: Mapping[str, Any]) -> tuple[int, int]:
+    usage_details = usage.get("prompt_tokens_details") or usage.get("input_tokens_details") or {}
+    cached_tokens = int(usage_details.get("cached_tokens") or 0)
+    cache_write_tokens = int(usage_details.get("cache_write_tokens") or 0)
+    return cached_tokens, cache_write_tokens
 
 
 def _parse_openai_response_text(payload: Mapping[str, Any]) -> str:
@@ -362,12 +460,15 @@ def _perform_stage4_live_call(
             payload = json.loads(response.read().decode("utf-8"))
         choice = ((payload.get("choices") or [{}])[0].get("message") or {})
         usage = payload.get("usage") or {}
+        cached_tokens, cache_write_tokens = _extract_cached_usage_fields(usage)
         return {
             "response_id": payload.get("id"),
             "text": str(choice.get("content") or "").strip(),
             "prompt_tokens": int(usage.get("prompt_tokens") or 0),
             "completion_tokens": int(usage.get("completion_tokens") or 0),
             "total_tokens": int(usage.get("total_tokens") or 0),
+            "cached_input_tokens": cached_tokens,
+            "cache_write_tokens": cache_write_tokens,
             "provider_cost_usd": payload.get("total_cost"),
         }
     api_key = os.environ["OPENAI_API_KEY"]
@@ -390,12 +491,15 @@ def _perform_stage4_live_call(
     with urllib_request.urlopen(request_obj, timeout=timeout_s) as response:
         response_payload = json.loads(response.read().decode("utf-8"))
     usage = response_payload.get("usage") or {}
+    cached_tokens, cache_write_tokens = _extract_cached_usage_fields(usage)
     return {
         "response_id": response_payload.get("id"),
         "text": _parse_openai_response_text(response_payload),
         "prompt_tokens": int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0),
         "completion_tokens": int(usage.get("output_tokens") or usage.get("completion_tokens") or 0),
         "total_tokens": int(usage.get("total_tokens") or 0),
+        "cached_input_tokens": cached_tokens,
+        "cache_write_tokens": cache_write_tokens,
         "provider_cost_usd": response_payload.get("cost_usd"),
     }
 
@@ -454,23 +558,41 @@ def execute_stage4_provider_prompt(
             prompt=prompt,
             max_output_tokens=max_output_tokens,
         )
+        live_route = resolve_stage4_route(
+            task_class=task_class,
+            role=role,
+            stronger_tier=stronger_tier,
+            actual_provider_used=True,
+        )
+    except urllib_error.HTTPError as exc:
+        fallback_route = None
+        if exc.code == 401 and str(route["route_id"]).startswith("openrouter/"):
+            fallback_route = _resolve_stage4_fallback_route(str(route["route_id"]), task_class=task_class)
+        if fallback_route is None:
+            raise RuntimeError(f"stage4 live provider call failed: {exc}") from exc
+        try:
+            live_call = _perform_stage4_live_call(
+                route=fallback_route,
+                prompt=prompt,
+                max_output_tokens=max_output_tokens,
+            )
+        except urllib_error.URLError as fallback_exc:
+            raise RuntimeError(f"stage4 live provider call failed: {fallback_exc}") from fallback_exc
+        live_route = fallback_route
     except urllib_error.URLError as exc:
         raise RuntimeError(f"stage4 live provider call failed: {exc}") from exc
-    live_route = resolve_stage4_route(
-        task_class=task_class,
-        role=role,
-        stronger_tier=stronger_tier,
-        actual_provider_used=True,
-    )
     prompt_tokens = int(live_call["prompt_tokens"])
     completion_tokens = int(live_call["completion_tokens"])
     total_tokens = int(live_call["total_tokens"] or (prompt_tokens + completion_tokens))
+    cached_input_tokens = int(live_call.get("cached_input_tokens") or 0)
+    cache_write_tokens = int(live_call.get("cache_write_tokens") or 0)
     provider_cost = live_call.get("provider_cost_usd")
     if provider_cost is None:
         cost_estimate, cost_source = estimate_stage4_route_cost(
             route_id=live_route["route_id"],
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            cached_input_tokens=cached_input_tokens,
         )
     else:
         cost_estimate = float(provider_cost)
@@ -487,6 +609,8 @@ def execute_stage4_provider_prompt(
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": total_tokens,
+            "cached_input_tokens": cached_input_tokens,
+            "cache_write_tokens": cache_write_tokens,
         },
         "cost_estimate": float(cost_estimate),
         "cost_source": cost_source,

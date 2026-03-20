@@ -120,6 +120,9 @@ Phase-1 T0 freezes:
 - `scripts/build_darwin_stage3_component_scorecard_v0.py`
 - `scripts/build_darwin_stage3_component_memo_v0.py`
 - `scripts/build_darwin_stage3_consolidated_verification_bundle_v0.py`
+- `scripts/run_darwin_stage4_live_economics_pilot_v0.py`
+- `scripts/build_darwin_stage4_live_readiness_v0.py`
+- `scripts/build_darwin_stage4_matched_budget_view_v1.py`
 
 ## Legacy compatibility
 

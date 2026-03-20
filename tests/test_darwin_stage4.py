@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import pytest
+from urllib import error as urllib_error
 
 from breadboard_ext.darwin.stage4 import (
     build_stage4_budget_envelope,
+    build_stage4_comparison_envelope_digest,
     build_stage4_search_policy_v1,
     build_stage4_support_envelope_digest,
     consume_execution_envelope_v2,
+    estimate_stage4_route_cost,
     execute_stage4_provider_prompt,
     resolve_stage4_route,
     select_stage4_search_policy_arms,
@@ -27,7 +30,7 @@ def test_build_stage4_budget_envelope_carries_stage4_comparison_fields() -> None
     envelope = build_stage4_budget_envelope(
         budget_class="class_a",
         wall_clock_ms=1250,
-        token_counts={"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15},
+        token_counts={"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15, "cached_input_tokens": 8},
         cost_estimate=0.0,
         comparison_class="bounded_internal",
         route_id=None,
@@ -36,6 +39,7 @@ def test_build_stage4_budget_envelope_carries_stage4_comparison_fields() -> None
         route_class="local_baseline",
         cost_source="local_execution",
         support_envelope_digest="a" * 64,
+        comparison_envelope_digest="c" * 64,
         evaluator_pack_version="stage4.evalpack.lane.repo_swe.task.v1",
         replication_reserve_fraction=0.2,
         control_reserve_fraction=0.1,
@@ -43,6 +47,7 @@ def test_build_stage4_budget_envelope_carries_stage4_comparison_fields() -> None
     assert envelope["execution_mode"] == "scaffold"
     assert envelope["route_class"] == "local_baseline"
     assert envelope["cost_source"] == "local_execution"
+    assert envelope["token_counts"]["cached_input_tokens"] == 8
     assert envelope["control_reserve_policy"] == "replication=0.20;control=0.10"
 
 
@@ -75,6 +80,7 @@ def test_validate_stage4_matched_budget_pair_requires_strict_contract() -> None:
         "route_class": "default_worker",
         "execution_mode": "scaffold",
         "evaluator_pack_version": "stage4.evalpack.repo_swe.v1",
+        "comparison_envelope_digest": "c" * 64,
         "support_envelope_digest": "a" * 64,
         "task_id": "task.repo",
         "control_reserve_policy": "replication=0.20;control=0.10",
@@ -82,8 +88,27 @@ def test_validate_stage4_matched_budget_pair_requires_strict_contract() -> None:
     candidate = dict(baseline)
     candidate["support_envelope_digest"] = "b" * 64
     result = validate_stage4_matched_budget_pair(baseline=baseline, candidate=candidate)
+    assert result.ok is True
+
+
+def test_validate_stage4_matched_budget_pair_requires_comparison_envelope_match() -> None:
+    baseline = {
+        "lane_id": "lane.repo_swe",
+        "budget_class": "class_a",
+        "comparison_class": "bounded_internal",
+        "route_class": "default_worker",
+        "execution_mode": "scaffold",
+        "evaluator_pack_version": "stage4.evalpack.repo_swe.v1",
+        "comparison_envelope_digest": "c" * 64,
+        "support_envelope_digest": "a" * 64,
+        "task_id": "task.repo",
+        "control_reserve_policy": "replication=0.20;control=0.10",
+    }
+    candidate = dict(baseline)
+    candidate["comparison_envelope_digest"] = "d" * 64
+    result = validate_stage4_matched_budget_pair(baseline=baseline, candidate=candidate)
     assert result.ok is False
-    assert result.reason == "support_envelope_digest_mismatch"
+    assert result.reason == "comparison_envelope_digest_mismatch"
 
 
 def test_validate_stage4_claim_eligibility_rejects_scaffold_rows() -> None:
@@ -115,6 +140,26 @@ def test_build_stage4_support_envelope_digest_is_stable() -> None:
         policy_bundle_id="policy.topology.pev_v0",
         budget_class="class_a",
         allowed_tools=["pytest", "git_diff"],
+        environment_digest="sha256:env",
+        claim_target="internal",
+    )
+    assert digest_a == digest_b
+
+
+def test_build_stage4_comparison_envelope_digest_is_stable() -> None:
+    digest_a = build_stage4_comparison_envelope_digest(
+        lane_id="lane.repo_swe",
+        task_id="task.repo",
+        budget_class="class_a",
+        comparison_class="stage4_live_economics",
+        environment_digest="sha256:env",
+        claim_target="internal",
+    )
+    digest_b = build_stage4_comparison_envelope_digest(
+        lane_id="lane.repo_swe",
+        task_id="task.repo",
+        budget_class="class_a",
+        comparison_class="stage4_live_economics",
         environment_digest="sha256:env",
         claim_target="internal",
     )
@@ -158,6 +203,7 @@ def test_execute_stage4_provider_prompt_accepts_real_provider_usage(monkeypatch:
     monkeypatch.setenv("DARWIN_STAGE4_ENABLE_LIVE", "1")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_INPUT_COST_PER_1M", "0.20")
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_CACHED_INPUT_COST_PER_1M", "0.02")
     monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_OUTPUT_COST_PER_1M", "0.80")
     monkeypatch.setattr(
         "breadboard_ext.darwin.stage4._perform_stage4_live_call",
@@ -165,6 +211,8 @@ def test_execute_stage4_provider_prompt_accepts_real_provider_usage(monkeypatch:
             "response_id": "resp_123",
             "text": "bounded mutation proposal",
             "prompt_tokens": 120,
+            "cached_input_tokens": 100,
+            "cache_write_tokens": 0,
             "completion_tokens": 24,
             "total_tokens": 144,
             "provider_cost_usd": None,
@@ -179,6 +227,22 @@ def test_execute_stage4_provider_prompt_accepts_real_provider_usage(monkeypatch:
     assert result["cost_source"] == "estimated_from_pricing_table"
     assert result["claim_eligible"] is True
     assert result["usage"]["total_tokens"] == 144
+    assert result["usage"]["cached_input_tokens"] == 100
+    assert result["cost_estimate"] == pytest.approx(0.0000252)
+
+
+def test_estimate_stage4_route_cost_requires_cached_pricing_for_cached_usage(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_INPUT_COST_PER_1M", "0.75")
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_OUTPUT_COST_PER_1M", "4.50")
+    monkeypatch.delenv("DARWIN_STAGE4_GPT54_MINI_CACHED_INPUT_COST_PER_1M", raising=False)
+    estimate, cost_source = estimate_stage4_route_cost(
+        route_id="openrouter/openai/gpt-5.4-mini",
+        prompt_tokens=2000,
+        completion_tokens=200,
+        cached_input_tokens=1500,
+    )
+    assert estimate == 0.0
+    assert cost_source == "cached_pricing_missing"
 
 
 def test_select_stage4_search_policy_arms_picks_top_repo_swe_mutations() -> None:
@@ -200,3 +264,44 @@ def test_select_stage4_search_policy_arms_picks_top_repo_swe_mutations() -> None
         "mut.tool_scope.add_git_diff_v1",
         "mut.budget.class_a_to_class_b_v1",
     ]
+
+
+def test_execute_stage4_provider_prompt_falls_back_to_openai_when_openrouter_is_unauthorized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DARWIN_STAGE4_ENABLE_LIVE", "1")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test-key")
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_INPUT_COST_PER_1M", "0.75")
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_CACHED_INPUT_COST_PER_1M", "0.075")
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_OUTPUT_COST_PER_1M", "4.50")
+
+    def _fake_live_call(*, route, **_):
+        if route["route_id"] == "openrouter/openai/gpt-5.4-mini":
+            raise urllib_error.HTTPError(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                code=401,
+                msg="Unauthorized",
+                hdrs=None,
+                fp=None,
+            )
+        return {
+            "response_id": "resp_fallback",
+            "text": "fallback mutation proposal",
+            "prompt_tokens": 110,
+            "cached_input_tokens": 90,
+            "cache_write_tokens": 0,
+            "completion_tokens": 22,
+            "total_tokens": 132,
+            "provider_cost_usd": None,
+        }
+
+    monkeypatch.setattr("breadboard_ext.darwin.stage4._perform_stage4_live_call", _fake_live_call)
+    result = execute_stage4_provider_prompt(
+        lane_id="lane.repo_swe",
+        task_class="repo_patch_workspace",
+        prompt="propose a bounded mutation",
+    )
+    assert result["execution_mode"] == "live"
+    assert result["route_id"] == "openai/gpt-5.4-mini"
+    assert result["claim_eligible"] is True

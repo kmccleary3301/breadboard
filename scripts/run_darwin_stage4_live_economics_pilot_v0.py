@@ -15,6 +15,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 from breadboard_ext.darwin.stage3 import build_stage3_mutation_canary  # noqa: E402
 from breadboard_ext.darwin.stage3_inference import build_stage3_proposal_prompt  # noqa: E402
 from breadboard_ext.darwin.stage4 import (  # noqa: E402
+    build_stage4_comparison_envelope_digest,
     build_stage4_search_policy_v1,
     build_stage4_support_envelope_digest,
     execute_stage4_provider_prompt,
@@ -148,6 +149,14 @@ def _run_arm(*, arm_cfg: dict, spec: dict, out_dir: Path) -> tuple[dict, list[di
             environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
             claim_target=str(spec.get("claim_target") or "internal"),
         )
+        comparison_envelope_digest = build_stage4_comparison_envelope_digest(
+            lane_id=arm_cfg["lane_id"],
+            task_id=task_id,
+            budget_class=arm_cfg["budget_class"],
+            comparison_class="stage4_live_economics",
+            environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
+            claim_target=str(spec.get("claim_target") or "internal"),
+        )
         evaluator_pack_version = stage4_evaluator_pack_version(
             lane_id=arm_cfg["lane_id"],
             task_id=task_id,
@@ -245,6 +254,7 @@ def _run_arm(*, arm_cfg: dict, spec: dict, out_dir: Path) -> tuple[dict, list[di
                 "route_class": provider_result["route_class"],
                 "provider_model": provider_result["provider_model"],
                 "execution_mode": provider_result["execution_mode"],
+                "comparison_envelope_digest": comparison_envelope_digest,
                 "support_envelope_digest": support_envelope_digest,
                 "evaluator_pack_version": evaluator_pack_version,
                 "control_reserve_policy": "replication=0.20;control=0.10",
@@ -259,34 +269,7 @@ def _run_arm(*, arm_cfg: dict, spec: dict, out_dir: Path) -> tuple[dict, list[di
     return arm_cfg, run_rows, telemetry_rows
 
 
-def run_stage4_live_economics_pilot(out_dir: Path = OUT_DIR) -> dict:
-    campaigns = _campaign_lookup()
-    search_policy = build_stage4_search_policy_v1(lane_id="lane.repo_swe", budget_class="class_a")
-    selected_arms = select_stage4_search_policy_arms(
-        search_policy=search_policy,
-        candidate_rows=_candidate_universe(),
-    )
-    arm_rows: list[dict] = []
-    run_rows: list[dict] = []
-    telemetry_rows: list[dict] = []
-    for arm_cfg in selected_arms:
-        arm, arm_run_rows, arm_telemetry = _run_arm(
-            arm_cfg=arm_cfg,
-            spec=campaigns[arm_cfg["lane_id"]],
-            out_dir=out_dir,
-        )
-        arm_rows.append(
-            {
-                "campaign_arm_id": arm["campaign_arm_id"],
-                "lane_id": arm["lane_id"],
-                "operator_id": arm["operator_id"],
-                "budget_class": arm["budget_class"],
-                "control_tag": arm["control_tag"],
-                "selection": dict(arm.get("search_policy_selection") or {}),
-            }
-        )
-        run_rows.extend(arm_run_rows)
-        telemetry_rows.extend(arm_telemetry)
+def build_stage4_live_comparisons(run_rows: list[dict]) -> list[dict]:
     control_lookup = {
         row["lane_id"]: row
         for row in run_rows
@@ -319,6 +302,38 @@ def run_stage4_live_economics_pilot(out_dir: Path = OUT_DIR) -> dict:
                 "search_policy_selection": dict(row.get("search_policy_selection") or {}),
             }
         )
+    return comparison_rows
+
+
+def run_stage4_live_economics_pilot(out_dir: Path = OUT_DIR) -> dict:
+    campaigns = _campaign_lookup()
+    search_policy = build_stage4_search_policy_v1(lane_id="lane.repo_swe", budget_class="class_a")
+    selected_arms = select_stage4_search_policy_arms(
+        search_policy=search_policy,
+        candidate_rows=_candidate_universe(),
+    )
+    arm_rows: list[dict] = []
+    run_rows: list[dict] = []
+    telemetry_rows: list[dict] = []
+    for arm_cfg in selected_arms:
+        arm, arm_run_rows, arm_telemetry = _run_arm(
+            arm_cfg=arm_cfg,
+            spec=campaigns[arm_cfg["lane_id"]],
+            out_dir=out_dir,
+        )
+        arm_rows.append(
+            {
+                "campaign_arm_id": arm["campaign_arm_id"],
+                "lane_id": arm["lane_id"],
+                "operator_id": arm["operator_id"],
+                "budget_class": arm["budget_class"],
+                "control_tag": arm["control_tag"],
+                "selection": dict(arm.get("search_policy_selection") or {}),
+            }
+        )
+        run_rows.extend(arm_run_rows)
+        telemetry_rows.extend(arm_telemetry)
+    comparison_rows = build_stage4_live_comparisons(run_rows)
     policy_path = out_dir / "search_policy_v1.json"
     arms_path = out_dir / "selected_arms_v0.json"
     runs_path = out_dir / "campaign_runs_v0.json"

@@ -1,7 +1,7 @@
 # DARWIN Stage-4 SearchPolicy Gate
 
 Date: 2026-03-20
-Status: blocked after the first real live-provider pilot
+Status: partially unblocked after pricing support and normalized comparison-envelope landing
 References:
 - `docs/darwin_stage4_search_policy_review_2026-03-20.md`
 - `docs/darwin_stage4_live_readiness_2026-03-20.md`
@@ -15,21 +15,31 @@ Can Stage 4 now count repo_swe SearchPolicy pilot outputs as live-provider power
 
 No.
 
-## Why the gate is blocked
+## What is now satisfied
 
-- Stage-4 worker pricing inputs are not present, so live rows remain `cost_source=provider_usage_only`
-- topology and tool-scope mutations currently fail the matched-budget gate via `support_envelope_digest_mismatch`
-- budget mutations currently fail the matched-budget gate via `budget_class_mismatch`
+- Stage-4 worker pricing inputs are present
+- cached-input pricing is modeled
+- the workspace is `ready_for_live_claims=true`
+- topology and tool-scope mutations now pass matched-budget comparison validity
+
+## Why the gate is still blocked
+
+- current valid live comparisons still show `delta_score=0.0`
+- budget mutations still fail matched-budget comparison via `budget_class_mismatch`
+- there is still no positive repo_swe live expected-value signal
 
 ## What is authorized
 
-- treat the current repo_swe live pilot as a valid execution/readiness result
-- add Stage-4 mini pricing inputs and rerun the live-economics pilot
-- keep the current repo_swe operator set for the next run
-- decide in the next slice whether topology/tool-scope mutations should preserve or normalize the support-envelope comparison boundary
+- treat the current repo_swe live pilot as a valid live-claim/readiness result
+- keep the current repo_swe operator set for the next bounded slice
+- use topology and tool-scope families as valid matched-budget comparison families
+- keep budget-class mutation as intentionally unmatched
+- decide whether the next bounded Stage-4 slice is:
+  - repo_swe EV refinement
+  - or first narrow systems live-provider expansion
 
 ## What is not authorized
 
-- counting the current live rows as Stage-4 power evidence
-- claiming matched-budget success from the current invalid comparison set
-- widening the SearchPolicy pilot to other lanes before repo_swe live claim eligibility is real
+- counting zero-delta live rows as Stage-4 power evidence
+- treating budget-class mutation as matched-budget valid
+- widening Stage-4 into broad live campaigns from this pilot alone

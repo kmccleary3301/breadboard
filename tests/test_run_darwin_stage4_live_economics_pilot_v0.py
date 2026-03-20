@@ -11,6 +11,7 @@ def test_run_stage4_live_economics_pilot_emits_policy_and_telemetry(monkeypatch:
     monkeypatch.delenv("DARWIN_STAGE4_ENABLE_LIVE", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("DARWIN_STAGE4_GPT54_MINI_CACHED_INPUT_COST_PER_1M", raising=False)
     write_bootstrap_specs()
     summary = run_stage4_live_economics_pilot()
     payload = json.loads(open(summary["summary_path"], "r", encoding="utf-8").read())

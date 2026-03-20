@@ -33,9 +33,14 @@ def build_stage4_live_readiness() -> dict:
         "darwin_stage4_enable_live": bool(os.environ.get("DARWIN_STAGE4_ENABLE_LIVE")),
         "gpt54_mini_input_cost_per_1m": bool(os.environ.get("DARWIN_STAGE4_GPT54_MINI_INPUT_COST_PER_1M")),
         "gpt54_mini_output_cost_per_1m": bool(os.environ.get("DARWIN_STAGE4_GPT54_MINI_OUTPUT_COST_PER_1M")),
+        "gpt54_mini_cached_input_cost_per_1m": bool(os.environ.get("DARWIN_STAGE4_GPT54_MINI_CACHED_INPUT_COST_PER_1M")),
     }
     provider_ready = env_presence["openai_api_key"] or env_presence["openrouter_api_key"]
-    pricing_ready = env_presence["gpt54_mini_input_cost_per_1m"] and env_presence["gpt54_mini_output_cost_per_1m"]
+    pricing_ready = (
+        env_presence["gpt54_mini_input_cost_per_1m"]
+        and env_presence["gpt54_mini_output_cost_per_1m"]
+        and env_presence["gpt54_mini_cached_input_cost_per_1m"]
+    )
     live_requested = env_presence["darwin_stage4_enable_live"]
     blockers: list[str] = []
     if not provider_ready:

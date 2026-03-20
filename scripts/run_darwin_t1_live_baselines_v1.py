@@ -39,6 +39,7 @@ from breadboard_ext.darwin.stage3 import (
 from breadboard_ext.darwin.stage4 import (
     STAGE4_EXECUTION_ENVELOPE_LANES,
     build_stage4_budget_envelope,
+    build_stage4_comparison_envelope_digest,
     build_stage4_support_envelope_digest,
     consume_execution_envelope_v2,
     stage4_evaluator_pack_version,
@@ -218,6 +219,7 @@ def run_named_lane(
     stage3_consumption: dict[str, Any] | None = None
     stage4_consumption: dict[str, Any] | None = None
     support_envelope_digest: str | None = None
+    comparison_envelope_digest: str | None = None
     evaluator_pack_version: str | None = None
     if should_emit_shadow_artifacts(lane_id):
         effective_config = build_effective_config(
@@ -277,6 +279,14 @@ def run_named_lane(
             policy_bundle_id=policy_bundle_id or spec["policy_bundle_id"],
             budget_class=budget_class or spec["budget_class"],
             allowed_tools=list(spec.get("allowed_tools") or []),
+            environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
+            claim_target=str(spec.get("claim_target") or "internal"),
+        )
+        comparison_envelope_digest = build_stage4_comparison_envelope_digest(
+            lane_id=lane_id,
+            task_id=task_id or lane_cfg["task_id"],
+            budget_class=budget_class or spec["budget_class"],
+            comparison_class="bounded_internal",
             environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
             claim_target=str(spec.get("claim_target") or "internal"),
         )
@@ -419,21 +429,30 @@ def run_named_lane(
             provider_model=None,
             execution_mode="scaffold",
             route_class="local_baseline",
-            cost_source="local_execution",
-            support_envelope_digest=support_envelope_digest
-            or build_stage4_support_envelope_digest(
+                cost_source="local_execution",
+                support_envelope_digest=support_envelope_digest
+                or build_stage4_support_envelope_digest(
                 lane_id=lane_id,
                 task_id=task_id or lane_cfg["task_id"],
                 topology_id=topology_id or spec["topology_family"],
                 policy_bundle_id=policy_bundle_id or spec["policy_bundle_id"],
                 budget_class=budget_class or spec["budget_class"],
                 allowed_tools=list(spec.get("allowed_tools") or []),
-                environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
-                claim_target=str(spec.get("claim_target") or "internal"),
-            ),
-            evaluator_pack_version=evaluator_pack["pack_version"],
-            replication_reserve_fraction=0.2,
-            control_reserve_fraction=0.1,
+                    environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
+                    claim_target=str(spec.get("claim_target") or "internal"),
+                ),
+                comparison_envelope_digest=comparison_envelope_digest
+                or build_stage4_comparison_envelope_digest(
+                    lane_id=lane_id,
+                    task_id=task_id or lane_cfg["task_id"],
+                    budget_class=budget_class or spec["budget_class"],
+                    comparison_class="bounded_internal",
+                    environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
+                    claim_target=str(spec.get("claim_target") or "internal"),
+                ),
+                evaluator_pack_version=evaluator_pack["pack_version"],
+                replication_reserve_fraction=0.2,
+                control_reserve_fraction=0.1,
         )
         evaluator_pack_path = lane_dir / f"{trial_label}_evaluator_pack_v0.json"
         _write_json(evaluator_pack_path, evaluator_pack)

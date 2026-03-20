@@ -1,9 +1,10 @@
 # DARWIN Stage-4 SearchPolicy Review
 
 Date: 2026-03-20
-Status: review completed after the first real repo_swe provider-backed pilot run
+Status: review updated after cached-pricing support and normalized comparison-envelope landing
 References:
 - `docs/darwin_stage4_live_economics_slice_2026-03-20.md`
+- `docs/darwin_stage4_comparison_envelope_slice_2026-03-20.md`
 - `docs/darwin_stage4_live_readiness_2026-03-20.md`
 - `artifacts/darwin/stage4/live_economics/live_economics_pilot_v0.json`
 - `artifacts/darwin/stage4/live_economics/search_policy_v1.json`
@@ -33,23 +34,25 @@ The lower-priority `mut.policy.shadow_memory_enable_v1` row remains excluded fro
 - the policy is operational rather than merely documentary
 - arm selection is deterministic
 - repo_swe selected arms executed with `execution_mode=live`
-- provider usage telemetry was returned on every repo_swe live arm
+- provider-backed pricing is now attached to live repo_swe arms
+- topology and tool-scope mutations now produce valid matched-budget comparisons
 - scaffold rows remain non-claim-eligible on the watchdog lane
 
 ## What is not yet validated
 
-- live-provider cost semantics on repo_swe
-- live claim eligibility on any Stage-4 arm
-- SearchPolicy behavior under provider-priced cost pressure
-- valid matched-budget comparisons for topology and tool-scope mutations under the current support-envelope rule
+- positive expected-value signal on repo_swe
+- SearchPolicy behavior under meaningful live improvement pressure
+- systems-lane live-provider behavior
+- any power claim beyond bounded live-operational readiness
 
 ## Current invalidity picture
 
-The first live repo_swe run exposed two exact invalidity classes:
+The current repo_swe live run now isolates one designed invalidity class:
 
-- `support_envelope_digest_mismatch` on topology and tool-scope mutations
 - `budget_class_mismatch` on budget-class mutations
 
 ## Conclusion
 
-The `SearchPolicyV1` pilot has crossed the live-execution boundary, but it has not yet crossed the live-claim boundary.
+The `SearchPolicyV1` pilot has crossed the live-claim boundary.
+
+It has not yet crossed the power-evidence boundary, because the current valid comparisons still show `delta_score=0.0` across the live repo_swe mutation set.
