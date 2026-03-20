@@ -1,7 +1,7 @@
 # DARWIN Stage-3 Signoff
 
 Date: 2026-03-19
-Status: final on merged-state verification
+Status: complete on `main`
 
 ## Scope
 
@@ -21,6 +21,7 @@ Stage 3 turned BreadBoard + DARWIN into an inference-native, component-compoundi
 - bounded-inference tests and builders
 - component-promotion / bounded-transfer tests and builders
 - comparative consolidation / pre-closeout tests and builders
+- merged-state verification and canonical artifact rebuild on `main`
 
 ## What remains bounded
 

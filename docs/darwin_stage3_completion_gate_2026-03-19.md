@@ -1,7 +1,7 @@
 # DARWIN Stage-3 Completion Gate
 
 Date: 2026-03-19
-Status: pending merged-state verification
+Status: complete
 
 - [x] doctrine / ADR program complete
 - [x] substrate uptake tranche complete
@@ -10,7 +10,7 @@ Status: pending merged-state verification
 - [x] comparative consolidation / pre-closeout tranche complete
 - [x] canonical artifact set frozen
 - [x] final signoff memo written
-- [ ] merged-state verification passed on `main`
+- [x] merged-state verification passed on `main`
 
 ## Gate meaning
 
