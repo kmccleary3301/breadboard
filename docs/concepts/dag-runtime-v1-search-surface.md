@@ -9,8 +9,8 @@ It does **not** add:
 - `rsa_mode`
 - `pacore_mode`
 - async frontier scheduling
-- branch-local workspace state
-- RL export
+- a public training or RL-control surface
+- DARWIN-style campaign semantics
 
 It adds:
 
@@ -26,6 +26,7 @@ It adds:
 - one typed compaction registry with bounded carry-over
 - one bounded multi-round message-passing recipe with final synthesis
 - one branch-local state slice with explicit snapshots and merge/discard semantics
+- one trajectory export layer with bounded local/global reward hooks
 - explicit search metrics:
   - `aggregability_gap`
   - `diversity_decay`
@@ -54,12 +55,13 @@ The first DAG cut proves:
 5. carried search state can stay bounded and inspectable through typed compaction
 6. a PaCoRe-like loop can reuse the same runtime without hidden context growth
 7. stateful branches can remain local and inspectable without collapsing into one mutable workspace
+8. offline research exports can be produced without changing the search truth model
 
 ## What remains intentionally deferred
 
-- branch-local workspace snapshots
-- verifier-driven stateful search
-- RL/export substrate
+- broader verifier-driven stateful search programs
+- online training or policy-learning systems
+- DARWIN-side orchestration or campaign semantics
 
 The point of this cut is to validate the architectural center before widening the system.
 
@@ -71,7 +73,10 @@ The current DAG worktree covers:
 - `Phase 1` barriered RSA recipe
 - `Phase 2` typed compaction and carry-over
 - `Phase 3` one bounded message-passing recipe
+- `Phase 4` branch-local state and merge/discard semantics
+- `Phase 5` trajectory export with bounded reward hooks
 
 What remains deferred inside V1:
 
-- RL/export trajectory hooks
+- no additional scoped V1 phases remain
+- broader RL/training programs remain intentionally outside this V1 cut

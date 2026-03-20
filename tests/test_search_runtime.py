@@ -1,19 +1,24 @@
 from __future__ import annotations
 
 from agentic_coder_prototype.search import (
+    SearchOfflineDataset,
     SearchBranchState,
     SearchCandidate,
     SearchCarryState,
     SearchEvent,
     SearchFrontier,
     SearchMessage,
+    SearchRewardSignal,
     build_default_search_compaction_registry,
     build_pacore_search_runtime_example,
     build_pacore_search_runtime_example_payload,
     SearchRun,
+    SearchTrajectoryExport,
     SearchWorkspaceSnapshot,
     build_rsa_search_runtime_example,
     build_rsa_search_runtime_example_payload,
+    build_search_trajectory_export_example,
+    build_search_trajectory_export_example_payload,
     build_stateful_branch_search_example,
     build_stateful_branch_search_example_payload,
     build_typed_compaction_registry_example,
@@ -231,3 +236,28 @@ def test_stateful_branch_search_payload_round_trips() -> None:
     assert len(run.workspace_snapshots) == 2
     assert merged_branch.status == "merged"
     assert merged_snapshot.snapshot_id == merged_branch.head_snapshot_id
+
+
+def test_search_trajectory_export_example_preserves_operator_conditioning() -> None:
+    example = build_search_trajectory_export_example()
+    trajectory = example["trajectory"]
+    dataset = example["dataset"]
+
+    assert trajectory.metadata["operator_conditioned"] is True
+    assert len(trajectory.steps) == len(example["run"].events)
+    assert any(item.scope == "local" for item in trajectory.reward_signals)
+    assert any(item.scope == "global" for item in trajectory.reward_signals)
+    assert dataset.metadata["trajectory_count"] == 1
+    assert dataset.trajectories[0] == trajectory
+
+
+def test_search_trajectory_export_payload_round_trips() -> None:
+    payload = build_search_trajectory_export_example_payload()
+    trajectory = SearchTrajectoryExport.from_dict(payload["trajectory"])
+    dataset = SearchOfflineDataset.from_dict(payload["dataset"])
+    first_signal = SearchRewardSignal.from_dict(payload["trajectory"]["reward_signals"][0])
+
+    assert trajectory.metadata["operator_conditioned"] is True
+    assert len(dataset.trajectories) == 1
+    assert dataset.trajectories[0] == trajectory
+    assert first_signal.scope in {"local", "global"}

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, List, Sequence
 
 from .compaction import SearchCompactionRegistry, build_default_search_compaction_registry
+from .export import build_search_offline_dataset, export_search_trajectory
 from .runtime import (
     AggregationProposal,
     BarrieredRoundScheduler,
@@ -397,4 +398,32 @@ def build_stateful_branch_search_example_payload() -> Dict[str, object]:
         "discarded_branch": example["discarded_branch"].to_dict(),
         "merged_snapshot": example["merged_snapshot"].to_dict(),
         "discarded_snapshot": example["discarded_snapshot"].to_dict(),
+    }
+
+
+def build_search_trajectory_export_example() -> Dict[str, object]:
+    stateful = build_stateful_branch_search_example()
+    run = stateful["run"]
+    trajectory = export_search_trajectory(
+        run,
+        metadata={"phase": "dag_v1_phase5", "non_kernel": True},
+    )
+    dataset = build_search_offline_dataset(
+        [trajectory],
+        dataset_id=f"{run.search_id}.offline_dataset.v1",
+        metadata={"phase": "dag_v1_phase5", "bounded": True},
+    )
+    return {
+        "run": run,
+        "trajectory": trajectory,
+        "dataset": dataset,
+    }
+
+
+def build_search_trajectory_export_example_payload() -> Dict[str, object]:
+    example = build_search_trajectory_export_example()
+    return {
+        "run": example["run"].to_dict(),
+        "trajectory": example["trajectory"].to_dict(),
+        "dataset": example["dataset"].to_dict(),
     }
