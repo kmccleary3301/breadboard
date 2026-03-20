@@ -149,6 +149,34 @@ The following stay backend-private:
 - Mini escalation governance
 - cohort-aware penalties and pruning
 
+In Phase 5, that private layer becomes explicitly cohort-aware:
+
+- private traces carry cohort rollups alongside slice rollups
+- unsupported cohort statuses can trigger bounded early stop
+- Mini escalation remains policy-driven and auditable in the private trace
+- none of that becomes a public reward or search-policy artifact
+
+## Optional narrow follow-on
+
+The V5 follow-on also stays narrow.
+
+It reuses the existing `VerifierAugmentedExperimentResult` shape on the bounded OpenCode side of the
+live V5 cohort follow-on pair.
+
+This final step is intentionally small:
+
+- one verifier-assisted refinement only
+- no new cohort artifact
+- no new search artifact
+- no package-graph or study manager drift
+
+The live V5 verifier follow-on:
+
+- stays inside the declared Codex ↔ OpenCode replay/config cohort
+- specializes only already-declared OpenCode prompt/config members
+- preserves transfer-supported claim discipline
+- preserves audited Mini behavior rather than widening it
+
 The public center remains:
 
 - evaluation suites

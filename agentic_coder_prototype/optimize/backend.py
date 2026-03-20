@@ -1685,6 +1685,37 @@ class StagedOptimizer(ReflectiveParetoBackend):
             penalties["model_tier_audit_active"] = 0.03
         return penalties
 
+    def _private_transfer_cohort_status(
+        self,
+        request: StagedOptimizerRequest,
+    ) -> Dict[str, Dict[str, Any]]:
+        raw_status = request.metadata.get("transfer_cohort_status") or {}
+        if not isinstance(raw_status, Mapping):
+            return {}
+        return {
+            str(cohort_id): dict(payload)
+            for cohort_id, payload in raw_status.items()
+            if isinstance(payload, Mapping)
+        }
+
+    def _private_transfer_cohort_penalties(
+        self,
+        request: StagedOptimizerRequest,
+    ) -> Dict[str, float]:
+        penalties: Dict[str, float] = {}
+        for cohort_id, payload in self._private_transfer_cohort_status(request).items():
+            status = str(payload.get("status") or "").strip().lower()
+            if status == "blocked":
+                penalties[f"cohort_blocked:{cohort_id}"] = 0.25
+            elif status == "inconclusive":
+                penalties[f"cohort_inconclusive:{cohort_id}"] = 0.14
+            elif status in {"referenced", "missing"}:
+                penalties[f"cohort_unproven:{cohort_id}"] = 0.1
+        cohort_rollup = request.metadata.get("cohort_rollup") or {}
+        if isinstance(cohort_rollup, Mapping) and bool(cohort_rollup.get("mini_audit_triggered")):
+            penalties["cohort_mini_audit_active"] = 0.02
+        return penalties
+
     def _private_candidate_bonus(
         self,
         request: StagedOptimizerRequest,
@@ -1731,6 +1762,7 @@ class StagedOptimizer(ReflectiveParetoBackend):
         if len(stage.allowed_loci) > 1:
             penalties["multi_locus_penalty"] = 0.05
         penalties.update(self._private_transfer_slice_penalties(request))
+        penalties.update(self._private_transfer_cohort_penalties(request))
         return penalties
 
     def _private_blocked_components(
@@ -1758,9 +1790,40 @@ class StagedOptimizer(ReflectiveParetoBackend):
             status = str(payload.get("status") or "").strip().lower()
             if status in {"blocked", "inconclusive", "missing"}:
                 blocked.append(f"transfer_slice:{slice_id}:{status}")
+        for cohort_id, payload in self._private_transfer_cohort_status(request).items():
+            status = str(payload.get("status") or "").strip().lower()
+            if status in {"blocked", "inconclusive", "referenced", "missing"}:
+                blocked.append(f"transfer_cohort:{cohort_id}:{status}")
         if bool(request.metadata.get("optimistic_scope_blocked")):
             blocked.append("optimistic_scope_blocked")
         return blocked
+
+    def _private_early_stop_state(
+        self,
+        request: StagedOptimizerRequest,
+        stage: StagePlanStep,
+        *,
+        escalation_considered: bool,
+        escalation_triggered: bool,
+    ) -> tuple[bool, Optional[str]]:
+        stage_plan = self.build_stage_plan(request)
+        is_final_stage = bool(stage_plan) and stage.stage_id == stage_plan[-1].stage_id
+        cohort_status = self._private_transfer_cohort_status(request)
+        unsupported_statuses = {"blocked", "inconclusive", "referenced", "missing"}
+        if cohort_status and all(
+            str(payload.get("status") or "").strip().lower() in unsupported_statuses
+            for payload in cohort_status.values()
+        ):
+            return True, "unsupported_transfer_cohort_status"
+        stopping_policy = str(request.evaluation_suite.metadata.get("stopping_policy") or "").strip().lower()
+        if (
+            is_final_stage
+            and stopping_policy == "stop_if_mini_audit_does_not_change_transfer_status"
+            and escalation_considered
+            and not escalation_triggered
+        ):
+            return True, "mini_audit_not_needed"
+        return False, None
 
     def _private_model_tier_for_stage(
         self,
@@ -1809,6 +1872,12 @@ class StagedOptimizer(ReflectiveParetoBackend):
         penalties = self._private_uncertainty_penalties(request, stage)
         blocked_components = self._private_blocked_components(request, stage)
         model_tier, considered, triggered, reason = self._private_model_tier_for_stage(request, stage)
+        early_stop, early_stop_reason = self._private_early_stop_state(
+            request,
+            stage,
+            escalation_considered=considered,
+            escalation_triggered=triggered,
+        )
         def _entry_score(entry: "PortfolioEntry", *, triggered_now: bool) -> float:
             return self._policy_score_for_entry(
                 entry,
@@ -1842,10 +1911,14 @@ class StagedOptimizer(ReflectiveParetoBackend):
                     "fallback_to_baseline": True,
                     "transfer_slice_status": self._private_transfer_slice_status(request),
                     "slice_penalties": self._private_transfer_slice_penalties(request),
+                    "transfer_cohort_status": self._private_transfer_cohort_status(request),
+                    "cohort_penalties": self._private_transfer_cohort_penalties(request),
                     "unfair_mixed_tier_backend_comparison_forbidden": bool(
                         request.evaluation_suite.rerun_policy.get("mixed_tier_backend_comparison_forbidden")
                     ),
                     "escalation_changed_order": False,
+                    "early_stop": early_stop,
+                    "early_stop_reason": early_stop_reason,
                 },
             )
         pre_escalation_best = max(compatible_entries, key=lambda entry: _entry_score(entry, triggered_now=False))
@@ -1874,6 +1947,8 @@ class StagedOptimizer(ReflectiveParetoBackend):
                 "objective_suite_id": request.objective_suite.suite_id,
                 "transfer_slice_status": self._private_transfer_slice_status(request),
                 "slice_penalties": self._private_transfer_slice_penalties(request),
+                "transfer_cohort_status": self._private_transfer_cohort_status(request),
+                "cohort_penalties": self._private_transfer_cohort_penalties(request),
                 "unfair_mixed_tier_backend_comparison_forbidden": bool(
                     request.evaluation_suite.rerun_policy.get("mixed_tier_backend_comparison_forbidden")
                 ),
@@ -1881,6 +1956,8 @@ class StagedOptimizer(ReflectiveParetoBackend):
                     triggered and pre_escalation_best.candidate.candidate_id != best_entry.candidate.candidate_id
                 ),
                 "selected_score": best_score,
+                "early_stop": early_stop,
+                "early_stop_reason": early_stop_reason,
             },
         )
 
@@ -2168,6 +2245,8 @@ class StagedOptimizer(ReflectiveParetoBackend):
                     "search_policy_trace_count": len(search_policy_trace),
                 },
             )
+            if bool(decision.metadata.get("early_stop")):
+                break
 
         return ReflectiveParetoBackendResult(
             request_id=request.request_id,
@@ -2184,6 +2263,12 @@ class StagedOptimizer(ReflectiveParetoBackend):
                 "stage_strategy": request.stage_strategy,
                 "search_policy_trace": [item.to_dict() for item in search_policy_trace],
                 "final_selected_candidate_id": current_baseline_entry.candidate.candidate_id,
+                "early_stopped": bool(search_policy_trace and search_policy_trace[-1].metadata.get("early_stop")),
+                "early_stop_reason": (
+                    search_policy_trace[-1].metadata.get("early_stop_reason")
+                    if search_policy_trace and search_policy_trace[-1].metadata.get("early_stop")
+                    else None
+                ),
                 **search_scope_metadata,
                 "search_space_id": request.search_space.search_space_id,
                 "evaluation_suite_id": request.evaluation_suite.suite_id,

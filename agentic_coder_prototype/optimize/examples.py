@@ -7794,8 +7794,14 @@ def build_codex_opencode_transfer_cohort_example() -> Dict[str, object]:
         **dict(codex_staged_request_payload.get("metadata") or {}),
         "phase": "v5",
         "transfer_cohort_ids": [cohort.cohort_id],
+        "transfer_cohort_status": cohort_status,
         "claim_tier": "transfer_supported",
         "model_policy": "nano_only",
+        "cohort_rollup": {
+            "status": "supported",
+            "model_policy": "nano_only",
+            "packages_covered": ["codex_dossier.current", "opencode_1_2_17.current"],
+        },
     }
     codex_staged_request = StagedOptimizerRequest.from_dict(codex_staged_request_payload)
     codex_staged_result_payload = codex["staged_result"].to_dict()
@@ -7813,8 +7819,14 @@ def build_codex_opencode_transfer_cohort_example() -> Dict[str, object]:
         **dict(opencode_staged_request_payload.get("metadata") or {}),
         "phase": "v5",
         "transfer_cohort_ids": [cohort.cohort_id],
+        "transfer_cohort_status": cohort_status,
         "claim_tier": "transfer_supported",
         "model_policy": "nano_only",
+        "cohort_rollup": {
+            "status": "supported",
+            "model_policy": "nano_only",
+            "packages_covered": ["codex_dossier.current", "opencode_1_2_17.current"],
+        },
     }
     opencode_staged_request = StagedOptimizerRequest.from_dict(opencode_staged_request_payload)
     opencode_staged_result_payload = opencode["staged_result"].to_dict()
@@ -8558,9 +8570,17 @@ def build_codex_opencode_replay_config_transfer_cohort_follow_on_example() -> Di
         **dict(codex_staged_request_payload.get("metadata") or {}),
         "phase": "v5",
         "transfer_cohort_ids": [cohort.cohort_id],
+        "transfer_cohort_status": cohort_status,
         "claim_tier": "transfer_supported",
         "model_policy": "nano_only",
         "follow_on": True,
+        "search_policy_signal": "",
+        "cohort_rollup": {
+            "status": "supported",
+            "model_policy": "nano_only",
+            "packages_covered": ["codex_dossier.current", "opencode_1_2_17.current"],
+            "mini_audit_triggered": False,
+        },
     }
     codex_staged_request = StagedOptimizerRequest.from_dict(codex_staged_request_payload)
     codex_staged_result_payload = codex["staged_result"].to_dict()
@@ -8579,9 +8599,22 @@ def build_codex_opencode_replay_config_transfer_cohort_follow_on_example() -> Di
         **dict(opencode_staged_request_payload.get("metadata") or {}),
         "phase": "v5",
         "transfer_cohort_ids": [cohort.cohort_id],
+        "transfer_cohort_status": cohort_status,
         "claim_tier": "transfer_supported",
         "model_policy": "nano_first",
         "follow_on": True,
+        "search_policy_signal": "ambiguous_hidden_hold",
+        "model_tier_audit": {
+            "triggered": True,
+            "reason": "ambiguous_hidden_hold_semantics",
+            "audit_model": "gpt-5.4-mini",
+        },
+        "cohort_rollup": {
+            "status": "supported",
+            "model_policy": "nano_first",
+            "packages_covered": ["codex_dossier.current", "opencode_1_2_17.current"],
+            "mini_audit_triggered": True,
+        },
     }
     opencode_staged_request = StagedOptimizerRequest.from_dict(opencode_staged_request_payload)
     opencode_staged_result_payload = opencode["staged_result"].to_dict()
@@ -8736,6 +8769,268 @@ def build_codex_opencode_replay_config_transfer_cohort_follow_on_example_payload
             "staged_result": example["opencode_cell"]["staged_result"].to_dict(),
         },
         "cohort_rollup": dict(example["cohort_rollup"]),
+    }
+
+
+def build_codex_opencode_transfer_cohort_verifier_follow_on_example() -> Dict[str, object]:
+    """Build one narrow verifier-assisted follow-on on the bounded V5 cohort follow-on lane."""
+
+    example = build_codex_opencode_replay_config_transfer_cohort_follow_on_example()
+    opencode_cell = example["opencode_cell"]
+    opencode_package = opencode_cell["package_example"]
+    cohort = example["transfer_cohort"]
+    evaluation_suite = example["evaluation_suite"]
+    objective_suite = example["objective_suite"]
+    manifest = opencode_cell["manifest"]
+    base_candidate = opencode_cell["cohort_candidate"]
+    search_space = opencode_package["search_space"]
+    assert isinstance(base_candidate, CandidateBundle)
+    assert isinstance(evaluation_suite, EvaluationSuiteManifest)
+    assert isinstance(objective_suite, ObjectiveSuiteManifest)
+    assert isinstance(manifest, BenchmarkRunManifest)
+    assert isinstance(search_space, SearchSpaceManifest)
+
+    refined_candidate = CandidateBundle(
+        candidate_id="cand.transfer_cohort.opencode.replay_config.verifier_refined.001",
+        source_target_id=opencode_package["target"].target_id,
+        applied_loci=[
+            "prompt.pack.base.system",
+            "guardrails.diff_policy.patch_splitting",
+        ],
+        changes=[
+            CandidateChange(
+                locus_id="prompt.pack.base.system",
+                value={
+                    "text": (
+                        "Preserve the durable OpenCode system envelope, keep replay-safe package boundaries explicit, "
+                        "and require any model-tier tie-break to remain auditable and package-scoped."
+                    )
+                },
+                rationale=(
+                    "Verifier guidance tightens replay-safe prompt coherence on the bounded cohort follow-on lane "
+                    "without widening package or cohort scope."
+                ),
+            ),
+            CandidateChange(
+                locus_id="guardrails.diff_policy.patch_splitting",
+                value={
+                    "enabled": True,
+                    "max_hunks": 4,
+                    "on_violation": "error",
+                },
+                rationale=(
+                    "Specialize the bounded patch policy on the audited OpenCode follow-on cell while preserving "
+                    "the existing declared config locus and cohort boundary."
+                ),
+            ),
+        ],
+        provenance={
+            "kind": "transfer_cohort_verifier_follow_on",
+            "baseline_candidate_id": base_candidate.candidate_id,
+            "transfer_cohort_id": cohort.cohort_id,
+        },
+        metadata={
+            "lane": "codex_opencode_replay_config_transfer_cohort",
+            "role": "verifier_follow_on",
+            "package": "opencode_1_2_17.current",
+            "transfer_cohort_id": cohort.cohort_id,
+            "non_kernel": True,
+        },
+    )
+
+    comparison = build_paired_candidate_comparison(
+        manifest,
+        comparison_id="comparison.transfer_cohort.opencode.replay_config.verifier_refined.001",
+        parent_candidate_id=base_candidate.candidate_id,
+        child_candidate_id=refined_candidate.candidate_id,
+        outcome="win",
+        compared_sample_ids=manifest.sample_ids(),
+        held_out_sample_ids=manifest.hidden_hold_sample_ids(),
+        trial_count=2,
+        rationale=(
+            "The verifier-assisted refinement improves replay-safe prompt/config coherence on the bounded OpenCode "
+            "cohort cell while preserving package scope, audited Mini discipline, and the existing transfer claim."
+        ),
+        evidence_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/transfer_cohort/opencode_replay_config_verifier_eval.json",
+                media_type="application/json",
+            )
+        ],
+        metric_deltas={
+            "workflow_coherence_delta": 0.02,
+            "replay_safe_integrity_delta": 0.03,
+            "package_scope_integrity_delta": 0.01,
+            "mini_audit_confirmed": True,
+            "verifier_confirmed": True,
+        },
+        better_candidate_id=refined_candidate.candidate_id,
+        metadata={
+            "lane": "codex_opencode_replay_config_transfer_cohort",
+            "transfer_cohort_id": cohort.cohort_id,
+            "experiment_kind": "verifier_augmented_transfer_cohort_refinement",
+            "model_policy": "nano_first",
+        },
+    )
+
+    refined_objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreakdown.transfer_cohort.opencode.replay_config.verifier_refined.001",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=manifest.manifest_id,
+        candidate_id=refined_candidate.candidate_id,
+        per_sample_components={
+            "sample.opencode_prompt_config_tool_guidance.train.001": {
+                "workflow_coherence": 0.86,
+                "replay_safe_integrity": 0.97,
+                "package_scope_integrity": 0.98,
+                "mutation_cost": 0.0,
+            },
+            "sample.opencode_prompt_config_tool_guidance.validation.001": {
+                "workflow_coherence": 0.84,
+                "replay_safe_integrity": 0.96,
+                "package_scope_integrity": 0.98,
+                "mutation_cost": 0.0,
+            },
+            "sample.opencode_prompt_config_tool_guidance.hold.001": {
+                "workflow_coherence": 0.82,
+                "replay_safe_integrity": 0.97,
+                "package_scope_integrity": 0.98,
+                "mutation_cost": 0.0,
+            },
+            "sample.opencode_prompt_config_tool_guidance.regression.001": {
+                "workflow_coherence": 0.8,
+                "replay_safe_integrity": 0.96,
+                "package_scope_integrity": 0.98,
+                "mutation_cost": 0.0,
+            },
+        },
+        per_bucket_components={
+            "replay-safe": {"workflow_coherence": 0.86, "replay_safe_integrity": 0.97},
+            "package-scope": {"package_scope_integrity": 0.98},
+        },
+        aggregate_objectives={
+            "workflow_coherence": 0.83,
+            "replay_safe_integrity": 0.965,
+            "package_scope_integrity": 0.98,
+            "mutation_cost": 0.0,
+            "eligible_for_promotion": False,
+        },
+        uncertainty_summary={
+            "stochasticity_class": "deterministic",
+            "trial_count": 2,
+            "blocked_for_uncertainty": False,
+            "mini_escalation_considered": True,
+            "mini_escalation_triggered": True,
+        },
+        blocked_components={},
+        signal_status={
+            "executable_checks": {"status": "pass", "authority": "primary"},
+            "semantic_judge": {"status": "pass", "authority": "advisory"},
+            "model_tier_audit": {"status": "audited_pass", "authority": "hard_gate"},
+            "verifier_outputs": {"status": "pass", "authority": "supporting"},
+        },
+        slice_status={
+            "package.opencode_1_2_17.current": {"status": "pass", "promotion_role": "required"},
+            "model_tier.nano_first_openai": {"status": "audited_pass", "promotion_role": "required"},
+        },
+        member_family_breakdowns={
+            "family.opencode_prompt_pack.v4": {"workflow_coherence": 0.83},
+            "family.opencode_bounded_config.v4": {"replay_safe_integrity": 0.965},
+            "family.opencode_tool_guidance_pack.v4": {"package_scope_integrity": 0.98},
+        },
+        cross_family_blocked_components={},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/transfer_cohort/opencode_replay_config_verifier_breakdown.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "codex_opencode_replay_config_transfer_cohort",
+            "transfer_cohort_id": cohort.cohort_id,
+            "search_space_id": search_space.search_space_id,
+            "experiment_kind": "verifier_augmented_transfer_cohort_refinement",
+            "cohort_follow_on": True,
+            "applicability_scope_status": "bounded",
+            "member_family_attribution": {
+                "family.opencode_prompt_pack.v4": {"status": "present", "drivers": ["workflow_coherence"]},
+                "family.opencode_bounded_config.v4": {"status": "present", "drivers": ["replay_safe_integrity"]},
+                "family.opencode_tool_guidance_pack.v4": {"status": "present", "drivers": ["package_scope_integrity"]},
+            },
+        },
+    )
+
+    verifier_experiment = VerifierAugmentedExperimentResult(
+        experiment_id="verifier_experiment.transfer_cohort.opencode.replay_config.v5",
+        experiment_kind="verifier_augmented_transfer_cohort_refinement",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_suite_id=objective_suite.suite_id,
+        target_family_id="family.opencode_bounded_config.v4",
+        search_space_id=search_space.search_space_id,
+        baseline_candidate_id=base_candidate.candidate_id,
+        refined_candidate_id=refined_candidate.candidate_id,
+        verifier_stack=[
+            *evaluation_suite.evaluator_stack,
+            "transfer_cohort_scope_verifier.v1",
+        ],
+        focus_sample_ids=manifest.hidden_hold_sample_ids() or manifest.sample_ids(),
+        comparison_result_id=comparison.comparison_id,
+        objective_breakdown_result_id=refined_objective_breakdown.result_id,
+        outcome="accepted",
+        rationale=(
+            "This narrow follow-on stays inside the bounded V5 transfer cohort lane, specializing the OpenCode "
+            "replay-safe prompt/config members while preserving the declared cohort scope, audited Mini rules, "
+            "and the existing transfer-supported claim."
+        ),
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/transfer_cohort/opencode_replay_config_verifier_summary.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "lane": "codex_opencode_replay_config_transfer_cohort",
+            "phase": "v5",
+            "backend_only": True,
+            "non_kernel": True,
+            "darwin_boundary": "not_reopened",
+            "family_bound": True,
+            "transfer_cohort_id": cohort.cohort_id,
+            "specialization_scope": "opencode_replay_safe_members_inside_bounded_transfer_cohort",
+            "model_policy": "nano_first",
+            "package": "opencode_1_2_17.current",
+        },
+    )
+
+    return {
+        "cohort_example": example,
+        "refined_candidate": refined_candidate,
+        "comparison_result": comparison,
+        "objective_breakdown_result": refined_objective_breakdown,
+        "verifier_experiment": verifier_experiment,
+    }
+
+
+def build_codex_opencode_transfer_cohort_verifier_follow_on_example_payload() -> Dict[str, object]:
+    example = build_codex_opencode_transfer_cohort_verifier_follow_on_example()
+    return {
+        "cohort_example": {
+            "transfer_cohort": example["cohort_example"]["transfer_cohort"].to_dict(),
+            "evaluation_suite": example["cohort_example"]["evaluation_suite"].to_dict(),
+            "objective_suite": example["cohort_example"]["objective_suite"].to_dict(),
+            "opencode_cell": {
+                "manifest": example["cohort_example"]["opencode_cell"]["manifest"].to_dict(),
+                "cohort_candidate": example["cohort_example"]["opencode_cell"]["cohort_candidate"].to_dict(),
+                "objective_breakdown_result": example["cohort_example"]["opencode_cell"]["objective_breakdown_result"].to_dict(),
+                "promotion_summary": example["cohort_example"]["opencode_cell"]["promotion_summary"].to_dict(),
+                "benchmark_result": example["cohort_example"]["opencode_cell"]["benchmark_result"].to_dict(),
+            },
+            "cohort_rollup": dict(example["cohort_example"]["cohort_rollup"]),
+        },
+        "refined_candidate": example["refined_candidate"].to_dict(),
+        "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
+        "verifier_experiment": example["verifier_experiment"].to_dict(),
     }
 
 

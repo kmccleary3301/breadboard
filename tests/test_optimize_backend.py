@@ -16,6 +16,8 @@ from agentic_coder_prototype.optimize import (
     build_codex_dossier_backend_example,
     build_codex_dossier_backend_example_payload,
     build_codex_dossier_evaluation_example,
+    build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
+    build_codex_opencode_transfer_cohort_example,
     build_opencode_prompt_config_tool_guidance_package_example,
     build_support_execution_benchmark_example,
     build_support_execution_coding_overlay_composition_example,
@@ -295,3 +297,55 @@ def test_staged_optimizer_records_private_search_policy_trace_for_v4_opencode_pa
     assert trace[-1]["metadata"]["transfer_slice_status"]["model_tier.nano_first_openai"]["status"] == "audited_pass"
     assert "model_tier_audit_active" in trace[-1]["metadata"]["slice_penalties"]
     assert "hidden_hold_deferred" in trace[-1]["blocked_components"]
+
+
+def test_staged_optimizer_records_private_search_policy_trace_for_v5_transfer_cohort_lane() -> None:
+    example = build_codex_opencode_transfer_cohort_example()
+
+    result = run_staged_optimizer(example["codex_cell"]["staged_request"])
+    trace = result.metadata["search_policy_trace"]
+    cohort_id = example["transfer_cohort"].cohort_id
+
+    assert trace
+    assert trace[-1]["metadata"]["transfer_cohort_status"][cohort_id]["status"] == "transfer_supported"
+    assert trace[-1]["metadata"]["cohort_penalties"] == {}
+    assert result.metadata["early_stopped"] is False
+
+
+def test_staged_optimizer_records_private_search_policy_trace_for_v5_follow_on_lane() -> None:
+    example = build_codex_opencode_replay_config_transfer_cohort_follow_on_example()
+
+    result = run_staged_optimizer(example["opencode_cell"]["staged_request"])
+    trace = result.metadata["search_policy_trace"]
+    cohort_id = example["transfer_cohort"].cohort_id
+
+    assert trace
+    assert trace[-1]["escalation_triggered"] is True
+    assert trace[-1]["metadata"]["transfer_cohort_status"][cohort_id]["mini_audit_triggered"] is True
+    assert "cohort_mini_audit_active" in trace[-1]["metadata"]["cohort_penalties"]
+    assert result.metadata["early_stopped"] is False
+
+
+def test_staged_optimizer_can_stop_early_on_unsupported_transfer_cohort_status() -> None:
+    example = build_codex_opencode_transfer_cohort_example()
+    cohort_id = example["transfer_cohort"].cohort_id
+    request = StagedOptimizerRequest.from_dict(
+        {
+            **example["codex_cell"]["staged_request"].to_dict(),
+            "metadata": {
+                **dict(example["codex_cell"]["staged_request"].metadata),
+                "transfer_cohort_status": {
+                    cohort_id: {
+                        "status": "inconclusive",
+                        "packages_covered": ["codex_dossier.current", "opencode_1_2_17.current"],
+                    }
+                },
+            },
+        }
+    )
+
+    result = run_staged_optimizer(request)
+
+    assert result.metadata["early_stopped"] is True
+    assert result.metadata["early_stop_reason"] == "unsupported_transfer_cohort_status"
+    assert any("transfer_cohort:" in item for item in result.metadata["search_policy_trace"][-1]["blocked_components"])

@@ -10,6 +10,8 @@ from agentic_coder_prototype.optimize import (
     SearchSpaceManifest,
     TargetFamilyManifest,
     TransferCohortManifest,
+    build_codex_opencode_transfer_cohort_verifier_follow_on_example,
+    build_codex_opencode_transfer_cohort_verifier_follow_on_example_payload,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example_payload,
     build_coding_overlay_benchmark_example,
@@ -502,3 +504,29 @@ def test_transfer_cohort_follow_on_adds_distinct_methodology_value() -> None:
     assert payload["opencode_cell"]["promotion_summary"]["transfer_cohort_status"][
         payload["transfer_cohort"]["cohort_id"]
     ]["mini_audit_triggered"] is True
+
+
+def test_transfer_cohort_verifier_follow_on_round_trip() -> None:
+    example = build_codex_opencode_transfer_cohort_verifier_follow_on_example()
+    payload = build_codex_opencode_transfer_cohort_verifier_follow_on_example_payload()
+
+    verifier_experiment = VerifierAugmentedExperimentResult.from_dict(payload["verifier_experiment"])
+    cohort = TransferCohortManifest.from_dict(payload["cohort_example"]["transfer_cohort"])
+
+    assert verifier_experiment.experiment_kind == "verifier_augmented_transfer_cohort_refinement"
+    assert verifier_experiment.refined_candidate_id == example["refined_candidate"].candidate_id
+    assert verifier_experiment.metadata["transfer_cohort_id"] == cohort.cohort_id
+    assert verifier_experiment.metadata["specialization_scope"] == "opencode_replay_safe_members_inside_bounded_transfer_cohort"
+
+
+def test_transfer_cohort_verifier_follow_on_stays_narrow_and_outside_darwin_ontology() -> None:
+    payload = build_codex_opencode_transfer_cohort_verifier_follow_on_example_payload()
+    verifier_payload = payload["verifier_experiment"]
+
+    assert verifier_payload["metadata"]["non_kernel"] is True
+    assert verifier_payload["metadata"]["darwin_boundary"] == "not_reopened"
+    assert verifier_payload["metadata"]["model_policy"] == "nano_first"
+    assert _payload_contains_forbidden_key(
+        payload,
+        {"campaign_id", "archive_id", "island_id", "genealogy_id", "reward_suite_id"},
+    ) is False

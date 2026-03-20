@@ -9,6 +9,8 @@ from agentic_coder_prototype.optimize import (
     CandidateComparisonResult,
     build_backend_comparison_example,
     build_backend_comparison_example_payload,
+    build_codex_opencode_transfer_cohort_verifier_follow_on_example,
+    build_codex_opencode_transfer_cohort_verifier_follow_on_example_payload,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
     build_codex_opencode_replay_config_transfer_cohort_follow_on_example_payload,
     build_codex_opencode_transfer_cohort_example,
@@ -314,3 +316,16 @@ def test_codex_opencode_transfer_cohort_follow_on_payload_round_trips() -> None:
     assert codex_result.transfer_cohort_status[payload["transfer_cohort"]["cohort_id"]]["model_policy"] == "nano_first"
     assert opencode_result.transfer_cohort_status[payload["transfer_cohort"]["cohort_id"]]["mini_audit_triggered"] is True
     assert payload["opencode_cell"]["benchmark_result"]["variance_summary"]["mini_escalation_triggered"] is True
+
+
+def test_codex_opencode_transfer_cohort_verifier_follow_on_payload_round_trips() -> None:
+    example = build_codex_opencode_transfer_cohort_verifier_follow_on_example()
+    payload = build_codex_opencode_transfer_cohort_verifier_follow_on_example_payload()
+
+    manifest = BenchmarkRunManifest.from_dict(payload["cohort_example"]["opencode_cell"]["manifest"])
+    comparison = CandidateComparisonResult.from_dict(payload["comparison_result"])
+
+    assert comparison.manifest_id == manifest.manifest_id
+    assert comparison.parent_candidate_id == payload["cohort_example"]["opencode_cell"]["cohort_candidate"]["candidate_id"]
+    assert comparison.better_candidate_id == example["refined_candidate"].candidate_id
+    assert comparison.metadata["experiment_kind"] == "verifier_augmented_transfer_cohort_refinement"
