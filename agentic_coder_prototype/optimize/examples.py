@@ -7473,6 +7473,7 @@ def build_codex_opencode_transfer_cohort_example() -> Dict[str, object]:
             "model_policy": "nano_only",
             "evaluation_suite_id": evaluation_suite.suite_id,
             "objective_suite_id": objective_suite.suite_id,
+            "composition_id": codex_composition.composition_id,
         },
     )
 
@@ -7509,6 +7510,7 @@ def build_codex_opencode_transfer_cohort_example() -> Dict[str, object]:
             "model_policy": "nano_only",
             "evaluation_suite_id": evaluation_suite.suite_id,
             "objective_suite_id": objective_suite.suite_id,
+            "composition_id": opencode_composition.composition_id,
         },
     )
 
@@ -8251,6 +8253,7 @@ def build_codex_opencode_replay_config_transfer_cohort_follow_on_example() -> Di
                 "model_policy": "nano_only",
                 "evaluation_suite_id": evaluation_suite.suite_id,
                 "objective_suite_id": objective_suite.suite_id,
+                "composition_id": codex["family_composition"].composition_id,
             },
         }
     )
@@ -8282,6 +8285,7 @@ def build_codex_opencode_replay_config_transfer_cohort_follow_on_example() -> Di
                 "model_policy": "nano_first",
                 "evaluation_suite_id": evaluation_suite.suite_id,
                 "objective_suite_id": objective_suite.suite_id,
+                "composition_id": opencode["family_composition"].composition_id,
             },
         }
     )

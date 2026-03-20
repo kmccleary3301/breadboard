@@ -813,6 +813,7 @@ def build_promotion_evidence_summary(
     comparison_results = list(comparison_results or [])
     objective_breakdown_results = list(objective_breakdown_results or [])
     transfer_cohorts = list(transfer_cohorts or [])
+    effective_claim_tier = str(claim_tier or "").strip().lower() or None
     manifests = [benchmark_manifest] if benchmark_manifest is not None else []
     outcome_counts: Dict[str, int] = {}
     comparison_ids: List[str] = []
@@ -886,6 +887,17 @@ def build_promotion_evidence_summary(
                 "member_slice_ids": list(cohort.member_slice_ids),
             },
         )
+    if effective_claim_tier is None:
+        effective_claim_tier = "transfer_supported" if transfer_cohorts else "package_local"
+    if effective_claim_tier in {"transfer_supported", "cohort_supported"} and not transfer_cohorts:
+        raise ValueError("transfer_supported and cohort_supported claims require explicit transfer cohorts")
+    if effective_claim_tier == "transfer_supported":
+        supporting_statuses = {
+            str(payload.get("status") or "").strip().lower()
+            for payload in merged_transfer_cohort_status.values()
+        }
+        if not (supporting_statuses & {"transfer_supported", "cohort_supported"}):
+            raise ValueError("transfer_supported claims require at least one supporting cohort status")
     transfer_slice_status = _merge_slice_status(objective_breakdown_results)
     for slice_item in transfer_slices:
         transfer_slice_status.setdefault(
@@ -945,6 +957,18 @@ def build_promotion_evidence_summary(
         member_family_ids=member_family_ids,
         model_tier_audit=model_tier_audit,
     )
+    if effective_claim_tier == "cohort_supported":
+        supported_cohort_ids = [
+            cohort_id
+            for cohort_id in transfer_cohort_ids
+            if str(merged_transfer_cohort_status.get(cohort_id, {}).get("status") or "").strip().lower()
+            == "cohort_supported"
+        ]
+        if not supported_cohort_ids:
+            raise ValueError("cohort_supported claims require explicit cohort-supported status")
+        if not review_required:
+            raise ValueError("cohort_supported claims require explicit review")
+        attribution_required = True
     attribution_summary = {
         "required": attribution_required,
         "present": bool(attribution_payload),
@@ -1005,6 +1029,7 @@ def build_promotion_evidence_summary(
             "regression_covered": bool(regression_ids and compared_regression_ids),
             "transfer_slice_ids": transfer_slice_ids,
             "transfer_cohort_ids": transfer_cohort_ids,
+            "claim_tier": effective_claim_tier,
             "optimistic_scope_blocked": optimistic_scope_blocked,
             "attribution_required": attribution_required,
             "attribution_present": bool(attribution_payload),
@@ -1016,7 +1041,7 @@ def build_promotion_evidence_summary(
         transfer_cohort_ids=transfer_cohort_ids,
         transfer_cohorts=transfer_cohorts,
         transfer_cohort_status=merged_transfer_cohort_status,
-        claim_tier=claim_tier or ("transfer_supported" if transfer_cohorts else "package_local"),
+        claim_tier=effective_claim_tier,
         transfer_slice_status=transfer_slice_status,
         blocked_transfer_slice_ids=blocked_transfer_slice_ids,
         inconclusive_transfer_slice_ids=inconclusive_transfer_slice_ids,
@@ -1404,6 +1429,10 @@ def evaluate_family_promotion_gate(
         "composition_id": family_composition.composition_id if family_composition is not None else None,
         "search_space_id": search_space.search_space_id if search_space is not None else None,
     }
+    claim_tier = str((benchmark_manifest.promotion_relevance or {}).get("claim_tier") or "").strip().lower() or (
+        "transfer_supported" if benchmark_manifest.transfer_cohort_ids else "package_local"
+    )
+    metadata["claim_tier"] = claim_tier
     if evaluation_suite is None or objective_suite is None or search_space is None or (
         target_family is None and family_composition is None
     ):
@@ -1519,7 +1548,18 @@ def evaluate_family_promotion_gate(
             candidate_id=candidate_id,
             reason="family-level applicability scope expanded beyond the declared package or slice boundary",
             evidence_refs=evidence_refs,
-            metadata={**metadata, "applicability_scope_status": "expanded"},
+                metadata={**metadata, "applicability_scope_status": "expanded"},
+            )
+    if claim_tier in {"transfer_supported", "cohort_supported"} and not benchmark_manifest.transfer_cohort_ids:
+        return GateResult(
+            gate_id=f"gate.family_promotion.{candidate_id}",
+            gate_kind="family_promotion",
+            status="insufficient_evidence",
+            target_id=target.target_id,
+            candidate_id=candidate_id,
+            reason="transfer-aware promotion claims require explicit transfer cohort references",
+            evidence_refs=evidence_refs,
+            metadata=metadata,
         )
     if family_composition is not None:
         covered_member_ids = {
@@ -1541,9 +1581,14 @@ def evaluate_family_promotion_gate(
                 metadata=metadata,
             )
         mini_audit = _copy_mapping((benchmark_manifest.promotion_relevance or {}).get("mini_escalation_audit"))
-        attribution_required = bool(mini_audit.get("triggered")) or len(family_composition.member_family_ids) > 2 or any(
-            "package_transfer" in result.aggregate_objectives or "package_coherence" in result.aggregate_objectives
-            for result in candidate_breakdowns
+        attribution_required = (
+            claim_tier == "cohort_supported"
+            or bool(mini_audit.get("triggered"))
+            or len(family_composition.member_family_ids) > 2
+            or any(
+                "package_transfer" in result.aggregate_objectives or "package_coherence" in result.aggregate_objectives
+                for result in candidate_breakdowns
+            )
         )
         attribution_payload: Optional[Mapping[str, Any]] = None
         for result in candidate_breakdowns:
@@ -1563,6 +1608,25 @@ def evaluate_family_promotion_gate(
                 evidence_refs=evidence_refs,
                 metadata=metadata,
             )
+        if claim_tier == "cohort_supported":
+            supporting_statuses = {
+                str(payload.get("status") or "").strip().lower()
+                for payload in (
+                    (benchmark_manifest.promotion_relevance or {}).get("transfer_cohort_status") or {}
+                ).values()
+            }
+            metadata["cohort_supported_statuses"] = sorted(supporting_statuses)
+            if "cohort_supported" not in supporting_statuses:
+                return GateResult(
+                    gate_id=f"gate.family_promotion.{candidate_id}",
+                    gate_kind="family_promotion",
+                    status="insufficient_evidence",
+                    target_id=target.target_id,
+                    candidate_id=candidate_id,
+                    reason="cohort-supported promotion claims require explicit cohort-supported evidence",
+                    evidence_refs=evidence_refs,
+                    metadata=metadata,
+                )
     slice_status = _merge_slice_status(candidate_breakdowns)
     required_transfer_slices = [
         item for item in benchmark_manifest.transfer_slices if item.promotion_role == "required"

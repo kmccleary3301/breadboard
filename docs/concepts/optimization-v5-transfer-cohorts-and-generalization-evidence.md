@@ -64,6 +64,19 @@ The first V5 tranche only proves `package_local` and `transfer_supported`.
 
 That is intentional. It keeps claims honest.
 
+The claim discipline is explicit:
+
+- `package_local` means the result is justified only inside one declared package boundary
+- `transfer_supported` means the result is supported across a bounded cohort with explicit slice evidence
+- `cohort_supported` is reserved for stronger cross-package claims and requires stronger review and attribution
+
+V5 blocks optimistic claim inflation:
+
+- a package-local result cannot silently upgrade itself to `transfer_supported`
+- a transfer-supported result cannot silently upgrade itself to `cohort_supported`
+- broader claims require explicit cohort status and stronger member-family attribution
+- expanded applicability scope remains a hard block
+
 ## First proving ground
 
 The first live V5 cohort is:

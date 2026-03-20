@@ -719,3 +719,110 @@ def test_transfer_cohort_follow_on_reviewability_and_audit_are_explicit() -> Non
     assert codex_summary.claim_tier == "transfer_supported"
     assert opencode_summary.transfer_cohort_status[cohort_id]["mini_audit_triggered"] is True
     assert opencode_summary.metadata["follow_on"] is True
+
+
+def test_package_examples_remain_explicitly_package_local() -> None:
+    example = build_support_execution_tool_guidance_coding_overlay_package_example()
+
+    assert example["promotion_summary"].claim_tier == "package_local"
+
+
+def test_build_promotion_evidence_summary_rejects_transfer_claim_without_cohort() -> None:
+    example = build_support_execution_tool_guidance_coding_overlay_package_example()
+
+    with pytest.raises(ValueError, match="require explicit transfer cohorts"):
+        build_promotion_evidence_summary(
+            summary_id="summary.invalid.transfer_claim.001",
+            candidate_id=example["package_candidate"].candidate_id,
+            benchmark_manifest=example["manifest"],
+            comparison_results=[example["comparison_result"]],
+            evaluation_suite=example["evaluation_suite"],
+            objective_suite=example["objective_suite"],
+            family_composition=example["family_composition"],
+            search_space=example["search_space"],
+            objective_breakdown_results=[example["objective_breakdown_result"]],
+            claim_tier="transfer_supported",
+            review_required=True,
+        )
+
+
+def test_build_promotion_evidence_summary_requires_supported_status_for_cohort_supported_claim() -> None:
+    example = build_codex_opencode_transfer_cohort_example()
+
+    with pytest.raises(ValueError, match="cohort-supported status"):
+        build_promotion_evidence_summary(
+            summary_id="summary.invalid.cohort_supported.001",
+            candidate_id=example["codex_cell"]["cohort_candidate"].candidate_id,
+            benchmark_manifest=example["codex_cell"]["manifest"],
+            comparison_results=example["codex_cell"]["benchmark_result"].comparison_results,
+            evaluation_suite=example["evaluation_suite"],
+            objective_suite=example["objective_suite"],
+            family_composition=example["codex_cell"]["package_example"]["family_composition"],
+            search_space=example["codex_cell"]["package_example"]["search_space"],
+            transfer_cohorts=[example["transfer_cohort"]],
+            objective_breakdown_results=[example["codex_cell"]["objective_breakdown_result"]],
+            claim_tier="cohort_supported",
+            transfer_cohort_status=example["codex_cell"]["promotion_summary"].transfer_cohort_status,
+            review_required=True,
+        )
+
+
+def test_build_promotion_evidence_summary_accepts_explicit_cohort_supported_claim_with_review_and_attribution() -> None:
+    example = build_codex_opencode_transfer_cohort_example()
+    cohort_id = example["transfer_cohort"].cohort_id
+    supported_status = {
+        cohort_id: {
+            **example["codex_cell"]["promotion_summary"].transfer_cohort_status[cohort_id],
+            "status": "cohort_supported",
+        }
+    }
+
+    summary = build_promotion_evidence_summary(
+        summary_id="summary.valid.cohort_supported.001",
+        candidate_id=example["codex_cell"]["cohort_candidate"].candidate_id,
+        benchmark_manifest=example["codex_cell"]["manifest"],
+        comparison_results=example["codex_cell"]["benchmark_result"].comparison_results,
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        family_composition=example["codex_cell"]["package_example"]["family_composition"],
+        search_space=example["codex_cell"]["package_example"]["search_space"],
+        transfer_cohorts=[example["transfer_cohort"]],
+        objective_breakdown_results=[example["codex_cell"]["objective_breakdown_result"]],
+        claim_tier="cohort_supported",
+        transfer_cohort_status=supported_status,
+        review_required=True,
+    )
+
+    assert summary.claim_tier == "cohort_supported"
+    assert summary.attribution_summary["required"] is True
+    assert summary.family_risk_summary["claim_tier"] == "cohort_supported"
+
+
+def test_family_promotion_gate_blocks_cohort_supported_claim_without_supported_evidence() -> None:
+    example = build_codex_opencode_transfer_cohort_example()
+    manifest = BenchmarkRunManifest.from_dict(
+        {
+            **example["codex_cell"]["manifest"].to_dict(),
+            "promotion_relevance": {
+                **dict(example["codex_cell"]["manifest"].promotion_relevance),
+                "claim_tier": "cohort_supported",
+                "transfer_cohort_status": example["codex_cell"]["promotion_summary"].transfer_cohort_status,
+            },
+        }
+    )
+
+    result = evaluate_family_promotion_gate(
+        target=example["codex_cell"]["package_example"]["target"],
+        candidate_id=example["codex_cell"]["cohort_candidate"].candidate_id,
+        benchmark_manifest=manifest,
+        comparison_results=example["codex_cell"]["benchmark_result"].comparison_results,
+        evaluation_suite=example["evaluation_suite"],
+        objective_suite=example["objective_suite"],
+        family_composition=example["codex_cell"]["package_example"]["family_composition"],
+        search_space=example["codex_cell"]["package_example"]["search_space"],
+        objective_breakdown_results=[example["codex_cell"]["objective_breakdown_result"]],
+    )
+
+    assert result.status == "insufficient_evidence"
+    assert "cohort-supported" in result.reason
+    assert result.metadata["claim_tier"] == "cohort_supported"
