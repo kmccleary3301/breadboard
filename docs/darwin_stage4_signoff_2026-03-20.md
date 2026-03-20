@@ -1,7 +1,7 @@
 # DARWIN Stage-4 Signoff
 
 Date: 2026-03-20
-Status: prepared on feature branch; final after merged-state verification on `main`
+Status: complete on `main`
 
 ## Scope
 
@@ -25,6 +25,7 @@ Stage 4 turned BreadBoard + DARWIN into a live-provider, multi-family compoundin
 - deep-live-search tests, reports, and replay checks
 - multi-family promotion / bounded-transfer tests and builders
 - late comparative / pre-closeout tests and builders
+- merged-state verification and canonical artifact rebuild on `main`
 
 ## What remains bounded
 

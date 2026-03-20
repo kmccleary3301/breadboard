@@ -1,7 +1,7 @@
 # DARWIN Stage-4 Canonical Artifacts
 
 Date: 2026-03-20
-Status: prepared artifact freeze on feature branch; final after merged-state verification on `main`
+Status: frozen on `main`
 References:
 - `artifacts/darwin/stage4/precloseout/canonical_artifact_index_v0.json`
 - `artifacts/darwin/stage4/precloseout/canonical_artifact_index_v0.md`

@@ -1,7 +1,7 @@
 # DARWIN Stage-4 Closeout Execution Plan
 
 Date: 2026-03-20
-Status: active on feature branch
+Status: complete on `main`
 Scope: final Stage-4 closeout, artifact freeze, merged-state verification, and formal completion
 References:
 - `docs/darwin_stage4_precloseout_gate_2026-03-20.md`

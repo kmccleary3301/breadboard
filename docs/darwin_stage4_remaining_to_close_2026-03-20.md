@@ -1,14 +1,11 @@
 # DARWIN Stage-4 Remaining To Close
 
 Date: 2026-03-20
-Status: closeout-only remainder note
+Status: historical after Stage-4 closeout on `main`
 
 ## Remaining Stage-4 work
 
-- final Stage-4 signoff memo
-- final Stage-4 completion gate
-- final canonical artifact freeze
-- merged-state verification on `main`
+- none; Stage 4 is complete on `main`
 
 ## Not remaining Stage-4 work
 

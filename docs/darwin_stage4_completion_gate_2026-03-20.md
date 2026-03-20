@@ -1,7 +1,7 @@
 # DARWIN Stage-4 Completion Gate
 
 Date: 2026-03-20
-Status: prepared on feature branch
+Status: complete
 
 - [x] doctrine / ADR / lane matrix program complete
 - [x] live economics / runtime closure tranche complete
@@ -10,7 +10,7 @@ Status: prepared on feature branch
 - [x] late comparative / pre-closeout tranche complete
 - [x] canonical artifact set frozen
 - [x] final signoff memo written
-- [ ] merged-state verification passed on `main`
+- [x] merged-state verification passed on `main`
 
 ## Gate meaning
 

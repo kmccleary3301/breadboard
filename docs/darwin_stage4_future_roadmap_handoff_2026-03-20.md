@@ -1,7 +1,7 @@
 # DARWIN Stage-4 Future Roadmap Handoff
 
 Date: 2026-03-20
-Status: prepared during Stage-4 closeout
+Status: active after Stage-4 closeout
 
 ## Completed in Stage 4
 
