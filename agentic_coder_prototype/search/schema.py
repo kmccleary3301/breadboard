@@ -18,6 +18,8 @@ ALLOWED_OPERATOR_KINDS = {
 ALLOWED_CANDIDATE_STATUSES = {"seeded", "active", "selected", "discarded", "verified", "terminated"}
 ALLOWED_FRONTIER_STATUSES = {"active", "completed", "terminated"}
 ALLOWED_BRANCH_STATUSES = {"active", "merged", "discarded"}
+ALLOWED_ASSESSMENT_KINDS = {"verify", "judge", "rank", "execute"}
+ALLOWED_ASSESSMENT_VERDICTS = {"pass", "fail", "prefer_a", "prefer_b", "ranked", "inconclusive"}
 
 
 def _require_text(value: Any, field_name: str) -> str:
@@ -258,6 +260,89 @@ class SearchCarryState:
 
 
 @dataclass(frozen=True)
+class SearchAssessment:
+    assessment_id: str
+    search_id: str
+    frontier_id: str
+    round_index: int
+    assessment_kind: str
+    backend_kind: str
+    schema_kind: str
+    subject_candidate_ids: List[str]
+    verdict: str
+    score_vector: Dict[str, Any] = field(default_factory=dict)
+    summary_payload: Dict[str, Any] = field(default_factory=dict)
+    artifact_refs: List[str] = field(default_factory=list)
+    usage: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "assessment_id", _require_text(self.assessment_id, "assessment_id"))
+        object.__setattr__(self, "search_id", _require_text(self.search_id, "search_id"))
+        object.__setattr__(self, "frontier_id", _require_text(self.frontier_id, "frontier_id"))
+        round_index = int(self.round_index)
+        if round_index < 0:
+            raise ValueError("round_index must be >= 0")
+        assessment_kind = _require_text(self.assessment_kind, "assessment_kind").lower()
+        verdict = _require_text(self.verdict, "verdict").lower()
+        if assessment_kind not in ALLOWED_ASSESSMENT_KINDS:
+            raise ValueError(f"assessment_kind must be one of: {sorted(ALLOWED_ASSESSMENT_KINDS)}")
+        if verdict not in ALLOWED_ASSESSMENT_VERDICTS:
+            raise ValueError(f"verdict must be one of: {sorted(ALLOWED_ASSESSMENT_VERDICTS)}")
+        object.__setattr__(self, "round_index", round_index)
+        object.__setattr__(self, "assessment_kind", assessment_kind)
+        object.__setattr__(self, "backend_kind", _require_text(self.backend_kind, "backend_kind"))
+        object.__setattr__(self, "schema_kind", _require_text(self.schema_kind, "schema_kind"))
+        object.__setattr__(self, "subject_candidate_ids", _copy_text_list(self.subject_candidate_ids))
+        object.__setattr__(self, "verdict", verdict)
+        object.__setattr__(self, "score_vector", _copy_mapping(self.score_vector))
+        object.__setattr__(self, "summary_payload", _copy_mapping(self.summary_payload))
+        object.__setattr__(self, "artifact_refs", _copy_text_list(self.artifact_refs))
+        object.__setattr__(self, "usage", _copy_mapping(self.usage))
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+
+        if not self.subject_candidate_ids:
+            raise ValueError("subject_candidate_ids must contain at least one candidate id")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "assessment_id": self.assessment_id,
+            "search_id": self.search_id,
+            "frontier_id": self.frontier_id,
+            "round_index": self.round_index,
+            "assessment_kind": self.assessment_kind,
+            "backend_kind": self.backend_kind,
+            "schema_kind": self.schema_kind,
+            "subject_candidate_ids": list(self.subject_candidate_ids),
+            "verdict": self.verdict,
+            "score_vector": dict(self.score_vector),
+            "summary_payload": dict(self.summary_payload),
+            "artifact_refs": list(self.artifact_refs),
+            "usage": dict(self.usage),
+            "metadata": dict(self.metadata),
+        }
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "SearchAssessment":
+        return SearchAssessment(
+            assessment_id=data.get("assessment_id") or "",
+            search_id=data.get("search_id") or "",
+            frontier_id=data.get("frontier_id") or "",
+            round_index=int(data.get("round_index") or 0),
+            assessment_kind=data.get("assessment_kind") or "",
+            backend_kind=data.get("backend_kind") or "",
+            schema_kind=data.get("schema_kind") or "",
+            subject_candidate_ids=list(data.get("subject_candidate_ids") or []),
+            verdict=data.get("verdict") or "",
+            score_vector=dict(data.get("score_vector") or {}),
+            summary_payload=dict(data.get("summary_payload") or {}),
+            artifact_refs=list(data.get("artifact_refs") or []),
+            usage=dict(data.get("usage") or {}),
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
 class SearchWorkspaceSnapshot:
     snapshot_id: str
     search_id: str
@@ -424,6 +509,7 @@ class SearchEvent:
     input_candidate_ids: List[str]
     output_candidate_ids: List[str] = field(default_factory=list)
     message_ids: List[str] = field(default_factory=list)
+    assessment_ids: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -441,6 +527,7 @@ class SearchEvent:
         object.__setattr__(self, "input_candidate_ids", _copy_text_list(self.input_candidate_ids))
         object.__setattr__(self, "output_candidate_ids", _copy_text_list(self.output_candidate_ids))
         object.__setattr__(self, "message_ids", _copy_text_list(self.message_ids))
+        object.__setattr__(self, "assessment_ids", _copy_text_list(self.assessment_ids))
         object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
 
         if not self.input_candidate_ids:
@@ -456,6 +543,7 @@ class SearchEvent:
             "input_candidate_ids": list(self.input_candidate_ids),
             "output_candidate_ids": list(self.output_candidate_ids),
             "message_ids": list(self.message_ids),
+            "assessment_ids": list(self.assessment_ids),
             "metadata": dict(self.metadata),
         }
 
@@ -470,6 +558,7 @@ class SearchEvent:
             input_candidate_ids=list(data.get("input_candidate_ids") or []),
             output_candidate_ids=list(data.get("output_candidate_ids") or []),
             message_ids=list(data.get("message_ids") or []),
+            assessment_ids=list(data.get("assessment_ids") or []),
             metadata=dict(data.get("metadata") or {}),
         )
 
@@ -514,6 +603,7 @@ class SearchRun:
     events: List[SearchEvent]
     messages: List[SearchMessage] = field(default_factory=list)
     carry_states: List[SearchCarryState] = field(default_factory=list)
+    assessments: List[SearchAssessment] = field(default_factory=list)
     workspace_snapshots: List[SearchWorkspaceSnapshot] = field(default_factory=list)
     branch_states: List[SearchBranchState] = field(default_factory=list)
     metrics: Optional[SearchMetrics] = None
@@ -547,6 +637,11 @@ class SearchRun:
             self,
             "carry_states",
             [item if isinstance(item, SearchCarryState) else SearchCarryState.from_dict(item) for item in self.carry_states],
+        )
+        object.__setattr__(
+            self,
+            "assessments",
+            [item if isinstance(item, SearchAssessment) else SearchAssessment.from_dict(item) for item in self.assessments],
         )
         object.__setattr__(
             self,
@@ -589,6 +684,7 @@ class SearchRun:
             "events": [item.to_dict() for item in self.events],
             "messages": [item.to_dict() for item in self.messages],
             "carry_states": [item.to_dict() for item in self.carry_states],
+            "assessments": [item.to_dict() for item in self.assessments],
             "workspace_snapshots": [item.to_dict() for item in self.workspace_snapshots],
             "branch_states": [item.to_dict() for item in self.branch_states],
             "metadata": dict(self.metadata),
@@ -609,6 +705,7 @@ class SearchRun:
             events=[SearchEvent.from_dict(item) for item in data.get("events") or []],
             messages=[SearchMessage.from_dict(item) for item in data.get("messages") or []],
             carry_states=[SearchCarryState.from_dict(item) for item in data.get("carry_states") or []],
+            assessments=[SearchAssessment.from_dict(item) for item in data.get("assessments") or []],
             workspace_snapshots=[
                 SearchWorkspaceSnapshot.from_dict(item) for item in data.get("workspace_snapshots") or []
             ],

@@ -93,6 +93,7 @@ class SearchTrajectoryStep:
     input_candidate_ids: List[str]
     output_candidate_ids: List[str]
     message_ids: List[str] = field(default_factory=list)
+    assessment_ids: List[str] = field(default_factory=list)
     carry_state_ids: List[str] = field(default_factory=list)
     branch_ids: List[str] = field(default_factory=list)
     reward_signal_ids: List[str] = field(default_factory=list)
@@ -118,6 +119,7 @@ class SearchTrajectoryStep:
         object.__setattr__(self, "input_candidate_ids", _copy_text_list(self.input_candidate_ids))
         object.__setattr__(self, "output_candidate_ids", _copy_text_list(self.output_candidate_ids))
         object.__setattr__(self, "message_ids", _copy_text_list(self.message_ids))
+        object.__setattr__(self, "assessment_ids", _copy_text_list(self.assessment_ids))
         object.__setattr__(self, "carry_state_ids", _copy_text_list(self.carry_state_ids))
         object.__setattr__(self, "branch_ids", _copy_text_list(self.branch_ids))
         object.__setattr__(self, "reward_signal_ids", _copy_text_list(self.reward_signal_ids))
@@ -132,6 +134,7 @@ class SearchTrajectoryStep:
             "input_candidate_ids": list(self.input_candidate_ids),
             "output_candidate_ids": list(self.output_candidate_ids),
             "message_ids": list(self.message_ids),
+            "assessment_ids": list(self.assessment_ids),
             "carry_state_ids": list(self.carry_state_ids),
             "branch_ids": list(self.branch_ids),
             "reward_signal_ids": list(self.reward_signal_ids),
@@ -148,6 +151,7 @@ class SearchTrajectoryStep:
             input_candidate_ids=list(data.get("input_candidate_ids") or []),
             output_candidate_ids=list(data.get("output_candidate_ids") or []),
             message_ids=list(data.get("message_ids") or []),
+            assessment_ids=list(data.get("assessment_ids") or []),
             carry_state_ids=list(data.get("carry_state_ids") or []),
             branch_ids=list(data.get("branch_ids") or []),
             reward_signal_ids=list(data.get("reward_signal_ids") or []),
@@ -333,6 +337,7 @@ def export_search_trajectory(
                 input_candidate_ids=list(event.input_candidate_ids),
                 output_candidate_ids=list(event.output_candidate_ids),
                 message_ids=list(event.message_ids),
+                assessment_ids=list(event.assessment_ids),
                 carry_state_ids=carry_state_ids,
                 branch_ids=list(branch_ids),
                 reward_signal_ids=reward_ids_by_event.get(event.event_id, []),

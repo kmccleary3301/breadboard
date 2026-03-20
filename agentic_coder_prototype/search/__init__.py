@@ -1,5 +1,11 @@
 """Opt-in search runtime primitives for DAG-shaped TTC research."""
 
+from .assessment import (
+    AssessmentOutput,
+    RegisteredAssessmentBackend,
+    SearchAssessmentRegistry,
+    build_default_search_assessment_registry,
+)
 from .compaction import (
     CompactionOutput,
     RegisteredCompactionBackend,
@@ -7,6 +13,14 @@ from .compaction import (
     build_default_search_compaction_registry,
 )
 from .examples import (
+    build_branch_execute_verify_pressure_cell,
+    build_dag_v2_phase0_pressure_packet,
+    build_dag_v2_phase0_pressure_packet_payload,
+    build_exact_verifier_assessment_example,
+    build_exact_verifier_assessment_example_payload,
+    build_judge_pairwise_assessment_example,
+    build_judge_pairwise_assessment_example_payload,
+    build_judge_reducer_pressure_cell,
     build_pacore_search_runtime_example,
     build_pacore_search_runtime_example_payload,
     build_rsa_search_runtime_example,
@@ -17,6 +31,7 @@ from .examples import (
     build_stateful_branch_search_example_payload,
     build_typed_compaction_registry_example,
     build_typed_compaction_registry_example_payload,
+    build_verifier_guided_pressure_cell,
 )
 from .export import (
     SearchOfflineDataset,
@@ -35,10 +50,13 @@ from .runtime import (
     MessagePassingSchedulerConfig,
 )
 from .schema import (
+    ALLOWED_ASSESSMENT_KINDS,
+    ALLOWED_ASSESSMENT_VERDICTS,
+    ALLOWED_BRANCH_STATUSES,
     ALLOWED_CANDIDATE_STATUSES,
     ALLOWED_FRONTIER_STATUSES,
     ALLOWED_OPERATOR_KINDS,
-    ALLOWED_BRANCH_STATUSES,
+    SearchAssessment,
     SearchBranchState,
     SearchCandidate,
     SearchCarryState,
@@ -51,17 +69,23 @@ from .schema import (
 )
 
 __all__ = [
+    "ALLOWED_ASSESSMENT_KINDS",
+    "ALLOWED_ASSESSMENT_VERDICTS",
     "ALLOWED_BRANCH_STATUSES",
     "ALLOWED_CANDIDATE_STATUSES",
     "ALLOWED_FRONTIER_STATUSES",
     "ALLOWED_OPERATOR_KINDS",
     "AggregationProposal",
+    "AssessmentOutput",
     "BarrieredRoundScheduler",
     "BarrieredSchedulerConfig",
     "BoundedMessagePassingScheduler",
     "CompactionOutput",
     "MessagePassingSchedulerConfig",
+    "RegisteredAssessmentBackend",
     "RegisteredCompactionBackend",
+    "SearchAssessment",
+    "SearchAssessmentRegistry",
     "SearchOfflineDataset",
     "SearchBranchState",
     "SearchCandidate",
@@ -76,8 +100,17 @@ __all__ = [
     "SearchTrajectoryExport",
     "SearchTrajectoryStep",
     "SearchWorkspaceSnapshot",
+    "build_branch_execute_verify_pressure_cell",
+    "build_dag_v2_phase0_pressure_packet",
+    "build_dag_v2_phase0_pressure_packet_payload",
+    "build_default_search_assessment_registry",
     "build_default_reward_signals",
     "build_default_search_compaction_registry",
+    "build_exact_verifier_assessment_example",
+    "build_exact_verifier_assessment_example_payload",
+    "build_judge_pairwise_assessment_example",
+    "build_judge_pairwise_assessment_example_payload",
+    "build_judge_reducer_pressure_cell",
     "build_pacore_search_runtime_example",
     "build_pacore_search_runtime_example_payload",
     "build_rsa_search_runtime_example",
@@ -89,5 +122,6 @@ __all__ = [
     "build_stateful_branch_search_example_payload",
     "build_typed_compaction_registry_example",
     "build_typed_compaction_registry_example_payload",
+    "build_verifier_guided_pressure_cell",
     "export_search_trajectory",
 ]

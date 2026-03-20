@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Sequence
 
+from .assessment import SearchAssessmentRegistry, build_default_search_assessment_registry
 from .compaction import SearchCompactionRegistry, build_default_search_compaction_registry
 from .export import build_search_offline_dataset, export_search_trajectory
 from .runtime import (
@@ -13,6 +14,7 @@ from .runtime import (
 )
 from .schema import (
     SearchBranchState,
+    SearchAssessment,
     SearchCandidate,
     SearchEvent,
     SearchMessage,
@@ -426,4 +428,319 @@ def build_search_trajectory_export_example_payload() -> Dict[str, object]:
         "run": example["run"].to_dict(),
         "trajectory": example["trajectory"].to_dict(),
         "dataset": example["dataset"].to_dict(),
+    }
+
+
+def build_verifier_guided_pressure_cell() -> Dict[str, object]:
+    base = build_stateful_branch_search_example()
+    run = base["run"]
+    selected_candidate_id = run.selected_candidate_id
+    verify_event = SearchEvent(
+        event_id=f"{run.search_id}.event.verify.frontier_stub",
+        search_id=run.search_id,
+        frontier_id=run.frontiers[-1].frontier_id,
+        round_index=run.frontiers[-1].round_index,
+        operator_kind="verify",
+        input_candidate_ids=[selected_candidate_id],
+        output_candidate_ids=[selected_candidate_id],
+        metadata={
+            "backend_kind": "exact_tests.v1",
+            "schema_kind": "code.test_report.v1",
+            "verdict": "pass",
+            "artifact_refs": [f"artifacts/search/{run.search_id}/verify_frontier_report.json"],
+            "awkward_storage": ["event.metadata", "candidate.score_vector", "message.summary_payload"],
+            "missing_public_shape": "assessment_evaluator_truth",
+        },
+    )
+    summary = {
+        "cell_id": "phase0.verifier_guided_code_patch_search",
+        "family": "verifier_guided_code_patch_search",
+        "awkwardness_kind": "assessment_evaluator_truth",
+        "why_v1_is_awkward": [
+            "exact verifier verdict is stored in event metadata",
+            "test artifact references are not first-class runtime truth",
+            "pass/fail semantics do not have a typed shared record",
+        ],
+    }
+    return {
+        "run": SearchRun(
+            search_id=run.search_id,
+            recipe_kind=run.recipe_kind,
+            candidates=list(run.candidates),
+            frontiers=list(run.frontiers),
+            events=[*run.events, verify_event],
+            messages=list(run.messages),
+            carry_states=list(run.carry_states),
+            workspace_snapshots=list(run.workspace_snapshots),
+            branch_states=list(run.branch_states),
+            metrics=run.metrics,
+            selected_candidate_id=run.selected_candidate_id,
+            metadata={**dict(run.metadata), "phase0_cell": summary["cell_id"]},
+        ),
+        "summary": summary,
+    }
+
+
+def build_judge_reducer_pressure_cell() -> Dict[str, object]:
+    base = build_pacore_search_runtime_example()
+    run = base["run"]
+    final_candidates = [item for item in run.candidates if item.frontier_id == run.frontiers[-2].frontier_id]
+    candidate_ids = [item.candidate_id for item in final_candidates[:2]]
+    verify_event = SearchEvent(
+        event_id=f"{run.search_id}.event.verify.judge_stub",
+        search_id=run.search_id,
+        frontier_id=run.frontiers[-2].frontier_id,
+        round_index=run.frontiers[-2].round_index,
+        operator_kind="verify",
+        input_candidate_ids=candidate_ids,
+        output_candidate_ids=[candidate_ids[0]],
+        metadata={
+            "backend_kind": "judge_pairwise.v1",
+            "schema_kind": "judge.verdict.v1",
+            "verdict": "prefer_a",
+            "preferred_candidate_id": candidate_ids[0],
+            "artifact_refs": [f"artifacts/search/{run.search_id}/judge_verdict.json"],
+            "awkward_storage": ["event.metadata", "message.summary_payload"],
+            "missing_public_shape": "assessment_evaluator_truth",
+        },
+    )
+    summary = {
+        "cell_id": "phase0.judge_reducer_reasoning_search",
+        "family": "judge_reducer_reasoning_search",
+        "awkwardness_kind": "assessment_evaluator_truth",
+        "why_v1_is_awkward": [
+            "pairwise judge verdict is embedded in event metadata",
+            "preference judgments do not have a typed shared record",
+            "reducer-facing evidence is not linked as first-class runtime truth",
+        ],
+    }
+    return {
+        "run": SearchRun(
+            search_id=run.search_id,
+            recipe_kind=run.recipe_kind,
+            candidates=list(run.candidates),
+            frontiers=list(run.frontiers),
+            events=[*run.events, verify_event],
+            messages=list(run.messages),
+            carry_states=list(run.carry_states),
+            metrics=run.metrics,
+            selected_candidate_id=run.selected_candidate_id,
+            metadata={**dict(run.metadata), "phase0_cell": summary["cell_id"]},
+        ),
+        "summary": summary,
+    }
+
+
+def build_branch_execute_verify_pressure_cell() -> Dict[str, object]:
+    base = build_stateful_branch_search_example()
+    run = base["run"]
+    branch_ids = [item.branch_id for item in run.branch_states]
+    candidate_ids = [item.candidate_id for item in run.branch_states]
+    verify_event = SearchEvent(
+        event_id=f"{run.search_id}.event.verify.branch_execute_stub",
+        search_id=run.search_id,
+        frontier_id=run.frontiers[-1].frontier_id,
+        round_index=run.frontiers[-1].round_index,
+        operator_kind="verify",
+        input_candidate_ids=candidate_ids,
+        output_candidate_ids=[run.selected_candidate_id],
+        metadata={
+            "backend_kind": "branch_execute_verify.v1",
+            "schema_kind": "branch.execute_report.v1",
+            "verdict": "prefer_a",
+            "branch_ids": branch_ids,
+            "artifact_refs": [f"artifacts/search/{run.search_id}/branch_execute_verify.json"],
+            "awkward_storage": ["event.metadata", "branch_state.metadata", "trajectory.metadata"],
+            "missing_public_shape": "assessment_evaluator_truth",
+        },
+    )
+    summary = {
+        "cell_id": "phase0.branch_execute_verify_search",
+        "family": "branch_execute_verify_search",
+        "awkwardness_kind": "assessment_evaluator_truth",
+        "why_v1_is_awkward": [
+            "branch execute/verify results are hidden in event and branch metadata",
+            "merge/discard decisions cannot point to a typed evaluator truth record",
+            "trajectory export cannot attach grounded verification truth directly",
+        ],
+    }
+    return {
+        "run": SearchRun(
+            search_id=run.search_id,
+            recipe_kind=run.recipe_kind,
+            candidates=list(run.candidates),
+            frontiers=list(run.frontiers),
+            events=[*run.events, verify_event],
+            messages=list(run.messages),
+            carry_states=list(run.carry_states),
+            workspace_snapshots=list(run.workspace_snapshots),
+            branch_states=list(run.branch_states),
+            metrics=run.metrics,
+            selected_candidate_id=run.selected_candidate_id,
+            metadata={**dict(run.metadata), "phase0_cell": summary["cell_id"]},
+        ),
+        "summary": summary,
+    }
+
+
+def build_dag_v2_phase0_pressure_packet() -> Dict[str, object]:
+    cells = [
+        build_verifier_guided_pressure_cell(),
+        build_judge_reducer_pressure_cell(),
+        build_branch_execute_verify_pressure_cell(),
+    ]
+    awkwardness_kinds = {cell["summary"]["awkwardness_kind"] for cell in cells}
+    repeated_shape = awkwardness_kinds == {"assessment_evaluator_truth"}
+    return {
+        "cells": cells,
+        "go_decision": repeated_shape and len(cells) >= 3,
+        "repeated_shape_kind": "assessment_evaluator_truth" if repeated_shape else None,
+        "conclusion": {
+            "missing_public_shape": "assessment_evaluator_truth" if repeated_shape else "unclear",
+            "new_message_primitive_needed": False,
+            "new_state_primitive_needed": False,
+            "async_forced": False,
+            "study_cell_count": len(cells),
+        },
+    }
+
+
+def build_dag_v2_phase0_pressure_packet_payload() -> Dict[str, object]:
+    packet = build_dag_v2_phase0_pressure_packet()
+    return {
+        "cells": [
+            {
+                "run": cell["run"].to_dict(),
+                "summary": dict(cell["summary"]),
+            }
+            for cell in packet["cells"]
+        ],
+        "go_decision": packet["go_decision"],
+        "repeated_shape_kind": packet["repeated_shape_kind"],
+        "conclusion": dict(packet["conclusion"]),
+    }
+
+
+def build_exact_verifier_assessment_example() -> Dict[str, object]:
+    base = build_verifier_guided_pressure_cell()
+    run = base["run"]
+    selected_candidate = next(item for item in run.candidates if item.candidate_id == run.selected_candidate_id)
+    registry: SearchAssessmentRegistry = build_default_search_assessment_registry()
+    assessment = registry.assess(
+        backend_kind="exact_tests.v1",
+        assessment_id=f"{run.search_id}.assessment.exact_tests.1",
+        search_id=run.search_id,
+        frontier_id=run.frontiers[-1].frontier_id,
+        round_index=run.frontiers[-1].round_index,
+        candidates=[selected_candidate],
+        metadata={"phase": "dag_v2_phase1", "cell_id": "verifier_guided_code_patch_search"},
+    )
+    verify_event = next(item for item in run.events if item.event_id.endswith("verify.frontier_stub"))
+    linked_event = SearchEvent(
+        event_id=verify_event.event_id,
+        search_id=verify_event.search_id,
+        frontier_id=verify_event.frontier_id,
+        round_index=verify_event.round_index,
+        operator_kind=verify_event.operator_kind,
+        input_candidate_ids=list(verify_event.input_candidate_ids),
+        output_candidate_ids=list(verify_event.output_candidate_ids),
+        message_ids=list(verify_event.message_ids),
+        assessment_ids=[assessment.assessment_id],
+        metadata=dict(verify_event.metadata),
+    )
+    events = [
+        linked_event if item.event_id == verify_event.event_id else item
+        for item in run.events
+    ]
+    run = SearchRun(
+        search_id=run.search_id,
+        recipe_kind=run.recipe_kind,
+        candidates=list(run.candidates),
+        frontiers=list(run.frontiers),
+        events=events,
+        messages=list(run.messages),
+        carry_states=list(run.carry_states),
+        assessments=[assessment],
+        workspace_snapshots=list(run.workspace_snapshots),
+        branch_states=list(run.branch_states),
+        metrics=run.metrics,
+        selected_candidate_id=run.selected_candidate_id,
+        metadata={**dict(run.metadata), "assessment_enabled": True},
+    )
+    return {
+        "run": run,
+        "assessment": assessment,
+        "registry_backend_kinds": registry.list_backend_kinds(),
+    }
+
+
+def build_exact_verifier_assessment_example_payload() -> Dict[str, object]:
+    example = build_exact_verifier_assessment_example()
+    return {
+        "run": example["run"].to_dict(),
+        "assessment": example["assessment"].to_dict(),
+        "registry_backend_kinds": list(example["registry_backend_kinds"]),
+    }
+
+
+def build_judge_pairwise_assessment_example() -> Dict[str, object]:
+    base = build_judge_reducer_pressure_cell()
+    run = base["run"]
+    verify_event = next(item for item in run.events if item.event_id.endswith("verify.judge_stub"))
+    candidates = [
+        next(item for item in run.candidates if item.candidate_id == candidate_id)
+        for candidate_id in verify_event.input_candidate_ids
+    ]
+    registry: SearchAssessmentRegistry = build_default_search_assessment_registry()
+    assessment = registry.assess(
+        backend_kind="judge_pairwise.v1",
+        assessment_id=f"{run.search_id}.assessment.judge_pairwise.1",
+        search_id=run.search_id,
+        frontier_id=verify_event.frontier_id,
+        round_index=verify_event.round_index,
+        candidates=candidates,
+        metadata={"phase": "dag_v2_phase1", "cell_id": "judge_reducer_reasoning_search"},
+    )
+    linked_event = SearchEvent(
+        event_id=verify_event.event_id,
+        search_id=verify_event.search_id,
+        frontier_id=verify_event.frontier_id,
+        round_index=verify_event.round_index,
+        operator_kind=verify_event.operator_kind,
+        input_candidate_ids=list(verify_event.input_candidate_ids),
+        output_candidate_ids=list(verify_event.output_candidate_ids),
+        message_ids=list(verify_event.message_ids),
+        assessment_ids=[assessment.assessment_id],
+        metadata=dict(verify_event.metadata),
+    )
+    events = [
+        linked_event if item.event_id == verify_event.event_id else item
+        for item in run.events
+    ]
+    run = SearchRun(
+        search_id=run.search_id,
+        recipe_kind=run.recipe_kind,
+        candidates=list(run.candidates),
+        frontiers=list(run.frontiers),
+        events=events,
+        messages=list(run.messages),
+        carry_states=list(run.carry_states),
+        assessments=[assessment],
+        metrics=run.metrics,
+        selected_candidate_id=run.selected_candidate_id,
+        metadata={**dict(run.metadata), "assessment_enabled": True},
+    )
+    return {
+        "run": run,
+        "assessment": assessment,
+        "registry_backend_kinds": registry.list_backend_kinds(),
+    }
+
+
+def build_judge_pairwise_assessment_example_payload() -> Dict[str, object]:
+    example = build_judge_pairwise_assessment_example()
+    return {
+        "run": example["run"].to_dict(),
+        "assessment": example["assessment"].to_dict(),
+        "registry_backend_kinds": list(example["registry_backend_kinds"]),
     }

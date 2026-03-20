@@ -107,6 +107,8 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [concepts/optimization-v6-live-experiment-cells-and-kernel-freeze.md](concepts/optimization-v6-live-experiment-cells-and-kernel-freeze.md) | Optimization V6 public-kernel freeze, live cohort-cell doctrine, Nano/Mini fairness rules, and the explicit optimize ↔ reward boundary under repeated experiments |
 | [concepts/optimization-v6-stop-go-synthesis.md](concepts/optimization-v6-stop-go-synthesis.md) | Optimization V6 synthesis note: repeated-shape pressure review, no-V7 criteria, and explicit DARWIN handoff signals |
 | [concepts/dag-runtime-v1-search-surface.md](concepts/dag-runtime-v1-search-surface.md) | DAG Runtime V1 search truth surface, deterministic barriered scheduler, and RSA-style recipe as an opt-in search subsystem |
+| [concepts/dag-runtime-v2-phase0-pressure-packet.md](concepts/dag-runtime-v2-phase0-pressure-packet.md) | DAG Runtime V2 Phase 0 go/no-go packet showing repeated assessment-truth pressure across verifier, judge/reducer, and branch execute/verify cells |
+| [concepts/dag-runtime-v2-assessment-surface.md](concepts/dag-runtime-v2-assessment-surface.md) | DAG Runtime V2 narrow assessment layer: grounded evaluator truth, assessment registry, and explicit linkage into runs, events, and trajectory export |
 
 ### Governance and change policy
 

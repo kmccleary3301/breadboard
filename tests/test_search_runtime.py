@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from agentic_coder_prototype.search import (
     SearchOfflineDataset,
+    SearchAssessment,
     SearchBranchState,
     SearchCandidate,
     SearchCarryState,
@@ -9,7 +10,16 @@ from agentic_coder_prototype.search import (
     SearchFrontier,
     SearchMessage,
     SearchRewardSignal,
+    build_default_search_assessment_registry,
+    build_branch_execute_verify_pressure_cell,
+    build_dag_v2_phase0_pressure_packet,
+    build_dag_v2_phase0_pressure_packet_payload,
     build_default_search_compaction_registry,
+    build_exact_verifier_assessment_example,
+    build_exact_verifier_assessment_example_payload,
+    build_judge_pairwise_assessment_example,
+    build_judge_pairwise_assessment_example_payload,
+    build_judge_reducer_pressure_cell,
     build_pacore_search_runtime_example,
     build_pacore_search_runtime_example_payload,
     SearchRun,
@@ -23,6 +33,7 @@ from agentic_coder_prototype.search import (
     build_stateful_branch_search_example_payload,
     build_typed_compaction_registry_example,
     build_typed_compaction_registry_example_payload,
+    build_verifier_guided_pressure_cell,
 )
 
 
@@ -261,3 +272,67 @@ def test_search_trajectory_export_payload_round_trips() -> None:
     assert len(dataset.trajectories) == 1
     assert dataset.trajectories[0] == trajectory
     assert first_signal.scope in {"local", "global"}
+
+
+def test_dag_v2_phase0_pressure_cells_expose_same_missing_shape() -> None:
+    verifier = build_verifier_guided_pressure_cell()
+    judge = build_judge_reducer_pressure_cell()
+    branch = build_branch_execute_verify_pressure_cell()
+
+    assert verifier["summary"]["awkwardness_kind"] == "assessment_evaluator_truth"
+    assert judge["summary"]["awkwardness_kind"] == "assessment_evaluator_truth"
+    assert branch["summary"]["awkwardness_kind"] == "assessment_evaluator_truth"
+    assert any(item.operator_kind == "verify" for item in verifier["run"].events)
+    assert any(item.operator_kind == "verify" for item in judge["run"].events)
+    assert any(item.operator_kind == "verify" for item in branch["run"].events)
+
+
+def test_dag_v2_phase0_pressure_packet_goes_green() -> None:
+    packet = build_dag_v2_phase0_pressure_packet()
+
+    assert packet["go_decision"] is True
+    assert packet["repeated_shape_kind"] == "assessment_evaluator_truth"
+    assert packet["conclusion"]["new_message_primitive_needed"] is False
+    assert packet["conclusion"]["new_state_primitive_needed"] is False
+    assert packet["conclusion"]["async_forced"] is False
+    assert packet["conclusion"]["study_cell_count"] == 3
+
+
+def test_dag_v2_phase0_pressure_packet_payload_round_trips() -> None:
+    payload = build_dag_v2_phase0_pressure_packet_payload()
+    runs = [SearchRun.from_dict(item["run"]) for item in payload["cells"]]
+
+    assert payload["go_decision"] is True
+    assert payload["repeated_shape_kind"] == "assessment_evaluator_truth"
+    assert len(runs) == 3
+    assert all(any(event.operator_kind == "verify" for event in run.events) for run in runs)
+
+
+def test_search_assessment_registry_examples_round_trip() -> None:
+    registry = build_default_search_assessment_registry()
+    verifier = build_exact_verifier_assessment_example()
+    judge = build_judge_pairwise_assessment_example()
+
+    assert registry.list_backend_kinds() == ["exact_tests.v1", "judge_pairwise.v1"]
+    assert verifier["assessment"].assessment_kind == "verify"
+    assert judge["assessment"].assessment_kind == "judge"
+    assert SearchAssessment.from_dict(verifier["assessment"].to_dict()) == verifier["assessment"]
+    assert SearchAssessment.from_dict(judge["assessment"].to_dict()) == judge["assessment"]
+    assert any(event.assessment_ids for event in verifier["run"].events if event.operator_kind == "verify")
+    assert any(event.assessment_ids for event in judge["run"].events if event.operator_kind == "verify")
+
+
+def test_search_assessment_example_payloads_round_trip() -> None:
+    verifier_payload = build_exact_verifier_assessment_example_payload()
+    judge_payload = build_judge_pairwise_assessment_example_payload()
+    verifier_run = SearchRun.from_dict(verifier_payload["run"])
+    judge_run = SearchRun.from_dict(judge_payload["run"])
+    verifier_assessment = SearchAssessment.from_dict(verifier_payload["assessment"])
+    judge_assessment = SearchAssessment.from_dict(judge_payload["assessment"])
+
+    assert verifier_payload["registry_backend_kinds"] == ["exact_tests.v1", "judge_pairwise.v1"]
+    assert judge_payload["registry_backend_kinds"] == ["exact_tests.v1", "judge_pairwise.v1"]
+    assert len(verifier_run.assessments) == 1
+    assert len(judge_run.assessments) == 1
+    assert verifier_run.assessments[0] == verifier_assessment
+    assert judge_run.assessments[0] == judge_assessment
