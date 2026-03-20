@@ -50,75 +50,118 @@ def _campaign_lookup() -> dict[str, dict]:
     return rows
 
 
-def _candidate_universe() -> list[dict]:
-    return [
-        {
-            "campaign_arm_id": "arm.repo_swe.control.stage4.v0",
-            "lane_id": "lane.repo_swe",
-            "operator_id": "baseline_seed",
-            "topology_id": "policy.topology.single_v0",
-            "policy_bundle_id": "policy.topology.single_v0",
-            "budget_class": "class_a",
-            "control_tag": "control",
-            "task_class": "repo_patch_workspace",
-            "repetition_count": 2,
-        },
-        {
-            "campaign_arm_id": "arm.repo_swe.topology.stage4.v0",
-            "lane_id": "lane.repo_swe",
-            "operator_id": "mut.topology.single_to_pev_v1",
-            "topology_id": "policy.topology.pev_v0",
-            "policy_bundle_id": "policy.topology.pev_v0",
-            "budget_class": "class_a",
-            "control_tag": "mutation",
-            "task_class": "repo_patch_workspace",
-            "repetition_count": 2,
-        },
-        {
-            "campaign_arm_id": "arm.repo_swe.toolscope.stage4.v0",
-            "lane_id": "lane.repo_swe",
-            "operator_id": "mut.tool_scope.add_git_diff_v1",
-            "topology_id": "policy.topology.pev_v0",
-            "policy_bundle_id": "policy.topology.pev_v0",
-            "budget_class": "class_a",
-            "control_tag": "mutation",
-            "task_class": "repo_patch_workspace",
-            "repetition_count": 2,
-        },
-        {
-            "campaign_arm_id": "arm.repo_swe.budget.stage4.v0",
-            "lane_id": "lane.repo_swe",
-            "operator_id": "mut.budget.class_a_to_class_b_v1",
-            "topology_id": "policy.topology.pev_v0",
-            "policy_bundle_id": "policy.topology.pev_v0",
-            "budget_class": "class_b",
-            "control_tag": "mutation",
-            "task_class": "repo_patch_workspace",
-            "repetition_count": 2,
-        },
-        {
-            "campaign_arm_id": "arm.repo_swe.policy.stage4.v0",
-            "lane_id": "lane.repo_swe",
-            "operator_id": "mut.policy.shadow_memory_enable_v1",
-            "topology_id": "policy.topology.pev_v0",
-            "policy_bundle_id": "policy.topology.pev_v0",
-            "budget_class": "class_a",
-            "control_tag": "mutation",
-            "task_class": "repo_patch_workspace",
-            "repetition_count": 2,
-        },
-        {
-            "campaign_arm_id": "arm.harness.watchdog.stage4.v0",
-            "lane_id": "lane.harness",
-            "operator_id": "baseline_seed",
-            "topology_id": "policy.topology.single_v0",
-            "policy_bundle_id": "policy.topology.single_v0",
-            "budget_class": "class_a",
-            "control_tag": "watchdog",
-            "task_class": "objective_regression",
-            "repetition_count": 2,
-        },
-    ]
+def _candidate_universe(*, lane_id: str, include_watchdog: bool = True) -> list[dict]:
+    if lane_id == "lane.repo_swe":
+        rows = [
+            {
+                "campaign_arm_id": "arm.repo_swe.control.stage4.v0",
+                "lane_id": "lane.repo_swe",
+                "operator_id": "baseline_seed",
+                "topology_id": "policy.topology.single_v0",
+                "policy_bundle_id": "policy.topology.single_v0",
+                "budget_class": "class_a",
+                "control_tag": "control",
+                "task_class": "repo_patch_workspace",
+                "repetition_count": 2,
+            },
+            {
+                "campaign_arm_id": "arm.repo_swe.topology.stage4.v0",
+                "lane_id": "lane.repo_swe",
+                "operator_id": "mut.topology.single_to_pev_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "control_tag": "mutation",
+                "task_class": "repo_patch_workspace",
+                "repetition_count": 2,
+            },
+            {
+                "campaign_arm_id": "arm.repo_swe.toolscope.stage4.v0",
+                "lane_id": "lane.repo_swe",
+                "operator_id": "mut.tool_scope.add_git_diff_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "control_tag": "mutation",
+                "task_class": "repo_patch_workspace",
+                "repetition_count": 2,
+            },
+            {
+                "campaign_arm_id": "arm.repo_swe.budget.stage4.v0",
+                "lane_id": "lane.repo_swe",
+                "operator_id": "mut.budget.class_a_to_class_b_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_b",
+                "control_tag": "mutation",
+                "task_class": "repo_patch_workspace",
+                "repetition_count": 2,
+            },
+            {
+                "campaign_arm_id": "arm.repo_swe.policy.stage4.v0",
+                "lane_id": "lane.repo_swe",
+                "operator_id": "mut.policy.shadow_memory_enable_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "control_tag": "mutation",
+                "task_class": "repo_patch_workspace",
+                "repetition_count": 2,
+            },
+        ]
+    elif lane_id == "lane.systems":
+        rows = [
+            {
+                "campaign_arm_id": "arm.systems.control.stage4.v0",
+                "lane_id": "lane.systems",
+                "operator_id": "baseline_seed",
+                "topology_id": "policy.topology.single_v0",
+                "policy_bundle_id": "policy.topology.single_v0",
+                "budget_class": "class_a",
+                "control_tag": "control",
+                "task_class": "systems_reward_workspace",
+                "repetition_count": 2,
+            },
+            {
+                "campaign_arm_id": "arm.systems.topology.stage4.v0",
+                "lane_id": "lane.systems",
+                "operator_id": "mut.topology.single_to_pev_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "control_tag": "mutation",
+                "task_class": "systems_reward_workspace",
+                "repetition_count": 2,
+            },
+            {
+                "campaign_arm_id": "arm.systems.policy.stage4.v0",
+                "lane_id": "lane.systems",
+                "operator_id": "mut.policy.shadow_memory_enable_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "control_tag": "mutation",
+                "task_class": "systems_reward_workspace",
+                "repetition_count": 2,
+            },
+        ]
+    else:
+        raise KeyError(f"unsupported stage4 live pilot lane: {lane_id}")
+    if include_watchdog:
+        rows.append(
+            {
+                "campaign_arm_id": "arm.harness.watchdog.stage4.v0",
+                "lane_id": "lane.harness",
+                "operator_id": "baseline_seed",
+                "topology_id": "policy.topology.single_v0",
+                "policy_bundle_id": "policy.topology.single_v0",
+                "budget_class": "class_a",
+                "control_tag": "watchdog",
+                "task_class": "objective_regression",
+                "repetition_count": 2,
+            }
+        )
+    return rows
 
 
 def _run_arm(*, arm_cfg: dict, spec: dict, out_dir: Path) -> tuple[dict, list[dict], list[dict]]:
@@ -200,12 +243,12 @@ def _run_arm(*, arm_cfg: dict, spec: dict, out_dir: Path) -> tuple[dict, list[di
             }
         )
         stage3_substrate = None
-        if arm_cfg["operator_id"] != "baseline_seed" and arm_cfg["lane_id"] == "lane.repo_swe":
+        if arm_cfg["operator_id"] != "baseline_seed" and arm_cfg["lane_id"] in {"lane.repo_swe", "lane.systems"}:
             canary = build_stage3_mutation_canary(
                 lane_id=arm_cfg["lane_id"],
                 spec=spec,
-                parent_candidate_id="cand.lane.repo_swe.baseline.v1",
-                parent_candidate_ref="artifacts/darwin/candidates/cand.lane.repo_swe.baseline.v1.json",
+                parent_candidate_id=f"cand.{arm_cfg['lane_id']}.baseline.v1",
+                parent_candidate_ref=f"artifacts/darwin/candidates/cand.{arm_cfg['lane_id']}.baseline.v1.json",
                 mutation_cfg={
                     "candidate_id": candidate_id,
                     "mutation_operator": arm_cfg["operator_id"],
@@ -324,12 +367,17 @@ def build_stage4_live_comparisons(run_rows: list[dict]) -> list[dict]:
     return comparison_rows
 
 
-def run_stage4_live_economics_pilot(out_dir: Path = OUT_DIR) -> dict:
+def run_stage4_live_pilot(
+    *,
+    lane_id: str,
+    out_dir: Path,
+    include_watchdog: bool = True,
+) -> dict:
     campaigns = _campaign_lookup()
-    search_policy = build_stage4_search_policy_v1(lane_id="lane.repo_swe", budget_class="class_a")
+    search_policy = build_stage4_search_policy_v1(lane_id=lane_id, budget_class="class_a")
     selected_arms = select_stage4_search_policy_arms(
         search_policy=search_policy,
-        candidate_rows=_candidate_universe(),
+        candidate_rows=_candidate_universe(lane_id=lane_id, include_watchdog=include_watchdog),
     )
     arm_rows: list[dict] = []
     run_rows: list[dict] = []
@@ -366,6 +414,7 @@ def run_stage4_live_economics_pilot(out_dir: Path = OUT_DIR) -> dict:
     _write_json(comparisons_path, {"schema": "breadboard.darwin.stage4.matched_budget_comparisons.v0", "row_count": len(comparison_rows), "rows": comparison_rows})
     summary = {
         "schema": "breadboard.darwin.stage4.live_economics_pilot.v0",
+        "pilot_lane_id": lane_id,
         "lane_count": len({row["lane_id"] for row in run_rows}),
         "arm_count": len(arm_rows),
         "run_count": len(run_rows),
@@ -373,10 +422,10 @@ def run_stage4_live_economics_pilot(out_dir: Path = OUT_DIR) -> dict:
         "execution_modes": sorted({row["execution_mode"] for row in run_rows}),
         "claim_eligible_comparison_count": sum(1 for row in comparison_rows if row["claim_eligible"]),
         "positive_power_signal_count": sum(1 for row in comparison_rows if row["positive_power_signal"]),
-        "selected_repo_swe_operator_ids": [
+        "selected_operator_ids": [
             row["operator_id"]
             for row in arm_rows
-            if row["lane_id"] == "lane.repo_swe" and row["control_tag"] != "control"
+            if row["lane_id"] == lane_id and row["control_tag"] != "control"
         ],
         "policy_ref": str(policy_path.relative_to(ROOT)),
         "selected_arms_ref": str(arms_path.relative_to(ROOT)),
@@ -384,8 +433,16 @@ def run_stage4_live_economics_pilot(out_dir: Path = OUT_DIR) -> dict:
         "telemetry_ref": str(telemetry_path.relative_to(ROOT)),
         "comparisons_ref": str(comparisons_path.relative_to(ROOT)),
     }
+    if lane_id == "lane.repo_swe":
+        summary["selected_repo_swe_operator_ids"] = list(summary["selected_operator_ids"])
+    elif lane_id == "lane.systems":
+        summary["selected_systems_operator_ids"] = list(summary["selected_operator_ids"])
     _write_json(summary_path, summary)
     return {"summary_path": str(summary_path), "arm_count": len(arm_rows), "run_count": len(run_rows)}
+
+
+def run_stage4_live_economics_pilot(out_dir: Path = OUT_DIR) -> dict:
+    return run_stage4_live_pilot(lane_id="lane.repo_swe", out_dir=out_dir, include_watchdog=True)
 
 
 def main() -> int:

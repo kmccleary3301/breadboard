@@ -291,6 +291,23 @@ def test_select_stage4_search_policy_arms_picks_top_repo_swe_mutations() -> None
     ]
 
 
+def test_select_stage4_search_policy_arms_for_systems_picks_bounded_mutations() -> None:
+    policy = build_stage4_search_policy_v1(lane_id="lane.systems", budget_class="class_a")
+    selected = select_stage4_search_policy_arms(
+        search_policy=policy,
+        candidate_rows=[
+            {"lane_id": "lane.systems", "operator_id": "baseline_seed", "control_tag": "control"},
+            {"lane_id": "lane.systems", "operator_id": "mut.topology.single_to_pev_v1", "control_tag": "mutation"},
+            {"lane_id": "lane.systems", "operator_id": "mut.policy.shadow_memory_enable_v1", "control_tag": "mutation"},
+        ],
+    )
+    systems_mutations = [row["operator_id"] for row in selected if row["lane_id"] == "lane.systems" and row["control_tag"] != "control"]
+    assert systems_mutations == [
+        "mut.topology.single_to_pev_v1",
+        "mut.policy.shadow_memory_enable_v1",
+    ]
+
+
 def test_execute_stage4_provider_prompt_falls_back_to_openai_when_openrouter_is_unauthorized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

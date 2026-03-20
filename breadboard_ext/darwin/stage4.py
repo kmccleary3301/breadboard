@@ -10,7 +10,7 @@ from urllib import request as urllib_request
 
 
 STAGE4_EXECUTION_ENVELOPE_LANES = {"lane.harness", "lane.repo_swe"}
-STAGE4_LIVE_AUTHORIZED_LANES = {"lane.repo_swe"}
+STAGE4_LIVE_AUTHORIZED_LANES = {"lane.repo_swe", "lane.systems"}
 
 DEFAULT_STAGE4_WORKER_ROUTE = "openrouter/openai/gpt-5.4-mini"
 DEFAULT_STAGE4_FILTER_ROUTE = "openrouter/openai/gpt-5.4-nano"
@@ -95,6 +95,42 @@ _SEARCH_POLICY_PILOTS = {
         "abort_conditions": [
             "provider_telemetry_missing",
             "support_envelope_digest_mismatch",
+            "claim_ineligible_live_rows",
+            "matched_budget_invalidity_rate_gt_0_25",
+        ],
+    },
+    "lane.systems": {
+        "policy_id": "darwin.stage4.search_policy.systems.v1",
+        "campaign_class": "C0 Scout",
+        "max_mutation_arms": 2,
+        "repetition_count": 2,
+        "topology_priors": [
+            {
+                "topology_id": "policy.topology.pev_v0",
+                "priority": 0.89,
+                "reason": "strongest bounded topology prior for systems under the current reward-regression evaluator",
+            },
+            {
+                "topology_id": "policy.topology.single_v0",
+                "priority": 0.58,
+                "reason": "retained control topology for systems matched-budget control arms",
+            },
+        ],
+        "operator_priors": [
+            {
+                "operator_id": "mut.topology.single_to_pev_v1",
+                "priority": 0.91,
+                "reason": "highest current systems-family prior from the Stage-3 mutation canary",
+            },
+            {
+                "operator_id": "mut.policy.shadow_memory_enable_v1",
+                "priority": 0.62,
+                "reason": "bounded policy-family probe for systems without widening runtime truth",
+            },
+        ],
+        "abort_conditions": [
+            "provider_telemetry_missing",
+            "comparison_envelope_digest_mismatch",
             "claim_ineligible_live_rows",
             "matched_budget_invalidity_rate_gt_0_25",
         ],

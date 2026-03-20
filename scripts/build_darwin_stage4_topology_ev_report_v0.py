@@ -25,8 +25,13 @@ def _write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def build_stage4_topology_ev_report() -> dict[str, object]:
-    comparisons = _load_json(COMPARISONS)
+def build_stage4_topology_ev_report(
+    *,
+    comparisons_path: Path = COMPARISONS,
+    out_json: Path = OUT_JSON,
+    out_md: Path = OUT_MD,
+) -> dict[str, object]:
+    comparisons = _load_json(comparisons_path)
     buckets: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for row in comparisons.get("rows") or []:
         buckets[(str(row["lane_id"]), str(row["topology_id"]))].append(row)
@@ -55,9 +60,9 @@ def build_stage4_topology_ev_report() -> dict[str, object]:
         "row_count": len(rows),
         "rows": rows,
     }
-    _write_json(OUT_JSON, payload)
-    _write_text(OUT_MD, "\n".join(lines) + "\n")
-    return {"out_json": str(OUT_JSON), "out_md": str(OUT_MD), "row_count": len(rows)}
+    _write_json(out_json, payload)
+    _write_text(out_md, "\n".join(lines) + "\n")
+    return {"out_json": str(out_json), "out_md": str(out_md), "row_count": len(rows)}
 
 
 def main() -> int:

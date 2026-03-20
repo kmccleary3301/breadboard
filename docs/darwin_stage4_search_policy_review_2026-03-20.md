@@ -1,11 +1,12 @@
 # DARWIN Stage-4 SearchPolicy Review
 
 Date: 2026-03-20
-Status: review updated after repo_swe EV refinement
+Status: repo_swe-only review after EV refinement; superseded for tranche progression by the cross-primary-lane review
 References:
 - `docs/darwin_stage4_live_economics_slice_2026-03-20.md`
 - `docs/darwin_stage4_comparison_envelope_slice_2026-03-20.md`
 - `docs/darwin_stage4_repo_swe_ev_refinement_slice_2026-03-20.md`
+- `docs/darwin_stage4_cross_primary_lane_review_2026-03-20.md`
 - `docs/darwin_stage4_live_readiness_2026-03-20.md`
 - `artifacts/darwin/stage4/live_economics/live_economics_pilot_v0.json`
 - `artifacts/darwin/stage4/live_economics/search_policy_v1.json`
@@ -67,4 +68,4 @@ The current evidence is narrow:
 
 That is sufficient for a bounded Stage-4 repo_swe power signal.
 
-It is not sufficient for broader compounding claims or systems-lane claims.
+It is not sufficient for broader compounding claims or systems-lane claims on its own.
