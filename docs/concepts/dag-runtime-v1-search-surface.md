@@ -25,6 +25,7 @@ It adds:
 - one RSA-style recipe over subset aggregation
 - one typed compaction registry with bounded carry-over
 - one bounded multi-round message-passing recipe with final synthesis
+- one branch-local state slice with explicit snapshots and merge/discard semantics
 - explicit search metrics:
   - `aggregability_gap`
   - `diversity_decay`
@@ -52,6 +53,7 @@ The first DAG cut proves:
 4. multi-parent lineage is a first-class concept without redefining C-Trees
 5. carried search state can stay bounded and inspectable through typed compaction
 6. a PaCoRe-like loop can reuse the same runtime without hidden context growth
+7. stateful branches can remain local and inspectable without collapsing into one mutable workspace
 
 ## What remains intentionally deferred
 
@@ -72,6 +74,4 @@ The current DAG worktree covers:
 
 What remains deferred inside V1:
 
-- branch-local workspace or state snapshots
-- merge/discard semantics for stateful branches
 - RL/export trajectory hooks

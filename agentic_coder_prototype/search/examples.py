@@ -10,7 +10,14 @@ from .runtime import (
     BoundedMessagePassingScheduler,
     MessagePassingSchedulerConfig,
 )
-from .schema import SearchCandidate, SearchEvent, SearchMessage, SearchRun
+from .schema import (
+    SearchBranchState,
+    SearchCandidate,
+    SearchEvent,
+    SearchMessage,
+    SearchRun,
+    SearchWorkspaceSnapshot,
+)
 
 
 def _seed_candidates(search_id: str) -> List[SearchCandidate]:
@@ -220,6 +227,7 @@ def build_pacore_search_runtime_example() -> Dict[str, object]:
             depth=round_index,
             payload_ref=f"artifacts/search/{search_id}/round_{round_index}_candidate_{proposal_index}.json",
             message_ref=carry_state.message_ids[0] if carry_state is not None else None,
+            workspace_ref=f"artifacts/search/{search_id}/workspace_round_{round_index}_{proposal_index}.json",
             score_vector={"correctness_score": improved_score},
             usage={
                 "prompt_tokens": 56 + (round_index * 9),
@@ -266,4 +274,127 @@ def build_pacore_search_runtime_example_payload() -> Dict[str, object]:
         "registry_backend_kinds": list(example["registry_backend_kinds"]),
         "seeds": [item.to_dict() for item in example["seeds"]],
         "run": example["run"].to_dict(),
+    }
+
+
+def build_stateful_branch_search_example() -> Dict[str, object]:
+    base = build_pacore_search_runtime_example()
+    base_run = base["run"]
+    final_population = [item for item in base_run.candidates if item.frontier_id == base_run.frontiers[-2].frontier_id]
+    winning_candidate = max(
+        final_population,
+        key=lambda item: (
+            float(item.score_vector.get("correctness_score", 0.0)),
+            -int(item.round_index),
+            item.candidate_id,
+        ),
+    )
+    discarded_candidate = min(
+        final_population,
+        key=lambda item: (
+            float(item.score_vector.get("correctness_score", 0.0)),
+            item.round_index,
+            item.candidate_id,
+        ),
+    )
+    merged_snapshot = SearchWorkspaceSnapshot(
+        snapshot_id=f"{base_run.search_id}.snapshot.branch.merge",
+        search_id=base_run.search_id,
+        branch_id=f"{base_run.search_id}.branch.merge",
+        artifact_ref=f"artifacts/search/{base_run.search_id}/branch_merge_snapshot.json",
+        parent_snapshot_id=winning_candidate.workspace_ref,
+        derived_from_candidate_id=winning_candidate.candidate_id,
+        metadata={"lane": "winning_branch", "action": "merge"},
+    )
+    discarded_snapshot = SearchWorkspaceSnapshot(
+        snapshot_id=f"{base_run.search_id}.snapshot.branch.discard",
+        search_id=base_run.search_id,
+        branch_id=f"{base_run.search_id}.branch.discard",
+        artifact_ref=f"artifacts/search/{base_run.search_id}/branch_discard_snapshot.json",
+        parent_snapshot_id=discarded_candidate.workspace_ref,
+        derived_from_candidate_id=discarded_candidate.candidate_id,
+        metadata={"lane": "discarded_branch", "action": "discard"},
+    )
+    merged_branch = SearchBranchState(
+        branch_id=merged_snapshot.branch_id,
+        search_id=base_run.search_id,
+        candidate_id=winning_candidate.candidate_id,
+        snapshot_ids=[merged_snapshot.snapshot_id],
+        head_snapshot_id=merged_snapshot.snapshot_id,
+        status="merged",
+        metadata={"merge_target": "main_branch", "review_status": "accepted"},
+    )
+    discarded_branch = SearchBranchState(
+        branch_id=discarded_snapshot.branch_id,
+        search_id=base_run.search_id,
+        candidate_id=discarded_candidate.candidate_id,
+        snapshot_ids=[discarded_snapshot.snapshot_id],
+        head_snapshot_id=discarded_snapshot.snapshot_id,
+        status="discarded",
+        metadata={"discard_reason": "lower_score", "review_status": "rejected"},
+    )
+    execute_event = SearchEvent(
+        event_id=f"{base_run.search_id}.event.execute.branch_local",
+        search_id=base_run.search_id,
+        frontier_id=base_run.frontiers[-2].frontier_id,
+        round_index=base_run.frontiers[-2].round_index,
+        operator_kind="execute",
+        input_candidate_ids=[winning_candidate.candidate_id, discarded_candidate.candidate_id],
+        output_candidate_ids=[winning_candidate.candidate_id, discarded_candidate.candidate_id],
+        metadata={
+            "branch_ids": [merged_branch.branch_id, discarded_branch.branch_id],
+            "state_mode": "branch_local",
+        },
+    )
+    merge_event = SearchEvent(
+        event_id=f"{base_run.search_id}.event.merge.branch",
+        search_id=base_run.search_id,
+        frontier_id=base_run.frontiers[-1].frontier_id,
+        round_index=base_run.frontiers[-1].round_index,
+        operator_kind="merge",
+        input_candidate_ids=[winning_candidate.candidate_id],
+        output_candidate_ids=[base_run.selected_candidate_id],
+        metadata={"branch_id": merged_branch.branch_id, "snapshot_id": merged_snapshot.snapshot_id},
+    )
+    discard_event = SearchEvent(
+        event_id=f"{base_run.search_id}.event.discard.branch",
+        search_id=base_run.search_id,
+        frontier_id=base_run.frontiers[-1].frontier_id,
+        round_index=base_run.frontiers[-1].round_index,
+        operator_kind="discard",
+        input_candidate_ids=[discarded_candidate.candidate_id],
+        metadata={"branch_id": discarded_branch.branch_id, "snapshot_id": discarded_snapshot.snapshot_id},
+    )
+    run = SearchRun(
+        search_id=base_run.search_id,
+        recipe_kind="stateful_branch_local_search",
+        candidates=list(base_run.candidates),
+        frontiers=list(base_run.frontiers),
+        events=[*base_run.events, execute_event, merge_event, discard_event],
+        messages=list(base_run.messages),
+        carry_states=list(base_run.carry_states),
+        workspace_snapshots=[merged_snapshot, discarded_snapshot],
+        branch_states=[merged_branch, discarded_branch],
+        metrics=base_run.metrics,
+        selected_candidate_id=base_run.selected_candidate_id,
+        metadata={**dict(base_run.metadata), "stateful_branching": True},
+    )
+    return {
+        "base_run": base_run,
+        "run": run,
+        "merged_branch": merged_branch,
+        "discarded_branch": discarded_branch,
+        "merged_snapshot": merged_snapshot,
+        "discarded_snapshot": discarded_snapshot,
+    }
+
+
+def build_stateful_branch_search_example_payload() -> Dict[str, object]:
+    example = build_stateful_branch_search_example()
+    return {
+        "run": example["run"].to_dict(),
+        "merged_branch": example["merged_branch"].to_dict(),
+        "discarded_branch": example["discarded_branch"].to_dict(),
+        "merged_snapshot": example["merged_snapshot"].to_dict(),
+        "discarded_snapshot": example["discarded_snapshot"].to_dict(),
     }

@@ -11,10 +11,13 @@ ALLOWED_OPERATOR_KINDS = {
     "verify",
     "select",
     "execute",
+    "merge",
+    "discard",
     "terminate",
 }
 ALLOWED_CANDIDATE_STATUSES = {"seeded", "active", "selected", "discarded", "verified", "terminated"}
 ALLOWED_FRONTIER_STATUSES = {"active", "completed", "terminated"}
+ALLOWED_BRANCH_STATUSES = {"active", "merged", "discarded"}
 
 
 def _require_text(value: Any, field_name: str) -> str:
@@ -255,6 +258,115 @@ class SearchCarryState:
 
 
 @dataclass(frozen=True)
+class SearchWorkspaceSnapshot:
+    snapshot_id: str
+    search_id: str
+    branch_id: str
+    artifact_ref: str
+    parent_snapshot_id: Optional[str] = None
+    derived_from_candidate_id: Optional[str] = None
+    state_kind: str = "workspace_snapshot"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "snapshot_id", _require_text(self.snapshot_id, "snapshot_id"))
+        object.__setattr__(self, "search_id", _require_text(self.search_id, "search_id"))
+        object.__setattr__(self, "branch_id", _require_text(self.branch_id, "branch_id"))
+        object.__setattr__(self, "artifact_ref", _require_text(self.artifact_ref, "artifact_ref"))
+        object.__setattr__(
+            self,
+            "parent_snapshot_id",
+            str(self.parent_snapshot_id).strip() if self.parent_snapshot_id else None,
+        )
+        object.__setattr__(
+            self,
+            "derived_from_candidate_id",
+            str(self.derived_from_candidate_id).strip() if self.derived_from_candidate_id else None,
+        )
+        object.__setattr__(self, "state_kind", _require_text(self.state_kind, "state_kind"))
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = {
+            "snapshot_id": self.snapshot_id,
+            "search_id": self.search_id,
+            "branch_id": self.branch_id,
+            "artifact_ref": self.artifact_ref,
+            "state_kind": self.state_kind,
+            "metadata": dict(self.metadata),
+        }
+        if self.parent_snapshot_id:
+            payload["parent_snapshot_id"] = self.parent_snapshot_id
+        if self.derived_from_candidate_id:
+            payload["derived_from_candidate_id"] = self.derived_from_candidate_id
+        return payload
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "SearchWorkspaceSnapshot":
+        return SearchWorkspaceSnapshot(
+            snapshot_id=data.get("snapshot_id") or "",
+            search_id=data.get("search_id") or "",
+            branch_id=data.get("branch_id") or "",
+            artifact_ref=data.get("artifact_ref") or "",
+            parent_snapshot_id=data.get("parent_snapshot_id"),
+            derived_from_candidate_id=data.get("derived_from_candidate_id"),
+            state_kind=data.get("state_kind") or "workspace_snapshot",
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
+class SearchBranchState:
+    branch_id: str
+    search_id: str
+    candidate_id: str
+    snapshot_ids: List[str]
+    head_snapshot_id: str
+    status: str = "active"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "branch_id", _require_text(self.branch_id, "branch_id"))
+        object.__setattr__(self, "search_id", _require_text(self.search_id, "search_id"))
+        object.__setattr__(self, "candidate_id", _require_text(self.candidate_id, "candidate_id"))
+        object.__setattr__(self, "snapshot_ids", _copy_text_list(self.snapshot_ids))
+        object.__setattr__(self, "head_snapshot_id", _require_text(self.head_snapshot_id, "head_snapshot_id"))
+        status = _require_text(self.status, "status").lower()
+        if status not in ALLOWED_BRANCH_STATUSES:
+            raise ValueError(f"status must be one of: {sorted(ALLOWED_BRANCH_STATUSES)}")
+        object.__setattr__(self, "status", status)
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+
+        if not self.snapshot_ids:
+            raise ValueError("snapshot_ids must contain at least one snapshot id")
+        if self.head_snapshot_id not in self.snapshot_ids:
+            raise ValueError("head_snapshot_id must be present in snapshot_ids")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "branch_id": self.branch_id,
+            "search_id": self.search_id,
+            "candidate_id": self.candidate_id,
+            "snapshot_ids": list(self.snapshot_ids),
+            "head_snapshot_id": self.head_snapshot_id,
+            "status": self.status,
+            "metadata": dict(self.metadata),
+        }
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "SearchBranchState":
+        return SearchBranchState(
+            branch_id=data.get("branch_id") or "",
+            search_id=data.get("search_id") or "",
+            candidate_id=data.get("candidate_id") or "",
+            snapshot_ids=list(data.get("snapshot_ids") or []),
+            head_snapshot_id=data.get("head_snapshot_id") or "",
+            status=data.get("status") or "active",
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
 class SearchFrontier:
     frontier_id: str
     search_id: str
@@ -402,6 +514,8 @@ class SearchRun:
     events: List[SearchEvent]
     messages: List[SearchMessage] = field(default_factory=list)
     carry_states: List[SearchCarryState] = field(default_factory=list)
+    workspace_snapshots: List[SearchWorkspaceSnapshot] = field(default_factory=list)
+    branch_states: List[SearchBranchState] = field(default_factory=list)
     metrics: Optional[SearchMetrics] = None
     selected_candidate_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -436,6 +550,19 @@ class SearchRun:
         )
         object.__setattr__(
             self,
+            "workspace_snapshots",
+            [
+                item if isinstance(item, SearchWorkspaceSnapshot) else SearchWorkspaceSnapshot.from_dict(item)
+                for item in self.workspace_snapshots
+            ],
+        )
+        object.__setattr__(
+            self,
+            "branch_states",
+            [item if isinstance(item, SearchBranchState) else SearchBranchState.from_dict(item) for item in self.branch_states],
+        )
+        object.__setattr__(
+            self,
             "metrics",
             self.metrics if isinstance(self.metrics, SearchMetrics) or self.metrics is None else SearchMetrics.from_dict(self.metrics),
         )
@@ -462,6 +589,8 @@ class SearchRun:
             "events": [item.to_dict() for item in self.events],
             "messages": [item.to_dict() for item in self.messages],
             "carry_states": [item.to_dict() for item in self.carry_states],
+            "workspace_snapshots": [item.to_dict() for item in self.workspace_snapshots],
+            "branch_states": [item.to_dict() for item in self.branch_states],
             "metadata": dict(self.metadata),
         }
         if self.metrics is not None:
@@ -480,6 +609,10 @@ class SearchRun:
             events=[SearchEvent.from_dict(item) for item in data.get("events") or []],
             messages=[SearchMessage.from_dict(item) for item in data.get("messages") or []],
             carry_states=[SearchCarryState.from_dict(item) for item in data.get("carry_states") or []],
+            workspace_snapshots=[
+                SearchWorkspaceSnapshot.from_dict(item) for item in data.get("workspace_snapshots") or []
+            ],
+            branch_states=[SearchBranchState.from_dict(item) for item in data.get("branch_states") or []],
             metrics=SearchMetrics.from_dict(data["metrics"]) if data.get("metrics") else None,
             selected_candidate_id=data.get("selected_candidate_id"),
             metadata=dict(data.get("metadata") or {}),

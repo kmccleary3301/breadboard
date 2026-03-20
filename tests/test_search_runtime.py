@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from agentic_coder_prototype.search import (
+    SearchBranchState,
     SearchCandidate,
     SearchCarryState,
     SearchEvent,
@@ -10,8 +11,11 @@ from agentic_coder_prototype.search import (
     build_pacore_search_runtime_example,
     build_pacore_search_runtime_example_payload,
     SearchRun,
+    SearchWorkspaceSnapshot,
     build_rsa_search_runtime_example,
     build_rsa_search_runtime_example_payload,
+    build_stateful_branch_search_example,
+    build_stateful_branch_search_example_payload,
     build_typed_compaction_registry_example,
     build_typed_compaction_registry_example_payload,
 )
@@ -79,6 +83,24 @@ def test_search_records_round_trip() -> None:
         token_budget=128,
     )
     assert SearchCarryState.from_dict(carry_state.to_dict()) == carry_state
+
+    snapshot = SearchWorkspaceSnapshot(
+        snapshot_id="search.test.snapshot.1",
+        search_id="search.test",
+        branch_id="search.test.branch.1",
+        artifact_ref="artifacts/search/test/snapshot_1.json",
+        derived_from_candidate_id=candidate.candidate_id,
+    )
+    branch = SearchBranchState(
+        branch_id="search.test.branch.1",
+        search_id="search.test",
+        candidate_id=candidate.candidate_id,
+        snapshot_ids=[snapshot.snapshot_id],
+        head_snapshot_id=snapshot.snapshot_id,
+        status="active",
+    )
+    assert SearchWorkspaceSnapshot.from_dict(snapshot.to_dict()) == snapshot
+    assert SearchBranchState.from_dict(branch.to_dict()) == branch
 
 
 def test_rsa_search_runtime_example_runs_end_to_end() -> None:
@@ -183,3 +205,29 @@ def test_pacore_search_runtime_payload_round_trips() -> None:
     assert len(run.carry_states) == 2
     assert run.recipe_kind == "pacore_message_passing"
     assert run.carry_states[-1].metadata["candidate_count"] > 0
+
+
+def test_stateful_branch_search_example_tracks_merge_and_discard() -> None:
+    example = build_stateful_branch_search_example()
+    run = example["run"]
+
+    assert run.recipe_kind == "stateful_branch_local_search"
+    assert len(run.branch_states) == 2
+    assert len(run.workspace_snapshots) == 2
+    assert {item.status for item in run.branch_states} == {"merged", "discarded"}
+    assert any(item.operator_kind == "merge" for item in run.events)
+    assert any(item.operator_kind == "discard" for item in run.events)
+    assert all(item.head_snapshot_id in item.snapshot_ids for item in run.branch_states)
+
+
+def test_stateful_branch_search_payload_round_trips() -> None:
+    payload = build_stateful_branch_search_example_payload()
+    run = SearchRun.from_dict(payload["run"])
+    merged_branch = SearchBranchState.from_dict(payload["merged_branch"])
+    merged_snapshot = SearchWorkspaceSnapshot.from_dict(payload["merged_snapshot"])
+
+    assert run.recipe_kind == "stateful_branch_local_search"
+    assert len(run.branch_states) == 2
+    assert len(run.workspace_snapshots) == 2
+    assert merged_branch.status == "merged"
+    assert merged_snapshot.snapshot_id == merged_branch.head_snapshot_id
