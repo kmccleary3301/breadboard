@@ -10,6 +10,9 @@ References:
 - `docs/darwin_stage4_tranche1_canary_status_2026-03-19.md`
 - `docs/darwin_stage4_live_economics_slice_2026-03-20.md`
 - `docs/darwin_stage4_live_economics_status_2026-03-20.md`
+- `docs/darwin_stage4_live_readiness_2026-03-20.md`
+- `docs/darwin_stage4_search_policy_review_2026-03-20.md`
+- `docs/darwin_stage4_search_policy_gate_2026-03-20.md`
 - `docs/darwin_stage3_signoff_2026-03-19.md`
 - `docs/darwin_stage3_completion_gate_2026-03-19.md`
 - `docs_tmp/DARWIN/BB_DARWIN_PHASE_4_PLANNER_RESPONSE.md`
