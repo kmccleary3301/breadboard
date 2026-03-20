@@ -16,7 +16,8 @@ def test_resolve_stage3_route_defaults_to_mini_and_nano() -> None:
     filter_route = resolve_stage3_route(task_class="repo_patch_workspace", role="filter")
     assert worker["route_id"] == DEFAULT_WORKER_ROUTE
     assert filter_route["route_id"] == DEFAULT_FILTER_ROUTE
-    assert worker["execution_mode"] in {"live", "scaffold_only"}
+    assert worker["execution_mode"] in {"live", "scaffold"}
+    assert worker["claim_eligible"] is False
 
 
 def test_build_stage3_usage_telemetry_normalizes_prompt_usage() -> None:
@@ -47,7 +48,12 @@ def test_validate_matched_budget_pair_rejects_budget_mismatch() -> None:
         "lane_id": "lane.repo_swe",
         "budget_class": "class_a",
         "comparison_class": "stage3_bounded_real_inference",
-        "route_id": DEFAULT_WORKER_ROUTE,
+        "route_class": "default_worker",
+        "execution_mode": "scaffold",
+        "evaluator_pack_version": "stage4.evalpack.repo_swe.v1",
+        "support_envelope_digest": "a" * 64,
+        "task_id": "task.stage3.lane.repo_swe.arm",
+        "control_reserve_policy": "replication=0.20;control=0.10",
     }
     candidate = dict(baseline)
     candidate["budget_class"] = "class_b"
@@ -61,13 +67,18 @@ def test_validate_matched_budget_pair_rejects_route_mismatch() -> None:
         "lane_id": "lane.repo_swe",
         "budget_class": "class_a",
         "comparison_class": "stage3_bounded_real_inference",
-        "route_id": DEFAULT_WORKER_ROUTE,
+        "route_class": "default_worker",
+        "execution_mode": "scaffold",
+        "evaluator_pack_version": "stage4.evalpack.repo_swe.v1",
+        "support_envelope_digest": "a" * 64,
+        "task_id": "task.stage3.lane.repo_swe.arm",
+        "control_reserve_policy": "replication=0.20;control=0.10",
     }
     candidate = dict(baseline)
-    candidate["route_id"] = DEFAULT_FILTER_ROUTE
+    candidate["route_class"] = "bulk_filter"
     out = validate_matched_budget_pair(baseline=baseline, candidate=candidate)
     assert out.ok is False
-    assert out.reason == "route_id_mismatch"
+    assert out.reason == "route_class_mismatch"
 
 
 def test_build_stage3_campaign_arm_preserves_route_metadata() -> None:
@@ -85,3 +96,4 @@ def test_build_stage3_campaign_arm_preserves_route_metadata() -> None:
     )
     assert arm["route_id"] == route["route_id"]
     assert arm["repetition_count"] == 2
+    assert arm["claim_eligible"] is False

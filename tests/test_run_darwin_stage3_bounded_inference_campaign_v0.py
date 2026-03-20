@@ -15,3 +15,4 @@ def test_run_bounded_inference_campaign_emits_campaign_artifacts() -> None:
     assert payload["run_count"] == 16
     assert payload["comparison_count"] == 10
     assert payload["execution_modes"]
+    assert payload["claim_eligible_comparison_count"] == 0

@@ -20,6 +20,11 @@ from breadboard_ext.darwin.stage3_inference import (  # noqa: E402
     resolve_stage3_route,
     validate_matched_budget_pair,
 )
+from breadboard_ext.darwin.stage4 import (  # noqa: E402
+    build_stage4_support_envelope_digest,
+    stage4_evaluator_pack_version,
+    validate_stage4_claim_eligibility,
+)
 from run_darwin_t1_live_baselines_v1 import run_named_lane  # noqa: E402
 
 
@@ -167,6 +172,18 @@ def _run_arm(
     for repetition_index in range(1, arm_cfg["repetition_count"] + 1):
         trial_label = f"{arm_cfg['campaign_arm_id'].split('.')[-2]}_r{repetition_index}"
         candidate_id = f"cand.{arm_cfg['lane_id']}.{trial_label}.v1"
+        task_id = f"task.stage3.{arm_cfg['lane_id']}.{arm_cfg['campaign_arm_id']}"
+        support_envelope_digest = build_stage4_support_envelope_digest(
+            lane_id=arm_cfg["lane_id"],
+            task_id=task_id,
+            topology_id=arm_cfg["topology_id"],
+            policy_bundle_id=arm_cfg["policy_bundle_id"],
+            budget_class=arm_cfg["budget_class"],
+            allowed_tools=list(spec.get("allowed_tools") or []),
+            environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
+            claim_target=str(spec.get("claim_target") or "internal"),
+        )
+        evaluator_pack_version = stage4_evaluator_pack_version(lane_id=arm_cfg["lane_id"], task_id=task_id)
         row = run_named_lane(
             arm_cfg["lane_id"],
             spec,
@@ -177,7 +194,7 @@ def _run_arm(
             policy_bundle_id=arm_cfg["policy_bundle_id"],
             budget_class=arm_cfg["budget_class"],
             perturbation_group=arm_cfg["control_tag"],
-            task_id=f"task.stage3.{arm_cfg['lane_id']}.{arm_cfg['campaign_arm_id']}",
+            task_id=task_id,
             trial_label=trial_label,
         )
         proposal_prompt = build_stage3_proposal_prompt(
@@ -228,7 +245,7 @@ def _run_arm(
                 },
                 candidate_ref=row["candidate_ref"],
                 evaluation_ref=row["evaluation_ref"],
-                task_id=f"task.stage3.{arm_cfg['lane_id']}.{arm_cfg['campaign_arm_id']}",
+                task_id=task_id,
             )
             substrate_dir = out_dir / "substrate" / arm_cfg["lane_id"]
             target_path = substrate_dir / f"{trial_label}_optimization_target_v1.json"
@@ -254,6 +271,7 @@ def _run_arm(
                 "topology_id": arm_cfg["topology_id"],
                 "budget_class": arm_cfg["budget_class"],
                 "comparison_class": "stage3_bounded_real_inference",
+                "task_id": task_id,
                 "control_tag": arm_cfg["control_tag"],
                 "repetition_index": repetition_index,
                 "candidate_id": row["candidate_id"],
@@ -263,8 +281,13 @@ def _run_arm(
                 "wall_clock_ms": row["wall_clock_ms"],
                 "verifier_status": row["verifier_status"],
                 "route_id": worker_route["route_id"],
+                "route_class": worker_route["route_class"],
                 "provider_model": worker_route["provider_model"],
                 "execution_mode": worker_route["execution_mode"],
+                "evaluator_pack_version": evaluator_pack_version,
+                "support_envelope_digest": support_envelope_digest,
+                "control_reserve_policy": "replication=0.20;control=0.10",
+                "cost_source": "estimated_from_pricing_table" if worker_route["execution_mode"] == "live" else "scaffold_placeholder",
                 "proposal_prompt": proposal_prompt,
                 "stage3_substrate": stage3_substrate,
             }
@@ -299,6 +322,12 @@ def run_bounded_inference_campaign(out_dir: Path = OUT_DIR) -> dict:
             continue
         baseline = control_lookup[row["lane_id"]]
         check = validate_matched_budget_pair(baseline=baseline, candidate=row)
+        claim_check = validate_stage4_claim_eligibility(
+            {
+                "execution_mode": row["execution_mode"],
+                "cost_source": row["cost_source"],
+            }
+        )
         delta_score = round(float(row["primary_score"]) - float(baseline["primary_score"]), 6)
         delta_runtime_ms = int(row["wall_clock_ms"]) - int(baseline["wall_clock_ms"])
         positive_signal = delta_score > 0 or (delta_score == 0.0 and delta_runtime_ms < 0 and row["verifier_status"] == "passed")
@@ -314,9 +343,12 @@ def run_bounded_inference_campaign(out_dir: Path = OUT_DIR) -> dict:
                 "control_tag": row["control_tag"],
                 "comparison_valid": check.ok and row["verifier_status"] == "passed",
                 "invalid_reason": None if check.ok else check.reason,
+                "claim_eligible": claim_check.ok,
+                "claim_ineligible_reason": claim_check.reason,
                 "delta_score": delta_score,
                 "delta_runtime_ms": delta_runtime_ms,
                 "positive_signal": positive_signal and check.ok,
+                "power_claim_eligible_signal": positive_signal and check.ok and claim_check.ok,
             }
         )
 
@@ -336,6 +368,8 @@ def run_bounded_inference_campaign(out_dir: Path = OUT_DIR) -> dict:
         "run_count": len(run_rows),
         "comparison_count": len(comparison_rows),
         "positive_signal_count": sum(1 for row in comparison_rows if row["positive_signal"]),
+        "claim_eligible_comparison_count": sum(1 for row in comparison_rows if row["claim_eligible"]),
+        "power_claim_eligible_signal_count": sum(1 for row in comparison_rows if row["power_claim_eligible_signal"]),
         "execution_modes": sorted({row["execution_mode"] for row in run_rows}),
         "arms_ref": str(arms_path.relative_to(ROOT)),
         "runs_ref": str(runs_path.relative_to(ROOT)),

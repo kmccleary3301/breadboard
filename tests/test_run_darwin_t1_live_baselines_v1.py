@@ -32,6 +32,17 @@ def test_run_live_baselines_emits_six_lane_summary() -> None:
             "bindings.tool_bindings",
             "bindings.budget_class",
         ]
+        assert rows[lane_id]["stage4_execution_envelope_consumption"]["consumed_fields"] == [
+            "bindings.command",
+            "bindings.cwd",
+            "bindings.out_dir",
+            "bindings.task_id",
+            "bindings.budget_class",
+            "bindings.tool_bindings",
+            "bindings.environment_digest",
+            "support_envelope_digest",
+            "evaluator_pack_version",
+        ]
         execution_plan = json.loads(Path(refs["execution_plan"]).read_text(encoding="utf-8"))
         assert execution_plan["runtime_consumed"] is True
         assert execution_plan["consumed_bindings"] == [
@@ -41,16 +52,23 @@ def test_run_live_baselines_emits_six_lane_summary() -> None:
             "bindings.tool_bindings",
             "bindings.budget_class",
         ]
+        assert execution_plan["execution_envelope_v2_consumed_fields"] == rows[lane_id]["stage4_execution_envelope_consumption"]["consumed_fields"]
         assert rows[lane_id]["stage3_execution_plan_consumption"]["budget_class"] == rows[lane_id]["budget_class"]
         assert rows[lane_id]["stage3_execution_plan_consumption"]["tool_bindings"]
+        assert rows[lane_id]["stage4_execution_envelope_consumption"]["task_id"]
+        assert len(rows[lane_id]["stage4_execution_envelope_consumption"]["support_envelope_digest"]) == 64
     harness_policy = json.loads(Path(rows["lane.harness"]["shadow_artifact_refs"]["effective_policy"]).read_text(encoding="utf-8"))
     assert harness_policy["topology_support"]["allowed_topology_ids"] == ["policy.topology.single_v0", "policy.topology.pev_v0"]
     assert harness_policy["topology_support"]["is_supported"] is True
     assert "mut.topology.single_to_pev_v1" in harness_policy["operator_eligibility"]["supported_operator_ids"]
     assert "mut.budget.class_a_to_class_b_v1" in harness_policy["operator_eligibility"]["prohibited_operator_ids"]
     harness_evaluator_pack = json.loads(Path(rows["lane.harness"]["shadow_artifact_refs"]["evaluator_pack"]).read_text(encoding="utf-8"))
+    assert harness_evaluator_pack["pack_version"].startswith("stage4.evalpack.")
     assert harness_evaluator_pack["budget_envelope"]["cost_classification"] == "exact_local_zero"
     assert harness_evaluator_pack["budget_envelope"]["comparison_class"] == "bounded_internal"
+    assert harness_evaluator_pack["budget_envelope"]["execution_mode"] == "scaffold"
+    assert harness_evaluator_pack["budget_envelope"]["route_class"] == "local_baseline"
+    assert harness_evaluator_pack["budget_envelope"]["cost_source"] == "local_execution"
     assert harness_evaluator_pack["budget_envelope"]["wall_clock_ms"] == rows["lane.harness"]["wall_clock_ms"]
     assert rows["lane.repo_swe"]["shadow_artifact_refs"]["optimization_target"].endswith("_optimization_target_v1.json")
     repo_target = json.loads(Path(rows["lane.repo_swe"]["shadow_artifact_refs"]["optimization_target"]).read_text(encoding="utf-8"))

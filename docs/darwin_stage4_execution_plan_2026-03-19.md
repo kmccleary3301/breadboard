@@ -6,6 +6,8 @@ Scope: Stage-4 doctrine freeze, live-economics hardening, runtime closure, deep 
 References:
 - `docs/darwin_stage4_doctrine_2026-03-19.md`
 - `docs/darwin_stage4_adr_set_2026-03-19.md`
+- `docs/darwin_stage4_tranche1_slice_2026-03-19.md`
+- `docs/darwin_stage4_tranche1_canary_status_2026-03-19.md`
 - `docs/darwin_stage3_signoff_2026-03-19.md`
 - `docs/darwin_stage3_completion_gate_2026-03-19.md`
 - `docs_tmp/DARWIN/BB_DARWIN_PHASE_4_PLANNER_RESPONSE.md`

@@ -32,10 +32,16 @@ from breadboard_ext.darwin.phase2 import (
 from breadboard_ext.darwin.stage3 import (
     STAGE3_CONSUMED_LANES,
     STAGE3_TARGETABLE_LANES,
-    build_stage3_budget_envelope,
     build_stage3_optimization_target,
     consume_execution_plan_bindings,
     dump_stage3_optimization_target,
+)
+from breadboard_ext.darwin.stage4 import (
+    STAGE4_EXECUTION_ENVELOPE_LANES,
+    build_stage4_budget_envelope,
+    build_stage4_support_envelope_digest,
+    consume_execution_envelope_v2,
+    stage4_evaluator_pack_version,
 )
 
 
@@ -210,6 +216,9 @@ def run_named_lane(
     evaluator_pack_issues = []
 
     stage3_consumption: dict[str, Any] | None = None
+    stage4_consumption: dict[str, Any] | None = None
+    support_envelope_digest: str | None = None
+    evaluator_pack_version: str | None = None
     if should_emit_shadow_artifacts(lane_id):
         effective_config = build_effective_config(
             spec=spec,
@@ -248,10 +257,6 @@ def run_named_lane(
             execution_plan["runtime_consumed"] = True
             execution_plan["consumed_bindings"] = list(stage3_consumption["consumed_fields"])
             command = list(stage3_consumption["command"])
-        execution_plan_path = lane_dir / f"{trial_label}_execution_plan_v0.json"
-        _write_json(execution_plan_path, execution_plan)
-        shadow_refs["execution_plan"] = str(execution_plan_path.relative_to(ROOT))
-
         effective_policy = build_effective_policy(
             spec=spec,
             lane_id=lane_id,
@@ -264,6 +269,33 @@ def run_named_lane(
         effective_policy_path = lane_dir / f"{trial_label}_effective_policy_v0.json"
         _write_json(effective_policy_path, effective_policy)
         shadow_refs["effective_policy"] = str(effective_policy_path.relative_to(ROOT))
+
+        support_envelope_digest = build_stage4_support_envelope_digest(
+            lane_id=lane_id,
+            task_id=task_id or lane_cfg["task_id"],
+            topology_id=topology_id or spec["topology_family"],
+            policy_bundle_id=policy_bundle_id or spec["policy_bundle_id"],
+            budget_class=budget_class or spec["budget_class"],
+            allowed_tools=list(spec.get("allowed_tools") or []),
+            environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
+            claim_target=str(spec.get("claim_target") or "internal"),
+        )
+        evaluator_pack_version = stage4_evaluator_pack_version(
+            lane_id=lane_id,
+            task_id=task_id or lane_cfg["task_id"],
+        )
+        if lane_id in STAGE4_EXECUTION_ENVELOPE_LANES:
+            stage4_consumption = consume_execution_envelope_v2(
+                execution_plan,
+                support_envelope_digest=support_envelope_digest,
+                evaluator_pack_version=evaluator_pack_version,
+            )
+            execution_plan["execution_envelope_v2_consumed_fields"] = list(stage4_consumption["consumed_fields"])
+            execution_plan["support_envelope_digest"] = support_envelope_digest
+
+        execution_plan_path = lane_dir / f"{trial_label}_execution_plan_v0.json"
+        _write_json(execution_plan_path, execution_plan)
+        shadow_refs["execution_plan"] = str(execution_plan_path.relative_to(ROOT))
 
         effective_config_issues = validate_effective_config(effective_config)
         execution_plan_issues = validate_execution_plan(execution_plan)
@@ -373,11 +405,35 @@ def run_named_lane(
             task_id=task_id or lane_cfg["task_id"],
             budget_class=budget_class or spec["budget_class"],
         )
-        evaluator_pack["budget_envelope"] = build_stage3_budget_envelope(
+        evaluator_pack["pack_version"] = evaluator_pack_version or stage4_evaluator_pack_version(
+            lane_id=lane_id,
+            task_id=task_id or lane_cfg["task_id"],
+        )
+        evaluator_pack["budget_envelope"] = build_stage4_budget_envelope(
             budget_class=budget_class or spec["budget_class"],
             wall_clock_ms=wall_clock_ms,
             token_counts=eval_record["token_counts"],
             cost_estimate=eval_record["cost_estimate"],
+            comparison_class="bounded_internal",
+            route_id=None,
+            provider_model=None,
+            execution_mode="scaffold",
+            route_class="local_baseline",
+            cost_source="local_execution",
+            support_envelope_digest=support_envelope_digest
+            or build_stage4_support_envelope_digest(
+                lane_id=lane_id,
+                task_id=task_id or lane_cfg["task_id"],
+                topology_id=topology_id or spec["topology_family"],
+                policy_bundle_id=policy_bundle_id or spec["policy_bundle_id"],
+                budget_class=budget_class or spec["budget_class"],
+                allowed_tools=list(spec.get("allowed_tools") or []),
+                environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
+                claim_target=str(spec.get("claim_target") or "internal"),
+            ),
+            evaluator_pack_version=evaluator_pack["pack_version"],
+            replication_reserve_fraction=0.2,
+            control_reserve_fraction=0.1,
         )
         evaluator_pack_path = lane_dir / f"{trial_label}_evaluator_pack_v0.json"
         _write_json(evaluator_pack_path, evaluator_pack)
@@ -413,6 +469,7 @@ def run_named_lane(
         "mutation_operator": mutation_operator,
         "wall_clock_ms": wall_clock_ms,
         "stage3_execution_plan_consumption": stage3_consumption,
+        "stage4_execution_envelope_consumption": stage4_consumption,
     }
 
 

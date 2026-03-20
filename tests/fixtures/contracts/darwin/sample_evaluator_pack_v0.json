@@ -30,6 +30,7 @@
     "claim_target": "internal",
     "comparability_requirements": ["same_task_id", "same_budget_class", "same_lane_id"]
   },
+  "pack_version": "stage4.evalpack.lane.harness.task.darwin.harness.parity_smoke.v1",
   "budget_envelope": {
     "budget_class": "budget.class_a_v0",
     "wall_clock_ms": 1250,
@@ -43,7 +44,13 @@
     "comparison_class": "bounded_internal",
     "route_id": null,
     "provider_model": null,
+    "execution_mode": "scaffold",
+    "route_class": "local_baseline",
+    "cost_source": "local_execution",
+    "support_envelope_digest": "4444444444444444444444444444444444444444444444444444444444444444",
+    "evaluator_pack_version": "stage4.evalpack.lane.harness.task.darwin.harness.parity_smoke.v1",
     "replication_reserve_fraction": 0.2,
-    "control_reserve_fraction": 0.1
+    "control_reserve_fraction": 0.1,
+    "control_reserve_policy": "replication=0.20;control=0.10"
   }
 }

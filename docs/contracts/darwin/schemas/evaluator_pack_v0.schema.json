@@ -17,6 +17,7 @@
     "invalid_comparison_rules",
     "control_pack",
     "claim_constraints",
+    "pack_version",
     "budget_envelope"
   ],
   "properties": {
@@ -86,6 +87,11 @@
         "cost_estimate",
         "cost_classification",
         "comparison_class",
+        "execution_mode",
+        "route_class",
+        "cost_source",
+        "support_envelope_digest",
+        "evaluator_pack_version",
         "replication_reserve_fraction",
         "control_reserve_fraction"
       ],
@@ -110,8 +116,14 @@
         "comparison_class": { "type": "string", "minLength": 1 },
         "route_id": { "type": ["string", "null"] },
         "provider_model": { "type": ["string", "null"] },
+        "execution_mode": { "type": "string", "enum": ["live", "scaffold"] },
+        "route_class": { "type": "string", "minLength": 1 },
+        "cost_source": { "type": "string", "minLength": 1 },
+        "support_envelope_digest": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "evaluator_pack_version": { "type": "string", "minLength": 1 },
         "replication_reserve_fraction": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-        "control_reserve_fraction": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+        "control_reserve_fraction": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "control_reserve_policy": { "type": "string", "minLength": 1 }
       }
     }
   }

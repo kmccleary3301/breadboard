@@ -4,10 +4,18 @@ import os
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from breadboard_ext.darwin.stage4 import (
+    DEFAULT_STAGE4_FILTER_ROUTE,
+    DEFAULT_STAGE4_STRONG_ROUTE,
+    DEFAULT_STAGE4_WORKER_ROUTE,
+    resolve_stage4_route,
+    validate_stage4_claim_eligibility,
+    validate_stage4_matched_budget_pair,
+)
 
-DEFAULT_WORKER_ROUTE = "openrouter/openai/gpt-5.4-mini"
-DEFAULT_FILTER_ROUTE = "openrouter/openai/gpt-5.4-nano"
-DEFAULT_STRONG_ROUTE = "openrouter/openai/gpt-5.4"
+DEFAULT_WORKER_ROUTE = DEFAULT_STAGE4_WORKER_ROUTE
+DEFAULT_FILTER_ROUTE = DEFAULT_STAGE4_FILTER_ROUTE
+DEFAULT_STRONG_ROUTE = DEFAULT_STAGE4_STRONG_ROUTE
 
 ROUTE_PROFILES = {
     DEFAULT_WORKER_ROUTE: {
@@ -40,22 +48,11 @@ def stage3_provider_ready() -> bool:
 
 
 def resolve_stage3_route(*, task_class: str, role: str = "worker", stronger_tier: bool = False) -> dict[str, Any]:
-    if stronger_tier:
-        route_id = DEFAULT_STRONG_ROUTE
-    elif role == "filter":
-        route_id = DEFAULT_FILTER_ROUTE
-    else:
-        route_id = DEFAULT_WORKER_ROUTE
-    profile = ROUTE_PROFILES[route_id]
-    return {
-        "route_id": route_id,
-        "provider_model": profile["provider_model"],
-        "role": profile["role"],
-        "task_class": task_class,
-        "provider_ready": stage3_provider_ready(),
-        "execution_mode": "live" if stage3_provider_ready() else "scaffold_only",
-        "cost_classification": profile["cost_classification"],
-    }
+    route = resolve_stage4_route(task_class=task_class, role=role, stronger_tier=stronger_tier, actual_provider_used=False)
+    profile = ROUTE_PROFILES[route["route_id"]]
+    route["role"] = profile["role"]
+    route["cost_classification"] = profile["cost_classification"]
+    return route
 
 
 def build_stage3_proposal_prompt(
@@ -91,6 +88,13 @@ def build_stage3_usage_telemetry(
     prompt_tokens = _rough_token_count(proposal_prompt)
     completion_tokens = 0 if route.get("execution_mode") != "live" else max(8, prompt_tokens // 5)
     total_tokens = prompt_tokens + completion_tokens
+    cost_source = "estimated_from_pricing_table" if route.get("execution_mode") == "live" else "scaffold_placeholder"
+    claim_check = validate_stage4_claim_eligibility(
+        {
+            "execution_mode": route["execution_mode"],
+            "cost_source": cost_source,
+        }
+    )
     return {
         "schema": "breadboard.darwin.stage3.usage_telemetry.v0",
         "campaign_arm_id": campaign_arm_id,
@@ -101,6 +105,7 @@ def build_stage3_usage_telemetry(
         "route_id": route["route_id"],
         "provider_model": route["provider_model"],
         "execution_mode": route["execution_mode"],
+        "route_class": route["route_class"],
         "usage": {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
@@ -108,6 +113,9 @@ def build_stage3_usage_telemetry(
         },
         "estimated_cost_usd": 0.0,
         "cost_classification": route["cost_classification"],
+        "cost_source": cost_source,
+        "claim_eligible": claim_check.ok,
+        "claim_ineligible_reason": claim_check.reason,
         "wall_clock_ms": int(wall_clock_ms),
     }
 
@@ -133,8 +141,10 @@ def build_stage3_campaign_arm(
         "budget_class": budget_class,
         "route_id": route["route_id"],
         "provider_model": route["provider_model"],
+        "route_class": route["route_class"],
         "route_role": route["role"],
         "execution_mode": route["execution_mode"],
+        "claim_eligible": route["claim_eligible"],
         "repetition_count": int(repetition_count),
         "control_tag": control_tag,
         "task_class": task_class,
@@ -157,8 +167,5 @@ class MatchedBudgetCheck:
 
 
 def validate_matched_budget_pair(*, baseline: Mapping[str, Any], candidate: Mapping[str, Any]) -> MatchedBudgetCheck:
-    required_fields = ("lane_id", "budget_class", "comparison_class", "route_id")
-    for field_name in required_fields:
-        if str(baseline.get(field_name) or "") != str(candidate.get(field_name) or ""):
-            return MatchedBudgetCheck(ok=False, reason=f"{field_name}_mismatch")
-    return MatchedBudgetCheck(ok=True, reason=None)
+    result = validate_stage4_matched_budget_pair(baseline=baseline, candidate=candidate)
+    return MatchedBudgetCheck(ok=result.ok, reason=result.reason)
