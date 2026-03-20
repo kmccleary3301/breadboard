@@ -16,3 +16,4 @@ Status: secondary confirmation recorded
 - current bounded real-inference tranche still does not make scheduling a primary proving center
 - scheduling is still the confirmation lane for tranche boundary discipline rather than operator expected-value proving
 - scheduling still serves as a clean boundary check for replay and lineage semantics
+- the first Stage-3 failed transfer is intentionally recorded on `lane.scheduling` as `unsupported_lane_scope`

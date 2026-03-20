@@ -15,6 +15,10 @@ References:
 - `docs/darwin_stage3_bounded_inference_review_2026-03-19.md`
 - `docs/darwin_stage3_bounded_inference_replay_note_2026-03-19.md`
 - `docs/darwin_stage3_component_entry_gate_2026-03-19.md`
+- `docs/darwin_stage3_component_transfer_execution_plan_2026-03-19.md`
+- `docs/darwin_stage3_component_transfer_status_2026-03-19.md`
+- `docs/darwin_stage3_component_transfer_review_2026-03-19.md`
+- `docs/darwin_stage3_component_transfer_gate_2026-03-19.md`
 - `docs_tmp/DARWIN/BB_DARWIN_PHASE_3_PLANNER_RESPONSE.md`
 
 ## 1. Purpose
@@ -197,19 +201,17 @@ Every Stage-3 tranche should require:
 7. decision-ledger reconstruction checks
 8. replicated run slices on primary lanes
 
-## 9. Next step
+## 9. Current tranche state
 
-The next correct move after tranche-1 hard-gate passage is:
+The bounded real-inference tranche is complete and the first component-promotion / bounded-transfer tranche is now complete.
 
-- start the bounded real-inference entry tranche
+Current Stage-3 state now includes:
 
-That tranche should focus on:
-
-- `lane.repo_swe` and `lane.systems` as primary lanes
-- `gpt-5.4-mini` as the default worker model
-- `gpt-5.4-nano` for bulk/filter/repetition roles
-- fixed replication and control reserve behavior
-- operator expected-value reporting under matched bounded budgets
+- bounded route-aware campaigns on `lane.repo_swe` and `lane.systems`
+- operator and topology expected-value reporting
+- first promoted reusable topology family from `lane.repo_swe`
+- first retained bounded transfer to `lane.systems`
+- first failed-transfer taxonomy on `lane.scheduling`
 
 Current tranche-1 slice reference:
 
@@ -231,3 +233,12 @@ Current tranche-1 slice reference:
 - `docs/darwin_stage3_tranche1_verification_bundle_2026-03-19.md`
 - `docs/darwin_stage3_tranche1_hard_gate_2026-03-19.md`
 - `docs/darwin_stage3_real_inference_entry_conditions_2026-03-19.md`
+- `docs/darwin_stage3_bounded_inference_execution_plan_2026-03-19.md`
+- `docs/darwin_stage3_bounded_inference_status_2026-03-19.md`
+- `docs/darwin_stage3_bounded_inference_review_2026-03-19.md`
+- `docs/darwin_stage3_bounded_inference_replay_note_2026-03-19.md`
+- `docs/darwin_stage3_component_entry_gate_2026-03-19.md`
+- `docs/darwin_stage3_component_transfer_execution_plan_2026-03-19.md`
+- `docs/darwin_stage3_component_transfer_status_2026-03-19.md`
+- `docs/darwin_stage3_component_transfer_review_2026-03-19.md`
+- `docs/darwin_stage3_component_transfer_gate_2026-03-19.md`

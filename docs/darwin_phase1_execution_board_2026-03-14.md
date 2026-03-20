@@ -60,3 +60,7 @@ Date: 2026-03-14
 - bounded real-inference review: `docs/darwin_stage3_bounded_inference_review_2026-03-19.md`
 - bounded real-inference replay note: `docs/darwin_stage3_bounded_inference_replay_note_2026-03-19.md`
 - component-entry gate: `docs/darwin_stage3_component_entry_gate_2026-03-19.md`
+- component-transfer execution plan: `docs/darwin_stage3_component_transfer_execution_plan_2026-03-19.md`
+- component-transfer status: `docs/darwin_stage3_component_transfer_status_2026-03-19.md`
+- component-transfer review: `docs/darwin_stage3_component_transfer_review_2026-03-19.md`
+- component-transfer gate: `docs/darwin_stage3_component_transfer_gate_2026-03-19.md`

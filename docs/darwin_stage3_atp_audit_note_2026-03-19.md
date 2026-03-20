@@ -15,3 +15,4 @@ ATP does not drive:
 - Stage-3 substrate shape
 - Stage-3 primary proving strategy
 - Stage-3 real-inference entry
+- Stage-3 component-promotion or bounded-transfer selection

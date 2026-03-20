@@ -499,3 +499,55 @@ def build_evolution_ledger() -> dict[str, Any]:
         "decision_records": decisions,
         "reconstructed_cases": build_reconstructed_cases(),
     }
+
+
+def build_stage3_component_decision_record(
+    *,
+    decision_id: str,
+    lane_id: str,
+    decision_type: str,
+    component_family_id: str,
+    candidate_ids: list[str],
+    evidence_refs: list[str],
+    replay_refs: list[str],
+    decision_basis: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema": "breadboard.darwin.decision_record.v0",
+        "decision_id": decision_id,
+        "decision_type": decision_type,
+        "lane_id": lane_id,
+        "candidate_ids": candidate_ids,
+        "component_ids": [component_family_id],
+        "evidence_refs": evidence_refs,
+        "replay_refs": replay_refs,
+        "decision_basis": decision_basis,
+        "decided_at": _now(),
+    }
+
+
+def build_stage3_transfer_decision_record(
+    *,
+    decision_id: str,
+    source_lane_id: str,
+    target_lane_id: str,
+    component_family_id: str,
+    evidence_refs: list[str],
+    replay_refs: list[str],
+    decision_basis: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema": "breadboard.darwin.decision_record.v0",
+        "decision_id": decision_id,
+        "decision_type": "transfer",
+        "lane_id": target_lane_id,
+        "candidate_ids": [],
+        "component_ids": [component_family_id],
+        "evidence_refs": evidence_refs,
+        "replay_refs": replay_refs,
+        "decision_basis": {
+            "source_lane_id": source_lane_id,
+            **decision_basis,
+        },
+        "decided_at": _now(),
+    }
