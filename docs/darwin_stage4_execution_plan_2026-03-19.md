@@ -38,6 +38,11 @@ References:
 - `docs/darwin_stage4_late_comparative_review_2026-03-20.md`
 - `docs/darwin_stage4_precloseout_gate_2026-03-20.md`
 - `docs/darwin_stage4_remaining_to_close_2026-03-20.md`
+- `docs/darwin_stage4_closeout_execution_plan_2026-03-20.md`
+- `docs/darwin_stage4_signoff_2026-03-20.md`
+- `docs/darwin_stage4_completion_gate_2026-03-20.md`
+- `docs/darwin_stage4_future_roadmap_handoff_2026-03-20.md`
+- `docs/darwin_stage4_main_verification_2026-03-20.md`
 - `docs/darwin_stage4_systems_live_readiness_2026-03-20.md`
 - `docs/darwin_stage4_cross_primary_lane_review_2026-03-20.md`
 - `docs/darwin_stage4_deep_live_search_gate_2026-03-20.md`

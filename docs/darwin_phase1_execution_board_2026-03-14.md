@@ -124,3 +124,8 @@ Date: 2026-03-14
 - late comparative review: `docs/darwin_stage4_late_comparative_review_2026-03-20.md`
 - pre-closeout gate: `docs/darwin_stage4_precloseout_gate_2026-03-20.md`
 - remaining-to-close note: `docs/darwin_stage4_remaining_to_close_2026-03-20.md`
+- closeout execution plan: `docs/darwin_stage4_closeout_execution_plan_2026-03-20.md`
+- final signoff: `docs/darwin_stage4_signoff_2026-03-20.md`
+- completion gate: `docs/darwin_stage4_completion_gate_2026-03-20.md`
+- future-roadmap handoff: `docs/darwin_stage4_future_roadmap_handoff_2026-03-20.md`
+- main verification note: `docs/darwin_stage4_main_verification_2026-03-20.md`
