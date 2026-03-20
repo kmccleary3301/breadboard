@@ -105,3 +105,10 @@ Date: 2026-03-14
 - replay note: `docs/darwin_stage4_replay_note_2026-03-20.md`
 - deep-live-search review: `docs/darwin_stage4_deep_live_search_review_2026-03-20.md`
 - promotion-entry gate: `docs/darwin_stage4_promotion_entry_gate_2026-03-20.md`
+- multi-family execution plan: `docs/darwin_stage4_multi_family_execution_plan_2026-03-20.md`
+- multi-family status: `docs/darwin_stage4_multi_family_status_2026-03-20.md`
+- second-family decision: `docs/darwin_stage4_second_family_decision_2026-03-20.md`
+- family watchdog note: `docs/darwin_stage4_family_watchdog_note_2026-03-20.md`
+- ATP family audit note: `docs/darwin_stage4_atp_family_audit_note_2026-03-20.md`
+- multi-family review: `docs/darwin_stage4_multi_family_review_2026-03-20.md`
+- late comparative gate: `docs/darwin_stage4_late_comparative_gate_2026-03-20.md`
