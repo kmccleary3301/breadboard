@@ -19,6 +19,7 @@ ALLOWED_TRANSFER_SLICE_KINDS = {
     "repo_family",
 }
 ALLOWED_TRANSFER_SLICE_PROMOTION_ROLES = {"required", "advisory", "claim_supporting"}
+ALLOWED_TRANSFER_COHORT_CLAIM_TIERS = {"package_local", "transfer_supported", "cohort_supported"}
 
 
 def _require_text(value: Any, field_name: str) -> str:
@@ -501,6 +502,54 @@ class TransferSliceManifest:
             selector=dict(data.get("selector") or {}),
             promotion_role=data.get("promotion_role") or "",
             visibility=data.get("visibility") or "",
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
+class TransferCohortManifest:
+    cohort_id: str
+    cohort_kind: str
+    member_slice_ids: List[str]
+    claim_scope: Dict[str, Any]
+    coverage_policy: Dict[str, Any]
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "cohort_id", _require_text(self.cohort_id, "cohort_id"))
+        object.__setattr__(self, "cohort_kind", _require_text(self.cohort_kind, "cohort_kind"))
+        object.__setattr__(self, "member_slice_ids", _copy_text_list(self.member_slice_ids))
+        object.__setattr__(self, "claim_scope", _copy_mapping(self.claim_scope))
+        object.__setattr__(self, "coverage_policy", _copy_mapping(self.coverage_policy))
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+
+        if not self.member_slice_ids:
+            raise ValueError("member_slice_ids must contain at least one slice id")
+        if len(self.member_slice_ids) != len(set(self.member_slice_ids)):
+            raise ValueError("member_slice_ids contains duplicate values")
+        if not self.claim_scope:
+            raise ValueError("claim_scope must contain at least one binding")
+        if not self.coverage_policy:
+            raise ValueError("coverage_policy must contain at least one rule")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "cohort_id": self.cohort_id,
+            "cohort_kind": self.cohort_kind,
+            "member_slice_ids": list(self.member_slice_ids),
+            "claim_scope": dict(self.claim_scope),
+            "coverage_policy": dict(self.coverage_policy),
+            "metadata": dict(self.metadata),
+        }
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "TransferCohortManifest":
+        return TransferCohortManifest(
+            cohort_id=data.get("cohort_id") or data.get("id") or "",
+            cohort_kind=data.get("cohort_kind") or "",
+            member_slice_ids=list(data.get("member_slice_ids") or []),
+            claim_scope=dict(data.get("claim_scope") or {}),
+            coverage_policy=dict(data.get("coverage_policy") or {}),
             metadata=dict(data.get("metadata") or {}),
         )
 

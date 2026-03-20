@@ -70,6 +70,8 @@ from .examples import (
     build_codex_dossier_promotion_examples_payload,
     build_coding_overlay_benchmark_example,
     build_coding_overlay_benchmark_example_payload,
+    build_codex_opencode_transfer_cohort_example,
+    build_codex_opencode_transfer_cohort_example_payload,
     build_opencode_prompt_config_tool_guidance_package_example,
     build_opencode_prompt_config_tool_guidance_package_example_payload,
     build_opencode_prompt_config_tool_guidance_verifier_follow_on_example,
@@ -116,6 +118,7 @@ from .suites import (
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
     TargetFamilyManifest,
+    TransferCohortManifest,
     TransferSliceManifest,
 )
 from .substrate import (
@@ -192,6 +195,7 @@ __all__ = [
     "SupportEnvelopeGateInput",
     "TargetFamilyManifest",
     "FamilyCompositionManifest",
+    "TransferCohortManifest",
     "TransferSliceManifest",
     "ToolPackContext",
     "ToolRequirement",
@@ -214,6 +218,8 @@ __all__ = [
     "build_codex_dossier_runtime_context_examples_payload",
     "build_coding_overlay_benchmark_example",
     "build_coding_overlay_benchmark_example_payload",
+    "build_codex_opencode_transfer_cohort_example",
+    "build_codex_opencode_transfer_cohort_example_payload",
     "build_opencode_prompt_config_tool_guidance_package_example",
     "build_opencode_prompt_config_tool_guidance_package_example_payload",
     "build_opencode_prompt_config_tool_guidance_verifier_follow_on_example",

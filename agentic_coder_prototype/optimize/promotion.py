@@ -6,12 +6,14 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 from .benchmark import BenchmarkRunManifest, CandidateComparisonResult
 from .evaluation import EvaluationRecord
 from .suites import (
+    ALLOWED_TRANSFER_COHORT_CLAIM_TIERS,
     EvaluationSuiteManifest,
     FamilyCompositionManifest,
     ObjectiveBreakdownResult,
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
     TargetFamilyManifest,
+    TransferCohortManifest,
     TransferSliceManifest,
 )
 from .substrate import ArtifactRef, MaterializedCandidate, OptimizationTarget, SupportEnvelope
@@ -193,6 +195,10 @@ class PromotionEvidenceSummary:
     coupling_risk_summary: Dict[str, Any] = field(default_factory=dict)
     transfer_slice_ids: List[str] = field(default_factory=list)
     transfer_slices: List[TransferSliceManifest] = field(default_factory=list)
+    transfer_cohort_ids: List[str] = field(default_factory=list)
+    transfer_cohorts: List[TransferCohortManifest] = field(default_factory=list)
+    transfer_cohort_status: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    claim_tier: Optional[str] = None
     transfer_slice_status: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     blocked_transfer_slice_ids: List[str] = field(default_factory=list)
     inconclusive_transfer_slice_ids: List[str] = field(default_factory=list)
@@ -236,6 +242,22 @@ class PromotionEvidenceSummary:
                 for item in self.transfer_slices
             ],
         )
+        object.__setattr__(self, "transfer_cohort_ids", _copy_text_list(self.transfer_cohort_ids))
+        object.__setattr__(
+            self,
+            "transfer_cohorts",
+            [
+                item if isinstance(item, TransferCohortManifest) else TransferCohortManifest.from_dict(item)
+                for item in self.transfer_cohorts
+            ],
+        )
+        object.__setattr__(self, "transfer_cohort_status", _copy_nested_mapping(self.transfer_cohort_status))
+        claim_tier = str(self.claim_tier or "").strip().lower() or None
+        if claim_tier and claim_tier not in ALLOWED_TRANSFER_COHORT_CLAIM_TIERS:
+            raise ValueError(
+                f"claim_tier must be one of: {sorted(ALLOWED_TRANSFER_COHORT_CLAIM_TIERS)}"
+            )
+        object.__setattr__(self, "claim_tier", claim_tier)
         object.__setattr__(self, "transfer_slice_status", _copy_nested_mapping(self.transfer_slice_status))
         object.__setattr__(self, "blocked_transfer_slice_ids", _copy_text_list(self.blocked_transfer_slice_ids))
         object.__setattr__(self, "inconclusive_transfer_slice_ids", _copy_text_list(self.inconclusive_transfer_slice_ids))
@@ -293,6 +315,9 @@ class PromotionEvidenceSummary:
             "coupling_risk_summary": dict(self.coupling_risk_summary),
             "transfer_slice_ids": list(self.transfer_slice_ids),
             "transfer_slices": [item.to_dict() for item in self.transfer_slices],
+            "transfer_cohort_ids": list(self.transfer_cohort_ids),
+            "transfer_cohorts": [item.to_dict() for item in self.transfer_cohorts],
+            "transfer_cohort_status": {key: dict(value) for key, value in self.transfer_cohort_status.items()},
             "transfer_slice_status": {key: dict(value) for key, value in self.transfer_slice_status.items()},
             "blocked_transfer_slice_ids": list(self.blocked_transfer_slice_ids),
             "inconclusive_transfer_slice_ids": list(self.inconclusive_transfer_slice_ids),
@@ -306,6 +331,8 @@ class PromotionEvidenceSummary:
         }
         if self.stochasticity_class:
             payload["stochasticity_class"] = self.stochasticity_class
+        if self.claim_tier:
+            payload["claim_tier"] = self.claim_tier
         if self.minimum_required_trials is not None:
             payload["minimum_required_trials"] = self.minimum_required_trials
         if self.observed_trial_count is not None:
@@ -342,6 +369,10 @@ class PromotionEvidenceSummary:
             coupling_risk_summary=dict(data.get("coupling_risk_summary") or {}),
             transfer_slice_ids=list(data.get("transfer_slice_ids") or []),
             transfer_slices=[TransferSliceManifest.from_dict(item) for item in data.get("transfer_slices") or []],
+            transfer_cohort_ids=list(data.get("transfer_cohort_ids") or []),
+            transfer_cohorts=[TransferCohortManifest.from_dict(item) for item in data.get("transfer_cohorts") or []],
+            transfer_cohort_status=_copy_nested_mapping(data.get("transfer_cohort_status") or {}),
+            claim_tier=data.get("claim_tier"),
             transfer_slice_status=_copy_nested_mapping(data.get("transfer_slice_status") or {}),
             blocked_transfer_slice_ids=list(data.get("blocked_transfer_slice_ids") or []),
             inconclusive_transfer_slice_ids=list(data.get("inconclusive_transfer_slice_ids") or []),
@@ -737,7 +768,10 @@ def build_promotion_evidence_summary(
     target_family: Optional[TargetFamilyManifest] = None,
     family_composition: Optional[FamilyCompositionManifest] = None,
     search_space: Optional[SearchSpaceManifest] = None,
+    transfer_cohorts: Sequence[TransferCohortManifest] | None = None,
     objective_breakdown_results: Sequence[ObjectiveBreakdownResult] | None = None,
+    claim_tier: Optional[str] = None,
+    transfer_cohort_status: Optional[Mapping[str, Mapping[str, Any]]] = None,
     review_required: bool = False,
     metadata: Optional[Mapping[str, Any]] = None,
 ) -> PromotionEvidenceSummary:
@@ -778,6 +812,7 @@ def build_promotion_evidence_summary(
 
     comparison_results = list(comparison_results or [])
     objective_breakdown_results = list(objective_breakdown_results or [])
+    transfer_cohorts = list(transfer_cohorts or [])
     manifests = [benchmark_manifest] if benchmark_manifest is not None else []
     outcome_counts: Dict[str, int] = {}
     comparison_ids: List[str] = []
@@ -841,6 +876,16 @@ def build_promotion_evidence_summary(
                 )
             )
     transfer_slice_ids = sorted({item.slice_id for item in transfer_slices})
+    transfer_cohort_ids = sorted({item.cohort_id for item in transfer_cohorts})
+    merged_transfer_cohort_status = _copy_nested_mapping(transfer_cohort_status or {})
+    for cohort in transfer_cohorts:
+        merged_transfer_cohort_status.setdefault(
+            cohort.cohort_id,
+            {
+                "status": "referenced",
+                "member_slice_ids": list(cohort.member_slice_ids),
+            },
+        )
     transfer_slice_status = _merge_slice_status(objective_breakdown_results)
     for slice_item in transfer_slices:
         transfer_slice_status.setdefault(
@@ -942,6 +987,9 @@ def build_promotion_evidence_summary(
             "transfer_slice_selectors": {
                 item.slice_id: dict(item.selector) for item in transfer_slices
             },
+            "transfer_cohort_scopes": {
+                cohort.cohort_id: dict(cohort.claim_scope) for cohort in transfer_cohorts
+            },
         },
         family_risk_summary={
             "review_required": review_required,
@@ -956,6 +1004,7 @@ def build_promotion_evidence_summary(
             "hidden_hold_covered": bool(held_out_sample_ids),
             "regression_covered": bool(regression_ids and compared_regression_ids),
             "transfer_slice_ids": transfer_slice_ids,
+            "transfer_cohort_ids": transfer_cohort_ids,
             "optimistic_scope_blocked": optimistic_scope_blocked,
             "attribution_required": attribution_required,
             "attribution_present": bool(attribution_payload),
@@ -964,6 +1013,10 @@ def build_promotion_evidence_summary(
         coupling_risk_summary=coupling_risk_summary,
         transfer_slice_ids=transfer_slice_ids,
         transfer_slices=transfer_slices,
+        transfer_cohort_ids=transfer_cohort_ids,
+        transfer_cohorts=transfer_cohorts,
+        transfer_cohort_status=merged_transfer_cohort_status,
+        claim_tier=claim_tier or ("transfer_supported" if transfer_cohorts else "package_local"),
         transfer_slice_status=transfer_slice_status,
         blocked_transfer_slice_ids=blocked_transfer_slice_ids,
         inconclusive_transfer_slice_ids=inconclusive_transfer_slice_ids,

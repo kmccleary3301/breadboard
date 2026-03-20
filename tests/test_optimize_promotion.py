@@ -14,6 +14,7 @@ from agentic_coder_prototype.optimize import (
     PromotionDecision,
     PromotionEvidenceSummary,
     PromotionRecord,
+    build_codex_opencode_transfer_cohort_example,
     build_codex_dossier_promotion_examples,
     build_codex_dossier_promotion_examples_payload,
     build_coding_overlay_benchmark_example,
@@ -690,3 +691,17 @@ def test_family_promotion_gate_requires_member_family_attribution_when_triggered
     assert "member-family attribution" in result.reason
     assert result.metadata["attribution_required"] is True
     assert result.metadata["attribution_present"] is False
+
+
+def test_transfer_cohort_claim_tier_and_status_are_explicit() -> None:
+    example = build_codex_opencode_transfer_cohort_example()
+    codex_summary = example["codex_cell"]["promotion_summary"]
+    opencode_summary = example["opencode_cell"]["promotion_summary"]
+    cohort_id = example["transfer_cohort"].cohort_id
+
+    assert codex_summary.claim_tier == "transfer_supported"
+    assert opencode_summary.claim_tier == "transfer_supported"
+    assert codex_summary.transfer_cohort_ids == [cohort_id]
+    assert opencode_summary.transfer_cohort_ids == [cohort_id]
+    assert codex_summary.transfer_cohort_status[cohort_id]["status"] == "transfer_supported"
+    assert opencode_summary.transfer_cohort_status[cohort_id]["status"] == "transfer_supported"

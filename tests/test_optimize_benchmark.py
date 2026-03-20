@@ -9,6 +9,8 @@ from agentic_coder_prototype.optimize import (
     CandidateComparisonResult,
     build_backend_comparison_example,
     build_backend_comparison_example_payload,
+    build_codex_opencode_transfer_cohort_example,
+    build_codex_opencode_transfer_cohort_example_payload,
     build_paired_candidate_comparison,
     build_coding_overlay_benchmark_example,
     build_coding_overlay_benchmark_example_payload,
@@ -275,3 +277,21 @@ def test_opencode_package_verifier_follow_on_payload_round_trips() -> None:
     assert comparison.parent_candidate_id == payload["package_example"]["package_candidate"]["candidate_id"]
     assert comparison.better_candidate_id == example["refined_candidate"].candidate_id
     assert comparison.metadata["experiment_kind"] == "verifier_augmented_package_refinement"
+
+
+def test_codex_opencode_transfer_cohort_payload_round_trips() -> None:
+    example = build_codex_opencode_transfer_cohort_example()
+    payload = build_codex_opencode_transfer_cohort_example_payload()
+
+    codex_manifest = BenchmarkRunManifest.from_dict(payload["codex_cell"]["manifest"])
+    codex_result = BenchmarkRunResult.from_dict(payload["codex_cell"]["benchmark_result"])
+    opencode_manifest = BenchmarkRunManifest.from_dict(payload["opencode_cell"]["manifest"])
+    opencode_result = BenchmarkRunResult.from_dict(payload["opencode_cell"]["benchmark_result"])
+
+    assert payload["transfer_cohort"]["cohort_id"] == "cohort.codex_dossier_current.opencode_1_2_17.v5"
+    assert codex_manifest.transfer_cohort_ids == [payload["transfer_cohort"]["cohort_id"]]
+    assert opencode_manifest.transfer_cohort_ids == [payload["transfer_cohort"]["cohort_id"]]
+    assert codex_result.transfer_cohort_status[payload["transfer_cohort"]["cohort_id"]]["status"] == "transfer_supported"
+    assert opencode_result.transfer_cohort_status[payload["transfer_cohort"]["cohort_id"]]["status"] == "transfer_supported"
+    assert payload["codex_cell"]["staged_result"]["metadata"]["search_policy_trace"]
+    assert payload["opencode_cell"]["staged_result"]["metadata"]["search_policy_trace"]

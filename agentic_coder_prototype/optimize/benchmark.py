@@ -93,6 +93,7 @@ class BenchmarkRunManifest:
     stochasticity_class: str = "deterministic"
     rerun_policy: Dict[str, Any] = field(default_factory=dict)
     contamination_notes: List[str] = field(default_factory=list)
+    transfer_cohort_ids: List[str] = field(default_factory=list)
     transfer_slices: List[TransferSliceManifest] = field(default_factory=list)
     promotion_relevance: Dict[str, Any] = field(default_factory=dict)
     artifact_refs: List[ArtifactRef] = field(default_factory=list)
@@ -124,6 +125,7 @@ class BenchmarkRunManifest:
         object.__setattr__(self, "stochasticity_class", stochasticity)
         object.__setattr__(self, "rerun_policy", _copy_mapping(self.rerun_policy))
         object.__setattr__(self, "contamination_notes", _copy_text_list(self.contamination_notes))
+        object.__setattr__(self, "transfer_cohort_ids", _copy_text_list(self.transfer_cohort_ids))
         object.__setattr__(
             self,
             "transfer_slices",
@@ -161,6 +163,8 @@ class BenchmarkRunManifest:
         transfer_slice_ids = [item.slice_id for item in self.transfer_slices]
         if len(transfer_slice_ids) != len(set(transfer_slice_ids)):
             raise ValueError("transfer_slices contains duplicate slice_id values")
+        if len(self.transfer_cohort_ids) != len(set(self.transfer_cohort_ids)):
+            raise ValueError("transfer_cohort_ids contains duplicate values")
 
         unknown_bucket_ids = sorted(set(self.bucket_tags) - set(all_sample_ids))
         if unknown_bucket_ids:
@@ -195,6 +199,7 @@ class BenchmarkRunManifest:
             "stochasticity_class": self.stochasticity_class,
             "rerun_policy": dict(self.rerun_policy),
             "contamination_notes": list(self.contamination_notes),
+            "transfer_cohort_ids": list(self.transfer_cohort_ids),
             "transfer_slices": [item.to_dict() for item in self.transfer_slices],
             "promotion_relevance": dict(self.promotion_relevance),
             "artifact_refs": [item.to_dict() for item in self.artifact_refs],
@@ -218,6 +223,7 @@ class BenchmarkRunManifest:
             stochasticity_class=data.get("stochasticity_class") or "deterministic",
             rerun_policy=dict(data.get("rerun_policy") or {}),
             contamination_notes=list(data.get("contamination_notes") or []),
+            transfer_cohort_ids=list(data.get("transfer_cohort_ids") or []),
             transfer_slices=[TransferSliceManifest.from_dict(item) for item in data.get("transfer_slices") or []],
             promotion_relevance=dict(data.get("promotion_relevance") or {}),
             artifact_refs=[ArtifactRef.from_dict(item) for item in data.get("artifact_refs") or []],
@@ -383,6 +389,7 @@ class BenchmarkRunResult:
     bucket_outcomes: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     variance_summary: Dict[str, Any] = field(default_factory=dict)
     cost_support_evidence_slices: Dict[str, Any] = field(default_factory=dict)
+    transfer_cohort_status: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     artifact_refs: List[ArtifactRef] = field(default_factory=list)
     promotion_readiness_summary: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -407,6 +414,11 @@ class BenchmarkRunResult:
         )
         object.__setattr__(self, "variance_summary", _copy_mapping(self.variance_summary))
         object.__setattr__(self, "cost_support_evidence_slices", _copy_mapping(self.cost_support_evidence_slices))
+        object.__setattr__(
+            self,
+            "transfer_cohort_status",
+            {str(key): dict(value) for key, value in (self.transfer_cohort_status or {}).items()},
+        )
         object.__setattr__(
             self,
             "artifact_refs",
@@ -435,6 +447,7 @@ class BenchmarkRunResult:
             "bucket_outcomes": {key: dict(value) for key, value in self.bucket_outcomes.items()},
             "variance_summary": dict(self.variance_summary),
             "cost_support_evidence_slices": dict(self.cost_support_evidence_slices),
+            "transfer_cohort_status": {key: dict(value) for key, value in self.transfer_cohort_status.items()},
             "artifact_refs": [item.to_dict() for item in self.artifact_refs],
             "promotion_readiness_summary": dict(self.promotion_readiness_summary),
             "metadata": dict(self.metadata),
@@ -454,6 +467,7 @@ class BenchmarkRunResult:
             bucket_outcomes={str(key): dict(value) for key, value in (data.get("bucket_outcomes") or {}).items()},
             variance_summary=dict(data.get("variance_summary") or {}),
             cost_support_evidence_slices=dict(data.get("cost_support_evidence_slices") or {}),
+            transfer_cohort_status={str(key): dict(value) for key, value in (data.get("transfer_cohort_status") or {}).items()},
             artifact_refs=[ArtifactRef.from_dict(item) for item in data.get("artifact_refs") or []],
             promotion_readiness_summary=dict(data.get("promotion_readiness_summary") or {}),
             metadata=dict(data.get("metadata") or {}),

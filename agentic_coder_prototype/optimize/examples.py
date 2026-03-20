@@ -36,6 +36,7 @@ from .diagnostics import DiagnosticBundle, DiagnosticEntry
 from .evaluation import EvaluationRecord
 from .promotion import (
     PromotionDecision,
+    PromotionEvidenceSummary,
     PromotionRecord,
     build_promotion_evidence_summary,
     promote_candidate,
@@ -47,6 +48,7 @@ from .suites import (
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
     TargetFamilyManifest,
+    TransferCohortManifest,
     TransferSliceManifest,
     VerifierAugmentedExperimentResult,
 )
@@ -6934,6 +6936,23 @@ def _clone_benchmark_run_result(
     return BenchmarkRunResult.from_dict(payload)
 
 
+def _clone_promotion_evidence_summary(
+    summary: PromotionEvidenceSummary,
+    **updates: object,
+) -> PromotionEvidenceSummary:
+    payload = summary.to_dict()
+    payload.update(updates)
+    payload["transfer_slices"] = [
+        item.to_dict() if isinstance(item, TransferSliceManifest) else item
+        for item in payload.get("transfer_slices", [])
+    ]
+    payload["transfer_cohorts"] = [
+        item.to_dict() if isinstance(item, TransferCohortManifest) else item
+        for item in payload.get("transfer_cohorts", [])
+    ]
+    return PromotionEvidenceSummary.from_dict(payload)
+
+
 def _build_backend_request_for_family_example(
     example: Dict[str, object],
     *,
@@ -7150,6 +7169,807 @@ def _build_backend_request_for_package_example(
         max_proposals=3,
         metadata={"package_bound": True},
     )
+
+
+def build_codex_opencode_transfer_cohort_example() -> Dict[str, object]:
+    """Build the first V5 two-package transfer cohort over the live V4 package lanes."""
+
+    codex = build_support_execution_tool_guidance_coding_overlay_package_example()
+    opencode = build_opencode_prompt_config_tool_guidance_package_example()
+    codex_package_candidate = codex["package_candidate"]
+    opencode_package_candidate = opencode["package_candidate"]
+    codex_composition = codex["family_composition"]
+    opencode_composition = opencode["family_composition"]
+    codex_search_space = codex["search_space"]
+    opencode_search_space = opencode["search_space"]
+    assert isinstance(codex_package_candidate, CandidateBundle)
+    assert isinstance(opencode_package_candidate, CandidateBundle)
+    assert isinstance(codex_composition, FamilyCompositionManifest)
+    assert isinstance(opencode_composition, FamilyCompositionManifest)
+    assert isinstance(codex_search_space, SearchSpaceManifest)
+    assert isinstance(opencode_search_space, SearchSpaceManifest)
+
+    codex_package_slice = next(
+        item.slice_id for item in codex["transfer_slices"] if item.slice_kind == "package"
+    )
+    opencode_package_slice = next(
+        item.slice_id for item in opencode["transfer_slices"] if item.slice_kind == "package"
+    )
+    shared_model_tier_slice = next(
+        item.slice_id for item in codex["transfer_slices"] if item.slice_kind == "model_tier"
+    )
+
+    cohort = TransferCohortManifest(
+        cohort_id="cohort.codex_dossier_current.opencode_1_2_17.v5",
+        cohort_kind="bounded_two_package_transfer",
+        member_slice_ids=[
+            codex_package_slice,
+            opencode_package_slice,
+            shared_model_tier_slice,
+        ],
+        claim_scope={
+            "package_ids": ["codex_dossier.current", "opencode_1_2_17.current"],
+            "shared_family_emphasis": [
+                "tool_guidance_clarity",
+                "bounded_edit_support_honesty",
+            ],
+            "max_package_count": 2,
+            "model_policy": "nano_only",
+        },
+        coverage_policy={
+            "requires_hidden_hold_per_package": True,
+            "requires_regression_per_package": True,
+            "claim_tiers": ["package_local", "transfer_supported", "cohort_supported"],
+            "requires_shared_model_tier": True,
+        },
+        metadata={
+            "phase": "v5",
+            "non_kernel": True,
+            "darwin_boundary": "not_reopened",
+        },
+    )
+
+    evaluation_suite = EvaluationSuiteManifest(
+        suite_id="evalsuite.transfer_cohort.codex_opencode.v5",
+        suite_kind="bounded_transfer_cohort_package_pair",
+        evaluator_stack=[
+            "tool_guidance_checker.v1",
+            "bounded_edit_scope_checker.v1",
+            "support_honesty_checker.v1",
+            "transfer_claim_checker.v1",
+        ],
+        split_visibility={
+            "train": "mutation_visible",
+            "validation": "comparison_visible",
+            "hold": "hidden_hold",
+            "regression": "comparison_visible",
+        },
+        stochasticity_class="deterministic",
+        rerun_policy={
+            "max_trials": 1,
+            "default_model": "gpt-5.4-nano",
+            "escalation_model": "gpt-5.4-mini",
+            "escalation_policy": "disabled_for_first_cohort_baseline",
+            "budget_policy": "nano_only_first_cohort",
+        },
+        capture_requirements=[
+            "guidance_clarity",
+            "bounded_edit_honesty",
+            "package_scope_integrity",
+            "transfer_claim_support",
+        ],
+        signal_channels={
+            "executable_checks": {"source_kind": "deterministic_checker"},
+            "semantic_judge": {"source_kind": "model_judge"},
+            "transfer_claim_review": {"source_kind": "cohort_gate"},
+        },
+        adjudication_requirements={
+            "requires_hidden_hold_review": True,
+            "requires_regression_coverage": True,
+            "model_policy": "nano_only",
+            "claim_scope": "bounded_two_package_transfer",
+        },
+        comparison_protocol_defaults={
+            "protocol_id": "paired_local_vs_transfer_cohort.v1",
+            "minimum_trial_count": 1,
+            "requires_hidden_hold_bucket": True,
+        },
+        artifact_requirements=["paired_eval_json", "cohort_benchmark_summary_json"],
+        metadata={
+            "phase": "v5",
+            "evaluation_truth": "primary",
+            "reward_like_ranking": "private_only",
+            "model_policy": "nano_only",
+            "stopping_policy": "stop_if_required_transfer_slices_fail_on_both_packages",
+        },
+    )
+
+    objective_suite = ObjectiveSuiteManifest(
+        suite_id="objsuite.transfer_cohort.codex_opencode.v5",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_channels={
+            "guidance_clarity": {
+                "direction": "maximize",
+                "source_metric": "guidance_clarity",
+                "promotion_sensitive": True,
+            },
+            "bounded_edit_honesty": {
+                "direction": "maximize",
+                "source_metric": "bounded_edit_honesty",
+                "promotion_sensitive": True,
+            },
+            "package_scope_integrity": {
+                "direction": "maximize",
+                "source_metric": "package_scope_integrity",
+                "promotion_sensitive": True,
+            },
+            "mutation_cost": {
+                "direction": "minimize",
+                "source_metric": "cost_delta_usd",
+                "promotion_sensitive": False,
+            },
+        },
+        penalties={
+            "scope_expansion": {
+                "kind": "hard_block",
+                "reason": "transfer cohorts may not widen package applicability implicitly",
+            },
+            "support_honesty_regression": {
+                "kind": "hard_block",
+                "reason": "shared bounded-edit and support honesty subset must remain intact",
+            },
+        },
+        aggregation_rules={"per_sample": "weighted_sum", "global": "cohort_transfer_first"},
+        uncertainty_policy={
+            "stochasticity_class": "deterministic",
+            "blocked_when_missing_hidden_hold": True,
+            "mini_escalation_allowed": False,
+        },
+        blocked_channel_annotations={
+            "package_scope_integrity": {"blocked_by": ["scope_expansion"]},
+        },
+        channel_dependencies={
+            "package_scope_integrity": ["guidance_clarity", "bounded_edit_honesty"],
+        },
+        frontier_dimensions=[
+            "guidance_clarity",
+            "bounded_edit_honesty",
+            "package_scope_integrity",
+            "mutation_cost",
+        ],
+        promotion_annotations={
+            "requires_transfer_cohort_support": True,
+            "review_class": "bounded_transfer_cohort",
+        },
+        visibility_annotations={
+            "hidden_hold_channels": [
+                "guidance_clarity",
+                "bounded_edit_honesty",
+                "package_scope_integrity",
+            ],
+        },
+        metadata={
+            "phase": "v5",
+            "reward_like_ranking": "private_only",
+        },
+    )
+
+    codex_change_map = {change.locus_id: change for change in codex_package_candidate.changes}
+    opencode_change_map = {change.locus_id: change for change in opencode_package_candidate.changes}
+
+    codex_tool_value = dict(codex_change_map["tool.render.exec_command"].value)
+    codex_tool_value["description"] = (
+        "Run commands inside the declared support envelope, and keep tool guidance aligned with bounded "
+        "edit honesty across Codex and OpenCode transfer cells."
+    )
+    codex_edit_value = dict(codex_change_map["prompt.section.editing_policy"].value)
+    codex_edit_value["text"] = (
+        "Prefer apply_patch and narrow diffs; keep support-sensitive review burden and bounded package edit "
+        "scope explicit across the transfer cohort."
+    )
+    codex_cohort_candidate = CandidateBundle(
+        candidate_id="cand.transfer_cohort.codex_dossier.shared.001",
+        source_target_id=codex["target"].target_id,
+        applied_loci=[
+            "tool.render.exec_command",
+            "prompt.section.editing_policy",
+        ],
+        changes=[
+            CandidateChange(
+                locus_id="tool.render.exec_command",
+                value=codex_tool_value,
+                rationale="Align tool guidance with the shared transfer-cohort bounded-edit/scope doctrine.",
+            ),
+            CandidateChange(
+                locus_id="prompt.section.editing_policy",
+                value=codex_edit_value,
+                rationale="Make the shared bounded-edit and support honesty subset explicit on the Codex package.",
+            ),
+        ],
+        provenance={
+            "kind": "transfer_cohort_candidate",
+            "baseline_candidate_id": codex_package_candidate.candidate_id,
+            "transfer_cohort_id": cohort.cohort_id,
+        },
+        metadata={
+            "lane": "codex_opencode_transfer_cohort",
+            "role": "cohort_staged_baseline",
+            "package": "codex_dossier.current",
+            "transfer_cohort_id": cohort.cohort_id,
+        },
+    )
+
+    opencode_builder_value = dict(opencode_change_map["prompt.pack.base.builder"].value)
+    opencode_builder_value["text"] = (
+        "Keep the build stage compact, package-scoped, and aligned to the shared transfer-cohort doctrine "
+        "for native Responses posture, bounded edits, and explicit tool guidance."
+    )
+    opencode_validation_value = dict(opencode_change_map["guardrails.validation.read_before_edit"].value)
+    opencode_validation_value.update(
+        {"mode": "strict", "require_fresh_read": True, "max_age_seconds": 900}
+    )
+    opencode_cohort_candidate = CandidateBundle(
+        candidate_id="cand.transfer_cohort.opencode.shared.001",
+        source_target_id=opencode["target"].target_id,
+        applied_loci=[
+            "prompt.pack.base.builder",
+            "guardrails.validation.read_before_edit",
+        ],
+        changes=[
+            CandidateChange(
+                locus_id="prompt.pack.base.builder",
+                value=opencode_builder_value,
+                rationale="Align the OpenCode prompt-pack member to the shared transfer-cohort bounded-edit doctrine.",
+            ),
+            CandidateChange(
+                locus_id="guardrails.validation.read_before_edit",
+                value=opencode_validation_value,
+                rationale="Tighten the bounded config member under the shared transfer-cohort support honesty subset.",
+            ),
+        ],
+        provenance={
+            "kind": "transfer_cohort_candidate",
+            "baseline_candidate_id": opencode_package_candidate.candidate_id,
+            "transfer_cohort_id": cohort.cohort_id,
+        },
+        metadata={
+            "lane": "codex_opencode_transfer_cohort",
+            "role": "cohort_staged_baseline",
+            "package": "opencode_1_2_17.current",
+            "transfer_cohort_id": cohort.cohort_id,
+        },
+    )
+
+    codex_manifest = BenchmarkRunManifest(
+        manifest_id="manifest.transfer_cohort.codex_dossier.v5",
+        benchmark_kind="transfer_cohort_package_cell",
+        target_id=codex["target"].target_id,
+        dataset_id=codex["dataset"].dataset_id,
+        dataset_version=codex["dataset"].dataset_version,
+        baseline_candidate_id=codex["baseline_candidate"].candidate_id,
+        environment_domain=codex["manifest"].environment_domain,
+        evaluator_stack=list(evaluation_suite.evaluator_stack),
+        comparison_protocol="paired_local_vs_transfer_cohort.v1",
+        splits=[BenchmarkSplit.from_dict(item.to_dict()) for item in codex["manifest"].splits],
+        bucket_tags={key: list(value) for key, value in codex["manifest"].bucket_tags.items()},
+        stochasticity_class="deterministic",
+        rerun_policy=dict(evaluation_suite.rerun_policy),
+        contamination_notes=[
+            "No hidden cohort identity may be used during mutation.",
+            "This first transfer cohort cell is Nano-only.",
+        ],
+        transfer_cohort_ids=[cohort.cohort_id],
+        transfer_slices=list(codex["transfer_slices"]),
+        promotion_relevance={
+            "claim_scope": "bounded_two_package_transfer",
+            "requires_transfer_cohort_support": True,
+            "transfer_cohort_ids": [cohort.cohort_id],
+        },
+        artifact_refs=list(codex["manifest"].artifact_refs),
+        metadata={
+            "phase": "v5",
+            "package": "codex_dossier.current",
+            "transfer_cohort_id": cohort.cohort_id,
+            "model_policy": "nano_only",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+        },
+    )
+
+    opencode_manifest = BenchmarkRunManifest(
+        manifest_id="manifest.transfer_cohort.opencode_1_2_17.v5",
+        benchmark_kind="transfer_cohort_package_cell",
+        target_id=opencode["target"].target_id,
+        dataset_id=opencode["dataset"].dataset_id,
+        dataset_version=opencode["dataset"].dataset_version,
+        baseline_candidate_id=opencode["baseline_candidate"].candidate_id,
+        environment_domain=opencode["manifest"].environment_domain,
+        evaluator_stack=list(evaluation_suite.evaluator_stack),
+        comparison_protocol="paired_local_vs_transfer_cohort.v1",
+        splits=[BenchmarkSplit.from_dict(item.to_dict()) for item in opencode["manifest"].splits],
+        bucket_tags={key: list(value) for key, value in opencode["manifest"].bucket_tags.items()},
+        stochasticity_class="deterministic",
+        rerun_policy=dict(evaluation_suite.rerun_policy),
+        contamination_notes=[
+            "No hidden cohort identity may be used during mutation.",
+            "This first transfer cohort cell is Nano-only and may not silently escalate to Mini.",
+        ],
+        transfer_cohort_ids=[cohort.cohort_id],
+        transfer_slices=list(opencode["transfer_slices"]),
+        promotion_relevance={
+            "claim_scope": "bounded_two_package_transfer",
+            "requires_transfer_cohort_support": True,
+            "transfer_cohort_ids": [cohort.cohort_id],
+        },
+        artifact_refs=list(opencode["manifest"].artifact_refs),
+        metadata={
+            "phase": "v5",
+            "package": "opencode_1_2_17.current",
+            "transfer_cohort_id": cohort.cohort_id,
+            "model_policy": "nano_only",
+            "evaluation_suite_id": evaluation_suite.suite_id,
+            "objective_suite_id": objective_suite.suite_id,
+        },
+    )
+
+    codex_atomic_vs_local = build_paired_candidate_comparison(
+        codex_manifest,
+        comparison_id="comparison.transfer_cohort.codex.atomic_vs_local.001",
+        parent_candidate_id=codex["baseline_candidate"].candidate_id,
+        child_candidate_id=codex_package_candidate.candidate_id,
+        outcome="win",
+        compared_sample_ids=codex_manifest.sample_ids(),
+        held_out_sample_ids=codex_manifest.hidden_hold_sample_ids(),
+        trial_count=1,
+        rationale="The V4 local Codex package candidate improves the shared guidance and bounded-edit subset over the atomic baseline.",
+        metric_deltas={
+            "guidance_clarity_delta": 0.11,
+            "bounded_edit_honesty_delta": 0.09,
+            "package_scope_integrity_delta": 0.04,
+        },
+        better_candidate_id=codex_package_candidate.candidate_id,
+        metadata={"phase": "v5", "package": "codex_dossier.current", "model_policy": "nano_only"},
+    )
+    codex_local_vs_cohort = build_paired_candidate_comparison(
+        codex_manifest,
+        comparison_id="comparison.transfer_cohort.codex.local_vs_cohort.001",
+        parent_candidate_id=codex_package_candidate.candidate_id,
+        child_candidate_id=codex_cohort_candidate.candidate_id,
+        outcome="win",
+        compared_sample_ids=codex_manifest.sample_ids(),
+        held_out_sample_ids=codex_manifest.hidden_hold_sample_ids(),
+        trial_count=1,
+        rationale="The cohort-aware Codex candidate improves the shared transfer subset while preserving package-local boundedness.",
+        metric_deltas={
+            "guidance_clarity_delta": 0.03,
+            "bounded_edit_honesty_delta": 0.04,
+            "package_scope_integrity_delta": 0.02,
+            "transfer_claim_support_delta": 0.07,
+        },
+        better_candidate_id=codex_cohort_candidate.candidate_id,
+        metadata={"phase": "v5", "package": "codex_dossier.current", "model_policy": "nano_only"},
+    )
+
+    opencode_atomic_vs_local = build_paired_candidate_comparison(
+        opencode_manifest,
+        comparison_id="comparison.transfer_cohort.opencode.atomic_vs_local.001",
+        parent_candidate_id=opencode["baseline_candidate"].candidate_id,
+        child_candidate_id=opencode_package_candidate.candidate_id,
+        outcome="win",
+        compared_sample_ids=opencode_manifest.sample_ids(),
+        held_out_sample_ids=opencode_manifest.hidden_hold_sample_ids(),
+        trial_count=1,
+        rationale="The V4 local OpenCode package candidate improves the shared guidance and bounded-edit subset over the atomic baseline under Nano-only reevaluation.",
+        metric_deltas={
+            "guidance_clarity_delta": 0.09,
+            "bounded_edit_honesty_delta": 0.07,
+            "package_scope_integrity_delta": 0.05,
+        },
+        better_candidate_id=opencode_package_candidate.candidate_id,
+        metadata={"phase": "v5", "package": "opencode_1_2_17.current", "model_policy": "nano_only"},
+    )
+    opencode_local_vs_cohort = build_paired_candidate_comparison(
+        opencode_manifest,
+        comparison_id="comparison.transfer_cohort.opencode.local_vs_cohort.001",
+        parent_candidate_id=opencode_package_candidate.candidate_id,
+        child_candidate_id=opencode_cohort_candidate.candidate_id,
+        outcome="non_inferior",
+        compared_sample_ids=opencode_manifest.sample_ids(),
+        held_out_sample_ids=opencode_manifest.hidden_hold_sample_ids(),
+        trial_count=1,
+        rationale="The cohort-aware OpenCode candidate stays non-inferior locally while strengthening the shared transfer claim under the Nano-only cohort policy.",
+        metric_deltas={
+            "guidance_clarity_delta": 0.02,
+            "bounded_edit_honesty_delta": 0.03,
+            "package_scope_integrity_delta": 0.01,
+            "transfer_claim_support_delta": 0.08,
+        },
+        better_candidate_id=opencode_cohort_candidate.candidate_id,
+        metadata={"phase": "v5", "package": "opencode_1_2_17.current", "model_policy": "nano_only"},
+    )
+
+    codex_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreakdown.transfer_cohort.codex.shared.001",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=codex_manifest.manifest_id,
+        candidate_id=codex_cohort_candidate.candidate_id,
+        per_sample_components={
+            "sample.support_execution_tool_guidance_coding_overlay.train.001": {
+                "guidance_clarity": 0.87,
+                "bounded_edit_honesty": 0.96,
+                "package_scope_integrity": 0.99,
+                "mutation_cost": 0.0,
+            },
+            "sample.support_execution_tool_guidance_coding_overlay.validation.001": {
+                "guidance_clarity": 0.84,
+                "bounded_edit_honesty": 0.95,
+                "package_scope_integrity": 0.98,
+                "mutation_cost": 0.0,
+            },
+            "sample.support_execution_tool_guidance_coding_overlay.hold.001": {
+                "guidance_clarity": 0.82,
+                "bounded_edit_honesty": 0.97,
+                "package_scope_integrity": 1.0,
+                "mutation_cost": 0.0,
+            },
+            "sample.support_execution_tool_guidance_coding_overlay.regression.001": {
+                "guidance_clarity": 0.8,
+                "bounded_edit_honesty": 0.96,
+                "package_scope_integrity": 1.0,
+                "mutation_cost": 0.0,
+            },
+        },
+        per_bucket_components={
+            "tool-guidance": {"guidance_clarity": 0.87},
+            "bounded-edit": {"bounded_edit_honesty": 0.96, "package_scope_integrity": 0.99},
+        },
+        aggregate_objectives={
+            "guidance_clarity": 0.8325,
+            "bounded_edit_honesty": 0.96,
+            "package_scope_integrity": 0.9925,
+            "mutation_cost": 0.0,
+            "eligible_for_promotion": False,
+        },
+        uncertainty_summary={"stochasticity_class": "deterministic", "trial_count": 1, "blocked_for_uncertainty": False},
+        blocked_components={},
+        signal_status={
+            "executable_checks": {"status": "pass", "authority": "primary"},
+            "semantic_judge": {"status": "pass", "authority": "advisory"},
+            "transfer_claim_review": {"status": "required", "authority": "hard_gate"},
+        },
+        slice_status={
+            codex_package_slice: {"status": "pass", "promotion_role": "required"},
+            shared_model_tier_slice: {"status": "pass", "promotion_role": "required"},
+        },
+        member_family_breakdowns={
+            "family.support_execution.v2": {"bounded_edit_honesty": 0.96},
+            "family.tool_guidance.v2": {"guidance_clarity": 0.8325},
+            "family.coding_overlay.v2": {"package_scope_integrity": 0.9925},
+        },
+        cross_family_blocked_components={},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/transfer_cohort/codex_objective_breakdown.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "phase": "v5",
+            "package": "codex_dossier.current",
+            "transfer_cohort_id": cohort.cohort_id,
+            "applicability_scope_status": "bounded",
+            "member_family_attribution": {
+                "family.support_execution.v2": {"status": "present", "drivers": ["bounded_edit_honesty"]},
+                "family.tool_guidance.v2": {"status": "present", "drivers": ["guidance_clarity"]},
+                "family.coding_overlay.v2": {"status": "present", "drivers": ["package_scope_integrity"]},
+            },
+        },
+    )
+
+    opencode_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreakdown.transfer_cohort.opencode.shared.001",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=opencode_manifest.manifest_id,
+        candidate_id=opencode_cohort_candidate.candidate_id,
+        per_sample_components={
+            "sample.opencode_prompt_config_tool_guidance.train.001": {
+                "guidance_clarity": 0.85,
+                "bounded_edit_honesty": 0.95,
+                "package_scope_integrity": 0.98,
+                "mutation_cost": 0.0,
+            },
+            "sample.opencode_prompt_config_tool_guidance.validation.001": {
+                "guidance_clarity": 0.83,
+                "bounded_edit_honesty": 0.94,
+                "package_scope_integrity": 0.97,
+                "mutation_cost": 0.0,
+            },
+            "sample.opencode_prompt_config_tool_guidance.hold.001": {
+                "guidance_clarity": 0.8,
+                "bounded_edit_honesty": 0.96,
+                "package_scope_integrity": 0.98,
+                "mutation_cost": 0.0,
+            },
+            "sample.opencode_prompt_config_tool_guidance.regression.001": {
+                "guidance_clarity": 0.79,
+                "bounded_edit_honesty": 0.95,
+                "package_scope_integrity": 0.98,
+                "mutation_cost": 0.0,
+            },
+        },
+        per_bucket_components={
+            "tool-guidance": {"guidance_clarity": 0.85},
+            "bounded-edit": {"bounded_edit_honesty": 0.95, "package_scope_integrity": 0.98},
+        },
+        aggregate_objectives={
+            "guidance_clarity": 0.8175,
+            "bounded_edit_honesty": 0.95,
+            "package_scope_integrity": 0.9775,
+            "mutation_cost": 0.0,
+            "eligible_for_promotion": False,
+        },
+        uncertainty_summary={"stochasticity_class": "deterministic", "trial_count": 1, "blocked_for_uncertainty": False},
+        blocked_components={},
+        signal_status={
+            "executable_checks": {"status": "pass", "authority": "primary"},
+            "semantic_judge": {"status": "pass", "authority": "advisory"},
+            "transfer_claim_review": {"status": "required", "authority": "hard_gate"},
+        },
+        slice_status={
+            opencode_package_slice: {"status": "pass", "promotion_role": "required"},
+            shared_model_tier_slice: {"status": "pass", "promotion_role": "required"},
+        },
+        member_family_breakdowns={
+            "family.opencode_prompt_pack.v4": {"guidance_clarity": 0.8175},
+            "family.opencode_bounded_config.v4": {"bounded_edit_honesty": 0.95},
+            "family.opencode_tool_guidance_pack.v4": {"package_scope_integrity": 0.9775},
+        },
+        cross_family_blocked_components={},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/transfer_cohort/opencode_objective_breakdown.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={
+            "phase": "v5",
+            "package": "opencode_1_2_17.current",
+            "transfer_cohort_id": cohort.cohort_id,
+            "applicability_scope_status": "bounded",
+            "member_family_attribution": {
+                "family.opencode_prompt_pack.v4": {"status": "present", "drivers": ["guidance_clarity"]},
+                "family.opencode_bounded_config.v4": {"status": "present", "drivers": ["bounded_edit_honesty"]},
+                "family.opencode_tool_guidance_pack.v4": {"status": "present", "drivers": ["package_scope_integrity"]},
+            },
+        },
+    )
+
+    cohort_status = {
+        cohort.cohort_id: {
+            "status": "transfer_supported",
+            "packages_covered": ["codex_dossier.current", "opencode_1_2_17.current"],
+            "model_policy": "nano_only",
+            "shared_family_emphasis": list(cohort.claim_scope["shared_family_emphasis"]),
+            "hidden_hold_per_package": True,
+        }
+    }
+
+    codex_summary = build_promotion_evidence_summary(
+        summary_id="summary.transfer_cohort.codex.shared.001",
+        candidate_id=codex_cohort_candidate.candidate_id,
+        benchmark_manifest=codex_manifest,
+        comparison_results=[codex_atomic_vs_local, codex_local_vs_cohort],
+        evaluation_suite=evaluation_suite,
+        objective_suite=objective_suite,
+        family_composition=codex_composition,
+        search_space=codex_search_space,
+        transfer_cohorts=[cohort],
+        objective_breakdown_results=[codex_breakdown],
+        claim_tier="transfer_supported",
+        transfer_cohort_status=cohort_status,
+        review_required=True,
+        metadata={"phase": "v5", "package": "codex_dossier.current"},
+    )
+    opencode_summary = build_promotion_evidence_summary(
+        summary_id="summary.transfer_cohort.opencode.shared.001",
+        candidate_id=opencode_cohort_candidate.candidate_id,
+        benchmark_manifest=opencode_manifest,
+        comparison_results=[opencode_atomic_vs_local, opencode_local_vs_cohort],
+        evaluation_suite=evaluation_suite,
+        objective_suite=objective_suite,
+        family_composition=opencode_composition,
+        search_space=opencode_search_space,
+        transfer_cohorts=[cohort],
+        objective_breakdown_results=[opencode_breakdown],
+        claim_tier="transfer_supported",
+        transfer_cohort_status=cohort_status,
+        review_required=True,
+        metadata={"phase": "v5", "package": "opencode_1_2_17.current"},
+    )
+
+    codex_staged_request_payload = codex["staged_request"].to_dict()
+    codex_staged_request_payload["metadata"] = {
+        **dict(codex_staged_request_payload.get("metadata") or {}),
+        "phase": "v5",
+        "transfer_cohort_ids": [cohort.cohort_id],
+        "claim_tier": "transfer_supported",
+        "model_policy": "nano_only",
+    }
+    codex_staged_request = StagedOptimizerRequest.from_dict(codex_staged_request_payload)
+    codex_staged_result_payload = codex["staged_result"].to_dict()
+    codex_staged_result_payload["metadata"] = {
+        **dict(codex_staged_result_payload.get("metadata") or {}),
+        "phase": "v5",
+        "transfer_cohort_ids": [cohort.cohort_id],
+        "claim_tier": "transfer_supported",
+        "model_policy": "nano_only",
+    }
+    codex_staged_result = ReflectiveParetoBackendResult.from_dict(codex_staged_result_payload)
+
+    opencode_staged_request_payload = opencode["staged_request"].to_dict()
+    opencode_staged_request_payload["metadata"] = {
+        **dict(opencode_staged_request_payload.get("metadata") or {}),
+        "phase": "v5",
+        "transfer_cohort_ids": [cohort.cohort_id],
+        "claim_tier": "transfer_supported",
+        "model_policy": "nano_only",
+    }
+    opencode_staged_request = StagedOptimizerRequest.from_dict(opencode_staged_request_payload)
+    opencode_staged_result_payload = opencode["staged_result"].to_dict()
+    opencode_staged_result_payload["metadata"] = {
+        **dict(opencode_staged_result_payload.get("metadata") or {}),
+        "phase": "v5",
+        "transfer_cohort_ids": [cohort.cohort_id],
+        "claim_tier": "transfer_supported",
+        "model_policy": "nano_only",
+    }
+    opencode_staged_result = ReflectiveParetoBackendResult.from_dict(opencode_staged_result_payload)
+
+    codex_result = BenchmarkRunResult(
+        run_id="benchmark_run.transfer_cohort.codex.v5",
+        manifest_id=codex_manifest.manifest_id,
+        candidate_ids=[
+            codex["baseline_candidate"].candidate_id,
+            codex_package_candidate.candidate_id,
+            codex_cohort_candidate.candidate_id,
+        ],
+        comparison_results=[codex_atomic_vs_local, codex_local_vs_cohort],
+        aggregate_metrics={
+            "atomic_score": 0.71,
+            "local_package_score": 0.83,
+            "cohort_candidate_score": 0.87,
+        },
+        bucket_outcomes={
+            "tool-guidance": {"outcome": "cohort_candidate_win"},
+            "bounded-edit": {"outcome": "cohort_candidate_win"},
+        },
+        variance_summary={"trial_count": 1, "stochasticity_class": "deterministic", "model_policy": "nano_only"},
+        cost_support_evidence_slices={"nano_only": True, "shared_transfer_subset": True},
+        transfer_cohort_status=cohort_status,
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/transfer_cohort/codex_benchmark_summary.json",
+                media_type="application/json",
+            )
+        ],
+        promotion_readiness_summary={
+            "claim_tier": "transfer_supported",
+            "local_claim_tier": "package_local",
+            "transfer_cohort_ids": [cohort.cohort_id],
+            "transfer_cohort_status": cohort_status,
+            "promotion_summary_id": codex_summary.summary_id,
+        },
+        metadata={
+            "phase": "v5",
+            "package": "codex_dossier.current",
+            "transfer_cohort_id": cohort.cohort_id,
+            "model_policy": "nano_only",
+        },
+    )
+
+    opencode_result = BenchmarkRunResult(
+        run_id="benchmark_run.transfer_cohort.opencode.v5",
+        manifest_id=opencode_manifest.manifest_id,
+        candidate_ids=[
+            opencode["baseline_candidate"].candidate_id,
+            opencode_package_candidate.candidate_id,
+            opencode_cohort_candidate.candidate_id,
+        ],
+        comparison_results=[opencode_atomic_vs_local, opencode_local_vs_cohort],
+        aggregate_metrics={
+            "atomic_score": 0.74,
+            "local_package_score": 0.82,
+            "cohort_candidate_score": 0.84,
+        },
+        bucket_outcomes={
+            "tool-guidance": {"outcome": "cohort_candidate_non_inferior"},
+            "bounded-edit": {"outcome": "cohort_candidate_win"},
+        },
+        variance_summary={"trial_count": 1, "stochasticity_class": "deterministic", "model_policy": "nano_only"},
+        cost_support_evidence_slices={"nano_only": True, "shared_transfer_subset": True},
+        transfer_cohort_status=cohort_status,
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/transfer_cohort/opencode_benchmark_summary.json",
+                media_type="application/json",
+            )
+        ],
+        promotion_readiness_summary={
+            "claim_tier": "transfer_supported",
+            "local_claim_tier": "package_local",
+            "transfer_cohort_ids": [cohort.cohort_id],
+            "transfer_cohort_status": cohort_status,
+            "promotion_summary_id": opencode_summary.summary_id,
+        },
+        metadata={
+            "phase": "v5",
+            "package": "opencode_1_2_17.current",
+            "transfer_cohort_id": cohort.cohort_id,
+            "model_policy": "nano_only",
+        },
+    )
+
+    return {
+        "transfer_cohort": cohort,
+        "evaluation_suite": evaluation_suite,
+        "objective_suite": objective_suite,
+        "codex_cell": {
+            "package_example": codex,
+            "manifest": codex_manifest,
+            "cohort_candidate": codex_cohort_candidate,
+            "objective_breakdown_result": codex_breakdown,
+            "promotion_summary": codex_summary,
+            "benchmark_result": codex_result,
+            "staged_request": codex_staged_request,
+            "staged_result": codex_staged_result,
+        },
+        "opencode_cell": {
+            "package_example": opencode,
+            "manifest": opencode_manifest,
+            "cohort_candidate": opencode_cohort_candidate,
+            "objective_breakdown_result": opencode_breakdown,
+            "promotion_summary": opencode_summary,
+            "benchmark_result": opencode_result,
+            "staged_request": opencode_staged_request,
+            "staged_result": opencode_staged_result,
+        },
+        "cohort_rollup": {
+            "cohort_id": cohort.cohort_id,
+            "claim_tier": "transfer_supported",
+            "status": "supported",
+            "packages_covered": ["codex_dossier.current", "opencode_1_2_17.current"],
+            "model_policy": "nano_only",
+            "shared_family_emphasis": list(cohort.claim_scope["shared_family_emphasis"]),
+        },
+    }
+
+
+def build_codex_opencode_transfer_cohort_example_payload() -> Dict[str, object]:
+    example = build_codex_opencode_transfer_cohort_example()
+    return {
+        "transfer_cohort": example["transfer_cohort"].to_dict(),
+        "evaluation_suite": example["evaluation_suite"].to_dict(),
+        "objective_suite": example["objective_suite"].to_dict(),
+        "codex_cell": {
+            "manifest": example["codex_cell"]["manifest"].to_dict(),
+            "cohort_candidate": example["codex_cell"]["cohort_candidate"].to_dict(),
+            "objective_breakdown_result": example["codex_cell"]["objective_breakdown_result"].to_dict(),
+            "promotion_summary": example["codex_cell"]["promotion_summary"].to_dict(),
+            "benchmark_result": example["codex_cell"]["benchmark_result"].to_dict(),
+            "staged_request": example["codex_cell"]["staged_request"].to_dict(),
+            "staged_result": example["codex_cell"]["staged_result"].to_dict(),
+        },
+        "opencode_cell": {
+            "manifest": example["opencode_cell"]["manifest"].to_dict(),
+            "cohort_candidate": example["opencode_cell"]["cohort_candidate"].to_dict(),
+            "objective_breakdown_result": example["opencode_cell"]["objective_breakdown_result"].to_dict(),
+            "promotion_summary": example["opencode_cell"]["promotion_summary"].to_dict(),
+            "benchmark_result": example["opencode_cell"]["benchmark_result"].to_dict(),
+            "staged_request": example["opencode_cell"]["staged_request"].to_dict(),
+            "staged_result": example["opencode_cell"]["staged_result"].to_dict(),
+        },
+        "cohort_rollup": dict(example["cohort_rollup"]),
+    }
 
 
 def build_staged_backend_comparison_example() -> Dict[str, object]:

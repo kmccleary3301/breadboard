@@ -9,8 +9,11 @@ from agentic_coder_prototype.optimize import (
     ObjectiveSuiteManifest,
     SearchSpaceManifest,
     TargetFamilyManifest,
+    TransferCohortManifest,
     build_coding_overlay_benchmark_example,
     build_coding_overlay_benchmark_example_payload,
+    build_codex_opencode_transfer_cohort_example,
+    build_codex_opencode_transfer_cohort_example_payload,
     build_opencode_prompt_config_tool_guidance_package_example,
     build_opencode_prompt_config_tool_guidance_package_example_payload,
     build_opencode_prompt_config_tool_guidance_verifier_follow_on_example,
@@ -317,6 +320,27 @@ def test_transfer_slice_manifest_round_trip() -> None:
     assert round_tripped.visibility == "hidden_hold"
 
 
+def test_transfer_cohort_manifest_round_trip() -> None:
+    cohort = TransferCohortManifest(
+        cohort_id="cohort.test.transfer.v5",
+        cohort_kind="bounded_two_package_transfer",
+        member_slice_ids=[
+            "package.codex_dossier.current",
+            "package.opencode_1_2_17.current",
+            "model_tier.nano_first_openai",
+        ],
+        claim_scope={"package_ids": ["codex_dossier.current", "opencode_1_2_17.current"]},
+        coverage_policy={"requires_hidden_hold_per_package": True},
+        metadata={"phase": "v5"},
+    )
+
+    round_tripped = TransferCohortManifest.from_dict(cohort.to_dict())
+
+    assert round_tripped.cohort_id == cohort.cohort_id
+    assert round_tripped.cohort_kind == "bounded_two_package_transfer"
+    assert round_tripped.member_slice_ids == cohort.member_slice_ids
+
+
 def test_support_execution_tool_guidance_coding_overlay_package_round_trip() -> None:
     example = build_support_execution_tool_guidance_coding_overlay_package_example()
     payload = build_support_execution_tool_guidance_coding_overlay_package_example_payload()
@@ -406,4 +430,43 @@ def test_opencode_package_verifier_follow_on_stays_narrow_and_outside_darwin_ont
     assert _payload_contains_forbidden_key(
         payload,
         {"campaign_id", "archive_id", "island_id", "genealogy_id", "reward_suite_id"},
+    ) is False
+
+
+def test_codex_opencode_transfer_cohort_round_trip() -> None:
+    example = build_codex_opencode_transfer_cohort_example()
+    payload = build_codex_opencode_transfer_cohort_example_payload()
+
+    cohort = TransferCohortManifest.from_dict(payload["transfer_cohort"])
+    evaluation_suite = EvaluationSuiteManifest.from_dict(payload["evaluation_suite"])
+    objective_suite = ObjectiveSuiteManifest.from_dict(payload["objective_suite"])
+
+    assert cohort.cohort_id == "cohort.codex_dossier_current.opencode_1_2_17.v5"
+    assert cohort.member_slice_ids == [
+        "package.codex_dossier.current",
+        "package.opencode_1_2_17.current",
+        "model_tier.nano_first_openai",
+    ]
+    assert evaluation_suite.metadata["evaluation_truth"] == "primary"
+    assert objective_suite.promotion_annotations["requires_transfer_cohort_support"] is True
+    assert payload["codex_cell"]["promotion_summary"]["claim_tier"] == "transfer_supported"
+    assert payload["opencode_cell"]["promotion_summary"]["claim_tier"] == "transfer_supported"
+    assert payload["cohort_rollup"]["status"] == "supported"
+    assert example["codex_cell"]["benchmark_result"].transfer_cohort_status[cohort.cohort_id]["model_policy"] == "nano_only"
+
+
+def test_transfer_cohort_payload_stays_narrow_and_outside_darwin_reward_ontology() -> None:
+    payload = build_codex_opencode_transfer_cohort_example_payload()
+
+    assert payload["evaluation_suite"]["metadata"]["reward_like_ranking"] == "private_only"
+    assert _payload_contains_forbidden_key(
+        payload,
+        {
+            "campaign_id",
+            "archive_id",
+            "island_id",
+            "genealogy_id",
+            "reward_suite_id",
+            "search_policy_manifest_id",
+        },
     ) is False
