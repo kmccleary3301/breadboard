@@ -14,6 +14,7 @@ from agentic_coder_prototype.optimize import (
     PromotionDecision,
     PromotionEvidenceSummary,
     PromotionRecord,
+    build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
     build_codex_opencode_transfer_cohort_example,
     build_codex_dossier_promotion_examples,
     build_codex_dossier_promotion_examples_payload,
@@ -705,3 +706,16 @@ def test_transfer_cohort_claim_tier_and_status_are_explicit() -> None:
     assert opencode_summary.transfer_cohort_ids == [cohort_id]
     assert codex_summary.transfer_cohort_status[cohort_id]["status"] == "transfer_supported"
     assert opencode_summary.transfer_cohort_status[cohort_id]["status"] == "transfer_supported"
+
+
+def test_transfer_cohort_follow_on_reviewability_and_audit_are_explicit() -> None:
+    example = build_codex_opencode_replay_config_transfer_cohort_follow_on_example()
+    codex_summary = example["codex_cell"]["promotion_summary"]
+    opencode_summary = example["opencode_cell"]["promotion_summary"]
+    cohort_id = example["transfer_cohort"].cohort_id
+
+    assert codex_summary.review_required is True
+    assert opencode_summary.review_required is True
+    assert codex_summary.claim_tier == "transfer_supported"
+    assert opencode_summary.transfer_cohort_status[cohort_id]["mini_audit_triggered"] is True
+    assert opencode_summary.metadata["follow_on"] is True

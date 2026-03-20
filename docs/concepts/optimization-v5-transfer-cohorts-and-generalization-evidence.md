@@ -83,6 +83,28 @@ This is the right first proving ground because:
 - it is still Nano-valid
 - it avoids widening to 4-family local packages before transfer/generalization is real
 
+## Second bounded follow-on
+
+The next bounded V5 proof stays on the same Codex ↔ OpenCode package pair.
+
+It does **not** widen package count or family count. Instead, it changes the shared emphasis to:
+
+- replay-safe prompt/config coherence
+- package-scope integrity
+
+This follow-on matters because it teaches something the first cohort does not:
+
+- whether a second, stricter shared emphasis can stay reviewable on the same pair
+- whether Nano-first methodology can remain fair when one package needs an audited Mini tie-break
+- whether replay-safe config/prompt pressure transfers honestly without widening claims
+
+The follow-on is still bounded:
+
+- Codex remains Nano-only
+- OpenCode may use Mini only as an audited tie-break on an ambiguous hidden-hold semantic slice
+- the claim tier remains `transfer_supported`
+- no `cohort_supported` claim is unlocked by this tranche
+
 ## Cost policy
 
 V5 keeps the same model doctrine:
@@ -95,6 +117,13 @@ In the first cohort tranche:
 - the baseline cohort study is Nano-only
 - Mini is documented but disabled for the first proof
 - fairness and stopping rules are explicit in suite metadata and cohort docs
+
+In the second bounded follow-on:
+
+- Nano remains the default for both packages
+- Codex still stays Nano-only
+- OpenCode may escalate to Mini only after an explicit Nano ambiguity
+- the escalation reason must be auditable in benchmark and promotion evidence
 
 ## What stays private
 

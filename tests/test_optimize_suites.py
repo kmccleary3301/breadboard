@@ -10,6 +10,8 @@ from agentic_coder_prototype.optimize import (
     SearchSpaceManifest,
     TargetFamilyManifest,
     TransferCohortManifest,
+    build_codex_opencode_replay_config_transfer_cohort_follow_on_example,
+    build_codex_opencode_replay_config_transfer_cohort_follow_on_example_payload,
     build_coding_overlay_benchmark_example,
     build_coding_overlay_benchmark_example_payload,
     build_codex_opencode_transfer_cohort_example,
@@ -470,3 +472,33 @@ def test_transfer_cohort_payload_stays_narrow_and_outside_darwin_reward_ontology
             "search_policy_manifest_id",
         },
     ) is False
+
+
+def test_transfer_cohort_follow_on_round_trip() -> None:
+    example = build_codex_opencode_replay_config_transfer_cohort_follow_on_example()
+    payload = build_codex_opencode_replay_config_transfer_cohort_follow_on_example_payload()
+
+    cohort = TransferCohortManifest.from_dict(payload["transfer_cohort"])
+    evaluation_suite = EvaluationSuiteManifest.from_dict(payload["evaluation_suite"])
+    objective_suite = ObjectiveSuiteManifest.from_dict(payload["objective_suite"])
+
+    assert cohort.cohort_id == "cohort.codex_dossier_current.opencode_1_2_17.replay_config.v5"
+    assert cohort.metadata["follow_on"] is True
+    assert evaluation_suite.rerun_policy["escalation_policy"] == "audited_semantic_tie_break_only"
+    assert objective_suite.metadata["reward_like_ranking"] == "private_only"
+    assert payload["cohort_rollup"]["status"] == "supported"
+    assert payload["cohort_rollup"]["mini_audit_triggered"] is True
+    assert example["opencode_cell"]["benchmark_result"].transfer_cohort_status[cohort.cohort_id]["model_policy"] == "nano_first"
+
+
+def test_transfer_cohort_follow_on_adds_distinct_methodology_value() -> None:
+    payload = build_codex_opencode_replay_config_transfer_cohort_follow_on_example_payload()
+
+    assert payload["transfer_cohort"]["claim_scope"]["shared_family_emphasis"] == [
+        "replay_safe_prompt_config_coherence",
+        "package_scope_integrity",
+    ]
+    assert payload["evaluation_suite"]["signal_channels"]["model_tier_audit"]["source_kind"] == "model_policy_audit"
+    assert payload["opencode_cell"]["promotion_summary"]["transfer_cohort_status"][
+        payload["transfer_cohort"]["cohort_id"]
+    ]["mini_audit_triggered"] is True
