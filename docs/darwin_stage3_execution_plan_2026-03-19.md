@@ -24,6 +24,13 @@ References:
 - `docs/darwin_stage3_late_review_2026-03-19.md`
 - `docs/darwin_stage3_late_gate_2026-03-19.md`
 - `docs/darwin_stage3_remaining_to_close_2026-03-19.md`
+- `docs/darwin_stage3_closeout_execution_plan_2026-03-19.md`
+- `docs/darwin_stage3_canonical_artifacts_2026-03-19.md`
+- `docs/darwin_stage3_claim_boundary_2026-03-19.md`
+- `docs/darwin_stage3_signoff_2026-03-19.md`
+- `docs/darwin_stage3_completion_gate_2026-03-19.md`
+- `docs/darwin_stage3_future_roadmap_handoff_2026-03-19.md`
+- `docs/darwin_stage3_main_verification_2026-03-19.md`
 - `docs_tmp/DARWIN/BB_DARWIN_PHASE_3_PLANNER_RESPONSE.md`
 
 ## 1. Purpose
@@ -208,7 +215,7 @@ Every Stage-3 tranche should require:
 
 ## 9. Current tranche state
 
-The bounded real-inference tranche is complete, the first component-promotion / bounded-transfer tranche is complete, and the comparative consolidation / pre-closeout tranche is now complete.
+The bounded real-inference tranche is complete, the first component-promotion / bounded-transfer tranche is complete, the comparative consolidation / pre-closeout tranche is complete, and Stage 3 is in final closeout.
 
 Current Stage-3 state now includes:
 
@@ -220,6 +227,7 @@ Current Stage-3 state now includes:
 - canonical component registry and scorecard
 - explicit no-second-family-yet decision
 - consolidated verification bundle and late-Stage-3 gate
+- final closeout plan, artifact freeze, signoff, and completion gate
 
 Current tranche-1 slice reference:
 
@@ -258,3 +266,10 @@ Current tranche-1 slice reference:
 - `docs/darwin_stage3_late_review_2026-03-19.md`
 - `docs/darwin_stage3_late_gate_2026-03-19.md`
 - `docs/darwin_stage3_remaining_to_close_2026-03-19.md`
+- `docs/darwin_stage3_closeout_execution_plan_2026-03-19.md`
+- `docs/darwin_stage3_canonical_artifacts_2026-03-19.md`
+- `docs/darwin_stage3_claim_boundary_2026-03-19.md`
+- `docs/darwin_stage3_signoff_2026-03-19.md`
+- `docs/darwin_stage3_completion_gate_2026-03-19.md`
+- `docs/darwin_stage3_future_roadmap_handoff_2026-03-19.md`
+- `docs/darwin_stage3_main_verification_2026-03-19.md`
