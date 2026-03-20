@@ -8,6 +8,7 @@ ATP remains:
 - an audit lane
 - a semantic-discipline check
 - a pressure test for claim and comparison hygiene
+- an audit-only read on the bounded real-inference tranche
 
 ATP does not drive:
 

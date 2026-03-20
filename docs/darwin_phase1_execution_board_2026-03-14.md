@@ -55,3 +55,8 @@ Date: 2026-03-14
 - optimize-object mapping: `docs/darwin_stage3_optimize_object_mapping_2026-03-19.md`
 - uptake review: `docs/darwin_stage3_tranche1_uptake_review_2026-03-19.md`
 - uptake gate: `docs/darwin_stage3_tranche1_uptake_gate_2026-03-19.md`
+- bounded real-inference execution plan: `docs/darwin_stage3_bounded_inference_execution_plan_2026-03-19.md`
+- bounded real-inference status: `docs/darwin_stage3_bounded_inference_status_2026-03-19.md`
+- bounded real-inference review: `docs/darwin_stage3_bounded_inference_review_2026-03-19.md`
+- bounded real-inference replay note: `docs/darwin_stage3_bounded_inference_replay_note_2026-03-19.md`
+- component-entry gate: `docs/darwin_stage3_component_entry_gate_2026-03-19.md`

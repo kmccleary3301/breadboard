@@ -55,6 +55,11 @@ Phase-1 is closed as the internal operational baseline.
 - `docs/darwin_stage3_optimize_object_mapping_2026-03-19.md`
 - `docs/darwin_stage3_tranche1_uptake_review_2026-03-19.md`
 - `docs/darwin_stage3_tranche1_uptake_gate_2026-03-19.md`
+- `docs/darwin_stage3_bounded_inference_execution_plan_2026-03-19.md`
+- `docs/darwin_stage3_bounded_inference_status_2026-03-19.md`
+- `docs/darwin_stage3_bounded_inference_review_2026-03-19.md`
+- `docs/darwin_stage3_bounded_inference_replay_note_2026-03-19.md`
+- `docs/darwin_stage3_component_entry_gate_2026-03-19.md`
 
 ## What Phase-2 should not reopen
 
