@@ -26,14 +26,14 @@ References:
 - `8` valid matched comparisons
 - `8` claim-eligible matched comparisons
 - `4` `CompoundingCaseV1` rows
-- `2` `reuse_lift`
-- `2` `no_lift`
+- `1` `reuse_lift`
+- `3` `no_lift`
 
 ## Current interpretation
 
 The Stage-5 protocol is now denser than the initial canary and no longer purely negative.
 
-Repo_SWE now shows a mixed but real warm-start vs family-lockout result. The tranche still does not prove scalable compounding. It does prove that the Stage-5 protocol can surface both positive and negative family-reuse outcomes under live-provider economics.
+Repo_SWE now shows a mixed but real warm-start vs family-lockout result. The tranche still does not prove scalable compounding. It does prove that the Stage-5 protocol can surface both positive and negative family-reuse outcomes under live-provider economics, with at least one positive reuse-lift case under the current bounded slice.
 
 ## Route/economics note
 

@@ -27,6 +27,7 @@ Repo_SWE now emits valid live `cold_start`, `warm_start`, and `family_lockout` r
 No.
 
 The current result is mixed: `2` `reuse_lift`, `2` `no_lift`. That is enough to prove the protocol can distinguish positive from non-positive family reuse. It is not enough to claim stable compounding rate.
+The current result is mixed: `1` `reuse_lift`, `3` `no_lift`. That is enough to prove the protocol can distinguish positive from non-positive family reuse. It is not enough to claim stable compounding rate.
 
 ### 4. Should Systems remain canary-only?
 
