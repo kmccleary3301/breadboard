@@ -144,3 +144,5 @@ Date: 2026-03-14
 - secondary-lane status: `docs/darwin_stage5_secondary_lane_status_2026-03-21.md`
 - multi-lane slice: `docs/darwin_stage5_multilane_slice_2026-03-21.md`
 - multi-lane status: `docs/darwin_stage5_multilane_status_2026-03-21.md`
+- multi-lane review: `docs/darwin_stage5_multilane_review_2026-03-21.md`
+- multi-lane gate: `docs/darwin_stage5_multilane_gate_2026-03-21.md`
