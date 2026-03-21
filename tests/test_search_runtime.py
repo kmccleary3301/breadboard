@@ -32,6 +32,8 @@ from agentic_coder_prototype.search import (
     build_judge_reduce_gate_example_payload,
     build_pacore_search_runtime_example,
     build_pacore_search_runtime_example_payload,
+    build_post_v2_study_01_verifier_patch_branch,
+    build_post_v2_study_01_verifier_patch_branch_payload,
     SearchRun,
     SearchTrajectoryExport,
     SearchWorkspaceSnapshot,
@@ -463,3 +465,27 @@ def test_dag_v2_stop_go_synthesis_payload_round_trips() -> None:
     assert payload["darwin_boundary"]["campaign_nouns_added_to_dag"] is False
     assert payload["rl_facing_note"]["training_framework_added"] is False
     assert payload["stop_go"]["async_public_mode_added"] is False
+
+
+def test_post_v2_study_01_verifier_patch_branch_is_recipe_level_pressure() -> None:
+    example = build_post_v2_study_01_verifier_patch_branch()
+    run = example["run"]
+
+    assert run.recipe_kind == "verifier_patch_branch_pressure_pass"
+    assert len(run.assessments) == 3
+    assert len(run.branch_states) == 3
+    assert example["outcome"].selected_candidate_id == example["repair_candidate_id"]
+    assert example["evidence"]["repeated_shape"] is False
+    assert example["evidence"]["future_v3_evidence"] is False
+    assert example["evidence"]["owner_boundary"] == "recipe_level"
+
+
+def test_post_v2_study_01_verifier_patch_branch_payload_round_trips() -> None:
+    payload = build_post_v2_study_01_verifier_patch_branch_payload()
+    run = SearchRun.from_dict(payload["run"])
+
+    assert run.recipe_kind == "verifier_patch_branch_pressure_pass"
+    assert len(run.assessments) == 3
+    assert payload["outcome"]["selected_candidate_id"] == payload["repair_candidate_id"]
+    assert payload["evidence"]["repeated_shape"] is False
+    assert payload["evidence"]["future_v3_evidence"] is False

@@ -1064,3 +1064,191 @@ def build_dag_v2_stop_go_synthesis_payload() -> Dict[str, object]:
         "rl_facing_note": dict(synthesis["rl_facing_note"]),
         "stop_go": dict(synthesis["stop_go"]),
     }
+
+
+def build_post_v2_study_01_verifier_patch_branch() -> Dict[str, object]:
+    base = build_stateful_branch_search_example()
+    run = base["run"]
+    merged_candidate = next(item for item in run.candidates if item.candidate_id == base["merged_branch"].candidate_id)
+    discarded_candidate = next(item for item in run.candidates if item.candidate_id == base["discarded_branch"].candidate_id)
+    repair_snapshot = SearchWorkspaceSnapshot(
+        snapshot_id=f"{run.search_id}.snapshot.branch.repair_patch",
+        search_id=run.search_id,
+        branch_id=f"{run.search_id}.branch.repair_patch",
+        artifact_ref=f"artifacts/search/{run.search_id}/repair_patch_snapshot.json",
+        parent_snapshot_id=base["merged_snapshot"].snapshot_id,
+        derived_from_candidate_id=merged_candidate.candidate_id,
+        metadata={"lane": "repair_patch_branch", "action": "patch_iterate"},
+    )
+    repair_candidate = SearchCandidate(
+        candidate_id=f"{run.search_id}.cand.branch.repair_patch",
+        search_id=run.search_id,
+        frontier_id=merged_candidate.frontier_id,
+        parent_ids=[merged_candidate.candidate_id],
+        round_index=merged_candidate.round_index,
+        depth=merged_candidate.depth + 1,
+        payload_ref=f"artifacts/search/{run.search_id}/repair_patch_candidate.json",
+        workspace_ref=repair_snapshot.snapshot_id,
+        score_vector={"correctness_score": 0.91, "patch_risk": 0.24},
+        usage={"prompt_tokens": 79, "completion_tokens": 41},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{run.search_id}/repair_patch_candidate.md",
+        metadata={"study_id": "study_01_verifier_patch_branch", "lane": "repair_patch_branch"},
+    )
+    repair_branch = SearchBranchState(
+        branch_id=repair_snapshot.branch_id,
+        search_id=run.search_id,
+        candidate_id=repair_candidate.candidate_id,
+        snapshot_ids=[repair_snapshot.snapshot_id],
+        head_snapshot_id=repair_snapshot.snapshot_id,
+        status="active",
+        metadata={"review_status": "pending", "study_id": "study_01_verifier_patch_branch"},
+    )
+    execute_event = SearchEvent(
+        event_id=f"{run.search_id}.event.execute.verifier_patch_branch",
+        search_id=run.search_id,
+        frontier_id=merged_candidate.frontier_id,
+        round_index=merged_candidate.round_index,
+        operator_kind="execute",
+        input_candidate_ids=[
+            merged_candidate.candidate_id,
+            discarded_candidate.candidate_id,
+            repair_candidate.candidate_id,
+        ],
+        output_candidate_ids=[
+            merged_candidate.candidate_id,
+            discarded_candidate.candidate_id,
+            repair_candidate.candidate_id,
+        ],
+        metadata={
+            "study_id": "study_01_verifier_patch_branch",
+            "branch_ids": [
+                base["merged_branch"].branch_id,
+                base["discarded_branch"].branch_id,
+                repair_branch.branch_id,
+            ],
+            "state_mode": "branch_local_patch_iteration",
+        },
+    )
+    verify_stub_event = SearchEvent(
+        event_id=f"{run.search_id}.event.verify.verifier_patch_branch",
+        search_id=run.search_id,
+        frontier_id=merged_candidate.frontier_id,
+        round_index=merged_candidate.round_index,
+        operator_kind="verify",
+        input_candidate_ids=[
+            merged_candidate.candidate_id,
+            discarded_candidate.candidate_id,
+            repair_candidate.candidate_id,
+        ],
+        output_candidate_ids=[repair_candidate.candidate_id],
+        metadata={
+            "study_id": "study_01_verifier_patch_branch",
+            "backend_kind": "exact_tests.v1",
+            "schema_kind": "code.test_report.v1",
+            "candidate_count": 3,
+            "branch_local_patch_pass": True,
+        },
+    )
+    study_run = SearchRun(
+        search_id=run.search_id,
+        recipe_kind="verifier_patch_branch_pressure_pass",
+        candidates=[*run.candidates, repair_candidate],
+        frontiers=list(run.frontiers),
+        events=[*run.events, execute_event, verify_stub_event],
+        messages=list(run.messages),
+        carry_states=list(run.carry_states),
+        workspace_snapshots=[*run.workspace_snapshots, repair_snapshot],
+        branch_states=[*run.branch_states, repair_branch],
+        metrics=run.metrics,
+        selected_candidate_id=run.selected_candidate_id,
+        metadata={**dict(run.metadata), "study_id": "study_01_verifier_patch_branch"},
+    )
+    gate_config = AssessmentGateConfig(
+        backend_kind="exact_tests.v1",
+        mode="require_before_select",
+        max_assessments=3,
+        required_verdicts=["pass"],
+        metadata={"study_id": "study_01_verifier_patch_branch", "phase": "post_v2_usage"},
+    )
+    registry = build_default_search_assessment_registry()
+    frontier_candidates = [merged_candidate, discarded_candidate, repair_candidate]
+    outcome = run_barriered_assessment_gate(
+        run=study_run,
+        registry=registry,
+        config=gate_config,
+        frontier_candidates=frontier_candidates,
+    )
+    events = [*study_run.events, outcome.gate_event]
+    if outcome.selection_event is not None:
+        events.append(outcome.selection_event)
+    gated_run = SearchRun(
+        search_id=study_run.search_id,
+        recipe_kind=study_run.recipe_kind,
+        candidates=list(study_run.candidates),
+        frontiers=list(study_run.frontiers),
+        events=events,
+        messages=list(study_run.messages),
+        carry_states=list(study_run.carry_states),
+        assessments=list(outcome.assessments),
+        workspace_snapshots=list(study_run.workspace_snapshots),
+        branch_states=list(study_run.branch_states),
+        metrics=study_run.metrics,
+        selected_candidate_id=outcome.selected_candidate_id,
+        metadata={
+            **dict(study_run.metadata),
+            "gate_mode": gate_config.mode,
+            "max_assessments": gate_config.max_assessments,
+            "terminated": outcome.terminated,
+        },
+    )
+    evidence = {
+        "easy": [
+            "branch-local patch candidates fit existing SearchCandidate and SearchBranchState records",
+            "exact verifier truth stays first-class through SearchAssessment",
+            "selection remains attributable to barriered assessment gates",
+        ],
+        "awkward": [
+            "grouping multiple verifier reports into one higher-level study summary is still a docs-level concern",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "recipe_level",
+    }
+    return {
+        "run": gated_run,
+        "gate_config": gate_config,
+        "outcome": outcome,
+        "repair_candidate_id": repair_candidate.candidate_id,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_01_verifier_patch_branch_payload() -> Dict[str, object]:
+    example = build_post_v2_study_01_verifier_patch_branch()
+    return {
+        "run": example["run"].to_dict(),
+        "gate_config": {
+            "backend_kind": example["gate_config"].backend_kind,
+            "mode": example["gate_config"].mode,
+            "max_assessments": example["gate_config"].max_assessments,
+            "required_verdicts": list(example["gate_config"].required_verdicts),
+            "metadata": dict(example["gate_config"].metadata),
+        },
+        "outcome": {
+            "pruned_candidate_ids": list(example["outcome"].pruned_candidate_ids),
+            "selected_candidate_id": example["outcome"].selected_candidate_id,
+            "terminated": example["outcome"].terminated,
+            "assessment_ids": [item.assessment_id for item in example["outcome"].assessments],
+        },
+        "repair_candidate_id": example["repair_candidate_id"],
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }

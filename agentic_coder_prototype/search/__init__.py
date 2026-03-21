@@ -41,6 +41,8 @@ from .examples import (
     build_stateful_branch_search_example_payload,
     build_typed_compaction_registry_example,
     build_typed_compaction_registry_example_payload,
+    build_post_v2_study_01_verifier_patch_branch,
+    build_post_v2_study_01_verifier_patch_branch_payload,
     build_verifier_guided_pressure_cell,
 )
 from .export import (
@@ -147,6 +149,8 @@ __all__ = [
     "build_stateful_branch_search_example_payload",
     "build_typed_compaction_registry_example",
     "build_typed_compaction_registry_example_payload",
+    "build_post_v2_study_01_verifier_patch_branch",
+    "build_post_v2_study_01_verifier_patch_branch_payload",
     "build_verifier_guided_pressure_cell",
     "export_search_trajectory",
     "run_barriered_assessment_gate",
