@@ -31,6 +31,27 @@ def test_build_stage5_search_policy_v2_consumes_promoted_family_state() -> None:
     assert policy["family_priors"][0]["source_operator_id"] == "mut.topology.single_to_pev_v1"
 
 
+def test_build_stage5_search_policy_v2_supports_systems_family_state() -> None:
+    policy = build_stage5_search_policy_v2(
+        lane_id="lane.systems",
+        budget_class="class_a",
+        family_rows=[
+            {
+                "family_id": "component_family.stage4.policy.policy.shadow_memory_enable_v1.lane.systems.v0",
+                "family_key": "policy.shadow_memory_enable_v1",
+                "family_kind": "policy",
+                "lane_id": "lane.systems",
+                "lifecycle_status": "promoted",
+                "replay_status": "missing",
+                "transfer_eligibility": {"allowed_target_lanes": ["lane.scheduling"]},
+            }
+        ],
+    )
+    assert policy["policy_id"] == "darwin.stage5.search_policy.systems.v2"
+    assert policy["lane_id"] == "lane.systems"
+    assert policy["family_priors"][0]["source_operator_id"] == "mut.policy.shadow_memory_enable_v1"
+
+
 def test_select_stage5_search_policy_arms_emits_warm_and_lockout_pairs() -> None:
     policy = build_stage5_search_policy_v2(
         lane_id="lane.repo_swe",
@@ -82,6 +103,57 @@ def test_select_stage5_search_policy_arms_emits_warm_and_lockout_pairs() -> None
     lockout = next(row for row in selected if row["comparison_mode"] == "family_lockout")
     assert warm["family_context"]["allowed_family_ids"]
     assert lockout["family_context"]["blocked_family_ids"]
+
+
+def test_select_stage5_search_policy_arms_supports_systems() -> None:
+    policy = build_stage5_search_policy_v2(
+        lane_id="lane.systems",
+        budget_class="class_a",
+        family_rows=[
+            {
+                "family_id": "component_family.stage4.policy.policy.shadow_memory_enable_v1.lane.systems.v0",
+                "family_key": "policy.shadow_memory_enable_v1",
+                "family_kind": "policy",
+                "lane_id": "lane.systems",
+                "lifecycle_status": "promoted",
+                "replay_status": "missing",
+                "transfer_eligibility": {"allowed_target_lanes": ["lane.scheduling"]},
+            }
+        ],
+    )
+    selected = select_stage5_search_policy_arms(
+        search_policy=policy,
+        candidate_rows=[
+            {
+                "campaign_arm_id": "arm.systems.control.stage4.v0",
+                "lane_id": "lane.systems",
+                "operator_id": "baseline_seed",
+                "topology_id": "policy.topology.single_v0",
+                "policy_bundle_id": "policy.topology.single_v0",
+                "budget_class": "class_a",
+                "control_tag": "control",
+                "task_class": "systems_repair_workspace",
+                "repetition_count": 2,
+            },
+            {
+                "campaign_arm_id": "arm.systems.policy.stage4.v0",
+                "lane_id": "lane.systems",
+                "operator_id": "mut.policy.shadow_memory_enable_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "control_tag": "mutation",
+                "task_class": "systems_repair_workspace",
+                "repetition_count": 2,
+            },
+        ],
+    )
+    modes = [row["comparison_mode"] for row in selected]
+    assert "cold_start" in modes
+    assert "warm_start" in modes
+    assert "family_lockout" in modes
+    warm = next(row for row in selected if row["comparison_mode"] == "warm_start")
+    assert warm["operator_id"] == "mut.policy.shadow_memory_enable_v1"
 
 
 def test_build_stage5_compounding_cases_detects_reuse_lift() -> None:

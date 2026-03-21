@@ -24,11 +24,19 @@ from scripts.run_darwin_stage4_live_economics_pilot_v0 import (  # noqa: E402
 )
 
 
-OUT_DIR = ROOT / "artifacts" / "darwin" / "stage5" / "tranche1"
+OUT_DIR = ROOT / "artifacts" / "darwin" / "stage5" / "tranche1" / "lane_repo_swe"
 
 
-def run_stage5_compounding_pilot(out_dir: Path = OUT_DIR) -> dict[str, object]:
-    lane_id = "lane.repo_swe"
+def _default_out_dir(lane_id: str) -> Path:
+    return ROOT / "artifacts" / "darwin" / "stage5" / "tranche1" / lane_id.replace(".", "_")
+
+
+def run_stage5_compounding_pilot(
+    *,
+    lane_id: str = "lane.repo_swe",
+    out_dir: Path | None = None,
+) -> dict[str, object]:
+    out_dir = _default_out_dir(lane_id) if out_dir is None else out_dir
     search_policy = build_stage5_search_policy_v2(
         lane_id=lane_id,
         budget_class="class_a",
@@ -136,9 +144,10 @@ def run_stage5_compounding_pilot(out_dir: Path = OUT_DIR) -> dict[str, object]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the Stage-5 tranche-1 compounding pilot.")
+    parser.add_argument("--lane-id", default="lane.repo_swe")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
-    summary = run_stage5_compounding_pilot()
+    summary = run_stage5_compounding_pilot(lane_id=args.lane_id)
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:

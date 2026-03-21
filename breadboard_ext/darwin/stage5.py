@@ -47,8 +47,8 @@ def build_stage5_search_policy_v2(
     budget_class: str,
     family_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    if lane_id != "lane.repo_swe":
-        raise ValueError("stage5 tranche-1 search policy v2 is only authorized for lane.repo_swe")
+    if lane_id not in {"lane.repo_swe", "lane.systems"}:
+        raise ValueError("stage5 search policy v2 is only authorized for lane.repo_swe and lane.systems")
     family_rows = list(load_stage5_family_registry_rows() if family_rows is None else family_rows)
     base_policy = build_stage4_search_policy_v1(lane_id=lane_id, budget_class=budget_class)
     promoted_rows = [
@@ -75,7 +75,7 @@ def build_stage5_search_policy_v2(
         family_registry_ref = str(DEFAULT_STAGE5_FAMILY_REGISTRY.relative_to(ROOT))
     payload = {
         "schema": "breadboard.darwin.stage5.search_policy.v2",
-        "policy_id": "darwin.stage5.search_policy.repo_swe.v2",
+        "policy_id": f"darwin.stage5.search_policy.{lane_id.split('.')[-1]}.v2",
         "lane_id": lane_id,
         "budget_class": budget_class,
         "campaign_class": "C1 Discovery",
@@ -151,8 +151,8 @@ def select_stage5_search_policy_arms(
     candidate_rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     lane_id = str(search_policy["lane_id"])
-    if lane_id != "lane.repo_swe":
-        raise ValueError("stage5 tranche-1 selection is only authorized for lane.repo_swe")
+    if lane_id not in {"lane.repo_swe", "lane.systems"}:
+        raise ValueError("stage5 selection is only authorized for lane.repo_swe and lane.systems")
     family_ids = [str(row["family_id"]) for row in search_policy.get("family_priors") or []]
     family_operator_ids = {
         str(row.get("source_operator_id") or "")
