@@ -1252,3 +1252,178 @@ def build_post_v2_study_01_verifier_patch_branch_payload() -> Dict[str, object]:
             "owner_boundary": example["evidence"]["owner_boundary"],
         },
     }
+
+
+def build_post_v2_study_02_judge_reducer_rounds() -> Dict[str, object]:
+    base = build_judge_reducer_pressure_cell()
+    run = base["run"]
+    verify_event = next(item for item in run.events if item.event_id.endswith("verify.judge_stub"))
+    candidate_a = next(item for item in run.candidates if item.candidate_id == verify_event.input_candidate_ids[0])
+    candidate_b = next(item for item in run.candidates if item.candidate_id == verify_event.input_candidate_ids[1])
+    synthesis_candidate = SearchCandidate(
+        candidate_id=f"{run.search_id}.cand.judge_reduce.synthesis",
+        search_id=run.search_id,
+        frontier_id=candidate_a.frontier_id,
+        parent_ids=[candidate_a.candidate_id, candidate_b.candidate_id],
+        round_index=candidate_a.round_index,
+        depth=max(candidate_a.depth, candidate_b.depth) + 1,
+        payload_ref=f"artifacts/search/{run.search_id}/judge_reduce_synthesis.json",
+        score_vector={"correctness_score": 0.93, "coherence_score": 0.88},
+        usage={"prompt_tokens": 71, "completion_tokens": 34},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{run.search_id}/judge_reduce_synthesis.md",
+        metadata={"study_id": "study_02_judge_reducer_rounds", "lane": "synthesis_candidate"},
+    )
+    aggregate_event = SearchEvent(
+        event_id=f"{run.search_id}.event.aggregate.judge_reduce_round2",
+        search_id=run.search_id,
+        frontier_id=candidate_a.frontier_id,
+        round_index=candidate_a.round_index,
+        operator_kind="aggregate",
+        input_candidate_ids=[candidate_a.candidate_id, candidate_b.candidate_id],
+        output_candidate_ids=[synthesis_candidate.candidate_id],
+        metadata={
+            "study_id": "study_02_judge_reducer_rounds",
+            "reduction_round": 2,
+            "bounded_summary": True,
+        },
+    )
+    study_run = SearchRun(
+        search_id=run.search_id,
+        recipe_kind="judge_reducer_rounds_pressure_pass",
+        candidates=[*run.candidates, synthesis_candidate],
+        frontiers=list(run.frontiers),
+        events=[*run.events, aggregate_event],
+        messages=list(run.messages),
+        carry_states=list(run.carry_states),
+        metrics=run.metrics,
+        selected_candidate_id=run.selected_candidate_id,
+        metadata={**dict(run.metadata), "study_id": "study_02_judge_reducer_rounds"},
+    )
+    registry = build_default_search_assessment_registry()
+    round1_config = AssessmentGateConfig(
+        backend_kind="judge_pairwise.v1",
+        mode="prune_on_verdict",
+        max_assessments=2,
+        required_verdicts=["prefer_a"],
+        metadata={
+            "study_id": "study_02_judge_reducer_rounds",
+            "reduction_round": 1,
+            "phase": "post_v2_usage",
+        },
+    )
+    round1_outcome = run_barriered_assessment_gate(
+        run=study_run,
+        registry=registry,
+        config=round1_config,
+        frontier_candidates=[candidate_a, candidate_b],
+    )
+    round1_selected = next(
+        item for item in study_run.candidates if item.candidate_id == round1_outcome.selected_candidate_id
+    )
+    round2_config = AssessmentGateConfig(
+        backend_kind="judge_pairwise.v1",
+        mode="require_before_select",
+        max_assessments=2,
+        required_verdicts=["prefer_a"],
+        metadata={
+            "study_id": "study_02_judge_reducer_rounds",
+            "reduction_round": 2,
+            "phase": "post_v2_usage",
+        },
+    )
+    round2_outcome = run_barriered_assessment_gate(
+        run=study_run,
+        registry=registry,
+        config=round2_config,
+        frontier_candidates=[round1_selected, synthesis_candidate],
+    )
+    events = [
+        *study_run.events,
+        round1_outcome.gate_event,
+        *( [round1_outcome.selection_event] if round1_outcome.selection_event is not None else [] ),
+        round2_outcome.gate_event,
+        *( [round2_outcome.selection_event] if round2_outcome.selection_event is not None else [] ),
+    ]
+    final_run = SearchRun(
+        search_id=study_run.search_id,
+        recipe_kind=study_run.recipe_kind,
+        candidates=list(study_run.candidates),
+        frontiers=list(study_run.frontiers),
+        events=events,
+        messages=list(study_run.messages),
+        carry_states=list(study_run.carry_states),
+        assessments=[*round1_outcome.assessments, *round2_outcome.assessments],
+        metrics=study_run.metrics,
+        selected_candidate_id=round2_outcome.selected_candidate_id,
+        metadata={
+            **dict(study_run.metadata),
+            "reduction_round_count": 2,
+            "terminated": round2_outcome.terminated,
+        },
+    )
+    evidence = {
+        "easy": [
+            "repeated adjudication rounds reuse SearchAssessment without new runtime nouns",
+            "pairwise judge verdicts remain explicit and linkable across rounds",
+            "bounded reduction can still terminate through barriered selection",
+        ],
+        "awkward": [
+            "bundling several assessment rounds into one study summary wants a helper, but not a new public primitive",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "private_helper_level",
+    }
+    return {
+        "run": final_run,
+        "round1_config": round1_config,
+        "round2_config": round2_config,
+        "round1_outcome": round1_outcome,
+        "round2_outcome": round2_outcome,
+        "synthesis_candidate_id": synthesis_candidate.candidate_id,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_02_judge_reducer_rounds_payload() -> Dict[str, object]:
+    example = build_post_v2_study_02_judge_reducer_rounds()
+    return {
+        "run": example["run"].to_dict(),
+        "round1_config": {
+            "backend_kind": example["round1_config"].backend_kind,
+            "mode": example["round1_config"].mode,
+            "max_assessments": example["round1_config"].max_assessments,
+            "required_verdicts": list(example["round1_config"].required_verdicts),
+            "metadata": dict(example["round1_config"].metadata),
+        },
+        "round2_config": {
+            "backend_kind": example["round2_config"].backend_kind,
+            "mode": example["round2_config"].mode,
+            "max_assessments": example["round2_config"].max_assessments,
+            "required_verdicts": list(example["round2_config"].required_verdicts),
+            "metadata": dict(example["round2_config"].metadata),
+        },
+        "round1_outcome": {
+            "pruned_candidate_ids": list(example["round1_outcome"].pruned_candidate_ids),
+            "selected_candidate_id": example["round1_outcome"].selected_candidate_id,
+            "terminated": example["round1_outcome"].terminated,
+            "assessment_ids": [item.assessment_id for item in example["round1_outcome"].assessments],
+        },
+        "round2_outcome": {
+            "pruned_candidate_ids": list(example["round2_outcome"].pruned_candidate_ids),
+            "selected_candidate_id": example["round2_outcome"].selected_candidate_id,
+            "terminated": example["round2_outcome"].terminated,
+            "assessment_ids": [item.assessment_id for item in example["round2_outcome"].assessments],
+        },
+        "synthesis_candidate_id": example["synthesis_candidate_id"],
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }
