@@ -129,3 +129,9 @@ Date: 2026-03-14
 - completion gate: `docs/darwin_stage4_completion_gate_2026-03-20.md`
 - future-roadmap handoff: `docs/darwin_stage4_future_roadmap_handoff_2026-03-20.md`
 - main verification note: `docs/darwin_stage4_main_verification_2026-03-20.md`
+
+## Stage-5 entrypoint
+
+- doctrine entrypoint: `docs/darwin_stage5_doctrine_2026-03-20.md`
+- execution entrypoint: `docs/darwin_stage5_execution_plan_2026-03-20.md`
+- ADR entrypoint: `docs/darwin_stage5_adr_set_2026-03-20.md`
