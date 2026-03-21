@@ -1,13 +1,16 @@
 # DARWIN Stage-5 Execution Plan
 
 Date: 2026-03-20
-Status: tranche-1 canary landed
+Status: tranche-1 hard gate passed
 Scope: Stage-5 doctrine freeze, economics truth hardening, compounding protocol, family-aware search, and scalable compounding proof
 References:
 - `docs/darwin_stage5_doctrine_2026-03-20.md`
 - `docs/darwin_stage5_adr_set_2026-03-20.md`
 - `docs/darwin_stage5_tranche1_slice_2026-03-20.md`
 - `docs/darwin_stage5_tranche1_canary_status_2026-03-20.md`
+- `docs/darwin_stage5_tranche1_status_2026-03-21.md`
+- `docs/darwin_stage5_tranche1_review_2026-03-21.md`
+- `docs/darwin_stage5_tranche1_hard_gate_2026-03-21.md`
 - `docs/darwin_stage4_signoff_2026-03-20.md`
 - `docs/darwin_stage4_completion_gate_2026-03-20.md`
 - `docs/darwin_stage4_future_roadmap_handoff_2026-03-20.md`

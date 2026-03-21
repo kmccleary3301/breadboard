@@ -26,6 +26,7 @@ def test_build_stage5_search_policy_v2_consumes_promoted_family_state() -> None:
     assert policy["schema"] == "breadboard.darwin.stage5.search_policy.v2"
     assert policy["campaign_class"] == "C1 Discovery"
     assert policy["consumes_family_state"] is True
+    assert policy["repetition_count"] >= 4
     assert policy["comparison_mode_quotas"]["warm_start"] == 1
     assert policy["family_priors"][0]["source_operator_id"] == "mut.topology.single_to_pev_v1"
 

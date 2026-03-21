@@ -80,6 +80,18 @@ def run_stage5_compounding_pilot(out_dir: Path = OUT_DIR) -> dict[str, object]:
         row["campaign_round_id"] = round_id
         row["campaign_class"] = search_policy["campaign_class"]
     compounding_cases = build_stage5_compounding_cases(comparison_rows=comparison_rows)
+    comparison_mode_counts = {
+        mode: sum(1 for row in comparison_rows if row.get("comparison_mode") == mode)
+        for mode in ("cold_start", "warm_start", "family_lockout")
+    }
+    provider_origin_counts: dict[str, int] = {}
+    fallback_reason_counts: dict[str, int] = {}
+    for row in telemetry_rows:
+        origin = str(row.get("provider_origin") or "unknown")
+        provider_origin_counts[origin] = provider_origin_counts.get(origin, 0) + 1
+        fallback_reason = str(row.get("fallback_reason") or "")
+        if fallback_reason:
+            fallback_reason_counts[fallback_reason] = fallback_reason_counts.get(fallback_reason, 0) + 1
 
     policy_path = out_dir / "search_policy_v2.json"
     arms_path = out_dir / "selected_arms_v0.json"
@@ -103,9 +115,14 @@ def run_stage5_compounding_pilot(out_dir: Path = OUT_DIR) -> dict[str, object]:
         "run_count": len(run_rows),
         "comparison_count": len(comparison_rows),
         "compounding_case_count": len(compounding_cases),
-        "warm_start_comparison_count": sum(1 for row in comparison_rows if row.get("comparison_mode") == "warm_start"),
-        "family_lockout_comparison_count": sum(1 for row in comparison_rows if row.get("comparison_mode") == "family_lockout"),
+        "comparison_valid_count": sum(1 for row in comparison_rows if row.get("comparison_valid")),
+        "claim_eligible_comparison_count": sum(1 for row in comparison_rows if row.get("claim_eligible")),
+        "warm_start_comparison_count": comparison_mode_counts["warm_start"],
+        "family_lockout_comparison_count": comparison_mode_counts["family_lockout"],
         "reuse_lift_count": sum(1 for row in compounding_cases if row.get("conclusion") == "reuse_lift"),
+        "no_lift_count": sum(1 for row in compounding_cases if row.get("conclusion") == "no_lift"),
+        "provider_origin_counts": provider_origin_counts,
+        "fallback_reason_counts": fallback_reason_counts,
         "policy_ref": str(policy_path.relative_to(ROOT)),
         "selected_arms_ref": str(arms_path.relative_to(ROOT)),
         "runs_ref": str(runs_path.relative_to(ROOT)),

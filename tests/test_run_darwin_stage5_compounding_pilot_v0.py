@@ -17,3 +17,5 @@ def test_run_stage5_compounding_pilot_emits_compounding_cases_in_scaffold_mode(m
     assert payload["arm_count"] >= 3
     assert payload["comparison_count"] >= 2
     assert payload["compounding_case_count"] >= 1
+    assert payload["claim_eligible_comparison_count"] >= 0
+    assert "provider_origin_counts" in payload

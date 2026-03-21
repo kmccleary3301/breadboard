@@ -82,7 +82,7 @@ def build_stage5_search_policy_v2(
         "worker_route_id": base_policy["worker_route_id"],
         "filter_route_id": base_policy["filter_route_id"],
         "max_mutation_arms": 2,
-        "repetition_count": int(base_policy["repetition_count"]),
+        "repetition_count": max(int(base_policy["repetition_count"]), 4),
         "operator_priors": list(base_policy["operator_priors"]),
         "topology_priors": list(base_policy["topology_priors"]),
         "family_priors": family_priors,
