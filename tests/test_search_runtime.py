@@ -11,7 +11,11 @@ from agentic_coder_prototype.search import (
     SearchMessage,
     SearchRewardSignal,
     build_default_search_assessment_registry,
+    build_branch_execute_verify_reference_recipe,
+    build_branch_execute_verify_reference_recipe_payload,
     build_branch_execute_verify_pressure_cell,
+    build_dag_v2_e4_widening_packet,
+    build_dag_v2_e4_widening_packet_payload,
     build_dag_v2_phase0_pressure_packet,
     build_dag_v2_phase0_pressure_packet_payload,
     build_default_search_compaction_registry,
@@ -384,3 +388,45 @@ def test_judge_reduce_gate_payload_round_trips() -> None:
     assert payload["gate_config"]["max_assessments"] == 2
     assert len(run.assessments) == 1
     assert len(payload["outcome"]["pruned_candidate_ids"]) == 1
+
+
+def test_branch_execute_verify_reference_recipe_is_credible_and_barriered() -> None:
+    example = build_branch_execute_verify_reference_recipe()
+    run = example["run"]
+
+    assert run.recipe_kind == "branch_execute_verify"
+    assert len(run.assessments) >= 1
+    assert run.metadata["gate_mode"] == "prune_on_verdict"
+    assert len(run.branch_states) == 2
+    assert any(event.assessment_ids for event in run.events if event.operator_kind == "verify")
+    assert example["outcome"].selected_candidate_id is not None
+
+
+def test_branch_execute_verify_reference_recipe_payload_round_trips() -> None:
+    payload = build_branch_execute_verify_reference_recipe_payload()
+    run = SearchRun.from_dict(payload["run"])
+
+    assert payload["gate_config"]["backend_kind"] == "exact_tests.v1"
+    assert payload["gate_config"]["mode"] == "prune_on_verdict"
+    assert payload["gate_config"]["max_assessments"] == 2
+    assert len(run.assessments) >= 1
+    assert payload["outcome"]["selected_candidate_id"] is not None
+
+
+def test_dag_v2_e4_widening_packet_is_assessment_led() -> None:
+    packet = build_dag_v2_e4_widening_packet()
+    recipe_kinds = {item["recipe_kind"] for item in packet["recipes"]}
+
+    assert packet["credible_family_count"] == 3
+    assert packet["widening_due_to_assessment_layer"] is True
+    assert packet["new_public_noun_families_added"] == 1
+    assert recipe_kinds == {"frontier_verify", "judge_reduce", "branch_execute_verify"}
+
+
+def test_dag_v2_e4_widening_packet_payload_round_trips() -> None:
+    payload = build_dag_v2_e4_widening_packet_payload()
+
+    assert payload["credible_family_count"] == 3
+    assert payload["widening_due_to_assessment_layer"] is True
+    assert payload["new_public_noun_families_added"] == 1
+    assert len(payload["recipes"]) == 3

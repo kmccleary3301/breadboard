@@ -888,3 +888,112 @@ def build_judge_reduce_gate_example_payload() -> Dict[str, object]:
             "assessment_ids": [item.assessment_id for item in example["outcome"].assessments],
         },
     }
+
+
+def build_branch_execute_verify_reference_recipe() -> Dict[str, object]:
+    base = build_branch_execute_verify_pressure_cell()
+    run = base["run"]
+    frontier_candidates = [
+        next(item for item in run.candidates if item.candidate_id == branch.candidate_id)
+        for branch in run.branch_states
+    ]
+    registry = build_default_search_assessment_registry()
+    gate_config = AssessmentGateConfig(
+        backend_kind="exact_tests.v1",
+        mode="prune_on_verdict",
+        max_assessments=2,
+        required_verdicts=["fail"],
+        metadata={"recipe": "branch_execute_verify", "phase": "dag_v2_phase3"},
+    )
+    outcome = run_barriered_assessment_gate(
+        run=run,
+        registry=registry,
+        config=gate_config,
+        frontier_candidates=frontier_candidates,
+    )
+    events = [*run.events, outcome.gate_event]
+    if outcome.selection_event is not None:
+        events.append(outcome.selection_event)
+    gated_run = SearchRun(
+        search_id=run.search_id,
+        recipe_kind="branch_execute_verify",
+        candidates=list(run.candidates),
+        frontiers=list(run.frontiers),
+        events=events,
+        messages=list(run.messages),
+        carry_states=list(run.carry_states),
+        assessments=list(outcome.assessments),
+        workspace_snapshots=list(run.workspace_snapshots),
+        branch_states=list(run.branch_states),
+        metrics=run.metrics,
+        selected_candidate_id=outcome.selected_candidate_id,
+        metadata={
+            **dict(run.metadata),
+            "gate_mode": gate_config.mode,
+            "max_assessments": gate_config.max_assessments,
+            "terminated": outcome.terminated,
+        },
+    )
+    return {
+        "run": gated_run,
+        "gate_config": gate_config,
+        "outcome": outcome,
+    }
+
+
+def build_branch_execute_verify_reference_recipe_payload() -> Dict[str, object]:
+    example = build_branch_execute_verify_reference_recipe()
+    return {
+        "run": example["run"].to_dict(),
+        "gate_config": {
+            "backend_kind": example["gate_config"].backend_kind,
+            "mode": example["gate_config"].mode,
+            "max_assessments": example["gate_config"].max_assessments,
+            "required_verdicts": list(example["gate_config"].required_verdicts),
+            "metadata": dict(example["gate_config"].metadata),
+        },
+        "outcome": {
+            "pruned_candidate_ids": list(example["outcome"].pruned_candidate_ids),
+            "selected_candidate_id": example["outcome"].selected_candidate_id,
+            "terminated": example["outcome"].terminated,
+            "assessment_ids": [item.assessment_id for item in example["outcome"].assessments],
+        },
+    }
+
+
+def build_dag_v2_e4_widening_packet() -> Dict[str, object]:
+    frontier_verify = build_frontier_verify_gate_example()
+    judge_reduce = build_judge_reduce_gate_example()
+    branch_execute_verify = build_branch_execute_verify_reference_recipe()
+    return {
+        "recipes": [
+            {
+                "recipe_kind": frontier_verify["run"].recipe_kind,
+                "credible_family": "verifier_guided_frontier_search",
+                "assessment_count": len(frontier_verify["run"].assessments),
+            },
+            {
+                "recipe_kind": judge_reduce["run"].recipe_kind,
+                "credible_family": "judge_reducer_reasoning_search",
+                "assessment_count": len(judge_reduce["run"].assessments),
+            },
+            {
+                "recipe_kind": branch_execute_verify["run"].recipe_kind,
+                "credible_family": "branch_execute_verify_search",
+                "assessment_count": len(branch_execute_verify["run"].assessments),
+            },
+        ],
+        "credible_family_count": 3,
+        "widening_due_to_assessment_layer": True,
+        "new_public_noun_families_added": 1,
+    }
+
+
+def build_dag_v2_e4_widening_packet_payload() -> Dict[str, object]:
+    packet = build_dag_v2_e4_widening_packet()
+    return {
+        "recipes": [dict(item) for item in packet["recipes"]],
+        "credible_family_count": packet["credible_family_count"],
+        "widening_due_to_assessment_layer": packet["widening_due_to_assessment_layer"],
+        "new_public_noun_families_added": packet["new_public_noun_families_added"],
+    }

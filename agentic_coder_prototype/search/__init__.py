@@ -14,6 +14,10 @@ from .compaction import (
 )
 from .examples import (
     build_branch_execute_verify_pressure_cell,
+    build_branch_execute_verify_reference_recipe,
+    build_branch_execute_verify_reference_recipe_payload,
+    build_dag_v2_e4_widening_packet,
+    build_dag_v2_e4_widening_packet_payload,
     build_dag_v2_phase0_pressure_packet,
     build_dag_v2_phase0_pressure_packet_payload,
     build_exact_verifier_assessment_example,
@@ -110,6 +114,10 @@ __all__ = [
     "SearchTrajectoryStep",
     "SearchWorkspaceSnapshot",
     "build_branch_execute_verify_pressure_cell",
+    "build_branch_execute_verify_reference_recipe",
+    "build_branch_execute_verify_reference_recipe_payload",
+    "build_dag_v2_e4_widening_packet",
+    "build_dag_v2_e4_widening_packet_payload",
     "build_dag_v2_phase0_pressure_packet",
     "build_dag_v2_phase0_pressure_packet_payload",
     "build_default_search_assessment_registry",
