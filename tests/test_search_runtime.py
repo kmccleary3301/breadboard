@@ -38,6 +38,8 @@ from agentic_coder_prototype.search import (
     build_post_v2_study_02_judge_reducer_rounds_payload,
     build_post_v2_study_03_branch_execute_verify_deeper,
     build_post_v2_study_03_branch_execute_verify_deeper_payload,
+    build_post_v2_study_04_optimize_adapter_probe,
+    build_post_v2_study_04_optimize_adapter_probe_payload,
     SearchRun,
     SearchTrajectoryExport,
     SearchWorkspaceSnapshot,
@@ -540,3 +542,29 @@ def test_post_v2_study_03_branch_execute_verify_deeper_payload_round_trips() -> 
     assert len(run.assessments) == 6
     assert payload["judge_outcome"]["selected_candidate_id"] is not None
     assert payload["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_04_optimize_adapter_probe_stays_outside_dag_kernel() -> None:
+    example = build_post_v2_study_04_optimize_adapter_probe()
+    trajectory = example["trajectory"]
+    adapter_payload = example["optimize_adapter_payload"]
+
+    assert trajectory.selected_candidate_id == adapter_payload["selected_candidate_id"]
+    assert len(adapter_payload["trajectory_assessment_ids"]) >= 1
+    assert set(adapter_payload["assessment_backend_kinds"]) == {"exact_tests.v1", "judge_pairwise.v1"}
+    assert adapter_payload["adapter_boundary"]["outside_dag_kernel"] is True
+    assert adapter_payload["adapter_boundary"]["introduced_optimize_public_nouns_into_dag"] is False
+    assert example["evidence"]["repeated_shape"] is False
+    assert example["evidence"]["owner_boundary"] == "adapter_level"
+
+
+def test_post_v2_study_04_optimize_adapter_probe_payload_round_trips() -> None:
+    payload = build_post_v2_study_04_optimize_adapter_probe_payload()
+    run = SearchRun.from_dict(payload["run"])
+    trajectory = SearchTrajectoryExport.from_dict(payload["trajectory"])
+
+    assert run.recipe_kind == "branch_execute_verify_deeper_pressure_pass"
+    assert trajectory.selected_candidate_id == payload["optimize_adapter_payload"]["selected_candidate_id"]
+    assert len(payload["optimize_adapter_payload"]["trajectory_assessment_ids"]) >= 1
+    assert payload["optimize_adapter_payload"]["adapter_boundary"]["outside_dag_kernel"] is True
+    assert payload["evidence"]["future_v3_evidence"] is False

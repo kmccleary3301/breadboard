@@ -1625,3 +1625,79 @@ def build_post_v2_study_03_branch_execute_verify_deeper_payload() -> Dict[str, o
             "owner_boundary": example["evidence"]["owner_boundary"],
         },
     }
+
+
+def build_post_v2_study_04_optimize_adapter_probe() -> Dict[str, object]:
+    study = build_post_v2_study_03_branch_execute_verify_deeper()
+    run = study["run"]
+    trajectory = export_search_trajectory(
+        run,
+        metadata={"study_id": "study_04_optimize_adapter_probe", "consumer": "optimize_adapter"},
+    )
+    selected_candidate = next(item for item in run.candidates if item.candidate_id == run.selected_candidate_id)
+    assessment_backend_kinds = sorted({item.backend_kind for item in run.assessments})
+    assessment_ids = sorted({assessment_id for step in trajectory.steps for assessment_id in step.assessment_ids})
+    optimize_adapter_payload = {
+        "source_search_id": run.search_id,
+        "source_recipe_kind": run.recipe_kind,
+        "selected_candidate_id": trajectory.selected_candidate_id,
+        "selected_candidate_payload_ref": selected_candidate.payload_ref,
+        "assessment_backend_kinds": assessment_backend_kinds,
+        "trajectory_assessment_ids": assessment_ids,
+        "selected_candidate_score_vector": dict(selected_candidate.score_vector),
+        "adapter_boundary": {
+            "outside_dag_kernel": True,
+            "introduced_optimize_public_nouns_into_dag": False,
+            "consumes": [
+                "SearchAssessment",
+                "SearchTrajectoryExport.steps[].assessment_ids",
+                "SearchTrajectoryExport.selected_candidate_id",
+            ],
+        },
+    }
+    evidence = {
+        "easy": [
+            "assessment-bearing trajectory export is sufficient for a simple optimize-side evidence packet",
+            "selected candidate and assessment linkage survive export without extra DAG primitives",
+            "no optimize public noun is needed inside the DAG kernel",
+        ],
+        "awkward": [
+            "optimize-side aggregation of assessment summaries is still an adapter concern rather than DAG truth",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "adapter_level",
+    }
+    return {
+        "run": run,
+        "trajectory": trajectory,
+        "optimize_adapter_payload": optimize_adapter_payload,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_04_optimize_adapter_probe_payload() -> Dict[str, object]:
+    example = build_post_v2_study_04_optimize_adapter_probe()
+    return {
+        "run": example["run"].to_dict(),
+        "trajectory": example["trajectory"].to_dict(),
+        "optimize_adapter_payload": {
+            "source_search_id": example["optimize_adapter_payload"]["source_search_id"],
+            "source_recipe_kind": example["optimize_adapter_payload"]["source_recipe_kind"],
+            "selected_candidate_id": example["optimize_adapter_payload"]["selected_candidate_id"],
+            "selected_candidate_payload_ref": example["optimize_adapter_payload"]["selected_candidate_payload_ref"],
+            "assessment_backend_kinds": list(example["optimize_adapter_payload"]["assessment_backend_kinds"]),
+            "trajectory_assessment_ids": list(example["optimize_adapter_payload"]["trajectory_assessment_ids"]),
+            "selected_candidate_score_vector": dict(example["optimize_adapter_payload"]["selected_candidate_score_vector"]),
+            "adapter_boundary": dict(example["optimize_adapter_payload"]["adapter_boundary"]),
+        },
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }
