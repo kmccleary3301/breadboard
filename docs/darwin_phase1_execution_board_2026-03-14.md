@@ -136,3 +136,4 @@ Date: 2026-03-14
 - execution entrypoint: `docs/darwin_stage5_execution_plan_2026-03-20.md`
 - ADR entrypoint: `docs/darwin_stage5_adr_set_2026-03-20.md`
 - tranche-1 slice entrypoint: `docs/darwin_stage5_tranche1_slice_2026-03-20.md`
+- tranche-1 canary status: `docs/darwin_stage5_tranche1_canary_status_2026-03-20.md`

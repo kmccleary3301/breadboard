@@ -197,6 +197,14 @@ def resolve_stage4_route(
     }
 
 
+def stage4_provider_origin(route_id: str) -> str:
+    if str(route_id).startswith("openrouter/"):
+        return "openrouter"
+    if str(route_id).startswith("openai/"):
+        return "openai"
+    return "unknown"
+
+
 def _resolve_stage4_fallback_route(route_id: str, *, task_class: str) -> dict[str, Any] | None:
     fallback_lookup = {
         DEFAULT_STAGE4_WORKER_ROUTE: DEFAULT_STAGE4_DIRECT_WORKER_ROUTE,
@@ -668,9 +676,17 @@ def execute_stage4_provider_prompt(
         stronger_tier=stronger_tier,
         actual_provider_used=False,
     )
+    requested_route_id = str(route["route_id"])
+    requested_provider_model = str(route["provider_model"])
+    requested_provider_origin = stage4_provider_origin(requested_route_id)
     if not stage4_live_execution_requested():
         return {
             **route,
+            "requested_route_id": requested_route_id,
+            "requested_provider_model": requested_provider_model,
+            "requested_provider_origin": requested_provider_origin,
+            "provider_origin": requested_provider_origin,
+            "fallback_reason": None,
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             "cost_estimate": 0.0,
             "cost_source": "scaffold_placeholder",
@@ -682,6 +698,11 @@ def execute_stage4_provider_prompt(
     if not stage4_provider_ready():
         return {
             **route,
+            "requested_route_id": requested_route_id,
+            "requested_provider_model": requested_provider_model,
+            "requested_provider_origin": requested_provider_origin,
+            "provider_origin": requested_provider_origin,
+            "fallback_reason": None,
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             "cost_estimate": 0.0,
             "cost_source": "scaffold_placeholder",
@@ -693,6 +714,11 @@ def execute_stage4_provider_prompt(
     if not stage4_live_lane_authorized(lane_id):
         return {
             **route,
+            "requested_route_id": requested_route_id,
+            "requested_provider_model": requested_provider_model,
+            "requested_provider_origin": requested_provider_origin,
+            "provider_origin": requested_provider_origin,
+            "fallback_reason": None,
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             "cost_estimate": 0.0,
             "cost_source": "scaffold_placeholder",
@@ -701,6 +727,7 @@ def execute_stage4_provider_prompt(
             "claim_ineligible_reason": "execution_mode_not_live",
             "live_block_reason": "lane_not_authorized_for_live",
         }
+    fallback_reason = None
     try:
         live_call = _perform_stage4_live_call(
             route=route,
@@ -717,6 +744,7 @@ def execute_stage4_provider_prompt(
         fallback_route = None
         if exc.code == 401 and str(route["route_id"]).startswith("openrouter/"):
             fallback_route = _resolve_stage4_fallback_route(str(route["route_id"]), task_class=task_class)
+            fallback_reason = "openrouter_http_401"
         if fallback_route is None:
             raise RuntimeError(f"stage4 live provider call failed: {exc}") from exc
         try:
@@ -754,6 +782,11 @@ def execute_stage4_provider_prompt(
     )
     return {
         **live_route,
+        "requested_route_id": requested_route_id,
+        "requested_provider_model": requested_provider_model,
+        "requested_provider_origin": requested_provider_origin,
+        "provider_origin": stage4_provider_origin(str(live_route["route_id"])),
+        "fallback_reason": fallback_reason,
         "usage": {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
