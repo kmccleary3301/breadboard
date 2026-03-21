@@ -42,6 +42,11 @@ The narrow assessment layer consists of:
 - `SearchAssessmentRegistry`
 - `RegisteredAssessmentBackend`
 - `AssessmentOutput`
+- barriered assessment gates:
+  - require assessment before select
+  - prune on verdict
+  - terminate on verdict
+  - `max_assessments`
 
 ## What this makes possible
 
@@ -50,6 +55,12 @@ This gives the runtime a first-class place to store:
 - exact verification truth
 - pairwise judge verdicts
 - future barriered gate inputs
+
+It also gives barriered search an inspectable way to:
+
+- defer selection until grounded assessment exists
+- prune candidates on explicit verdicts
+- terminate early on explicit verdicts
 
 without adding:
 

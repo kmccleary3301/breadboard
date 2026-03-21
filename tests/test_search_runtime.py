@@ -17,9 +17,13 @@ from agentic_coder_prototype.search import (
     build_default_search_compaction_registry,
     build_exact_verifier_assessment_example,
     build_exact_verifier_assessment_example_payload,
+    build_frontier_verify_gate_example,
+    build_frontier_verify_gate_example_payload,
     build_judge_pairwise_assessment_example,
     build_judge_pairwise_assessment_example_payload,
     build_judge_reducer_pressure_cell,
+    build_judge_reduce_gate_example,
+    build_judge_reduce_gate_example_payload,
     build_pacore_search_runtime_example,
     build_pacore_search_runtime_example_payload,
     SearchRun,
@@ -336,3 +340,47 @@ def test_search_assessment_example_payloads_round_trip() -> None:
     assert len(judge_run.assessments) == 1
     assert verifier_run.assessments[0] == verifier_assessment
     assert judge_run.assessments[0] == judge_assessment
+
+
+def test_frontier_verify_gate_example_is_barriered_and_inspectable() -> None:
+    example = build_frontier_verify_gate_example()
+    run = example["run"]
+
+    assert run.recipe_kind == "frontier_verify"
+    assert len(run.assessments) == 1
+    assert run.selected_candidate_id is not None
+    assert run.metadata["gate_mode"] == "require_before_select"
+    assert any(event.assessment_ids for event in run.events if event.operator_kind == "verify")
+    assert any(event.operator_kind == "select" for event in run.events)
+
+
+def test_frontier_verify_gate_payload_round_trips() -> None:
+    payload = build_frontier_verify_gate_example_payload()
+    run = SearchRun.from_dict(payload["run"])
+
+    assert payload["gate_config"]["mode"] == "require_before_select"
+    assert payload["gate_config"]["max_assessments"] == 1
+    assert len(run.assessments) == 1
+    assert payload["outcome"]["terminated"] is False
+
+
+def test_judge_reduce_gate_example_prunes_and_selects() -> None:
+    example = build_judge_reduce_gate_example()
+    run = example["run"]
+
+    assert run.recipe_kind == "judge_reduce"
+    assert len(run.assessments) == 1
+    assert run.metadata["gate_mode"] == "prune_on_verdict"
+    assert len(example["outcome"].pruned_candidate_ids) == 1
+    assert example["outcome"].selected_candidate_id is not None
+    assert any(event.assessment_ids for event in run.events if event.operator_kind == "verify")
+
+
+def test_judge_reduce_gate_payload_round_trips() -> None:
+    payload = build_judge_reduce_gate_example_payload()
+    run = SearchRun.from_dict(payload["run"])
+
+    assert payload["gate_config"]["mode"] == "prune_on_verdict"
+    assert payload["gate_config"]["max_assessments"] == 2
+    assert len(run.assessments) == 1
+    assert len(payload["outcome"]["pruned_candidate_ids"]) == 1

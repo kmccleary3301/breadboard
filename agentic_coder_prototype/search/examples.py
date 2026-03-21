@@ -7,10 +7,12 @@ from .compaction import SearchCompactionRegistry, build_default_search_compactio
 from .export import build_search_offline_dataset, export_search_trajectory
 from .runtime import (
     AggregationProposal,
+    AssessmentGateConfig,
     BarrieredRoundScheduler,
     BarrieredSchedulerConfig,
     BoundedMessagePassingScheduler,
     MessagePassingSchedulerConfig,
+    run_barriered_assessment_gate,
 )
 from .schema import (
     SearchBranchState,
@@ -743,4 +745,146 @@ def build_judge_pairwise_assessment_example_payload() -> Dict[str, object]:
         "run": example["run"].to_dict(),
         "assessment": example["assessment"].to_dict(),
         "registry_backend_kinds": list(example["registry_backend_kinds"]),
+    }
+
+
+def build_frontier_verify_gate_example() -> Dict[str, object]:
+    base = build_verifier_guided_pressure_cell()
+    run = base["run"]
+    frontier_candidates = [
+        item
+        for item in run.candidates
+        if item.candidate_id == run.selected_candidate_id
+    ]
+    registry = build_default_search_assessment_registry()
+    gate_config = AssessmentGateConfig(
+        backend_kind="exact_tests.v1",
+        mode="require_before_select",
+        max_assessments=1,
+        required_verdicts=["pass"],
+        metadata={"recipe": "frontier_verify", "phase": "dag_v2_phase2"},
+    )
+    outcome = run_barriered_assessment_gate(
+        run=run,
+        registry=registry,
+        config=gate_config,
+        frontier_candidates=frontier_candidates,
+    )
+    events = [*run.events, outcome.gate_event]
+    if outcome.selection_event is not None:
+        events.append(outcome.selection_event)
+    gated_run = SearchRun(
+        search_id=run.search_id,
+        recipe_kind="frontier_verify",
+        candidates=list(run.candidates),
+        frontiers=list(run.frontiers),
+        events=events,
+        messages=list(run.messages),
+        carry_states=list(run.carry_states),
+        assessments=list(outcome.assessments),
+        workspace_snapshots=list(run.workspace_snapshots),
+        branch_states=list(run.branch_states),
+        metrics=run.metrics,
+        selected_candidate_id=outcome.selected_candidate_id,
+        metadata={
+            **dict(run.metadata),
+            "gate_mode": gate_config.mode,
+            "max_assessments": gate_config.max_assessments,
+            "terminated": outcome.terminated,
+        },
+    )
+    return {
+        "run": gated_run,
+        "gate_config": gate_config,
+        "outcome": outcome,
+    }
+
+
+def build_frontier_verify_gate_example_payload() -> Dict[str, object]:
+    example = build_frontier_verify_gate_example()
+    return {
+        "run": example["run"].to_dict(),
+        "gate_config": {
+            "backend_kind": example["gate_config"].backend_kind,
+            "mode": example["gate_config"].mode,
+            "max_assessments": example["gate_config"].max_assessments,
+            "required_verdicts": list(example["gate_config"].required_verdicts),
+            "metadata": dict(example["gate_config"].metadata),
+        },
+        "outcome": {
+            "pruned_candidate_ids": list(example["outcome"].pruned_candidate_ids),
+            "selected_candidate_id": example["outcome"].selected_candidate_id,
+            "terminated": example["outcome"].terminated,
+            "assessment_ids": [item.assessment_id for item in example["outcome"].assessments],
+        },
+    }
+
+
+def build_judge_reduce_gate_example() -> Dict[str, object]:
+    base = build_judge_reducer_pressure_cell()
+    run = base["run"]
+    verify_event = next(item for item in run.events if item.event_id.endswith("verify.judge_stub"))
+    frontier_candidates = [
+        next(item for item in run.candidates if item.candidate_id == candidate_id)
+        for candidate_id in verify_event.input_candidate_ids
+    ]
+    registry = build_default_search_assessment_registry()
+    gate_config = AssessmentGateConfig(
+        backend_kind="judge_pairwise.v1",
+        mode="prune_on_verdict",
+        max_assessments=2,
+        required_verdicts=["prefer_a"],
+        metadata={"recipe": "judge_reduce", "phase": "dag_v2_phase2"},
+    )
+    outcome = run_barriered_assessment_gate(
+        run=run,
+        registry=registry,
+        config=gate_config,
+        frontier_candidates=frontier_candidates,
+    )
+    events = [*run.events, outcome.gate_event]
+    if outcome.selection_event is not None:
+        events.append(outcome.selection_event)
+    gated_run = SearchRun(
+        search_id=run.search_id,
+        recipe_kind="judge_reduce",
+        candidates=list(run.candidates),
+        frontiers=list(run.frontiers),
+        events=events,
+        messages=list(run.messages),
+        carry_states=list(run.carry_states),
+        assessments=list(outcome.assessments),
+        metrics=run.metrics,
+        selected_candidate_id=outcome.selected_candidate_id,
+        metadata={
+            **dict(run.metadata),
+            "gate_mode": gate_config.mode,
+            "max_assessments": gate_config.max_assessments,
+            "terminated": outcome.terminated,
+        },
+    )
+    return {
+        "run": gated_run,
+        "gate_config": gate_config,
+        "outcome": outcome,
+    }
+
+
+def build_judge_reduce_gate_example_payload() -> Dict[str, object]:
+    example = build_judge_reduce_gate_example()
+    return {
+        "run": example["run"].to_dict(),
+        "gate_config": {
+            "backend_kind": example["gate_config"].backend_kind,
+            "mode": example["gate_config"].mode,
+            "max_assessments": example["gate_config"].max_assessments,
+            "required_verdicts": list(example["gate_config"].required_verdicts),
+            "metadata": dict(example["gate_config"].metadata),
+        },
+        "outcome": {
+            "pruned_candidate_ids": list(example["outcome"].pruned_candidate_ids),
+            "selected_candidate_id": example["outcome"].selected_candidate_id,
+            "terminated": example["outcome"].terminated,
+            "assessment_ids": [item.assessment_id for item in example["outcome"].assessments],
+        },
     }

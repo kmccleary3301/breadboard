@@ -4,8 +4,10 @@ from dataclasses import dataclass, field
 from random import Random
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
+from .assessment import SearchAssessmentRegistry
 from .compaction import SearchCompactionRegistry
 from .schema import (
+    SearchAssessment,
     SearchCandidate,
     SearchCarryState,
     SearchEvent,
@@ -83,6 +85,47 @@ def _default_selector(candidates: Sequence[SearchCandidate]) -> SearchCandidate:
     )
 
 
+@dataclass(frozen=True)
+class AssessmentGateConfig:
+    backend_kind: str
+    mode: str
+    max_assessments: int
+    required_verdicts: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        backend_kind = str(self.backend_kind or "").strip()
+        mode = str(self.mode or "").strip().lower()
+        max_assessments = int(self.max_assessments)
+        if not backend_kind:
+            raise ValueError("backend_kind must be non-empty")
+        if mode not in {"require_before_select", "prune_on_verdict", "terminate_on_verdict"}:
+            raise ValueError(
+                "mode must be one of: ['prune_on_verdict', 'require_before_select', 'terminate_on_verdict']"
+            )
+        if max_assessments <= 0:
+            raise ValueError("max_assessments must be positive")
+        object.__setattr__(self, "backend_kind", backend_kind)
+        object.__setattr__(self, "mode", mode)
+        object.__setattr__(self, "max_assessments", max_assessments)
+        object.__setattr__(
+            self,
+            "required_verdicts",
+            [str(item or "").strip().lower() for item in self.required_verdicts if str(item or "").strip()],
+        )
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+
+
+@dataclass(frozen=True)
+class AssessmentGateOutcome:
+    assessments: List[SearchAssessment]
+    pruned_candidate_ids: List[str]
+    selected_candidate_id: Optional[str]
+    terminated: bool
+    gate_event: SearchEvent
+    selection_event: Optional[SearchEvent] = None
+
+
 def _sample_subsets(
     population: Sequence[SearchCandidate],
     *,
@@ -133,6 +176,145 @@ def _compute_metrics(
             "initial_diversity": initial_diversity,
             "final_diversity": final_diversity,
         },
+    )
+
+
+def run_barriered_assessment_gate(
+    *,
+    run: SearchRun,
+    registry: SearchAssessmentRegistry,
+    config: AssessmentGateConfig,
+    frontier_candidates: Sequence[SearchCandidate],
+) -> AssessmentGateOutcome:
+    if len(frontier_candidates) > config.max_assessments:
+        raise ValueError("frontier_candidates exceeds max_assessments budget")
+    if not frontier_candidates:
+        raise ValueError("frontier_candidates must contain at least one candidate")
+
+    backend = registry.get_backend(config.backend_kind)
+    assessments: List[SearchAssessment] = []
+    if backend.subject_arity == "pair":
+        if len(frontier_candidates) != 2:
+            raise ValueError("pair assessment gates require exactly two frontier candidates")
+        assessments.append(
+            registry.assess(
+                backend_kind=config.backend_kind,
+                assessment_id=f"{run.search_id}.assessment.{config.mode}.1",
+                search_id=run.search_id,
+                frontier_id=frontier_candidates[0].frontier_id,
+                round_index=frontier_candidates[0].round_index,
+                candidates=list(frontier_candidates),
+                metadata={"gate_mode": config.mode, **dict(config.metadata)},
+            )
+        )
+    else:
+        for index, candidate in enumerate(frontier_candidates, start=1):
+            assessments.append(
+                registry.assess(
+                    backend_kind=config.backend_kind,
+                    assessment_id=f"{run.search_id}.assessment.{config.mode}.{index}",
+                    search_id=run.search_id,
+                    frontier_id=candidate.frontier_id,
+                    round_index=candidate.round_index,
+                    candidates=[candidate],
+                    metadata={"gate_mode": config.mode, **dict(config.metadata)},
+                )
+            )
+
+    pruned_candidate_ids: List[str] = []
+    selected_candidate_id: Optional[str] = None
+    terminated = False
+
+    if config.mode == "require_before_select":
+        if backend.subject_arity == "pair":
+            assessment = assessments[0]
+            if config.required_verdicts and assessment.verdict not in config.required_verdicts:
+                passing = []
+            else:
+                preferred_candidate_id = assessment.summary_payload.get("preferred_candidate_id")
+                passing = [preferred_candidate_id] if preferred_candidate_id else []
+        else:
+            passing = [
+                item.subject_candidate_ids[0]
+                for item in assessments
+                if not config.required_verdicts or item.verdict in config.required_verdicts
+            ]
+        if not passing:
+            terminated = True
+        else:
+            selected_candidate_id = max(
+                [item for item in frontier_candidates if item.candidate_id in passing],
+                key=lambda candidate: (
+                    float(candidate.score_vector.get("correctness_score", 0.0)),
+                    -int(candidate.round_index),
+                    candidate.candidate_id,
+                ),
+            ).candidate_id
+    elif config.mode == "prune_on_verdict":
+        if backend.subject_arity == "pair":
+            assessment = assessments[0]
+            if config.required_verdicts and assessment.verdict in config.required_verdicts:
+                preferred_candidate_id = assessment.summary_payload.get("preferred_candidate_id")
+                pruned_candidate_ids = [
+                    item.candidate_id for item in frontier_candidates if item.candidate_id != preferred_candidate_id
+                ]
+        else:
+            pruned_candidate_ids = [
+                item.subject_candidate_ids[0]
+                for item in assessments
+                if config.required_verdicts and item.verdict in config.required_verdicts
+            ]
+        survivors = [item for item in frontier_candidates if item.candidate_id not in pruned_candidate_ids]
+        selected_candidate_id = survivors[0].candidate_id if survivors else None
+        terminated = not survivors
+    elif config.mode == "terminate_on_verdict":
+        terminated = any(
+            not config.required_verdicts or item.verdict in config.required_verdicts
+            for item in assessments
+        )
+        if not terminated:
+            selected_candidate_id = frontier_candidates[0].candidate_id
+
+    gate_event = SearchEvent(
+        event_id=f"{run.search_id}.event.gate.{config.mode}",
+        search_id=run.search_id,
+        frontier_id=frontier_candidates[0].frontier_id,
+        round_index=frontier_candidates[0].round_index,
+        operator_kind="verify",
+        input_candidate_ids=[item.candidate_id for item in frontier_candidates],
+        output_candidate_ids=[item.candidate_id for item in frontier_candidates if item.candidate_id not in pruned_candidate_ids],
+        assessment_ids=[item.assessment_id for item in assessments],
+        metadata={
+            "gate_mode": config.mode,
+            "backend_kind": config.backend_kind,
+            "max_assessments": config.max_assessments,
+            "terminated": terminated,
+            "pruned_candidate_ids": list(pruned_candidate_ids),
+            **dict(config.metadata),
+        },
+    )
+
+    selection_event: Optional[SearchEvent] = None
+    if selected_candidate_id is not None:
+        selection_event = SearchEvent(
+            event_id=f"{run.search_id}.event.select.{config.mode}",
+            search_id=run.search_id,
+            frontier_id=frontier_candidates[0].frontier_id,
+            round_index=frontier_candidates[0].round_index,
+            operator_kind="select",
+            input_candidate_ids=[item.candidate_id for item in frontier_candidates if item.candidate_id not in pruned_candidate_ids],
+            output_candidate_ids=[selected_candidate_id],
+            assessment_ids=[item.assessment_id for item in assessments],
+            metadata={"gate_mode": config.mode, "backend_kind": config.backend_kind},
+        )
+
+    return AssessmentGateOutcome(
+        assessments=assessments,
+        pruned_candidate_ids=pruned_candidate_ids,
+        selected_candidate_id=selected_candidate_id,
+        terminated=terminated,
+        gate_event=gate_event,
+        selection_event=selection_event,
     )
 
 

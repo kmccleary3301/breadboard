@@ -81,6 +81,11 @@ class SearchAssessmentRegistry:
     def list_backend_kinds(self) -> List[str]:
         return sorted(self._backends.keys())
 
+    def get_backend(self, backend_kind: str) -> RegisteredAssessmentBackend:
+        if backend_kind not in self._backends:
+            raise ValueError(f"unknown assessment backend: {backend_kind}")
+        return self._backends[backend_kind][0]
+
     def assess(
         self,
         *,
