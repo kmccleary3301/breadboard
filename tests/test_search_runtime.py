@@ -42,6 +42,8 @@ from agentic_coder_prototype.search import (
     build_post_v2_study_04_optimize_adapter_probe_payload,
     build_post_v2_study_05_rl_facing_probe,
     build_post_v2_study_05_rl_facing_probe_payload,
+    build_post_v2_study_06_darwin_boundary_probe,
+    build_post_v2_study_06_darwin_boundary_probe_payload,
     SearchRun,
     SearchTrajectoryExport,
     SearchWorkspaceSnapshot,
@@ -597,3 +599,24 @@ def test_post_v2_study_05_rl_facing_probe_payload_round_trips() -> None:
     assert trajectory.selected_candidate_id == payload["rl_consumption_packet"]["selected_candidate_id"]
     assert payload["rl_consumption_packet"]["assessment_linked_step_count"] >= 1
     assert payload["rl_consumption_packet"]["rl_boundary"]["training_framework_added"] is False
+
+
+def test_post_v2_study_06_darwin_boundary_probe_keeps_dag_frozen() -> None:
+    example = build_post_v2_study_06_darwin_boundary_probe()
+    owners = {item["owner"] for item in example["scenarios"]}
+
+    assert "dag_local" in owners
+    assert "darwin_local" in owners
+    assert example["evidence"]["repeated_shape"] is False
+    assert example["evidence"]["future_v3_evidence"] is False
+    assert example["synthesis"]["no_v3_now"] is True
+    assert example["synthesis"]["dag_v2_should_remain_frozen"] is True
+
+
+def test_post_v2_study_06_darwin_boundary_probe_payload_round_trips() -> None:
+    payload = build_post_v2_study_06_darwin_boundary_probe_payload()
+
+    assert len(payload["scenarios"]) == 4
+    assert payload["evidence"]["future_v3_evidence"] is False
+    assert payload["synthesis"]["no_v3_now"] is True
+    assert payload["synthesis"]["repeated_shape_gap_count"] == 0

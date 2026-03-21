@@ -1780,3 +1780,73 @@ def build_post_v2_study_05_rl_facing_probe_payload() -> Dict[str, object]:
             "owner_boundary": example["evidence"]["owner_boundary"],
         },
     }
+
+
+def build_post_v2_study_06_darwin_boundary_probe() -> Dict[str, object]:
+    scenarios = [
+        {
+            "scenario_id": "dag_local_branch_episode",
+            "description": "single bounded branch-local execute/verify search episode",
+            "owner": "dag_local",
+            "why": "fits current per-task search truth, assessments, and branch-local state",
+        },
+        {
+            "scenario_id": "multi_cohort_async_campaign",
+            "description": "many bounded searches coordinated across cohorts with shared budget and asynchronous scheduling",
+            "owner": "darwin_local",
+            "why": "requires outer-loop campaign orchestration and cross-run budget allocation",
+        },
+        {
+            "scenario_id": "persistent_diversity_archive",
+            "description": "cross-task archive or island pressure over many runs",
+            "owner": "darwin_local",
+            "why": "requires persistent archive semantics outside DAG runtime",
+        },
+        {
+            "scenario_id": "assessment_export_to_optimize",
+            "description": "assessment-bearing DAG export consumed by optimize-side evaluation",
+            "owner": "adapter_local",
+            "why": "works through exports and adapters without a DAG kernel change",
+        },
+    ]
+    evidence = {
+        "easy": [
+            "DAG-local vs DARWIN-local ownership is classifiable with the current V2 boundary memo",
+            "multi-cohort async budget allocation clearly belongs outside DAG",
+            "export-driven composition remains adapter-local rather than DAG-local",
+        ],
+        "awkward": [
+            "some future scenarios may mix DAG-local and DARWIN-local concerns, but that ambiguity is a classification concern, not current kernel pressure",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "boundary_clarification_level",
+    }
+    synthesis = {
+        "no_v3_now": True,
+        "repeated_shape_gap_count": 0,
+        "dag_v2_should_remain_frozen": True,
+        "next_default_move": "use_dag_v2_on_more_targets",
+    }
+    return {
+        "scenarios": scenarios,
+        "evidence": evidence,
+        "synthesis": synthesis,
+    }
+
+
+def build_post_v2_study_06_darwin_boundary_probe_payload() -> Dict[str, object]:
+    example = build_post_v2_study_06_darwin_boundary_probe()
+    return {
+        "scenarios": [dict(item) for item in example["scenarios"]],
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+        "synthesis": dict(example["synthesis"]),
+    }
