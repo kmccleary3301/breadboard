@@ -142,3 +142,5 @@ Date: 2026-03-14
 - tranche-1 hard gate: `docs/darwin_stage5_tranche1_hard_gate_2026-03-21.md`
 - secondary-lane slice: `docs/darwin_stage5_secondary_lane_slice_2026-03-21.md`
 - secondary-lane status: `docs/darwin_stage5_secondary_lane_status_2026-03-21.md`
+- multi-lane slice: `docs/darwin_stage5_multilane_slice_2026-03-21.md`
+- multi-lane status: `docs/darwin_stage5_multilane_status_2026-03-21.md`

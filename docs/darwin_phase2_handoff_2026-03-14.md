@@ -141,6 +141,8 @@ Phase-1 is closed as the internal operational baseline.
 - `docs/darwin_stage5_tranche1_hard_gate_2026-03-21.md`
 - `docs/darwin_stage5_secondary_lane_slice_2026-03-21.md`
 - `docs/darwin_stage5_secondary_lane_status_2026-03-21.md`
+- `docs/darwin_stage5_multilane_slice_2026-03-21.md`
+- `docs/darwin_stage5_multilane_status_2026-03-21.md`
 
 ## What Phase-2 should not reopen
 

@@ -35,6 +35,7 @@ def run_stage5_compounding_pilot(
     *,
     lane_id: str = "lane.repo_swe",
     out_dir: Path | None = None,
+    round_index: int = 1,
 ) -> dict[str, object]:
     out_dir = _default_out_dir(lane_id) if out_dir is None else out_dir
     search_policy = build_stage5_search_policy_v2(
@@ -50,7 +51,7 @@ def run_stage5_compounding_pilot(
     arm_rows: list[dict] = []
     run_rows: list[dict] = []
     telemetry_rows: list[dict] = []
-    round_id = f"round.stage5.{lane_id}.r1"
+    round_id = f"round.stage5.{lane_id}.r{int(round_index)}"
     for arm_cfg in selected_arms:
         arm_cfg = dict(arm_cfg)
         arm_cfg["repetition_count"] = int(search_policy["repetition_count"])
@@ -145,9 +146,10 @@ def run_stage5_compounding_pilot(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the Stage-5 tranche-1 compounding pilot.")
     parser.add_argument("--lane-id", default="lane.repo_swe")
+    parser.add_argument("--round-index", type=int, default=1)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
-    summary = run_stage5_compounding_pilot(lane_id=args.lane_id)
+    summary = run_stage5_compounding_pilot(lane_id=args.lane_id, round_index=args.round_index)
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
