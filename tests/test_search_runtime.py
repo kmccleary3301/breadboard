@@ -36,6 +36,8 @@ from agentic_coder_prototype.search import (
     build_post_v2_study_01_verifier_patch_branch_payload,
     build_post_v2_study_02_judge_reducer_rounds,
     build_post_v2_study_02_judge_reducer_rounds_payload,
+    build_post_v2_study_03_branch_execute_verify_deeper,
+    build_post_v2_study_03_branch_execute_verify_deeper_payload,
     SearchRun,
     SearchTrajectoryExport,
     SearchWorkspaceSnapshot,
@@ -514,4 +516,27 @@ def test_post_v2_study_02_judge_reducer_rounds_payload_round_trips() -> None:
     assert len(run.assessments) == 2
     assert payload["round1_outcome"]["selected_candidate_id"] is not None
     assert payload["round2_outcome"]["selected_candidate_id"] == payload["synthesis_candidate_id"]
+    assert payload["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_03_branch_execute_verify_deeper_stays_narrow() -> None:
+    example = build_post_v2_study_03_branch_execute_verify_deeper()
+    run = example["run"]
+
+    assert run.recipe_kind == "branch_execute_verify_deeper_pressure_pass"
+    assert len(run.assessments) == 6
+    assert len(run.branch_states) == 4
+    assert example["judge_outcome"].selected_candidate_id is not None
+    assert example["evidence"]["repeated_shape"] is False
+    assert example["evidence"]["future_v3_evidence"] is False
+    assert example["evidence"]["owner_boundary"] == "private_helper_level"
+
+
+def test_post_v2_study_03_branch_execute_verify_deeper_payload_round_trips() -> None:
+    payload = build_post_v2_study_03_branch_execute_verify_deeper_payload()
+    run = SearchRun.from_dict(payload["run"])
+
+    assert run.recipe_kind == "branch_execute_verify_deeper_pressure_pass"
+    assert len(run.assessments) == 6
+    assert payload["judge_outcome"]["selected_candidate_id"] is not None
     assert payload["evidence"]["repeated_shape"] is False

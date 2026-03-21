@@ -1427,3 +1427,201 @@ def build_post_v2_study_02_judge_reducer_rounds_payload() -> Dict[str, object]:
             "owner_boundary": example["evidence"]["owner_boundary"],
         },
     }
+
+
+def build_post_v2_study_03_branch_execute_verify_deeper() -> Dict[str, object]:
+    base = build_post_v2_study_01_verifier_patch_branch()
+    run = base["run"]
+    repair_candidate = next(item for item in run.candidates if item.candidate_id == base["repair_candidate_id"])
+    risky_snapshot = SearchWorkspaceSnapshot(
+        snapshot_id=f"{run.search_id}.snapshot.branch.risky_patch",
+        search_id=run.search_id,
+        branch_id=f"{run.search_id}.branch.risky_patch",
+        artifact_ref=f"artifacts/search/{run.search_id}/risky_patch_snapshot.json",
+        parent_snapshot_id=repair_candidate.workspace_ref,
+        derived_from_candidate_id=repair_candidate.candidate_id,
+        metadata={"lane": "risky_patch_branch", "action": "patch_iterate"},
+    )
+    risky_candidate = SearchCandidate(
+        candidate_id=f"{run.search_id}.cand.branch.risky_patch",
+        search_id=run.search_id,
+        frontier_id=repair_candidate.frontier_id,
+        parent_ids=[repair_candidate.candidate_id],
+        round_index=repair_candidate.round_index,
+        depth=repair_candidate.depth + 1,
+        payload_ref=f"artifacts/search/{run.search_id}/risky_patch_candidate.json",
+        workspace_ref=risky_snapshot.snapshot_id,
+        score_vector={"correctness_score": 0.84, "patch_risk": 0.61},
+        usage={"prompt_tokens": 83, "completion_tokens": 47},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{run.search_id}/risky_patch_candidate.md",
+        metadata={"study_id": "study_03_branch_execute_verify_deeper", "lane": "risky_patch_branch"},
+    )
+    risky_branch = SearchBranchState(
+        branch_id=risky_snapshot.branch_id,
+        search_id=run.search_id,
+        candidate_id=risky_candidate.candidate_id,
+        snapshot_ids=[risky_snapshot.snapshot_id],
+        head_snapshot_id=risky_snapshot.snapshot_id,
+        status="active",
+        metadata={"review_status": "pending", "study_id": "study_03_branch_execute_verify_deeper"},
+    )
+    execute_event = SearchEvent(
+        event_id=f"{run.search_id}.event.execute.branch_execute_verify_deeper",
+        search_id=run.search_id,
+        frontier_id=repair_candidate.frontier_id,
+        round_index=repair_candidate.round_index,
+        operator_kind="execute",
+        input_candidate_ids=[repair_candidate.candidate_id, risky_candidate.candidate_id],
+        output_candidate_ids=[repair_candidate.candidate_id, risky_candidate.candidate_id],
+        metadata={
+            "study_id": "study_03_branch_execute_verify_deeper",
+            "branch_ids": [next(item for item in run.branch_states if item.candidate_id == repair_candidate.candidate_id).branch_id, risky_branch.branch_id],
+            "execution_bundle_kind": "branch_execute_verify_pair.v1",
+        },
+    )
+    study_run = SearchRun(
+        search_id=run.search_id,
+        recipe_kind="branch_execute_verify_deeper_pressure_pass",
+        candidates=[*run.candidates, risky_candidate],
+        frontiers=list(run.frontiers),
+        events=[*run.events, execute_event],
+        messages=list(run.messages),
+        carry_states=list(run.carry_states),
+        assessments=list(run.assessments),
+        workspace_snapshots=[*run.workspace_snapshots, risky_snapshot],
+        branch_states=[*run.branch_states, risky_branch],
+        metrics=run.metrics,
+        selected_candidate_id=run.selected_candidate_id,
+        metadata={**dict(run.metadata), "study_id": "study_03_branch_execute_verify_deeper"},
+    )
+    registry = build_default_search_assessment_registry()
+    verify_config = AssessmentGateConfig(
+        backend_kind="exact_tests.v1",
+        mode="require_before_select",
+        max_assessments=2,
+        required_verdicts=["pass"],
+        metadata={"study_id": "study_03_branch_execute_verify_deeper", "phase": "post_v2_usage"},
+    )
+    verify_outcome = run_barriered_assessment_gate(
+        run=study_run,
+        registry=registry,
+        config=verify_config,
+        frontier_candidates=[repair_candidate, risky_candidate],
+    )
+    judge_config = AssessmentGateConfig(
+        backend_kind="judge_pairwise.v1",
+        mode="require_before_select",
+        max_assessments=2,
+        required_verdicts=["prefer_a"],
+        metadata={"study_id": "study_03_branch_execute_verify_deeper", "phase": "post_v2_usage"},
+    )
+    judge_outcome = run_barriered_assessment_gate(
+        run=study_run,
+        registry=registry,
+        config=judge_config,
+        frontier_candidates=[repair_candidate, risky_candidate],
+    )
+    selected_candidate_id = judge_outcome.selected_candidate_id or verify_outcome.selected_candidate_id
+    merge_event = SearchEvent(
+        event_id=f"{run.search_id}.event.merge.branch_execute_verify_deeper",
+        search_id=run.search_id,
+        frontier_id=repair_candidate.frontier_id,
+        round_index=repair_candidate.round_index,
+        operator_kind="merge",
+        input_candidate_ids=[selected_candidate_id] if selected_candidate_id else [],
+        output_candidate_ids=[selected_candidate_id] if selected_candidate_id else [],
+        metadata={"study_id": "study_03_branch_execute_verify_deeper"},
+    )
+    final_events = [
+        *study_run.events,
+        verify_outcome.gate_event,
+        *( [verify_outcome.selection_event] if verify_outcome.selection_event is not None else [] ),
+        judge_outcome.gate_event,
+        *( [judge_outcome.selection_event] if judge_outcome.selection_event is not None else [] ),
+        merge_event,
+    ]
+    final_run = SearchRun(
+        search_id=study_run.search_id,
+        recipe_kind=study_run.recipe_kind,
+        candidates=list(study_run.candidates),
+        frontiers=list(study_run.frontiers),
+        events=final_events,
+        messages=list(study_run.messages),
+        carry_states=list(study_run.carry_states),
+        assessments=[*study_run.assessments, *verify_outcome.assessments, *judge_outcome.assessments],
+        workspace_snapshots=list(study_run.workspace_snapshots),
+        branch_states=list(study_run.branch_states),
+        metrics=study_run.metrics,
+        selected_candidate_id=selected_candidate_id,
+        metadata={
+            **dict(study_run.metadata),
+            "deeper_branch_execute_verify": True,
+            "terminated": verify_outcome.terminated or judge_outcome.terminated,
+        },
+    )
+    evidence = {
+        "easy": [
+            "deeper branch-local execute/verify flow still fits current branch state plus assessment records",
+            "assessment-backed ranking among viable branches stays explicit",
+            "merge remains attributable to inspectable branch and assessment artifacts",
+        ],
+        "awkward": [
+            "combining branch-local execute reports with follow-on ranking summaries is still a reporting/helper problem",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "private_helper_level",
+    }
+    return {
+        "run": final_run,
+        "verify_config": verify_config,
+        "judge_config": judge_config,
+        "verify_outcome": verify_outcome,
+        "judge_outcome": judge_outcome,
+        "risky_candidate_id": risky_candidate.candidate_id,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_03_branch_execute_verify_deeper_payload() -> Dict[str, object]:
+    example = build_post_v2_study_03_branch_execute_verify_deeper()
+    return {
+        "run": example["run"].to_dict(),
+        "verify_config": {
+            "backend_kind": example["verify_config"].backend_kind,
+            "mode": example["verify_config"].mode,
+            "max_assessments": example["verify_config"].max_assessments,
+            "required_verdicts": list(example["verify_config"].required_verdicts),
+            "metadata": dict(example["verify_config"].metadata),
+        },
+        "judge_config": {
+            "backend_kind": example["judge_config"].backend_kind,
+            "mode": example["judge_config"].mode,
+            "max_assessments": example["judge_config"].max_assessments,
+            "required_verdicts": list(example["judge_config"].required_verdicts),
+            "metadata": dict(example["judge_config"].metadata),
+        },
+        "verify_outcome": {
+            "pruned_candidate_ids": list(example["verify_outcome"].pruned_candidate_ids),
+            "selected_candidate_id": example["verify_outcome"].selected_candidate_id,
+            "terminated": example["verify_outcome"].terminated,
+            "assessment_ids": [item.assessment_id for item in example["verify_outcome"].assessments],
+        },
+        "judge_outcome": {
+            "pruned_candidate_ids": list(example["judge_outcome"].pruned_candidate_ids),
+            "selected_candidate_id": example["judge_outcome"].selected_candidate_id,
+            "terminated": example["judge_outcome"].terminated,
+            "assessment_ids": [item.assessment_id for item in example["judge_outcome"].assessments],
+        },
+        "risky_candidate_id": example["risky_candidate_id"],
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }

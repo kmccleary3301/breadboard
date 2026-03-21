@@ -45,6 +45,8 @@ from .examples import (
     build_post_v2_study_01_verifier_patch_branch_payload,
     build_post_v2_study_02_judge_reducer_rounds,
     build_post_v2_study_02_judge_reducer_rounds_payload,
+    build_post_v2_study_03_branch_execute_verify_deeper,
+    build_post_v2_study_03_branch_execute_verify_deeper_payload,
     build_verifier_guided_pressure_cell,
 )
 from .export import (
@@ -155,6 +157,8 @@ __all__ = [
     "build_post_v2_study_01_verifier_patch_branch_payload",
     "build_post_v2_study_02_judge_reducer_rounds",
     "build_post_v2_study_02_judge_reducer_rounds_payload",
+    "build_post_v2_study_03_branch_execute_verify_deeper",
+    "build_post_v2_study_03_branch_execute_verify_deeper_payload",
     "build_verifier_guided_pressure_cell",
     "export_search_trajectory",
     "run_barriered_assessment_gate",
