@@ -18,6 +18,8 @@ from agentic_coder_prototype.search import (
     build_dag_v2_e4_widening_packet_payload,
     build_dag_v2_phase0_pressure_packet,
     build_dag_v2_phase0_pressure_packet_payload,
+    build_dag_v2_stop_go_synthesis,
+    build_dag_v2_stop_go_synthesis_payload,
     build_default_search_compaction_registry,
     build_exact_verifier_assessment_example,
     build_exact_verifier_assessment_example_payload,
@@ -42,6 +44,7 @@ from agentic_coder_prototype.search import (
     build_typed_compaction_registry_example,
     build_typed_compaction_registry_example_payload,
     build_verifier_guided_pressure_cell,
+    export_search_trajectory,
 )
 
 
@@ -430,3 +433,33 @@ def test_dag_v2_e4_widening_packet_payload_round_trips() -> None:
     assert payload["widening_due_to_assessment_layer"] is True
     assert payload["new_public_noun_families_added"] == 1
     assert len(payload["recipes"]) == 3
+
+
+def test_assessment_linkage_survives_trajectory_export() -> None:
+    example = build_branch_execute_verify_reference_recipe()
+    exported = export_search_trajectory(example["run"])
+
+    assert any(step.assessment_ids for step in exported.steps)
+    assert exported.recipe_kind == "branch_execute_verify"
+
+
+def test_dag_v2_stop_go_synthesis_is_frozen_and_narrow() -> None:
+    synthesis = build_dag_v2_stop_go_synthesis()
+
+    assert synthesis["trajectory_export"]["assessment_ids_linked"] is True
+    assert synthesis["optimize_adapter"]["outside_dag_kernel"] is True
+    assert synthesis["optimize_adapter"]["introduces_optimize_public_nouns_into_dag"] is False
+    assert synthesis["darwin_boundary"]["campaign_nouns_added_to_dag"] is False
+    assert synthesis["rl_facing_note"]["training_framework_added"] is False
+    assert synthesis["stop_go"]["current_decision"] == "stop_and_freeze"
+    assert synthesis["stop_go"]["only_new_public_noun_family"] == "SearchAssessment"
+
+
+def test_dag_v2_stop_go_synthesis_payload_round_trips() -> None:
+    payload = build_dag_v2_stop_go_synthesis_payload()
+
+    assert payload["trajectory_export"]["assessment_ids_linked"] is True
+    assert payload["optimize_adapter"]["outside_dag_kernel"] is True
+    assert payload["darwin_boundary"]["campaign_nouns_added_to_dag"] is False
+    assert payload["rl_facing_note"]["training_framework_added"] is False
+    assert payload["stop_go"]["async_public_mode_added"] is False

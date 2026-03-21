@@ -110,6 +110,10 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [concepts/dag-runtime-v2-phase0-pressure-packet.md](concepts/dag-runtime-v2-phase0-pressure-packet.md) | DAG Runtime V2 Phase 0 go/no-go packet showing repeated assessment-truth pressure across verifier, judge/reducer, and branch execute/verify cells |
 | [concepts/dag-runtime-v2-assessment-surface.md](concepts/dag-runtime-v2-assessment-surface.md) | DAG Runtime V2 narrow assessment layer: grounded evaluator truth, assessment registry, and explicit linkage into runs, events, and trajectory export |
 | [concepts/dag-runtime-v2-e4-widening-packet.md](concepts/dag-runtime-v2-e4-widening-packet.md) | DAG Runtime V2 Phase 3 widening memo showing that verifier, judge/reducer, and branch execute/verify recipes all widen through the same assessment layer |
+| [concepts/dag-runtime-v2-optimize-adapter-note.md](concepts/dag-runtime-v2-optimize-adapter-note.md) | DAG Runtime V2 optimize adapter boundary: assessment-grounded DAG artifacts are consumable by optimize without pulling optimize nouns into the DAG kernel |
+| [concepts/dag-runtime-v2-darwin-boundary.md](concepts/dag-runtime-v2-darwin-boundary.md) | DAG Runtime V2 DARWIN boundary memo: bounded per-task search stays in DAG while campaign/archive pressure remains outside it |
+| [concepts/dag-runtime-v2-rl-facing-note.md](concepts/dag-runtime-v2-rl-facing-note.md) | DAG Runtime V2 RL-facing note: exported assessment-bearing search truth is usable for downstream RL-adjacent studies without turning the runtime into a training framework |
+| [concepts/dag-runtime-v2-stop-go-synthesis.md](concepts/dag-runtime-v2-stop-go-synthesis.md) | DAG Runtime V2 stop/go synthesis: V2 stops with the assessment layer and should stay frozen unless repeated evidence forces another public shape |
 
 ### Governance and change policy
 

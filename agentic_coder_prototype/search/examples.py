@@ -997,3 +997,70 @@ def build_dag_v2_e4_widening_packet_payload() -> Dict[str, object]:
         "widening_due_to_assessment_layer": packet["widening_due_to_assessment_layer"],
         "new_public_noun_families_added": packet["new_public_noun_families_added"],
     }
+
+
+def build_dag_v2_stop_go_synthesis() -> Dict[str, object]:
+    return {
+        "trajectory_export": {
+            "assessment_ids_linked": True,
+            "stable_consumer_surface": [
+                "SearchAssessment",
+                "SearchRun.assessments",
+                "SearchEvent.assessment_ids",
+                "SearchTrajectoryStep.assessment_ids",
+            ],
+        },
+        "optimize_adapter": {
+            "outside_dag_kernel": True,
+            "consumes": [
+                "SearchRun.assessments",
+                "SearchTrajectoryExport.steps[].assessment_ids",
+                "SearchTrajectoryExport.selected_candidate_id",
+            ],
+            "introduces_optimize_public_nouns_into_dag": False,
+        },
+        "darwin_boundary": {
+            "dag_runtime_role": "bounded_per_task_search",
+            "darwin_role": "outer_loop_campaign_orchestration",
+            "handoff_signals": [
+                "many_cohort_async_pressure",
+                "persistent_diversity_archive_pressure",
+                "cross_task_budget_allocation_pressure",
+            ],
+            "campaign_nouns_added_to_dag": False,
+        },
+        "rl_facing_note": {
+            "available_now": [
+                "SearchTrajectoryExport",
+                "SearchRewardSignal",
+                "SearchAssessment",
+            ],
+            "deferred": [
+                "training_framework",
+                "online_policy_learning",
+                "public_rl_control_surface",
+            ],
+            "training_framework_added": False,
+        },
+        "stop_go": {
+            "current_decision": "stop_and_freeze",
+            "only_new_public_noun_family": "SearchAssessment",
+            "async_public_mode_added": False,
+            "proceed_only_if": [
+                "repeated_shape_pressure_exceeds_assessment_layer",
+                "multiple_families_need_same_new_public_shape",
+                "docs_or_private_helpers_no_longer_suffice",
+            ],
+        },
+    }
+
+
+def build_dag_v2_stop_go_synthesis_payload() -> Dict[str, object]:
+    synthesis = build_dag_v2_stop_go_synthesis()
+    return {
+        "trajectory_export": dict(synthesis["trajectory_export"]),
+        "optimize_adapter": dict(synthesis["optimize_adapter"]),
+        "darwin_boundary": dict(synthesis["darwin_boundary"]),
+        "rl_facing_note": dict(synthesis["rl_facing_note"]),
+        "stop_go": dict(synthesis["stop_go"]),
+    }
