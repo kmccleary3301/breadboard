@@ -40,6 +40,8 @@ from agentic_coder_prototype.search import (
     build_post_v2_study_03_branch_execute_verify_deeper_payload,
     build_post_v2_study_04_optimize_adapter_probe,
     build_post_v2_study_04_optimize_adapter_probe_payload,
+    build_post_v2_study_05_rl_facing_probe,
+    build_post_v2_study_05_rl_facing_probe_payload,
     SearchRun,
     SearchTrajectoryExport,
     SearchWorkspaceSnapshot,
@@ -568,3 +570,30 @@ def test_post_v2_study_04_optimize_adapter_probe_payload_round_trips() -> None:
     assert len(payload["optimize_adapter_payload"]["trajectory_assessment_ids"]) >= 1
     assert payload["optimize_adapter_payload"]["adapter_boundary"]["outside_dag_kernel"] is True
     assert payload["evidence"]["future_v3_evidence"] is False
+
+
+def test_post_v2_study_05_rl_facing_probe_stays_downstream() -> None:
+    example = build_post_v2_study_05_rl_facing_probe()
+    packet = example["rl_consumption_packet"]
+
+    assert packet["trajectory_count"] == 1
+    assert packet["step_count"] == len(example["trajectory"].steps)
+    assert packet["reward_signal_count"] == len(example["trajectory"].reward_signals)
+    assert packet["assessment_linked_step_count"] >= 1
+    assert packet["rl_boundary"]["training_framework_added"] is False
+    assert packet["rl_boundary"]["public_rl_control_surface_added"] is False
+    assert example["evidence"]["future_v3_evidence"] is False
+    assert example["evidence"]["owner_boundary"] == "downstream_consumer_level"
+
+
+def test_post_v2_study_05_rl_facing_probe_payload_round_trips() -> None:
+    payload = build_post_v2_study_05_rl_facing_probe_payload()
+    run = SearchRun.from_dict(payload["run"])
+    trajectory = SearchTrajectoryExport.from_dict(payload["trajectory"])
+    dataset = SearchOfflineDataset.from_dict(payload["dataset"])
+
+    assert run.recipe_kind == "branch_execute_verify_deeper_pressure_pass"
+    assert dataset.dataset_id == payload["rl_consumption_packet"]["dataset_id"]
+    assert trajectory.selected_candidate_id == payload["rl_consumption_packet"]["selected_candidate_id"]
+    assert payload["rl_consumption_packet"]["assessment_linked_step_count"] >= 1
+    assert payload["rl_consumption_packet"]["rl_boundary"]["training_framework_added"] is False

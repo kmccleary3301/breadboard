@@ -49,6 +49,8 @@ from .examples import (
     build_post_v2_study_03_branch_execute_verify_deeper_payload,
     build_post_v2_study_04_optimize_adapter_probe,
     build_post_v2_study_04_optimize_adapter_probe_payload,
+    build_post_v2_study_05_rl_facing_probe,
+    build_post_v2_study_05_rl_facing_probe_payload,
     build_verifier_guided_pressure_cell,
 )
 from .export import (
@@ -163,6 +165,8 @@ __all__ = [
     "build_post_v2_study_03_branch_execute_verify_deeper_payload",
     "build_post_v2_study_04_optimize_adapter_probe",
     "build_post_v2_study_04_optimize_adapter_probe_payload",
+    "build_post_v2_study_05_rl_facing_probe",
+    "build_post_v2_study_05_rl_facing_probe_payload",
     "build_verifier_guided_pressure_cell",
     "export_search_trajectory",
     "run_barriered_assessment_gate",

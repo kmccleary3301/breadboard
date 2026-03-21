@@ -1701,3 +1701,82 @@ def build_post_v2_study_04_optimize_adapter_probe_payload() -> Dict[str, object]
             "owner_boundary": example["evidence"]["owner_boundary"],
         },
     }
+
+
+def build_post_v2_study_05_rl_facing_probe() -> Dict[str, object]:
+    study = build_post_v2_study_03_branch_execute_verify_deeper()
+    run = study["run"]
+    trajectory = export_search_trajectory(
+        run,
+        metadata={"study_id": "study_05_rl_facing_probe", "consumer": "rl_adjacent"},
+    )
+    dataset = build_search_offline_dataset(
+        [trajectory],
+        dataset_id=f"{run.search_id}.post_v2_rl_probe",
+        metadata={"study_id": "study_05_rl_facing_probe", "operator_conditioned": True},
+    )
+    rl_consumption_packet = {
+        "dataset_id": dataset.dataset_id,
+        "trajectory_count": len(dataset.trajectories),
+        "step_count": len(trajectory.steps),
+        "reward_signal_count": len(trajectory.reward_signals),
+        "assessment_linked_step_count": sum(1 for step in trajectory.steps if step.assessment_ids),
+        "selected_candidate_id": trajectory.selected_candidate_id,
+        "rl_boundary": {
+            "training_framework_added": False,
+            "public_rl_control_surface_added": False,
+            "downstream_wrapper_required": True,
+            "uses_existing_surfaces": [
+                "SearchTrajectoryExport",
+                "SearchRewardSignal",
+                "SearchAssessment",
+            ],
+        },
+    }
+    evidence = {
+        "easy": [
+            "trajectory export already carries operator-conditioned steps, reward signals, and assessment linkage",
+            "offline dataset packaging is enough for a narrow RL-adjacent consumer packet",
+            "no learner or actor surface is required inside DAG",
+        ],
+        "awkward": [
+            "episode packaging and learner-specific tensorization remain downstream wrapper concerns",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "downstream_consumer_level",
+    }
+    return {
+        "run": run,
+        "trajectory": trajectory,
+        "dataset": dataset,
+        "rl_consumption_packet": rl_consumption_packet,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_05_rl_facing_probe_payload() -> Dict[str, object]:
+    example = build_post_v2_study_05_rl_facing_probe()
+    return {
+        "run": example["run"].to_dict(),
+        "trajectory": example["trajectory"].to_dict(),
+        "dataset": example["dataset"].to_dict(),
+        "rl_consumption_packet": {
+            "dataset_id": example["rl_consumption_packet"]["dataset_id"],
+            "trajectory_count": example["rl_consumption_packet"]["trajectory_count"],
+            "step_count": example["rl_consumption_packet"]["step_count"],
+            "reward_signal_count": example["rl_consumption_packet"]["reward_signal_count"],
+            "assessment_linked_step_count": example["rl_consumption_packet"]["assessment_linked_step_count"],
+            "selected_candidate_id": example["rl_consumption_packet"]["selected_candidate_id"],
+            "rl_boundary": dict(example["rl_consumption_packet"]["rl_boundary"]),
+        },
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }
