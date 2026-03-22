@@ -21,7 +21,7 @@ Passed.
 
 - keep Stage 5 bounded to repeated multi-lane protocol work
 - treat Systems as the stronger lane in the current policy surface
-- tighten Repo_SWE policy behavior before any broadening work
+- keep the tightened Repo_SWE selection path in place before any broadening work
 
 ## What is not authorized next
 

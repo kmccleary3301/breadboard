@@ -227,7 +227,7 @@ Hard gate:
 
 ### Epic 5 — Family-aware search
 
-- Repo_SWE primary proving
+- Repo_SWE primary proving, with tightened selection after policy-stability review
 - Systems follow-on proving
 - Harness controls
 - Scheduling confirmation
@@ -238,6 +238,7 @@ Hard gate:
 
 - provider-backed cost truth on Repo_SWE live rows
 - canonical warm-start / family-lockout protocol
+- Repo_SWE-only tightening path before any broader widening
 - `CompoundingCaseV1` emission
 - `SearchPolicyV2` skeleton consuming current family state
 - `ComponentFamilyV2` lifecycle draft with no runtime-truth expansion

@@ -16,7 +16,7 @@ The repeated multi-lane surface is now summarized into lane-level stability clas
 
 ### 2. What is the main result?
 
-Repo_SWE is still unstable in the repeated view. Systems is balanced on aggregate and stronger than Repo_SWE, but not yet round-dominant.
+Repo_SWE is now mixed-positive after tightening the lane-specific Stage-5 policy. Systems remains balanced on aggregate and slightly stronger, but not yet round-dominant.
 
 ### 3. Does this prove stable scalable compounding?
 
@@ -34,4 +34,4 @@ The report gives a clearer basis for deciding where to keep scaling and where to
 
 The policy-stability slice succeeded.
 
-It does not upgrade Stage 5 into stable scalable compounding. It does provide a more precise reason to continue bounded multi-lane protocol work with Systems as the stronger lane and Repo_SWE as the lane that currently needs tighter policy behavior.
+It does not upgrade Stage 5 into stable scalable compounding. It does provide a more precise reason to continue bounded multi-lane protocol work with Systems as the stronger lane and Repo_SWE as the lane that now needs continued tightened selection rather than broader rollout.

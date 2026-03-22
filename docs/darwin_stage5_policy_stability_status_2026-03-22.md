@@ -16,22 +16,22 @@ References:
 ## Current stability result
 
 - Repo_SWE:
-  - `stable_negative`
-  - `1` reuse-lift vs `7` no-lift across two rounds
-  - round 1 negative, round 2 negative
+  - `mixed_positive`
+  - `6` reuse-lift vs `6` no-lift across two rounds
+  - round 1 mixed, round 2 mixed
 - Systems:
   - `mixed_positive`
-  - `4` reuse-lift vs `4` no-lift across two rounds
+  - `5` reuse-lift vs `3` no-lift across two rounds
   - round 1 mixed, round 2 mixed
 
 ## Interpretation
 
 The repeated multi-lane compounding surface is now better characterized:
 
-- Systems is the stronger lane on aggregate balance, but not yet round-dominant
-- Repo_SWE remains unstable in the repeated view
+- Repo_SWE is now tightened enough to move into mixed-positive repeated behavior
+- Systems remains the stronger aggregate lane, but still not round-dominant
 
-That is a useful result because it sharpens the Stage-5 question from "is compounding real?" to "where is compounding stabilizing, and where is it not?"
+That is a useful result because it sharpens the Stage-5 question from "is compounding real?" to "where is compounding stabilizing, and where is it not?" and shows the Repo_SWE tightening actually changed the lane behavior.
 
 ## Route/economics note
 
@@ -43,5 +43,6 @@ The stability report remains caveated by the same provider-economics behavior:
 ## What this authorizes next
 
 - keep the Stage-5 policy layer focused on stability, not transfer
+- continue the tightened Repo_SWE selection path before widening again
 - continue bounded multi-lane protocol work
 - avoid claiming stable scalable compounding until the policy/review layer is cleaner

@@ -11,6 +11,7 @@ from breadboard_ext.darwin.stage4_family_program import FAMILY_OPERATOR_MAP
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_STAGE5_FAMILY_REGISTRY = ROOT / "artifacts" / "darwin" / "stage4" / "family_program" / "family_registry_v0.json"
+DEFAULT_STAGE5_POLICY_STABILITY = ROOT / "artifacts" / "darwin" / "stage5" / "policy_stability" / "policy_stability_v0.json"
 
 STAGE5_COMPARISON_MODES = ("cold_start", "warm_start", "family_lockout")
 
@@ -32,6 +33,13 @@ def load_stage5_family_registry_rows(path: Path = DEFAULT_STAGE5_FAMILY_REGISTRY
     return list(payload.get("rows") or [])
 
 
+def load_stage5_policy_stability_rows(path: Path = DEFAULT_STAGE5_POLICY_STABILITY) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    payload = _load_json(path)
+    return list(payload.get("rows") or [])
+
+
 def _family_operator_id(row: Mapping[str, Any]) -> str | None:
     family_key = str(row.get("family_key") or "")
     family_kind = str(row.get("family_kind") or "")
@@ -41,15 +49,30 @@ def _family_operator_id(row: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _lane_policy_review_conclusion(
+    lane_id: str,
+    *,
+    policy_stability_rows: list[dict[str, Any]] | None = None,
+) -> str | None:
+    rows = load_stage5_policy_stability_rows() if policy_stability_rows is None else list(policy_stability_rows)
+    for row in rows:
+        if str(row.get("lane_id") or "") == lane_id:
+            conclusion = str(row.get("policy_review_conclusion") or "")
+            return conclusion or None
+    return None
+
+
 def build_stage5_search_policy_v2(
     *,
     lane_id: str,
     budget_class: str,
     family_rows: list[dict[str, Any]] | None = None,
+    policy_stability_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if lane_id not in {"lane.repo_swe", "lane.systems"}:
         raise ValueError("stage5 search policy v2 is only authorized for lane.repo_swe and lane.systems")
     family_rows = list(load_stage5_family_registry_rows() if family_rows is None else family_rows)
+    policy_review_conclusion = _lane_policy_review_conclusion(lane_id, policy_stability_rows=policy_stability_rows)
     base_policy = build_stage4_search_policy_v1(lane_id=lane_id, budget_class=budget_class)
     promoted_rows = [
         row
@@ -73,6 +96,7 @@ def build_stage5_search_policy_v2(
     family_registry_ref = None
     if DEFAULT_STAGE5_FAMILY_REGISTRY.exists():
         family_registry_ref = str(DEFAULT_STAGE5_FAMILY_REGISTRY.relative_to(ROOT))
+    tightened_repo_swe = lane_id == "lane.repo_swe" and policy_review_conclusion == "tighten"
     payload = {
         "schema": "breadboard.darwin.stage5.search_policy.v2",
         "policy_id": f"darwin.stage5.search_policy.{lane_id.split('.')[-1]}.v2",
@@ -81,8 +105,8 @@ def build_stage5_search_policy_v2(
         "campaign_class": "C1 Discovery",
         "worker_route_id": base_policy["worker_route_id"],
         "filter_route_id": base_policy["filter_route_id"],
-        "max_mutation_arms": 2,
-        "repetition_count": max(int(base_policy["repetition_count"]), 4),
+        "max_mutation_arms": 1 if tightened_repo_swe else 2,
+        "repetition_count": max(int(base_policy["repetition_count"]), 6 if tightened_repo_swe else 4),
         "operator_priors": list(base_policy["operator_priors"]),
         "topology_priors": list(base_policy["topology_priors"]),
         "family_priors": family_priors,
@@ -103,6 +127,13 @@ def build_stage5_search_policy_v2(
                 "reason": "cheap_filter_and_scout_route",
             },
         ],
+        "policy_stability_ref": str(DEFAULT_STAGE5_POLICY_STABILITY.relative_to(ROOT)) if DEFAULT_STAGE5_POLICY_STABILITY.exists() else None,
+        "policy_review_conclusion": policy_review_conclusion,
+        "policy_tightening": {
+            "enabled": tightened_repo_swe,
+            "lane_review_conclusion": policy_review_conclusion,
+            "reason": "repo_swe_stability_requires_tighter_selection" if tightened_repo_swe else "not_required",
+        },
         "abort_thresholds": {
             "matched_budget_invalidity_rate_gt": 0.25,
             "claim_ineligible_live_rows_gt": 0,
@@ -177,6 +208,7 @@ def select_stage5_search_policy_arms(
                 family_ids=[],
             )
         )
+    max_mutation_arms = max(0, int(search_policy.get("max_mutation_arms") or 0))
     ranked_rows = sorted(
         mutation_rows,
         key=lambda row: (
@@ -185,29 +217,39 @@ def select_stage5_search_policy_arms(
             str(row.get("operator_id") or ""),
         ),
     )
-    family_row = ranked_rows[0] if ranked_rows else None
-    if family_row is not None:
-        selected_rows.append(
-            _stage5_variant(
-                row=family_row,
-                comparison_mode="warm_start",
-                search_policy=search_policy,
-                family_ids=family_ids,
+    policy_tightening = search_policy.get("policy_tightening")
+    tightened_repo_swe = bool(policy_tightening.get("enabled")) if isinstance(policy_tightening, Mapping) else False
+    if tightened_repo_swe and lane_id == "lane.repo_swe":
+        max_mutation_arms = min(max_mutation_arms or 1, 1)
+    for row in ranked_rows[:max_mutation_arms or 0]:
+        if str(row.get("operator_id") or "") in family_operator_ids:
+            selected_rows.append(
+                _stage5_variant(
+                    row=row,
+                    comparison_mode="warm_start",
+                    search_policy=search_policy,
+                    family_ids=family_ids,
+                )
             )
-        )
-        selected_rows.append(
-            _stage5_variant(
-                row=family_row,
-                comparison_mode="family_lockout",
-                search_policy=search_policy,
-                family_ids=family_ids,
+            selected_rows.append(
+                _stage5_variant(
+                    row=row,
+                    comparison_mode="family_lockout",
+                    search_policy=search_policy,
+                    family_ids=family_ids,
+                )
             )
-        )
-    for row in other_rows:
-        variant = dict(row)
-        variant["comparison_mode"] = "cold_start"
-        variant["family_context"] = {"allowed_family_ids": [], "blocked_family_ids": []}
-        selected_rows.append(variant)
+        else:
+            variant = dict(row)
+            variant["comparison_mode"] = "cold_start"
+            variant["family_context"] = {"allowed_family_ids": [], "blocked_family_ids": []}
+            selected_rows.append(variant)
+    if not (tightened_repo_swe and lane_id == "lane.repo_swe"):
+        for row in other_rows:
+            variant = dict(row)
+            variant["comparison_mode"] = "cold_start"
+            variant["family_context"] = {"allowed_family_ids": [], "blocked_family_ids": []}
+            selected_rows.append(variant)
     return selected_rows
 
 
