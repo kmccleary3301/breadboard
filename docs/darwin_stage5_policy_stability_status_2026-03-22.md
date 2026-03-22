@@ -16,9 +16,9 @@ References:
 ## Current stability result
 
 - Repo_SWE:
-  - `mixed_positive`
-  - `4` reuse-lift vs `4` no-lift across two rounds
-  - round 1 mixed, round 2 mixed
+  - `stable_negative`
+  - `2` reuse-lift vs `6` no-lift across two rounds
+  - round 1 negative, round 2 negative
 - Systems:
   - `mixed_positive`
   - `4` reuse-lift vs `4` no-lift across two rounds
@@ -28,7 +28,7 @@ References:
 
 The repeated multi-lane compounding surface is now better characterized:
 
-- Repo_SWE remains mixed-positive under the tighter selection path
+- Repo_SWE is unstable again under the denser tightened path
 - Systems remains mixed-positive and roughly balanced on the latest run
 
 That is a useful result because it sharpens the Stage-5 question from "is compounding real?" to "where is compounding stabilizing, and where is it not?" without overstating Repo_SWE stability.
