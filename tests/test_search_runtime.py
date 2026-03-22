@@ -44,6 +44,8 @@ from agentic_coder_prototype.search import (
     build_post_v2_study_05_rl_facing_probe_payload,
     build_post_v2_study_06_darwin_boundary_probe,
     build_post_v2_study_06_darwin_boundary_probe_payload,
+    build_post_v2_study_07_message_passing_adjudication,
+    build_post_v2_study_07_message_passing_adjudication_payload,
     SearchRun,
     SearchTrajectoryExport,
     SearchWorkspaceSnapshot,
@@ -620,3 +622,27 @@ def test_post_v2_study_06_darwin_boundary_probe_payload_round_trips() -> None:
     assert payload["evidence"]["future_v3_evidence"] is False
     assert payload["synthesis"]["no_v3_now"] is True
     assert payload["synthesis"]["repeated_shape_gap_count"] == 0
+
+
+def test_post_v2_study_07_message_passing_adjudication_stays_narrow() -> None:
+    example = build_post_v2_study_07_message_passing_adjudication()
+    run = example["run"]
+
+    assert run.recipe_kind == "message_passing_adjudication_pressure_pass"
+    assert len(run.carry_states) >= 1
+    assert len(run.assessments) == 1
+    assert run.selected_candidate_id == example["adjudicated_candidate_id"]
+    assert example["carry_state_id"] == run.metadata["carry_state_id"]
+    assert example["evidence"]["future_v3_evidence"] is False
+    assert example["evidence"]["owner_boundary"] == "private_helper_level"
+
+
+def test_post_v2_study_07_message_passing_adjudication_payload_round_trips() -> None:
+    payload = build_post_v2_study_07_message_passing_adjudication_payload()
+    run = SearchRun.from_dict(payload["run"])
+
+    assert run.recipe_kind == "message_passing_adjudication_pressure_pass"
+    assert len(run.assessments) == 1
+    assert payload["outcome"]["selected_candidate_id"] == payload["adjudicated_candidate_id"]
+    assert payload["carry_state_id"] == run.metadata["carry_state_id"]
+    assert payload["evidence"]["repeated_shape"] is False

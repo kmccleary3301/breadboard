@@ -53,6 +53,8 @@ from .examples import (
     build_post_v2_study_05_rl_facing_probe_payload,
     build_post_v2_study_06_darwin_boundary_probe,
     build_post_v2_study_06_darwin_boundary_probe_payload,
+    build_post_v2_study_07_message_passing_adjudication,
+    build_post_v2_study_07_message_passing_adjudication_payload,
     build_verifier_guided_pressure_cell,
 )
 from .export import (
@@ -171,6 +173,8 @@ __all__ = [
     "build_post_v2_study_05_rl_facing_probe_payload",
     "build_post_v2_study_06_darwin_boundary_probe",
     "build_post_v2_study_06_darwin_boundary_probe_payload",
+    "build_post_v2_study_07_message_passing_adjudication",
+    "build_post_v2_study_07_message_passing_adjudication_payload",
     "build_verifier_guided_pressure_cell",
     "export_search_trajectory",
     "run_barriered_assessment_gate",

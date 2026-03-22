@@ -1850,3 +1850,145 @@ def build_post_v2_study_06_darwin_boundary_probe_payload() -> Dict[str, object]:
         },
         "synthesis": dict(example["synthesis"]),
     }
+
+
+def build_post_v2_study_07_message_passing_adjudication() -> Dict[str, object]:
+    base = build_pacore_search_runtime_example()
+    run = base["run"]
+    assessment_frontier = run.frontiers[-2]
+    frontier_candidates = [
+        item for item in run.candidates if item.frontier_id == assessment_frontier.frontier_id
+    ][:2]
+    if len(frontier_candidates) != 2:
+        raise ValueError("study_07 requires exactly two pre-synthesis frontier candidates")
+    carry_state = run.carry_states[-1]
+    incumbent = frontier_candidates[0]
+    challenger = frontier_candidates[1]
+    adjudicated_candidate = SearchCandidate(
+        candidate_id=f"{run.search_id}.cand.message_adjudication.1",
+        search_id=run.search_id,
+        frontier_id=assessment_frontier.frontier_id,
+        parent_ids=[incumbent.candidate_id, challenger.candidate_id],
+        round_index=assessment_frontier.round_index,
+        depth=max(incumbent.depth, challenger.depth) + 1,
+        payload_ref=f"artifacts/search/{run.search_id}/message_adjudication_candidate.json",
+        message_ref=carry_state.message_ids[0],
+        score_vector={"correctness_score": 0.9, "coherence_score": 0.89},
+        usage={"prompt_tokens": 77, "completion_tokens": 36},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{run.search_id}/message_adjudication_candidate.md",
+        metadata={"study_id": "study_07_message_passing_adjudication", "carry_state_id": carry_state.state_id},
+    )
+    aggregate_event = SearchEvent(
+        event_id=f"{run.search_id}.event.aggregate.message_adjudication",
+        search_id=run.search_id,
+        frontier_id=assessment_frontier.frontier_id,
+        round_index=assessment_frontier.round_index,
+        operator_kind="aggregate",
+        input_candidate_ids=[incumbent.candidate_id, challenger.candidate_id],
+        output_candidate_ids=[adjudicated_candidate.candidate_id],
+        message_ids=list(carry_state.message_ids),
+        metadata={
+            "study_id": "study_07_message_passing_adjudication",
+            "carry_state_id": carry_state.state_id,
+            "bounded_message_passing": True,
+        },
+    )
+    study_run = SearchRun(
+        search_id=run.search_id,
+        recipe_kind="message_passing_adjudication_pressure_pass",
+        candidates=[*run.candidates, adjudicated_candidate],
+        frontiers=list(run.frontiers),
+        events=[*run.events, aggregate_event],
+        messages=list(run.messages),
+        carry_states=list(run.carry_states),
+        metrics=run.metrics,
+        selected_candidate_id=run.selected_candidate_id,
+        metadata={**dict(run.metadata), "study_id": "study_07_message_passing_adjudication"},
+    )
+    gate_config = AssessmentGateConfig(
+        backend_kind="judge_pairwise.v1",
+        mode="require_before_select",
+        max_assessments=2,
+        required_verdicts=["prefer_a"],
+        metadata={"study_id": "study_07_message_passing_adjudication", "phase": "post_v2_wave2"},
+    )
+    registry = build_default_search_assessment_registry()
+    outcome = run_barriered_assessment_gate(
+        run=study_run,
+        registry=registry,
+        config=gate_config,
+        frontier_candidates=[adjudicated_candidate, incumbent],
+    )
+    events = [*study_run.events, outcome.gate_event]
+    if outcome.selection_event is not None:
+        events.append(outcome.selection_event)
+    final_run = SearchRun(
+        search_id=study_run.search_id,
+        recipe_kind=study_run.recipe_kind,
+        candidates=list(study_run.candidates),
+        frontiers=list(study_run.frontiers),
+        events=events,
+        messages=list(study_run.messages),
+        carry_states=list(study_run.carry_states),
+        assessments=list(outcome.assessments),
+        metrics=study_run.metrics,
+        selected_candidate_id=outcome.selected_candidate_id,
+        metadata={
+            **dict(study_run.metadata),
+            "carry_state_id": carry_state.state_id,
+            "terminated": outcome.terminated,
+        },
+    )
+    evidence = {
+        "easy": [
+            "bounded carry-state plus assessments can support a message-passing adjudication recipe",
+            "carry-over remains explicit without a new message primitive",
+            "selection remains attributable to existing assessment gates",
+        ],
+        "awkward": [
+            "multi-round adjudication summaries over carry-state still want helper/reporting code",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "private_helper_level",
+    }
+    return {
+        "run": final_run,
+        "gate_config": gate_config,
+        "outcome": outcome,
+        "carry_state_id": carry_state.state_id,
+        "adjudicated_candidate_id": adjudicated_candidate.candidate_id,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_07_message_passing_adjudication_payload() -> Dict[str, object]:
+    example = build_post_v2_study_07_message_passing_adjudication()
+    return {
+        "run": example["run"].to_dict(),
+        "gate_config": {
+            "backend_kind": example["gate_config"].backend_kind,
+            "mode": example["gate_config"].mode,
+            "max_assessments": example["gate_config"].max_assessments,
+            "required_verdicts": list(example["gate_config"].required_verdicts),
+            "metadata": dict(example["gate_config"].metadata),
+        },
+        "outcome": {
+            "pruned_candidate_ids": list(example["outcome"].pruned_candidate_ids),
+            "selected_candidate_id": example["outcome"].selected_candidate_id,
+            "terminated": example["outcome"].terminated,
+            "assessment_ids": [item.assessment_id for item in example["outcome"].assessments],
+        },
+        "carry_state_id": example["carry_state_id"],
+        "adjudicated_candidate_id": example["adjudicated_candidate_id"],
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }
