@@ -146,3 +146,7 @@ Date: 2026-03-14
 - multi-lane status: `docs/darwin_stage5_multilane_status_2026-03-21.md`
 - multi-lane review: `docs/darwin_stage5_multilane_review_2026-03-21.md`
 - multi-lane gate: `docs/darwin_stage5_multilane_gate_2026-03-21.md`
+- policy-stability slice: `docs/darwin_stage5_policy_stability_slice_2026-03-22.md`
+- policy-stability status: `docs/darwin_stage5_policy_stability_status_2026-03-22.md`
+- policy-stability review: `docs/darwin_stage5_policy_stability_review_2026-03-22.md`
+- policy-stability gate: `docs/darwin_stage5_policy_stability_gate_2026-03-22.md`
