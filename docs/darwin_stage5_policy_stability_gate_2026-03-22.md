@@ -20,8 +20,9 @@ Passed.
 ## What is authorized next
 
 - keep Stage 5 bounded to repeated multi-lane protocol work
-- treat Systems as the stronger lane in the current policy surface
 - keep the tightened Repo_SWE selection path in place before any broadening work
+- keep Systems in the same bounded protocol workstream
+- avoid treating the latest lane balance as stable compounding
 
 ## What is not authorized next
 

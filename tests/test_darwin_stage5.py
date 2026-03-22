@@ -55,7 +55,8 @@ def test_build_stage5_search_policy_v2_tightens_repo_swe_after_policy_stability(
     )
     assert policy["policy_tightening"]["enabled"] is True
     assert policy["max_mutation_arms"] == 1
-    assert policy["repetition_count"] >= 6
+    assert policy["repetition_count"] >= 8
+    assert policy["policy_tightening"]["repetition_count"] >= 8
     assert policy["policy_review_conclusion"] == "tighten"
 
 

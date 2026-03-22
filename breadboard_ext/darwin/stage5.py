@@ -106,7 +106,7 @@ def build_stage5_search_policy_v2(
         "worker_route_id": base_policy["worker_route_id"],
         "filter_route_id": base_policy["filter_route_id"],
         "max_mutation_arms": 1 if tightened_repo_swe else 2,
-        "repetition_count": max(int(base_policy["repetition_count"]), 6 if tightened_repo_swe else 4),
+        "repetition_count": max(int(base_policy["repetition_count"]), 8 if tightened_repo_swe else 4),
         "operator_priors": list(base_policy["operator_priors"]),
         "topology_priors": list(base_policy["topology_priors"]),
         "family_priors": family_priors,
@@ -132,6 +132,7 @@ def build_stage5_search_policy_v2(
         "policy_tightening": {
             "enabled": tightened_repo_swe,
             "lane_review_conclusion": policy_review_conclusion,
+            "repetition_count": max(int(base_policy["repetition_count"]), 8 if tightened_repo_swe else 4),
             "reason": "repo_swe_stability_requires_tighter_selection" if tightened_repo_swe else "not_required",
         },
         "abort_thresholds": {

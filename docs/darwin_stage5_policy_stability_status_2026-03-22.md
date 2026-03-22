@@ -17,21 +17,21 @@ References:
 
 - Repo_SWE:
   - `mixed_positive`
-  - `6` reuse-lift vs `6` no-lift across two rounds
+  - `4` reuse-lift vs `4` no-lift across two rounds
   - round 1 mixed, round 2 mixed
 - Systems:
   - `mixed_positive`
-  - `5` reuse-lift vs `3` no-lift across two rounds
+  - `4` reuse-lift vs `4` no-lift across two rounds
   - round 1 mixed, round 2 mixed
 
 ## Interpretation
 
 The repeated multi-lane compounding surface is now better characterized:
 
-- Repo_SWE is now tightened enough to move into mixed-positive repeated behavior
-- Systems remains the stronger aggregate lane, but still not round-dominant
+- Repo_SWE remains mixed-positive under the tighter selection path
+- Systems remains mixed-positive and roughly balanced on the latest run
 
-That is a useful result because it sharpens the Stage-5 question from "is compounding real?" to "where is compounding stabilizing, and where is it not?" and shows the Repo_SWE tightening actually changed the lane behavior.
+That is a useful result because it sharpens the Stage-5 question from "is compounding real?" to "where is compounding stabilizing, and where is it not?" without overstating Repo_SWE stability.
 
 ## Route/economics note
 
