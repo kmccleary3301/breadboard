@@ -38,24 +38,37 @@ def _summary_counts(row: Mapping[str, Any]) -> dict[str, int]:
             "comparison_valid_count": int(payload.get("comparison_valid_count") or 0),
             "reuse_lift_count": int(payload.get("reuse_lift_count") or 0),
             "no_lift_count": int(payload.get("no_lift_count") or 0),
+            "flat_count": int(payload.get("flat_count") or 0),
         }
     return {
         "claim_eligible_comparison_count": int(row.get("claim_eligible_comparison_count") or 0),
         "comparison_valid_count": int(row.get("comparison_valid_count") or 0),
         "reuse_lift_count": int(row.get("reuse_lift_count") or 0),
         "no_lift_count": int(row.get("no_lift_count") or 0),
+        "flat_count": int(row.get("flat_count") or 0),
     }
 
 
-def _stability_class(*, positive_round_count: int, round_count: int, reuse_lift_count: int, no_lift_count: int) -> str:
+def _stability_class(
+    *,
+    positive_round_count: int,
+    negative_round_count: int,
+    flat_round_count: int,
+    round_count: int,
+    reuse_lift_count: int,
+    no_lift_count: int,
+    flat_count: int,
+) -> str:
     if round_count <= 0:
         return "unknown"
+    if flat_round_count == round_count and flat_count > 0:
+        return "stable_flat"
     if positive_round_count == round_count and reuse_lift_count > no_lift_count:
         return "stable_positive"
-    if positive_round_count == 0 and no_lift_count > reuse_lift_count:
+    if negative_round_count == round_count and no_lift_count > reuse_lift_count:
         return "stable_negative"
     if reuse_lift_count >= no_lift_count:
-        return "mixed_positive"
+        return "mixed_positive" if reuse_lift_count > no_lift_count else "mixed_flat"
     return "mixed_negative"
 
 
@@ -77,9 +90,13 @@ def build_stage5_policy_stability(
         comparison_valid_counts = [row["comparison_valid_count"] for row in round_counts]
         reuse_counts = [row["reuse_lift_count"] for row in round_counts]
         no_lift_counts = [row["no_lift_count"] for row in round_counts]
+        flat_counts = [row["flat_count"] for row in round_counts]
         positive_round_count = sum(1 for reuse_count, no_lift_count in zip(reuse_counts, no_lift_counts) if reuse_count > no_lift_count)
+        negative_round_count = sum(1 for reuse_count, no_lift_count in zip(reuse_counts, no_lift_counts) if no_lift_count > reuse_count)
+        flat_round_count = sum(1 for reuse_count, no_lift_count in zip(reuse_counts, no_lift_counts) if reuse_count == no_lift_count)
         total_reuse = sum(reuse_counts)
         total_no_lift = sum(no_lift_counts)
+        total_flat = sum(flat_counts)
         round_count = len(rows)
         lane_rows.append(
             {
@@ -90,19 +107,26 @@ def build_stage5_policy_stability(
                 "round_comparison_valid_counts": comparison_valid_counts,
                 "round_reuse_lift_counts": reuse_counts,
                 "round_no_lift_counts": no_lift_counts,
+                "round_flat_counts": flat_counts,
                 "positive_round_count": positive_round_count,
+                "negative_round_count": negative_round_count,
+                "flat_round_count": flat_round_count,
                 "claim_eligible_comparison_count": sum(claim_eligible_counts),
                 "comparison_valid_count": sum(comparison_valid_counts),
                 "reuse_lift_count": total_reuse,
                 "no_lift_count": total_no_lift,
+                "flat_count": total_flat,
                 "reuse_lift_rate": round(total_reuse / max(sum(claim_eligible_counts), 1), 4),
                 "stability_class": _stability_class(
                     positive_round_count=positive_round_count,
+                    negative_round_count=negative_round_count,
+                    flat_round_count=flat_round_count,
                     round_count=round_count,
                     reuse_lift_count=total_reuse,
                     no_lift_count=total_no_lift,
+                    flat_count=total_flat,
                 ),
-                "policy_review_conclusion": "continue" if total_reuse >= total_no_lift else "tighten",
+                "policy_review_conclusion": "continue" if total_reuse + total_flat >= total_no_lift else "tighten",
                 "summary_refs": [str(row["summary_ref"]) for row in rows],
             }
         )
@@ -119,7 +143,7 @@ def build_stage5_policy_stability(
     for row in lane_rows:
         lines.append(
             f"- `{row['lane_id']}`: stability=`{row['stability_class']}`, "
-            f"reuse_lift=`{row['reuse_lift_count']}`, no_lift=`{row['no_lift_count']}`, "
+            f"reuse_lift=`{row['reuse_lift_count']}`, flat=`{row['flat_count']}`, no_lift=`{row['no_lift_count']}`, "
             f"positive_rounds=`{row['positive_round_count']}/{row['round_count']}`"
         )
     write_json(out_dir / OUT_JSON.name, payload)

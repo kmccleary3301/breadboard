@@ -17,6 +17,7 @@ def test_build_stage5_policy_stability_classifies_lanes(tmp_path: Path) -> None:
                 "comparison_valid_count": 8,
                 "reuse_lift_count": 0,
                 "no_lift_count": 4,
+                "flat_count": 0,
                 "policy_ref": "artifacts/darwin/stage5/tranche1/lane_repo_swe/search_policy_v2.json",
                 "summary_path": str(lane_repo_summary),
             }
@@ -30,6 +31,7 @@ def test_build_stage5_policy_stability_classifies_lanes(tmp_path: Path) -> None:
                 "comparison_valid_count": 8,
                 "reuse_lift_count": 3,
                 "no_lift_count": 1,
+                "flat_count": 0,
                 "policy_ref": "artifacts/darwin/stage5/tranche1/lane_systems/search_policy_v2.json",
                 "summary_path": str(lane_systems_summary),
             }

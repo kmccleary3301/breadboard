@@ -14,6 +14,8 @@ DEFAULT_STAGE5_FAMILY_REGISTRY = ROOT / "artifacts" / "darwin" / "stage4" / "fam
 DEFAULT_STAGE5_POLICY_STABILITY = ROOT / "artifacts" / "darwin" / "stage5" / "policy_stability" / "policy_stability_v0.json"
 
 STAGE5_COMPARISON_MODES = ("cold_start", "warm_start", "family_lockout")
+STAGE5_RUNTIME_LIFT_DEADBAND_MS = 10
+STAGE5_COST_LIFT_DEADBAND_USD = 0.0001
 
 _FAMILY_PRIORITY_BASE = {
     "topology": 0.95,
@@ -291,10 +293,19 @@ def build_stage5_compounding_cases(
         lockout = rows.get("family_lockout")
         if warm is None or lockout is None:
             continue
+        score_lift = round(float(warm.get("delta_score") or 0.0) - float(lockout.get("delta_score") or 0.0), 6)
+        runtime_lift_ms = int(warm.get("delta_runtime_ms") or 0) - int(lockout.get("delta_runtime_ms") or 0)
+        cost_lift_usd = round(float(warm.get("delta_cost_usd") or 0.0) - float(lockout.get("delta_cost_usd") or 0.0), 8)
         if not bool(warm.get("comparison_valid")) or not bool(lockout.get("comparison_valid")):
             conclusion = "invalid"
         elif not bool(warm.get("claim_eligible")) or not bool(lockout.get("claim_eligible")):
             conclusion = "inconclusive"
+        elif (
+            abs(score_lift) <= 0.0
+            and abs(runtime_lift_ms) <= STAGE5_RUNTIME_LIFT_DEADBAND_MS
+            and abs(cost_lift_usd) <= STAGE5_COST_LIFT_DEADBAND_USD
+        ):
+            conclusion = "flat"
         else:
             warm_tuple = (
                 float(warm.get("delta_score") or 0.0),
@@ -344,9 +355,13 @@ def build_stage5_compounding_cases(
                     "power_signal_class": str(lockout.get("power_signal_class") or ""),
                 },
                 "outcome_deltas": {
-                    "score_lift": round(float(warm.get("delta_score") or 0.0) - float(lockout.get("delta_score") or 0.0), 6),
-                    "runtime_lift_ms": int(warm.get("delta_runtime_ms") or 0) - int(lockout.get("delta_runtime_ms") or 0),
-                    "cost_lift_usd": round(float(warm.get("delta_cost_usd") or 0.0) - float(lockout.get("delta_cost_usd") or 0.0), 8),
+                    "score_lift": score_lift,
+                    "runtime_lift_ms": runtime_lift_ms,
+                    "cost_lift_usd": cost_lift_usd,
+                },
+                "decision_deadband": {
+                    "runtime_lift_ms": STAGE5_RUNTIME_LIFT_DEADBAND_MS,
+                    "cost_lift_usd": STAGE5_COST_LIFT_DEADBAND_USD,
                 },
                 "conclusion": conclusion,
             }

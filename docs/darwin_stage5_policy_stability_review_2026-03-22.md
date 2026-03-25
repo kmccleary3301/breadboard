@@ -16,7 +16,7 @@ The repeated multi-lane surface is now summarized into lane-level stability clas
 
 ### 2. What is the main result?
 
-Repo_SWE is back to mixed-positive on the latest repeated run. Systems slipped to mixed-negative after the systems-specific stability probe.
+Repo_SWE is now best read as weak-and-mostly-flat rather than hard-negative, because the deadband strips out small runtime/cost differences that were previously being counted as lift/no-lift. Systems is the cleaner current positive lane.
 
 ### 3. Does this prove stable scalable compounding?
 
@@ -28,10 +28,14 @@ The report sharpens the signal, but it does not change the underlying conclusion
 
 Yes.
 
-The report gives a clearer basis for deciding where to keep scaling and where to tighten before any transfer or composition work.
+The report gives a clearer basis for deciding where to keep scaling and where to change protocol. It also hardens the live runtime path by preventing provider timeouts from aborting repeated Stage-5 runs.
 
 ## Review conclusion
 
 The policy-stability slice succeeded.
 
-It does not upgrade Stage 5 into stable scalable compounding. It does provide a more precise reason to stop broadening Systems, keep Stage 5 bounded, and treat Repo_SWE as the lane that currently recovers better under repeated live compounding pressure.
+It does not upgrade Stage 5 into stable scalable compounding. It does produce a cleaner conclusion:
+
+- Systems is currently the stronger compounding lane under the bounded protocol
+- Repo_SWE is not convincingly positive, but much of its prior instability was flat noise
+- the next Repo_SWE move should be family-level or comparison-protocol adjustment, not more raw repetition

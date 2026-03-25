@@ -130,6 +130,7 @@ def run_stage5_compounding_pilot(
         "family_lockout_comparison_count": comparison_mode_counts["family_lockout"],
         "reuse_lift_count": sum(1 for row in compounding_cases if row.get("conclusion") == "reuse_lift"),
         "no_lift_count": sum(1 for row in compounding_cases if row.get("conclusion") == "no_lift"),
+        "flat_count": sum(1 for row in compounding_cases if row.get("conclusion") == "flat"),
         "provider_origin_counts": provider_origin_counts,
         "fallback_reason_counts": fallback_reason_counts,
         "policy_ref": str(policy_path.relative_to(ROOT)),

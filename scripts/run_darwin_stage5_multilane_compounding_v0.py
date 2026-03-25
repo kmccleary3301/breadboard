@@ -46,6 +46,7 @@ def run_stage5_multilane_compounding(*, rounds: int = 2, out_dir: Path = OUT_DIR
                 "comparison_valid_count": int(payload.get("comparison_valid_count") or 0),
                 "reuse_lift_count": int(payload.get("reuse_lift_count") or 0),
                 "no_lift_count": int(payload.get("no_lift_count") or 0),
+                "flat_count": int(payload.get("flat_count") or 0),
                 "provider_origin_counts": dict(payload.get("provider_origin_counts") or {}),
                 "fallback_reason_counts": dict(payload.get("fallback_reason_counts") or {}),
                 "summary_ref": str(Path(str(row["summary_path"])).relative_to(ROOT)),
@@ -61,12 +62,14 @@ def run_stage5_multilane_compounding(*, rounds: int = 2, out_dir: Path = OUT_DIR
                 "comparison_valid_count": 0,
                 "reuse_lift_count": 0,
                 "no_lift_count": 0,
+                "flat_count": 0,
             },
         )
         lane_totals[row["lane_id"]]["claim_eligible_comparison_count"] += row["claim_eligible_comparison_count"]
         lane_totals[row["lane_id"]]["comparison_valid_count"] += row["comparison_valid_count"]
         lane_totals[row["lane_id"]]["reuse_lift_count"] += row["reuse_lift_count"]
         lane_totals[row["lane_id"]]["no_lift_count"] += row["no_lift_count"]
+        lane_totals[row["lane_id"]]["flat_count"] += row["flat_count"]
 
     bundle = {
         "schema": "breadboard.darwin.stage5.multilane_compounding.v0",

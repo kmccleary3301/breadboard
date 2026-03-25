@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import pytest
 from urllib import error as urllib_error
 
 from breadboard_ext.darwin.stage4 import (
+    _perform_stage4_live_call,
     advance_stage4_search_policy_v1,
     build_stage4_budget_envelope,
     build_stage4_campaign_round_record,
@@ -378,3 +380,76 @@ def test_execute_stage4_provider_prompt_falls_back_to_openai_when_openrouter_is_
     assert result["execution_mode"] == "live"
     assert result["route_id"] == "openai/gpt-5.4-mini"
     assert result["claim_eligible"] is True
+
+
+def test_execute_stage4_provider_prompt_falls_back_to_openai_when_openrouter_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DARWIN_STAGE4_ENABLE_LIVE", "1")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test-key")
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_INPUT_COST_PER_1M", "0.75")
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_CACHED_INPUT_COST_PER_1M", "0.075")
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_OUTPUT_COST_PER_1M", "4.50")
+
+    def _fake_live_call(*, route, **_):
+        if route["route_id"] == "openrouter/openai/gpt-5.4-mini":
+            raise TimeoutError("timed out waiting for openrouter")
+        return {
+            "response_id": "resp_fallback_timeout",
+            "text": "fallback mutation proposal",
+            "prompt_tokens": 120,
+            "cached_input_tokens": 100,
+            "cache_write_tokens": 0,
+            "completion_tokens": 24,
+            "total_tokens": 144,
+            "provider_cost_usd": None,
+        }
+
+    monkeypatch.setattr("breadboard_ext.darwin.stage4._perform_stage4_live_call", _fake_live_call)
+    result = execute_stage4_provider_prompt(
+        lane_id="lane.repo_swe",
+        task_class="repo_patch_workspace",
+        prompt="propose a bounded mutation",
+    )
+    assert result["execution_mode"] == "live"
+    assert result["route_id"] == "openai/gpt-5.4-mini"
+    assert result["fallback_reason"] == "openrouter_timeout"
+    assert result["claim_eligible"] is True
+
+
+def test_perform_stage4_live_call_caps_openrouter_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-test-key")
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return json.dumps(
+                {
+                    "id": "resp_openrouter_timeout_cap",
+                    "choices": [{"message": {"content": "ok"}}],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
+                }
+            ).encode("utf-8")
+
+    def _fake_urlopen(request_obj, timeout):
+        captured["timeout"] = timeout
+        captured["url"] = request_obj.full_url
+        return _FakeResponse()
+
+    monkeypatch.setattr("breadboard_ext.darwin.stage4.urllib_request.urlopen", _fake_urlopen)
+    payload = _perform_stage4_live_call(
+        route=resolve_stage4_route(task_class="repo_patch_workspace", actual_provider_used=False),
+        prompt="say hi",
+        timeout_s=60,
+    )
+    assert payload["response_id"] == "resp_openrouter_timeout_cap"
+    assert captured["timeout"] == 15

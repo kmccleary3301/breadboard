@@ -19,6 +19,7 @@ DEFAULT_STAGE4_STRONG_ROUTE = "openrouter/openai/gpt-5.4"
 DEFAULT_STAGE4_DIRECT_WORKER_ROUTE = "openai/gpt-5.4-mini"
 DEFAULT_STAGE4_DIRECT_FILTER_ROUTE = "openai/gpt-5.4-nano"
 DEFAULT_STAGE4_DIRECT_STRONG_ROUTE = "openai/gpt-5.4"
+DEFAULT_STAGE4_OPENROUTER_TIMEOUT_S = 15
 
 _ROUTE_PROFILES = {
     DEFAULT_STAGE4_WORKER_ROUTE: {
@@ -595,6 +596,7 @@ def _perform_stage4_live_call(
 ) -> dict[str, Any]:
     route_id = str(route["route_id"])
     provider_model = str(route["provider_model"])
+    request_timeout_s = min(int(timeout_s), DEFAULT_STAGE4_OPENROUTER_TIMEOUT_S) if route_id.startswith("openrouter/") else int(timeout_s)
     if route_id.startswith("openrouter/"):
         api_key = os.environ["OPENROUTER_API_KEY"]
         endpoint = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/chat/completions")
@@ -613,7 +615,7 @@ def _perform_stage4_live_call(
             },
             method="POST",
         )
-        with urllib_request.urlopen(request_obj, timeout=timeout_s) as response:
+        with urllib_request.urlopen(request_obj, timeout=request_timeout_s) as response:
             payload = json.loads(response.read().decode("utf-8"))
         choice = ((payload.get("choices") or [{}])[0].get("message") or {})
         usage = payload.get("usage") or {}
@@ -645,7 +647,7 @@ def _perform_stage4_live_call(
         },
         method="POST",
     )
-    with urllib_request.urlopen(request_obj, timeout=timeout_s) as response:
+    with urllib_request.urlopen(request_obj, timeout=request_timeout_s) as response:
         response_payload = json.loads(response.read().decode("utf-8"))
     usage = response_payload.get("usage") or {}
     cached_tokens, cache_write_tokens = _extract_cached_usage_fields(usage)
@@ -728,6 +730,7 @@ def execute_stage4_provider_prompt(
             "live_block_reason": "lane_not_authorized_for_live",
         }
     fallback_reason = None
+    fallback_route = None
     try:
         live_call = _perform_stage4_live_call(
             route=route,
@@ -741,7 +744,6 @@ def execute_stage4_provider_prompt(
             actual_provider_used=True,
         )
     except urllib_error.HTTPError as exc:
-        fallback_route = None
         if exc.code == 401 and str(route["route_id"]).startswith("openrouter/"):
             fallback_route = _resolve_stage4_fallback_route(str(route["route_id"]), task_class=task_class)
             fallback_reason = "openrouter_http_401"
@@ -756,7 +758,22 @@ def execute_stage4_provider_prompt(
         except urllib_error.URLError as fallback_exc:
             raise RuntimeError(f"stage4 live provider call failed: {fallback_exc}") from fallback_exc
         live_route = fallback_route
-    except urllib_error.URLError as exc:
+    except (urllib_error.URLError, TimeoutError) as exc:
+        if str(route["route_id"]).startswith("openrouter/"):
+            fallback_route = _resolve_stage4_fallback_route(str(route["route_id"]), task_class=task_class)
+            fallback_reason = "openrouter_timeout" if isinstance(exc, TimeoutError) else "openrouter_network_error"
+        if fallback_route is None:
+            raise RuntimeError(f"stage4 live provider call failed: {exc}") from exc
+        try:
+            live_call = _perform_stage4_live_call(
+                route=fallback_route,
+                prompt=prompt,
+                max_output_tokens=max_output_tokens,
+            )
+        except (urllib_error.URLError, TimeoutError) as fallback_exc:
+            raise RuntimeError(f"stage4 live provider call failed: {fallback_exc}") from fallback_exc
+        live_route = fallback_route
+    except Exception as exc:
         raise RuntimeError(f"stage4 live provider call failed: {exc}") from exc
     prompt_tokens = int(live_call["prompt_tokens"])
     completion_tokens = int(live_call["completion_tokens"])

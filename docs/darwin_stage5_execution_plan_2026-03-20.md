@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Execution Plan
 
 Date: 2026-03-20
-Status: policy-stability slice landed
+Status: policy-stability deadband slice landed
 Scope: Stage-5 doctrine freeze, economics truth hardening, compounding protocol, family-aware search, and scalable compounding proof
 References:
 - `docs/darwin_stage5_doctrine_2026-03-20.md`
@@ -217,6 +217,16 @@ Hard gate:
 - route priors
 - campaign-class chooser
 - abort thresholds
+
+## 8. Current bounded read
+
+The current Stage-5 read after the policy-stability deadband slice is:
+
+- `lane.repo_swe`: weak and mostly flat under the current topology-family protocol
+- `lane.systems`: the clearer current positive lane under the promoted policy-family protocol
+- provider fallback is operational for both `openrouter_http_401` and OpenRouter timeout cases
+
+That is enough to keep Stage 5 moving, but not enough to claim stable scalable compounding. The next bounded move should be a Repo_SWE family-level or comparison-protocol adjustment, not more raw repetition.
 
 ### Epic 4 — `ComponentFamilyV2`
 
