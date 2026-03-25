@@ -24,6 +24,35 @@ _FAMILY_PRIORITY_BASE = {
 }
 
 
+def _classify_stage5_compounding_outcome(
+    *,
+    score_lift: float,
+    runtime_lift_ms: int,
+    cost_lift_usd: float,
+) -> tuple[str, str]:
+    if score_lift > 0.0:
+        return "reuse_lift", "score_better"
+    if score_lift < 0.0:
+        return "no_lift", "score_worse"
+
+    runtime_better = runtime_lift_ms <= -STAGE5_RUNTIME_LIFT_DEADBAND_MS
+    runtime_worse = runtime_lift_ms >= STAGE5_RUNTIME_LIFT_DEADBAND_MS
+    cost_better = cost_lift_usd <= -STAGE5_COST_LIFT_DEADBAND_USD
+    cost_worse = cost_lift_usd >= STAGE5_COST_LIFT_DEADBAND_USD
+
+    if not (runtime_better or runtime_worse or cost_better or cost_worse):
+        return "flat", "within_deadband"
+    if runtime_better and not cost_worse:
+        return "reuse_lift", "runtime_better_cost_neutral"
+    if cost_better and not runtime_worse:
+        return "reuse_lift", "cost_better_runtime_neutral"
+    if runtime_worse and not cost_better:
+        return "no_lift", "runtime_worse_cost_neutral"
+    if cost_worse and not runtime_better:
+        return "no_lift", "cost_worse_runtime_neutral"
+    return "flat", "cross_metric_tradeoff"
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -374,26 +403,16 @@ def build_stage5_compounding_cases(
         cost_lift_usd = round(float(warm.get("delta_cost_usd") or 0.0) - float(lockout.get("delta_cost_usd") or 0.0), 8)
         if not bool(warm.get("comparison_valid")) or not bool(lockout.get("comparison_valid")):
             conclusion = "invalid"
+            decision_basis = "comparison_invalid"
         elif not bool(warm.get("claim_eligible")) or not bool(lockout.get("claim_eligible")):
             conclusion = "inconclusive"
-        elif (
-            abs(score_lift) <= 0.0
-            and abs(runtime_lift_ms) <= STAGE5_RUNTIME_LIFT_DEADBAND_MS
-            and abs(cost_lift_usd) <= STAGE5_COST_LIFT_DEADBAND_USD
-        ):
-            conclusion = "flat"
+            decision_basis = "claim_ineligible"
         else:
-            warm_tuple = (
-                float(warm.get("delta_score") or 0.0),
-                -int(warm.get("delta_runtime_ms") or 0),
-                -float(warm.get("delta_cost_usd") or 0.0),
+            conclusion, decision_basis = _classify_stage5_compounding_outcome(
+                score_lift=score_lift,
+                runtime_lift_ms=runtime_lift_ms,
+                cost_lift_usd=cost_lift_usd,
             )
-            lockout_tuple = (
-                float(lockout.get("delta_score") or 0.0),
-                -int(lockout.get("delta_runtime_ms") or 0),
-                -float(lockout.get("delta_cost_usd") or 0.0),
-            )
-            conclusion = "reuse_lift" if warm_tuple > lockout_tuple else "no_lift"
         cases.append(
             {
                 "schema": "breadboard.darwin.stage5.compounding_case.v1",
@@ -435,6 +454,7 @@ def build_stage5_compounding_cases(
                     "runtime_lift_ms": runtime_lift_ms,
                     "cost_lift_usd": cost_lift_usd,
                 },
+                "decision_basis": decision_basis,
                 "decision_deadband": {
                     "runtime_lift_ms": STAGE5_RUNTIME_LIFT_DEADBAND_MS,
                     "cost_lift_usd": STAGE5_COST_LIFT_DEADBAND_USD,
