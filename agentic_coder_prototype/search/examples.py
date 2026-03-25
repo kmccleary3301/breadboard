@@ -8,6 +8,8 @@ from agentic_coder_prototype.optimize import (
     CandidateComparisonResult,
     ObjectiveBreakdownResult,
     PromotionEvidenceSummary,
+    TransferCohortManifest,
+    TransferSliceManifest,
     build_paired_candidate_comparison,
 )
 
@@ -2619,6 +2621,237 @@ def build_post_v2_study_12_optimize_comparison_probe_payload() -> Dict[str, obje
         "run": example["run"].to_dict(),
         "benchmark_manifest": example["benchmark_manifest"].to_dict(),
         "comparison_result": example["comparison_result"].to_dict(),
+        "selected_candidate_id": example["selected_candidate_id"],
+        "adapter_boundary": dict(example["adapter_boundary"]),
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }
+
+
+def build_post_v2_study_13_multi_candidate_tournament() -> Dict[str, object]:
+    study = build_post_v2_study_11_branch_carry_hybrid()
+    run = study["run"]
+    review_candidate = next(item for item in run.candidates if item.candidate_id == study["review_candidate_id"])
+    incumbent_candidate = next(item for item in run.candidates if item.candidate_id == study["base_selected_candidate_id"])
+    risky_candidate = next(item for item in run.candidates if item.candidate_id.endswith(".cand.branch.risky_patch"))
+    registry = build_default_search_assessment_registry()
+    semifinal_config = AssessmentGateConfig(
+        backend_kind="judge_pairwise.v1",
+        mode="require_before_select",
+        max_assessments=2,
+        required_verdicts=["prefer_a"],
+        metadata={"study_id": "study_13_multi_candidate_tournament", "phase": "post_v2_continuation"},
+    )
+    semifinal_outcome = run_barriered_assessment_gate(
+        run=run,
+        registry=registry,
+        config=semifinal_config,
+        frontier_candidates=[review_candidate, incumbent_candidate],
+    )
+    semifinal_winner_id = semifinal_outcome.selected_candidate_id or review_candidate.candidate_id
+    semifinal_winner = next(item for item in run.candidates if item.candidate_id == semifinal_winner_id)
+    final_config = AssessmentGateConfig(
+        backend_kind="judge_pairwise.v1",
+        mode="require_before_select",
+        max_assessments=2,
+        required_verdicts=["prefer_a"],
+        metadata={"study_id": "study_13_multi_candidate_tournament", "phase": "post_v2_continuation"},
+    )
+    final_outcome = run_barriered_assessment_gate(
+        run=run,
+        registry=registry,
+        config=final_config,
+        frontier_candidates=[semifinal_winner, risky_candidate],
+    )
+    final_events = [*run.events, semifinal_outcome.gate_event]
+    if semifinal_outcome.selection_event is not None:
+        final_events.append(semifinal_outcome.selection_event)
+    final_events.append(final_outcome.gate_event)
+    if final_outcome.selection_event is not None:
+        final_events.append(final_outcome.selection_event)
+    final_run = SearchRun(
+        search_id=run.search_id,
+        recipe_kind="multi_candidate_tournament_pressure_pass",
+        candidates=list(run.candidates),
+        frontiers=list(run.frontiers),
+        events=final_events,
+        messages=list(run.messages),
+        carry_states=list(run.carry_states),
+        assessments=[*run.assessments, *semifinal_outcome.assessments, *final_outcome.assessments],
+        workspace_snapshots=list(run.workspace_snapshots),
+        branch_states=list(run.branch_states),
+        metrics=run.metrics,
+        selected_candidate_id=final_outcome.selected_candidate_id,
+        metadata={
+            **dict(run.metadata),
+            "tournament_semifinal_winner_id": semifinal_winner_id,
+            "terminated": semifinal_outcome.terminated or final_outcome.terminated,
+        },
+    )
+    evidence = {
+        "easy": [
+            "multi-candidate adjudication can be expressed as bounded sequential assessment gates",
+            "tournament-style narrowing still fits the existing assessment/event surface",
+            "no bracket or tournament public noun was needed",
+        ],
+        "awkward": [
+            "higher-level tournament summaries still want helper/reporting code outside the kernel",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "private_helper_level",
+    }
+    return {
+        "run": final_run,
+        "semifinal_config": semifinal_config,
+        "semifinal_outcome": semifinal_outcome,
+        "final_config": final_config,
+        "final_outcome": final_outcome,
+        "review_candidate_id": review_candidate.candidate_id,
+        "incumbent_candidate_id": incumbent_candidate.candidate_id,
+        "risky_candidate_id": risky_candidate.candidate_id,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_13_multi_candidate_tournament_payload() -> Dict[str, object]:
+    example = build_post_v2_study_13_multi_candidate_tournament()
+    return {
+        "run": example["run"].to_dict(),
+        "semifinal_config": {
+            "backend_kind": example["semifinal_config"].backend_kind,
+            "mode": example["semifinal_config"].mode,
+            "max_assessments": example["semifinal_config"].max_assessments,
+            "required_verdicts": list(example["semifinal_config"].required_verdicts),
+            "metadata": dict(example["semifinal_config"].metadata),
+        },
+        "semifinal_outcome": {
+            "selected_candidate_id": example["semifinal_outcome"].selected_candidate_id,
+            "assessment_ids": [item.assessment_id for item in example["semifinal_outcome"].assessments],
+        },
+        "final_config": {
+            "backend_kind": example["final_config"].backend_kind,
+            "mode": example["final_config"].mode,
+            "max_assessments": example["final_config"].max_assessments,
+            "required_verdicts": list(example["final_config"].required_verdicts),
+            "metadata": dict(example["final_config"].metadata),
+        },
+        "final_outcome": {
+            "selected_candidate_id": example["final_outcome"].selected_candidate_id,
+            "assessment_ids": [item.assessment_id for item in example["final_outcome"].assessments],
+        },
+        "review_candidate_id": example["review_candidate_id"],
+        "incumbent_candidate_id": example["incumbent_candidate_id"],
+        "risky_candidate_id": example["risky_candidate_id"],
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }
+
+
+def build_post_v2_study_14_optimize_transfer_cohort_probe() -> Dict[str, object]:
+    study = build_post_v2_study_12_optimize_comparison_probe()
+    run = study["run"]
+    selected_candidate_id = study["selected_candidate_id"]
+    slices = [
+        TransferSliceManifest(
+            slice_id="slice.dag.codex_like",
+            slice_kind="package",
+            selector={"package_name": "codex_dossier_like"},
+            promotion_role="required",
+            visibility="comparison_visible",
+            metadata={"source": "dag_post_v2_study_14", "outside_dag_kernel": True},
+        ),
+        TransferSliceManifest(
+            slice_id="slice.dag.opencodish",
+            slice_kind="package",
+            selector={"package_name": "opencode_1_2_17_like"},
+            promotion_role="claim_supporting",
+            visibility="hidden_hold",
+            metadata={"source": "dag_post_v2_study_14", "outside_dag_kernel": True},
+        ),
+    ]
+    cohort = TransferCohortManifest(
+        cohort_id="cohort.dag.study14",
+        cohort_kind="paired_transfer_probe",
+        member_slice_ids=[item.slice_id for item in slices],
+        claim_scope={"bounded_to": "dag_runtime_adapter", "target_family": "branch_carry_hybrid"},
+        coverage_policy={"requires_hidden_hold": True, "minimum_member_count": 2},
+        metadata={"source": "dag_post_v2_study_14", "outside_dag_kernel": True},
+    )
+    summary = PromotionEvidenceSummary(
+        summary_id="summary.dag.study14",
+        candidate_id=selected_candidate_id,
+        manifest_ids=[study["benchmark_manifest"].manifest_id],
+        held_out_sample_ids=study["benchmark_manifest"].hidden_hold_sample_ids(),
+        outcome_counts={"non_inferior": 1},
+        evaluation_suite_ids=["evaluation.dag.transfer_probe.v1"],
+        transfer_slice_ids=[item.slice_id for item in slices],
+        transfer_slices=slices,
+        transfer_cohort_ids=[cohort.cohort_id],
+        transfer_cohorts=[cohort],
+        transfer_cohort_status={
+            cohort.cohort_id: {"status": "supported", "member_count": len(slices), "hidden_hold_covered": True}
+        },
+        transfer_slice_status={
+            slices[0].slice_id: {"status": "pass", "role": slices[0].promotion_role},
+            slices[1].slice_id: {"status": "pass", "role": slices[1].promotion_role},
+        },
+        claim_tier="cohort_supported",
+        applicability_scope={"target_kind": "dag_runtime_adapter", "bounded_to": "study_11_branch_carry_hybrid"},
+        review_class="adapter_only",
+        objective_breakdown_status="complete",
+        metadata={"source": "dag_post_v2_study_14", "outside_dag_kernel": True},
+    )
+    adapter_boundary = {
+        "outside_dag_kernel": True,
+        "introduced_optimize_public_nouns_into_dag": False,
+        "used_real_optimize_records": True,
+        "transfer_logic_stayed_adapter_local": True,
+    }
+    evidence = {
+        "easy": [
+            "real optimize transfer slices and cohorts can be populated from DAG study outputs without touching the DAG kernel",
+            "cohort and claim-tier semantics remain adapter-side rather than becoming DAG concepts",
+        ],
+        "awkward": [
+            "slice naming and claim-scope wording remain adapter conventions",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "adapter_level",
+    }
+    return {
+        "run": run,
+        "transfer_slices": slices,
+        "transfer_cohort": cohort,
+        "promotion_summary": summary,
+        "selected_candidate_id": selected_candidate_id,
+        "adapter_boundary": adapter_boundary,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_14_optimize_transfer_cohort_probe_payload() -> Dict[str, object]:
+    example = build_post_v2_study_14_optimize_transfer_cohort_probe()
+    return {
+        "run": example["run"].to_dict(),
+        "transfer_slices": [item.to_dict() for item in example["transfer_slices"]],
+        "transfer_cohort": example["transfer_cohort"].to_dict(),
+        "promotion_summary": example["promotion_summary"].to_dict(),
         "selected_candidate_id": example["selected_candidate_id"],
         "adapter_boundary": dict(example["adapter_boundary"]),
         "evidence": {

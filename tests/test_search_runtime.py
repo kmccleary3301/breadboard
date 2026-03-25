@@ -5,6 +5,7 @@ from agentic_coder_prototype.optimize import (
     CandidateComparisonResult,
     ObjectiveBreakdownResult,
     PromotionEvidenceSummary,
+    TransferCohortManifest,
 )
 from agentic_coder_prototype.search import (
     SearchOfflineDataset,
@@ -62,6 +63,10 @@ from agentic_coder_prototype.search import (
     build_post_v2_study_11_branch_carry_hybrid_payload,
     build_post_v2_study_12_optimize_comparison_probe,
     build_post_v2_study_12_optimize_comparison_probe_payload,
+    build_post_v2_study_13_multi_candidate_tournament,
+    build_post_v2_study_13_multi_candidate_tournament_payload,
+    build_post_v2_study_14_optimize_transfer_cohort_probe,
+    build_post_v2_study_14_optimize_transfer_cohort_probe_payload,
     SearchRun,
     SearchTrajectoryExport,
     SearchWorkspaceSnapshot,
@@ -779,5 +784,51 @@ def test_post_v2_study_12_optimize_comparison_probe_payload_round_trips() -> Non
 
     assert manifest.hidden_hold_sample_ids() == ["sample.branch_carry_hybrid.hidden"]
     assert comparison.child_candidate_id == payload["selected_candidate_id"]
+    assert payload["adapter_boundary"]["used_real_optimize_records"] is True
+    assert payload["evidence"]["future_v3_evidence"] is False
+
+
+def test_post_v2_study_13_multi_candidate_tournament_stays_narrow() -> None:
+    example = build_post_v2_study_13_multi_candidate_tournament()
+    run = example["run"]
+
+    assert run.recipe_kind == "multi_candidate_tournament_pressure_pass"
+    assert len(example["semifinal_outcome"].assessments) == 1
+    assert len(example["final_outcome"].assessments) == 1
+    assert run.selected_candidate_id == example["review_candidate_id"]
+    assert example["evidence"]["future_v3_evidence"] is False
+    assert example["evidence"]["owner_boundary"] == "private_helper_level"
+
+
+def test_post_v2_study_13_multi_candidate_tournament_payload_round_trips() -> None:
+    payload = build_post_v2_study_13_multi_candidate_tournament_payload()
+    run = SearchRun.from_dict(payload["run"])
+
+    assert run.recipe_kind == "multi_candidate_tournament_pressure_pass"
+    assert payload["final_outcome"]["selected_candidate_id"] == payload["review_candidate_id"]
+    assert len(payload["semifinal_outcome"]["assessment_ids"]) == 1
+    assert payload["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_14_optimize_transfer_cohort_probe_stays_adapter_local() -> None:
+    example = build_post_v2_study_14_optimize_transfer_cohort_probe()
+    summary = example["promotion_summary"]
+    cohort = example["transfer_cohort"]
+
+    assert isinstance(summary, PromotionEvidenceSummary)
+    assert isinstance(cohort, TransferCohortManifest)
+    assert summary.claim_tier == "cohort_supported"
+    assert cohort.cohort_id in summary.transfer_cohort_ids
+    assert example["adapter_boundary"]["transfer_logic_stayed_adapter_local"] is True
+    assert example["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_14_optimize_transfer_cohort_probe_payload_round_trips() -> None:
+    payload = build_post_v2_study_14_optimize_transfer_cohort_probe_payload()
+    summary = PromotionEvidenceSummary.from_dict(payload["promotion_summary"])
+    cohort = TransferCohortManifest.from_dict(payload["transfer_cohort"])
+
+    assert summary.claim_tier == "cohort_supported"
+    assert cohort.cohort_id in summary.transfer_cohort_ids
     assert payload["adapter_boundary"]["used_real_optimize_records"] is True
     assert payload["evidence"]["future_v3_evidence"] is False
