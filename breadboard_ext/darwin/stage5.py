@@ -81,6 +81,7 @@ def build_stage5_search_policy_v2(
     budget_class: str,
     family_rows: list[dict[str, Any]] | None = None,
     policy_stability_rows: list[dict[str, Any]] | None = None,
+    family_probe_override_kind: str | None = None,
 ) -> dict[str, Any]:
     if lane_id not in {"lane.repo_swe", "lane.systems"}:
         raise ValueError("stage5 search policy v2 is only authorized for lane.repo_swe and lane.systems")
@@ -111,6 +112,16 @@ def build_stage5_search_policy_v2(
             family_probe_enabled = True
             family_probe_target_kind = "tool_scope"
             promoted_rows = [*probe_rows, *promoted_rows]
+    if family_probe_override_kind:
+        override_rows = [
+            row
+            for row in family_rows
+            if str(row.get("lane_id") or "") == lane_id and str(row.get("family_kind") or "") == family_probe_override_kind
+        ]
+        if override_rows:
+            family_probe_enabled = True
+            family_probe_target_kind = family_probe_override_kind
+            promoted_rows = [*override_rows, *[row for row in promoted_rows if str(row.get("family_kind") or "") != family_probe_override_kind]]
     family_priors = []
     for row in promoted_rows:
         operator_id = _family_operator_id(row)
@@ -189,8 +200,15 @@ def build_stage5_search_policy_v2(
             "lane_review_conclusion": policy_review_conclusion,
             "stability_class": str(policy_stability_row.get("stability_class") or ""),
             "target_family_kind": family_probe_target_kind,
+            "override_kind": family_probe_override_kind,
             "repetition_count": repetition_count,
-            "reason": "repo_swe_shift_to_withheld_tool_scope_probe" if family_probe_enabled else "not_required",
+            "reason": (
+                f"repo_swe_forced_family_probe_{family_probe_override_kind}"
+                if family_probe_override_kind
+                else "repo_swe_shift_to_withheld_tool_scope_probe"
+                if family_probe_enabled
+                else "not_required"
+            ),
         },
         "abort_thresholds": {
             "matched_budget_invalidity_rate_gt": 0.25,

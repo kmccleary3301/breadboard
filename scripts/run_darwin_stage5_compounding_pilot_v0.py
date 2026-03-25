@@ -36,12 +36,14 @@ def run_stage5_compounding_pilot(
     lane_id: str = "lane.repo_swe",
     out_dir: Path | None = None,
     round_index: int = 1,
+    family_probe_override_kind: str | None = None,
 ) -> dict[str, object]:
     out_dir = _default_out_dir(lane_id) if out_dir is None else out_dir
     search_policy = build_stage5_search_policy_v2(
         lane_id=lane_id,
         budget_class="class_a",
         family_rows=load_stage5_family_registry_rows(),
+        family_probe_override_kind=family_probe_override_kind,
     )
     campaigns = _campaign_lookup()
     selected_arms = select_stage5_search_policy_arms(
@@ -133,6 +135,7 @@ def run_stage5_compounding_pilot(
         "flat_count": sum(1 for row in compounding_cases if row.get("conclusion") == "flat"),
         "provider_origin_counts": provider_origin_counts,
         "fallback_reason_counts": fallback_reason_counts,
+        "family_probe_override_kind": family_probe_override_kind,
         "policy_ref": str(policy_path.relative_to(ROOT)),
         "selected_arms_ref": str(arms_path.relative_to(ROOT)),
         "runs_ref": str(runs_path.relative_to(ROOT)),
@@ -148,9 +151,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run the Stage-5 tranche-1 compounding pilot.")
     parser.add_argument("--lane-id", default="lane.repo_swe")
     parser.add_argument("--round-index", type=int, default=1)
+    parser.add_argument("--family-probe-override-kind", default=None)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
-    summary = run_stage5_compounding_pilot(lane_id=args.lane_id, round_index=args.round_index)
+    summary = run_stage5_compounding_pilot(
+        lane_id=args.lane_id,
+        round_index=args.round_index,
+        family_probe_override_kind=args.family_probe_override_kind,
+    )
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
