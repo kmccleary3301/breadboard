@@ -3,6 +3,7 @@ from __future__ import annotations
 from agentic_coder_prototype.optimize import (
     BenchmarkRunManifest,
     CandidateComparisonResult,
+    MutationProposal,
     ObjectiveBreakdownResult,
     PromotionEvidenceSummary,
     ReflectionDecision,
@@ -72,6 +73,10 @@ from agentic_coder_prototype.search import (
     build_post_v2_study_15_reducer_after_tournament_payload,
     build_post_v2_study_16_optimize_reflection_probe,
     build_post_v2_study_16_optimize_reflection_probe_payload,
+    build_post_v2_study_17_repair_loop_after_reducer,
+    build_post_v2_study_17_repair_loop_after_reducer_payload,
+    build_post_v2_study_18_optimize_mutation_proposal_probe,
+    build_post_v2_study_18_optimize_mutation_proposal_probe_payload,
     SearchRun,
     SearchTrajectoryExport,
     SearchWorkspaceSnapshot,
@@ -879,5 +884,48 @@ def test_post_v2_study_16_optimize_reflection_probe_payload_round_trips() -> Non
 
     assert decision.target_candidate_id == payload["target_candidate_id"]
     assert decision.should_mutate is True
+    assert payload["adapter_boundary"]["used_real_optimize_records"] is True
+    assert payload["evidence"]["future_v3_evidence"] is False
+
+
+def test_post_v2_study_17_repair_loop_after_reducer_stays_narrow() -> None:
+    example = build_post_v2_study_17_repair_loop_after_reducer()
+    run = example["run"]
+
+    assert run.recipe_kind == "repair_loop_after_reducer_pressure_pass"
+    assert run.selected_candidate_id == example["repaired_candidate_id"]
+    assert example["carry_state_id"] == run.metadata["carry_state_id"]
+    assert len(example["outcome"].assessments) == 2
+    assert example["evidence"]["future_v3_evidence"] is False
+    assert example["evidence"]["owner_boundary"] == "private_helper_level"
+
+
+def test_post_v2_study_17_repair_loop_after_reducer_payload_round_trips() -> None:
+    payload = build_post_v2_study_17_repair_loop_after_reducer_payload()
+    run = SearchRun.from_dict(payload["run"])
+
+    assert run.recipe_kind == "repair_loop_after_reducer_pressure_pass"
+    assert payload["outcome"]["selected_candidate_id"] == payload["repaired_candidate_id"]
+    assert len(payload["outcome"]["assessment_ids"]) == 2
+    assert payload["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_18_optimize_mutation_proposal_probe_stays_adapter_local() -> None:
+    example = build_post_v2_study_18_optimize_mutation_proposal_probe()
+    proposal = example["mutation_proposal"]
+
+    assert isinstance(proposal, MutationProposal)
+    assert proposal.candidate.candidate_id == example["target_candidate_id"]
+    assert proposal.candidate.applied_loci == ["carry_state_summary"]
+    assert example["adapter_boundary"]["mutation_logic_stayed_adapter_local"] is True
+    assert example["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_18_optimize_mutation_proposal_probe_payload_round_trips() -> None:
+    payload = build_post_v2_study_18_optimize_mutation_proposal_probe_payload()
+    proposal = MutationProposal.from_dict(payload["mutation_proposal"])
+
+    assert proposal.candidate.candidate_id == payload["target_candidate_id"]
+    assert proposal.candidate.applied_loci == ["carry_state_summary"]
     assert payload["adapter_boundary"]["used_real_optimize_records"] is True
     assert payload["evidence"]["future_v3_evidence"] is False

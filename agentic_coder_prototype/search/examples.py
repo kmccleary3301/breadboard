@@ -3,9 +3,13 @@ from __future__ import annotations
 from typing import Dict, List, Sequence
 
 from agentic_coder_prototype.optimize import (
+    ArtifactRef,
     BenchmarkRunManifest,
     BenchmarkSplit,
+    CandidateBundle,
+    CandidateChange,
     CandidateComparisonResult,
+    MutationProposal,
     ObjectiveBreakdownResult,
     PromotionEvidenceSummary,
     ReflectionDecision,
@@ -3077,6 +3081,241 @@ def build_post_v2_study_16_optimize_reflection_probe_payload() -> Dict[str, obje
     return {
         "run": example["run"].to_dict(),
         "reflection_decision": example["reflection_decision"].to_dict(),
+        "target_candidate_id": example["target_candidate_id"],
+        "adapter_boundary": dict(example["adapter_boundary"]),
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }
+
+
+def build_post_v2_study_17_repair_loop_after_reducer() -> Dict[str, object]:
+    study = build_post_v2_study_15_reducer_after_tournament()
+    run = study["run"]
+    reducer_candidate = next(item for item in run.candidates if item.candidate_id == study["reducer_candidate_id"])
+    risky_candidate = next(
+        item for item in run.candidates if item.candidate_id.endswith(".cand.branch.risky_patch")
+    )
+    compaction_registry: SearchCompactionRegistry = build_default_search_compaction_registry()
+    message, carry_state = compaction_registry.compact(
+        backend_kind="bounded_candidate_rollup.v1",
+        search_id=run.search_id,
+        carry_state_id=f"{run.search_id}.carry.repair_loop",
+        message_id=f"{run.search_id}.msg.repair_loop",
+        candidates=[reducer_candidate, risky_candidate],
+        metadata={"study_id": "study_17_repair_loop_after_reducer", "phase": "post_v2_continuation"},
+    )
+    compaction_event = SearchEvent(
+        event_id=f"{run.search_id}.event.compact.repair_loop",
+        search_id=run.search_id,
+        frontier_id=reducer_candidate.frontier_id,
+        round_index=reducer_candidate.round_index,
+        operator_kind="compact",
+        input_candidate_ids=[reducer_candidate.candidate_id, risky_candidate.candidate_id],
+        message_ids=[message.message_id],
+        metadata={"study_id": "study_17_repair_loop_after_reducer", "carry_state_id": carry_state.state_id},
+    )
+    repaired_candidate = SearchCandidate(
+        candidate_id=f"{run.search_id}.cand.repair_loop",
+        search_id=run.search_id,
+        frontier_id=reducer_candidate.frontier_id,
+        parent_ids=[reducer_candidate.candidate_id, risky_candidate.candidate_id],
+        round_index=reducer_candidate.round_index,
+        depth=max(reducer_candidate.depth, risky_candidate.depth) + 1,
+        payload_ref=f"artifacts/search/{run.search_id}/repair_loop_candidate.json",
+        workspace_ref=reducer_candidate.workspace_ref,
+        message_ref=message.message_id,
+        score_vector={"correctness_score": 0.97, "coherence_score": 0.94},
+        usage={"prompt_tokens": 94, "completion_tokens": 46},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{run.search_id}/repair_loop_candidate.md",
+        metadata={"study_id": "study_17_repair_loop_after_reducer", "carry_state_id": carry_state.state_id},
+    )
+    aggregate_event = SearchEvent(
+        event_id=f"{run.search_id}.event.aggregate.repair_loop",
+        search_id=run.search_id,
+        frontier_id=reducer_candidate.frontier_id,
+        round_index=reducer_candidate.round_index,
+        operator_kind="aggregate",
+        input_candidate_ids=[reducer_candidate.candidate_id, risky_candidate.candidate_id],
+        output_candidate_ids=[repaired_candidate.candidate_id],
+        message_ids=[message.message_id],
+        metadata={"study_id": "study_17_repair_loop_after_reducer"},
+    )
+    study_run = SearchRun(
+        search_id=run.search_id,
+        recipe_kind="repair_loop_after_reducer_pressure_pass",
+        candidates=[*run.candidates, repaired_candidate],
+        frontiers=list(run.frontiers),
+        events=[*run.events, compaction_event, aggregate_event],
+        messages=[*run.messages, message],
+        carry_states=[*run.carry_states, carry_state],
+        assessments=list(run.assessments),
+        workspace_snapshots=list(run.workspace_snapshots),
+        branch_states=list(run.branch_states),
+        metrics=run.metrics,
+        selected_candidate_id=run.selected_candidate_id,
+        metadata={**dict(run.metadata), "study_id": "study_17_repair_loop_after_reducer"},
+    )
+    gate_config = AssessmentGateConfig(
+        backend_kind="exact_tests.v1",
+        mode="require_before_select",
+        max_assessments=2,
+        required_verdicts=["pass"],
+        metadata={"study_id": "study_17_repair_loop_after_reducer", "phase": "post_v2_continuation"},
+    )
+    outcome = run_barriered_assessment_gate(
+        run=study_run,
+        registry=build_default_search_assessment_registry(),
+        config=gate_config,
+        frontier_candidates=[repaired_candidate, reducer_candidate],
+    )
+    final_events = [*study_run.events, outcome.gate_event]
+    if outcome.selection_event is not None:
+        final_events.append(outcome.selection_event)
+    final_run = SearchRun(
+        search_id=study_run.search_id,
+        recipe_kind=study_run.recipe_kind,
+        candidates=list(study_run.candidates),
+        frontiers=list(study_run.frontiers),
+        events=final_events,
+        messages=list(study_run.messages),
+        carry_states=list(study_run.carry_states),
+        assessments=[*study_run.assessments, *outcome.assessments],
+        workspace_snapshots=list(study_run.workspace_snapshots),
+        branch_states=list(study_run.branch_states),
+        metrics=run.metrics,
+        selected_candidate_id=outcome.selected_candidate_id,
+        metadata={
+            **dict(study_run.metadata),
+            "carry_state_id": carry_state.state_id,
+            "terminated": outcome.terminated,
+        },
+    )
+    evidence = {
+        "easy": [
+            "repair-loop refinement after reducer selection still fits existing DAG V2 surfaces",
+            "carry-state and exact verifier truth remain explicit through the loop",
+            "no iterative repair-loop public noun was needed",
+        ],
+        "awkward": [
+            "higher-level repair-loop narration remains helper/reporting work",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "private_helper_level",
+    }
+    return {
+        "run": final_run,
+        "gate_config": gate_config,
+        "outcome": outcome,
+        "carry_state_id": carry_state.state_id,
+        "repaired_candidate_id": repaired_candidate.candidate_id,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_17_repair_loop_after_reducer_payload() -> Dict[str, object]:
+    example = build_post_v2_study_17_repair_loop_after_reducer()
+    return {
+        "run": example["run"].to_dict(),
+        "gate_config": {
+            "backend_kind": example["gate_config"].backend_kind,
+            "mode": example["gate_config"].mode,
+            "max_assessments": example["gate_config"].max_assessments,
+            "required_verdicts": list(example["gate_config"].required_verdicts),
+            "metadata": dict(example["gate_config"].metadata),
+        },
+        "outcome": {
+            "selected_candidate_id": example["outcome"].selected_candidate_id,
+            "assessment_ids": [item.assessment_id for item in example["outcome"].assessments],
+        },
+        "carry_state_id": example["carry_state_id"],
+        "repaired_candidate_id": example["repaired_candidate_id"],
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }
+
+
+def build_post_v2_study_18_optimize_mutation_proposal_probe() -> Dict[str, object]:
+    study = build_post_v2_study_17_repair_loop_after_reducer()
+    run = study["run"]
+    proposal_candidate_id = study["repaired_candidate_id"]
+    candidate_bundle = CandidateBundle(
+        candidate_id=proposal_candidate_id,
+        source_target_id="target.dag.adapter.repair_loop",
+        applied_loci=["carry_state_summary"],
+        changes=[
+            CandidateChange(
+                locus_id="carry_state_summary",
+                value={"strategy": "tighten_reducer_followup", "selected_candidate_id": proposal_candidate_id},
+                rationale="DAG evidence supports a tighter carry-state summary for the follow-up repair pass.",
+                metadata={"source": "dag_post_v2_study_18", "outside_dag_kernel": True},
+            )
+        ],
+        change_set_refs=[
+            ArtifactRef(
+                ref=f"artifacts/search/{run.search_id}/repair_loop_candidate.json",
+                media_type="application/json",
+                metadata={"artifact_id": "artifact.dag.study18.change_set"},
+            )
+        ],
+        provenance={"source": "dag_post_v2_study_17", "outside_dag_kernel": True},
+        metadata={"source": "dag_post_v2_study_18", "outside_dag_kernel": True},
+    )
+    proposal = MutationProposal(
+        proposal_id="proposal.dag.study18",
+        policy_id="policy.dag.adapter.v1",
+        candidate=candidate_bundle,
+        blast_radius={"review_required": False, "locus_count": 1},
+        rationale_summary="Adapter-local mutation proposal derived from the DAG repair-loop evidence.",
+        metadata={"source": "dag_post_v2_study_18", "outside_dag_kernel": True},
+    )
+    adapter_boundary = {
+        "outside_dag_kernel": True,
+        "introduced_optimize_public_nouns_into_dag": False,
+        "used_real_optimize_records": True,
+        "mutation_logic_stayed_adapter_local": True,
+    }
+    evidence = {
+        "easy": [
+            "real optimize mutation proposals can be built from DAG study outputs without changing the DAG kernel",
+            "mutation-locus and blast-radius semantics remain optimize-side",
+        ],
+        "awkward": [
+            "adapter-side locus naming and rationale formatting remain consumer conventions",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "adapter_level",
+    }
+    return {
+        "run": run,
+        "mutation_proposal": proposal,
+        "target_candidate_id": proposal_candidate_id,
+        "adapter_boundary": adapter_boundary,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_18_optimize_mutation_proposal_probe_payload() -> Dict[str, object]:
+    example = build_post_v2_study_18_optimize_mutation_proposal_probe()
+    return {
+        "run": example["run"].to_dict(),
+        "mutation_proposal": example["mutation_proposal"].to_dict(),
         "target_candidate_id": example["target_candidate_id"],
         "adapter_boundary": dict(example["adapter_boundary"]),
         "evidence": {
