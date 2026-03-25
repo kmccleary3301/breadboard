@@ -3878,3 +3878,286 @@ def build_dag_v3_rsa_replication_packet_payload() -> Dict[str, object]:
         "model_tier": example["model_tier"],
         "metadata": dict(example["metadata"]),
     }
+
+
+def build_dag_v3_pacore_round_profile_packet() -> Dict[str, object]:
+    round_profiles = [
+        {
+            "profile_id": "pacore.low",
+            "label": "low",
+            "population_size": 2,
+            "subset_size": 2,
+            "max_rounds": 1,
+            "compaction_mode": "conclusion_only",
+        },
+        {
+            "profile_id": "pacore.medium",
+            "label": "medium",
+            "population_size": 3,
+            "subset_size": 2,
+            "max_rounds": 2,
+            "compaction_mode": "conclusion_only",
+        },
+        {
+            "profile_id": "pacore.high",
+            "label": "high",
+            "population_size": 4,
+            "subset_size": 2,
+            "max_rounds": 3,
+            "compaction_mode": "conclusion_only",
+        },
+    ]
+    return {
+        "paper_key": "pacore_parallel_coordinated_reasoning",
+        "profiles": round_profiles,
+        "metadata": {
+            "phase": "dag_v3_phase3",
+            "frozen_kernel": True,
+            "model_tier_default": "gpt_5_4_mini",
+        },
+    }
+
+
+def build_dag_v3_pacore_round_profile_packet_payload() -> Dict[str, object]:
+    example = build_dag_v3_pacore_round_profile_packet()
+    return {
+        "paper_key": example["paper_key"],
+        "profiles": [dict(item) for item in example["profiles"]],
+        "metadata": dict(example["metadata"]),
+    }
+
+
+def build_dag_v3_pacore_conclusion_only_compaction_baseline() -> Dict[str, object]:
+    example = build_pacore_search_runtime_example()
+    run = example["run"]
+    final_message = run.messages[-1]
+    baseline_payload = {
+        "mode": "conclusion_only",
+        "source_message_id": final_message.message_id,
+        "summary": final_message.summary_payload.get("summary"),
+        "dropped_fields": ["reasoning_steps", "full_trace", "intermediate_branch_notes"],
+        "preserved_fields": ["summary", "improved_score"],
+        "auditable": True,
+    }
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_v3.pacore.conclusion_only_baseline.v1",
+        paper_key="pacore_parallel_coordinated_reasoning",
+        normalization_rule="round_count_and_population_matched",
+        baseline_ids=["conclusion_only_compaction", "bounded_candidate_rollup"],
+        metadata={"phase": "dag_v3_phase3", "source_search_id": run.search_id},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_v3.pacore.conclusion_only.deviations.v1",
+        paper_key="pacore_parallel_coordinated_reasoning",
+        deviations=[
+            {
+                "deviation_id": "pacore.compaction.dev.01",
+                "severity": "low",
+                "summary": "The conclusion-only baseline is expressed as an explicit helper artifact rather than a new runtime compaction backend.",
+            }
+        ],
+        metadata={"phase": "dag_v3_phase3"},
+    )
+    return {
+        "baseline_packet": baseline_packet,
+        "baseline_payload": baseline_payload,
+        "deviation_ledger": deviation_ledger,
+        "run": run,
+    }
+
+
+def build_dag_v3_pacore_conclusion_only_compaction_baseline_payload() -> Dict[str, object]:
+    example = build_dag_v3_pacore_conclusion_only_compaction_baseline()
+    return {
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "baseline_payload": dict(example["baseline_payload"]),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "run": example["run"].to_dict(),
+    }
+
+
+def build_dag_v3_pacore_message_ablation_packet() -> Dict[str, object]:
+    with_messages = build_pacore_search_runtime_example()["run"]
+    without_messages = _build_rsa_search_runtime_with_profile(
+        search_id="search.dag_v3.pacore.ablation.no_messages",
+        max_rounds=2,
+        population_size=3,
+        subset_size=2,
+        random_seed=13,
+        metadata={"phase": "dag_v3_phase3", "study_kind": "pacore_without_messages"},
+    )["run"]
+    parallel_vs_sequential = [
+        {
+            "variant": "with_message_passing",
+            "search_id": with_messages.search_id,
+            "message_count": len(with_messages.messages),
+            "selected_score": float(
+                next(item for item in with_messages.candidates if item.candidate_id == with_messages.selected_candidate_id).score_vector.get(
+                    "correctness_score", 0.0
+                )
+            ),
+            "metrics": compute_fidelity_metrics(with_messages),
+        },
+        {
+            "variant": "without_message_passing",
+            "search_id": without_messages.search_id,
+            "message_count": len(without_messages.messages),
+            "selected_score": float(
+                next(item for item in without_messages.candidates if item.candidate_id == without_messages.selected_candidate_id).score_vector.get(
+                    "correctness_score", 0.0
+                )
+            ),
+            "metrics": compute_fidelity_metrics(without_messages),
+        },
+    ]
+    return {
+        "paper_key": "pacore_parallel_coordinated_reasoning",
+        "rows": parallel_vs_sequential,
+        "metadata": {
+            "phase": "dag_v3_phase3",
+            "comparison": "with_without_message_passing",
+            "model_tier": "gpt_5_4_mini",
+        },
+        "runs": [with_messages, without_messages],
+    }
+
+
+def build_dag_v3_pacore_message_ablation_packet_payload() -> Dict[str, object]:
+    example = build_dag_v3_pacore_message_ablation_packet()
+    return {
+        "paper_key": example["paper_key"],
+        "rows": [dict(item) for item in example["rows"]],
+        "metadata": dict(example["metadata"]),
+        "runs": [item.to_dict() for item in example["runs"]],
+    }
+
+
+def build_dag_v3_pacore_parallel_vs_sequential_packet() -> Dict[str, object]:
+    ablation = build_dag_v3_pacore_message_ablation_packet()
+    coding_transfer_runner = {
+        "runner_id": "dag_v3.pacore.coding_transfer.v1",
+        "benchmark_packet": "pacore.coding_transfer.slice.v1",
+        "model_tier": "gpt_5_4_mini",
+        "claim_limit": "bounded coding-transfer smoke only",
+        "required_artifacts": ["compute_ledger", "fidelity_scorecard", "deviation_ledger"],
+    }
+    return {
+        "paper_key": "pacore_parallel_coordinated_reasoning",
+        "parallel_variant": dict(ablation["rows"][0]),
+        "sequential_variant": dict(ablation["rows"][1]),
+        "coding_transfer_runner": coding_transfer_runner,
+        "metadata": {"phase": "dag_v3_phase3", "comparison": "parallel_vs_sequential"},
+    }
+
+
+def build_dag_v3_pacore_parallel_vs_sequential_packet_payload() -> Dict[str, object]:
+    example = build_dag_v3_pacore_parallel_vs_sequential_packet()
+    return {
+        "paper_key": example["paper_key"],
+        "parallel_variant": dict(example["parallel_variant"]),
+        "sequential_variant": dict(example["sequential_variant"]),
+        "coding_transfer_runner": dict(example["coding_transfer_runner"]),
+        "metadata": dict(example["metadata"]),
+    }
+
+
+def build_dag_v3_pacore_replication_packet() -> Dict[str, object]:
+    profile = build_dag_v3_pacore_paper_profile()
+    round_profiles = build_dag_v3_pacore_round_profile_packet()
+    compaction_baseline = build_dag_v3_pacore_conclusion_only_compaction_baseline()
+    ablation = build_dag_v3_pacore_message_ablation_packet()
+    comparison = build_dag_v3_pacore_parallel_vs_sequential_packet()
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_v3.pacore.phase3.scorecard.v1",
+        paper_key="pacore_parallel_coordinated_reasoning",
+        fidelity_label="medium_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="partial",
+        compute_fidelity="normalized",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "algorithm-faithful, model-substituted, inference-only",
+            "compaction_baseline_packet_id": compaction_baseline["baseline_packet"].packet_id,
+            "coding_transfer_runner_id": comparison["coding_transfer_runner"]["runner_id"],
+        },
+        metadata={"phase": "dag_v3_phase3"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_v3.pacore.phase3.compute.v1",
+        paper_key="pacore_parallel_coordinated_reasoning",
+        model_tier="gpt_5_4_mini",
+        normalization_rule="round_count_and_population_matched",
+        entries=[
+            {
+                "entry_id": f"pacore.phase3.{row['search_id']}.tokens",
+                "kind": "total_tokens",
+                "label": row["variant"],
+                "quantity": sum(
+                    float(run_candidate.usage.get("prompt_tokens", 0.0) + run_candidate.usage.get("completion_tokens", 0.0))
+                    for run in ablation["runs"]
+                    if run.search_id == row["search_id"]
+                    for run_candidate in run.candidates
+                ),
+                "unit": "tokens",
+            }
+            for row in ablation["rows"]
+        ],
+        metadata={"phase": "dag_v3_phase3"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_v3.pacore.phase3.deviations.v1",
+        paper_key="pacore_parallel_coordinated_reasoning",
+        deviations=[
+            {
+                "deviation_id": "pacore.phase3.dev.01",
+                "severity": "medium",
+                "summary": "Phase 3 reproduces exact round/message helper profiles and explicit ablations, but remains inference-only on GPT-5.4 Mini.",
+            },
+            {
+                "deviation_id": "pacore.phase3.dev.02",
+                "severity": "low",
+                "summary": "The coding-transfer slice runner is defined and bounded here; full coding-transfer execution is deferred to later packets.",
+            },
+        ],
+        metadata={"phase": "dag_v3_phase3"},
+    )
+    behavior_packet = {
+        "with_message_passing_score": ablation["rows"][0]["selected_score"],
+        "without_message_passing_score": ablation["rows"][1]["selected_score"],
+        "parallel_variant_search_id": comparison["parallel_variant"]["search_id"],
+        "sequential_variant_search_id": comparison["sequential_variant"]["search_id"],
+        "round_profile_labels": [item["label"] for item in round_profiles["profiles"]],
+    }
+    return {
+        "recipe_manifest": profile["recipe_manifest"],
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "deviation_ledger": deviation_ledger,
+        "round_profiles": list(round_profiles["profiles"]),
+        "compaction_baseline": compaction_baseline["baseline_packet"],
+        "message_ablation_rows": list(ablation["rows"]),
+        "parallel_vs_sequential": {
+            "parallel_variant": dict(comparison["parallel_variant"]),
+            "sequential_variant": dict(comparison["sequential_variant"]),
+        },
+        "coding_transfer_runner": dict(comparison["coding_transfer_runner"]),
+        "behavior_packet": behavior_packet,
+        "metadata": {"phase": "dag_v3_phase3", "kernel_change_required": False},
+    }
+
+
+def build_dag_v3_pacore_replication_packet_payload() -> Dict[str, object]:
+    example = build_dag_v3_pacore_replication_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "round_profiles": [dict(item) for item in example["round_profiles"]],
+        "compaction_baseline": example["compaction_baseline"].to_dict(),
+        "message_ablation_rows": [dict(item) for item in example["message_ablation_rows"]],
+        "parallel_vs_sequential": dict(example["parallel_vs_sequential"]),
+        "coding_transfer_runner": dict(example["coding_transfer_runner"]),
+        "behavior_packet": dict(example["behavior_packet"]),
+        "metadata": dict(example["metadata"]),
+    }

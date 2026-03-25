@@ -48,6 +48,16 @@ from agentic_coder_prototype.search import (
     build_pacore_search_runtime_example_payload,
     build_dag_v3_pacore_paper_profile,
     build_dag_v3_pacore_paper_profile_payload,
+    build_dag_v3_pacore_parallel_vs_sequential_packet,
+    build_dag_v3_pacore_parallel_vs_sequential_packet_payload,
+    build_dag_v3_pacore_replication_packet,
+    build_dag_v3_pacore_replication_packet_payload,
+    build_dag_v3_pacore_round_profile_packet,
+    build_dag_v3_pacore_round_profile_packet_payload,
+    build_dag_v3_pacore_message_ablation_packet,
+    build_dag_v3_pacore_message_ablation_packet_payload,
+    build_dag_v3_pacore_conclusion_only_compaction_baseline,
+    build_dag_v3_pacore_conclusion_only_compaction_baseline_payload,
     build_dag_v3_phase1_smoke_packet,
     build_dag_v3_phase1_smoke_packet_payload,
     build_dag_v3_rsa_budget_matched_baseline_packet,
@@ -411,6 +421,57 @@ def test_dag_v3_rsa_replication_packet_carries_phase2_outputs() -> None:
     assert example["compute_ledger"].total_for_unit("tokens") > 0.0
     assert len(example["sweep_rows"]) == 4
     assert example["qualitative_synthesis"]["best_nkt"]["N"] in {4, 8}
+    assert payload["metadata"]["kernel_change_required"] is False
+
+
+def test_dag_v3_pacore_round_profile_packet_has_low_med_high_profiles() -> None:
+    example = build_dag_v3_pacore_round_profile_packet()
+    payload = build_dag_v3_pacore_round_profile_packet_payload()
+
+    assert example["paper_key"] == "pacore_parallel_coordinated_reasoning"
+    assert [item["label"] for item in example["profiles"]] == ["low", "medium", "high"]
+    assert payload["metadata"]["model_tier_default"] == "gpt_5_4_mini"
+
+
+def test_dag_v3_pacore_conclusion_only_compaction_baseline_is_explicit() -> None:
+    example = build_dag_v3_pacore_conclusion_only_compaction_baseline()
+    payload = build_dag_v3_pacore_conclusion_only_compaction_baseline_payload()
+
+    assert example["baseline_packet"].paper_key == "pacore_parallel_coordinated_reasoning"
+    assert example["baseline_payload"]["mode"] == "conclusion_only"
+    assert example["baseline_payload"]["auditable"] is True
+    assert payload["baseline_payload"]["source_message_id"] == example["baseline_payload"]["source_message_id"]
+
+
+def test_dag_v3_pacore_message_ablation_packet_compares_with_and_without_messages() -> None:
+    example = build_dag_v3_pacore_message_ablation_packet()
+    payload = build_dag_v3_pacore_message_ablation_packet_payload()
+
+    assert len(example["rows"]) == 2
+    assert example["rows"][0]["variant"] == "with_message_passing"
+    assert example["rows"][1]["variant"] == "without_message_passing"
+    assert payload["metadata"]["comparison"] == "with_without_message_passing"
+
+
+def test_dag_v3_pacore_parallel_vs_sequential_packet_defines_coding_transfer_runner() -> None:
+    example = build_dag_v3_pacore_parallel_vs_sequential_packet()
+    payload = build_dag_v3_pacore_parallel_vs_sequential_packet_payload()
+
+    assert example["coding_transfer_runner"]["benchmark_packet"] == "pacore.coding_transfer.slice.v1"
+    assert example["parallel_variant"]["variant"] == "with_message_passing"
+    assert example["sequential_variant"]["variant"] == "without_message_passing"
+    assert payload["metadata"]["comparison"] == "parallel_vs_sequential"
+
+
+def test_dag_v3_pacore_replication_packet_carries_phase3_outputs() -> None:
+    example = build_dag_v3_pacore_replication_packet()
+    payload = build_dag_v3_pacore_replication_packet_payload()
+
+    assert example["recipe_manifest"].paper_key == "pacore_parallel_coordinated_reasoning"
+    assert example["scorecard"].fidelity_label == "medium_fidelity"
+    assert len(example["round_profiles"]) == 3
+    assert len(example["message_ablation_rows"]) == 2
+    assert example["coding_transfer_runner"]["runner_id"] == "dag_v3.pacore.coding_transfer.v1"
     assert payload["metadata"]["kernel_change_required"] is False
 
 
