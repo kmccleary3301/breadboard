@@ -157,3 +157,6 @@ Date: 2026-03-14
 - systems-weighted status: `docs/darwin_stage5_systems_weighted_status_2026-03-25.md`
 - systems-weighted review: `docs/darwin_stage5_systems_weighted_review_2026-03-25.md`
 - systems-weighted gate: `docs/darwin_stage5_systems_weighted_gate_2026-03-25.md`
+- systems-weighted live status: `docs/darwin_stage5_systems_weighted_live_status_2026-03-25.md`
+- systems-weighted live review: `docs/darwin_stage5_systems_weighted_live_review_2026-03-25.md`
+- systems-weighted live gate: `docs/darwin_stage5_systems_weighted_live_gate_2026-03-25.md`
