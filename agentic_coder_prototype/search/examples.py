@@ -4161,3 +4161,185 @@ def build_dag_v3_pacore_replication_packet_payload() -> Dict[str, object]:
         "behavior_packet": dict(example["behavior_packet"]),
         "metadata": dict(example["metadata"]),
     }
+
+
+def build_dag_v3_optimize_ready_comparison_packet() -> Dict[str, object]:
+    rsa = build_dag_v3_rsa_replication_packet()
+    pacore = build_dag_v3_pacore_replication_packet()
+    comparison_packet = {
+        "packet_id": "dag_v3.optimize_ready.comparison.v1",
+        "consumer": "optimize",
+        "recipes": [
+            {
+                "paper_key": rsa["recipe_manifest"].paper_key,
+                "fidelity_label": rsa["scorecard"].fidelity_label,
+                "compute_ledger_id": rsa["compute_ledger"].ledger_id,
+                "baseline_packet_id": rsa["baseline_packet"].packet_id,
+                "deviation_ledger_id": rsa["deviation_ledger"].ledger_id,
+            },
+            {
+                "paper_key": pacore["recipe_manifest"].paper_key,
+                "fidelity_label": pacore["scorecard"].fidelity_label,
+                "compute_ledger_id": pacore["compute_ledger"].ledger_id,
+                "compaction_baseline_packet_id": pacore["compaction_baseline"].packet_id,
+                "deviation_ledger_id": pacore["deviation_ledger"].ledger_id,
+            },
+        ],
+        "shared_metrics": {
+            "rsa": {
+                "best_aggregation_gain": max(float(row["metrics"]["aggregation_gain"]) for row in rsa["sweep_rows"]),
+                "best_emergent_correctness": max(float(row["metrics"]["emergent_correctness"]) for row in rsa["sweep_rows"]),
+            },
+            "pacore": {
+                "message_passing_gain": float(pacore["behavior_packet"]["with_message_passing_score"])
+                - float(pacore["behavior_packet"]["without_message_passing_score"]),
+                "message_rounds": len(pacore["round_profiles"]),
+            },
+        },
+        "adapter_boundary": {
+            "outside_dag_kernel": True,
+            "introduced_optimize_public_nouns_into_dag": False,
+            "consumes": [
+                "PaperRecipeManifest",
+                "FidelityScorecard",
+                "ComputeBudgetLedger",
+                "BaselineComparisonPacket",
+                "ReplicationDeviationLedger",
+            ],
+        },
+        "metadata": {"phase": "dag_v3_phase4", "kernel_change_required": False},
+    }
+    return comparison_packet
+
+
+def build_dag_v3_optimize_ready_comparison_packet_payload() -> Dict[str, object]:
+    example = build_dag_v3_optimize_ready_comparison_packet()
+    return {
+        "packet_id": example["packet_id"],
+        "consumer": example["consumer"],
+        "recipes": [dict(item) for item in example["recipes"]],
+        "shared_metrics": dict(example["shared_metrics"]),
+        "adapter_boundary": dict(example["adapter_boundary"]),
+        "metadata": dict(example["metadata"]),
+    }
+
+
+def build_dag_v3_rl_facing_export_slice_packet() -> Dict[str, object]:
+    rsa = build_dag_v3_rsa_replication_packet()
+    pacore = build_dag_v3_pacore_replication_packet()
+    export_slices = [
+        {
+            "slice_id": "dag_v3.rl_slice.rsa_aggregation_segments",
+            "paper_key": rsa["recipe_manifest"].paper_key,
+            "unit_kind": "aggregation_example",
+            "source_packet": "rsa_replication_packet",
+            "claim_limit": "bounded RL-facing export opportunity only",
+        },
+        {
+            "slice_id": "dag_v3.rl_slice.pacore_message_segments",
+            "paper_key": pacore["recipe_manifest"].paper_key,
+            "unit_kind": "communication_example",
+            "source_packet": "pacore_replication_packet",
+            "claim_limit": "bounded RL-facing export opportunity only",
+        },
+    ]
+    return {
+        "packet_id": "dag_v3.rl_facing_export_slices.v1",
+        "slices": export_slices,
+        "rl_boundary": {
+            "training_framework_added": False,
+            "public_rl_control_surface_added": False,
+            "uses_existing_export_truth": True,
+            "requires_future_rl_program": True,
+        },
+        "metadata": {"phase": "dag_v3_phase4", "kernel_change_required": False},
+    }
+
+
+def build_dag_v3_rl_facing_export_slice_packet_payload() -> Dict[str, object]:
+    example = build_dag_v3_rl_facing_export_slice_packet()
+    return {
+        "packet_id": example["packet_id"],
+        "slices": [dict(item) for item in example["slices"]],
+        "rl_boundary": dict(example["rl_boundary"]),
+        "metadata": dict(example["metadata"]),
+    }
+
+
+def build_dag_v3_darwin_boundary_update_packet() -> Dict[str, object]:
+    rsa = build_dag_v3_rsa_replication_packet()
+    pacore = build_dag_v3_pacore_replication_packet()
+    return {
+        "packet_id": "dag_v3.darwin_boundary_update.v1",
+        "still_dag_local": [
+            "paper_recipe_manifests",
+            "fidelity_scorecards",
+            "compute_ledgers",
+            "replication_deviation_ledgers",
+            "bounded replication helpers",
+        ],
+        "still_not_dag_local": [
+            "many-run campaign orchestration",
+            "archive or island semantics",
+            "population-level novelty/diversity management",
+            "persistent outer-loop experiment search",
+        ],
+        "evidence": {
+            "rsa_packet_id": rsa["compute_ledger"].ledger_id,
+            "pacore_packet_id": pacore["compute_ledger"].ledger_id,
+            "repeated_dag_local_public_shape_pressure": 0,
+        },
+        "metadata": {"phase": "dag_v3_phase4", "kernel_change_required": False},
+    }
+
+
+def build_dag_v3_darwin_boundary_update_packet_payload() -> Dict[str, object]:
+    example = build_dag_v3_darwin_boundary_update_packet()
+    return {
+        "packet_id": example["packet_id"],
+        "still_dag_local": list(example["still_dag_local"]),
+        "still_not_dag_local": list(example["still_not_dag_local"]),
+        "evidence": dict(example["evidence"]),
+        "metadata": dict(example["metadata"]),
+    }
+
+
+def build_dag_v3_cross_paper_synthesis_packet() -> Dict[str, object]:
+    rsa = build_dag_v3_rsa_replication_packet()
+    pacore = build_dag_v3_pacore_replication_packet()
+    return {
+        "packet_id": "dag_v3.cross_paper_synthesis.v1",
+        "shared": [
+            "fidelity helper artifacts instead of kernel expansion",
+            "compute-normalized replication packets",
+            "Mini-first model substitution policy",
+            "explicit inference-only claim labeling",
+        ],
+        "paper_specific": {
+            "rsa": ["N / K / T sweeps", "budget-matched aggregation baselines"],
+            "pacore": ["round geometry", "message-passing ablations", "compaction baselines"],
+        },
+        "outside_dag": [
+            "training-aware replication claims",
+            "optimize objective/promotion logic",
+            "RL training pipeline ownership",
+            "DARWIN outer-loop orchestration",
+        ],
+        "references": {
+            "rsa_scorecard_id": rsa["scorecard"].scorecard_id,
+            "pacore_scorecard_id": pacore["scorecard"].scorecard_id,
+        },
+        "metadata": {"phase": "dag_v3_phase4", "kernel_change_required": False},
+    }
+
+
+def build_dag_v3_cross_paper_synthesis_packet_payload() -> Dict[str, object]:
+    example = build_dag_v3_cross_paper_synthesis_packet()
+    return {
+        "packet_id": example["packet_id"],
+        "shared": list(example["shared"]),
+        "paper_specific": dict(example["paper_specific"]),
+        "outside_dag": list(example["outside_dag"]),
+        "references": dict(example["references"]),
+        "metadata": dict(example["metadata"]),
+    }

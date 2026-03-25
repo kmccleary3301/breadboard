@@ -117,6 +117,7 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [concepts/dag-runtime-v3-fidelity-helper-layer.md](concepts/dag-runtime-v3-fidelity-helper-layer.md) | DAG Runtime V3 helper layer: paper recipe manifests, fidelity scorecards, compute ledgers, and deviation tracking on top of a frozen DAG V2 kernel |
 | [concepts/dag-runtime-v3-rsa-replication-packet.md](concepts/dag-runtime-v3-rsa-replication-packet.md) | DAG Runtime V3 RSA tranche: fixed-seed `N / K / T` sweeps, budget-matched baselines, and medium-fidelity replication packets without kernel growth |
 | [concepts/dag-runtime-v3-pacore-replication-packet.md](concepts/dag-runtime-v3-pacore-replication-packet.md) | DAG Runtime V3 PaCoRe tranche: explicit round profiles, compaction baselines, message-passing ablations, and bounded coding-transfer follow-on without kernel growth |
+| [concepts/dag-runtime-v3-cross-paper-composition.md](concepts/dag-runtime-v3-cross-paper-composition.md) | DAG Runtime V3 cross-paper composition: optimize-ready comparison packets, bounded RL-facing export slices, DARWIN boundary updates, and synthesis without kernel growth |
 
 ### Governance and change policy
 

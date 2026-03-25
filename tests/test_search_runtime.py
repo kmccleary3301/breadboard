@@ -58,8 +58,16 @@ from agentic_coder_prototype.search import (
     build_dag_v3_pacore_message_ablation_packet_payload,
     build_dag_v3_pacore_conclusion_only_compaction_baseline,
     build_dag_v3_pacore_conclusion_only_compaction_baseline_payload,
+    build_dag_v3_cross_paper_synthesis_packet,
+    build_dag_v3_cross_paper_synthesis_packet_payload,
+    build_dag_v3_darwin_boundary_update_packet,
+    build_dag_v3_darwin_boundary_update_packet_payload,
+    build_dag_v3_optimize_ready_comparison_packet,
+    build_dag_v3_optimize_ready_comparison_packet_payload,
     build_dag_v3_phase1_smoke_packet,
     build_dag_v3_phase1_smoke_packet_payload,
+    build_dag_v3_rl_facing_export_slice_packet,
+    build_dag_v3_rl_facing_export_slice_packet_payload,
     build_dag_v3_rsa_budget_matched_baseline_packet,
     build_dag_v3_rsa_budget_matched_baseline_packet_payload,
     build_dag_v3_rsa_nkt_sweep_packet,
@@ -472,6 +480,44 @@ def test_dag_v3_pacore_replication_packet_carries_phase3_outputs() -> None:
     assert len(example["round_profiles"]) == 3
     assert len(example["message_ablation_rows"]) == 2
     assert example["coding_transfer_runner"]["runner_id"] == "dag_v3.pacore.coding_transfer.v1"
+    assert payload["metadata"]["kernel_change_required"] is False
+
+
+def test_dag_v3_optimize_ready_comparison_packet_stays_adapter_level() -> None:
+    example = build_dag_v3_optimize_ready_comparison_packet()
+    payload = build_dag_v3_optimize_ready_comparison_packet_payload()
+
+    assert example["consumer"] == "optimize"
+    assert len(example["recipes"]) == 2
+    assert example["adapter_boundary"]["introduced_optimize_public_nouns_into_dag"] is False
+    assert payload["metadata"]["kernel_change_required"] is False
+
+
+def test_dag_v3_rl_facing_export_slice_packet_stays_bounded() -> None:
+    example = build_dag_v3_rl_facing_export_slice_packet()
+    payload = build_dag_v3_rl_facing_export_slice_packet_payload()
+
+    assert len(example["slices"]) == 2
+    assert example["rl_boundary"]["public_rl_control_surface_added"] is False
+    assert payload["metadata"]["kernel_change_required"] is False
+
+
+def test_dag_v3_darwin_boundary_update_packet_keeps_outer_loop_outside_dag() -> None:
+    example = build_dag_v3_darwin_boundary_update_packet()
+    payload = build_dag_v3_darwin_boundary_update_packet_payload()
+
+    assert "paper_recipe_manifests" in example["still_dag_local"]
+    assert "many-run campaign orchestration" in example["still_not_dag_local"]
+    assert payload["evidence"]["repeated_dag_local_public_shape_pressure"] == 0
+
+
+def test_dag_v3_cross_paper_synthesis_packet_classifies_shared_vs_outside_work() -> None:
+    example = build_dag_v3_cross_paper_synthesis_packet()
+    payload = build_dag_v3_cross_paper_synthesis_packet_payload()
+
+    assert "fidelity helper artifacts instead of kernel expansion" in example["shared"]
+    assert "N / K / T sweeps" in example["paper_specific"]["rsa"]
+    assert "training-aware replication claims" in example["outside_dag"]
     assert payload["metadata"]["kernel_change_required"] is False
 
 
