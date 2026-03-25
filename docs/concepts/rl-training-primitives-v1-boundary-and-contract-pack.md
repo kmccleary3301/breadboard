@@ -47,3 +47,5 @@ This is enough to prove the architecture is real without prematurely committing 
 - RL-owned search modes
 
 The first graph projection is built from existing DAG/search runs and keeps policy-view truth, evaluation truth, and export-facing truth separate. That separation is the architectural center of RL V1.
+
+Phase 2 then hardens that graph path by requiring replay parity: the same source run must project to the same graph-core truth whether reconstructed live or from serialized replay payload.

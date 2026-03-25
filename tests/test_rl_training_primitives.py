@@ -13,6 +13,12 @@ from agentic_coder_prototype.rl import (
     build_rl_v1_boundary_audit_packet_payload,
     build_rl_v1_contract_pack_example,
     build_rl_v1_contract_pack_example_payload,
+    build_rl_v1_live_projection_example,
+    build_rl_v1_live_projection_example_payload,
+    build_rl_v1_replay_parity_example,
+    build_rl_v1_replay_parity_example_payload,
+    build_rl_v1_replay_projection_example,
+    build_rl_v1_replay_projection_example_payload,
     build_rl_v1_trajectory_graph_shell_example,
     build_rl_v1_trajectory_graph_shell_example_payload,
 )
@@ -69,3 +75,36 @@ def test_rl_v1_trajectory_graph_shell_example_projects_graph_truth() -> None:
     assert graph.compaction_manifests
     assert round_tripped == graph
     assert graph.metadata["graph_shell_only"] is True
+
+
+def test_rl_v1_live_projection_example_is_explicit() -> None:
+    example = build_rl_v1_live_projection_example()
+    payload = build_rl_v1_live_projection_example_payload()
+    graph = TrajectoryGraph.from_dict(payload["trajectory_graph"])
+
+    assert graph.rollout_descriptor.origin_kind == "live"
+    assert graph.metadata["projection_path"] == "live"
+    assert len(graph.decisions) == len(example["run"].events)
+    assert graph.cost_ledger is not None
+
+
+def test_rl_v1_replay_projection_example_is_explicit() -> None:
+    example = build_rl_v1_replay_projection_example()
+    payload = build_rl_v1_replay_projection_example_payload()
+    graph = TrajectoryGraph.from_dict(payload["trajectory_graph"])
+    replay_run = SearchRun.from_dict(payload["run_payload"])
+
+    assert graph.rollout_descriptor.origin_kind == "replay"
+    assert graph.metadata["projection_path"] == "replay"
+    assert graph.rollout_descriptor.source_ref == replay_run.search_id
+    assert len(graph.observations) == len(replay_run.candidates)
+
+
+def test_rl_v1_replay_parity_example_matches_at_graph_core() -> None:
+    example = build_rl_v1_replay_parity_example()
+    payload = build_rl_v1_replay_parity_example_payload()
+
+    assert example["live_graph"].rollout_descriptor.origin_kind == "live"
+    assert example["replay_graph"].rollout_descriptor.origin_kind == "replay"
+    assert example["live_parity_view"] == example["replay_parity_view"]
+    assert payload["live_parity_view"] == payload["replay_parity_view"]

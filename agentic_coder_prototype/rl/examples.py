@@ -4,9 +4,13 @@ from typing import Any, Dict
 
 from ..search import build_branch_execute_verify_reference_recipe
 from .graph import (
+    build_trajectory_graph_core_parity_view,
     build_compaction_manifests_from_search_run,
     build_cost_ledger_from_search_run,
+    build_default_rollout_descriptor_from_search_run,
     build_evaluation_annotations_from_search_run,
+    project_live_search_run_to_trajectory_graph,
+    project_replay_payload_to_trajectory_graph,
     project_search_run_to_trajectory_graph,
 )
 from .schema import (
@@ -158,4 +162,86 @@ def build_rl_v1_trajectory_graph_shell_example_payload() -> Dict[str, object]:
         "rollout_descriptor": example["rollout_descriptor"].to_dict(),
         "environment_descriptor": example["environment_descriptor"].to_dict(),
         "policy_provenance": example["policy_provenance"].to_dict(),
+    }
+
+
+def build_rl_v1_live_projection_example() -> Dict[str, object]:
+    base = build_rl_v1_contract_pack_example()
+    graph = project_live_search_run_to_trajectory_graph(
+        run=base["run"],
+        environment_descriptor=base["environment_descriptor"],
+        policy_provenance=[base["policy_provenance"]],
+        metadata={"phase": "rl_v1_phase2", "projection_case": "live"},
+    )
+    return {
+        **base,
+        "trajectory_graph": graph,
+    }
+
+
+def build_rl_v1_live_projection_example_payload() -> Dict[str, object]:
+    example = build_rl_v1_live_projection_example()
+    return {
+        "run": example["run"].to_dict(),
+        "trajectory_graph": example["trajectory_graph"].to_dict(),
+        "environment_descriptor": example["environment_descriptor"].to_dict(),
+        "policy_provenance": example["policy_provenance"].to_dict(),
+    }
+
+
+def build_rl_v1_replay_projection_example() -> Dict[str, object]:
+    base = build_rl_v1_contract_pack_example()
+    graph = project_replay_payload_to_trajectory_graph(
+        run_payload=base["run"].to_dict(),
+        environment_descriptor=base["environment_descriptor"],
+        policy_provenance=[base["policy_provenance"]],
+        metadata={"phase": "rl_v1_phase2", "projection_case": "replay"},
+    )
+    return {
+        **base,
+        "trajectory_graph": graph,
+        "run_payload": base["run"].to_dict(),
+    }
+
+
+def build_rl_v1_replay_projection_example_payload() -> Dict[str, object]:
+    example = build_rl_v1_replay_projection_example()
+    return {
+        "run_payload": dict(example["run_payload"]),
+        "trajectory_graph": example["trajectory_graph"].to_dict(),
+        "environment_descriptor": example["environment_descriptor"].to_dict(),
+        "policy_provenance": example["policy_provenance"].to_dict(),
+    }
+
+
+def build_rl_v1_replay_parity_example() -> Dict[str, object]:
+    contract_pack = build_rl_v1_contract_pack_example()
+    live_graph = project_live_search_run_to_trajectory_graph(
+        run=contract_pack["run"],
+        environment_descriptor=contract_pack["environment_descriptor"],
+        policy_provenance=[contract_pack["policy_provenance"]],
+        metadata={"phase": "rl_v1_phase2", "projection_case": "live_parity"},
+    )
+    replay_graph = project_replay_payload_to_trajectory_graph(
+        run_payload=contract_pack["run"].to_dict(),
+        environment_descriptor=contract_pack["environment_descriptor"],
+        policy_provenance=[contract_pack["policy_provenance"]],
+        metadata={"phase": "rl_v1_phase2", "projection_case": "replay_parity"},
+    )
+    return {
+        **contract_pack,
+        "live_graph": live_graph,
+        "replay_graph": replay_graph,
+        "live_parity_view": build_trajectory_graph_core_parity_view(live_graph),
+        "replay_parity_view": build_trajectory_graph_core_parity_view(replay_graph),
+    }
+
+
+def build_rl_v1_replay_parity_example_payload() -> Dict[str, object]:
+    example = build_rl_v1_replay_parity_example()
+    return {
+        "live_graph": example["live_graph"].to_dict(),
+        "replay_graph": example["replay_graph"].to_dict(),
+        "live_parity_view": dict(example["live_parity_view"]),
+        "replay_parity_view": dict(example["replay_parity_view"]),
     }

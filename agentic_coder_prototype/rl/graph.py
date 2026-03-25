@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from ..search import SearchAssessment, SearchMessage, SearchRun
 from .schema import (
@@ -17,6 +17,25 @@ from .schema import (
     TrackRecord,
     TrajectoryGraph,
 )
+
+
+def build_default_rollout_descriptor_from_search_run(
+    *,
+    run: SearchRun,
+    origin_kind: str,
+    metadata: Optional[Mapping[str, Any]] = None,
+) -> RolloutDescriptor:
+    return RolloutDescriptor(
+        rollout_id=f"{run.search_id}.rl.rollout.v1",
+        source_kind="search_run",
+        source_ref=run.search_id,
+        recipe_kind=run.recipe_kind,
+        origin_kind=origin_kind,
+        metadata={
+            "selected_candidate_id": run.selected_candidate_id,
+            **dict(metadata or {}),
+        },
+    )
 
 
 def _first_numeric_score(score_vector: Mapping[str, Any]) -> Optional[float]:
@@ -325,3 +344,60 @@ def project_search_run_to_trajectory_graph(
         compaction_manifests=list(compaction_manifests or build_compaction_manifests_from_search_run(run)),
         metadata={"search_id": run.search_id, "recipe_kind": run.recipe_kind, **dict(metadata or {})},
     )
+
+
+def project_live_search_run_to_trajectory_graph(
+    *,
+    run: SearchRun,
+    environment_descriptor: EnvironmentDescriptor,
+    policy_provenance: Sequence[PolicyProvenance],
+    metadata: Optional[Mapping[str, Any]] = None,
+) -> TrajectoryGraph:
+    return project_search_run_to_trajectory_graph(
+        run=run,
+        rollout_descriptor=build_default_rollout_descriptor_from_search_run(
+            run=run,
+            origin_kind="live",
+            metadata={"projection_path": "live", **dict(metadata or {})},
+        ),
+        environment_descriptor=environment_descriptor,
+        policy_provenance=policy_provenance,
+        metadata={"projection_path": "live", **dict(metadata or {})},
+    )
+
+
+def project_replay_payload_to_trajectory_graph(
+    *,
+    run_payload: Mapping[str, Any],
+    environment_descriptor: EnvironmentDescriptor,
+    policy_provenance: Sequence[PolicyProvenance],
+    metadata: Optional[Mapping[str, Any]] = None,
+) -> TrajectoryGraph:
+    run = SearchRun.from_dict(run_payload)
+    return project_search_run_to_trajectory_graph(
+        run=run,
+        rollout_descriptor=build_default_rollout_descriptor_from_search_run(
+            run=run,
+            origin_kind="replay",
+            metadata={"projection_path": "replay", **dict(metadata or {})},
+        ),
+        environment_descriptor=environment_descriptor,
+        policy_provenance=policy_provenance,
+        metadata={"projection_path": "replay", **dict(metadata or {})},
+    )
+
+
+def build_trajectory_graph_core_parity_view(graph: TrajectoryGraph) -> Dict[str, Any]:
+    return {
+        "graph_id": graph.graph_id,
+        "recipe_kind": graph.rollout_descriptor.recipe_kind,
+        "source_ref": graph.rollout_descriptor.source_ref,
+        "tracks": [item.to_dict() for item in graph.tracks],
+        "observations": [item.to_dict() for item in graph.observations],
+        "decisions": [item.to_dict() for item in graph.decisions],
+        "effects": [item.to_dict() for item in graph.effects],
+        "causal_edges": [item.to_dict() for item in graph.causal_edges],
+        "evaluation_annotations": [item.to_dict() for item in graph.evaluation_annotations],
+        "cost_ledger": graph.cost_ledger.to_dict() if graph.cost_ledger else None,
+        "compaction_manifests": [item.to_dict() for item in graph.compaction_manifests],
+    }
