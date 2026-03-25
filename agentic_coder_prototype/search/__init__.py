@@ -61,6 +61,10 @@ from .examples import (
     build_post_v2_study_09_optimize_objective_breakdown_probe_payload,
     build_post_v2_study_10_optimize_benchmark_promotion_probe,
     build_post_v2_study_10_optimize_benchmark_promotion_probe_payload,
+    build_post_v2_study_11_branch_carry_hybrid,
+    build_post_v2_study_11_branch_carry_hybrid_payload,
+    build_post_v2_study_12_optimize_comparison_probe,
+    build_post_v2_study_12_optimize_comparison_probe_payload,
     build_verifier_guided_pressure_cell,
 )
 from .export import (
@@ -187,6 +191,10 @@ __all__ = [
     "build_post_v2_study_09_optimize_objective_breakdown_probe_payload",
     "build_post_v2_study_10_optimize_benchmark_promotion_probe",
     "build_post_v2_study_10_optimize_benchmark_promotion_probe_payload",
+    "build_post_v2_study_11_branch_carry_hybrid",
+    "build_post_v2_study_11_branch_carry_hybrid_payload",
+    "build_post_v2_study_12_optimize_comparison_probe",
+    "build_post_v2_study_12_optimize_comparison_probe_payload",
     "build_verifier_guided_pressure_cell",
     "export_search_trajectory",
     "run_barriered_assessment_gate",

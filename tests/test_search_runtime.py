@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from agentic_coder_prototype.optimize import (
     BenchmarkRunManifest,
+    CandidateComparisonResult,
     ObjectiveBreakdownResult,
     PromotionEvidenceSummary,
 )
@@ -57,6 +58,10 @@ from agentic_coder_prototype.search import (
     build_post_v2_study_09_optimize_objective_breakdown_probe_payload,
     build_post_v2_study_10_optimize_benchmark_promotion_probe,
     build_post_v2_study_10_optimize_benchmark_promotion_probe_payload,
+    build_post_v2_study_11_branch_carry_hybrid,
+    build_post_v2_study_11_branch_carry_hybrid_payload,
+    build_post_v2_study_12_optimize_comparison_probe,
+    build_post_v2_study_12_optimize_comparison_probe_payload,
     SearchRun,
     SearchTrajectoryExport,
     SearchWorkspaceSnapshot,
@@ -727,5 +732,52 @@ def test_post_v2_study_10_optimize_benchmark_promotion_probe_payload_round_trips
 
     assert manifest.hidden_hold_sample_ids() == ["sample.verifier_judge_handoff.hidden"]
     assert summary.candidate_id == payload["selected_candidate_id"]
+    assert payload["adapter_boundary"]["used_real_optimize_records"] is True
+    assert payload["evidence"]["future_v3_evidence"] is False
+
+
+def test_post_v2_study_11_branch_carry_hybrid_stays_narrow() -> None:
+    example = build_post_v2_study_11_branch_carry_hybrid()
+    run = example["run"]
+
+    assert run.recipe_kind == "branch_carry_hybrid_pressure_pass"
+    assert len(run.carry_states) >= 1
+    assert len(example["outcome"].assessments) == 1
+    assert run.selected_candidate_id == example["review_candidate_id"]
+    assert example["carry_state_id"] == run.metadata["carry_state_id"]
+    assert example["evidence"]["future_v3_evidence"] is False
+    assert example["evidence"]["owner_boundary"] == "private_helper_level"
+
+
+def test_post_v2_study_11_branch_carry_hybrid_payload_round_trips() -> None:
+    payload = build_post_v2_study_11_branch_carry_hybrid_payload()
+    run = SearchRun.from_dict(payload["run"])
+
+    assert run.recipe_kind == "branch_carry_hybrid_pressure_pass"
+    assert payload["outcome"]["selected_candidate_id"] == payload["review_candidate_id"]
+    assert payload["base_selected_candidate_id"] != payload["review_candidate_id"]
+    assert payload["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_12_optimize_comparison_probe_stays_adapter_local() -> None:
+    example = build_post_v2_study_12_optimize_comparison_probe()
+    manifest = example["benchmark_manifest"]
+    comparison = example["comparison_result"]
+
+    assert isinstance(manifest, BenchmarkRunManifest)
+    assert isinstance(comparison, CandidateComparisonResult)
+    assert comparison.parent_candidate_id != comparison.child_candidate_id
+    assert comparison.outcome == "non_inferior"
+    assert example["adapter_boundary"]["comparison_logic_stayed_adapter_local"] is True
+    assert example["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_12_optimize_comparison_probe_payload_round_trips() -> None:
+    payload = build_post_v2_study_12_optimize_comparison_probe_payload()
+    manifest = BenchmarkRunManifest.from_dict(payload["benchmark_manifest"])
+    comparison = CandidateComparisonResult.from_dict(payload["comparison_result"])
+
+    assert manifest.hidden_hold_sample_ids() == ["sample.branch_carry_hybrid.hidden"]
+    assert comparison.child_candidate_id == payload["selected_candidate_id"]
     assert payload["adapter_boundary"]["used_real_optimize_records"] is True
     assert payload["evidence"]["future_v3_evidence"] is False
