@@ -153,3 +153,7 @@ Date: 2026-03-14
 - cross-lane review status: `docs/darwin_stage5_cross_lane_review_status_2026-03-25.md`
 - cross-lane review: `docs/darwin_stage5_cross_lane_review_2026-03-25.md`
 - cross-lane gate: `docs/darwin_stage5_cross_lane_gate_2026-03-25.md`
+- systems-weighted slice: `docs/darwin_stage5_systems_weighted_slice_2026-03-25.md`
+- systems-weighted status: `docs/darwin_stage5_systems_weighted_status_2026-03-25.md`
+- systems-weighted review: `docs/darwin_stage5_systems_weighted_review_2026-03-25.md`
+- systems-weighted gate: `docs/darwin_stage5_systems_weighted_gate_2026-03-25.md`

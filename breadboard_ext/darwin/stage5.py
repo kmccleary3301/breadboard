@@ -12,6 +12,7 @@ from breadboard_ext.darwin.stage4_family_program import FAMILY_OPERATOR_MAP
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_STAGE5_FAMILY_REGISTRY = ROOT / "artifacts" / "darwin" / "stage4" / "family_program" / "family_registry_v0.json"
 DEFAULT_STAGE5_POLICY_STABILITY = ROOT / "artifacts" / "darwin" / "stage5" / "policy_stability" / "policy_stability_v0.json"
+DEFAULT_STAGE5_CROSS_LANE_REVIEW = ROOT / "artifacts" / "darwin" / "stage5" / "cross_lane_review" / "cross_lane_review_v0.json"
 
 STAGE5_COMPARISON_MODES = ("cold_start", "warm_start", "family_lockout")
 STAGE5_RUNTIME_LIFT_DEADBAND_MS = 10
@@ -91,6 +92,24 @@ def load_stage5_policy_stability_rows(path: Path = DEFAULT_STAGE5_POLICY_STABILI
     return list(payload.get("rows") or [])
 
 
+def load_stage5_cross_lane_review(path: Path = DEFAULT_STAGE5_CROSS_LANE_REVIEW) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    return _load_json(path)
+
+
+def _lane_cross_lane_review_row(
+    lane_id: str,
+    *,
+    cross_lane_review: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    payload = load_stage5_cross_lane_review() if cross_lane_review is None else dict(cross_lane_review)
+    for row in list(payload.get("rows") or []):
+        if str(row.get("lane_id") or "") == lane_id:
+            return dict(row)
+    return None
+
+
 def _family_operator_id(row: Mapping[str, Any]) -> str | None:
     family_key = str(row.get("family_key") or "")
     family_kind = str(row.get("family_kind") or "")
@@ -130,13 +149,18 @@ def build_stage5_search_policy_v2(
     budget_class: str,
     family_rows: list[dict[str, Any]] | None = None,
     policy_stability_rows: list[dict[str, Any]] | None = None,
+    cross_lane_review: dict[str, Any] | None = None,
     family_probe_override_kind: str | None = None,
 ) -> dict[str, Any]:
     if lane_id not in {"lane.repo_swe", "lane.systems"}:
         raise ValueError("stage5 search policy v2 is only authorized for lane.repo_swe and lane.systems")
+    isolated_inputs = family_rows is not None or policy_stability_rows is not None
     family_rows = list(load_stage5_family_registry_rows() if family_rows is None else family_rows)
     policy_review_conclusion = _lane_policy_review_conclusion(lane_id, policy_stability_rows=policy_stability_rows)
     policy_stability_row = _lane_policy_stability_row(lane_id, policy_stability_rows=policy_stability_rows) or {}
+    cross_lane_review_payload = {} if (cross_lane_review is None and isolated_inputs) else load_stage5_cross_lane_review() if cross_lane_review is None else dict(cross_lane_review)
+    cross_lane_row = _lane_cross_lane_review_row(lane_id, cross_lane_review=cross_lane_review_payload) or {}
+    cross_lane_weight = str(cross_lane_row.get("lane_weight") or "")
     base_policy = build_stage4_search_policy_v1(lane_id=lane_id, budget_class=budget_class)
     promoted_rows = [
         row
@@ -149,6 +173,7 @@ def build_stage5_search_policy_v2(
         lane_id == "lane.repo_swe"
         and str(policy_stability_row.get("stability_class") or "") in {"mixed_negative", "stable_negative", "mixed_flat"}
         and int(policy_stability_row.get("flat_count") or 0) >= 1
+        and cross_lane_weight != "challenge_lane"
     ):
         probe_rows = [
             row
@@ -195,10 +220,12 @@ def build_stage5_search_policy_v2(
         family_registry_ref = str(DEFAULT_STAGE5_FAMILY_REGISTRY.relative_to(ROOT))
     tightened_repo_swe = lane_id == "lane.repo_swe" and policy_review_conclusion == "tighten"
     stability_probe_systems = lane_id == "lane.systems" and policy_review_conclusion == "continue"
-    max_mutation_arms = 1 if (tightened_repo_swe or stability_probe_systems or family_probe_enabled) else 2
+    systems_primary_weight = lane_id == "lane.systems" and cross_lane_weight == "primary_proving_lane"
+    repo_swe_challenge_weight = lane_id == "lane.repo_swe" and cross_lane_weight == "challenge_lane"
+    max_mutation_arms = 1 if (tightened_repo_swe or stability_probe_systems or family_probe_enabled or systems_primary_weight or repo_swe_challenge_weight) else 2
     repetition_count = max(
         int(base_policy["repetition_count"]),
-        8 if tightened_repo_swe else 6 if (stability_probe_systems or family_probe_enabled) else 4,
+        8 if (tightened_repo_swe or systems_primary_weight) else 6 if (stability_probe_systems or family_probe_enabled) else 4,
     )
     payload = {
         "schema": "breadboard.darwin.stage5.search_policy.v2",
@@ -231,6 +258,7 @@ def build_stage5_search_policy_v2(
             },
         ],
         "policy_stability_ref": str(DEFAULT_STAGE5_POLICY_STABILITY.relative_to(ROOT)) if DEFAULT_STAGE5_POLICY_STABILITY.exists() else None,
+        "cross_lane_review_ref": str(DEFAULT_STAGE5_CROSS_LANE_REVIEW.relative_to(ROOT)) if DEFAULT_STAGE5_CROSS_LANE_REVIEW.exists() else None,
         "policy_review_conclusion": policy_review_conclusion,
         "policy_tightening": {
             "enabled": tightened_repo_swe,
@@ -239,10 +267,16 @@ def build_stage5_search_policy_v2(
             "reason": "repo_swe_stability_requires_tighter_selection" if tightened_repo_swe else "not_required",
         },
         "policy_stability_probe": {
-            "enabled": stability_probe_systems,
+            "enabled": stability_probe_systems or systems_primary_weight,
             "lane_review_conclusion": policy_review_conclusion,
             "repetition_count": repetition_count,
-            "reason": "systems_stability_probe_on_promoted_policy_family" if stability_probe_systems else "not_required",
+            "reason": (
+                "systems_weighted_primary_probe"
+                if systems_primary_weight
+                else "systems_stability_probe_on_promoted_policy_family"
+                if stability_probe_systems
+                else "not_required"
+            ),
         },
         "family_probe": {
             "enabled": family_probe_enabled,
@@ -258,6 +292,14 @@ def build_stage5_search_policy_v2(
                 if family_probe_enabled
                 else "not_required"
             ),
+        },
+        "cross_lane_weighting": {
+            "enabled": bool(cross_lane_weight),
+            "lane_weight": cross_lane_weight or "unset",
+            "current_primary_lane_id": str(cross_lane_review_payload.get("current_primary_lane_id") or ""),
+            "reason": str(cross_lane_row.get("lane_weight_reason") or "not_available"),
+            "repo_swe_challenge": repo_swe_challenge_weight,
+            "systems_primary": systems_primary_weight,
         },
         "abort_thresholds": {
             "matched_budget_invalidity_rate_gt": 0.25,
@@ -352,11 +394,18 @@ def select_stage5_search_policy_arms(
     tightened_repo_swe = bool(policy_tightening.get("enabled")) if isinstance(policy_tightening, Mapping) else False
     policy_stability_probe = search_policy.get("policy_stability_probe")
     stability_probe_systems = bool(policy_stability_probe.get("enabled")) if isinstance(policy_stability_probe, Mapping) else False
+    cross_lane_weighting = search_policy.get("cross_lane_weighting")
+    systems_primary_weight = bool(cross_lane_weighting.get("systems_primary")) if isinstance(cross_lane_weighting, Mapping) else False
+    repo_swe_challenge_weight = bool(cross_lane_weighting.get("repo_swe_challenge")) if isinstance(cross_lane_weighting, Mapping) else False
     family_probe = search_policy.get("family_probe")
     family_probe_enabled = bool(family_probe.get("enabled")) if isinstance(family_probe, Mapping) else False
     if tightened_repo_swe and lane_id == "lane.repo_swe":
         max_mutation_arms = min(max_mutation_arms or 1, 1)
     if stability_probe_systems and lane_id == "lane.systems":
+        max_mutation_arms = min(max_mutation_arms or 1, 1)
+    if systems_primary_weight and lane_id == "lane.systems":
+        max_mutation_arms = min(max_mutation_arms or 1, 1)
+    if repo_swe_challenge_weight and lane_id == "lane.repo_swe":
         max_mutation_arms = min(max_mutation_arms or 1, 1)
     if family_probe_enabled and lane_id == "lane.repo_swe":
         max_mutation_arms = min(max_mutation_arms or 1, 1)
@@ -388,7 +437,7 @@ def select_stage5_search_policy_arms(
             variant["comparison_mode"] = "cold_start"
             variant["family_context"] = {"allowed_family_ids": [], "blocked_family_ids": []}
             selected_rows.append(variant)
-    if not (tightened_repo_swe and lane_id == "lane.repo_swe"):
+    if not ((tightened_repo_swe or repo_swe_challenge_weight) and lane_id == "lane.repo_swe") and not (systems_primary_weight and lane_id == "lane.systems"):
         for row in other_rows:
             variant = dict(row)
             variant["comparison_mode"] = "cold_start"

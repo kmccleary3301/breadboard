@@ -12,7 +12,6 @@ if str(ROOT) not in sys.path:
 from breadboard_ext.darwin.stage5 import (  # noqa: E402
     build_stage5_compounding_cases,
     build_stage5_search_policy_v2,
-    load_stage5_family_registry_rows,
     select_stage5_search_policy_arms,
 )
 from scripts.run_darwin_stage4_live_economics_pilot_v0 import (  # noqa: E402
@@ -42,7 +41,6 @@ def run_stage5_compounding_pilot(
     search_policy = build_stage5_search_policy_v2(
         lane_id=lane_id,
         budget_class="class_a",
-        family_rows=load_stage5_family_registry_rows(),
         family_probe_override_kind=family_probe_override_kind,
     )
     campaigns = _campaign_lookup()
