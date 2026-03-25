@@ -56,11 +56,22 @@ def _lane_policy_review_conclusion(
     *,
     policy_stability_rows: list[dict[str, Any]] | None = None,
 ) -> str | None:
+    row = _lane_policy_stability_row(lane_id, policy_stability_rows=policy_stability_rows)
+    if row is None:
+        return None
+    conclusion = str(row.get("policy_review_conclusion") or "")
+    return conclusion or None
+
+
+def _lane_policy_stability_row(
+    lane_id: str,
+    *,
+    policy_stability_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     rows = load_stage5_policy_stability_rows() if policy_stability_rows is None else list(policy_stability_rows)
     for row in rows:
         if str(row.get("lane_id") or "") == lane_id:
-            conclusion = str(row.get("policy_review_conclusion") or "")
-            return conclusion or None
+            return dict(row)
     return None
 
 
@@ -75,24 +86,48 @@ def build_stage5_search_policy_v2(
         raise ValueError("stage5 search policy v2 is only authorized for lane.repo_swe and lane.systems")
     family_rows = list(load_stage5_family_registry_rows() if family_rows is None else family_rows)
     policy_review_conclusion = _lane_policy_review_conclusion(lane_id, policy_stability_rows=policy_stability_rows)
+    policy_stability_row = _lane_policy_stability_row(lane_id, policy_stability_rows=policy_stability_rows) or {}
     base_policy = build_stage4_search_policy_v1(lane_id=lane_id, budget_class=budget_class)
     promoted_rows = [
         row
         for row in family_rows
         if str(row.get("lane_id") or "") == lane_id and str(row.get("lifecycle_status") or "") == "promoted"
     ]
+    family_probe_enabled = False
+    family_probe_target_kind = None
+    if (
+        lane_id == "lane.repo_swe"
+        and str(policy_stability_row.get("stability_class") or "") in {"mixed_negative", "stable_negative", "mixed_flat"}
+        and int(policy_stability_row.get("flat_count") or 0) >= 1
+    ):
+        probe_rows = [
+            row
+            for row in family_rows
+            if str(row.get("lane_id") or "") == lane_id
+            and str(row.get("lifecycle_status") or "") == "withheld"
+            and str(row.get("family_kind") or "") == "tool_scope"
+        ]
+        if probe_rows:
+            family_probe_enabled = True
+            family_probe_target_kind = "tool_scope"
+            promoted_rows = [*probe_rows, *promoted_rows]
     family_priors = []
     for row in promoted_rows:
         operator_id = _family_operator_id(row)
         family_kind = str(row.get("family_kind") or "")
+        lifecycle_status = str(row.get("lifecycle_status") or "")
+        priority = float(_FAMILY_PRIORITY_BASE.get(family_kind, 0.75))
+        if family_probe_enabled and family_kind == family_probe_target_kind:
+            priority = max(priority, 0.99)
         family_priors.append(
             {
                 "family_id": str(row["family_id"]),
                 "family_kind": family_kind,
-                "priority": float(_FAMILY_PRIORITY_BASE.get(family_kind, 0.75)),
+                "priority": priority,
                 "source_operator_id": operator_id,
                 "replay_status": str(row.get("replay_status") or ""),
                 "transfer_eligibility": dict(row.get("transfer_eligibility") or {}),
+                "lifecycle_status": lifecycle_status,
             }
         )
     family_registry_ref = None
@@ -100,10 +135,10 @@ def build_stage5_search_policy_v2(
         family_registry_ref = str(DEFAULT_STAGE5_FAMILY_REGISTRY.relative_to(ROOT))
     tightened_repo_swe = lane_id == "lane.repo_swe" and policy_review_conclusion == "tighten"
     stability_probe_systems = lane_id == "lane.systems" and policy_review_conclusion == "continue"
-    max_mutation_arms = 1 if (tightened_repo_swe or stability_probe_systems) else 2
+    max_mutation_arms = 1 if (tightened_repo_swe or stability_probe_systems or family_probe_enabled) else 2
     repetition_count = max(
         int(base_policy["repetition_count"]),
-        8 if tightened_repo_swe else 6 if stability_probe_systems else 4,
+        8 if tightened_repo_swe else 6 if (stability_probe_systems or family_probe_enabled) else 4,
     )
     payload = {
         "schema": "breadboard.darwin.stage5.search_policy.v2",
@@ -148,6 +183,14 @@ def build_stage5_search_policy_v2(
             "lane_review_conclusion": policy_review_conclusion,
             "repetition_count": repetition_count,
             "reason": "systems_stability_probe_on_promoted_policy_family" if stability_probe_systems else "not_required",
+        },
+        "family_probe": {
+            "enabled": family_probe_enabled,
+            "lane_review_conclusion": policy_review_conclusion,
+            "stability_class": str(policy_stability_row.get("stability_class") or ""),
+            "target_family_kind": family_probe_target_kind,
+            "repetition_count": repetition_count,
+            "reason": "repo_swe_shift_to_withheld_tool_scope_probe" if family_probe_enabled else "not_required",
         },
         "abort_thresholds": {
             "matched_budget_invalidity_rate_gt": 0.25,
@@ -205,6 +248,11 @@ def select_stage5_search_policy_arms(
         for row in search_policy.get("family_priors") or []
         if str(row.get("source_operator_id") or "")
     }
+    family_priority_lookup = {
+        str(row.get("source_operator_id") or ""): float(row.get("priority") or 0.0)
+        for row in search_policy.get("family_priors") or []
+        if str(row.get("source_operator_id") or "")
+    }
     priority_lookup = {
         str(row["operator_id"]): float(row["priority"])
         for row in search_policy.get("operator_priors") or []
@@ -228,6 +276,7 @@ def select_stage5_search_policy_arms(
         mutation_rows,
         key=lambda row: (
             str(row.get("operator_id") or "") not in family_operator_ids,
+            -family_priority_lookup.get(str(row.get("operator_id") or ""), -1.0),
             -priority_lookup.get(str(row.get("operator_id") or ""), -1.0),
             str(row.get("operator_id") or ""),
         ),
@@ -236,18 +285,27 @@ def select_stage5_search_policy_arms(
     tightened_repo_swe = bool(policy_tightening.get("enabled")) if isinstance(policy_tightening, Mapping) else False
     policy_stability_probe = search_policy.get("policy_stability_probe")
     stability_probe_systems = bool(policy_stability_probe.get("enabled")) if isinstance(policy_stability_probe, Mapping) else False
+    family_probe = search_policy.get("family_probe")
+    family_probe_enabled = bool(family_probe.get("enabled")) if isinstance(family_probe, Mapping) else False
     if tightened_repo_swe and lane_id == "lane.repo_swe":
         max_mutation_arms = min(max_mutation_arms or 1, 1)
     if stability_probe_systems and lane_id == "lane.systems":
         max_mutation_arms = min(max_mutation_arms or 1, 1)
+    if family_probe_enabled and lane_id == "lane.repo_swe":
+        max_mutation_arms = min(max_mutation_arms or 1, 1)
     for row in ranked_rows[:max_mutation_arms or 0]:
         if str(row.get("operator_id") or "") in family_operator_ids:
+            row_family_ids = [
+                str(family_row["family_id"])
+                for family_row in search_policy.get("family_priors") or []
+                if str(family_row.get("source_operator_id") or "") == str(row.get("operator_id") or "")
+            ]
             selected_rows.append(
                 _stage5_variant(
                     row=row,
                     comparison_mode="warm_start",
                     search_policy=search_policy,
-                    family_ids=family_ids,
+                    family_ids=row_family_ids or family_ids,
                 )
             )
             selected_rows.append(
@@ -255,7 +313,7 @@ def select_stage5_search_policy_arms(
                     row=row,
                     comparison_mode="family_lockout",
                     search_policy=search_policy,
-                    family_ids=family_ids,
+                    family_ids=row_family_ids or family_ids,
                 )
             )
         else:

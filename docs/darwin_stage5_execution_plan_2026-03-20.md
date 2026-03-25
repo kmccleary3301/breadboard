@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Execution Plan
 
 Date: 2026-03-20
-Status: policy-stability deadband slice landed
+Status: Repo_SWE family-probe slice landed
 Scope: Stage-5 doctrine freeze, economics truth hardening, compounding protocol, family-aware search, and scalable compounding proof
 References:
 - `docs/darwin_stage5_doctrine_2026-03-20.md`
@@ -21,6 +21,10 @@ References:
 - `docs/darwin_stage5_policy_stability_status_2026-03-22.md`
 - `docs/darwin_stage5_policy_stability_review_2026-03-22.md`
 - `docs/darwin_stage5_policy_stability_gate_2026-03-22.md`
+- `docs/darwin_stage5_repo_swe_family_probe_slice_2026-03-25.md`
+- `docs/darwin_stage5_repo_swe_family_probe_status_2026-03-25.md`
+- `docs/darwin_stage5_repo_swe_family_probe_review_2026-03-25.md`
+- `docs/darwin_stage5_repo_swe_family_probe_gate_2026-03-25.md`
 - `docs/darwin_stage4_signoff_2026-03-20.md`
 - `docs/darwin_stage4_completion_gate_2026-03-20.md`
 - `docs/darwin_stage4_future_roadmap_handoff_2026-03-20.md`
@@ -222,7 +226,7 @@ Hard gate:
 
 The current Stage-5 read after the policy-stability deadband slice is:
 
-- `lane.repo_swe`: weak and mostly flat under the current topology-family protocol
+- `lane.repo_swe`: more directional under the tool-scope family probe, but still mixed-negative overall
 - `lane.systems`: the clearer current positive lane under the promoted policy-family protocol
 - provider fallback is operational for both `openrouter_http_401` and OpenRouter timeout cases
 

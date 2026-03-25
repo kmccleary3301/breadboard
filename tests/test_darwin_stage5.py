@@ -109,6 +109,45 @@ def test_build_stage5_search_policy_v2_adds_systems_stability_probe() -> None:
     assert policy["policy_stability_probe"]["reason"] == "systems_stability_probe_on_promoted_policy_family"
 
 
+def test_build_stage5_search_policy_v2_adds_repo_swe_family_probe() -> None:
+    policy = build_stage5_search_policy_v2(
+        lane_id="lane.repo_swe",
+        budget_class="class_a",
+        family_rows=[
+            {
+                "family_id": "component_family.stage4.topology.policy.topology.pev_v0.lane.repo_swe.v0",
+                "family_key": "policy.topology.pev_v0",
+                "family_kind": "topology",
+                "lane_id": "lane.repo_swe",
+                "lifecycle_status": "promoted",
+                "replay_status": "supported",
+                "transfer_eligibility": {"allowed_target_lanes": ["lane.systems"]},
+            },
+            {
+                "family_id": "component_family.stage4.tool_scope.policy.tool_scope.add_git_diff_v1.lane.repo_swe.v0",
+                "family_key": "policy.tool_scope.add_git_diff_v1",
+                "family_kind": "tool_scope",
+                "lane_id": "lane.repo_swe",
+                "lifecycle_status": "withheld",
+                "replay_status": "missing",
+                "transfer_eligibility": {"allowed_target_lanes": []},
+            },
+        ],
+        policy_stability_rows=[
+            {
+                "lane_id": "lane.repo_swe",
+                "policy_review_conclusion": "continue",
+                "stability_class": "mixed_negative",
+                "flat_count": 5,
+            }
+        ],
+    )
+    assert policy["family_probe"]["enabled"] is True
+    assert policy["max_mutation_arms"] == 1
+    assert policy["repetition_count"] >= 6
+    assert policy["family_priors"][0]["source_operator_id"] == "mut.tool_scope.add_git_diff_v1"
+
+
 def test_select_stage5_search_policy_arms_emits_warm_and_lockout_pairs() -> None:
     policy = build_stage5_search_policy_v2(
         lane_id="lane.repo_swe",
@@ -227,6 +266,83 @@ def test_select_stage5_search_policy_arms_tightened_repo_swe_limits_spillover() 
     assert "arm.repo_swe.topology.stage5.v0.warm-start.stage5.v0" in arm_ids
     assert "arm.repo_swe.topology.stage5.v0.family-lockout.stage5.v0" in arm_ids
     assert not any(arm_id.startswith("arm.repo_swe.policy.stage5.v0") for arm_id in arm_ids)
+
+
+def test_select_stage5_search_policy_arms_repo_swe_family_probe_prefers_tool_scope() -> None:
+    policy = build_stage5_search_policy_v2(
+        lane_id="lane.repo_swe",
+        budget_class="class_a",
+        family_rows=[
+            {
+                "family_id": "component_family.stage4.topology.policy.topology.pev_v0.lane.repo_swe.v0",
+                "family_key": "policy.topology.pev_v0",
+                "family_kind": "topology",
+                "lane_id": "lane.repo_swe",
+                "lifecycle_status": "promoted",
+                "replay_status": "supported",
+                "transfer_eligibility": {"allowed_target_lanes": ["lane.systems"]},
+            },
+            {
+                "family_id": "component_family.stage4.tool_scope.policy.tool_scope.add_git_diff_v1.lane.repo_swe.v0",
+                "family_key": "policy.tool_scope.add_git_diff_v1",
+                "family_kind": "tool_scope",
+                "lane_id": "lane.repo_swe",
+                "lifecycle_status": "withheld",
+                "replay_status": "missing",
+                "transfer_eligibility": {"allowed_target_lanes": []},
+            },
+        ],
+        policy_stability_rows=[
+            {
+                "lane_id": "lane.repo_swe",
+                "policy_review_conclusion": "continue",
+                "stability_class": "mixed_negative",
+                "flat_count": 5,
+            }
+        ],
+    )
+    selected = select_stage5_search_policy_arms(
+        search_policy=policy,
+        candidate_rows=[
+            {
+                "campaign_arm_id": "arm.repo_swe.control.stage5.v0",
+                "lane_id": "lane.repo_swe",
+                "operator_id": "baseline_seed",
+                "topology_id": "policy.topology.single_v0",
+                "policy_bundle_id": "policy.topology.single_v0",
+                "budget_class": "class_a",
+                "control_tag": "control",
+                "task_class": "repo_patch_workspace",
+                "repetition_count": 2,
+            },
+            {
+                "campaign_arm_id": "arm.repo_swe.topology.stage5.v0",
+                "lane_id": "lane.repo_swe",
+                "operator_id": "mut.topology.single_to_pev_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "control_tag": "mutation",
+                "task_class": "repo_patch_workspace",
+                "repetition_count": 2,
+            },
+            {
+                "campaign_arm_id": "arm.repo_swe.tool_scope.stage5.v0",
+                "lane_id": "lane.repo_swe",
+                "operator_id": "mut.tool_scope.add_git_diff_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "control_tag": "mutation",
+                "task_class": "repo_patch_workspace",
+                "repetition_count": 2,
+            },
+        ],
+    )
+    arm_ids = [row["campaign_arm_id"] for row in selected]
+    assert "arm.repo_swe.tool_scope.stage5.v0.warm-start.stage5.v0" in arm_ids
+    assert "arm.repo_swe.tool_scope.stage5.v0.family-lockout.stage5.v0" in arm_ids
+    assert not any(arm_id.startswith("arm.repo_swe.topology.stage5.v0") for arm_id in arm_ids)
 
 
 def test_select_stage5_search_policy_arms_supports_systems() -> None:
