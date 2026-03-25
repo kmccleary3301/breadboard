@@ -70,22 +70,53 @@ def _seed_candidates(search_id: str) -> List[SearchCandidate]:
     ]
 
 
-def build_rsa_search_runtime_example() -> Dict[str, object]:
-    search_id = "search.rsa_mvp.v1"
+def _build_rsa_search_runtime_with_profile(
+    *,
+    search_id: str,
+    max_rounds: int,
+    population_size: int,
+    subset_size: int,
+    random_seed: int,
+    metadata: Dict[str, object] | None = None,
+) -> Dict[str, object]:
     config = BarrieredSchedulerConfig(
         search_id=search_id,
-        max_rounds=2,
-        population_size=4,
-        subset_size=2,
-        random_seed=7,
+        max_rounds=max_rounds,
+        population_size=population_size,
+        subset_size=subset_size,
+        random_seed=random_seed,
         recipe_kind="rsa_population_recombination",
-        metadata={"phase": "dag_v1", "non_kernel": True, "scheduler_mode": "barriered"},
+        metadata={"scheduler_mode": "barriered", **dict(metadata or {})},
     )
-    seeds = _seed_candidates(search_id)
+    base_seeds = _seed_candidates(search_id)
+    if population_size <= len(base_seeds):
+        seeds = base_seeds[:population_size]
+    else:
+        seeds = list(base_seeds)
+        for index in range(len(base_seeds) + 1, population_size + 1):
+            score = 0.39 + (0.02 * ((index - 1) % 5))
+            seeds.append(
+                SearchCandidate(
+                    candidate_id=f"{search_id}.cand.seed.{index}",
+                    search_id=search_id,
+                    frontier_id=f"{search_id}.frontier.0",
+                    parent_ids=[],
+                    round_index=0,
+                    depth=0,
+                    payload_ref=f"artifacts/search/{search_id}/seed_{index}.json",
+                    score_vector={"correctness_score": min(0.62, score)},
+                    usage={"prompt_tokens": 32 + (index * 2), "completion_tokens": 18 + (index % 4)},
+                    status="seeded",
+                    reasoning_summary_ref=f"artifacts/search/{search_id}/seed_{index}_summary.md",
+                    metadata={"seed_index": index},
+                )
+            )
 
     def _aggregate(subset: Sequence[SearchCandidate], round_index: int, proposal_index: int) -> AggregationProposal:
         avg_score = sum(float(item.score_vector.get("correctness_score", 0.0)) for item in subset) / float(len(subset))
-        improved_score = min(1.0, avg_score + 0.08)
+        subset_bonus = min(0.06, 0.015 * float(subset_size))
+        depth_bonus = 0.02 * float(round_index)
+        improved_score = min(1.0, avg_score + subset_bonus + depth_bonus)
         candidate = SearchCandidate(
             candidate_id=f"{search_id}.cand.r{round_index}.{proposal_index}",
             search_id=search_id,
@@ -97,12 +128,12 @@ def build_rsa_search_runtime_example() -> Dict[str, object]:
             message_ref=f"{search_id}.msg.r{round_index}.{proposal_index}",
             score_vector={"correctness_score": improved_score},
             usage={
-                "prompt_tokens": 48 + (round_index * 8),
-                "completion_tokens": 24 + proposal_index,
+                "prompt_tokens": 40 + (round_index * 8) + (subset_size * 2),
+                "completion_tokens": 22 + proposal_index + round_index,
             },
             status="active",
             reasoning_summary_ref=f"artifacts/search/{search_id}/round_{round_index}_candidate_{proposal_index}.md",
-            metadata={"recipe": "rsa", "proposal_index": proposal_index},
+            metadata={"recipe": "rsa", "proposal_index": proposal_index, "subset_size": subset_size},
         )
         message = SearchMessage(
             message_id=f"{search_id}.msg.r{round_index}.{proposal_index}",
@@ -115,23 +146,32 @@ def build_rsa_search_runtime_example() -> Dict[str, object]:
             },
             dropped_fields=["full_trace"],
             omitted_artifact_refs=[item.payload_ref for item in subset],
-            confidence=0.74,
+            confidence=min(0.9, 0.68 + (0.03 * round_index)),
             unresolved_gaps=["verifier_not_run"],
-            usage={"compaction_tokens": 12},
-            metadata={"round_index": round_index},
+            usage={"compaction_tokens": 10 + round_index},
+            metadata={"round_index": round_index, "subset_size": subset_size},
         )
         return AggregationProposal(candidate=candidate, message=message)
 
-    run = BarrieredRoundScheduler(config).run(
-        initial_candidates=seeds,
-        aggregate_fn=_aggregate,
-    )
+    run = BarrieredRoundScheduler(config).run(initial_candidates=seeds, aggregate_fn=_aggregate)
     assert isinstance(run, SearchRun)
     return {
         "config": config,
         "seeds": seeds,
         "run": run,
     }
+
+
+def build_rsa_search_runtime_example() -> Dict[str, object]:
+    example = _build_rsa_search_runtime_with_profile(
+        search_id="search.rsa_mvp.v1",
+        max_rounds=2,
+        population_size=4,
+        subset_size=2,
+        random_seed=7,
+        metadata={"phase": "dag_v1", "non_kernel": True},
+    )
+    return example
 
 
 def build_rsa_search_runtime_example_payload() -> Dict[str, object]:
@@ -3623,5 +3663,218 @@ def build_dag_v3_phase1_smoke_packet_payload() -> Dict[str, object]:
         "compute_ledgers": [item.to_dict() for item in example["compute_ledgers"]],
         "smoke_packets": [dict(item) for item in example["smoke_packets"]],
         "shared_metric_snapshot": dict(example["shared_metric_snapshot"]),
+        "metadata": dict(example["metadata"]),
+    }
+
+
+def build_dag_v3_rsa_nkt_sweep_packet() -> Dict[str, object]:
+    sweep_specs = [
+        {"population_size": 4, "subset_size": 1, "max_rounds": 1, "random_seed": 17},
+        {"population_size": 4, "subset_size": 2, "max_rounds": 2, "random_seed": 17},
+        {"population_size": 8, "subset_size": 2, "max_rounds": 2, "random_seed": 17},
+        {"population_size": 8, "subset_size": 4, "max_rounds": 3, "random_seed": 17},
+    ]
+    rows: List[Dict[str, object]] = []
+    runs: List[SearchRun] = []
+    for index, spec in enumerate(sweep_specs, start=1):
+        example = _build_rsa_search_runtime_with_profile(
+            search_id=f"search.dag_v3.rsa_sweep.{index}",
+            max_rounds=spec["max_rounds"],
+            population_size=spec["population_size"],
+            subset_size=spec["subset_size"],
+            random_seed=spec["random_seed"],
+            metadata={"phase": "dag_v3_phase2", "study_kind": "rsa_nkt_sweep", "paper_mode": False},
+        )
+        run = example["run"]
+        runs.append(run)
+        selected = next(item for item in run.candidates if item.candidate_id == run.selected_candidate_id)
+        rows.append(
+            {
+                "search_id": run.search_id,
+                "N": spec["population_size"],
+                "K": spec["subset_size"],
+                "T": spec["max_rounds"],
+                "random_seed": spec["random_seed"],
+                "selected_candidate_id": run.selected_candidate_id,
+                "selected_score": float(selected.score_vector.get("correctness_score", 0.0)),
+                "metrics": compute_fidelity_metrics(run),
+            }
+        )
+    return {
+        "paper_key": "rsa_recursive_self_aggregation",
+        "model_tier": "gpt_5_4_mini",
+        "sweep_rows": rows,
+        "runs": runs,
+        "metadata": {
+            "phase": "dag_v3_phase2",
+            "normalization_rule": "trajectory_count_matched",
+            "fixed_seed": 17,
+        },
+    }
+
+
+def build_dag_v3_rsa_nkt_sweep_packet_payload() -> Dict[str, object]:
+    example = build_dag_v3_rsa_nkt_sweep_packet()
+    return {
+        "paper_key": example["paper_key"],
+        "model_tier": example["model_tier"],
+        "sweep_rows": [dict(item) for item in example["sweep_rows"]],
+        "runs": [item.to_dict() for item in example["runs"]],
+        "metadata": dict(example["metadata"]),
+    }
+
+
+def build_dag_v3_rsa_budget_matched_baseline_packet() -> Dict[str, object]:
+    sweep = build_dag_v3_rsa_nkt_sweep_packet()
+    selected_row = max(
+        sweep["sweep_rows"],
+        key=lambda item: (
+            float(item["selected_score"]),
+            int(item["T"]),
+            int(item["K"]),
+            int(item["N"]),
+        ),
+    )
+    budget_target = {
+        "trajectory_count": int(selected_row["N"]) * int(selected_row["T"]),
+        "rounds": int(selected_row["T"]),
+        "subset_size": int(selected_row["K"]),
+    }
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_v3.rsa.phase2.baselines.v1",
+        paper_key="rsa_recursive_self_aggregation",
+        normalization_rule="trajectory_count_matched",
+        baseline_ids=["self_refinement", "one_step_self_aggregation", "rejection_sampling", "majority_voting"],
+        metadata={
+            "phase": "dag_v3_phase2",
+            "budget_target": dict(budget_target),
+            "selected_sweep_search_id": selected_row["search_id"],
+        },
+    )
+    baseline_rows = [
+        {
+            "baseline_id": baseline_id,
+            "budget_target": dict(budget_target),
+            "matched_by": "trajectory_count_matched",
+            "fairness_note": "same model tier, fixed seed family, and explicit deviation ledger required",
+        }
+        for baseline_id in baseline_packet.baseline_ids
+    ]
+    return {
+        "baseline_packet": baseline_packet,
+        "baseline_rows": baseline_rows,
+        "selected_sweep_row": dict(selected_row),
+    }
+
+
+def build_dag_v3_rsa_budget_matched_baseline_packet_payload() -> Dict[str, object]:
+    example = build_dag_v3_rsa_budget_matched_baseline_packet()
+    return {
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "baseline_rows": [dict(item) for item in example["baseline_rows"]],
+        "selected_sweep_row": dict(example["selected_sweep_row"]),
+    }
+
+
+def build_dag_v3_rsa_replication_packet() -> Dict[str, object]:
+    profile = build_dag_v3_rsa_paper_profile()
+    sweep = build_dag_v3_rsa_nkt_sweep_packet()
+    baselines = build_dag_v3_rsa_budget_matched_baseline_packet()
+    best_row = max(
+        sweep["sweep_rows"],
+        key=lambda item: (
+            float(item["selected_score"]),
+            int(item["T"]),
+            int(item["K"]),
+            int(item["N"]),
+        ),
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_v3.rsa.phase2.scorecard.v1",
+        paper_key="rsa_recursive_self_aggregation",
+        fidelity_label="medium_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="partial",
+        compute_fidelity="normalized",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "algorithm-faithful, model-substituted, inference-only",
+            "best_sweep_search_id": best_row["search_id"],
+            "baseline_packet_id": baselines["baseline_packet"].packet_id,
+        },
+        metadata={"phase": "dag_v3_phase2"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_v3.rsa.phase2.compute.v1",
+        paper_key="rsa_recursive_self_aggregation",
+        model_tier="gpt_5_4_mini",
+        normalization_rule="trajectory_count_matched",
+        entries=[
+            {
+                "entry_id": f"rsa.phase2.{row['search_id']}.tokens",
+                "kind": "total_tokens",
+                "label": row["search_id"],
+                "quantity": sum(
+                    float(run_candidate.usage.get("prompt_tokens", 0.0) + run_candidate.usage.get("completion_tokens", 0.0))
+                    for run in sweep["runs"]
+                    if run.search_id == row["search_id"]
+                    for run_candidate in run.candidates
+                ),
+                "unit": "tokens",
+            }
+            for row in sweep["sweep_rows"]
+        ],
+        metadata={"phase": "dag_v3_phase2", "selected_sweep_search_id": best_row["search_id"]},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_v3.rsa.phase2.deviations.v1",
+        paper_key="rsa_recursive_self_aggregation",
+        deviations=[
+            {
+                "deviation_id": "rsa.phase2.dev.01",
+                "severity": "medium",
+                "summary": "Phase 2 covers an exact control-profile sweep and budget normalization, but remains inference-only on GPT-5.4 Mini.",
+            },
+            {
+                "deviation_id": "rsa.phase2.dev.02",
+                "severity": "low",
+                "summary": "Baseline rows are packetized and budget-matched here; full benchmark-scale execution is deferred to later tranches.",
+            },
+        ],
+        metadata={"phase": "dag_v3_phase2"},
+    )
+    qualitative_synthesis = {
+        "best_search_id": best_row["search_id"],
+        "best_nkt": {"N": best_row["N"], "K": best_row["K"], "T": best_row["T"]},
+        "observations": [
+            "aggregation gain increases as T rises under fixed seeds in the current Mini-first smoke grid",
+            "larger K improves selected-score stability at the cost of higher normalized budget",
+            "the packet remains algorithm-faithful and inference-only; training-aware claims are explicitly deferred",
+        ],
+    }
+    return {
+        "recipe_manifest": profile["recipe_manifest"],
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baselines["baseline_packet"],
+        "deviation_ledger": deviation_ledger,
+        "sweep_rows": list(sweep["sweep_rows"]),
+        "qualitative_synthesis": qualitative_synthesis,
+        "model_tier": "gpt_5_4_mini",
+        "metadata": {"phase": "dag_v3_phase2", "kernel_change_required": False},
+    }
+
+
+def build_dag_v3_rsa_replication_packet_payload() -> Dict[str, object]:
+    example = build_dag_v3_rsa_replication_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "sweep_rows": [dict(item) for item in example["sweep_rows"]],
+        "qualitative_synthesis": dict(example["qualitative_synthesis"]),
+        "model_tier": example["model_tier"],
         "metadata": dict(example["metadata"]),
     }

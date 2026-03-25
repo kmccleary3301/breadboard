@@ -50,8 +50,14 @@ from agentic_coder_prototype.search import (
     build_dag_v3_pacore_paper_profile_payload,
     build_dag_v3_phase1_smoke_packet,
     build_dag_v3_phase1_smoke_packet_payload,
+    build_dag_v3_rsa_budget_matched_baseline_packet,
+    build_dag_v3_rsa_budget_matched_baseline_packet_payload,
+    build_dag_v3_rsa_nkt_sweep_packet,
+    build_dag_v3_rsa_nkt_sweep_packet_payload,
     build_dag_v3_rsa_paper_profile,
     build_dag_v3_rsa_paper_profile_payload,
+    build_dag_v3_rsa_replication_packet,
+    build_dag_v3_rsa_replication_packet_payload,
     build_post_v2_study_01_verifier_patch_branch,
     build_post_v2_study_01_verifier_patch_branch_payload,
     build_post_v2_study_02_judge_reducer_rounds,
@@ -371,6 +377,41 @@ def test_dag_v3_common_fidelity_metrics_are_reproducible_from_existing_runs() ->
     assert rsa_metrics["aggregation_gain"] >= 0.0
     assert pacore_metrics["message_efficiency"] > 0.0
     assert pacore_metrics["verifier_yield"] >= 0.0
+
+
+def test_dag_v3_rsa_nkt_sweep_packet_is_fixed_seed_and_structured() -> None:
+    example = build_dag_v3_rsa_nkt_sweep_packet()
+    payload = build_dag_v3_rsa_nkt_sweep_packet_payload()
+
+    assert example["paper_key"] == "rsa_recursive_self_aggregation"
+    assert example["metadata"]["fixed_seed"] == 17
+    assert len(example["sweep_rows"]) == 4
+    assert {row["random_seed"] for row in example["sweep_rows"]} == {17}
+    assert any(row["N"] == 8 and row["K"] == 4 and row["T"] == 3 for row in example["sweep_rows"])
+    assert payload["model_tier"] == "gpt_5_4_mini"
+
+
+def test_dag_v3_rsa_budget_matched_baseline_packet_is_normalized() -> None:
+    example = build_dag_v3_rsa_budget_matched_baseline_packet()
+    payload = build_dag_v3_rsa_budget_matched_baseline_packet_payload()
+
+    assert example["baseline_packet"].paper_key == "rsa_recursive_self_aggregation"
+    assert example["baseline_packet"].normalization_rule == "trajectory_count_matched"
+    assert len(example["baseline_rows"]) == 4
+    assert all(row["matched_by"] == "trajectory_count_matched" for row in example["baseline_rows"])
+    assert payload["selected_sweep_row"]["search_id"] == example["selected_sweep_row"]["search_id"]
+
+
+def test_dag_v3_rsa_replication_packet_carries_phase2_outputs() -> None:
+    example = build_dag_v3_rsa_replication_packet()
+    payload = build_dag_v3_rsa_replication_packet_payload()
+
+    assert example["recipe_manifest"].paper_key == "rsa_recursive_self_aggregation"
+    assert example["scorecard"].fidelity_label == "medium_fidelity"
+    assert example["compute_ledger"].total_for_unit("tokens") > 0.0
+    assert len(example["sweep_rows"]) == 4
+    assert example["qualitative_synthesis"]["best_nkt"]["N"] in {4, 8}
+    assert payload["metadata"]["kernel_change_required"] is False
 
 
 def test_pacore_search_runtime_payload_round_trips() -> None:
