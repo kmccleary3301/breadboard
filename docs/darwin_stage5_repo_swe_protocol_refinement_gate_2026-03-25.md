@@ -10,7 +10,7 @@ References:
 
 - Repo_SWE comparison logic no longer overvalues tiny runtime deltas against material cost changes
 - the refined rule was exercised on the live Repo_SWE family A/B surface
-- the Repo_SWE family choice remained stable under the stronger rule
+- the refined rule exposed that the Repo_SWE family choice is not stable under stronger comparison semantics
 
 ## Gate decision
 
@@ -18,12 +18,12 @@ Passed.
 
 ## What is authorized next
 
-- keep Repo_SWE on `tool_scope`
-- refine the protocol around the selected family
-- keep Systems unchanged unless a cross-lane review forces a change
+- stop treating the Repo_SWE family decision as settled
+- run a bounded cross-lane Stage-5 review next
+- keep Systems unchanged until that review is written
 
 ## What is not authorized next
 
-- no return to topology as the default Repo_SWE family
+- no claim that Repo_SWE family selection is now solved
 - no transfer expansion
 - no family composition

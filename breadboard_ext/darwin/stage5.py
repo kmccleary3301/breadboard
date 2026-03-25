@@ -16,6 +16,7 @@ DEFAULT_STAGE5_POLICY_STABILITY = ROOT / "artifacts" / "darwin" / "stage5" / "po
 STAGE5_COMPARISON_MODES = ("cold_start", "warm_start", "family_lockout")
 STAGE5_RUNTIME_LIFT_DEADBAND_MS = 10
 STAGE5_COST_LIFT_DEADBAND_USD = 0.0001
+STAGE5_TOOL_SCOPE_RUNTIME_LIFT_DEADBAND_MS = 15
 
 _FAMILY_PRIORITY_BASE = {
     "topology": 0.95,
@@ -26,31 +27,50 @@ _FAMILY_PRIORITY_BASE = {
 
 def _classify_stage5_compounding_outcome(
     *,
+    operator_id: str,
     score_lift: float,
     runtime_lift_ms: int,
     cost_lift_usd: float,
-) -> tuple[str, str]:
+) -> tuple[str, str, dict[str, Any]]:
+    protocol = {
+        "objective": "balanced",
+        "runtime_lift_deadband_ms": STAGE5_RUNTIME_LIFT_DEADBAND_MS,
+        "cost_lift_deadband_usd": STAGE5_COST_LIFT_DEADBAND_USD,
+    }
+    if operator_id == "mut.tool_scope.add_git_diff_v1":
+        protocol = {
+            "objective": "cost_first",
+            "runtime_lift_deadband_ms": STAGE5_TOOL_SCOPE_RUNTIME_LIFT_DEADBAND_MS,
+            "cost_lift_deadband_usd": STAGE5_COST_LIFT_DEADBAND_USD,
+        }
     if score_lift > 0.0:
-        return "reuse_lift", "score_better"
+        return "reuse_lift", "score_better", protocol
     if score_lift < 0.0:
-        return "no_lift", "score_worse"
+        return "no_lift", "score_worse", protocol
 
-    runtime_better = runtime_lift_ms <= -STAGE5_RUNTIME_LIFT_DEADBAND_MS
-    runtime_worse = runtime_lift_ms >= STAGE5_RUNTIME_LIFT_DEADBAND_MS
-    cost_better = cost_lift_usd <= -STAGE5_COST_LIFT_DEADBAND_USD
-    cost_worse = cost_lift_usd >= STAGE5_COST_LIFT_DEADBAND_USD
+    runtime_deadband = int(protocol["runtime_lift_deadband_ms"])
+    cost_deadband = float(protocol["cost_lift_deadband_usd"])
+    runtime_better = runtime_lift_ms <= -runtime_deadband
+    runtime_worse = runtime_lift_ms >= runtime_deadband
+    cost_better = cost_lift_usd <= -cost_deadband
+    cost_worse = cost_lift_usd >= cost_deadband
 
     if not (runtime_better or runtime_worse or cost_better or cost_worse):
-        return "flat", "within_deadband"
+        return "flat", "within_deadband", protocol
+    if str(protocol["objective"]) == "cost_first":
+        if cost_better and not runtime_worse:
+            return "reuse_lift", "cost_better_runtime_neutral", protocol
+        if cost_worse and not runtime_better:
+            return "no_lift", "cost_worse_runtime_neutral", protocol
     if runtime_better and not cost_worse:
-        return "reuse_lift", "runtime_better_cost_neutral"
+        return "reuse_lift", "runtime_better_cost_neutral", protocol
     if cost_better and not runtime_worse:
-        return "reuse_lift", "cost_better_runtime_neutral"
+        return "reuse_lift", "cost_better_runtime_neutral", protocol
     if runtime_worse and not cost_better:
-        return "no_lift", "runtime_worse_cost_neutral"
+        return "no_lift", "runtime_worse_cost_neutral", protocol
     if cost_worse and not runtime_better:
-        return "no_lift", "cost_worse_runtime_neutral"
-    return "flat", "cross_metric_tradeoff"
+        return "no_lift", "cost_worse_runtime_neutral", protocol
+    return "flat", "cross_metric_tradeoff", protocol
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -404,11 +424,22 @@ def build_stage5_compounding_cases(
         if not bool(warm.get("comparison_valid")) or not bool(lockout.get("comparison_valid")):
             conclusion = "invalid"
             decision_basis = "comparison_invalid"
+            decision_protocol = {
+                "objective": "n/a",
+                "runtime_lift_deadband_ms": STAGE5_RUNTIME_LIFT_DEADBAND_MS,
+                "cost_lift_deadband_usd": STAGE5_COST_LIFT_DEADBAND_USD,
+            }
         elif not bool(warm.get("claim_eligible")) or not bool(lockout.get("claim_eligible")):
             conclusion = "inconclusive"
             decision_basis = "claim_ineligible"
+            decision_protocol = {
+                "objective": "n/a",
+                "runtime_lift_deadband_ms": STAGE5_RUNTIME_LIFT_DEADBAND_MS,
+                "cost_lift_deadband_usd": STAGE5_COST_LIFT_DEADBAND_USD,
+            }
         else:
-            conclusion, decision_basis = _classify_stage5_compounding_outcome(
+            conclusion, decision_basis, decision_protocol = _classify_stage5_compounding_outcome(
+                operator_id=operator_id,
                 score_lift=score_lift,
                 runtime_lift_ms=runtime_lift_ms,
                 cost_lift_usd=cost_lift_usd,
@@ -455,9 +486,10 @@ def build_stage5_compounding_cases(
                     "cost_lift_usd": cost_lift_usd,
                 },
                 "decision_basis": decision_basis,
+                "decision_protocol": decision_protocol,
                 "decision_deadband": {
-                    "runtime_lift_ms": STAGE5_RUNTIME_LIFT_DEADBAND_MS,
-                    "cost_lift_usd": STAGE5_COST_LIFT_DEADBAND_USD,
+                    "runtime_lift_ms": int(decision_protocol["runtime_lift_deadband_ms"]),
+                    "cost_lift_usd": float(decision_protocol["cost_lift_deadband_usd"]),
                 },
                 "conclusion": conclusion,
             }

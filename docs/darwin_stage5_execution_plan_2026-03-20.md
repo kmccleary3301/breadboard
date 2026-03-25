@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Execution Plan
 
 Date: 2026-03-20
-Status: Repo_SWE protocol-refinement slice landed
+Status: Repo_SWE protocol-refinement slice landed; cross-lane review next
 Scope: Stage-5 doctrine freeze, economics truth hardening, compounding protocol, family-aware search, and scalable compounding proof
 References:
 - `docs/darwin_stage5_doctrine_2026-03-20.md`
@@ -234,11 +234,11 @@ Hard gate:
 
 The current Stage-5 read after the Repo_SWE protocol-refinement slice is:
 
-- `lane.repo_swe`: tool-scope is now the better current family than topology, but the lane is still mixed
+- `lane.repo_swe`: family choice is not stable under stronger comparison semantics
 - `lane.systems`: the clearer current positive lane under the promoted policy-family protocol
 - provider fallback is operational for both `openrouter_http_401` and OpenRouter timeout cases
 
-That is enough to keep Stage 5 moving, but not enough to claim stable scalable compounding. The next bounded move should keep Repo_SWE on `tool_scope` and target a narrower protocol lift or cross-lane review rather than more family selection work.
+That is enough to keep Stage 5 moving, but not enough to claim stable scalable compounding. The next bounded move should be a cross-lane Stage-5 review that re-evaluates how much weight Repo_SWE should carry relative to Systems under the strengthened protocol.
 
 ### Epic 4 — `ComponentFamilyV2`
 

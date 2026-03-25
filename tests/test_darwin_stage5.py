@@ -660,3 +660,54 @@ def test_build_stage5_compounding_cases_marks_cross_metric_tradeoff_flat() -> No
     assert len(cases) == 1
     assert cases[0]["conclusion"] == "flat"
     assert cases[0]["decision_basis"] == "cross_metric_tradeoff"
+
+
+def test_build_stage5_compounding_cases_uses_cost_first_for_tool_scope() -> None:
+    cases = build_stage5_compounding_cases(
+        comparison_rows=[
+            {
+                "lane_id": "lane.repo_swe",
+                "campaign_class": "C1 Discovery",
+                "campaign_arm_id": "arm.repo_swe.tool_scope.warm_start",
+                "operator_id": "mut.tool_scope.add_git_diff_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "repetition_index": 1,
+                "comparison_valid": True,
+                "claim_eligible": True,
+                "delta_score": 0.0,
+                "delta_runtime_ms": 7,
+                "delta_cost_usd": 0.0001,
+                "power_signal_class": "no_signal",
+                "comparison_mode": "warm_start",
+                "family_context": {"allowed_family_ids": ["family.tool"], "blocked_family_ids": []},
+                "evaluator_pack_version": "stage4.evalpack.repo.v1",
+                "comparison_envelope_digest": "e" * 64,
+                "provider_origin": "openai",
+                "cost_source": "estimated_from_pricing_table",
+            },
+            {
+                "lane_id": "lane.repo_swe",
+                "campaign_class": "C1 Discovery",
+                "campaign_arm_id": "arm.repo_swe.tool_scope.family_lockout",
+                "operator_id": "mut.tool_scope.add_git_diff_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "repetition_index": 1,
+                "comparison_valid": True,
+                "claim_eligible": True,
+                "delta_score": 0.0,
+                "delta_runtime_ms": -6,
+                "delta_cost_usd": 0.00035,
+                "power_signal_class": "score_retained_runtime_improved",
+                "comparison_mode": "family_lockout",
+                "family_context": {"allowed_family_ids": [], "blocked_family_ids": ["family.tool"]},
+                "evaluator_pack_version": "stage4.evalpack.repo.v1",
+                "comparison_envelope_digest": "e" * 64,
+                "provider_origin": "openai",
+                "cost_source": "estimated_from_pricing_table",
+            },
+        ]
+    )
+    assert len(cases) == 1
+    assert cases[0]["conclusion"] == "reuse_lift"
+    assert cases[0]["decision_protocol"]["objective"] == "cost_first"
+    assert cases[0]["decision_deadband"]["runtime_lift_ms"] == 15

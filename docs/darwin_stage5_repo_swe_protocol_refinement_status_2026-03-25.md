@@ -13,21 +13,23 @@ References:
 
 ## Current result
 
-The family choice did not flip under the stronger rule:
+The family choice did flip under the stronger rule and live rerun:
 
-- `tool_scope`
-  - `5` reuse-lift
-  - `3` flat
-  - `4` no-lift
 - `topology`
   - `3` reuse-lift
   - `5` flat
   - `4` no-lift
+- `tool_scope`
+  - `3` reuse-lift
+  - `2` flat
+  - `7` no-lift
 
 ## Interpretation
 
-This is a useful result.
+This is a useful result, but not the one from the prior slice.
 
-- the family choice is now cleaner
-- `tool_scope` still beats `topology`
-- the Stage-5 Repo_SWE problem is no longer "which family?" but "how to lift the selected family from mixed into positive stability?"
+- under the stronger rule, `tool_scope` no longer holds the better Repo_SWE profile
+- `topology` is now the safer current family because it produces fewer outright no-lift outcomes
+- Repo_SWE family choice is therefore not stable across protocol changes
+
+The Stage-5 problem is no longer just single-lane family selection. It is now whether Repo_SWE should be tuned further at all before a broader cross-lane review.

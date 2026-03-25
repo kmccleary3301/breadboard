@@ -10,9 +10,9 @@ References:
 
 ### 1. Did the refined rule change the family choice?
 
-No.
+Yes.
 
-`tool_scope` still beats `topology`.
+The live rerun under the stronger rule removed the earlier `tool_scope` edge. `topology` is now the safer current Repo_SWE family because it carries fewer outright negative outcomes.
 
 ### 2. Is that a problem?
 
@@ -22,8 +22,8 @@ It is the desired outcome for this slice. The choice is now supported by a clean
 
 ### 3. What is the next bounded question?
 
-The next bounded question is how to improve the selected Repo_SWE `tool_scope` family under the current Stage-5 protocol, not whether topology should come back.
+The next bounded question is whether Repo_SWE should continue to be optimized in isolation or whether the next Stage-5 move should shift to a cross-lane review and hold Repo_SWE family selection open.
 
 ## Review conclusion
 
-The slice succeeded. The Stage-5 Repo_SWE default family should remain `tool_scope`, and the next bounded move should target protocol refinement around that family rather than re-opening family selection.
+The slice succeeded because it revealed that the Repo_SWE family choice is not stable under a stronger comparison rule. The next bounded move should be a cross-lane Stage-5 review, not more Repo_SWE-only tuning pretending the family decision is settled.
