@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from typing import Dict, List, Sequence
 
+from agentic_coder_prototype.optimize import (
+    BenchmarkRunManifest,
+    BenchmarkSplit,
+    ObjectiveBreakdownResult,
+    PromotionEvidenceSummary,
+)
+
 from .assessment import SearchAssessmentRegistry, build_default_search_assessment_registry
 from .compaction import SearchCompactionRegistry, build_default_search_compaction_registry
 from .export import build_search_offline_dataset, export_search_trajectory
@@ -1983,6 +1990,379 @@ def build_post_v2_study_07_message_passing_adjudication_payload() -> Dict[str, o
         },
         "carry_state_id": example["carry_state_id"],
         "adjudicated_candidate_id": example["adjudicated_candidate_id"],
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }
+
+
+def build_post_v2_study_08_verifier_judge_handoff() -> Dict[str, object]:
+    base = build_pacore_search_runtime_example()
+    run = base["run"]
+    assessment_frontier = run.frontiers[-2]
+    frontier_candidates = [
+        item for item in run.candidates if item.frontier_id == assessment_frontier.frontier_id
+    ][:2]
+    if len(frontier_candidates) != 2:
+        raise ValueError("study_08 requires exactly two pre-synthesis frontier candidates")
+    carry_state = run.carry_states[-1]
+    incumbent = frontier_candidates[0]
+    challenger = frontier_candidates[1]
+    adjudicated_candidate = SearchCandidate(
+        candidate_id=f"{run.search_id}.cand.message_handoff.1",
+        search_id=run.search_id,
+        frontier_id=assessment_frontier.frontier_id,
+        parent_ids=[incumbent.candidate_id, challenger.candidate_id],
+        round_index=assessment_frontier.round_index,
+        depth=max(incumbent.depth, challenger.depth) + 1,
+        payload_ref=f"artifacts/search/{run.search_id}/message_handoff_candidate.json",
+        message_ref=carry_state.message_ids[0],
+        score_vector={"correctness_score": 0.91, "coherence_score": 0.9},
+        usage={"prompt_tokens": 82, "completion_tokens": 39},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{run.search_id}/message_handoff_candidate.md",
+        metadata={"study_id": "study_08_verifier_judge_handoff", "carry_state_id": carry_state.state_id},
+    )
+    aggregate_event = SearchEvent(
+        event_id=f"{run.search_id}.event.aggregate.message_handoff",
+        search_id=run.search_id,
+        frontier_id=assessment_frontier.frontier_id,
+        round_index=assessment_frontier.round_index,
+        operator_kind="aggregate",
+        input_candidate_ids=[incumbent.candidate_id, challenger.candidate_id],
+        output_candidate_ids=[adjudicated_candidate.candidate_id],
+        message_ids=list(carry_state.message_ids),
+        metadata={
+            "study_id": "study_08_verifier_judge_handoff",
+            "carry_state_id": carry_state.state_id,
+            "bounded_message_passing": True,
+        },
+    )
+    study_run = SearchRun(
+        search_id=run.search_id,
+        recipe_kind="message_passing_verifier_judge_handoff",
+        candidates=[*run.candidates, adjudicated_candidate],
+        frontiers=list(run.frontiers),
+        events=[*run.events, aggregate_event],
+        messages=list(run.messages),
+        carry_states=list(run.carry_states),
+        metrics=run.metrics,
+        selected_candidate_id=run.selected_candidate_id,
+        metadata={**dict(run.metadata), "study_id": "study_08_verifier_judge_handoff"},
+    )
+    verifier_gate_config = AssessmentGateConfig(
+        backend_kind="exact_tests.v1",
+        mode="require_before_select",
+        max_assessments=2,
+        required_verdicts=["pass"],
+        metadata={"study_id": "study_08_verifier_judge_handoff", "phase": "post_v2_wave2"},
+    )
+    registry = build_default_search_assessment_registry()
+    verifier_outcome = run_barriered_assessment_gate(
+        run=study_run,
+        registry=registry,
+        config=verifier_gate_config,
+        frontier_candidates=[adjudicated_candidate, incumbent],
+    )
+    verifier_events = [*study_run.events, verifier_outcome.gate_event]
+    verifier_run = SearchRun(
+        search_id=study_run.search_id,
+        recipe_kind=study_run.recipe_kind,
+        candidates=list(study_run.candidates),
+        frontiers=list(study_run.frontiers),
+        events=verifier_events,
+        messages=list(study_run.messages),
+        carry_states=list(study_run.carry_states),
+        assessments=list(verifier_outcome.assessments),
+        metrics=study_run.metrics,
+        selected_candidate_id=study_run.selected_candidate_id,
+        metadata={
+            **dict(study_run.metadata),
+            "carry_state_id": carry_state.state_id,
+            "verifier_pruned_candidate_ids": list(verifier_outcome.pruned_candidate_ids),
+        },
+    )
+    surviving_candidates = [
+        item
+        for item in [adjudicated_candidate, incumbent]
+        if item.candidate_id not in set(verifier_outcome.pruned_candidate_ids)
+    ]
+    if len(surviving_candidates) != 2:
+        raise ValueError("study_08 requires two surviving candidates after verifier gate")
+    judge_gate_config = AssessmentGateConfig(
+        backend_kind="judge_pairwise.v1",
+        mode="require_before_select",
+        max_assessments=2,
+        required_verdicts=["prefer_a"],
+        metadata={"study_id": "study_08_verifier_judge_handoff", "phase": "post_v2_wave2"},
+    )
+    judge_outcome = run_barriered_assessment_gate(
+        run=verifier_run,
+        registry=registry,
+        config=judge_gate_config,
+        frontier_candidates=surviving_candidates,
+    )
+    final_events = [*verifier_run.events, judge_outcome.gate_event]
+    if judge_outcome.selection_event is not None:
+        final_events.append(judge_outcome.selection_event)
+    final_run = SearchRun(
+        search_id=verifier_run.search_id,
+        recipe_kind=verifier_run.recipe_kind,
+        candidates=list(verifier_run.candidates),
+        frontiers=list(verifier_run.frontiers),
+        events=final_events,
+        messages=list(verifier_run.messages),
+        carry_states=list(verifier_run.carry_states),
+        assessments=[*verifier_run.assessments, *judge_outcome.assessments],
+        metrics=verifier_run.metrics,
+        selected_candidate_id=judge_outcome.selected_candidate_id,
+        metadata={
+            **dict(verifier_run.metadata),
+            "terminated": judge_outcome.terminated,
+            "selected_after_handoff": judge_outcome.selected_candidate_id,
+        },
+    )
+    evidence = {
+        "easy": [
+            "exact verifier and judge pairwise truth can compose through the same SearchAssessment surface",
+            "bounded carry-state plus two-stage assessment remains attributable without a second runtime noun family",
+            "selection still stays barriered and deterministic",
+        ],
+        "awkward": [
+            "higher-level handoff reports want adapter-side bundling, but the runtime truth surface is already sufficient",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "recipe_level",
+    }
+    return {
+        "run": final_run,
+        "verifier_gate_config": verifier_gate_config,
+        "judge_gate_config": judge_gate_config,
+        "verifier_outcome": verifier_outcome,
+        "judge_outcome": judge_outcome,
+        "carry_state_id": carry_state.state_id,
+        "adjudicated_candidate_id": adjudicated_candidate.candidate_id,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_08_verifier_judge_handoff_payload() -> Dict[str, object]:
+    example = build_post_v2_study_08_verifier_judge_handoff()
+    return {
+        "run": example["run"].to_dict(),
+        "verifier_gate_config": {
+            "backend_kind": example["verifier_gate_config"].backend_kind,
+            "mode": example["verifier_gate_config"].mode,
+            "max_assessments": example["verifier_gate_config"].max_assessments,
+            "required_verdicts": list(example["verifier_gate_config"].required_verdicts),
+            "metadata": dict(example["verifier_gate_config"].metadata),
+        },
+        "judge_gate_config": {
+            "backend_kind": example["judge_gate_config"].backend_kind,
+            "mode": example["judge_gate_config"].mode,
+            "max_assessments": example["judge_gate_config"].max_assessments,
+            "required_verdicts": list(example["judge_gate_config"].required_verdicts),
+            "metadata": dict(example["judge_gate_config"].metadata),
+        },
+        "verifier_outcome": {
+            "pruned_candidate_ids": list(example["verifier_outcome"].pruned_candidate_ids),
+            "selected_candidate_id": example["verifier_outcome"].selected_candidate_id,
+            "terminated": example["verifier_outcome"].terminated,
+            "assessment_ids": [item.assessment_id for item in example["verifier_outcome"].assessments],
+        },
+        "judge_outcome": {
+            "pruned_candidate_ids": list(example["judge_outcome"].pruned_candidate_ids),
+            "selected_candidate_id": example["judge_outcome"].selected_candidate_id,
+            "terminated": example["judge_outcome"].terminated,
+            "assessment_ids": [item.assessment_id for item in example["judge_outcome"].assessments],
+        },
+        "carry_state_id": example["carry_state_id"],
+        "adjudicated_candidate_id": example["adjudicated_candidate_id"],
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }
+
+
+def build_post_v2_study_09_optimize_objective_breakdown_probe() -> Dict[str, object]:
+    example = build_post_v2_study_08_verifier_judge_handoff()
+    run = example["run"]
+    selected_candidate_id = example["judge_outcome"].selected_candidate_id or run.selected_candidate_id
+    if not selected_candidate_id:
+        raise ValueError("study_09 requires a selected candidate id")
+    final_assessment = example["judge_outcome"].assessments[0]
+    objective_result = ObjectiveBreakdownResult(
+        result_id="dag.study09.objective_breakdown",
+        objective_suite_id="objective.dag.adapter.v1",
+        manifest_id="manifest.dag.adapter.v1",
+        candidate_id=selected_candidate_id,
+        per_sample_components={
+            "sample.verifier_judge_handoff": {
+                "assessment_verdict": final_assessment.verdict,
+                "correctness_score": 0.93,
+                "coherence_score": 0.9,
+                "verifier_gate_count": len(example["verifier_outcome"].assessments),
+            }
+        },
+        per_bucket_components={
+            "bucket.verifier_judge_handoff": {
+                "assessment_count": len(run.assessments),
+                "carry_state_count": len(run.carry_states),
+            }
+        },
+        aggregate_objectives={"correctness": 0.93, "coherence": 0.9},
+        signal_status={
+            "exact_tests.v1": {"status": "complete", "count": len(example["verifier_outcome"].assessments)},
+            "judge_pairwise.v1": {"status": "complete", "count": len(example["judge_outcome"].assessments)},
+        },
+        metadata={"source": "dag_post_v2_study_08", "outside_dag_kernel": True},
+    )
+    adapter_boundary = {
+        "outside_dag_kernel": True,
+        "introduced_optimize_public_nouns_into_dag": False,
+        "used_real_optimize_records": True,
+    }
+    evidence = {
+        "easy": [
+            "DAG assessment truth can be mapped into ObjectiveBreakdownResult without mutating the DAG kernel",
+            "multi-stage verifier and judge evidence survives the adapter boundary cleanly",
+        ],
+        "awkward": [
+            "adapter-side objective aggregation still wants local conventions, but that remains outside DAG",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "adapter_level",
+    }
+    return {
+        "run": run,
+        "objective_breakdown_result": objective_result,
+        "selected_candidate_id": selected_candidate_id,
+        "assessment_ids": [item.assessment_id for item in run.assessments],
+        "adapter_boundary": adapter_boundary,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_09_optimize_objective_breakdown_probe_payload() -> Dict[str, object]:
+    example = build_post_v2_study_09_optimize_objective_breakdown_probe()
+    return {
+        "run": example["run"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
+        "selected_candidate_id": example["selected_candidate_id"],
+        "assessment_ids": list(example["assessment_ids"]),
+        "adapter_boundary": dict(example["adapter_boundary"]),
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }
+
+
+def build_post_v2_study_10_optimize_benchmark_promotion_probe() -> Dict[str, object]:
+    objective_example = build_post_v2_study_09_optimize_objective_breakdown_probe()
+    run = objective_example["run"]
+    selected_candidate_id = objective_example["selected_candidate_id"]
+    manifest = BenchmarkRunManifest(
+        manifest_id="manifest.dag.study10",
+        benchmark_kind="dag_adapter_probe",
+        target_id="search.verifier_judge_handoff",
+        dataset_id="dataset.dag.study10",
+        dataset_version="v1",
+        baseline_candidate_id=run.candidates[0].candidate_id,
+        environment_domain="dag_runtime",
+        evaluator_stack=["exact_tests.v1", "judge_pairwise.v1", "trajectory_export.v1"],
+        comparison_protocol="fixed_adapter_check",
+        splits=[
+            BenchmarkSplit(
+                split_name="train",
+                sample_ids=["sample.verifier_judge_handoff.train"],
+                visibility="mutation_visible",
+            ),
+            BenchmarkSplit(
+                split_name="hidden_eval",
+                sample_ids=["sample.verifier_judge_handoff.hidden"],
+                visibility="hidden_hold",
+            ),
+        ],
+        bucket_tags={
+            "sample.verifier_judge_handoff.train": ["verifier", "judge", "carry_state"],
+            "sample.verifier_judge_handoff.hidden": ["judge", "hidden_hold"],
+        },
+        contamination_notes=["adapter-only probe; no optimize public noun enters DAG kernel"],
+        metadata={"source": "dag_post_v2_study_08", "outside_dag_kernel": True},
+    )
+    summary = PromotionEvidenceSummary(
+        summary_id="summary.dag.study10",
+        candidate_id=selected_candidate_id,
+        manifest_ids=[manifest.manifest_id],
+        held_out_sample_ids=manifest.hidden_hold_sample_ids(),
+        compared_regression_sample_ids=["sample.verifier_judge_handoff.train"],
+        outcome_counts={"non_inferior": 1},
+        evaluation_suite_ids=["evaluation.dag.adapter.v1"],
+        objective_suite_ids=[objective_example["objective_breakdown_result"].objective_suite_id],
+        objective_breakdown_result_ids=[objective_example["objective_breakdown_result"].result_id],
+        applicability_scope={"target_kind": "dag_runtime_adapter", "bounded_to": "study_08_verifier_judge_handoff"},
+        review_class="adapter_only",
+        objective_breakdown_status="complete",
+        metadata={"source": "dag_post_v2_study_08", "outside_dag_kernel": True},
+    )
+    adapter_boundary = {
+        "outside_dag_kernel": True,
+        "introduced_optimize_public_nouns_into_dag": False,
+        "used_real_optimize_records": True,
+        "promotion_logic_stayed_adapter_local": True,
+    }
+    evidence = {
+        "easy": [
+            "DAG trajectory and assessment truth can populate BenchmarkRunManifest and PromotionEvidenceSummary cleanly",
+            "promotion and benchmark evidence can stay adapter-local without expanding the DAG kernel",
+        ],
+        "awkward": [
+            "adapter-level sample/bucket naming remains a consumer convention rather than a DAG runtime concept",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "adapter_level",
+    }
+    return {
+        "run": run,
+        "objective_breakdown_result": objective_example["objective_breakdown_result"],
+        "benchmark_manifest": manifest,
+        "promotion_summary": summary,
+        "selected_candidate_id": selected_candidate_id,
+        "adapter_boundary": adapter_boundary,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_10_optimize_benchmark_promotion_probe_payload() -> Dict[str, object]:
+    example = build_post_v2_study_10_optimize_benchmark_promotion_probe()
+    return {
+        "run": example["run"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
+        "benchmark_manifest": example["benchmark_manifest"].to_dict(),
+        "promotion_summary": example["promotion_summary"].to_dict(),
+        "selected_candidate_id": example["selected_candidate_id"],
+        "adapter_boundary": dict(example["adapter_boundary"]),
         "evidence": {
             "easy": list(example["evidence"]["easy"]),
             "awkward": list(example["evidence"]["awkward"]),

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from agentic_coder_prototype.optimize import (
+    BenchmarkRunManifest,
+    ObjectiveBreakdownResult,
+    PromotionEvidenceSummary,
+)
 from agentic_coder_prototype.search import (
     SearchOfflineDataset,
     SearchAssessment,
@@ -46,6 +51,12 @@ from agentic_coder_prototype.search import (
     build_post_v2_study_06_darwin_boundary_probe_payload,
     build_post_v2_study_07_message_passing_adjudication,
     build_post_v2_study_07_message_passing_adjudication_payload,
+    build_post_v2_study_08_verifier_judge_handoff,
+    build_post_v2_study_08_verifier_judge_handoff_payload,
+    build_post_v2_study_09_optimize_objective_breakdown_probe,
+    build_post_v2_study_09_optimize_objective_breakdown_probe_payload,
+    build_post_v2_study_10_optimize_benchmark_promotion_probe,
+    build_post_v2_study_10_optimize_benchmark_promotion_probe_payload,
     SearchRun,
     SearchTrajectoryExport,
     SearchWorkspaceSnapshot,
@@ -646,3 +657,75 @@ def test_post_v2_study_07_message_passing_adjudication_payload_round_trips() -> 
     assert payload["outcome"]["selected_candidate_id"] == payload["adjudicated_candidate_id"]
     assert payload["carry_state_id"] == run.metadata["carry_state_id"]
     assert payload["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_08_verifier_judge_handoff_stays_narrow() -> None:
+    example = build_post_v2_study_08_verifier_judge_handoff()
+    run = example["run"]
+
+    assert run.recipe_kind == "message_passing_verifier_judge_handoff"
+    assert len(example["verifier_outcome"].assessments) == 2
+    assert len(example["judge_outcome"].assessments) == 1
+    assert len(run.assessments) == 3
+    assert run.selected_candidate_id == example["adjudicated_candidate_id"]
+    assert example["carry_state_id"] == run.metadata["carry_state_id"]
+    assert example["evidence"]["future_v3_evidence"] is False
+    assert example["evidence"]["owner_boundary"] == "recipe_level"
+
+
+def test_post_v2_study_08_verifier_judge_handoff_payload_round_trips() -> None:
+    payload = build_post_v2_study_08_verifier_judge_handoff_payload()
+    run = SearchRun.from_dict(payload["run"])
+
+    assert run.recipe_kind == "message_passing_verifier_judge_handoff"
+    assert len(payload["verifier_outcome"]["assessment_ids"]) == 2
+    assert len(payload["judge_outcome"]["assessment_ids"]) == 1
+    assert payload["judge_outcome"]["selected_candidate_id"] == payload["adjudicated_candidate_id"]
+    assert payload["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_09_optimize_objective_breakdown_probe_stays_adapter_local() -> None:
+    example = build_post_v2_study_09_optimize_objective_breakdown_probe()
+    result = example["objective_breakdown_result"]
+
+    assert isinstance(result, ObjectiveBreakdownResult)
+    assert result.candidate_id == example["selected_candidate_id"]
+    assert result.metadata["outside_dag_kernel"] is True
+    assert example["adapter_boundary"]["outside_dag_kernel"] is True
+    assert example["adapter_boundary"]["introduced_optimize_public_nouns_into_dag"] is False
+    assert example["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_09_optimize_objective_breakdown_probe_payload_round_trips() -> None:
+    payload = build_post_v2_study_09_optimize_objective_breakdown_probe_payload()
+    run = SearchRun.from_dict(payload["run"])
+    result = ObjectiveBreakdownResult.from_dict(payload["objective_breakdown_result"])
+
+    assert run.selected_candidate_id == payload["selected_candidate_id"]
+    assert result.candidate_id == payload["selected_candidate_id"]
+    assert payload["adapter_boundary"]["used_real_optimize_records"] is True
+    assert payload["evidence"]["future_v3_evidence"] is False
+
+
+def test_post_v2_study_10_optimize_benchmark_promotion_probe_stays_adapter_local() -> None:
+    example = build_post_v2_study_10_optimize_benchmark_promotion_probe()
+    manifest = example["benchmark_manifest"]
+    summary = example["promotion_summary"]
+
+    assert isinstance(manifest, BenchmarkRunManifest)
+    assert isinstance(summary, PromotionEvidenceSummary)
+    assert summary.candidate_id == example["selected_candidate_id"]
+    assert manifest.hidden_hold_sample_ids() == ["sample.verifier_judge_handoff.hidden"]
+    assert example["adapter_boundary"]["promotion_logic_stayed_adapter_local"] is True
+    assert example["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_10_optimize_benchmark_promotion_probe_payload_round_trips() -> None:
+    payload = build_post_v2_study_10_optimize_benchmark_promotion_probe_payload()
+    manifest = BenchmarkRunManifest.from_dict(payload["benchmark_manifest"])
+    summary = PromotionEvidenceSummary.from_dict(payload["promotion_summary"])
+
+    assert manifest.hidden_hold_sample_ids() == ["sample.verifier_judge_handoff.hidden"]
+    assert summary.candidate_id == payload["selected_candidate_id"]
+    assert payload["adapter_boundary"]["used_real_optimize_records"] is True
+    assert payload["evidence"]["future_v3_evidence"] is False
