@@ -69,6 +69,10 @@ from .examples import (
     build_post_v2_study_13_multi_candidate_tournament_payload,
     build_post_v2_study_14_optimize_transfer_cohort_probe,
     build_post_v2_study_14_optimize_transfer_cohort_probe_payload,
+    build_post_v2_study_15_reducer_after_tournament,
+    build_post_v2_study_15_reducer_after_tournament_payload,
+    build_post_v2_study_16_optimize_reflection_probe,
+    build_post_v2_study_16_optimize_reflection_probe_payload,
     build_verifier_guided_pressure_cell,
 )
 from .export import (
@@ -203,6 +207,10 @@ __all__ = [
     "build_post_v2_study_13_multi_candidate_tournament_payload",
     "build_post_v2_study_14_optimize_transfer_cohort_probe",
     "build_post_v2_study_14_optimize_transfer_cohort_probe_payload",
+    "build_post_v2_study_15_reducer_after_tournament",
+    "build_post_v2_study_15_reducer_after_tournament_payload",
+    "build_post_v2_study_16_optimize_reflection_probe",
+    "build_post_v2_study_16_optimize_reflection_probe_payload",
     "build_verifier_guided_pressure_cell",
     "export_search_trajectory",
     "run_barriered_assessment_gate",

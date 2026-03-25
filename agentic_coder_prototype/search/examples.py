@@ -8,6 +8,8 @@ from agentic_coder_prototype.optimize import (
     CandidateComparisonResult,
     ObjectiveBreakdownResult,
     PromotionEvidenceSummary,
+    ReflectionDecision,
+    ReflectionFinding,
     TransferCohortManifest,
     TransferSliceManifest,
     build_paired_candidate_comparison,
@@ -2853,6 +2855,229 @@ def build_post_v2_study_14_optimize_transfer_cohort_probe_payload() -> Dict[str,
         "transfer_cohort": example["transfer_cohort"].to_dict(),
         "promotion_summary": example["promotion_summary"].to_dict(),
         "selected_candidate_id": example["selected_candidate_id"],
+        "adapter_boundary": dict(example["adapter_boundary"]),
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }
+
+
+def build_post_v2_study_15_reducer_after_tournament() -> Dict[str, object]:
+    study = build_post_v2_study_13_multi_candidate_tournament()
+    run = study["run"]
+    winner = next(item for item in run.candidates if item.candidate_id == run.selected_candidate_id)
+    runner_up = next(item for item in run.candidates if item.candidate_id == study["incumbent_candidate_id"])
+    compaction_registry: SearchCompactionRegistry = build_default_search_compaction_registry()
+    message, carry_state = compaction_registry.compact(
+        backend_kind="bounded_candidate_rollup.v1",
+        search_id=run.search_id,
+        carry_state_id=f"{run.search_id}.carry.reducer_after_tournament",
+        message_id=f"{run.search_id}.msg.reducer_after_tournament",
+        candidates=[winner, runner_up],
+        metadata={"study_id": "study_15_reducer_after_tournament", "phase": "post_v2_continuation"},
+    )
+    compaction_event = SearchEvent(
+        event_id=f"{run.search_id}.event.compact.reducer_after_tournament",
+        search_id=run.search_id,
+        frontier_id=winner.frontier_id,
+        round_index=winner.round_index,
+        operator_kind="compact",
+        input_candidate_ids=[winner.candidate_id, runner_up.candidate_id],
+        message_ids=[message.message_id],
+        metadata={"study_id": "study_15_reducer_after_tournament", "carry_state_id": carry_state.state_id},
+    )
+    reducer_candidate = SearchCandidate(
+        candidate_id=f"{run.search_id}.cand.reducer_after_tournament",
+        search_id=run.search_id,
+        frontier_id=winner.frontier_id,
+        parent_ids=[winner.candidate_id, runner_up.candidate_id],
+        round_index=winner.round_index,
+        depth=max(winner.depth, runner_up.depth) + 1,
+        payload_ref=f"artifacts/search/{run.search_id}/reducer_after_tournament_candidate.json",
+        workspace_ref=winner.workspace_ref,
+        message_ref=message.message_id,
+        score_vector={"correctness_score": 0.96, "coherence_score": 0.93},
+        usage={"prompt_tokens": 91, "completion_tokens": 44},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{run.search_id}/reducer_after_tournament_candidate.md",
+        metadata={"study_id": "study_15_reducer_after_tournament", "carry_state_id": carry_state.state_id},
+    )
+    aggregate_event = SearchEvent(
+        event_id=f"{run.search_id}.event.aggregate.reducer_after_tournament",
+        search_id=run.search_id,
+        frontier_id=winner.frontier_id,
+        round_index=winner.round_index,
+        operator_kind="aggregate",
+        input_candidate_ids=[winner.candidate_id, runner_up.candidate_id],
+        output_candidate_ids=[reducer_candidate.candidate_id],
+        message_ids=[message.message_id],
+        metadata={"study_id": "study_15_reducer_after_tournament"},
+    )
+    study_run = SearchRun(
+        search_id=run.search_id,
+        recipe_kind="reducer_after_tournament_pressure_pass",
+        candidates=[*run.candidates, reducer_candidate],
+        frontiers=list(run.frontiers),
+        events=[*run.events, compaction_event, aggregate_event],
+        messages=[*run.messages, message],
+        carry_states=[*run.carry_states, carry_state],
+        assessments=list(run.assessments),
+        workspace_snapshots=list(run.workspace_snapshots),
+        branch_states=list(run.branch_states),
+        metrics=run.metrics,
+        selected_candidate_id=run.selected_candidate_id,
+        metadata={**dict(run.metadata), "study_id": "study_15_reducer_after_tournament"},
+    )
+    gate_config = AssessmentGateConfig(
+        backend_kind="exact_tests.v1",
+        mode="require_before_select",
+        max_assessments=2,
+        required_verdicts=["pass"],
+        metadata={"study_id": "study_15_reducer_after_tournament", "phase": "post_v2_continuation"},
+    )
+    outcome = run_barriered_assessment_gate(
+        run=study_run,
+        registry=build_default_search_assessment_registry(),
+        config=gate_config,
+        frontier_candidates=[reducer_candidate, winner],
+    )
+    final_events = [*study_run.events, outcome.gate_event]
+    if outcome.selection_event is not None:
+        final_events.append(outcome.selection_event)
+    final_run = SearchRun(
+        search_id=study_run.search_id,
+        recipe_kind=study_run.recipe_kind,
+        candidates=list(study_run.candidates),
+        frontiers=list(study_run.frontiers),
+        events=final_events,
+        messages=list(study_run.messages),
+        carry_states=list(study_run.carry_states),
+        assessments=[*study_run.assessments, *outcome.assessments],
+        workspace_snapshots=list(study_run.workspace_snapshots),
+        branch_states=list(study_run.branch_states),
+        metrics=study_run.metrics,
+        selected_candidate_id=outcome.selected_candidate_id,
+        metadata={
+            **dict(study_run.metadata),
+            "carry_state_id": carry_state.state_id,
+            "terminated": outcome.terminated,
+        },
+    )
+    evidence = {
+        "easy": [
+            "tournament-style narrowing plus reducer synthesis still fits existing DAG V2 surfaces",
+            "carry-state and exact verifier truth remain explicit after tournament selection",
+            "no reducer-control primitive was needed",
+        ],
+        "awkward": [
+            "higher-level reducer narratives remain helper/reporting concerns outside the kernel",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "private_helper_level",
+    }
+    return {
+        "run": final_run,
+        "gate_config": gate_config,
+        "outcome": outcome,
+        "carry_state_id": carry_state.state_id,
+        "reducer_candidate_id": reducer_candidate.candidate_id,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_15_reducer_after_tournament_payload() -> Dict[str, object]:
+    example = build_post_v2_study_15_reducer_after_tournament()
+    return {
+        "run": example["run"].to_dict(),
+        "gate_config": {
+            "backend_kind": example["gate_config"].backend_kind,
+            "mode": example["gate_config"].mode,
+            "max_assessments": example["gate_config"].max_assessments,
+            "required_verdicts": list(example["gate_config"].required_verdicts),
+            "metadata": dict(example["gate_config"].metadata),
+        },
+        "outcome": {
+            "selected_candidate_id": example["outcome"].selected_candidate_id,
+            "assessment_ids": [item.assessment_id for item in example["outcome"].assessments],
+        },
+        "carry_state_id": example["carry_state_id"],
+        "reducer_candidate_id": example["reducer_candidate_id"],
+        "evidence": {
+            "easy": list(example["evidence"]["easy"]),
+            "awkward": list(example["evidence"]["awkward"]),
+            "impossible": list(example["evidence"]["impossible"]),
+            "repeated_shape": example["evidence"]["repeated_shape"],
+            "future_v3_evidence": example["evidence"]["future_v3_evidence"],
+            "owner_boundary": example["evidence"]["owner_boundary"],
+        },
+    }
+
+
+def build_post_v2_study_16_optimize_reflection_probe() -> Dict[str, object]:
+    study = build_post_v2_study_15_reducer_after_tournament()
+    run = study["run"]
+    target_candidate_id = next(
+        item.candidate_id for item in run.candidates if item.candidate_id.endswith(".cand.branch.risky_patch")
+    )
+    findings = [
+        ReflectionFinding(
+            wrongness_id="wrongness.dag.study16.risky_patch",
+            wrongness_class="coherence_failure",
+            failure_locus="branch_reasoning",
+            suggested_repair_locus="carry_state_summary",
+            confidence=0.81,
+            metadata={"source": "dag_post_v2_study_16", "outside_dag_kernel": True},
+        )
+    ]
+    decision = ReflectionDecision(
+        decision_id="decision.dag.study16",
+        target_candidate_id=target_candidate_id,
+        should_mutate=True,
+        recommended_loci=["carry_state_summary"],
+        findings=findings,
+        metadata={"source": "dag_post_v2_study_16", "outside_dag_kernel": True},
+    )
+    adapter_boundary = {
+        "outside_dag_kernel": True,
+        "introduced_optimize_public_nouns_into_dag": False,
+        "used_real_optimize_records": True,
+        "reflection_logic_stayed_adapter_local": True,
+    }
+    evidence = {
+        "easy": [
+            "real optimize reflection decisions can be derived from DAG assessment evidence without mutating the DAG kernel",
+            "wrongness and repair-locus semantics remain optimize-side",
+        ],
+        "awkward": [
+            "adapter-side failure-locus naming remains a consumer convention",
+        ],
+        "impossible": [],
+        "repeated_shape": False,
+        "future_v3_evidence": False,
+        "owner_boundary": "adapter_level",
+    }
+    return {
+        "run": run,
+        "reflection_decision": decision,
+        "target_candidate_id": target_candidate_id,
+        "adapter_boundary": adapter_boundary,
+        "evidence": evidence,
+    }
+
+
+def build_post_v2_study_16_optimize_reflection_probe_payload() -> Dict[str, object]:
+    example = build_post_v2_study_16_optimize_reflection_probe()
+    return {
+        "run": example["run"].to_dict(),
+        "reflection_decision": example["reflection_decision"].to_dict(),
+        "target_candidate_id": example["target_candidate_id"],
         "adapter_boundary": dict(example["adapter_boundary"]),
         "evidence": {
             "easy": list(example["evidence"]["easy"]),

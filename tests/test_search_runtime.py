@@ -5,6 +5,7 @@ from agentic_coder_prototype.optimize import (
     CandidateComparisonResult,
     ObjectiveBreakdownResult,
     PromotionEvidenceSummary,
+    ReflectionDecision,
     TransferCohortManifest,
 )
 from agentic_coder_prototype.search import (
@@ -67,6 +68,10 @@ from agentic_coder_prototype.search import (
     build_post_v2_study_13_multi_candidate_tournament_payload,
     build_post_v2_study_14_optimize_transfer_cohort_probe,
     build_post_v2_study_14_optimize_transfer_cohort_probe_payload,
+    build_post_v2_study_15_reducer_after_tournament,
+    build_post_v2_study_15_reducer_after_tournament_payload,
+    build_post_v2_study_16_optimize_reflection_probe,
+    build_post_v2_study_16_optimize_reflection_probe_payload,
     SearchRun,
     SearchTrajectoryExport,
     SearchWorkspaceSnapshot,
@@ -830,5 +835,49 @@ def test_post_v2_study_14_optimize_transfer_cohort_probe_payload_round_trips() -
 
     assert summary.claim_tier == "cohort_supported"
     assert cohort.cohort_id in summary.transfer_cohort_ids
+    assert payload["adapter_boundary"]["used_real_optimize_records"] is True
+    assert payload["evidence"]["future_v3_evidence"] is False
+
+
+def test_post_v2_study_15_reducer_after_tournament_stays_narrow() -> None:
+    example = build_post_v2_study_15_reducer_after_tournament()
+    run = example["run"]
+
+    assert run.recipe_kind == "reducer_after_tournament_pressure_pass"
+    assert run.selected_candidate_id == example["reducer_candidate_id"]
+    assert example["carry_state_id"] == run.metadata["carry_state_id"]
+    assert len(example["outcome"].assessments) == 2
+    assert example["evidence"]["future_v3_evidence"] is False
+    assert example["evidence"]["owner_boundary"] == "private_helper_level"
+
+
+def test_post_v2_study_15_reducer_after_tournament_payload_round_trips() -> None:
+    payload = build_post_v2_study_15_reducer_after_tournament_payload()
+    run = SearchRun.from_dict(payload["run"])
+
+    assert run.recipe_kind == "reducer_after_tournament_pressure_pass"
+    assert payload["outcome"]["selected_candidate_id"] == payload["reducer_candidate_id"]
+    assert len(payload["outcome"]["assessment_ids"]) == 2
+    assert payload["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_16_optimize_reflection_probe_stays_adapter_local() -> None:
+    example = build_post_v2_study_16_optimize_reflection_probe()
+    decision = example["reflection_decision"]
+
+    assert isinstance(decision, ReflectionDecision)
+    assert decision.target_candidate_id == example["target_candidate_id"]
+    assert decision.should_mutate is True
+    assert decision.recommended_loci == ["carry_state_summary"]
+    assert example["adapter_boundary"]["reflection_logic_stayed_adapter_local"] is True
+    assert example["evidence"]["repeated_shape"] is False
+
+
+def test_post_v2_study_16_optimize_reflection_probe_payload_round_trips() -> None:
+    payload = build_post_v2_study_16_optimize_reflection_probe_payload()
+    decision = ReflectionDecision.from_dict(payload["reflection_decision"])
+
+    assert decision.target_candidate_id == payload["target_candidate_id"]
+    assert decision.should_mutate is True
     assert payload["adapter_boundary"]["used_real_optimize_records"] is True
     assert payload["evidence"]["future_v3_evidence"] is False
