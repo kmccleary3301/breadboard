@@ -22,6 +22,14 @@ from agentic_coder_prototype.optimize import (
 from .assessment import SearchAssessmentRegistry, build_default_search_assessment_registry
 from .compaction import SearchCompactionRegistry, build_default_search_compaction_registry
 from .export import build_search_offline_dataset, export_search_trajectory
+from .fidelity import (
+    BaselineComparisonPacket,
+    ComputeBudgetLedger,
+    PaperRecipeManifest,
+    ReplicationDeviationLedger,
+    build_default_fidelity_scorecard,
+    compute_fidelity_metrics,
+)
 from .runtime import (
     AggregationProposal,
     AssessmentGateConfig,
@@ -3326,4 +3334,294 @@ def build_post_v2_study_18_optimize_mutation_proposal_probe_payload() -> Dict[st
             "future_v3_evidence": example["evidence"]["future_v3_evidence"],
             "owner_boundary": example["evidence"]["owner_boundary"],
         },
+    }
+
+
+def build_dag_v3_rsa_paper_profile() -> Dict[str, object]:
+    example = build_rsa_search_runtime_example()
+    run = example["run"]
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_v3.rsa.profile.v1",
+        paper_key="rsa_recursive_self_aggregation",
+        paper_title="Recursive Self-Aggregation Unlocks Deep Thinking in Large Language Models",
+        family_kind="aggregation_search",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="medium_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="rsa.smoke.reasoning_slice.v1",
+        control_profile={
+            "population_size": example["config"].population_size,
+            "subset_size": example["config"].subset_size,
+            "max_rounds": example["config"].max_rounds,
+            "sweep_axes": ["N", "K", "T"],
+        },
+        baseline_ids=["self_refinement", "majority_voting", "rejection_sampling"],
+        metadata={"phase": "dag_v3_phase1", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_v3.rsa.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="medium_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="partial",
+        compute_fidelity="normalized",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "algorithm-faithful, model-substituted, inference-only",
+            "runtime_surface_change_required": False,
+        },
+        metadata={"phase": "dag_v3_phase1"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_v3.rsa.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        normalization_rule="trajectory_count_matched",
+        entries=[
+            {
+                "entry_id": "rsa.prompt_tokens",
+                "kind": "prompt_tokens",
+                "label": "prompt_tokens",
+                "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates),
+                "unit": "tokens",
+            },
+            {
+                "entry_id": "rsa.completion_tokens",
+                "kind": "completion_tokens",
+                "label": "completion_tokens",
+                "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates),
+                "unit": "tokens",
+            },
+            {
+                "entry_id": "rsa.rounds",
+                "kind": "rounds",
+                "label": "rounds",
+                "quantity": float(example["config"].max_rounds),
+                "unit": "rounds",
+            },
+            {
+                "entry_id": "rsa.population",
+                "kind": "population_size",
+                "label": "population_size",
+                "quantity": float(example["config"].population_size),
+                "unit": "candidates",
+            },
+        ],
+        metadata={"phase": "dag_v3_phase1"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_v3.rsa.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="trajectory_count_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "dag_v3_phase1"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_v3.rsa.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {
+                "deviation_id": "rsa.dev.01",
+                "severity": "medium",
+                "summary": "Uses GPT-5.4 Mini as a model-substituted inference-only smoke profile rather than the paper's native training setup.",
+            },
+            {
+                "deviation_id": "rsa.dev.02",
+                "severity": "low",
+                "summary": "Current smoke packet demonstrates exact control-profile fields but not the full N/K/T sweep grid yet.",
+            },
+        ],
+        metadata={"phase": "dag_v3_phase1"},
+    )
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "metrics": compute_fidelity_metrics(run),
+        "smoke_packet": {
+            "search_id": run.search_id,
+            "selected_candidate_id": run.selected_candidate_id,
+            "model_tier": "gpt_5_4_mini",
+            "paper_label": "algorithm-faithful, model-substituted, inference-only",
+        },
+        "run": run,
+    }
+
+
+def build_dag_v3_rsa_paper_profile_payload() -> Dict[str, object]:
+    example = build_dag_v3_rsa_paper_profile()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "metrics": dict(example["metrics"]),
+        "smoke_packet": dict(example["smoke_packet"]),
+        "run": example["run"].to_dict(),
+    }
+
+
+def build_dag_v3_pacore_paper_profile() -> Dict[str, object]:
+    example = build_pacore_search_runtime_example()
+    run = example["run"]
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_v3.pacore.profile.v1",
+        paper_key="pacore_parallel_coordinated_reasoning",
+        paper_title="PaCoRe: Learning to Scale Test-Time Compute with Parallel Coordinated Reasoning",
+        family_kind="message_passing_search",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="medium_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="pacore.smoke.reasoning_slice.v1",
+        control_profile={
+            "population_size": example["config"].population_size,
+            "subset_size": example["config"].subset_size,
+            "max_rounds": example["config"].max_rounds,
+            "compaction_backend_kind": example["config"].compaction_backend_kind,
+            "round_geometry": "barriered_message_passing",
+        },
+        baseline_ids=["parallel_no_messages", "sequential_rollout", "generic_reducer"],
+        metadata={"phase": "dag_v3_phase1", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_v3.pacore.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="medium_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="partial",
+        compute_fidelity="normalized",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "algorithm-faithful, model-substituted, inference-only",
+            "runtime_surface_change_required": False,
+            "compaction_requirement": "explicit and auditable",
+        },
+        metadata={"phase": "dag_v3_phase1"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_v3.pacore.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        normalization_rule="round_count_and_population_matched",
+        entries=[
+            {
+                "entry_id": "pacore.prompt_tokens",
+                "kind": "prompt_tokens",
+                "label": "prompt_tokens",
+                "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates),
+                "unit": "tokens",
+            },
+            {
+                "entry_id": "pacore.completion_tokens",
+                "kind": "completion_tokens",
+                "label": "completion_tokens",
+                "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates),
+                "unit": "tokens",
+            },
+            {
+                "entry_id": "pacore.messages",
+                "kind": "message_count",
+                "label": "message_count",
+                "quantity": float(len(run.messages)),
+                "unit": "messages",
+            },
+            {
+                "entry_id": "pacore.rounds",
+                "kind": "rounds",
+                "label": "rounds",
+                "quantity": float(example["config"].max_rounds),
+                "unit": "rounds",
+            },
+        ],
+        metadata={"phase": "dag_v3_phase1"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_v3.pacore.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="round_count_and_population_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "dag_v3_phase1"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_v3.pacore.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {
+                "deviation_id": "pacore.dev.01",
+                "severity": "medium",
+                "summary": "Uses bounded BreadBoard message-passing on GPT-5.4 Mini rather than the paper's native training-aware setup.",
+            },
+            {
+                "deviation_id": "pacore.dev.02",
+                "severity": "low",
+                "summary": "Current smoke packet captures explicit round geometry and compaction backend but not the full low/med/high round ablation grid yet.",
+            },
+        ],
+        metadata={"phase": "dag_v3_phase1"},
+    )
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "metrics": compute_fidelity_metrics(run),
+        "smoke_packet": {
+            "search_id": run.search_id,
+            "selected_candidate_id": run.selected_candidate_id,
+            "model_tier": "gpt_5_4_mini",
+            "paper_label": "algorithm-faithful, model-substituted, inference-only",
+        },
+        "run": run,
+    }
+
+
+def build_dag_v3_pacore_paper_profile_payload() -> Dict[str, object]:
+    example = build_dag_v3_pacore_paper_profile()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "metrics": dict(example["metrics"]),
+        "smoke_packet": dict(example["smoke_packet"]),
+        "run": example["run"].to_dict(),
+    }
+
+
+def build_dag_v3_phase1_smoke_packet() -> Dict[str, object]:
+    rsa = build_dag_v3_rsa_paper_profile()
+    pacore = build_dag_v3_pacore_paper_profile()
+    return {
+        "kernel_change_required": False,
+        "paper_profiles": [rsa["recipe_manifest"], pacore["recipe_manifest"]],
+        "scorecards": [rsa["scorecard"], pacore["scorecard"]],
+        "compute_ledgers": [rsa["compute_ledger"], pacore["compute_ledger"]],
+        "smoke_packets": [rsa["smoke_packet"], pacore["smoke_packet"]],
+        "shared_metric_snapshot": {
+            "rsa": dict(rsa["metrics"]),
+            "pacore": dict(pacore["metrics"]),
+        },
+        "metadata": {
+            "phase": "dag_v3_phase1",
+            "frozen_kernel": True,
+            "model_tier_default": "gpt_5_4_mini",
+        },
+    }
+
+
+def build_dag_v3_phase1_smoke_packet_payload() -> Dict[str, object]:
+    example = build_dag_v3_phase1_smoke_packet()
+    return {
+        "kernel_change_required": example["kernel_change_required"],
+        "paper_profiles": [item.to_dict() for item in example["paper_profiles"]],
+        "scorecards": [item.to_dict() for item in example["scorecards"]],
+        "compute_ledgers": [item.to_dict() for item in example["compute_ledgers"]],
+        "smoke_packets": [dict(item) for item in example["smoke_packets"]],
+        "shared_metric_snapshot": dict(example["shared_metric_snapshot"]),
+        "metadata": dict(example["metadata"]),
     }

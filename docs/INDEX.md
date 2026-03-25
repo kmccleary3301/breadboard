@@ -114,6 +114,7 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [concepts/dag-runtime-v2-darwin-boundary.md](concepts/dag-runtime-v2-darwin-boundary.md) | DAG Runtime V2 DARWIN boundary memo: bounded per-task search stays in DAG while campaign/archive pressure remains outside it |
 | [concepts/dag-runtime-v2-rl-facing-note.md](concepts/dag-runtime-v2-rl-facing-note.md) | DAG Runtime V2 RL-facing note: exported assessment-bearing search truth is usable for downstream RL-adjacent studies without turning the runtime into a training framework |
 | [concepts/dag-runtime-v2-stop-go-synthesis.md](concepts/dag-runtime-v2-stop-go-synthesis.md) | DAG Runtime V2 stop/go synthesis: V2 stops with the assessment layer and should stay frozen unless repeated evidence forces another public shape |
+| [concepts/dag-runtime-v3-fidelity-helper-layer.md](concepts/dag-runtime-v3-fidelity-helper-layer.md) | DAG Runtime V3 helper layer: paper recipe manifests, fidelity scorecards, compute ledgers, and deviation tracking on top of a frozen DAG V2 kernel |
 
 ### Governance and change policy
 

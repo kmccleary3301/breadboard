@@ -10,6 +10,11 @@ from agentic_coder_prototype.optimize import (
     TransferCohortManifest,
 )
 from agentic_coder_prototype.search import (
+    BaselineComparisonPacket,
+    ComputeBudgetLedger,
+    FidelityScorecard,
+    PaperRecipeManifest,
+    ReplicationDeviationLedger,
     SearchOfflineDataset,
     SearchAssessment,
     SearchBranchState,
@@ -41,6 +46,12 @@ from agentic_coder_prototype.search import (
     build_judge_reduce_gate_example_payload,
     build_pacore_search_runtime_example,
     build_pacore_search_runtime_example_payload,
+    build_dag_v3_pacore_paper_profile,
+    build_dag_v3_pacore_paper_profile_payload,
+    build_dag_v3_phase1_smoke_packet,
+    build_dag_v3_phase1_smoke_packet_payload,
+    build_dag_v3_rsa_paper_profile,
+    build_dag_v3_rsa_paper_profile_payload,
     build_post_v2_study_01_verifier_patch_branch,
     build_post_v2_study_01_verifier_patch_branch_payload,
     build_post_v2_study_02_judge_reducer_rounds,
@@ -89,6 +100,7 @@ from agentic_coder_prototype.search import (
     build_typed_compaction_registry_example,
     build_typed_compaction_registry_example_payload,
     build_verifier_guided_pressure_cell,
+    compute_fidelity_metrics,
     export_search_trajectory,
 )
 
@@ -265,6 +277,100 @@ def test_pacore_search_runtime_example_is_bounded_and_replayable() -> None:
     assert run.candidates[-1].message_ref == run.carry_states[-1].message_ids[0]
     assert run.metrics is not None
     assert run.metrics.mixing_rate > 0.0
+
+
+def test_dag_v3_fidelity_artifacts_round_trip() -> None:
+    manifest = PaperRecipeManifest(
+        manifest_id="manifest.test",
+        paper_key="paper.test",
+        paper_title="Paper Test",
+        family_kind="aggregation_search",
+        runtime_recipe_kind="rsa_population_recombination",
+        fidelity_target="medium_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="paper.test.slice.v1",
+        control_profile={"population_size": 4},
+        baseline_ids=["baseline_a"],
+    )
+    scorecard = FidelityScorecard(
+        scorecard_id="scorecard.test",
+        paper_key="paper.test",
+        fidelity_label="medium_fidelity",
+        dimensions={"structural_fidelity": "pass"},
+    )
+    ledger = ComputeBudgetLedger(
+        ledger_id="ledger.test",
+        paper_key="paper.test",
+        model_tier="gpt_5_4_mini",
+        entries=[{"entry_id": "entry.test", "kind": "prompt_tokens", "label": "prompt_tokens", "quantity": 12, "unit": "tokens"}],
+        normalization_rule="trajectory_count_matched",
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="baseline.test",
+        paper_key="paper.test",
+        normalization_rule="trajectory_count_matched",
+        baseline_ids=["baseline_a"],
+    )
+    deviations = ReplicationDeviationLedger(
+        ledger_id="deviations.test",
+        paper_key="paper.test",
+        deviations=[{"deviation_id": "dev.test", "severity": "low", "summary": "model substitution"}],
+    )
+
+    assert PaperRecipeManifest.from_dict(manifest.to_dict()) == manifest
+    assert FidelityScorecard.from_dict(scorecard.to_dict()) == scorecard
+    assert ComputeBudgetLedger.from_dict(ledger.to_dict()) == ledger
+    assert BaselineComparisonPacket.from_dict(baseline_packet.to_dict()) == baseline_packet
+    assert ReplicationDeviationLedger.from_dict(deviations.to_dict()) == deviations
+    assert ledger.total_for_unit("tokens") == 12.0
+
+
+def test_dag_v3_rsa_profile_and_smoke_packet_are_non_kernel() -> None:
+    example = build_dag_v3_rsa_paper_profile()
+    payload = build_dag_v3_rsa_paper_profile_payload()
+
+    assert example["recipe_manifest"].paper_key == "rsa_recursive_self_aggregation"
+    assert example["scorecard"].dimensions["structural_fidelity"] == "pass"
+    assert example["compute_ledger"].total_for_unit("tokens") > 0.0
+    assert example["baseline_packet"].normalization_rule == "trajectory_count_matched"
+    assert example["deviation_ledger"].deviations[0]["severity"] in {"medium", "low"}
+    assert example["smoke_packet"]["model_tier"] == "gpt_5_4_mini"
+    assert payload["recipe_manifest"]["runtime_recipe_kind"] == "rsa_population_recombination"
+
+
+def test_dag_v3_pacore_profile_and_smoke_packet_are_non_kernel() -> None:
+    example = build_dag_v3_pacore_paper_profile()
+    payload = build_dag_v3_pacore_paper_profile_payload()
+
+    assert example["recipe_manifest"].paper_key == "pacore_parallel_coordinated_reasoning"
+    assert example["recipe_manifest"].control_profile["compaction_backend_kind"] == "bounded_candidate_rollup.v1"
+    assert example["scorecard"].notes["compaction_requirement"] == "explicit and auditable"
+    assert example["compute_ledger"].total_for_unit("messages") >= 0.0
+    assert payload["recipe_manifest"]["runtime_recipe_kind"] == "pacore_message_passing"
+
+
+def test_dag_v3_phase1_smoke_packet_uses_existing_dag_artifacts() -> None:
+    example = build_dag_v3_phase1_smoke_packet()
+    payload = build_dag_v3_phase1_smoke_packet_payload()
+
+    assert example["kernel_change_required"] is False
+    assert len(example["paper_profiles"]) == 2
+    assert example["metadata"]["frozen_kernel"] is True
+    assert payload["metadata"]["model_tier_default"] == "gpt_5_4_mini"
+    assert "rsa" in payload["shared_metric_snapshot"]
+    assert "pacore" in payload["shared_metric_snapshot"]
+
+
+def test_dag_v3_common_fidelity_metrics_are_reproducible_from_existing_runs() -> None:
+    rsa = build_rsa_search_runtime_example()["run"]
+    pacore = build_pacore_search_runtime_example()["run"]
+    rsa_metrics = compute_fidelity_metrics(rsa)
+    pacore_metrics = compute_fidelity_metrics(pacore)
+
+    assert rsa_metrics["aggregability_gap"] > 0.0
+    assert rsa_metrics["aggregation_gain"] >= 0.0
+    assert pacore_metrics["message_efficiency"] > 0.0
+    assert pacore_metrics["verifier_yield"] >= 0.0
 
 
 def test_pacore_search_runtime_payload_round_trips() -> None:
