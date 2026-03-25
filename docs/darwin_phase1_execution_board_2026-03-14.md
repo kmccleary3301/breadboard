@@ -150,3 +150,6 @@ Date: 2026-03-14
 - policy-stability status: `docs/darwin_stage5_policy_stability_status_2026-03-22.md`
 - policy-stability review: `docs/darwin_stage5_policy_stability_review_2026-03-22.md`
 - policy-stability gate: `docs/darwin_stage5_policy_stability_gate_2026-03-22.md`
+- cross-lane review status: `docs/darwin_stage5_cross_lane_review_status_2026-03-25.md`
+- cross-lane review: `docs/darwin_stage5_cross_lane_review_2026-03-25.md`
+- cross-lane gate: `docs/darwin_stage5_cross_lane_gate_2026-03-25.md`

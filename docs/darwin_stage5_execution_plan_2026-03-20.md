@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Execution Plan
 
 Date: 2026-03-20
-Status: Repo_SWE protocol-refinement slice landed; cross-lane review next
+Status: cross-lane review landed; systems-weighted compounding review next
 Scope: Stage-5 doctrine freeze, economics truth hardening, compounding protocol, family-aware search, and scalable compounding proof
 References:
 - `docs/darwin_stage5_doctrine_2026-03-20.md`
@@ -33,6 +33,9 @@ References:
 - `docs/darwin_stage5_repo_swe_protocol_refinement_status_2026-03-25.md`
 - `docs/darwin_stage5_repo_swe_protocol_refinement_review_2026-03-25.md`
 - `docs/darwin_stage5_repo_swe_protocol_refinement_gate_2026-03-25.md`
+- `docs/darwin_stage5_cross_lane_review_status_2026-03-25.md`
+- `docs/darwin_stage5_cross_lane_review_2026-03-25.md`
+- `docs/darwin_stage5_cross_lane_gate_2026-03-25.md`
 - `docs/darwin_stage4_signoff_2026-03-20.md`
 - `docs/darwin_stage4_completion_gate_2026-03-20.md`
 - `docs/darwin_stage4_future_roadmap_handoff_2026-03-20.md`
