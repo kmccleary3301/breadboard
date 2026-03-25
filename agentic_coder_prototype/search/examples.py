@@ -4343,3 +4343,67 @@ def build_dag_v3_cross_paper_synthesis_packet_payload() -> Dict[str, object]:
         "references": dict(example["references"]),
         "metadata": dict(example["metadata"]),
     }
+
+
+def build_dag_v3_freeze_decision_gate_packet() -> Dict[str, object]:
+    optimize_packet = build_dag_v3_optimize_ready_comparison_packet()
+    rl_packet = build_dag_v3_rl_facing_export_slice_packet()
+    darwin_packet = build_dag_v3_darwin_boundary_update_packet()
+    synthesis = build_dag_v3_cross_paper_synthesis_packet()
+    remaining_pressure = {
+        "dag_kernel": {
+            "status": "frozen",
+            "justification": "No repeated DAG-local public-shape pressure appeared across the replication and composition tranches.",
+        },
+        "recipe_helper": {
+            "status": "active",
+            "next_pressure": "benchmark/evaluator quality and richer paper-faithful helper packets",
+        },
+        "optimize": {
+            "status": "ready",
+            "next_pressure": "optimize can consume replication packets without DAG kernel changes",
+            "packet_id": optimize_packet["packet_id"],
+        },
+        "rl": {
+            "status": "ready_for_resume",
+            "next_pressure": "bounded RL-facing export opportunities are now concrete and claim-labeled",
+            "packet_id": rl_packet["packet_id"],
+        },
+        "darwin": {
+            "status": "still_outside",
+            "next_pressure": "outer-loop orchestration remains a DARWIN concern, not DAG-local runtime pressure",
+            "packet_id": darwin_packet["packet_id"],
+        },
+        "harness_environment": {
+            "status": "active",
+            "next_pressure": "higher-fidelity benchmark and evaluator packets will matter more than new DAG runtime shape",
+        },
+    }
+    freeze_decision = {
+        "current_decision": "freeze_and_reclassify",
+        "open_dag_v4_now": False,
+        "reason": "The remaining work is mostly benchmark/evaluator quality, recipe/helper depth, optimize consumption, and future RL work rather than missing DAG runtime shape.",
+        "evidence": {
+            "optimize_packet_id": optimize_packet["packet_id"],
+            "rl_packet_id": rl_packet["packet_id"],
+            "darwin_packet_id": darwin_packet["packet_id"],
+            "cross_paper_synthesis_id": synthesis["packet_id"],
+            "repeated_dag_local_public_shape_pressure": 0,
+        },
+    }
+    return {
+        "packet_id": "dag_v3.freeze_decision_gate.v1",
+        "remaining_pressure": remaining_pressure,
+        "freeze_decision": freeze_decision,
+        "metadata": {"phase": "dag_v3_phase5", "kernel_change_required": False},
+    }
+
+
+def build_dag_v3_freeze_decision_gate_packet_payload() -> Dict[str, object]:
+    example = build_dag_v3_freeze_decision_gate_packet()
+    return {
+        "packet_id": example["packet_id"],
+        "remaining_pressure": dict(example["remaining_pressure"]),
+        "freeze_decision": dict(example["freeze_decision"]),
+        "metadata": dict(example["metadata"]),
+    }

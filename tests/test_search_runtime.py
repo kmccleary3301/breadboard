@@ -62,6 +62,8 @@ from agentic_coder_prototype.search import (
     build_dag_v3_cross_paper_synthesis_packet_payload,
     build_dag_v3_darwin_boundary_update_packet,
     build_dag_v3_darwin_boundary_update_packet_payload,
+    build_dag_v3_freeze_decision_gate_packet,
+    build_dag_v3_freeze_decision_gate_packet_payload,
     build_dag_v3_optimize_ready_comparison_packet,
     build_dag_v3_optimize_ready_comparison_packet_payload,
     build_dag_v3_phase1_smoke_packet,
@@ -518,6 +520,17 @@ def test_dag_v3_cross_paper_synthesis_packet_classifies_shared_vs_outside_work()
     assert "fidelity helper artifacts instead of kernel expansion" in example["shared"]
     assert "N / K / T sweeps" in example["paper_specific"]["rsa"]
     assert "training-aware replication claims" in example["outside_dag"]
+    assert payload["metadata"]["kernel_change_required"] is False
+
+
+def test_dag_v3_freeze_decision_gate_packet_classifies_remaining_pressure() -> None:
+    example = build_dag_v3_freeze_decision_gate_packet()
+    payload = build_dag_v3_freeze_decision_gate_packet_payload()
+
+    assert example["freeze_decision"]["current_decision"] == "freeze_and_reclassify"
+    assert example["freeze_decision"]["open_dag_v4_now"] is False
+    assert example["remaining_pressure"]["dag_kernel"]["status"] == "frozen"
+    assert example["remaining_pressure"]["rl"]["status"] == "ready_for_resume"
     assert payload["metadata"]["kernel_change_required"] is False
 
 
