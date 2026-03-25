@@ -16,7 +16,7 @@ The repeated multi-lane surface is now summarized into lane-level stability clas
 
 ### 2. What is the main result?
 
-Repo_SWE is unstable again after the denser tightened lane-specific Stage-5 policy. Systems remains mixed-positive and roughly balanced on the latest run.
+Repo_SWE is back to mixed-positive on the latest repeated run. Systems slipped to mixed-negative after the systems-specific stability probe.
 
 ### 3. Does this prove stable scalable compounding?
 
@@ -34,4 +34,4 @@ The report gives a clearer basis for deciding where to keep scaling and where to
 
 The policy-stability slice succeeded.
 
-It does not upgrade Stage 5 into stable scalable compounding. It does provide a more precise reason to keep Repo_SWE on the tightened path without widening it further and to continue bounded multi-lane protocol work with Systems as the steadier lane.
+It does not upgrade Stage 5 into stable scalable compounding. It does provide a more precise reason to stop broadening Systems, keep Stage 5 bounded, and treat Repo_SWE as the lane that currently recovers better under repeated live compounding pressure.

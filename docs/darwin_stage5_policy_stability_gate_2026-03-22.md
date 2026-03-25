@@ -20,8 +20,8 @@ Passed.
 ## What is authorized next
 
 - keep Stage 5 bounded to repeated multi-lane protocol work
-- keep the tightened Repo_SWE selection path in place before any broadening work
-- keep Systems in the same bounded protocol workstream
+- keep Repo_SWE as the stronger current proving lane
+- stop broadening Systems from the current probe result
 - avoid treating the latest lane balance as stable compounding
 
 ## What is not authorized next

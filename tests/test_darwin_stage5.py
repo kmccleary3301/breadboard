@@ -81,6 +81,34 @@ def test_build_stage5_search_policy_v2_supports_systems_family_state() -> None:
     assert policy["family_priors"][0]["source_operator_id"] == "mut.policy.shadow_memory_enable_v1"
 
 
+def test_build_stage5_search_policy_v2_adds_systems_stability_probe() -> None:
+    policy = build_stage5_search_policy_v2(
+        lane_id="lane.systems",
+        budget_class="class_a",
+        family_rows=[
+            {
+                "family_id": "component_family.stage4.policy.policy.shadow_memory_enable_v1.lane.systems.v0",
+                "family_key": "policy.shadow_memory_enable_v1",
+                "family_kind": "policy",
+                "lane_id": "lane.systems",
+                "lifecycle_status": "promoted",
+                "replay_status": "missing",
+                "transfer_eligibility": {"allowed_target_lanes": ["lane.scheduling"]},
+            }
+        ],
+        policy_stability_rows=[
+            {
+                "lane_id": "lane.systems",
+                "policy_review_conclusion": "continue",
+            }
+        ],
+    )
+    assert policy["policy_stability_probe"]["enabled"] is True
+    assert policy["max_mutation_arms"] == 1
+    assert policy["repetition_count"] >= 6
+    assert policy["policy_stability_probe"]["reason"] == "systems_stability_probe_on_promoted_policy_family"
+
+
 def test_select_stage5_search_policy_arms_emits_warm_and_lockout_pairs() -> None:
     policy = build_stage5_search_policy_v2(
         lane_id="lane.repo_swe",
@@ -250,6 +278,73 @@ def test_select_stage5_search_policy_arms_supports_systems() -> None:
     assert "family_lockout" in modes
     warm = next(row for row in selected if row["comparison_mode"] == "warm_start")
     assert warm["operator_id"] == "mut.policy.shadow_memory_enable_v1"
+
+
+def test_select_stage5_search_policy_arms_systems_stability_probe_limits_spillover() -> None:
+    policy = build_stage5_search_policy_v2(
+        lane_id="lane.systems",
+        budget_class="class_a",
+        family_rows=[
+            {
+                "family_id": "component_family.stage4.policy.policy.shadow_memory_enable_v1.lane.systems.v0",
+                "family_key": "policy.shadow_memory_enable_v1",
+                "family_kind": "policy",
+                "lane_id": "lane.systems",
+                "lifecycle_status": "promoted",
+                "replay_status": "missing",
+                "transfer_eligibility": {"allowed_target_lanes": ["lane.scheduling"]},
+            }
+        ],
+        policy_stability_rows=[
+            {
+                "lane_id": "lane.systems",
+                "policy_review_conclusion": "continue",
+            }
+        ],
+    )
+    selected = select_stage5_search_policy_arms(
+        search_policy=policy,
+        candidate_rows=[
+            {
+                "campaign_arm_id": "arm.systems.control.stage5.v0",
+                "lane_id": "lane.systems",
+                "operator_id": "baseline_seed",
+                "topology_id": "policy.topology.single_v0",
+                "policy_bundle_id": "policy.topology.single_v0",
+                "budget_class": "class_a",
+                "control_tag": "control",
+                "task_class": "systems_repair_workspace",
+                "repetition_count": 2,
+            },
+            {
+                "campaign_arm_id": "arm.systems.policy.stage5.v0",
+                "lane_id": "lane.systems",
+                "operator_id": "mut.policy.shadow_memory_enable_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "control_tag": "mutation",
+                "task_class": "systems_repair_workspace",
+                "repetition_count": 2,
+            },
+            {
+                "campaign_arm_id": "arm.systems.topology.stage5.v0",
+                "lane_id": "lane.systems",
+                "operator_id": "mut.topology.single_to_pev_v1",
+                "topology_id": "policy.topology.pev_v0",
+                "policy_bundle_id": "policy.topology.pev_v0",
+                "budget_class": "class_a",
+                "control_tag": "mutation",
+                "task_class": "systems_repair_workspace",
+                "repetition_count": 2,
+            },
+        ],
+    )
+    arm_ids = [row["campaign_arm_id"] for row in selected]
+    assert "arm.systems.control.stage5.v0.cold-start.stage5.v0" in arm_ids
+    assert "arm.systems.policy.stage5.v0.warm-start.stage5.v0" in arm_ids
+    assert "arm.systems.policy.stage5.v0.family-lockout.stage5.v0" in arm_ids
+    assert not any(arm_id.startswith("arm.systems.topology.stage5.v0") for arm_id in arm_ids)
 
 
 def test_build_stage5_compounding_cases_detects_reuse_lift() -> None:

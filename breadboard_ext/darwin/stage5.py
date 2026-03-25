@@ -97,6 +97,12 @@ def build_stage5_search_policy_v2(
     if DEFAULT_STAGE5_FAMILY_REGISTRY.exists():
         family_registry_ref = str(DEFAULT_STAGE5_FAMILY_REGISTRY.relative_to(ROOT))
     tightened_repo_swe = lane_id == "lane.repo_swe" and policy_review_conclusion == "tighten"
+    stability_probe_systems = lane_id == "lane.systems" and policy_review_conclusion == "continue"
+    max_mutation_arms = 1 if (tightened_repo_swe or stability_probe_systems) else 2
+    repetition_count = max(
+        int(base_policy["repetition_count"]),
+        8 if tightened_repo_swe else 6 if stability_probe_systems else 4,
+    )
     payload = {
         "schema": "breadboard.darwin.stage5.search_policy.v2",
         "policy_id": f"darwin.stage5.search_policy.{lane_id.split('.')[-1]}.v2",
@@ -105,8 +111,8 @@ def build_stage5_search_policy_v2(
         "campaign_class": "C1 Discovery",
         "worker_route_id": base_policy["worker_route_id"],
         "filter_route_id": base_policy["filter_route_id"],
-        "max_mutation_arms": 1 if tightened_repo_swe else 2,
-        "repetition_count": max(int(base_policy["repetition_count"]), 8 if tightened_repo_swe else 4),
+        "max_mutation_arms": max_mutation_arms,
+        "repetition_count": repetition_count,
         "operator_priors": list(base_policy["operator_priors"]),
         "topology_priors": list(base_policy["topology_priors"]),
         "family_priors": family_priors,
@@ -132,8 +138,14 @@ def build_stage5_search_policy_v2(
         "policy_tightening": {
             "enabled": tightened_repo_swe,
             "lane_review_conclusion": policy_review_conclusion,
-            "repetition_count": max(int(base_policy["repetition_count"]), 8 if tightened_repo_swe else 4),
+            "repetition_count": repetition_count,
             "reason": "repo_swe_stability_requires_tighter_selection" if tightened_repo_swe else "not_required",
+        },
+        "policy_stability_probe": {
+            "enabled": stability_probe_systems,
+            "lane_review_conclusion": policy_review_conclusion,
+            "repetition_count": repetition_count,
+            "reason": "systems_stability_probe_on_promoted_policy_family" if stability_probe_systems else "not_required",
         },
         "abort_thresholds": {
             "matched_budget_invalidity_rate_gt": 0.25,
@@ -220,7 +232,11 @@ def select_stage5_search_policy_arms(
     )
     policy_tightening = search_policy.get("policy_tightening")
     tightened_repo_swe = bool(policy_tightening.get("enabled")) if isinstance(policy_tightening, Mapping) else False
+    policy_stability_probe = search_policy.get("policy_stability_probe")
+    stability_probe_systems = bool(policy_stability_probe.get("enabled")) if isinstance(policy_stability_probe, Mapping) else False
     if tightened_repo_swe and lane_id == "lane.repo_swe":
+        max_mutation_arms = min(max_mutation_arms or 1, 1)
+    if stability_probe_systems and lane_id == "lane.systems":
         max_mutation_arms = min(max_mutation_arms or 1, 1)
     for row in ranked_rows[:max_mutation_arms or 0]:
         if str(row.get("operator_id") or "") in family_operator_ids:

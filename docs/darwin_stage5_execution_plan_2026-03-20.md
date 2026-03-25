@@ -228,7 +228,7 @@ Hard gate:
 ### Epic 5 — Family-aware search
 
 - Repo_SWE primary proving, with tightened selection after policy-stability review
-- Systems follow-on proving
+- Systems follow-on proving, with bounded stability probing only
 - Harness controls
 - Scheduling confirmation
 
