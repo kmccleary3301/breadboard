@@ -119,6 +119,7 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [concepts/dag-runtime-v3-pacore-replication-packet.md](concepts/dag-runtime-v3-pacore-replication-packet.md) | DAG Runtime V3 PaCoRe tranche: explicit round profiles, compaction baselines, message-passing ablations, and bounded coding-transfer follow-on without kernel growth |
 | [concepts/dag-runtime-v3-cross-paper-composition.md](concepts/dag-runtime-v3-cross-paper-composition.md) | DAG Runtime V3 cross-paper composition: optimize-ready comparison packets, bounded RL-facing export slices, DARWIN boundary updates, and synthesis without kernel growth |
 | [concepts/dag-runtime-v3-freeze-and-decision-gate.md](concepts/dag-runtime-v3-freeze-and-decision-gate.md) | DAG Runtime V3 closeout: freeze-and-reclassify decision gate that keeps the kernel frozen and pushes remaining pressure to helper, optimize, RL, evaluator, and DARWIN-adjacent layers |
+| [concepts/rl-training-primitives-v1-boundary-and-contract-pack.md](concepts/rl-training-primitives-v1-boundary-and-contract-pack.md) | RL Training Primitives V1 first tranche: overlay-only boundary doctrine, explicit supersession of shallow linear trajectory surfaces, and the initial graph-native contract pack |
 
 ### Governance and change policy
 
