@@ -20,6 +20,7 @@ DEFAULT_STAGE4_DIRECT_WORKER_ROUTE = "openai/gpt-5.4-mini"
 DEFAULT_STAGE4_DIRECT_FILTER_ROUTE = "openai/gpt-5.4-nano"
 DEFAULT_STAGE4_DIRECT_STRONG_ROUTE = "openai/gpt-5.4"
 DEFAULT_STAGE4_OPENROUTER_TIMEOUT_S = 15
+DEFAULT_STAGE4_OPENAI_TIMEOUT_S = 30
 
 _ROUTE_PROFILES = {
     DEFAULT_STAGE4_WORKER_ROUTE: {
@@ -596,7 +597,11 @@ def _perform_stage4_live_call(
 ) -> dict[str, Any]:
     route_id = str(route["route_id"])
     provider_model = str(route["provider_model"])
-    request_timeout_s = min(int(timeout_s), DEFAULT_STAGE4_OPENROUTER_TIMEOUT_S) if route_id.startswith("openrouter/") else int(timeout_s)
+    if route_id.startswith("openrouter/"):
+        request_timeout_s = min(int(timeout_s), DEFAULT_STAGE4_OPENROUTER_TIMEOUT_S)
+    else:
+        openai_timeout_s = int(os.environ.get("DARWIN_STAGE4_OPENAI_TIMEOUT_S") or DEFAULT_STAGE4_OPENAI_TIMEOUT_S)
+        request_timeout_s = min(int(timeout_s), openai_timeout_s)
     if route_id.startswith("openrouter/"):
         api_key = os.environ["OPENROUTER_API_KEY"]
         endpoint = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/chat/completions")
@@ -731,6 +736,75 @@ def execute_stage4_provider_prompt(
         }
     fallback_reason = None
     fallback_route = None
+    if str(route["route_id"]).startswith("openrouter/") and not os.environ.get("OPENROUTER_API_KEY"):
+        fallback_route = _resolve_stage4_fallback_route(str(route["route_id"]), task_class=task_class)
+        fallback_reason = "openrouter_key_missing"
+        if fallback_route is None:
+            return {
+                **route,
+                "requested_route_id": requested_route_id,
+                "requested_provider_model": requested_provider_model,
+                "requested_provider_origin": requested_provider_origin,
+                "provider_origin": requested_provider_origin,
+                "fallback_reason": fallback_reason,
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                "cost_estimate": 0.0,
+                "cost_source": "scaffold_placeholder",
+                "response_text": "",
+                "response_id": None,
+                "claim_ineligible_reason": "execution_mode_not_live",
+                "live_block_reason": "openrouter_key_missing_no_fallback",
+            }
+        live_call = _perform_stage4_live_call(
+            route=fallback_route,
+            prompt=prompt,
+            max_output_tokens=max_output_tokens,
+        )
+        live_route = fallback_route
+        prompt_tokens = int(live_call["prompt_tokens"])
+        completion_tokens = int(live_call["completion_tokens"])
+        total_tokens = int(live_call["total_tokens"] or (prompt_tokens + completion_tokens))
+        cached_input_tokens = int(live_call.get("cached_input_tokens") or 0)
+        cache_write_tokens = int(live_call.get("cache_write_tokens") or 0)
+        provider_cost = live_call.get("provider_cost_usd")
+        if provider_cost is None:
+            cost_estimate, cost_source = estimate_stage4_route_cost(
+                route_id=live_route["route_id"],
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cached_input_tokens=cached_input_tokens,
+            )
+        else:
+            cost_estimate = float(provider_cost)
+            cost_source = "provider_returned"
+        claim_check = validate_stage4_claim_eligibility(
+            {
+                "execution_mode": live_route["execution_mode"],
+                "cost_source": cost_source,
+            }
+        )
+        return {
+            **live_route,
+            "requested_route_id": requested_route_id,
+            "requested_provider_model": requested_provider_model,
+            "requested_provider_origin": requested_provider_origin,
+            "provider_origin": stage4_provider_origin(str(live_route["route_id"])),
+            "fallback_reason": fallback_reason,
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "cached_input_tokens": cached_input_tokens,
+                "cache_write_tokens": cache_write_tokens,
+            },
+            "cost_estimate": float(cost_estimate),
+            "cost_source": cost_source,
+            "response_text": str(live_call.get("text") or ""),
+            "response_id": live_call.get("response_id"),
+            "claim_eligible": claim_check.ok,
+            "claim_ineligible_reason": claim_check.reason,
+            "live_block_reason": None,
+        }
     try:
         live_call = _perform_stage4_live_call(
             route=route,

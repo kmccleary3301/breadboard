@@ -37,6 +37,9 @@ def build_stage5_systems_weighted_live_review(
     systems_weighted_payload = _load_json(systems_weighted_path)
 
     weighted_rows = {str(row.get("lane_id") or ""): dict(row) for row in list(systems_weighted_payload.get("rows") or [])}
+    weighted_bundle_complete = bool(systems_weighted_payload.get("bundle_complete"))
+    weighted_completed_row_count = int(systems_weighted_payload.get("completed_row_count") or 0)
+    weighted_row_count = int(systems_weighted_payload.get("row_count") or 0)
     lane_rows = []
     for row in list(policy_payload.get("rows") or []):
         lane_id = str(row.get("lane_id") or "")
@@ -53,6 +56,8 @@ def build_stage5_systems_weighted_live_review(
                 "flat_count": int(row.get("flat_count") or 0),
                 "no_lift_count": int(row.get("no_lift_count") or 0),
                 "reuse_lift_rate": float(row.get("reuse_lift_rate") or 0.0),
+                "round_complete": bool(weighted_row.get("round_complete")),
+                "live_claim_surface_status": str(weighted_row.get("live_claim_surface_status") or "unknown"),
             }
         )
 
@@ -76,6 +81,10 @@ def build_stage5_systems_weighted_live_review(
             "cross_lane_review_ref": path_ref(cross_lane_review_path),
             "systems_weighted_ref": path_ref(systems_weighted_path),
         },
+        "systems_weighted_bundle_complete": weighted_bundle_complete,
+        "systems_weighted_completed_row_count": weighted_completed_row_count,
+        "systems_weighted_row_count": weighted_row_count,
+        "systems_weighted_live_run_status": "complete" if weighted_bundle_complete and weighted_completed_row_count == weighted_row_count else "partial_or_stale",
         "current_primary_lane_id": str(cross_lane_payload.get("current_primary_lane_id") or ""),
         "row_count": len(lane_rows),
         "rows": lane_rows,
@@ -91,6 +100,7 @@ def build_stage5_systems_weighted_live_review(
         f"- policy stability: `{path_ref(policy_stability_path)}`",
         f"- cross-lane review: `{path_ref(cross_lane_review_path)}`",
         f"- systems-weighted bundle: `{path_ref(systems_weighted_path)}`",
+        f"- systems-weighted live run status: `{payload['systems_weighted_live_run_status']}`",
         f"- systems primary supported: `{systems_primary_supported}`",
         f"- repo challenge supported: `{repo_challenge_supported}`",
     ]

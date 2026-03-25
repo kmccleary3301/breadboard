@@ -160,3 +160,5 @@ Date: 2026-03-14
 - systems-weighted live status: `docs/darwin_stage5_systems_weighted_live_status_2026-03-25.md`
 - systems-weighted live review: `docs/darwin_stage5_systems_weighted_live_review_2026-03-25.md`
 - systems-weighted live gate: `docs/darwin_stage5_systems_weighted_live_gate_2026-03-25.md`
+- family-surface repair status: `docs/darwin_stage5_family_surface_repair_status_2026-03-25.md`
+- family-aware proving status: `docs/darwin_stage5_family_aware_proving_status_2026-03-25.md`

@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Systems-Weighted Live Status
 
 Date: 2026-03-25
-Status: bounded live-review bundle landed
+Status: bounded live-review bundle landed; partial-vs-complete live status now explicit
 References:
 - `artifacts/darwin/stage5/systems_weighted_live_review/systems_weighted_live_review_v0.json`
 - `artifacts/darwin/stage5/policy_stability/policy_stability_v0.json`
@@ -28,9 +28,9 @@ References:
 
 ## Operational note
 
-The fresh systems-weighted live rerun is currently stalling behind the live provider path. This status is therefore based on the current live policy-stability evidence plus the newly operational systems-weighted policy slice.
+The systems-weighted live review now carries an explicit live-run status. The current status is `partial_or_stale`, which means the review is still derived from the current live evidence rather than from a fresh completed systems-weighted rerun.
 
-That is acceptable for this bounded review because the question here is whether the new lane weighting is supported by the current live evidence, not whether a brand new live campaign already changed the result.
+That is acceptable for this bounded review, but it is also the remaining execution-hygiene blocker before Stage-5 can claim a cleaner family-aware proving surface.
 
 ## Result
 

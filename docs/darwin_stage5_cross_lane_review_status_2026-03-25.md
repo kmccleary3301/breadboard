@@ -29,7 +29,7 @@ References:
 
 The current Repo_SWE family A/B surface is marked `stale_or_incomplete`.
 
-That is the correct current read because the persisted family A/B round set now contains mixed claim eligibility after an interrupted live rerun. The cross-lane review therefore does not treat the current Repo_SWE family artifact as proof of a settled family winner.
+That read is now source-backed, not only review-derived. The repaired family artifact itself carries the stale status because one counted round is still non-claim-eligible. The cross-lane review therefore does not treat the current Repo_SWE family artifact as proof of a settled family winner.
 
 ## Interpretation
 

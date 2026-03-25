@@ -120,12 +120,18 @@ def run_stage5_compounding_pilot(
     summary = {
         "schema": "breadboard.darwin.stage5.compounding_pilot.v0",
         "pilot_lane_id": lane_id,
+        "run_completion_status": "complete",
         "arm_count": len(arm_rows),
         "run_count": len(run_rows),
         "comparison_count": len(comparison_rows),
         "compounding_case_count": len(compounding_cases),
         "comparison_valid_count": sum(1 for row in comparison_rows if row.get("comparison_valid")),
         "claim_eligible_comparison_count": sum(1 for row in comparison_rows if row.get("claim_eligible")),
+        "live_claim_surface_status": (
+            "claim_eligible_live"
+            if any(bool(row.get("claim_eligible")) for row in comparison_rows)
+            else "non_claim_eligible_or_scaffold"
+        ),
         "warm_start_comparison_count": comparison_mode_counts["warm_start"],
         "family_lockout_comparison_count": comparison_mode_counts["family_lockout"],
         "reuse_lift_count": sum(1 for row in compounding_cases if row.get("conclusion") == "reuse_lift"),

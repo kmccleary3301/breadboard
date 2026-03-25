@@ -418,6 +418,41 @@ def test_execute_stage4_provider_prompt_falls_back_to_openai_when_openrouter_tim
     assert result["claim_eligible"] is True
 
 
+def test_execute_stage4_provider_prompt_falls_back_to_openai_when_openrouter_key_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DARWIN_STAGE4_ENABLE_LIVE", "1")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test-key")
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_INPUT_COST_PER_1M", "0.75")
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_CACHED_INPUT_COST_PER_1M", "0.075")
+    monkeypatch.setenv("DARWIN_STAGE4_GPT54_MINI_OUTPUT_COST_PER_1M", "4.50")
+
+    def _fake_live_call(*, route, **_):
+        assert route["route_id"] == "openai/gpt-5.4-mini"
+        return {
+            "response_id": "resp_fallback_missing_key",
+            "text": "fallback mutation proposal",
+            "prompt_tokens": 100,
+            "cached_input_tokens": 80,
+            "cache_write_tokens": 0,
+            "completion_tokens": 20,
+            "total_tokens": 120,
+            "provider_cost_usd": None,
+        }
+
+    monkeypatch.setattr("breadboard_ext.darwin.stage4._perform_stage4_live_call", _fake_live_call)
+    result = execute_stage4_provider_prompt(
+        lane_id="lane.repo_swe",
+        task_class="repo_patch_workspace",
+        prompt="propose a bounded mutation",
+    )
+    assert result["execution_mode"] == "live"
+    assert result["route_id"] == "openai/gpt-5.4-mini"
+    assert result["fallback_reason"] == "openrouter_key_missing"
+    assert result["claim_eligible"] is True
+
+
 def test_perform_stage4_live_call_caps_openrouter_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -453,3 +488,44 @@ def test_perform_stage4_live_call_caps_openrouter_timeout(
     )
     assert payload["response_id"] == "resp_openrouter_timeout_cap"
     assert captured["timeout"] == 15
+
+
+def test_perform_stage4_live_call_caps_openai_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test-key")
+    monkeypatch.setenv("DARWIN_STAGE4_OPENAI_TIMEOUT_S", "12")
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return json.dumps(
+                {
+                    "id": "resp_openai_timeout_cap",
+                    "output_text": "ok",
+                    "usage": {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12},
+                }
+            ).encode("utf-8")
+
+    def _fake_urlopen(request_obj, timeout):
+        captured["timeout"] = timeout
+        captured["url"] = request_obj.full_url
+        return _FakeResponse()
+
+    monkeypatch.setattr("breadboard_ext.darwin.stage4.urllib_request.urlopen", _fake_urlopen)
+    payload = _perform_stage4_live_call(
+        route={
+            "route_id": "openai/gpt-5.4-mini",
+            "provider_model": "openai/gpt-5.4-mini",
+        },
+        prompt="say hi",
+        timeout_s=60,
+    )
+    assert payload["response_id"] == "resp_openai_timeout_cap"
+    assert captured["timeout"] == 12

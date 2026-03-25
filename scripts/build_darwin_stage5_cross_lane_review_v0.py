@@ -78,6 +78,18 @@ def _family_ab_totals(payload: dict[str, Any], *, source_path: Path) -> tuple[di
 
 
 def _repo_swe_family_selection_state(payload: dict[str, Any], *, source_path: Path) -> dict[str, Any]:
+    if str(payload.get("completion_status") or "") == "stale_or_incomplete":
+        return {
+            "family_selection_status": str(payload.get("family_selection_status") or "stale_or_incomplete"),
+            "preferred_family_kind": payload.get("preferred_family_kind"),
+            "reason": str(payload.get("family_selection_reason") or "family_ab_bundle_marked_stale_by_source"),
+        }
+    if str(payload.get("completion_status") or "") == "complete":
+        return {
+            "family_selection_status": str(payload.get("family_selection_status") or "open"),
+            "preferred_family_kind": payload.get("preferred_family_kind"),
+            "reason": str(payload.get("family_selection_reason") or "family_ab_bundle_marked_complete_by_source"),
+        }
     family_totals, stale = _family_ab_totals(payload, source_path=source_path)
     if stale:
         return {

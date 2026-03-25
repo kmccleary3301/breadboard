@@ -38,13 +38,17 @@ def run_stage5_systems_weighted_compounding(*, rounds: int = 2, out_dir: Path = 
 
     bundle_rows = []
     lane_totals: dict[str, dict[str, int]] = {}
+    completed_row_count = 0
     for row in lane_runs:
         payload = json.loads(Path(str(row["summary_path"])).read_text(encoding="utf-8"))
         policy_ref = Path(str(payload.get("policy_ref") or ""))
         policy_payload = json.loads((ROOT / policy_ref).read_text(encoding="utf-8")) if policy_ref else {}
+        round_complete = str(payload.get("run_completion_status") or "") == "complete"
         bundle_row = {
             "round_index": int(row["round_index"]),
             "lane_id": str(row["lane_id"]),
+            "round_complete": round_complete,
+            "live_claim_surface_status": str(payload.get("live_claim_surface_status") or "unknown"),
             "claim_eligible_comparison_count": int(payload.get("claim_eligible_comparison_count") or 0),
             "comparison_valid_count": int(payload.get("comparison_valid_count") or 0),
             "reuse_lift_count": int(payload.get("reuse_lift_count") or 0),
@@ -54,6 +58,8 @@ def run_stage5_systems_weighted_compounding(*, rounds: int = 2, out_dir: Path = 
             "summary_ref": path_ref(Path(str(row["summary_path"]))),
         }
         bundle_rows.append(bundle_row)
+        if round_complete:
+            completed_row_count += 1
         lane_totals.setdefault(
             bundle_row["lane_id"],
             {
@@ -76,6 +82,8 @@ def run_stage5_systems_weighted_compounding(*, rounds: int = 2, out_dir: Path = 
         "lane_count": len(LANE_ORDER),
         "lane_order": list(LANE_ORDER),
         "row_count": len(bundle_rows),
+        "completed_row_count": completed_row_count,
+        "bundle_complete": completed_row_count == len(bundle_rows),
         "rows": bundle_rows,
         "lane_totals": lane_totals,
     }

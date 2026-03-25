@@ -229,6 +229,51 @@ def test_build_stage5_search_policy_v2_suppresses_repo_swe_family_probe_for_chal
     assert policy["repetition_count"] == 4
 
 
+def test_build_stage5_search_policy_v2_suppresses_repo_swe_family_probe_for_stale_family_surface() -> None:
+    policy = build_stage5_search_policy_v2(
+        lane_id="lane.repo_swe",
+        budget_class="class_a",
+        family_rows=[
+            {
+                "family_id": "component_family.stage4.topology.policy.topology.pev_v0.lane.repo_swe.v0",
+                "family_key": "policy.topology.pev_v0",
+                "family_kind": "topology",
+                "lane_id": "lane.repo_swe",
+                "lifecycle_status": "promoted",
+                "replay_status": "supported",
+                "transfer_eligibility": {"allowed_target_lanes": ["lane.systems"]},
+            },
+            {
+                "family_id": "component_family.stage4.tool_scope.policy.tool_scope.add_git_diff_v1.lane.repo_swe.v0",
+                "family_key": "policy.tool_scope.add_git_diff_v1",
+                "family_kind": "tool_scope",
+                "lane_id": "lane.repo_swe",
+                "lifecycle_status": "withheld",
+                "replay_status": "missing",
+                "transfer_eligibility": {"allowed_target_lanes": []},
+            },
+        ],
+        policy_stability_rows=[
+            {
+                "lane_id": "lane.repo_swe",
+                "policy_review_conclusion": "continue",
+                "stability_class": "mixed_negative",
+                "flat_count": 5,
+            }
+        ],
+        repo_swe_family_ab={
+            "completion_status": "stale_or_incomplete",
+            "family_selection_status": "stale_or_incomplete",
+            "family_selection_reason": "family_ab_bundle_contains_non_claim_eligible_or_missing_rounds",
+        },
+    )
+    assert policy["family_probe"]["enabled"] is False
+    assert policy["family_probe"]["reason"] == "repo_swe_family_surface_stale"
+    assert policy["family_surface"]["status"] == "stale_or_incomplete"
+    assert policy["family_surface"]["blocks_probe"] is True
+    assert policy["max_mutation_arms"] == 1
+
+
 def test_select_stage5_search_policy_arms_emits_warm_and_lockout_pairs() -> None:
     policy = build_stage5_search_policy_v2(
         lane_id="lane.repo_swe",

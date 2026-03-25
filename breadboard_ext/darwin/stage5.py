@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_STAGE5_FAMILY_REGISTRY = ROOT / "artifacts" / "darwin" / "stage4" / "family_program" / "family_registry_v0.json"
 DEFAULT_STAGE5_POLICY_STABILITY = ROOT / "artifacts" / "darwin" / "stage5" / "policy_stability" / "policy_stability_v0.json"
 DEFAULT_STAGE5_CROSS_LANE_REVIEW = ROOT / "artifacts" / "darwin" / "stage5" / "cross_lane_review" / "cross_lane_review_v0.json"
+DEFAULT_STAGE5_REPO_SWE_FAMILY_AB = ROOT / "artifacts" / "darwin" / "stage5" / "repo_swe_family_ab" / "repo_swe_family_ab_v0.json"
 
 STAGE5_COMPARISON_MODES = ("cold_start", "warm_start", "family_lockout")
 STAGE5_RUNTIME_LIFT_DEADBAND_MS = 10
@@ -98,6 +99,26 @@ def load_stage5_cross_lane_review(path: Path = DEFAULT_STAGE5_CROSS_LANE_REVIEW)
     return _load_json(path)
 
 
+def load_stage5_repo_swe_family_ab(path: Path = DEFAULT_STAGE5_REPO_SWE_FAMILY_AB) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    return _load_json(path)
+
+
+def _repo_swe_family_surface_state(payload: Mapping[str, Any] | None) -> dict[str, Any]:
+    if payload is None:
+        return {
+            "status": "missing",
+            "preferred_family_kind": None,
+            "reason": "repo_swe_family_ab_not_available",
+        }
+    return {
+        "status": str(payload.get("family_selection_status") or payload.get("completion_status") or "unknown"),
+        "preferred_family_kind": payload.get("preferred_family_kind"),
+        "reason": str(payload.get("family_selection_reason") or "repo_swe_family_ab_state_available"),
+    }
+
+
 def _lane_cross_lane_review_row(
     lane_id: str,
     *,
@@ -150,6 +171,7 @@ def build_stage5_search_policy_v2(
     family_rows: list[dict[str, Any]] | None = None,
     policy_stability_rows: list[dict[str, Any]] | None = None,
     cross_lane_review: dict[str, Any] | None = None,
+    repo_swe_family_ab: dict[str, Any] | None = None,
     family_probe_override_kind: str | None = None,
 ) -> dict[str, Any]:
     if lane_id not in {"lane.repo_swe", "lane.systems"}:
@@ -161,6 +183,15 @@ def build_stage5_search_policy_v2(
     cross_lane_review_payload = {} if (cross_lane_review is None and isolated_inputs) else load_stage5_cross_lane_review() if cross_lane_review is None else dict(cross_lane_review)
     cross_lane_row = _lane_cross_lane_review_row(lane_id, cross_lane_review=cross_lane_review_payload) or {}
     cross_lane_weight = str(cross_lane_row.get("lane_weight") or "")
+    repo_swe_family_surface = (
+        _repo_swe_family_surface_state(load_stage5_repo_swe_family_ab() if repo_swe_family_ab is None and not isolated_inputs else repo_swe_family_ab)
+        if lane_id == "lane.repo_swe"
+        else {
+            "status": "not_applicable",
+            "preferred_family_kind": None,
+            "reason": "repo_swe_only_surface",
+        }
+    )
     base_policy = build_stage4_search_policy_v1(lane_id=lane_id, budget_class=budget_class)
     promoted_rows = [
         row
@@ -174,6 +205,7 @@ def build_stage5_search_policy_v2(
         and str(policy_stability_row.get("stability_class") or "") in {"mixed_negative", "stable_negative", "mixed_flat"}
         and int(policy_stability_row.get("flat_count") or 0) >= 1
         and cross_lane_weight != "challenge_lane"
+        and str(repo_swe_family_surface.get("status") or "") not in {"stale_or_incomplete", "missing"}
     ):
         probe_rows = [
             row
@@ -222,7 +254,8 @@ def build_stage5_search_policy_v2(
     stability_probe_systems = lane_id == "lane.systems" and policy_review_conclusion == "continue"
     systems_primary_weight = lane_id == "lane.systems" and cross_lane_weight == "primary_proving_lane"
     repo_swe_challenge_weight = lane_id == "lane.repo_swe" and cross_lane_weight == "challenge_lane"
-    max_mutation_arms = 1 if (tightened_repo_swe or stability_probe_systems or family_probe_enabled or systems_primary_weight or repo_swe_challenge_weight) else 2
+    repo_swe_family_surface_stale = lane_id == "lane.repo_swe" and str(repo_swe_family_surface.get("status") or "") in {"stale_or_incomplete", "missing"}
+    max_mutation_arms = 1 if (tightened_repo_swe or stability_probe_systems or family_probe_enabled or systems_primary_weight or repo_swe_challenge_weight or repo_swe_family_surface_stale) else 2
     repetition_count = max(
         int(base_policy["repetition_count"]),
         8 if (tightened_repo_swe or systems_primary_weight) else 6 if (stability_probe_systems or family_probe_enabled) else 4,
@@ -279,19 +312,27 @@ def build_stage5_search_policy_v2(
             ),
         },
         "family_probe": {
-            "enabled": family_probe_enabled,
+            "enabled": family_probe_enabled and not repo_swe_family_surface_stale,
             "lane_review_conclusion": policy_review_conclusion,
             "stability_class": str(policy_stability_row.get("stability_class") or ""),
             "target_family_kind": family_probe_target_kind,
             "override_kind": family_probe_override_kind,
             "repetition_count": repetition_count,
             "reason": (
-                f"repo_swe_forced_family_probe_{family_probe_override_kind}"
+                "repo_swe_family_surface_stale"
+                if repo_swe_family_surface_stale
+                else f"repo_swe_forced_family_probe_{family_probe_override_kind}"
                 if family_probe_override_kind
                 else "repo_swe_shift_to_withheld_tool_scope_probe"
                 if family_probe_enabled
                 else "not_required"
             ),
+        },
+        "family_surface": {
+            "status": str(repo_swe_family_surface.get("status") or ""),
+            "preferred_family_kind": repo_swe_family_surface.get("preferred_family_kind"),
+            "reason": str(repo_swe_family_surface.get("reason") or ""),
+            "blocks_probe": repo_swe_family_surface_stale,
         },
         "cross_lane_weighting": {
             "enabled": bool(cross_lane_weight),
@@ -307,6 +348,7 @@ def build_stage5_search_policy_v2(
         },
         "consumes_family_state": True,
         "family_registry_ref": family_registry_ref,
+        "repo_swe_family_ab_ref": str(DEFAULT_STAGE5_REPO_SWE_FAMILY_AB.relative_to(ROOT)) if DEFAULT_STAGE5_REPO_SWE_FAMILY_AB.exists() else None,
     }
     payload["policy_digest"] = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return payload

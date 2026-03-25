@@ -3,13 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.build_darwin_stage5_systems_weighted_live_review_v0 import build_stage5_systems_weighted_live_review
+from scripts.build_darwin_stage5_compounding_quality_v0 import build_stage5_compounding_quality
 
 
-def test_build_stage5_systems_weighted_live_review_marks_systems_primary(tmp_path: Path) -> None:
+def test_build_stage5_compounding_quality_marks_repo_swe_family_contamination(tmp_path: Path) -> None:
     policy_path = tmp_path / "policy_stability_v0.json"
     cross_lane_path = tmp_path / "cross_lane_review_v0.json"
-    weighted_path = tmp_path / "systems_weighted_compounding_v0.json"
+    systems_live_path = tmp_path / "systems_weighted_live_review_v0.json"
+    repo_swe_family_path = tmp_path / "repo_swe_family_ab_v0.json"
+
     policy_path.write_text(
         json.dumps(
             {
@@ -17,6 +19,7 @@ def test_build_stage5_systems_weighted_live_review_marks_systems_primary(tmp_pat
                     {
                         "lane_id": "lane.systems",
                         "stability_class": "mixed_positive",
+                        "policy_review_conclusion": "continue",
                         "claim_eligible_comparison_count": 24,
                         "comparison_valid_count": 24,
                         "reuse_lift_count": 7,
@@ -27,6 +30,7 @@ def test_build_stage5_systems_weighted_live_review_marks_systems_primary(tmp_pat
                     {
                         "lane_id": "lane.repo_swe",
                         "stability_class": "mixed_negative",
+                        "policy_review_conclusion": "tighten",
                         "claim_eligible_comparison_count": 24,
                         "comparison_valid_count": 24,
                         "reuse_lift_count": 4,
@@ -42,38 +46,48 @@ def test_build_stage5_systems_weighted_live_review_marks_systems_primary(tmp_pat
     cross_lane_path.write_text(
         json.dumps(
             {
-                "current_primary_lane_id": "lane.systems",
                 "rows": [
                     {"lane_id": "lane.systems", "lane_weight": "primary_proving_lane"},
                     {"lane_id": "lane.repo_swe", "lane_weight": "challenge_lane"},
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    weighted_path.write_text(
-        json.dumps(
-            {
-                "bundle_complete": True,
-                "completed_row_count": 2,
-                "row_count": 2,
-                "rows": [
-                    {"lane_id": "lane.systems", "lane_weight": "primary_proving_lane", "round_complete": True, "live_claim_surface_status": "claim_eligible_live"},
-                    {"lane_id": "lane.repo_swe", "lane_weight": "challenge_lane", "round_complete": True, "live_claim_surface_status": "claim_eligible_live"},
                 ]
             }
         ),
         encoding="utf-8",
     )
+    systems_live_path.write_text(
+        json.dumps(
+            {
+                "systems_weighted_live_run_status": "partial_or_stale",
+                "rows": [
+                    {"lane_id": "lane.systems", "round_complete": True, "live_claim_surface_status": "claim_eligible_live"},
+                    {"lane_id": "lane.repo_swe", "round_complete": False, "live_claim_surface_status": "unknown"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    repo_swe_family_path.write_text(
+        json.dumps(
+            {
+                "completion_status": "stale_or_incomplete",
+                "family_selection_status": "stale_or_incomplete",
+                "valid_round_row_count": 3,
+                "stale_round_row_count": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
 
-    summary = build_stage5_systems_weighted_live_review(
+    summary = build_stage5_compounding_quality(
         policy_stability_path=policy_path,
         cross_lane_review_path=cross_lane_path,
-        systems_weighted_path=weighted_path,
+        systems_weighted_live_review_path=systems_live_path,
+        repo_swe_family_ab_path=repo_swe_family_path,
         out_dir=tmp_path / "out",
     )
     payload = json.loads(Path(summary["out_json"]).read_text(encoding="utf-8"))
-    assert payload["schema"] == "breadboard.darwin.stage5.systems_weighted_live_review.v0"
-    assert payload["systems_weighted_live_run_status"] == "complete"
-    assert payload["systems_primary_supported"] is True
-    assert payload["repo_challenge_supported"] is True
+    row_map = {row["lane_id"]: row for row in payload["rows"]}
+    assert payload["systems_weighted_live_run_status"] == "partial_or_stale"
+    assert row_map["lane.systems"]["lane_weight"] == "primary_proving_lane"
+    assert row_map["lane.repo_swe"]["stale_family_surface_contamination"] is True
+    assert row_map["lane.repo_swe"]["family_surface_status"] == "stale_or_incomplete"
