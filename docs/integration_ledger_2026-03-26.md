@@ -2,7 +2,7 @@
 
 Date: 2026-03-26
 Status: current upstream merge-state inventory
-Repo head: `main` at `b7c8fff`
+Repo head: `main` at `059d3a2`
 
 ## Purpose
 
@@ -10,6 +10,7 @@ This ledger records the current branch-integration state after:
 
 - DARWIN Stage 5 closeout on `main`
 - ATP Hilbert runner integration on `main`
+- clean integration of the current concurrent workstreams on `main`
 
 The goal is to make the remaining merge work explicit and keep future integration disciplined.
 
@@ -48,16 +49,18 @@ Read:
 
 ### 3. C-Trees effort
 
-Status: partially merged
+Status: fully merged on `main`
 
 Branches:
-- `origin/codex/ctrees-merge-prep-20260313` — fully merged
-- `origin/codex/ctrees-helper-rehydration-20260313` — not merged
+- `origin/codex/ctrees-merge-prep-20260313`
+- `origin/codex/ctrees-helper-rehydration-20260313`
+- `origin/codex/ctrees-main-merge-20260326`
+- `origin/codex/integration-main-20260326`
 
 Read:
-- the merge-prep branch is already on `main`
-- the helper rehydration tranche is still a real pending branch
-- this is the cleanest remaining non-DARWIN, non-ATP integration candidate
+- the helper rehydration tranche is now merged
+- the ctrees integration branch family is fully upstream
+- there is no remaining C-Trees merge debt from these branches
 
 ### 4. Terminal / TUI / parity effort family
 
@@ -127,14 +130,19 @@ Status:
 - `origin/codex/atp-port-20260310`
 - `origin/codex/atp-integration-20260326`
 - `origin/codex/ctrees-merge-prep-20260313`
+- `origin/codex/ctrees-helper-rehydration-20260313`
+- `origin/codex/ctrees-main-merge-20260326`
 - `origin/codex/phase14-terminals-20260310`
+- `origin/codex/integration-main-20260326`
 - `origin/phase5/tmux-e2e-harness-trust-main`
 - `origin/tui/todo-primitives-closeout`
 - `origin/engine/provider-auth-import-ir-reapply`
 
-### Real remaining merge candidates
+### Real remaining clean merge candidates
 
-- `origin/codex/ctrees-helper-rehydration-20260313`
+None identified from the current major branch set.
+
+The remaining major branches are all divergent and should be treated as selective-salvage projects rather than direct merges.
 
 ### Diverged branches that need selective integration, not direct merge
 
@@ -160,21 +168,15 @@ Status:
 
 ## Recommended next integration order
 
-1. `origin/codex/ctrees-helper-rehydration-20260313`
-   - best next real merge candidate
-   - recent
-   - small enough to audit
-   - has a clean merge base
-
-2. terminal / TUI archaeology pass
+1. terminal / TUI archaeology pass
    - build a salvage ledger first
    - identify what is already subsumed
    - cherry-pick only the still-valuable deltas
 
-3. webapp branch as a separate integration project
+2. webapp branch as a separate integration project
    - do not mix it into C-Trees or TUI salvage work
 
-4. older ATP / Lean and provider-auth WIP only after explicit prioritization
+3. older ATP / Lean and provider-auth WIP only after explicit prioritization
 
 ## Integration rule going forward
 
