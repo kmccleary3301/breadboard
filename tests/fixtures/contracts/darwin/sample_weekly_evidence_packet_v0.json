@@ -1,0 +1,32 @@
+{
+  "schema": "breadboard.darwin.weekly_evidence_packet.v0",
+  "packet_id": "packet.2026w11",
+  "week_start_utc": "2026-03-09T00:00:00Z",
+  "lane_summaries": [
+    {
+      "lane_id": "lane.harness",
+      "status": "green",
+      "headline": "Baseline scorecard emitted with replay-complete artifacts."
+    },
+    {
+      "lane_id": "lane.atp",
+      "status": "yellow",
+      "headline": "Corrected benchmark packaging complete; broader comparative runs deferred."
+    }
+  ],
+  "scorecard_refs": [
+    "artifacts/darwin/scorecards/t1_baseline_scorecard.latest.json"
+  ],
+  "budget_burn": {
+    "class_a_usd": 18.4,
+    "class_b_usd": 0.0
+  },
+  "drift_refs": [
+    "artifacts/darwin/drift/drift_audit_week1.json"
+  ],
+  "incident_refs": [],
+  "next_actions": [
+    "launch lane.systems baseline",
+    "emit topology family runner v0"
+  ]
+}

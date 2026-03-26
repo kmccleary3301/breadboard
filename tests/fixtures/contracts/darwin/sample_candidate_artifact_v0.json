@@ -1,0 +1,14 @@
+{
+  "schema": "breadboard.darwin.candidate_artifact.v0",
+  "candidate_id": "cand.harness.001",
+  "campaign_id": "camp.darwin.phase1.harness.001",
+  "lane_id": "lane.harness",
+  "parent_ids": ["cand.harness.seed.000"],
+  "artifact_type": "config",
+  "artifact_ref": "artifacts/darwin/candidates/cand.harness.001.json",
+  "mutation_operator": "budget_vector_perturbation",
+  "novelty_score": 0.42,
+  "estimated_potential": 0.73,
+  "tool_scope": ["diff", "pytest"],
+  "state_hash": "sha256:candidate-state-001"
+}

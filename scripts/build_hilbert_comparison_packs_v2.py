@@ -52,6 +52,125 @@ PACKS = {
         "numbertheory_2dvd4expn",
         "mathd_algebra_107",
     ],
+    "pack_c_imo1977_p6_stress_minif2f_v1": [
+        "imo_1977_p6",
+    ],
+    "pack_d_mixed_induction_numbertheory_minif2f_v1": [
+        "imo_1959_p1",
+        "induction_sumkexp3eqsumksq",
+        "induction_12dvd4expnp1p20",
+        "numbertheory_2pownm1prime_nprime",
+        "mathd_numbertheory_427",
+        "mathd_algebra_452",
+    ],
+    "pack_d_induction_core_minif2f_v1": [
+        "induction_sumkexp3eqsumksq",
+        "induction_12dvd4expnp1p20",
+    ],
+    "pack_d_numbertheory_core_minif2f_v1": [
+        "imo_1959_p1",
+        "numbertheory_2pownm1prime_nprime",
+        "mathd_numbertheory_427",
+        "mathd_algebra_452",
+    ],
+    "pack_e_algebra_core_minif2f_v1": [
+        "mathd_algebra_48",
+        "mathd_algebra_101",
+        "mathd_algebra_410",
+        "mathd_algebra_73",
+        "mathd_algebra_77",
+        "mathd_algebra_131",
+    ],
+    "pack_e_algebra_focus_minif2f_v1": [
+        "mathd_algebra_48",
+        "mathd_algebra_73",
+        "mathd_algebra_77",
+        "mathd_algebra_131",
+    ],
+    "pack_f_discrete_arithmetic_mix_minif2f_v1": [
+        "amc12a_2015_p10",
+        "aime_1991_p1",
+        "amc12a_2008_p4",
+        "amc12_2001_p9",
+        "mathd_numbertheory_48",
+        "mathd_numbertheory_33",
+    ],
+    "pack_g_arithmetic_sanity_minif2f_v1": [
+        "mathd_numbertheory_3",
+        "mathd_numbertheory_12",
+        "mathd_numbertheory_237",
+        "mathd_numbertheory_299",
+        "mathd_numbertheory_353",
+        "mathd_numbertheory_430",
+    ],
+    "pack_h_modular_closedform_minif2f_v1": [
+        "mathd_numbertheory_5",
+        "mathd_numbertheory_24",
+        "mathd_numbertheory_45",
+        "mathd_numbertheory_66",
+        "mathd_numbertheory_99",
+        "mathd_numbertheory_109",
+    ],
+    "pack_i_divisors_modmix_minif2f_v1": [
+        "mathd_numbertheory_127",
+        "mathd_numbertheory_149",
+        "mathd_numbertheory_169",
+        "mathd_numbertheory_185",
+        "mathd_numbertheory_221",
+        "mathd_numbertheory_233",
+    ],
+    "pack_j_residue_gcd_mix_minif2f_v1": [
+        "mathd_numbertheory_34",
+        "mathd_numbertheory_100",
+        "mathd_numbertheory_212",
+        "mathd_numbertheory_239",
+        "mathd_numbertheory_254",
+        "mathd_numbertheory_320",
+    ],
+    "pack_k_moddigit_closedform_minif2f_v1": [
+        "mathd_numbertheory_1124",
+        "mathd_numbertheory_293",
+        "mathd_numbertheory_328",
+        "mathd_numbertheory_175",
+        "mathd_numbertheory_728",
+        "mathd_numbertheory_769",
+    ],
+    "pack_l_algebra_linear_equiv_minif2f_v1": [
+        "mathd_algebra_141",
+        "mathd_algebra_209",
+        "mathd_algebra_33",
+        "mathd_algebra_398",
+        "mathd_algebra_459",
+        "mathd_algebra_137",
+    ],
+    "pack_m_boundary_olympiad_mix_minif2f_v1": [
+        "imo_1960_p2",
+        "imo_1963_p5",
+        "induction_nfactltnexpnm1ngt3",
+        "numbertheory_fxeq4powxp6powxp9powx_f2powmdvdf2pown",
+    ],
+}
+EXCLUDED_TASKS = {
+    "mathd_numbertheory_780": (
+        "Unsound under extracted ℕ semantics: m=11, x=2 satisfies the hypotheses "
+        "because Nat subtraction truncates (2 - 36) to 0, but the conclusion m = 43 is false."
+    ),
+    "aime_1984_p5": (
+        "Unsound under current Mathlib `Real.logb` semantics (`logb b x = log |x| / log b` for x < 0): "
+        "a = -64, b = 8 satisfies h₀ and h₁, but a * b = -512."
+    ),
+    "amc12a_2019_p12": (
+        "Unsound under the extracted real-log statement: taking x = 2^(3 + sqrt 5) and "
+        "y = 2^(3 - sqrt 5) satisfies h₁ and h₂, but log(x / y) / log 2 = 2 * sqrt 5, not 20."
+    ),
+    "mathd_algebra_77": (
+        "Unsound under the extracted polynomial statement: taking a = -1/2, b = -1/2 and "
+        "f x = x^2 + a*x + b satisfies h₀, h₁, h₂, and h₃, but the conclusion a = 1 ∧ b = -2 is false."
+    ),
+    "mathd_numbertheory_728": (
+        "Unsound closed arithmetic target: direct evaluation gives "
+        "(29^13 - 5^13) % 7 = 3, not 0."
+    ),
 }
 
 
@@ -91,6 +210,16 @@ def _canonical_starter_file(header: str, formal_statement: str) -> str:
 
 
 def _canonicalize_formal_statement(task_id: str, formal_statement: str) -> str:
+    formal_statement = re.sub(r"\bnat\.", "Nat.", formal_statement)
+    formal_statement = re.sub(r"\bfinset\.", "Finset.", formal_statement)
+    formal_statement = re.sub(r"(?<!\.)\bfinset\b", "Finset", formal_statement)
+    formal_statement = re.sub(r"(?<!\.)\bequiv\b", "Equiv", formal_statement)
+    formal_statement = re.sub(r"\breal\.", "Real.", formal_statement)
+    formal_statement = re.sub(r"\bcomplex\.", "Complex.", formal_statement)
+    formal_statement = re.sub(r"\bzmod\b", "ZMod", formal_statement)
+    formal_statement = re.sub(r"λ\s+([A-Za-z_][A-Za-z0-9_]*)\s*,", r"fun \1 =>", formal_statement)
+    formal_statement = formal_statement.replace("Nat.prime", "Nat.Prime")
+    formal_statement = formal_statement.replace(".denom", ".den")
     if task_id == "mathd_numbertheory_530":
         return (
             "theorem mathd_numbertheory_530\n"
@@ -100,6 +229,11 @@ def _canonicalize_formal_statement(task_id: str, formal_statement: str) -> str:
             "  (h_gt : (5 : ℝ) < n / k) :\n"
             "  22 ≤ (Nat.lcm n k) / (Nat.gcd n k) := by\n"
         )
+    if task_id == "mathd_numbertheory_169":
+        return (
+            "theorem mathd_numbertheory_169 :\n"
+            "  Nat.gcd (Nat.factorial 20) 200000 = 40000 := by\n"
+        )
     return formal_statement
 
 
@@ -108,6 +242,8 @@ def _load_tasks(task_ids: List[str]) -> List[Dict[str, Any]]:
     merged = "\n\n".join(texts)
     tasks: List[Dict[str, Any]] = []
     for task_id in task_ids:
+        if task_id in EXCLUDED_TASKS:
+            continue
         block = _extract_theorem_block(merged, task_id)
         header, formal_statement = _extract_header_and_statement(block)
         formal_statement = _canonicalize_formal_statement(task_id, formal_statement)
@@ -168,7 +304,8 @@ def _build_manifest(pack_name: str, tasks: List[Dict[str, Any]]) -> Dict[str, An
 
 
 def build_pack(pack_name: str, out_root: Path) -> Dict[str, Any]:
-    tasks = _load_tasks(PACKS[pack_name])
+    requested_task_ids = PACKS[pack_name]
+    tasks = _load_tasks(requested_task_ids)
     pack_dir = out_root / pack_name
     pack_dir.mkdir(parents=True, exist_ok=True)
 
@@ -197,12 +334,27 @@ def build_pack(pack_name: str, out_root: Path) -> Dict[str, Any]:
     dump_json(pack_dir / "cross_system_manifest.json", manifest)
     dump_json(pack_dir / "bb_task_inputs.json", {"schema": "breadboard.bb_task_inputs.v2", "tasks": bb_tasks})
     _write_jsonl(pack_dir / "hilbert_dataset.jsonl", hilbert_rows)
+    excluded = [
+        {"task_id": task_id, "reason": EXCLUDED_TASKS[task_id]}
+        for task_id in requested_task_ids
+        if task_id in EXCLUDED_TASKS
+    ]
+    dump_json(
+        pack_dir / "pack_metadata.json",
+        {
+            "pack_name": pack_name,
+            "requested_task_ids": requested_task_ids,
+            "included_task_ids": [task["task_id"] for task in tasks],
+            "excluded_tasks": excluded,
+        },
+    )
 
     return {
         "pack_name": pack_name,
         "task_count": len(tasks),
         "task_ids": [task["task_id"] for task in tasks],
         "dir": str(pack_dir),
+        "excluded_tasks": excluded,
     }
 
 

@@ -1,0 +1,44 @@
+{
+  "schema": "breadboard.darwin.research_baseline_pack.v0",
+  "queries": [
+    {
+      "query_id": "research.query.001",
+      "required_refs": ["r1", "r2"],
+      "bridge_refs": ["r3"],
+      "support_refs": ["r4"],
+      "evidence_pool": [
+        {"ref_id": "r1", "kind": "core", "weight": 0.96},
+        {"ref_id": "r2", "kind": "core", "weight": 0.88},
+        {"ref_id": "r3", "kind": "bridge", "weight": 0.74},
+        {"ref_id": "r4", "kind": "support", "weight": 0.63},
+        {"ref_id": "r5", "kind": "noise", "weight": 0.57}
+      ]
+    },
+    {
+      "query_id": "research.query.002",
+      "required_refs": ["r6", "r7"],
+      "bridge_refs": ["r8"],
+      "support_refs": ["r9"],
+      "evidence_pool": [
+        {"ref_id": "r6", "kind": "core", "weight": 0.94},
+        {"ref_id": "r7", "kind": "core", "weight": 0.83},
+        {"ref_id": "r8", "kind": "bridge", "weight": 0.71},
+        {"ref_id": "r9", "kind": "support", "weight": 0.61},
+        {"ref_id": "r10", "kind": "noise", "weight": 0.56}
+      ]
+    },
+    {
+      "query_id": "research.query.003",
+      "required_refs": ["r11", "r12"],
+      "bridge_refs": ["r13"],
+      "support_refs": ["r14"],
+      "evidence_pool": [
+        {"ref_id": "r11", "kind": "core", "weight": 0.91},
+        {"ref_id": "r12", "kind": "core", "weight": 0.84},
+        {"ref_id": "r13", "kind": "bridge", "weight": 0.69},
+        {"ref_id": "r14", "kind": "support", "weight": 0.62},
+        {"ref_id": "r15", "kind": "noise", "weight": 0.58}
+      ]
+    }
+  ]
+}

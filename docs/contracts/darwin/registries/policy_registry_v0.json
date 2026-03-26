@@ -1,0 +1,65 @@
+{
+  "schema": "breadboard.darwin.policy_registry.v0",
+  "bundles": [
+    {
+      "policy_bundle_id": "policy.topology.single_v0",
+      "policy_class": "topology_family",
+      "status": "approved",
+      "applies_to_lanes": ["lane.atp", "lane.harness", "lane.systems", "lane.repo_swe", "lane.scheduling"],
+      "change_control": {
+        "versioning_rule": "new semantics require a new immutable bundle id",
+        "rollback_target": "policy.topology.single_v0"
+      }
+    },
+    {
+      "policy_bundle_id": "policy.topology.pev_v0",
+      "policy_class": "topology_family",
+      "status": "approved",
+      "applies_to_lanes": ["lane.atp", "lane.harness", "lane.systems", "lane.repo_swe"],
+      "change_control": {
+        "versioning_rule": "promote only with replay-complete evidence",
+        "rollback_target": "policy.topology.single_v0"
+      }
+    },
+    {
+      "policy_bundle_id": "policy.topology.pwrv_v0",
+      "policy_class": "topology_family",
+      "status": "shadow",
+      "applies_to_lanes": ["lane.atp", "lane.systems", "lane.repo_swe"],
+      "change_control": {
+        "versioning_rule": "shadow first, promote after paired retention gains",
+        "rollback_target": "policy.topology.pev_v0"
+      }
+    },
+    {
+      "policy_bundle_id": "policy.memory.flat_v0",
+      "policy_class": "memory_policy",
+      "status": "approved",
+      "applies_to_lanes": ["lane.atp", "lane.harness", "lane.systems", "lane.repo_swe", "lane.scheduling", "lane.research"],
+      "change_control": {
+        "versioning_rule": "flat baseline is mandatory comparator for promotions",
+        "rollback_target": "policy.memory.flat_v0"
+      }
+    },
+    {
+      "policy_bundle_id": "policy.memory.hybrid_ctree_v0",
+      "policy_class": "memory_policy",
+      "status": "shadow",
+      "applies_to_lanes": ["lane.atp", "lane.systems", "lane.repo_swe", "lane.research"],
+      "change_control": {
+        "versioning_rule": "optional only until multi-lane ablations pass",
+        "rollback_target": "policy.memory.flat_v0"
+      }
+    },
+    {
+      "policy_bundle_id": "policy.budget.class_a_v0",
+      "policy_class": "budget_policy",
+      "status": "approved",
+      "applies_to_lanes": ["lane.atp", "lane.harness", "lane.systems", "lane.repo_swe", "lane.scheduling", "lane.research"],
+      "change_control": {
+        "versioning_rule": "budget classes are immutable once claim-bearing",
+        "rollback_target": "policy.budget.class_a_v0"
+      }
+    }
+  ]
+}

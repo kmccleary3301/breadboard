@@ -59,6 +59,11 @@ Reference scripts:
 - `scripts/run_cross_system_pilot_bundle_v1.py`
 - `scripts/build_cross_system_frozen_slices_v1.py`
 
+Selection and promotion policy:
+
+- `docs/contracts/benchmarks/ATP_HILBERT_TRANCHE_SELECTION_POLICY_V1.md`
+- `docs/ATP_HILBERT_MAINTAINED_RUNBOOK_V1_2026-03-13.md`
+
 Adapter input fixture example:
 
 - `tests/fixtures/benchmarks/cross_system_task_inputs_demo_v1.json`

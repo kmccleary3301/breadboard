@@ -20,7 +20,6 @@ from .ctrees.collapse import collapse_ctree
 from .ctrees.runner import TreeRunner
 from .reward import aggregate_reward_v1, validate_reward_v1
 from .policy_pack import PolicyPack
-from .policy_pack import PolicyPack
 
 
 def _canonical_hash(payload: Any) -> str:
@@ -103,6 +102,44 @@ def build_rlm_summary(provider_metadata: Dict[str, Any] | None) -> Optional[Dict
     if isinstance(longrun_delta, dict):
         payload["last_episode_delta"] = longrun_delta
     return payload or None
+
+
+def build_ctree_runtime_payload(
+    config: Dict[str, Any] | None,
+    session_state: Any,
+    *,
+    prompt_summary: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    ctree_store = getattr(session_state, "ctree_store", None)
+    if ctree_store is None:
+        return None
+
+    snapshot = ctree_store.snapshot()
+    compiler_payload = compile_ctree(ctree_store, prompt_summary=prompt_summary)
+    collapse_payload = collapse_ctree(ctree_store)
+    runner_payload = None
+
+    try:
+        ctree_cfg = (config.get("ctrees") or {}) if isinstance(config, dict) else {}
+        runner_cfg = (ctree_cfg.get("runner") or {}) if isinstance(ctree_cfg, dict) else {}
+        if runner_cfg.get("enabled"):
+            branches = runner_cfg.get("branches") or 2
+            runner = TreeRunner(ctree_store, branches=branches)
+            runner_payload = runner.build_manifest()
+    except Exception:
+        runner_payload = None
+
+    payload = {
+        "snapshot": snapshot,
+        "compiler": compiler_payload,
+        "collapse": collapse_payload,
+        "retrieval_substrate": compiler_payload.get("stages", {}).get("SPEC", {}).get("retrieval_substrate"),
+        "rehydration_bundle": compiler_payload.get("stages", {}).get("SPEC", {}).get("rehydration_bundle"),
+        "prompt_planes": compiler_payload.get("prompt_planes"),
+    }
+    if runner_payload:
+        payload["runner"] = runner_payload
+    return payload
 
 
 def run_main_loop(
@@ -355,35 +392,22 @@ def run_main_loop(
                 if prompt_summary:
                     run_summary_payload["prompts"] = prompt_summary
                 try:
-                    ctree_store = getattr(session_state, "ctree_store", None)
-                    if ctree_store is not None:
-                        session_state.set_provider_metadata("ctrees_snapshot", ctree_store.snapshot())
-                        session_state.set_provider_metadata(
-                            "ctrees_compiler",
-                            compile_ctree(ctree_store, prompt_summary=prompt_summary),
-                        )
-                        session_state.set_provider_metadata(
-                            "ctrees_collapse",
-                            collapse_ctree(ctree_store),
-                        )
+                    ctree_runtime_payload = build_ctree_runtime_payload(
+                        getattr(self, "config", None),
+                        session_state,
+                        prompt_summary=prompt_summary,
+                    )
+                    if isinstance(ctree_runtime_payload, dict):
+                        session_state.set_provider_metadata("ctrees_snapshot", ctree_runtime_payload.get("snapshot"))
+                        session_state.set_provider_metadata("ctrees_compiler", ctree_runtime_payload.get("compiler"))
+                        session_state.set_provider_metadata("ctrees_collapse", ctree_runtime_payload.get("collapse"))
+                        session_state.set_provider_metadata("ctrees_retrieval_substrate", ctree_runtime_payload.get("retrieval_substrate"))
+                        session_state.set_provider_metadata("ctrees_rehydration_bundle", ctree_runtime_payload.get("rehydration_bundle"))
+                        session_state.set_provider_metadata("ctrees_prompt_planes", ctree_runtime_payload.get("prompt_planes"))
+                        if ctree_runtime_payload.get("runner") is not None:
+                            session_state.set_provider_metadata("ctrees_runner", ctree_runtime_payload.get("runner"))
                         try:
-                            ctree_cfg = (self.config.get("ctrees") or {}) if isinstance(getattr(self, "config", None), dict) else {}
-                            runner_cfg = (ctree_cfg.get("runner") or {}) if isinstance(ctree_cfg, dict) else {}
-                            if runner_cfg.get("enabled"):
-                                branches = runner_cfg.get("branches") or 2
-                                runner = TreeRunner(ctree_store, branches=branches)
-                                session_state.set_provider_metadata("ctrees_runner", runner.build_manifest())
-                        except Exception:
-                            pass
-                        try:
-                            session_state.emit_ctree_snapshot(
-                                {
-                                    "snapshot": session_state.get_provider_metadata("ctrees_snapshot"),
-                                    "compiler": session_state.get_provider_metadata("ctrees_compiler"),
-                                    "collapse": session_state.get_provider_metadata("ctrees_collapse"),
-                                    "runner": session_state.get_provider_metadata("ctrees_runner"),
-                                }
-                            )
+                            session_state.emit_ctree_snapshot(ctree_runtime_payload)
                         except Exception:
                             pass
                 except Exception:

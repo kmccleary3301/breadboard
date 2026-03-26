@@ -1,0 +1,13 @@
+{
+  "schema": "breadboard.darwin.claim_record.v0",
+  "claim_id": "claim.phase1.harness.week1",
+  "evidence_bundle_id": "bundle.phase1.week1.001",
+  "claim_target": "internal",
+  "claim_tier": "t1",
+  "scope": "harness baseline internal directional signal",
+  "status": "approved",
+  "summary": "Harness baseline reached replay-complete internal signal under class_a budget.",
+  "confidence_statement": "Directional only; not external-safe.",
+  "limitations_ref": "docs/contracts/darwin/DARWIN_CLAIM_LADDER_V0.md",
+  "approved_by": ["review.eval", "review.ops"]
+}

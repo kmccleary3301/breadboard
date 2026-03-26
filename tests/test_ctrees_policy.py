@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 from agentic_coder_prototype.ctrees.compiler import compile_ctree
-from agentic_coder_prototype.ctrees.policy import collapse_policy
+from agentic_coder_prototype.ctrees.collapse import collapse_ctree
+from agentic_coder_prototype.ctrees.policy import (
+    build_rehydration_plan,
+    build_retrieval_substrate,
+    collapse_policy,
+    resolve_retrieval_policy,
+)
 from agentic_coder_prototype.ctrees.store import CTreeStore
 
 
@@ -20,6 +26,29 @@ def test_ctree_compiler_hashes_deterministic() -> None:
     assert compiled_a["hashes"]["z3"] == compiled_b["hashes"]["z3"]
 
 
+def test_ctree_replay_and_recompute_match() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Phase 9"}, turn=1)
+    store.record("task", {"title": "Reducer", "parent_id": root_id, "targets": ["ctrees/compiler.py"]}, turn=2)
+    store.record(
+        "task",
+        {
+            "title": "Blocked sibling",
+            "parent_id": root_id,
+            "blocker_refs": ["dep-1"],
+        },
+        turn=3,
+    )
+
+    replayed = CTreeStore.from_events(list(store.events))
+
+    compiled_original = compile_ctree(store)
+    compiled_replayed = compile_ctree(replayed)
+
+    assert compiled_original["stages"]["SPEC"] == compiled_replayed["stages"]["SPEC"]
+    assert compiled_original["prompt_planes"] == compiled_replayed["prompt_planes"]
+
+
 def test_ctree_collapse_policy_ordering() -> None:
     store = CTreeStore()
     store.nodes.append({"id": "ctn_000010"})
@@ -31,3 +60,205 @@ def test_ctree_collapse_policy_ordering() -> None:
 
     assert policy_target_2["drop"] == ["ctn_000001"]
     assert policy_target_1["drop"] == ["ctn_000001", "ctn_000002"]
+
+
+def test_ctree_parent_reduction_is_sibling_order_invariant() -> None:
+    store_a = CTreeStore()
+    parent_a = store_a.record("objective", {"title": "Parent"}, turn=1)
+    store_a.record("task", {"title": "First", "parent_id": parent_a, "targets": ["a.py"]}, turn=2)
+    store_a.record("task", {"title": "Second", "parent_id": parent_a, "blocker_refs": ["dep-1"]}, turn=3)
+
+    store_b = CTreeStore()
+    parent_b = store_b.record("objective", {"title": "Parent"}, turn=1)
+    store_b.record("task", {"title": "Second", "parent_id": parent_b, "blocker_refs": ["dep-1"]}, turn=2)
+    store_b.record("task", {"title": "First", "parent_id": parent_b, "targets": ["a.py"]}, turn=3)
+
+    reductions_a = compile_ctree(store_a)["stages"]["SPEC"]["parent_reductions"]
+    reductions_b = compile_ctree(store_b)["stages"]["SPEC"]["parent_reductions"]
+
+    comparable_a = dict(reductions_a[0])
+    comparable_b = dict(reductions_b[0])
+    comparable_a.pop("node_id", None)
+    comparable_b.pop("node_id", None)
+    assert comparable_a == comparable_b
+
+
+def test_ctree_compiler_reduces_parent_state() -> None:
+    store = CTreeStore()
+    parent_id = store.record("objective", {"title": "Phase 9"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Define schema",
+            "parent_id": parent_id,
+            "targets": ["ctrees/schema.py"],
+            "artifact_refs": ["schema_spec.md"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Blocked child",
+            "parent_id": parent_id,
+            "blocker_refs": ["bd-123"],
+        },
+        turn=3,
+    )
+
+    compiled = compile_ctree(store)
+    reductions = compiled["stages"]["SPEC"]["parent_reductions"]
+
+    assert reductions
+    reduced_parent = reductions[0]
+    assert reduced_parent["node_id"] == parent_id
+    assert reduced_parent["child_count"] == 2
+    assert reduced_parent["child_status_counts"]["active"] == 1
+    assert reduced_parent["child_status_counts"]["blocked"] == 1
+    assert "ctrees/schema.py" in reduced_parent["active_target_set"]
+    assert "bd-123" in reduced_parent["unresolved_blocker_set"]
+
+
+def test_ctree_policy_exposes_tranche1_retrieval_and_rehydration() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Phase 9"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Draft policy",
+            "parent_id": root_id,
+            "constraints": [{"summary": "Keep it deterministic"}],
+            "targets": ["ctrees/policy.py"],
+            "artifact_refs": ["policy_spec.md"],
+        },
+        turn=2,
+    )
+
+    retrieval = resolve_retrieval_policy(store, mode="resume")
+    substrate = build_retrieval_substrate(store, mode="resume")
+    rehydration = build_rehydration_plan(store, mode="resume")
+    collapse = collapse_ctree(store)
+
+    assert retrieval["enabled_lanes"] == ["structural", "lexical"]
+    assert substrate["active_path_node_ids"]
+    assert substrate["candidate_support"]["structural"]
+    assert rehydration["restore_bundle"]["constraints"]
+    assert rehydration["rehydration_bundle"]["support_node_ids"]
+    assert collapse["retrieval_policy"]["mode"] == "resume"
+    assert collapse["rehydration_plan"]["mode"] == "resume"
+    assert collapse["retrieval_substrate"]["candidate_support"]["structural"]
+
+
+def test_ctree_prompt_planes_use_support_bundle_contract() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Prompt plane test"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Plane contract",
+            "parent_id": root_id,
+            "constraints": [{"summary": "Use explicit support bundles"}],
+            "targets": ["ctrees/compiler.py"],
+        },
+        turn=2,
+    )
+
+    compiled = compile_ctree(store, prompt_summary={"turn_count": 2})
+    planes = compiled["prompt_planes"]
+
+    assert planes["schema_version"] == "ctree_prompt_planes_v2"
+    assert "stable_rules" in planes
+    assert "support_bundle" in planes
+    assert "dynamic_prompt_context" not in planes
+    assert "retrieved_support" not in planes
+    assert "rehydration" not in planes
+    assert planes["support_bundle"]["support_node_ids"]
+    assert planes["live_session_delta"]["prompt_summary"]["turn_count"] == 2
+
+
+def test_ctree_dependency_lookup_surfaces_direct_blocker_graph_support() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Dependency lookup"}, turn=1)
+    blocker_id = store.record(
+        "task",
+        {
+            "title": "Schema prerequisite",
+            "parent_id": root_id,
+            "targets": ["ctrees/schema.py"],
+            "artifact_refs": ["schema_spec.md"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Blocked compiler follow-up",
+            "parent_id": root_id,
+            "blocker_refs": [blocker_id],
+            "related_links": [{"type": "validates", "target": blocker_id}],
+            "targets": ["ctrees/compiler.py"],
+        },
+        turn=3,
+    )
+
+    substrate = build_retrieval_substrate(store, mode="dependency_lookup")
+    bundle = build_rehydration_plan(store, mode="dependency_lookup")["rehydration_bundle"]
+
+    assert substrate["retrieval_policy"]["enabled_lanes"] == ["structural", "graph_link"]
+    assert substrate["candidate_support"]["graph_link"]
+    assert blocker_id in [item["node_id"] for item in substrate["candidate_support"]["graph_link"]]
+    assert blocker_id in bundle["support_node_ids"]
+    assert blocker_id in bundle["blocker_refs"]
+    assert blocker_id in bundle["validations"]
+    assert "schema_spec.md" in bundle["artifact_refs"]
+
+
+def test_ctree_dependency_lookup_graph_neighborhood_is_opt_in_and_bounded() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Dependency neighborhood"}, turn=1)
+    validation_id = store.record(
+        "evidence_bundle",
+        {
+            "title": "Schema validation packet",
+            "parent_id": root_id,
+            "status": "done",
+            "artifact_refs": ["schema_validation.md"],
+        },
+        turn=2,
+    )
+    blocker_id = store.record(
+        "task",
+        {
+            "title": "Schema prerequisite",
+            "parent_id": root_id,
+            "artifact_refs": ["schema_spec.md"],
+            "related_links": [{"type": "validates", "target": validation_id}],
+            "targets": ["ctrees/schema.py"],
+        },
+        turn=3,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Blocked compiler follow-up",
+            "parent_id": root_id,
+            "blocker_refs": [blocker_id],
+            "targets": ["ctrees/compiler.py"],
+        },
+        turn=4,
+    )
+
+    baseline = build_rehydration_plan(store, mode="dependency_lookup")
+    widened = build_rehydration_plan(store, mode="dependency_lookup", graph_neighborhood_enabled=True)
+
+    baseline_lanes = baseline["retrieval_substrate"]["retrieval_policy"]["enabled_lanes"]
+    widened_lanes = widened["retrieval_substrate"]["retrieval_policy"]["enabled_lanes"]
+    widened_neighbors = widened["retrieval_substrate"]["candidate_support"]["graph_neighborhood"]
+    widened_bundle = widened["rehydration_bundle"]
+
+    assert baseline_lanes == ["structural", "graph_link"]
+    assert widened_lanes == ["structural", "graph_link", "graph_neighborhood"]
+    assert len(widened_neighbors) <= 4
+    assert any(item["reason"] == "neighbor_validates_link" for item in widened_neighbors)
+    assert validation_id in widened_bundle["graph_neighbor_ids"]
+    assert "schema_validation.md" in widened_bundle["artifact_refs"]

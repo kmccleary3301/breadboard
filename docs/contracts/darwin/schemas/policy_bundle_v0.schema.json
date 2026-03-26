@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/policy_bundle_v0.schema.json",
+  "title": "DarwinPolicyBundleV0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "policy_bundle_id",
+    "schema_version",
+    "parent_selection_policy",
+    "mutation_policy",
+    "crossover_policy",
+    "topology_policy",
+    "budget_policy",
+    "memory_policy_ref",
+    "safety_policy",
+    "promotion_policy",
+    "created_from",
+    "change_reason",
+    "approval_state"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.policy_bundle.v0" },
+    "policy_bundle_id": { "type": "string", "minLength": 1 },
+    "schema_version": { "type": "string", "minLength": 1 },
+    "parent_selection_policy": { "type": "string", "minLength": 1 },
+    "mutation_policy": { "type": "string", "minLength": 1 },
+    "crossover_policy": { "type": "string", "minLength": 1 },
+    "topology_policy": { "type": "string", "minLength": 1 },
+    "budget_policy": { "type": "string", "minLength": 1 },
+    "memory_policy_ref": { "type": "string", "minLength": 1 },
+    "safety_policy": { "type": "string", "minLength": 1 },
+    "promotion_policy": { "type": "string", "minLength": 1 },
+    "created_from": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "change_reason": { "type": "string", "minLength": 1 },
+    "approval_state": { "type": "string", "enum": ["draft", "shadow", "approved", "deprecated"] }
+  }
+}

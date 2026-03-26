@@ -1,0 +1,16 @@
+{
+  "schema": "breadboard.darwin.policy_bundle.v0",
+  "policy_bundle_id": "policy.topology.pev_v0",
+  "schema_version": "v0",
+  "parent_selection_policy": "rank_then_diversity",
+  "mutation_policy": "operator_library_v1",
+  "crossover_policy": "typed_merge_v0",
+  "topology_policy": "planner_executor_verifier",
+  "budget_policy": "policy.budget.class_a_v0",
+  "memory_policy_ref": "policy.memory.flat_v0",
+  "safety_policy": "safety.default_v0",
+  "promotion_policy": "promotion.internal_comparative_v0",
+  "created_from": ["policy.topology.single_v0"],
+  "change_reason": "introduce verifier-aware topology baseline",
+  "approval_state": "approved"
+}

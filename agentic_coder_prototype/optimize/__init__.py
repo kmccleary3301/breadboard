@@ -146,6 +146,7 @@ from .substrate import (
     SupportEnvelope,
     materialize_candidate,
 )
+from .trajectory_ir import TrajectoryEpisode, TrajectoryStep, build_stub_episode
 from .wrongness import WrongnessReport
 
 __all__ = [
@@ -213,6 +214,8 @@ __all__ = [
     "TransferSliceManifest",
     "ToolPackContext",
     "ToolRequirement",
+    "TrajectoryEpisode",
+    "TrajectoryStep",
     "TypedOverlayMutationPolicy",
     "WrongnessGuidedReflectionPolicy",
     "WrongnessReport",
@@ -267,6 +270,7 @@ __all__ = [
     "build_tool_guidance_coding_overlay_composition_example_payload",
     "build_tool_guidance_benchmark_example",
     "build_tool_guidance_benchmark_example_payload",
+    "build_stub_episode",
     "create_promotion_record",
     "evaluate_comparison_gate",
     "evaluate_family_promotion_gate",
