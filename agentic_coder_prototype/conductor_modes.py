@@ -130,6 +130,10 @@ def get_model_response(
         pass
 
     provider_tools_cfg = getattr(conductor, "_provider_tools_effective", None) or dict((conductor.config.get("provider_tools") or {}))
+    phase16_tool_choice = session_state.get_provider_metadata("phase16_provider_tool_choice")
+    if phase16_tool_choice is not None:
+        provider_tools_cfg = dict(provider_tools_cfg)
+        provider_tools_cfg["tool_choice"] = phase16_tool_choice
     effective_config = dict(conductor.config)
     effective_config["provider_tools"] = provider_tools_cfg
     conductor._provider_tools_effective = provider_tools_cfg
@@ -276,6 +280,15 @@ def get_model_response(
     }
     if stream_policy is not None:
         runtime_extra["stream_policy"] = stream_policy
+    phase16_parallel_tool_calls = session_state.get_provider_metadata("phase16_parallel_tool_calls")
+    phase16_phase_label = session_state.get_provider_metadata("phase16_phase_label")
+    responses_extra: Dict[str, Any] = {}
+    if phase16_parallel_tool_calls is not None:
+        responses_extra["parallel_tool_calls"] = bool(phase16_parallel_tool_calls)
+    if responses_extra:
+        runtime_extra["responses_extra"] = responses_extra
+    if phase16_phase_label:
+        runtime_extra["phase16_phase_label"] = str(phase16_phase_label)
 
     runtime_context = ProviderRuntimeContext(
         session_state=session_state,

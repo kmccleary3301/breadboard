@@ -1,0 +1,14 @@
+{
+  "schema": "breadboard.darwin.decision_record.v0",
+  "decision_id": "decision.rollback.sample.v1",
+  "decision_type": "rollback",
+  "lane_id": "lane.repo_swe",
+  "candidate_ids": ["cand.lane.repo_swe.baseline.v1"],
+  "component_ids": ["policy.budget.class_a_v0"],
+  "evidence_refs": ["artifacts/darwin/search/promotion_decisions_v1.json"],
+  "replay_refs": [],
+  "decision_basis": {
+    "reason_code": "rollback_target_preserved"
+  },
+  "decided_at": "2026-03-18T00:00:00+00:00"
+}

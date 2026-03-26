@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/decision_record_v0.schema.json",
+  "title": "DarwinDecisionRecordV0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "decision_id",
+    "decision_type",
+    "lane_id",
+    "candidate_ids",
+    "component_ids",
+    "evidence_refs",
+    "replay_refs",
+    "decision_basis",
+    "decided_at"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.decision_record.v0" },
+    "decision_id": { "type": "string", "minLength": 1 },
+    "decision_type": {
+      "type": "string",
+      "enum": ["promotion", "rollback", "transfer", "deprecation", "retained_baseline"]
+    },
+    "lane_id": { "type": "string", "minLength": 1 },
+    "candidate_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "component_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "replay_refs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "decision_basis": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["reason_code"],
+      "properties": {
+        "reason_code": { "type": "string", "minLength": 1 }
+      }
+    },
+    "decided_at": { "type": "string", "minLength": 1 }
+  }
+}

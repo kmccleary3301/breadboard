@@ -5,9 +5,11 @@ import concurrent.futures
 import hashlib
 from datetime import datetime
 import json
+import math
 import os
 import random
 import shutil
+import shlex
 import subprocess
 import sys
 import time
@@ -4580,12 +4582,16 @@ class OpenAIConductor:
         normalized = name.lower()
         if normalized == "bash":
             normalized = "run_shell"
+        elif normalized == "shell_command":
+            normalized = "run_shell"
         elif normalized == "list":
             normalized = "list_dir"
         elif normalized == "read":
             normalized = "read_file"
         elif normalized == "write":
             normalized = "create_file_from_block"
+        elif normalized == "apply_patch":
+            normalized = "apply_unified_patch"
         elif normalized == "todowrite":
             normalized = "todo.write_board"
         elif normalized == "todoread":
@@ -4645,6 +4651,19 @@ class OpenAIConductor:
             return self._execute_todo_tool("todo.write_board", args)
         if normalized == "todo.list":
             return self._execute_todo_tool("todo.list", args)
+        if normalized == "update_plan":
+            explanation = str(args.get("explanation") or "")
+            plan = args.get("plan")
+            try:
+                setattr(self, "_codex_update_plan_state", {"explanation": explanation, "plan": plan})
+            except Exception:
+                pass
+            return {
+                "ok": True,
+                "explanation": explanation,
+                "plan": plan,
+                "__mvi_text_output": "Plan updated",
+            }
         if normalized == "create_file_from_block":
             target = self._normalize_workspace_path(str(args.get("file_name", "")))
             content = str(args.get("content", ""))
@@ -4674,7 +4693,18 @@ class OpenAIConductor:
                 if str(expected_status or "").lower() == "error":
                     return {"error": expected_output, "__mvi_text_output": expected_output}
                 return {"stdout": expected_output, "exit": 0, "__mvi_text_output": expected_output}
-            return self.run_shell(args["command"], args.get("timeout"))
+            command = str(args.get("command") or args.get("input") or "")
+            if not command:
+                return {"error": "missing shell command"}
+            workdir = str(args.get("workdir") or "").strip()
+            if workdir:
+                command = f"cd {shlex.quote(workdir)} && {command}"
+            timeout = args.get("timeout")
+            if timeout is None:
+                timeout_ms = args.get("timeout_ms")
+                if isinstance(timeout_ms, (int, float)):
+                    timeout = max(1, int(math.ceil(float(timeout_ms) / 1000.0)))
+            return self.run_shell(command, timeout)
         if normalized == "apply_search_replace":
             target = self._normalize_workspace_path(str(args.get("file_name", "")))
             search_text = str(args.get("search", ""))
@@ -4687,7 +4717,7 @@ class OpenAIConductor:
                 return self._ray_get(self.sandbox.write_text.remote(target, replace_text))
             return self._ray_get(self.sandbox.edit_replace.remote(target, search_text, replace_text, 1))
         if normalized == "apply_unified_patch":
-            patch_source_text = str(args.get("patch", ""))
+            patch_source_text = str(args.get("patch") or args.get("input") or "")
             patch_text = patch_source_text
             if (
                 "*** Add File:" in patch_text
@@ -4884,6 +4914,9 @@ class OpenAIConductor:
             winrate = context.get("winrate_vs_baseline") or context.get("winrateVsBaseline")
             if winrate is not None:
                 session_state.set_provider_metadata("winrate_vs_baseline", winrate)
+            for key, value in context.items():
+                if isinstance(key, str) and (key.startswith("phase15_") or key.startswith("phase16_")):
+                    session_state.set_provider_metadata(key, value)
         session_state.set_provider_metadata("initial_user_prompt", user_prompt or "")
         session_state.set_provider_metadata(
             "requires_build_guard",

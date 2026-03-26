@@ -1,0 +1,12 @@
+extends: codex_cli_gpt5_e4_live__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml
+
+profile: { name: codex-cli-gpt5-codex-e4-live-candidate-a }
+
+phase11:
+  live_protocol_adapter:
+    enabled: true
+    strategy: candidate_a
+    mode: active_continuation
+    graph_enabled: true
+    graph_neighborhood_enabled: false
+    dense_enabled: false

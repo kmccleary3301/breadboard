@@ -1,0 +1,12 @@
+{
+  "schema": "breadboard.darwin.component_ref.v0",
+  "component_kind": "operator",
+  "component_id": "mut.prompt.tighten_acceptance_v1",
+  "lane_scope": ["lane.harness", "lane.research"],
+  "source_ref": "artifacts/darwin/search/mutation_operator_registry_v1.json#mut.prompt.tighten_acceptance_v1",
+  "source_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+  "status": "approved",
+  "metadata": {
+    "operator_class": "prompt"
+  }
+}

@@ -32,6 +32,19 @@ Phase-1 T0 freezes:
 - `DARWIN_TYPED_SEARCH_CORE_V1.md`
 - `DARWIN_TRANSFER_PROTOCOL_V1.md`
 - `DARWIN_COMPUTE_NORMALIZED_SCORECARD_V1.md`
+- `DARWIN_COMPUTE_NORMALIZED_SCORECARD_V2.md`
+- `DARWIN_COST_ACCOUNTING_CLASSIFICATION_V0.md`
+- `DARWIN_MODEL_ROUTING_POLICY_V0.md`
+- `DARWIN_TRANSFER_FAMILY_POLICY_V0.md`
+- `DARWIN_LINEAGE_POLICY_V0.md`
+- `DARWIN_EXTERNAL_SAFE_EVIDENCE_POLICY_V0.md`
+- `DARWIN_STAGE3_COMPONENT_FAMILY_POLICY_V0.md`
+- `DARWIN_STAGE3_COMPONENT_PROMOTION_POLICY_V0.md`
+- `DARWIN_STAGE3_BOUNDED_TRANSFER_POLICY_V0.md`
+- `DARWIN_STAGE3_COMPONENT_LIFECYCLE_V0.md`
+- `DARWIN_STAGE4_COMPONENT_FAMILY_POLICY_V0.md`
+- `DARWIN_STAGE4_COMPONENT_PROMOTION_POLICY_V0.md`
+- `DARWIN_STAGE4_BOUNDED_TRANSFER_POLICY_V0.md`
 
 ### Machine-readable schemas
 
@@ -39,6 +52,13 @@ Phase-1 T0 freezes:
 - `schemas/policy_bundle_v0.schema.json`
 - `schemas/candidate_artifact_v0.schema.json`
 - `schemas/evaluation_record_v0.schema.json`
+- `schemas/effective_config_v0.schema.json`
+- `schemas/execution_plan_v0.schema.json`
+- `schemas/effective_policy_v0.schema.json`
+- `schemas/evaluator_pack_v0.schema.json`
+- `schemas/component_ref_v0.schema.json`
+- `schemas/decision_record_v0.schema.json`
+- `schemas/evolution_ledger_v0.schema.json`
 - `schemas/evidence_bundle_v0.schema.json`
 - `schemas/claim_record_v0.schema.json`
 - `schemas/lane_registry_v0.schema.json`
@@ -65,13 +85,63 @@ Phase-1 T0 freezes:
 - `scripts/build_darwin_typed_search_core_v1.py`
 - `scripts/run_darwin_t2_search_smoke_v1.py`
 - `scripts/build_darwin_invalid_comparison_ledger_v1.py`
+- `scripts/build_darwin_evolution_ledger_v0.py`
 - `scripts/build_darwin_compute_normalized_view_v1.py`
+- `scripts/build_darwin_compute_normalized_view_v2.py`
+- `scripts/build_darwin_compute_normalized_review_v0.py`
+- `scripts/build_darwin_compute_normalized_memo_v0.py`
+- `scripts/build_darwin_transfer_family_view_v0.py`
+- `scripts/build_darwin_lineage_review_v0.py`
+- `scripts/build_darwin_transfer_lineage_proving_review_v0.py`
+- `scripts/build_darwin_external_safe_claim_subset_v0.py`
+- `scripts/build_darwin_external_safe_invalidity_summary_v0.py`
+- `scripts/build_darwin_external_safe_reviewer_summary_v0.py`
+- `scripts/build_darwin_external_safe_memo_v0.py`
+- `scripts/build_darwin_external_safe_packet_v0.py`
+- `scripts/build_darwin_transfer_family_view_v0.py`
+- `scripts/build_darwin_lineage_review_v0.py`
 - `scripts/build_darwin_comparative_dossier_v1.py`
 - `scripts/emit_darwin_search_evidence_v1.py`
 - `scripts/run_darwin_phase1_replay_audit_v1.py`
 - `scripts/emit_darwin_phase1_final_evidence_v1.py`
 - `scripts/run_darwin_phase1_orchestration_v1.py`
 - `scripts/run_darwin_research_lane_baseline_v0.py`
+- `scripts/run_darwin_stage3_bounded_inference_campaign_v0.py`
+- `scripts/build_darwin_stage3_operator_ev_report_v0.py`
+- `scripts/build_darwin_stage3_topology_ev_report_v0.py`
+- `scripts/build_darwin_stage3_invalidity_summary_v0.py`
+- `scripts/build_darwin_stage3_verification_bundle_v0.py`
+- `scripts/build_darwin_stage3_component_candidates_v0.py`
+- `scripts/run_darwin_stage3_component_replay_v0.py`
+- `scripts/build_darwin_stage3_component_promotion_report_v0.py`
+- `scripts/build_darwin_stage3_bounded_transfer_outcomes_v0.py`
+- `scripts/build_darwin_stage3_failed_transfer_taxonomy_v0.py`
+- `scripts/build_darwin_stage3_component_transfer_verification_bundle_v0.py`
+- `scripts/build_darwin_stage3_component_registry_v0.py`
+- `scripts/build_darwin_stage3_promoted_family_artifact_v0.py`
+- `scripts/build_darwin_stage3_second_family_decision_v0.py`
+- `scripts/build_darwin_stage3_component_scorecard_v0.py`
+- `scripts/build_darwin_stage3_component_memo_v0.py`
+- `scripts/build_darwin_stage3_consolidated_verification_bundle_v0.py`
+- `scripts/run_darwin_stage4_live_economics_pilot_v0.py`
+- `scripts/run_darwin_stage4_systems_live_pilot_v0.py`
+- `scripts/build_darwin_stage4_live_readiness_v0.py`
+- `scripts/build_darwin_stage4_matched_budget_view_v1.py`
+- `scripts/build_darwin_stage4_operator_ev_report_v0.py`
+- `scripts/build_darwin_stage4_topology_ev_report_v0.py`
+- `scripts/build_darwin_stage4_systems_ev_bundle_v0.py`
+- `scripts/build_darwin_stage4_family_candidates_v0.py`
+- `scripts/build_darwin_stage4_family_promotion_report_v0.py`
+- `scripts/build_darwin_stage4_second_family_decision_v0.py`
+- `scripts/build_darwin_stage4_family_registry_v0.py`
+- `scripts/build_darwin_stage4_bounded_transfer_outcomes_v0.py`
+- `scripts/build_darwin_stage4_failed_transfer_taxonomy_v0.py`
+- `scripts/build_darwin_stage4_family_scorecard_v0.py`
+- `scripts/build_darwin_stage4_family_memo_v0.py`
+- `scripts/build_darwin_stage4_family_verification_bundle_v0.py`
+- `scripts/run_darwin_stage4_family_replay_audit_v0.py`
+- `scripts/build_darwin_stage4_canonical_artifact_index_v0.py`
+- `scripts/build_darwin_stage4_comparative_bundle_v0.py`
 
 ## Legacy compatibility
 

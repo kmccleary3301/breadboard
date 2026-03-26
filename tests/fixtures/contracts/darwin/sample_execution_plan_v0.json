@@ -1,0 +1,33 @@
+{
+  "schema": "breadboard.darwin.execution_plan.v0",
+  "campaign_id": "camp.darwin.phase2.harness.shadow.v0",
+  "lane_id": "lane.harness",
+  "candidate_id": "cand.lane.harness.baseline.v1",
+  "trial_label": "baseline",
+  "shadow_mode": true,
+  "runtime_consumed": false,
+  "effective_config_ref": "artifacts/darwin/live_baselines/lane.harness/baseline_effective_config_v0.json",
+  "plan_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+  "execution_graph": {
+    "topology_id": "policy.topology.single_v0",
+    "nodes": [
+      { "node_id": "node.executor", "role": "executor" }
+    ],
+    "edges": []
+  },
+  "bindings": {
+    "cwd": "/repo",
+    "out_dir": "artifacts/darwin/live_baselines/lane.harness",
+    "task_id": "task.darwin.harness.parity_smoke",
+    "budget_class": "class_a",
+    "tool_bindings": ["pytest", "diff", "filesystem_read"],
+    "environment_digest": "sha256:darwin-phase1-bootstrap",
+    "command": ["python", "-m", "pytest", "-q", "tests/test_extension_spine.py"]
+  },
+  "runtime_truth_refs": {
+    "candidate_ref": "artifacts/darwin/candidates/cand.lane.harness.baseline.v1.json",
+    "evaluation_ref": "artifacts/darwin/evaluations/cand.lane.harness.baseline.v1.evaluation_v1.json",
+    "stdout_ref": "artifacts/darwin/live_baselines/lane.harness/stdout.txt",
+    "stderr_ref": "artifacts/darwin/live_baselines/lane.harness/stderr.txt"
+  }
+}

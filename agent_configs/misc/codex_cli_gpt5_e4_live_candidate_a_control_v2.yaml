@@ -1,0 +1,14 @@
+extends: codex_cli_gpt5_e4_live_candidate_a.yaml
+
+profile: { name: codex-cli-gpt5-codex-e4-live-candidate-a-control-v2 }
+
+phase12:
+  live_controller:
+    enabled: true
+    variant: candidate_a_control_v2
+    require_verification: true
+    require_grounding: true
+    max_no_progress_turns: 3
+    max_inspection_turns: 2
+    mandatory_write_by_turn: 4
+    escalation_after_no_progress: 2

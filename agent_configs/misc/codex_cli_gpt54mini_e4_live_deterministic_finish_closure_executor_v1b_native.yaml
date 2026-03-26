@@ -1,0 +1,15 @@
+extends: codex_cli_gpt54mini_e4_live_deterministic_finish_closure_executor_v1_native.yaml
+
+profile: { name: codex-cli-gpt5.4-mini-e4-live-deterministic-finish-closure-executor-v1b-native }
+
+phase18:
+  finish_closure_executor:
+    enabled: true
+    family: deterministic_closure_ready_executor_v1_mini_native
+    variant: deterministic_closure_ready_executor_v1b_mini_native
+    support_strategy: deterministic_reranker
+    tool_choice: required
+    parallel_tool_calls: false
+    require_request_finish_receipt: true
+    require_closure_ready: true
+    deny_no_tool_turn_when_closure_ready: true

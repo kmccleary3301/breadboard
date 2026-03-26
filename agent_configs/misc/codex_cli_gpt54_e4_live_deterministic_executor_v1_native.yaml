@@ -1,0 +1,19 @@
+extends: codex_cli_gpt54_e4_live_deterministic_executor_v1.yaml
+
+profile: { name: codex-cli-gpt5.4-e4-live-deterministic-executor-v1-native }
+
+provider_tools:
+  use_native: true
+  suppress_prompts: false
+  api_variant: responses
+
+phase14:
+  executor:
+    enabled: true
+    family: deterministic_executor_v1_native
+    variant: deterministic_executor_v1_native
+    support_strategy: deterministic_reranker
+    max_localize_turns: 1
+    max_commit_turns: 1
+    allow_no_edit_close: true
+    require_mark_task_complete: true

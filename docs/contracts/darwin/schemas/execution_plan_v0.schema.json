@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/darwin/execution_plan_v0.schema.json",
+  "title": "DarwinExecutionPlanV0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "campaign_id",
+    "lane_id",
+    "candidate_id",
+    "trial_label",
+    "shadow_mode",
+    "runtime_consumed",
+    "effective_config_ref",
+    "plan_digest",
+    "execution_graph",
+    "bindings",
+    "runtime_truth_refs"
+  ],
+  "properties": {
+    "schema": { "const": "breadboard.darwin.execution_plan.v0" },
+    "campaign_id": { "type": "string", "minLength": 1 },
+    "lane_id": { "type": "string", "minLength": 1 },
+    "candidate_id": { "type": "string", "minLength": 1 },
+    "trial_label": { "type": "string", "minLength": 1 },
+    "shadow_mode": { "type": "boolean" },
+    "runtime_consumed": { "type": "boolean" },
+    "effective_config_ref": { "type": "string", "minLength": 1 },
+    "plan_digest": { "type": "string", "minLength": 64, "maxLength": 64 },
+    "execution_graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["topology_id", "nodes", "edges"],
+      "properties": {
+        "topology_id": { "type": "string", "minLength": 1 },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["node_id", "role"],
+            "properties": {
+              "node_id": { "type": "string", "minLength": 1 },
+              "role": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "type": "string", "minLength": 1 },
+              "to": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cwd", "out_dir", "task_id", "budget_class", "tool_bindings", "environment_digest", "command"],
+      "properties": {
+        "cwd": { "type": "string", "minLength": 1 },
+        "out_dir": { "type": "string", "minLength": 1 },
+        "task_id": { "type": "string", "minLength": 1 },
+        "budget_class": { "type": "string", "minLength": 1 },
+        "tool_bindings": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "environment_digest": { "type": "string", "minLength": 1 },
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "runtime_truth_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_ref", "evaluation_ref", "stdout_ref", "stderr_ref"],
+      "properties": {
+        "candidate_ref": { "type": "string", "minLength": 1 },
+        "evaluation_ref": { "type": "string", "minLength": 1 },
+        "stdout_ref": { "type": "string", "minLength": 1 },
+        "stderr_ref": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+extends: codex_cli_gpt5_e4_live_candidate_a.yaml
+
+profile: { name: codex-cli-gpt5-codex-e4-live-candidate-a-runtime-v1 }
+
+tools:
+  registry:
+    include:
+      - shell_command
+      - apply_patch
+
+phase13:
+  runtime_protocol:
+    enabled: true
+    family: candidate_a_runtime_v1
+    support_strategy: candidate_a
+    max_localize_turns: 2
+    max_edit_attempts_before_reanchor: 1
+    require_verified_completion: true
+    allow_reanchor_on_failed_verify: true

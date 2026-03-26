@@ -187,6 +187,7 @@ def build_archive_snapshot(*, candidate_rows: list[dict]) -> dict:
                 "promotion_state": row.get("promotion_state"),
                 "candidate_ref": row.get("candidate_ref"),
                 "evaluation_ref": row.get("evaluation_ref"),
+                "stage3_substrate": row.get("stage3_substrate"),
             }
         )
     return {

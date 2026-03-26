@@ -59,9 +59,16 @@ class ProviderDumpLogger:
         self._lock = threading.Lock()
 
     def _ensure_dir(self) -> Optional[Path]:
-        if (not self.enabled or not self.log_dir) and os.environ.get("KC_PROVIDER_LOG_DIR"):
-            self.log_dir = os.environ.get("KC_PROVIDER_LOG_DIR")
-            self.enabled = bool(self.log_dir)
+        env_log_dir = os.environ.get("KC_PROVIDER_LOG_DIR")
+        env_workspace = os.environ.get("KC_PROVIDER_WORKSPACE")
+        env_session_id = os.environ.get("KC_PROVIDER_SESSION_ID")
+        if env_log_dir and env_log_dir != self.log_dir:
+            self.log_dir = env_log_dir
+        if env_workspace is not None and env_workspace != self.workspace_override:
+            self.workspace_override = env_workspace
+        if env_session_id is not None and env_session_id != self.session_override:
+            self.session_override = env_session_id
+        self.enabled = bool(self.log_dir)
         if not self.enabled or not self.log_dir:
             return None
         path = Path(self.log_dir)
@@ -173,4 +180,3 @@ class ProviderDumpLogger:
 
 
 provider_dump_logger = ProviderDumpLogger()
-
