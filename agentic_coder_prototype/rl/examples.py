@@ -943,3 +943,105 @@ def build_rl_v2_adapter_probe_program_example_payload() -> Dict[str, object]:
         "live_evaluation_pack": example["live_evaluation_pack"].to_dict(),
         "probe_reports": {key: value.to_dict() for key, value in example["probe_reports"].items()},
     }
+
+
+def build_rl_v2_pressure_study_packet() -> Dict[str, object]:
+    conformance = build_rl_v2_export_conformance_example()
+    delayed_eval = build_rl_v2_delayed_evaluation_fidelity_example()
+    async_graph = build_rl_v1_multi_agent_async_hardening_example()["trajectory_graph"]
+    representative_workloads = [
+        {
+            "workload_family": "single_agent_code",
+            "graph_id": conformance["live_graph"].graph_id,
+            "export_manifest_id": conformance["live_export_manifest"].export_manifest_id,
+            "qualities": ["graph_native", "compaction_aware", "replay_parity_ready"],
+        },
+        {
+            "workload_family": "multi_agent_async",
+            "graph_id": async_graph.graph_id,
+            "export_manifest_id": delayed_eval["export_manifest"].export_manifest_id,
+            "qualities": ["message_edges", "workspace_edges", "credit_frame_ready"],
+        },
+        {
+            "workload_family": "delayed_evaluation_async",
+            "graph_id": delayed_eval["trajectory_graph"].graph_id,
+            "export_manifest_id": delayed_eval["export_manifest"].export_manifest_id,
+            "qualities": ["delayed_eval", "available_at_explicit", "policy_view_safe"],
+        },
+    ]
+    baselines = {
+        "transcript_only": {
+            "lost_capabilities": [
+                "graph_topology",
+                "track_lineage",
+                "compaction_manifest_refs",
+                "delayed_available_at",
+                "credit_frame",
+            ],
+            "information_loss_count": 5,
+        },
+        "flattened_global_step": {
+            "lost_capabilities": [
+                "branch_lineage",
+                "message_visibility_edges",
+                "workspace_write_edges",
+            ],
+            "information_loss_count": 3,
+        },
+        "scalar_reward_only": {
+            "lost_capabilities": [
+                "text_feedback",
+                "evidence_refs",
+                "cost_lineage",
+                "async_attribution",
+                "compaction_provenance",
+                "delayed_evaluation_timing",
+            ],
+            "information_loss_count": 6,
+        },
+        "graph_native_export": {
+            "lost_capabilities": [],
+            "information_loss_count": 0,
+        },
+    }
+    comparison = {
+        "winner": "graph_native_export",
+        "graph_native_materially_better": True,
+        "evidence": {
+            "replay_parity_holds": (
+                conformance["live_conformance_parity_view"] == conformance["replay_conformance_parity_view"]
+            ),
+            "delayed_eval_safe": delayed_eval["delayed_evaluation_fidelity_report"]["policy_view_safe"],
+            "compaction_auditable": build_rl_v2_compaction_fidelity_example()["compaction_fidelity_report"][
+                "all_compaction_refs_preserved"
+            ],
+        },
+    }
+    experiment_policy = {
+        "default_model": "gpt-5.4-mini",
+        "default_mode": "mini_default",
+        "escalation_rule": "escalate_only_when_capability_gap_is_explicit_and_auditable",
+        "baseline_fairness": "budget_matched_and_split_stable",
+    }
+    return {
+        "packet_id": "bb.rl.v2.pressure_study_packet.v1",
+        "representative_workloads": representative_workloads,
+        "baselines": baselines,
+        "comparison": comparison,
+        "experiment_policy": experiment_policy,
+    }
+
+
+def build_rl_v2_pressure_study_packet_payload() -> Dict[str, object]:
+    packet = build_rl_v2_pressure_study_packet()
+    return {
+        "packet_id": packet["packet_id"],
+        "representative_workloads": [dict(item) for item in packet["representative_workloads"]],
+        "baselines": {key: dict(value) for key, value in packet["baselines"].items()},
+        "comparison": {
+            "winner": packet["comparison"]["winner"],
+            "graph_native_materially_better": packet["comparison"]["graph_native_materially_better"],
+            "evidence": dict(packet["comparison"]["evidence"]),
+        },
+        "experiment_policy": dict(packet["experiment_policy"]),
+    }

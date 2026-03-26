@@ -47,6 +47,8 @@ from agentic_coder_prototype.rl import (
     build_rl_v2_adapter_probe_program_example_payload,
     build_rl_v2_export_conformance_example,
     build_rl_v2_export_conformance_example_payload,
+    build_rl_v2_pressure_study_packet,
+    build_rl_v2_pressure_study_packet_payload,
     build_rl_v2_freeze_and_scope_packet,
     build_rl_v2_freeze_and_scope_packet_payload,
     build_rl_v2_replay_live_fidelity_example,
@@ -361,3 +363,24 @@ def test_rl_v2_adapter_probe_reports_make_losses_and_unsupported_fields_explicit
     assert "parquet_row_group_config" in dataset_report.unsupported_fields
     assert "optimizer_state_omitted_by_design" in trainer_feedback_report.fidelity_losses
     assert "optimizer_checkpoint_ref" in trainer_feedback_report.unsupported_fields
+
+
+def test_rl_v2_pressure_study_packet_prefers_graph_native_export() -> None:
+    packet = build_rl_v2_pressure_study_packet()
+    payload = build_rl_v2_pressure_study_packet_payload()
+
+    assert payload["packet_id"] == "bb.rl.v2.pressure_study_packet.v1"
+    assert len(payload["representative_workloads"]) == 3
+    assert payload["comparison"]["winner"] == "graph_native_export"
+    assert payload["comparison"]["graph_native_materially_better"] is True
+    assert payload["baselines"]["graph_native_export"]["information_loss_count"] == 0
+    assert payload["baselines"]["transcript_only"]["information_loss_count"] > 0
+    assert packet["comparison"]["evidence"]["replay_parity_holds"] is True
+
+
+def test_rl_v2_pressure_study_packet_uses_mini_default_policy() -> None:
+    packet = build_rl_v2_pressure_study_packet()
+
+    assert packet["experiment_policy"]["default_model"] == "gpt-5.4-mini"
+    assert packet["experiment_policy"]["default_mode"] == "mini_default"
+    assert "auditable" in packet["experiment_policy"]["escalation_rule"]
