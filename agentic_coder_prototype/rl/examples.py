@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from ..longrun.checkpoint import build_longrun_checkpoint_metadata_record
 from ..search import build_branch_execute_verify_reference_recipe
+from .conformance import build_export_conformance_packet, build_export_conformance_parity_view
 from .fidelity import (
     build_compaction_fidelity_report,
     build_delayed_evaluation_fidelity_report,
@@ -24,6 +25,7 @@ from .graph import (
 )
 from .export import (
     build_dataset_export_unit_core_view,
+    export_reference_unit_bundle,
     export_rl_transition_segment_unit,
     export_sft_distillation_unit,
     export_verifier_example_unit,
@@ -743,4 +745,96 @@ def build_rl_v2_delayed_evaluation_fidelity_example_payload() -> Dict[str, objec
         "export_unit": example["export_unit"].to_dict(),
         "export_manifest": example["export_manifest"].to_dict(),
         "delayed_evaluation_fidelity_report": dict(example["delayed_evaluation_fidelity_report"]),
+    }
+
+
+def build_rl_v2_export_conformance_example() -> Dict[str, object]:
+    base = build_rl_v1_replay_parity_example()
+    live_bundle = export_reference_unit_bundle(base["live_graph"])
+    replay_bundle = export_reference_unit_bundle(base["replay_graph"])
+    live_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.v2.evaluation_pack.conformance.v1",
+        annotations=base["live_graph"].evaluation_annotations,
+        rubric_version="rl_v2_conformance_v1",
+        visibility_boundary="policy_view",
+        reduction_context="export_conformance",
+        metadata={"phase": "rl_v2_phase2", "projection_case": "live"},
+    )
+    replay_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.v2.evaluation_pack.conformance.v1",
+        annotations=base["replay_graph"].evaluation_annotations,
+        rubric_version="rl_v2_conformance_v1",
+        visibility_boundary="policy_view",
+        reduction_context="export_conformance",
+        metadata={"phase": "rl_v2_phase2", "projection_case": "replay"},
+    )
+    controls = [
+        "task_root_split",
+        "artifact_lineage_guard",
+        "teacher_student_origin_guard",
+    ]
+    live_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.v2.export_manifest.conformance.live.v1",
+        export_units=list(live_bundle.values()),
+        evaluation_pack_manifest=live_pack,
+        split_kind="train_holdout",
+        canonicalization_policy="source_ref_exact",
+        transform_version="rl_v2_phase2",
+        contamination_controls=controls,
+        fidelity_tier="replay_parity_verified",
+        metadata={"phase": "rl_v2_phase2", "projection_case": "live"},
+    )
+    replay_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.v2.export_manifest.conformance.replay.v1",
+        export_units=list(replay_bundle.values()),
+        evaluation_pack_manifest=replay_pack,
+        split_kind="train_holdout",
+        canonicalization_policy="source_ref_exact",
+        transform_version="rl_v2_phase2",
+        contamination_controls=controls,
+        fidelity_tier="replay_parity_verified",
+        metadata={"phase": "rl_v2_phase2", "projection_case": "replay"},
+    )
+    live_packet = build_export_conformance_packet(
+        packet_id="bb.rl.v2.export_conformance.live.v1",
+        export_units=list(live_bundle.values()),
+        evaluation_pack_manifest=live_pack,
+        export_manifest=live_manifest,
+        metadata={"phase": "rl_v2_phase2", "projection_case": "live"},
+    )
+    replay_packet = build_export_conformance_packet(
+        packet_id="bb.rl.v2.export_conformance.replay.v1",
+        export_units=list(replay_bundle.values()),
+        evaluation_pack_manifest=replay_pack,
+        export_manifest=replay_manifest,
+        metadata={"phase": "rl_v2_phase2", "projection_case": "replay"},
+    )
+    return {
+        **base,
+        "live_export_bundle": live_bundle,
+        "replay_export_bundle": replay_bundle,
+        "live_evaluation_pack": live_pack,
+        "replay_evaluation_pack": replay_pack,
+        "live_export_manifest": live_manifest,
+        "replay_export_manifest": replay_manifest,
+        "live_conformance_packet": live_packet,
+        "replay_conformance_packet": replay_packet,
+        "live_conformance_parity_view": build_export_conformance_parity_view(live_packet),
+        "replay_conformance_parity_view": build_export_conformance_parity_view(replay_packet),
+    }
+
+
+def build_rl_v2_export_conformance_example_payload() -> Dict[str, object]:
+    example = build_rl_v2_export_conformance_example()
+    return {
+        "live_export_bundle": {key: value.to_dict() for key, value in example["live_export_bundle"].items()},
+        "replay_export_bundle": {key: value.to_dict() for key, value in example["replay_export_bundle"].items()},
+        "live_evaluation_pack": example["live_evaluation_pack"].to_dict(),
+        "replay_evaluation_pack": example["replay_evaluation_pack"].to_dict(),
+        "live_export_manifest": example["live_export_manifest"].to_dict(),
+        "replay_export_manifest": example["replay_export_manifest"].to_dict(),
+        "live_conformance_packet": dict(example["live_conformance_packet"]),
+        "replay_conformance_packet": dict(example["replay_conformance_packet"]),
+        "live_conformance_parity_view": dict(example["live_conformance_parity_view"]),
+        "replay_conformance_parity_view": dict(example["replay_conformance_parity_view"]),
     }

@@ -1,5 +1,10 @@
 """Trainer-neutral RL overlay contracts for BreadBoard runtime truth."""
 
+from .conformance import (
+    build_export_conformance_packet,
+    build_export_conformance_parity_view,
+    build_export_unit_conformance_view,
+)
 from .fidelity import (
     build_compaction_fidelity_report,
     build_delayed_evaluation_fidelity_report,
@@ -37,6 +42,8 @@ from .examples import (
     build_rl_v2_compaction_fidelity_example_payload,
     build_rl_v2_delayed_evaluation_fidelity_example,
     build_rl_v2_delayed_evaluation_fidelity_example_payload,
+    build_rl_v2_export_conformance_example,
+    build_rl_v2_export_conformance_example_payload,
     build_rl_v2_freeze_and_scope_packet,
     build_rl_v2_freeze_and_scope_packet_payload,
     build_rl_v2_replay_live_fidelity_example,
@@ -44,6 +51,7 @@ from .examples import (
 )
 from .export import (
     build_dataset_export_unit_core_view,
+    export_reference_unit_bundle,
     export_rl_transition_segment_unit,
     export_sft_distillation_unit,
     export_verifier_example_unit,
@@ -100,7 +108,10 @@ __all__ = [
     "TrainingFeedback",
     "TrajectoryGraph",
     "build_compaction_fidelity_report",
+    "build_export_conformance_packet",
+    "build_export_conformance_parity_view",
     "build_dataset_export_unit_core_view",
+    "build_export_unit_conformance_view",
     "build_delayed_evaluation_fidelity_report",
     "build_credit_frame_from_trajectory_graph",
     "build_rl_v1_alpha_exporters_example",
@@ -136,6 +147,8 @@ __all__ = [
     "build_rl_v2_compaction_fidelity_example_payload",
     "build_rl_v2_delayed_evaluation_fidelity_example",
     "build_rl_v2_delayed_evaluation_fidelity_example_payload",
+    "build_rl_v2_export_conformance_example",
+    "build_rl_v2_export_conformance_example_payload",
     "build_rl_v2_freeze_and_scope_packet",
     "build_rl_v2_freeze_and_scope_packet_payload",
     "build_rl_v2_replay_live_fidelity_example",
@@ -144,6 +157,7 @@ __all__ = [
     "build_export_fingerprint",
     "build_export_manifest",
     "build_export_manifest_parity_view",
+    "export_reference_unit_bundle",
     "export_rl_transition_segment_unit",
     "export_sft_distillation_unit",
     "export_verifier_example_unit",

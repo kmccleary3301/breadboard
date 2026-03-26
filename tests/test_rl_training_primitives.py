@@ -42,6 +42,8 @@ from agentic_coder_prototype.rl import (
     build_rl_v2_compaction_fidelity_example_payload,
     build_rl_v2_delayed_evaluation_fidelity_example,
     build_rl_v2_delayed_evaluation_fidelity_example_payload,
+    build_rl_v2_export_conformance_example,
+    build_rl_v2_export_conformance_example_payload,
     build_rl_v2_freeze_and_scope_packet,
     build_rl_v2_freeze_and_scope_packet_payload,
     build_rl_v2_replay_live_fidelity_example,
@@ -305,3 +307,26 @@ def test_rl_v2_delayed_evaluation_fidelity_example_preserves_available_at() -> N
     assert report["all_available_at_explicit"] is True
     assert report["policy_view_safe"] is True
     assert example["delayed_evaluation_fidelity_report"] == report
+
+
+def test_rl_v2_export_conformance_example_preserves_replay_live_parity() -> None:
+    example = build_rl_v2_export_conformance_example()
+    payload = build_rl_v2_export_conformance_example_payload()
+    live_manifest = ExportManifest.from_dict(payload["live_export_manifest"])
+    replay_manifest = ExportManifest.from_dict(payload["replay_export_manifest"])
+
+    assert live_manifest.fidelity_tier == "replay_parity_verified"
+    assert replay_manifest.fidelity_tier == "replay_parity_verified"
+    assert payload["live_conformance_parity_view"] == payload["replay_conformance_parity_view"]
+    assert example["live_conformance_parity_view"] == example["replay_conformance_parity_view"]
+
+
+def test_rl_v2_export_conformance_packet_tracks_split_and_contamination() -> None:
+    example = build_rl_v2_export_conformance_example()
+    packet = example["live_conformance_packet"]
+
+    assert packet["split_provenance"]["split_kind"] == "train_holdout"
+    assert "teacher_student_origin_guard" in packet["split_provenance"]["contamination_controls"]
+    assert packet["summary"]["export_unit_count"] == 3
+    assert packet["summary"]["fidelity_tier"] == "replay_parity_verified"
+    assert packet["summary"]["export_kind_counts"]["verifier_example"] == 1

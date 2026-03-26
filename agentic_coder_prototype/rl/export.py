@@ -124,6 +124,14 @@ def export_verifier_example_unit(graph: TrajectoryGraph) -> DatasetExportUnit:
     )
 
 
+def export_reference_unit_bundle(graph: TrajectoryGraph) -> Dict[str, DatasetExportUnit]:
+    return {
+        "sft": export_sft_distillation_unit(graph),
+        "transition": export_rl_transition_segment_unit(graph),
+        "verifier": export_verifier_example_unit(graph),
+    }
+
+
 def build_dataset_export_unit_core_view(unit: DatasetExportUnit) -> Dict[str, Any]:
     return {
         "export_kind": unit.export_kind,
