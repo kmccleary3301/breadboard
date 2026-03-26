@@ -162,3 +162,11 @@ Date: 2026-03-14
 - systems-weighted live gate: `docs/darwin_stage5_systems_weighted_live_gate_2026-03-25.md`
 - family-surface repair status: `docs/darwin_stage5_family_surface_repair_status_2026-03-25.md`
 - family-aware proving status: `docs/darwin_stage5_family_aware_proving_status_2026-03-25.md`
+- family-aware proving completion slice: `docs/darwin_stage5_family_aware_proving_completion_slice_2026-03-25.md`
+- Repo_SWE challenge refresh slice: `docs/darwin_stage5_repo_swe_challenge_refresh_2026-03-25.md`
+- Repo_SWE challenge refresh status: `docs/darwin_stage5_repo_swe_challenge_refresh_status_2026-03-25.md`
+- Systems confirmation status: `docs/darwin_stage5_systems_confirmation_status_2026-03-25.md`
+- family-aware scorecard status: `docs/darwin_stage5_family_aware_scorecard_status_2026-03-25.md`
+- Tranche-2 success criteria: `docs/darwin_stage5_tranche2_success_criteria_2026-03-25.md`
+- family-aware proving review: `docs/darwin_stage5_family_aware_proving_review_2026-03-25.md`
+- Tranche-2 gate: `docs/darwin_stage5_tranche2_gate_2026-03-25.md`

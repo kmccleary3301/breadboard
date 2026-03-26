@@ -38,6 +38,8 @@ def run_stage5_compounding_pilot(
     family_probe_override_kind: str | None = None,
 ) -> dict[str, object]:
     out_dir = _default_out_dir(lane_id) if out_dir is None else out_dir
+    if not out_dir.is_absolute():
+        out_dir = ROOT / out_dir
     search_policy = build_stage5_search_policy_v2(
         lane_id=lane_id,
         budget_class="class_a",
@@ -95,12 +97,35 @@ def run_stage5_compounding_pilot(
     }
     provider_origin_counts: dict[str, int] = {}
     fallback_reason_counts: dict[str, int] = {}
+    arm_statuses: list[dict[str, object]] = []
+    arm_status_counts: dict[str, int] = {}
     for row in telemetry_rows:
         origin = str(row.get("provider_origin") or "unknown")
         provider_origin_counts[origin] = provider_origin_counts.get(origin, 0) + 1
         fallback_reason = str(row.get("fallback_reason") or "")
         if fallback_reason:
             fallback_reason_counts[fallback_reason] = fallback_reason_counts.get(fallback_reason, 0) + 1
+    for arm_row in arm_rows:
+        arm_run_subset = [
+            row
+            for row in run_rows
+            if str(row.get("campaign_arm_id") or "") == str(arm_row["campaign_arm_id"])
+        ]
+        if arm_run_subset and all(str(row.get("execution_mode") or "") == "live" for row in arm_run_subset):
+            status = "completed_live"
+        elif arm_run_subset:
+            status = "completed_scaffold"
+        else:
+            status = "missing"
+        arm_status_counts[status] = arm_status_counts.get(status, 0) + 1
+        arm_statuses.append(
+            {
+                "campaign_arm_id": arm_row["campaign_arm_id"],
+                "comparison_mode": arm_row["comparison_mode"],
+                "operator_id": arm_row["operator_id"],
+                "status": status,
+            }
+        )
 
     policy_path = out_dir / "search_policy_v2.json"
     arms_path = out_dir / "selected_arms_v0.json"
@@ -139,6 +164,8 @@ def run_stage5_compounding_pilot(
         "flat_count": sum(1 for row in compounding_cases if row.get("conclusion") == "flat"),
         "provider_origin_counts": provider_origin_counts,
         "fallback_reason_counts": fallback_reason_counts,
+        "arm_status_counts": arm_status_counts,
+        "arm_statuses": arm_statuses,
         "family_probe_override_kind": family_probe_override_kind,
         "policy_ref": str(policy_path.relative_to(ROOT)),
         "selected_arms_ref": str(arms_path.relative_to(ROOT)),
@@ -156,10 +183,12 @@ def main() -> int:
     parser.add_argument("--lane-id", default="lane.repo_swe")
     parser.add_argument("--round-index", type=int, default=1)
     parser.add_argument("--family-probe-override-kind", default=None)
+    parser.add_argument("--out-dir", default=None)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     summary = run_stage5_compounding_pilot(
         lane_id=args.lane_id,
+        out_dir=Path(args.out_dir) if args.out_dir else None,
         round_index=args.round_index,
         family_probe_override_kind=args.family_probe_override_kind,
     )

@@ -40,6 +40,7 @@ def build_stage5_systems_weighted_live_review(
     weighted_bundle_complete = bool(systems_weighted_payload.get("bundle_complete"))
     weighted_completed_row_count = int(systems_weighted_payload.get("completed_row_count") or 0)
     weighted_row_count = int(systems_weighted_payload.get("row_count") or 0)
+    weighted_round_rows = list(systems_weighted_payload.get("round_rows") or [])
     lane_rows = []
     for row in list(policy_payload.get("rows") or []):
         lane_id = str(row.get("lane_id") or "")
@@ -56,6 +57,7 @@ def build_stage5_systems_weighted_live_review(
                 "flat_count": int(row.get("flat_count") or 0),
                 "no_lift_count": int(row.get("no_lift_count") or 0),
                 "reuse_lift_rate": float(row.get("reuse_lift_rate") or 0.0),
+                "lane_execution_status": str(weighted_row.get("lane_execution_status") or "unknown"),
                 "round_complete": bool(weighted_row.get("round_complete")),
                 "live_claim_surface_status": str(weighted_row.get("live_claim_surface_status") or "unknown"),
             }
@@ -64,6 +66,7 @@ def build_stage5_systems_weighted_live_review(
     lane_map = {row["lane_id"]: row for row in lane_rows}
     systems_row = lane_map.get("lane.systems", {})
     repo_row = lane_map.get("lane.repo_swe", {})
+    repo_family_status = str(dict(cross_lane_payload.get("repo_swe_family_selection") or {}).get("family_selection_status") or "")
     systems_primary_supported = (
         str(systems_row.get("lane_weight") or "") == "primary_proving_lane"
         and int(systems_row.get("claim_eligible_comparison_count") or 0) > 0
@@ -73,6 +76,12 @@ def build_stage5_systems_weighted_live_review(
         str(repo_row.get("lane_weight") or "") == "challenge_lane"
         and int(repo_row.get("claim_eligible_comparison_count") or 0) > 0
     )
+    live_run_status = "complete" if weighted_bundle_complete and weighted_completed_row_count == weighted_row_count else "partial_or_stale"
+    next_step = "repo_swe_family_ab_repair_or_clean_live_rerun"
+    next_step_reason = "systems_primary_is_supported_by_live_evidence_but_repo_swe_family_surface_is_still_stale"
+    if live_run_status == "complete" and repo_family_status.startswith("settled_"):
+        next_step = "family_aware_proving_review_and_gate"
+        next_step_reason = "systems_primary_is_supported_and_repo_swe_challenge_is_now_fresh_enough_for_tranche2_review"
 
     payload = {
         "schema": "breadboard.darwin.stage5.systems_weighted_live_review.v0",
@@ -84,14 +93,15 @@ def build_stage5_systems_weighted_live_review(
         "systems_weighted_bundle_complete": weighted_bundle_complete,
         "systems_weighted_completed_row_count": weighted_completed_row_count,
         "systems_weighted_row_count": weighted_row_count,
-        "systems_weighted_live_run_status": "complete" if weighted_bundle_complete and weighted_completed_row_count == weighted_row_count else "partial_or_stale",
+        "systems_weighted_round_rows": weighted_round_rows,
+        "systems_weighted_live_run_status": live_run_status,
         "current_primary_lane_id": str(cross_lane_payload.get("current_primary_lane_id") or ""),
         "row_count": len(lane_rows),
         "rows": lane_rows,
         "systems_primary_supported": systems_primary_supported,
         "repo_challenge_supported": repo_challenge_supported,
-        "next_step": "repo_swe_family_ab_repair_or_clean_live_rerun",
-        "next_step_reason": "systems_primary_is_supported_by_live_evidence_but_repo_swe_family_surface_is_still stale".replace(" ", "_"),
+        "next_step": next_step,
+        "next_step_reason": next_step_reason,
     }
 
     lines = [
@@ -106,7 +116,7 @@ def build_stage5_systems_weighted_live_review(
     ]
     for row in lane_rows:
         lines.append(
-            f"- `{row['lane_id']}`: weight=`{row['lane_weight']}`, claim_eligible=`{row['claim_eligible_comparison_count']}`, "
+            f"- `{row['lane_id']}`: weight=`{row['lane_weight']}`, status=`{row['lane_execution_status']}`, claim_eligible=`{row['claim_eligible_comparison_count']}`, "
             f"reuse_lift=`{row['reuse_lift_count']}`, flat=`{row['flat_count']}`, no_lift=`{row['no_lift_count']}`"
         )
 

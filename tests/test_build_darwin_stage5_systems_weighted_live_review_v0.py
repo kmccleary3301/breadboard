@@ -43,6 +43,7 @@ def test_build_stage5_systems_weighted_live_review_marks_systems_primary(tmp_pat
         json.dumps(
             {
                 "current_primary_lane_id": "lane.systems",
+                "repo_swe_family_selection": {"family_selection_status": "settled_topology"},
                 "rows": [
                     {"lane_id": "lane.systems", "lane_weight": "primary_proving_lane"},
                     {"lane_id": "lane.repo_swe", "lane_weight": "challenge_lane"},
@@ -77,3 +78,4 @@ def test_build_stage5_systems_weighted_live_review_marks_systems_primary(tmp_pat
     assert payload["systems_weighted_live_run_status"] == "complete"
     assert payload["systems_primary_supported"] is True
     assert payload["repo_challenge_supported"] is True
+    assert payload["next_step"] == "family_aware_proving_review_and_gate"

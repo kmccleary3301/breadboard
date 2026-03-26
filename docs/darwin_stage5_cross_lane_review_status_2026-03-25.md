@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Cross-Lane Review Status
 
 Date: 2026-03-25
-Status: cross-lane review slice landed
+Status: refreshed after clean Repo_SWE family state
 References:
 - `artifacts/darwin/stage5/cross_lane_review/cross_lane_review_v0.json`
 - `artifacts/darwin/stage5/policy_stability/policy_stability_v0.json`
@@ -27,9 +27,9 @@ References:
 
 ## Repo_SWE family note
 
-The current Repo_SWE family A/B surface is marked `stale_or_incomplete`.
+The current Repo_SWE family A/B surface is now `settled_topology`.
 
-That read is now source-backed, not only review-derived. The repaired family artifact itself carries the stale status because one counted round is still non-claim-eligible. The cross-lane review therefore does not treat the current Repo_SWE family artifact as proof of a settled family winner.
+That means the cross-lane review can now use a clean Repo_SWE family state instead of carrying a stale-family caveat forward.
 
 ## Interpretation
 
@@ -37,11 +37,13 @@ The current Stage-5 compounding surface is no longer balanced across the two pri
 
 - Systems is the cleaner current proving lane
 - Repo_SWE remains interpretable enough to keep in scope
-- Repo_SWE should not currently carry equal proving weight until its family/protocol surface is clean again
+- Repo_SWE should still not carry equal proving weight because it remains weaker than Systems under the current bounded protocol
 
 ## What this authorizes next
 
 - keep `lane.systems` as the current primary proving lane
 - keep `lane.repo_swe` as the bounded challenge lane
-- move to a systems-weighted Stage-5 compounding review next
-- keep transfer and composition closed
+- keep `lane.systems` as the current primary proving lane
+- keep `lane.repo_swe` as the bounded challenge lane
+- move to the family-aware proving review and gate next
+- keep transfer and composition closed until Tranche 3 is explicitly opened

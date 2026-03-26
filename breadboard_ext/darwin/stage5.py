@@ -381,6 +381,8 @@ def _stage5_variant(
         "policy_digest": search_policy["policy_digest"],
         "comparison_mode": comparison_mode,
         "family_count": len(family_ids),
+        "family_surface_status": str(dict(search_policy.get("family_surface") or {}).get("status") or ""),
+        "lane_weight": str(dict(search_policy.get("cross_lane_weighting") or {}).get("lane_weight") or ""),
     }
     return variant
 
@@ -552,6 +554,14 @@ def build_stage5_compounding_cases(
                     "family_lockout_provider_origin": str(lockout.get("provider_origin") or ""),
                     "warm_start_cost_source": str(warm.get("cost_source") or ""),
                     "family_lockout_cost_source": str(lockout.get("cost_source") or ""),
+                },
+                "policy_provenance": {
+                    "warm_start_policy_digest": str(dict(warm.get("search_policy_selection") or {}).get("policy_digest") or ""),
+                    "family_lockout_policy_digest": str(dict(lockout.get("search_policy_selection") or {}).get("policy_digest") or ""),
+                    "warm_start_family_surface_status": str(dict(warm.get("search_policy_selection") or {}).get("family_surface_status") or ""),
+                    "family_lockout_family_surface_status": str(dict(lockout.get("search_policy_selection") or {}).get("family_surface_status") or ""),
+                    "warm_start_lane_weight": str(dict(warm.get("search_policy_selection") or {}).get("lane_weight") or ""),
+                    "family_lockout_lane_weight": str(dict(lockout.get("search_policy_selection") or {}).get("lane_weight") or ""),
                 },
                 "warm_start": {
                     "campaign_arm_id": str(warm.get("campaign_arm_id") or ""),

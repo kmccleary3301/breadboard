@@ -165,6 +165,8 @@ def _candidate_universe(*, lane_id: str, include_watchdog: bool = True) -> list[
 
 
 def _run_arm(*, arm_cfg: dict, spec: dict, out_dir: Path) -> tuple[dict, list[dict], list[dict]]:
+    if not out_dir.is_absolute():
+        out_dir = ROOT / out_dir
     run_rows: list[dict] = []
     telemetry_rows: list[dict] = []
     for repetition_index in range(1, int(arm_cfg["repetition_count"]) + 1):
@@ -376,6 +378,7 @@ def build_stage4_live_comparisons(run_rows: list[dict]) -> list[dict]:
                 "fallback_reason": row.get("fallback_reason"),
                 "comparison_mode": str(row.get("comparison_mode") or "default"),
                 "family_context": dict(row.get("family_context") or {"allowed_family_ids": [], "blocked_family_ids": []}),
+                "search_policy_selection": dict(row.get("search_policy_selection") or {}),
                 "evaluator_pack_version": str(row.get("evaluator_pack_version") or ""),
                 "comparison_envelope_digest": str(row.get("comparison_envelope_digest") or ""),
                 "cost_source": str(row.get("cost_source") or ""),

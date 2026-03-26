@@ -190,6 +190,8 @@ def run_named_lane(
     result_path_override: str | None = None,
     kind_override: str | None = None,
 ) -> dict:
+    if not out_dir.is_absolute():
+        out_dir = ROOT / out_dir
     lane_dir = out_dir / lane_id
     lane_dir.mkdir(parents=True, exist_ok=True)
     lane_cfg = LANE_COMMANDS[lane_id]

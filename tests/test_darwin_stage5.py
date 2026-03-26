@@ -11,6 +11,11 @@ def test_build_stage5_search_policy_v2_consumes_promoted_family_state() -> None:
     policy = build_stage5_search_policy_v2(
         lane_id="lane.repo_swe",
         budget_class="class_a",
+        repo_swe_family_ab={
+            "family_selection_status": "settled_topology",
+            "preferred_family_kind": "topology",
+            "family_selection_reason": "unit_test_settled",
+        },
         family_rows=[
             {
                 "family_id": "component_family.stage4.topology.policy.topology.pev_v0.lane.repo_swe.v0",
@@ -35,6 +40,11 @@ def test_build_stage5_search_policy_v2_tightens_repo_swe_after_policy_stability(
     policy = build_stage5_search_policy_v2(
         lane_id="lane.repo_swe",
         budget_class="class_a",
+        repo_swe_family_ab={
+            "family_selection_status": "settled_topology",
+            "preferred_family_kind": "topology",
+            "family_selection_reason": "unit_test_settled",
+        },
         family_rows=[
             {
                 "family_id": "component_family.stage4.topology.policy.topology.pev_v0.lane.repo_swe.v0",
@@ -145,6 +155,11 @@ def test_build_stage5_search_policy_v2_adds_repo_swe_family_probe() -> None:
     policy = build_stage5_search_policy_v2(
         lane_id="lane.repo_swe",
         budget_class="class_a",
+        repo_swe_family_ab={
+            "family_selection_status": "settled_topology",
+            "preferred_family_kind": "topology",
+            "family_selection_reason": "unit_test_settled",
+        },
         family_rows=[
             {
                 "family_id": "component_family.stage4.topology.policy.topology.pev_v0.lane.repo_swe.v0",
@@ -398,6 +413,11 @@ def test_select_stage5_search_policy_arms_repo_swe_family_probe_prefers_tool_sco
     policy = build_stage5_search_policy_v2(
         lane_id="lane.repo_swe",
         budget_class="class_a",
+        repo_swe_family_ab={
+            "family_selection_status": "settled_topology",
+            "preferred_family_kind": "topology",
+            "family_selection_reason": "unit_test_settled",
+        },
         family_rows=[
             {
                 "family_id": "component_family.stage4.topology.policy.topology.pev_v0.lane.repo_swe.v0",
@@ -611,6 +631,11 @@ def test_build_stage5_compounding_cases_detects_reuse_lift() -> None:
                 "comparison_envelope_digest": "a" * 64,
                 "provider_origin": "openai",
                 "cost_source": "estimated_from_pricing_table",
+                "search_policy_selection": {
+                    "policy_digest": "warm-digest",
+                    "family_surface_status": "settled_topology",
+                    "lane_weight": "challenge_lane",
+                },
             },
             {
                 "lane_id": "lane.repo_swe",
@@ -631,11 +656,20 @@ def test_build_stage5_compounding_cases_detects_reuse_lift() -> None:
                 "comparison_envelope_digest": "a" * 64,
                 "provider_origin": "openai",
                 "cost_source": "estimated_from_pricing_table",
+                "search_policy_selection": {
+                    "policy_digest": "lockout-digest",
+                    "family_surface_status": "settled_topology",
+                    "lane_weight": "challenge_lane",
+                },
             },
         ]
     )
     assert len(cases) == 1
     assert cases[0]["conclusion"] == "reuse_lift"
+    assert cases[0]["policy_provenance"]["warm_start_policy_digest"] == "warm-digest"
+    assert cases[0]["policy_provenance"]["family_lockout_policy_digest"] == "lockout-digest"
+    assert cases[0]["policy_provenance"]["warm_start_family_surface_status"] == "settled_topology"
+    assert cases[0]["policy_provenance"]["warm_start_lane_weight"] == "challenge_lane"
 
 
 def test_build_stage5_compounding_cases_marks_small_deltas_flat() -> None:

@@ -26,16 +26,27 @@ Repo_SWE remains important because it still exposes protocol stress and family-s
 
 ### 3. Is the Repo_SWE family-selection question resolved?
 
-No.
+Yes, within the current bounded surface.
 
-The current derived review marks the Repo_SWE family A/B surface as `stale_or_incomplete` because the persisted round set contains mixed claim eligibility after an interrupted live rerun. That means the cross-lane decision cannot honestly rest on a claimed Repo_SWE family winner today.
+The current Repo_SWE family A/B artifact is:
+
+- `completion_status=complete`
+- `family_selection_status=settled_topology`
+- `preferred_family_kind=topology`
+
+That does not make Repo_SWE the stronger lane. It does make the challenge surface fresh enough to interpret honestly.
 
 ### 4. What is the next bounded Stage-5 question?
 
-Whether a systems-weighted Stage-5 compounding review remains positive when Repo_SWE is held as a bounded challenge lane rather than as a co-equal proving lane.
+Whether the now-clean Systems-primary / Repo_SWE-challenge split is enough to pass the family-aware proving review and authorize scaled compounding planning.
 
 ## Review conclusion
 
-The correct next move is a systems-weighted Stage-5 review slice.
+The correct next move is the Stage-5 family-aware proving review and gate.
 
-That keeps the proving program moving without pretending Repo_SWE is cleaner than the current evidence supports, and it avoids widening into transfer or family composition before the cross-lane proving weight is honest.
+The proving split is now honest and current:
+
+- Systems remains the cleaner lane
+- Repo_SWE remains the weaker but now fresh challenge lane
+
+That is enough to finish Tranche 2 without widening into transfer or composition yet.

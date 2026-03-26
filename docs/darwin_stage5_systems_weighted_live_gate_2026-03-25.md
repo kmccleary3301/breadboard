@@ -20,8 +20,8 @@ Passed.
 
 ## What is authorized next
 
-- a bounded Repo_SWE family A/B repair slice or a clean Repo_SWE live rerun
-- continued Systems-primary Stage-5 proving
+- family-aware proving review and Tranche-2 gate
+- continued Systems-primary Stage-5 proving while scaled compounding planning is defined
 
 ## What is not authorized next
 

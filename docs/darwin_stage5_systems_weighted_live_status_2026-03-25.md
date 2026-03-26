@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Systems-Weighted Live Status
 
 Date: 2026-03-25
-Status: bounded live-review bundle landed; partial-vs-complete live status now explicit
+Status: refreshed after clean completed systems-weighted live run
 References:
 - `artifacts/darwin/stage5/systems_weighted_live_review/systems_weighted_live_review_v0.json`
 - `artifacts/darwin/stage5/policy_stability/policy_stability_v0.json`
@@ -28,9 +28,13 @@ References:
 
 ## Operational note
 
-The systems-weighted live review now carries an explicit live-run status. The current status is `partial_or_stale`, which means the review is still derived from the current live evidence rather than from a fresh completed systems-weighted rerun.
+The systems-weighted live review now carries a clean completed live-run status:
 
-That is acceptable for this bounded review, but it is also the remaining execution-hygiene blocker before Stage-5 can claim a cleaner family-aware proving surface.
+- `systems_weighted_live_run_status=complete`
+- `systems_weighted_bundle_complete=true`
+- per-lane execution status: `completed_live`
+
+This removes the main execution-hygiene blocker that was keeping the family-aware proving surface below gate quality.
 
 ## Result
 

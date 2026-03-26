@@ -30,16 +30,20 @@ Repo_SWE still provides meaningful contrast and protocol pressure, but its curre
 
 ### 3. Did this review require a fresh successful live rerun?
 
-No.
+Yes, and that rerun now exists.
 
-The fresh systems-weighted rerun is currently stalling on the live provider path. This review is still valid because it asks whether the weighting decision is supported by the current live evidence, and that evidence is already explicit and claim-bearing.
+The current systems-weighted live review is built from a clean completed live bundle:
+
+- `systems_weighted_live_run_status=complete`
+- `systems_weighted_bundle_complete=true`
+- per-lane execution status: `completed_live`
 
 ### 4. What is the next bounded Stage-5 question?
 
-Repair or cleanly rerun the Repo_SWE family A/B surface so the challenge lane becomes cleaner and the proving program can move without stale family ambiguity.
+Whether the now-complete systems-weighted live surface plus the refreshed Repo_SWE challenge surface are enough to pass the family-aware proving review and gate.
 
 ## Review conclusion
 
 The systems-weighted live review is passed.
 
-The current live evidence supports Systems as the current primary proving lane and Repo_SWE as the bounded challenge lane. The next bounded move should target Repo_SWE family-surface repair or a clean live rerun there, not transfer or family composition.
+The current live evidence supports Systems as the current primary proving lane and Repo_SWE as the bounded challenge lane. The next bounded move is the family-aware proving review and Tranche-2 gate, not transfer or family composition.

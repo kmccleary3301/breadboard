@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Execution Plan
 
 Date: 2026-03-20
-Status: family-surface repair and family-aware integrity landed; clean live rerun hygiene next
+Status: Stage-5 Tranche-2 family-aware proving completed; scaled compounding planning next
 Scope: Stage-5 doctrine freeze, economics truth hardening, compounding protocol, family-aware search, and scalable compounding proof
 References:
 - `docs/darwin_stage5_doctrine_2026-03-20.md`
@@ -45,6 +45,14 @@ References:
 - `docs/darwin_stage5_systems_weighted_live_gate_2026-03-25.md`
 - `docs/darwin_stage5_family_surface_repair_status_2026-03-25.md`
 - `docs/darwin_stage5_family_aware_proving_status_2026-03-25.md`
+- `docs/darwin_stage5_family_aware_proving_completion_slice_2026-03-25.md`
+- `docs/darwin_stage5_repo_swe_challenge_refresh_2026-03-25.md`
+- `docs/darwin_stage5_repo_swe_challenge_refresh_status_2026-03-25.md`
+- `docs/darwin_stage5_systems_confirmation_status_2026-03-25.md`
+- `docs/darwin_stage5_family_aware_scorecard_status_2026-03-25.md`
+- `docs/darwin_stage5_tranche2_success_criteria_2026-03-25.md`
+- `docs/darwin_stage5_family_aware_proving_review_2026-03-25.md`
+- `docs/darwin_stage5_tranche2_gate_2026-03-25.md`
 - `docs/darwin_stage4_signoff_2026-03-20.md`
 - `docs/darwin_stage4_completion_gate_2026-03-20.md`
 - `docs/darwin_stage4_future_roadmap_handoff_2026-03-20.md`
