@@ -40,15 +40,18 @@ Primary interface:
 
 ## Runtime Emission Path (Current)
 
-ATP retrieval decomposition runner emits diagnostics artifacts and validation status:
+The current merged ATP program emits ATP-facing diagnostics primarily through the adapter slice and formal-pack runners:
 
-- script: `scripts/run_atp_retrieval_decomposition_loop_v1.py`
-- artifact: `diagnostics.json`
-- report fields:
-  - `diagnostic_taxonomy_version`
-  - `diagnostics_path`
-  - `diagnostics_validation_ok`
-  - `diagnostics_unknown_count`
+- adapter slice:
+  - script: `scripts/run_bb_atp_adapter_slice_v1.py`
+  - per-task artifact: `runner_diagnostic.json`
+  - run-level payload schema: `breadboard.bb_atp_adapter_slice_run.v2`
+- formal pack:
+  - script: `scripts/run_bb_formal_pack_v1.py`
+  - per-task artifact family includes raw diagnostic payloads emitted during formal-pack execution
+  - run-level payload schema: `breadboard.bb_formal_pack_run.v1`
+
+Earlier docs referenced a standalone ATP retrieval/decomposition runner. On current `main`, the adapter-slice and formal-pack paths are the maintained ATP-facing emission routes.
 
 ## Unknown/Fallback Policy
 

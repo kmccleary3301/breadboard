@@ -28,30 +28,45 @@ Repair policy logging doc:
 
 ## Validation
 
-Use the fixture validator to confirm schema compatibility:
+Current `main` no longer ships the older standalone ATP capability validator referenced in earlier tranches. The closest maintained contract-facing validation entrypoint is the manifest-driven adapter slice runner:
 
 ```bash
-python scripts/validate_atp_capability_contracts.py \
-  --fixture tests/fixtures/atp_capabilities/retrieval_solver_replay_fixture_v1.json \
-  --schema-dir docs/contracts/atp/schemas \
-  --json-out artifacts/atp_capabilities/contract_validation_report.latest.json
+python scripts/run_bb_atp_adapter_slice_v1.py \
+  --manifest <cross-system-manifest.json> \
+  --config <breadboard-config.yaml> \
+  --system-id breadboard \
+  --task-inputs <task-inputs.json> \
+  --out-json artifacts/benchmarks/cross_system/breadboard/adapter_slice_run.latest.json
 ```
+
+This path validates the current manifest/toolchain/budget expectations and emits per-task ATP diagnostics through the current adapter slice flow.
 
 ## Minimal retrieval-decomposition loop
 
-```bash
-python scripts/run_atp_retrieval_decomposition_loop_v1.py \
-  --fixture tests/fixtures/atp_capabilities/retrieval_solver_replay_fixture_v1.json \
-  --schema-dir docs/contracts/atp/schemas \
-  --artifacts-dir artifacts/atp_retrieval_decomposition_v1 \
-  --out artifacts/atp_retrieval_decomposition_v1/atp_retrieval_decomposition_report.latest.json
-```
-
-## Specialist fallback trace matrix
+For the current merged ATP proving lane, the practical replacement is the formal pack runner:
 
 ```bash
-python scripts/run_atp_specialist_solver_fallback_matrix_v1.py \
-  --schema-dir docs/contracts/atp/schemas \
-  --artifacts-dir artifacts/atp_specialist_solver_fallback_matrix_v1 \
-  --out artifacts/atp_specialist_solver_fallback_matrix_v1/solver_fallback_matrix_report.latest.json
+python scripts/run_bb_formal_pack_v1.py \
+  --manifest <formal-pack-manifest.json> \
+  --config <breadboard-config.yaml> \
+  --output-dir artifacts/benchmarks/formal_pack/latest
 ```
+
+This is the better maintained current proving entrypoint for manifest-driven ATP/Hilbert-style formal runs.
+
+## Hilbert comparison and scoreboard workflow
+
+For tranche-level ATP/Hilbert comparison work, use the current scoreboard and rollup builders instead of the removed specialist-fallback matrix runner:
+
+```bash
+python scripts/build_atp_hilbert_scoreboard_v1.py \
+  --out-json artifacts/benchmarks/hilbert_comparison_packs_v2/scoreboard_v1.json \
+  --out-md artifacts/benchmarks/hilbert_comparison_packs_v2/scoreboard_v1.md
+```
+
+See also:
+
+- `scripts/build_atp_hilbert_rollup_v1.py`
+- `scripts/build_atp_hilbert_canonical_baselines_v1.py`
+- `scripts/run_bb_atp_adapter_slice_v1.py`
+- `scripts/run_bb_formal_pack_v1.py`

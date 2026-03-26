@@ -47,6 +47,7 @@ BreadBoard is simultaneously:
 - a harness emulator with public E4 dossier configs for Codex, Claude Code, OpenCode, and oh-my-opencode
 - a TypeScript backbone product layer for host apps that do not want to think in raw kernel substrate terms
 - a conformance-heavy environment for replay, parity, optimization, long-run agents, and future evaluation work
+- a growing research platform for ATP, formal sandboxes, optimization, DAG search, RL export layers, C-Trees, and DARWIN
 
 This repository is for engineers and researchers who care about:
 
@@ -72,6 +73,7 @@ This repository is for engineers and researchers who care about:
 | Harness emulation | Public dossier configs plus replay/parity tooling | 🟢 |
 | Replay / conformance | Golden, parity, and contract validation paths | 🟢 |
 | Long-run / RLM / optimization work | Experimental and advancing, but real | 🟡 |
+| DAG / RL / DARWIN / ATP / C-Trees research layers | Integrated and documented, with active playbooks | 🟡 |
 
 ### The shortest accurate description
 
@@ -98,11 +100,30 @@ It is **not** a thin wrapper around one provider SDK, and it is **not** just a t
 | clone the repo and get something running quickly | [docs/quickstarts/FIRST_RUN_5_MIN.md](docs/quickstarts/FIRST_RUN_5_MIN.md) |
 | do a full local setup with environment validation | [docs/INSTALL_AND_DEV_QUICKSTART.md](docs/INSTALL_AND_DEV_QUICKSTART.md) |
 | understand the repo at a high level | [docs/INDEX.md](docs/INDEX.md) |
+| understand the research systems and choose the right advanced subsystem | [docs/quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md](docs/quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md) |
 | inspect the public E4 dossier configs | [`agent_configs/`](agent_configs/) |
 | use the engine from Python or TypeScript | [docs/contracts/cli_bridge/openapi.json](docs/contracts/cli_bridge/openapi.json) and the examples below |
 | evaluate parity / replay / evidence | [docs/conformance/README.md](docs/conformance/README.md) |
 | integrate BreadBoard into a TS host | [`sdk/ts-backbone/`](sdk/ts-backbone/), [`sdk/ts-host-kits/`](sdk/ts-host-kits/), [`sdk/ts-host-t3/`](sdk/ts-host-t3/) |
 | understand claim boundaries before repeating them publicly | [docs/CLAIMS_EVIDENCE_LEDGER.md](docs/CLAIMS_EVIDENCE_LEDGER.md) |
+
+### Research systems entrypoint
+
+If you are here for the newly integrated research-facing subsystems, start with:
+
+- [docs/quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md](docs/quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md)
+- [docs/concepts/research-systems-overview.md](docs/concepts/research-systems-overview.md)
+- [docs/concepts/research-systems-composition-playbook.md](docs/concepts/research-systems-composition-playbook.md)
+- [docs/concepts/research-systems-walkthroughs.md](docs/concepts/research-systems-walkthroughs.md)
+
+Those docs are the fastest path into:
+
+- ATP and Lean sandboxing
+- optimization
+- DAG runtime
+- RL training overlays
+- C-Trees
+- DARWIN
 
 ---
 
@@ -545,4 +566,3 @@ If those things are what you care about, BreadBoard is likely worth your time. I
    - [docs/contracts/kernel/T3_BACKBONE_ADOPTION_V1.md](docs/contracts/kernel/T3_BACKBONE_ADOPTION_V1.md)
 5. If you care about proof and parity:
    - [docs/conformance/README.md](docs/conformance/README.md)
-

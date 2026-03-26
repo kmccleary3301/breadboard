@@ -16,6 +16,9 @@ If you are new, start at the row that fits your situation and follow it forward.
 **Setting up a local dev environment and need the full reference:**
 → [INSTALL_AND_DEV_QUICKSTART.md](INSTALL_AND_DEV_QUICKSTART.md)
 
+**Exploring ATP, optimization, DAG, RL, C-Trees, or DARWIN and want the shortest research-systems entry path:**
+→ [quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md](quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md) · [concepts/research-systems-overview.md](concepts/research-systems-overview.md)
+
 **Writing code against the engine (Python or TypeScript SDK):**
 → [contracts/cli_bridge/openapi.json](contracts/cli_bridge/openapi.json) · SDK examples in the repo README
 
@@ -46,6 +49,7 @@ If you are new, start at the row that fits your situation and follow it forward.
 | Doc | What it covers |
 |-----|----------------|
 | [quickstarts/FIRST_RUN_5_MIN.md](quickstarts/FIRST_RUN_5_MIN.md) | Fastest path from clone to a working local setup |
+| [quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md](quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md) | Fastest high-quality reading path into ATP, Lean sandboxing, optimization, DAG, RL, C-Trees, and DARWIN |
 | [INSTALL_AND_DEV_QUICKSTART.md](INSTALL_AND_DEV_QUICKSTART.md) | Full setup reference: bootstrap options, doctor, disk maintenance |
 | [ci/QUICKSTART_SAFE_VALIDATION_20260217.md](ci/QUICKSTART_SAFE_VALIDATION_20260217.md) | CI-validated quickstart run record |
 
@@ -116,6 +120,26 @@ If you are new, start at the row that fits your situation and follow it forward.
 | [RLM_MODE_QUICKSTART.md](RLM_MODE_QUICKSTART.md) | RLM mode quickstart |
 | [RLM_PHASE2_EVAL_RUNBOOK.md](RLM_PHASE2_EVAL_RUNBOOK.md) | Phase 2 eval runbook |
 
+### Research systems and advanced runtime layers
+
+| Doc | What it covers |
+|-----|----------------|
+| [concepts/research-systems-overview.md](concepts/research-systems-overview.md) | The high-level map for BreadBoard's research-facing subsystems: ATP, Lean sandboxing, optimization, DAG, RL, C-Trees, and DARWIN, including composition boundaries and reading paths |
+| [concepts/research-systems-composition-playbook.md](concepts/research-systems-composition-playbook.md) | Practical guide for composing ATP, DAG, optimization, RL, C-Trees, DARWIN, and sandboxing cleanly without letting subsystem boundaries collapse |
+| [concepts/research-systems-walkthroughs.md](concepts/research-systems-walkthroughs.md) | Commands-and-files walkthroughs for ATP, optimization, DAG, RL, C-Trees, DARWIN, and their main composition boundaries |
+| [concepts/atp-and-lean-sandboxing.md](concepts/atp-and-lean-sandboxing.md) | How ATP contracts and sandbox envelopes fit together, why Lean is a key pressure case, and how formal proving loops stay typed and replayable |
+| [concepts/atp-formal-workflows.md](concepts/atp-formal-workflows.md) | Practical ATP workflow guide covering retrieval, decomposition, diagnostics, Hilbert proving slices, and the honest current Lean/sandbox support story |
+| [concepts/optimization-system-overview.md](concepts/optimization-system-overview.md) | A readable synthesis of the optimization stack from substrate through transfer cohorts, promotion, and live experiment-cell doctrine |
+| [concepts/optimization-study-playbook.md](concepts/optimization-study-playbook.md) | Practical guide for scoping and running optimization studies cleanly across loci, families, transfer claims, promotion, and live experiment cells |
+| [concepts/dag-runtime-system-overview.md](concepts/dag-runtime-system-overview.md) | A readable synthesis of the DAG runtime from search truth through assessments and paper-fidelity helper layers |
+| [concepts/dag-paper-replication-playbook.md](concepts/dag-paper-replication-playbook.md) | Practical guide for RSA/PaCoRe-style DAG paper replication with fidelity scorecards, compute ledgers, baseline packets, and deviation tracking |
+| [concepts/rl-training-system-overview.md](concepts/rl-training-system-overview.md) | A readable synthesis of the RL overlay from graph-native trajectory truth through fidelity, conformance, and adapter probes |
+| [concepts/rl-adapterization-playbook.md](concepts/rl-adapterization-playbook.md) | Practical guide for turning RL export truth into bounded probe-backed adapter paths without letting trainer needs distort BreadBoard truth |
+| [concepts/ctrees-system-overview.md](concepts/ctrees-system-overview.md) | Narrative overview of the C-Trees research lane, its tree-shaped control concerns, and its boundaries relative to DAG, RL, and DARWIN |
+| [concepts/ctrees-lifecycle-guide.md](concepts/ctrees-lifecycle-guide.md) | Concrete guide to the current C-Trees lifecycle: schema, phase machine, branch receipts, finish closure, helper rehydration, and evaluation-facing bridge layers |
+| [concepts/darwin-system-overview.md](concepts/darwin-system-overview.md) | Narrative overview of DARWIN as BreadBoard's outer-loop campaign, lane, policy, evidence, and claim layer |
+| [concepts/darwin-campaign-workflow-guide.md](concepts/darwin-campaign-workflow-guide.md) | Practical guide for running DARWIN as a campaign/lane/policy/evidence program rather than a loose pile of stage notes |
+
 ### Optimization
 
 | Doc | What it covers |
@@ -133,6 +157,11 @@ If you are new, start at the row that fits your situation and follow it forward.
 | [concepts/optimization-v5-transfer-cohorts-and-generalization-evidence.md](concepts/optimization-v5-transfer-cohorts-and-generalization-evidence.md) | Optimization V5 transfer cohorts, claim tiers, Codex↔OpenCode cohort methodology, and Nano-first generalization doctrine |
 | [concepts/optimization-v6-live-experiment-cells-and-kernel-freeze.md](concepts/optimization-v6-live-experiment-cells-and-kernel-freeze.md) | Optimization V6 public-kernel freeze, live cohort-cell doctrine, Nano/Mini fairness rules, and the explicit optimize ↔ reward boundary under repeated experiments |
 | [concepts/optimization-v6-stop-go-synthesis.md](concepts/optimization-v6-stop-go-synthesis.md) | Optimization V6 synthesis note: repeated-shape pressure review, no-V7 criteria, and explicit DARWIN handoff signals |
+
+### DAG runtime and search
+
+| Doc | What it covers |
+|-----|----------------|
 | [concepts/dag-runtime-v1-search-surface.md](concepts/dag-runtime-v1-search-surface.md) | DAG Runtime V1 search truth surface, deterministic barriered scheduler, and RSA-style recipe as an opt-in search subsystem |
 | [concepts/dag-runtime-v2-phase0-pressure-packet.md](concepts/dag-runtime-v2-phase0-pressure-packet.md) | DAG Runtime V2 Phase 0 go/no-go packet showing repeated assessment-truth pressure across verifier, judge/reducer, and branch execute/verify cells |
 | [concepts/dag-runtime-v2-assessment-surface.md](concepts/dag-runtime-v2-assessment-surface.md) | DAG Runtime V2 narrow assessment layer: grounded evaluator truth, assessment registry, and explicit linkage into runs, events, and trajectory export |
@@ -146,6 +175,11 @@ If you are new, start at the row that fits your situation and follow it forward.
 | [concepts/dag-runtime-v3-pacore-replication-packet.md](concepts/dag-runtime-v3-pacore-replication-packet.md) | DAG Runtime V3 PaCoRe tranche: explicit round profiles, compaction baselines, message-passing ablations, and bounded coding-transfer follow-on without kernel growth |
 | [concepts/dag-runtime-v3-cross-paper-composition.md](concepts/dag-runtime-v3-cross-paper-composition.md) | DAG Runtime V3 cross-paper composition: optimize-ready comparison packets, bounded RL-facing export slices, DARWIN boundary updates, and synthesis without kernel growth |
 | [concepts/dag-runtime-v3-freeze-and-decision-gate.md](concepts/dag-runtime-v3-freeze-and-decision-gate.md) | DAG Runtime V3 closeout: freeze-and-reclassify decision gate that keeps the kernel frozen and pushes remaining pressure to helper, optimize, RL, evaluator, and DARWIN-adjacent layers |
+
+### RL training overlays
+
+| Doc | What it covers |
+|-----|----------------|
 | [concepts/rl-training-primitives-v1-boundary-and-contract-pack.md](concepts/rl-training-primitives-v1-boundary-and-contract-pack.md) | RL Training Primitives V1 first tranche: overlay-only boundary doctrine, explicit supersession of shallow linear trajectory surfaces, and the initial graph-native contract pack |
 | [concepts/rl-training-primitives-v1-replay-parity.md](concepts/rl-training-primitives-v1-replay-parity.md) | RL Training Primitives V1 replay parity: live and replay projection paths must converge on the same graph-core truth surface |
 | [concepts/rl-training-primitives-v1-alpha-exporters.md](concepts/rl-training-primitives-v1-alpha-exporters.md) | RL Training Primitives V1 alpha exporters: trainer-neutral export units for SFT, RL transition segments, and verifier examples with explicit provenance and replay parity |

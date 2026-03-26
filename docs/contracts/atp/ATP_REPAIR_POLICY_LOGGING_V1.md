@@ -31,41 +31,33 @@ Primary fields:
 
 ## Runtime Emission Path
 
-Current ATP decomposition runner emits:
+Current merged ATP formal workflows center on:
 
-- artifact: `repair_policy_log.json`
-- report fields:
-  - `repair_policy_log_path`
-  - `repair_policy_validation_ok`
-  - `repair_policy_validation_errors`
-  - `repair_off`
-  - `repair_attempt_count`
-  - `repair_success_count`
-  - `repair_success_rate`
+- `scripts/run_bb_formal_pack_v1.py`
+- `scripts/run_bb_atp_adapter_slice_v1.py`
 
-Script:
+These runners already emit ATP-facing diagnostics and manifest-driven formal workflow artifacts. They are the right current reference points for repair-policy integration work on `main`.
 
-- `scripts/run_atp_retrieval_decomposition_loop_v1.py`
+Earlier docs referenced a standalone ATP retrieval/decomposition runner and a dedicated repair-policy log validator. Those were part of an older tranche shape and are not the maintained entrypoints in the current merged ATP program.
 
-Validator:
+For current repair-policy work, the practical expectation is:
 
-- `scripts/check_atp_repair_policy_log_v1.py`
+- normalize failures into ATP diagnostic classes
+- make repair or fallback decisions explicit in the ATP-facing workflow artifacts
+- keep replay- and comparison-friendly traces around the proving run
+- use the current formal-pack and adapter-slice scripts as the operational proving surfaces
 
 ## Ablation Toggle
 
-CLI flag:
+The exact ablation toggle is now workflow-specific rather than centralized in one standalone ATP runner. When adding or evolving repair-policy behavior on current `main`, keep the ablation requirement itself stable:
 
-- `--repair-off`
-
-Effect:
-
-- skips repair node generation,
-- logs `selected_operator=repair_off`,
-- keeps replay/trace deterministic for ablation comparisons.
+- there must be a way to disable the repair operator path cleanly
+- the no-repair path must remain replayable and comparable
+- the emitted ATP-facing artifacts must make the ablation visible
 
 ## Minimal Success Metrics (v1)
 
-1. `repair_policy_validation_ok == true`
-2. `repair_attempt_count > 0` in normal mode
-3. `repair_success_rate` is explicitly reported
-4. `--repair-off` mode runs and logs policy decisions without schema violations
+1. repair or fallback behavior is explicit in ATP-facing artifacts rather than implied by raw logs
+2. the no-repair or reduced-repair path is available for ablation comparisons
+3. proving runs remain replayable and comparable under both normal and ablated modes
+4. ATP-facing workflow artifacts remain schema-stable enough for tranche comparison and rollup work
