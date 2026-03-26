@@ -4,6 +4,7 @@ from agentic_coder_prototype.rl import (
     AdapterCapabilities,
     CompactionManifest,
     CostLedger,
+    CreditFrame,
     DatasetExportUnit,
     EnvironmentDescriptor,
     EvaluationAnnotation,
@@ -18,6 +19,8 @@ from agentic_coder_prototype.rl import (
     build_rl_v1_contract_pack_example_payload,
     build_rl_v1_live_projection_example,
     build_rl_v1_live_projection_example_payload,
+    build_rl_v1_multi_agent_async_hardening_example,
+    build_rl_v1_multi_agent_async_hardening_example_payload,
     build_rl_v1_replay_parity_example,
     build_rl_v1_replay_parity_example_payload,
     build_rl_v1_replay_projection_example,
@@ -147,3 +150,35 @@ def test_rl_v1_verifier_export_tracks_verifier_annotations() -> None:
 
     assert annotations
     assert any(item["channel"] in {"execute", "verify"} for item in annotations)
+
+
+def test_rl_v1_multi_agent_async_hardening_example_preserves_semantics() -> None:
+    example = build_rl_v1_multi_agent_async_hardening_example()
+    payload = build_rl_v1_multi_agent_async_hardening_example_payload()
+    graph = TrajectoryGraph.from_dict(payload["trajectory_graph"])
+    credit_frame = CreditFrame.from_dict(payload["credit_frame"])
+    edge_kinds = {item.edge_kind for item in graph.causal_edges}
+
+    assert "spawns_branch_track" in edge_kinds
+    assert "join_branch_track" in edge_kinds
+    assert "message_visible_to_observation" in edge_kinds
+    assert "workspace_visible_to_observation" in edge_kinds
+    assert "writes_workspace_snapshot" in edge_kinds
+    assert "wakes_track" in edge_kinds
+    assert any(item.delayed for item in graph.evaluation_annotations)
+    assert credit_frame.delayed_annotation_ids
+    assert credit_frame.workspace_attribution_refs
+    assert payload["checkpoint_pointer"]["schema_version"] == "bb.checkpoint_metadata.v1"
+    assert graph.rollout_descriptor.metadata["checkpoint_pointer"]["phase"] == "verification_resume"
+    assert example["credit_frame"] == credit_frame
+
+
+def test_rl_v1_credit_frame_has_async_shared_attribution_shape() -> None:
+    example = build_rl_v1_multi_agent_async_hardening_example()
+    credit_frame = example["credit_frame"]
+
+    assert credit_frame.frame_kind == "async_shared_attribution"
+    assert set(credit_frame.target_annotation_ids) == {item.annotation_id for item in example["trajectory_graph"].evaluation_annotations}
+    assert credit_frame.decision_weights
+    assert credit_frame.track_weights
+    assert credit_frame.metadata["continuation_aligned"] is True

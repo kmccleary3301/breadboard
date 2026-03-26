@@ -31,6 +31,13 @@ def _copy_nested_int_mapping(value: Mapping[str, Any] | None) -> Dict[str, int]:
     return copied
 
 
+def _copy_nested_float_mapping(value: Mapping[str, Any] | None) -> Dict[str, float]:
+    copied: Dict[str, float] = {}
+    for key, raw in (value or {}).items():
+        copied[str(key)] = float(raw or 0.0)
+    return copied
+
+
 @dataclass(frozen=True)
 class RolloutDescriptor:
     rollout_id: str
@@ -816,5 +823,58 @@ class DatasetExportUnit:
             ],
             compaction_manifests=[CompactionManifest.from_dict(item) for item in data.get("compaction_manifests") or []],
             record_payload=dict(data.get("record_payload") or {}),
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
+class CreditFrame:
+    frame_id: str
+    graph_id: str
+    frame_kind: str
+    target_annotation_ids: List[str]
+    decision_weights: Dict[str, float]
+    track_weights: Dict[str, float]
+    workspace_attribution_refs: List[str] = field(default_factory=list)
+    delayed_annotation_ids: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "frame_id", _require_text(self.frame_id, "frame_id"))
+        object.__setattr__(self, "graph_id", _require_text(self.graph_id, "graph_id"))
+        object.__setattr__(self, "frame_kind", _require_text(self.frame_kind, "frame_kind"))
+        object.__setattr__(self, "target_annotation_ids", _copy_text_list(self.target_annotation_ids))
+        object.__setattr__(self, "decision_weights", _copy_nested_float_mapping(self.decision_weights))
+        object.__setattr__(self, "track_weights", _copy_nested_float_mapping(self.track_weights))
+        object.__setattr__(self, "workspace_attribution_refs", _copy_text_list(self.workspace_attribution_refs))
+        object.__setattr__(self, "delayed_annotation_ids", _copy_text_list(self.delayed_annotation_ids))
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+        if not self.target_annotation_ids:
+            raise ValueError("target_annotation_ids must contain at least one annotation id")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "frame_id": self.frame_id,
+            "graph_id": self.graph_id,
+            "frame_kind": self.frame_kind,
+            "target_annotation_ids": list(self.target_annotation_ids),
+            "decision_weights": dict(self.decision_weights),
+            "track_weights": dict(self.track_weights),
+            "workspace_attribution_refs": list(self.workspace_attribution_refs),
+            "delayed_annotation_ids": list(self.delayed_annotation_ids),
+            "metadata": dict(self.metadata),
+        }
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "CreditFrame":
+        return CreditFrame(
+            frame_id=data.get("frame_id") or "",
+            graph_id=data.get("graph_id") or "",
+            frame_kind=data.get("frame_kind") or "",
+            target_annotation_ids=list(data.get("target_annotation_ids") or []),
+            decision_weights=dict(data.get("decision_weights") or {}),
+            track_weights=dict(data.get("track_weights") or {}),
+            workspace_attribution_refs=list(data.get("workspace_attribution_refs") or []),
+            delayed_annotation_ids=list(data.get("delayed_annotation_ids") or []),
             metadata=dict(data.get("metadata") or {}),
         )

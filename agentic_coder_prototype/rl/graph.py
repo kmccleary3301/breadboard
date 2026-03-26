@@ -7,6 +7,7 @@ from .schema import (
     CausalEdge,
     CompactionManifest,
     CostLedger,
+    CreditFrame,
     DecisionRecord,
     EffectRecord,
     EnvironmentDescriptor,
@@ -164,6 +165,7 @@ def project_search_run_to_trajectory_graph(
     metadata: Optional[Mapping[str, Any]] = None,
 ) -> TrajectoryGraph:
     root_track_id = f"{run.search_id}.rl.track.root"
+    causal_edges: List[CausalEdge] = []
     tracks: List[TrackRecord] = [
         TrackRecord(
             track_id=root_track_id,
@@ -189,6 +191,15 @@ def project_search_run_to_trajectory_graph(
                 metadata={"round_index": frontier.round_index, **dict(frontier.metadata)},
             )
         )
+        causal_edges.append(
+            CausalEdge(
+                edge_id=f"{previous_track_id}.to.{track_id}",
+                source_id=previous_track_id,
+                target_id=track_id,
+                edge_kind="spawns_frontier_track",
+                metadata={"frontier_id": frontier.frontier_id},
+            )
+        )
         previous_track_id = track_id
 
     branch_track_ids: Dict[str, str] = {}
@@ -207,6 +218,15 @@ def project_search_run_to_trajectory_graph(
                     "status": branch.status,
                     **dict(branch.metadata),
                 },
+            )
+        )
+        causal_edges.append(
+            CausalEdge(
+                edge_id=f"{root_track_id}.to.{track_id}",
+                source_id=root_track_id,
+                target_id=track_id,
+                edge_kind="spawns_branch_track",
+                metadata={"branch_id": branch.branch_id, "candidate_id": branch.candidate_id},
             )
         )
 
@@ -238,10 +258,29 @@ def project_search_run_to_trajectory_graph(
                 },
             )
         )
+        if candidate.message_ref:
+            causal_edges.append(
+                CausalEdge(
+                    edge_id=f"{candidate.message_ref}.to.{observation_id}",
+                    source_id=candidate.message_ref,
+                    target_id=observation_id,
+                    edge_kind="message_visible_to_observation",
+                    metadata={"candidate_id": candidate.candidate_id},
+                )
+            )
+        if candidate.workspace_ref:
+            causal_edges.append(
+                CausalEdge(
+                    edge_id=f"{candidate.workspace_ref}.to.{observation_id}",
+                    source_id=candidate.workspace_ref,
+                    target_id=observation_id,
+                    edge_kind="workspace_visible_to_observation",
+                    metadata={"candidate_id": candidate.candidate_id},
+                )
+            )
 
     decisions: List[DecisionRecord] = []
     effects: List[EffectRecord] = []
-    causal_edges: List[CausalEdge] = []
     snapshot_ids_by_candidate: Dict[str, List[str]] = {}
     for snapshot in run.workspace_snapshots:
         if snapshot.derived_from_candidate_id:
@@ -298,6 +337,16 @@ def project_search_run_to_trajectory_graph(
                 metadata={"round_index": event.round_index},
             )
         )
+        for snapshot_id in workspace_snapshot_ids:
+            causal_edges.append(
+                CausalEdge(
+                    edge_id=f"{effect_id}.to.{snapshot_id}",
+                    source_id=effect_id,
+                    target_id=snapshot_id,
+                    edge_kind="writes_workspace_snapshot",
+                    metadata={"event_id": event.event_id},
+                )
+            )
 
         for candidate_id in event.input_candidate_ids:
             observation_id = observation_by_candidate_id.get(candidate_id)
@@ -319,6 +368,32 @@ def project_search_run_to_trajectory_graph(
                 edge_kind="decision_causes_effect",
             )
         )
+        branch_ids = event.metadata.get("branch_ids") or []
+        if isinstance(branch_ids, list):
+            for branch_id in branch_ids:
+                branch_track_id = f"{run.search_id}.rl.track.branch.{branch_id}"
+                causal_edges.append(
+                    CausalEdge(
+                        edge_id=f"{branch_track_id}.to.{decision_id}",
+                        source_id=branch_track_id,
+                        target_id=decision_id,
+                        edge_kind="branch_scope_for_decision",
+                        metadata={"event_id": event.event_id},
+                    )
+                )
+        branch_id = event.metadata.get("branch_id")
+        if branch_id:
+            branch_track_id = f"{run.search_id}.rl.track.branch.{branch_id}"
+            join_kind = "join_branch_track" if event.operator_kind in {"merge", "discard"} else "branch_scope_for_decision"
+            causal_edges.append(
+                CausalEdge(
+                    edge_id=f"{branch_track_id}.to.{decision_id}",
+                    source_id=branch_track_id,
+                    target_id=decision_id,
+                    edge_kind=join_kind,
+                    metadata={"event_id": event.event_id},
+                )
+            )
         for assessment_id in event.assessment_ids:
             causal_edges.append(
                 CausalEdge(
@@ -326,6 +401,20 @@ def project_search_run_to_trajectory_graph(
                     source_id=decision_id,
                     target_id=assessment_id,
                     edge_kind="decision_triggers_evaluation",
+                )
+            )
+
+    resolved_evaluation_annotations = list(evaluation_annotations or build_evaluation_annotations_from_search_run(run))
+    for annotation in resolved_evaluation_annotations:
+        wake_track_id = annotation.metadata.get("wake_track_id")
+        if annotation.delayed and isinstance(wake_track_id, str) and wake_track_id.strip():
+            causal_edges.append(
+                CausalEdge(
+                    edge_id=f"{annotation.annotation_id}.to.{wake_track_id}",
+                    source_id=annotation.annotation_id,
+                    target_id=wake_track_id,
+                    edge_kind="wakes_track",
+                    metadata={"channel": annotation.channel},
                 )
             )
 
@@ -339,7 +428,7 @@ def project_search_run_to_trajectory_graph(
         decisions=decisions,
         effects=effects,
         causal_edges=causal_edges,
-        evaluation_annotations=list(evaluation_annotations or build_evaluation_annotations_from_search_run(run)),
+        evaluation_annotations=resolved_evaluation_annotations,
         cost_ledger=cost_ledger if cost_ledger is not None else build_cost_ledger_from_search_run(run),
         compaction_manifests=list(compaction_manifests or build_compaction_manifests_from_search_run(run)),
         metadata={"search_id": run.search_id, "recipe_kind": run.recipe_kind, **dict(metadata or {})},
@@ -401,3 +490,29 @@ def build_trajectory_graph_core_parity_view(graph: TrajectoryGraph) -> Dict[str,
         "cost_ledger": graph.cost_ledger.to_dict() if graph.cost_ledger else None,
         "compaction_manifests": [item.to_dict() for item in graph.compaction_manifests],
     }
+
+
+def build_credit_frame_from_trajectory_graph(
+    graph: TrajectoryGraph,
+    *,
+    frame_kind: str = "async_shared_attribution",
+    metadata: Optional[Mapping[str, Any]] = None,
+) -> CreditFrame:
+    target_annotation_ids = [item.annotation_id for item in graph.evaluation_annotations]
+    delayed_annotation_ids = [item.annotation_id for item in graph.evaluation_annotations if item.delayed]
+    decision_ids = [item.decision_id for item in graph.decisions]
+    track_ids = [item.track_id for item in graph.tracks]
+    decision_weight = 1.0 / float(len(decision_ids) or 1)
+    track_weight = 1.0 / float(len(track_ids) or 1)
+    workspace_refs = sorted({item.workspace_ref for item in graph.observations if item.workspace_ref})
+    return CreditFrame(
+        frame_id=f"{graph.graph_id}.credit_frame.v1",
+        graph_id=graph.graph_id,
+        frame_kind=frame_kind,
+        target_annotation_ids=target_annotation_ids,
+        decision_weights={item: decision_weight for item in decision_ids},
+        track_weights={item: track_weight for item in track_ids},
+        workspace_attribution_refs=workspace_refs,
+        delayed_annotation_ids=delayed_annotation_ids,
+        metadata={"track_count": len(track_ids), "decision_count": len(decision_ids), **dict(metadata or {})},
+    )

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from ..longrun.checkpoint import build_longrun_checkpoint_metadata_record
 from ..search import build_branch_execute_verify_reference_recipe
 from .graph import (
+    build_credit_frame_from_trajectory_graph,
     build_trajectory_graph_core_parity_view,
     build_compaction_manifests_from_search_run,
     build_cost_ledger_from_search_run,
@@ -21,8 +23,10 @@ from .export import (
 )
 from .schema import (
     AdapterCapabilities,
+    CreditFrame,
     DatasetExportUnit,
     EnvironmentDescriptor,
+    EvaluationAnnotation,
     PolicyProvenance,
     RolloutDescriptor,
 )
@@ -286,4 +290,78 @@ def build_rl_v1_alpha_exporters_example_payload() -> Dict[str, object]:
         "replay_exports": {key: value.to_dict() for key, value in example["replay_exports"].items()},
         "live_export_core_views": dict(example["live_export_core_views"]),
         "replay_export_core_views": dict(example["replay_export_core_views"]),
+    }
+
+
+def build_rl_v1_multi_agent_async_hardening_example() -> Dict[str, object]:
+    base = build_rl_v1_contract_pack_example()
+    run = base["run"]
+    root_track_id = f"{run.search_id}.rl.track.root"
+    delayed_annotations = []
+    for index, annotation in enumerate(base["evaluation_annotations"]):
+        delayed_annotations.append(
+            EvaluationAnnotation(
+                annotation_id=annotation.annotation_id,
+                subject_id=annotation.subject_id,
+                subject_kind=annotation.subject_kind,
+                channel=annotation.channel,
+                status=annotation.status,
+                score_value=annotation.score_value,
+                text_feedback=annotation.text_feedback,
+                artifact_refs=list(annotation.artifact_refs),
+                delayed=index == 0,
+                metadata={
+                    **dict(annotation.metadata),
+                    "delayed": index == 0,
+                    "wake_track_id": root_track_id if index == 0 else None,
+                    "background_task": "verifier_pool" if index == 0 else "inline",
+                },
+            )
+        )
+    checkpoint_pointer = build_longrun_checkpoint_metadata_record(
+        path=f"meta/checkpoints/{run.search_id}_resume.json",
+        episode=7,
+        phase="verification_resume",
+        updated_at=1700000000.0,
+    )
+    graph = project_search_run_to_trajectory_graph(
+        run=run,
+        rollout_descriptor=build_default_rollout_descriptor_from_search_run(
+            run=run,
+            origin_kind="live",
+            metadata={
+                "phase": "rl_v1_phase4",
+                "projection_case": "multi_agent_async_hardening",
+                "checkpoint_pointer": checkpoint_pointer,
+            },
+        ),
+        environment_descriptor=base["environment_descriptor"],
+        policy_provenance=[base["policy_provenance"]],
+        evaluation_annotations=delayed_annotations,
+        cost_ledger=base["cost_ledger"],
+        compaction_manifests=base["compaction_manifests"],
+        metadata={
+            "phase": "rl_v1_phase4",
+            "projection_case": "multi_agent_async_hardening",
+            "checkpoint_pointer": checkpoint_pointer,
+        },
+    )
+    credit_frame = build_credit_frame_from_trajectory_graph(
+        graph,
+        metadata={"phase": "rl_v1_phase4", "continuation_aligned": True},
+    )
+    return {
+        **base,
+        "trajectory_graph": graph,
+        "credit_frame": credit_frame,
+        "checkpoint_pointer": checkpoint_pointer,
+    }
+
+
+def build_rl_v1_multi_agent_async_hardening_example_payload() -> Dict[str, object]:
+    example = build_rl_v1_multi_agent_async_hardening_example()
+    return {
+        "trajectory_graph": example["trajectory_graph"].to_dict(),
+        "credit_frame": example["credit_frame"].to_dict(),
+        "checkpoint_pointer": dict(example["checkpoint_pointer"]),
     }
