@@ -8,6 +8,8 @@ from agentic_coder_prototype.rl import (
     DatasetExportUnit,
     EnvironmentDescriptor,
     EvaluationAnnotation,
+    EvaluationPackManifest,
+    ExportManifest,
     PolicyProvenance,
     RolloutDescriptor,
     TrainingFeedback,
@@ -36,6 +38,14 @@ from agentic_coder_prototype.rl import (
     build_rl_v1_serving_inference_probe_payload,
     build_rl_v1_trajectory_graph_shell_example,
     build_rl_v1_trajectory_graph_shell_example_payload,
+    build_rl_v2_compaction_fidelity_example,
+    build_rl_v2_compaction_fidelity_example_payload,
+    build_rl_v2_delayed_evaluation_fidelity_example,
+    build_rl_v2_delayed_evaluation_fidelity_example_payload,
+    build_rl_v2_freeze_and_scope_packet,
+    build_rl_v2_freeze_and_scope_packet_payload,
+    build_rl_v2_replay_live_fidelity_example,
+    build_rl_v2_replay_live_fidelity_example_payload,
 )
 from agentic_coder_prototype.search import SearchRun
 
@@ -242,3 +252,56 @@ def test_rl_v1_freeze_and_deferrals_packet_closes_v1_cleanly() -> None:
     assert payload["boundary_summary"]["evaluator_outside"] is True
     assert payload["boundary_summary"]["dataset_engine_outside"] is True
     assert payload["completed_probes"] == example["completed_probes"]
+
+
+def test_rl_v2_freeze_and_scope_packet_locks_v2_center() -> None:
+    packet = build_rl_v2_freeze_and_scope_packet()
+    payload = build_rl_v2_freeze_and_scope_packet_payload()
+
+    assert packet["v2_center"] == "export_data_fidelity"
+    assert packet["boundary"]["kernel_truth_frozen"] is True
+    assert "no_new_kernel_nouns_by_default" in payload["non_goals"]
+    assert payload["support_ladder"] == ["probe", "experimental", "supported"]
+
+
+def test_rl_v2_replay_live_fidelity_example_preserves_manifest_parity() -> None:
+    example = build_rl_v2_replay_live_fidelity_example()
+    payload = build_rl_v2_replay_live_fidelity_example_payload()
+    live_pack = EvaluationPackManifest.from_dict(payload["live_evaluation_pack"])
+    replay_pack = EvaluationPackManifest.from_dict(payload["replay_evaluation_pack"])
+    live_manifest = ExportManifest.from_dict(payload["live_export_manifest"])
+    replay_manifest = ExportManifest.from_dict(payload["replay_export_manifest"])
+
+    assert live_pack.evaluation_pack_id == replay_pack.evaluation_pack_id
+    assert live_pack.annotation_ids == replay_pack.annotation_ids
+    assert live_manifest.export_fingerprint == replay_manifest.export_fingerprint
+    assert payload["live_export_manifest_parity_view"] == payload["replay_export_manifest_parity_view"]
+    assert example["live_export_manifest_parity_view"] == example["replay_export_manifest_parity_view"]
+
+
+def test_rl_v2_compaction_fidelity_example_preserves_compaction_refs() -> None:
+    example = build_rl_v2_compaction_fidelity_example()
+    payload = build_rl_v2_compaction_fidelity_example_payload()
+    export_unit = DatasetExportUnit.from_dict(payload["export_unit"])
+    export_manifest = ExportManifest.from_dict(payload["export_manifest"])
+    report = payload["compaction_fidelity_report"]
+
+    assert export_unit.compaction_manifests
+    assert export_manifest.evaluation_pack_id == payload["evaluation_pack"]["evaluation_pack_id"]
+    assert report["all_compaction_refs_preserved"] is True
+    assert report["lossy_policy_view"] is True
+    assert report["fidelity_tiers"] == [item.fidelity_tier for item in export_unit.compaction_manifests]
+    assert example["compaction_fidelity_report"] == report
+
+
+def test_rl_v2_delayed_evaluation_fidelity_example_preserves_available_at() -> None:
+    example = build_rl_v2_delayed_evaluation_fidelity_example()
+    payload = build_rl_v2_delayed_evaluation_fidelity_example_payload()
+    export_manifest = ExportManifest.from_dict(payload["export_manifest"])
+    report = payload["delayed_evaluation_fidelity_report"]
+
+    assert export_manifest.evaluation_pack_id == payload["evaluation_pack"]["evaluation_pack_id"]
+    assert report["delayed_annotation_count"] >= 1
+    assert report["all_available_at_explicit"] is True
+    assert report["policy_view_safe"] is True
+    assert example["delayed_evaluation_fidelity_report"] == report

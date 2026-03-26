@@ -4,6 +4,13 @@ from typing import Any, Dict
 
 from ..longrun.checkpoint import build_longrun_checkpoint_metadata_record
 from ..search import build_branch_execute_verify_reference_recipe
+from .fidelity import (
+    build_compaction_fidelity_report,
+    build_delayed_evaluation_fidelity_report,
+    build_evaluation_pack_manifest,
+    build_export_manifest,
+    build_export_manifest_parity_view,
+)
 from .graph import (
     build_credit_frame_from_trajectory_graph,
     build_trajectory_graph_core_parity_view,
@@ -27,9 +34,12 @@ from .schema import (
     DatasetExportUnit,
     EnvironmentDescriptor,
     EvaluationAnnotation,
+    EvaluationPackManifest,
+    ExportManifest,
     PolicyProvenance,
     RolloutDescriptor,
     TrainingFeedback,
+    TrajectoryGraph,
 )
 
 
@@ -497,4 +507,240 @@ def build_rl_v1_freeze_and_deferrals_payload() -> Dict[str, object]:
         "completed_probes": list(packet["completed_probes"]),
         "deferred_to_v2": list(packet["deferred_to_v2"]),
         "boundary_summary": dict(packet["boundary_summary"]),
+    }
+
+
+def build_rl_v2_freeze_and_scope_packet() -> Dict[str, object]:
+    return {
+        "packet_id": "bb.rl.v2.freeze_and_scope.v1",
+        "v1_surfaces_frozen": [
+            "overlay_not_kernel",
+            "four_truth_surfaces",
+            "graph_native_trajectory_model",
+            "evaluation_cost_credit_separation",
+            "flatten_only_at_edge",
+            "search_deferred_and_non_duplicate",
+            "delegated_serving_trainer_evaluator_boundaries",
+        ],
+        "v2_center": "export_data_fidelity",
+        "support_ladder": [
+            "probe",
+            "experimental",
+            "supported",
+        ],
+        "non_goals": [
+            "no_new_kernel_nouns_by_default",
+            "no_trainer_specific_packing_in_breadboard_truth",
+            "no_dataset_engine_product_surface",
+            "no_rl_owned_duplicate_search_ontology",
+        ],
+        "boundary": {
+            "kernel_truth_frozen": True,
+            "rl_overlay_mostly_frozen": True,
+            "helper_level_additions_allowed": True,
+            "adapter_local_losses_must_be_explicit": True,
+        },
+    }
+
+
+def build_rl_v2_freeze_and_scope_packet_payload() -> Dict[str, object]:
+    packet = build_rl_v2_freeze_and_scope_packet()
+    return {
+        "packet_id": packet["packet_id"],
+        "v1_surfaces_frozen": list(packet["v1_surfaces_frozen"]),
+        "v2_center": packet["v2_center"],
+        "support_ladder": list(packet["support_ladder"]),
+        "non_goals": list(packet["non_goals"]),
+        "boundary": dict(packet["boundary"]),
+    }
+
+
+def build_rl_v2_replay_live_fidelity_example() -> Dict[str, object]:
+    base = build_rl_v1_alpha_exporters_example()
+    live_units = list(base["live_exports"].values())
+    replay_units = list(base["replay_exports"].values())
+    live_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.v2.evaluation_pack.reference.v1",
+        annotations=base["live_graph"].evaluation_annotations,
+        rubric_version="rl_v2_replay_live_v1",
+        visibility_boundary="policy_view",
+        reduction_context="export_fidelity_audit",
+        metadata={"phase": "rl_v2_phase1", "projection_case": "live"},
+    )
+    replay_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.v2.evaluation_pack.reference.v1",
+        annotations=base["replay_graph"].evaluation_annotations,
+        rubric_version="rl_v2_replay_live_v1",
+        visibility_boundary="policy_view",
+        reduction_context="export_fidelity_audit",
+        metadata={"phase": "rl_v2_phase1", "projection_case": "replay"},
+    )
+    live_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.v2.export_manifest.live_reference.v1",
+        export_units=live_units,
+        evaluation_pack_manifest=live_pack,
+        split_kind="audit_holdout",
+        canonicalization_policy="source_ref_exact",
+        transform_version="rl_v2_phase1",
+        contamination_controls=["task_root_split", "artifact_lineage_guard"],
+        metadata={"phase": "rl_v2_phase1", "projection_case": "live"},
+    )
+    replay_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.v2.export_manifest.replay_reference.v1",
+        export_units=replay_units,
+        evaluation_pack_manifest=replay_pack,
+        split_kind="audit_holdout",
+        canonicalization_policy="source_ref_exact",
+        transform_version="rl_v2_phase1",
+        contamination_controls=["task_root_split", "artifact_lineage_guard"],
+        metadata={"phase": "rl_v2_phase1", "projection_case": "replay"},
+    )
+    return {
+        **base,
+        "live_evaluation_pack": live_pack,
+        "replay_evaluation_pack": replay_pack,
+        "live_export_manifest": live_manifest,
+        "replay_export_manifest": replay_manifest,
+        "live_export_manifest_parity_view": build_export_manifest_parity_view(live_manifest),
+        "replay_export_manifest_parity_view": build_export_manifest_parity_view(replay_manifest),
+    }
+
+
+def build_rl_v2_replay_live_fidelity_example_payload() -> Dict[str, object]:
+    example = build_rl_v2_replay_live_fidelity_example()
+    return {
+        "live_evaluation_pack": example["live_evaluation_pack"].to_dict(),
+        "replay_evaluation_pack": example["replay_evaluation_pack"].to_dict(),
+        "live_export_manifest": example["live_export_manifest"].to_dict(),
+        "replay_export_manifest": example["replay_export_manifest"].to_dict(),
+        "live_export_manifest_parity_view": dict(example["live_export_manifest_parity_view"]),
+        "replay_export_manifest_parity_view": dict(example["replay_export_manifest_parity_view"]),
+    }
+
+
+def build_rl_v2_compaction_fidelity_example() -> Dict[str, object]:
+    base = build_rl_v1_alpha_exporters_example()
+    graph = base["live_graph"]
+    transition_export = base["live_exports"]["transition"]
+    evaluation_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.v2.evaluation_pack.compaction.v1",
+        annotations=graph.evaluation_annotations,
+        rubric_version="rl_v2_compaction_v1",
+        visibility_boundary="policy_view",
+        reduction_context="compaction_audit",
+        metadata={"phase": "rl_v2_phase1", "projection_case": "compaction"},
+    )
+    export_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.v2.export_manifest.compaction.v1",
+        export_units=[transition_export],
+        evaluation_pack_manifest=evaluation_pack,
+        split_kind="audit_holdout",
+        canonicalization_policy="source_ref_exact",
+        transform_version="rl_v2_compaction_v1",
+        contamination_controls=["task_root_split", "artifact_lineage_guard"],
+        metadata={"phase": "rl_v2_phase1", "projection_case": "compaction"},
+    )
+    return {
+        "trajectory_graph": graph,
+        "evaluation_pack": evaluation_pack,
+        "export_unit": transition_export,
+        "export_manifest": export_manifest,
+        "compaction_fidelity_report": build_compaction_fidelity_report(
+            graph=graph,
+            export_unit=transition_export,
+            evaluation_pack_manifest=evaluation_pack,
+            export_manifest=export_manifest,
+        ),
+    }
+
+
+def build_rl_v2_compaction_fidelity_example_payload() -> Dict[str, object]:
+    example = build_rl_v2_compaction_fidelity_example()
+    return {
+        "trajectory_graph": example["trajectory_graph"].to_dict(),
+        "evaluation_pack": example["evaluation_pack"].to_dict(),
+        "export_unit": example["export_unit"].to_dict(),
+        "export_manifest": example["export_manifest"].to_dict(),
+        "compaction_fidelity_report": dict(example["compaction_fidelity_report"]),
+    }
+
+
+def build_rl_v2_delayed_evaluation_fidelity_example() -> Dict[str, object]:
+    base = build_rl_v1_multi_agent_async_hardening_example()
+    graph = base["trajectory_graph"]
+    adjusted_annotations = []
+    for index, annotation in enumerate(graph.evaluation_annotations):
+        adjusted_annotations.append(
+            EvaluationAnnotation(
+                annotation_id=annotation.annotation_id,
+                subject_id=annotation.subject_id,
+                subject_kind=annotation.subject_kind,
+                channel=annotation.channel,
+                status=annotation.status,
+                score_value=annotation.score_value,
+                text_feedback=annotation.text_feedback,
+                artifact_refs=list(annotation.artifact_refs),
+                delayed=annotation.delayed,
+                metadata={
+                    **dict(annotation.metadata),
+                    "available_at": f"turn_{index + 2}",
+                    "visibility_boundary": "policy_view",
+                },
+            )
+        )
+    adjusted_graph = TrajectoryGraph(
+        graph_id=graph.graph_id,
+        rollout_descriptor=graph.rollout_descriptor,
+        environment_descriptor=graph.environment_descriptor,
+        policy_provenance=list(graph.policy_provenance),
+        tracks=list(graph.tracks),
+        observations=list(graph.observations),
+        decisions=list(graph.decisions),
+        effects=list(graph.effects),
+        causal_edges=list(graph.causal_edges),
+        evaluation_annotations=adjusted_annotations,
+        cost_ledger=graph.cost_ledger,
+        compaction_manifests=list(graph.compaction_manifests),
+        metadata={**dict(graph.metadata), "phase": "rl_v2_phase1", "projection_case": "delayed_eval"},
+    )
+    verifier_export = export_verifier_example_unit(adjusted_graph)
+    evaluation_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.v2.evaluation_pack.delayed_eval.v1",
+        annotations=adjusted_graph.evaluation_annotations,
+        rubric_version="rl_v2_delayed_eval_v1",
+        visibility_boundary="policy_view",
+        reduction_context="delayed_eval_audit",
+        metadata={"phase": "rl_v2_phase1", "projection_case": "delayed_eval"},
+    )
+    export_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.v2.export_manifest.delayed_eval.v1",
+        export_units=[verifier_export],
+        evaluation_pack_manifest=evaluation_pack,
+        split_kind="audit_holdout",
+        canonicalization_policy="event_address_stable",
+        transform_version="rl_v2_delayed_eval_v1",
+        contamination_controls=["task_root_split", "future_leak_guard"],
+        metadata={"phase": "rl_v2_phase1", "projection_case": "delayed_eval"},
+    )
+    return {
+        "trajectory_graph": adjusted_graph,
+        "evaluation_pack": evaluation_pack,
+        "export_unit": verifier_export,
+        "export_manifest": export_manifest,
+        "delayed_evaluation_fidelity_report": build_delayed_evaluation_fidelity_report(
+            graph=adjusted_graph,
+            evaluation_pack_manifest=evaluation_pack,
+            export_manifest=export_manifest,
+        ),
+    }
+
+
+def build_rl_v2_delayed_evaluation_fidelity_example_payload() -> Dict[str, object]:
+    example = build_rl_v2_delayed_evaluation_fidelity_example()
+    return {
+        "trajectory_graph": example["trajectory_graph"].to_dict(),
+        "evaluation_pack": example["evaluation_pack"].to_dict(),
+        "export_unit": example["export_unit"].to_dict(),
+        "export_manifest": example["export_manifest"].to_dict(),
+        "delayed_evaluation_fidelity_report": dict(example["delayed_evaluation_fidelity_report"]),
     }

@@ -828,6 +828,144 @@ class DatasetExportUnit:
 
 
 @dataclass(frozen=True)
+class EvaluationPackManifest:
+    evaluation_pack_id: str
+    annotation_ids: List[str]
+    channels: List[str]
+    rubric_version: str
+    visibility_boundary: str
+    delayed_evaluation_allowed: bool = False
+    reduction_context: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "evaluation_pack_id", _require_text(self.evaluation_pack_id, "evaluation_pack_id"))
+        object.__setattr__(self, "annotation_ids", _copy_text_list(self.annotation_ids))
+        object.__setattr__(self, "channels", _copy_text_list(self.channels))
+        object.__setattr__(self, "rubric_version", _require_text(self.rubric_version, "rubric_version"))
+        object.__setattr__(
+            self,
+            "visibility_boundary",
+            _require_text(self.visibility_boundary, "visibility_boundary"),
+        )
+        object.__setattr__(self, "delayed_evaluation_allowed", bool(self.delayed_evaluation_allowed))
+        object.__setattr__(
+            self,
+            "reduction_context",
+            str(self.reduction_context).strip() if self.reduction_context else None,
+        )
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+        if not self.annotation_ids:
+            raise ValueError("annotation_ids must contain at least one annotation id")
+        if not self.channels:
+            raise ValueError("channels must contain at least one evaluation channel")
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = {
+            "evaluation_pack_id": self.evaluation_pack_id,
+            "annotation_ids": list(self.annotation_ids),
+            "channels": list(self.channels),
+            "rubric_version": self.rubric_version,
+            "visibility_boundary": self.visibility_boundary,
+            "delayed_evaluation_allowed": self.delayed_evaluation_allowed,
+            "metadata": dict(self.metadata),
+        }
+        if self.reduction_context:
+            payload["reduction_context"] = self.reduction_context
+        return payload
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "EvaluationPackManifest":
+        return EvaluationPackManifest(
+            evaluation_pack_id=data.get("evaluation_pack_id") or "",
+            annotation_ids=list(data.get("annotation_ids") or []),
+            channels=list(data.get("channels") or []),
+            rubric_version=data.get("rubric_version") or "",
+            visibility_boundary=data.get("visibility_boundary") or "",
+            delayed_evaluation_allowed=bool(data.get("delayed_evaluation_allowed")),
+            reduction_context=data.get("reduction_context"),
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
+class ExportManifest:
+    export_manifest_id: str
+    export_unit_ids: List[str]
+    export_kinds: List[str]
+    source_graph_ids: List[str]
+    evaluation_pack_id: str
+    split_kind: str
+    canonicalization_policy: str
+    transform_version: str
+    export_fingerprint: str
+    contamination_controls: List[str] = field(default_factory=list)
+    origin_kinds: List[str] = field(default_factory=list)
+    fidelity_tier: str = "replay_stable_contract"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "export_manifest_id", _require_text(self.export_manifest_id, "export_manifest_id"))
+        object.__setattr__(self, "export_unit_ids", _copy_text_list(self.export_unit_ids))
+        object.__setattr__(self, "export_kinds", _copy_text_list(self.export_kinds))
+        object.__setattr__(self, "source_graph_ids", _copy_text_list(self.source_graph_ids))
+        object.__setattr__(self, "evaluation_pack_id", _require_text(self.evaluation_pack_id, "evaluation_pack_id"))
+        object.__setattr__(self, "split_kind", _require_text(self.split_kind, "split_kind"))
+        object.__setattr__(
+            self,
+            "canonicalization_policy",
+            _require_text(self.canonicalization_policy, "canonicalization_policy"),
+        )
+        object.__setattr__(self, "transform_version", _require_text(self.transform_version, "transform_version"))
+        object.__setattr__(self, "export_fingerprint", _require_text(self.export_fingerprint, "export_fingerprint"))
+        object.__setattr__(self, "contamination_controls", _copy_text_list(self.contamination_controls))
+        object.__setattr__(self, "origin_kinds", _copy_text_list(self.origin_kinds))
+        object.__setattr__(self, "fidelity_tier", _require_text(self.fidelity_tier, "fidelity_tier"))
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+        if not self.export_unit_ids:
+            raise ValueError("export_unit_ids must contain at least one export unit id")
+        if not self.export_kinds:
+            raise ValueError("export_kinds must contain at least one export kind")
+        if not self.source_graph_ids:
+            raise ValueError("source_graph_ids must contain at least one source graph id")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "export_manifest_id": self.export_manifest_id,
+            "export_unit_ids": list(self.export_unit_ids),
+            "export_kinds": list(self.export_kinds),
+            "source_graph_ids": list(self.source_graph_ids),
+            "evaluation_pack_id": self.evaluation_pack_id,
+            "split_kind": self.split_kind,
+            "canonicalization_policy": self.canonicalization_policy,
+            "transform_version": self.transform_version,
+            "export_fingerprint": self.export_fingerprint,
+            "contamination_controls": list(self.contamination_controls),
+            "origin_kinds": list(self.origin_kinds),
+            "fidelity_tier": self.fidelity_tier,
+            "metadata": dict(self.metadata),
+        }
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "ExportManifest":
+        return ExportManifest(
+            export_manifest_id=data.get("export_manifest_id") or "",
+            export_unit_ids=list(data.get("export_unit_ids") or []),
+            export_kinds=list(data.get("export_kinds") or []),
+            source_graph_ids=list(data.get("source_graph_ids") or []),
+            evaluation_pack_id=data.get("evaluation_pack_id") or "",
+            split_kind=data.get("split_kind") or "",
+            canonicalization_policy=data.get("canonicalization_policy") or "",
+            transform_version=data.get("transform_version") or "",
+            export_fingerprint=data.get("export_fingerprint") or "",
+            contamination_controls=list(data.get("contamination_controls") or []),
+            origin_kinds=list(data.get("origin_kinds") or []),
+            fidelity_tier=data.get("fidelity_tier") or "replay_stable_contract",
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
 class CreditFrame:
     frame_id: str
     graph_id: str
