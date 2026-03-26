@@ -367,6 +367,80 @@ class AdapterCapabilities:
 
 
 @dataclass(frozen=True)
+class AdapterProbeReport:
+    probe_report_id: str
+    adapter_id: str
+    probe_kind: str
+    support_level: str
+    workload_family: str
+    capability_snapshot: AdapterCapabilities
+    export_manifest_id: Optional[str] = None
+    evaluation_pack_id: Optional[str] = None
+    fidelity_losses: List[str] = field(default_factory=list)
+    unsupported_fields: List[str] = field(default_factory=list)
+    conformance_status: str = "passed"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "probe_report_id", _require_text(self.probe_report_id, "probe_report_id"))
+        object.__setattr__(self, "adapter_id", _require_text(self.adapter_id, "adapter_id"))
+        object.__setattr__(self, "probe_kind", _require_text(self.probe_kind, "probe_kind"))
+        support_level = _require_text(self.support_level, "support_level").lower()
+        if support_level not in {"probe", "experimental", "supported"}:
+            raise ValueError("support_level must be one of: ['probe', 'experimental', 'supported']")
+        object.__setattr__(self, "support_level", support_level)
+        object.__setattr__(self, "workload_family", _require_text(self.workload_family, "workload_family"))
+        capability_snapshot = (
+            self.capability_snapshot
+            if isinstance(self.capability_snapshot, AdapterCapabilities)
+            else AdapterCapabilities.from_dict(self.capability_snapshot)
+        )
+        object.__setattr__(self, "capability_snapshot", capability_snapshot)
+        object.__setattr__(self, "export_manifest_id", str(self.export_manifest_id).strip() if self.export_manifest_id else None)
+        object.__setattr__(self, "evaluation_pack_id", str(self.evaluation_pack_id).strip() if self.evaluation_pack_id else None)
+        object.__setattr__(self, "fidelity_losses", _copy_text_list(self.fidelity_losses))
+        object.__setattr__(self, "unsupported_fields", _copy_text_list(self.unsupported_fields))
+        object.__setattr__(self, "conformance_status", _require_text(self.conformance_status, "conformance_status"))
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = {
+            "probe_report_id": self.probe_report_id,
+            "adapter_id": self.adapter_id,
+            "probe_kind": self.probe_kind,
+            "support_level": self.support_level,
+            "workload_family": self.workload_family,
+            "capability_snapshot": self.capability_snapshot.to_dict(),
+            "fidelity_losses": list(self.fidelity_losses),
+            "unsupported_fields": list(self.unsupported_fields),
+            "conformance_status": self.conformance_status,
+            "metadata": dict(self.metadata),
+        }
+        if self.export_manifest_id:
+            payload["export_manifest_id"] = self.export_manifest_id
+        if self.evaluation_pack_id:
+            payload["evaluation_pack_id"] = self.evaluation_pack_id
+        return payload
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "AdapterProbeReport":
+        return AdapterProbeReport(
+            probe_report_id=data.get("probe_report_id") or "",
+            adapter_id=data.get("adapter_id") or "",
+            probe_kind=data.get("probe_kind") or "",
+            support_level=data.get("support_level") or "",
+            workload_family=data.get("workload_family") or "",
+            capability_snapshot=AdapterCapabilities.from_dict(data.get("capability_snapshot") or {}),
+            export_manifest_id=data.get("export_manifest_id"),
+            evaluation_pack_id=data.get("evaluation_pack_id"),
+            fidelity_losses=list(data.get("fidelity_losses") or []),
+            unsupported_fields=list(data.get("unsupported_fields") or []),
+            conformance_status=data.get("conformance_status") or "passed",
+            metadata=dict(data.get("metadata") or {}),
+        )
+
+
+@dataclass(frozen=True)
 class TrackRecord:
     track_id: str
     source_kind: str

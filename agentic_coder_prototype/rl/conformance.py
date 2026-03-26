@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Mapping, Optional, Sequence
 
-from .schema import DatasetExportUnit, EvaluationPackManifest, ExportManifest
+from .schema import AdapterCapabilities, AdapterProbeReport, DatasetExportUnit, EvaluationPackManifest, ExportManifest
 
 
 def build_export_unit_conformance_view(
@@ -106,3 +106,33 @@ def build_export_conformance_parity_view(packet: Mapping[str, Any]) -> Dict[str,
         "split_provenance": dict(packet["split_provenance"]),
         "summary": dict(packet["summary"]),
     }
+
+
+def build_adapter_probe_report(
+    *,
+    probe_report_id: str,
+    adapter_capabilities: AdapterCapabilities,
+    probe_kind: str,
+    workload_family: str,
+    support_level: str = "probe",
+    export_manifest_id: Optional[str] = None,
+    evaluation_pack_id: Optional[str] = None,
+    fidelity_losses: Optional[Sequence[str]] = None,
+    unsupported_fields: Optional[Sequence[str]] = None,
+    conformance_status: str = "passed",
+    metadata: Optional[Mapping[str, Any]] = None,
+) -> AdapterProbeReport:
+    return AdapterProbeReport(
+        probe_report_id=probe_report_id,
+        adapter_id=adapter_capabilities.adapter_id,
+        probe_kind=probe_kind,
+        support_level=support_level,
+        workload_family=workload_family,
+        capability_snapshot=adapter_capabilities,
+        export_manifest_id=export_manifest_id,
+        evaluation_pack_id=evaluation_pack_id,
+        fidelity_losses=list(fidelity_losses or []),
+        unsupported_fields=list(unsupported_fields or []),
+        conformance_status=conformance_status,
+        metadata=dict(metadata or {}),
+    )

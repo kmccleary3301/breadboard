@@ -4,7 +4,11 @@ from typing import Any, Dict
 
 from ..longrun.checkpoint import build_longrun_checkpoint_metadata_record
 from ..search import build_branch_execute_verify_reference_recipe
-from .conformance import build_export_conformance_packet, build_export_conformance_parity_view
+from .conformance import (
+    build_adapter_probe_report,
+    build_export_conformance_packet,
+    build_export_conformance_parity_view,
+)
 from .fidelity import (
     build_compaction_fidelity_report,
     build_delayed_evaluation_fidelity_report,
@@ -32,6 +36,7 @@ from .export import (
 )
 from .schema import (
     AdapterCapabilities,
+    AdapterProbeReport,
     CreditFrame,
     DatasetExportUnit,
     EnvironmentDescriptor,
@@ -837,4 +842,104 @@ def build_rl_v2_export_conformance_example_payload() -> Dict[str, object]:
         "replay_conformance_packet": dict(example["replay_conformance_packet"]),
         "live_conformance_parity_view": dict(example["live_conformance_parity_view"]),
         "replay_conformance_parity_view": dict(example["replay_conformance_parity_view"]),
+    }
+
+
+def build_rl_v2_adapter_probe_program_example() -> Dict[str, object]:
+    conformance = build_rl_v2_export_conformance_example()
+    serving_probe = build_rl_v1_serving_inference_probe()
+    evaluator_probe = build_rl_v1_evaluator_verifier_probe()
+    dataset_probe = build_rl_v1_dataset_training_feedback_probe()
+    evaluator_capabilities = AdapterCapabilities(
+        adapter_id="reference_evaluator_probe_adapter",
+        adapter_kind="evaluator_probe_adapter",
+        supports_graph_trajectory=True,
+        supports_async=True,
+        supports_training_feedback=False,
+        export_formats=["verifier_example_json", "evaluation_annotation_json"],
+        metadata={"owner_boundary": "delegated"},
+    )
+    dataset_capabilities = AdapterCapabilities(
+        adapter_id="reference_dataset_pipeline_adapter",
+        adapter_kind="dataset_pipeline_adapter",
+        supports_graph_trajectory=True,
+        supports_async=True,
+        supports_training_feedback=False,
+        export_formats=["dataset_export_unit_json", "export_manifest_json"],
+        metadata={"owner_boundary": "delegated"},
+    )
+
+    serving_report = build_adapter_probe_report(
+        probe_report_id="bb.rl.v2.adapter_probe.serving.v1",
+        adapter_capabilities=serving_probe["adapter_capabilities"],
+        probe_kind="serving_inference",
+        workload_family="single_agent_code",
+        export_manifest_id=conformance["live_export_manifest"].export_manifest_id,
+        evaluation_pack_id=conformance["live_evaluation_pack"].evaluation_pack_id,
+        fidelity_losses=["provider_cache_stats_not_modeled"],
+        unsupported_fields=["serving_batch_id", "backend_cache_hit_rate"],
+        metadata={"phase": "rl_v2_phase3", "support_claim": "probe_only"},
+    )
+    evaluator_report = build_adapter_probe_report(
+        probe_report_id="bb.rl.v2.adapter_probe.evaluator.v1",
+        adapter_capabilities=evaluator_capabilities,
+        probe_kind="evaluator_verifier",
+        workload_family="async_verifier",
+        export_manifest_id=conformance["live_export_manifest"].export_manifest_id,
+        evaluation_pack_id=conformance["live_evaluation_pack"].evaluation_pack_id,
+        fidelity_losses=["judge_internal_prompt_not_exposed"],
+        unsupported_fields=["judge_prompt_bundle_ref"],
+        metadata={"phase": "rl_v2_phase3", "support_claim": "probe_only"},
+    )
+    dataset_report = build_adapter_probe_report(
+        probe_report_id="bb.rl.v2.adapter_probe.dataset_pipeline.v1",
+        adapter_capabilities=dataset_capabilities,
+        probe_kind="dataset_pipeline",
+        workload_family="trainer_neutral_export",
+        export_manifest_id=conformance["live_export_manifest"].export_manifest_id,
+        evaluation_pack_id=conformance["live_evaluation_pack"].evaluation_pack_id,
+        fidelity_losses=["external_parquet_layout_delegated"],
+        unsupported_fields=["parquet_row_group_config"],
+        metadata={"phase": "rl_v2_phase3", "support_claim": "probe_only"},
+    )
+    trainer_feedback_report = build_adapter_probe_report(
+        probe_report_id="bb.rl.v2.adapter_probe.trainer_feedback.v1",
+        adapter_capabilities=AdapterCapabilities(
+            adapter_id="reference_training_feedback_adapter",
+            adapter_kind="trainer_feedback_adapter",
+            supports_graph_trajectory=True,
+            supports_async=False,
+            supports_training_feedback=True,
+            export_formats=["dataset_export_unit_json", "training_feedback_json"],
+            metadata={"owner_boundary": "delegated"},
+        ),
+        probe_kind="trainer_feedback",
+        workload_family="trainer_feedback_loop",
+        export_manifest_id=conformance["live_export_manifest"].export_manifest_id,
+        evaluation_pack_id=conformance["live_evaluation_pack"].evaluation_pack_id,
+        fidelity_losses=["optimizer_state_omitted_by_design"],
+        unsupported_fields=["optimizer_checkpoint_ref", "packed_minibatch_plan"],
+        metadata={"phase": "rl_v2_phase3", "support_claim": "probe_only"},
+    )
+    return {
+        "serving_probe": serving_probe,
+        "evaluator_probe": evaluator_probe,
+        "dataset_probe": dataset_probe,
+        "live_export_manifest": conformance["live_export_manifest"],
+        "live_evaluation_pack": conformance["live_evaluation_pack"],
+        "probe_reports": {
+            "serving": serving_report,
+            "evaluator": evaluator_report,
+            "dataset": dataset_report,
+            "trainer_feedback": trainer_feedback_report,
+        },
+    }
+
+
+def build_rl_v2_adapter_probe_program_example_payload() -> Dict[str, object]:
+    example = build_rl_v2_adapter_probe_program_example()
+    return {
+        "live_export_manifest": example["live_export_manifest"].to_dict(),
+        "live_evaluation_pack": example["live_evaluation_pack"].to_dict(),
+        "probe_reports": {key: value.to_dict() for key, value in example["probe_reports"].items()},
     }

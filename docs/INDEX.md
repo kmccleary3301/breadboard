@@ -126,6 +126,7 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [concepts/rl-training-primitives-v1-freeze-and-deferrals.md](concepts/rl-training-primitives-v1-freeze-and-deferrals.md) | RL Training Primitives V1 closeout: delegated-boundary probes, optional training feedback support, and the V1 freeze/defer decision |
 | [concepts/rl-training-primitives-v2-fidelity-hardening.md](concepts/rl-training-primitives-v2-fidelity-hardening.md) | RL Training Primitives V2 first tranche: frozen V1 semantics plus replay/live, compaction, and delayed-evaluation fidelity hardening with export-level helper manifests |
 | [concepts/rl-training-primitives-v2-export-conformance.md](concepts/rl-training-primitives-v2-export-conformance.md) | RL Training Primitives V2 Phase 2: canonical export bundles, conformance packets, and replay/live parity views with explicit split, contamination, transform, and fidelity-tier reporting |
+| [concepts/rl-training-primitives-v2-adapter-probes.md](concepts/rl-training-primitives-v2-adapter-probes.md) | RL Training Primitives V2 Phase 3: bounded adapter probe reports for serving, evaluator, dataset, and trainer-feedback paths without overclaiming support |
 
 ### Governance and change policy
 

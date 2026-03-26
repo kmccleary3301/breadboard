@@ -1,6 +1,7 @@
 """Trainer-neutral RL overlay contracts for BreadBoard runtime truth."""
 
 from .conformance import (
+    build_adapter_probe_report,
     build_export_conformance_packet,
     build_export_conformance_parity_view,
     build_export_unit_conformance_view,
@@ -42,6 +43,8 @@ from .examples import (
     build_rl_v2_compaction_fidelity_example_payload,
     build_rl_v2_delayed_evaluation_fidelity_example,
     build_rl_v2_delayed_evaluation_fidelity_example_payload,
+    build_rl_v2_adapter_probe_program_example,
+    build_rl_v2_adapter_probe_program_example_payload,
     build_rl_v2_export_conformance_example,
     build_rl_v2_export_conformance_example_payload,
     build_rl_v2_freeze_and_scope_packet,
@@ -69,6 +72,7 @@ from .graph import (
 )
 from .schema import (
     AdapterCapabilities,
+    AdapterProbeReport,
     CausalEdge,
     CompactionManifest,
     CostLedger,
@@ -90,6 +94,7 @@ from .schema import (
 
 __all__ = [
     "AdapterCapabilities",
+    "AdapterProbeReport",
     "CausalEdge",
     "CompactionManifest",
     "CostLedger",
@@ -107,6 +112,7 @@ __all__ = [
     "TrackRecord",
     "TrainingFeedback",
     "TrajectoryGraph",
+    "build_adapter_probe_report",
     "build_compaction_fidelity_report",
     "build_export_conformance_packet",
     "build_export_conformance_parity_view",
@@ -143,6 +149,8 @@ __all__ = [
     "build_rl_v1_serving_inference_probe_payload",
     "build_rl_v1_trajectory_graph_shell_example",
     "build_rl_v1_trajectory_graph_shell_example_payload",
+    "build_rl_v2_adapter_probe_program_example",
+    "build_rl_v2_adapter_probe_program_example_payload",
     "build_rl_v2_compaction_fidelity_example",
     "build_rl_v2_compaction_fidelity_example_payload",
     "build_rl_v2_delayed_evaluation_fidelity_example",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from agentic_coder_prototype.rl import (
     AdapterCapabilities,
+    AdapterProbeReport,
     CompactionManifest,
     CostLedger,
     CreditFrame,
@@ -42,6 +43,8 @@ from agentic_coder_prototype.rl import (
     build_rl_v2_compaction_fidelity_example_payload,
     build_rl_v2_delayed_evaluation_fidelity_example,
     build_rl_v2_delayed_evaluation_fidelity_example_payload,
+    build_rl_v2_adapter_probe_program_example,
+    build_rl_v2_adapter_probe_program_example_payload,
     build_rl_v2_export_conformance_example,
     build_rl_v2_export_conformance_example_payload,
     build_rl_v2_freeze_and_scope_packet,
@@ -330,3 +333,31 @@ def test_rl_v2_export_conformance_packet_tracks_split_and_contamination() -> Non
     assert packet["summary"]["export_unit_count"] == 3
     assert packet["summary"]["fidelity_tier"] == "replay_parity_verified"
     assert packet["summary"]["export_kind_counts"]["verifier_example"] == 1
+
+
+def test_rl_v2_adapter_probe_program_reports_bounded_support() -> None:
+    example = build_rl_v2_adapter_probe_program_example()
+    payload = build_rl_v2_adapter_probe_program_example_payload()
+    reports = {
+        key: AdapterProbeReport.from_dict(value)
+        for key, value in payload["probe_reports"].items()
+    }
+
+    assert set(reports) == {"serving", "evaluator", "dataset", "trainer_feedback"}
+    assert all(item.support_level == "probe" for item in reports.values())
+    assert reports["serving"].probe_kind == "serving_inference"
+    assert reports["evaluator"].workload_family == "async_verifier"
+    assert reports["dataset"].export_manifest_id == payload["live_export_manifest"]["export_manifest_id"]
+    assert reports["trainer_feedback"].capability_snapshot.supports_training_feedback is True
+    assert example["probe_reports"]["serving"].probe_report_id == reports["serving"].probe_report_id
+
+
+def test_rl_v2_adapter_probe_reports_make_losses_and_unsupported_fields_explicit() -> None:
+    example = build_rl_v2_adapter_probe_program_example()
+    dataset_report = example["probe_reports"]["dataset"]
+    trainer_feedback_report = example["probe_reports"]["trainer_feedback"]
+
+    assert "external_parquet_layout_delegated" in dataset_report.fidelity_losses
+    assert "parquet_row_group_config" in dataset_report.unsupported_fields
+    assert "optimizer_state_omitted_by_design" in trainer_feedback_report.fidelity_losses
+    assert "optimizer_checkpoint_ref" in trainer_feedback_report.unsupported_fields
