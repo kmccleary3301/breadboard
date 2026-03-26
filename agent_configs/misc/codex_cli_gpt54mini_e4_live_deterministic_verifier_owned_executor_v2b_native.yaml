@@ -1,0 +1,25 @@
+extends: codex_cli_gpt54mini_e4_live.yaml
+
+profile: { name: codex-cli-gpt5.4-mini-e4-live-deterministic-verifier-owned-executor-v2b-native }
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs
+    include:
+      - shell_command
+      - apply_patch
+      - mark_task_complete
+
+phase15:
+  verifier_executor:
+    enabled: true
+    family: deterministic_verifier_owned_executor_v2b_mini_native
+    variant: deterministic_verifier_owned_executor_v2b_mini_native
+    support_strategy: deterministic_reranker
+    max_localize_turns: 1
+    max_branch_turns: 1
+    max_commit_turns: 1
+    max_verify_turns: 2
+    require_mark_task_complete: true
+    deny_no_tool_turn_before_close: true

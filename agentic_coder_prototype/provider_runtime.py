@@ -1325,6 +1325,10 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             model=payload.get("model"),
             payload=payload,
             context=context,
+            metadata={
+                "phase_label": (context.extra or {}).get("phase16_phase_label"),
+                "turn_index": (context.extra or {}).get("turn_index"),
+            },
         )
 
         try:
@@ -2162,7 +2166,11 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             model=model,
             payload=request,
             context=context,
-            metadata=response_metadata,
+            metadata={
+                **response_metadata,
+                "phase_label": (context.extra or {}).get("phase16_phase_label"),
+                "turn_index": (context.extra or {}).get("turn_index"),
+            },
         )
 
         session_state = getattr(context, "session_state", None)

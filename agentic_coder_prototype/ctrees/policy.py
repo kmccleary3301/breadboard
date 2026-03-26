@@ -48,6 +48,43 @@ _DENSE_TERM_ALIASES = {
     "planning": "plan",
 }
 _DENSE_SUFFIXES = ("ation", "tion", "ment", "ing", "ers", "ies", "ied", "ed", "er", "or", "ly", "es", "s")
+_LANE_PROFILES = {
+    "frozen_core": {
+        "graph_enabled": True,
+        "graph_neighborhood_enabled": False,
+        "dense_enabled": False,
+        "helper_enabled": False,
+        "helper_summary_coupling_enabled": False,
+    },
+    "graph_neighborhood": {
+        "graph_enabled": True,
+        "graph_neighborhood_enabled": True,
+        "dense_enabled": False,
+        "helper_enabled": False,
+        "helper_summary_coupling_enabled": False,
+    },
+    "helper_rehydration": {
+        "graph_enabled": True,
+        "graph_neighborhood_enabled": False,
+        "dense_enabled": False,
+        "helper_enabled": True,
+        "helper_summary_coupling_enabled": False,
+    },
+    "summary_coupling": {
+        "graph_enabled": True,
+        "graph_neighborhood_enabled": False,
+        "dense_enabled": False,
+        "helper_enabled": True,
+        "helper_summary_coupling_enabled": True,
+    },
+    "dense_retrieval": {
+        "graph_enabled": True,
+        "graph_neighborhood_enabled": False,
+        "dense_enabled": True,
+        "helper_enabled": True,
+        "helper_summary_coupling_enabled": False,
+    },
+}
 
 
 def _sort_node_ids(ids: List[str]) -> List[str]:
@@ -73,6 +110,49 @@ def _node_by_id(store: CTreeStore, node_id: str) -> Optional[Dict[str, Any]]:
         if isinstance(node, dict) and str(node.get("id") or "") == str(node_id):
             return node
     return None
+
+
+def resolve_focus_node_id(store: CTreeStore, focus_node_id: Optional[str] = None) -> Optional[str]:
+    if focus_node_id:
+        node = _node_by_id(store, str(focus_node_id))
+        if isinstance(node, dict):
+            normalized_id = str(node.get("id") or "").strip()
+            if normalized_id:
+                return normalized_id
+    snapshot = store.snapshot()
+    last_node = snapshot.get("last_node") if isinstance(snapshot, dict) else None
+    last_node_id = str(last_node.get("id") or "").strip() if isinstance(last_node, dict) else ""
+    return last_node_id or None
+
+
+def resolve_lane_profile(
+    lane_profile: Optional[str] = None,
+    *,
+    graph_enabled: bool,
+    graph_neighborhood_enabled: bool,
+    dense_enabled: bool,
+    helper_enabled: bool,
+    helper_summary_coupling_enabled: bool,
+) -> Dict[str, Any]:
+    profile_name = str(lane_profile or "custom").strip() or "custom"
+    profile_defaults = dict(_LANE_PROFILES.get(profile_name) or {})
+    if not profile_defaults:
+        return {
+            "profile": "custom",
+            "graph_enabled": bool(graph_enabled),
+            "graph_neighborhood_enabled": bool(graph_neighborhood_enabled),
+            "dense_enabled": bool(dense_enabled),
+            "helper_enabled": bool(helper_enabled),
+            "helper_summary_coupling_enabled": bool(helper_summary_coupling_enabled),
+        }
+    return {
+        "profile": profile_name,
+        "graph_enabled": bool(profile_defaults.get("graph_enabled")),
+        "graph_neighborhood_enabled": bool(profile_defaults.get("graph_neighborhood_enabled")),
+        "dense_enabled": bool(profile_defaults.get("dense_enabled")),
+        "helper_enabled": bool(profile_defaults.get("helper_enabled")),
+        "helper_summary_coupling_enabled": bool(profile_defaults.get("helper_summary_coupling_enabled")),
+    }
 
 
 def _simple_child_state(node: Dict[str, Any]) -> Dict[str, Any]:
@@ -583,16 +663,13 @@ def _collect_graph_neighborhood_candidates(
     return candidates
 
 
-def active_path_node_ids(store: CTreeStore) -> List[str]:
-    nodes = list(getattr(store, "nodes", []) or [])
-    if not nodes:
-        return []
-    last_node = nodes[-1]
-    if not isinstance(last_node, dict):
+def active_path_node_ids(store: CTreeStore, focus_node_id: Optional[str] = None) -> List[str]:
+    effective_focus_node_id = resolve_focus_node_id(store, focus_node_id)
+    if not effective_focus_node_id:
         return []
     ordered: List[str] = []
     seen = set()
-    current: Optional[Dict[str, Any]] = last_node
+    current = _node_by_id(store, effective_focus_node_id)
     while isinstance(current, dict):
         current_id = str(current.get("id") or "")
         if not current_id or current_id in seen:
@@ -612,14 +689,13 @@ def resolve_retrieval_policy(
     *,
     mode: str = "active_continuation",
     token_budget: Optional[int] = None,
+    focus_node_id: Optional[str] = None,
     graph_enabled: bool = True,
     graph_neighborhood_enabled: bool = False,
     dense_enabled: bool = False,
 ) -> Dict[str, Any]:
-    active_path = active_path_node_ids(store)
-    snapshot = store.snapshot()
-    last_node = snapshot.get("last_node") if isinstance(snapshot, dict) else None
-    last_node_id = str(last_node.get("id") or "") if isinstance(last_node, dict) else None
+    effective_focus_node_id = resolve_focus_node_id(store, focus_node_id)
+    active_path = active_path_node_ids(store, effective_focus_node_id)
     structural_sources = ["active_node", "ancestors", "latest_child_summaries"]
     lexical_sources = ["constraints", "targets", "workspace_scope", "artifact_refs", "titles", "paths"]
     dense_sources = ["normalized_titles", "normalized_constraints", "normalized_artifacts", "normalized_targets"]
@@ -671,7 +747,12 @@ def resolve_retrieval_policy(
         "allowed_sources": allowed_sources,
         "token_budget": effective_budget,
         "active_path_node_ids": active_path,
-        "focus_node_id": last_node_id,
+        "focus_node_id": effective_focus_node_id,
+        "focus_selection": {
+            "strategy": "explicit" if focus_node_id else "last_node_fallback",
+            "requested_focus_node_id": str(focus_node_id or ""),
+            "resolved_focus_node_id": effective_focus_node_id,
+        },
         "restore_targets": restore_targets,
     }
 
@@ -681,6 +762,7 @@ def build_retrieval_substrate(
     *,
     mode: str = "active_continuation",
     token_budget: Optional[int] = None,
+    focus_node_id: Optional[str] = None,
     graph_enabled: bool = True,
     graph_neighborhood_enabled: bool = False,
     dense_enabled: bool = False,
@@ -689,6 +771,7 @@ def build_retrieval_substrate(
         store,
         mode=mode,
         token_budget=token_budget,
+        focus_node_id=focus_node_id,
         graph_enabled=graph_enabled,
         graph_neighborhood_enabled=graph_neighborhood_enabled,
         dense_enabled=dense_enabled,
@@ -740,24 +823,34 @@ def build_rehydration_plan(
     *,
     mode: str = "active_continuation",
     token_budget: Optional[int] = None,
+    focus_node_id: Optional[str] = None,
+    lane_profile: Optional[str] = None,
     graph_enabled: bool = True,
     graph_neighborhood_enabled: bool = False,
     dense_enabled: bool = False,
     helper_enabled: bool = False,
     helper_summary_coupling_enabled: bool = False,
 ) -> Dict[str, Any]:
+    lane_config = resolve_lane_profile(
+        lane_profile,
+        graph_enabled=graph_enabled,
+        graph_neighborhood_enabled=graph_neighborhood_enabled,
+        dense_enabled=dense_enabled,
+        helper_enabled=helper_enabled,
+        helper_summary_coupling_enabled=helper_summary_coupling_enabled,
+    )
     retrieval_substrate = build_retrieval_substrate(
         store,
         mode=mode,
         token_budget=token_budget,
-        graph_enabled=graph_enabled,
-        graph_neighborhood_enabled=graph_neighborhood_enabled,
-        dense_enabled=dense_enabled,
+        focus_node_id=focus_node_id,
+        graph_enabled=bool(lane_config.get("graph_enabled")),
+        graph_neighborhood_enabled=bool(lane_config.get("graph_neighborhood_enabled")),
+        dense_enabled=bool(lane_config.get("dense_enabled")),
     )
     retrieval_policy = retrieval_substrate.get("retrieval_policy") or {}
-    snapshot = store.snapshot()
-    last_node = snapshot.get("last_node") if isinstance(snapshot, dict) else None
     focus_node_id = retrieval_policy.get("focus_node_id")
+    focus_node = _node_by_id(store, str(focus_node_id)) if focus_node_id else None
     active_path = list(retrieval_policy.get("active_path_node_ids") or [])
     constraints: List[Dict[str, Any]] = []
     targets: List[str] = []
@@ -810,11 +903,11 @@ def build_rehydration_plan(
                 seen_artifacts.add(text)
                 artifact_refs.append(text)
 
-    if not constraints and isinstance(last_node, dict):
-        constraints = list(last_node.get("constraints") or [])
-        targets = list(last_node.get("targets") or [])
-        workspace_scope = list(last_node.get("workspace_scope") or [])
-        artifact_refs = list(last_node.get("artifact_refs") or [])
+    if not constraints and isinstance(focus_node, dict):
+        constraints = list(focus_node.get("constraints") or [])
+        targets = list(focus_node.get("targets") or [])
+        workspace_scope = list(focus_node.get("workspace_scope") or [])
+        artifact_refs = list(focus_node.get("artifact_refs") or [])
     if mode == "pivot":
         constraints = constraints[:3]
         artifact_refs = artifact_refs[:3]
@@ -852,9 +945,9 @@ def build_rehydration_plan(
     helper_proposal = None
     summary_support: List[Dict[str, Any]] = []
     selected_candidates = list(promoted_candidates)
-    if helper_enabled:
+    if bool(lane_config.get("helper_enabled")):
         subtree_summary_proposals: List[Dict[str, Any]] = []
-        if helper_summary_coupling_enabled:
+        if bool(lane_config.get("helper_summary_coupling_enabled")):
             subtree_summary_proposals = _build_active_path_subtree_summary_proposals(store, active_path)
             summary_support = [
                 {
@@ -929,7 +1022,9 @@ def build_rehydration_plan(
     return {
         "schema_version": "ctree_rehydration_bundle_v1",
         "mode": mode,
-        "focus_node_id": focus_node_id,
+        "focus_node_id": retrieval_policy.get("focus_node_id"),
+        "lane_profile": str(lane_config.get("profile") or "custom"),
+        "lane_config": lane_config,
         "token_budget": retrieval_policy.get("token_budget"),
         "dependency_coverage_target": "direct_only" if mode in {"active_continuation", "resume"} else "minimal",
         "restore_bundle": {

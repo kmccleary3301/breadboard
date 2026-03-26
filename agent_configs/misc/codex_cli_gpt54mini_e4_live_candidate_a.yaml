@@ -1,0 +1,12 @@
+extends: codex_cli_gpt54mini_e4_live.yaml
+
+profile: { name: codex-cli-gpt5.4-mini-e4-live-candidate-a }
+
+phase11:
+  live_protocol_adapter:
+    enabled: true
+    strategy: candidate_a
+    mode: active_continuation
+    graph_enabled: true
+    graph_neighborhood_enabled: false
+    dense_enabled: false

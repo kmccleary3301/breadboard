@@ -1,0 +1,28 @@
+extends: codex_cli_gpt54mini_e4_live.yaml
+
+profile: { name: codex-cli-gpt5.4-mini-e4-live-deterministic-invocation-first-executor-v1-native }
+
+provider_tools:
+  use_native: true
+  suppress_prompts: true
+  api_variant: responses
+  responses_use_developer_role: true
+  tool_choice: required
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs
+    include:
+      - shell_command
+      - apply_patch
+      - mark_task_complete
+
+phase16:
+  invocation_first_executor:
+    enabled: true
+    family: deterministic_invocation_first_executor_v1_mini_native
+    variant: deterministic_invocation_first_executor_v1_mini_native
+    support_strategy: deterministic_reranker
+    tool_choice: required
+    parallel_tool_calls: false

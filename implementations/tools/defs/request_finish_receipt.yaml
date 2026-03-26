@@ -1,0 +1,25 @@
+id: request_finish_receipt
+name: request_finish_receipt
+description: Request runner-validated task closure using the active branch mode and current receipt basis.
+type_id: python
+syntax_formats_supported: [native_function_calling, json_block]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: branch_mode
+    type: string
+    description: The active branch mode, typically `edit` or `proof`
+    required: false
+  - name: closure_basis
+    type: string
+    description: Short statement of why the task is ready to close
+    required: false
+execution:
+  blocking: true
+  max_per_turn: 1
+provider_routing:
+  openai:
+    native_primary: true
+    fallback_formats: [json_block]
+  anthropic:
+    native_primary: true
+    fallback_formats: [json_block]

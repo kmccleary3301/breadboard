@@ -115,6 +115,12 @@ def legacy_message_view(provider_message: ProviderMessage) -> SimpleNamespace:
     )
 
 
+def _is_completion_action_result(tool_name: str, tool_result: Dict[str, Any]) -> bool:
+    if tool_name == "mark_task_complete":
+        return True
+    return isinstance(tool_result, dict) and tool_result.get("action") == "complete"
+
+
 def build_exec_func(conductor: ConductorContext, session_state: SessionState) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     """Create execution function with replay-aware TODO resolution."""
     hook_manager = getattr(conductor, "hook_manager", None)
@@ -264,12 +270,16 @@ def summarize_execution_results(
         tool_name_lower = tool_name.lower()
         if tool_name_lower == "bash":
             tool_name = "run_shell"
+        elif tool_name_lower == "shell_command":
+            tool_name = "run_shell"
         elif tool_name_lower == "list":
             tool_name = "list_dir"
         elif tool_name_lower == "read":
             tool_name = "read_file"
         elif tool_name_lower == "write":
             tool_name = "create_file_from_block"
+        elif tool_name_lower == "apply_patch":
+            tool_name = "apply_unified_patch"
         elif tool_name_lower == "todo":
             tool_name = "TodoWrite"
         tool_result_dict = tool_result if isinstance(tool_result, dict) else {}
@@ -1500,11 +1510,9 @@ def handle_native_tool_calls(
         guard_blocked = False
         for idx in range(len(results) - 1, -1, -1):
             current = results[idx]
-            if (
-                current.get("fn") == "mark_task_complete"
-                and isinstance(current.get("out"), dict)
-                and current["out"].get("action") == "complete"
-            ):
+            current_fn = str(current.get("fn") or "")
+            current_out = current.get("out") if isinstance(current.get("out"), dict) else {}
+            if _is_completion_action_result(current_fn, current_out):
                 guard_ok, guard_reason = conductor._completion_guard_check(session_state)
                 if guard_ok:
                     continue
@@ -1513,7 +1521,7 @@ def handle_native_tool_calls(
                 abort = conductor._emit_completion_guard_feedback(
                     session_state,
                     markdown_logger,
-                    guard_reason or "Completion guard blocked mark_task_complete",
+                    guard_reason or f"Completion guard blocked {current_fn or 'tool completion'}",
                     stream_responses,
                 )
                 summary = session_state.tool_usage_summary
@@ -1523,12 +1531,12 @@ def handle_native_tool_calls(
                     if turn_usage and isinstance(turn_usage.get("tools"), list):
                         tools_list = turn_usage["tools"]
                         for tool_entry_idx in range(len(tools_list) - 1, -1, -1):
-                            if tools_list[tool_entry_idx].get("name") == "mark_task_complete":
+                            if tools_list[tool_entry_idx].get("name") == current_fn:
                                 tools_list.pop(tool_entry_idx)
                                 break
                 recent_tools_summary = [
                     entry for entry in recent_tools_summary
-                    if entry.get("name") != "mark_task_complete"
+                    if entry.get("name") != current_fn
                 ]
                 results.pop(idx)
                 if abort:
@@ -1585,6 +1593,31 @@ def handle_native_tool_calls(
                 conductor.logger_v2.append_text("conversation/conversation.md", conductor.md_writer.provider_tool_results(short, f"provider_native/tool_results/turn_{persist_turn}.json"))
         except Exception:
             pass
+
+        for result_entry in results:
+            tool_name = str(result_entry.get("fn") or "")
+            tool_out = result_entry.get("out") if isinstance(result_entry.get("out"), dict) else {}
+            if not _is_completion_action_result(tool_name, tool_out):
+                continue
+
+            if not getattr(session_state, "completion_summary", None):
+                session_state.completion_summary = {
+                    "completed": True,
+                    "method": "tool_completion_action",
+                    "reason": tool_name or "tool_completion_action",
+                    "confidence": 1.0,
+                    "tool": tool_name,
+                    "tool_result": tool_out,
+                    "source": "tool_call",
+                }
+            else:
+                session_state.completion_summary.setdefault("completed", True)
+                session_state.completion_summary.setdefault("reason", tool_name or "tool_completion_action")
+                session_state.completion_summary.setdefault("method", "tool_completion_action")
+
+            if stream_responses:
+                print(f"[stop] reason=tool_based confidence=1.0 - {tool_name}() completed")
+            return True
 
         if flow_strategy == "assistant_continuation":
             try:

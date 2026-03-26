@@ -1,0 +1,22 @@
+id: record_proof_receipt
+name: record_proof_receipt
+description: Record an explicit no-edit proof receipt after gathering sufficient runner-visible evidence.
+type_id: python
+syntax_formats_supported: [native_function_calling, json_block]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: summary
+    type: string
+    description: Short description of the proof basis
+    required: true
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    additional_properties: false
+    strict: false
+    fallback_formats: [json_block]
+  anthropic:
+    native_primary: false
+    fallback_formats: [json_block]

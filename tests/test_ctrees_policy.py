@@ -176,6 +176,72 @@ def test_ctree_prompt_planes_use_support_bundle_contract() -> None:
     assert planes["live_session_delta"]["prompt_summary"]["turn_count"] == 2
 
 
+def test_ctree_explicit_focus_override_changes_active_path_and_support() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Focus root"}, turn=1)
+    focus_id = store.record(
+        "task",
+        {
+            "title": "Focus candidate",
+            "parent_id": root_id,
+            "targets": ["ctrees/compiler.py"],
+            "artifact_refs": ["focus_artifact.md"],
+        },
+        turn=2,
+    )
+    tail_id = store.record(
+        "task",
+        {
+            "title": "Later unrelated task",
+            "parent_id": root_id,
+            "targets": ["router/audit.py"],
+            "artifact_refs": ["tail_artifact.md"],
+        },
+        turn=3,
+    )
+
+    baseline = build_rehydration_plan(store, mode="active_continuation")
+    focused = build_rehydration_plan(store, mode="active_continuation", focus_node_id=focus_id)
+
+    assert baseline["focus_node_id"] == tail_id
+    assert focused["focus_node_id"] == focus_id
+    assert baseline["retrieval_policy"]["focus_selection"]["strategy"] == "last_node_fallback"
+    assert focused["retrieval_policy"]["focus_selection"]["strategy"] == "explicit"
+    assert focused["retrieval_substrate"]["active_path_node_ids"] == [root_id, focus_id]
+    assert "ctrees/compiler.py" in focused["rehydration_bundle"]["targets"]
+    assert "router/audit.py" not in focused["rehydration_bundle"]["targets"]
+
+
+def test_ctree_compile_focus_override_propagates_to_prompt_planes() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Compile focus"}, turn=1)
+    focus_id = store.record(
+        "task",
+        {
+            "title": "Desired focus",
+            "parent_id": root_id,
+            "targets": ["ctrees/policy.py"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Trailing sibling",
+            "parent_id": root_id,
+            "targets": ["router/audit.py"],
+        },
+        turn=3,
+    )
+
+    compiled = compile_ctree(store, focus_node_id=focus_id)
+
+    assert compiled["prompt_planes"]["reduced_task_state"]["focus_node_id"] == focus_id
+    assert compiled["prompt_planes"]["support_bundle"]["focus_node_id"] == focus_id
+    assert compiled["stages"]["HEADER"]["focus_node_id"] == focus_id
+    assert compiled["stages"]["HEADER"]["active_path_node_ids"] == [root_id, focus_id]
+
+
 def test_ctree_helper_subtree_summaries_are_opt_in() -> None:
     store = CTreeStore()
     root_id = store.record("objective", {"title": "Helper subtree"}, turn=1)
@@ -420,3 +486,39 @@ def test_ctree_dense_retrieval_is_opt_in() -> None:
     assert not ((baseline.get("retrieval_substrate") or {}).get("candidate_support") or {}).get("dense")
     assert ((dense.get("retrieval_substrate") or {}).get("candidate_support") or {}).get("dense")
     assert (dense.get("helper_proposal") or {}).get("selected_support_node_ids") == ["ctn_000003", "ctn_000002"]
+
+
+def test_ctree_lane_profiles_freeze_core_and_optional_surfaces() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Lane profile"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Compilation packet",
+            "parent_id": root_id,
+            "status": "active",
+            "artifact_refs": ["compile_validation.md"],
+            "constraints": [{"summary": "Validated build interface", "scope": "task"}],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Verify compiler contract",
+            "parent_id": root_id,
+            "artifact_refs": ["rewrite_plan.md"],
+            "targets": ["ctrees/compiler.py"],
+        },
+        turn=3,
+    )
+
+    frozen_core = build_rehydration_plan(store, mode="active_continuation", lane_profile="frozen_core")
+    dense = build_rehydration_plan(store, mode="active_continuation", lane_profile="dense_retrieval")
+
+    assert frozen_core["lane_profile"] == "frozen_core"
+    assert dense["lane_profile"] == "dense_retrieval"
+    assert not ((frozen_core.get("retrieval_substrate") or {}).get("candidate_support") or {}).get("dense")
+    assert ((dense.get("retrieval_substrate") or {}).get("candidate_support") or {}).get("dense")
+    assert frozen_core["lane_config"]["helper_enabled"] is False
+    assert dense["lane_config"]["helper_enabled"] is True

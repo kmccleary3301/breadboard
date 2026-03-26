@@ -118,8 +118,9 @@ def _build_prompt_planes(
     rehydration_bundle: Dict[str, Any],
     helper_subtree_summaries: Optional[List[Dict[str, Any]]],
     prompt_summary: Optional[Dict[str, Any]],
+    focus_node_id: Optional[str],
 ) -> Dict[str, Any]:
-    active_path = active_path_node_ids(store)
+    active_path = active_path_node_ids(store, focus_node_id)
     local_by_id = {str(state.get("node_id")): state for state in local_states}
     active_states = [local_by_id[node_id] for node_id in active_path if node_id in local_by_id]
     reduced_target_set = sorted(
@@ -191,6 +192,7 @@ def compile_ctree(
     *,
     prompt_summary: Optional[Dict[str, Any]] = None,
     helper_summary_enabled: bool = False,
+    focus_node_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Compile the current task-state surface into stable staged payloads."""
 
@@ -247,8 +249,9 @@ def compile_ctree(
 
     top_level_ids = [str(node.get("id")) for node in store.top_level_nodes()]
     status_counts = Counter(str(node.get("status") or "unknown") for node in nodes)
-    retrieval_substrate = build_retrieval_substrate(store, mode="active_continuation")
-    rehydration_plan = build_rehydration_plan(store, mode="active_continuation")
+    retrieval_substrate = build_retrieval_substrate(store, mode="active_continuation", focus_node_id=focus_node_id)
+    effective_focus_node_id = retrieval_substrate.get("focus_node_id")
+    rehydration_plan = build_rehydration_plan(store, mode="active_continuation", focus_node_id=effective_focus_node_id)
     rehydration_bundle = dict(rehydration_plan.get("rehydration_bundle") or {})
     prompt_planes = _build_prompt_planes(
         store,
@@ -258,6 +261,7 @@ def compile_ctree(
         rehydration_bundle=rehydration_bundle,
         helper_subtree_summaries=helper_subtree_summaries,
         prompt_summary=prompt_summary,
+        focus_node_id=effective_focus_node_id,
     )
 
     raw_payload: Dict[str, Any] = {
@@ -297,7 +301,8 @@ def compile_ctree(
         "ready_count": len(ready_nodes),
         "top_level_count": len(top_level_ids),
         "status_counts": dict(status_counts),
-        "active_path_node_ids": active_path_node_ids(store),
+        "active_path_node_ids": active_path_node_ids(store, effective_focus_node_id),
+        "focus_node_id": effective_focus_node_id,
         "unresolved_blocker_count": len(prompt_planes["reduced_task_state"]["unresolved_blocker_refs"]),
         "needs_resolution": bool(prompt_planes["reduced_task_state"]["needs_resolution"]),
     }

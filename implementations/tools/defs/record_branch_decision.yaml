@@ -1,0 +1,26 @@
+id: record_branch_decision
+name: record_branch_decision
+description: Record the explicit branch choice for the current task. Use this before attempting proof or edit completion.
+type_id: python
+syntax_formats_supported: [native_function_calling, json_block]
+preferred_formats: [native_function_calling]
+parameters:
+  - name: branch_mode
+    type: string
+    description: Must be either `edit` or `proof`
+    required: true
+  - name: rationale
+    type: string
+    description: Short justification for the branch choice
+    required: false
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    additional_properties: false
+    strict: false
+    fallback_formats: [json_block]
+  anthropic:
+    native_primary: false
+    fallback_formats: [json_block]
