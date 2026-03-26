@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Execution Plan
 
 Date: 2026-03-20
-Status: Stage-5 Tranche-3 scaled compounding and bounded transfer completed; late comparative next
+Status: Stage-5 Tranche-3 scaled compounding and bounded transfer completed; late comparative and closeout active
 Scope: Stage-5 doctrine freeze, economics truth hardening, compounding protocol, family-aware search, and scalable compounding proof
 References:
 - `docs/darwin_stage5_doctrine_2026-03-20.md`
@@ -61,6 +61,21 @@ References:
 - `docs/darwin_stage5_harness_atp_bounds_2026-03-25.md`
 - `docs/darwin_stage5_scaled_compounding_review_2026-03-25.md`
 - `docs/darwin_stage5_scaled_compounding_gate_2026-03-25.md`
+- `docs/darwin_stage5_late_comparative_execution_plan_2026-03-25.md`
+- `docs/darwin_stage5_canonical_artifacts_2026-03-25.md`
+- `docs/darwin_stage5_claim_boundary_2026-03-25.md`
+- `docs/darwin_stage5_registry_integrity_note_2026-03-25.md`
+- `docs/darwin_stage5_transfer_comparability_note_2026-03-25.md`
+- `docs/darwin_stage5_composition_boundary_note_2026-03-25.md`
+- `docs/darwin_stage5_replay_sufficiency_note_2026-03-25.md`
+- `docs/darwin_stage5_route_economics_note_2026-03-25.md`
+- `docs/darwin_stage5_late_comparative_review_2026-03-25.md`
+- `docs/darwin_stage5_precloseout_gate_2026-03-25.md`
+- `docs/darwin_stage5_remaining_to_close_2026-03-25.md`
+- `docs/darwin_stage5_closeout_execution_plan_2026-03-25.md`
+- `docs/darwin_stage5_signoff_2026-03-25.md`
+- `docs/darwin_stage5_completion_gate_2026-03-25.md`
+- `docs/darwin_stage5_future_roadmap_handoff_2026-03-25.md`
 - `docs/darwin_stage4_signoff_2026-03-20.md`
 - `docs/darwin_stage4_completion_gate_2026-03-20.md`
 - `docs/darwin_stage4_future_roadmap_handoff_2026-03-20.md`

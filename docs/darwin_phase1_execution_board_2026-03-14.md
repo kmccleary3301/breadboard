@@ -178,3 +178,18 @@ Date: 2026-03-14
 - harness / ATP bounds: `docs/darwin_stage5_harness_atp_bounds_2026-03-25.md`
 - scaled compounding review: `docs/darwin_stage5_scaled_compounding_review_2026-03-25.md`
 - scaled compounding gate: `docs/darwin_stage5_scaled_compounding_gate_2026-03-25.md`
+- late comparative execution plan: `docs/darwin_stage5_late_comparative_execution_plan_2026-03-25.md`
+- canonical artifacts: `docs/darwin_stage5_canonical_artifacts_2026-03-25.md`
+- claim boundary: `docs/darwin_stage5_claim_boundary_2026-03-25.md`
+- registry integrity note: `docs/darwin_stage5_registry_integrity_note_2026-03-25.md`
+- transfer comparability note: `docs/darwin_stage5_transfer_comparability_note_2026-03-25.md`
+- composition boundary note: `docs/darwin_stage5_composition_boundary_note_2026-03-25.md`
+- replay sufficiency note: `docs/darwin_stage5_replay_sufficiency_note_2026-03-25.md`
+- route economics note: `docs/darwin_stage5_route_economics_note_2026-03-25.md`
+- late comparative review: `docs/darwin_stage5_late_comparative_review_2026-03-25.md`
+- pre-closeout gate: `docs/darwin_stage5_precloseout_gate_2026-03-25.md`
+- remaining to close: `docs/darwin_stage5_remaining_to_close_2026-03-25.md`
+- closeout execution plan: `docs/darwin_stage5_closeout_execution_plan_2026-03-25.md`
+- signoff: `docs/darwin_stage5_signoff_2026-03-25.md`
+- completion gate: `docs/darwin_stage5_completion_gate_2026-03-25.md`
+- future-roadmap handoff: `docs/darwin_stage5_future_roadmap_handoff_2026-03-25.md`

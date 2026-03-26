@@ -177,6 +177,21 @@ Phase-1 is closed as the internal operational baseline.
 - `docs/darwin_stage5_harness_atp_bounds_2026-03-25.md`
 - `docs/darwin_stage5_scaled_compounding_review_2026-03-25.md`
 - `docs/darwin_stage5_scaled_compounding_gate_2026-03-25.md`
+- `docs/darwin_stage5_late_comparative_execution_plan_2026-03-25.md`
+- `docs/darwin_stage5_canonical_artifacts_2026-03-25.md`
+- `docs/darwin_stage5_claim_boundary_2026-03-25.md`
+- `docs/darwin_stage5_registry_integrity_note_2026-03-25.md`
+- `docs/darwin_stage5_transfer_comparability_note_2026-03-25.md`
+- `docs/darwin_stage5_composition_boundary_note_2026-03-25.md`
+- `docs/darwin_stage5_replay_sufficiency_note_2026-03-25.md`
+- `docs/darwin_stage5_route_economics_note_2026-03-25.md`
+- `docs/darwin_stage5_late_comparative_review_2026-03-25.md`
+- `docs/darwin_stage5_precloseout_gate_2026-03-25.md`
+- `docs/darwin_stage5_remaining_to_close_2026-03-25.md`
+- `docs/darwin_stage5_closeout_execution_plan_2026-03-25.md`
+- `docs/darwin_stage5_signoff_2026-03-25.md`
+- `docs/darwin_stage5_completion_gate_2026-03-25.md`
+- `docs/darwin_stage5_future_roadmap_handoff_2026-03-25.md`
 
 ## What Phase-2 should not reopen
 
