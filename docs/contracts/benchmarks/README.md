@@ -64,6 +64,51 @@ Selection and promotion policy:
 - `docs/contracts/benchmarks/ATP_HILBERT_TRANCHE_SELECTION_POLICY_V1.md`
 - `docs/ATP_HILBERT_MAINTAINED_RUNBOOK_V1_2026-03-13.md`
 
+`scripts/run_bb_atp_adapter_slice_v1.py` is the real BreadBoard execution path for
+Hilbert comparison packs. It creates a per-task workspace, launches an actual
+BreadBoard session against the supplied config/model, verifies the resulting Lean
+file against Kimina, and emits `normalized_prover_result_v1` rows plus raw
+diagnostic JSON.
+
+Example invocation:
+
+```bash
+cd breadboard_repo
+python scripts/run_bb_atp_adapter_slice_v1.py \
+  --manifest artifacts/benchmarks/hilbert_comparison_packs_v1/pack_a_seedproof_sanity_minif2f_v1/cross_system_manifest.json \
+  --task-inputs artifacts/benchmarks/hilbert_comparison_packs_v1/pack_a_seedproof_sanity_minif2f_v1/bb_task_inputs.json \
+  --config agent_configs/atp_bb_aristotle_match_codexmini_v1.yaml \
+  --model openrouter/openai/gpt-5.4 \
+  --base-url http://127.0.0.1:9599 \
+  --start-engine \
+  --engine-port 9599 \
+  --verifier-url http://127.0.0.1:18001/verify \
+  --out artifacts/benchmarks/hilbert_comparison_packs_v1/pack_a_seedproof_sanity_minif2f_v1/bb_atp_normalized_results_v1.jsonl \
+  --summary-out artifacts/benchmarks/hilbert_comparison_packs_v1/pack_a_seedproof_sanity_minif2f_v1/bb_atp_slice_summary_v1.json
+```
+
+Hilbert-style comparator arm:
+
+- `agent_configs/atp_hilbert_like_gpt54_v1.yaml`
+
+This is a separate BreadBoard evaluation arm, not a replacement for the generic BB ATP
+baseline. It keeps the visible tool surface to `shell_command`, uses a persistent
+theorem-locking system prompt, and is intended for side-by-side Pack A / Pack B comparison
+against Hilbert-style proof loops.
+
+Recommended Hilbert comparison progression:
+
+- `pack_a2_calibration_minif2f_v1`: cheap calibration pack for bounded test-phase runs; excludes malformed `mathd_algebra_282`
+- `pack_b_hilbert_comparator_minif2f_v1`: broader direct-comparison pack once calibration is healthy
+- `pack_s1_imo_stress_minif2f_v1`: explicit stress pack for expensive search-heavy theorems
+- `pack_c_putnam_frontier_v1`: hard frontier tranche after the MiniF2F lanes are stable
+
+Current calibration status:
+
+- `pack_a2_calibration_minif2f_v1` is now the stable low-cost lane. BreadBoard Hilbert-like reaches `4/4` solved on the repaired pack, versus Hilbert `1/4`, using `cross_system_pilot_report_v3.json`.
+- The BB runner now performs stop-on-verified-proof during polling, so a valid Lean proof is captured immediately instead of being overwritten by later low-value drift.
+- The local external comparator clone at `other_harness_refs/ml-hilbert` now tracks the maintained `Rose-STL-Lab/ml-hilbert` fork on `main` (`bee1325`), while preserving Apple’s repository as the `apple` remote for reference.
+
 Adapter input fixture example:
 
 - `tests/fixtures/benchmarks/cross_system_task_inputs_demo_v1.json`
