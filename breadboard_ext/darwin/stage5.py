@@ -193,6 +193,11 @@ def build_stage5_search_policy_v2(
         }
     )
     base_policy = build_stage4_search_policy_v1(lane_id=lane_id, budget_class=budget_class)
+    tightened_repo_swe = lane_id == "lane.repo_swe" and policy_review_conclusion == "tighten"
+    stability_probe_systems = lane_id == "lane.systems" and policy_review_conclusion == "continue"
+    systems_primary_weight = lane_id == "lane.systems" and cross_lane_weight == "primary_proving_lane"
+    repo_swe_challenge_weight = lane_id == "lane.repo_swe" and cross_lane_weight == "challenge_lane"
+    repo_swe_family_surface_stale = lane_id == "lane.repo_swe" and str(repo_swe_family_surface.get("status") or "") in {"stale_or_incomplete", "missing"}
     promoted_rows = [
         row
         for row in family_rows
@@ -234,8 +239,22 @@ def build_stage5_search_policy_v2(
         family_kind = str(row.get("family_kind") or "")
         lifecycle_status = str(row.get("lifecycle_status") or "")
         priority = float(_FAMILY_PRIORITY_BASE.get(family_kind, 0.75))
+        confidence_class = "default_family_surface"
         if family_probe_enabled and family_kind == family_probe_target_kind:
             priority = max(priority, 0.99)
+            confidence_class = "probe_candidate_priority_boost"
+        elif systems_primary_weight and lane_id == "lane.systems" and family_kind == "policy":
+            priority = max(priority, 0.98)
+            confidence_class = "systems_primary_active_family"
+        elif (
+            repo_swe_challenge_weight
+            and lane_id == "lane.repo_swe"
+            and family_kind == str(repo_swe_family_surface.get("preferred_family_kind") or "")
+        ):
+            priority = max(priority, 0.97)
+            confidence_class = "repo_swe_challenge_settled_family"
+        elif lifecycle_status == "withheld":
+            confidence_class = "held_back_family"
         family_priors.append(
             {
                 "family_id": str(row["family_id"]),
@@ -245,16 +264,12 @@ def build_stage5_search_policy_v2(
                 "replay_status": str(row.get("replay_status") or ""),
                 "transfer_eligibility": dict(row.get("transfer_eligibility") or {}),
                 "lifecycle_status": lifecycle_status,
+                "confidence_class": confidence_class,
             }
         )
     family_registry_ref = None
     if DEFAULT_STAGE5_FAMILY_REGISTRY.exists():
         family_registry_ref = str(DEFAULT_STAGE5_FAMILY_REGISTRY.relative_to(ROOT))
-    tightened_repo_swe = lane_id == "lane.repo_swe" and policy_review_conclusion == "tighten"
-    stability_probe_systems = lane_id == "lane.systems" and policy_review_conclusion == "continue"
-    systems_primary_weight = lane_id == "lane.systems" and cross_lane_weight == "primary_proving_lane"
-    repo_swe_challenge_weight = lane_id == "lane.repo_swe" and cross_lane_weight == "challenge_lane"
-    repo_swe_family_surface_stale = lane_id == "lane.repo_swe" and str(repo_swe_family_surface.get("status") or "") in {"stale_or_incomplete", "missing"}
     max_mutation_arms = 1 if (tightened_repo_swe or stability_probe_systems or family_probe_enabled or systems_primary_weight or repo_swe_challenge_weight or repo_swe_family_surface_stale) else 2
     repetition_count = max(
         int(base_policy["repetition_count"]),
@@ -341,6 +356,13 @@ def build_stage5_search_policy_v2(
             "reason": str(cross_lane_row.get("lane_weight_reason") or "not_available"),
             "repo_swe_challenge": repo_swe_challenge_weight,
             "systems_primary": systems_primary_weight,
+        },
+        "compounding_weighting": {
+            "enabled": bool(cross_lane_weight) or bool(repo_swe_family_surface.get("preferred_family_kind")),
+            "strategy": "family_status_weighted_priority",
+            "systems_primary_policy_boost": systems_primary_weight,
+            "repo_swe_settled_family_boost": repo_swe_challenge_weight and bool(repo_swe_family_surface.get("preferred_family_kind")),
+            "family_surface_status": str(repo_swe_family_surface.get("status") or "not_applicable"),
         },
         "abort_thresholds": {
             "matched_budget_invalidity_rate_gt": 0.25,

@@ -170,3 +170,11 @@ Date: 2026-03-14
 - Tranche-2 success criteria: `docs/darwin_stage5_tranche2_success_criteria_2026-03-25.md`
 - family-aware proving review: `docs/darwin_stage5_family_aware_proving_review_2026-03-25.md`
 - Tranche-2 gate: `docs/darwin_stage5_tranche2_gate_2026-03-25.md`
+- scaled compounding execution plan: `docs/darwin_stage5_scaled_compounding_execution_plan_2026-03-25.md`
+- Tranche-3 metrics: `docs/darwin_stage5_tranche3_metrics_2026-03-25.md`
+- Stage-5 bounded transfer policy: `docs/contracts/darwin/DARWIN_STAGE5_BOUNDED_TRANSFER_POLICY_V0.md`
+- Stage-5 composition canary policy: `docs/contracts/darwin/DARWIN_STAGE5_COMPOSITION_CANARY_POLICY_V0.md`
+- scaled compounding status: `docs/darwin_stage5_scaled_compounding_status_2026-03-25.md`
+- harness / ATP bounds: `docs/darwin_stage5_harness_atp_bounds_2026-03-25.md`
+- scaled compounding review: `docs/darwin_stage5_scaled_compounding_review_2026-03-25.md`
+- scaled compounding gate: `docs/darwin_stage5_scaled_compounding_gate_2026-03-25.md`

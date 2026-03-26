@@ -169,6 +169,14 @@ Phase-1 is closed as the internal operational baseline.
 - `docs/darwin_stage5_tranche2_success_criteria_2026-03-25.md`
 - `docs/darwin_stage5_family_aware_proving_review_2026-03-25.md`
 - `docs/darwin_stage5_tranche2_gate_2026-03-25.md`
+- `docs/darwin_stage5_scaled_compounding_execution_plan_2026-03-25.md`
+- `docs/darwin_stage5_tranche3_metrics_2026-03-25.md`
+- `docs/contracts/darwin/DARWIN_STAGE5_BOUNDED_TRANSFER_POLICY_V0.md`
+- `docs/contracts/darwin/DARWIN_STAGE5_COMPOSITION_CANARY_POLICY_V0.md`
+- `docs/darwin_stage5_scaled_compounding_status_2026-03-25.md`
+- `docs/darwin_stage5_harness_atp_bounds_2026-03-25.md`
+- `docs/darwin_stage5_scaled_compounding_review_2026-03-25.md`
+- `docs/darwin_stage5_scaled_compounding_gate_2026-03-25.md`
 
 ## What Phase-2 should not reopen
 

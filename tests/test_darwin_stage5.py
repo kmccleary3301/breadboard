@@ -151,6 +151,36 @@ def test_build_stage5_search_policy_v2_uses_systems_primary_cross_lane_weight() 
     assert policy["policy_stability_probe"]["reason"] == "systems_weighted_primary_probe"
 
 
+def test_build_stage5_search_policy_v2_marks_systems_primary_family_confidence() -> None:
+    policy = build_stage5_search_policy_v2(
+        lane_id="lane.systems",
+        budget_class="class_a",
+        family_rows=[
+            {
+                "family_id": "component_family.stage4.policy.policy.shadow_memory_enable_v1.lane.systems.v0",
+                "family_key": "policy.shadow_memory_enable_v1",
+                "family_kind": "policy",
+                "lane_id": "lane.systems",
+                "lifecycle_status": "promoted",
+                "replay_status": "missing",
+                "transfer_eligibility": {"allowed_target_lanes": ["lane.scheduling"]},
+            }
+        ],
+        cross_lane_review={
+            "current_primary_lane_id": "lane.systems",
+            "rows": [
+                {
+                    "lane_id": "lane.systems",
+                    "lane_weight": "primary_proving_lane",
+                    "lane_weight_reason": "systems_has_cleaner_current_compounding_surface",
+                }
+            ],
+        },
+    )
+    assert policy["compounding_weighting"]["systems_primary_policy_boost"] is True
+    assert policy["family_priors"][0]["confidence_class"] == "systems_primary_active_family"
+
+
 def test_build_stage5_search_policy_v2_adds_repo_swe_family_probe() -> None:
     policy = build_stage5_search_policy_v2(
         lane_id="lane.repo_swe",
