@@ -121,6 +121,7 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [concepts/dag-runtime-v3-freeze-and-decision-gate.md](concepts/dag-runtime-v3-freeze-and-decision-gate.md) | DAG Runtime V3 closeout: freeze-and-reclassify decision gate that keeps the kernel frozen and pushes remaining pressure to helper, optimize, RL, evaluator, and DARWIN-adjacent layers |
 | [concepts/rl-training-primitives-v1-boundary-and-contract-pack.md](concepts/rl-training-primitives-v1-boundary-and-contract-pack.md) | RL Training Primitives V1 first tranche: overlay-only boundary doctrine, explicit supersession of shallow linear trajectory surfaces, and the initial graph-native contract pack |
 | [concepts/rl-training-primitives-v1-replay-parity.md](concepts/rl-training-primitives-v1-replay-parity.md) | RL Training Primitives V1 replay parity: live and replay projection paths must converge on the same graph-core truth surface |
+| [concepts/rl-training-primitives-v1-alpha-exporters.md](concepts/rl-training-primitives-v1-alpha-exporters.md) | RL Training Primitives V1 alpha exporters: trainer-neutral export units for SFT, RL transition segments, and verifier examples with explicit provenance and replay parity |
 
 ### Governance and change policy
 

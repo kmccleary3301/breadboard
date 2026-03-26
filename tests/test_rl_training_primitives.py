@@ -4,11 +4,14 @@ from agentic_coder_prototype.rl import (
     AdapterCapabilities,
     CompactionManifest,
     CostLedger,
+    DatasetExportUnit,
     EnvironmentDescriptor,
     EvaluationAnnotation,
     PolicyProvenance,
     RolloutDescriptor,
     TrajectoryGraph,
+    build_rl_v1_alpha_exporters_example,
+    build_rl_v1_alpha_exporters_example_payload,
     build_rl_v1_boundary_audit_packet,
     build_rl_v1_boundary_audit_packet_payload,
     build_rl_v1_contract_pack_example,
@@ -108,3 +111,39 @@ def test_rl_v1_replay_parity_example_matches_at_graph_core() -> None:
     assert example["replay_graph"].rollout_descriptor.origin_kind == "replay"
     assert example["live_parity_view"] == example["replay_parity_view"]
     assert payload["live_parity_view"] == payload["replay_parity_view"]
+
+
+def test_rl_v1_alpha_exporters_example_is_trainer_neutral_and_round_trips() -> None:
+    example = build_rl_v1_alpha_exporters_example()
+    payload = build_rl_v1_alpha_exporters_example_payload()
+    live_sft = DatasetExportUnit.from_dict(payload["live_exports"]["sft"])
+    live_transition = DatasetExportUnit.from_dict(payload["live_exports"]["transition"])
+    live_verifier = DatasetExportUnit.from_dict(payload["live_exports"]["verifier"])
+
+    assert live_sft.export_kind == "sft_distillation"
+    assert live_transition.export_kind == "rl_transition_segment"
+    assert live_verifier.export_kind == "verifier_example"
+    assert live_sft.rollout_descriptor.source_ref == example["run"].search_id
+    assert live_transition.policy_provenance
+    assert live_verifier.compaction_manifests
+    assert payload["live_export_core_views"] == payload["replay_export_core_views"]
+    assert example["live_export_core_views"] == example["replay_export_core_views"]
+
+
+def test_rl_v1_transition_export_contains_decision_segments() -> None:
+    example = build_rl_v1_alpha_exporters_example()
+    transition_export = example["live_exports"]["transition"]
+    transitions = transition_export.record_payload["transitions"]
+
+    assert len(transitions) == len(example["live_graph"].decisions)
+    assert transitions[0]["observation_ids"]
+    assert all("decision_id" in item for item in transitions)
+
+
+def test_rl_v1_verifier_export_tracks_verifier_annotations() -> None:
+    example = build_rl_v1_alpha_exporters_example()
+    verifier_export = example["live_exports"]["verifier"]
+    annotations = verifier_export.record_payload["verifier_annotations"]
+
+    assert annotations
+    assert any(item["channel"] in {"execute", "verify"} for item in annotations)

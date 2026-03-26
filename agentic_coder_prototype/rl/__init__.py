@@ -1,6 +1,8 @@
 """Trainer-neutral RL overlay contracts for BreadBoard runtime truth."""
 
 from .examples import (
+    build_rl_v1_alpha_exporters_example,
+    build_rl_v1_alpha_exporters_example_payload,
     build_rl_v1_boundary_audit_packet,
     build_rl_v1_boundary_audit_packet_payload,
     build_rl_v1_contract_pack_example,
@@ -13,6 +15,12 @@ from .examples import (
     build_rl_v1_replay_projection_example_payload,
     build_rl_v1_trajectory_graph_shell_example,
     build_rl_v1_trajectory_graph_shell_example_payload,
+)
+from .export import (
+    build_dataset_export_unit_core_view,
+    export_rl_transition_segment_unit,
+    export_sft_distillation_unit,
+    export_verifier_example_unit,
 )
 from .graph import (
     build_default_rollout_descriptor_from_search_run,
@@ -29,6 +37,7 @@ from .schema import (
     CausalEdge,
     CompactionManifest,
     CostLedger,
+    DatasetExportUnit,
     DecisionRecord,
     EffectRecord,
     EnvironmentDescriptor,
@@ -45,6 +54,7 @@ __all__ = [
     "CausalEdge",
     "CompactionManifest",
     "CostLedger",
+    "DatasetExportUnit",
     "DecisionRecord",
     "EffectRecord",
     "EnvironmentDescriptor",
@@ -54,6 +64,9 @@ __all__ = [
     "RolloutDescriptor",
     "TrackRecord",
     "TrajectoryGraph",
+    "build_dataset_export_unit_core_view",
+    "build_rl_v1_alpha_exporters_example",
+    "build_rl_v1_alpha_exporters_example_payload",
     "build_default_rollout_descriptor_from_search_run",
     "build_trajectory_graph_core_parity_view",
     "build_compaction_manifests_from_search_run",
@@ -71,6 +84,9 @@ __all__ = [
     "build_rl_v1_replay_projection_example_payload",
     "build_rl_v1_trajectory_graph_shell_example",
     "build_rl_v1_trajectory_graph_shell_example_payload",
+    "export_rl_transition_segment_unit",
+    "export_sft_distillation_unit",
+    "export_verifier_example_unit",
     "project_live_search_run_to_trajectory_graph",
     "project_replay_payload_to_trajectory_graph",
     "project_search_run_to_trajectory_graph",

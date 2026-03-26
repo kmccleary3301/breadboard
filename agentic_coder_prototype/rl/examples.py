@@ -13,8 +13,15 @@ from .graph import (
     project_replay_payload_to_trajectory_graph,
     project_search_run_to_trajectory_graph,
 )
+from .export import (
+    build_dataset_export_unit_core_view,
+    export_rl_transition_segment_unit,
+    export_sft_distillation_unit,
+    export_verifier_example_unit,
+)
 from .schema import (
     AdapterCapabilities,
+    DatasetExportUnit,
     EnvironmentDescriptor,
     PolicyProvenance,
     RolloutDescriptor,
@@ -244,4 +251,39 @@ def build_rl_v1_replay_parity_example_payload() -> Dict[str, object]:
         "replay_graph": example["replay_graph"].to_dict(),
         "live_parity_view": dict(example["live_parity_view"]),
         "replay_parity_view": dict(example["replay_parity_view"]),
+    }
+
+
+def build_rl_v1_alpha_exporters_example() -> Dict[str, object]:
+    base = build_rl_v1_replay_parity_example()
+    live_graph = base["live_graph"]
+    replay_graph = base["replay_graph"]
+    live_exports = {
+        "sft": export_sft_distillation_unit(live_graph),
+        "transition": export_rl_transition_segment_unit(live_graph),
+        "verifier": export_verifier_example_unit(live_graph),
+    }
+    replay_exports = {
+        "sft": export_sft_distillation_unit(replay_graph),
+        "transition": export_rl_transition_segment_unit(replay_graph),
+        "verifier": export_verifier_example_unit(replay_graph),
+    }
+    return {
+        **base,
+        "live_exports": live_exports,
+        "replay_exports": replay_exports,
+        "live_export_core_views": {key: build_dataset_export_unit_core_view(value) for key, value in live_exports.items()},
+        "replay_export_core_views": {
+            key: build_dataset_export_unit_core_view(value) for key, value in replay_exports.items()
+        },
+    }
+
+
+def build_rl_v1_alpha_exporters_example_payload() -> Dict[str, object]:
+    example = build_rl_v1_alpha_exporters_example()
+    return {
+        "live_exports": {key: value.to_dict() for key, value in example["live_exports"].items()},
+        "replay_exports": {key: value.to_dict() for key, value in example["replay_exports"].items()},
+        "live_export_core_views": dict(example["live_export_core_views"]),
+        "replay_export_core_views": dict(example["replay_export_core_views"]),
     }

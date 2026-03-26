@@ -726,3 +726,95 @@ class TrajectoryGraph:
             compaction_manifests=[CompactionManifest.from_dict(item) for item in data.get("compaction_manifests") or []],
             metadata=dict(data.get("metadata") or {}),
         )
+
+
+@dataclass(frozen=True)
+class DatasetExportUnit:
+    export_unit_id: str
+    export_kind: str
+    graph_id: str
+    rollout_descriptor: RolloutDescriptor
+    environment_descriptor: EnvironmentDescriptor
+    policy_provenance: List[PolicyProvenance]
+    evaluation_annotations: List[EvaluationAnnotation]
+    compaction_manifests: List[CompactionManifest]
+    record_payload: Dict[str, Any]
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "export_unit_id", _require_text(self.export_unit_id, "export_unit_id"))
+        object.__setattr__(self, "export_kind", _require_text(self.export_kind, "export_kind"))
+        object.__setattr__(self, "graph_id", _require_text(self.graph_id, "graph_id"))
+        object.__setattr__(
+            self,
+            "rollout_descriptor",
+            self.rollout_descriptor
+            if isinstance(self.rollout_descriptor, RolloutDescriptor)
+            else RolloutDescriptor.from_dict(self.rollout_descriptor),
+        )
+        object.__setattr__(
+            self,
+            "environment_descriptor",
+            self.environment_descriptor
+            if isinstance(self.environment_descriptor, EnvironmentDescriptor)
+            else EnvironmentDescriptor.from_dict(self.environment_descriptor),
+        )
+        object.__setattr__(
+            self,
+            "policy_provenance",
+            [
+                item if isinstance(item, PolicyProvenance) else PolicyProvenance.from_dict(item)
+                for item in self.policy_provenance
+            ],
+        )
+        object.__setattr__(
+            self,
+            "evaluation_annotations",
+            [
+                item if isinstance(item, EvaluationAnnotation) else EvaluationAnnotation.from_dict(item)
+                for item in self.evaluation_annotations
+            ],
+        )
+        object.__setattr__(
+            self,
+            "compaction_manifests",
+            [
+                item if isinstance(item, CompactionManifest) else CompactionManifest.from_dict(item)
+                for item in self.compaction_manifests
+            ],
+        )
+        object.__setattr__(self, "record_payload", _copy_mapping(self.record_payload))
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+        if not self.policy_provenance:
+            raise ValueError("policy_provenance must contain at least one policy record")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "export_unit_id": self.export_unit_id,
+            "export_kind": self.export_kind,
+            "graph_id": self.graph_id,
+            "rollout_descriptor": self.rollout_descriptor.to_dict(),
+            "environment_descriptor": self.environment_descriptor.to_dict(),
+            "policy_provenance": [item.to_dict() for item in self.policy_provenance],
+            "evaluation_annotations": [item.to_dict() for item in self.evaluation_annotations],
+            "compaction_manifests": [item.to_dict() for item in self.compaction_manifests],
+            "record_payload": dict(self.record_payload),
+            "metadata": dict(self.metadata),
+        }
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "DatasetExportUnit":
+        return DatasetExportUnit(
+            export_unit_id=data.get("export_unit_id") or "",
+            export_kind=data.get("export_kind") or "",
+            graph_id=data.get("graph_id") or "",
+            rollout_descriptor=RolloutDescriptor.from_dict(data.get("rollout_descriptor") or {}),
+            environment_descriptor=EnvironmentDescriptor.from_dict(data.get("environment_descriptor") or {}),
+            policy_provenance=[PolicyProvenance.from_dict(item) for item in data.get("policy_provenance") or []],
+            evaluation_annotations=[
+                EvaluationAnnotation.from_dict(item) for item in data.get("evaluation_annotations") or []
+            ],
+            compaction_manifests=[CompactionManifest.from_dict(item) for item in data.get("compaction_manifests") or []],
+            record_payload=dict(data.get("record_payload") or {}),
+            metadata=dict(data.get("metadata") or {}),
+        )
