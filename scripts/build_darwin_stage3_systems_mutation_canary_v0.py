@@ -11,8 +11,14 @@ if str(ROOT) not in sys.path:
 
 from breadboard_ext.darwin.contracts import validate_evaluator_pack  # noqa: E402
 from breadboard_ext.darwin.phase2 import build_evaluator_pack  # noqa: E402
-from breadboard_ext.darwin.stage3 import build_stage3_budget_envelope, build_stage3_mutation_canary  # noqa: E402
-from run_darwin_t1_live_baselines_v1 import run_named_lane  # noqa: E402
+from breadboard_ext.darwin.stage3 import build_stage3_mutation_canary  # noqa: E402
+from breadboard_ext.darwin.stage4 import (  # noqa: E402
+    build_stage4_budget_envelope,
+    build_stage4_comparison_envelope_digest,
+    build_stage4_support_envelope_digest,
+    stage4_evaluator_pack_version,
+)
+from scripts.run_darwin_t1_live_baselines_v1 import run_named_lane  # noqa: E402
 
 
 BOOTSTRAP_MANIFEST = ROOT / "artifacts" / "darwin" / "bootstrap" / "bootstrap_manifest_v0.json"
@@ -111,12 +117,44 @@ def run_systems_mutation_canary(out_dir: Path = OUT_DIR) -> dict:
             task_id=cfg["task_id"],
             budget_class=cfg["budget_class"],
         )
-        evaluator_pack["budget_envelope"] = build_stage3_budget_envelope(
+        evaluator_pack["pack_version"] = stage4_evaluator_pack_version(
+            lane_id="lane.systems",
+            task_id=cfg["task_id"],
+        )
+        support_envelope_digest = build_stage4_support_envelope_digest(
+            lane_id="lane.systems",
+            task_id=cfg["task_id"],
+            topology_id=cfg["topology_id"],
+            policy_bundle_id=cfg["policy_bundle_id"],
+            budget_class=cfg["budget_class"],
+            allowed_tools=list(spec.get("allowed_tools") or []),
+            environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
+            claim_target=str(spec.get("claim_target") or "internal"),
+        )
+        comparison_envelope_digest = build_stage4_comparison_envelope_digest(
+            lane_id="lane.systems",
+            task_id=cfg["task_id"],
+            budget_class=cfg["budget_class"],
+            comparison_class="stage3_canary",
+            environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
+            claim_target=str(spec.get("claim_target") or "internal"),
+        )
+        evaluator_pack["budget_envelope"] = build_stage4_budget_envelope(
             budget_class=cfg["budget_class"],
             wall_clock_ms=row["wall_clock_ms"],
             token_counts={},
             cost_estimate=0.0,
             comparison_class="stage3_canary",
+            route_id=None,
+            provider_model=None,
+            execution_mode="scaffold",
+            route_class="local_baseline",
+            cost_source="local_execution",
+            support_envelope_digest=support_envelope_digest,
+            comparison_envelope_digest=comparison_envelope_digest,
+            evaluator_pack_version=evaluator_pack["pack_version"],
+            replication_reserve_fraction=0.2,
+            control_reserve_fraction=0.1,
         )
         evaluator_pack_path = out_dir / "runs" / "lane.systems" / f"{cfg['trial_label']}_evaluator_pack_v0.json"
         _write_json(evaluator_pack_path, evaluator_pack)

@@ -198,4 +198,91 @@ class EnhancedBaseDialect(ABC):
         
         # Invalidate cache
         self._success_rate_cache = None
+
+    def get_error_patterns(self, time_window_hours: float = 24.0) -> Dict[str, int]:
+        """Return recent error counts keyed by error type."""
+        cutoff_time = time.time() - (time_window_hours * 3600)
+        error_counts: Dict[str, int] = {}
+        for metrics in self._execution_history:
+            if metrics.timestamp < cutoff_time or metrics.success or not metrics.error_type:
+                continue
+            error_counts[metrics.error_type] = error_counts.get(metrics.error_type, 0) + 1
+        return error_counts
+
+
+def detect_task_type(content: str, context: Optional[Dict[str, Any]] = None) -> TaskType:
+    """Infer a coarse task type from content and optional context."""
+    context = context or {}
+
+    explicit_task_type = context.get("task_type")
+    if explicit_task_type:
+        try:
+            return explicit_task_type if isinstance(explicit_task_type, TaskType) else TaskType(explicit_task_type)
+        except ValueError:
+            pass
+
+    haystack = f"{content}\n{context.get('prompt', '')}\n{context.get('goal', '')}".lower()
+
+    keyword_groups = [
+        (TaskType.CODE_EDITING, ("edit", "patch", "bug", "refactor", "diff", "code", "fix the file")),
+        (TaskType.SHELL_COMMANDS, ("run ", "shell", "terminal", "command", "bash", "pytest", "test ")),
+        (TaskType.CONFIGURATION, ("config", "configuration", ".yaml", ".yml", ".json", "settings", "environment variable")),
+        (TaskType.API_OPERATIONS, ("api", "endpoint", "http", "request", "response", "call the api")),
+        (TaskType.DATA_PROCESSING, ("dataset", "csv", "parse", "transform", "process data", "aggregate")),
+        (TaskType.FILE_MODIFICATION, ("file", "write", "create", "rename", "delete", "update file")),
+    ]
+
+    for task_type, keywords in keyword_groups:
+        if any(keyword in haystack for keyword in keywords):
+            return task_type
+
+    return TaskType.GENERAL
+
+
+def calculate_format_preference_score(
+    format_name: Union[str, ToolCallFormat],
+    model_id: str,
+    task_type: Union[str, TaskType],
+    performance_data: Optional[Dict[str, float]] = None,
+) -> float:
+    """Calculate a simple weighted preference score for a format."""
+    format_str = format_name.value if isinstance(format_name, ToolCallFormat) else format_name
+    task_type_obj = task_type if isinstance(task_type, TaskType) else TaskType(task_type)
+
+    model_name = model_id.lower()
+    score = 0.0
+
+    model_preferences = {
+        "gpt": {
+            "native_function_calling": 0.45,
+            "unified_diff": 0.30,
+            "json_block": 0.20,
+        },
+        "claude": {
+            "anthropic_xml": 0.45,
+            "unified_diff": 0.30,
+            "json_block": 0.20,
+        },
+    }
+    task_preferences = {
+        TaskType.CODE_EDITING: {"unified_diff": 0.35, "aider_search_replace": 0.30},
+        TaskType.FILE_MODIFICATION: {"unified_diff": 0.25, "anthropic_xml": 0.20},
+        TaskType.API_OPERATIONS: {"native_function_calling": 0.35, "json_block": 0.20},
+        TaskType.SHELL_COMMANDS: {"yaml_command": 0.30, "anthropic_xml": 0.15},
+        TaskType.DATA_PROCESSING: {"json_block": 0.30, "native_function_calling": 0.15},
+        TaskType.CONFIGURATION: {"yaml_command": 0.30, "json_block": 0.20},
+        TaskType.GENERAL: {"json_block": 0.15, "yaml_command": 0.10},
+    }
+
+    for model_key, weights in model_preferences.items():
+        if model_key in model_name:
+            score += weights.get(format_str, 0.0)
+            break
+
+    score += task_preferences.get(task_type_obj, {}).get(format_str, 0.0)
+
+    if performance_data:
+        score += performance_data.get(format_str, 0.0)
+
+    return score
     

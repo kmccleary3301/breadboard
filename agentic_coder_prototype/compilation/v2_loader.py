@@ -5,6 +5,25 @@ from pathlib import Path
 from typing import Any, Dict, List, Union
 
 
+def _resolve_config_path(config_path_str: str) -> Path:
+    """Resolve config paths across pre-merge and integrated repo layouts."""
+    candidate = Path(config_path_str)
+    if candidate.is_absolute():
+        return candidate
+
+    resolved = candidate.resolve()
+    if resolved.exists():
+        return resolved
+
+    parts = candidate.parts
+    if len(parts) > 1:
+        stripped = Path(*parts[1:]).resolve()
+        if stripped.exists():
+            return stripped
+
+    return resolved
+
+
 def _load_yaml(path: Union[str, Path]) -> Dict[str, Any]:
     import yaml  # lazy import
     with open(path, "r", encoding="utf-8") as f:
@@ -456,7 +475,7 @@ def load_agent_config(config_path_str: str) -> Dict[str, Any]:
     Load agent config with v2 support (extends + validation + minimal normalization).
     Env override: if AGENT_SCHEMA_V2_ENABLED=1, treat as v2 when version==2 or 'modes'+'loop' present.
     """
-    config_path = Path(config_path_str).resolve()
+    config_path = _resolve_config_path(config_path_str)
     raw = _load_yaml(config_path)
 
     # Prefer resolving extends first (so child files inherit version/mode/loop)

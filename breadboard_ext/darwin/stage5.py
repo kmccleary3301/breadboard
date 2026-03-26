@@ -125,6 +125,8 @@ def _lane_cross_lane_review_row(
     cross_lane_review: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     payload = load_stage5_cross_lane_review() if cross_lane_review is None else dict(cross_lane_review)
+    if payload is None:
+        return None
     for row in list(payload.get("rows") or []):
         if str(row.get("lane_id") or "") == lane_id:
             return dict(row)
@@ -180,7 +182,13 @@ def build_stage5_search_policy_v2(
     family_rows = list(load_stage5_family_registry_rows() if family_rows is None else family_rows)
     policy_review_conclusion = _lane_policy_review_conclusion(lane_id, policy_stability_rows=policy_stability_rows)
     policy_stability_row = _lane_policy_stability_row(lane_id, policy_stability_rows=policy_stability_rows) or {}
-    cross_lane_review_payload = {} if (cross_lane_review is None and isolated_inputs) else load_stage5_cross_lane_review() if cross_lane_review is None else dict(cross_lane_review)
+    cross_lane_review_payload = (
+        {}
+        if (cross_lane_review is None and isolated_inputs)
+        else load_stage5_cross_lane_review() if cross_lane_review is None else dict(cross_lane_review)
+    )
+    if cross_lane_review_payload is None:
+        cross_lane_review_payload = {}
     cross_lane_row = _lane_cross_lane_review_row(lane_id, cross_lane_review=cross_lane_review_payload) or {}
     cross_lane_weight = str(cross_lane_row.get("lane_weight") or "")
     repo_swe_family_surface = (
@@ -615,6 +623,84 @@ def build_stage5_compounding_cases(
                     "cost_lift_usd": float(decision_protocol["cost_lift_deadband_usd"]),
                 },
                 "conclusion": conclusion,
+            }
+        )
+    if cases:
+        return cases
+
+    # Scaffold-mode fallback: some bootstrap paths only emit cold-start comparisons.
+    # Preserve a non-empty compounding bundle so downstream reporting can stay stable.
+    cold_start_rows = [
+        row
+        for row in comparison_rows
+        if str(row.get("comparison_mode") or "") == "cold_start"
+    ]
+    scaffold_grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in cold_start_rows:
+        key = (str(row.get("lane_id") or ""), str(row.get("operator_id") or ""))
+        scaffold_grouped.setdefault(key, row)
+
+    for (lane_id, operator_id), row in sorted(scaffold_grouped.items()):
+        cases.append(
+            {
+                "schema": "breadboard.darwin.stage5.compounding_case.v1",
+                "compounding_case_id": f"compounding_case.{lane_id}.{operator_id}.scaffold.v1",
+                "lane_id": lane_id,
+                "campaign_class": str(row.get("campaign_class") or ""),
+                "comparison_mode_pair": ["cold_start"],
+                "operator_id": operator_id,
+                "topology_id": str(row.get("topology_id") or ""),
+                "family_context": dict(row.get("family_context") or {}),
+                "evaluator_pack_version": str(row.get("evaluator_pack_version") or ""),
+                "comparison_envelope_digest": str(row.get("comparison_envelope_digest") or ""),
+                "route_context": {
+                    "warm_start_provider_origin": str(row.get("provider_origin") or ""),
+                    "family_lockout_provider_origin": "",
+                    "warm_start_cost_source": str(row.get("cost_source") or ""),
+                    "family_lockout_cost_source": "",
+                },
+                "policy_provenance": {
+                    "warm_start_policy_digest": str(dict(row.get("search_policy_selection") or {}).get("policy_digest") or ""),
+                    "family_lockout_policy_digest": "",
+                    "warm_start_family_surface_status": str(dict(row.get("search_policy_selection") or {}).get("family_surface_status") or ""),
+                    "family_lockout_family_surface_status": "",
+                    "warm_start_lane_weight": str(dict(row.get("search_policy_selection") or {}).get("lane_weight") or ""),
+                    "family_lockout_lane_weight": "",
+                },
+                "warm_start": {
+                    "campaign_arm_id": str(row.get("campaign_arm_id") or ""),
+                    "comparison_valid": bool(row.get("comparison_valid")),
+                    "claim_eligible": bool(row.get("claim_eligible")),
+                    "delta_score": float(row.get("delta_score") or 0.0),
+                    "delta_runtime_ms": int(row.get("delta_runtime_ms") or 0),
+                    "delta_cost_usd": float(row.get("delta_cost_usd") or 0.0),
+                    "power_signal_class": str(row.get("power_signal_class") or ""),
+                },
+                "family_lockout": {
+                    "campaign_arm_id": "",
+                    "comparison_valid": False,
+                    "claim_eligible": False,
+                    "delta_score": 0.0,
+                    "delta_runtime_ms": 0,
+                    "delta_cost_usd": 0.0,
+                    "power_signal_class": "missing_family_lockout",
+                },
+                "outcome_deltas": {
+                    "score_lift": 0.0,
+                    "runtime_lift_ms": 0,
+                    "cost_lift_usd": 0.0,
+                },
+                "decision_basis": "scaffold_cold_start_only",
+                "decision_protocol": {
+                    "objective": "n/a",
+                    "runtime_lift_deadband_ms": STAGE5_RUNTIME_LIFT_DEADBAND_MS,
+                    "cost_lift_deadband_usd": STAGE5_COST_LIFT_DEADBAND_USD,
+                },
+                "decision_deadband": {
+                    "runtime_lift_ms": STAGE5_RUNTIME_LIFT_DEADBAND_MS,
+                    "cost_lift_usd": STAGE5_COST_LIFT_DEADBAND_USD,
+                },
+                "conclusion": "inconclusive",
             }
         )
     return cases

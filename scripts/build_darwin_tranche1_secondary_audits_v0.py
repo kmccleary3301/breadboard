@@ -11,6 +11,12 @@ if str(ROOT) not in sys.path:
 
 from breadboard_ext.darwin.contracts import validate_effective_policy, validate_evaluator_pack
 from breadboard_ext.darwin.phase2 import build_effective_policy, build_evaluator_pack
+from breadboard_ext.darwin.stage4 import (
+    build_stage4_budget_envelope,
+    build_stage4_comparison_envelope_digest,
+    build_stage4_support_envelope_digest,
+    stage4_evaluator_pack_version,
+)
 
 
 BOOTSTRAP_MANIFEST = ROOT / "artifacts" / "darwin" / "bootstrap" / "bootstrap_manifest_v0.json"
@@ -63,6 +69,45 @@ def write_secondary_audits(out_dir: Path = OUT_DIR) -> dict:
             trial_label="audit_shadow",
             task_id=AUDIT_TASK_IDS[lane_id],
             budget_class=spec["budget_class"],
+        )
+        evaluator_pack["pack_version"] = stage4_evaluator_pack_version(
+            lane_id=lane_id,
+            task_id=AUDIT_TASK_IDS[lane_id],
+        )
+        support_envelope_digest = build_stage4_support_envelope_digest(
+            lane_id=lane_id,
+            task_id=AUDIT_TASK_IDS[lane_id],
+            topology_id=spec["topology_family"],
+            policy_bundle_id=spec["policy_bundle_id"],
+            budget_class=spec["budget_class"],
+            allowed_tools=list(spec.get("allowed_tools") or []),
+            environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
+            claim_target=str(spec.get("claim_target") or "internal"),
+        )
+        comparison_envelope_digest = build_stage4_comparison_envelope_digest(
+            lane_id=lane_id,
+            task_id=AUDIT_TASK_IDS[lane_id],
+            budget_class=spec["budget_class"],
+            comparison_class="bounded_internal",
+            environment_digest=str(spec.get("environment_digest") or "unknown-environment"),
+            claim_target=str(spec.get("claim_target") or "internal"),
+        )
+        evaluator_pack["budget_envelope"] = build_stage4_budget_envelope(
+            budget_class=spec["budget_class"],
+            wall_clock_ms=0,
+            token_counts={},
+            cost_estimate=0.0,
+            comparison_class="bounded_internal",
+            route_id=None,
+            provider_model=None,
+            execution_mode="scaffold",
+            route_class="local_baseline",
+            cost_source="local_execution",
+            support_envelope_digest=support_envelope_digest,
+            comparison_envelope_digest=comparison_envelope_digest,
+            evaluator_pack_version=evaluator_pack["pack_version"],
+            replication_reserve_fraction=0.2,
+            control_reserve_fraction=0.1,
         )
         policy_issues = validate_effective_policy(effective_policy)
         evaluator_issues = validate_evaluator_pack(evaluator_pack)
