@@ -1045,3 +1045,46 @@ def build_rl_v2_pressure_study_packet_payload() -> Dict[str, object]:
         },
         "experiment_policy": dict(packet["experiment_policy"]),
     }
+
+
+def build_rl_v2_freeze_and_deferrals() -> Dict[str, object]:
+    return {
+        "freeze_decision": {
+            "current_decision": "freeze_rl_v2",
+            "open_rl_v3_now": False,
+            "new_kernel_nouns_added": False,
+        },
+        "surfaces_proven_under_pressure": [
+            "evaluation_pack_manifest",
+            "export_manifest",
+            "adapter_probe_report",
+        ],
+        "surfaces_not_justified": [
+            "policy_view_witness",
+            "rl_owned_search_contract",
+            "world_state_delta_canon",
+            "study_manager_ontology",
+            "trainer_specific_packing_surface",
+        ],
+        "public_claims_enabled": [
+            "replay_stable_graph_native_rl_exports",
+            "compaction_aware_and_delayed_eval_aware_export_fidelity",
+            "bounded_probe_level_adapter_evidence",
+        ],
+        "deferred_after_v2": [
+            "adapter expansions only when support pressure repeats",
+            "observation_materialization only if compaction audits force it",
+            "search_or_state_delta_work only under repeated cross-workload pressure",
+        ],
+    }
+
+
+def build_rl_v2_freeze_and_deferrals_payload() -> Dict[str, object]:
+    packet = build_rl_v2_freeze_and_deferrals()
+    return {
+        "freeze_decision": dict(packet["freeze_decision"]),
+        "surfaces_proven_under_pressure": list(packet["surfaces_proven_under_pressure"]),
+        "surfaces_not_justified": list(packet["surfaces_not_justified"]),
+        "public_claims_enabled": list(packet["public_claims_enabled"]),
+        "deferred_after_v2": list(packet["deferred_after_v2"]),
+    }

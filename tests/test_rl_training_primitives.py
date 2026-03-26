@@ -47,6 +47,8 @@ from agentic_coder_prototype.rl import (
     build_rl_v2_adapter_probe_program_example_payload,
     build_rl_v2_export_conformance_example,
     build_rl_v2_export_conformance_example_payload,
+    build_rl_v2_freeze_and_deferrals,
+    build_rl_v2_freeze_and_deferrals_payload,
     build_rl_v2_pressure_study_packet,
     build_rl_v2_pressure_study_packet_payload,
     build_rl_v2_freeze_and_scope_packet,
@@ -384,3 +386,20 @@ def test_rl_v2_pressure_study_packet_uses_mini_default_policy() -> None:
     assert packet["experiment_policy"]["default_model"] == "gpt-5.4-mini"
     assert packet["experiment_policy"]["default_mode"] == "mini_default"
     assert "auditable" in packet["experiment_policy"]["escalation_rule"]
+
+
+def test_rl_v2_freeze_and_deferrals_closes_v2_without_growth() -> None:
+    packet = build_rl_v2_freeze_and_deferrals()
+    payload = build_rl_v2_freeze_and_deferrals_payload()
+
+    assert payload["freeze_decision"]["current_decision"] == "freeze_rl_v2"
+    assert payload["freeze_decision"]["open_rl_v3_now"] is False
+    assert payload["freeze_decision"]["new_kernel_nouns_added"] is False
+    assert payload["surfaces_proven_under_pressure"] == [
+        "evaluation_pack_manifest",
+        "export_manifest",
+        "adapter_probe_report",
+    ]
+    assert "policy_view_witness" in payload["surfaces_not_justified"]
+    assert "bounded_probe_level_adapter_evidence" in payload["public_claims_enabled"]
+    assert packet["deferred_after_v2"] == payload["deferred_after_v2"]

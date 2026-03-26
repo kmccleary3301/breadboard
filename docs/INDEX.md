@@ -128,6 +128,7 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [concepts/rl-training-primitives-v2-export-conformance.md](concepts/rl-training-primitives-v2-export-conformance.md) | RL Training Primitives V2 Phase 2: canonical export bundles, conformance packets, and replay/live parity views with explicit split, contamination, transform, and fidelity-tier reporting |
 | [concepts/rl-training-primitives-v2-adapter-probes.md](concepts/rl-training-primitives-v2-adapter-probes.md) | RL Training Primitives V2 Phase 3: bounded adapter probe reports for serving, evaluator, dataset, and trainer-feedback paths without overclaiming support |
 | [concepts/rl-training-primitives-v2-pressure-study-packet.md](concepts/rl-training-primitives-v2-pressure-study-packet.md) | RL Training Primitives V2 Phase 4: representative workload packet and weak-baseline comparisons to prove the graph-native export path matters under budget-matched Mini-default experiments |
+| [concepts/rl-training-primitives-v2-freeze-and-deferrals.md](concepts/rl-training-primitives-v2-freeze-and-deferrals.md) | RL Training Primitives V2 closeout: freeze the proof-led helper surfaces and explicitly defer anything not forced by repeated pressure |
 
 ### Governance and change policy
 
