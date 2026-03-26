@@ -1,0 +1,13 @@
+extends: codex_cli_gpt54mini_e4_live_execution_first_branch_receipt_executor_v1_native.yaml
+
+profile: { name: codex-cli-gpt5.4-mini-e4-live-execution-first-branch-receipt-executor-v1b-native }
+
+phase17:
+  branch_receipt_executor:
+    enabled: true
+    family: execution_first_branch_receipt_executor_v1b_mini_native
+    variant: execution_first_branch_receipt_executor_v1b_mini_native
+    support_strategy: minimal_support
+    tool_choice: required
+    parallel_tool_calls: false
+    strict_receipt_forcing: true

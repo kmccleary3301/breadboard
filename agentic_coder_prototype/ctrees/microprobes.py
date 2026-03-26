@@ -395,3 +395,206 @@ def run_graph_neighborhood_probe() -> Dict[str, Any]:
         "graph_neighbor_bundle_ids": bundle.get("graph_neighbor_ids") or [],
         "support_node_ids": bundle.get("support_node_ids") or [],
     }
+
+
+def run_helper_resume_probe() -> Dict[str, Any]:
+    store = build_probe_store()
+    baseline = build_rehydration_plan(store, mode="resume")
+    helper = build_rehydration_plan(store, mode="resume", helper_enabled=True)
+    return {
+        "probe": "helper_resume",
+        "baseline_support_node_ids": (baseline.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "helper_support_node_ids": (helper.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "helper_proposal": helper.get("helper_proposal") or {},
+    }
+
+
+def run_helper_false_neighbor_probe() -> Dict[str, Any]:
+    store = build_false_neighbor_store()
+    baseline = build_rehydration_plan(store, mode="active_continuation")
+    helper = build_rehydration_plan(store, mode="active_continuation", helper_enabled=True)
+    return {
+        "probe": "helper_false_neighbor",
+        "baseline_support_node_ids": (baseline.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "helper_support_node_ids": (helper.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "helper_proposal": helper.get("helper_proposal") or {},
+        "helper_artifact_refs": (helper.get("rehydration_bundle") or {}).get("artifact_refs") or [],
+    }
+
+
+def run_helper_dependency_lookup_probe() -> Dict[str, Any]:
+    store = build_graph_neighborhood_store()
+    baseline = build_rehydration_plan(store, mode="dependency_lookup", graph_neighborhood_enabled=True)
+    helper = build_rehydration_plan(
+        store,
+        mode="dependency_lookup",
+        graph_neighborhood_enabled=True,
+        helper_enabled=True,
+    )
+    return {
+        "probe": "helper_dependency_lookup",
+        "baseline_support_node_ids": (baseline.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "helper_support_node_ids": (helper.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "helper_proposal": helper.get("helper_proposal") or {},
+        "helper_artifact_refs": (helper.get("rehydration_bundle") or {}).get("artifact_refs") or [],
+    }
+
+
+def build_subtree_summary_store() -> CTreeStore:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Subtree summary probe"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Blocked child",
+            "parent_id": root_id,
+            "blocker_refs": ["dep-schema"],
+            "artifact_refs": ["schema_spec.md"],
+            "targets": ["ctrees/schema.py"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Superseded child",
+            "parent_id": root_id,
+            "status": "superseded",
+            "artifact_refs": ["legacy_schema.md"],
+            "targets": ["ctrees/schema.py"],
+        },
+        turn=3,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Active child",
+            "parent_id": root_id,
+            "artifact_refs": ["replacement_schema.md"],
+            "targets": ["ctrees/compiler.py"],
+        },
+        turn=4,
+    )
+    return store
+
+
+def build_summary_coupling_store() -> CTreeStore:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Summary coupling probe"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Irrelevant root note",
+            "parent_id": root_id,
+            "targets": ["docs/plan.md"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Schema validation packet",
+            "parent_id": root_id,
+            "status": "active",
+            "artifact_refs": ["schema_check.md"],
+        },
+        turn=3,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Continue compiler rewrite",
+            "parent_id": root_id,
+            "artifact_refs": ["rewrite_plan.md"],
+            "targets": ["ctrees/compiler.py"],
+        },
+        turn=4,
+    )
+    return store
+
+
+def build_dense_retrieval_store() -> CTreeStore:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Dense retrieval probe"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Router audit note",
+            "parent_id": root_id,
+            "artifact_refs": ["router_audit.md"],
+            "targets": ["router/audit.py"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Compilation packet",
+            "parent_id": root_id,
+            "status": "active",
+            "artifact_refs": ["compile_validation.md"],
+            "constraints": [{"summary": "Validated build interface", "scope": "task"}],
+        },
+        turn=3,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Verify compiler contract",
+            "parent_id": root_id,
+            "artifact_refs": ["rewrite_plan.md"],
+            "targets": ["ctrees/compiler.py"],
+        },
+        turn=4,
+    )
+    return store
+
+
+def run_helper_subtree_summary_probe() -> Dict[str, Any]:
+    store = build_subtree_summary_store()
+    baseline = compile_ctree(store)
+    helper = compile_ctree(store, helper_summary_enabled=True)
+    proposals = (helper.get("stages", {}).get("SPEC", {}).get("helper_subtree_summaries") or [])
+    first = proposals[0] if proposals else {}
+    return {
+        "probe": "helper_subtree_summary",
+        "baseline_parent_reduction": (baseline.get("stages", {}).get("SPEC", {}).get("parent_reductions") or [None])[0],
+        "helper_summary": first,
+        "helper_prompt_plane_has_summaries": "subtree_summary_proposals" in (helper.get("prompt_planes") or {}),
+    }
+
+
+def run_helper_summary_coupling_probe() -> Dict[str, Any]:
+    store = build_summary_coupling_store()
+    baseline = build_rehydration_plan(store, mode="active_continuation", helper_enabled=True)
+    coupled = build_rehydration_plan(
+        store,
+        mode="active_continuation",
+        helper_enabled=True,
+        helper_summary_coupling_enabled=True,
+    )
+    return {
+        "probe": "helper_summary_coupling",
+        "baseline_support_node_ids": (baseline.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "coupled_support_node_ids": (coupled.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "summary_support": (coupled.get("rehydration_bundle") or {}).get("summary_support") or [],
+        "helper_proposal": coupled.get("helper_proposal") or {},
+    }
+
+
+def run_dense_retrieval_probe() -> Dict[str, Any]:
+    store = build_dense_retrieval_store()
+    baseline = build_rehydration_plan(store, mode="active_continuation", helper_enabled=True)
+    dense = build_rehydration_plan(
+        store,
+        mode="active_continuation",
+        dense_enabled=True,
+        helper_enabled=True,
+    )
+    return {
+        "probe": "dense_retrieval",
+        "baseline_support_node_ids": (baseline.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "dense_support_node_ids": (dense.get("rehydration_bundle") or {}).get("support_node_ids") or [],
+        "dense_candidate_support": ((dense.get("retrieval_substrate") or {}).get("candidate_support") or {}).get("dense") or [],
+        "helper_proposal": dense.get("helper_proposal") or {},
+    }

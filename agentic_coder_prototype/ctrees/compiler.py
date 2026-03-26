@@ -5,6 +5,7 @@ import json
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional
 
+from .helper_subtree_summary import build_helper_subtree_summary_input, build_helper_subtree_summary_proposal
 from .policy import active_path_node_ids, build_rehydration_plan, build_retrieval_substrate
 from .store import CTreeStore
 from .schema import CTREE_SCHEMA_VERSION
@@ -115,9 +116,11 @@ def _build_prompt_planes(
     parent_reductions: List[Dict[str, Any]],
     retrieval_substrate: Dict[str, Any],
     rehydration_bundle: Dict[str, Any],
+    helper_subtree_summaries: Optional[List[Dict[str, Any]]],
     prompt_summary: Optional[Dict[str, Any]],
+    focus_node_id: Optional[str],
 ) -> Dict[str, Any]:
-    active_path = active_path_node_ids(store)
+    active_path = active_path_node_ids(store, focus_node_id)
     local_by_id = {str(state.get("node_id")): state for state in local_states}
     active_states = [local_by_id[node_id] for node_id in active_path if node_id in local_by_id]
     reduced_target_set = sorted(
@@ -174,6 +177,8 @@ def _build_prompt_planes(
         "reduced_task_state": reduced_task_state,
         "support_bundle": dict(rehydration_bundle or {}),
     }
+    if helper_subtree_summaries:
+        prompt_planes["subtree_summary_proposals"] = [dict(item) for item in helper_subtree_summaries]
     if prompt_summary:
         prompt_planes["live_session_delta"] = {
             "prompt_summary": prompt_summary,
@@ -182,7 +187,13 @@ def _build_prompt_planes(
     return prompt_planes
 
 
-def compile_ctree(store: CTreeStore, *, prompt_summary: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def compile_ctree(
+    store: CTreeStore,
+    *,
+    prompt_summary: Optional[Dict[str, Any]] = None,
+    helper_summary_enabled: bool = False,
+    focus_node_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """Compile the current task-state surface into stable staged payloads."""
 
     hashes = store.hashes()
@@ -219,10 +230,28 @@ def compile_ctree(store: CTreeStore, *, prompt_summary: Optional[Dict[str, Any]]
         child_states = [_reduce_local_state(child) for child in children]
         parent_reductions.append(_reduce_parent_state(node, child_states))
 
+    helper_subtree_summaries: List[Dict[str, Any]] = []
+    if helper_summary_enabled:
+        for node in nodes:
+            children = children_by_parent.get(str(node.get("id") or ""), [])
+            if not children:
+                continue
+            child_states = [_reduce_local_state(child) for child in children]
+            reduction = next((item for item in parent_reductions if str(item.get("node_id") or "") == str(node.get("id") or "")), None)
+            if not isinstance(reduction, dict):
+                continue
+            helper_input = build_helper_subtree_summary_input(
+                parent_node=node,
+                parent_reduction=reduction,
+                child_states=child_states,
+            )
+            helper_subtree_summaries.append(build_helper_subtree_summary_proposal(helper_input))
+
     top_level_ids = [str(node.get("id")) for node in store.top_level_nodes()]
     status_counts = Counter(str(node.get("status") or "unknown") for node in nodes)
-    retrieval_substrate = build_retrieval_substrate(store, mode="active_continuation")
-    rehydration_plan = build_rehydration_plan(store, mode="active_continuation")
+    retrieval_substrate = build_retrieval_substrate(store, mode="active_continuation", focus_node_id=focus_node_id)
+    effective_focus_node_id = retrieval_substrate.get("focus_node_id")
+    rehydration_plan = build_rehydration_plan(store, mode="active_continuation", focus_node_id=effective_focus_node_id)
     rehydration_bundle = dict(rehydration_plan.get("rehydration_bundle") or {})
     prompt_planes = _build_prompt_planes(
         store,
@@ -230,7 +259,9 @@ def compile_ctree(store: CTreeStore, *, prompt_summary: Optional[Dict[str, Any]]
         parent_reductions=parent_reductions,
         retrieval_substrate=retrieval_substrate,
         rehydration_bundle=rehydration_bundle,
+        helper_subtree_summaries=helper_subtree_summaries,
         prompt_summary=prompt_summary,
+        focus_node_id=effective_focus_node_id,
     )
 
     raw_payload: Dict[str, Any] = {
@@ -241,6 +272,7 @@ def compile_ctree(store: CTreeStore, *, prompt_summary: Optional[Dict[str, Any]]
         "snapshot": stable_snapshot,
         "local_states": local_states,
         "parent_reductions": parent_reductions,
+        "helper_subtree_summaries": helper_subtree_summaries,
         "retrieval_substrate": retrieval_substrate,
         "rehydration_bundle": rehydration_bundle,
         "prompt_planes": prompt_planes,
@@ -257,6 +289,7 @@ def compile_ctree(store: CTreeStore, *, prompt_summary: Optional[Dict[str, Any]]
         "ready_node_ids": [str(node.get("id")) for node in ready_nodes],
         "status_counts": dict(status_counts),
         "parent_reductions": parent_reductions,
+        "helper_subtree_summaries": helper_subtree_summaries,
         "retrieval_substrate": retrieval_substrate,
         "rehydration_bundle": rehydration_bundle,
         "prompt_planes": prompt_planes,
@@ -268,7 +301,8 @@ def compile_ctree(store: CTreeStore, *, prompt_summary: Optional[Dict[str, Any]]
         "ready_count": len(ready_nodes),
         "top_level_count": len(top_level_ids),
         "status_counts": dict(status_counts),
-        "active_path_node_ids": active_path_node_ids(store),
+        "active_path_node_ids": active_path_node_ids(store, effective_focus_node_id),
+        "focus_node_id": effective_focus_node_id,
         "unresolved_blocker_count": len(prompt_planes["reduced_task_state"]["unresolved_blocker_refs"]),
         "needs_resolution": bool(prompt_planes["reduced_task_state"]["needs_resolution"]),
     }
@@ -278,6 +312,7 @@ def compile_ctree(store: CTreeStore, *, prompt_summary: Optional[Dict[str, Any]]
         "ready_node_ids": [str(node.get("id")) for node in ready_nodes],
         "top_level_ids": top_level_ids,
         "parent_digest": _hash_payload(parent_reductions),
+        "helper_summary_digest": _hash_payload(helper_subtree_summaries),
         "prompt_plane_digest": _hash_payload(prompt_planes),
     }
 

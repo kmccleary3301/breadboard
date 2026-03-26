@@ -18,6 +18,7 @@ from .surface_manifest import build_surface_manifest
 from .ctrees.compiler import compile_ctree
 from .ctrees.collapse import collapse_ctree
 from .ctrees.runner import TreeRunner
+from .ctrees.executor_hooks import filter_tool_defs_by_allowlist
 from .reward import aggregate_reward_v1, validate_reward_v1
 from .policy_pack import PolicyPack
 
@@ -600,10 +601,6 @@ def run_main_loop(
                 self._active_tool_names = [t.name for t in (effective_tool_defs or []) if getattr(t, "name", None)]
                 turn_allowed_tool_names = list(self._active_tool_names)
             try:
-                record_tool_allowlist_snapshot(session_state, turn_allowed_tool_names, turn_index=turn_index)
-            except Exception:
-                pass
-            try:
                 hook_manager = getattr(self, "hook_manager", None)
                 if hook_manager is not None:
                     hook_payload = {
@@ -628,6 +625,34 @@ def run_main_loop(
                             "hook_denied",
                             {"hook_reason": getattr(hook_result, "reason", None)},
                         )
+                    if getattr(hook_result, "action", "") == "transform":
+                        hook_payload = getattr(hook_result, "payload", {}) or {}
+                        override_allowlist = hook_payload.get("tool_allowlist")
+                        if isinstance(override_allowlist, list):
+                            effective_tool_defs, turn_allowed_tool_names = filter_tool_defs_by_allowlist(
+                                effective_tool_defs or [],
+                                override_allowlist,
+                            )
+                            self._active_tool_names = list(turn_allowed_tool_names)
+                        if "provider_tool_choice" in hook_payload:
+                            session_state.set_provider_metadata(
+                                "phase16_provider_tool_choice",
+                                hook_payload.get("provider_tool_choice"),
+                            )
+                        if "parallel_tool_calls" in hook_payload:
+                            session_state.set_provider_metadata(
+                                "phase16_parallel_tool_calls",
+                                hook_payload.get("parallel_tool_calls"),
+                            )
+                        if "phase_label" in hook_payload:
+                            session_state.set_provider_metadata(
+                                "phase16_phase_label",
+                                hook_payload.get("phase_label"),
+                            )
+            except Exception:
+                pass
+            try:
+                record_tool_allowlist_snapshot(session_state, turn_allowed_tool_names, turn_index=turn_index)
             except Exception:
                 pass
             try:
@@ -799,12 +824,42 @@ def run_main_loop(
             try:
                 hook_manager = getattr(self, "hook_manager", None)
                 if hook_manager is not None:
-                    hook_manager.run(
+                    hook_result = hook_manager.run(
                         "post_turn",
                         {"turn": turn_index, "completed": bool(completed)},
                         session_state=session_state,
                         turn=turn_index,
                     )
+                    if getattr(hook_result, "action", "") == "deny":
+                        message = str(getattr(hook_result, "reason", "") or "executor denied completion")
+                        payload = getattr(hook_result, "payload", {}) or {}
+                        validation_message = str(payload.get("validation_message") or message)
+                        try:
+                            session_state.add_message({"role": "user", "content": validation_message}, to_provider=True)
+                        except Exception:
+                            pass
+                        try:
+                            markdown_logger.log_user_message(validation_message)
+                        except Exception:
+                            pass
+                        try:
+                            session_state.increment_guardrail_counter("phase14_executor_finish_denied")
+                        except Exception:
+                            pass
+                        try:
+                            session_state.record_guardrail_event(
+                                "phase14_executor_finish_denied",
+                                {"reason": message, "turn": turn_index},
+                            )
+                        except Exception:
+                            pass
+                        session_state.completion_summary = {
+                            "completed": False,
+                            "reason": "executor_finish_denied",
+                            "method": "phase14_executor",
+                            "hook_reason": message,
+                        }
+                        completed = False
             except Exception:
                 pass
             if completed:

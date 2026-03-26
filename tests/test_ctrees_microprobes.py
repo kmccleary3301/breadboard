@@ -4,8 +4,14 @@ from agentic_coder_prototype.ctrees.microprobes import (
     run_blocker_clearance_probe,
     run_continuation_probe,
     run_dependency_lookup_probe,
+    run_dense_retrieval_probe,
     run_false_neighbor_probe,
     run_graph_neighborhood_probe,
+    run_helper_dependency_lookup_probe,
+    run_helper_false_neighbor_probe,
+    run_helper_resume_probe,
+    run_helper_summary_coupling_probe,
+    run_helper_subtree_summary_probe,
     run_pivot_probe,
     run_pivot_minimality_probe,
     run_resume_probe,
@@ -116,3 +122,59 @@ def test_ctree_graph_neighborhood_probe_surfaces_one_hop_neighbor_support() -> N
     assert payload["neighbor_source_ids"]
     assert "schema_validation.md" in payload["artifact_refs"]
     assert payload["graph_neighbor_bundle_ids"]
+
+
+def test_ctree_helper_resume_probe_prunes_baseline_support() -> None:
+    payload = run_helper_resume_probe()
+
+    assert payload["probe"] == "helper_resume"
+    assert len(payload["helper_support_node_ids"]) < len(payload["baseline_support_node_ids"])
+    assert payload["helper_proposal"]["selected_support_node_ids"] == payload["helper_support_node_ids"]
+
+
+def test_ctree_helper_false_neighbor_probe_keeps_relevant_and_drops_irrelevant_nodes() -> None:
+    payload = run_helper_false_neighbor_probe()
+
+    assert payload["probe"] == "helper_false_neighbor"
+    assert len(payload["helper_support_node_ids"]) < len(payload["baseline_support_node_ids"])
+    assert "retrieval_contract.md" in payload["helper_artifact_refs"]
+    assert payload["helper_proposal"]["selected_support_node_ids"] == payload["helper_support_node_ids"]
+
+
+def test_ctree_helper_dependency_lookup_probe_keeps_dependency_grounding() -> None:
+    payload = run_helper_dependency_lookup_probe()
+
+    assert payload["probe"] == "helper_dependency_lookup"
+    assert len(payload["helper_support_node_ids"]) < len(payload["baseline_support_node_ids"])
+    assert "schema_validation.md" in payload["helper_artifact_refs"]
+    assert "replacement_schema.md" in payload["helper_artifact_refs"]
+    assert payload["helper_proposal"]["selected_support_node_ids"] == payload["helper_support_node_ids"]
+
+
+def test_ctree_helper_subtree_summary_probe_surfaces_grounded_summary() -> None:
+    payload = run_helper_subtree_summary_probe()
+
+    assert payload["probe"] == "helper_subtree_summary"
+    assert payload["helper_prompt_plane_has_summaries"] is True
+    assert payload["helper_summary"]["selected_child_ids"]
+    assert "Blocked child" in payload["helper_summary"]["header_summary"]
+
+
+def test_ctree_helper_summary_coupling_probe_surfaces_summary_support() -> None:
+    payload = run_helper_summary_coupling_probe()
+
+    assert payload["probe"] == "helper_summary_coupling"
+    assert payload["summary_support"]
+    assert payload["baseline_support_node_ids"] == ["ctn_000004"]
+    assert payload["coupled_support_node_ids"] == ["ctn_000004", "ctn_000003"]
+    assert payload["helper_proposal"]["summary_coupling_parent_ids"]
+
+
+def test_ctree_dense_retrieval_probe_recovers_semantic_support() -> None:
+    payload = run_dense_retrieval_probe()
+
+    assert payload["probe"] == "dense_retrieval"
+    assert payload["baseline_support_node_ids"] == ["ctn_000004"]
+    assert payload["dense_support_node_ids"] == ["ctn_000004", "ctn_000003"]
+    assert payload["dense_candidate_support"]
+    assert payload["helper_proposal"]["selected_support_node_ids"] == payload["dense_support_node_ids"]

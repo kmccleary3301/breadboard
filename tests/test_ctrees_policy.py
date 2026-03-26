@@ -176,6 +176,104 @@ def test_ctree_prompt_planes_use_support_bundle_contract() -> None:
     assert planes["live_session_delta"]["prompt_summary"]["turn_count"] == 2
 
 
+def test_ctree_explicit_focus_override_changes_active_path_and_support() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Focus root"}, turn=1)
+    focus_id = store.record(
+        "task",
+        {
+            "title": "Focus candidate",
+            "parent_id": root_id,
+            "targets": ["ctrees/compiler.py"],
+            "artifact_refs": ["focus_artifact.md"],
+        },
+        turn=2,
+    )
+    tail_id = store.record(
+        "task",
+        {
+            "title": "Later unrelated task",
+            "parent_id": root_id,
+            "targets": ["router/audit.py"],
+            "artifact_refs": ["tail_artifact.md"],
+        },
+        turn=3,
+    )
+
+    baseline = build_rehydration_plan(store, mode="active_continuation")
+    focused = build_rehydration_plan(store, mode="active_continuation", focus_node_id=focus_id)
+
+    assert baseline["focus_node_id"] == tail_id
+    assert focused["focus_node_id"] == focus_id
+    assert baseline["retrieval_policy"]["focus_selection"]["strategy"] == "last_node_fallback"
+    assert focused["retrieval_policy"]["focus_selection"]["strategy"] == "explicit"
+    assert focused["retrieval_substrate"]["active_path_node_ids"] == [root_id, focus_id]
+    assert "ctrees/compiler.py" in focused["rehydration_bundle"]["targets"]
+    assert "router/audit.py" not in focused["rehydration_bundle"]["targets"]
+
+
+def test_ctree_compile_focus_override_propagates_to_prompt_planes() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Compile focus"}, turn=1)
+    focus_id = store.record(
+        "task",
+        {
+            "title": "Desired focus",
+            "parent_id": root_id,
+            "targets": ["ctrees/policy.py"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Trailing sibling",
+            "parent_id": root_id,
+            "targets": ["router/audit.py"],
+        },
+        turn=3,
+    )
+
+    compiled = compile_ctree(store, focus_node_id=focus_id)
+
+    assert compiled["prompt_planes"]["reduced_task_state"]["focus_node_id"] == focus_id
+    assert compiled["prompt_planes"]["support_bundle"]["focus_node_id"] == focus_id
+    assert compiled["stages"]["HEADER"]["focus_node_id"] == focus_id
+    assert compiled["stages"]["HEADER"]["active_path_node_ids"] == [root_id, focus_id]
+
+
+def test_ctree_helper_subtree_summaries_are_opt_in() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Helper subtree"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Blocked child",
+            "parent_id": root_id,
+            "blocker_refs": ["dep-schema"],
+            "artifact_refs": ["schema_spec.md"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Active child",
+            "parent_id": root_id,
+            "artifact_refs": ["replacement_schema.md"],
+        },
+        turn=3,
+    )
+
+    baseline = compile_ctree(store)
+    helper = compile_ctree(store, helper_summary_enabled=True)
+
+    assert "subtree_summary_proposals" not in baseline["prompt_planes"]
+    assert helper["stages"]["SPEC"]["helper_subtree_summaries"]
+    assert helper["prompt_planes"]["subtree_summary_proposals"]
+    assert helper["stages"]["FROZEN"]["helper_summary_digest"]
+
+
 def test_ctree_dependency_lookup_surfaces_direct_blocker_graph_support() -> None:
     store = CTreeStore()
     root_id = store.record("objective", {"title": "Dependency lookup"}, turn=1)
@@ -262,3 +360,165 @@ def test_ctree_dependency_lookup_graph_neighborhood_is_opt_in_and_bounded() -> N
     assert any(item["reason"] == "neighbor_validates_link" for item in widened_neighbors)
     assert validation_id in widened_bundle["graph_neighbor_ids"]
     assert "schema_validation.md" in widened_bundle["artifact_refs"]
+
+
+def test_ctree_helper_rehydration_is_opt_in_and_prunes_structural_spillover() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Helper pruning"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Relevant retrieval contract work",
+            "parent_id": root_id,
+            "targets": ["ctrees/policy.py"],
+            "artifact_refs": ["retrieval_contract.md"],
+            "workspace_scope": ["agentic_coder_prototype/ctrees"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Irrelevant batch router audit",
+            "parent_id": root_id,
+            "targets": ["router/audit.py"],
+            "artifact_refs": ["batch_router.md"],
+            "workspace_scope": ["agentic_coder_prototype/router"],
+        },
+        turn=3,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Continue retrieval contract work",
+            "parent_id": root_id,
+            "targets": ["ctrees/policy.py"],
+            "artifact_refs": ["retrieval_contract.md"],
+            "constraints": [{"summary": "Suppress false lexical neighbors"}],
+        },
+        turn=4,
+    )
+
+    baseline = build_rehydration_plan(store, mode="active_continuation")
+    helper = build_rehydration_plan(store, mode="active_continuation", helper_enabled=True)
+
+    baseline_ids = (baseline.get("rehydration_bundle") or {}).get("support_node_ids") or []
+    helper_ids = (helper.get("rehydration_bundle") or {}).get("support_node_ids") or []
+    proposal = helper.get("helper_proposal") or {}
+
+    assert helper.get("helper_proposal") is not None
+    assert len(helper_ids) < len(baseline_ids)
+    assert str(root_id) in baseline_ids
+    assert str(root_id) not in helper_ids
+    assert "retrieval_contract.md" in (helper.get("rehydration_bundle") or {}).get("artifact_refs") or []
+    assert proposal["selected_support_node_ids"] == helper_ids
+
+
+def test_ctree_helper_summary_coupling_is_opt_in() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Summary coupling"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Blocked child",
+            "parent_id": root_id,
+            "blocker_refs": ["dep-schema"],
+            "artifact_refs": ["schema_spec.md"],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Active child",
+            "parent_id": root_id,
+            "artifact_refs": ["replacement_schema.md"],
+        },
+        turn=3,
+    )
+
+    helper = build_rehydration_plan(store, mode="active_continuation", helper_enabled=True)
+    coupled = build_rehydration_plan(
+        store,
+        mode="active_continuation",
+        helper_enabled=True,
+        helper_summary_coupling_enabled=True,
+    )
+
+    assert not (helper.get("rehydration_bundle") or {}).get("summary_support")
+    assert (coupled.get("rehydration_bundle") or {}).get("summary_support")
+    assert (coupled.get("helper_proposal") or {}).get("summary_coupling_parent_ids")
+
+
+def test_ctree_dense_retrieval_is_opt_in() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Dense retrieval"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Compilation packet",
+            "parent_id": root_id,
+            "status": "active",
+            "artifact_refs": ["compile_validation.md"],
+            "constraints": [{"summary": "Validated build interface", "scope": "task"}],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Verify compiler contract",
+            "parent_id": root_id,
+            "artifact_refs": ["rewrite_plan.md"],
+            "targets": ["ctrees/compiler.py"],
+        },
+        turn=3,
+    )
+
+    baseline = build_rehydration_plan(store, mode="active_continuation", helper_enabled=True)
+    dense = build_rehydration_plan(
+        store,
+        mode="active_continuation",
+        dense_enabled=True,
+        helper_enabled=True,
+    )
+
+    assert not ((baseline.get("retrieval_substrate") or {}).get("candidate_support") or {}).get("dense")
+    assert ((dense.get("retrieval_substrate") or {}).get("candidate_support") or {}).get("dense")
+    assert (dense.get("helper_proposal") or {}).get("selected_support_node_ids") == ["ctn_000003", "ctn_000002"]
+
+
+def test_ctree_lane_profiles_freeze_core_and_optional_surfaces() -> None:
+    store = CTreeStore()
+    root_id = store.record("objective", {"title": "Lane profile"}, turn=1)
+    store.record(
+        "task",
+        {
+            "title": "Compilation packet",
+            "parent_id": root_id,
+            "status": "active",
+            "artifact_refs": ["compile_validation.md"],
+            "constraints": [{"summary": "Validated build interface", "scope": "task"}],
+        },
+        turn=2,
+    )
+    store.record(
+        "task",
+        {
+            "title": "Verify compiler contract",
+            "parent_id": root_id,
+            "artifact_refs": ["rewrite_plan.md"],
+            "targets": ["ctrees/compiler.py"],
+        },
+        turn=3,
+    )
+
+    frozen_core = build_rehydration_plan(store, mode="active_continuation", lane_profile="frozen_core")
+    dense = build_rehydration_plan(store, mode="active_continuation", lane_profile="dense_retrieval")
+
+    assert frozen_core["lane_profile"] == "frozen_core"
+    assert dense["lane_profile"] == "dense_retrieval"
+    assert not ((frozen_core.get("retrieval_substrate") or {}).get("candidate_support") or {}).get("dense")
+    assert ((dense.get("retrieval_substrate") or {}).get("candidate_support") or {}).get("dense")
+    assert frozen_core["lane_config"]["helper_enabled"] is False
+    assert dense["lane_config"]["helper_enabled"] is True

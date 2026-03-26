@@ -1,0 +1,31 @@
+extends: codex_cli_gpt54mini_e4_live.yaml
+
+profile: { name: codex-cli-gpt5.4-mini-e4-live-deterministic-branch-receipt-executor-v1-native }
+
+provider_tools:
+  use_native: true
+  suppress_prompts: true
+  api_variant: responses
+  responses_use_developer_role: true
+  tool_choice: required
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs
+    include:
+      - shell_command
+      - apply_patch
+      - record_branch_decision
+      - record_proof_receipt
+      - record_verification_receipt
+      - mark_task_complete
+
+phase17:
+  branch_receipt_executor:
+    enabled: true
+    family: deterministic_branch_receipt_executor_v1_mini_native
+    variant: deterministic_branch_receipt_executor_v1_mini_native
+    support_strategy: deterministic_reranker
+    tool_choice: required
+    parallel_tool_calls: false

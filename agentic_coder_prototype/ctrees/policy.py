@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
+from .helper_rehydration import build_helper_rehydration_input, build_helper_rehydration_proposal
+from .helper_subtree_summary import build_helper_subtree_summary_input, build_helper_subtree_summary_proposal
 from .store import CTreeStore
 
 
@@ -14,6 +16,74 @@ _GENERIC_LEXICAL_TERMS = {
     "probe",
     "phase",
     "work",
+}
+_DENSE_TERM_ALIASES = {
+    "verify": "validate",
+    "verified": "validate",
+    "verification": "validate",
+    "validate": "validate",
+    "validated": "validate",
+    "validates": "validate",
+    "validation": "validate",
+    "check": "validate",
+    "checks": "validate",
+    "checked": "validate",
+    "compiler": "compile",
+    "compile": "compile",
+    "compiling": "compile",
+    "compiled": "compile",
+    "compilation": "compile",
+    "continuation": "resume",
+    "continue": "resume",
+    "continued": "resume",
+    "continuing": "resume",
+    "resume": "resume",
+    "resumed": "resume",
+    "rehydrate": "resume",
+    "rehydration": "resume",
+    "restore": "resume",
+    "restored": "resume",
+    "restoration": "resume",
+    "planner": "plan",
+    "planning": "plan",
+}
+_DENSE_SUFFIXES = ("ation", "tion", "ment", "ing", "ers", "ies", "ied", "ed", "er", "or", "ly", "es", "s")
+_LANE_PROFILES = {
+    "frozen_core": {
+        "graph_enabled": True,
+        "graph_neighborhood_enabled": False,
+        "dense_enabled": False,
+        "helper_enabled": False,
+        "helper_summary_coupling_enabled": False,
+    },
+    "graph_neighborhood": {
+        "graph_enabled": True,
+        "graph_neighborhood_enabled": True,
+        "dense_enabled": False,
+        "helper_enabled": False,
+        "helper_summary_coupling_enabled": False,
+    },
+    "helper_rehydration": {
+        "graph_enabled": True,
+        "graph_neighborhood_enabled": False,
+        "dense_enabled": False,
+        "helper_enabled": True,
+        "helper_summary_coupling_enabled": False,
+    },
+    "summary_coupling": {
+        "graph_enabled": True,
+        "graph_neighborhood_enabled": False,
+        "dense_enabled": False,
+        "helper_enabled": True,
+        "helper_summary_coupling_enabled": True,
+    },
+    "dense_retrieval": {
+        "graph_enabled": True,
+        "graph_neighborhood_enabled": False,
+        "dense_enabled": True,
+        "helper_enabled": True,
+        "helper_summary_coupling_enabled": False,
+    },
 }
 
 
@@ -40,6 +110,120 @@ def _node_by_id(store: CTreeStore, node_id: str) -> Optional[Dict[str, Any]]:
         if isinstance(node, dict) and str(node.get("id") or "") == str(node_id):
             return node
     return None
+
+
+def resolve_focus_node_id(store: CTreeStore, focus_node_id: Optional[str] = None) -> Optional[str]:
+    if focus_node_id:
+        node = _node_by_id(store, str(focus_node_id))
+        if isinstance(node, dict):
+            normalized_id = str(node.get("id") or "").strip()
+            if normalized_id:
+                return normalized_id
+    snapshot = store.snapshot()
+    last_node = snapshot.get("last_node") if isinstance(snapshot, dict) else None
+    last_node_id = str(last_node.get("id") or "").strip() if isinstance(last_node, dict) else ""
+    return last_node_id or None
+
+
+def resolve_lane_profile(
+    lane_profile: Optional[str] = None,
+    *,
+    graph_enabled: bool,
+    graph_neighborhood_enabled: bool,
+    dense_enabled: bool,
+    helper_enabled: bool,
+    helper_summary_coupling_enabled: bool,
+) -> Dict[str, Any]:
+    profile_name = str(lane_profile or "custom").strip() or "custom"
+    profile_defaults = dict(_LANE_PROFILES.get(profile_name) or {})
+    if not profile_defaults:
+        return {
+            "profile": "custom",
+            "graph_enabled": bool(graph_enabled),
+            "graph_neighborhood_enabled": bool(graph_neighborhood_enabled),
+            "dense_enabled": bool(dense_enabled),
+            "helper_enabled": bool(helper_enabled),
+            "helper_summary_coupling_enabled": bool(helper_summary_coupling_enabled),
+        }
+    return {
+        "profile": profile_name,
+        "graph_enabled": bool(profile_defaults.get("graph_enabled")),
+        "graph_neighborhood_enabled": bool(profile_defaults.get("graph_neighborhood_enabled")),
+        "dense_enabled": bool(profile_defaults.get("dense_enabled")),
+        "helper_enabled": bool(profile_defaults.get("helper_enabled")),
+        "helper_summary_coupling_enabled": bool(profile_defaults.get("helper_summary_coupling_enabled")),
+    }
+
+
+def _simple_child_state(node: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "node_id": str(node.get("id") or ""),
+        "title": str(node.get("title") or ""),
+        "status": str(node.get("status") or ""),
+        "artifact_refs": list(node.get("artifact_refs") or []),
+        "targets": list(node.get("targets") or []),
+        "blocker_refs": list(node.get("blocker_refs") or []),
+        "final_spec_present": node.get("final_spec") is not None,
+    }
+
+
+def _simple_parent_reduction(parent_node: Dict[str, Any], child_states: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "node_id": str(parent_node.get("id") or ""),
+        "title": str(parent_node.get("title") or ""),
+        "unresolved_blocker_set": sorted(
+            {
+                str(blocker)
+                for child in child_states
+                for blocker in list(child.get("blocker_refs") or [])
+                if str(blocker)
+            }
+        ),
+        "artifact_summary": sorted(
+            {
+                str(artifact)
+                for child in child_states
+                for artifact in list(child.get("artifact_refs") or [])
+                if str(artifact)
+            }
+        ),
+        "active_target_set": sorted(
+            {
+                str(target)
+                for child in child_states
+                for target in list(child.get("targets") or [])
+                if str(target)
+            }
+        ),
+    }
+
+
+def _build_active_path_subtree_summary_proposals(store: CTreeStore, active_path: List[str]) -> List[Dict[str, Any]]:
+    children_by_parent: Dict[str, List[Dict[str, Any]]] = {}
+    for node in list(getattr(store, "nodes", []) or []):
+        if not isinstance(node, dict):
+            continue
+        parent_id = str(node.get("parent_id") or "").strip()
+        if not parent_id:
+            continue
+        children_by_parent.setdefault(parent_id, []).append(node)
+
+    proposals: List[Dict[str, Any]] = []
+    for node_id in active_path:
+        children = children_by_parent.get(str(node_id), [])
+        if not children:
+            continue
+        parent_node = _node_by_id(store, str(node_id))
+        if not isinstance(parent_node, dict):
+            continue
+        child_states = [_simple_child_state(child) for child in children]
+        helper_input = build_helper_subtree_summary_input(
+            parent_node=parent_node,
+            parent_reduction=_simple_parent_reduction(parent_node, child_states),
+            child_states=child_states,
+        )
+        proposals.append(build_helper_subtree_summary_proposal(helper_input))
+    return proposals
 
 
 def _candidate_item(node: Dict[str, Any], *, lane: str, reason: str, score: int) -> Dict[str, Any]:
@@ -70,6 +254,42 @@ def _clip_candidates(candidates: List[Dict[str, Any]], limit: int) -> List[Dict[
     return ordered[: max(limit, 0)]
 
 
+def _candidate_preference(candidate: Dict[str, Any]) -> tuple[int, int, int]:
+    lane = str(candidate.get("lane") or "")
+    reason = str(candidate.get("reason") or "")
+    graph_type = str(candidate.get("graph_type") or "")
+
+    lane_weight = {
+        "graph_link": 4,
+        "dense": 3,
+        "graph_neighborhood": 3,
+        "lexical": 2,
+        "structural": 1,
+    }.get(lane, 0)
+    reason_weight = {
+        "focus_node": 5,
+        "active_path": 4,
+        "direct_validates_link": 4,
+        "direct_blocker_node": 4,
+        "neighbor_supersedes_link": 4,
+        "neighbor_validates_link": 4,
+        "lexical_overlap": 3,
+        "semantic_overlap": 3,
+        "ancestor": 2,
+        "neighbor_blocker_ref": 2,
+        "ready_neighbor": 1,
+        "external_blocker_ref": 1,
+    }.get(reason, 0)
+    graph_weight = {
+        "validates": 3,
+        "supersedes": 3,
+        "blocks": 2,
+        "waits_for": 1,
+        "conditional_blocks": 1,
+    }.get(graph_type, 0)
+    return (lane_weight, reason_weight, graph_weight)
+
+
 def _focus_terms(store: CTreeStore, focus_node_id: Optional[str], active_path: List[str]) -> List[str]:
     terms: List[str] = []
     candidate_ids: List[str] = []
@@ -97,6 +317,36 @@ def _focus_terms(store: CTreeStore, focus_node_id: Optional[str], active_path: L
             seen.add(text)
             terms.append(text)
     return terms
+
+
+def _normalize_dense_term(term: str) -> str:
+    text = re.sub(r"[^a-z0-9]+", "", str(term).strip().lower())
+    if not text:
+        return ""
+    alias = _DENSE_TERM_ALIASES.get(text)
+    if alias:
+        return alias
+    for suffix in _DENSE_SUFFIXES:
+        if len(text) > len(suffix) + 2 and text.endswith(suffix):
+            text = text[: -len(suffix)]
+            break
+    return _DENSE_TERM_ALIASES.get(text, text)
+
+
+def _dense_terms_from_tokens(tokens: List[str]) -> List[str]:
+    seen = set()
+    dense_terms: List[str] = []
+    for token in tokens:
+        normalized = _normalize_dense_term(token)
+        if not normalized or normalized in seen:
+            continue
+        if normalized in _GENERIC_LEXICAL_TERMS:
+            continue
+        if len(normalized) <= 3:
+            continue
+        seen.add(normalized)
+        dense_terms.append(normalized)
+    return dense_terms
 
 
 def _collect_structural_candidates(
@@ -168,6 +418,49 @@ def _collect_lexical_candidates(
             {
                 **_candidate_item(node, lane="lexical", reason="lexical_overlap", score=score),
                 "matched_terms": overlap,
+            }
+        )
+    return candidates
+
+
+def _collect_dense_candidates(
+    store: CTreeStore,
+    *,
+    focus_node_id: Optional[str],
+    active_path: List[str],
+) -> List[Dict[str, Any]]:
+    focus_raw_terms = set(_focus_terms(store, focus_node_id, active_path))
+    focus_dense_terms = set(_dense_terms_from_tokens(list(focus_raw_terms)))
+    if not focus_dense_terms:
+        return []
+
+    candidates: List[Dict[str, Any]] = []
+    normalized_focus_raw = {_normalize_dense_term(term) for term in focus_raw_terms if _normalize_dense_term(term)}
+    for node in list(getattr(store, "nodes", []) or []):
+        node_id = str(node.get("id") or "")
+        if focus_node_id and node_id == str(focus_node_id):
+            continue
+        raw_terms = {str(term).strip().lower() for term in list(node.get("lexical_terms") or []) if str(term).strip()}
+        exact_overlap = sorted(focus_raw_terms & raw_terms)
+        dense_terms = set(_dense_terms_from_tokens(list(raw_terms)))
+        dense_overlap = sorted(focus_dense_terms & dense_terms)
+        semantic_only = [term for term in dense_overlap if term not in normalized_focus_raw or term not in exact_overlap]
+        if not semantic_only:
+            continue
+        score = 24 + (len(semantic_only) * 12)
+        if list(node.get("artifact_refs") or []):
+            score += 6
+        if list(node.get("constraints") or []):
+            score += 6
+        if str(node.get("status") or "") in {"superseded", "abandoned", "archived"}:
+            score -= 18
+        if score < 30:
+            continue
+        candidates.append(
+            {
+                **_candidate_item(node, lane="dense", reason="semantic_overlap", score=score),
+                "matched_dense_terms": semantic_only,
+                "matched_exact_terms": exact_overlap,
             }
         )
     return candidates
@@ -370,16 +663,13 @@ def _collect_graph_neighborhood_candidates(
     return candidates
 
 
-def active_path_node_ids(store: CTreeStore) -> List[str]:
-    nodes = list(getattr(store, "nodes", []) or [])
-    if not nodes:
-        return []
-    last_node = nodes[-1]
-    if not isinstance(last_node, dict):
+def active_path_node_ids(store: CTreeStore, focus_node_id: Optional[str] = None) -> List[str]:
+    effective_focus_node_id = resolve_focus_node_id(store, focus_node_id)
+    if not effective_focus_node_id:
         return []
     ordered: List[str] = []
     seen = set()
-    current: Optional[Dict[str, Any]] = last_node
+    current = _node_by_id(store, effective_focus_node_id)
     while isinstance(current, dict):
         current_id = str(current.get("id") or "")
         if not current_id or current_id in seen:
@@ -399,15 +689,16 @@ def resolve_retrieval_policy(
     *,
     mode: str = "active_continuation",
     token_budget: Optional[int] = None,
+    focus_node_id: Optional[str] = None,
     graph_enabled: bool = True,
     graph_neighborhood_enabled: bool = False,
+    dense_enabled: bool = False,
 ) -> Dict[str, Any]:
-    active_path = active_path_node_ids(store)
-    snapshot = store.snapshot()
-    last_node = snapshot.get("last_node") if isinstance(snapshot, dict) else None
-    last_node_id = str(last_node.get("id") or "") if isinstance(last_node, dict) else None
+    effective_focus_node_id = resolve_focus_node_id(store, focus_node_id)
+    active_path = active_path_node_ids(store, effective_focus_node_id)
     structural_sources = ["active_node", "ancestors", "latest_child_summaries"]
     lexical_sources = ["constraints", "targets", "workspace_scope", "artifact_refs", "titles", "paths"]
+    dense_sources = ["normalized_titles", "normalized_constraints", "normalized_artifacts", "normalized_targets"]
     graph_sources = ["blockers", "validates", "supersedes", "duplicates", "relates_to", "replies_to"]
 
     enabled_lanes = ["structural", "lexical"]
@@ -442,6 +733,11 @@ def resolve_retrieval_policy(
         if graph_enabled and graph_neighborhood_enabled:
             restore_targets.append("neighbor_context")
 
+    if dense_enabled and mode in {"active_continuation", "resume", "pivot"}:
+        enabled_lanes.append("dense")
+        lane_limits["dense"] = 4
+        allowed_sources["dense"] = dense_sources
+
     effective_budget = token_budget if token_budget is not None and token_budget > 0 else 1200
     return {
         "schema_version": "ctree_retrieval_policy_v1",
@@ -451,7 +747,12 @@ def resolve_retrieval_policy(
         "allowed_sources": allowed_sources,
         "token_budget": effective_budget,
         "active_path_node_ids": active_path,
-        "focus_node_id": last_node_id,
+        "focus_node_id": effective_focus_node_id,
+        "focus_selection": {
+            "strategy": "explicit" if focus_node_id else "last_node_fallback",
+            "requested_focus_node_id": str(focus_node_id or ""),
+            "resolved_focus_node_id": effective_focus_node_id,
+        },
         "restore_targets": restore_targets,
     }
 
@@ -461,15 +762,19 @@ def build_retrieval_substrate(
     *,
     mode: str = "active_continuation",
     token_budget: Optional[int] = None,
+    focus_node_id: Optional[str] = None,
     graph_enabled: bool = True,
     graph_neighborhood_enabled: bool = False,
+    dense_enabled: bool = False,
 ) -> Dict[str, Any]:
     retrieval_policy = resolve_retrieval_policy(
         store,
         mode=mode,
         token_budget=token_budget,
+        focus_node_id=focus_node_id,
         graph_enabled=graph_enabled,
         graph_neighborhood_enabled=graph_neighborhood_enabled,
+        dense_enabled=dense_enabled,
     )
     active_path = list(retrieval_policy.get("active_path_node_ids") or [])
     focus_node_id = retrieval_policy.get("focus_node_id")
@@ -483,6 +788,10 @@ def build_retrieval_substrate(
     if "lexical" in list(retrieval_policy.get("enabled_lanes") or []):
         lexical = _collect_lexical_candidates(store, focus_node_id=focus_node_id, active_path=active_path)
         candidate_support["lexical"] = _clip_candidates(lexical, int(lane_limits.get("lexical") or 0))
+
+    if "dense" in list(retrieval_policy.get("enabled_lanes") or []):
+        dense = _collect_dense_candidates(store, focus_node_id=focus_node_id, active_path=active_path)
+        candidate_support["dense"] = _clip_candidates(dense, int(lane_limits.get("dense") or 0))
 
     if "graph_link" in list(retrieval_policy.get("enabled_lanes") or []):
         graph_candidates = _collect_graph_link_candidates(store, focus_node_id=focus_node_id, active_path=active_path)
@@ -514,20 +823,34 @@ def build_rehydration_plan(
     *,
     mode: str = "active_continuation",
     token_budget: Optional[int] = None,
+    focus_node_id: Optional[str] = None,
+    lane_profile: Optional[str] = None,
     graph_enabled: bool = True,
     graph_neighborhood_enabled: bool = False,
+    dense_enabled: bool = False,
+    helper_enabled: bool = False,
+    helper_summary_coupling_enabled: bool = False,
 ) -> Dict[str, Any]:
+    lane_config = resolve_lane_profile(
+        lane_profile,
+        graph_enabled=graph_enabled,
+        graph_neighborhood_enabled=graph_neighborhood_enabled,
+        dense_enabled=dense_enabled,
+        helper_enabled=helper_enabled,
+        helper_summary_coupling_enabled=helper_summary_coupling_enabled,
+    )
     retrieval_substrate = build_retrieval_substrate(
         store,
         mode=mode,
         token_budget=token_budget,
-        graph_enabled=graph_enabled,
-        graph_neighborhood_enabled=graph_neighborhood_enabled,
+        focus_node_id=focus_node_id,
+        graph_enabled=bool(lane_config.get("graph_enabled")),
+        graph_neighborhood_enabled=bool(lane_config.get("graph_neighborhood_enabled")),
+        dense_enabled=bool(lane_config.get("dense_enabled")),
     )
     retrieval_policy = retrieval_substrate.get("retrieval_policy") or {}
-    snapshot = store.snapshot()
-    last_node = snapshot.get("last_node") if isinstance(snapshot, dict) else None
     focus_node_id = retrieval_policy.get("focus_node_id")
+    focus_node = _node_by_id(store, str(focus_node_id)) if focus_node_id else None
     active_path = list(retrieval_policy.get("active_path_node_ids") or [])
     constraints: List[Dict[str, Any]] = []
     targets: List[str] = []
@@ -546,6 +869,7 @@ def build_rehydration_plan(
     seen_validations = set()
     seen_graph_neighbor_ids = set()
     seen_superseded_source_ids = set()
+    candidate_lookup: Dict[str, Dict[str, Any]] = {}
 
     for node_id in active_path:
         node = _node_by_id(store, str(node_id))
@@ -579,62 +903,108 @@ def build_rehydration_plan(
                 seen_artifacts.add(text)
                 artifact_refs.append(text)
 
-    if not constraints and isinstance(last_node, dict):
-        constraints = list(last_node.get("constraints") or [])
-        targets = list(last_node.get("targets") or [])
-        workspace_scope = list(last_node.get("workspace_scope") or [])
-        artifact_refs = list(last_node.get("artifact_refs") or [])
+    if not constraints and isinstance(focus_node, dict):
+        constraints = list(focus_node.get("constraints") or [])
+        targets = list(focus_node.get("targets") or [])
+        workspace_scope = list(focus_node.get("workspace_scope") or [])
+        artifact_refs = list(focus_node.get("artifact_refs") or [])
     if mode == "pivot":
         constraints = constraints[:3]
         artifact_refs = artifact_refs[:3]
         workspace_scope = workspace_scope[:1]
 
-    promoted_candidates: List[Dict[str, Any]] = []
-    seen_candidate_ids = set()
-    for lane in ("structural", "lexical", "graph_link", "graph_neighborhood"):
+    candidate_order: List[str] = []
+    for lane in ("structural", "lexical", "dense", "graph_link", "graph_neighborhood"):
         for candidate in list((retrieval_substrate.get("candidate_support") or {}).get(lane) or []):
             node_id = str(candidate.get("node_id") or "")
-            if mode == "dependency_lookup":
-                blocker_text = str(candidate.get("blocker_ref") or "").strip()
-                if blocker_text and blocker_text not in seen_blocker_refs:
-                    seen_blocker_refs.add(blocker_text)
-                    blocker_refs.append(blocker_text)
-                graph_type = str(candidate.get("graph_type") or "")
-                if graph_type == "validates" and node_id not in seen_validations:
-                    seen_validations.add(node_id)
-                    validations.append(node_id)
-                if lane == "graph_neighborhood" and node_id and node_id not in seen_graph_neighbor_ids:
-                    seen_graph_neighbor_ids.add(node_id)
-                    graph_neighbor_ids.append(node_id)
-                if lane == "graph_neighborhood" and graph_type == "supersedes":
-                    source_id = str(candidate.get("neighbor_source_id") or "").strip()
-                    if source_id and source_id not in seen_superseded_source_ids:
-                        seen_superseded_source_ids.add(source_id)
-                        superseded_source_ids.append(source_id)
-                for artifact in list(candidate.get("artifact_refs") or []):
-                    text = str(artifact).strip()
-                    if text and text not in seen_artifacts:
-                        seen_artifacts.add(text)
-                        artifact_refs.append(text)
-                for target in list(candidate.get("targets") or []):
-                    text = str(target).strip()
-                    if text and text not in seen_targets:
-                        seen_targets.add(text)
-                        targets.append(text)
-            if not node_id or node_id in seen_candidate_ids:
+            if not node_id:
                 continue
-            seen_candidate_ids.add(node_id)
-            promoted_candidates.append(
-                {
-                    "node_id": node_id,
-                    "lane": str(candidate.get("lane") or lane),
-                    "reason": str(candidate.get("reason") or ""),
-                    "score": int(candidate.get("score") or 0),
-                }
-            )
+            payload = dict(candidate)
+            payload.setdefault("lane", str(lane))
+            if node_id not in candidate_lookup:
+                candidate_order.append(node_id)
+                candidate_lookup[node_id] = payload
+                continue
+            if _candidate_preference(payload) > _candidate_preference(candidate_lookup[node_id]):
+                candidate_lookup[node_id] = payload
+
+    promoted_candidates: List[Dict[str, Any]] = [
+        {
+            "node_id": node_id,
+            "lane": str((candidate_lookup.get(node_id) or {}).get("lane") or ""),
+            "reason": str((candidate_lookup.get(node_id) or {}).get("reason") or ""),
+            "score": int((candidate_lookup.get(node_id) or {}).get("score") or 0),
+        }
+        for node_id in candidate_order
+        if node_id in candidate_lookup
+    ]
 
     if mode == "pivot":
         promoted_candidates = promoted_candidates[:4]
+
+    helper_proposal = None
+    summary_support: List[Dict[str, Any]] = []
+    selected_candidates = list(promoted_candidates)
+    if bool(lane_config.get("helper_enabled")):
+        subtree_summary_proposals: List[Dict[str, Any]] = []
+        if bool(lane_config.get("helper_summary_coupling_enabled")):
+            subtree_summary_proposals = _build_active_path_subtree_summary_proposals(store, active_path)
+            summary_support = [
+                {
+                    "parent_node_id": str(item.get("parent_node_id") or ""),
+                    "header_summary": str(item.get("header_summary") or ""),
+                    "selected_child_ids": list(item.get("selected_child_ids") or []),
+                }
+                for item in subtree_summary_proposals
+            ]
+        helper_input = build_helper_rehydration_input(
+            store,
+            mode=mode,
+            retrieval_substrate=retrieval_substrate,
+            subtree_summary_proposals=subtree_summary_proposals,
+        )
+        helper_proposal = build_helper_rehydration_proposal(store, helper_input)
+        selected_candidates = [
+            {
+                "node_id": node_id,
+                "lane": str((candidate_lookup.get(node_id) or {}).get("lane") or ""),
+                "reason": str((candidate_lookup.get(node_id) or {}).get("reason") or ""),
+                "score": int((candidate_lookup.get(node_id) or {}).get("score") or 0),
+            }
+            for node_id in list(helper_proposal.get("selected_support_node_ids") or [])
+            if str(node_id) in candidate_lookup
+        ]
+
+    for item in selected_candidates:
+        node_id = str(item.get("node_id") or "")
+        candidate = candidate_lookup.get(node_id) or {}
+        if mode == "dependency_lookup":
+            blocker_text = str(candidate.get("blocker_ref") or "").strip()
+            if blocker_text and blocker_text not in seen_blocker_refs:
+                seen_blocker_refs.add(blocker_text)
+                blocker_refs.append(blocker_text)
+            graph_type = str(candidate.get("graph_type") or "")
+            if graph_type == "validates" and node_id not in seen_validations:
+                seen_validations.add(node_id)
+                validations.append(node_id)
+            if str(candidate.get("lane") or "") == "graph_neighborhood" and node_id and node_id not in seen_graph_neighbor_ids:
+                seen_graph_neighbor_ids.add(node_id)
+                graph_neighbor_ids.append(node_id)
+            if str(candidate.get("lane") or "") == "graph_neighborhood" and graph_type == "supersedes":
+                source_id = str(candidate.get("neighbor_source_id") or "").strip()
+                if source_id and source_id not in seen_superseded_source_ids:
+                    seen_superseded_source_ids.add(source_id)
+                    superseded_source_ids.append(source_id)
+            for artifact in list(candidate.get("artifact_refs") or []):
+                text = str(artifact).strip()
+                if text and text not in seen_artifacts:
+                    seen_artifacts.add(text)
+                    artifact_refs.append(text)
+            for target in list(candidate.get("targets") or []):
+                text = str(target).strip()
+                if text and text not in seen_targets:
+                    seen_targets.add(text)
+                    targets.append(text)
 
     if mode == "dependency_lookup" and superseded_source_ids:
         superseded_artifacts = set()
@@ -652,7 +1022,9 @@ def build_rehydration_plan(
     return {
         "schema_version": "ctree_rehydration_bundle_v1",
         "mode": mode,
-        "focus_node_id": focus_node_id,
+        "focus_node_id": retrieval_policy.get("focus_node_id"),
+        "lane_profile": str(lane_config.get("profile") or "custom"),
+        "lane_config": lane_config,
         "token_budget": retrieval_policy.get("token_budget"),
         "dependency_coverage_target": "direct_only" if mode in {"active_continuation", "resume"} else "minimal",
         "restore_bundle": {
@@ -665,7 +1037,8 @@ def build_rehydration_plan(
             "validations": validations,
             "graph_neighbor_ids": graph_neighbor_ids,
             "superseded_source_ids": superseded_source_ids,
-            "promoted_candidates": promoted_candidates,
+            "promoted_candidates": selected_candidates,
+            "summary_support": summary_support,
         },
         "retrieval_substrate": retrieval_substrate,
         "rehydration_bundle": {
@@ -673,7 +1046,7 @@ def build_rehydration_plan(
             "mode": mode,
             "focus_node_id": focus_node_id,
             "active_path_node_ids": list(retrieval_policy.get("active_path_node_ids") or []),
-            "support_node_ids": [item["node_id"] for item in promoted_candidates],
+            "support_node_ids": [item["node_id"] for item in selected_candidates],
             "constraints": constraints,
             "targets": targets,
             "workspace_scope": workspace_scope,
@@ -682,8 +1055,10 @@ def build_rehydration_plan(
             "validations": validations,
             "graph_neighbor_ids": graph_neighbor_ids,
             "superseded_source_ids": superseded_source_ids,
-            "candidate_provenance": promoted_candidates,
+            "candidate_provenance": selected_candidates,
+            "summary_support": summary_support,
         },
+        "helper_proposal": helper_proposal,
         "retrieval_policy": retrieval_policy,
     }
 
