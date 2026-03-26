@@ -878,3 +878,52 @@ class CreditFrame:
             delayed_annotation_ids=list(data.get("delayed_annotation_ids") or []),
             metadata=dict(data.get("metadata") or {}),
         )
+
+
+@dataclass(frozen=True)
+class TrainingFeedback:
+    feedback_id: str
+    source_adapter_id: str
+    target_export_unit_id: str
+    feedback_kind: str
+    status: str
+    metric_payload: Dict[str, Any] = field(default_factory=dict)
+    text_feedback: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "feedback_id", _require_text(self.feedback_id, "feedback_id"))
+        object.__setattr__(self, "source_adapter_id", _require_text(self.source_adapter_id, "source_adapter_id"))
+        object.__setattr__(self, "target_export_unit_id", _require_text(self.target_export_unit_id, "target_export_unit_id"))
+        object.__setattr__(self, "feedback_kind", _require_text(self.feedback_kind, "feedback_kind"))
+        object.__setattr__(self, "status", _require_text(self.status, "status"))
+        object.__setattr__(self, "metric_payload", _copy_mapping(self.metric_payload))
+        object.__setattr__(self, "text_feedback", str(self.text_feedback).strip() if self.text_feedback else None)
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = {
+            "feedback_id": self.feedback_id,
+            "source_adapter_id": self.source_adapter_id,
+            "target_export_unit_id": self.target_export_unit_id,
+            "feedback_kind": self.feedback_kind,
+            "status": self.status,
+            "metric_payload": dict(self.metric_payload),
+            "metadata": dict(self.metadata),
+        }
+        if self.text_feedback:
+            payload["text_feedback"] = self.text_feedback
+        return payload
+
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> "TrainingFeedback":
+        return TrainingFeedback(
+            feedback_id=data.get("feedback_id") or "",
+            source_adapter_id=data.get("source_adapter_id") or "",
+            target_export_unit_id=data.get("target_export_unit_id") or "",
+            feedback_kind=data.get("feedback_kind") or "",
+            status=data.get("status") or "",
+            metric_payload=dict(data.get("metric_payload") or {}),
+            text_feedback=data.get("text_feedback"),
+            metadata=dict(data.get("metadata") or {}),
+        )

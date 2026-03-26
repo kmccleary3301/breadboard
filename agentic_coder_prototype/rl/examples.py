@@ -29,6 +29,7 @@ from .schema import (
     EvaluationAnnotation,
     PolicyProvenance,
     RolloutDescriptor,
+    TrainingFeedback,
 )
 
 
@@ -364,4 +365,136 @@ def build_rl_v1_multi_agent_async_hardening_example_payload() -> Dict[str, objec
         "trajectory_graph": example["trajectory_graph"].to_dict(),
         "credit_frame": example["credit_frame"].to_dict(),
         "checkpoint_pointer": dict(example["checkpoint_pointer"]),
+    }
+
+
+def build_rl_v1_serving_inference_probe() -> Dict[str, object]:
+    example = build_rl_v1_alpha_exporters_example()
+    sft_export = example["live_exports"]["sft"]
+    policy = example["policy_provenance"]
+    adapter = example["adapter_capabilities"]
+    return {
+        "probe_id": "bb.rl.v1.serving_inference_probe.v1",
+        "policy_provenance": policy,
+        "adapter_capabilities": adapter,
+        "export_unit": sft_export,
+        "boundary": {
+            "serving_owned_outside_breadboard": True,
+            "trainer_specific_state_added": False,
+            "provenance_fields": ["provider", "model_name", "prompt_ref", "config_ref"],
+        },
+    }
+
+
+def build_rl_v1_serving_inference_probe_payload() -> Dict[str, object]:
+    example = build_rl_v1_serving_inference_probe()
+    return {
+        "probe_id": example["probe_id"],
+        "policy_provenance": example["policy_provenance"].to_dict(),
+        "adapter_capabilities": example["adapter_capabilities"].to_dict(),
+        "export_unit": example["export_unit"].to_dict(),
+        "boundary": dict(example["boundary"]),
+    }
+
+
+def build_rl_v1_evaluator_verifier_probe() -> Dict[str, object]:
+    example = build_rl_v1_alpha_exporters_example()
+    verifier_export = example["live_exports"]["verifier"]
+    return {
+        "probe_id": "bb.rl.v1.evaluator_verifier_probe.v1",
+        "export_unit": verifier_export,
+        "annotation_channels": [item.channel for item in verifier_export.evaluation_annotations],
+        "boundary": {
+            "evaluator_pool_owned_outside_breadboard": True,
+            "annotation_truth_stays_inside_breadboard": True,
+            "verifier_examples_are_export_only": True,
+        },
+    }
+
+
+def build_rl_v1_evaluator_verifier_probe_payload() -> Dict[str, object]:
+    example = build_rl_v1_evaluator_verifier_probe()
+    return {
+        "probe_id": example["probe_id"],
+        "export_unit": example["export_unit"].to_dict(),
+        "annotation_channels": list(example["annotation_channels"]),
+        "boundary": dict(example["boundary"]),
+    }
+
+
+def build_rl_v1_dataset_training_feedback_probe() -> Dict[str, object]:
+    example = build_rl_v1_alpha_exporters_example()
+    transition_export = example["live_exports"]["transition"]
+    feedback = TrainingFeedback(
+        feedback_id="bb.rl.v1.training_feedback_probe.v1",
+        source_adapter_id="reference_training_feedback_adapter",
+        target_export_unit_id=transition_export.export_unit_id,
+        feedback_kind="trainer_batch_validation",
+        status="accepted_for_batching",
+        metric_payload={
+            "transition_count": len(transition_export.record_payload["transitions"]),
+            "replay_match": True,
+            "graph_kind": transition_export.export_kind,
+        },
+        text_feedback="Batch accepted without requiring trainer-specific state inside BreadBoard.",
+        metadata={"phase": "rl_v1_phase5", "delegated_owner": "training_adapter"},
+    )
+    return {
+        "probe_id": "bb.rl.v1.dataset_training_feedback_probe.v1",
+        "export_unit": transition_export,
+        "training_feedback": feedback,
+        "boundary": {
+            "dataset_engine_owned_outside_breadboard": True,
+            "training_feedback_supported": True,
+            "trainer_specific_optimizer_state_added": False,
+        },
+    }
+
+
+def build_rl_v1_dataset_training_feedback_probe_payload() -> Dict[str, object]:
+    example = build_rl_v1_dataset_training_feedback_probe()
+    return {
+        "probe_id": example["probe_id"],
+        "export_unit": example["export_unit"].to_dict(),
+        "training_feedback": example["training_feedback"].to_dict(),
+        "boundary": dict(example["boundary"]),
+    }
+
+
+def build_rl_v1_freeze_and_deferrals() -> Dict[str, object]:
+    serving = build_rl_v1_serving_inference_probe()
+    evaluator = build_rl_v1_evaluator_verifier_probe()
+    feedback = build_rl_v1_dataset_training_feedback_probe()
+    return {
+        "freeze_decision": {
+            "current_decision": "freeze_rl_v1",
+            "open_rl_v2_now": False,
+            "trainer_specific_runtime_mode_added": False,
+        },
+        "completed_probes": [
+            serving["probe_id"],
+            evaluator["probe_id"],
+            feedback["probe_id"],
+        ],
+        "deferred_to_v2": [
+            "trainer-specific packing and optimizer state",
+            "counterfactual relabeling pack",
+            "deep online learner control surfaces",
+            "canonical RL-owned search overlay",
+        ],
+        "boundary_summary": {
+            "serving_outside": serving["boundary"]["serving_owned_outside_breadboard"],
+            "evaluator_outside": evaluator["boundary"]["evaluator_pool_owned_outside_breadboard"],
+            "dataset_engine_outside": feedback["boundary"]["dataset_engine_owned_outside_breadboard"],
+        },
+    }
+
+
+def build_rl_v1_freeze_and_deferrals_payload() -> Dict[str, object]:
+    packet = build_rl_v1_freeze_and_deferrals()
+    return {
+        "freeze_decision": dict(packet["freeze_decision"]),
+        "completed_probes": list(packet["completed_probes"]),
+        "deferred_to_v2": list(packet["deferred_to_v2"]),
+        "boundary_summary": dict(packet["boundary_summary"]),
     }

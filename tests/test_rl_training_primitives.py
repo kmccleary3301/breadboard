@@ -10,6 +10,7 @@ from agentic_coder_prototype.rl import (
     EvaluationAnnotation,
     PolicyProvenance,
     RolloutDescriptor,
+    TrainingFeedback,
     TrajectoryGraph,
     build_rl_v1_alpha_exporters_example,
     build_rl_v1_alpha_exporters_example_payload,
@@ -17,6 +18,12 @@ from agentic_coder_prototype.rl import (
     build_rl_v1_boundary_audit_packet_payload,
     build_rl_v1_contract_pack_example,
     build_rl_v1_contract_pack_example_payload,
+    build_rl_v1_dataset_training_feedback_probe,
+    build_rl_v1_dataset_training_feedback_probe_payload,
+    build_rl_v1_evaluator_verifier_probe,
+    build_rl_v1_evaluator_verifier_probe_payload,
+    build_rl_v1_freeze_and_deferrals,
+    build_rl_v1_freeze_and_deferrals_payload,
     build_rl_v1_live_projection_example,
     build_rl_v1_live_projection_example_payload,
     build_rl_v1_multi_agent_async_hardening_example,
@@ -25,6 +32,8 @@ from agentic_coder_prototype.rl import (
     build_rl_v1_replay_parity_example_payload,
     build_rl_v1_replay_projection_example,
     build_rl_v1_replay_projection_example_payload,
+    build_rl_v1_serving_inference_probe,
+    build_rl_v1_serving_inference_probe_payload,
     build_rl_v1_trajectory_graph_shell_example,
     build_rl_v1_trajectory_graph_shell_example_payload,
 )
@@ -182,3 +191,54 @@ def test_rl_v1_credit_frame_has_async_shared_attribution_shape() -> None:
     assert credit_frame.decision_weights
     assert credit_frame.track_weights
     assert credit_frame.metadata["continuation_aligned"] is True
+
+
+def test_rl_v1_serving_inference_probe_preserves_policy_provenance() -> None:
+    example = build_rl_v1_serving_inference_probe()
+    payload = build_rl_v1_serving_inference_probe_payload()
+    export_unit = DatasetExportUnit.from_dict(payload["export_unit"])
+
+    assert payload["probe_id"] == "bb.rl.v1.serving_inference_probe.v1"
+    assert payload["policy_provenance"]["provider"] == "openai"
+    assert export_unit.export_kind == "sft_distillation"
+    assert payload["boundary"]["serving_owned_outside_breadboard"] is True
+    assert payload["boundary"]["trainer_specific_state_added"] is False
+
+
+def test_rl_v1_evaluator_verifier_probe_preserves_annotation_truth() -> None:
+    example = build_rl_v1_evaluator_verifier_probe()
+    payload = build_rl_v1_evaluator_verifier_probe_payload()
+    export_unit = DatasetExportUnit.from_dict(payload["export_unit"])
+
+    assert payload["probe_id"] == "bb.rl.v1.evaluator_verifier_probe.v1"
+    assert export_unit.export_kind == "verifier_example"
+    assert payload["boundary"]["annotation_truth_stays_inside_breadboard"] is True
+    assert any(channel in {"execute", "verify"} for channel in payload["annotation_channels"])
+
+
+def test_rl_v1_dataset_training_feedback_probe_round_trips() -> None:
+    example = build_rl_v1_dataset_training_feedback_probe()
+    payload = build_rl_v1_dataset_training_feedback_probe_payload()
+    export_unit = DatasetExportUnit.from_dict(payload["export_unit"])
+    training_feedback = TrainingFeedback.from_dict(payload["training_feedback"])
+
+    assert payload["probe_id"] == "bb.rl.v1.dataset_training_feedback_probe.v1"
+    assert export_unit.export_kind == "rl_transition_segment"
+    assert training_feedback.target_export_unit_id == export_unit.export_unit_id
+    assert training_feedback.status == "accepted_for_batching"
+    assert payload["boundary"]["training_feedback_supported"] is True
+    assert payload["boundary"]["trainer_specific_optimizer_state_added"] is False
+    assert example["training_feedback"] == training_feedback
+
+
+def test_rl_v1_freeze_and_deferrals_packet_closes_v1_cleanly() -> None:
+    example = build_rl_v1_freeze_and_deferrals()
+    payload = build_rl_v1_freeze_and_deferrals_payload()
+
+    assert payload["freeze_decision"]["current_decision"] == "freeze_rl_v1"
+    assert payload["freeze_decision"]["open_rl_v2_now"] is False
+    assert "trainer-specific packing and optimizer state" in payload["deferred_to_v2"]
+    assert payload["boundary_summary"]["serving_outside"] is True
+    assert payload["boundary_summary"]["evaluator_outside"] is True
+    assert payload["boundary_summary"]["dataset_engine_outside"] is True
+    assert payload["completed_probes"] == example["completed_probes"]

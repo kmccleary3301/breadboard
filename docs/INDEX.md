@@ -123,6 +123,7 @@ This is the docs map. If you are new, start at the row that fits your situation 
 | [concepts/rl-training-primitives-v1-replay-parity.md](concepts/rl-training-primitives-v1-replay-parity.md) | RL Training Primitives V1 replay parity: live and replay projection paths must converge on the same graph-core truth surface |
 | [concepts/rl-training-primitives-v1-alpha-exporters.md](concepts/rl-training-primitives-v1-alpha-exporters.md) | RL Training Primitives V1 alpha exporters: trainer-neutral export units for SFT, RL transition segments, and verifier examples with explicit provenance and replay parity |
 | [concepts/rl-training-primitives-v1-multi-agent-async-hardening.md](concepts/rl-training-primitives-v1-multi-agent-async-hardening.md) | RL Training Primitives V1 multi-agent and async hardening: branch/message/workspace causality, delayed evaluator wake-ups, credit frames, and continuation alignment without kernel growth |
+| [concepts/rl-training-primitives-v1-freeze-and-deferrals.md](concepts/rl-training-primitives-v1-freeze-and-deferrals.md) | RL Training Primitives V1 closeout: delegated-boundary probes, optional training feedback support, and the V1 freeze/defer decision |
 
 ### Governance and change policy
 
