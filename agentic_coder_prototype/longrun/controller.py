@@ -7,6 +7,17 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
+from ..orchestration.coordination import (
+    build_coordination_inspection_snapshot,
+    build_directive,
+    build_human_required_signal_proposal,
+    build_no_progress_signal_proposal,
+    build_retryable_failure_signal_proposal,
+    build_review_verdict,
+    validate_directive,
+    validate_review_verdict,
+    validate_signal_proposal,
+)
 from .checkpoint import load_latest_checkpoint_pointer, load_state_from_latest_checkpoint, write_checkpoint
 from .recovery import RecoveryPolicy
 from .queue import WorkQueue
@@ -16,6 +27,7 @@ from .flags import resolve_longrun_policy_profile
 
 EpisodeRunner = Callable[[int], Dict[str, Any]]
 ReviewerHook = Callable[[Mapping[str, Any]], Mapping[str, Any] | None]
+CoordinationEmitter = Callable[[Dict[str, Any]], None]
 
 
 def _as_positive_int(value: Any, default: int) -> int:
@@ -63,6 +75,9 @@ class LongRunController:
         macro_event_emitter: Optional[Callable[[str, Dict[str, Any]], None]] = None,
         verification_executor: VerificationExecutor | None = None,
         reviewer_hook: ReviewerHook | None = None,
+        coordination_signal_emitter: Optional[CoordinationEmitter] = None,
+        coordination_review_verdict_emitter: Optional[CoordinationEmitter] = None,
+        coordination_directive_emitter: Optional[CoordinationEmitter] = None,
     ) -> None:
         self._config = config if isinstance(config, Mapping) else {}
         self._logger_v2 = logger_v2
@@ -72,6 +87,9 @@ class LongRunController:
         self._macro_event_emitter = macro_event_emitter
         self._verification_executor = verification_executor
         self._reviewer_hook = reviewer_hook
+        self._coordination_signal_emitter = coordination_signal_emitter
+        self._coordination_review_verdict_emitter = coordination_review_verdict_emitter
+        self._coordination_directive_emitter = coordination_directive_emitter
 
         lr_cfg = self._config.get("long_running")
         lr_cfg = lr_cfg if isinstance(lr_cfg, Mapping) else {}
@@ -85,6 +103,10 @@ class LongRunController:
         reviewer = reviewer if isinstance(reviewer, Mapping) else {}
         resume = lr_cfg.get("resume")
         resume = resume if isinstance(resume, Mapping) else {}
+        coordination = self._config.get("coordination")
+        coordination = coordination if isinstance(coordination, Mapping) else {}
+        coordination_review = coordination.get("review")
+        coordination_review = coordination_review if isinstance(coordination_review, Mapping) else {}
 
         # Keep enabled runs bounded even when config is sparse.
         self._max_episodes = _as_positive_int(budgets.get("max_episodes"), default=1)
@@ -119,6 +141,13 @@ class LongRunController:
         self._resume_enabled = bool(resume.get("enabled", False))
         self._resume_state_path = str(resume.get("state_path") or "meta/longrun_state.json")
         self._policy_profile = resolve_longrun_policy_profile(self._config, default="balanced")
+        self._coordination_no_progress_action = str(
+            coordination_review.get("no_progress_action") or "checkpoint"
+        ).strip().lower()
+        self._coordination_retryable_failure_action = str(
+            coordination_review.get("retryable_failure_action") or "retry"
+        ).strip().lower()
+        self._coordination_task_id = str(coordination.get("task_id") or "longrun_controller").strip() or "longrun_controller"
 
     def run(self, episode_runner: EpisodeRunner) -> Dict[str, Any]:
         started_at = self._time_fn()
@@ -162,6 +191,9 @@ class LongRunController:
                 "branch_event_count": 0,
                 "lane_counts": {},
             },
+            "coordination_events": [],
+            "coordination_next_event_id": 1,
+            "coordination_emitted_keys": [],
         }
         started_at = self._seed_state_from_resume(state, default_started_at=started_at)
 
@@ -221,6 +253,19 @@ class LongRunController:
                     self._work_queue.defer(current_item_id, "provider_error")
                     state["queue_snapshot"] = self._safe_queue_snapshot()
                     self._write_queue_snapshot(state["queue_snapshot"])
+                self._emit_retryable_failure_coordination(
+                    state,
+                    failure_summary=str(exc),
+                    retry_basis=str(action.get("reason") or "provider_error_retry"),
+                    attempt_count=int(state["retry_streak"]),
+                    error_type=exc.__class__.__name__,
+                    backoff_seconds=float(action.get("backoff_seconds") or 0.0),
+                    current_item_id=current_item_id,
+                    dedupe_key=(
+                        f"retryable_failure:provider_error:{int(state['provider_error_count'])}:"
+                        f"{int(state['retry_streak'])}:{exc.__class__.__name__}:{str(exc)}"
+                    ),
+                )
                 if action.get("action") == "retry_with_backoff":
                     backoff_seconds = float(action.get("backoff_seconds") or 0.0)
                     try:
@@ -356,6 +401,24 @@ class LongRunController:
                 },
             )
 
+            human_required_stop = self._emit_human_required_coordination_if_needed(
+                result,
+                state,
+                episode_index=episode_index,
+            )
+            if human_required_stop is not None:
+                state["status"] = "stopped"
+                state["stop_reason"] = human_required_stop
+                self._emit_macro_event(
+                    "loop.stop",
+                    {
+                        "episode_index": episode_index,
+                        "reason": state["stop_reason"],
+                        "episodes_run": int(state["episodes_run"]),
+                    },
+                )
+                break
+
             stop_reason = self._check_post_episode_stop(result, state)
             if stop_reason is not None:
                 state["status"] = "completed" if stop_reason == "episode_completed" else "stopped"
@@ -409,6 +472,8 @@ class LongRunController:
             "resume_state_path": state.get("resume_state_path"),
             "policy_profile": state.get("policy_profile", self._policy_profile),
             "rlm_usage": state.get("rlm_usage"),
+            "coordination": self._coordination_inspection_snapshot(state),
+            "coordination_event_trace": self._coordination_event_trace(state),
         }
         self._write_summary(summary)
 
@@ -453,6 +518,18 @@ class LongRunController:
 
         if self._max_retries_per_item > 0 and int(state["retry_streak"]) >= self._max_retries_per_item:
             action = self._recovery_policy.on_episode_fail(state, result)
+            if str(action.get("action") or "") in {"retry_episode", "rollback_and_retry"}:
+                self._emit_retryable_failure_coordination(
+                    state,
+                    failure_summary=str(result.get("completion_reason") or "episode_not_completed"),
+                    retry_basis=str(action.get("reason") or action.get("action") or "retry_episode"),
+                    attempt_count=int(state["retry_streak"]),
+                    current_item_id=str(state.get("current_item_id") or "") or None,
+                    dedupe_key=(
+                        f"retryable_failure:episode:{int(state['episodes_run'])}:{int(state['retry_streak'])}:"
+                        f"{str(result.get('completion_reason') or '')}"
+                    ),
+                )
             if action.get("action") == "rollback_and_retry":
                 state["rollback_used"] = True
                 state["retry_streak"] = 0
@@ -468,6 +545,16 @@ class LongRunController:
             and int(state.get("failure_signature_streak") or 0) >= self._no_progress_signature_repeats
         ):
             action = self._recovery_policy.on_no_progress(state)
+            self._emit_no_progress_coordination(
+                state,
+                stall_reason=str(action.get("reason") or "no_progress_signature_repeated"),
+                current_item_id=str(state.get("current_item_id") or "") or None,
+                last_activity_marker=str(result.get("completion_reason") or "") or None,
+                dedupe_key=(
+                    f"no_progress:signature:{int(state['episodes_run'])}:{int(state.get('failure_signature_streak') or 0)}:"
+                    f"{str(state.get('last_failure_signature') or '')}"
+                ),
+            )
             if bool(action.get("stop", True)):
                 return str(action.get("reason") or "no_progress_signature_repeated")
             state["last_recovery_action"] = dict(action)
@@ -475,6 +562,16 @@ class LongRunController:
 
         if self._no_progress_max_episodes > 0 and int(state["no_progress_streak"]) >= self._no_progress_max_episodes:
             action = self._recovery_policy.on_no_progress(state)
+            self._emit_no_progress_coordination(
+                state,
+                stall_reason=str(action.get("reason") or "no_progress_threshold_reached"),
+                current_item_id=str(state.get("current_item_id") or "") or None,
+                last_activity_marker=str(result.get("completion_reason") or "") or None,
+                dedupe_key=(
+                    f"no_progress:threshold:{int(state['episodes_run'])}:{int(state['no_progress_streak'])}:"
+                    f"{str(state.get('last_failure_signature') or '')}"
+                ),
+            )
             if bool(action.get("stop")):
                 return str(action.get("reason") or "no_progress_threshold_reached")
             state["last_recovery_action"] = dict(action)
@@ -637,6 +734,9 @@ class LongRunController:
             "backoff_seconds",
             "last_failure_signature",
             "failure_signature_streak",
+            "coordination_events",
+            "coordination_next_event_id",
+            "coordination_emitted_keys",
         ):
             if key in payload:
                 state[key] = payload[key]
@@ -798,3 +898,323 @@ class LongRunController:
             self._macro_event_emitter(str(event_type), dict(payload))
         except Exception:
             pass
+
+    def _emit_coordination_event(
+        self,
+        state: Dict[str, Any],
+        *,
+        event_type: str,
+        payload: Mapping[str, Any],
+        dedupe_key: Optional[str] = None,
+        causal_parent_event_id: Optional[int] = None,
+    ) -> Dict[str, Any] | None:
+        emitted_keys = state.get("coordination_emitted_keys")
+        if not isinstance(emitted_keys, list):
+            emitted_keys = []
+            state["coordination_emitted_keys"] = emitted_keys
+        if dedupe_key and dedupe_key in emitted_keys:
+            return None
+        next_event_id = int(state.get("coordination_next_event_id") or 1)
+        record = {
+            "event_id": next_event_id,
+            "type": str(event_type),
+            "payload": dict(payload or {}),
+            "causal_parent_event_id": causal_parent_event_id,
+        }
+        events = state.get("coordination_events")
+        if not isinstance(events, list):
+            events = []
+            state["coordination_events"] = events
+        events.append(record)
+        state["coordination_next_event_id"] = next_event_id + 1
+        if dedupe_key:
+            emitted_keys.append(str(dedupe_key))
+        emitter = None
+        if event_type == "coordination.signal":
+            emitter = self._coordination_signal_emitter
+        elif event_type == "coordination.review_verdict":
+            emitter = self._coordination_review_verdict_emitter
+        elif event_type == "coordination.directive":
+            emitter = self._coordination_directive_emitter
+        if emitter is not None:
+            try:
+                emitter(dict(payload or {}))
+            except Exception:
+                pass
+        return record
+
+    def _emit_no_progress_coordination(
+        self,
+        state: Dict[str, Any],
+        *,
+        stall_reason: str,
+        current_item_id: Optional[str],
+        last_activity_marker: Optional[str],
+        dedupe_key: str,
+    ) -> None:
+        signal = validate_signal_proposal(
+            build_no_progress_signal_proposal(
+                task_id=self._coordination_task_id,
+                stall_reason=stall_reason,
+                observed_episode_index=int(state.get("episode_index") or 0),
+                no_progress_streak=int(state.get("no_progress_streak") or 0),
+                failure_signature_streak=int(state.get("failure_signature_streak") or 0),
+                last_activity_marker=last_activity_marker,
+                current_item_id=current_item_id,
+                retry_streak=int(state.get("retry_streak") or 0),
+                evidence_refs=["artifact://meta/longrun_state.json"],
+            ),
+            mission_owner_role="system",
+        )
+        signal_record = self._emit_coordination_event(
+            state,
+            event_type="coordination.signal",
+            payload=signal,
+            dedupe_key=dedupe_key,
+        )
+        if signal_record is None:
+            return
+        verdict = validate_review_verdict(
+            build_review_verdict(
+                reviewer_task_id=self._coordination_task_id,
+                reviewer_role="system",
+                subject_signal=signal,
+                subject_event_id=int(signal_record["event_id"]),
+                trigger_signal_id=str(signal.get("signal_id") or ""),
+                trigger_event_id=int(signal_record["event_id"]),
+                trigger_code="no_progress",
+                verdict_code=self._coordination_no_progress_action,
+                mission_completed=False,
+                blocking_reason=stall_reason,
+                recommended_next_action=self._coordination_no_progress_action,
+                signal_evidence_refs=["artifact://meta/longrun_state.json"],
+                metadata={"longrun_reason": stall_reason},
+            )
+        )
+        verdict_record = self._emit_coordination_event(
+            state,
+            event_type="coordination.review_verdict",
+            payload=verdict,
+            causal_parent_event_id=int(signal_record["event_id"]),
+        )
+        if verdict_record is None:
+            return
+        directive = validate_directive(
+            build_directive(
+                directive_code=self._coordination_no_progress_action,
+                issuer_task_id=self._coordination_task_id,
+                issuer_role="system",
+                target_task_id=self._coordination_task_id,
+                based_on_verdict=verdict,
+                payload={"wake_target": True, "coordination_origin": "longrun.no_progress"},
+                evidence_refs=["artifact://meta/longrun_state.json"],
+                metadata={"review_event_id": int(verdict_record["event_id"])},
+            )
+        )
+        self._emit_coordination_event(
+            state,
+            event_type="coordination.directive",
+            payload=directive,
+            causal_parent_event_id=int(verdict_record["event_id"]),
+        )
+
+    def _emit_retryable_failure_coordination(
+        self,
+        state: Dict[str, Any],
+        *,
+        failure_summary: str,
+        retry_basis: str,
+        attempt_count: int,
+        current_item_id: Optional[str],
+        dedupe_key: str,
+        error_type: Optional[str] = None,
+        backoff_seconds: Optional[float] = None,
+    ) -> None:
+        signal = validate_signal_proposal(
+            build_retryable_failure_signal_proposal(
+                task_id=self._coordination_task_id,
+                failure_summary=failure_summary,
+                retry_basis=retry_basis,
+                attempt_count=attempt_count,
+                current_item_id=current_item_id,
+                backoff_seconds=backoff_seconds,
+                error_type=error_type,
+                evidence_refs=["artifact://meta/longrun_state.json"],
+            ),
+            mission_owner_role="system",
+        )
+        signal_record = self._emit_coordination_event(
+            state,
+            event_type="coordination.signal",
+            payload=signal,
+            dedupe_key=dedupe_key,
+        )
+        if signal_record is None:
+            return
+        verdict = validate_review_verdict(
+            build_review_verdict(
+                reviewer_task_id=self._coordination_task_id,
+                reviewer_role="system",
+                subject_signal=signal,
+                subject_event_id=int(signal_record["event_id"]),
+                trigger_signal_id=str(signal.get("signal_id") or ""),
+                trigger_event_id=int(signal_record["event_id"]),
+                trigger_code="retryable_failure",
+                verdict_code=self._coordination_retryable_failure_action,
+                mission_completed=False,
+                blocking_reason=failure_summary,
+                recommended_next_action=self._coordination_retryable_failure_action,
+                signal_evidence_refs=["artifact://meta/longrun_state.json"],
+                metadata={"retry_basis": retry_basis, "attempt_count": int(attempt_count)},
+            )
+        )
+        verdict_record = self._emit_coordination_event(
+            state,
+            event_type="coordination.review_verdict",
+            payload=verdict,
+            causal_parent_event_id=int(signal_record["event_id"]),
+        )
+        if verdict_record is None:
+            return
+        directive = validate_directive(
+            build_directive(
+                directive_code=self._coordination_retryable_failure_action,
+                issuer_task_id=self._coordination_task_id,
+                issuer_role="system",
+                target_task_id=self._coordination_task_id,
+                based_on_verdict=verdict,
+                payload={"wake_target": True, "coordination_origin": "longrun.retryable_failure"},
+                evidence_refs=["artifact://meta/longrun_state.json"],
+                metadata={"review_event_id": int(verdict_record["event_id"])},
+            )
+        )
+        self._emit_coordination_event(
+            state,
+            event_type="coordination.directive",
+            payload=directive,
+            causal_parent_event_id=int(verdict_record["event_id"]),
+        )
+
+    def _emit_human_required_coordination_if_needed(
+        self,
+        result: Mapping[str, Any],
+        state: Dict[str, Any],
+        *,
+        episode_index: int,
+    ) -> str | None:
+        completion_reason = str(result.get("completion_reason") or "").strip().lower()
+        human_required = result.get("human_required")
+        if completion_reason not in {"human_required", "requires_human_input"} and not isinstance(human_required, Mapping):
+            return None
+        human_payload = dict(human_required or {}) if isinstance(human_required, Mapping) else {}
+        required_input = str(
+            human_payload.get("required_input")
+            or human_payload.get("requested_input")
+            or result.get("required_input")
+            or "human_decision_required"
+        ).strip()
+        blocking_reason = str(
+            human_payload.get("blocking_reason")
+            or human_payload.get("reason")
+            or result.get("completion_summary")
+            or result.get("completion_reason")
+            or "human_input_required"
+        ).strip()
+        evidence_refs = [
+            str(item)
+            for item in (human_payload.get("evidence_refs") or result.get("evidence_refs") or [])
+            if str(item).strip()
+        ] or ["artifact://meta/longrun_summary.json"]
+        signal = validate_signal_proposal(
+            build_human_required_signal_proposal(
+                task_id=self._coordination_task_id,
+                required_input=required_input,
+                blocking_reason=blocking_reason,
+                current_item_id=str(state.get("current_item_id") or "") or None,
+                evidence_refs=evidence_refs,
+                payload={
+                    "observed_episode_index": int(episode_index),
+                    "completion_reason": str(result.get("completion_reason") or ""),
+                },
+            ),
+            mission_owner_role="system",
+        )
+        signal_record = self._emit_coordination_event(
+            state,
+            event_type="coordination.signal",
+            payload=signal,
+            dedupe_key=f"human_required:{int(state.get('episodes_run') or 0)}:{required_input}:{blocking_reason}",
+        )
+        if signal_record is None:
+            return "human_required"
+        verdict = validate_review_verdict(
+            build_review_verdict(
+                reviewer_task_id=self._coordination_task_id,
+                reviewer_role="system",
+                subject_signal=signal,
+                subject_event_id=int(signal_record["event_id"]),
+                trigger_signal_id=str(signal.get("signal_id") or ""),
+                trigger_event_id=int(signal_record["event_id"]),
+                trigger_code="human_required",
+                verdict_code="human_required",
+                mission_completed=False,
+                blocking_reason=blocking_reason,
+                recommended_next_action="human_required",
+                signal_evidence_refs=evidence_refs,
+                metadata={"required_input": required_input},
+            )
+        )
+        verdict_record = self._emit_coordination_event(
+            state,
+            event_type="coordination.review_verdict",
+            payload=verdict,
+            causal_parent_event_id=int(signal_record["event_id"]),
+        )
+        if verdict_record is not None:
+            directive = validate_directive(
+                build_directive(
+                    directive_code="escalate",
+                    issuer_task_id=self._coordination_task_id,
+                    issuer_role="system",
+                    target_task_id=self._coordination_task_id,
+                    based_on_verdict=verdict,
+                    payload={"wake_target": False, "coordination_origin": "longrun.human_required"},
+                    evidence_refs=evidence_refs,
+                    metadata={"review_event_id": int(verdict_record["event_id"])},
+                )
+            )
+            self._emit_coordination_event(
+                state,
+                event_type="coordination.directive",
+                payload=directive,
+                causal_parent_event_id=int(verdict_record["event_id"]),
+            )
+        return "human_required"
+
+    def _coordination_inspection_snapshot(self, state: Mapping[str, Any]) -> Dict[str, Any]:
+        events = state.get("coordination_events")
+        if not isinstance(events, list):
+            events = []
+        return build_coordination_inspection_snapshot(
+            signals=(
+                dict(event.get("payload") or {})
+                for event in events
+                if isinstance(event, Mapping) and str(event.get("type") or "") == "coordination.signal"
+            ),
+            review_verdicts=(
+                dict(event.get("payload") or {})
+                for event in events
+                if isinstance(event, Mapping) and str(event.get("type") or "") == "coordination.review_verdict"
+            ),
+            directives=(
+                dict(event.get("payload") or {})
+                for event in events
+                if isinstance(event, Mapping) and str(event.get("type") or "") == "coordination.directive"
+            ),
+        )
+
+    def _coordination_event_trace(self, state: Mapping[str, Any]) -> List[Dict[str, Any]]:
+        events = state.get("coordination_events")
+        if not isinstance(events, list):
+            return []
+        return [dict(event) for event in events if isinstance(event, Mapping)]

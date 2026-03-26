@@ -1,5 +1,6 @@
 import type {
   EffectiveToolSurfaceV1,
+  CoordinationInspectionSnapshotV1,
   KernelEventV1,
   TerminalInteractionV1,
   TerminalOutputDeltaV1,
@@ -76,6 +77,7 @@ export interface BackboneTurnResult {
   readonly runContextId: string
   readonly transcript: SessionTranscriptV1
   readonly events: readonly KernelEventV1[]
+  readonly coordinationInspection: CoordinationInspectionSnapshotV1
   readonly providerTurn?: ProviderTextTurnResult
   readonly driverTurn?: DriverMediatedToolTurnResult
   readonly unsupportedCase?: UnsupportedCaseV1
@@ -260,6 +262,11 @@ export interface BackboneToolSurfaceApi {
   resolveBindings(input: EffectiveToolSurfaceResolutionInput): readonly import("@breadboard/kernel-core").ResolvedToolBinding[]
 }
 
+export interface CoordinationInspectionInput {
+  readonly snapshot?: CoordinationInspectionSnapshotV1 | null
+  readonly events?: readonly KernelEventV1[]
+}
+
 export interface BackboneSession {
   readonly descriptor: HostSessionDescriptor
   readonly workspace: Workspace
@@ -270,6 +277,7 @@ export interface BackboneSession {
   classifyToolTurn(input: ToolTurnInput): SupportClaim
   runProviderTurn(input: ProviderTurnInput): Promise<BackboneTurnResult>
   runToolTurn(input: ToolTurnInput): Promise<BackboneTurnResult>
+  inspectCoordination(input?: CoordinationInspectionInput): CoordinationInspectionSnapshotV1
 }
 
 export interface BackboneOptions {

@@ -100,6 +100,14 @@ The first Phase 14 tranche now adds:
 - `terminal_sessions_v1.md`
 - `tool_bindings_and_effective_surfaces_v1.md`
 
+The coordination follow-on tranche now adds:
+
+- `coordination_signals_v1.md`
+- `coordination_reviews_v1.md`
+- `coordination_directives_v1.md`
+- `coordination_intervention_v1.md`
+- `coordination_verification_v1.md`
+
 The first V3 tranche now adds:
 
 - `backbone_api_v1.md`

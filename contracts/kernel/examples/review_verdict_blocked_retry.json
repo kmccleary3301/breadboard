@@ -1,0 +1,39 @@
+{
+  "schema_version": "bb.review_verdict.v1",
+  "verdict_id": "review_blocked_retry_1",
+  "reviewer_task_id": "task_supervisor_1",
+  "reviewer_role": "supervisor",
+  "subject": {
+    "kind": "signal",
+    "signal_id": "signal_blocked_1",
+    "signal_event_id": 14,
+    "signal_code": "blocked",
+    "source_task_id": "task_worker_1",
+    "mission_task_id": "task_supervisor_1",
+    "subscription_id": "sub_worker_state",
+    "trigger_signal_id": "signal_blocked_1",
+    "trigger_event_id": 14,
+    "trigger_code": "blocked"
+  },
+  "verdict_code": "retry",
+  "mission_completed": false,
+  "required_deliverable_refs": [],
+  "deliverable_refs": [],
+  "missing_deliverable_refs": [],
+  "blocking_reason": "missing sandbox capability",
+  "recommended_next_action": "retry",
+  "support_claim_ref": "support://sandbox/capability/bash",
+  "signal_evidence_refs": [
+    "support://sandbox/capability/bash"
+  ],
+  "metadata": {
+    "job_id": "job_supervisor_1",
+    "blocked_action": "retry",
+    "legacy_decision": "blocked_retry_requested"
+  },
+  "validation": {
+    "accepted": true,
+    "reasons": ["review_verdict_valid"],
+    "validated_by": "engine"
+  }
+}

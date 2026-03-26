@@ -6,6 +6,17 @@
   "placement_preferences": ["remote_worker", "delegated_python"],
   "checkpoint_strategy": "periodic",
   "wake_conditions": ["timer", "signal:user_approval"],
+  "wake_subscriptions": [
+    {
+      "schema_version": "bb.wake_subscription.v1",
+      "subscription_id": "sub_task_bg_1_complete",
+      "on_codes": ["complete", "blocked"],
+      "action": "resume",
+      "from_task_ids": ["task_worker_1"],
+      "include_descendants": false,
+      "coalesce_window_ms": 0
+    }
+  ],
   "join_policy": "manual",
   "retry_policy": {"max_attempts": 3},
   "priority": 5,

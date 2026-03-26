@@ -46,3 +46,13 @@ Hosts are expected to use `SupportClaim` for:
 - execution-profile messaging
 - host-mode selection
 - confidence-sensitive UX
+
+## Coordination note
+
+Projection profiles may describe how coordination-derived wake or status information is surfaced, but they do not replace coordination truth.
+
+That means:
+
+- `SupportClaim` may say whether a host can display or consume projected wake information
+- `ProjectionProfile` may describe the outward shape of those projections
+- neither object decides whether a worker had authority to complete a mission

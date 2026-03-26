@@ -100,6 +100,82 @@ Current evidence is project-wide rather than centralized:
 
 The gap is not evidence scarcity. It is evidence standardization for the engine-contract program.
 
+## Coordination evidence expectation
+
+For the current coordination tranche, a conformance bundle should make the causal chain inspectable rather than merely summarizing the outcome.
+
+The sparse supervisor-worker evidence should include:
+
+- the accepted coordination signal
+- the derived wake payload
+- trigger lineage (`subscription_id`, `trigger_signal_id`, `trigger_code`, `source_task_id`)
+- the review verdict record
+- mission completion output when the supervisor validated `complete`
+
+That keeps projection, coordination truth, and mission authority separable in the evidence itself.
+
+The older sparse `supervisor_decision` fixture field remains acceptable only as compatibility-oriented explanatory evidence.
+
+It should be interpreted as:
+
+- a projection over the underlying `review_verdict` truth
+- useful for legacy reference readability
+- not a new durable coordination object
+
+For the reviewed-result tranche, evidence should now make four layers inspectable:
+
+- signal truth
+- review/verdict truth
+- any completion output or later directive truth
+- projections such as wakeup notices
+
+For the directive tranche, evidence should additionally preserve:
+
+- the directive object itself
+- the review-verdict-to-directive lineage
+- whether the directive produced a downstream wake or remained control-only
+
+For the reducer-style multi-worker tranche, evidence should also preserve:
+
+- shard signals as separate producer truth
+- reducer signal as the fan-in subject
+- aggregate contract metadata or validation outcome
+- supervisor review over reducer output
+- directive lineage when blocked shard handling requires action intent
+
+For the longrun/escalation tranche, evidence should additionally preserve:
+
+- runtime-emitted `no_progress`, `retryable_failure`, or `human_required` signal truth
+- the review verdict recorded over that runtime signal
+- any resulting directive truth
+- stop reason and longrun summary without collapsing those layers together
+
+When longrun summaries expose coordination state, they should prefer the shared read-only coordination inspection snapshot and keep raw event traces separate as evidence, not fold those traces into a custom summary-specific coordination shape.
+
+For the delegated-verification tranche, evidence should additionally preserve:
+
+- worker result signal as the verified subject
+- verifier signal carrying a verification-result contract
+- subject-signal lineage inside that verification bundle
+- supervisor review over verifier output
+- any directive issued back to the verifier when verification fails
+
+For the hardened intervention tranche, evidence should additionally preserve:
+
+- the effective reviewer role profile used for review truth
+- whether host intervention required a prior supervisor `escalate`
+- any `support_claim_ref` that narrowed the allowed host action set
+- the effective `allowed_host_actions` exposed in inspection
+
+## E4 closure note
+
+For current E4-facing public dossiers, coordination should remain narrow:
+
+- mission ownership stays explicit
+- reviewer roles stay named and small
+- host override stays directive-based
+- support-aware narrowing stays visible in policy/config rather than hidden in UI behavior
+
 ---
 
 ## Known ambiguities

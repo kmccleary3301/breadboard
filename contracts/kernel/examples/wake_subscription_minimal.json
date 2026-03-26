@@ -1,0 +1,9 @@
+{
+  "schema_version": "bb.wake_subscription.v1",
+  "subscription_id": "sub_supervisor_worker_1",
+  "on_codes": ["complete", "blocked", "human_required"],
+  "action": "resume",
+  "from_task_ids": ["task_worker_1"],
+  "include_descendants": false,
+  "coalesce_window_ms": 0
+}

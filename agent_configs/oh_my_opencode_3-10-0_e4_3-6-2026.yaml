@@ -384,6 +384,26 @@ multi_agent:
             # async/background primitives elsewhere in the tool surface.
         join_policy:
           default: block_until_complete
+      coordination:
+        # This stays additive and narrow: mission completion remains supervisor-owned, while
+        # legacy completion ingress and timer-like wake conditions remain visible as compatibility.
+        mission_owner_role: supervisor
+        legacy_completion_sources:
+        - text_sentinel
+        - tool_call
+        - provider_finish
+        preserve_legacy_wake_conditions: true
+        review:
+          allowed_reviewer_roles:
+          - supervisor
+          - system
+          no_progress_action: checkpoint
+          retryable_failure_action: retry
+        intervention:
+          require_supervisor_escalate: true
+          support_claim_limited_actions:
+          - checkpoint
+          - terminate
       bus:
         model_visible_topics:
         - tool_result

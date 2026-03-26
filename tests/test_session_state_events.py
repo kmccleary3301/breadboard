@@ -201,6 +201,9 @@ def test_session_state_event_family_registry_covers_public_runtime_event_types()
         "permission_request": ("canonical", "permission.requested"),
         "permission_response": ("canonical", "permission.decided"),
         "task_event": ("canonical", "task.progress"),
+        "coordination_signal": ("canonical", "coordination.signal"),
+        "coordination_review_verdict": ("canonical", "coordination.review_verdict"),
+        "coordination_directive": ("canonical", "coordination.directive"),
         "turn_start": ("canonical", "turn.started"),
         "todo_event": ("projection_only", "projection.todo_snapshot"),
         "ctree_snapshot": ("projection_only", "projection.ctree_snapshot"),
@@ -210,6 +213,91 @@ def test_session_state_event_family_registry_covers_public_runtime_event_types()
     for event_type, (classification, family) in expected.items():
         assert registry[event_type]["classification"] == classification
         assert registry[event_type]["family"] == family
+
+
+def test_session_state_coordination_inspection_snapshot_is_read_only() -> None:
+    state = SessionState("ws", "image", {})
+    signal = state.record_coordination_signal(
+        {
+            "signal_id": "sig-1",
+            "code": "human_required",
+            "task_id": "task_worker_1",
+            "payload": {
+                "required_input": "Confirm deploy target",
+                "blocking_reason": "Production deploy requires operator approval",
+            },
+        }
+    )
+    state.record_coordination_review_verdict(
+        {
+            "verdict_id": "rev-1",
+            "verdict_code": "human_required",
+            "subject": {
+                "signal_id": "sig-1",
+                "source_task_id": "task_worker_1",
+                "mission_task_id": "task_supervisor_1",
+            },
+            "blocking_reason": "Production deploy requires operator approval",
+        }
+    )
+    state.record_coordination_directive(
+        {
+            "directive_id": "dir-1",
+            "directive_code": "escalate",
+            "based_on_verdict_id": "rev-1",
+            "issuer_role": "supervisor",
+        }
+    )
+
+    snapshot = state.coordination_inspection_snapshot()
+    assert snapshot["latest_signal_by_code"]["human_required"]["signal_id"] == "sig-1"
+    assert snapshot["unresolved_interventions"][0]["review_verdict_id"] == "rev-1"
+    assert snapshot["unresolved_interventions"][0]["required_input"] == "Confirm deploy target"
+    assert snapshot["unresolved_interventions"][0]["allowed_host_actions"] == []
+    assert snapshot["resolved_interventions"] == []
+
+    signal["signal_id"] = "mutated"
+    assert snapshot["signals"][0]["signal_id"] == "sig-1"
+
+
+def test_session_state_coordination_inspection_marks_host_responses_as_resolved() -> None:
+    state = SessionState("ws", "image", {})
+    state.record_coordination_signal(
+        {
+            "signal_id": "sig-2",
+            "code": "human_required",
+            "task_id": "task_worker_1",
+            "payload": {
+                "required_input": "Approve rerun",
+                "blocking_reason": "Operator sign-off required",
+            },
+        }
+    )
+    state.record_coordination_review_verdict(
+        {
+            "verdict_id": "rev-2",
+            "verdict_code": "human_required",
+            "subject": {
+                "signal_id": "sig-2",
+                "source_task_id": "task_worker_1",
+                "mission_task_id": "task_supervisor_1",
+            },
+        }
+    )
+    state.record_coordination_directive(
+        {
+            "directive_id": "dir-2",
+            "directive_code": "continue",
+            "based_on_verdict_id": "rev-2",
+            "issuer_role": "host",
+        }
+    )
+
+    snapshot = state.coordination_inspection_snapshot()
+    assert snapshot["unresolved_interventions"] == []
+    assert snapshot["resolved_interventions"][0]["review_verdict_id"] == "rev-2"
+    assert snapshot["resolved_interventions"][0]["allowed_host_actions"] == []
+    assert snapshot["resolved_interventions"][0]["host_responses"][0]["directive_id"] == "dir-2"
 
 
 def test_cli_bridge_runtime_event_sets_match_kernel_vs_projection_boundary() -> None:

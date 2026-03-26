@@ -217,6 +217,185 @@ export interface SandboxResultV1 {
   error?: Record<string, unknown> | null
 }
 
+export type SignalCodeV1 =
+  | "partial_complete"
+  | "merge_ready"
+  | "complete"
+  | "blocked"
+  | "no_progress"
+  | "retryable_failure"
+  | "catastrophic_failure"
+  | "human_required"
+
+export type SignalAuthorityScopeV1 = "task" | "mission"
+
+export type SignalStatusV1 = "proposed" | "accepted" | "rejected"
+
+export type SignalSourceKindV1 =
+  | "assistant_content"
+  | "text_sentinel"
+  | "provider_finish"
+  | "tool_call"
+  | "runtime"
+  | "worker"
+  | "supervisor"
+  | "host"
+  | "system"
+
+export type SignalEmitterRoleV1 = "assistant" | "worker" | "supervisor" | "host" | "runtime" | "system"
+
+export interface SignalSourceV1 {
+  kind: SignalSourceKindV1
+  emitter_role: SignalEmitterRoleV1
+  detail?: string | null
+}
+
+export interface SignalValidationV1 {
+  accepted: boolean
+  reasons: string[]
+  validated_by: string
+  validated_at?: number | null
+}
+
+export interface SignalV1 {
+  schema_version: "bb.signal.v1"
+  signal_id: string
+  code: SignalCodeV1
+  task_id: string
+  parent_task_id?: string | null
+  mission_task_id?: string | null
+  authority_scope: SignalAuthorityScopeV1
+  status: SignalStatusV1
+  source: SignalSourceV1
+  evidence_refs: string[]
+  payload: Record<string, unknown>
+  validation?: SignalValidationV1 | null
+}
+
+export type WakeSubscriptionActionV1 = "resume"
+
+export interface WakeSubscriptionV1 {
+  schema_version: "bb.wake_subscription.v1"
+  subscription_id: string
+  on_codes: SignalCodeV1[]
+  action: WakeSubscriptionActionV1
+  from_task_ids?: string[]
+  include_descendants?: boolean
+  coalesce_window_ms?: number
+}
+
+export type ReviewVerdictCodeV1 =
+  | "validated"
+  | "pending_validation"
+  | "retry"
+  | "checkpoint"
+  | "escalate"
+  | "human_required"
+  | "noted"
+
+export type ReviewVerdictReviewerRoleV1 = "supervisor" | "host" | "system"
+
+export interface ReviewVerdictSubjectV1 {
+  kind: "signal"
+  signal_id: string
+  signal_event_id?: number | null
+  signal_code: SignalCodeV1
+  source_task_id: string
+  mission_task_id?: string | null
+  subscription_id?: string | null
+  trigger_signal_id?: string | null
+  trigger_event_id?: number | null
+  trigger_code?: SignalCodeV1 | null
+}
+
+export interface ReviewVerdictValidationV1 {
+  accepted: boolean
+  reasons: string[]
+  validated_by: string
+  validated_at?: number | null
+}
+
+export interface ReviewVerdictV1 {
+  schema_version: "bb.review_verdict.v1"
+  verdict_id: string
+  reviewer_task_id: string
+  reviewer_role: ReviewVerdictReviewerRoleV1
+  subject: ReviewVerdictSubjectV1
+  verdict_code: ReviewVerdictCodeV1
+  mission_completed: boolean
+  required_deliverable_refs: string[]
+  deliverable_refs: string[]
+  missing_deliverable_refs: string[]
+  blocking_reason?: string | null
+  recommended_next_action?: "retry" | "checkpoint" | "escalate" | "human_required" | null
+  support_claim_ref?: string | null
+  signal_evidence_refs: string[]
+  metadata: Record<string, unknown>
+  validation?: ReviewVerdictValidationV1 | null
+}
+
+export type DirectiveCodeV1 = "continue" | "retry" | "checkpoint" | "escalate" | "terminate"
+
+export type DirectiveIssuerRoleV1 = "supervisor" | "host" | "system"
+
+export interface DirectiveValidationV1 {
+  accepted: boolean
+  reasons: string[]
+  validated_by: string
+  validated_at?: number | null
+}
+
+export interface DirectiveV1 {
+  schema_version: "bb.directive.v1"
+  directive_id: string
+  directive_code: DirectiveCodeV1
+  issuer_task_id: string
+  issuer_role: DirectiveIssuerRoleV1
+  target_task_id: string
+  target_job_id?: string | null
+  based_on_verdict_id: string
+  based_on_signal_id: string
+  payload: Record<string, unknown>
+  evidence_refs: string[]
+  metadata: Record<string, unknown>
+  validation?: DirectiveValidationV1 | null
+}
+
+export interface CoordinationVerificationResultV1 {
+  schema_version: "bb.coordination_verification_result.v1"
+  subject_signal_id: string
+  subject_task_id: string
+  validator_task_id: string
+  status: "pass" | "fail" | "soft_fail"
+  verification_artifact_refs: string[]
+  summary?: string
+}
+
+export interface CoordinationInterventionSnapshotV1 {
+  intervention_id: string
+  status: "pending" | "resolved"
+  review_verdict_id: string
+  signal_id: string
+  source_task_id: string
+  mission_task_id?: string | null
+  required_input?: string | null
+  blocking_reason?: string | null
+  allowed_host_actions?: DirectiveCodeV1[]
+  review_verdict: ReviewVerdictV1
+  signal: SignalV1 | null
+  directives: DirectiveV1[]
+  host_responses: DirectiveV1[]
+}
+
+export interface CoordinationInspectionSnapshotV1 {
+  signals: SignalV1[]
+  review_verdicts: ReviewVerdictV1[]
+  directives: DirectiveV1[]
+  latest_signal_by_code: Partial<Record<SignalCodeV1, SignalV1>>
+  unresolved_interventions: CoordinationInterventionSnapshotV1[]
+  resolved_interventions: CoordinationInterventionSnapshotV1[]
+}
+
 export interface DistributedTaskDescriptorV1 {
   schema_version: "bb.distributed_task_descriptor.v1"
   task_id: string
@@ -225,6 +404,7 @@ export interface DistributedTaskDescriptorV1 {
   placement_preferences?: string[]
   checkpoint_strategy?: string | null
   wake_conditions?: string[]
+  wake_subscriptions?: WakeSubscriptionV1[]
   join_policy?: string | null
   retry_policy?: Record<string, unknown> | null
   priority?: number | null
@@ -465,6 +645,11 @@ const executionCapabilitySchema = loadTrackedSchema("bb.execution_capability.v1.
 const executionPlacementSchema = loadTrackedSchema("bb.execution_placement.v1.schema.json")
 const sandboxRequestSchema = loadTrackedSchema("bb.sandbox_request.v1.schema.json")
 const sandboxResultSchema = loadTrackedSchema("bb.sandbox_result.v1.schema.json")
+const signalSchema = loadTrackedSchema("bb.signal.v1.schema.json")
+const reviewVerdictSchema = loadTrackedSchema("bb.review_verdict.v1.schema.json")
+const directiveSchema = loadTrackedSchema("bb.directive.v1.schema.json")
+const coordinationVerificationResultSchema = loadTrackedSchema("bb.coordination_verification_result.v1.schema.json")
+const wakeSubscriptionSchema = loadTrackedSchema("bb.wake_subscription.v1.schema.json")
 const distributedTaskDescriptorSchema = loadTrackedSchema("bb.distributed_task_descriptor.v1.schema.json")
 const transcriptContinuationPatchSchema = loadTrackedSchema("bb.transcript_continuation_patch.v1.schema.json")
 const unsupportedCaseSchema = loadTrackedSchema("bb.unsupported_case.v1.schema.json")
@@ -544,6 +729,11 @@ const validators = {
   executionPlacement: ajv.compile(executionPlacementSchema),
   sandboxRequest: ajv.compile(sandboxRequestSchema),
   sandboxResult: ajv.compile(sandboxResultSchema),
+  signal: ajv.compile(signalSchema),
+  reviewVerdict: ajv.compile(reviewVerdictSchema),
+  directive: ajv.compile(directiveSchema),
+  coordinationVerificationResult: ajv.compile(coordinationVerificationResultSchema),
+  wakeSubscription: ajv.compile(wakeSubscriptionSchema),
   distributedTaskDescriptor: ajv.compile(distributedTaskDescriptorSchema),
   transcriptContinuationPatch: ajv.compile(transcriptContinuationPatchSchema),
   unsupportedCase: ajv.compile(unsupportedCaseSchema),
@@ -578,6 +768,11 @@ export const kernelSchemas = {
   executionPlacement: executionPlacementSchema,
   sandboxRequest: sandboxRequestSchema,
   sandboxResult: sandboxResultSchema,
+  signal: signalSchema,
+  reviewVerdict: reviewVerdictSchema,
+  directive: directiveSchema,
+  coordinationVerificationResult: coordinationVerificationResultSchema,
+  wakeSubscription: wakeSubscriptionSchema,
   distributedTaskDescriptor: distributedTaskDescriptorSchema,
   transcriptContinuationPatch: transcriptContinuationPatchSchema,
   unsupportedCase: unsupportedCaseSchema,

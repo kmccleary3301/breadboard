@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_reference_slice.v1.schema.json",
+  "title": "bb.coordination_reference_slice.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scenario_id",
+    "supervisor_task_id",
+    "worker_task_id",
+    "subscription_id",
+    "accepted_signal",
+    "wakeup_payload",
+    "supervisor_decision",
+    "events"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.coordination_reference_slice.v1"
+    },
+    "scenario_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "supervisor_task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "worker_task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "compatibility_notes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "subscription_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "accepted_signal": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schema_version", "signal_id", "code", "task_id", "status", "validation"],
+      "properties": {
+        "schema_version": {
+          "const": "bb.signal.v1"
+        },
+        "signal_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": ["accepted", "rejected", "proposed"]
+        },
+        "validation": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["accepted", "reasons"],
+          "properties": {
+            "accepted": {
+              "type": "boolean"
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "wakeup_payload": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "job_id",
+        "agent_id",
+        "reason",
+        "subscription_id",
+        "trigger_signal_id",
+        "trigger_code",
+        "source_task_id"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subscription_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger_signal_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_task_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "supervisor_decision": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "job_id",
+        "supervisor_task_id",
+        "subscription_id",
+        "trigger_signal_id",
+        "trigger_code",
+        "source_task_id",
+        "decision",
+        "mission_completed"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "supervisor_task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subscription_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger_signal_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mission_completed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "completion_payload": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["event_id", "type", "agent_id", "payload"],
+        "properties": {
+          "event_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agent_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  }
+}

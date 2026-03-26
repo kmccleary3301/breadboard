@@ -5,6 +5,53 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from .coordination import BLOCKED_RECOMMENDED_ACTIONS, DIRECTIVE_CODES, REVIEWER_ROLES
+
+
+_COORDINATION_ALLOWED_KEYS = frozenset(
+    {
+        "mission_owner_role",
+        "legacy_completion_sources",
+        "preserve_legacy_wake_conditions",
+        "done",
+        "review",
+        "merge",
+        "intervention",
+    }
+)
+_COORDINATION_DONE_ALLOWED_KEYS = frozenset(
+    {
+        "require_deliverable_refs",
+        "require_all_required_refs",
+        "require_no_open_required_children",
+    }
+)
+_COORDINATION_REVIEW_ALLOWED_KEYS = frozenset(
+    {
+        "explicit_verdicts",
+        "allowed_reviewer_roles",
+        "allowed_blocked_actions",
+        "no_progress_action",
+        "retryable_failure_action",
+        "verification_result_contract",
+    }
+)
+_COORDINATION_MERGE_ALLOWED_KEYS = frozenset({"reducer_result_contract"})
+_COORDINATION_INTERVENTION_ALLOWED_KEYS = frozenset(
+    {
+        "host_allowed_actions",
+        "require_evidence_refs",
+        "require_supervisor_escalate",
+        "support_claim_limited_actions",
+    }
+)
+
+
+def _reject_unknown_keys(raw: Dict[str, Any], *, section: str, allowed: frozenset[str]) -> None:
+    unknown = sorted(str(key) for key in raw.keys() if str(key) not in allowed)
+    if unknown:
+        raise ValueError(f"{section} contains unsupported keys: {', '.join(unknown)}")
+
 
 @dataclass(frozen=True)
 class AgentConfigRef:
@@ -64,6 +111,47 @@ class BusConfig:
 
 
 @dataclass(frozen=True)
+class CoordinationConfig:
+    @dataclass(frozen=True)
+    class DoneConfig:
+        require_deliverable_refs: bool = False
+        require_all_required_refs: bool = True
+        require_no_open_required_children: bool = False
+
+    @dataclass(frozen=True)
+    class ReviewConfig:
+        explicit_verdicts: bool = True
+        allowed_reviewer_roles: List[str] = field(default_factory=lambda: ["supervisor", "system"])
+        allowed_blocked_actions: List[str] = field(
+            default_factory=lambda: ["retry", "checkpoint", "escalate", "human_required"]
+        )
+        no_progress_action: str = "checkpoint"
+        retryable_failure_action: str = "retry"
+        verification_result_contract: Optional[str] = None
+
+    @dataclass(frozen=True)
+    class MergeConfig:
+        reducer_result_contract: Optional[str] = None
+
+    @dataclass(frozen=True)
+    class InterventionConfig:
+        host_allowed_actions: List[str] = field(default_factory=lambda: ["continue", "checkpoint", "terminate"])
+        require_evidence_refs: bool = False
+        require_supervisor_escalate: bool = True
+        support_claim_limited_actions: List[str] = field(default_factory=lambda: ["checkpoint", "terminate"])
+
+    mission_owner_role: str = "supervisor"
+    legacy_completion_sources: List[str] = field(
+        default_factory=lambda: ["text_sentinel", "tool_call", "provider_finish"]
+    )
+    preserve_legacy_wake_conditions: bool = True
+    done: DoneConfig = field(default_factory=DoneConfig)
+    review: ReviewConfig = field(default_factory=ReviewConfig)
+    merge: MergeConfig = field(default_factory=MergeConfig)
+    intervention: InterventionConfig = field(default_factory=InterventionConfig)
+
+
+@dataclass(frozen=True)
 class WorkspaceConfig:
     sharing: Dict[str, Any] = field(default_factory=dict)
     isolation: Dict[str, Any] = field(default_factory=dict)
@@ -84,6 +172,7 @@ class TeamConfig:
     topology: TopologyConfig = field(default_factory=TopologyConfig)
     orchestration: OrchestrationConfig = field(default_factory=OrchestrationConfig)
     bus: BusConfig = field(default_factory=BusConfig)
+    coordination: CoordinationConfig = field(default_factory=CoordinationConfig)
     workspace: WorkspaceConfig = field(default_factory=WorkspaceConfig)
     budgets: BudgetConfig = field(default_factory=BudgetConfig)
 
@@ -158,6 +247,161 @@ class TeamConfig:
             retention=dict(bus_raw.get("retention") or {}),
         )
 
+        coordination_raw = team.get("coordination") or {}
+        coordination_raw = coordination_raw if isinstance(coordination_raw, dict) else {}
+        _reject_unknown_keys(
+            coordination_raw,
+            section="coordination",
+            allowed=_COORDINATION_ALLOWED_KEYS,
+        )
+        done_raw = coordination_raw.get("done") or {}
+        done_raw = done_raw if isinstance(done_raw, dict) else {}
+        _reject_unknown_keys(
+            done_raw,
+            section="coordination.done",
+            allowed=_COORDINATION_DONE_ALLOWED_KEYS,
+        )
+        review_raw = coordination_raw.get("review") or {}
+        review_raw = review_raw if isinstance(review_raw, dict) else {}
+        _reject_unknown_keys(
+            review_raw,
+            section="coordination.review",
+            allowed=_COORDINATION_REVIEW_ALLOWED_KEYS,
+        )
+        merge_raw = coordination_raw.get("merge") or {}
+        merge_raw = merge_raw if isinstance(merge_raw, dict) else {}
+        _reject_unknown_keys(
+            merge_raw,
+            section="coordination.merge",
+            allowed=_COORDINATION_MERGE_ALLOWED_KEYS,
+        )
+        intervention_raw = coordination_raw.get("intervention") or {}
+        intervention_raw = intervention_raw if isinstance(intervention_raw, dict) else {}
+        _reject_unknown_keys(
+            intervention_raw,
+            section="coordination.intervention",
+            allowed=_COORDINATION_INTERVENTION_ALLOWED_KEYS,
+        )
+        coordination = CoordinationConfig(
+            mission_owner_role=str(coordination_raw.get("mission_owner_role") or "supervisor"),
+            legacy_completion_sources=[
+                str(item)
+                for item in (coordination_raw.get("legacy_completion_sources") or [])
+                if str(item).strip()
+            ]
+            or ["text_sentinel", "tool_call", "provider_finish"],
+            preserve_legacy_wake_conditions=bool(
+                coordination_raw.get("preserve_legacy_wake_conditions", True)
+            ),
+            done=CoordinationConfig.DoneConfig(
+                require_deliverable_refs=bool(done_raw.get("require_deliverable_refs", False)),
+                require_all_required_refs=bool(done_raw.get("require_all_required_refs", True)),
+                require_no_open_required_children=bool(
+                    done_raw.get("require_no_open_required_children", False)
+                ),
+            ),
+            review=CoordinationConfig.ReviewConfig(
+                explicit_verdicts=bool(review_raw.get("explicit_verdicts", True)),
+                allowed_reviewer_roles=[
+                    str(item)
+                    for item in (review_raw.get("allowed_reviewer_roles") or [])
+                    if str(item).strip()
+                ]
+                or ["supervisor", "system"],
+                allowed_blocked_actions=[
+                    str(item)
+                    for item in (review_raw.get("allowed_blocked_actions") or [])
+                    if str(item).strip()
+                ]
+                or ["retry", "checkpoint", "escalate", "human_required"],
+                no_progress_action=str(review_raw.get("no_progress_action") or "checkpoint"),
+                retryable_failure_action=str(review_raw.get("retryable_failure_action") or "retry"),
+                verification_result_contract=(
+                    str(review_raw.get("verification_result_contract")).strip()
+                    if review_raw.get("verification_result_contract") is not None
+                    and str(review_raw.get("verification_result_contract")).strip()
+                    else None
+                ),
+            ),
+            merge=CoordinationConfig.MergeConfig(
+                reducer_result_contract=(
+                    str(merge_raw.get("reducer_result_contract")).strip()
+                    if merge_raw.get("reducer_result_contract") is not None
+                    and str(merge_raw.get("reducer_result_contract")).strip()
+                    else None
+                )
+            ),
+            intervention=CoordinationConfig.InterventionConfig(
+                host_allowed_actions=[
+                    str(item)
+                    for item in (intervention_raw.get("host_allowed_actions") or [])
+                    if str(item).strip()
+                ]
+                or ["continue", "checkpoint", "terminate"],
+                require_evidence_refs=bool(intervention_raw.get("require_evidence_refs", False)),
+                require_supervisor_escalate=bool(intervention_raw.get("require_supervisor_escalate", True)),
+                support_claim_limited_actions=[
+                    str(item)
+                    for item in (intervention_raw.get("support_claim_limited_actions") or [])
+                    if str(item).strip()
+                ]
+                or ["checkpoint", "terminate"],
+            ),
+        )
+
+        mission_owner_role = str(coordination.mission_owner_role or "").strip() or "supervisor"
+        allowed_reviewer_roles = {
+            str(item).strip()
+            for item in (coordination.review.allowed_reviewer_roles or [])
+            if str(item).strip()
+        }
+        if mission_owner_role not in allowed_reviewer_roles:
+            raise ValueError(
+                "coordination.mission_owner_role must be included in coordination.review.allowed_reviewer_roles"
+            )
+        invalid_reviewer_roles = sorted(role for role in allowed_reviewer_roles if role not in REVIEWER_ROLES)
+        if invalid_reviewer_roles:
+            raise ValueError(
+                "coordination.review.allowed_reviewer_roles contains unsupported roles: "
+                + ", ".join(invalid_reviewer_roles)
+            )
+        allowed_blocked_actions = {
+            str(item).strip()
+            for item in (coordination.review.allowed_blocked_actions or [])
+            if str(item).strip()
+        }
+        invalid_blocked_actions = sorted(
+            action for action in allowed_blocked_actions if action not in BLOCKED_RECOMMENDED_ACTIONS
+        )
+        if invalid_blocked_actions:
+            raise ValueError(
+                "coordination.review.allowed_blocked_actions contains unsupported actions: "
+                + ", ".join(invalid_blocked_actions)
+            )
+        for field_name, field_value in (
+            ("coordination.review.no_progress_action", coordination.review.no_progress_action),
+            ("coordination.review.retryable_failure_action", coordination.review.retryable_failure_action),
+        ):
+            action = str(field_value or "").strip()
+            if action and action not in BLOCKED_RECOMMENDED_ACTIONS:
+                raise ValueError(f"{field_name} must stay within the narrow blocked-action vocabulary")
+        for field_name, actions in (
+            ("coordination.intervention.host_allowed_actions", coordination.intervention.host_allowed_actions),
+            (
+                "coordination.intervention.support_claim_limited_actions",
+                coordination.intervention.support_claim_limited_actions,
+            ),
+        ):
+            invalid_directives = sorted(
+                action
+                for action in {str(item).strip() for item in actions if str(item).strip()}
+                if action not in DIRECTIVE_CODES
+            )
+            if invalid_directives:
+                raise ValueError(
+                    f"{field_name} contains unsupported directive codes: {', '.join(invalid_directives)}"
+                )
+
         workspace_raw = team.get("workspace") or {}
         workspace = WorkspaceConfig(
             sharing=dict(workspace_raw.get("sharing") or {}),
@@ -178,6 +422,7 @@ class TeamConfig:
             topology=TopologyConfig(edges=edges),
             orchestration=orchestration,
             bus=bus,
+            coordination=coordination,
             workspace=workspace,
             budgets=budgets,
         )

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.wake_subscription.v1.schema.json",
+  "title": "bb.wake_subscription.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "subscription_id", "on_codes", "action"],
+  "properties": {
+    "schema_version": {"const": "bb.wake_subscription.v1"},
+    "subscription_id": {"type": "string", "minLength": 1},
+    "on_codes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "partial_complete",
+          "merge_ready",
+          "complete",
+          "blocked",
+          "no_progress",
+          "retryable_failure",
+          "catastrophic_failure",
+          "human_required"
+        ]
+      }
+    },
+    "action": {"const": "resume"},
+    "from_task_ids": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "include_descendants": {"type": "boolean"},
+    "coalesce_window_ms": {"type": "integer", "minimum": 0}
+  }
+}

@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_delegated_verification_reference_slice.v1.schema.json",
+  "title": "bb.coordination_delegated_verification_reference_slice.v1",
+  "$defs": {
+    "verification_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "subject_signal_id",
+        "subject_task_id",
+        "validator_task_id",
+        "status",
+        "verification_artifact_refs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "bb.coordination_verification_result.v1"
+        },
+        "subject_signal_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subject_task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "validator_task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "soft_fail"
+          ]
+        },
+        "verification_artifact_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "summary": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scenario_id",
+    "supervisor_task_id",
+    "worker_task_id",
+    "verifier_task_id",
+    "worker_signal",
+    "verifier_signal",
+    "review_verdict",
+    "events"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.coordination_delegated_verification_reference_slice.v1"
+    },
+    "scenario_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "supervisor_task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "worker_task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verifier_task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "worker_signal": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "schema_version",
+        "signal_id",
+        "code",
+        "task_id",
+        "status"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "bb.signal.v1"
+        },
+        "signal_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "const": "complete"
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "rejected",
+            "proposed"
+          ]
+        }
+      }
+    },
+    "verifier_signal": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "schema_version",
+        "signal_id",
+        "code",
+        "task_id",
+        "status",
+        "payload"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "bb.signal.v1"
+        },
+        "signal_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "enum": [
+            "complete",
+            "blocked"
+          ]
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "rejected",
+            "proposed"
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "verification_result_contract",
+            "verification_result"
+          ],
+          "properties": {
+            "verification_result_contract": {
+              "const": "bb.coordination_verification_result.v1"
+            },
+            "verification_result": {
+              "$ref": "#/$defs/verification_result"
+            }
+          }
+        }
+      }
+    },
+    "review_verdict": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "schema_version",
+        "verdict_id",
+        "verdict_code",
+        "subject"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "bb.review_verdict.v1"
+        },
+        "verdict_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verdict_code": {
+          "enum": [
+            "validated",
+            "pending_validation",
+            "retry",
+            "checkpoint",
+            "escalate",
+            "human_required",
+            "noted"
+          ]
+        },
+        "subject": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "directive": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    },
+    "events": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "event_id",
+          "type",
+          "payload"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  }
+}

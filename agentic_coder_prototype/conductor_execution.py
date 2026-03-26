@@ -16,6 +16,12 @@ from .provider_adapters import provider_adapter_manager
 from .provider_routing import provider_router
 from .provider_runtime import ProviderMessage, ProviderRuntimeError, ProviderResult, provider_registry
 from .replay import resolve_todo_placeholders
+from .orchestration.coordination import (
+    build_completion_signal_proposal,
+    build_tool_completion_signal_proposal,
+    is_accepted_signal,
+    validate_signal_proposal,
+)
 from .state.session_state import SessionState
 from .turn_context import TurnContext
 from .checkpointing.checkpoint_manager import CheckpointManager
@@ -24,6 +30,34 @@ from .hooks.model import HookResult
 
 class ReplayToolOutputMismatchError(RuntimeError):
     """Raised when replay-mode tool outputs diverge from the golden trace."""
+
+
+def _coordination_task_context(session_state: SessionState) -> tuple[str, Optional[str], Optional[str]]:
+    task_id = (
+        session_state.get_provider_metadata("coordination_task_id")
+        or session_state.get_provider_metadata("task_id")
+        or "main"
+    )
+    parent_task_id = (
+        session_state.get_provider_metadata("coordination_parent_task_id")
+        or session_state.get_provider_metadata("parent_task_id")
+    )
+    mission_task_id = (
+        session_state.get_provider_metadata("coordination_mission_task_id")
+        or session_state.get_provider_metadata("mission_task_id")
+    )
+    return str(task_id), str(parent_task_id) if parent_task_id else None, str(mission_task_id) if mission_task_id else None
+
+
+def _record_validated_signal(
+    session_state: SessionState,
+    signal: Dict[str, Any],
+    *,
+    turn: Optional[int],
+) -> Dict[str, Any]:
+    recorded = session_state.record_coordination_signal(signal, turn=turn)
+    session_state.add_transcript_entry({"coordination_signal": recorded})
+    return recorded
 
 
 def classify_tool_terminal_state(tool_result: Dict[str, Any]) -> str:
@@ -670,9 +704,38 @@ def process_model_output(
             session_state.set_provider_metadata("assistant_text_history", updated_history)
         session_state.set_provider_metadata("recent_tool_activity", None)
 
-        if completion_analysis["completed"] and completion_detector.meets_threshold(completion_analysis):
+        if completion_analysis["completed"]:
+            signal_task_id, signal_parent_task_id, signal_mission_task_id = _coordination_task_context(session_state)
+            rejection_reasons: list[str] = []
+            threshold_met = completion_detector.meets_threshold(completion_analysis)
+            if not threshold_met:
+                rejection_reasons.append(
+                    f"confidence_below_threshold:{completion_analysis.get('confidence', 0.0)}<{completion_detector.threshold}"
+                )
             guard_ok, guard_reason = conductor._completion_guard_check(session_state)
-            if not guard_ok and guard_reason:
+            if threshold_met and not guard_ok and guard_reason:
+                rejection_reasons.append(f"completion_guard_failed:{guard_reason}")
+            validated_signal = validate_signal_proposal(
+                build_completion_signal_proposal(
+                    completion_analysis,
+                    task_id=signal_task_id,
+                    parent_task_id=signal_parent_task_id,
+                    mission_task_id=signal_mission_task_id,
+                ),
+                mission_owner_role=str(
+                    session_state.get_provider_metadata("completion_owner_role") or "assistant"
+                ),
+                extra_rejection_reasons=rejection_reasons,
+            )
+            recorded_signal = _record_validated_signal(
+                session_state,
+                validated_signal,
+                turn=session_state.get_provider_metadata("current_turn_index")
+                if isinstance(session_state.get_provider_metadata("current_turn_index"), int)
+                else None,
+            )
+
+            if threshold_met and not guard_ok and guard_reason:
                 abort = conductor._emit_completion_guard_feedback(
                     session_state,
                     markdown_logger,
@@ -683,38 +746,69 @@ def process_model_output(
                     session_state.set_provider_metadata("completion_guard_abort", True)
                 return False
 
-            if stream_responses:
-                print(f"[stop] reason={completion_analysis['method']} confidence={completion_analysis['confidence']:.2f} - {completion_analysis['reason']}")
             session_state.add_transcript_entry({
                 "completion_detected": {
                     "method": completion_analysis["method"],
                     "confidence": completion_analysis["confidence"],
                     "reason": completion_analysis["reason"],
                     "content_analyzed": bool(msg.content),
-                    "threshold_met": completion_detector.meets_threshold(completion_analysis)
+                    "threshold_met": threshold_met,
+                    "signal_status": recorded_signal.get("status"),
                 }
             })
-            if not getattr(session_state, "completion_summary", None):
-                session_state.completion_summary = {
-                    "completed": True,
-                    "method": completion_analysis["method"],
-                    "reason": completion_analysis["reason"],
-                    "confidence": completion_analysis["confidence"],
-                    "source": "assistant_content",
-                    "analysis": completion_analysis,
-                }
-            else:
-                session_state.completion_summary.setdefault("completed", True)
-                session_state.completion_summary.setdefault("method", completion_analysis["method"])
-                session_state.completion_summary.setdefault("reason", completion_analysis["reason"])
-                session_state.completion_summary.setdefault("confidence", completion_analysis["confidence"])
-            return True
+            if is_accepted_signal(recorded_signal):
+                if stream_responses:
+                    print(f"[stop] reason={completion_analysis['method']} confidence={completion_analysis['confidence']:.2f} - {completion_analysis['reason']}")
+                if not getattr(session_state, "completion_summary", None):
+                    session_state.completion_summary = {
+                        "completed": True,
+                        "method": completion_analysis["method"],
+                        "reason": completion_analysis["reason"],
+                        "confidence": completion_analysis["confidence"],
+                        "source": "assistant_content",
+                        "analysis": completion_analysis,
+                        "signal": recorded_signal,
+                    }
+                else:
+                    session_state.completion_summary.setdefault("completed", True)
+                    session_state.completion_summary.setdefault("method", completion_analysis["method"])
+                    session_state.completion_summary.setdefault("reason", completion_analysis["reason"])
+                    session_state.completion_summary.setdefault("confidence", completion_analysis["confidence"])
+                    session_state.completion_summary.setdefault("signal", recorded_signal)
+                return True
         else:
             completion_cfg = (conductor.config.get("completion", {}) or {})
             if completion_cfg.get("allow_zero_tool_completion"):
                 summary = getattr(session_state, "tool_usage_summary", {})
                 total_calls = int(summary.get("total_calls") or 0)
                 if total_calls <= 0:
+                    signal_task_id, signal_parent_task_id, signal_mission_task_id = _coordination_task_context(session_state)
+                    synthetic_analysis = {
+                        "completed": True,
+                        "method": "auto_zero_tool",
+                        "reason": "Conversation-only turn; zero tool usage allowed",
+                        "confidence": 0.65,
+                        "signal_code": "complete",
+                        "signal_source_kind": "assistant_content",
+                        "source": "assistant_content",
+                    }
+                    recorded_signal = _record_validated_signal(
+                        session_state,
+                        validate_signal_proposal(
+                            build_completion_signal_proposal(
+                                synthetic_analysis,
+                                task_id=signal_task_id,
+                                parent_task_id=signal_parent_task_id,
+                                mission_task_id=signal_mission_task_id,
+                            ),
+                            mission_owner_role=str(
+                                session_state.get_provider_metadata("completion_owner_role") or "assistant"
+                            ),
+                        ),
+                        turn=session_state.get_provider_metadata("current_turn_index")
+                        if isinstance(session_state.get_provider_metadata("current_turn_index"), int)
+                        else None,
+                    )
                     session_state.completion_summary = {
                         "completed": True,
                         "method": "auto_zero_tool",
@@ -722,6 +816,7 @@ def process_model_output(
                         "confidence": 0.65,
                         "source": "assistant_content",
                         "analysis": completion_analysis,
+                        "signal": recorded_signal,
                     }
                     return True
 
@@ -1052,21 +1147,48 @@ def handle_text_tool_calls(
                 session_state.add_transcript_entry({"completion_analysis": completion_analysis})
             except Exception:
                 pass
-            if completion_analysis.get("completed") and completion_detector.meets_threshold(completion_analysis):
-                if not getattr(session_state, "completion_summary", None):
-                    session_state.completion_summary = {
-                        "completed": True,
-                        "method": completion_analysis.get("method"),
-                        "reason": completion_analysis.get("reason"),
-                        "confidence": completion_analysis.get("confidence"),
-                        "source": "assistant_content",
-                        "analysis": completion_analysis,
-                    }
-                else:
-                    session_state.completion_summary.setdefault("completed", True)
-                    session_state.completion_summary.setdefault("reason", completion_analysis.get("reason"))
-                    session_state.completion_summary.setdefault("method", completion_analysis.get("method"))
-                return True
+            if completion_analysis.get("completed"):
+                signal_task_id, signal_parent_task_id, signal_mission_task_id = _coordination_task_context(session_state)
+                rejection_reasons: list[str] = []
+                if not completion_detector.meets_threshold(completion_analysis):
+                    rejection_reasons.append(
+                        f"confidence_below_threshold:{completion_analysis.get('confidence', 0.0)}<{completion_detector.threshold}"
+                    )
+                recorded_signal = _record_validated_signal(
+                    session_state,
+                    validate_signal_proposal(
+                        build_completion_signal_proposal(
+                            completion_analysis,
+                            task_id=signal_task_id,
+                            parent_task_id=signal_parent_task_id,
+                            mission_task_id=signal_mission_task_id,
+                        ),
+                        mission_owner_role=str(
+                            session_state.get_provider_metadata("completion_owner_role") or "assistant"
+                        ),
+                        extra_rejection_reasons=rejection_reasons,
+                    ),
+                    turn=session_state.get_provider_metadata("current_turn_index")
+                    if isinstance(session_state.get_provider_metadata("current_turn_index"), int)
+                    else None,
+                )
+                if is_accepted_signal(recorded_signal):
+                    if not getattr(session_state, "completion_summary", None):
+                        session_state.completion_summary = {
+                            "completed": True,
+                            "method": completion_analysis.get("method"),
+                            "reason": completion_analysis.get("reason"),
+                            "confidence": completion_analysis.get("confidence"),
+                            "source": "assistant_content",
+                            "analysis": completion_analysis,
+                            "signal": recorded_signal,
+                        }
+                    else:
+                        session_state.completion_summary.setdefault("completed", True)
+                        session_state.completion_summary.setdefault("reason", completion_analysis.get("reason"))
+                        session_state.completion_summary.setdefault("method", completion_analysis.get("method"))
+                        session_state.completion_summary.setdefault("signal", recorded_signal)
+                    return True
         if current_mode == "plan":
             manager = session_state.get_todo_manager()
             snapshot = manager.snapshot() if manager else None
@@ -1201,7 +1323,30 @@ def handle_text_tool_calls(
         tool_name = getattr(tool_parsed, "function", "") if tool_parsed else ""
         action = tool_result.get("action") if isinstance(tool_result, dict) else None
         if action == "complete" or tool_name == "mark_task_complete":
+            signal_task_id, signal_parent_task_id, signal_mission_task_id = _coordination_task_context(session_state)
+            rejection_reasons: list[str] = []
             guard_ok, guard_reason = conductor._completion_guard_check(session_state)
+            if not guard_ok and guard_reason:
+                rejection_reasons.append(f"completion_guard_failed:{guard_reason}")
+            validated_signal = validate_signal_proposal(
+                build_tool_completion_signal_proposal(
+                    task_id=signal_task_id,
+                    tool_name=tool_name,
+                    tool_result=tool_result,
+                    parent_task_id=signal_parent_task_id,
+                    mission_task_id=signal_mission_task_id,
+                ),
+                mission_owner_role=str(
+                    session_state.get_provider_metadata("completion_owner_role") or "assistant"
+                ),
+                extra_rejection_reasons=rejection_reasons,
+            )
+            recorded_signal = _record_validated_signal(
+                session_state,
+                validated_signal,
+                turn=turn_index_int,
+            )
+
             if not guard_ok and guard_reason:
                 abort = conductor._emit_completion_guard_feedback(
                     session_state,
@@ -1211,6 +1356,9 @@ def handle_text_tool_calls(
                 )
                 if abort:
                     session_state.set_provider_metadata("completion_guard_abort", True)
+                continue
+
+            if not is_accepted_signal(recorded_signal):
                 continue
 
             chunks = conductor.message_formatter.format_execution_results(executed_results, failed_at_index, len(parsed))
@@ -1227,11 +1375,13 @@ def handle_text_tool_calls(
                     "tool": tool_parsed.function,
                     "tool_result": tool_result,
                     "source": "tool_call",
+                    "signal": recorded_signal,
                 }
             else:
                 session_state.completion_summary.setdefault("completed", True)
                 session_state.completion_summary.setdefault("reason", "mark_task_complete")
                 session_state.completion_summary.setdefault("method", "tool_mark_task_complete")
+                session_state.completion_summary.setdefault("signal", recorded_signal)
 
             if stream_responses:
                 print(f"[stop] reason=tool_based confidence=1.0 - mark_task_complete() called")

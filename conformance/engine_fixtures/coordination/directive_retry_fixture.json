@@ -1,0 +1,38 @@
+{
+  "fixture_family": "coordination",
+  "fixture_id": "coord_directive_retry_python_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "reference-engine",
+  "contract": "bb.directive.v1",
+  "reference_output": {
+    "schema_version": "bb.directive.v1",
+    "directive_id": "directive_task_supervisor_1_review_task_supervisor_1_signal_blocked_directive",
+    "directive_code": "retry",
+    "issuer_task_id": "task_supervisor_1",
+    "issuer_role": "supervisor",
+    "target_task_id": "task_worker_1",
+    "target_job_id": "job_worker_1",
+    "based_on_verdict_id": "review_task_supervisor_1_signal_blocked_directive",
+    "based_on_signal_id": "signal_blocked_directive",
+    "payload": {
+      "wake_target": true,
+      "recommended_next_action": "retry",
+      "blocking_reason": "provider quota exhausted"
+    },
+    "evidence_refs": [
+      "evidence://quota/worker-1"
+    ],
+    "metadata": {
+      "review_event_id": 5,
+      "trigger_signal_id": "signal_blocked_directive"
+    },
+    "validation": {
+      "accepted": true,
+      "reasons": [
+        "directive_valid"
+      ],
+      "validated_by": "engine",
+      "validated_at": 0.0
+    }
+  }
+}

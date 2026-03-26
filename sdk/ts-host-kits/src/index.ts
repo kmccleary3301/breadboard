@@ -8,9 +8,13 @@ import type {
   TerminalCleanupInput,
 } from "@breadboard/backbone"
 import type {
+  CoordinationInspectionSnapshotV1,
+  DirectiveCodeV1,
   EffectiveToolSurfaceV1,
+  ReviewVerdictCodeV1,
   SessionTranscriptV1,
   SessionTranscriptV1Item,
+  SignalCodeV1,
   TerminalCleanupResultV1,
   UnsupportedCaseV1,
   TerminalOutputDeltaV1,
@@ -112,6 +116,27 @@ export interface HostProjectionCallbackSink {
 export interface HostProjectionEnvelope<Result> {
   readonly transcript: HostTranscriptProjection
   readonly result: Result
+}
+
+export interface HostCoordinationProjectionIntervention {
+  readonly interventionId: string
+  readonly status: "pending" | "resolved"
+  readonly sourceTaskId: string
+  readonly missionTaskId?: string | null
+  readonly requiredInput?: string | null
+  readonly blockingReason?: string | null
+  readonly allowedHostActions: readonly DirectiveCodeV1[]
+  readonly latestHostDirectiveCode?: DirectiveCodeV1 | null
+  readonly signalCode?: SignalCodeV1 | null
+  readonly reviewVerdictCode: ReviewVerdictCodeV1
+}
+
+export interface HostCoordinationProjection {
+  readonly pendingInterventionCount: number
+  readonly resolvedInterventionCount: number
+  readonly latestSignalCodes: readonly SignalCodeV1[]
+  readonly pendingInterventions: readonly HostCoordinationProjectionIntervention[]
+  readonly resolvedInterventions: readonly HostCoordinationProjectionIntervention[]
 }
 
 export interface HostAgentMeta {
@@ -481,6 +506,41 @@ export function buildHostProjectionEnvelope<Result>(options: {
   return {
     transcript: buildHostTranscriptProjection(options.transcriptSource),
     result: options.result,
+  }
+}
+
+function buildHostCoordinationProjectionIntervention(
+  item: CoordinationInspectionSnapshotV1["unresolved_interventions"][number],
+): HostCoordinationProjectionIntervention {
+  const latestHostResponse = item.host_responses[item.host_responses.length - 1]
+  return {
+    interventionId: item.intervention_id,
+    status: item.status,
+    sourceTaskId: item.source_task_id,
+    missionTaskId: item.mission_task_id ?? null,
+    requiredInput: item.required_input ?? null,
+    blockingReason: item.blocking_reason ?? null,
+    allowedHostActions: [...(item.allowed_host_actions ?? [])],
+    latestHostDirectiveCode: latestHostResponse?.directive_code ?? null,
+    signalCode: item.signal?.code ?? item.review_verdict.subject.signal_code ?? null,
+    reviewVerdictCode: item.review_verdict.verdict_code,
+  }
+}
+
+/**
+ * Reduce the stable read-only coordination inspection snapshot into a small host-facing view.
+ * This stays projection-only and must not be treated as coordination truth.
+ */
+export function buildHostCoordinationProjection(
+  source: CoordinationInspectionSnapshotV1 | { readonly coordinationInspection: CoordinationInspectionSnapshotV1 },
+): HostCoordinationProjection {
+  const snapshot = "coordinationInspection" in source ? source.coordinationInspection : source
+  return {
+    pendingInterventionCount: snapshot.unresolved_interventions.length,
+    resolvedInterventionCount: snapshot.resolved_interventions.length,
+    latestSignalCodes: Object.keys(snapshot.latest_signal_by_code) as SignalCodeV1[],
+    pendingInterventions: snapshot.unresolved_interventions.map((item) => buildHostCoordinationProjectionIntervention(item)),
+    resolvedInterventions: snapshot.resolved_interventions.map((item) => buildHostCoordinationProjectionIntervention(item)),
   }
 }
 

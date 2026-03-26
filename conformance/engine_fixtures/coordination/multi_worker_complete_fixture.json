@@ -1,0 +1,604 @@
+{
+  "fixture_family": "coordination",
+  "fixture_id": "coord_multi_worker_complete_python_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "reference-engine",
+  "contract": "bb.coordination_multi_worker_reference_slice.v1",
+  "reference_output": {
+    "schema_version": "bb.coordination_multi_worker_reference_slice.v1",
+    "scenario_id": "coordination_multi_worker_complete_python_reference",
+    "supervisor_task_id": "task_supervisor_1",
+    "reducer_task_id": "task_reducer_1",
+    "shard_task_ids": [
+      "task_shard_1",
+      "task_shard_2"
+    ],
+    "shard_signals": [
+      {
+        "schema_version": "bb.signal.v1",
+        "signal_id": "signal_task_shard_1_complete",
+        "code": "complete",
+        "task_id": "task_shard_1",
+        "parent_task_id": "task_reducer_1",
+        "mission_task_id": "task_supervisor_1",
+        "authority_scope": "task",
+        "status": "accepted",
+        "source": {
+          "kind": "worker",
+          "emitter_role": "worker",
+          "detail": null
+        },
+        "evidence_refs": [
+          "artifact://shards/1/report.md"
+        ],
+        "payload": {
+          "deliverable_refs": [
+            "artifact://shards/1/report.md"
+          ]
+        },
+        "validation": {
+          "accepted": true,
+          "reasons": [
+            "signal_valid"
+          ],
+          "validated_by": "engine",
+          "validated_at": 0.0
+        }
+      },
+      {
+        "schema_version": "bb.signal.v1",
+        "signal_id": "signal_task_shard_2_complete",
+        "code": "complete",
+        "task_id": "task_shard_2",
+        "parent_task_id": "task_reducer_1",
+        "mission_task_id": "task_supervisor_1",
+        "authority_scope": "task",
+        "status": "accepted",
+        "source": {
+          "kind": "worker",
+          "emitter_role": "worker",
+          "detail": null
+        },
+        "evidence_refs": [
+          "artifact://shards/2/report.md"
+        ],
+        "payload": {
+          "deliverable_refs": [
+            "artifact://shards/2/report.md"
+          ]
+        },
+        "validation": {
+          "accepted": true,
+          "reasons": [
+            "signal_valid"
+          ],
+          "validated_by": "engine",
+          "validated_at": 0.0
+        }
+      }
+    ],
+    "reducer_signal": {
+      "schema_version": "bb.signal.v1",
+      "signal_id": "signal_reducer_complete_multi",
+      "code": "complete",
+      "task_id": "task_reducer_1",
+      "parent_task_id": "task_supervisor_1",
+      "mission_task_id": "task_supervisor_1",
+      "authority_scope": "task",
+      "status": "accepted",
+      "source": {
+        "kind": "worker",
+        "emitter_role": "worker",
+        "detail": null
+      },
+      "evidence_refs": [
+        "artifact://aggregate/shard-aggregate.md"
+      ],
+      "payload": {
+        "deliverable_refs": [
+          "artifact://aggregate/shard-aggregate.md"
+        ],
+        "aggregate_result_contract": "shard_aggregate_v1",
+        "aggregate_result": {
+          "required_worker_task_ids": [
+            "task_shard_1",
+            "task_shard_2"
+          ],
+          "completed_worker_task_ids": [
+            "task_shard_1",
+            "task_shard_2"
+          ],
+          "aggregate_artifact_refs": [
+            "artifact://aggregate/shard-aggregate.md"
+          ],
+          "summary": "2 shard results merged"
+        }
+      },
+      "validation": {
+        "accepted": true,
+        "reasons": [
+          "signal_valid"
+        ],
+        "validated_by": "engine",
+        "validated_at": 0.0
+      }
+    },
+    "review_verdict": {
+      "schema_version": "bb.review_verdict.v1",
+      "verdict_id": "review_task_supervisor_1_signal_reducer_complete_multi",
+      "reviewer_task_id": "task_supervisor_1",
+      "reviewer_role": "supervisor",
+      "subject": {
+        "kind": "signal",
+        "signal_id": "signal_reducer_complete_multi",
+        "signal_event_id": 9,
+        "signal_code": "complete",
+        "source_task_id": "task_reducer_1",
+        "mission_task_id": "task_supervisor_1",
+        "subscription_id": "sub_reducer_state",
+        "trigger_signal_id": "signal_reducer_complete_multi",
+        "trigger_event_id": 9,
+        "trigger_code": "complete"
+      },
+      "verdict_code": "validated",
+      "mission_completed": true,
+      "required_deliverable_refs": [
+        "artifact://aggregate/shard-aggregate.md"
+      ],
+      "deliverable_refs": [
+        "artifact://aggregate/shard-aggregate.md"
+      ],
+      "missing_deliverable_refs": [],
+      "blocking_reason": null,
+      "recommended_next_action": null,
+      "support_claim_ref": null,
+      "signal_evidence_refs": [
+        "artifact://aggregate/shard-aggregate.md"
+      ],
+      "metadata": {
+        "job_id": "job_supervisor_1",
+        "blocked_action": null,
+        "aggregate_contract_required": "shard_aggregate_v1",
+        "aggregate_contract_received": "shard_aggregate_v1",
+        "aggregate_missing_worker_task_ids": [],
+        "aggregate_artifact_refs": [
+          "artifact://aggregate/shard-aggregate.md"
+        ],
+        "verification_contract_required": null,
+        "verification_contract_received": null,
+        "verification_status": null,
+        "verification_subject_signal_id": null,
+        "verification_subject_signal_found": false,
+        "verification_subject_signal_code": null,
+        "verification_subject_task_id": null,
+        "verification_artifact_refs": [],
+        "allowed_host_actions": [
+          "continue",
+          "checkpoint",
+          "terminate"
+        ],
+        "require_supervisor_escalate": true,
+        "review_role_profile": [
+          "supervisor",
+          "system"
+        ],
+        "legacy_decision": "mission_complete_validated"
+      },
+      "validation": {
+        "accepted": true,
+        "reasons": [
+          "review_verdict_valid"
+        ],
+        "validated_by": "engine",
+        "validated_at": 0.0
+      }
+    },
+    "directive": null,
+    "events": [
+      {
+        "event_id": 1,
+        "type": "agent.spawned",
+        "agent_id": "supervisor",
+        "parent_agent_id": "root",
+        "causal_parent_event_id": null,
+        "payload": {
+          "role": "supervisor",
+          "job_id": "job_supervisor_1",
+          "agent_id": "supervisor",
+          "owner_agent": "root",
+          "kind": "agent",
+          "seq": 1,
+          "task_descriptor": {
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_supervisor_1",
+            "task_kind": "background",
+            "wake_subscriptions": [
+              {
+                "schema_version": "bb.wake_subscription.v1",
+                "subscription_id": "sub_reducer_state",
+                "on_codes": [
+                  "complete",
+                  "blocked"
+                ],
+                "action": "resume",
+                "from_task_ids": [
+                  "task_reducer_1"
+                ],
+                "include_descendants": false,
+                "coalesce_window_ms": 0
+              }
+            ]
+          }
+        }
+      },
+      {
+        "event_id": 2,
+        "type": "agent.spawned",
+        "agent_id": "reducer",
+        "parent_agent_id": "supervisor",
+        "causal_parent_event_id": null,
+        "payload": {
+          "role": "reducer",
+          "job_id": "job_reducer_1",
+          "agent_id": "reducer",
+          "owner_agent": "supervisor",
+          "kind": "agent",
+          "seq": 2,
+          "task_descriptor": {
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_reducer_1",
+            "parent_task_id": "task_supervisor_1",
+            "task_kind": "background",
+            "wake_subscriptions": [
+              {
+                "schema_version": "bb.wake_subscription.v1",
+                "subscription_id": "sub_shard_updates",
+                "on_codes": [
+                  "complete",
+                  "blocked"
+                ],
+                "action": "resume",
+                "from_task_ids": [
+                  "task_shard_1",
+                  "task_shard_2"
+                ],
+                "include_descendants": false,
+                "coalesce_window_ms": 0
+              }
+            ]
+          }
+        }
+      },
+      {
+        "event_id": 3,
+        "type": "agent.spawned",
+        "agent_id": "shard-1",
+        "parent_agent_id": "reducer",
+        "causal_parent_event_id": null,
+        "payload": {
+          "role": "worker",
+          "job_id": "job_shard_1",
+          "agent_id": "shard-1",
+          "owner_agent": "reducer",
+          "kind": "agent",
+          "seq": 3,
+          "task_descriptor": {
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_shard_1",
+            "task_kind": "background",
+            "wake_conditions": [],
+            "parent_task_id": "task_reducer_1"
+          }
+        }
+      },
+      {
+        "event_id": 4,
+        "type": "agent.spawned",
+        "agent_id": "shard-2",
+        "parent_agent_id": "reducer",
+        "causal_parent_event_id": null,
+        "payload": {
+          "role": "worker",
+          "job_id": "job_shard_2",
+          "agent_id": "shard-2",
+          "owner_agent": "reducer",
+          "kind": "agent",
+          "seq": 4,
+          "task_descriptor": {
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_shard_2",
+            "task_kind": "background",
+            "wake_conditions": [],
+            "parent_task_id": "task_reducer_1"
+          }
+        }
+      },
+      {
+        "event_id": 5,
+        "type": "coordination.signal",
+        "agent_id": "shard-1",
+        "parent_agent_id": "reducer",
+        "causal_parent_event_id": null,
+        "payload": {
+          "schema_version": "bb.signal.v1",
+          "signal_id": "signal_task_shard_1_complete",
+          "code": "complete",
+          "task_id": "task_shard_1",
+          "parent_task_id": "task_reducer_1",
+          "mission_task_id": "task_supervisor_1",
+          "authority_scope": "task",
+          "status": "accepted",
+          "source": {
+            "kind": "worker",
+            "emitter_role": "worker",
+            "detail": null
+          },
+          "evidence_refs": [
+            "artifact://shards/1/report.md"
+          ],
+          "payload": {
+            "deliverable_refs": [
+              "artifact://shards/1/report.md"
+            ]
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "signal_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        }
+      },
+      {
+        "event_id": 6,
+        "type": "agent.wakeup_emitted",
+        "agent_id": "reducer",
+        "parent_agent_id": "supervisor",
+        "causal_parent_event_id": 5,
+        "payload": {
+          "job_id": "job_reducer_1",
+          "agent_id": "reducer",
+          "owner_agent": "supervisor",
+          "seq": 2,
+          "reason": "signal:complete",
+          "message": "Task task_shard_1 signaled complete.",
+          "subscription_id": "sub_shard_updates",
+          "trigger_signal_id": "signal_task_shard_1_complete",
+          "trigger_code": "complete",
+          "resume_reason": "signal:complete",
+          "cursor_event_id": 5,
+          "source_task_id": "task_shard_1"
+        }
+      },
+      {
+        "event_id": 7,
+        "type": "coordination.signal",
+        "agent_id": "shard-2",
+        "parent_agent_id": "reducer",
+        "causal_parent_event_id": null,
+        "payload": {
+          "schema_version": "bb.signal.v1",
+          "signal_id": "signal_task_shard_2_complete",
+          "code": "complete",
+          "task_id": "task_shard_2",
+          "parent_task_id": "task_reducer_1",
+          "mission_task_id": "task_supervisor_1",
+          "authority_scope": "task",
+          "status": "accepted",
+          "source": {
+            "kind": "worker",
+            "emitter_role": "worker",
+            "detail": null
+          },
+          "evidence_refs": [
+            "artifact://shards/2/report.md"
+          ],
+          "payload": {
+            "deliverable_refs": [
+              "artifact://shards/2/report.md"
+            ]
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "signal_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        }
+      },
+      {
+        "event_id": 8,
+        "type": "agent.wakeup_emitted",
+        "agent_id": "reducer",
+        "parent_agent_id": "supervisor",
+        "causal_parent_event_id": 7,
+        "payload": {
+          "job_id": "job_reducer_1",
+          "agent_id": "reducer",
+          "owner_agent": "supervisor",
+          "seq": 2,
+          "reason": "signal:complete",
+          "message": "Task task_shard_2 signaled complete.",
+          "subscription_id": "sub_shard_updates",
+          "trigger_signal_id": "signal_task_shard_2_complete",
+          "trigger_code": "complete",
+          "resume_reason": "signal:complete",
+          "cursor_event_id": 7,
+          "source_task_id": "task_shard_2"
+        }
+      },
+      {
+        "event_id": 9,
+        "type": "coordination.signal",
+        "agent_id": "reducer",
+        "parent_agent_id": "supervisor",
+        "causal_parent_event_id": null,
+        "payload": {
+          "schema_version": "bb.signal.v1",
+          "signal_id": "signal_reducer_complete_multi",
+          "code": "complete",
+          "task_id": "task_reducer_1",
+          "parent_task_id": "task_supervisor_1",
+          "mission_task_id": "task_supervisor_1",
+          "authority_scope": "task",
+          "status": "accepted",
+          "source": {
+            "kind": "worker",
+            "emitter_role": "worker",
+            "detail": null
+          },
+          "evidence_refs": [
+            "artifact://aggregate/shard-aggregate.md"
+          ],
+          "payload": {
+            "deliverable_refs": [
+              "artifact://aggregate/shard-aggregate.md"
+            ],
+            "aggregate_result_contract": "shard_aggregate_v1",
+            "aggregate_result": {
+              "required_worker_task_ids": [
+                "task_shard_1",
+                "task_shard_2"
+              ],
+              "completed_worker_task_ids": [
+                "task_shard_1",
+                "task_shard_2"
+              ],
+              "aggregate_artifact_refs": [
+                "artifact://aggregate/shard-aggregate.md"
+              ],
+              "summary": "2 shard results merged"
+            }
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "signal_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        }
+      },
+      {
+        "event_id": 10,
+        "type": "agent.wakeup_emitted",
+        "agent_id": "supervisor",
+        "parent_agent_id": "root",
+        "causal_parent_event_id": 9,
+        "payload": {
+          "job_id": "job_supervisor_1",
+          "agent_id": "supervisor",
+          "owner_agent": "root",
+          "seq": 1,
+          "reason": "signal:complete",
+          "message": "Task task_reducer_1 signaled complete.",
+          "subscription_id": "sub_reducer_state",
+          "trigger_signal_id": "signal_reducer_complete_multi",
+          "trigger_code": "complete",
+          "resume_reason": "signal:complete",
+          "cursor_event_id": 9,
+          "source_task_id": "task_reducer_1"
+        }
+      },
+      {
+        "event_id": 11,
+        "type": "coordination.review_verdict",
+        "agent_id": "supervisor",
+        "parent_agent_id": "root",
+        "causal_parent_event_id": 9,
+        "payload": {
+          "schema_version": "bb.review_verdict.v1",
+          "verdict_id": "review_task_supervisor_1_signal_reducer_complete_multi",
+          "reviewer_task_id": "task_supervisor_1",
+          "reviewer_role": "supervisor",
+          "subject": {
+            "kind": "signal",
+            "signal_id": "signal_reducer_complete_multi",
+            "signal_event_id": 9,
+            "signal_code": "complete",
+            "source_task_id": "task_reducer_1",
+            "mission_task_id": "task_supervisor_1",
+            "subscription_id": "sub_reducer_state",
+            "trigger_signal_id": "signal_reducer_complete_multi",
+            "trigger_event_id": 9,
+            "trigger_code": "complete"
+          },
+          "verdict_code": "validated",
+          "mission_completed": true,
+          "required_deliverable_refs": [
+            "artifact://aggregate/shard-aggregate.md"
+          ],
+          "deliverable_refs": [
+            "artifact://aggregate/shard-aggregate.md"
+          ],
+          "missing_deliverable_refs": [],
+          "blocking_reason": null,
+          "recommended_next_action": null,
+          "support_claim_ref": null,
+          "signal_evidence_refs": [
+            "artifact://aggregate/shard-aggregate.md"
+          ],
+          "metadata": {
+            "job_id": "job_supervisor_1",
+            "blocked_action": null,
+            "aggregate_contract_required": "shard_aggregate_v1",
+            "aggregate_contract_received": "shard_aggregate_v1",
+            "aggregate_missing_worker_task_ids": [],
+            "aggregate_artifact_refs": [
+              "artifact://aggregate/shard-aggregate.md"
+            ],
+            "verification_contract_required": null,
+            "verification_contract_received": null,
+            "verification_status": null,
+            "verification_subject_signal_id": null,
+            "verification_subject_signal_found": false,
+            "verification_subject_signal_code": null,
+            "verification_subject_task_id": null,
+            "verification_artifact_refs": [],
+            "allowed_host_actions": [
+              "continue",
+              "checkpoint",
+              "terminate"
+            ],
+            "require_supervisor_escalate": true,
+            "review_role_profile": [
+              "supervisor",
+              "system"
+            ],
+            "legacy_decision": "mission_complete_validated"
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "review_verdict_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        }
+      },
+      {
+        "event_id": 12,
+        "type": "agent.job_completed",
+        "agent_id": "supervisor",
+        "parent_agent_id": "root",
+        "causal_parent_event_id": null,
+        "payload": {
+          "verdict_code": "validated",
+          "mission_completed": true,
+          "trigger_signal_id": "signal_reducer_complete_multi",
+          "trigger_event_id": 9,
+          "job_id": "job_supervisor_1",
+          "agent_id": "supervisor",
+          "state": "completed",
+          "seq": 1
+        }
+      }
+    ]
+  }
+}

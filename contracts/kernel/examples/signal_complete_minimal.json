@@ -1,0 +1,26 @@
+{
+  "schema_version": "bb.signal.v1",
+  "signal_id": "signal_complete_1",
+  "code": "complete",
+  "task_id": "task_worker_1",
+  "parent_task_id": "task_supervisor_1",
+  "mission_task_id": "task_supervisor_1",
+  "authority_scope": "task",
+  "status": "accepted",
+  "source": {
+    "kind": "text_sentinel",
+    "emitter_role": "assistant",
+    "detail": "TASK COMPLETE"
+  },
+  "evidence_refs": [],
+  "payload": {
+    "completion_method": "assistant_content",
+    "completion_reason": "explicit_completion_marker",
+    "confidence": 0.9
+  },
+  "validation": {
+    "accepted": true,
+    "reasons": ["signal_valid"],
+    "validated_by": "engine"
+  }
+}

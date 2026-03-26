@@ -1,8 +1,9 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import type { DistributedTaskDescriptorV1, TranscriptContinuationPatchV1 } from "@breadboard/kernel-contracts"
+import type { DirectiveV1, DistributedTaskDescriptorV1, TranscriptContinuationPatchV1 } from "@breadboard/kernel-contracts"
 import {
+  buildTemporalDirectiveUpdateDescriptor,
   buildTemporalResumeUpdateDescriptor,
   buildTemporalTaskControlPlaneDescriptor,
   buildTemporalTaskQueue,
@@ -17,6 +18,17 @@ const backgroundTask: DistributedTaskDescriptorV1 = {
   placement_preferences: ["remote_worker", "delegated_oci"],
   checkpoint_strategy: "every_step",
   wake_conditions: ["child_complete", "timer:30s"],
+  wake_subscriptions: [
+    {
+      schema_version: "bb.wake_subscription.v1",
+      subscription_id: "sub:bg:complete",
+      on_codes: ["complete", "blocked"],
+      action: "resume",
+      from_task_ids: ["task:child:1"],
+      include_descendants: false,
+      coalesce_window_ms: 0,
+    },
+  ],
   join_policy: "all_children",
   retry_policy: { max_attempts: 3 },
   priority: 2,
@@ -40,6 +52,32 @@ const transcriptPatch: TranscriptContinuationPatchV1 = {
   lossiness_flags: [],
 }
 
+const retryDirective: DirectiveV1 = {
+  schema_version: "bb.directive.v1",
+  directive_id: "directive_retry_1",
+  directive_code: "retry",
+  issuer_task_id: "task:supervisor:1",
+  issuer_role: "supervisor",
+  target_task_id: "task:child:1",
+  target_job_id: "job:child:1",
+  based_on_verdict_id: "review_blocked_retry_1",
+  based_on_signal_id: "signal_blocked_1",
+  payload: {
+    wake_target: true,
+    recommended_next_action: "retry",
+    blocking_reason: "provider quota exhausted",
+  },
+  evidence_refs: ["evidence://quota/worker-1"],
+  metadata: {
+    review_event_id: 19,
+  },
+  validation: {
+    accepted: true,
+    reasons: ["directive_valid"],
+    validated_by: "engine",
+  },
+}
+
 test("temporal adapter derives task queues from task kind", () => {
   assert.equal(buildTemporalTaskQueue(backgroundTask), "breadboard-background")
 })
@@ -51,14 +89,19 @@ test("temporal adapter maps distributed task descriptor into a start descriptor"
   assert.equal(descriptor.taskQueue, "breadboard-background")
   assert.equal(descriptor.searchAttributes.parentTaskId, "task:root:1")
   assert.deepEqual(descriptor.memo.wakeConditions, ["child_complete", "timer:30s"])
+  assert.equal(Array.isArray(descriptor.memo.wakeSubscriptions), true)
   assert.deepEqual(descriptor.retryPolicy, { max_attempts: 3 })
 })
 
 test("temporal adapter derives workflow control-plane descriptors", () => {
   const controlPlane = buildTemporalTaskControlPlaneDescriptor(backgroundTask)
-  assert.equal(controlPlane.signalDescriptors[0]?.signalName, "breadboard.wake")
+  assert.equal(controlPlane.signalDescriptors[0]?.signalName, "breadboard.coordinationSignal")
   assert.equal(controlPlane.signalDescriptors[1]?.signalName, "breadboard.childComplete")
   assert.equal(controlPlane.signalDescriptors[2]?.signalName, "breadboard.timerWake")
+  assert.deepEqual(controlPlane.signalDescriptors[0]?.payload, {
+    taskId: "task:bg:1",
+    wakeSubscriptions: backgroundTask.wake_subscriptions,
+  })
   assert.deepEqual(controlPlane.queryNames, [
     "breadboard.getState",
     "breadboard.getCheckpoint",
@@ -73,10 +116,49 @@ test("temporal adapter builds a resume update descriptor with transcript continu
     descriptor: backgroundTask,
     transcriptPatch,
     resumeReason: "timer_wake",
+    coordination: {
+      subscriptionId: "sub:bg:complete",
+      triggerSignalId: "signal_complete_1",
+      triggerCode: "complete",
+      cursorEventId: 17,
+    },
   })
   assert.equal(descriptor.workflowId, backgroundTask.task_id)
   assert.equal(descriptor.updateName, "breadboard.resume")
   assert.equal(descriptor.payload.taskId, backgroundTask.task_id)
   assert.equal(descriptor.payload.resumeReason, "timer_wake")
+  assert.deepEqual(descriptor.payload.coordination, {
+    subscriptionId: "sub:bg:complete",
+    triggerSignalId: "signal_complete_1",
+    triggerCode: "complete",
+    cursorEventId: 17,
+  })
   assert.deepEqual(descriptor.payload.transcriptPatch, transcriptPatch)
+})
+
+test("temporal adapter builds a directive update descriptor", () => {
+  const descriptor = buildTemporalDirectiveUpdateDescriptor({
+    directive: retryDirective,
+  })
+  assert.equal(descriptor.workflowId, "task:child:1")
+  assert.equal(descriptor.updateName, "breadboard.applyDirective")
+  assert.deepEqual(descriptor.payload, {
+    directiveId: "directive_retry_1",
+    directiveCode: "retry",
+    issuerTaskId: "task:supervisor:1",
+    issuerRole: "supervisor",
+    targetTaskId: "task:child:1",
+    targetJobId: "job:child:1",
+    basedOnVerdictId: "review_blocked_retry_1",
+    basedOnSignalId: "signal_blocked_1",
+    payload: {
+      wake_target: true,
+      recommended_next_action: "retry",
+      blocking_reason: "provider quota exhausted",
+    },
+    evidenceRefs: ["evidence://quota/worker-1"],
+    metadata: {
+      review_event_id: 19,
+    },
+  })
 })

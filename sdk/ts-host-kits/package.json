@@ -16,7 +16,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
-    "test": "npm --prefix ../ts-workspace run build && npm --prefix ../ts-kernel-contracts run build && npm --prefix ../ts-backbone install ../ts-workspace ../ts-kernel-contracts >/dev/null && npm --prefix ../ts-backbone run build && npm install ../ts-backbone ../ts-kernel-contracts >/dev/null && npm run build && node --test dist/test/host-kits.test.js"
+    "test": "npm --prefix ../ts-kernel-contracts run build && npm --prefix ../ts-execution-drivers run build && npm --prefix ../ts-execution-driver-local run build && npm --prefix ../ts-execution-driver-oci run build && npm --prefix ../ts-execution-driver-remote run build && npm --prefix ../ts-kernel-core install ../ts-kernel-contracts ../ts-execution-drivers ../ts-execution-driver-local ../ts-execution-driver-oci ../ts-execution-driver-remote >/dev/null && npm --prefix ../ts-kernel-core run build && npm --prefix ../ts-workspace run build && npm --prefix ../ts-backbone install ../ts-workspace ../ts-kernel-contracts ../ts-execution-drivers ../ts-execution-driver-local ../ts-execution-driver-oci ../ts-execution-driver-remote ../ts-kernel-core >/dev/null && npm --prefix ../ts-backbone run build && npm install ../ts-backbone ../ts-kernel-contracts >/dev/null && npm run build && node --test dist/test/host-kits.test.js"
   },
   "dependencies": {
     "@breadboard/backbone": "file:../ts-backbone",

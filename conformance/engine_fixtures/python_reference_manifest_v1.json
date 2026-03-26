@@ -739,6 +739,149 @@
         "effective_tool_surface/codex_background_fallback_terminal_surface_fixture.json"
       ],
       "notes": "Codex-shaped effective tool surface where background-terminal bindings remain visible through an explicit fallback-selected remote binding path."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coordination_supervisor_complete_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/reference_complete_fixture.json"
+      ],
+      "notes": "Sparse supervisor-worker complete path proving accepted signal truth, wake projection, and supervisor-owned mission completion."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coordination_supervisor_blocked_python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/reference_blocked_fixture.json"
+      ],
+      "notes": "Sparse supervisor-worker blocked path proving structured blockage, wake projection, and supervisor escalation/checkpoint decisions."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.reviewed_complete.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/reviewed_complete_fixture.json"
+      ],
+      "notes": "Reviewed-result complete path proving explicit review/verdict truth separate from accepted signal and wake projection."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.reviewed_blocked.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/reviewed_blocked_fixture.json"
+      ],
+      "notes": "Reviewed-result blocked path proving explicit supervisor review/verdict truth separate from accepted signal and wake projection."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.directive_retry.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/directive_retry_fixture.json"
+      ],
+      "notes": "Directive retry path proving durable supervisory action intent derived from reviewed blocked truth."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.multi_worker_complete.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/multi_worker_complete_fixture.json"
+      ],
+      "notes": "Reducer-style multi-worker complete path proving shard fan-in, aggregate result contract validation, and supervisor review over reducer output."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.multi_worker_blocked.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/multi_worker_blocked_fixture.json"
+      ],
+      "notes": "Reducer-style blocked-shard path proving reducer wake, supervisor review, and directive issuance without channels or rendezvous."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.longrun_no_progress.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/longrun_no_progress_fixture.json"
+      ],
+      "notes": "Longrun no-progress lane proving runtime stall detection emits reviewed checkpoint-worthy coordination truth rather than private stop-only metadata."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.longrun_retryable_failure.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/longrun_retryable_failure_fixture.json"
+      ],
+      "notes": "Longrun retryable-failure lane proving retry intent is explicit durable coordination truth and not just recovery-policy side effect."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.longrun_human_required.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/longrun_human_required_fixture.json"
+      ],
+      "notes": "Longrun human-required lane proving escalation flows through signal truth, review truth, and directive truth before projection."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.intervention_continue.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/intervention_continue_fixture.json"
+      ],
+      "notes": "Host intervention lane proving reviewed human-required truth can be answered by durable host-issued directive truth without adding a new kernel primitive."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.delegated_verification.pass.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/delegated_verification_pass_fixture.json"
+      ],
+      "notes": "Delegated verification pass lane proving a verifier task can carry a verification-result contract and gate supervisor approval over a worker result."
+    },
+    {
+      "engineFamily": "python_reference",
+      "engineRef": "working-tree",
+      "scenarioId": "coord.delegated_verification.fail.python_reference",
+      "supportTier": "reference-engine",
+      "comparatorClass": "normalized-trace-equal",
+      "evidence": [
+        "coordination/delegated_verification_fail_fixture.json"
+      ],
+      "notes": "Delegated verification fail lane proving verifier-carried failure evidence can lead to explicit checkpoint directive truth without inventing a new primitive."
     }
   ]
 }

@@ -1,7 +1,9 @@
 import {
   assertValid,
+  type DirectiveV1,
   type DistributedTaskDescriptorV1,
   type TranscriptContinuationPatchV1,
+  type WakeSubscriptionV1,
 } from "@breadboard/kernel-contracts"
 
 export interface TemporalWorkflowStartDescriptor {
@@ -36,6 +38,19 @@ export interface TemporalResumeUpdateDescriptor {
   payload: Record<string, unknown>
 }
 
+export interface TemporalDirectiveUpdateDescriptor {
+  workflowId: string
+  updateName: "breadboard.applyDirective"
+  payload: Record<string, unknown>
+}
+
+export interface CoordinationResumeMetadata {
+  subscriptionId?: string | null
+  triggerSignalId?: string | null
+  triggerCode?: string | null
+  cursorEventId?: number | null
+}
+
 export function buildTemporalTaskQueue(task: DistributedTaskDescriptorV1): string {
   switch (task.task_kind) {
     case "subagent":
@@ -55,6 +70,12 @@ function normalizeDistributedTaskDescriptor(
   return assertValid<DistributedTaskDescriptorV1>("distributedTaskDescriptor", descriptorInput)
 }
 
+function normalizeWakeSubscriptions(descriptor: DistributedTaskDescriptorV1): WakeSubscriptionV1[] {
+  return (descriptor.wake_subscriptions ?? []).map((subscription) =>
+    assertValid<WakeSubscriptionV1>("wakeSubscription", subscription),
+  )
+}
+
 export function buildTemporalWorkflowStartDescriptor(
   descriptorInput: DistributedTaskDescriptorV1,
 ): TemporalWorkflowStartDescriptor {
@@ -71,6 +92,7 @@ export function buildTemporalWorkflowStartDescriptor(
     memo: {
       placementPreferences: descriptor.placement_preferences ?? [],
       wakeConditions: descriptor.wake_conditions ?? [],
+      wakeSubscriptions: normalizeWakeSubscriptions(descriptor),
       joinPolicy: descriptor.join_policy ?? null,
       checkpointStrategy: descriptor.checkpoint_strategy ?? null,
       artifactRefs: descriptor.artifact_refs ?? [],
@@ -89,15 +111,27 @@ export function buildTemporalTaskControlPlaneDescriptor(
   descriptorInput: DistributedTaskDescriptorV1,
 ): TemporalTaskControlPlaneDescriptor {
   const descriptor = normalizeDistributedTaskDescriptor(descriptorInput)
-  const signalDescriptors: TemporalWorkflowSignalDescriptor[] = [
-    {
+  const wakeSubscriptions = normalizeWakeSubscriptions(descriptor)
+  const signalDescriptors: TemporalWorkflowSignalDescriptor[] = []
+
+  if (wakeSubscriptions.length > 0) {
+    signalDescriptors.push({
+      signalName: "breadboard.coordinationSignal",
+      payload: {
+        taskId: descriptor.task_id,
+        wakeSubscriptions,
+      },
+    })
+  } else {
+    signalDescriptors.push({
       signalName: "breadboard.wake",
       payload: {
         taskId: descriptor.task_id,
         wakeConditions: descriptor.wake_conditions ?? [],
       },
-    },
-  ]
+    })
+  }
+
   if ((descriptor.wake_conditions ?? []).includes("child_complete")) {
     signalDescriptors.push({
       signalName: "breadboard.childComplete",
@@ -146,12 +180,14 @@ export function buildTemporalResumeUpdateDescriptor(input: {
   descriptor: DistributedTaskDescriptorV1
   transcriptPatch?: TranscriptContinuationPatchV1 | null
   resumeReason?: string | null
+  coordination?: CoordinationResumeMetadata | null
 }): TemporalResumeUpdateDescriptor {
   const descriptor = normalizeDistributedTaskDescriptor(input.descriptor)
   const transcriptPatch =
     input.transcriptPatch != null
       ? assertValid<TranscriptContinuationPatchV1>("transcriptContinuationPatch", input.transcriptPatch)
       : null
+  const coordination = input.coordination ?? null
   return {
     workflowId: descriptor.task_id,
     updateName: "breadboard.resume",
@@ -160,7 +196,38 @@ export function buildTemporalResumeUpdateDescriptor(input: {
       taskKind: descriptor.task_kind,
       resumeReason: input.resumeReason ?? "host_resume",
       checkpointStrategy: descriptor.checkpoint_strategy ?? null,
+      coordination: coordination
+        ? {
+            subscriptionId: coordination.subscriptionId ?? null,
+            triggerSignalId: coordination.triggerSignalId ?? null,
+            triggerCode: coordination.triggerCode ?? null,
+            cursorEventId: coordination.cursorEventId ?? null,
+          }
+        : null,
       transcriptPatch,
+    },
+  }
+}
+
+export function buildTemporalDirectiveUpdateDescriptor(input: {
+  directive: DirectiveV1
+}): TemporalDirectiveUpdateDescriptor {
+  const directive = assertValid<DirectiveV1>("directive", input.directive)
+  return {
+    workflowId: directive.target_task_id,
+    updateName: "breadboard.applyDirective",
+    payload: {
+      directiveId: directive.directive_id,
+      directiveCode: directive.directive_code,
+      issuerTaskId: directive.issuer_task_id,
+      issuerRole: directive.issuer_role,
+      targetTaskId: directive.target_task_id,
+      targetJobId: directive.target_job_id ?? null,
+      basedOnVerdictId: directive.based_on_verdict_id,
+      basedOnSignalId: directive.based_on_signal_id,
+      payload: directive.payload,
+      evidenceRefs: directive.evidence_refs,
+      metadata: directive.metadata,
     },
   }
 }

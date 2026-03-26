@@ -1,0 +1,25 @@
+{
+  "schema_version": "bb.signal.v1",
+  "signal_id": "signal_blocked_1",
+  "code": "blocked",
+  "task_id": "task_worker_2",
+  "parent_task_id": "task_supervisor_1",
+  "mission_task_id": "task_supervisor_1",
+  "authority_scope": "task",
+  "status": "accepted",
+  "source": {
+    "kind": "worker",
+    "emitter_role": "worker",
+    "detail": "blocked_on_environment"
+  },
+  "evidence_refs": ["artifact://support-claim/env-1"],
+  "payload": {
+    "blocking_reason": "missing_api_key",
+    "recommended_next_action": "escalate"
+  },
+  "validation": {
+    "accepted": true,
+    "reasons": ["signal_valid"],
+    "validated_by": "engine"
+  }
+}

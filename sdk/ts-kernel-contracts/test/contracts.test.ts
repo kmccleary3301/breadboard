@@ -26,11 +26,33 @@ test("kernel validators accept tracked examples", () => {
   assert.doesNotThrow(() =>
     assertValid("sandboxResult", loadJson("../../contracts/kernel/examples/sandbox_result_minimal.json")),
   )
+  assert.doesNotThrow(() => assertValid("signal", loadJson("../../contracts/kernel/examples/signal_complete_minimal.json")))
+  assert.doesNotThrow(() =>
+    assertValid("reviewVerdict", loadJson("../../contracts/kernel/examples/review_verdict_complete_validated.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("reviewVerdict", loadJson("../../contracts/kernel/examples/review_verdict_blocked_retry.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("directive", loadJson("../../contracts/kernel/examples/directive_retry_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("wakeSubscription", loadJson("../../contracts/kernel/examples/wake_subscription_minimal.json")),
+  )
   assert.doesNotThrow(() =>
     assertValid(
       "distributedTaskDescriptor",
       loadJson("../../contracts/kernel/examples/distributed_task_descriptor_minimal.json"),
     ),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("signal", loadJson("../../contracts/kernel/examples/signal_complete_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("signal", loadJson("../../contracts/kernel/examples/signal_blocked_minimal.json")),
+  )
+  assert.doesNotThrow(() =>
+    assertValid("wakeSubscription", loadJson("../../contracts/kernel/examples/wake_subscription_minimal.json")),
   )
   assert.doesNotThrow(() =>
     assertValid(
@@ -87,6 +109,20 @@ test("kernel validators accept tracked examples", () => {
 
 test("kernel validator rejects malformed run request", () => {
   assert.equal(kernelValidators.runRequest({ schema_version: "bb.run_request.v1", request_id: "r1", entry_mode: "interactive" }), false)
+})
+
+test("kernel validator accepts a coordination verification result payload", () => {
+  assert.doesNotThrow(() =>
+    assertValid("coordinationVerificationResult", {
+      schema_version: "bb.coordination_verification_result.v1",
+      subject_signal_id: "signal_worker_complete_1",
+      subject_task_id: "task_worker_1",
+      validator_task_id: "task_verifier_1",
+      status: "pass",
+      verification_artifact_refs: ["artifact://verification/pass.json"],
+      summary: "Verifier confirmed worker deliverable.",
+    }),
+  )
 })
 
 test("kernel validator accepts tracked engine conformance manifest", () => {

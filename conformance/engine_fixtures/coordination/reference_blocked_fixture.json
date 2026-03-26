@@ -1,0 +1,331 @@
+{
+  "fixture_family": "coordination",
+  "fixture_id": "coordination_supervisor_blocked_python_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "reference-engine",
+  "contract": "bb.coordination_reference_slice.v1",
+  "reference_output": {
+    "schema_version": "bb.coordination_reference_slice.v1",
+    "scenario_id": "coordination_supervisor_blocked_python_reference",
+    "supervisor_task_id": "task_supervisor_1",
+    "worker_task_id": "task_worker_1",
+    "compatibility_notes": [
+      "supervisor_decision is a compatibility projection over review_verdict truth, not a new coordination primitive."
+    ],
+    "subscription_id": "sub_worker_state",
+    "accepted_signal": {
+      "schema_version": "bb.signal.v1",
+      "signal_id": "signal_blocked_reference",
+      "code": "blocked",
+      "task_id": "task_worker_1",
+      "parent_task_id": "task_supervisor_1",
+      "mission_task_id": "task_supervisor_1",
+      "authority_scope": "task",
+      "status": "accepted",
+      "source": {
+        "kind": "worker",
+        "emitter_role": "worker",
+        "detail": null
+      },
+      "evidence_refs": [
+        "evidence://quota/worker-1"
+      ],
+      "payload": {
+        "blocking_reason": "provider quota exhausted",
+        "recommended_next_action": "checkpoint"
+      },
+      "validation": {
+        "accepted": true,
+        "reasons": [
+          "signal_valid"
+        ],
+        "validated_by": "engine",
+        "validated_at": 0.0
+      }
+    },
+    "wakeup_payload": {
+      "job_id": "job_supervisor_1",
+      "agent_id": "supervisor",
+      "owner_agent": "root",
+      "seq": 1,
+      "reason": "signal:blocked",
+      "message": "Task task_worker_1 blocked: provider quota exhausted",
+      "subscription_id": "sub_worker_state",
+      "trigger_signal_id": "signal_blocked_reference",
+      "trigger_code": "blocked",
+      "resume_reason": "signal:blocked",
+      "cursor_event_id": 3,
+      "source_task_id": "task_worker_1"
+    },
+    "supervisor_decision": {
+      "job_id": "job_supervisor_1",
+      "supervisor_task_id": "task_supervisor_1",
+      "subscription_id": "sub_worker_state",
+      "trigger_signal_id": "signal_blocked_reference",
+      "trigger_event_id": 3,
+      "trigger_code": "blocked",
+      "source_task_id": "task_worker_1",
+      "decision": "blocked_checkpoint_requested",
+      "mission_completed": false,
+      "required_deliverable_refs": [],
+      "deliverable_refs": [],
+      "missing_deliverable_refs": [],
+      "blocking_reason": "provider quota exhausted",
+      "recommended_next_action": "checkpoint",
+      "blocked_action": "checkpoint",
+      "support_claim_ref": null,
+      "signal_evidence_refs": [
+        "evidence://quota/worker-1"
+      ]
+    },
+    "events": [
+      {
+        "event_id": 1,
+        "type": "agent.spawned",
+        "agent_id": "supervisor",
+        "parent_agent_id": "root",
+        "causal_parent_event_id": null,
+        "payload": {
+          "role": "supervisor",
+          "job_id": "job_supervisor_1",
+          "agent_id": "supervisor",
+          "owner_agent": "root",
+          "kind": "agent",
+          "seq": 1,
+          "task_descriptor": {
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_supervisor_1",
+            "task_kind": "background",
+            "wake_conditions": [
+              "timer:30s"
+            ],
+            "wake_subscriptions": [
+              {
+                "schema_version": "bb.wake_subscription.v1",
+                "subscription_id": "sub_worker_state",
+                "on_codes": [
+                  "complete",
+                  "blocked"
+                ],
+                "action": "resume",
+                "from_task_ids": [
+                  "task_worker_1"
+                ],
+                "include_descendants": false,
+                "coalesce_window_ms": 0
+              }
+            ]
+          }
+        }
+      },
+      {
+        "event_id": 2,
+        "type": "agent.spawned",
+        "agent_id": "worker",
+        "parent_agent_id": "supervisor",
+        "causal_parent_event_id": null,
+        "payload": {
+          "role": "worker",
+          "job_id": "job_worker_1",
+          "agent_id": "worker",
+          "owner_agent": "supervisor",
+          "kind": "agent",
+          "seq": 2,
+          "task_descriptor": {
+            "schema_version": "bb.distributed_task_descriptor.v1",
+            "task_id": "task_worker_1",
+            "task_kind": "background",
+            "wake_conditions": [],
+            "parent_task_id": "task_supervisor_1"
+          }
+        }
+      },
+      {
+        "event_id": 3,
+        "type": "coordination.signal",
+        "agent_id": "worker",
+        "parent_agent_id": "supervisor",
+        "causal_parent_event_id": null,
+        "payload": {
+          "schema_version": "bb.signal.v1",
+          "signal_id": "signal_blocked_reference",
+          "code": "blocked",
+          "task_id": "task_worker_1",
+          "parent_task_id": "task_supervisor_1",
+          "mission_task_id": "task_supervisor_1",
+          "authority_scope": "task",
+          "status": "accepted",
+          "source": {
+            "kind": "worker",
+            "emitter_role": "worker",
+            "detail": null
+          },
+          "evidence_refs": [
+            "evidence://quota/worker-1"
+          ],
+          "payload": {
+            "blocking_reason": "provider quota exhausted",
+            "recommended_next_action": "checkpoint"
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "signal_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        }
+      },
+      {
+        "event_id": 4,
+        "type": "agent.wakeup_emitted",
+        "agent_id": "supervisor",
+        "parent_agent_id": "root",
+        "causal_parent_event_id": 3,
+        "payload": {
+          "job_id": "job_supervisor_1",
+          "agent_id": "supervisor",
+          "owner_agent": "root",
+          "seq": 1,
+          "reason": "signal:blocked",
+          "message": "Task task_worker_1 blocked: provider quota exhausted",
+          "subscription_id": "sub_worker_state",
+          "trigger_signal_id": "signal_blocked_reference",
+          "trigger_code": "blocked",
+          "resume_reason": "signal:blocked",
+          "cursor_event_id": 3,
+          "source_task_id": "task_worker_1"
+        }
+      },
+      {
+        "event_id": 5,
+        "type": "coordination.review_verdict",
+        "agent_id": "supervisor",
+        "parent_agent_id": "root",
+        "causal_parent_event_id": 3,
+        "payload": {
+          "schema_version": "bb.review_verdict.v1",
+          "verdict_id": "review_task_supervisor_1_signal_blocked_reference",
+          "reviewer_task_id": "task_supervisor_1",
+          "reviewer_role": "supervisor",
+          "subject": {
+            "kind": "signal",
+            "signal_id": "signal_blocked_reference",
+            "signal_event_id": 3,
+            "signal_code": "blocked",
+            "source_task_id": "task_worker_1",
+            "mission_task_id": "task_supervisor_1",
+            "subscription_id": "sub_worker_state",
+            "trigger_signal_id": "signal_blocked_reference",
+            "trigger_event_id": 3,
+            "trigger_code": "blocked"
+          },
+          "verdict_code": "checkpoint",
+          "mission_completed": false,
+          "required_deliverable_refs": [],
+          "deliverable_refs": [],
+          "missing_deliverable_refs": [],
+          "blocking_reason": "provider quota exhausted",
+          "recommended_next_action": "checkpoint",
+          "support_claim_ref": null,
+          "signal_evidence_refs": [
+            "evidence://quota/worker-1"
+          ],
+          "metadata": {
+            "job_id": "job_supervisor_1",
+            "blocked_action": "checkpoint",
+            "aggregate_contract_required": null,
+            "aggregate_contract_received": null,
+            "aggregate_missing_worker_task_ids": [],
+            "aggregate_artifact_refs": [],
+            "verification_contract_required": null,
+            "verification_contract_received": null,
+            "verification_status": null,
+            "verification_subject_signal_id": null,
+            "verification_subject_signal_found": false,
+            "verification_subject_signal_code": null,
+            "verification_subject_task_id": null,
+            "verification_artifact_refs": [],
+            "allowed_host_actions": [
+              "continue",
+              "checkpoint",
+              "terminate"
+            ],
+            "require_supervisor_escalate": true,
+            "review_role_profile": [
+              "supervisor",
+              "system"
+            ],
+            "legacy_decision": "blocked_checkpoint_requested"
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "review_verdict_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        }
+      },
+      {
+        "event_id": 6,
+        "type": "coordination.directive",
+        "agent_id": "supervisor",
+        "parent_agent_id": "root",
+        "causal_parent_event_id": 5,
+        "payload": {
+          "schema_version": "bb.directive.v1",
+          "directive_id": "directive_task_supervisor_1_review_task_supervisor_1_signal_blocked_reference",
+          "directive_code": "checkpoint",
+          "issuer_task_id": "task_supervisor_1",
+          "issuer_role": "supervisor",
+          "target_task_id": "task_worker_1",
+          "target_job_id": "job_worker_1",
+          "based_on_verdict_id": "review_task_supervisor_1_signal_blocked_reference",
+          "based_on_signal_id": "signal_blocked_reference",
+          "payload": {
+            "wake_target": true,
+            "recommended_next_action": "checkpoint",
+            "blocking_reason": "provider quota exhausted"
+          },
+          "evidence_refs": [
+            "evidence://quota/worker-1"
+          ],
+          "metadata": {
+            "review_event_id": 5,
+            "trigger_signal_id": "signal_blocked_reference"
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "directive_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        }
+      },
+      {
+        "event_id": 7,
+        "type": "agent.wakeup_emitted",
+        "agent_id": "worker",
+        "parent_agent_id": "supervisor",
+        "causal_parent_event_id": 6,
+        "payload": {
+          "job_id": "job_worker_1",
+          "agent_id": "worker",
+          "owner_agent": "supervisor",
+          "seq": 2,
+          "reason": "directive:checkpoint",
+          "message": "Checkpoint requested for task task_worker_1.",
+          "source_task_id": "task_supervisor_1",
+          "directive_id": "directive_task_supervisor_1_review_task_supervisor_1_signal_blocked_reference",
+          "directive_code": "checkpoint",
+          "based_on_verdict_id": "review_task_supervisor_1_signal_blocked_reference"
+        }
+      }
+    ]
+  }
+}

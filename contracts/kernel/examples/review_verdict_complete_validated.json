@@ -1,0 +1,42 @@
+{
+  "schema_version": "bb.review_verdict.v1",
+  "verdict_id": "review_complete_validated_1",
+  "reviewer_task_id": "task_supervisor_1",
+  "reviewer_role": "supervisor",
+  "subject": {
+    "kind": "signal",
+    "signal_id": "signal_complete_1",
+    "signal_event_id": 12,
+    "signal_code": "complete",
+    "source_task_id": "task_worker_1",
+    "mission_task_id": "task_supervisor_1",
+    "subscription_id": "sub_worker_state",
+    "trigger_signal_id": "signal_complete_1",
+    "trigger_event_id": 12,
+    "trigger_code": "complete"
+  },
+  "verdict_code": "validated",
+  "mission_completed": true,
+  "required_deliverable_refs": [
+    "artifact://deliverables/worker-report.md"
+  ],
+  "deliverable_refs": [
+    "artifact://deliverables/worker-report.md"
+  ],
+  "missing_deliverable_refs": [],
+  "blocking_reason": null,
+  "recommended_next_action": null,
+  "support_claim_ref": null,
+  "signal_evidence_refs": [
+    "artifact://deliverables/worker-report.md"
+  ],
+  "metadata": {
+    "job_id": "job_supervisor_1",
+    "legacy_decision": "mission_complete_validated"
+  },
+  "validation": {
+    "accepted": true,
+    "reasons": ["review_verdict_valid"],
+    "validated_by": "engine"
+  }
+}

@@ -22,6 +22,7 @@ import {
   buildEffectiveToolSurfaceView,
   buildEffectiveToolSurfaceAnalysisView,
   buildEffectiveToolSurfaceSupportSummaryView,
+  buildHostCoordinationProjection,
   buildHostProjectionEnvelope,
   buildHostResultMeta,
   buildHostTranscriptProjection,
@@ -241,6 +242,16 @@ test("createProviderHostSession preserves transcript continuity and projection s
           throw new Error("not used in this test")
         },
       },
+      inspectCoordination() {
+        return {
+          signals: [],
+          review_verdicts: [],
+          directives: [],
+          latest_signal_by_code: {},
+          unresolved_interventions: [],
+          resolved_interventions: [],
+        }
+      },
       classifyProviderTurn() {
         return supportedClaim
       },
@@ -268,6 +279,14 @@ test("createProviderHostSession preserves transcript continuity and projection s
             ],
           },
           events: [],
+          coordinationInspection: {
+            signals: [],
+            review_verdicts: [],
+            directives: [],
+            latest_signal_by_code: {},
+            unresolved_interventions: [],
+            resolved_interventions: [],
+          },
           providerTurn: undefined,
           driverTurn: undefined,
           unsupportedCase: undefined,
@@ -341,6 +360,117 @@ test("createProviderHostSession preserves transcript continuity and projection s
   assert.equal(view.supportClaim.level, "supported")
   assert.equal(view.projectionOutput?.summary, "resume:run-2")
   assert.equal(view.projectionState?.count, 2)
+})
+
+test("buildHostCoordinationProjection reduces the read-only inspection shape for host use", () => {
+  const projection = buildHostCoordinationProjection({
+    signals: [],
+    review_verdicts: [],
+    directives: [],
+    latest_signal_by_code: {
+      human_required: {
+        schema_version: "bb.signal.v1",
+        signal_id: "signal-human-1",
+        code: "human_required",
+        task_id: "task_worker_1",
+        authority_scope: "task",
+        status: "accepted",
+        source: { kind: "runtime", emitter_role: "runtime" },
+        evidence_refs: [],
+        payload: {},
+      },
+    },
+    unresolved_interventions: [],
+    resolved_interventions: [
+      {
+        intervention_id: "intervention_review-1",
+        status: "resolved",
+        review_verdict_id: "review-1",
+        signal_id: "signal-human-1",
+        source_task_id: "task_worker_1",
+        mission_task_id: "task_supervisor_1",
+        required_input: "Approve guarded retry",
+        blocking_reason: "Operator approval required",
+        allowed_host_actions: ["continue", "checkpoint", "terminate"],
+        review_verdict: {
+          schema_version: "bb.review_verdict.v1",
+          verdict_id: "review-1",
+          reviewer_task_id: "task_supervisor_1",
+          reviewer_role: "supervisor",
+          subject: {
+            kind: "signal",
+            signal_id: "signal-human-1",
+            signal_code: "human_required",
+            source_task_id: "task_worker_1",
+          },
+          verdict_code: "human_required",
+          mission_completed: false,
+          required_deliverable_refs: [],
+          deliverable_refs: [],
+          missing_deliverable_refs: [],
+          signal_evidence_refs: [],
+          metadata: {},
+        },
+        signal: {
+          schema_version: "bb.signal.v1",
+          signal_id: "signal-human-1",
+          code: "human_required",
+          task_id: "task_worker_1",
+          authority_scope: "task",
+          status: "accepted",
+          source: { kind: "runtime", emitter_role: "runtime" },
+          evidence_refs: [],
+          payload: {},
+        },
+        directives: [
+          {
+            schema_version: "bb.directive.v1",
+            directive_id: "directive-host-1",
+            directive_code: "continue",
+            issuer_task_id: "host::task_supervisor_1",
+            issuer_role: "host",
+            target_task_id: "task_worker_1",
+            based_on_verdict_id: "review-1",
+            based_on_signal_id: "signal-human-1",
+            payload: { wake_target: true },
+            evidence_refs: [],
+            metadata: {},
+          },
+        ],
+        host_responses: [
+          {
+            schema_version: "bb.directive.v1",
+            directive_id: "directive-host-1",
+            directive_code: "continue",
+            issuer_task_id: "host::task_supervisor_1",
+            issuer_role: "host",
+            target_task_id: "task_worker_1",
+            based_on_verdict_id: "review-1",
+            based_on_signal_id: "signal-human-1",
+            payload: { wake_target: true },
+            evidence_refs: [],
+            metadata: {},
+          },
+        ],
+      },
+    ],
+  })
+
+  assert.deepEqual(projection.latestSignalCodes, ["human_required"])
+  assert.equal(projection.pendingInterventionCount, 0)
+  assert.equal(projection.resolvedInterventionCount, 1)
+  assert.deepEqual(projection.resolvedInterventions[0], {
+    interventionId: "intervention_review-1",
+    status: "resolved",
+    sourceTaskId: "task_worker_1",
+    missionTaskId: "task_supervisor_1",
+    requiredInput: "Approve guarded retry",
+    blockingReason: "Operator approval required",
+    allowedHostActions: ["continue", "checkpoint", "terminate"],
+    latestHostDirectiveCode: "continue",
+    signalCode: "human_required",
+    reviewVerdictCode: "human_required",
+  })
 })
 
 test("buildHostTranscriptProjection extracts assistant text and tool previews", () => {
@@ -1166,6 +1296,14 @@ test("resolveProviderHostTurnView fills missing projection output and state", ()
           items: [],
         },
         events: [],
+        coordinationInspection: {
+          signals: [],
+          review_verdicts: [],
+          directives: [],
+          latest_signal_by_code: {},
+          unresolved_interventions: [],
+          resolved_interventions: [],
+        },
         providerTurn: undefined,
         driverTurn: undefined,
         unsupportedCase: undefined,

@@ -1,0 +1,242 @@
+{
+  "fixture_family": "coordination",
+  "fixture_id": "coord_longrun_no_progress_python_reference",
+  "comparator_class": "normalized-trace-equal",
+  "support_tier": "reference-engine",
+  "contract": "bb.coordination_longrun_reference_slice.v1",
+  "reference_output": {
+    "schema_version": "bb.coordination_longrun_reference_slice.v1",
+    "scenario_id": "coordination_longrun_no_progress_python_reference",
+    "stop_reason": "no_progress_threshold_reached",
+    "episodes_run": 2,
+    "signals": [
+      {
+        "schema_version": "bb.signal.v1",
+        "signal_id": "signal_longrun_1",
+        "code": "no_progress",
+        "task_id": "longrun_controller",
+        "parent_task_id": null,
+        "mission_task_id": null,
+        "authority_scope": "task",
+        "status": "accepted",
+        "source": {
+          "kind": "runtime",
+          "emitter_role": "runtime",
+          "detail": null
+        },
+        "evidence_refs": [
+          "artifact://meta/longrun_state.json"
+        ],
+        "payload": {
+          "stall_reason": "no_progress_threshold_reached",
+          "observed_episode_index": 2,
+          "no_progress_streak": 2,
+          "failure_signature_streak": 2,
+          "last_activity_marker": "not_done",
+          "retry_streak": 2
+        },
+        "validation": {
+          "accepted": true,
+          "reasons": [
+            "signal_valid"
+          ],
+          "validated_by": "engine",
+          "validated_at": 0.0
+        }
+      }
+    ],
+    "review_verdicts": [
+      {
+        "schema_version": "bb.review_verdict.v1",
+        "verdict_id": "review_longrun_1",
+        "reviewer_task_id": "longrun_controller",
+        "reviewer_role": "system",
+        "subject": {
+          "kind": "signal",
+          "signal_id": "signal_longrun_1",
+          "signal_event_id": 1,
+          "signal_code": "no_progress",
+          "source_task_id": "longrun_controller",
+          "mission_task_id": null,
+          "subscription_id": null,
+          "trigger_signal_id": "signal_longrun_1",
+          "trigger_event_id": 1,
+          "trigger_code": "no_progress"
+        },
+        "verdict_code": "checkpoint",
+        "mission_completed": false,
+        "required_deliverable_refs": [],
+        "deliverable_refs": [],
+        "missing_deliverable_refs": [],
+        "blocking_reason": "no_progress_threshold_reached",
+        "recommended_next_action": "checkpoint",
+        "support_claim_ref": null,
+        "signal_evidence_refs": [
+          "artifact://meta/longrun_state.json"
+        ],
+        "metadata": {
+          "longrun_reason": "no_progress_threshold_reached"
+        },
+        "validation": {
+          "accepted": true,
+          "reasons": [
+            "review_verdict_valid"
+          ],
+          "validated_by": "engine",
+          "validated_at": 0.0
+        }
+      }
+    ],
+    "directives": [
+      {
+        "schema_version": "bb.directive.v1",
+        "directive_id": "directive_longrun_1",
+        "directive_code": "checkpoint",
+        "issuer_task_id": "longrun_controller",
+        "issuer_role": "system",
+        "target_task_id": "longrun_controller",
+        "target_job_id": null,
+        "based_on_verdict_id": "review_longrun_1",
+        "based_on_signal_id": "signal_longrun_1",
+        "payload": {
+          "wake_target": true,
+          "coordination_origin": "longrun.no_progress"
+        },
+        "evidence_refs": [
+          "artifact://meta/longrun_state.json"
+        ],
+        "metadata": {
+          "review_event_id": 2
+        },
+        "validation": {
+          "accepted": true,
+          "reasons": [
+            "directive_valid"
+          ],
+          "validated_by": "engine",
+          "validated_at": 0.0
+        }
+      }
+    ],
+    "events": [
+      {
+        "event_id": 1,
+        "type": "coordination.signal",
+        "payload": {
+          "schema_version": "bb.signal.v1",
+          "signal_id": "signal_longrun_1",
+          "code": "no_progress",
+          "task_id": "longrun_controller",
+          "parent_task_id": null,
+          "mission_task_id": null,
+          "authority_scope": "task",
+          "status": "accepted",
+          "source": {
+            "kind": "runtime",
+            "emitter_role": "runtime",
+            "detail": null
+          },
+          "evidence_refs": [
+            "artifact://meta/longrun_state.json"
+          ],
+          "payload": {
+            "stall_reason": "no_progress_threshold_reached",
+            "observed_episode_index": 2,
+            "no_progress_streak": 2,
+            "failure_signature_streak": 2,
+            "last_activity_marker": "not_done",
+            "retry_streak": 2
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "signal_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        },
+        "causal_parent_event_id": null
+      },
+      {
+        "event_id": 2,
+        "type": "coordination.review_verdict",
+        "payload": {
+          "schema_version": "bb.review_verdict.v1",
+          "verdict_id": "review_longrun_1",
+          "reviewer_task_id": "longrun_controller",
+          "reviewer_role": "system",
+          "subject": {
+            "kind": "signal",
+            "signal_id": "signal_longrun_1",
+            "signal_event_id": 1,
+            "signal_code": "no_progress",
+            "source_task_id": "longrun_controller",
+            "mission_task_id": null,
+            "subscription_id": null,
+            "trigger_signal_id": "signal_longrun_1",
+            "trigger_event_id": 1,
+            "trigger_code": "no_progress"
+          },
+          "verdict_code": "checkpoint",
+          "mission_completed": false,
+          "required_deliverable_refs": [],
+          "deliverable_refs": [],
+          "missing_deliverable_refs": [],
+          "blocking_reason": "no_progress_threshold_reached",
+          "recommended_next_action": "checkpoint",
+          "support_claim_ref": null,
+          "signal_evidence_refs": [
+            "artifact://meta/longrun_state.json"
+          ],
+          "metadata": {
+            "longrun_reason": "no_progress_threshold_reached"
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "review_verdict_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        },
+        "causal_parent_event_id": 1
+      },
+      {
+        "event_id": 3,
+        "type": "coordination.directive",
+        "payload": {
+          "schema_version": "bb.directive.v1",
+          "directive_id": "directive_longrun_1",
+          "directive_code": "checkpoint",
+          "issuer_task_id": "longrun_controller",
+          "issuer_role": "system",
+          "target_task_id": "longrun_controller",
+          "target_job_id": null,
+          "based_on_verdict_id": "review_longrun_1",
+          "based_on_signal_id": "signal_longrun_1",
+          "payload": {
+            "wake_target": true,
+            "coordination_origin": "longrun.no_progress"
+          },
+          "evidence_refs": [
+            "artifact://meta/longrun_state.json"
+          ],
+          "metadata": {
+            "review_event_id": 2
+          },
+          "validation": {
+            "accepted": true,
+            "reasons": [
+              "directive_valid"
+            ],
+            "validated_by": "engine",
+            "validated_at": 0.0
+          }
+        },
+        "causal_parent_event_id": 2
+      }
+    ]
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_multi_worker_reference_slice.v1.schema.json",
+  "title": "bb.coordination_multi_worker_reference_slice.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scenario_id",
+    "supervisor_task_id",
+    "reducer_task_id",
+    "shard_task_ids",
+    "shard_signals",
+    "reducer_signal",
+    "review_verdict",
+    "events"
+  ],
+  "properties": {
+    "schema_version": {"const": "bb.coordination_multi_worker_reference_slice.v1"},
+    "scenario_id": {"type": "string", "minLength": 1},
+    "supervisor_task_id": {"type": "string", "minLength": 1},
+    "reducer_task_id": {"type": "string", "minLength": 1},
+    "shard_task_ids": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "shard_signals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["schema_version", "signal_id", "code", "task_id", "status"],
+        "properties": {
+          "schema_version": {"const": "bb.signal.v1"},
+          "signal_id": {"type": "string", "minLength": 1},
+          "code": {"type": "string", "minLength": 1},
+          "task_id": {"type": "string", "minLength": 1},
+          "status": {"enum": ["accepted", "rejected", "proposed"]}
+        }
+      }
+    },
+    "reducer_signal": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schema_version", "signal_id", "code", "task_id", "status"],
+      "properties": {
+        "schema_version": {"const": "bb.signal.v1"},
+        "signal_id": {"type": "string", "minLength": 1},
+        "code": {"type": "string", "minLength": 1},
+        "task_id": {"type": "string", "minLength": 1},
+        "status": {"enum": ["accepted", "rejected", "proposed"]}
+      }
+    },
+    "review_verdict": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schema_version", "verdict_id", "verdict_code", "subject"],
+      "properties": {
+        "schema_version": {"const": "bb.review_verdict.v1"},
+        "verdict_id": {"type": "string", "minLength": 1},
+        "verdict_code": {"type": "string", "minLength": 1},
+        "subject": {"type": "object", "additionalProperties": true}
+      }
+    },
+    "directive": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["event_id", "type", "agent_id", "payload"],
+        "properties": {
+          "event_id": {"type": "integer", "minimum": 1},
+          "type": {"type": "string", "minLength": 1},
+          "agent_id": {"type": "string", "minLength": 1},
+          "payload": {"type": "object", "additionalProperties": true}
+        }
+      }
+    }
+  }
+}
