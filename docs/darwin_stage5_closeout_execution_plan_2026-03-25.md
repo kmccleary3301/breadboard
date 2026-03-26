@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Closeout Execution Plan
 
 Date: 2026-03-25
-Status: active closeout tranche
+Status: complete on `main`
 Scope: final Stage-5 closeout, artifact freeze confirmation, merged-state verification, and formal completion
 References:
 - `docs/darwin_stage5_precloseout_gate_2026-03-25.md`

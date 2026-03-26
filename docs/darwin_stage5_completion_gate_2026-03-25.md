@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Completion Gate
 
 Date: 2026-03-25
-Status: pending merged-state verification
+Status: complete
 
 - [x] doctrine / ADR / lane matrix program complete
 - [x] economics truth / compounding protocol tranche complete
@@ -10,7 +10,7 @@ Status: pending merged-state verification
 - [x] late comparative / pre-closeout tranche complete
 - [x] canonical artifact set frozen
 - [x] final signoff memo written
-- [ ] merged-state verification passed on `main`
+- [x] merged-state verification passed on `main`
 
 ## Gate meaning
 

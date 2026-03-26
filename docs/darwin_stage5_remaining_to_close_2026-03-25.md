@@ -1,15 +1,13 @@
 # DARWIN Stage-5 Remaining to Close
 
 Date: 2026-03-25
-Status: active after pre-closeout gate
+Status: resolved by Stage-5 closeout on `main`
 
 ## Remaining Stage-5 work
 
-- final signoff
-- final completion gate
-- final canonical artifact freeze confirmation
-- future-roadmap handoff
-- merged-state verification on `main`
+None.
+
+The remaining-to-close items were completed by the final closeout and merged-state verification on `main`.
 
 ## Future-roadmap items, not Stage-5 debt
 

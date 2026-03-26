@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Signoff
 
 Date: 2026-03-25
-Status: pending merged-state verification
+Status: complete on `main`
 
 ## Scope
 
@@ -24,6 +24,7 @@ Stage 5 turned BreadBoard + DARWIN into a bounded scalable-compounding program w
 - scaled-compounding runners and comparison surfaces
 - bounded-transfer, failed-transfer taxonomy, replay-posture, registry, scaled-scorecard, and verification-bundle builders
 - late comparative / pre-closeout builders and review surfaces
+- merged-state verification and canonical artifact rebuild on `main`
 
 ## What remains bounded
 

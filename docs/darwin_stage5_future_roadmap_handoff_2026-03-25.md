@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Future Roadmap Handoff
 
 Date: 2026-03-25
-Status: pending merged-state verification
+Status: active after Stage-5 closeout
 
 ## Completed in Stage 5
 

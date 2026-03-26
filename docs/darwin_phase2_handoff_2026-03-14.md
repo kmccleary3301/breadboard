@@ -192,6 +192,7 @@ Phase-1 is closed as the internal operational baseline.
 - `docs/darwin_stage5_signoff_2026-03-25.md`
 - `docs/darwin_stage5_completion_gate_2026-03-25.md`
 - `docs/darwin_stage5_future_roadmap_handoff_2026-03-25.md`
+- `docs/darwin_stage5_main_verification_2026-03-25.md`
 
 ## What Phase-2 should not reopen
 

@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Canonical Artifacts
 
 Date: 2026-03-25
-Status: frozen for late Stage-5 review
+Status: frozen on `main`
 References:
 - `artifacts/darwin/stage5/precloseout/canonical_artifact_index_v0.json`
 - `artifacts/darwin/stage5/precloseout/canonical_artifact_index_v0.md`

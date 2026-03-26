@@ -1,7 +1,7 @@
 # DARWIN Stage-5 Execution Plan
 
 Date: 2026-03-20
-Status: Stage-5 Tranche-3 scaled compounding and bounded transfer completed; late comparative and closeout active
+Status: Stage 5 complete on `main`
 Scope: Stage-5 doctrine freeze, economics truth hardening, compounding protocol, family-aware search, and scalable compounding proof
 References:
 - `docs/darwin_stage5_doctrine_2026-03-20.md`
@@ -76,6 +76,7 @@ References:
 - `docs/darwin_stage5_signoff_2026-03-25.md`
 - `docs/darwin_stage5_completion_gate_2026-03-25.md`
 - `docs/darwin_stage5_future_roadmap_handoff_2026-03-25.md`
+- `docs/darwin_stage5_main_verification_2026-03-25.md`
 - `docs/darwin_stage4_signoff_2026-03-20.md`
 - `docs/darwin_stage4_completion_gate_2026-03-20.md`
 - `docs/darwin_stage4_future_roadmap_handoff_2026-03-20.md`
