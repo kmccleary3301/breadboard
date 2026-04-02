@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable
 from agentic_coder_prototype.compilation.provider_schema import build_openai_tools_schema_from_yaml
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
 from agentic_coder_prototype.conductor_components import initialize_yaml_tools
-from agentic_coder_prototype.surface_snapshot import build_tool_schema_snapshot
+from agentic_coder_prototype.surface import build_tool_schema_snapshot
 
 
 _RLM_TOOL_NAMES = {

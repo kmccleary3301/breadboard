@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 import ray
 
 from .adaptive_iter import ADAPTIVE_PREFIX_ITERABLE
-from .sandbox_v2 import DevSandboxV2
+from .sandbox import DevSandboxV2
 
 
 @ray.remote
@@ -108,4 +108,3 @@ class DockerSandboxV2(DevSandboxV2):
             if not stream:
                 return payload
             return [ADAPTIVE_PREFIX_ITERABLE, payload]
-

@@ -34,7 +34,7 @@ fi
 
 mkdir -p "$(dirname "${OUTPUT_PATH}")"
 echo "[guardrail-metrics] Writing metrics to ${OUTPUT_PATH}"
-python "${ROOT_DIR}/scripts/guardrail_metrics.py" "${LOG_DIRS[@]}" --format jsonl > "${OUTPUT_PATH}"
+python "${ROOT_DIR}/scripts/ops/guardrail_metrics.py" "${LOG_DIRS[@]}" --format jsonl > "${OUTPUT_PATH}"
 SUMMARY_PATH="${OUTPUT_PATH%.jsonl}.summary.json"
 python - "${OUTPUT_PATH}" "${SUMMARY_PATH}" <<'PY'
 import json, pathlib, sys

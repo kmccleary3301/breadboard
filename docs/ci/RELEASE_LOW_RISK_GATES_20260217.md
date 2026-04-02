@@ -14,7 +14,7 @@ restore, using reproducible commands.
 Command:
 
 ```bash
-python scripts/export_cli_bridge_contracts.py
+python scripts/release/export_cli_bridge_contracts.py
 ```
 
 Result: PASS
@@ -48,7 +48,7 @@ Result: PASS
 Validation target files:
 
 - `README.md`
-- `docs/RELEASE_LANDING_V1.md`
+- `README.md`
 
 Result: PASS
 
@@ -71,4 +71,3 @@ Result: PASS
 
 - This report does not cover external channel feedback gates.
 - This report does not claim broad parity/completeness beyond documented coverage.
-

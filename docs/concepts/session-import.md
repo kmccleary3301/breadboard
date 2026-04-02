@@ -38,7 +38,7 @@ Fields like `id` and `seq` are produced deterministically by the converter so th
 Engine-owned conversion script:
 
 ```bash
-python scripts/import_ir_to_events_jsonl.py \
+python scripts/migration/import_ir_to_events_jsonl.py \
   --input path/to/import_ir.json \
   --output path/to/events.jsonl \
   --session-id imported-session
@@ -50,4 +50,3 @@ By default, the script validates the input JSON against `import_ir_v1.schema.jso
 
 - This is an **engine-assist** surface. The actual filesystem importer UX typically belongs in the TUI.
 - The initial converter focuses on mapping IR messages into `user_message` / `assistant_message` / `tool_result` events. It can be extended to emit richer event types as needed.
-

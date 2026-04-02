@@ -77,7 +77,7 @@ For replay-driven lanes, the central manifest is typically:
 ### Strict evidence validation
 
 - [scripts/check_e4_target_freeze_manifest.py](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/scripts/check_e4_target_freeze_manifest.py)
-- [scripts/audit_e4_target_drift.py](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/scripts/audit_e4_target_drift.py)
+- [scripts/research/parity/audit_e4_target_drift.py](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_integration_main_20260326/scripts/research/parity/audit_e4_target_drift.py)
 
 ## The end-to-end workflow
 
@@ -302,8 +302,8 @@ Required checks after freezing:
 
 ```bash
 python scripts/check_e4_target_freeze_manifest.py --strict-evidence --json
-python scripts/audit_e4_target_drift.py
-python scripts/check_e4_snapshot_coverage.py --json
+python scripts/research/parity/audit_e4_target_drift.py
+python scripts/research/parity/check_e4_snapshot_coverage.py --json
 ```
 
 Interpretation:
@@ -440,7 +440,7 @@ Fix:
 - [ ] Update `parity_scenarios.yaml` if the lane is replay-driven.
 - [ ] Update `config/e4_target_freeze_manifest.yaml`.
 - [ ] Add a new versioned snapshot config.
-- [ ] Run `check_e4_snapshot_coverage.py`.
+- [ ] Run `scripts/research/parity/check_e4_snapshot_coverage.py`.
 - [ ] Run `check_e4_target_freeze_manifest.py --strict-evidence`.
 - [ ] Run drift audit.
 - [ ] Update `E4_RECALIBRATION_STATUS_V1.md`.

@@ -461,7 +461,7 @@ def main() -> int:
     _run(
         [
             "python",
-            "scripts/audit_e4_target_drift.py",
+            "scripts/research/parity/audit_e4_target_drift.py",
             "--snapshot-json",
             str(tracked_snapshot),
             "--json-out",
@@ -472,7 +472,7 @@ def main() -> int:
     _run(
         [
             "python",
-            "scripts/audit_e4_target_drift.py",
+            "scripts/research/parity/audit_e4_target_drift.py",
             "--json-out",
             str(drift_live_out),
         ],

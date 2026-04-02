@@ -80,7 +80,7 @@ Update in `config/e4_target_freeze_manifest.yaml`:
 ```bash
 python scripts/check_e4_target_freeze_manifest.py --strict-evidence --json
 python scripts/check_e4_target_freeze_manifest.py --strict-evidence --max-evidence-age-days 45 --json
-python scripts/audit_e4_target_drift.py --json-out artifacts/conformance/e4_target_drift_audit_report.json
+python scripts/research/parity/audit_e4_target_drift.py --json-out artifacts/conformance/e4_target_drift_audit_report.json
 ```
 
 Expected:
@@ -93,4 +93,3 @@ Expected:
 ```bash
 tmux -L bb_e4 kill-server || true
 ```
-

@@ -98,14 +98,14 @@ It is **not** a thin wrapper around one provider SDK, and it is **not** just a t
 | If you want to… | Start here |
 |---|---|
 | clone the repo and get something running quickly | [docs/quickstarts/FIRST_RUN_5_MIN.md](docs/quickstarts/FIRST_RUN_5_MIN.md) |
-| do a full local setup with environment validation | [docs/INSTALL_AND_DEV_QUICKSTART.md](docs/INSTALL_AND_DEV_QUICKSTART.md) |
+| do a full local setup with environment validation | [docs/getting-started/INSTALL_AND_DEV_QUICKSTART.md](docs/getting-started/INSTALL_AND_DEV_QUICKSTART.md) |
 | understand the repo at a high level | [docs/INDEX.md](docs/INDEX.md) |
 | understand the research systems and choose the right advanced subsystem | [docs/quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md](docs/quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md) |
 | inspect the public E4 dossier configs | [`agent_configs/`](agent_configs/) |
 | use the engine from Python or TypeScript | [docs/contracts/cli_bridge/openapi.json](docs/contracts/cli_bridge/openapi.json) and the examples below |
 | evaluate parity / replay / evidence | [docs/conformance/README.md](docs/conformance/README.md) |
 | integrate BreadBoard into a TS host | [`sdk/ts-backbone/`](sdk/ts-backbone/), [`sdk/ts-host-kits/`](sdk/ts-host-kits/), [`sdk/ts-host-t3/`](sdk/ts-host-t3/) |
-| understand claim boundaries before repeating them publicly | [docs/CLAIMS_EVIDENCE_LEDGER.md](docs/CLAIMS_EVIDENCE_LEDGER.md) |
+| understand BreadBoard’s stable contracts and evidence posture | [docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md](docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md) |
 
 ### Research systems entrypoint
 
@@ -124,6 +124,16 @@ Those docs are the fastest path into:
 - RL training overlays
 - C-Trees
 - DARWIN
+
+Public, durable documentation now lives under the tracked `docs/` taxonomy.
+Maintainer-only notes live under `docs/internals/`, including the
+research-closeout and stop/go material in `docs/internals/research/`.
+Local planning, research, tranche, and archaeology material is intentionally
+offloaded to `docs_tmp/` so new readers do not have to navigate our execution
+residue first.
+
+The stable top-level zone model is documented in
+[docs/reference/REPOSITORY_ZONE_MODEL.md](docs/reference/REPOSITORY_ZONE_MODEL.md).
 
 ---
 
@@ -145,7 +155,7 @@ breadboard/
 │   ├── state/                     session/event/transcript state
 │   ├── todo/                      task/todo primitives
 │   └── tool_calling/              tool routing and related logic
-├── breadboard_sdk/                Python SDK
+├── breadboard_sdk/                Python SDK surface
 ├── sdk/
 │   ├── ts/                        CLI-bridge TS SDK
 │   ├── ts-backbone/               public TS backbone API
@@ -167,7 +177,7 @@ breadboard/
 │   └── text_contracts/            text and contract artifacts
 ├── conformance/                   engine fixture bundles and conformance manifests
 ├── contracts/                     machine-readable kernel and contract schemas
-├── docs/                          operator, contract, quickstart, and product docs
+├── docs/                          durable tracked docs surface
 ├── implementations/               profiles, prompts, tools, and synthesis assets
 ├── opentui_slab/                  fixed-height OpenTUI-style client
 ├── scripts/                       setup, validation, replay, export, and maintenance tools
@@ -177,6 +187,14 @@ breadboard/
 ├── tui_skeleton/                  main terminal client
 └── vscode_sidebar/                VSCode sidebar surface
 ```
+
+Zone intent:
+
+- `breadboard/` is the public product-facing Python package area
+- `agentic_coder_prototype/` is the transitional internal runtime substrate
+- `breadboard_ext/` is extension space
+- `breadboard_sdk/` and `sdk/` are SDK and host surfaces
+- `scripts/` and `docs/` are support surfaces with explicit taxonomy
 
 If you want the documentation equivalent of that map, see [docs/INDEX.md](docs/INDEX.md).
 
@@ -217,10 +235,16 @@ make setup-fast-engine
 ### Verification
 
 ```bash
+python scripts/dev/quickstart_first_time.py --include-advanced
+python scripts/dev/first_time_doctor.py --strict
 make doctor
+make setup-refresh-python
 make cli-capabilities
 make devx-smoke
+make devx-full-pass
+make devx-timing
 make sdk-hello-live
+make disk-report
 ```
 
 ### What the bootstrap actually does
@@ -232,7 +256,7 @@ make sdk-hello-live
 
 For the detailed setup reference:
 
-- [docs/INSTALL_AND_DEV_QUICKSTART.md](docs/INSTALL_AND_DEV_QUICKSTART.md)
+- [docs/getting-started/INSTALL_AND_DEV_QUICKSTART.md](docs/getting-started/INSTALL_AND_DEV_QUICKSTART.md)
 - [docs/quickstarts/FIRST_RUN_5_MIN.md](docs/quickstarts/FIRST_RUN_5_MIN.md)
 
 ---
@@ -392,7 +416,7 @@ BreadBoard keeps a deterministic event log and leans heavily on replay/evidence.
 ### Typical replay workflow
 
 ```bash
-python scripts/export_cli_bridge_contracts.py
+python scripts/release/export_cli_bridge_contracts.py
 bash scripts/phase12_live_smoke.sh
 RUN_DIR="$(ls -1dt logging/* | head -n 1)"
 python scripts/log_reduce.py "${RUN_DIR}" --turn-limit 2 --tool-only
@@ -404,8 +428,8 @@ python scripts/log_reduce.py "${RUN_DIR}" --turn-limit 2 --tool-only
 |---|---|
 | conformance overview | [docs/conformance/README.md](docs/conformance/README.md) |
 | test matrix | [docs/conformance/CONFORMANCE_TEST_MATRIX_V1.md](docs/conformance/CONFORMANCE_TEST_MATRIX_V1.md) |
-| parity-critical boundaries | [docs/PARITY_KERNEL_BOUNDARIES.md](docs/PARITY_KERNEL_BOUNDARIES.md) |
-| public claims and wording guardrails | [docs/CLAIMS_EVIDENCE_LEDGER.md](docs/CLAIMS_EVIDENCE_LEDGER.md) |
+| kernel contract pack | [docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md](docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md) |
+| E4 target/version posture | [docs/conformance/E4_TARGET_VERSIONING.md](docs/conformance/E4_TARGET_VERSIONING.md) |
 | replay-proof quickstart | [docs/quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md](docs/quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md) |
 | launch proof media | [docs/media/proof/README.md](docs/media/proof/README.md) |
 
@@ -463,12 +487,10 @@ If you are evaluating BreadBoard as a TS backbone rather than as a Python engine
 
 Useful client docs:
 
-- [docs/TUI_THINKING_STREAMING_CONFIG.md](docs/TUI_THINKING_STREAMING_CONFIG.md)
-- [docs/TUI_TODO_EVENT_CONTRACT.md](docs/TUI_TODO_EVENT_CONTRACT.md)
-- [docs/VSCODE_SIDEBAR_DOCS_INDEX.md](docs/VSCODE_SIDEBAR_DOCS_INDEX.md)
 - [docs/contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md](docs/contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md)
 - [docs/contracts/kernel/T3_BACKBONE_ADOPTION_V1.md](docs/contracts/kernel/T3_BACKBONE_ADOPTION_V1.md)
 - [docs/contracts/kernel/THIN_HOST_ADOPTION_V1.md](docs/contracts/kernel/THIN_HOST_ADOPTION_V1.md)
+- [docs/contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md](docs/contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md)
 
 ---
 
@@ -481,15 +503,14 @@ The repo docs are large. These are the most useful entrypoints.
 | Doc | Purpose |
 |---|---|
 | [docs/quickstarts/FIRST_RUN_5_MIN.md](docs/quickstarts/FIRST_RUN_5_MIN.md) | fastest path from clone to a working local run |
-| [docs/INSTALL_AND_DEV_QUICKSTART.md](docs/INSTALL_AND_DEV_QUICKSTART.md) | full setup and environment reference |
+| [docs/getting-started/INSTALL_AND_DEV_QUICKSTART.md](docs/getting-started/INSTALL_AND_DEV_QUICKSTART.md) | full setup and environment reference |
 | [docs/INDEX.md](docs/INDEX.md) | docs map by audience and task |
 
 ### Contracts and kernels
 
 | Doc | Purpose |
 |---|---|
-| [docs/CONTRACT_SURFACES.md](docs/CONTRACT_SURFACES.md) | stable contract map |
-| [docs/PARITY_KERNEL_BOUNDARIES.md](docs/PARITY_KERNEL_BOUNDARIES.md) | byte-stable parity-critical surfaces |
+| [docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md](docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md) | stable public contract pack |
 | [docs/contracts/kernel/PROGRAM_INDEX_V1.md](docs/contracts/kernel/PROGRAM_INDEX_V1.md) | kernel and TS backbone program map |
 
 ### Conformance and claims
@@ -497,8 +518,8 @@ The repo docs are large. These are the most useful entrypoints.
 | Doc | Purpose |
 |---|---|
 | [docs/conformance/README.md](docs/conformance/README.md) | conformance suite overview |
-| [docs/CLAIMS_EVIDENCE_LEDGER.md](docs/CLAIMS_EVIDENCE_LEDGER.md) | public claim guardrails |
 | [docs/conformance/E4_TARGET_VERSIONING.md](docs/conformance/E4_TARGET_VERSIONING.md) | E4 target freeze/versioning policy |
+| [docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md](docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md) | public-facing contract and change discipline |
 
 ### TS backbone and adoption
 
@@ -521,8 +542,8 @@ Two examples of what this README is **not** claiming:
 
 Use these before repeating a claim:
 
-- [docs/CLAIMS_EVIDENCE_LEDGER.md](docs/CLAIMS_EVIDENCE_LEDGER.md)
-- [docs/PARITY_KERNEL_BOUNDARIES.md](docs/PARITY_KERNEL_BOUNDARIES.md)
+- [docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md](docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md)
+- [docs/conformance/E4_TARGET_VERSIONING.md](docs/conformance/E4_TARGET_VERSIONING.md)
 - [docs/conformance/README.md](docs/conformance/README.md)
 
 ---

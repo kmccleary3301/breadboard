@@ -22,7 +22,7 @@ REQUIRED_DOC_COMMANDS: dict[str, list[str]] = {
         "make devx-timing",
         "make disk-report",
     ],
-    "docs/INSTALL_AND_DEV_QUICKSTART.md": [
+    "docs/getting-started/INSTALL_AND_DEV_QUICKSTART.md": [
         "python scripts/dev/quickstart_first_time.py --include-advanced",
         "python scripts/dev/first_time_doctor.py --strict",
         "make setup-fast",

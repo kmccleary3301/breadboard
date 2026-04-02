@@ -17,16 +17,6 @@
         "null"
       ]
     },
-    "artifact_ref": {
-      "anyOf": [
-        {
-          "$ref": "artifact_ref_v1.schema.json"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "diff_preview": {},
     "progress": {},
     "todo": {

@@ -1,4 +1,4 @@
-from agentic_coder_prototype.provider_normalizer import normalize_provider_result
+from agentic_coder_prototype.provider import normalize_provider_result
 from agentic_coder_prototype.provider_runtime import ProviderResult, ProviderMessage, ProviderToolCall
 
 

@@ -9,7 +9,7 @@ from agentic_coder_prototype.monitoring.reward_metrics import (
     _sanitize_metric_name,
 )
 from agentic_coder_prototype.state.session_state import SessionState
-from agentic_coder_prototype.provider_metrics import ProviderMetricsCollector
+from agentic_coder_prototype.provider.metrics import ProviderMetricsCollector
 from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
 from scripts.export_provider_metrics import aggregate
 
@@ -156,4 +156,3 @@ def test_aggregate_handles_reward_events():
     assert pas_entry["count"] == 2
     assert pas_entry["avg"] == pytest.approx(0.75)
     assert reward_summary["metrics"]["TPF_DELTA"]["avg"] == pytest.approx(1.0)
-

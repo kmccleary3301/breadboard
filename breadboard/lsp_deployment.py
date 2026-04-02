@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Any
 from pathlib import Path
 
 import ray
-from .lsp_manager_v2 import LSPManagerV2, LSP_SERVER_CONFIGS
+from .lsp_manager import LSPManagerV2, LSP_SERVER_CONFIGS
 from .sandbox_lsp_integration import LSPSandboxFactory, integrate_lsp_with_agent_session
 
 
@@ -342,7 +342,7 @@ def example_usage():
         print("Testing LSP features...")
         
         # Test diagnostics
-        diagnostics = ray.get(enhanced_sandbox.lsp_diagnostics.remote("lsp_manager_v2.py"))
+        diagnostics = ray.get(enhanced_sandbox.lsp_diagnostics.remote("lsp_manager.py"))
         print(f"Found {len(diagnostics)} diagnostic sources")
         
         # Test workspace symbols

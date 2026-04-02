@@ -314,7 +314,10 @@ For the exact subsystem arc, read the tranche docs in order:
 - [Optimization V4 mixed-evidence package lanes](optimization-v4-mixed-evidence-package-lanes.md)
 - [Optimization V5 transfer cohorts and generalization evidence](optimization-v5-transfer-cohorts-and-generalization-evidence.md)
 - [Optimization V6 live experiment cells and kernel freeze](optimization-v6-live-experiment-cells-and-kernel-freeze.md)
-- [Optimization V6 stop/go synthesis](optimization-v6-stop-go-synthesis.md)
+
+If you need the maintainer-only stop/go closeout note, use:
+
+- [Optimization V6 stop/go synthesis](../internals/research/optimization-v6-stop-go-synthesis.md)
 
 ---
 

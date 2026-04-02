@@ -10,7 +10,7 @@ Scope: X/Twitter, Reddit, LinkedIn (Hacker News still deferred).
 
 - [ ] At least 2 proof-backed posts shipped across early channels.
 - [ ] Each post includes one caveat/limitation and one concrete CTA.
-- [ ] Post links point to current docs (`RELEASE_LANDING_V1`, proof bundle, quickstart).
+- [ ] Post links point to current public docs (`README.md`, proof bundle quickstart, and onboarding quickstarts).
 
 ## Feedback Intake
 
@@ -28,13 +28,13 @@ Scope: X/Twitter, Reddit, LinkedIn (Hacker News still deferred).
 - [ ] Mark each item with severity (`high`/`medium`/`low`) and confidence.
 - [ ] Convert high-severity items into actionable tasks/docs edits.
 - [ ] Reject/defer out-of-scope items with written rationale.
-- [ ] Ensure no public claim language conflicts with evidence ledger.
+- [ ] Ensure no public claim language conflicts with the current conformance and contract surfaces.
 
 ## Required Updates Before Marking Incorporated
 
 - [ ] Apply at least one docs iteration from real feedback.
-- [ ] Update `docs/CLAIMS_EVIDENCE_LEDGER.md` if wording changes.
-- [ ] Update `docs/RELEASE_LANDING_V1.md` if onboarding path changes.
+- [ ] Update `README.md`, `docs/INDEX.md`, or `docs/conformance/README.md` if wording changes.
+- [ ] Update the onboarding quickstart path if the install flow changes.
 - [ ] Add/refresh one reproducible proof artifact if requested by feedback.
 - [ ] Record what changed and why in a dated validation note.
 
@@ -48,12 +48,14 @@ Scope: X/Twitter, Reddit, LinkedIn (Hacker News still deferred).
   - before/after docs pointers.
 - [ ] Update `docs/LAUNCH_STAGING_PLAN_V1.md`:
   - check `Early channel feedback has been incorporated`.
-- [ ] Update `docs/RELEASE_LANDING_V1.md`:
-  - add the new incorporation report under latest validation records.
+- [ ] Update the current public landing docs:
+  - `README.md`
+  - `docs/INDEX.md`
+  - or the most relevant quickstart/reference doc
+  with the incorporation report where appropriate.
 
 ## Exit Criteria
 
 - [ ] The incorporation report exists and is linked from launch docs.
 - [ ] The final unchecked HN gate is now checked.
 - [ ] Staging decision can be re-reviewed for broad posting readiness.
-

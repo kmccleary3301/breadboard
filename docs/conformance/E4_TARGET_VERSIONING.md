@@ -58,7 +58,7 @@ make e4-snapshot-coverage
 Equivalent direct command:
 
 ```bash
-python scripts/check_e4_snapshot_coverage.py --json
+python scripts/research/parity/check_e4_snapshot_coverage.py --json
 ```
 
 ## Refresh helpers

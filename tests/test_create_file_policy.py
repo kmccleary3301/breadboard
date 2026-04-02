@@ -2,7 +2,7 @@ import ray
 import pytest
 
 from agentic_coder_prototype.execution.enhanced_executor import EnhancedToolExecutor
-from breadboard.sandbox_v2 import DevSandboxV2
+from breadboard.sandbox import DevSandboxV2
 
 
 @pytest.fixture(scope="module")
@@ -56,4 +56,3 @@ def test_aider_prefer_write_on_create(ray_cluster, tmp_path):
     asyncio.set_event_loop(loop)
     out = loop.run_until_complete(exe.execute_tool_call(tool_call))
     assert isinstance(out, dict)
-

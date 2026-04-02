@@ -331,21 +331,25 @@ Those belong elsewhere.
 
 ## Recommended reading after this overview
 
-For the detailed arc:
+For the public subsystem arc:
 
 - [DAG Runtime V1 search surface](dag-runtime-v1-search-surface.md)
-- [DAG Runtime V2 phase 0 pressure packet](dag-runtime-v2-phase0-pressure-packet.md)
 - [DAG Runtime V2 assessment surface](dag-runtime-v2-assessment-surface.md)
 - [DAG Runtime V2 E4 widening packet](dag-runtime-v2-e4-widening-packet.md)
 - [DAG Runtime V2 optimize adapter note](dag-runtime-v2-optimize-adapter-note.md)
 - [DAG Runtime V2 DARWIN boundary](dag-runtime-v2-darwin-boundary.md)
 - [DAG Runtime V2 RL-facing note](dag-runtime-v2-rl-facing-note.md)
-- [DAG Runtime V2 stop/go synthesis](dag-runtime-v2-stop-go-synthesis.md)
 - [DAG Runtime V3 fidelity helper layer](dag-runtime-v3-fidelity-helper-layer.md)
 - [DAG Runtime V3 RSA replication packet](dag-runtime-v3-rsa-replication-packet.md)
 - [DAG Runtime V3 PaCoRe replication packet](dag-runtime-v3-pacore-replication-packet.md)
 - [DAG Runtime V3 cross-paper composition](dag-runtime-v3-cross-paper-composition.md)
-- [DAG Runtime V3 freeze and decision gate](dag-runtime-v3-freeze-and-decision-gate.md)
+
+If you need the maintainer-only go/no-go and freeze records that explain why the
+subsystem stopped growing, use:
+
+- [DAG Runtime V2 phase 0 pressure packet](../internals/research/dag-runtime-v2-phase0-pressure-packet.md)
+- [DAG Runtime V2 stop/go synthesis](../internals/research/dag-runtime-v2-stop-go-synthesis.md)
+- [DAG Runtime V3 freeze and decision gate](../internals/research/dag-runtime-v3-freeze-and-decision-gate.md)
 
 ---
 

@@ -15,7 +15,7 @@ from breadboard.lsp_deployment import (
     deploy_lsp_system,
     example_usage
 )
-from breadboard.lsp_manager_v2 import LSP_SERVER_CONFIGS
+from breadboard.lsp_manager import LSP_SERVER_CONFIGS
 
 
 @pytest.fixture(scope="module")
@@ -251,7 +251,7 @@ class TestLSPClusterManager:
         assert health_status["unhealthy_servers"] == 0
         assert isinstance(health_status["language_status"], dict)
     
-    @patch('lsp_deployment.LSPManagerV2')
+    @patch('breadboard.lsp_deployment.LSPManagerV2')
     def test_cluster_deployment(self, mock_lsp_manager, ray_cluster, cluster_manager, test_workspace):
         """Test full cluster deployment"""
         # Mock successful LSP manager creation
@@ -300,7 +300,7 @@ class TestLSPClusterManager:
         no_server = cluster_manager.get_lsp_server("nonexistent")
         assert no_server is None
     
-    @patch('lsp_deployment.LSPManagerV2')
+    @patch('breadboard.lsp_deployment.LSPManagerV2')
     def test_server_scaling(self, mock_lsp_manager, cluster_manager, test_workspace):
         """Test server scaling functionality"""
         # Mock LSP manager creation
@@ -359,7 +359,7 @@ class TestLSPProxyRouter:
         # Should be created without errors
         assert router is not None
     
-    @patch('lsp_deployment.LSPClusterManager.get_lsp_server')
+    @patch('breadboard.lsp_deployment.LSPClusterManager.get_lsp_server')
     def test_diagnostics_routing(self, mock_get_server, proxy_router, test_workspace):
         """Test diagnostics routing logic"""
         # Mock server with diagnostics capability
@@ -375,7 +375,7 @@ class TestLSPProxyRouter:
         
         assert isinstance(result, dict)
     
-    @patch('lsp_deployment.LSPClusterManager.get_lsp_server') 
+    @patch('breadboard.lsp_deployment.LSPClusterManager.get_lsp_server') 
     def test_hover_routing(self, mock_get_server, proxy_router, test_workspace):
         """Test hover request routing"""
         # Mock server with hover capability

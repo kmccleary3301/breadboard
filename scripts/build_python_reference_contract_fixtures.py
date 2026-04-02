@@ -20,8 +20,8 @@ from agentic_coder_prototype.orchestration.coordination import (
 )
 from agentic_coder_prototype.orchestration.orchestrator import MultiAgentOrchestrator
 from agentic_coder_prototype.orchestration.schema import TeamConfig
-from agentic_coder_prototype.provider_invoker import ProviderInvoker
-from agentic_coder_prototype.provider_runtime import ProviderResult
+from agentic_coder_prototype.provider import ProviderInvoker
+from agentic_coder_prototype.provider.runtime import ProviderResult
 from agentic_coder_prototype.state.session_state import SessionState
 
 ROOT = Path(__file__).resolve().parents[1]

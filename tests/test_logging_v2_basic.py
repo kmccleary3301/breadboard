@@ -2,10 +2,11 @@ import json
 import os
 from pathlib import Path
 
-from agentic_coder_prototype.logging_v2 import LoggerV2Manager
-from agentic_coder_prototype.logging_v2.api_recorder import APIRequestRecorder
-from agentic_coder_prototype.logging_v2.prompt_logger import PromptArtifactLogger
-from agentic_coder_prototype.logging_v2.request_recorder import StructuredRequestRecorder
+from agentic_coder_prototype.run_logging import LoggerV2Manager
+from agentic_coder_prototype.run_logging.api_recorder import APIRequestRecorder
+from agentic_coder_prototype.run_logging.prompt_logger import PromptArtifactLogger
+from agentic_coder_prototype.run_logging.request_recorder import StructuredRequestRecorder
+from agentic_coder_prototype.logging_v2 import LoggerV2Manager as CompatLoggerV2Manager
 
 
 def test_logger_v2_creates_run_tree(tmp_path):
@@ -63,3 +64,6 @@ def test_logger_v2_creates_run_tree(tmp_path):
     assert long_req["request"]["body_truncated"] is True
     assert len(long_req["request"]["body_excerpt"]) == 2048
 
+
+def test_logging_v2_compatibility_import_alias():
+    assert CompatLoggerV2Manager is LoggerV2Manager

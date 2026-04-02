@@ -1,4 +1,4 @@
-from agentic_coder_prototype.provider_metrics import ProviderMetricsCollector
+from agentic_coder_prototype.provider.metrics import ProviderMetricsCollector
 
 
 def test_provider_metrics_records_dialect_stats():

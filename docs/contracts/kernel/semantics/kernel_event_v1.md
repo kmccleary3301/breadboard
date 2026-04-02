@@ -37,9 +37,9 @@ Primary current owners and related surfaces:
 - `agentic_coder_prototype/engine.py`
 - `agentic_coder_prototype/agent_session.py`
 - `agentic_coder_prototype/turn_context.py`
-- `agentic_coder_prototype/logging_v2/run_logger.py`
-- `agentic_coder_prototype/logging_v2/request_recorder.py`
-- `agentic_coder_prototype/logging_v2/api_recorder.py`
+- `agentic_coder_prototype/run_logging/run_logger.py`
+- `agentic_coder_prototype/run_logging/request_recorder.py`
+- `agentic_coder_prototype/run_logging/api_recorder.py`
 - `agentic_coder_prototype/ctrees/events.py`
 - task and CLI bridge event normalizers tested elsewhere
 

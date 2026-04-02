@@ -109,7 +109,11 @@ bash scripts/dev/sdk_hello_live_smoke.sh --no-ts
 ## 6. Daily commands
 
 ```bash
+# quick status snapshot
+python scripts/dev/quickstart_first_time.py --include-advanced
+
 # strict environment check
+python scripts/dev/first_time_doctor.py --strict
 make doctor
 
 # stricter TUI-inclusive checks
@@ -179,4 +183,4 @@ bash scripts/dev/bootstrap_first_time.sh --skip-python
 
 ---
 
-For the full setup reference with all flags, profiles, and advanced smokes, see [../INSTALL_AND_DEV_QUICKSTART.md](../INSTALL_AND_DEV_QUICKSTART.md).
+For the full setup reference with all flags, profiles, and advanced smokes, see [../getting-started/INSTALL_AND_DEV_QUICKSTART.md](../getting-started/INSTALL_AND_DEV_QUICKSTART.md).

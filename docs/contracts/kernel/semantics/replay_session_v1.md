@@ -90,7 +90,7 @@ A first-pass `bb.replay_session.v1` should include:
 Current replay-related ownership is spread across:
 
 - `agentic_coder_prototype/replay.py`
-- replay-aware execution paths in `conductor_execution.py`
+- replay-aware execution paths in `agentic_coder_prototype/conductor/execution.py`
 - replay provider runtime surfaces
 - conversion scripts under `scripts/`
 - many parity scenarios and evidence bundles under `docs/conformance/`

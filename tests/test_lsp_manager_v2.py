@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from breadboard.lsp_manager_v2 import (
+from breadboard.lsp_manager import (
     LSPManagerV2, 
     LSPServer, 
     LSPOrchestrator, 
@@ -15,6 +15,7 @@ from breadboard.lsp_manager_v2 import (
     LSPJSONRPCClient,
     LSP_SERVER_CONFIGS
 )
+from breadboard.lsp_manager_v2 import LSPManagerV2 as CompatLSPManagerV2
 
 
 @pytest.fixture(scope="module")
@@ -144,6 +145,10 @@ class TestLSPJSONRPCClient:
         
         # Verify stdin.write was called
         mock_process.stdin.write.assert_called()
+
+    def test_v2_compatibility_import_alias(self):
+        """Test that the legacy v2 module path still aliases the canonical class."""
+        assert CompatLSPManagerV2 is LSPManagerV2
 
 
 class TestLSPServerConfigs:

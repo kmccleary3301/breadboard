@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from agentic_coder_prototype.provider_invoker import ProviderInvoker
+from agentic_coder_prototype.provider import ProviderInvoker
 from agentic_coder_prototype.provider_runtime import (
     ProviderMessage,
     ProviderResult,

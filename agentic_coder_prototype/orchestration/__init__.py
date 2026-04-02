@@ -18,6 +18,7 @@ from .job_manager import JobManager, JobRef
 from .bus_adapter import BusAdapter
 from .orchestrator import MultiAgentOrchestrator
 from .replay import EventLogReplay, load_event_log, write_event_log
+from .agent_session import OpenCodeAgent
 
 __all__ = [
     "AgentConfigRef",
@@ -40,4 +41,5 @@ __all__ = [
     "EventLogReplay",
     "load_event_log",
     "write_event_log",
+    "OpenCodeAgent",
 ]

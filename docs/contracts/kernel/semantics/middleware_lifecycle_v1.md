@@ -23,7 +23,7 @@ These names are drawn from current runtime behavior and the extension spine docs
 
 ## Current sources of truth
 
-- `agentic_coder_prototype/conductor_execution.py`
+- `agentic_coder_prototype/conductor/execution.py`
 - `agentic_coder_prototype/conductor_loop.py`
 - `agentic_coder_prototype/extensions/spine.py`
 - `docs/EXTENSION_MIDDLEWARE_SPINE.md`

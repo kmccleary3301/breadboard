@@ -263,7 +263,7 @@ Use this sequence:
 4. [RL V2 export conformance](rl-training-primitives-v2-export-conformance.md)
 5. [RL V2 adapter probes](rl-training-primitives-v2-adapter-probes.md)
 6. [RL V2 pressure-study packet](rl-training-primitives-v2-pressure-study-packet.md)
-7. [RL V2 freeze and deferrals](rl-training-primitives-v2-freeze-and-deferrals.md)
+7. [RL V2 freeze and deferrals](../internals/research/rl-training-primitives-v2-freeze-and-deferrals.md)
 
 ---
 

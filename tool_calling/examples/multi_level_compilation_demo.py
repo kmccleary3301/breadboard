@@ -14,7 +14,7 @@ from tool_calling.multi_level_prompt_compiler import (
     MultiLevelPromptCompiler, PromptCompilationConfig, 
     PromptLength, PersistenceMode
 )
-from tool_calling.enhanced_agent_integration_v2 import EnhancedAgentIntegrationV2
+from tool_calling.enhanced_agent_integration import EnhancedAgentIntegrationV2
 from tool_calling.core import ToolDefinition, ToolParameter
 
 

@@ -5,7 +5,7 @@ This review records the gate status for broad launch posting readiness.
 ## Inputs Reviewed
 
 - `docs/LAUNCH_STAGING_PLAN_V1.md`
-- `docs/RELEASE_LANDING_V1.md`
+- `README.md`
 - `docs/ci/QUICKSTART_SAFE_VALIDATION_20260217.md`
 - `docs/ci/RELEASE_LOW_RISK_GATES_20260217.md`
 
@@ -30,4 +30,3 @@ This review records the gate status for broad launch posting readiness.
 - This is consistent with policy:
   - Hacker News remains deferred until traction/feedback from early channels.
 - No high-severity technical/doc mismatches were observed in this review pass.
-

@@ -8,7 +8,7 @@ import pytest
 import ray
 
 from breadboard.adaptive_iter import decode_adaptive_iterable
-from breadboard.sandbox_v2 import new_dev_sandbox_v2
+from breadboard.sandbox import new_dev_sandbox_v2
 
 
 def _docker_usable() -> bool:
@@ -49,4 +49,3 @@ def test_docker_sandbox_runs_shell(ray_cluster, tmp_path):
     items = list(it)
     assert items[-1]["exit"] == 0
     assert "hello" in str(items[0])
-

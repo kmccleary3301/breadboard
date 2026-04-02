@@ -128,60 +128,6 @@
     {
       "properties": {
         "command": {
-          "enum": [
-            "session_child_next",
-            "session_child_previous",
-            "session_parent"
-          ]
-        },
-        "payload": {
-          "additionalProperties": true,
-          "properties": {
-            "childSessionId": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "child_session_id": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "parentSessionId": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "parent_session_id": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "targetSessionId": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "target_session_id": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "type": "object"
-        }
-      },
-      "title": "SessionNavigation"
-    },
-    {
-      "properties": {
-        "command": {
           "const": "stop"
         },
         "payload": {
@@ -300,9 +246,6 @@
         "restore_checkpoint",
         "permission_decision",
         "set_skills",
-        "session_child_next",
-        "session_child_previous",
-        "session_parent",
         "stop",
         "set_model",
         "set_mode",

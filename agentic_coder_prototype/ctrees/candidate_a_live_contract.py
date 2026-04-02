@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CONTROL_ROOT = Path("/shared_folders/querylake_server/ray_testing/ray_SCE")
-_RUNNER_SCRIPT = _REPO_ROOT / "scripts" / "phase11_benchmark_runner_stub.py"
+_RUNNER_SCRIPT = _REPO_ROOT / "scripts" / "archive" / "phase11_benchmark_runner_stub.py"
 _DEFAULT_OUTPUT_ROOT = _CONTROL_ROOT / "docs_tmp" / "c_trees" / "phase_11" / "artifacts" / "candidate_a_live"
 _DEFAULT_WORKSPACE_ROOT = _REPO_ROOT / "tmp" / "phase11_candidate_a_live_runs"
 

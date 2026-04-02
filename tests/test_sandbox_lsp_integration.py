@@ -12,7 +12,7 @@ from breadboard.sandbox_lsp_integration import (
     integrate_lsp_with_agent_session,
     LSP_TOOL_DEFINITIONS
 )
-from breadboard.sandbox_v2 import DevSandboxV2
+from breadboard.sandbox import DevSandboxV2
 
 
 @pytest.fixture(scope="module")

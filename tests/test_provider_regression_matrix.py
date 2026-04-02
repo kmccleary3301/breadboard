@@ -5,7 +5,7 @@ import pytest
 
 from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.provider_capability_probe import CapabilityProbeResult
+from agentic_coder_prototype.provider.capability_probe import CapabilityProbeResult
 from agentic_coder_prototype.provider_runtime import (
     MockRuntime,
     ProviderRuntimeError,

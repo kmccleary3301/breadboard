@@ -58,13 +58,13 @@ Machine-readable contract artifacts live under:
 
 ## Relationship to other docs
 
-### `docs/CONTRACT_SURFACES.md`
+### `docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md`
 
-This is the top-level map of stable contract boundaries. It should point here when kernel contracts become the primary runtime source of truth.
+This is the top-level public contract pack. It is the durable entrypoint for stable boundaries, change discipline, and contract-breaking expectations.
 
-### `docs/PARITY_KERNEL_BOUNDARIES.md`
+### `docs/conformance/E4_TARGET_VERSIONING.md`
 
-This remains useful for parity-critical surfaces and current E4/emulation governance. The kernel-contract program is broader: it is about multi-engine runtime truth, not only target harness parity.
+This remains useful for parity-target freeze doctrine and E4/emulation governance. The kernel-contract program is broader: it is about multi-engine runtime truth, not only target harness parity.
 
 ### `contracts/kernel/`
 

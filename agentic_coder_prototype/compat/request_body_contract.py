@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional
 
 from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.provider_runtime import (
+from agentic_coder_prototype.provider.runtime import (
     AnthropicMessagesRuntime,
     OpenAIChatRuntime,
     ProviderRuntime,

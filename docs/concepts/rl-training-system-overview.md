@@ -316,18 +316,21 @@ RL may eventually provide better data or evidence to those systems, but it shoul
 
 ## Recommended reading after this overview
 
-For the detailed evolution:
+For the public subsystem arc:
 
 - [RL V1 boundary and contract pack](rl-training-primitives-v1-boundary-and-contract-pack.md)
 - [RL V1 replay parity](rl-training-primitives-v1-replay-parity.md)
 - [RL V1 alpha exporters](rl-training-primitives-v1-alpha-exporters.md)
 - [RL V1 multi-agent async hardening](rl-training-primitives-v1-multi-agent-async-hardening.md)
-- [RL V1 freeze and deferrals](rl-training-primitives-v1-freeze-and-deferrals.md)
 - [RL V2 fidelity hardening](rl-training-primitives-v2-fidelity-hardening.md)
 - [RL V2 export conformance](rl-training-primitives-v2-export-conformance.md)
 - [RL V2 adapter probes](rl-training-primitives-v2-adapter-probes.md)
 - [RL V2 pressure-study packet](rl-training-primitives-v2-pressure-study-packet.md)
-- [RL V2 freeze and deferrals](rl-training-primitives-v2-freeze-and-deferrals.md)
+
+If you need the maintainer-only closeout and deferral notes, use:
+
+- [RL V1 freeze and deferrals](../internals/research/rl-training-primitives-v1-freeze-and-deferrals.md)
+- [RL V2 freeze and deferrals](../internals/research/rl-training-primitives-v2-freeze-and-deferrals.md)
 
 ---
 

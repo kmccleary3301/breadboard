@@ -26,7 +26,7 @@ Primary current owners and related surfaces:
 
 - `agentic_coder_prototype/agent_session.py`
 - `agentic_coder_prototype/turn_context.py`
-- `agentic_coder_prototype/logging_v2/markdown_transcript.py`
+- `agentic_coder_prototype/run_logging/markdown_transcript.py`
 - `agentic_coder_prototype/reasoning_trace_store.py`
 - `agentic_coder_prototype/todo/store.py`
 - longrun/checkpoint paths that snapshot session state

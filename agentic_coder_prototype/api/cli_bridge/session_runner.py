@@ -22,9 +22,9 @@ from agentic_coder_prototype.skills.registry import (
     apply_skill_selection,
 )
 from agentic_coder_prototype.plugins.loader import discover_plugin_manifests, plugin_snapshot
-from agentic_coder_prototype.policy_pack import PolicyPack
-from agentic_coder_prototype.guardrail_coordinator import GuardrailCoordinator
-from agentic_coder_prototype.permission_rules_store import (
+from agentic_coder_prototype.permissions.policy_pack import PolicyPack
+from agentic_coder_prototype.guardrail import GuardrailCoordinator
+from agentic_coder_prototype.permissions import (
     build_permission_overrides,
     load_permission_rules,
     upsert_permission_rule,

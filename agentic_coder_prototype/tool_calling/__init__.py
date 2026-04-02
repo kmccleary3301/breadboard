@@ -19,3 +19,5 @@ Use the new submodules directly:
 from agentic_coder_prototype.core.core import ToolDefinition, ToolParameter
 from agentic_coder_prototype.compilation.tool_yaml_loader import load_yaml_tools
 from agentic_coder_prototype.compilation.system_prompt_compiler import get_compiler
+from .catalog import build_tool_catalog_specs, tool_catalog_hash
+from .ir import ToolCallIR, as_simplenamespace, to_tool_call_ir

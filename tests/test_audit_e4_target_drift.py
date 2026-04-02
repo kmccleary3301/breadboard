@@ -13,7 +13,7 @@ def _repo_root() -> Path:
 
 
 def _load_module(module_name: str):
-    module_path = _repo_root() / "scripts" / "audit_e4_target_drift.py"
+    module_path = _repo_root() / "scripts" / "research" / "parity" / "audit_e4_target_drift.py"
     scripts_dir = str((_repo_root() / "scripts").resolve())
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)

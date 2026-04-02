@@ -116,7 +116,7 @@ This avoids intermittent Ray worker kills under high ambient memory pressure.
 1. None for this recalibration pass; strict evidence checks and snapshot-based drift audit are green:
    - `python scripts/check_e4_target_freeze_manifest.py --strict-evidence --json` -> `ok: true`
    - `python scripts/check_e4_target_freeze_manifest.py --strict-evidence --max-evidence-age-days 45 --json` -> `ok: true`
-   - `python scripts/audit_e4_target_drift.py --snapshot-json artifacts/conformance/e4_refsnapshot_20260304_0300.json ...` -> `drift_count: 0`
+   - `python scripts/research/parity/audit_e4_target_drift.py --snapshot-json artifacts/conformance/e4_refsnapshot_20260304_0300.json ...` -> `drift_count: 0`
 2. Hardening landed in `scripts/start_tmux_phase4_replay_target.sh`:
    - defaults replay targets to safe `/tmp/breadboard_replay_<session>_ws` workspace
    - auto-falls back to safe workspace when repo-root is requested
@@ -294,7 +294,7 @@ Strict replay probe reruns:
 Manifest/drift verification:
 
 - `python scripts/check_e4_target_freeze_manifest.py --strict-evidence --json` -> `ok: true`
-- `python scripts/audit_e4_target_drift.py --json-out artifacts/conformance/e4_target_drift_audit_report.20260305_fix4_final.json`
+- `python scripts/research/parity/audit_e4_target_drift.py --json-out artifacts/conformance/e4_target_drift_audit_report.20260305_fix4_final.json`
   - `drift_count: 0` (all 44 E4 rows aligned at run time)
 
 ## oh-my-opencode follow-up refresh (2026-03-05)

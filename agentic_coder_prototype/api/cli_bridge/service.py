@@ -44,7 +44,7 @@ from .registry import SessionRecord, SessionRegistry
 from .session_runner import SessionRunner
 from .tail_index import _TAIL_LINE_INDEX_CACHE
 from ...compilation.v2_loader import load_agent_config
-from ...policy_pack import PolicyPack
+from ...permissions.policy_pack import PolicyPack
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 import ray
 
-from .sandbox_v2 import DevSandboxV2
+from .sandbox import DevSandboxV2
 
 
 @dataclass(frozen=True)
@@ -85,4 +85,3 @@ def create_sandbox(spec: SandboxLaunchSpec) -> ray.actor.ActorHandle:
         workspace=str(spec.workspace),
         lsp_actor=spec.lsp_actor,
     )
-

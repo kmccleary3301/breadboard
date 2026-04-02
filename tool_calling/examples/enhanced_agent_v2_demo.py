@@ -16,7 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tool_calling.core import ToolDefinition, ToolParameter
-from tool_calling.enhanced_agent_integration_v2 import EnhancedAgentIntegrationV2
+from tool_calling.enhanced_agent_integration import EnhancedAgentIntegrationV2
 
 
 def load_test_config(config_path: str) -> dict:

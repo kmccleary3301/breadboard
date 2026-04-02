@@ -2,7 +2,7 @@ import types
 
 import pytest
 
-from agentic_coder_prototype.provider_capability_probe import ProviderCapabilityProbeRunner
+from agentic_coder_prototype.provider.capability_probe import ProviderCapabilityProbeRunner
 from agentic_coder_prototype.provider_runtime import ProviderResult, ProviderMessage
 from agentic_coder_prototype.state.session_state import SessionState
 

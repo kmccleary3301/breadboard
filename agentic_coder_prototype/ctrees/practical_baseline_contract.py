@@ -11,7 +11,7 @@ from .downstream_task_pack import build_phase11_downstream_benchmark_tasks, buil
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CONTROL_ROOT = Path("/shared_folders/querylake_server/ray_testing/ray_SCE")
-_RUNNER_SCRIPT = _REPO_ROOT / "scripts" / "phase11_benchmark_runner_stub.py"
+_RUNNER_SCRIPT = _REPO_ROOT / "scripts" / "archive" / "phase11_benchmark_runner_stub.py"
 _DEFAULT_OUTPUT_ROOT = _CONTROL_ROOT / "docs_tmp" / "c_trees" / "phase_11" / "artifacts" / "practical_baseline"
 _DEFAULT_WORKSPACE_ROOT = _REPO_ROOT / "tmp" / "phase11_practical_baseline_runs"
 

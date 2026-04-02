@@ -20,8 +20,8 @@ __all__ = [
 if TYPE_CHECKING:  # pragma: no cover - typing-only imports
     from .agent import AgenticCoder, create_agent  # noqa: F401
     from .agent_llm_openai import OpenAIConductor  # noqa: F401
-    from .provider_routing import provider_router  # noqa: F401
-    from .provider_adapters import provider_adapter_manager  # noqa: F401
+    from .provider.routing import provider_router  # noqa: F401
+    from .provider import provider_adapter_manager  # noqa: F401
 
 
 def __getattr__(name: str):
@@ -35,11 +35,11 @@ def __getattr__(name: str):
 
         return OpenAIConductor
     if name == "provider_router":
-        from .provider_routing import provider_router
+        from .provider.routing import provider_router
 
         return provider_router
     if name == "provider_adapter_manager":
-        from .provider_adapters import provider_adapter_manager
+        from .provider import provider_adapter_manager
 
         return provider_adapter_manager
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

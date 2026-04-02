@@ -112,12 +112,12 @@ The same contract should also capture:
 
 Current ownership is spread across:
 
-- `agentic_coder_prototype/provider_ir.py`
-- `agentic_coder_prototype/provider_normalizer.py`
-- `agentic_coder_prototype/provider_runtime.py`
-- `agentic_coder_prototype/provider_runtime_replay.py`
-- `agentic_coder_prototype/provider_invoker.py`
-- invocation sites in `agentic_coder_prototype/agent_llm_openai.py` and `conductor_execution.py`
+- `agentic_coder_prototype/provider/ir.py`
+- `agentic_coder_prototype/provider/normalizer.py`
+- `agentic_coder_prototype/provider/runtime.py`
+- `agentic_coder_prototype/provider/runtime_replay.py`
+- `agentic_coder_prototype/provider/invoker.py`
+- invocation sites in `agentic_coder_prototype/agent_llm_openai.py` and `agentic_coder_prototype/conductor/execution.py`
 
 The explicit contract boundary is still weaker than ideal. The immediate Python cleanup should make the request/response exchange record explicit even if transport behavior remains unchanged.
 

@@ -1,5 +1,5 @@
 """
-Integration layer between sandbox_v2.py and lsp_manager_v2.py
+Integration layer between the canonical sandbox and canonical LSP modules.
 Provides enhanced LSP capabilities without modifying existing code.
 """
 
@@ -7,14 +7,15 @@ import os
 import ray
 from typing import Any, Dict, List, Optional
 
-from .lsp_manager_v2 import LSPManagerV2
+from .lsp_manager import LSPManagerV2
 
 
 @ray.remote
 class LSPEnhancedSandbox:
     """
     Enhanced sandbox that wraps DevSandboxV2 with advanced LSP capabilities.
-    This is a composition pattern that adds LSP features without modifying sandbox_v2.py
+    This is a composition pattern that adds LSP features without modifying the
+    canonical sandbox module.
     """
     
     def __init__(self, base_sandbox: ray.ObjectRef, workspace: str):
@@ -192,7 +193,7 @@ class LSPSandboxFactory:
         """
         Create an LSP-enhanced sandbox that's compatible with the agent session actor.
         """
-        from .sandbox_v2 import DevSandboxV2
+        from .sandbox import DevSandboxV2
         
         # Create base sandbox
         base_sandbox = DevSandboxV2.remote(image, session_id, workspace, lsp_actor)

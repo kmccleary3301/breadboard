@@ -4,7 +4,16 @@ import pytest
 import ray
 
 from breadboard.adaptive_iter import decode_adaptive_iterable
-from breadboard.sandbox_v2 import new_dev_sandbox_v2
+from breadboard.sandbox import new_dev_sandbox_v2
+
+
+def test_sandbox_v2_compat_exports():
+    from breadboard.sandbox import DevSandboxV2 as CanonicalDevSandboxV2
+    from breadboard.sandbox_v2 import DevSandboxV2 as CompatDevSandboxV2
+    from breadboard.sandbox_v2 import new_dev_sandbox_v2 as compat_factory
+
+    assert CompatDevSandboxV2 is CanonicalDevSandboxV2
+    assert compat_factory is new_dev_sandbox_v2
 
 
 @pytest.fixture(scope="module")

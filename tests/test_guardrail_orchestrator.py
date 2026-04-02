@@ -3,8 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
-from agentic_coder_prototype.guardrail_coordinator import GuardrailCoordinator
-from agentic_coder_prototype.guardrail_orchestrator import GuardrailOrchestrator
+from agentic_coder_prototype.guardrail import GuardrailCoordinator, GuardrailOrchestrator
 
 
 class DummySessionState:
@@ -200,4 +199,3 @@ def test_handle_blocked_calls_emits_workspace_validation_error() -> None:
     assert any("VALIDATION_ERROR" in msg for msg in logger.user_messages)
     assert any(ev["type"] == "workspace_block" for ev in session.guardrail_events)
     assert session.counters.get("workspace_guard_violation", 0) == 1
-

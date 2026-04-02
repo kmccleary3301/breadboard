@@ -1,6 +1,6 @@
 import time
 
-from agentic_coder_prototype.provider_health import RouteHealthManager
+from agentic_coder_prototype.provider.health import RouteHealthManager
 
 
 def test_route_health_opens_and_closes_circuit(monkeypatch):

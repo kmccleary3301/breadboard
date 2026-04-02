@@ -1077,6 +1077,26 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/features": {
+      "get": {
+        "operationId": "feature_audit_features_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Feature Audit Features Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Feature Audit"
+      }
+    },
     "/health": {
       "get": {
         "operationId": "health_health_get",

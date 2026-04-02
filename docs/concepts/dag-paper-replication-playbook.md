@@ -273,7 +273,7 @@ Use this sequence:
 3. [DAG Runtime V3 RSA replication packet](dag-runtime-v3-rsa-replication-packet.md)
 4. [DAG Runtime V3 PaCoRe replication packet](dag-runtime-v3-pacore-replication-packet.md)
 5. [DAG Runtime V3 cross-paper composition](dag-runtime-v3-cross-paper-composition.md)
-6. [DAG Runtime V3 freeze and decision gate](dag-runtime-v3-freeze-and-decision-gate.md)
+6. [DAG Runtime V3 freeze and decision gate](../internals/research/dag-runtime-v3-freeze-and-decision-gate.md)
 
 ---
 

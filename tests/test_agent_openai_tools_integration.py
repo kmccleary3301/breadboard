@@ -13,8 +13,8 @@ if TOOLS_ROOT not in sys.path:
     sys.path.insert(0, TOOLS_ROOT)
 
 from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from agentic_coder_prototype.provider_capability_probe import ProviderCapabilityProbeRunner
-from agentic_coder_prototype.provider_health import RouteHealthManager
+from agentic_coder_prototype.provider.capability_probe import ProviderCapabilityProbeRunner
+from agentic_coder_prototype.provider.health import RouteHealthManager
 from agentic_coder_prototype.provider_runtime import (
     ProviderRuntimeContext,
     ProviderRuntimeError,
@@ -23,7 +23,7 @@ from agentic_coder_prototype.provider_runtime import (
 )
 from agentic_coder_prototype.provider_routing import ProviderDescriptor
 from agentic_coder_prototype.state.session_state import SessionState
-from agentic_coder_prototype.provider_metrics import ProviderMetricsCollector
+from agentic_coder_prototype.provider.metrics import ProviderMetricsCollector
 
 
 def test_provider_schema_names_roundtrip():

@@ -50,7 +50,7 @@ Canonical validation entrypoints:
 
 - `python scripts/validate_engine_conformance_manifest.py`
 - `python scripts/compare_kernel_conformance_engines.py`
-- `python scripts/validate_kernel_contract_fixtures.py`
+- `python scripts/release/validate_kernel_contract_fixtures.py`
 - `python scripts/run_kernel_conformance_gate.py`
 
 ---

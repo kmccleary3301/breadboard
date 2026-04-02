@@ -1,0 +1,261 @@
+script_path,category,owner_domain,first_move_candidate
+_cross_system_eval_v1.py,research,repo hygiene,no
+aggregate_phase4_tier3_health.py,research,parity,no
+analyze_phase5_frame_gap_hotspots.py,research,repo hygiene,no
+atp_evolake_passive_window.py,research,ATP,no
+atp_ops_digest.py,research,ATP,no
+atp_seven_day_stability_report.py,research,ATP,no
+atp_snapshot_pool_stability.py,research,ATP,no
+atp_state_ref_regression_recovery.py,research,ATP,no
+research/parity/audit_e4_target_drift.py,research,parity,no
+audit_longrun_parity_disabled.py,research,longrun/RLM,no
+backfill_atp_hilbert_bb_spend_v1.py,research,ATP,no
+release/bless_golden.py,release,parity,no
+bless_render_profile_version.py,release,rendering,no
+bless_tmux_golden.py,release,parity,no
+bootstrap_darwin_campaign_specs_v0.py,research,DARWIN,no
+build_atp_hilbert_arm_audit_v1.py,research,ATP,no
+build_atp_hilbert_canonical_baselines_v1.py,research,ATP,no
+build_atp_hilbert_no_repair_slice_v1.py,research,ATP,no
+build_atp_hilbert_repair_intensity_v1.py,research,ATP,no
+build_atp_hilbert_rollup_v1.py,research,ATP,no
+build_atp_hilbert_scoreboard_v1.py,research,ATP,no
+build_atp_invalid_extract_ledger_v1.py,research,ATP,no
+build_darwin_bootstrap_rollup_v0.py,research,DARWIN,no
+build_darwin_comparative_dossier_v1.py,research,DARWIN,no
+build_darwin_compute_normalized_memo_v0.py,research,DARWIN,no
+build_darwin_compute_normalized_review_v0.py,research,DARWIN,no
+build_darwin_compute_normalized_view_v1.py,research,DARWIN,no
+build_darwin_compute_normalized_view_v2.py,research,DARWIN,no
+build_darwin_evolution_ledger_v0.py,research,DARWIN,no
+build_darwin_external_safe_claim_subset_v0.py,research,DARWIN,no
+build_darwin_external_safe_invalidity_summary_v0.py,research,DARWIN,no
+build_darwin_external_safe_memo_v0.py,research,DARWIN,no
+build_darwin_external_safe_packet_v0.py,research,DARWIN,no
+build_darwin_external_safe_reviewer_summary_v0.py,research,DARWIN,no
+build_darwin_future_lane_placeholders_v0.py,research,DARWIN,no
+build_darwin_invalid_comparison_ledger_v1.py,research,DARWIN,no
+build_darwin_lineage_review_v0.py,research,DARWIN,no
+build_darwin_stage3_bounded_transfer_outcomes_v0.py,research,DARWIN,no
+build_darwin_stage3_component_candidates_v0.py,research,DARWIN,no
+build_darwin_stage3_component_memo_v0.py,research,DARWIN,no
+build_darwin_stage3_component_promotion_report_v0.py,research,DARWIN,no
+build_darwin_stage3_component_registry_v0.py,research,DARWIN,no
+build_darwin_stage3_component_scorecard_v0.py,research,DARWIN,no
+build_darwin_stage3_component_transfer_verification_bundle_v0.py,research,DARWIN,no
+build_darwin_stage3_consolidated_verification_bundle_v0.py,research,DARWIN,no
+build_darwin_stage3_failed_transfer_taxonomy_v0.py,research,DARWIN,no
+build_darwin_stage3_invalidity_summary_v0.py,research,DARWIN,no
+build_darwin_stage3_operator_ev_report_v0.py,research,DARWIN,no
+build_darwin_stage3_promoted_family_artifact_v0.py,research,DARWIN,no
+build_darwin_stage3_second_family_decision_v0.py,research,DARWIN,no
+build_darwin_stage3_systems_mutation_canary_v0.py,research,DARWIN,no
+build_darwin_stage3_topology_ev_report_v0.py,research,DARWIN,no
+build_darwin_stage3_verification_bundle_v0.py,research,DARWIN,no
+build_darwin_stage4_bounded_transfer_outcomes_v0.py,research,DARWIN,no
+build_darwin_stage4_canonical_artifact_index_v0.py,research,DARWIN,no
+build_darwin_stage4_comparative_bundle_v0.py,research,DARWIN,no
+build_darwin_stage4_deep_live_reports_v0.py,research,DARWIN,no
+build_darwin_stage4_failed_transfer_taxonomy_v0.py,research,DARWIN,no
+build_darwin_stage4_family_candidates_v0.py,research,DARWIN,no
+build_darwin_stage4_family_memo_v0.py,research,DARWIN,no
+build_darwin_stage4_family_promotion_report_v0.py,research,DARWIN,no
+build_darwin_stage4_family_registry_v0.py,research,DARWIN,no
+build_darwin_stage4_family_scorecard_v0.py,research,DARWIN,no
+build_darwin_stage4_family_verification_bundle_v0.py,research,DARWIN,no
+build_darwin_stage4_live_readiness_v0.py,research,DARWIN,no
+build_darwin_stage4_matched_budget_view_v1.py,research,DARWIN,no
+build_darwin_stage4_operator_ev_report_v0.py,research,DARWIN,no
+build_darwin_stage4_second_family_decision_v0.py,research,DARWIN,no
+build_darwin_stage4_systems_ev_bundle_v0.py,research,DARWIN,no
+build_darwin_stage4_topology_ev_report_v0.py,research,DARWIN,no
+build_darwin_stage5_bounded_transfer_outcomes_v0.py,research,DARWIN,no
+build_darwin_stage5_canonical_artifact_index_v0.py,research,DARWIN,no
+build_darwin_stage5_comparative_bundle_v0.py,research,DARWIN,no
+build_darwin_stage5_composition_canary_v0.py,research,DARWIN,no
+build_darwin_stage5_compounding_quality_v0.py,research,DARWIN,no
+build_darwin_stage5_compounding_rate_v0.py,research,DARWIN,no
+build_darwin_stage5_cross_lane_review_v0.py,research,DARWIN,no
+build_darwin_stage5_failed_transfer_taxonomy_v0.py,research,DARWIN,no
+build_darwin_stage5_family_aware_scorecard_v0.py,research,DARWIN,no
+build_darwin_stage5_family_registry_v0.py,research,DARWIN,no
+build_darwin_stage5_family_reuse_tracking_v0.py,research,DARWIN,no
+build_darwin_stage5_policy_stability_v0.py,research,DARWIN,no
+build_darwin_stage5_replay_posture_v0.py,research,DARWIN,no
+build_darwin_stage5_repo_swe_family_ab_repair_v0.py,research,DARWIN,no
+build_darwin_stage5_scaled_memo_v0.py,research,DARWIN,no
+build_darwin_stage5_scaled_scorecard_v0.py,research,DARWIN,no
+build_darwin_stage5_systems_weighted_live_review_v0.py,research,DARWIN,no
+build_darwin_stage5_third_family_decision_v0.py,research,DARWIN,no
+build_darwin_stage5_verification_bundle_v0.py,research,DARWIN,no
+build_darwin_topology_family_runner_v0.py,research,DARWIN,no
+build_darwin_tranche1_secondary_audits_v0.py,research,DARWIN,no
+build_darwin_transfer_family_view_v0.py,research,DARWIN,no
+build_darwin_transfer_lineage_proving_review_v0.py,research,DARWIN,no
+build_darwin_typed_search_core_v1.py,research,DARWIN,no
+build_darwin_weekly_packet_v1.py,research,DARWIN,no
+build_hilbert_bb_comparison_bundle_v1.py,research,ATP,no
+build_hilbert_comparison_packs_v1.py,research,ATP,no
+build_hilbert_comparison_packs_v2.py,research,ATP,no
+build_ink_publication_benchmark_pack.py,research,rendering,no
+build_launch_media_bundle.py,release,rendering,yes
+build_phase4_tier3_gallery_index.py,research,rendering,no
+build_phase5_latency_canary_timeseries.py,research,repo hygiene,no
+build_phase5_latency_trend_report.py,research,repo hygiene,no
+build_phase5_postcert_monitoring_bundle.py,research,repo hygiene,no
+build_phase5_reliability_flake_report.py,research,repo hygiene,no
+build_phase5_visual_drift_metrics.py,research,repo hygiene,no
+build_pilot_comparison_report_v1.py,research,repo hygiene,no
+build_python_reference_contract_fixtures.py,research,repo hygiene,no
+build_vendor_bundle.py,release,rendering,yes
+check_darwin_lane_readiness_v0.py,research,DARWIN,no
+research/parity/check_e4_snapshot_coverage.py,research,parity,no
+check_e4_target_freeze_manifest.py,research,parity,no
+check_longrun_run_summary_parity_audit.py,research,longrun/RLM,no
+check_phase4_tier3_trends.py,research,parity,no
+check_phase5_canary_wait_alignment.py,research,repo hygiene,no
+check_phase5_discrepancy_budget_gate.py,research,repo hygiene,no
+check_phase5_footer_contrast_gate.py,research,rendering,no
+check_phase5_latency_drift_gate.py,research,repo hygiene,no
+check_phase5_reliability_flake_budget.py,research,repo hygiene,no
+check_render_profile_freeze.py,research,rendering,no
+ops/cli_session_health.py,ops,repo hygiene,yes
+compare_ground_truth_eval_runs.py,research,parity,no
+compare_kernel_conformance_engines.py,research,parity,no
+compare_provider_vs_golden.py,research,provider,no
+compare_tmux_run_to_golden.py,research,parity,no
+migration/compat_dump_request_bodies.py,migration,repo hygiene,yes
+compile_tpsl_preview.py,research,repo hygiene,no
+convert_claude_logged_run_to_replay_session.py,migration,parity,yes
+convert_claude_session.py,migration,repo hygiene,yes
+convert_codex_rollout_to_replay_session.py,migration,parity,yes
+convert_hilbert_results_to_cross_system_v2.py,migration,ATP,yes
+convert_openai_normalized_to_replay_session.py,migration,provider,yes
+convert_opencode_export_to_replay_session.py,migration,parity,yes
+curate_phase4_fullpane_visual_pack.py,research,parity,no
+dev/check_onboarding_contract_drift.py,dev,repo hygiene,yes
+dev/cli_isolated_agent.py,dev,repo hygiene,yes
+dev/cli_run_openai_agent.py,dev,provider,yes
+dev/quickstart_first_time.py,dev,repo hygiene,yes
+dev/report_devx_timing.py,dev,repo hygiene,yes
+diff_terminal_semantics.py,research,repo hygiene,no
+emit_darwin_evidence_and_claims_v1.py,research,DARWIN,no
+emit_darwin_phase1_final_evidence_v1.py,research,DARWIN,no
+emit_darwin_search_evidence_v1.py,research,DARWIN,no
+evaluate_longrun_phase2_go_no_go.py,research,longrun/RLM,no
+evaluate_rlm_phase2_p5.py,research,longrun/RLM,no
+evaluate_screenshot_ground_truth.py,research,rendering,no
+evaluate_static_renderer_binary.py,research,rendering,no
+evolake_toy_campaign_nightly.py,research,ATP,no
+release/export_cli_bridge_contracts.py,release,repo hygiene,yes
+export_phase4_run_health.py,research,parity,no
+export_phase4_tier3_health.py,research,parity,no
+ops/export_provider_metrics.py,ops,provider,yes
+extract_codex_rollout_patches.py,research,repo hygiene,no
+extract_codex_tui_seed_files.py,research,repo hygiene,no
+ops/fixtures_doctor.py,ops,repo hygiene,yes
+freeze_ground_truth_ansi_fixtures.py,research,rendering,no
+freeze_phase4_text_contract_signoff.py,research,parity,no
+generate_claude_tool_defs_from_golden.py,research,parity,no
+generate_phase5_ansi_ordering_check.py,research,rendering,no
+generate_phase5_footer_qc_pack.py,research,rendering,no
+generate_tmux_run_gallery.py,research,rendering,no
+ops/guardrail_metrics.py,ops,repo hygiene,yes
+migration/import_ir_to_events_jsonl.py,migration,repo hygiene,yes
+index_claude_goldens.py,research,parity,no
+log_reduce.py,research,repo hygiene,no
+migrate_claude_goldens_to_runs.py,migration,parity,yes
+opencode_patch.py,research,repo hygiene,no
+opencode_webfetch_fixture_server.py,research,repo hygiene,no
+archive/phase11_benchmark_runner_stub.py,archive,repo hygiene,yes
+archive/phase11_export_trajectory_stub.py,archive,repo hygiene,yes
+phase11_optuna_runner.py,research,repo hygiene,no
+archive/phase11_paired_eval_stub.py,archive,repo hygiene,yes
+phase11_surface_coverage_audit.py,research,repo hygiene,no
+phase11_validate_tasks.py,research,repo hygiene,no
+phase11_validation_bundle.py,research,repo hygiene,no
+phase5_rank_replay_discrepancies.py,research,parity,no
+ops/preflight_workspace_safety.py,ops,repo hygiene,yes
+process_provider_dumps.py,research,provider,no
+recompute_protofs_sample_eval.py,research,repo hygiene,no
+migration/recover_missing_files_from_codex_outputs.py,migration,repo hygiene,yes
+render_longrun_phase2_trend_summary.py,research,longrun/RLM,no
+render_parity_diagnostics.py,research,rendering,no
+render_preflight_check.py,research,rendering,no
+replay_codex_tui_patches.py,research,parity,no
+replay_opencode_session.py,research,parity,no
+run_bb_atp_adapter_slice_v1.py,research,ATP,no
+run_bb_formal_pack_v1.py,research,ATP,no
+run_darwin_phase1_orchestration_v1.py,research,DARWIN,no
+run_darwin_phase1_replay_audit_v1.py,research,DARWIN,no
+run_darwin_research_lane_baseline_v0.py,research,DARWIN,no
+run_darwin_scheduling_lane_baseline_v0.py,research,DARWIN,no
+run_darwin_stage3_bounded_inference_campaign_v0.py,research,DARWIN,no
+run_darwin_stage3_component_replay_v0.py,research,DARWIN,no
+run_darwin_stage4_deep_live_search_v0.py,research,DARWIN,no
+run_darwin_stage4_family_replay_audit_v0.py,research,DARWIN,no
+run_darwin_stage4_live_economics_pilot_v0.py,research,DARWIN,no
+run_darwin_stage4_replay_checks_v0.py,research,DARWIN,no
+run_darwin_stage4_systems_live_pilot_v0.py,research,DARWIN,no
+run_darwin_stage5_compounding_pilot_v0.py,research,DARWIN,no
+run_darwin_stage5_multilane_compounding_v0.py,research,DARWIN,no
+run_darwin_stage5_repo_swe_family_ab_v0.py,research,DARWIN,no
+run_darwin_stage5_scaled_compounding_v0.py,research,DARWIN,no
+run_darwin_stage5_systems_compounding_pilot_v0.py,research,DARWIN,no
+run_darwin_stage5_systems_weighted_compounding_v0.py,research,DARWIN,no
+run_darwin_t1_baseline_scorecard_v1.py,research,DARWIN,no
+run_darwin_t1_live_baselines_v1.py,research,DARWIN,no
+run_darwin_t1_smoke_v1.py,research,DARWIN,no
+run_darwin_t2_search_smoke_v1.py,research,DARWIN,no
+run_e4_snapshot_recalibration.py,research,parity,no
+run_gepa.py,research,longrun/RLM,no
+run_hpo.py,research,longrun/RLM,no
+run_kernel_conformance_gate.py,release,parity,no
+run_langflow_shim_acceptance.py,research,repo hygiene,no
+run_longrun_phase1_pilot.py,research,longrun/RLM,no
+run_longrun_phase2_live_pilot.py,research,longrun/RLM,no
+run_parity_replays.py,research,parity,no
+run_passive_window_daily.py,research,longrun/RLM,no
+run_phase4_fresh_recapture_signoff.py,research,parity,no
+run_regression_matrix.py,research,repo hygiene,no
+run_rlm_phase2_tier0.py,research,longrun/RLM,no
+run_tmux_capture_scenario.py,research,parity,no
+safe_delete.py,research,repo hygiene,no
+sample_protofs_live_distribution.py,research,repo hygiene,no
+sanitize_provider_logs.py,research,provider,no
+smoke_anthropic_sonnet4.py,research,provider,no
+subagents_ex2_tail_index_capture.py,research,repo hygiene,no
+summarize_reward_metrics.py,research,repo hygiene,no
+sync_opencode_tool_schemas.py,research,repo hygiene,no
+tmux_capture_poll.py,research,parity,no
+tmux_capture_preflight.py,research,parity,no
+tmux_capture_render_profile.py,research,rendering,no
+tmux_capture_time.py,research,parity,no
+tmux_capture_to_png.py,research,parity,no
+update_e4_target_freeze_manifest.py,research,parity,no
+update_longrun_phase2_trend_history.py,research,longrun/RLM,no
+validate_cross_system_run_v1.py,research,repo hygiene,no
+validate_darwin_contract_pack_v0.py,research,DARWIN,no
+validate_engine_conformance_manifest.py,research,parity,no
+validate_engine_manifest.py,research,repo hygiene,no
+validate_ground_truth_eval_run.py,research,parity,no
+validate_ink_references_manifest.py,research,rendering,no
+release/validate_kernel_contract_fixtures.py,release,parity,no
+validate_longrun_phase1_scenario_contract.py,research,longrun/RLM,no
+validate_longrun_phase2_live_artifacts.py,research,longrun/RLM,no
+validate_longrun_phase2_warn_artifacts.py,research,longrun/RLM,no
+validate_passive_window_source_drop.py,research,longrun/RLM,no
+validate_phase4_claude_parity.py,research,parity,no
+validate_phase4_footer_contract.py,research,rendering,no
+validate_phase4_showcase_regression.py,research,parity,no
+validate_phase4_text_contract_suite.py,research,parity,no
+validate_phase4_visual_pack.py,research,parity,no
+validate_phase5_advanced_behavior_stress.py,research,repo hygiene,no
+validate_phase5_artifact_integrity.py,research,repo hygiene,no
+validate_phase5_replay_reliability.py,research,parity,no
+validate_phase8_live_bounds.py,research,repo hygiene,no
+validate_replay_artifact_refs.py,research,parity,no
+validate_rlm_artifacts.py,research,longrun/RLM,no
+validate_tmux_capture_run.py,research,parity,no
+validate_tmux_scenario_action_aliases.py,research,parity,no
+verify_phase4_gate_run_for_sha.py,research,parity,no

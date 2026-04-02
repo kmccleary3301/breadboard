@@ -1,232 +1,545 @@
-import os, subprocess, uuid, ray, time, pathlib, shutil
+"""Canonical BreadBoard sandbox module.
 
-# This directory will be synced to all nodes by Ray and will serve as the
-# parent for all container workspaces.
-CONTAINERS_DIR = pathlib.Path(__file__).parent.resolve() / "containers"
-CONTAINERS_DIR.mkdir(exist_ok=True)
+This now points at the current light/process-backed sandbox implementation.
+Legacy callers may still import `breadboard.sandbox_v2` during migration.
+"""
 
-def sandbox_env(image:str):
-    """
-    Helper to create the runtime_env for a gVisor sandbox.
-    We are not using docker volume mounts anymore. Instead, the `working_dir`
-    is specified at the job-level in `ray.init()`.
-    """
-    return {
-        "docker": {
-            "image": image,
-            "runtime": "runsc",  # <<< gVisor
-        }
-    }
+from __future__ import annotations
+
+import os
+import subprocess
+import uuid
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple, List
+
+import ray
+
+from .adaptive_iter import ADAPTIVE_PREFIX_ITERABLE
+
 
 @ray.remote
-class DevSandbox:
-    def __init__(self, image:str, session_id:str):
+class DevSandboxV2:
+    """Local filesystem-backed sandbox implementation.
+
+    This is a minimal stand-in for recovery/testing. It executes commands on the
+    host filesystem scoped to the provided workspace.
+    """
+
+    def __init__(self, image: str, session_id: str = "", workspace: str = "", lsp_actor: Any = None) -> None:
         self.image = image
         self.session_id = session_id
-        # The working_dir from ray.init() is the root of our sandbox.
-        # We create a unique directory for this session inside it.
-        self.cwd = f"./{self.session_id}"
-        os.makedirs(self.cwd, exist_ok=True)
+        self.workspace = str(workspace)
+        self.lsp_actor = lsp_actor
 
-    def add_file(self, path: str, content: bytes):
-        """Writes content to a file, creating parent dirs if needed."""
-        # Note: we need to import this here as it's not available by default
-        # in the python version used in the container.
-        import pathlib
-
-        full_path = pathlib.Path(self.cwd) / path
-        full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_bytes(content)
-
-    def run(self, cmd):
-        """
-        Execute a command and return all output lines as a list.
-        This is not a streaming implementation, but it is more robust
-        than the previous generator-based approach.
-        """
-        proc = subprocess.Popen(
-            cmd,
-            cwd=self.cwd,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        lines = []
-        for line in proc.stdout:
-            lines.append(line.rstrip())
-        return lines
-
-    def get_cwd_contents(self):
-        """Return the contents of the current working directory."""
-        return os.listdir(self.cwd)
-
-    def get_session_id(self):
-        """Returns the unique session ID for this sandbox."""
+    def get_session_id(self) -> str:
         return self.session_id
 
+    def get_workspace(self) -> str:
+        return self.workspace
 
-if __name__ == "__main__":
-    # The `working_dir` is specified here at the job level. Ray will sync the
-    # contents of CONTAINERS_DIR to the main directory of the container on all nodes.
-    ray.init(runtime_env={"working_dir": str(CONTAINERS_DIR)})
+    def _resolve_checked(self, path: str) -> Tuple[str, bool]:
+        ws = Path(self.workspace).resolve()
+        candidate = Path(path)
+        if not candidate.is_absolute():
+            candidate = ws / candidate
+        try:
+            candidate = candidate.resolve()
+        except Exception:
+            return str(ws), False
+        try:
+            candidate.relative_to(ws)
+        except Exception:
+            return str(ws), False
+        return str(candidate), True
 
-    TEMPLATES = {
-        "python":  "python-dev:latest",
-        "react":   "react-dev:latest",
-        "c":       "gcc-dev:latest",
-    }
+    def _resolve(self, path: str) -> str:
+        abs_path, _ok = self._resolve_checked(path)
+        return abs_path
 
-    def get_sandbox(user, template):
-        session_id = str(uuid.uuid4())
-        actor_name = f"sandbox-{user}-{template}-{session_id}"
-        env = sandbox_env(TEMPLATES[template])
-        print(f"Creating sandbox for {user} with template {template}...")
-        print(f"  Actor name: {actor_name}")
-        print(f"  Session ID: {session_id}")
+    def _touch_lsp(self, abs_path: str) -> None:
+        actor = self.lsp_actor
+        if actor is None:
+            return
+        try:
+            touch = getattr(actor, "touch_file", None)
+            if touch is None:
+                return
+            remote = getattr(touch, "remote", None)
+            if callable(remote):
+                remote(abs_path, False)
+            elif callable(touch):
+                touch(abs_path, False)
+        except Exception:
+            pass
 
-        # Pass the session_id to the actor's constructor.
-        return DevSandbox.options(runtime_env=env, name=actor_name).remote(
-            image=TEMPLATES[template], session_id=session_id
+    def exists(self, path: str) -> bool:
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return False
+        return Path(abs_path).exists()
+
+    def stat(self, path: str) -> Dict[str, Any]:
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return {"path": abs_path, "exists": False, "error": "path_outside_workspace"}
+        p = Path(abs_path)
+        if not p.exists():
+            return {"path": abs_path, "exists": False}
+        try:
+            st = p.stat()
+            return {
+                "path": abs_path,
+                "exists": True,
+                "type": "dir" if p.is_dir() else "file",
+                "size": st.st_size,
+                "mtime": st.st_mtime,
+            }
+        except Exception:
+            return {"path": abs_path, "exists": True}
+
+    def put(self, path: str, content: bytes) -> Dict[str, Any]:
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return {"ok": False, "path": abs_path, "error": "path_outside_workspace"}
+        p = Path(abs_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            p.write_bytes(content or b"")
+        except Exception as exc:
+            return {"ok": False, "path": abs_path, "error": str(exc)}
+        self._touch_lsp(abs_path)
+        return {"ok": True, "path": abs_path, "bytes": len(content or b"")}
+
+    def get(self, path: str) -> bytes:
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return b""
+        try:
+            return Path(abs_path).read_bytes()
+        except Exception:
+            return b""
+
+    def read_text(
+        self,
+        path: str,
+        offset: Optional[int] = None,
+        limit: Optional[int] = None,
+        encoding: str = "utf-8",
+    ) -> Dict[str, Any]:
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            start = int(offset or 0) if offset is not None else 0
+            if start < 0:
+                start = 0
+            return {
+                "path": abs_path,
+                "content": "",
+                "truncated": False,
+                "offset": start,
+                "limit": limit,
+                "error": "path_outside_workspace",
+            }
+        try:
+            raw = Path(abs_path).read_text(encoding=encoding, errors="replace")
+        except Exception:
+            raw = ""
+
+        start = int(offset or 0) if offset is not None else 0
+        if start < 0:
+            start = 0
+        truncated = False
+        content = raw
+        if start:
+            content = content[start:]
+        if limit is not None:
+            try:
+                lim = int(limit)
+            except Exception:
+                lim = None
+            if lim is not None and lim >= 0 and len(content) > lim:
+                content = content[:lim]
+                truncated = True
+
+        return {"path": abs_path, "content": content, "truncated": truncated, "offset": start, "limit": limit}
+
+    def write_text(self, path: str, content: str, encoding: str = "utf-8") -> Dict[str, Any]:
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return {"ok": False, "path": abs_path, "error": "path_outside_workspace"}
+        p = Path(abs_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            p.write_text(content or "", encoding=encoding)
+        except Exception as exc:
+            return {"ok": False, "path": abs_path, "error": str(exc)}
+        self._touch_lsp(abs_path)
+        return {"ok": True, "path": abs_path, "bytes": len(content or "")}
+
+    def ls(self, path: str, depth: int = 1) -> Dict[str, Any]:
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return {"path": abs_path, "entries": [], "items": [], "tree_format": False, "error": "path_outside_workspace"}
+        depth = max(1, int(depth or 1))
+        root = Path(abs_path)
+        entries = []
+        if not root.exists():
+            return {"path": abs_path, "entries": []}
+
+        def _walk(current: Path, rel: Path, remaining: int) -> None:
+            try:
+                for child in sorted(current.iterdir()):
+                    rel_child = rel / child.name
+                    entries.append({
+                        "path": str(rel_child),
+                        "type": "dir" if child.is_dir() else "file",
+                    })
+                    if child.is_dir() and remaining > 1:
+                        _walk(child, rel_child, remaining - 1)
+            except Exception:
+                pass
+
+        _walk(root, Path("."), depth)
+        return {"path": abs_path, "items": entries, "entries": entries, "tree_format": False}
+
+    def glob(self, pattern: str, root: str = ".", limit: Optional[int] = None) -> List[str]:
+        resolved_root, ok = self._resolve_checked(root)
+        if not ok:
+            return []
+        root_path = Path(resolved_root)
+        if not root_path.exists():
+            return []
+        matches: List[str] = []
+        try:
+            for match in root_path.glob(pattern):
+                try:
+                    rel = str(match.relative_to(root_path))
+                except Exception:
+                    rel = str(match)
+                matches.append(rel)
+        except Exception:
+            return []
+        # Sort by mtime (desc) to align with OpenCode expectations
+        try:
+            matches.sort(
+                key=lambda p: (root_path / p).stat().st_mtime if (root_path / p).exists() else 0.0,
+                reverse=True,
+            )
+        except Exception:
+            pass
+        if limit is not None:
+            try:
+                limit_val = int(limit)
+                if limit_val >= 0:
+                    matches = matches[:limit_val]
+            except Exception:
+                pass
+        return matches
+
+    def grep(self, pattern: str, path: str = ".", include: Optional[str] = None, limit: int = 100) -> Dict[str, Any]:
+        root = Path(self._resolve(path))
+        if not root.exists():
+            return {"matches": []}
+        try:
+            import re
+            regex = re.compile(pattern)
+        except Exception:
+            return {"matches": []}
+        import fnmatch
+
+        matches: List[Dict[str, Any]] = []
+        try:
+            for file_path in root.rglob("*"):
+                if not file_path.is_file():
+                    continue
+                try:
+                    rel = str(file_path.relative_to(root))
+                except Exception:
+                    rel = str(file_path)
+                if include and not fnmatch.fnmatch(rel, include):
+                    continue
+                try:
+                    text = file_path.read_text(encoding="utf-8", errors="ignore")
+                except Exception:
+                    continue
+                for idx, line in enumerate(text.splitlines(), start=1):
+                    if regex.search(line):
+                        matches.append({"path": rel, "line": idx, "text": line})
+                        if len(matches) >= int(limit or 0 or 0) and int(limit or 0) > 0:
+                            return {"matches": matches}
+            return {"matches": matches}
+        except Exception:
+            return {"matches": matches}
+
+    def run(
+        self,
+        cmd: str,
+        timeout: Optional[int] = None,
+        stdin_data: Optional[str] = None,
+        env: Optional[Dict[str, str]] = None,
+        stream: bool = True,
+        shell: bool = True,
+    ):
+        return self.run_shell(
+            cmd,
+            timeout=timeout or 30,
+            env=env,
+            stream=stream,
+            stdin_data=stdin_data,
+            shell=shell,
         )
 
-    def cleanup_sandbox(actor):
-        """Kills the actor, which implicitly cleans up its workspace."""
-        if not actor:
-            return
-        
-        session_id = ray.get(actor.get_session_id.remote())
-        print(f"\nCleaning up sandbox {session_id}...")
-        ray.kill(actor)
-        print("  -> Actor killed. Workspace will be garbage collected by Ray.")
+    def run_shell(
+        self,
+        command: str,
+        timeout: int = 30,
+        env: Optional[Dict[str, str]] = None,
+        stream: bool = False,
+        stdin_data: Optional[str] = None,
+        shell: bool = True,
+    ) -> Dict[str, Any]:
+        cmd = command or ""
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=self.workspace,
+                shell=bool(shell),
+                timeout=timeout,
+                env={**os.environ, **(env or {})},
+                input=stdin_data,
+                capture_output=True,
+                text=True,
+            )
+            stdout = result.stdout or ""
+            stderr = result.stderr or ""
+            payload = {"exit": result.returncode, "stdout": stdout, "stderr": stderr}
+            if not stream:
+                return payload
 
-    # --- Test Python Sandbox ---
-    print("--- Testing Python sandbox ---")
-    python_sandbox = None
+            lines: List[Any] = [ADAPTIVE_PREFIX_ITERABLE]
+            for line in (stdout.splitlines() or []):
+                lines.append(line)
+            if not stdout and stderr:
+                for line in stderr.splitlines():
+                    lines.append(line)
+            lines.append(payload)
+            return lines  # type: ignore[return-value]
+        except subprocess.TimeoutExpired:
+            payload = {"exit": 124, "stdout": "", "stderr": "Command timed out"}
+            if not stream:
+                return payload
+            return [ADAPTIVE_PREFIX_ITERABLE, payload]  # type: ignore[return-value]
+        except Exception as exc:
+            payload = {"exit": 1, "stdout": "", "stderr": str(exc)}
+            if not stream:
+                return payload
+            return [ADAPTIVE_PREFIX_ITERABLE, payload]  # type: ignore[return-value]
+
+    def edit_replace(
+        self,
+        path: str,
+        old_string: str,
+        new_string: str,
+        count: int = 0,
+        encoding: str = "utf-8",
+    ) -> Dict[str, Any]:
+        abs_path, ok = self._resolve_checked(path)
+        if not ok:
+            return {"ok": False, "path": abs_path, "error": "path_outside_workspace"}
+        p = Path(abs_path)
+        content = ""
+        if p.exists():
+            content = p.read_text(encoding=encoding, errors="replace")
+        if count and count > 0:
+            updated = content.replace(old_string, new_string, count)
+        else:
+            updated = content.replace(old_string, new_string)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            p.write_text(updated, encoding=encoding)
+        except Exception as exc:
+            return {"ok": False, "path": abs_path, "error": str(exc)}
+        self._touch_lsp(abs_path)
+        return {"ok": True, "path": abs_path}
+
+    def multiedit(self, edits: List[Dict[str, Any]], encoding: str = "utf-8") -> Dict[str, Any]:
+        """Apply multiple edits in sequence.
+
+        Each edit may contain:
+          - path + content (write)
+          - path + old + new (+ count) (replace)
+        """
+
+        results: List[Dict[str, Any]] = []
+        for edit in edits or []:
+            if not isinstance(edit, dict):
+                continue
+            path = str(edit.get("path") or "")
+            if not path:
+                continue
+            if "content" in edit:
+                results.append(self.write_text(path, str(edit.get("content") or ""), encoding=encoding))
+                continue
+            old = str(edit.get("old") or edit.get("old_string") or "")
+            new = str(edit.get("new") or edit.get("new_string") or "")
+            count = int(edit.get("count") or 0)
+            results.append(self.edit_replace(path, old, new, count, encoding=encoding))
+        return {"ok": True, "results": results}
+
+    def _run_git(self, args: List[str], *, timeout: int = 10) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args],
+            cwd=self.workspace,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+    def vcs(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        action = (request or {}).get("action") or (request or {}).get("operation") or "status"
+        action = str(action).strip().lower()
+        params = (request or {}).get("params") or {}
+        if not isinstance(params, dict):
+            params = {}
+
+        try:
+            if action == "init":
+                user = (request or {}).get("user") or {}
+                self._run_git(["init"])
+                name = (user.get("name") if isinstance(user, dict) else None) or "BreadBoard"
+                email = (user.get("email") if isinstance(user, dict) else None) or "breadboard@local"
+                self._run_git(["config", "user.name", str(name)])
+                self._run_git(["config", "user.email", str(email)])
+                return {"ok": True}
+
+            if action == "add":
+                res = self._run_git(["add", "-A"])
+                return {"ok": res.returncode == 0, "stdout": res.stdout, "stderr": res.stderr}
+
+            if action == "commit":
+                message = str((params or {}).get("message") or "update")
+                res = self._run_git(["commit", "-m", message])
+                ok = res.returncode == 0
+                return {"ok": ok, "stdout": res.stdout, "stderr": res.stderr}
+
+            if action == "status":
+                res = self._run_git(["status", "--porcelain"])
+                return {"ok": res.returncode == 0, "data": {"output": res.stdout}, "stderr": res.stderr}
+
+            if action == "diff":
+                staged = bool((params or {}).get("staged"))
+                unified = (params or {}).get("unified")
+                args = ["diff"]
+                if staged:
+                    args.append("--cached")
+                if unified is not None:
+                    try:
+                        args.append(f"-U{int(unified)}")
+                    except Exception:
+                        pass
+                res = self._run_git(args, timeout=20)
+                return {"ok": res.returncode == 0, "data": {"diff": res.stdout}}
+
+            if action == "apply_patch":
+                patch_text = str((params or {}).get("patch") or "")
+                if not patch_text.strip():
+                    return {"ok": False, "error": "empty patch"}
+                patch_path = Path(self.workspace) / f".breadboard_patch_{uuid.uuid4().hex}.diff"
+                patch_path.write_text(patch_text, encoding="utf-8")
+                args = ["apply"]
+                if bool((params or {}).get("three_way") or (params or {}).get("threeWay")):
+                    args.append("--3way")
+                if bool((params or {}).get("index")):
+                    args.append("--index")
+                whitespace = (params or {}).get("whitespace")
+                if isinstance(whitespace, str) and whitespace.strip():
+                    args.append(f"--whitespace={whitespace.strip()}")
+                if bool((params or {}).get("reverse")):
+                    args.append("-R")
+                if bool((params or {}).get("keep_rejects")):
+                    args.append("--reject")
+                args.append(str(patch_path))
+                res = self._run_git(args, timeout=30)
+                try:
+                    patch_path.unlink(missing_ok=True)  # type: ignore[arg-type]
+                except Exception:
+                    pass
+                return {"ok": res.returncode == 0, "stdout": res.stdout, "stderr": res.stderr}
+
+            return {"ok": False, "error": f"Unsupported vcs action: {action}"}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def lsp_diagnostics(self, path: str) -> Dict[str, Any]:
+        actor = self.lsp_actor
+        if actor is None:
+            return {}
+        try:
+            diagnostics = getattr(actor, "diagnostics", None)
+            remote = getattr(diagnostics, "remote", None) if diagnostics is not None else None
+            if callable(remote):
+                return ray.get(remote())
+            if callable(diagnostics):
+                return diagnostics()
+        except Exception:
+            return {}
+        return {}
+
+
+def new_dev_sandbox_v2(
+    image: str,
+    workspace: str,
+    *,
+    name: str | None = None,
+    session_id: str | None = None,
+    lsp_actor: Any = None,
+    driver: str | None = None,
+    driver_options: Dict[str, Any] | None = None,
+):
+    """Create a sandbox actor for the requested driver.
+
+    This is the primary constructor used by tests and higher-level engine code.
+    """
+
+    from .sandbox_driver import SandboxLaunchSpec, create_sandbox, resolve_driver_from_env
+
+    resolved_driver = (driver or resolve_driver_from_env()).strip().lower()
+    spec = SandboxLaunchSpec(
+        driver=resolved_driver,
+        image=str(image),
+        workspace=str(workspace),
+        session_id=session_id or f"sb-{uuid.uuid4()}",
+        name=name,
+        lsp_actor=lsp_actor,
+        driver_options=dict(driver_options or {}),
+    )
     try:
-        python_sandbox = get_sandbox("test_user", "python")
-
-        # First, a simple echo test
-        print(">>> Running echo test...")
-        # The run method now returns a list, not a generator.
-        echo_output = ray.get(python_sandbox.run.remote("echo 'Hello from Python sandbox'"))
-        for line in echo_output:
-            print(line)
-        assert echo_output == ["Hello from Python sandbox"]
-        print("<<< Echo test complete.")
-
-        # Now, test file persistence
-        print(">>> Running file persistence test...")
-        ray.get(python_sandbox.run.remote("echo 'import sys; print(sys.version)' > test.py"))
-
-        print("\nListing workspace contents...")
-        contents = ray.get(python_sandbox.get_cwd_contents.remote())
-        print(f"  -> Contents: {contents}")
-        assert "test.py" in contents
-        print("✅ Persistence test passed.")
-
-        print("\nReading file content...")
-        output = ray.get(python_sandbox.run.remote("cat test.py"))
-        print(f"  -> Output: {output}")
-        assert "import sys" in output[0]
-        print("✅ File read test passed.")
-        
-        print("\nExecuting python script...")
-        output = ray.get(python_sandbox.run.remote("python test.py"))
-        print(f"  -> Output: {output}")
-        assert "3." in output[0]
-        print("✅ Python script execution passed.")
-
-        print("\nTesting file upload...")
-        file_content = b"This is a test file upload."
-        ray.get(python_sandbox.add_file.remote("new_dir/uploaded.txt", file_content))
-        
-        contents = ray.get(python_sandbox.get_cwd_contents.remote())
-        print(f"  -> Workspace contents: {contents}")
-        assert "new_dir" in contents
-
-        output = ray.get(python_sandbox.run.remote("cat new_dir/uploaded.txt"))
-        print(f"  -> Uploaded file content: {output}")
-        assert output == ["This is a test file upload."]
-        print("✅ File upload test passed.")
-
-    except Exception as e:
-        print(f"🚨 Python sandbox test failed: {e}")
-    finally:
-        cleanup_sandbox(python_sandbox)
-        print("--- Python Test Complete ---")
+        return create_sandbox(spec)
+    except NotImplementedError:
+        # Docker driver is optional; fall back to process sandbox until implemented.
+        fallback = SandboxLaunchSpec(
+            driver="process",
+            image=str(image),
+            workspace=str(workspace),
+            session_id=spec.session_id,
+            name=name,
+            lsp_actor=lsp_actor,
+            driver_options=spec.driver_options,
+        )
+        return create_sandbox(fallback)
 
 
-    # --- Test React Sandbox ---
-    print("\n--- Testing React sandbox ---")
-    react_sandbox = None
-    try:
-        react_sandbox = get_sandbox("test_user", "react")
-
-        # First, a simple echo test
-        print(">>> Running echo test...")
-        echo_output = ray.get(react_sandbox.run.remote("echo 'Hello from React sandbox'"))
-        for line in echo_output:
-            print(line)
-        assert echo_output == ["Hello from React sandbox"]
-        print("<<< Echo test complete.")
-
-        # Now, test command execution
-        print(">>> Running command execution test...")
-        node_version_lines = ray.get(react_sandbox.run.remote("node -v"))
-        print(f"  -> Output: {node_version_lines}")
-        assert node_version_lines and node_version_lines[0].startswith("v")
-        print("✅ Command execution complete.")
-
-        print("\nExecuting javascript file...")
-        output = ray.get(react_sandbox.run.remote(
-            "echo \"console.log('Hello from Node.js script');\" > test.js && node test.js"
-        ))
-        print(f"  -> Output: {output}")
-        assert output == ["Hello from Node.js script"]
-        print("✅ Javascript execution passed.")
-
-    except Exception as e:
-        print(f"🚨 React sandbox test failed: {e}")
-    finally:
-        cleanup_sandbox(react_sandbox)
-        print("--- React Test Complete ---")
+# Canonical aliases for the stabilized module path. We keep the V2 names
+# available during migration, but new imports should prefer `breadboard.sandbox`.
+DevSandbox = DevSandboxV2
 
 
-    # --- Test C/GCC Sandbox ---
-    print("\n--- Testing C/GCC sandbox ---")
-    c_sandbox = None
-    try:
-        c_sandbox = get_sandbox("test_user", "c")
+def new_dev_sandbox(*args: Any, **kwargs: Any):
+    return new_dev_sandbox_v2(*args, **kwargs)
 
-        # First, a simple echo test
-        print(">>> Running echo test...")
-        echo_output = ray.get(c_sandbox.run.remote("echo 'Hello from C sandbox'"))
-        for line in echo_output:
-            print(line)
-        assert echo_output == ["Hello from C sandbox"]
-        print("<<< Echo test complete.")
 
-        # Now, test command execution
-        print(">>> Compiling and running C code...")
-        command = """
-cat <<'EOF' > hello.c
-#include <stdio.h>
-int main() {
-    printf("Hello from C!\\n");
-    return 0;
-}
-EOF
-
-gcc hello.c -o hello_exe && ./hello_exe
-"""
-        output = ray.get(c_sandbox.run.remote(command))
-        print(f"  -> Output: {output}")
-        assert output == ["Hello from C!"]
-        print("✅ C code compilation and execution passed.")
-
-    except Exception as e:
-        print(f"🚨 C/GCC sandbox test failed: {e}")
-    finally:
-        cleanup_sandbox(c_sandbox)
-        print("--- C/GCC Test Complete ---") 
+__all__ = [
+    "DevSandbox",
+    "DevSandboxV2",
+    "new_dev_sandbox",
+    "new_dev_sandbox_v2",
+]

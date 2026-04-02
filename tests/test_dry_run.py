@@ -5,7 +5,7 @@ import uuid
 import ray
 
 from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from breadboard.sandbox_virtualized import SandboxFactory, DeploymentMode
+from breadboard.sandbox_factory import SandboxFactory, DeploymentMode
 from tool_calling.core import ToolDefinition, ToolParameter
 from tool_calling.pythonic02 import Pythonic02Dialect
 from tool_calling.pythonic_inline import PythonicInlineDialect
@@ -145,4 +145,3 @@ def test_dry_run_exec(tmp_path: Path):
 
     finally:
         ray.shutdown()
-

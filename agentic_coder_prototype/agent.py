@@ -34,8 +34,8 @@ def _get_ray():  # type: ignore[no-untyped-def]
     return _ray
 from .agent_llm_openai import OpenAIConductor
 from .compilation.v2_loader import load_agent_config
-from .provider_routing import provider_router
-from .provider_adapters import provider_adapter_manager
+from .provider.routing import provider_router
+from .provider import provider_adapter_manager
 from .compilation.tool_yaml_loader import load_yaml_tools
 from .compilation.system_prompt_compiler import get_compiler
 

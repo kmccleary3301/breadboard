@@ -26,9 +26,9 @@ import ray
 
 from adaptive_iter import decode_adaptive_iterable
 
-from breadboard.sandbox_v2 import DevSandboxV2
+from breadboard.sandbox import DevSandboxV2
 from breadboard.opencode_patch import PatchParseError, parse_opencode_patch, to_unified_diff
-from breadboard.sandbox_virtualized import SandboxFactory, DeploymentMode
+from breadboard.sandbox_factory import SandboxFactory, DeploymentMode
 from .core.core import ToolDefinition, ToolParameter
 from .execution.composite import CompositeToolCaller
 from .dialects.bash_block import BashBlockDialect
@@ -36,18 +36,18 @@ from .execution.dialect_manager import DialectManager
 from .execution.agent_executor import AgentToolExecutor
 from .compilation.system_prompt_compiler import get_compiler
 from .compilation.v2_loader import load_agent_config
-from .provider_ir import IRFinish, IRDeltaEvent
-from .provider_routing import provider_router
-from .provider_adapters import provider_adapter_manager
-from .provider_runtime import (
+from .provider.ir import IRFinish, IRDeltaEvent
+from .provider.routing import provider_router
+from .provider import provider_adapter_manager
+from .provider.runtime import (
     provider_registry,
     ProviderRuntimeContext,
     ProviderResult,
     ProviderMessage,
     ProviderRuntimeError,
 )
-from .provider_runtime_replay import ReplayRuntime
-from .provider_capability_probe import ProviderCapabilityProbeRunner
+from .provider import ReplayRuntime
+from .provider.capability_probe import ProviderCapabilityProbeRunner
 from .state.session_state import SessionState
 from .state.completion_detector import CompletionDetector
 from .messaging.message_formatter import MessageFormatter
@@ -55,19 +55,18 @@ from .messaging.markdown_logger import MarkdownLogger
 from .error_handling.error_handler import ErrorHandler
 from .monitoring.telemetry import TelemetryLogger
 from .monitoring.reward_metrics import RewardMetricsSQLiteWriter, TodoMetricsSQLiteWriter
-from .logging_v2 import LoggerV2Manager
-from .logging_v2.api_recorder import APIRequestRecorder
-from .logging_v2.prompt_logger import PromptArtifactLogger
-from .logging_v2.markdown_transcript import MarkdownTranscriptWriter
-from .logging_v2.provider_native_logger import ProviderNativeLogger
-from .logging_v2.request_recorder import StructuredRequestRecorder
+from .run_logging import LoggerV2Manager
+from .run_logging.api_recorder import APIRequestRecorder
+from .run_logging.prompt_logger import PromptArtifactLogger
+from .run_logging.markdown_transcript import MarkdownTranscriptWriter
+from .run_logging.provider_native_logger import ProviderNativeLogger
+from .run_logging.request_recorder import StructuredRequestRecorder
 from .utils.local_ray import LocalActorProxy, identity_get
-from .provider_health import RouteHealthManager
-from .provider_normalizer import normalize_provider_result
-from .provider_metrics import ProviderMetricsCollector
-from .guardrail_coordinator import GuardrailCoordinator
-from .guardrail_orchestrator import GuardrailOrchestrator
-from .conductor_components import (
+from .provider.health import RouteHealthManager
+from .provider import normalize_provider_result
+from .provider.metrics import ProviderMetricsCollector
+from .guardrail import GuardrailCoordinator, GuardrailOrchestrator
+from .conductor.components import (
     apply_cache_control_to_initial_user_prompt,
     apply_cache_control_to_tool_messages,
     apply_capability_tool_overrides,
@@ -121,7 +120,7 @@ from .skills.registry import (
     apply_skill_selection,
 )
 from .skills.executor import execute_graph_skill
-from .conductor_patching import (
+from .conductor.patching import (
     apply_patch_operations_direct,
     convert_patch_to_unified,
     count_diff_hunks,
@@ -136,10 +135,10 @@ from .conductor_patching import (
     retry_diff_with_aider,
     validate_structural_artifacts,
 )
-from .conductor_loop import run_main_loop
-from .conductor_bootstrap import bootstrap_conductor, prepare_workspace
-from .conductor_components import write_env_fingerprint
-from .conductor_modes import (
+from .conductor.loop import run_main_loop
+from .conductor.bootstrap import bootstrap_conductor, prepare_workspace
+from .conductor.components import write_env_fingerprint
+from .conductor.modes import (
     add_enhanced_message_fields,
     adjust_tool_prompt_mode,
     apply_preference_order,
@@ -152,7 +151,7 @@ from .conductor_modes import (
     setup_native_tools,
     setup_tool_prompts,
 )
-from .conductor_execution import (
+from .conductor.execution import (
     build_exec_func,
     execute_agent_calls,
     build_turn_context,
@@ -174,15 +173,14 @@ from .conductor_execution import (
 from .todo import TodoManager, TodoStore
 from .todo.store import TODO_OPEN_STATUSES
 from .replay import ReplaySession, load_replay_session
-from .plan_bootstrapper import PlanBootstrapper
-from .permission_broker import PermissionBroker, PermissionDeniedError
-from .loop_detection import LoopDetectionService
-from .context_window_guard import ContextWindowGuard
-from .streaming_policy import StreamingPolicy
-from .provider_invoker import ProviderInvoker
-from .tool_prompt_planner import ToolPromptPlanner
-from .turn_relayer import TurnRelayer
-from .turn_context import TurnContext
+from .conductor.plan_bootstrapper import PlanBootstrapper
+from .permissions import PermissionBroker, PermissionDeniedError
+from .conductor.loop_detection import LoopDetectionService
+from .conductor.context_window_guard import ContextWindowGuard
+from .conductor.streaming_policy import StreamingPolicy
+from .provider import ProviderInvoker
+from .conductor.prompt_planner import ToolPromptPlanner
+from .turns import TurnContext, TurnRelayer
 from .orchestration import TeamConfig, MultiAgentOrchestrator
 from .longrun import LongRunController, build_work_queue, is_longrun_enabled, resolve_episode_max_steps
 from .rlm import (
@@ -5151,7 +5149,7 @@ class OpenAIConductor:
                 except Exception:
                     pass
                 try:
-                    from agentic_coder_prototype.policy_pack import PolicyPack
+                    from agentic_coder_prototype.permissions.policy_pack import PolicyPack
 
                     self.permission_broker = PermissionBroker(
                         merged_permissions,
@@ -5910,6 +5908,8 @@ class OpenAIConductor:
             markdown_logger=markdown_logger,
             attempted=attempted,
             last_error=last_error,
+            provider_router_override=provider_router,
+            provider_registry_override=provider_registry,
         )
 
     def _ensure_capability_probes(self, session_state: SessionState, markdown_logger: MarkdownLogger) -> None:

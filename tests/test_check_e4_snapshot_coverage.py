@@ -25,6 +25,20 @@ def test_check_e4_snapshot_coverage_passes_on_repo() -> None:
     assert payload["missing_snapshot_row_count"] == 0
 
 
+def test_check_e4_snapshot_coverage_passes_on_repo_canonical_path() -> None:
+    proc = subprocess.run(
+        [sys.executable, "scripts/research/parity/check_e4_snapshot_coverage.py", "--json"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr or proc.stdout
+    payload = json.loads(proc.stdout)
+    assert payload["ok"] is True
+    assert payload["missing_snapshot_row_count"] == 0
+
+
 def test_check_e4_snapshot_coverage_flags_base_rows_without_snapshots(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     (repo_root / "agent_configs").mkdir(parents=True)
@@ -52,7 +66,7 @@ def test_check_e4_snapshot_coverage_flags_base_rows_without_snapshots(tmp_path: 
     proc = subprocess.run(
         [
             sys.executable,
-            str(REPO_ROOT / "scripts" / "check_e4_snapshot_coverage.py"),
+            str(REPO_ROOT / "scripts" / "research" / "parity" / "check_e4_snapshot_coverage.py"),
             "--repo-root",
             str(repo_root),
             "--json",

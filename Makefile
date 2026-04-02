@@ -84,13 +84,13 @@ e4-target-manifest:
 	python scripts/check_e4_target_freeze_manifest.py --json
 
 e4-snapshot-coverage:
-	python scripts/check_e4_snapshot_coverage.py --json
+	python scripts/research/parity/check_e4_snapshot_coverage.py --json
 
 e4-target-refresh-plan:
 	python scripts/update_e4_target_freeze_manifest.py --check --json-out artifacts/conformance/e4_target_refresh_plan.json
 
 e4-target-drift-audit:
-	python scripts/audit_e4_target_drift.py --json-out artifacts/conformance/e4_target_drift_audit_report.json --fail-on-drift
+	python scripts/research/parity/audit_e4_target_drift.py --json-out artifacts/conformance/e4_target_drift_audit_report.json --fail-on-drift
 
 e4-postrestore-strict-probe:
 	python scripts/run_parity_replays.py --strict \

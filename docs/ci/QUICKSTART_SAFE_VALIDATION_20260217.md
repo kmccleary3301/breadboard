@@ -13,7 +13,7 @@ against the restored repository state.
 ## Commands Executed
 
 ```bash
-python scripts/preflight_workspace_safety.py --config agent_configs/misc/opencode_mock_c_fs.yaml
+python scripts/ops/preflight_workspace_safety.py --config agent_configs/misc/opencode_mock_c_fs.yaml
 npm -C tui_skeleton ci
 npm -C tui_skeleton run build
 breadboard doctor --config agent_configs/misc/opencode_mock_c_fs.yaml
@@ -22,7 +22,7 @@ breadboard run --config agent_configs/misc/opencode_mock_c_fs.yaml "Say hi and e
 
 ## Result Summary
 
-- `preflight_workspace_safety.py`: PASS
+- `scripts/ops/preflight_workspace_safety.py`: PASS
 - `npm ci`: PASS
 - `npm run build`: PASS
 - `breadboard doctor`: PASS
@@ -56,4 +56,3 @@ npm -C tui_skeleton run build
 ```
 
 Both commands passed.
-
