@@ -253,7 +253,7 @@ Read:
 
 Read:
 
-- [Optimization V6 stop/go synthesis](../internals/research/optimization-v6-stop-go-synthesis.md)
+- [Optimization System Overview](optimization-system-overview.md)
 - [DARWIN System Overview](darwin-system-overview.md)
 
 ### ATP to sandboxing

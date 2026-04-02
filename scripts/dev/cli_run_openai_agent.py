@@ -17,7 +17,7 @@ import ray
 from dotenv import load_dotenv
 
 from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from breadboard.sandbox_virtualized import SandboxFactory, DeploymentMode
+from breadboard.sandbox_factory import DeploymentMode, SandboxFactory
 
 
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "agent_configs" / "test_agent.yaml"

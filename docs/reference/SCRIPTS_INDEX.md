@@ -103,6 +103,25 @@ examples:
 The old top-level script paths still exist only as compatibility wrappers while
 the migration window is open.
 
+## Operator quick commands
+
+When you need the stable operator-facing paths quickly, start here:
+
+- health and fixture checks:
+  - `python scripts/ops/cli_session_health.py --help`
+  - `python scripts/ops/fixtures_doctor.py --help`
+  - `python scripts/ops/preflight_workspace_safety.py --help`
+- release and contract surfaces:
+  - `python scripts/release/export_cli_bridge_contracts.py --help`
+  - `python scripts/release/validate_kernel_contract_fixtures.py --help`
+  - `python scripts/release/bless_golden.py --help`
+- migration helpers:
+  - `python scripts/migration/import_ir_to_events_jsonl.py --help`
+  - `python scripts/migration/compat_dump_request_bodies.py --help`
+- parity research helpers:
+  - `python scripts/research/parity/audit_e4_target_drift.py --help`
+  - `python scripts/research/parity/check_e4_snapshot_coverage.py --json`
+
 ## Low-risk moved slices
 
 - everything already under `scripts/dev/`

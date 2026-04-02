@@ -99,6 +99,7 @@ It is **not** a thin wrapper around one provider SDK, and it is **not** just a t
 |---|---|
 | clone the repo and get something running quickly | [docs/quickstarts/FIRST_RUN_5_MIN.md](docs/quickstarts/FIRST_RUN_5_MIN.md) |
 | do a full local setup with environment validation | [docs/getting-started/INSTALL_AND_DEV_QUICKSTART.md](docs/getting-started/INSTALL_AND_DEV_QUICKSTART.md) |
+| figure out which canonical script family or entrypoint to use | [docs/guides/OPERATOR_SCRIPT_SURFACE.md](docs/guides/OPERATOR_SCRIPT_SURFACE.md) |
 | understand the repo at a high level | [docs/INDEX.md](docs/INDEX.md) |
 | understand the research systems and choose the right advanced subsystem | [docs/quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md](docs/quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md) |
 | inspect the public E4 dossier configs | [`agent_configs/`](agent_configs/) |

@@ -344,12 +344,9 @@ For the public subsystem arc:
 - [DAG Runtime V3 PaCoRe replication packet](dag-runtime-v3-pacore-replication-packet.md)
 - [DAG Runtime V3 cross-paper composition](dag-runtime-v3-cross-paper-composition.md)
 
-If you need the maintainer-only go/no-go and freeze records that explain why the
-subsystem stopped growing, use:
-
-- [DAG Runtime V2 phase 0 pressure packet](../internals/research/dag-runtime-v2-phase0-pressure-packet.md)
-- [DAG Runtime V2 stop/go synthesis](../internals/research/dag-runtime-v2-stop-go-synthesis.md)
-- [DAG Runtime V3 freeze and decision gate](../internals/research/dag-runtime-v3-freeze-and-decision-gate.md)
+If you need maintainer-only freeze and decision records, start from
+[../internals/research/README.md](../internals/research/README.md) instead of
+treating those notes as part of the public reading path.
 
 ---
 

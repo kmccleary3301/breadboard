@@ -327,10 +327,9 @@ For the public subsystem arc:
 - [RL V2 adapter probes](rl-training-primitives-v2-adapter-probes.md)
 - [RL V2 pressure-study packet](rl-training-primitives-v2-pressure-study-packet.md)
 
-If you need the maintainer-only closeout and deferral notes, use:
-
-- [RL V1 freeze and deferrals](../internals/research/rl-training-primitives-v1-freeze-and-deferrals.md)
-- [RL V2 freeze and deferrals](../internals/research/rl-training-primitives-v2-freeze-and-deferrals.md)
+If you need maintainer-only closeout and deferral notes, start from
+[../internals/research/README.md](../internals/research/README.md) instead of
+using those records as part of the public subsystem arc.
 
 ---
 

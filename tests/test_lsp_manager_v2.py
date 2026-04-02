@@ -4,6 +4,8 @@ import pytest
 import ray
 import tempfile
 import json
+import importlib
+import warnings
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -149,6 +151,17 @@ class TestLSPJSONRPCClient:
     def test_v2_compatibility_import_alias(self):
         """Test that the legacy v2 module path still aliases the canonical class."""
         assert CompatLSPManagerV2 is LSPManagerV2
+
+    def test_v2_wrapper_emits_deprecation_warning(self):
+        """Test that importing the legacy v2 path emits a deprecation warning."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", DeprecationWarning)
+            module = importlib.import_module("breadboard.lsp_manager_v2")
+            importlib.reload(module)
+        assert any(
+            item.category is DeprecationWarning and "breadboard.lsp_manager_v2" in str(item.message)
+            for item in caught
+        )
 
 
 class TestLSPServerConfigs:

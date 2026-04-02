@@ -16,6 +16,9 @@ If you are new, start at the row that fits your situation and follow it forward.
 **Setting up a local dev environment and need the full reference:**
 → [getting-started/INSTALL_AND_DEV_QUICKSTART.md](getting-started/INSTALL_AND_DEV_QUICKSTART.md)
 
+**Trying to figure out which canonical script family or entrypoint to use:**
+→ [guides/OPERATOR_SCRIPT_SURFACE.md](guides/OPERATOR_SCRIPT_SURFACE.md) · [reference/SCRIPTS_INDEX.md](reference/SCRIPTS_INDEX.md)
+
 **Exploring ATP, optimization, DAG, RL, C-Trees, or DARWIN and want the shortest research-systems entry path:**
 → [quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md](quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md) · [concepts/research-systems-overview.md](concepts/research-systems-overview.md)
 
@@ -66,6 +69,13 @@ Tracked `docs/` is now split intentionally:
 | [quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md](quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md) | Fastest high-quality reading path into ATP, Lean sandboxing, optimization, DAG, RL, C-Trees, and DARWIN |
 | [getting-started/INSTALL_AND_DEV_QUICKSTART.md](getting-started/INSTALL_AND_DEV_QUICKSTART.md) | Full setup reference: bootstrap options, doctor, disk maintenance |
 | [ci/QUICKSTART_SAFE_VALIDATION_20260217.md](ci/QUICKSTART_SAFE_VALIDATION_20260217.md) | CI-validated quickstart run record |
+
+### Operator and maintainer workflows
+
+| Doc | What it covers |
+|-----|----------------|
+| [guides/OPERATOR_SCRIPT_SURFACE.md](guides/OPERATOR_SCRIPT_SURFACE.md) | How to choose the right canonical script family and entrypoint for setup, ops, release, migration, and parity work |
+| [reference/SCRIPTS_INDEX.md](reference/SCRIPTS_INDEX.md) | Stable categorized script taxonomy and machine-readable inventory entrypoint |
 
 ### Contracts and surfaces
 
