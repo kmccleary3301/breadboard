@@ -23,10 +23,18 @@ from .assessment import SearchAssessmentRegistry, build_default_search_assessmen
 from .compaction import SearchCompactionRegistry, build_default_search_compaction_registry
 from .export import build_search_offline_dataset, export_search_trajectory
 from .fidelity import (
+    AssessmentLineagePacket,
     BaselineComparisonPacket,
+    BenchmarkControlPacket,
+    CompositionSeamPacket,
     ComputeBudgetLedger,
+    ConsumerHandoffPacket,
     PaperRecipeManifest,
+    RepeatedShapeRegisterEntry,
+    ReplayExportIntegrityPacket,
     ReplicationDeviationLedger,
+    TopologyAudit,
+    FrontierPolicyAudit,
     build_default_fidelity_scorecard,
     compute_fidelity_metrics,
 )
@@ -5495,4 +5503,3028 @@ def build_dag_replication_v1_codetree_packet_payload() -> Dict[str, object]:
         "execution_feedback_packet": dict(example["execution_feedback_packet"]),
         "task_scope_note": dict(example["task_scope_note"]),
         "codetree_audit": dict(example["codetree_audit"]),
+    }
+
+
+def build_dag_v4_phase1_control_packet() -> Dict[str, object]:
+    """Build the first DAG V4 helper/control packet without changing kernel truth."""
+
+    got = build_dag_replication_v1_got_sorting_packet()
+    tot = build_dag_replication_v1_tot_game24_packet()
+
+    repeated_shape_entries = [
+        RepeatedShapeRegisterEntry(
+            gap_label="irregular_graph_feedback_lineage",
+            target_family="got_v2_preflight",
+            topology_class="G",
+            where_it_appears="bounded graph-transform rerun over prior GoT packet",
+            current_workaround="lineage audit plus explicit graph packet manifests",
+            why_workaround_is_insufficient="not yet exhausted; current packet remains reconstructable under helper-local audits",
+            effect_on_fidelity_tier="no_downgrade",
+            effect_on_replay_export="none observed in bounded rerun",
+            primary_locus="helper_level_only",
+            seen_in_other_targets=[],
+            seen_in_consumers=["optimize_handoff_preflight", "rl_handoff_preflight"],
+            helper_exhausted=False,
+            counts_toward_review=False,
+            notes={"packet_id": got["recipe_manifest"].manifest_id},
+            metadata={"phase": "dag_v4_phase1"},
+        ),
+        RepeatedShapeRegisterEntry(
+            gap_label="adaptive_frontier_reopen_truth",
+            target_family="tot_v2_preflight",
+            topology_class="F",
+            where_it_appears="frontier-controlled rerun over prior ToT packet with explicit audit expectations",
+            current_workaround="frontier policy audit plus evaluator-strength controls",
+            why_workaround_is_insufficient="harder reopen/backtrack slices are still pending, so no repeated-shape claim is allowed yet",
+            effect_on_fidelity_tier="bounded_medium_only",
+            effect_on_replay_export="none observed in bounded rerun",
+            primary_locus="helper_and_evaluator_control_only",
+            seen_in_other_targets=[],
+            seen_in_consumers=["optimize_handoff_preflight", "rl_handoff_preflight"],
+            helper_exhausted=False,
+            counts_toward_review=False,
+            notes={"packet_id": tot["recipe_manifest"].manifest_id},
+            metadata={"phase": "dag_v4_phase1"},
+        ),
+    ]
+    topology_audits = [
+        TopologyAudit(
+            audit_id="dag_v4.phase1.audit.got.topology.v1",
+            target_family="got_v2_preflight",
+            topology_class="G",
+            parentage_reconstructable=True,
+            fan_flow_reconstructable=True,
+            feedback_loop_reconstructable=True,
+            shadow_state_required=False,
+            notes={"lineage_basis": "candidate parent ids plus helper packet graph rows"},
+            metadata={"phase": "dag_v4_phase1"},
+        ),
+        TopologyAudit(
+            audit_id="dag_v4.phase1.audit.tot.topology.v1",
+            target_family="tot_v2_preflight",
+            topology_class="F",
+            parentage_reconstructable=True,
+            fan_flow_reconstructable=True,
+            feedback_loop_reconstructable=False,
+            shadow_state_required=False,
+            notes={"current_limit": "bounded ToT slice does not yet exercise reopen loops"},
+            metadata={"phase": "dag_v4_phase1"},
+        ),
+    ]
+    frontier_policy_audits = [
+        FrontierPolicyAudit(
+            audit_id="dag_v4.phase1.audit.got.frontier.v1",
+            target_family="got_v2_preflight",
+            topology_class="G",
+            select_prune_reconstructable=True,
+            budget_conditioned_reconstructable=False,
+            reopen_backtrack_reconstructable=False,
+            consumer_can_explain_frontier=True,
+            shadow_policy_required=False,
+            notes={"reason": "GoT preflight is graph-local rather than budget-tree-local"},
+            metadata={"phase": "dag_v4_phase1"},
+        ),
+        FrontierPolicyAudit(
+            audit_id="dag_v4.phase1.audit.tot.frontier.v1",
+            target_family="tot_v2_preflight",
+            topology_class="F",
+            select_prune_reconstructable=True,
+            budget_conditioned_reconstructable=True,
+            reopen_backtrack_reconstructable=False,
+            consumer_can_explain_frontier=True,
+            shadow_policy_required=False,
+            notes={"current_limit": "reopen/backtrack not yet exercised in the bounded packet"},
+            metadata={"phase": "dag_v4_phase1"},
+        ),
+    ]
+    benchmark_control_packet = BenchmarkControlPacket(
+        packet_id="dag_v4.phase1.control.evaluator_strength.v1",
+        target_family="got_tot_preflight",
+        control_kind="evaluator_strength_and_budget_control",
+        evaluator_stack=["packet_review_judge", "fidelity_checker", "bounded_compute_checker"],
+        controls=[
+            "match_llm_call_budget",
+            "explicit_discriminator_strength_note",
+            "record_holdout_confound_risks",
+        ],
+        known_confound_risks=["weak evaluator overstates frontier gap", "sorting/game24 task simplification hides reopen pressure"],
+        notes={"purpose": "keep bounded reruns interpretable before harder V4 packets"},
+        metadata={"phase": "dag_v4_phase1"},
+    )
+    replay_export_integrity_packet = ReplayExportIntegrityPacket(
+        packet_id="dag_v4.phase1.control.replay_export.v1",
+        target_family="got_tot_preflight",
+        topology_class="G+F",
+        export_modes=["trajectory_export", "offline_dataset_projection", "flattened_transcript_control"],
+        preserved_semantics=["selected_candidate_identity", "assessment linkage", "frontier sequence", "candidate parentage"],
+        lost_semantics=["none material in bounded rerun"],
+        shadow_assumptions_required=False,
+        notes={"flattened_control": "included only as a loss-detection baseline"},
+        metadata={"phase": "dag_v4_phase1"},
+    )
+    consumer_handoff_packets = [
+        ConsumerHandoffPacket(
+            packet_id="dag_v4.phase1.handoff.optimize.v1",
+            target_family="got_tot_preflight",
+            consumer_kind="optimize",
+            artifact_kinds=["SearchRun", "FidelityScorecard", "ComputeBudgetLedger", "BaselineComparisonPacket"],
+            handoff_contract=["comparison-ready packet ids", "bounded claim-limit annotations", "no shadow frontier semantics"],
+            shadow_semantics_required=False,
+            notes={"consumer_read": "optimize should compare packets without DAG-private assumptions"},
+            metadata={"phase": "dag_v4_phase1"},
+        ),
+        ConsumerHandoffPacket(
+            packet_id="dag_v4.phase1.handoff.rl.v1",
+            target_family="got_tot_preflight",
+            consumer_kind="rl",
+            artifact_kinds=["trajectory_export", "assessment linkage", "control baselines"],
+            handoff_contract=["replay/export integrity must remain explicit", "flattened control must expose any semantic loss"],
+            shadow_semantics_required=False,
+            notes={"consumer_read": "RL should not need DAG-private topology semantics for bounded exports"},
+            metadata={"phase": "dag_v4_phase1"},
+        ),
+    ]
+    composition_seam_packet = CompositionSeamPacket(
+        packet_id="dag_v4.phase1.seam.preflight.v1",
+        source_family="got_tot_preflight",
+        target_kind="optimize_and_rl",
+        seam_labels=["frontier_decision_continuity", "assessment_to_action_continuity", "export_integrity"],
+        issues=[
+            {"issue_id": "seam.frontier.1", "status": "not_observed", "locus": "none"},
+            {"issue_id": "seam.export.1", "status": "bounded_clean", "locus": "helper_level_only"},
+        ],
+        repeated_shape_candidate=False,
+        notes={"purpose": "first cross-system preflight before harder V4 packets"},
+        metadata={"phase": "dag_v4_phase1"},
+    )
+    return {
+        "kernel_change_required": False,
+        "phase": "dag_v4_phase1",
+        "source_packets": {
+            "got": got,
+            "tot": tot,
+        },
+        "repeated_shape_register": repeated_shape_entries,
+        "topology_audits": topology_audits,
+        "frontier_policy_audits": frontier_policy_audits,
+        "benchmark_control_packet": benchmark_control_packet,
+        "replay_export_integrity_packet": replay_export_integrity_packet,
+        "consumer_handoff_packets": consumer_handoff_packets,
+        "composition_seam_packet": composition_seam_packet,
+        "metadata": {
+            "purpose": "phase1_helper_and_control_hardening",
+            "frozen_kernel": True,
+            "old_packet_rerun_count": 2,
+            "next_targets": ["got_v2", "tot_v2"],
+        },
+    }
+
+
+def build_dag_v4_phase1_control_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_phase1_control_packet()
+    return {
+        "kernel_change_required": example["kernel_change_required"],
+        "phase": example["phase"],
+        "source_packets": {
+            "got": {
+                "recipe_manifest": example["source_packets"]["got"]["recipe_manifest"].to_dict(),
+                "scorecard": example["source_packets"]["got"]["scorecard"].to_dict(),
+                "compute_ledger": example["source_packets"]["got"]["compute_ledger"].to_dict(),
+                "baseline_packet": example["source_packets"]["got"]["baseline_packet"].to_dict(),
+                "deviation_ledger": example["source_packets"]["got"]["deviation_ledger"].to_dict(),
+            },
+            "tot": {
+                "recipe_manifest": example["source_packets"]["tot"]["recipe_manifest"].to_dict(),
+                "scorecard": example["source_packets"]["tot"]["scorecard"].to_dict(),
+                "compute_ledger": example["source_packets"]["tot"]["compute_ledger"].to_dict(),
+                "baseline_packet": example["source_packets"]["tot"]["baseline_packet"].to_dict(),
+                "deviation_ledger": example["source_packets"]["tot"]["deviation_ledger"].to_dict(),
+            },
+        },
+        "repeated_shape_register": [item.to_dict() for item in example["repeated_shape_register"]],
+        "topology_audits": [item.to_dict() for item in example["topology_audits"]],
+        "frontier_policy_audits": [item.to_dict() for item in example["frontier_policy_audits"]],
+        "benchmark_control_packet": example["benchmark_control_packet"].to_dict(),
+        "replay_export_integrity_packet": example["replay_export_integrity_packet"].to_dict(),
+        "consumer_handoff_packets": [item.to_dict() for item in example["consumer_handoff_packets"]],
+        "composition_seam_packet": example["composition_seam_packet"].to_dict(),
+        "metadata": dict(example["metadata"]),
+    }
+
+
+def build_dag_v4_got_v2_packet() -> Dict[str, object]:
+    """Build the GoT v2 re-probe packet that removes the bounded single-refine assumption."""
+
+    base = build_dag_replication_v1_got_sorting_packet()
+    base_run = base["run"]
+    search_id = "search.dag_v4.got_v2"
+    base_candidates = [
+        SearchCandidate.from_dict({**candidate.to_dict(), "search_id": search_id})
+        for candidate in base_run.candidates
+    ]
+    candidate_index = {candidate.candidate_id.split(".cand.", 1)[-1]: candidate for candidate in base_candidates}
+    merge_ab = candidate_index["merge.ab"]
+    final_refine = candidate_index["final.refine"]
+    feedback_candidate = SearchCandidate(
+        candidate_id=f"{search_id}.cand.feedback.merge",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.3",
+        parent_ids=[merge_ab.candidate_id, final_refine.candidate_id],
+        round_index=3,
+        depth=4,
+        payload_ref=f"artifacts/search/{search_id}/feedback_merge.json",
+        score_vector={"correctness_score": 0.93, "sortedness_score": 0.985, "preservation_score": 1.0},
+        usage={"prompt_tokens": 36, "completion_tokens": 15},
+        status="selected",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/feedback_merge.md",
+        metadata={"node_kind": "feedback_merge", "transform_type": "graph_feedback_merge", "instance_class": "mixed_signed_duplicates"},
+    )
+    events = [SearchEvent.from_dict({**event.to_dict(), "search_id": search_id}) for event in base_run.events]
+    events.append(
+        SearchEvent(
+            event_id=f"{search_id}.event.feedback.merge",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.3",
+            round_index=3,
+            operator_kind="aggregate",
+            input_candidate_ids=[merge_ab.candidate_id, final_refine.candidate_id],
+            output_candidate_ids=[feedback_candidate.candidate_id],
+            metadata={"recipe": "got_sorting_v2", "transform_type": "feedback_merge", "max_fan_in": 2, "feedback_loop": True},
+        )
+    )
+    frontiers = [SearchFrontier.from_dict({**frontier.to_dict(), "search_id": search_id}) for frontier in base_run.frontiers]
+    frontiers.append(
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.3",
+            search_id=search_id,
+            round_index=3,
+            candidate_ids=[feedback_candidate.candidate_id],
+            status="completed",
+        )
+    )
+    run = SearchRun(
+        search_id=search_id,
+        recipe_kind="got_sorting_graph_packet_v2",
+        candidates=[*base_candidates, feedback_candidate],
+        frontiers=frontiers,
+        events=events,
+        messages=[],
+        selected_candidate_id=feedback_candidate.candidate_id,
+        metadata={
+            "phase": "dag_v4_phase2",
+            "paper_key": "graph_of_thoughts",
+            "packet_id": "got_sorting_v2",
+            "task_class": "sorting",
+            "removed_assumptions": ["single_refine_step_only", "no_feedback_merge_after_refine"],
+            "max_llm_calls": 18,
+        },
+    )
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_v4.got_v2.profile.v1",
+        paper_key="graph_of_thoughts",
+        paper_title="Graph of Thoughts: Solving Elaborate Problems with Large Language Models",
+        family_kind="graph_structured_reasoning",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="high_structural_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="got.sorting.64_number.slice.v2",
+        control_profile={
+            "task_class": "sorting",
+            "feedback_merge_enabled": True,
+            "multi_parent_fusion_depth": 2,
+            "consumer_replay_required": True,
+        },
+        baseline_ids=[
+            "direct_answer",
+            "cot",
+            "tot_budget_matched",
+            "got_no_feedback_merge",
+            "got_no_multi_parent_fusion",
+            "linear_reducer",
+        ],
+        metadata={"phase": "dag_v4_phase2", "packet_id": "got_sorting_v2", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_v4.got_v2.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="high_structural_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="pass",
+        compute_fidelity="bounded",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "harder bounded sorting packet only",
+            "removed_assumptions": ["single_refine_step_only", "no_feedback_merge_after_refine"],
+            "repeated_shape_watch": ["irregular_graph_feedback_lineage", "multi_parent_provenance"],
+        },
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_v4.got_v2.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        entries=[
+            {"entry_id": "got_v2.calls", "kind": "llm_calls", "label": "llm_calls", "quantity": 9, "unit": "calls"},
+            {"entry_id": "got_v2.prompt_tokens", "kind": "prompt_tokens", "label": "prompt_tokens", "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "got_v2.completion_tokens", "kind": "completion_tokens", "label": "completion_tokens", "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "got_v2.feedback_loops", "kind": "feedback_loops", "label": "feedback_loops", "quantity": 1.0, "unit": "loops"},
+            {"entry_id": "got_v2.nodes", "kind": "node_count", "label": "node_count", "quantity": float(len(run.candidates)), "unit": "nodes"},
+        ],
+        normalization_rule="bounded_sorting_feedback_packet_matched",
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_v4.got_v2.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="bounded_sorting_feedback_packet_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "dag_v4_phase2", "task_class": "sorting"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_v4.got_v2.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {"deviation_id": "got_v2.dev.01", "severity": "medium", "summary": "Still a sorting-family packet rather than a broad GoT task suite."},
+            {"deviation_id": "got_v2.dev.02", "severity": "low", "summary": "Feedback merge remains bounded to a single additional graph-transform loop."},
+        ],
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    topology_audit = TopologyAudit(
+        audit_id="dag_v4.got_v2.topology.v1",
+        target_family="got_v2",
+        topology_class="G",
+        parentage_reconstructable=True,
+        fan_flow_reconstructable=True,
+        feedback_loop_reconstructable=True,
+        shadow_state_required=False,
+        notes={"selected_candidate_id": run.selected_candidate_id},
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    replay_export_integrity = ReplayExportIntegrityPacket(
+        packet_id="dag_v4.got_v2.replay_export.v1",
+        target_family="got_v2",
+        topology_class="G",
+        export_modes=["trajectory_export", "offline_dataset_projection", "flattened_transcript_control"],
+        preserved_semantics=["multi_parent_lineage", "feedback_loop_parentage", "selected_candidate_identity"],
+        lost_semantics=[],
+        shadow_assumptions_required=False,
+        notes={"flattened_control_expected_loss": "none material in bounded packet"},
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    repeated_shape_entry = RepeatedShapeRegisterEntry(
+        gap_label="irregular_graph_feedback_lineage",
+        target_family="got_v2",
+        topology_class="G",
+        where_it_appears="feedback merge after refine over bounded sorting graph",
+        current_workaround="topology audit plus replay/export integrity packet",
+        why_workaround_is_insufficient="no insufficiency observed in bounded v2 packet",
+        effect_on_fidelity_tier="no_downgrade",
+        effect_on_replay_export="none observed",
+        primary_locus="helper_level_only",
+        seen_in_other_targets=[],
+        seen_in_consumers=["optimize_preflight", "rl_preflight"],
+        helper_exhausted=False,
+        counts_toward_review=False,
+        notes={"selected_candidate_id": run.selected_candidate_id},
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "run": run,
+        "topology_audit": topology_audit,
+        "replay_export_integrity_packet": replay_export_integrity,
+        "repeated_shape_entry": repeated_shape_entry,
+        "removed_assumptions": ["single_refine_step_only", "no_feedback_merge_after_refine"],
+    }
+
+
+def build_dag_v4_got_v2_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_got_v2_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "run": example["run"].to_dict(),
+        "topology_audit": example["topology_audit"].to_dict(),
+        "replay_export_integrity_packet": example["replay_export_integrity_packet"].to_dict(),
+        "repeated_shape_entry": example["repeated_shape_entry"].to_dict(),
+        "removed_assumptions": list(example["removed_assumptions"]),
+    }
+
+
+def build_dag_v4_tot_v2_packet() -> Dict[str, object]:
+    """Build the ToT v2 re-probe packet that introduces bounded reopen behavior."""
+
+    search_id = "search.dag_v4.tot_v2"
+    seeds = [
+        SearchCandidate(
+            candidate_id=f"{search_id}.cand.seed.{index}",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.0",
+            parent_ids=[],
+            round_index=0,
+            depth=0,
+            payload_ref=f"artifacts/search/{search_id}/seed_{index}.json",
+            score_vector={"correctness_score": score, "frontier_rank_score": rank},
+            usage={"prompt_tokens": 24 + index, "completion_tokens": 14 + index},
+            status="seeded",
+            reasoning_summary_ref=f"artifacts/search/{search_id}/seed_{index}_summary.md",
+            metadata={"thought_kind": "initial_state", "game24_instance": "8,8,3,3", "seed_index": index},
+        )
+        for index, (score, rank) in enumerate(((0.31, 0.42), (0.37, 0.48), (0.34, 0.45)), start=1)
+    ]
+    expand_a = SearchCandidate(
+        candidate_id=f"{search_id}.cand.expand.a",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[seeds[1].candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/expand_a.json",
+        score_vector={"correctness_score": 0.56, "frontier_rank_score": 0.68},
+        usage={"prompt_tokens": 37, "completion_tokens": 19},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/expand_a.md",
+        metadata={"thought_kind": "expanded_state", "action": "expand"},
+    )
+    expand_b = SearchCandidate(
+        candidate_id=f"{search_id}.cand.expand.b",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[seeds[2].candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/expand_b.json",
+        score_vector={"correctness_score": 0.52, "frontier_rank_score": 0.61},
+        usage={"prompt_tokens": 36, "completion_tokens": 18},
+        status="discarded",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/expand_b.md",
+        metadata={"thought_kind": "expanded_state", "action": "expand"},
+    )
+    reopen_candidate = SearchCandidate(
+        candidate_id=f"{search_id}.cand.reopen.b",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.2",
+        parent_ids=[expand_b.candidate_id],
+        round_index=2,
+        depth=2,
+        payload_ref=f"artifacts/search/{search_id}/reopen_b.json",
+        score_vector={"correctness_score": 0.74, "frontier_rank_score": 0.79},
+        usage={"prompt_tokens": 33, "completion_tokens": 16},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/reopen_b.md",
+        metadata={"thought_kind": "reopened_state", "action": "reopen_expand", "reopened_from_candidate_id": expand_b.candidate_id},
+    )
+    final_candidate = SearchCandidate(
+        candidate_id=f"{search_id}.cand.final",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.3",
+        parent_ids=[reopen_candidate.candidate_id],
+        round_index=3,
+        depth=3,
+        payload_ref=f"artifacts/search/{search_id}/final_candidate.json",
+        score_vector={"correctness_score": 0.9, "frontier_rank_score": 0.85},
+        usage={"prompt_tokens": 41, "completion_tokens": 17},
+        status="selected",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/final_candidate.md",
+        metadata={"thought_kind": "solution_state", "action": "select_final"},
+    )
+    events = [
+        SearchEvent(
+            event_id=f"{search_id}.event.expand",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="expand",
+            input_candidate_ids=[item.candidate_id for item in seeds],
+            output_candidate_ids=[expand_a.candidate_id, expand_b.candidate_id],
+            metadata={"recipe": "tot_game24_v2", "frontier_policy": "expand_rank_prune_reopen"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.prune",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="discard",
+            input_candidate_ids=[expand_b.candidate_id],
+            output_candidate_ids=[],
+            metadata={"recipe": "tot_game24_v2", "pruned_candidate_ids": [expand_b.candidate_id], "rationale": "lower frontier rank"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.reopen",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.2",
+            round_index=2,
+            operator_kind="expand",
+            input_candidate_ids=[expand_b.candidate_id],
+            output_candidate_ids=[reopen_candidate.candidate_id],
+            metadata={"recipe": "tot_game24_v2", "reopen_from_candidate_id": expand_b.candidate_id, "budget_conditioned_reopen": True},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.final",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.3",
+            round_index=3,
+            operator_kind="select",
+            input_candidate_ids=[reopen_candidate.candidate_id],
+            output_candidate_ids=[final_candidate.candidate_id],
+            metadata={"recipe": "tot_game24_v2", "termination": "valid_24_expression"},
+        ),
+    ]
+    frontiers = [
+        SearchFrontier(frontier_id=f"{search_id}.frontier.0", search_id=search_id, round_index=0, candidate_ids=[item.candidate_id for item in seeds], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.1", search_id=search_id, round_index=1, candidate_ids=[expand_a.candidate_id, expand_b.candidate_id], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.2", search_id=search_id, round_index=2, candidate_ids=[reopen_candidate.candidate_id], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.3", search_id=search_id, round_index=3, candidate_ids=[final_candidate.candidate_id], status="completed"),
+    ]
+    run = SearchRun(
+        search_id=search_id,
+        recipe_kind="tot_game24_frontier_packet_v2",
+        candidates=[*seeds, expand_a, expand_b, reopen_candidate, final_candidate],
+        frontiers=frontiers,
+        events=events,
+        messages=[],
+        selected_candidate_id=final_candidate.candidate_id,
+        metadata={
+            "phase": "dag_v4_phase2",
+            "paper_key": "tree_of_thoughts",
+            "packet_id": "tot_game24_v2",
+            "task_class": "game_of_24",
+            "frontier_policy": "expand_rank_prune_reopen",
+            "removed_assumptions": ["reopen_disabled", "single_frontier_pass_only"],
+            "max_llm_calls": 14,
+        },
+    )
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_v4.tot_v2.profile.v1",
+        paper_key="tree_of_thoughts",
+        paper_title="Tree of Thoughts: Deliberate Problem Solving with Large Language Models",
+        family_kind="adaptive_frontier_search",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="high_structural_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="tot.game24.slice.v2",
+        control_profile={
+            "task_class": "game_of_24",
+            "frontier_policy": "expand_rank_prune_reopen",
+            "reopen_policy": "enabled_bounded_once",
+            "evaluator_control": "required",
+        },
+        baseline_ids=[
+            "cot",
+            "self_consistency",
+            "reranking",
+            "fixed_width_no_backtracking",
+            "no_self_eval",
+            "discriminator_control",
+        ],
+        metadata={"phase": "dag_v4_phase2", "packet_id": "tot_game24_v2", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_v4.tot_v2.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="high_structural_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="controlled",
+        compute_fidelity="bounded",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "harder bounded game-of-24 packet only",
+            "removed_assumptions": ["reopen_disabled", "single_frontier_pass_only"],
+            "frontier_watch": ["reopen_truth", "budget_conditioned_frontier_policy"],
+        },
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_v4.tot_v2.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        entries=[
+            {"entry_id": "tot_v2.calls", "kind": "llm_calls", "label": "llm_calls", "quantity": 7, "unit": "calls"},
+            {"entry_id": "tot_v2.prompt_tokens", "kind": "prompt_tokens", "label": "prompt_tokens", "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "tot_v2.completion_tokens", "kind": "completion_tokens", "label": "completion_tokens", "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "tot_v2.reopen_count", "kind": "reopen_count", "label": "reopen_count", "quantity": 1.0, "unit": "events"},
+            {"entry_id": "tot_v2.peak_parallel_width", "kind": "peak_parallel_width", "label": "peak_parallel_width", "quantity": 3.0, "unit": "branches"},
+        ],
+        normalization_rule="game24_frontier_reopen_packet_matched",
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_v4.tot_v2.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="game24_frontier_reopen_packet_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "dag_v4_phase2", "task_class": "game_of_24"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_v4.tot_v2.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {"deviation_id": "tot_v2.dev.01", "severity": "medium", "summary": "Still a Game-of-24-first packet rather than broad ToT coverage."},
+            {"deviation_id": "tot_v2.dev.02", "severity": "low", "summary": "Reopen behavior is enabled only once to isolate bounded frontier semantics."},
+        ],
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    frontier_policy_audit = FrontierPolicyAudit(
+        audit_id="dag_v4.tot_v2.frontier.v1",
+        target_family="tot_v2",
+        topology_class="F",
+        select_prune_reconstructable=True,
+        budget_conditioned_reconstructable=True,
+        reopen_backtrack_reconstructable=True,
+        consumer_can_explain_frontier=True,
+        shadow_policy_required=False,
+        notes={"reopen_count": 1, "reopen_candidate_id": reopen_candidate.candidate_id},
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    benchmark_control_packet = BenchmarkControlPacket(
+        packet_id="dag_v4.tot_v2.control.v1",
+        target_family="tot_v2",
+        control_kind="evaluator_strength_and_discriminator_control",
+        evaluator_stack=["packet_review_judge", "frontier_rank_checker", "bounded_compute_checker"],
+        controls=["match_call_budget", "record_reopen_policy", "explicit_discriminator_control"],
+        known_confound_risks=["weak evaluator overstates frontier gap", "Game-of-24 task simplification"],
+        notes={"purpose": "distinguish frontier truth from evaluator weakness"},
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    repeated_shape_entry = RepeatedShapeRegisterEntry(
+        gap_label="adaptive_frontier_reopen_truth",
+        target_family="tot_v2",
+        topology_class="F",
+        where_it_appears="bounded single-reopen Game-of-24 packet",
+        current_workaround="frontier policy audit plus benchmark control packet",
+        why_workaround_is_insufficient="harder adaptive-frontier families still pending before any repeated-shape claim",
+        effect_on_fidelity_tier="no_downgrade",
+        effect_on_replay_export="none observed",
+        primary_locus="helper_and_evaluator_control_only",
+        seen_in_other_targets=[],
+        seen_in_consumers=["optimize_preflight", "rl_preflight"],
+        helper_exhausted=False,
+        counts_toward_review=False,
+        notes={"reopen_count": 1},
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "run": run,
+        "frontier_policy_audit": frontier_policy_audit,
+        "benchmark_control_packet": benchmark_control_packet,
+        "repeated_shape_entry": repeated_shape_entry,
+        "removed_assumptions": ["reopen_disabled", "single_frontier_pass_only"],
+    }
+
+
+def build_dag_v4_tot_v2_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_tot_v2_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "run": example["run"].to_dict(),
+        "frontier_policy_audit": example["frontier_policy_audit"].to_dict(),
+        "benchmark_control_packet": example["benchmark_control_packet"].to_dict(),
+        "repeated_shape_entry": example["repeated_shape_entry"].to_dict(),
+        "removed_assumptions": list(example["removed_assumptions"]),
+    }
+
+
+def build_dag_v4_moa_v2_packet() -> Dict[str, object]:
+    """Build the MoA v2 re-probe packet that deepens layered heterogeneity."""
+
+    search_id = "search.dag_v4.moa_v2"
+    seeds = [
+        SearchCandidate(
+            candidate_id=f"{search_id}.cand.seed.{index}",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.0",
+            parent_ids=[],
+            round_index=0,
+            depth=0,
+            payload_ref=f"artifacts/search/{search_id}/seed_{index}.json",
+            score_vector={"correctness_score": score, "judge_rank_score": rank},
+            usage={"prompt_tokens": 28 + index, "completion_tokens": 16 + index},
+            status="seeded",
+            reasoning_summary_ref=f"artifacts/search/{search_id}/seed_{index}.md",
+            metadata={"layer_index": 0, "roster_role": role, "model_name": model},
+        )
+        for index, (score, rank, role, model) in enumerate(
+            (
+                (0.41, 0.51, "researcher_a", "gpt_5_4_mini"),
+                (0.43, 0.53, "researcher_b", "claude_sonnet"),
+                (0.4, 0.5, "researcher_c", "gemini_flash"),
+                (0.44, 0.55, "researcher_d", "gpt_5_4_mini"),
+            ),
+            start=1,
+        )
+    ]
+    layer1_a = SearchCandidate(
+        candidate_id=f"{search_id}.cand.layer1.a",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[item.candidate_id for item in seeds],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/layer1_a.json",
+        score_vector={"correctness_score": 0.64, "judge_rank_score": 0.71},
+        usage={"prompt_tokens": 64, "completion_tokens": 24},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/layer1_a.md",
+        metadata={"layer_index": 1, "aggregation_style": "cross_layer_fan_in", "roster_role": "aggregator_a", "model_name": "gpt_5_4_mini"},
+    )
+    layer1_b = SearchCandidate(
+        candidate_id=f"{search_id}.cand.layer1.b",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[item.candidate_id for item in seeds],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/layer1_b.json",
+        score_vector={"correctness_score": 0.66, "judge_rank_score": 0.73},
+        usage={"prompt_tokens": 63, "completion_tokens": 24},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/layer1_b.md",
+        metadata={"layer_index": 1, "aggregation_style": "cross_layer_fan_in", "roster_role": "aggregator_b", "model_name": "claude_sonnet"},
+    )
+    judge_candidate = SearchCandidate(
+        candidate_id=f"{search_id}.cand.layer2.judge",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.2",
+        parent_ids=[layer1_a.candidate_id, layer1_b.candidate_id],
+        round_index=2,
+        depth=2,
+        payload_ref=f"artifacts/search/{search_id}/layer2_judge.json",
+        score_vector={"correctness_score": 0.74, "judge_rank_score": 0.81},
+        usage={"prompt_tokens": 47, "completion_tokens": 18},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/layer2_judge.md",
+        metadata={"layer_index": 2, "roster_role": "judge", "model_name": "gpt_5_4_mini"},
+    )
+    final_candidate = SearchCandidate(
+        candidate_id=f"{search_id}.cand.final",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.3",
+        parent_ids=[layer1_a.candidate_id, layer1_b.candidate_id, judge_candidate.candidate_id],
+        round_index=3,
+        depth=3,
+        payload_ref=f"artifacts/search/{search_id}/final.json",
+        score_vector={"correctness_score": 0.84, "judge_rank_score": 0.88},
+        usage={"prompt_tokens": 38, "completion_tokens": 16},
+        status="selected",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/final.md",
+        metadata={"layer_index": 3, "roster_role": "final_synthesizer", "model_name": "gpt_5_4_mini"},
+    )
+    events = [
+        SearchEvent(
+            event_id=f"{search_id}.event.layer1",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="aggregate",
+            input_candidate_ids=[item.candidate_id for item in seeds],
+            output_candidate_ids=[layer1_a.candidate_id, layer1_b.candidate_id],
+            metadata={"recipe": "moa_v2", "fan_in_size": len(seeds), "layer_transition": "0_to_1"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.judge",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.2",
+            round_index=2,
+            operator_kind="verify",
+            input_candidate_ids=[layer1_a.candidate_id, layer1_b.candidate_id],
+            output_candidate_ids=[judge_candidate.candidate_id],
+            metadata={"recipe": "moa_v2", "layer_transition": "1_to_2", "judge_required": True},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.final",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.3",
+            round_index=3,
+            operator_kind="select",
+            input_candidate_ids=[layer1_a.candidate_id, layer1_b.candidate_id, judge_candidate.candidate_id],
+            output_candidate_ids=[final_candidate.candidate_id],
+            metadata={"recipe": "moa_v2", "layer_transition": "2_to_3", "judge_backed": True},
+        ),
+    ]
+    frontiers = [
+        SearchFrontier(frontier_id=f"{search_id}.frontier.0", search_id=search_id, round_index=0, candidate_ids=[item.candidate_id for item in seeds], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.1", search_id=search_id, round_index=1, candidate_ids=[layer1_a.candidate_id, layer1_b.candidate_id], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.2", search_id=search_id, round_index=2, candidate_ids=[judge_candidate.candidate_id], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.3", search_id=search_id, round_index=3, candidate_ids=[final_candidate.candidate_id], status="completed"),
+    ]
+    run = SearchRun(
+        search_id=search_id,
+        recipe_kind="moa_layered_fan_in_packet_v2",
+        candidates=[*seeds, layer1_a, layer1_b, judge_candidate, final_candidate],
+        frontiers=frontiers,
+        events=events,
+        messages=[],
+        selected_candidate_id=final_candidate.candidate_id,
+        metadata={
+            "phase": "dag_v4_phase2",
+            "paper_key": "mixture_of_agents",
+            "packet_id": "moa_layered_v2",
+            "removed_assumptions": ["small_fixed_roster_only", "single_judge_pass_only"],
+            "max_llm_calls": 12,
+        },
+    )
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_v4.moa_v2.profile.v1",
+        paper_key="mixture_of_agents",
+        paper_title="Mixture-of-Agents Enhances Large Language Model Capabilities",
+        family_kind="layered_fan_in_reasoning",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="medium_structural_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="moa.bounded_multihop_qa.slice.v2",
+        control_profile={
+            "task_class": "bounded_multihop_qa",
+            "layer_count": 4,
+            "agents_per_layer": [4, 2, 1, 1],
+            "roster_policy": "heterogeneous",
+            "judge_required": True,
+        },
+        baseline_ids=[
+            "best_single_model",
+            "ensemble_vote_judge",
+            "one_layer_moa",
+            "homogeneous_roster",
+            "sequential_summarization",
+        ],
+        metadata={"phase": "dag_v4_phase2", "packet_id": "moa_layered_v2", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_v4.moa_v2.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="medium_structural_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="bounded",
+        compute_fidelity="bounded",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "harder bounded layered-fan-in packet only",
+            "removed_assumptions": ["small_fixed_roster_only", "single_judge_pass_only"],
+            "fan_in_watch": ["layered_heterogeneity_provenance", "judge_backed_fan_in"],
+        },
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_v4.moa_v2.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        entries=[
+            {"entry_id": "moa_v2.calls", "kind": "llm_calls", "label": "llm_calls", "quantity": 8, "unit": "calls"},
+            {"entry_id": "moa_v2.prompt_tokens", "kind": "prompt_tokens", "label": "prompt_tokens", "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "moa_v2.completion_tokens", "kind": "completion_tokens", "label": "completion_tokens", "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "moa_v2.layer_count", "kind": "layer_count", "label": "layer_count", "quantity": 4.0, "unit": "layers"},
+            {"entry_id": "moa_v2.judge_steps", "kind": "judge_steps", "label": "judge_steps", "quantity": 1.0, "unit": "steps"},
+        ],
+        normalization_rule="bounded_moa_layered_v2_packet_matched",
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_v4.moa_v2.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="bounded_moa_layered_v2_packet_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_v4.moa_v2.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {"deviation_id": "moa_v2.dev.01", "severity": "medium", "summary": "Still bounded to a synthetic multihop-QA packet rather than a broad judged benchmark stack."},
+            {"deviation_id": "moa_v2.dev.02", "severity": "low", "summary": "Judge-backed synthesis is explicit but remains single-pass in the v2 packet."},
+        ],
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    topology_audit = TopologyAudit(
+        audit_id="dag_v4.moa_v2.topology.v1",
+        target_family="moa_v2",
+        topology_class="H",
+        parentage_reconstructable=True,
+        fan_flow_reconstructable=True,
+        feedback_loop_reconstructable=False,
+        shadow_state_required=False,
+        notes={"fan_in_size": 4, "judge_stage_present": True},
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    assessment_lineage = AssessmentLineagePacket(
+        packet_id="dag_v4.moa_v2.assessment_lineage.v1",
+        target_family="moa_v2",
+        topology_class="H",
+        assessment_kinds=["judge"],
+        action_links=[{"assessment_id": "judge.layer2", "action_id": "select.final", "target_candidate_id": final_candidate.candidate_id}],
+        mixed_chain_reconstructable=True,
+        notes={"judge_stage": judge_candidate.candidate_id},
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    repeated_shape_entry = RepeatedShapeRegisterEntry(
+        gap_label="layered_heterogeneity_provenance",
+        target_family="moa_v2",
+        topology_class="H",
+        where_it_appears="heterogeneous layered fan-in with explicit judge stage",
+        current_workaround="topology audit plus assessment lineage packet",
+        why_workaround_is_insufficient="no insufficiency observed yet; broader heterogeneity tranche still pending",
+        effect_on_fidelity_tier="no_downgrade",
+        effect_on_replay_export="none observed",
+        primary_locus="helper_and_benchmark_scope_only",
+        seen_in_other_targets=[],
+        seen_in_consumers=["optimize_preflight", "rl_preflight"],
+        helper_exhausted=False,
+        counts_toward_review=False,
+        notes={"judge_stage_present": True},
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "run": run,
+        "topology_audit": topology_audit,
+        "assessment_lineage_packet": assessment_lineage,
+        "repeated_shape_entry": repeated_shape_entry,
+        "removed_assumptions": ["small_fixed_roster_only", "single_judge_pass_only"],
+    }
+
+
+def build_dag_v4_moa_v2_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_moa_v2_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "run": example["run"].to_dict(),
+        "topology_audit": example["topology_audit"].to_dict(),
+        "assessment_lineage_packet": example["assessment_lineage_packet"].to_dict(),
+        "repeated_shape_entry": example["repeated_shape_entry"].to_dict(),
+        "removed_assumptions": list(example["removed_assumptions"]),
+    }
+
+
+def build_dag_v4_codetree_v2_packet() -> Dict[str, object]:
+    """Build the CodeTree v2 re-probe packet that deepens repair and workspace lineage pressure."""
+
+    search_id = "search.dag_v4.codetree_v2"
+    seed = SearchCandidate(
+        candidate_id=f"{search_id}.cand.strategy",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.0",
+        parent_ids=[],
+        round_index=0,
+        depth=0,
+        payload_ref=f"artifacts/search/{search_id}/strategy.json",
+        score_vector={"correctness_score": 0.43, "repairability_score": 0.57},
+        usage={"prompt_tokens": 32, "completion_tokens": 18},
+        status="seeded",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/strategy.md",
+        workspace_ref=f"artifacts/search/{search_id}/workspace_strategy.json",
+        metadata={"stage_role": "thinker", "benchmark_slice": "toy_patch_pair_v2"},
+    )
+    solver = SearchCandidate(
+        candidate_id=f"{search_id}.cand.solver",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[seed.candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/solver.json",
+        score_vector={"correctness_score": 0.59, "repairability_score": 0.63},
+        usage={"prompt_tokens": 49, "completion_tokens": 27},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/solver.md",
+        workspace_ref=f"artifacts/search/{search_id}/workspace_solver.json",
+        metadata={"stage_role": "solver", "tree_action": "expand_patch"},
+    )
+    critic = SearchCandidate(
+        candidate_id=f"{search_id}.cand.critic",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.2",
+        parent_ids=[solver.candidate_id],
+        round_index=2,
+        depth=2,
+        payload_ref=f"artifacts/search/{search_id}/critic.json",
+        score_vector={"correctness_score": 0.5, "repairability_score": 0.72},
+        usage={"prompt_tokens": 30, "completion_tokens": 17},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/critic.md",
+        workspace_ref=f"artifacts/search/{search_id}/workspace_solver.json",
+        metadata={"stage_role": "critic", "tree_action": "critique_patch"},
+    )
+    debugger = SearchCandidate(
+        candidate_id=f"{search_id}.cand.debugger",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.3",
+        parent_ids=[solver.candidate_id, critic.candidate_id],
+        round_index=3,
+        depth=3,
+        payload_ref=f"artifacts/search/{search_id}/debugger.json",
+        score_vector={"correctness_score": 0.79, "repairability_score": 0.84},
+        usage={"prompt_tokens": 46, "completion_tokens": 25},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/debugger.md",
+        workspace_ref=f"artifacts/search/{search_id}/workspace_debugger.json",
+        metadata={"stage_role": "debugger", "tree_action": "repair_after_feedback"},
+    )
+    verifier = SearchCandidate(
+        candidate_id=f"{search_id}.cand.verifier",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.4",
+        parent_ids=[debugger.candidate_id],
+        round_index=4,
+        depth=4,
+        payload_ref=f"artifacts/search/{search_id}/verifier.json",
+        score_vector={"correctness_score": 0.82, "repairability_score": 0.86},
+        usage={"prompt_tokens": 26, "completion_tokens": 14},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/verifier.md",
+        workspace_ref=f"artifacts/search/{search_id}/workspace_debugger.json",
+        metadata={"stage_role": "verifier", "tree_action": "recheck_after_repair"},
+    )
+    final_candidate = SearchCandidate(
+        candidate_id=f"{search_id}.cand.final",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.5",
+        parent_ids=[debugger.candidate_id, verifier.candidate_id],
+        round_index=5,
+        depth=5,
+        payload_ref=f"artifacts/search/{search_id}/final.json",
+        score_vector={"correctness_score": 0.89, "repairability_score": 0.92},
+        usage={"prompt_tokens": 22, "completion_tokens": 12},
+        status="selected",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/final.md",
+        workspace_ref=f"artifacts/search/{search_id}/workspace_debugger.json",
+        metadata={"stage_role": "selector", "tree_action": "accept_patch"},
+    )
+    events = [
+        SearchEvent(
+            event_id=f"{search_id}.event.expand",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="expand",
+            input_candidate_ids=[seed.candidate_id],
+            output_candidate_ids=[solver.candidate_id],
+            metadata={"recipe": "codetree_v2", "stage_transition": "thinker_to_solver"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.verify.critic",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.2",
+            round_index=2,
+            operator_kind="verify",
+            input_candidate_ids=[solver.candidate_id],
+            output_candidate_ids=[critic.candidate_id],
+            metadata={"recipe": "codetree_v2", "stage_transition": "solver_to_critic", "feedback_kind": "execution_plus_review"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.repair",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.3",
+            round_index=3,
+            operator_kind="execute",
+            input_candidate_ids=[solver.candidate_id, critic.candidate_id],
+            output_candidate_ids=[debugger.candidate_id],
+            metadata={"recipe": "codetree_v2", "stage_transition": "critic_to_debugger"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.verify.repair",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.4",
+            round_index=4,
+            operator_kind="verify",
+            input_candidate_ids=[debugger.candidate_id],
+            output_candidate_ids=[verifier.candidate_id],
+            metadata={"recipe": "codetree_v2", "stage_transition": "debugger_to_verifier", "feedback_kind": "post_repair_recheck"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.select",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.5",
+            round_index=5,
+            operator_kind="select",
+            input_candidate_ids=[debugger.candidate_id, verifier.candidate_id],
+            output_candidate_ids=[final_candidate.candidate_id],
+            metadata={"recipe": "codetree_v2", "termination": "all_visible_tests_pass_after_repair"},
+        ),
+    ]
+    frontiers = [
+        SearchFrontier(frontier_id=f"{search_id}.frontier.0", search_id=search_id, round_index=0, candidate_ids=[seed.candidate_id], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.1", search_id=search_id, round_index=1, candidate_ids=[solver.candidate_id], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.2", search_id=search_id, round_index=2, candidate_ids=[critic.candidate_id], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.3", search_id=search_id, round_index=3, candidate_ids=[debugger.candidate_id], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.4", search_id=search_id, round_index=4, candidate_ids=[verifier.candidate_id], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.5", search_id=search_id, round_index=5, candidate_ids=[final_candidate.candidate_id], status="completed"),
+    ]
+    run = SearchRun(
+        search_id=search_id,
+        recipe_kind="codetree_stage_patch_packet_v2",
+        candidates=[seed, solver, critic, debugger, verifier, final_candidate],
+        frontiers=frontiers,
+        events=events,
+        messages=[],
+        selected_candidate_id=final_candidate.candidate_id,
+        metadata={
+            "phase": "dag_v4_phase2",
+            "paper_key": "codetree",
+            "packet_id": "codetree_patch_v2",
+            "removed_assumptions": ["single_repair_pass_only", "no_post_repair_verifier_stage"],
+            "max_llm_calls": 11,
+        },
+    )
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_v4.codetree_v2.profile.v1",
+        paper_key="codetree",
+        paper_title="CodeTree",
+        family_kind="stage_heterogeneous_code_tree",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="medium_structural_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="codetree.toy_patch_pair.slice.v2",
+        control_profile={
+            "task_class": "bounded_code_patch",
+            "visible_hidden_test_policy": "visible_only_in_v2",
+            "execution_feedback": "required",
+            "critic_role": "explicit",
+            "post_repair_verifier_stage": True,
+        },
+        baseline_ids=[
+            "direct_single_shot_code",
+            "cot_code",
+            "iterative_self_debug",
+            "strategy_solver_pair",
+            "execution_only_critic",
+            "no_tree_iterative_refine",
+        ],
+        metadata={"phase": "dag_v4_phase2", "packet_id": "codetree_patch_v2", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_v4.codetree_v2.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="medium_structural_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="bounded",
+        compute_fidelity="bounded",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "harder bounded code-search-tree packet only",
+            "removed_assumptions": ["single_repair_pass_only", "no_post_repair_verifier_stage"],
+            "workspace_watch": ["workspace_borrow_merge_lineage", "mixed_assessment_chain"],
+        },
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_v4.codetree_v2.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        entries=[
+            {"entry_id": "codetree_v2.calls", "kind": "llm_calls", "label": "llm_calls", "quantity": 6, "unit": "calls"},
+            {"entry_id": "codetree_v2.prompt_tokens", "kind": "prompt_tokens", "label": "prompt_tokens", "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "codetree_v2.completion_tokens", "kind": "completion_tokens", "label": "completion_tokens", "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "codetree_v2.execution_rounds", "kind": "execution_rounds", "label": "execution_rounds", "quantity": 3.0, "unit": "rounds"},
+            {"entry_id": "codetree_v2.verify_rounds", "kind": "verify_rounds", "label": "verify_rounds", "quantity": 2.0, "unit": "rounds"},
+        ],
+        normalization_rule="bounded_codetree_patch_v2_packet_matched",
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_v4.codetree_v2.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="bounded_codetree_patch_v2_packet_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_v4.codetree_v2.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {"deviation_id": "codetree_v2.dev.01", "severity": "medium", "summary": "Still a toy patch slice rather than benchmark-scale code search."},
+            {"deviation_id": "codetree_v2.dev.02", "severity": "low", "summary": "Workspace lineage is bounded to explicit workspace refs rather than broad repository-state borrowing."},
+        ],
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    topology_audit = TopologyAudit(
+        audit_id="dag_v4.codetree_v2.topology.v1",
+        target_family="codetree_v2",
+        topology_class="W",
+        parentage_reconstructable=True,
+        fan_flow_reconstructable=True,
+        feedback_loop_reconstructable=True,
+        shadow_state_required=False,
+        notes={"workspace_refs_present": True},
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    assessment_lineage = AssessmentLineagePacket(
+        packet_id="dag_v4.codetree_v2.assessment_lineage.v1",
+        target_family="codetree_v2",
+        topology_class="W",
+        assessment_kinds=["verify", "execute"],
+        action_links=[
+            {"assessment_id": "critic.verify", "action_id": "debugger.repair", "target_candidate_id": debugger.candidate_id},
+            {"assessment_id": "verifier.recheck", "action_id": "select.final", "target_candidate_id": final_candidate.candidate_id},
+        ],
+        mixed_chain_reconstructable=True,
+        notes={"workspace_refs": [seed.workspace_ref, solver.workspace_ref, debugger.workspace_ref]},
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    replay_export_integrity = ReplayExportIntegrityPacket(
+        packet_id="dag_v4.codetree_v2.replay_export.v1",
+        target_family="codetree_v2",
+        topology_class="W",
+        export_modes=["trajectory_export", "offline_dataset_projection", "flattened_transcript_control"],
+        preserved_semantics=["assessment_to_action_chain", "workspace_ref_lineage", "selected_candidate_identity"],
+        lost_semantics=[],
+        shadow_assumptions_required=False,
+        notes={"visible_hidden_test_policy": "visible_only_in_v2"},
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    repeated_shape_entry = RepeatedShapeRegisterEntry(
+        gap_label="workspace_borrow_merge_lineage",
+        target_family="codetree_v2",
+        topology_class="W",
+        where_it_appears="repair and verifier stages sharing explicit workspace lineage",
+        current_workaround="workspace refs plus assessment lineage packet plus replay/export audit",
+        why_workaround_is_insufficient="no insufficiency observed yet; shared-workspace class is still only partially pressured",
+        effect_on_fidelity_tier="no_downgrade",
+        effect_on_replay_export="none observed",
+        primary_locus="helper_and_harness_scope_only",
+        seen_in_other_targets=[],
+        seen_in_consumers=["optimize_preflight", "rl_preflight"],
+        helper_exhausted=False,
+        counts_toward_review=False,
+        notes={"post_repair_verifier_stage": True},
+        metadata={"phase": "dag_v4_phase2"},
+    )
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "run": run,
+        "topology_audit": topology_audit,
+        "assessment_lineage_packet": assessment_lineage,
+        "replay_export_integrity_packet": replay_export_integrity,
+        "repeated_shape_entry": repeated_shape_entry,
+        "removed_assumptions": ["single_repair_pass_only", "no_post_repair_verifier_stage"],
+    }
+
+
+def build_dag_v4_codetree_v2_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_codetree_v2_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "run": example["run"].to_dict(),
+        "topology_audit": example["topology_audit"].to_dict(),
+        "assessment_lineage_packet": example["assessment_lineage_packet"].to_dict(),
+        "replay_export_integrity_packet": example["replay_export_integrity_packet"].to_dict(),
+        "repeated_shape_entry": example["repeated_shape_entry"].to_dict(),
+        "removed_assumptions": list(example["removed_assumptions"]),
+    }
+
+
+def build_dag_v4_bavt_packet() -> Dict[str, object]:
+    """Build the BAVT packet that pressures budget-aware frontier value selection."""
+
+    search_id = "search.dag_v4.bavt"
+    root = SearchCandidate(
+        candidate_id=f"{search_id}.cand.root",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.0",
+        parent_ids=[],
+        round_index=0,
+        depth=0,
+        payload_ref=f"artifacts/search/{search_id}/root.json",
+        score_vector={"correctness_score": 0.34, "value_estimate": 0.46},
+        usage={"prompt_tokens": 24, "completion_tokens": 13},
+        status="seeded",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/root.md",
+        metadata={"state_kind": "root", "task_class": "budgeted_reasoning_tree"},
+    )
+    branch_a = SearchCandidate(
+        candidate_id=f"{search_id}.cand.branch.a",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[root.candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/branch_a.json",
+        score_vector={"correctness_score": 0.58, "value_estimate": 0.72},
+        usage={"prompt_tokens": 31, "completion_tokens": 17},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/branch_a.md",
+        metadata={"state_kind": "expanded_branch", "estimated_cost": 2, "value_band": "high"},
+    )
+    branch_b = SearchCandidate(
+        candidate_id=f"{search_id}.cand.branch.b",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[root.candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/branch_b.json",
+        score_vector={"correctness_score": 0.52, "value_estimate": 0.64},
+        usage={"prompt_tokens": 29, "completion_tokens": 16},
+        status="discarded",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/branch_b.md",
+        metadata={"state_kind": "expanded_branch", "estimated_cost": 4, "value_band": "medium"},
+    )
+    branch_a_refine = SearchCandidate(
+        candidate_id=f"{search_id}.cand.branch.a.refine",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.2",
+        parent_ids=[branch_a.candidate_id],
+        round_index=2,
+        depth=2,
+        payload_ref=f"artifacts/search/{search_id}/branch_a_refine.json",
+        score_vector={"correctness_score": 0.77, "value_estimate": 0.83},
+        usage={"prompt_tokens": 27, "completion_tokens": 15},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/branch_a_refine.md",
+        metadata={"state_kind": "refined_branch", "budget_reallocated": True, "estimated_cost": 2},
+    )
+    final_candidate = SearchCandidate(
+        candidate_id=f"{search_id}.cand.final",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.3",
+        parent_ids=[branch_a_refine.candidate_id],
+        round_index=3,
+        depth=3,
+        payload_ref=f"artifacts/search/{search_id}/final.json",
+        score_vector={"correctness_score": 0.88, "value_estimate": 0.87},
+        usage={"prompt_tokens": 23, "completion_tokens": 12},
+        status="selected",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/final.md",
+        metadata={"state_kind": "selected_solution", "selection_rule": "budget_aware_value_max"},
+    )
+    events = [
+        SearchEvent(
+            event_id=f"{search_id}.event.expand",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="expand",
+            input_candidate_ids=[root.candidate_id],
+            output_candidate_ids=[branch_a.candidate_id, branch_b.candidate_id],
+            metadata={"recipe": "bavt_budget_packet", "frontier_policy": "value_per_cost_rank"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.prune.low_value_cost",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="discard",
+            input_candidate_ids=[branch_b.candidate_id],
+            output_candidate_ids=[],
+            metadata={
+                "recipe": "bavt_budget_packet",
+                "discard_reason": "lower_value_per_cost",
+                "budget_spend_after_discard": 2,
+            },
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.reallocate.refine",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.2",
+            round_index=2,
+            operator_kind="expand",
+            input_candidate_ids=[branch_a.candidate_id],
+            output_candidate_ids=[branch_a_refine.candidate_id],
+            metadata={
+                "recipe": "bavt_budget_packet",
+                "budget_reallocation": "from_discarded_branch_to_branch_a",
+                "frontier_policy": "budget_aware_refine",
+            },
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.select",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.3",
+            round_index=3,
+            operator_kind="select",
+            input_candidate_ids=[branch_a_refine.candidate_id],
+            output_candidate_ids=[final_candidate.candidate_id],
+            metadata={"recipe": "bavt_budget_packet", "termination": "best_value_under_budget"},
+        ),
+    ]
+    frontiers = [
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.0",
+            search_id=search_id,
+            round_index=0,
+            candidate_ids=[root.candidate_id],
+            status="completed",
+        ),
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.1",
+            search_id=search_id,
+            round_index=1,
+            candidate_ids=[branch_a.candidate_id, branch_b.candidate_id],
+            status="completed",
+        ),
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.2",
+            search_id=search_id,
+            round_index=2,
+            candidate_ids=[branch_a_refine.candidate_id],
+            status="completed",
+        ),
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.3",
+            search_id=search_id,
+            round_index=3,
+            candidate_ids=[final_candidate.candidate_id],
+            status="completed",
+        ),
+    ]
+    run = SearchRun(
+        search_id=search_id,
+        recipe_kind="bavt_budget_aware_frontier_packet",
+        candidates=[root, branch_a, branch_b, branch_a_refine, final_candidate],
+        frontiers=frontiers,
+        events=events,
+        messages=[],
+        selected_candidate_id=final_candidate.candidate_id,
+        metadata={
+            "phase": "dag_v4_phase3",
+            "paper_key": "budget_aware_value_tree_search",
+            "packet_id": "bavt_budget_packet",
+            "topology_class": "F",
+            "frontier_policy": "value_per_cost_rank_then_reallocate",
+            "budget_limit": 4,
+        },
+    )
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_v4.bavt.profile.v1",
+        paper_key="budget_aware_value_tree_search",
+        paper_title="Budget-Aware Value Tree Search",
+        family_kind="adaptive_frontier_search",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="medium_structural_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="bavt.budgeted.reasoning.slice.v1",
+        control_profile={
+            "task_class": "budgeted_reasoning_tree",
+            "frontier_policy": "value_per_cost_rank_then_reallocate",
+            "budget_limit": 4,
+            "reallocation_policy": "single_reallocate_after_discard",
+        },
+        baseline_ids=[
+            "cot",
+            "fixed_width_tree",
+            "greedy_value_only",
+            "budget_blind_search",
+            "single_path_refine",
+        ],
+        metadata={"phase": "dag_v4_phase3", "packet_id": "bavt_budget_packet", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_v4.bavt.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="medium_structural_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="controlled",
+        compute_fidelity="bounded",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "bounded budget-aware frontier packet only",
+            "frontier_watch": ["value_per_cost_truth", "budget_reallocation_trace"],
+        },
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_v4.bavt.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        entries=[
+            {"entry_id": "bavt.calls", "kind": "llm_calls", "label": "llm_calls", "quantity": 5, "unit": "calls"},
+            {"entry_id": "bavt.prompt_tokens", "kind": "prompt_tokens", "label": "prompt_tokens", "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "bavt.completion_tokens", "kind": "completion_tokens", "label": "completion_tokens", "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "bavt.budget_limit", "kind": "budget_limit", "label": "budget_limit", "quantity": 4.0, "unit": "budget_units"},
+            {"entry_id": "bavt.reallocation_steps", "kind": "reallocation_steps", "label": "reallocation_steps", "quantity": 1.0, "unit": "steps"},
+        ],
+        normalization_rule="budget_aware_frontier_packet_matched",
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_v4.bavt.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="budget_aware_frontier_packet_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_v4.bavt.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {"deviation_id": "bavt.dev.01", "severity": "medium", "summary": "Packet is bounded to one explicit budget reallocation rather than long adaptive rollout."},
+            {"deviation_id": "bavt.dev.02", "severity": "low", "summary": "Value estimates are synthetic packet values, not benchmark-calibrated estimates."},
+        ],
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    frontier_policy_audit = FrontierPolicyAudit(
+        audit_id="dag_v4.bavt.frontier.v1",
+        target_family="bavt",
+        topology_class="F",
+        select_prune_reconstructable=True,
+        budget_conditioned_reconstructable=True,
+        reopen_backtrack_reconstructable=True,
+        consumer_can_explain_frontier=True,
+        shadow_policy_required=False,
+        notes={"policy": "value_per_cost_rank_then_reallocate", "budget_limit": 4},
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    benchmark_control_packet = BenchmarkControlPacket(
+        packet_id="dag_v4.bavt.control.v1",
+        target_family="bavt",
+        control_kind="budget_conditioned_frontier_and_evaluator_control",
+        evaluator_stack=["value_rank_checker", "budget_trace_checker", "packet_review_judge"],
+        controls=["match_budget_limit", "record_value_per_cost_inputs", "compare_against_budget_blind_control"],
+        known_confound_risks=["weak value estimator overstating frontier need", "synthetic task under-representing long horizon"],
+        notes={"purpose": "distinguish frontier truth from evaluator or estimator weakness"},
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    repeated_shape_entry = RepeatedShapeRegisterEntry(
+        gap_label="budget_conditioned_frontier_truth",
+        target_family="bavt",
+        topology_class="F",
+        where_it_appears="budget-aware value-ranked frontier with explicit reallocation",
+        current_workaround="frontier policy audit plus benchmark control packet",
+        why_workaround_is_insufficient="no insufficiency observed in bounded BAVT packet yet",
+        effect_on_fidelity_tier="no_downgrade",
+        effect_on_replay_export="none observed",
+        primary_locus="helper_and_evaluator_control_only",
+        seen_in_other_targets=["tot_v2"],
+        seen_in_consumers=[],
+        helper_exhausted=False,
+        counts_toward_review=False,
+        notes={"review_threshold_missing": "same-class only, no consumer confirmation"},
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "run": run,
+        "frontier_policy_audit": frontier_policy_audit,
+        "benchmark_control_packet": benchmark_control_packet,
+        "repeated_shape_entry": repeated_shape_entry,
+    }
+
+
+def build_dag_v4_bavt_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_bavt_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "run": example["run"].to_dict(),
+        "frontier_policy_audit": example["frontier_policy_audit"].to_dict(),
+        "benchmark_control_packet": example["benchmark_control_packet"].to_dict(),
+        "repeated_shape_entry": example["repeated_shape_entry"].to_dict(),
+    }
+
+
+def build_dag_v4_adaptive_parallel_mcts_lite_packet() -> Dict[str, object]:
+    """Build a bounded adaptive-parallel-MCTS-lite packet for later-phase frontier pressure."""
+
+    search_id = "search.dag_v4.apmcts_lite"
+    root = SearchCandidate(
+        candidate_id=f"{search_id}.cand.root",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.0",
+        parent_ids=[],
+        round_index=0,
+        depth=0,
+        payload_ref=f"artifacts/search/{search_id}/root.json",
+        score_vector={"correctness_score": 0.33, "uct_score": 0.44},
+        usage={"prompt_tokens": 25, "completion_tokens": 14},
+        status="seeded",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/root.md",
+        metadata={"state_kind": "root", "task_class": "bounded_parallel_tree_search"},
+    )
+    rollout_a = SearchCandidate(
+        candidate_id=f"{search_id}.cand.rollout.a",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[root.candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/rollout_a.json",
+        score_vector={"correctness_score": 0.57, "uct_score": 0.71},
+        usage={"prompt_tokens": 34, "completion_tokens": 19},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/rollout_a.md",
+        metadata={"state_kind": "parallel_rollout", "visit_count": 2, "parallel_slot": 1},
+    )
+    rollout_b = SearchCandidate(
+        candidate_id=f"{search_id}.cand.rollout.b",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[root.candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/rollout_b.json",
+        score_vector={"correctness_score": 0.54, "uct_score": 0.66},
+        usage={"prompt_tokens": 33, "completion_tokens": 18},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/rollout_b.md",
+        metadata={"state_kind": "parallel_rollout", "visit_count": 1, "parallel_slot": 2},
+    )
+    backprop = SearchCandidate(
+        candidate_id=f"{search_id}.cand.backprop",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.2",
+        parent_ids=[rollout_a.candidate_id, rollout_b.candidate_id],
+        round_index=2,
+        depth=2,
+        payload_ref=f"artifacts/search/{search_id}/backprop.json",
+        score_vector={"correctness_score": 0.72, "uct_score": 0.79},
+        usage={"prompt_tokens": 28, "completion_tokens": 15},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/backprop.md",
+        metadata={"state_kind": "backprop_update", "parallel_merge": True, "visit_count": 3},
+    )
+    final_candidate = SearchCandidate(
+        candidate_id=f"{search_id}.cand.final",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.3",
+        parent_ids=[backprop.candidate_id],
+        round_index=3,
+        depth=3,
+        payload_ref=f"artifacts/search/{search_id}/final.json",
+        score_vector={"correctness_score": 0.84, "uct_score": 0.81},
+        usage={"prompt_tokens": 22, "completion_tokens": 11},
+        status="selected",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/final.md",
+        metadata={"state_kind": "selected_solution", "selection_rule": "best_parallel_uct_after_backprop"},
+    )
+    events = [
+        SearchEvent(
+            event_id=f"{search_id}.event.parallel_expand",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="expand",
+            input_candidate_ids=[root.candidate_id],
+            output_candidate_ids=[rollout_a.candidate_id, rollout_b.candidate_id],
+            metadata={"recipe": "adaptive_parallel_mcts_lite", "frontier_policy": "parallel_uct_expand"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.backprop",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.2",
+            round_index=2,
+            operator_kind="aggregate",
+            input_candidate_ids=[rollout_a.candidate_id, rollout_b.candidate_id],
+            output_candidate_ids=[backprop.candidate_id],
+            metadata={
+                "recipe": "adaptive_parallel_mcts_lite",
+                "frontier_policy": "parallel_backprop_update",
+                "budget_conditioned_parallelism": True,
+            },
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.select",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.3",
+            round_index=3,
+            operator_kind="select",
+            input_candidate_ids=[backprop.candidate_id],
+            output_candidate_ids=[final_candidate.candidate_id],
+            metadata={"recipe": "adaptive_parallel_mcts_lite", "termination": "best_parallel_uct"},
+        ),
+    ]
+    frontiers = [
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.0",
+            search_id=search_id,
+            round_index=0,
+            candidate_ids=[root.candidate_id],
+            status="completed",
+        ),
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.1",
+            search_id=search_id,
+            round_index=1,
+            candidate_ids=[rollout_a.candidate_id, rollout_b.candidate_id],
+            status="completed",
+        ),
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.2",
+            search_id=search_id,
+            round_index=2,
+            candidate_ids=[backprop.candidate_id],
+            status="completed",
+        ),
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.3",
+            search_id=search_id,
+            round_index=3,
+            candidate_ids=[final_candidate.candidate_id],
+            status="completed",
+        ),
+    ]
+    run = SearchRun(
+        search_id=search_id,
+        recipe_kind="adaptive_parallel_mcts_lite_packet",
+        candidates=[root, rollout_a, rollout_b, backprop, final_candidate],
+        frontiers=frontiers,
+        events=events,
+        messages=[],
+        selected_candidate_id=final_candidate.candidate_id,
+        metadata={
+            "phase": "dag_v4_phase3",
+            "paper_key": "adaptive_parallel_mcts_lite",
+            "packet_id": "adaptive_parallel_mcts_lite_packet",
+            "topology_class": "F",
+            "frontier_policy": "parallel_uct_expand_then_backprop",
+            "parallel_budget_slots": 2,
+        },
+    )
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_v4.apmcts_lite.profile.v1",
+        paper_key="adaptive_parallel_mcts_lite",
+        paper_title="Adaptive Parallel MCTS-lite",
+        family_kind="adaptive_frontier_search",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="medium_structural_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="adaptive_parallel_mcts.reasoning.slice.v1",
+        control_profile={
+            "task_class": "bounded_parallel_tree_search",
+            "frontier_policy": "parallel_uct_expand_then_backprop",
+            "parallel_budget_slots": 2,
+            "backprop_required": True,
+        },
+        baseline_ids=[
+            "cot",
+            "sequential_mcts_lite",
+            "fixed_width_parallel_tree",
+            "no_backprop_parallel_expand",
+            "best_single_rollout",
+        ],
+        metadata={"phase": "dag_v4_phase3", "packet_id": "adaptive_parallel_mcts_lite_packet", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_v4.apmcts_lite.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="medium_structural_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="controlled",
+        compute_fidelity="bounded",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "bounded adaptive parallel MCTS-lite packet only",
+            "frontier_watch": ["parallel_backprop_trace", "parallel_budget_slot_truth"],
+        },
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_v4.apmcts_lite.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        entries=[
+            {"entry_id": "apmcts.calls", "kind": "llm_calls", "label": "llm_calls", "quantity": 5, "unit": "calls"},
+            {"entry_id": "apmcts.prompt_tokens", "kind": "prompt_tokens", "label": "prompt_tokens", "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "apmcts.completion_tokens", "kind": "completion_tokens", "label": "completion_tokens", "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "apmcts.parallel_budget_slots", "kind": "parallel_budget_slots", "label": "parallel_budget_slots", "quantity": 2.0, "unit": "slots"},
+            {"entry_id": "apmcts.backprop_steps", "kind": "backprop_steps", "label": "backprop_steps", "quantity": 1.0, "unit": "steps"},
+        ],
+        normalization_rule="adaptive_parallel_frontier_packet_matched",
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_v4.apmcts_lite.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="adaptive_parallel_frontier_packet_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_v4.apmcts_lite.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {"deviation_id": "apmcts.dev.01", "severity": "medium", "summary": "Packet uses a single bounded backprop update rather than an extended simulation loop."},
+            {"deviation_id": "apmcts.dev.02", "severity": "medium", "summary": "UCT-style scores are packet-level stand-ins rather than benchmark-derived values."},
+        ],
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    frontier_policy_audit = FrontierPolicyAudit(
+        audit_id="dag_v4.apmcts_lite.frontier.v1",
+        target_family="adaptive_parallel_mcts_lite",
+        topology_class="F",
+        select_prune_reconstructable=True,
+        budget_conditioned_reconstructable=True,
+        reopen_backtrack_reconstructable=True,
+        consumer_can_explain_frontier=True,
+        shadow_policy_required=False,
+        notes={"parallel_budget_slots": 2, "backprop_present": True},
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    benchmark_control_packet = BenchmarkControlPacket(
+        packet_id="dag_v4.apmcts_lite.control.v1",
+        target_family="adaptive_parallel_mcts_lite",
+        control_kind="parallel_frontier_and_evaluator_control",
+        evaluator_stack=["uct_trace_checker", "parallel_budget_checker", "packet_review_judge"],
+        controls=["match_parallel_budget_slots", "compare_against_sequential_control", "record_backprop_inputs"],
+        known_confound_risks=["parallel-serving effects masquerading as frontier truth", "synthetic UCT scores"],
+        notes={"purpose": "separate frontier pressure from serving or harness artifacts"},
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    replay_export_integrity = ReplayExportIntegrityPacket(
+        packet_id="dag_v4.apmcts_lite.replay_export.v1",
+        target_family="adaptive_parallel_mcts_lite",
+        topology_class="F",
+        export_modes=["trajectory_export", "offline_dataset_projection", "flattened_transcript_control"],
+        preserved_semantics=["parallel_branch_identity", "backprop_update", "selected_candidate_identity"],
+        lost_semantics=[],
+        shadow_assumptions_required=False,
+        notes={"parallel_slots_recorded": 2},
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    repeated_shape_entry = RepeatedShapeRegisterEntry(
+        gap_label="adaptive_parallel_frontier_truth",
+        target_family="adaptive_parallel_mcts_lite",
+        topology_class="F",
+        where_it_appears="parallel expand plus bounded backprop under explicit slot budget",
+        current_workaround="frontier policy audit plus replay/export integrity plus benchmark control",
+        why_workaround_is_insufficient="no insufficiency observed in bounded packet; class diversity and consumer confirmation still absent",
+        effect_on_fidelity_tier="no_downgrade",
+        effect_on_replay_export="none observed",
+        primary_locus="helper_and_harness_control_only",
+        seen_in_other_targets=["tot_v2", "bavt"],
+        seen_in_consumers=[],
+        helper_exhausted=False,
+        counts_toward_review=False,
+        notes={"review_threshold_missing": "same-class only, no helper exhaustion, no consumer confirmation"},
+        metadata={"phase": "dag_v4_phase3"},
+    )
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "run": run,
+        "frontier_policy_audit": frontier_policy_audit,
+        "benchmark_control_packet": benchmark_control_packet,
+        "replay_export_integrity_packet": replay_export_integrity,
+        "repeated_shape_entry": repeated_shape_entry,
+    }
+
+
+def build_dag_v4_adaptive_parallel_mcts_lite_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_adaptive_parallel_mcts_lite_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "run": example["run"].to_dict(),
+        "frontier_policy_audit": example["frontier_policy_audit"].to_dict(),
+        "benchmark_control_packet": example["benchmark_control_packet"].to_dict(),
+        "replay_export_integrity_packet": example["replay_export_integrity_packet"].to_dict(),
+        "repeated_shape_entry": example["repeated_shape_entry"].to_dict(),
+    }
+
+
+def build_dag_v4_team_of_thoughts_packet() -> Dict[str, object]:
+    """Build the Team of Thoughts packet that pressures layered role heterogeneity."""
+
+    search_id = "search.dag_v4.team_of_thoughts"
+    planner = SearchCandidate(
+        candidate_id=f"{search_id}.cand.planner",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.0",
+        parent_ids=[],
+        round_index=0,
+        depth=0,
+        payload_ref=f"artifacts/search/{search_id}/planner.json",
+        score_vector={"correctness_score": 0.38, "coordination_score": 0.49},
+        usage={"prompt_tokens": 28, "completion_tokens": 16},
+        status="seeded",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/planner.md",
+        metadata={"role": "planner", "team_stage": "plan", "task_class": "bounded_team_reasoning"},
+    )
+    analyst = SearchCandidate(
+        candidate_id=f"{search_id}.cand.analyst",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[planner.candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/analyst.json",
+        score_vector={"correctness_score": 0.61, "coordination_score": 0.68},
+        usage={"prompt_tokens": 34, "completion_tokens": 18},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/analyst.md",
+        metadata={"role": "analyst", "team_stage": "specialist_response", "roster_kind": "heterogeneous"},
+    )
+    skeptic = SearchCandidate(
+        candidate_id=f"{search_id}.cand.skeptic",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[planner.candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/skeptic.json",
+        score_vector={"correctness_score": 0.55, "coordination_score": 0.66},
+        usage={"prompt_tokens": 33, "completion_tokens": 17},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/skeptic.md",
+        metadata={"role": "skeptic", "team_stage": "specialist_response", "roster_kind": "heterogeneous"},
+    )
+    synthesizer = SearchCandidate(
+        candidate_id=f"{search_id}.cand.synthesizer",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.2",
+        parent_ids=[analyst.candidate_id, skeptic.candidate_id],
+        round_index=2,
+        depth=2,
+        payload_ref=f"artifacts/search/{search_id}/synthesizer.json",
+        score_vector={"correctness_score": 0.77, "coordination_score": 0.81},
+        usage={"prompt_tokens": 29, "completion_tokens": 15},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/synthesizer.md",
+        metadata={"role": "synthesizer", "team_stage": "merge_specialists", "roster_kind": "heterogeneous"},
+    )
+    reviewer = SearchCandidate(
+        candidate_id=f"{search_id}.cand.reviewer",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.3",
+        parent_ids=[synthesizer.candidate_id],
+        round_index=3,
+        depth=3,
+        payload_ref=f"artifacts/search/{search_id}/reviewer.json",
+        score_vector={"correctness_score": 0.83, "coordination_score": 0.86},
+        usage={"prompt_tokens": 24, "completion_tokens": 13},
+        status="selected",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/reviewer.md",
+        metadata={"role": "reviewer", "team_stage": "final_team_review", "roster_kind": "heterogeneous"},
+    )
+    events = [
+        SearchEvent(
+            event_id=f"{search_id}.event.dispatch",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="expand",
+            input_candidate_ids=[planner.candidate_id],
+            output_candidate_ids=[analyst.candidate_id, skeptic.candidate_id],
+            metadata={"recipe": "team_of_thoughts_packet", "dispatch_policy": "heterogeneous_pair"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.synthesize",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.2",
+            round_index=2,
+            operator_kind="aggregate",
+            input_candidate_ids=[analyst.candidate_id, skeptic.candidate_id],
+            output_candidate_ids=[synthesizer.candidate_id],
+            metadata={"recipe": "team_of_thoughts_packet", "merge_policy": "planner_absent_specialist_merge"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.review",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.3",
+            round_index=3,
+            operator_kind="verify",
+            input_candidate_ids=[synthesizer.candidate_id],
+            output_candidate_ids=[reviewer.candidate_id],
+            metadata={"recipe": "team_of_thoughts_packet", "review_policy": "final_team_review"},
+        ),
+    ]
+    frontiers = [
+        SearchFrontier(f"{search_id}.frontier.0", search_id, 0, [planner.candidate_id], "completed"),
+        SearchFrontier(f"{search_id}.frontier.1", search_id, 1, [analyst.candidate_id, skeptic.candidate_id], "completed"),
+        SearchFrontier(f"{search_id}.frontier.2", search_id, 2, [synthesizer.candidate_id], "completed"),
+        SearchFrontier(f"{search_id}.frontier.3", search_id, 3, [reviewer.candidate_id], "completed"),
+    ]
+    run = SearchRun(
+        search_id=search_id,
+        recipe_kind="team_of_thoughts_layered_packet",
+        candidates=[planner, analyst, skeptic, synthesizer, reviewer],
+        frontiers=frontiers,
+        events=events,
+        messages=[],
+        selected_candidate_id=reviewer.candidate_id,
+        metadata={
+            "phase": "dag_v4_phase4",
+            "paper_key": "team_of_thoughts",
+            "packet_id": "team_of_thoughts_packet",
+            "topology_class": "H",
+            "heterogeneous_roles": ["planner", "analyst", "skeptic", "synthesizer", "reviewer"],
+        },
+    )
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_v4.team_of_thoughts.profile.v1",
+        paper_key="team_of_thoughts",
+        paper_title="Team of Thoughts",
+        family_kind="layered_fan_in_reasoning",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="medium_structural_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="team_of_thoughts.bounded_reasoning.slice.v1",
+        control_profile={
+            "task_class": "bounded_team_reasoning",
+            "role_set": ["planner", "analyst", "skeptic", "synthesizer", "reviewer"],
+            "heterogeneous_roster": True,
+            "final_review_stage": True,
+        },
+        baseline_ids=[
+            "single_agent_cot",
+            "homogeneous_team_vote",
+            "planner_plus_synthesizer_only",
+            "no_skeptic_role",
+            "single_merge_then_select",
+        ],
+        metadata={"phase": "dag_v4_phase4", "packet_id": "team_of_thoughts_packet", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_v4.team_of_thoughts.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="medium_structural_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="controlled",
+        compute_fidelity="bounded",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "bounded heterogeneous team packet only",
+            "heterogeneity_watch": ["layered_role_provenance", "roster_semantics_truth"],
+        },
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_v4.team_of_thoughts.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        entries=[
+            {"entry_id": "tot_team.calls", "kind": "llm_calls", "label": "llm_calls", "quantity": 5, "unit": "calls"},
+            {"entry_id": "tot_team.prompt_tokens", "kind": "prompt_tokens", "label": "prompt_tokens", "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "tot_team.completion_tokens", "kind": "completion_tokens", "label": "completion_tokens", "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "tot_team.role_count", "kind": "role_count", "label": "role_count", "quantity": 5.0, "unit": "roles"},
+            {"entry_id": "tot_team.merge_steps", "kind": "merge_steps", "label": "merge_steps", "quantity": 1.0, "unit": "steps"},
+        ],
+        normalization_rule="team_of_thoughts_packet_matched",
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_v4.team_of_thoughts.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="team_of_thoughts_packet_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_v4.team_of_thoughts.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {"deviation_id": "tot_team.dev.01", "severity": "medium", "summary": "Packet is bounded to a small heterogeneous roster rather than large team scales."},
+            {"deviation_id": "tot_team.dev.02", "severity": "low", "summary": "Role semantics are packet-local manifests rather than full public runtime constructs."},
+        ],
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    topology_audit = TopologyAudit(
+        audit_id="dag_v4.team_of_thoughts.topology.v1",
+        target_family="team_of_thoughts",
+        topology_class="H",
+        parentage_reconstructable=True,
+        fan_flow_reconstructable=True,
+        feedback_loop_reconstructable=False,
+        shadow_state_required=False,
+        notes={"role_count": 5, "heterogeneous_roster": True},
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    assessment_lineage = AssessmentLineagePacket(
+        packet_id="dag_v4.team_of_thoughts.assessment_lineage.v1",
+        target_family="team_of_thoughts",
+        topology_class="H",
+        assessment_kinds=["verify"],
+        action_links=[{"assessment_id": "review.final", "action_id": "select.reviewer", "target_candidate_id": reviewer.candidate_id}],
+        mixed_chain_reconstructable=True,
+        notes={"final_review_role": "reviewer"},
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    repeated_shape_entry = RepeatedShapeRegisterEntry(
+        gap_label="layered_role_provenance",
+        target_family="team_of_thoughts",
+        topology_class="H",
+        where_it_appears="heterogeneous specialist roster with explicit final review stage",
+        current_workaround="topology audit plus role-stage manifest plus assessment lineage packet",
+        why_workaround_is_insufficient="no insufficiency observed yet; D-class tranche still pending",
+        effect_on_fidelity_tier="no_downgrade",
+        effect_on_replay_export="none observed",
+        primary_locus="helper_and_manifest_scope_only",
+        seen_in_other_targets=["moa_v2"],
+        seen_in_consumers=[],
+        helper_exhausted=False,
+        counts_toward_review=False,
+        notes={"review_threshold_missing": "cross-class support and helper exhaustion absent"},
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    role_stage_manifest = {
+        "manifest_id": "dag_v4.team_of_thoughts.roles.v1",
+        "roles": [
+            {"role": "planner", "stage": "plan"},
+            {"role": "analyst", "stage": "specialist_response"},
+            {"role": "skeptic", "stage": "specialist_response"},
+            {"role": "synthesizer", "stage": "merge_specialists"},
+            {"role": "reviewer", "stage": "final_team_review"},
+        ],
+        "heterogeneous": True,
+    }
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "run": run,
+        "topology_audit": topology_audit,
+        "assessment_lineage_packet": assessment_lineage,
+        "repeated_shape_entry": repeated_shape_entry,
+        "role_stage_manifest": role_stage_manifest,
+    }
+
+
+def build_dag_v4_team_of_thoughts_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_team_of_thoughts_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "run": example["run"].to_dict(),
+        "topology_audit": example["topology_audit"].to_dict(),
+        "assessment_lineage_packet": example["assessment_lineage_packet"].to_dict(),
+        "repeated_shape_entry": example["repeated_shape_entry"].to_dict(),
+        "role_stage_manifest": dict(example["role_stage_manifest"]),
+    }
+
+
+def build_dag_v4_dci_packet() -> Dict[str, object]:
+    """Build the DCI packet that pressures typed acts and shared workspace semantics."""
+
+    search_id = "search.dag_v4.dci"
+    root_snapshot = SearchWorkspaceSnapshot(
+        snapshot_id=f"{search_id}.snapshot.root",
+        search_id=search_id,
+        branch_id=f"{search_id}.branch.shared",
+        artifact_ref=f"artifacts/search/{search_id}/workspace_root.json",
+        derived_from_candidate_id=None,
+        metadata={"workspace_kind": "shared_deliberation_board"},
+    )
+    proposer = SearchCandidate(
+        candidate_id=f"{search_id}.cand.proposer",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.0",
+        parent_ids=[],
+        round_index=0,
+        depth=0,
+        payload_ref=f"artifacts/search/{search_id}/proposer.json",
+        score_vector={"correctness_score": 0.41, "deliberation_score": 0.51},
+        usage={"prompt_tokens": 27, "completion_tokens": 15},
+        status="seeded",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/proposer.md",
+        workspace_ref=root_snapshot.artifact_ref,
+        metadata={"typed_act": "propose_claim", "workspace_mode": "shared"},
+    )
+    challenger = SearchCandidate(
+        candidate_id=f"{search_id}.cand.challenger",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[proposer.candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/challenger.json",
+        score_vector={"correctness_score": 0.53, "deliberation_score": 0.67},
+        usage={"prompt_tokens": 31, "completion_tokens": 17},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/challenger.md",
+        workspace_ref=root_snapshot.artifact_ref,
+        metadata={"typed_act": "raise_objection", "workspace_mode": "shared", "objection_kind": "constraint_violation"},
+    )
+    reviser = SearchCandidate(
+        candidate_id=f"{search_id}.cand.reviser",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.2",
+        parent_ids=[proposer.candidate_id, challenger.candidate_id],
+        round_index=2,
+        depth=2,
+        payload_ref=f"artifacts/search/{search_id}/reviser.json",
+        score_vector={"correctness_score": 0.71, "deliberation_score": 0.78},
+        usage={"prompt_tokens": 30, "completion_tokens": 16},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/reviser.md",
+        workspace_ref=f"artifacts/search/{search_id}/workspace_revision.json",
+        metadata={"typed_act": "revise_claim", "workspace_mode": "borrow_then_update"},
+    )
+    closer = SearchCandidate(
+        candidate_id=f"{search_id}.cand.closer",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.3",
+        parent_ids=[reviser.candidate_id],
+        round_index=3,
+        depth=3,
+        payload_ref=f"artifacts/search/{search_id}/closer.json",
+        score_vector={"correctness_score": 0.84, "deliberation_score": 0.85},
+        usage={"prompt_tokens": 23, "completion_tokens": 12},
+        status="selected",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/closer.md",
+        workspace_ref=f"artifacts/search/{search_id}/workspace_revision.json",
+        metadata={"typed_act": "close_deliberation", "workspace_mode": "shared_reopen_closed"},
+    )
+    revision_snapshot = SearchWorkspaceSnapshot(
+        snapshot_id=f"{search_id}.snapshot.revision",
+        search_id=search_id,
+        branch_id=f"{search_id}.branch.shared",
+        artifact_ref=f"artifacts/search/{search_id}/workspace_revision.json",
+        derived_from_candidate_id=reviser.candidate_id,
+        metadata={"workspace_kind": "shared_deliberation_board", "borrowed_from_snapshot_id": root_snapshot.snapshot_id},
+    )
+    branch = SearchBranchState(
+        branch_id=f"{search_id}.branch.shared",
+        search_id=search_id,
+        candidate_id=closer.candidate_id,
+        snapshot_ids=[root_snapshot.snapshot_id, revision_snapshot.snapshot_id],
+        head_snapshot_id=revision_snapshot.snapshot_id,
+        status="merged",
+        metadata={"workspace_mode": "shared"},
+    )
+    events = [
+        SearchEvent(
+            event_id=f"{search_id}.event.object",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="verify",
+            input_candidate_ids=[proposer.candidate_id],
+            output_candidate_ids=[challenger.candidate_id],
+            metadata={"recipe": "dci_typed_deliberation_packet", "typed_act": "raise_objection"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.revise",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.2",
+            round_index=2,
+            operator_kind="aggregate",
+            input_candidate_ids=[proposer.candidate_id, challenger.candidate_id],
+            output_candidate_ids=[reviser.candidate_id],
+            metadata={"recipe": "dci_typed_deliberation_packet", "typed_act": "revise_claim", "reopen_condition": "objection_unresolved"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.close",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.3",
+            round_index=3,
+            operator_kind="select",
+            input_candidate_ids=[reviser.candidate_id],
+            output_candidate_ids=[closer.candidate_id],
+            metadata={"recipe": "dci_typed_deliberation_packet", "typed_act": "close_deliberation"},
+        ),
+    ]
+    frontiers = [
+        SearchFrontier(f"{search_id}.frontier.0", search_id, 0, [proposer.candidate_id], "completed"),
+        SearchFrontier(f"{search_id}.frontier.1", search_id, 1, [challenger.candidate_id], "completed"),
+        SearchFrontier(f"{search_id}.frontier.2", search_id, 2, [reviser.candidate_id], "completed"),
+        SearchFrontier(f"{search_id}.frontier.3", search_id, 3, [closer.candidate_id], "completed"),
+    ]
+    run = SearchRun(
+        search_id=search_id,
+        recipe_kind="dci_typed_deliberation_packet",
+        candidates=[proposer, challenger, reviser, closer],
+        frontiers=frontiers,
+        events=events,
+        messages=[],
+        selected_candidate_id=closer.candidate_id,
+        branch_states=[branch],
+        workspace_snapshots=[root_snapshot, revision_snapshot],
+        metadata={
+            "phase": "dag_v4_phase4",
+            "paper_key": "dci_typed_epistemic_acts",
+            "packet_id": "dci_typed_deliberation_packet",
+            "topology_class": "D",
+            "typed_acts": ["propose_claim", "raise_objection", "revise_claim", "close_deliberation"],
+        },
+    )
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_v4.dci.profile.v1",
+        paper_key="dci_typed_epistemic_acts",
+        paper_title="DCI / typed epistemic acts",
+        family_kind="typed_collective_deliberation",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="medium_structural_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="dci.typed_deliberation.slice.v1",
+        control_profile={
+            "task_class": "bounded_typed_deliberation",
+            "typed_acts": ["propose_claim", "raise_objection", "revise_claim", "close_deliberation"],
+            "shared_workspace": True,
+            "reopen_condition": "objection_unresolved",
+        },
+        baseline_ids=[
+            "single_agent_cot",
+            "untagged_dialogue",
+            "no_shared_workspace",
+            "proposal_plus_review_only",
+            "no_reopen_condition",
+        ],
+        metadata={"phase": "dag_v4_phase4", "packet_id": "dci_typed_deliberation_packet", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_v4.dci.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="medium_structural_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="controlled",
+        compute_fidelity="bounded",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "bounded typed deliberation packet only",
+            "typed_act_watch": ["typed_collective_act_truth", "shared_workspace_reopen_semantics"],
+        },
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_v4.dci.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        entries=[
+            {"entry_id": "dci.calls", "kind": "llm_calls", "label": "llm_calls", "quantity": 4, "unit": "calls"},
+            {"entry_id": "dci.prompt_tokens", "kind": "prompt_tokens", "label": "prompt_tokens", "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "dci.completion_tokens", "kind": "completion_tokens", "label": "completion_tokens", "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "dci.typed_act_count", "kind": "typed_act_count", "label": "typed_act_count", "quantity": 4.0, "unit": "acts"},
+            {"entry_id": "dci.workspace_snapshots", "kind": "workspace_snapshots", "label": "workspace_snapshots", "quantity": 2.0, "unit": "snapshots"},
+        ],
+        normalization_rule="typed_deliberation_packet_matched",
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_v4.dci.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="typed_deliberation_packet_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_v4.dci.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {"deviation_id": "dci.dev.01", "severity": "medium", "summary": "Packet is bounded to four typed acts rather than a large typed collective act system."},
+            {"deviation_id": "dci.dev.02", "severity": "low", "summary": "Typed acts remain packet-local labels rather than promoted runtime nouns."},
+        ],
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    topology_audit = TopologyAudit(
+        audit_id="dag_v4.dci.topology.v1",
+        target_family="dci_typed_epistemic_acts",
+        topology_class="D",
+        parentage_reconstructable=True,
+        fan_flow_reconstructable=True,
+        feedback_loop_reconstructable=True,
+        shadow_state_required=False,
+        notes={"shared_workspace": True, "typed_act_count": 4},
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    assessment_lineage = AssessmentLineagePacket(
+        packet_id="dag_v4.dci.assessment_lineage.v1",
+        target_family="dci_typed_epistemic_acts",
+        topology_class="D",
+        assessment_kinds=["verify"],
+        action_links=[{"assessment_id": "objection.1", "action_id": "revise_claim", "target_candidate_id": reviser.candidate_id}],
+        mixed_chain_reconstructable=True,
+        notes={"reopen_condition": "objection_unresolved"},
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    replay_export_integrity = ReplayExportIntegrityPacket(
+        packet_id="dag_v4.dci.replay_export.v1",
+        target_family="dci_typed_epistemic_acts",
+        topology_class="D",
+        export_modes=["trajectory_export", "offline_dataset_projection", "flattened_transcript_control"],
+        preserved_semantics=["typed_act_identity", "workspace_snapshot_lineage", "reopen_condition"],
+        lost_semantics=[],
+        shadow_assumptions_required=False,
+        notes={"shared_workspace_snapshot_ids": [root_snapshot.snapshot_id, revision_snapshot.snapshot_id]},
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    repeated_shape_entry = RepeatedShapeRegisterEntry(
+        gap_label="typed_collective_act_truth",
+        target_family="dci_typed_epistemic_acts",
+        topology_class="D",
+        where_it_appears="typed shared-workspace deliberation with explicit objection and revision acts",
+        current_workaround="typed act ledger plus workspace snapshots plus replay/export integrity packet",
+        why_workaround_is_insufficient="no insufficiency observed yet; helper-vs-runtime boundary remains intact in bounded packet",
+        effect_on_fidelity_tier="no_downgrade",
+        effect_on_replay_export="none observed",
+        primary_locus="helper_and_workspace_manifest_only",
+        seen_in_other_targets=["team_of_thoughts"],
+        seen_in_consumers=[],
+        helper_exhausted=False,
+        counts_toward_review=False,
+        notes={"review_threshold_missing": "cross-class evidence and helper exhaustion absent"},
+        metadata={"phase": "dag_v4_phase4"},
+    )
+    typed_act_ledger = {
+        "ledger_id": "dag_v4.dci.typed_acts.v1",
+        "acts": [
+            {"candidate_id": proposer.candidate_id, "typed_act": "propose_claim"},
+            {"candidate_id": challenger.candidate_id, "typed_act": "raise_objection"},
+            {"candidate_id": reviser.candidate_id, "typed_act": "revise_claim"},
+            {"candidate_id": closer.candidate_id, "typed_act": "close_deliberation"},
+        ],
+        "shared_workspace": True,
+    }
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "run": run,
+        "topology_audit": topology_audit,
+        "assessment_lineage_packet": assessment_lineage,
+        "replay_export_integrity_packet": replay_export_integrity,
+        "repeated_shape_entry": repeated_shape_entry,
+        "typed_act_ledger": typed_act_ledger,
+        "workspace_snapshot_ids": [root_snapshot.snapshot_id, revision_snapshot.snapshot_id],
+    }
+
+
+def build_dag_v4_dci_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_dci_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "run": example["run"].to_dict(),
+        "topology_audit": example["topology_audit"].to_dict(),
+        "assessment_lineage_packet": example["assessment_lineage_packet"].to_dict(),
+        "replay_export_integrity_packet": example["replay_export_integrity_packet"].to_dict(),
+        "repeated_shape_entry": example["repeated_shape_entry"].to_dict(),
+        "typed_act_ledger": dict(example["typed_act_ledger"]),
+        "workspace_snapshot_ids": list(example["workspace_snapshot_ids"]),
+    }
+
+
+def build_dag_v4_optimize_consumer_packet() -> Dict[str, object]:
+    """Build the optimize consumer packet over three structurally distinct DAG V4 families."""
+
+    got = build_dag_v4_got_v2_packet()
+    bavt = build_dag_v4_bavt_packet()
+    team = build_dag_v4_team_of_thoughts_packet()
+    source_rows = [
+        {
+            "target_family": "got_v2",
+            "topology_class": "G",
+            "selected_candidate_id": got["run"].selected_candidate_id,
+            "benchmark_packet": got["recipe_manifest"].benchmark_packet,
+        },
+        {
+            "target_family": "bavt",
+            "topology_class": "F",
+            "selected_candidate_id": bavt["run"].selected_candidate_id,
+            "benchmark_packet": bavt["recipe_manifest"].benchmark_packet,
+        },
+        {
+            "target_family": "team_of_thoughts",
+            "topology_class": "H",
+            "selected_candidate_id": team["run"].selected_candidate_id,
+            "benchmark_packet": team["recipe_manifest"].benchmark_packet,
+        },
+    ]
+    handoff_packets = [
+        ConsumerHandoffPacket(
+            packet_id="dag_v4.optimize.got_v2.handoff.v1",
+            target_family="got_v2",
+            consumer_kind="optimize",
+            artifact_kinds=["SearchRun", "FidelityScorecard", "ComputeBudgetLedger", "ReplayExportIntegrityPacket"],
+            handoff_contract=["selected_candidate_identity", "multi_parent_lineage", "bounded_compute_visibility"],
+            shadow_semantics_required=False,
+            notes={"measurement_basis": "explicit replay/export packet"},
+            metadata={"phase": "dag_v4_phase5"},
+        ),
+        ConsumerHandoffPacket(
+            packet_id="dag_v4.optimize.bavt.handoff.v1",
+            target_family="bavt",
+            consumer_kind="optimize",
+            artifact_kinds=["SearchRun", "FidelityScorecard", "ComputeBudgetLedger", "FrontierPolicyAudit"],
+            handoff_contract=["selected_candidate_identity", "budget_trace_visibility", "frontier_policy_visibility"],
+            shadow_semantics_required=False,
+            notes={"measurement_basis": "frontier policy audit plus compute ledger"},
+            metadata={"phase": "dag_v4_phase5"},
+        ),
+        ConsumerHandoffPacket(
+            packet_id="dag_v4.optimize.team_of_thoughts.handoff.v1",
+            target_family="team_of_thoughts",
+            consumer_kind="optimize",
+            artifact_kinds=["SearchRun", "FidelityScorecard", "ComputeBudgetLedger", "AssessmentLineagePacket"],
+            handoff_contract=["selected_candidate_identity", "role_stage_manifest_visibility", "final_review_lineage"],
+            shadow_semantics_required=False,
+            notes={"measurement_basis": "role-stage manifest plus lineage packet"},
+            metadata={"phase": "dag_v4_phase5"},
+        ),
+    ]
+    integrity_rows = [
+        {
+            "target_family": "got_v2",
+            "topology_class": "G",
+            "measured_shadow_semantics_required": False,
+            "evidence_sources": ["ReplayExportIntegrityPacket", "ConsumerHandoffPacket"],
+            "lost_semantics_count": len(got["replay_export_integrity_packet"].lost_semantics),
+        },
+        {
+            "target_family": "bavt",
+            "topology_class": "F",
+            "measured_shadow_semantics_required": False,
+            "evidence_sources": ["FrontierPolicyAudit", "ComputeBudgetLedger", "ConsumerHandoffPacket"],
+            "lost_semantics_count": 0,
+        },
+        {
+            "target_family": "team_of_thoughts",
+            "topology_class": "H",
+            "measured_shadow_semantics_required": False,
+            "evidence_sources": ["TopologyAudit", "AssessmentLineagePacket", "role_stage_manifest", "ConsumerHandoffPacket"],
+            "lost_semantics_count": 0,
+        },
+    ]
+    seam_packet = CompositionSeamPacket(
+        packet_id="dag_v4.optimize.consumer.seam.v1",
+        source_family="dag_v4_consumer_bundle",
+        target_kind="optimize",
+        seam_labels=["comparison_packet_handoff", "objective_breakdown_visibility", "budget_alignment"],
+        issues=[
+            {
+                "issue_id": "optimize.seam.01",
+                "status": "consumer_local_only",
+                "summary": "Optimize wants normalized comparison rows, but source DAG packets already expose enough bounded truth.",
+            },
+            {
+                "issue_id": "optimize.seam.02",
+                "status": "helper_level_only",
+                "summary": "BAVT handoff is most naturally consumed through frontier-policy audit rather than a new DAG runtime field.",
+            },
+        ],
+        repeated_shape_candidate=False,
+        notes={"review_threshold_result": "consumer confirmation present but no cross-class missing DAG truth"},
+        metadata={"phase": "dag_v4_phase5"},
+    )
+    consumer_issue_classification = [
+        {"target_family": "got_v2", "locus": "consumer_local_only", "summary": "Optimize can read the packet without new DAG nouns."},
+        {"target_family": "bavt", "locus": "helper_level_only", "summary": "Budget/frontier handoff is satisfied by audit artifacts."},
+        {"target_family": "team_of_thoughts", "locus": "consumer_local_only", "summary": "Role roster semantics stay manifest-local."},
+    ]
+    return {
+        "consumer_kind": "optimize",
+        "source_rows": source_rows,
+        "consumer_handoff_packets": handoff_packets,
+        "integrity_rows": integrity_rows,
+        "composition_seam_packet": seam_packet,
+        "consumer_issue_classification": consumer_issue_classification,
+        "repeated_shape_update": {
+            "review_counting_gap_labels": [],
+            "consumer_confirmation_without_cross_class_missing_truth": True,
+            "dag_kernel_change_required": False,
+        },
+    }
+
+
+def build_dag_v4_optimize_consumer_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_optimize_consumer_packet()
+    return {
+        "consumer_kind": example["consumer_kind"],
+        "source_rows": [dict(item) for item in example["source_rows"]],
+        "consumer_handoff_packets": [item.to_dict() for item in example["consumer_handoff_packets"]],
+        "integrity_rows": [dict(item) for item in example["integrity_rows"]],
+        "composition_seam_packet": example["composition_seam_packet"].to_dict(),
+        "consumer_issue_classification": [dict(item) for item in example["consumer_issue_classification"]],
+        "repeated_shape_update": dict(example["repeated_shape_update"]),
+    }
+
+
+def build_dag_v4_rl_consumer_packet() -> Dict[str, object]:
+    """Build the RL consumer packet over three structurally distinct DAG V4 families."""
+
+    apmcts = build_dag_v4_adaptive_parallel_mcts_lite_packet()
+    codetree = build_dag_v4_codetree_v2_packet()
+    dci = build_dag_v4_dci_packet()
+    source_rows = [
+        {
+            "target_family": "adaptive_parallel_mcts_lite",
+            "topology_class": "F",
+            "selected_candidate_id": apmcts["run"].selected_candidate_id,
+            "benchmark_packet": apmcts["recipe_manifest"].benchmark_packet,
+        },
+        {
+            "target_family": "codetree_v2",
+            "topology_class": "W",
+            "selected_candidate_id": codetree["run"].selected_candidate_id,
+            "benchmark_packet": codetree["recipe_manifest"].benchmark_packet,
+        },
+        {
+            "target_family": "dci_typed_epistemic_acts",
+            "topology_class": "D",
+            "selected_candidate_id": dci["run"].selected_candidate_id,
+            "benchmark_packet": dci["recipe_manifest"].benchmark_packet,
+        },
+    ]
+    handoff_packets = [
+        ConsumerHandoffPacket(
+            packet_id="dag_v4.rl.apmcts.handoff.v1",
+            target_family="adaptive_parallel_mcts_lite",
+            consumer_kind="rl",
+            artifact_kinds=["SearchRun", "FidelityScorecard", "ReplayExportIntegrityPacket", "FrontierPolicyAudit"],
+            handoff_contract=["selected_candidate_identity", "parallel_branch_identity", "backprop_visibility"],
+            shadow_semantics_required=False,
+            notes={"measurement_basis": "replay/export packet plus frontier policy audit"},
+            metadata={"phase": "dag_v4_phase5"},
+        ),
+        ConsumerHandoffPacket(
+            packet_id="dag_v4.rl.codetree_v2.handoff.v1",
+            target_family="codetree_v2",
+            consumer_kind="rl",
+            artifact_kinds=["SearchRun", "FidelityScorecard", "ReplayExportIntegrityPacket", "AssessmentLineagePacket"],
+            handoff_contract=["selected_candidate_identity", "workspace_ref_lineage", "assessment_to_action_chain"],
+            shadow_semantics_required=False,
+            notes={"measurement_basis": "replay/export packet plus assessment lineage"},
+            metadata={"phase": "dag_v4_phase5"},
+        ),
+        ConsumerHandoffPacket(
+            packet_id="dag_v4.rl.dci.handoff.v1",
+            target_family="dci_typed_epistemic_acts",
+            consumer_kind="rl",
+            artifact_kinds=["SearchRun", "FidelityScorecard", "ReplayExportIntegrityPacket", "AssessmentLineagePacket"],
+            handoff_contract=["selected_candidate_identity", "typed_act_identity", "workspace_snapshot_lineage"],
+            shadow_semantics_required=False,
+            notes={"measurement_basis": "replay/export packet plus typed-act ledger"},
+            metadata={"phase": "dag_v4_phase5"},
+        ),
+    ]
+    integrity_rows = [
+        {
+            "target_family": "adaptive_parallel_mcts_lite",
+            "topology_class": "F",
+            "measured_shadow_semantics_required": False,
+            "evidence_sources": ["ReplayExportIntegrityPacket", "ConsumerHandoffPacket"],
+            "lost_semantics_count": len(apmcts["replay_export_integrity_packet"].lost_semantics),
+        },
+        {
+            "target_family": "codetree_v2",
+            "topology_class": "W",
+            "measured_shadow_semantics_required": False,
+            "evidence_sources": ["ReplayExportIntegrityPacket", "AssessmentLineagePacket", "ConsumerHandoffPacket"],
+            "lost_semantics_count": len(codetree["replay_export_integrity_packet"].lost_semantics),
+        },
+        {
+            "target_family": "dci_typed_epistemic_acts",
+            "topology_class": "D",
+            "measured_shadow_semantics_required": False,
+            "evidence_sources": ["ReplayExportIntegrityPacket", "typed_act_ledger", "ConsumerHandoffPacket"],
+            "lost_semantics_count": len(dci["replay_export_integrity_packet"].lost_semantics),
+        },
+    ]
+    seam_packet = CompositionSeamPacket(
+        packet_id="dag_v4.rl.consumer.seam.v1",
+        source_family="dag_v4_consumer_bundle",
+        target_kind="rl",
+        seam_labels=["trajectory_projection_handoff", "annotation_pack_visibility", "replay_projection_integrity"],
+        issues=[
+            {
+                "issue_id": "rl.seam.01",
+                "status": "consumer_local_only",
+                "summary": "RL wants packet slicing choices, but the DAG packet truth is already sufficient for bounded export.",
+            },
+            {
+                "issue_id": "rl.seam.02",
+                "status": "helper_level_only",
+                "summary": "Typed-act and workspace lineage stay in helper-layer artifacts without forcing DAG promotion.",
+            },
+        ],
+        repeated_shape_candidate=False,
+        notes={"review_threshold_result": "consumer confirmation present but no cross-class missing DAG truth"},
+        metadata={"phase": "dag_v4_phase5"},
+    )
+    consumer_issue_classification = [
+        {"target_family": "adaptive_parallel_mcts_lite", "locus": "consumer_local_only", "summary": "RL can consume bounded parallel frontier traces without new DAG truth."},
+        {"target_family": "codetree_v2", "locus": "consumer_local_only", "summary": "Workspace and assessment chains are exportable as-is."},
+        {"target_family": "dci_typed_epistemic_acts", "locus": "helper_level_only", "summary": "Typed acts remain packet-local and replay-safe."},
+    ]
+    return {
+        "consumer_kind": "rl",
+        "source_rows": source_rows,
+        "consumer_handoff_packets": handoff_packets,
+        "integrity_rows": integrity_rows,
+        "composition_seam_packet": seam_packet,
+        "consumer_issue_classification": consumer_issue_classification,
+        "repeated_shape_update": {
+            "review_counting_gap_labels": [],
+            "consumer_confirmation_without_cross_class_missing_truth": True,
+            "dag_kernel_change_required": False,
+        },
+    }
+
+
+def build_dag_v4_rl_consumer_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_rl_consumer_packet()
+    return {
+        "consumer_kind": example["consumer_kind"],
+        "source_rows": [dict(item) for item in example["source_rows"]],
+        "consumer_handoff_packets": [item.to_dict() for item in example["consumer_handoff_packets"]],
+        "integrity_rows": [dict(item) for item in example["integrity_rows"]],
+        "composition_seam_packet": example["composition_seam_packet"].to_dict(),
+        "consumer_issue_classification": [dict(item) for item in example["consumer_issue_classification"]],
+        "repeated_shape_update": dict(example["repeated_shape_update"]),
+    }
+
+
+def build_dag_v4_cross_system_seam_packet() -> Dict[str, object]:
+    """Build the cross-system seam packet over the optimize and RL consumer bundles."""
+
+    optimize_packet = build_dag_v4_optimize_consumer_packet()
+    rl_packet = build_dag_v4_rl_consumer_packet()
+    seam_packet = CompositionSeamPacket(
+        packet_id="dag_v4.cross_system.seam.v1",
+        source_family="dag_v4_phase5_consumer_pressure",
+        target_kind="cross_system",
+        seam_labels=[
+            "consumer_handoff_contracts",
+            "replay_export_integrity_visibility",
+            "frontier_and_workspace_audit_visibility",
+        ],
+        issues=[
+            {
+                "issue_id": "cross_system.seam.01",
+                "status": "helper_level_only",
+                "summary": "Optimize and RL both prefer pre-normalized comparison views, but the underlying DAG packet truth remains sufficient.",
+            },
+            {
+                "issue_id": "cross_system.seam.02",
+                "status": "consumer_local_only",
+                "summary": "Consumer packet slicing choices differ, but do not imply missing DAG runtime truth.",
+            },
+        ],
+        repeated_shape_candidate=False,
+        notes={
+            "optimize_issue_count": len(optimize_packet["consumer_issue_classification"]),
+            "rl_issue_count": len(rl_packet["consumer_issue_classification"]),
+            "cross_class_review_counting_gap_labels": [],
+        },
+        metadata={"phase": "dag_v4_phase6"},
+    )
+    seam_rows = [
+        {
+            "consumer_kind": "optimize",
+            "topology_classes": ["G", "F", "H"],
+            "all_shadow_semantics_required": False,
+            "dominant_locus": "consumer_local_or_helper_only",
+        },
+        {
+            "consumer_kind": "rl",
+            "topology_classes": ["F", "W", "D"],
+            "all_shadow_semantics_required": False,
+            "dominant_locus": "consumer_local_or_helper_only",
+        },
+    ]
+    return {
+        "optimize_packet": optimize_packet,
+        "rl_packet": rl_packet,
+        "cross_system_seam_packet": seam_packet,
+        "seam_rows": seam_rows,
+        "repeated_shape_update": {
+            "review_counting_gap_labels": [],
+            "cross_class_consumer_confirmation_without_runtime_loss": True,
+            "dag_kernel_change_required": False,
+        },
+    }
+
+
+def build_dag_v4_cross_system_seam_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_cross_system_seam_packet()
+    return {
+        "optimize_packet": build_dag_v4_optimize_consumer_packet_payload(),
+        "rl_packet": build_dag_v4_rl_consumer_packet_payload(),
+        "cross_system_seam_packet": example["cross_system_seam_packet"].to_dict(),
+        "seam_rows": [dict(item) for item in example["seam_rows"]],
+        "repeated_shape_update": dict(example["repeated_shape_update"]),
+    }
+
+
+def build_dag_v4_helper_exhaustion_counterfactual_packet() -> Dict[str, object]:
+    """Build the helper-exhaustion packet over the leading DAG V4 seam candidates."""
+
+    bavt = build_dag_v4_bavt_packet()
+    dci = build_dag_v4_dci_packet()
+    optimize_packet = build_dag_v4_optimize_consumer_packet()
+    rl_packet = build_dag_v4_rl_consumer_packet()
+    helper_fix_attempts = [
+        {
+            "gap_label": "budget_conditioned_frontier_truth",
+            "target_family": "bavt",
+            "topology_class": "F",
+            "helper_fix": "frontier_policy_audit plus budget-normalized control row and explicit handoff contract",
+            "consumer_rerun": "optimize",
+            "result": "still helper-local, no runtime loss",
+        },
+        {
+            "gap_label": "typed_collective_act_truth",
+            "target_family": "dci_typed_epistemic_acts",
+            "topology_class": "D",
+            "helper_fix": "typed_act_ledger plus workspace snapshots plus replay/export integrity packet",
+            "consumer_rerun": "rl",
+            "result": "still helper-local, no runtime loss",
+        },
+    ]
+    rerun_rows = [
+        {
+            "target_family": "bavt",
+            "consumer_kind": "optimize",
+            "helper_fix_applied": True,
+            "shadow_semantics_required_after_fix": False,
+            "replay_loss_after_fix": False,
+            "classification_after_fix": "helper_level_only",
+        },
+        {
+            "target_family": "dci_typed_epistemic_acts",
+            "consumer_kind": "rl",
+            "helper_fix_applied": True,
+            "shadow_semantics_required_after_fix": False,
+            "replay_loss_after_fix": False,
+            "classification_after_fix": "helper_level_only",
+        },
+    ]
+    seam_packet = CompositionSeamPacket(
+        packet_id="dag_v4.helper_exhaustion.seam.v1",
+        source_family="dag_v4_phase6_helper_exhaustion",
+        target_kind="helper_exhaustion",
+        seam_labels=["helper_counterfactual_rerun", "consumer_rerun_after_helper_fix"],
+        issues=[
+            {
+                "issue_id": "helper_exhaustion.01",
+                "status": "resolved_by_helper_only",
+                "summary": "Budget-conditioned frontier seam remains interpretable after helper-only audit and handoff normalization.",
+            },
+            {
+                "issue_id": "helper_exhaustion.02",
+                "status": "resolved_by_helper_only",
+                "summary": "Typed shared-workspace seam remains interpretable after helper-only ledger and replay/export refinement.",
+            },
+        ],
+        repeated_shape_candidate=False,
+        notes={"helper_exhaustion_attempted": True, "consumer_rerun_count": 2},
+        metadata={"phase": "dag_v4_phase6"},
+    )
+    return {
+        "helper_fix_attempts": helper_fix_attempts,
+        "rerun_rows": rerun_rows,
+        "source_packets": {
+            "bavt": bavt,
+            "dci": dci,
+            "optimize_consumer": optimize_packet,
+            "rl_consumer": rl_packet,
+        },
+        "composition_seam_packet": seam_packet,
+        "repeated_shape_update": {
+            "helper_exhaustion_attempted": True,
+            "review_counting_gap_labels": [],
+            "dag_kernel_change_required": False,
+        },
+    }
+
+
+def build_dag_v4_helper_exhaustion_counterfactual_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_helper_exhaustion_counterfactual_packet()
+    return {
+        "helper_fix_attempts": [dict(item) for item in example["helper_fix_attempts"]],
+        "rerun_rows": [dict(item) for item in example["rerun_rows"]],
+        "source_packets": {
+            "bavt": build_dag_v4_bavt_packet_payload(),
+            "dci": build_dag_v4_dci_packet_payload(),
+            "optimize_consumer": build_dag_v4_optimize_consumer_packet_payload(),
+            "rl_consumer": build_dag_v4_rl_consumer_packet_payload(),
+        },
+        "composition_seam_packet": example["composition_seam_packet"].to_dict(),
+        "repeated_shape_update": dict(example["repeated_shape_update"]),
+    }
+
+
+def build_dag_v4_final_adjudication_packet() -> Dict[str, object]:
+    """Build the final DAG V4 adjudication packet."""
+
+    optimize_consumer = build_dag_v4_optimize_consumer_packet()
+    rl_consumer = build_dag_v4_rl_consumer_packet()
+    seam_packet = build_dag_v4_cross_system_seam_packet()
+    helper_exhaustion = build_dag_v4_helper_exhaustion_counterfactual_packet()
+    repeated_shape_register = [
+        build_dag_v4_got_v2_packet()["repeated_shape_entry"],
+        build_dag_v4_tot_v2_packet()["repeated_shape_entry"],
+        build_dag_v4_moa_v2_packet()["repeated_shape_entry"],
+        build_dag_v4_codetree_v2_packet()["repeated_shape_entry"],
+        build_dag_v4_bavt_packet()["repeated_shape_entry"],
+        build_dag_v4_adaptive_parallel_mcts_lite_packet()["repeated_shape_entry"],
+        build_dag_v4_team_of_thoughts_packet()["repeated_shape_entry"],
+        build_dag_v4_dci_packet()["repeated_shape_entry"],
+    ]
+    locus_summary = {
+        "dag_kernel": {
+            "status": "frozen",
+            "justification": "No review-counting repeated shape survived cross-class pressure, consumer pressure, and helper exhaustion.",
+        },
+        "helper_fidelity": {
+            "status": "active",
+            "next_pressure": "continue using packet-local manifests, audits, and replay/export integrity artifacts rather than promoting new DAG nouns.",
+        },
+        "consumer_layer": {
+            "status": "active",
+            "next_pressure": "consumer-specific packet shaping remains a downstream concern, not DAG-local runtime truth.",
+            "optimize_issue_count": len(optimize_consumer["consumer_issue_classification"]),
+            "rl_issue_count": len(rl_consumer["consumer_issue_classification"]),
+        },
+        "benchmark_evaluator": {
+            "status": "active",
+            "next_pressure": "future work should keep using evaluator controls before any architecture claims are reopened.",
+        },
+        "harness_environment": {
+            "status": "active",
+            "next_pressure": "parallelism and shared-workspace serving concerns remain harness-local unless they start corrupting replay/export integrity.",
+        },
+    }
+    repeated_shape_summary = {
+        "total_entries": len(repeated_shape_register),
+        "review_counting_gap_labels": [],
+        "topology_classes_covered": ["G", "F", "H", "W", "D"],
+        "consumer_confirmation_present": True,
+        "helper_exhaustion_attempted": True,
+        "replay_export_corruption_detected": False,
+    }
+    freeze_decision = {
+        "current_decision": "keep_dag_frozen",
+        "open_dag_v5_now": False,
+        "reason": "The full V4 proof-by-pressure program did not produce a review-counting repeated shape, and the leading seam candidates resolved to helper-level or consumer-local interpretations after helper exhaustion.",
+        "reopen_criteria": [
+            "the same missing DAG truth appears across at least two topology classes and one downstream consumer",
+            "helper exhaustion has been attempted and failed",
+            "replay, export, or provenance integrity is materially corrupted",
+        ],
+    }
+    return {
+        "packet_id": "dag_v4.final_adjudication.v1",
+        "source_packets": {
+            "optimize_consumer_packet": optimize_consumer,
+            "rl_consumer_packet": rl_consumer,
+            "cross_system_seam_packet": seam_packet,
+            "helper_exhaustion_counterfactual_packet": helper_exhaustion,
+        },
+        "reviewed_topology_classes": ["G", "F", "H", "W", "D"],
+        "reviewed_target_count": 8,
+        "repeated_shape_summary": repeated_shape_summary,
+        "locus_summary": locus_summary,
+        "freeze_decision": freeze_decision,
+        "metadata": {"phase": "dag_v4_phase7", "kernel_change_required": False},
+    }
+
+
+def build_dag_v4_final_adjudication_packet_payload() -> Dict[str, object]:
+    example = build_dag_v4_final_adjudication_packet()
+    return {
+        "packet_id": example["packet_id"],
+        "source_packets": {
+            "optimize_consumer_packet": build_dag_v4_optimize_consumer_packet_payload(),
+            "rl_consumer_packet": build_dag_v4_rl_consumer_packet_payload(),
+            "cross_system_seam_packet": build_dag_v4_cross_system_seam_packet_payload(),
+            "helper_exhaustion_counterfactual_packet": build_dag_v4_helper_exhaustion_counterfactual_packet_payload(),
+        },
+        "reviewed_topology_classes": list(example["reviewed_topology_classes"]),
+        "reviewed_target_count": example["reviewed_target_count"],
+        "repeated_shape_summary": dict(example["repeated_shape_summary"]),
+        "locus_summary": dict(example["locus_summary"]),
+        "freeze_decision": dict(example["freeze_decision"]),
+        "metadata": dict(example["metadata"]),
     }

@@ -10,10 +10,17 @@ from agentic_coder_prototype.optimize import (
     TransferCohortManifest,
 )
 from agentic_coder_prototype.search import (
+    AssessmentLineagePacket,
     BaselineComparisonPacket,
+    BenchmarkControlPacket,
+    CompositionSeamPacket,
     ComputeBudgetLedger,
+    ConsumerHandoffPacket,
     FidelityScorecard,
+    FrontierPolicyAudit,
     PaperRecipeManifest,
+    RepeatedShapeRegisterEntry,
+    ReplayExportIntegrityPacket,
     ReplicationDeviationLedger,
     SearchOfflineDataset,
     SearchAssessment,
@@ -24,6 +31,7 @@ from agentic_coder_prototype.search import (
     SearchFrontier,
     SearchMessage,
     SearchRewardSignal,
+    TopologyAudit,
     build_default_search_assessment_registry,
     build_branch_execute_verify_reference_recipe,
     build_branch_execute_verify_reference_recipe_payload,
@@ -76,6 +84,34 @@ from agentic_coder_prototype.search import (
     build_dag_replication_v1_tot_game24_packet_payload,
     build_dag_replication_v1_codetree_packet,
     build_dag_replication_v1_codetree_packet_payload,
+    build_dag_v4_phase1_control_packet,
+    build_dag_v4_phase1_control_packet_payload,
+    build_dag_v4_got_v2_packet,
+    build_dag_v4_got_v2_packet_payload,
+    build_dag_v4_tot_v2_packet,
+    build_dag_v4_tot_v2_packet_payload,
+    build_dag_v4_moa_v2_packet,
+    build_dag_v4_moa_v2_packet_payload,
+    build_dag_v4_codetree_v2_packet,
+    build_dag_v4_codetree_v2_packet_payload,
+    build_dag_v4_bavt_packet,
+    build_dag_v4_bavt_packet_payload,
+    build_dag_v4_adaptive_parallel_mcts_lite_packet,
+    build_dag_v4_adaptive_parallel_mcts_lite_packet_payload,
+    build_dag_v4_team_of_thoughts_packet,
+    build_dag_v4_team_of_thoughts_packet_payload,
+    build_dag_v4_dci_packet,
+    build_dag_v4_dci_packet_payload,
+    build_dag_v4_optimize_consumer_packet,
+    build_dag_v4_optimize_consumer_packet_payload,
+    build_dag_v4_rl_consumer_packet,
+    build_dag_v4_rl_consumer_packet_payload,
+    build_dag_v4_cross_system_seam_packet,
+    build_dag_v4_cross_system_seam_packet_payload,
+    build_dag_v4_helper_exhaustion_counterfactual_packet,
+    build_dag_v4_helper_exhaustion_counterfactual_packet_payload,
+    build_dag_v4_final_adjudication_packet,
+    build_dag_v4_final_adjudication_packet_payload,
     build_dag_v3_rl_facing_export_slice_packet,
     build_dag_v3_rl_facing_export_slice_packet_payload,
     build_dag_v3_rsa_budget_matched_baseline_packet,
@@ -357,6 +393,93 @@ def test_dag_v3_fidelity_artifacts_round_trip() -> None:
     assert BaselineComparisonPacket.from_dict(baseline_packet.to_dict()) == baseline_packet
     assert ReplicationDeviationLedger.from_dict(deviations.to_dict()) == deviations
     assert ledger.total_for_unit("tokens") == 12.0
+
+
+def test_dag_v4_phase1_helper_artifacts_round_trip() -> None:
+    repeated_shape = RepeatedShapeRegisterEntry(
+        gap_label="frontier_decision_truth",
+        target_family="tot_v2",
+        topology_class="F",
+        where_it_appears="bounded frontier rerun",
+        current_workaround="frontier policy audit",
+        why_workaround_is_insufficient="helper exhaustion not attempted yet",
+        effect_on_fidelity_tier="bounded_medium_only",
+        effect_on_replay_export="none observed",
+        primary_locus="helper_and_evaluator_control_only",
+        seen_in_other_targets=["bavt_candidate"],
+        seen_in_consumers=["optimize_preflight"],
+        helper_exhausted=False,
+        counts_toward_review=False,
+    )
+    topology_audit = TopologyAudit(
+        audit_id="topology.audit.test",
+        target_family="got_v2",
+        topology_class="G",
+        parentage_reconstructable=True,
+        fan_flow_reconstructable=True,
+        feedback_loop_reconstructable=True,
+        shadow_state_required=False,
+    )
+    frontier_audit = FrontierPolicyAudit(
+        audit_id="frontier.audit.test",
+        target_family="tot_v2",
+        topology_class="F",
+        select_prune_reconstructable=True,
+        budget_conditioned_reconstructable=True,
+        reopen_backtrack_reconstructable=False,
+        consumer_can_explain_frontier=True,
+        shadow_policy_required=False,
+    )
+    lineage_packet = AssessmentLineagePacket(
+        packet_id="assessment.lineage.test",
+        target_family="codetree_v2",
+        topology_class="W",
+        assessment_kinds=["judge", "execute"],
+        action_links=[{"assessment_id": "a1", "action_id": "select.1"}],
+        mixed_chain_reconstructable=True,
+    )
+    replay_packet = ReplayExportIntegrityPacket(
+        packet_id="replay.export.test",
+        target_family="got_v2",
+        topology_class="G",
+        export_modes=["trajectory_export"],
+        preserved_semantics=["parentage", "assessment linkage"],
+        lost_semantics=[],
+        shadow_assumptions_required=False,
+    )
+    benchmark_control = BenchmarkControlPacket(
+        packet_id="benchmark.control.test",
+        target_family="tot_v2",
+        control_kind="evaluator_strength",
+        evaluator_stack=["packet_review_judge"],
+        controls=["match_call_budget"],
+        known_confound_risks=["weak evaluator"],
+    )
+    handoff_packet = ConsumerHandoffPacket(
+        packet_id="handoff.test",
+        target_family="got_v2",
+        consumer_kind="optimize",
+        artifact_kinds=["SearchRun", "FidelityScorecard"],
+        handoff_contract=["no shadow semantics"],
+        shadow_semantics_required=False,
+    )
+    seam_packet = CompositionSeamPacket(
+        packet_id="seam.test",
+        source_family="got_v2",
+        target_kind="optimize",
+        seam_labels=["assessment_to_action_continuity"],
+        issues=[{"issue_id": "seam.1", "status": "not_observed"}],
+        repeated_shape_candidate=False,
+    )
+
+    assert RepeatedShapeRegisterEntry.from_dict(repeated_shape.to_dict()) == repeated_shape
+    assert TopologyAudit.from_dict(topology_audit.to_dict()) == topology_audit
+    assert FrontierPolicyAudit.from_dict(frontier_audit.to_dict()) == frontier_audit
+    assert AssessmentLineagePacket.from_dict(lineage_packet.to_dict()) == lineage_packet
+    assert ReplayExportIntegrityPacket.from_dict(replay_packet.to_dict()) == replay_packet
+    assert BenchmarkControlPacket.from_dict(benchmark_control.to_dict()) == benchmark_control
+    assert ConsumerHandoffPacket.from_dict(handoff_packet.to_dict()) == handoff_packet
+    assert CompositionSeamPacket.from_dict(seam_packet.to_dict()) == seam_packet
 
 
 def test_dag_v3_rsa_profile_and_smoke_packet_are_non_kernel() -> None:
@@ -1309,3 +1432,277 @@ def test_dag_replication_v1_codetree_payload_round_trips() -> None:
     assert scorecard.fidelity_label == "medium_structural_fidelity"
     assert compute_ledger.total_for_unit("actions") == 1.0
     assert payload["role_stage_manifest"]["critic_stage"] == "execution_plus_review"
+
+
+def test_dag_v4_phase1_control_packet_reruns_old_packets_under_new_audit_stack() -> None:
+    example = build_dag_v4_phase1_control_packet()
+    payload = build_dag_v4_phase1_control_packet_payload()
+
+    assert example["kernel_change_required"] is False
+    assert example["metadata"]["old_packet_rerun_count"] == 2
+    assert len(example["repeated_shape_register"]) == 2
+    assert len(example["topology_audits"]) == 2
+    assert len(example["frontier_policy_audits"]) == 2
+    assert example["benchmark_control_packet"].control_kind == "evaluator_strength_and_budget_control"
+    assert example["replay_export_integrity_packet"].shadow_assumptions_required is False
+    assert len(example["consumer_handoff_packets"]) == 2
+    assert example["composition_seam_packet"].repeated_shape_candidate is False
+    assert payload["source_packets"]["got"]["recipe_manifest"]["paper_key"] == "graph_of_thoughts"
+    assert payload["source_packets"]["tot"]["recipe_manifest"]["paper_key"] == "tree_of_thoughts"
+    assert payload["consumer_handoff_packets"][0]["consumer_kind"] == "optimize"
+    assert payload["consumer_handoff_packets"][1]["consumer_kind"] == "rl"
+
+
+def test_dag_v4_got_v2_packet_reprobes_feedback_lineage_cleanly() -> None:
+    example = build_dag_v4_got_v2_packet()
+    payload = build_dag_v4_got_v2_packet_payload()
+    run = SearchRun.from_dict(payload["run"])
+    topology_audit = TopologyAudit.from_dict(payload["topology_audit"])
+    replay_packet = ReplayExportIntegrityPacket.from_dict(payload["replay_export_integrity_packet"])
+
+    assert run.recipe_kind == "got_sorting_graph_packet_v2"
+    assert payload["recipe_manifest"]["paper_key"] == "graph_of_thoughts"
+    assert payload["removed_assumptions"] == [
+        "single_refine_step_only",
+        "no_feedback_merge_after_refine",
+    ]
+    assert topology_audit.topology_class == "G"
+    assert topology_audit.feedback_loop_reconstructable is True
+    assert replay_packet.shadow_assumptions_required is False
+    assert example["repeated_shape_entry"].counts_toward_review is False
+    assert run.selected_candidate_id == payload["run"]["selected_candidate_id"]
+
+
+def test_dag_v4_tot_v2_packet_reprobes_reopen_policy_cleanly() -> None:
+    example = build_dag_v4_tot_v2_packet()
+    payload = build_dag_v4_tot_v2_packet_payload()
+    run = SearchRun.from_dict(payload["run"])
+    frontier_audit = FrontierPolicyAudit.from_dict(payload["frontier_policy_audit"])
+    control_packet = BenchmarkControlPacket.from_dict(payload["benchmark_control_packet"])
+
+    assert run.recipe_kind == "tot_game24_frontier_packet_v2"
+    assert payload["recipe_manifest"]["paper_key"] == "tree_of_thoughts"
+    assert payload["removed_assumptions"] == [
+        "reopen_disabled",
+        "single_frontier_pass_only",
+    ]
+    assert frontier_audit.topology_class == "F"
+    assert frontier_audit.reopen_backtrack_reconstructable is True
+    assert control_packet.control_kind == "evaluator_strength_and_discriminator_control"
+    assert example["repeated_shape_entry"].counts_toward_review is False
+    assert run.selected_candidate_id == payload["run"]["selected_candidate_id"]
+
+
+def test_dag_v4_moa_v2_packet_reprobes_layered_judge_lineage_cleanly() -> None:
+    example = build_dag_v4_moa_v2_packet()
+    payload = build_dag_v4_moa_v2_packet_payload()
+    run = SearchRun.from_dict(payload["run"])
+    topology_audit = TopologyAudit.from_dict(payload["topology_audit"])
+    lineage_packet = AssessmentLineagePacket.from_dict(payload["assessment_lineage_packet"])
+
+    assert run.recipe_kind == "moa_layered_fan_in_packet_v2"
+    assert payload["recipe_manifest"]["paper_key"] == "mixture_of_agents"
+    assert payload["removed_assumptions"] == [
+        "small_fixed_roster_only",
+        "single_judge_pass_only",
+    ]
+    assert topology_audit.topology_class == "H"
+    assert lineage_packet.topology_class == "H"
+    assert lineage_packet.mixed_chain_reconstructable is True
+    assert example["repeated_shape_entry"].counts_toward_review is False
+    assert run.selected_candidate_id == payload["run"]["selected_candidate_id"]
+
+
+def test_dag_v4_codetree_v2_packet_reprobes_workspace_lineage_cleanly() -> None:
+    example = build_dag_v4_codetree_v2_packet()
+    payload = build_dag_v4_codetree_v2_packet_payload()
+    run = SearchRun.from_dict(payload["run"])
+    topology_audit = TopologyAudit.from_dict(payload["topology_audit"])
+    lineage_packet = AssessmentLineagePacket.from_dict(payload["assessment_lineage_packet"])
+    replay_packet = ReplayExportIntegrityPacket.from_dict(payload["replay_export_integrity_packet"])
+
+    assert run.recipe_kind == "codetree_stage_patch_packet_v2"
+    assert payload["recipe_manifest"]["paper_key"] == "codetree"
+    assert payload["removed_assumptions"] == [
+        "single_repair_pass_only",
+        "no_post_repair_verifier_stage",
+    ]
+    assert topology_audit.topology_class == "W"
+    assert lineage_packet.topology_class == "W"
+    assert replay_packet.topology_class == "W"
+    assert replay_packet.shadow_assumptions_required is False
+    assert example["repeated_shape_entry"].counts_toward_review is False
+    assert run.selected_candidate_id == payload["run"]["selected_candidate_id"]
+
+
+def test_dag_v4_bavt_packet_reprobes_budget_aware_frontier_cleanly() -> None:
+    example = build_dag_v4_bavt_packet()
+    payload = build_dag_v4_bavt_packet_payload()
+    run = SearchRun.from_dict(payload["run"])
+    frontier_audit = FrontierPolicyAudit.from_dict(payload["frontier_policy_audit"])
+    control_packet = BenchmarkControlPacket.from_dict(payload["benchmark_control_packet"])
+
+    assert run.recipe_kind == "bavt_budget_aware_frontier_packet"
+    assert payload["recipe_manifest"]["paper_key"] == "budget_aware_value_tree_search"
+    assert frontier_audit.topology_class == "F"
+    assert frontier_audit.budget_conditioned_reconstructable is True
+    assert frontier_audit.reopen_backtrack_reconstructable is True
+    assert control_packet.control_kind == "budget_conditioned_frontier_and_evaluator_control"
+    assert example["repeated_shape_entry"].counts_toward_review is False
+    assert example["repeated_shape_entry"].seen_in_other_targets == ["tot_v2"]
+    assert run.selected_candidate_id == payload["run"]["selected_candidate_id"]
+
+
+def test_dag_v4_adaptive_parallel_mcts_lite_packet_stays_bounded_and_auditable() -> None:
+    example = build_dag_v4_adaptive_parallel_mcts_lite_packet()
+    payload = build_dag_v4_adaptive_parallel_mcts_lite_packet_payload()
+    run = SearchRun.from_dict(payload["run"])
+    frontier_audit = FrontierPolicyAudit.from_dict(payload["frontier_policy_audit"])
+    control_packet = BenchmarkControlPacket.from_dict(payload["benchmark_control_packet"])
+    replay_packet = ReplayExportIntegrityPacket.from_dict(payload["replay_export_integrity_packet"])
+
+    assert run.recipe_kind == "adaptive_parallel_mcts_lite_packet"
+    assert payload["recipe_manifest"]["paper_key"] == "adaptive_parallel_mcts_lite"
+    assert frontier_audit.topology_class == "F"
+    assert frontier_audit.budget_conditioned_reconstructable is True
+    assert frontier_audit.reopen_backtrack_reconstructable is True
+    assert control_packet.control_kind == "parallel_frontier_and_evaluator_control"
+    assert replay_packet.shadow_assumptions_required is False
+    assert example["repeated_shape_entry"].counts_toward_review is False
+    assert example["repeated_shape_entry"].seen_in_other_targets == ["tot_v2", "bavt"]
+    assert run.selected_candidate_id == payload["run"]["selected_candidate_id"]
+
+
+def test_dag_v4_team_of_thoughts_packet_reprobes_layered_role_heterogeneity_cleanly() -> None:
+    example = build_dag_v4_team_of_thoughts_packet()
+    payload = build_dag_v4_team_of_thoughts_packet_payload()
+    run = SearchRun.from_dict(payload["run"])
+    topology_audit = TopologyAudit.from_dict(payload["topology_audit"])
+    lineage_packet = AssessmentLineagePacket.from_dict(payload["assessment_lineage_packet"])
+
+    assert run.recipe_kind == "team_of_thoughts_layered_packet"
+    assert payload["recipe_manifest"]["paper_key"] == "team_of_thoughts"
+    assert topology_audit.topology_class == "H"
+    assert topology_audit.fan_flow_reconstructable is True
+    assert lineage_packet.topology_class == "H"
+    assert payload["role_stage_manifest"]["heterogeneous"] is True
+    assert payload["role_stage_manifest"]["roles"][0]["role"] == "planner"
+    assert example["repeated_shape_entry"].counts_toward_review is False
+    assert example["repeated_shape_entry"].seen_in_other_targets == ["moa_v2"]
+    assert run.selected_candidate_id == payload["run"]["selected_candidate_id"]
+
+
+def test_dag_v4_dci_packet_reprobes_typed_shared_workspace_cleanly() -> None:
+    example = build_dag_v4_dci_packet()
+    payload = build_dag_v4_dci_packet_payload()
+    run = SearchRun.from_dict(payload["run"])
+    topology_audit = TopologyAudit.from_dict(payload["topology_audit"])
+    lineage_packet = AssessmentLineagePacket.from_dict(payload["assessment_lineage_packet"])
+    replay_packet = ReplayExportIntegrityPacket.from_dict(payload["replay_export_integrity_packet"])
+
+    assert run.recipe_kind == "dci_typed_deliberation_packet"
+    assert payload["recipe_manifest"]["paper_key"] == "dci_typed_epistemic_acts"
+    assert topology_audit.topology_class == "D"
+    assert topology_audit.feedback_loop_reconstructable is True
+    assert lineage_packet.topology_class == "D"
+    assert replay_packet.topology_class == "D"
+    assert replay_packet.shadow_assumptions_required is False
+    assert payload["typed_act_ledger"]["shared_workspace"] is True
+    assert payload["typed_act_ledger"]["acts"][1]["typed_act"] == "raise_objection"
+    assert len(payload["workspace_snapshot_ids"]) == 2
+    assert example["repeated_shape_entry"].counts_toward_review is False
+    assert example["repeated_shape_entry"].seen_in_other_targets == ["team_of_thoughts"]
+    assert run.selected_candidate_id == payload["run"]["selected_candidate_id"]
+
+
+def test_dag_v4_optimize_consumer_packet_covers_three_structurally_distinct_families() -> None:
+    example = build_dag_v4_optimize_consumer_packet()
+    payload = build_dag_v4_optimize_consumer_packet_payload()
+    seam_packet = CompositionSeamPacket.from_dict(payload["composition_seam_packet"])
+    handoffs = [ConsumerHandoffPacket.from_dict(item) for item in payload["consumer_handoff_packets"]]
+
+    assert payload["consumer_kind"] == "optimize"
+    assert len(payload["source_rows"]) == 3
+    assert {item["topology_class"] for item in payload["source_rows"]} == {"G", "F", "H"}
+    assert len(handoffs) == 3
+    assert all(item.consumer_kind == "optimize" for item in handoffs)
+    assert all(item.shadow_semantics_required is False for item in handoffs)
+    assert all("evidence_sources" in item for item in payload["integrity_rows"])
+    assert all(item["measured_shadow_semantics_required"] is False for item in payload["integrity_rows"])
+    assert seam_packet.target_kind == "optimize"
+    assert seam_packet.repeated_shape_candidate is False
+    assert example["repeated_shape_update"]["review_counting_gap_labels"] == []
+    assert example["repeated_shape_update"]["dag_kernel_change_required"] is False
+
+
+def test_dag_v4_rl_consumer_packet_covers_three_structurally_distinct_families() -> None:
+    example = build_dag_v4_rl_consumer_packet()
+    payload = build_dag_v4_rl_consumer_packet_payload()
+    seam_packet = CompositionSeamPacket.from_dict(payload["composition_seam_packet"])
+    handoffs = [ConsumerHandoffPacket.from_dict(item) for item in payload["consumer_handoff_packets"]]
+
+    assert payload["consumer_kind"] == "rl"
+    assert len(payload["source_rows"]) == 3
+    assert {item["topology_class"] for item in payload["source_rows"]} == {"F", "W", "D"}
+    assert len(handoffs) == 3
+    assert all(item.consumer_kind == "rl" for item in handoffs)
+    assert all(item.shadow_semantics_required is False for item in handoffs)
+    assert all("evidence_sources" in item for item in payload["integrity_rows"])
+    assert all(item["measured_shadow_semantics_required"] is False for item in payload["integrity_rows"])
+    assert seam_packet.target_kind == "rl"
+    assert seam_packet.repeated_shape_candidate is False
+    assert example["repeated_shape_update"]["review_counting_gap_labels"] == []
+    assert example["repeated_shape_update"]["dag_kernel_change_required"] is False
+
+
+def test_dag_v4_cross_system_seam_packet_unifies_consumer_read_without_promoting_gaps() -> None:
+    example = build_dag_v4_cross_system_seam_packet()
+    payload = build_dag_v4_cross_system_seam_packet_payload()
+    seam_packet = CompositionSeamPacket.from_dict(payload["cross_system_seam_packet"])
+
+    assert seam_packet.target_kind == "cross_system"
+    assert seam_packet.repeated_shape_candidate is False
+    assert len(payload["seam_rows"]) == 2
+    assert payload["seam_rows"][0]["consumer_kind"] == "optimize"
+    assert payload["seam_rows"][1]["consumer_kind"] == "rl"
+    assert payload["repeated_shape_update"]["review_counting_gap_labels"] == []
+    assert payload["repeated_shape_update"]["dag_kernel_change_required"] is False
+    assert payload["optimize_packet"]["consumer_kind"] == "optimize"
+    assert payload["rl_packet"]["consumer_kind"] == "rl"
+
+
+def test_dag_v4_helper_exhaustion_counterfactual_packet_attempts_helper_only_fixes_and_consumer_reruns() -> None:
+    example = build_dag_v4_helper_exhaustion_counterfactual_packet()
+    payload = build_dag_v4_helper_exhaustion_counterfactual_packet_payload()
+    seam_packet = CompositionSeamPacket.from_dict(payload["composition_seam_packet"])
+
+    assert len(payload["helper_fix_attempts"]) == 2
+    assert payload["helper_fix_attempts"][0]["gap_label"] == "budget_conditioned_frontier_truth"
+    assert payload["helper_fix_attempts"][1]["gap_label"] == "typed_collective_act_truth"
+    assert len(payload["rerun_rows"]) == 2
+    assert all(item["helper_fix_applied"] is True for item in payload["rerun_rows"])
+    assert all(item["shadow_semantics_required_after_fix"] is False for item in payload["rerun_rows"])
+    assert all(item["replay_loss_after_fix"] is False for item in payload["rerun_rows"])
+    assert seam_packet.target_kind == "helper_exhaustion"
+    assert seam_packet.repeated_shape_candidate is False
+    assert payload["repeated_shape_update"]["helper_exhaustion_attempted"] is True
+    assert payload["repeated_shape_update"]["review_counting_gap_labels"] == []
+    assert payload["repeated_shape_update"]["dag_kernel_change_required"] is False
+
+
+def test_dag_v4_final_adjudication_packet_keeps_freeze_after_full_v4_program() -> None:
+    example = build_dag_v4_final_adjudication_packet()
+    payload = build_dag_v4_final_adjudication_packet_payload()
+
+    assert payload["packet_id"] == "dag_v4.final_adjudication.v1"
+    assert payload["reviewed_topology_classes"] == ["G", "F", "H", "W", "D"]
+    assert payload["reviewed_target_count"] == 8
+    assert payload["repeated_shape_summary"]["review_counting_gap_labels"] == []
+    assert payload["repeated_shape_summary"]["consumer_confirmation_present"] is True
+    assert payload["repeated_shape_summary"]["helper_exhaustion_attempted"] is True
+    assert payload["repeated_shape_summary"]["replay_export_corruption_detected"] is False
+    assert payload["freeze_decision"]["current_decision"] == "keep_dag_frozen"
+    assert payload["freeze_decision"]["open_dag_v5_now"] is False
+    assert payload["metadata"]["kernel_change_required"] is False
+    assert payload["source_packets"]["cross_system_seam_packet"]["repeated_shape_update"]["dag_kernel_change_required"] is False
+    assert payload["source_packets"]["helper_exhaustion_counterfactual_packet"]["repeated_shape_update"]["helper_exhaustion_attempted"] is True
