@@ -68,6 +68,14 @@ from agentic_coder_prototype.search import (
     build_dag_v3_optimize_ready_comparison_packet_payload,
     build_dag_v3_phase1_smoke_packet,
     build_dag_v3_phase1_smoke_packet_payload,
+    build_dag_replication_v1_got_sorting_packet,
+    build_dag_replication_v1_got_sorting_packet_payload,
+    build_dag_replication_v1_moa_layered_packet,
+    build_dag_replication_v1_moa_layered_packet_payload,
+    build_dag_replication_v1_tot_game24_packet,
+    build_dag_replication_v1_tot_game24_packet_payload,
+    build_dag_replication_v1_codetree_packet,
+    build_dag_replication_v1_codetree_packet_payload,
     build_dag_v3_rl_facing_export_slice_packet,
     build_dag_v3_rl_facing_export_slice_packet_payload,
     build_dag_v3_rsa_budget_matched_baseline_packet,
@@ -1196,3 +1204,108 @@ def test_post_v2_study_18_optimize_mutation_proposal_probe_payload_round_trips()
     assert proposal.candidate.applied_loci == ["carry_state_summary"]
     assert payload["adapter_boundary"]["used_real_optimize_records"] is True
     assert payload["evidence"]["future_v3_evidence"] is False
+
+
+def test_dag_replication_v1_got_sorting_packet_is_bounded_and_lineage_auditable() -> None:
+    example = build_dag_replication_v1_got_sorting_packet()
+    run = example["run"]
+
+    assert run.recipe_kind == "got_sorting_graph_packet"
+    assert run.selected_candidate_id is not None
+    assert example["recipe_manifest"].paper_key == "graph_of_thoughts"
+    assert example["scorecard"].fidelity_label == "high_structural_fidelity"
+    assert example["compute_ledger"].total_for_unit("calls") <= 16.0
+    assert example["baseline_packet"].baseline_ids[0] == "direct_answer"
+    assert example["replay_audit"]["shadow_state_required"] is False
+    assert any(len(row["parent_node_ids"]) == 2 for row in example["lineage_rows"])
+
+
+def test_dag_replication_v1_got_sorting_payload_round_trips() -> None:
+    payload = build_dag_replication_v1_got_sorting_packet_payload()
+    run = SearchRun.from_dict(payload["run"])
+    scorecard = FidelityScorecard.from_dict(payload["scorecard"])
+    compute_ledger = ComputeBudgetLedger.from_dict(payload["compute_ledger"])
+
+    assert run.recipe_kind == "got_sorting_graph_packet"
+    assert payload["recipe_manifest"]["paper_key"] == "graph_of_thoughts"
+    assert scorecard.fidelity_label == "high_structural_fidelity"
+    assert compute_ledger.total_for_unit("calls") <= 16.0
+    assert payload["replay_audit"]["merged_parentage_reconstructable"] is True
+
+
+def test_dag_replication_v1_tot_game24_packet_is_frontier_controlled() -> None:
+    example = build_dag_replication_v1_tot_game24_packet()
+    run = example["run"]
+
+    assert run.recipe_kind == "tot_game24_frontier_packet"
+    assert run.selected_candidate_id is not None
+    assert example["recipe_manifest"].paper_key == "tree_of_thoughts"
+    assert example["scorecard"].notes["backtrack_scope"] == "reopen disabled in first packet to isolate frontier provenance before adding backtracking"
+    assert example["frontier_audit"]["frontier_policy_reconstructable"] is True
+    assert example["frontier_audit"]["evaluator_confound_controlled"] is True
+    assert example["compute_ledger"].total_for_unit("branches") <= 3.0
+
+
+def test_dag_replication_v1_tot_game24_payload_round_trips() -> None:
+    payload = build_dag_replication_v1_tot_game24_packet_payload()
+    run = SearchRun.from_dict(payload["run"])
+    scorecard = FidelityScorecard.from_dict(payload["scorecard"])
+    baseline_packet = BaselineComparisonPacket.from_dict(payload["baseline_packet"])
+
+    assert run.recipe_kind == "tot_game24_frontier_packet"
+    assert payload["recipe_manifest"]["paper_key"] == "tree_of_thoughts"
+    assert scorecard.fidelity_label == "high_structural_fidelity"
+    assert "discriminator_control" in baseline_packet.baseline_ids
+    assert payload["frontier_audit"]["prune_history_reconstructable"] is True
+
+
+def test_dag_replication_v1_moa_layered_packet_is_lineage_bounded() -> None:
+    example = build_dag_replication_v1_moa_layered_packet()
+    run = example["run"]
+
+    assert run.recipe_kind == "moa_layered_fan_in_packet"
+    assert run.selected_candidate_id is not None
+    assert example["recipe_manifest"].paper_key == "mixture_of_agents"
+    assert example["scorecard"].fidelity_label == "medium_structural_fidelity"
+    assert example["fan_in_audit"]["layered_fan_in_reconstructable"] is True
+    assert example["fan_in_audit"]["shared_runtime_gap_detected"] is False
+    assert example["compute_ledger"].total_for_unit("layers") == 3.0
+
+
+def test_dag_replication_v1_moa_layered_payload_round_trips() -> None:
+    payload = build_dag_replication_v1_moa_layered_packet_payload()
+    run = SearchRun.from_dict(payload["run"])
+    scorecard = FidelityScorecard.from_dict(payload["scorecard"])
+    baseline_packet = BaselineComparisonPacket.from_dict(payload["baseline_packet"])
+
+    assert run.recipe_kind == "moa_layered_fan_in_packet"
+    assert payload["recipe_manifest"]["paper_key"] == "mixture_of_agents"
+    assert scorecard.fidelity_label == "medium_structural_fidelity"
+    assert "one_layer_moa" in baseline_packet.baseline_ids
+    assert payload["layer_roster_manifest"]["homogeneous_or_heterogeneous"] == "heterogeneous"
+
+
+def test_dag_replication_v1_codetree_packet_is_stage_auditable() -> None:
+    example = build_dag_replication_v1_codetree_packet()
+    run = example["run"]
+
+    assert run.recipe_kind == "codetree_stage_patch_packet"
+    assert run.selected_candidate_id is not None
+    assert example["recipe_manifest"].paper_key == "codetree"
+    assert example["scorecard"].fidelity_label == "medium_structural_fidelity"
+    assert example["codetree_audit"]["critic_action_reconstructable"] is True
+    assert example["codetree_audit"]["shared_runtime_gap_detected"] is False
+    assert example["execution_feedback_packet"]["visible_tests_passed_after_repair"] == 3
+
+
+def test_dag_replication_v1_codetree_payload_round_trips() -> None:
+    payload = build_dag_replication_v1_codetree_packet_payload()
+    run = SearchRun.from_dict(payload["run"])
+    scorecard = FidelityScorecard.from_dict(payload["scorecard"])
+    compute_ledger = ComputeBudgetLedger.from_dict(payload["compute_ledger"])
+
+    assert run.recipe_kind == "codetree_stage_patch_packet"
+    assert payload["recipe_manifest"]["paper_key"] == "codetree"
+    assert scorecard.fidelity_label == "medium_structural_fidelity"
+    assert compute_ledger.total_for_unit("actions") == 1.0
+    assert payload["role_stage_manifest"]["critic_stage"] == "execution_plus_review"

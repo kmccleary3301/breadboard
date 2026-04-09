@@ -3,7 +3,13 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from ..longrun.checkpoint import build_longrun_checkpoint_metadata_record
-from ..search import build_branch_execute_verify_reference_recipe
+from ..search import (
+    build_branch_execute_verify_reference_recipe,
+    build_dag_replication_v1_codetree_packet,
+    build_dag_replication_v1_got_sorting_packet,
+    build_dag_replication_v1_moa_layered_packet,
+    build_dag_replication_v1_tot_game24_packet,
+)
 from .conformance import (
     build_adapter_probe_report,
     build_export_conformance_packet,
@@ -1087,4 +1093,681 @@ def build_rl_v2_freeze_and_deferrals_payload() -> Dict[str, object]:
         "surfaces_not_justified": list(packet["surfaces_not_justified"]),
         "public_claims_enabled": list(packet["public_claims_enabled"]),
         "deferred_after_v2": list(packet["deferred_after_v2"]),
+    }
+
+
+def _build_next_frontier_fallback_annotations(run, *, workload_family: str) -> list[EvaluationAnnotation]:
+    selected_candidate = None
+    if run.selected_candidate_id:
+        selected_candidate = next(
+            (candidate for candidate in run.candidates if candidate.candidate_id == run.selected_candidate_id),
+            None,
+        )
+    if selected_candidate is None and run.candidates:
+        selected_candidate = run.candidates[-1]
+    subject_id = selected_candidate.candidate_id if selected_candidate is not None else run.search_id
+    artifact_refs = []
+    payload_ref = getattr(selected_candidate, "payload_ref", None) if selected_candidate is not None else None
+    if payload_ref:
+        artifact_refs.append(payload_ref)
+    return [
+        EvaluationAnnotation(
+            annotation_id=f"{run.search_id}.annotation.next_frontier.packet_review.v1",
+            subject_id=subject_id,
+            subject_kind="candidate" if selected_candidate is not None else "search_run",
+            channel="packet_review",
+            status="completed",
+            score_value=0.84,
+            text_feedback="Bounded next-frontier packet audit attached at the packet layer.",
+            artifact_refs=artifact_refs,
+            metadata={
+                "phase": "next_frontier_c",
+                "workload_family": workload_family,
+                "synthetic_annotation": True,
+            },
+        )
+    ]
+
+
+def _build_next_frontier_graph_from_search_run(run, *, projection_case: str, workload_family: str) -> TrajectoryGraph:
+    environment_descriptor = EnvironmentDescriptor(
+        environment_id=f"{run.search_id}.rl.environment.next_frontier.v1",
+        environment_kind="dag_packet_workspace",
+        workspace_mode="bounded_packet_replay",
+        tool_names=["search_runtime", "fidelity_scorecard", "compute_ledger"],
+        metadata={"phase": "next_frontier_c", "workload_family": workload_family},
+    )
+    policy_provenance = PolicyProvenance(
+        policy_id=f"{run.search_id}.rl.policy.next_frontier.v1",
+        policy_kind="assistant_policy",
+        provider="openai",
+        model_name="gpt-5.4-mini",
+        sequential_track_id=f"{run.search_id}.rl.track.root",
+        prompt_ref=f"prompts/{run.recipe_kind}.md",
+        config_ref=f"configs/{run.recipe_kind}.yaml",
+        metadata={"phase": "next_frontier_c", "workload_family": workload_family},
+    )
+    if projection_case == "replay":
+        graph = project_replay_payload_to_trajectory_graph(
+            run_payload=run.to_dict(),
+            environment_descriptor=environment_descriptor,
+            policy_provenance=[policy_provenance],
+            metadata={"phase": "next_frontier_c", "workload_family": workload_family, "projection_case": "replay"},
+        )
+    else:
+        graph = project_live_search_run_to_trajectory_graph(
+            run=run,
+            environment_descriptor=environment_descriptor,
+            policy_provenance=[policy_provenance],
+            metadata={"phase": "next_frontier_c", "workload_family": workload_family, "projection_case": "live"},
+        )
+    evaluation_annotations = build_evaluation_annotations_from_search_run(run)
+    if not evaluation_annotations:
+        evaluation_annotations = _build_next_frontier_fallback_annotations(
+            run,
+            workload_family=workload_family,
+        )
+    return TrajectoryGraph(
+        graph_id=graph.graph_id,
+        rollout_descriptor=graph.rollout_descriptor,
+        environment_descriptor=graph.environment_descriptor,
+        policy_provenance=list(graph.policy_provenance),
+        tracks=list(graph.tracks),
+        observations=list(graph.observations),
+        decisions=list(graph.decisions),
+        effects=list(graph.effects),
+        causal_edges=list(graph.causal_edges),
+        evaluation_annotations=evaluation_annotations,
+        cost_ledger=build_cost_ledger_from_search_run(run),
+        compaction_manifests=build_compaction_manifests_from_search_run(run),
+        metadata=dict(graph.metadata),
+    )
+
+
+def build_next_frontier_rl_trainer_facing_export_packet() -> Dict[str, object]:
+    """Build the first trainer-facing RL packet over a DAG replication workload."""
+
+    got_packet = build_dag_replication_v1_got_sorting_packet()
+    graph = _build_next_frontier_graph_from_search_run(
+        got_packet["run"],
+        projection_case="live",
+        workload_family="dag_got_sorting",
+    )
+    export_units = export_reference_unit_bundle(graph)
+    evaluation_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.next_frontier.evaluation_pack.trainer.v1",
+        annotations=graph.evaluation_annotations,
+        rubric_version="next_frontier_trainer_v1",
+        visibility_boundary="policy_view",
+        reduction_context="trainer_facing_export",
+        metadata={"phase": "next_frontier_c", "source_workload": "dag_got_sorting"},
+    )
+    export_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.next_frontier.export_manifest.trainer.v1",
+        export_units=list(export_units.values()),
+        evaluation_pack_manifest=evaluation_pack,
+        split_kind="train_holdout",
+        canonicalization_policy="source_ref_exact",
+        transform_version="next_frontier_trainer_v1",
+        contamination_controls=["task_root_split", "artifact_lineage_guard", "packet_family_guard"],
+        fidelity_tier="bounded_trainer_ready",
+        metadata={"phase": "next_frontier_c", "source_workload": "dag_got_sorting"},
+    )
+    return {
+        "source_packet_id": got_packet["recipe_manifest"].manifest_id,
+        "workload_family": "dag_got_sorting",
+        "trajectory_graph": graph,
+        "export_units": export_units,
+        "evaluation_pack": evaluation_pack,
+        "export_manifest": export_manifest,
+        "bounded_loss_report": {
+            "lost_fields": [],
+            "preserved_fields": ["graph_topology", "evaluation_annotations", "compaction_manifests", "cost_ledger"],
+            "acceptance_rule": "bounded_loss_only_if_trainer_local_packing_is_delegated",
+        },
+        "study_note": {
+            "packet_kind": "trainer_facing_export",
+            "pain_classification": "adapter_local_expectation_gap_only",
+        },
+    }
+
+
+def build_next_frontier_rl_trainer_facing_export_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_rl_trainer_facing_export_packet()
+    return {
+        "source_packet_id": example["source_packet_id"],
+        "workload_family": example["workload_family"],
+        "trajectory_graph": example["trajectory_graph"].to_dict(),
+        "export_units": {key: value.to_dict() for key, value in example["export_units"].items()},
+        "evaluation_pack": example["evaluation_pack"].to_dict(),
+        "export_manifest": example["export_manifest"].to_dict(),
+        "bounded_loss_report": dict(example["bounded_loss_report"]),
+        "study_note": dict(example["study_note"]),
+    }
+
+
+def build_next_frontier_rl_evaluator_verifier_packet() -> Dict[str, object]:
+    """Build the first evaluator/verifier RL packet over a DAG frontier workload."""
+
+    tot_packet = build_dag_replication_v1_tot_game24_packet()
+    graph = _build_next_frontier_graph_from_search_run(
+        tot_packet["run"],
+        projection_case="live",
+        workload_family="dag_tot_game24",
+    )
+    verifier_unit = export_verifier_example_unit(graph)
+    evaluation_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.next_frontier.evaluation_pack.verifier.v1",
+        annotations=graph.evaluation_annotations,
+        rubric_version="next_frontier_verifier_v1",
+        visibility_boundary="policy_view",
+        reduction_context="evaluator_verifier_packet",
+        metadata={"phase": "next_frontier_c", "source_workload": "dag_tot_game24", "delayed_eval_policy": "none"},
+    )
+    export_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.next_frontier.export_manifest.verifier.v1",
+        export_units=[verifier_unit],
+        evaluation_pack_manifest=evaluation_pack,
+        split_kind="audit_holdout",
+        canonicalization_policy="event_address_stable",
+        transform_version="next_frontier_verifier_v1",
+        contamination_controls=["task_root_split", "future_leak_guard"],
+        fidelity_tier="bounded_verifier_ready",
+        metadata={"phase": "next_frontier_c", "source_workload": "dag_tot_game24"},
+    )
+    return {
+        "source_packet_id": tot_packet["recipe_manifest"].manifest_id,
+        "workload_family": "dag_tot_game24",
+        "trajectory_graph": graph,
+        "export_unit": verifier_unit,
+        "evaluation_pack": evaluation_pack,
+        "export_manifest": export_manifest,
+        "coherence_report": {
+            "annotation_count": len(evaluation_pack.annotation_ids),
+            "all_annotations_in_pack": set(evaluation_pack.annotation_ids)
+            == {item.annotation_id for item in verifier_unit.evaluation_annotations},
+            "delayed_eval_assumption": "none_in_first_packet",
+        },
+        "study_note": {
+            "packet_kind": "evaluator_verifier",
+            "pain_classification": "evaluator_local_only",
+        },
+    }
+
+
+def build_next_frontier_rl_evaluator_verifier_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_rl_evaluator_verifier_packet()
+    return {
+        "source_packet_id": example["source_packet_id"],
+        "workload_family": example["workload_family"],
+        "trajectory_graph": example["trajectory_graph"].to_dict(),
+        "export_unit": example["export_unit"].to_dict(),
+        "evaluation_pack": example["evaluation_pack"].to_dict(),
+        "export_manifest": example["export_manifest"].to_dict(),
+        "coherence_report": dict(example["coherence_report"]),
+        "study_note": dict(example["study_note"]),
+    }
+
+
+def build_next_frontier_rl_replay_live_parity_packet() -> Dict[str, object]:
+    """Build the first replay/live parity packet on a new DAG code-tree workload."""
+
+    codetree_packet = build_dag_replication_v1_codetree_packet()
+    live_graph = _build_next_frontier_graph_from_search_run(
+        codetree_packet["run"],
+        projection_case="live",
+        workload_family="dag_codetree_patch",
+    )
+    replay_graph = _build_next_frontier_graph_from_search_run(
+        codetree_packet["run"],
+        projection_case="replay",
+        workload_family="dag_codetree_patch",
+    )
+    live_bundle = export_reference_unit_bundle(live_graph)
+    replay_bundle = export_reference_unit_bundle(replay_graph)
+    live_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.next_frontier.evaluation_pack.parity.v1",
+        annotations=live_graph.evaluation_annotations,
+        rubric_version="next_frontier_parity_v1",
+        visibility_boundary="policy_view",
+        reduction_context="new_workload_parity",
+        metadata={"phase": "next_frontier_c", "projection_case": "live"},
+    )
+    replay_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.next_frontier.evaluation_pack.parity.v1",
+        annotations=replay_graph.evaluation_annotations,
+        rubric_version="next_frontier_parity_v1",
+        visibility_boundary="policy_view",
+        reduction_context="new_workload_parity",
+        metadata={"phase": "next_frontier_c", "projection_case": "replay"},
+    )
+    live_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.next_frontier.export_manifest.parity.live.v1",
+        export_units=list(live_bundle.values()),
+        evaluation_pack_manifest=live_pack,
+        split_kind="audit_holdout",
+        canonicalization_policy="source_ref_exact",
+        transform_version="next_frontier_parity_v1",
+        contamination_controls=["task_root_split", "artifact_lineage_guard"],
+        fidelity_tier="replay_parity_verified",
+        metadata={"phase": "next_frontier_c", "projection_case": "live"},
+    )
+    replay_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.next_frontier.export_manifest.parity.replay.v1",
+        export_units=list(replay_bundle.values()),
+        evaluation_pack_manifest=replay_pack,
+        split_kind="audit_holdout",
+        canonicalization_policy="source_ref_exact",
+        transform_version="next_frontier_parity_v1",
+        contamination_controls=["task_root_split", "artifact_lineage_guard"],
+        fidelity_tier="replay_parity_verified",
+        metadata={"phase": "next_frontier_c", "projection_case": "replay"},
+    )
+    return {
+        "source_packet_id": codetree_packet["recipe_manifest"].manifest_id,
+        "workload_family": "dag_codetree_patch",
+        "live_graph": live_graph,
+        "replay_graph": replay_graph,
+        "live_parity_view": build_trajectory_graph_core_parity_view(live_graph),
+        "replay_parity_view": build_trajectory_graph_core_parity_view(replay_graph),
+        "live_export_manifest": live_manifest,
+        "replay_export_manifest": replay_manifest,
+        "live_export_manifest_parity_view": build_export_manifest_parity_view(live_manifest),
+        "replay_export_manifest_parity_view": build_export_manifest_parity_view(replay_manifest),
+        "study_note": {
+            "packet_kind": "replay_live_parity",
+            "pain_classification": "no_repeated_rl_shape",
+        },
+    }
+
+
+def build_next_frontier_rl_replay_live_parity_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_rl_replay_live_parity_packet()
+    return {
+        "source_packet_id": example["source_packet_id"],
+        "workload_family": example["workload_family"],
+        "live_graph": example["live_graph"].to_dict(),
+        "replay_graph": example["replay_graph"].to_dict(),
+        "live_parity_view": dict(example["live_parity_view"]),
+        "replay_parity_view": dict(example["replay_parity_view"]),
+        "live_export_manifest": example["live_export_manifest"].to_dict(),
+        "replay_export_manifest": example["replay_export_manifest"].to_dict(),
+        "live_export_manifest_parity_view": dict(example["live_export_manifest_parity_view"]),
+        "replay_export_manifest_parity_view": dict(example["replay_export_manifest_parity_view"]),
+        "study_note": dict(example["study_note"]),
+    }
+
+
+def build_next_frontier_rl_adapter_friction_synthesis() -> Dict[str, object]:
+    trainer_packet = build_next_frontier_rl_trainer_facing_export_packet()
+    verifier_packet = build_next_frontier_rl_evaluator_verifier_packet()
+    parity_packet = build_next_frontier_rl_replay_live_parity_packet()
+    return {
+        "synthesis_id": "bb.rl.next_frontier.adapter_friction_synthesis.v1",
+        "evidence_sources": [
+            trainer_packet["export_manifest"].export_manifest_id,
+            verifier_packet["export_manifest"].export_manifest_id,
+            parity_packet["live_export_manifest"].export_manifest_id,
+        ],
+        "repeated_shape_gap_detected": False,
+        "recommended_outcome": "keep_rl_frozen",
+        "pain_summary": [
+            trainer_packet["study_note"]["pain_classification"],
+            verifier_packet["study_note"]["pain_classification"],
+            parity_packet["study_note"]["pain_classification"],
+        ],
+        "metadata": {"phase": "next_frontier_c"},
+    }
+
+
+def build_next_frontier_rl_adapter_friction_synthesis_payload() -> Dict[str, object]:
+    example = build_next_frontier_rl_adapter_friction_synthesis()
+    return {
+        "synthesis_id": example["synthesis_id"],
+        "evidence_sources": list(example["evidence_sources"]),
+        "repeated_shape_gap_detected": example["repeated_shape_gap_detected"],
+        "recommended_outcome": example["recommended_outcome"],
+        "pain_summary": list(example["pain_summary"]),
+        "metadata": dict(example["metadata"]),
+    }
+
+
+def build_next_frontier_rl_second_trainer_facing_export_packet() -> Dict[str, object]:
+    """Build a second trainer-facing RL packet on a different DAG workload family."""
+
+    moa_packet = build_dag_replication_v1_moa_layered_packet()
+    graph = _build_next_frontier_graph_from_search_run(
+        moa_packet["run"],
+        projection_case="live",
+        workload_family="dag_moa_layered",
+    )
+    export_units = export_reference_unit_bundle(graph)
+    evaluation_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.next_frontier.evaluation_pack.trainer.v2",
+        annotations=graph.evaluation_annotations,
+        rubric_version="next_frontier_trainer_v2",
+        visibility_boundary="policy_view",
+        reduction_context="trainer_facing_export_second_loop",
+        metadata={"phase": "next_frontier_c", "source_workload": "dag_moa_layered"},
+    )
+    export_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.next_frontier.export_manifest.trainer.v2",
+        export_units=list(export_units.values()),
+        evaluation_pack_manifest=evaluation_pack,
+        split_kind="train_holdout",
+        canonicalization_policy="event_address_stable",
+        transform_version="next_frontier_trainer_v2",
+        contamination_controls=["task_root_split", "artifact_lineage_guard", "roster_visibility_guard"],
+        fidelity_tier="bounded_trainer_ready",
+        metadata={"phase": "next_frontier_c", "source_workload": "dag_moa_layered"},
+    )
+    return {
+        "source_packet_id": moa_packet["recipe_manifest"].manifest_id,
+        "workload_family": "dag_moa_layered",
+        "trajectory_graph": graph,
+        "export_units": export_units,
+        "evaluation_pack": evaluation_pack,
+        "export_manifest": export_manifest,
+        "bounded_loss_report": {
+            "lost_fields": [],
+            "preserved_fields": ["layered_fan_in", "evaluation_annotations", "compaction_manifests", "cost_ledger"],
+            "acceptance_rule": "bounded_loss_only_if_consumer_local_roster_packing_is_delegated",
+        },
+        "study_note": {
+            "packet_kind": "trainer_facing_export_second_loop",
+            "pain_classification": "adapter_and_compaction_local_only",
+        },
+    }
+
+
+def build_next_frontier_rl_second_trainer_facing_export_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_rl_second_trainer_facing_export_packet()
+    return {
+        "source_packet_id": example["source_packet_id"],
+        "workload_family": example["workload_family"],
+        "trajectory_graph": example["trajectory_graph"].to_dict(),
+        "export_units": {key: value.to_dict() for key, value in example["export_units"].items()},
+        "evaluation_pack": example["evaluation_pack"].to_dict(),
+        "export_manifest": example["export_manifest"].to_dict(),
+        "bounded_loss_report": dict(example["bounded_loss_report"]),
+        "study_note": dict(example["study_note"]),
+    }
+
+
+def build_next_frontier_rl_second_evaluator_verifier_packet() -> Dict[str, object]:
+    """Build a second evaluator/verifier packet on a different DAG workload."""
+
+    codetree_packet = build_dag_replication_v1_codetree_packet()
+    graph = _build_next_frontier_graph_from_search_run(
+        codetree_packet["run"],
+        projection_case="live",
+        workload_family="dag_codetree_patch",
+    )
+    verifier_unit = export_verifier_example_unit(graph)
+    evaluation_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.next_frontier.evaluation_pack.verifier.v2",
+        annotations=graph.evaluation_annotations,
+        rubric_version="next_frontier_verifier_v2",
+        visibility_boundary="policy_view",
+        reduction_context="evaluator_verifier_second_loop",
+        metadata={"phase": "next_frontier_c", "source_workload": "dag_codetree_patch", "delayed_eval_policy": "bounded"},
+    )
+    export_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.next_frontier.export_manifest.verifier.v2",
+        export_units=[verifier_unit],
+        evaluation_pack_manifest=evaluation_pack,
+        split_kind="audit_holdout",
+        canonicalization_policy="event_address_stable",
+        transform_version="next_frontier_verifier_v2",
+        contamination_controls=["task_root_split", "future_leak_guard", "execution_feedback_guard"],
+        fidelity_tier="bounded_verifier_ready",
+        metadata={"phase": "next_frontier_c", "source_workload": "dag_codetree_patch"},
+    )
+    return {
+        "source_packet_id": codetree_packet["recipe_manifest"].manifest_id,
+        "workload_family": "dag_codetree_patch",
+        "trajectory_graph": graph,
+        "export_unit": verifier_unit,
+        "evaluation_pack": evaluation_pack,
+        "export_manifest": export_manifest,
+        "coherence_report": {
+            "annotation_count": len(evaluation_pack.annotation_ids),
+            "all_annotations_in_pack": set(evaluation_pack.annotation_ids)
+            == {item.annotation_id for item in verifier_unit.evaluation_annotations},
+            "delayed_eval_assumption": "bounded_and_explicit",
+        },
+        "study_note": {
+            "packet_kind": "evaluator_verifier_second_loop",
+            "pain_classification": "evaluator_and_compaction_local_only",
+        },
+    }
+
+
+def build_next_frontier_rl_second_evaluator_verifier_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_rl_second_evaluator_verifier_packet()
+    return {
+        "source_packet_id": example["source_packet_id"],
+        "workload_family": example["workload_family"],
+        "trajectory_graph": example["trajectory_graph"].to_dict(),
+        "export_unit": example["export_unit"].to_dict(),
+        "evaluation_pack": example["evaluation_pack"].to_dict(),
+        "export_manifest": example["export_manifest"].to_dict(),
+        "coherence_report": dict(example["coherence_report"]),
+        "study_note": dict(example["study_note"]),
+    }
+
+
+def build_next_frontier_rl_second_replay_live_parity_packet() -> Dict[str, object]:
+    """Build a second replay/live parity packet on a different workload family."""
+
+    moa_packet = build_dag_replication_v1_moa_layered_packet()
+    live_graph = _build_next_frontier_graph_from_search_run(
+        moa_packet["run"],
+        projection_case="live",
+        workload_family="dag_moa_layered",
+    )
+    replay_graph = _build_next_frontier_graph_from_search_run(
+        moa_packet["run"],
+        projection_case="replay",
+        workload_family="dag_moa_layered",
+    )
+    live_bundle = export_reference_unit_bundle(live_graph)
+    replay_bundle = export_reference_unit_bundle(replay_graph)
+    live_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.next_frontier.evaluation_pack.parity.v2",
+        annotations=live_graph.evaluation_annotations,
+        rubric_version="next_frontier_parity_v2",
+        visibility_boundary="policy_view",
+        reduction_context="second_workload_parity",
+        metadata={"phase": "next_frontier_c", "projection_case": "live"},
+    )
+    replay_pack = build_evaluation_pack_manifest(
+        evaluation_pack_id="bb.rl.next_frontier.evaluation_pack.parity.v2",
+        annotations=replay_graph.evaluation_annotations,
+        rubric_version="next_frontier_parity_v2",
+        visibility_boundary="policy_view",
+        reduction_context="second_workload_parity",
+        metadata={"phase": "next_frontier_c", "projection_case": "replay"},
+    )
+    live_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.next_frontier.export_manifest.parity.live.v2",
+        export_units=list(live_bundle.values()),
+        evaluation_pack_manifest=live_pack,
+        split_kind="audit_holdout",
+        canonicalization_policy="event_address_stable",
+        transform_version="next_frontier_parity_v2",
+        contamination_controls=["task_root_split", "artifact_lineage_guard", "roster_visibility_guard"],
+        fidelity_tier="replay_parity_verified",
+        metadata={"phase": "next_frontier_c", "projection_case": "live"},
+    )
+    replay_manifest = build_export_manifest(
+        export_manifest_id="bb.rl.next_frontier.export_manifest.parity.replay.v2",
+        export_units=list(replay_bundle.values()),
+        evaluation_pack_manifest=replay_pack,
+        split_kind="audit_holdout",
+        canonicalization_policy="event_address_stable",
+        transform_version="next_frontier_parity_v2",
+        contamination_controls=["task_root_split", "artifact_lineage_guard", "roster_visibility_guard"],
+        fidelity_tier="replay_parity_verified",
+        metadata={"phase": "next_frontier_c", "projection_case": "replay"},
+    )
+    return {
+        "source_packet_id": moa_packet["recipe_manifest"].manifest_id,
+        "workload_family": "dag_moa_layered",
+        "live_graph": live_graph,
+        "replay_graph": replay_graph,
+        "live_parity_view": build_trajectory_graph_core_parity_view(live_graph),
+        "replay_parity_view": build_trajectory_graph_core_parity_view(replay_graph),
+        "live_export_manifest": live_manifest,
+        "replay_export_manifest": replay_manifest,
+        "live_export_manifest_parity_view": build_export_manifest_parity_view(live_manifest),
+        "replay_export_manifest_parity_view": build_export_manifest_parity_view(replay_manifest),
+        "study_note": {
+            "packet_kind": "replay_live_parity_second_loop",
+            "pain_classification": "no_repeated_rl_shape",
+        },
+    }
+
+
+def build_next_frontier_rl_second_replay_live_parity_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_rl_second_replay_live_parity_packet()
+    return {
+        "source_packet_id": example["source_packet_id"],
+        "workload_family": example["workload_family"],
+        "live_graph": example["live_graph"].to_dict(),
+        "replay_graph": example["replay_graph"].to_dict(),
+        "live_parity_view": dict(example["live_parity_view"]),
+        "replay_parity_view": dict(example["replay_parity_view"]),
+        "live_export_manifest": example["live_export_manifest"].to_dict(),
+        "replay_export_manifest": example["replay_export_manifest"].to_dict(),
+        "live_export_manifest_parity_view": dict(example["live_export_manifest_parity_view"]),
+        "replay_export_manifest_parity_view": dict(example["replay_export_manifest_parity_view"]),
+        "study_note": dict(example["study_note"]),
+    }
+
+
+def build_next_frontier_rl_tranche_synthesis_v2() -> Dict[str, object]:
+    first_trainer = build_next_frontier_rl_trainer_facing_export_packet()
+    first_verifier = build_next_frontier_rl_evaluator_verifier_packet()
+    first_parity = build_next_frontier_rl_replay_live_parity_packet()
+    second_trainer = build_next_frontier_rl_second_trainer_facing_export_packet()
+    second_verifier = build_next_frontier_rl_second_evaluator_verifier_packet()
+    second_parity = build_next_frontier_rl_second_replay_live_parity_packet()
+    return {
+        "synthesis_id": "bb.rl.next_frontier.tranche_synthesis.v2",
+        "evidence_sources": [
+            first_trainer["export_manifest"].export_manifest_id,
+            first_verifier["export_manifest"].export_manifest_id,
+            first_parity["live_export_manifest"].export_manifest_id,
+            second_trainer["export_manifest"].export_manifest_id,
+            second_verifier["export_manifest"].export_manifest_id,
+            second_parity["live_export_manifest"].export_manifest_id,
+        ],
+        "repeated_shape_gap_detected": False,
+        "recommended_outcome": "keep_rl_frozen",
+        "next_frontier_ready": "frontier_d_cross_system_composition",
+        "pain_summary": [
+            first_trainer["study_note"]["pain_classification"],
+            first_verifier["study_note"]["pain_classification"],
+            second_trainer["study_note"]["pain_classification"],
+            second_verifier["study_note"]["pain_classification"],
+        ],
+        "metadata": {"phase": "next_frontier_c", "loop_count": 2},
+    }
+
+
+def build_next_frontier_rl_tranche_synthesis_v2_payload() -> Dict[str, object]:
+    example = build_next_frontier_rl_tranche_synthesis_v2()
+    return {
+        "synthesis_id": example["synthesis_id"],
+        "evidence_sources": list(example["evidence_sources"]),
+        "repeated_shape_gap_detected": example["repeated_shape_gap_detected"],
+        "recommended_outcome": example["recommended_outcome"],
+        "next_frontier_ready": example["next_frontier_ready"],
+        "pain_summary": list(example["pain_summary"]),
+        "metadata": dict(example["metadata"]),
+    }
+
+
+def build_next_frontier_dag_to_rl_composition_packet() -> Dict[str, object]:
+    """Build the first DAG-to-RL composition packet."""
+
+    second_trainer = build_next_frontier_rl_second_trainer_facing_export_packet()
+    return {
+        "composition_id": "composition.next_frontier.dag_to_rl.v1",
+        "source_packet_id": second_trainer["source_packet_id"],
+        "consumer_export_manifest_id": second_trainer["export_manifest"].export_manifest_id,
+        "handoff_contract": {
+            "preserved_fields": [
+                "recipe_manifest_identity",
+                "evaluation_pack_identity",
+                "cost_ledger_identity",
+                "compaction_manifest_identity",
+            ],
+            "provenance_continuity": True,
+            "helper_only_handoff": True,
+        },
+        "composition_report": {
+            "composed_cleanly": True,
+            "awkwardness_classification": "adapter_local_only",
+            "repeated_shape_gap_detected": False,
+        },
+        "metadata": {"phase": "next_frontier_d", "source_workload": second_trainer["workload_family"]},
+    }
+
+
+def build_next_frontier_dag_to_rl_composition_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_dag_to_rl_composition_packet()
+    return {
+        "composition_id": example["composition_id"],
+        "source_packet_id": example["source_packet_id"],
+        "consumer_export_manifest_id": example["consumer_export_manifest_id"],
+        "handoff_contract": dict(example["handoff_contract"]),
+        "composition_report": dict(example["composition_report"]),
+        "metadata": dict(example["metadata"]),
+    }
+
+
+def build_next_frontier_rl_final_closeout_packet() -> Dict[str, object]:
+    """Build the final RL closeout packet for the next-frontier program."""
+
+    synthesis = build_next_frontier_rl_tranche_synthesis_v2()
+    return {
+        "closeout_id": "bb.rl.next_frontier.final_closeout.v1",
+        "source_synthesis_id": synthesis["synthesis_id"],
+        "reviewed_loops": 2,
+        "reviewed_packet_count": 6,
+        "final_decision": "keep_rl_frozen",
+        "repeated_shape_gap_detected": False,
+        "reopen_criteria": [
+            "the same missing RL shape repeats across more than one workload family",
+            "the same missing RL shape repeats across more than one consumer type",
+            "the same missing RL shape appears in more than one packet family",
+        ],
+        "proven_capabilities": [
+            "trainer-facing export packets",
+            "evaluator/verifier pack packets",
+            "replay/live parity packets",
+        ],
+        "not_proven": [
+            "need for a new RL public ontology",
+            "need for trainer-specific kernel truth",
+        ],
+        "metadata": {"phase": "next_frontier_c", "loop_count": 2},
+    }
+
+
+def build_next_frontier_rl_final_closeout_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_rl_final_closeout_packet()
+    return {
+        "closeout_id": example["closeout_id"],
+        "source_synthesis_id": example["source_synthesis_id"],
+        "reviewed_loops": example["reviewed_loops"],
+        "reviewed_packet_count": example["reviewed_packet_count"],
+        "final_decision": example["final_decision"],
+        "repeated_shape_gap_detected": example["repeated_shape_gap_detected"],
+        "reopen_criteria": list(example["reopen_criteria"]),
+        "proven_capabilities": list(example["proven_capabilities"]),
+        "not_proven": list(example["not_proven"]),
+        "metadata": dict(example["metadata"]),
     }

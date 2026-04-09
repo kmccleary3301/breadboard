@@ -55,6 +55,26 @@ from agentic_coder_prototype.rl import (
     build_rl_v2_freeze_and_scope_packet_payload,
     build_rl_v2_replay_live_fidelity_example,
     build_rl_v2_replay_live_fidelity_example_payload,
+    build_next_frontier_rl_trainer_facing_export_packet,
+    build_next_frontier_rl_trainer_facing_export_packet_payload,
+    build_next_frontier_rl_evaluator_verifier_packet,
+    build_next_frontier_rl_evaluator_verifier_packet_payload,
+    build_next_frontier_rl_replay_live_parity_packet,
+    build_next_frontier_rl_replay_live_parity_packet_payload,
+    build_next_frontier_rl_adapter_friction_synthesis,
+    build_next_frontier_rl_adapter_friction_synthesis_payload,
+    build_next_frontier_rl_second_trainer_facing_export_packet,
+    build_next_frontier_rl_second_trainer_facing_export_packet_payload,
+    build_next_frontier_rl_second_evaluator_verifier_packet,
+    build_next_frontier_rl_second_evaluator_verifier_packet_payload,
+    build_next_frontier_rl_second_replay_live_parity_packet,
+    build_next_frontier_rl_second_replay_live_parity_packet_payload,
+    build_next_frontier_rl_tranche_synthesis_v2,
+    build_next_frontier_rl_tranche_synthesis_v2_payload,
+    build_next_frontier_dag_to_rl_composition_packet,
+    build_next_frontier_dag_to_rl_composition_packet_payload,
+    build_next_frontier_rl_final_closeout_packet,
+    build_next_frontier_rl_final_closeout_packet_payload,
 )
 from agentic_coder_prototype.search import SearchRun
 
@@ -403,3 +423,105 @@ def test_rl_v2_freeze_and_deferrals_closes_v2_without_growth() -> None:
     assert "policy_view_witness" in payload["surfaces_not_justified"]
     assert "bounded_probe_level_adapter_evidence" in payload["public_claims_enabled"]
     assert packet["deferred_after_v2"] == payload["deferred_after_v2"]
+
+
+def test_next_frontier_rl_trainer_facing_export_packet_is_bounded_and_manifested() -> None:
+    example = build_next_frontier_rl_trainer_facing_export_packet()
+    payload = build_next_frontier_rl_trainer_facing_export_packet_payload()
+    manifest = ExportManifest.from_dict(payload["export_manifest"])
+    evaluation_pack = EvaluationPackManifest.from_dict(payload["evaluation_pack"])
+
+    assert payload["workload_family"] == "dag_got_sorting"
+    assert manifest.fidelity_tier == "bounded_trainer_ready"
+    assert evaluation_pack.evaluation_pack_id == manifest.evaluation_pack_id
+    assert payload["bounded_loss_report"]["lost_fields"] == []
+    assert payload["study_note"]["pain_classification"] == "adapter_local_expectation_gap_only"
+
+
+def test_next_frontier_rl_evaluator_verifier_packet_keeps_pack_coherent() -> None:
+    example = build_next_frontier_rl_evaluator_verifier_packet()
+    payload = build_next_frontier_rl_evaluator_verifier_packet_payload()
+    export_unit = DatasetExportUnit.from_dict(payload["export_unit"])
+    evaluation_pack = EvaluationPackManifest.from_dict(payload["evaluation_pack"])
+
+    assert payload["workload_family"] == "dag_tot_game24"
+    assert export_unit.export_kind == "verifier_example"
+    assert set(evaluation_pack.annotation_ids) == {item.annotation_id for item in export_unit.evaluation_annotations}
+    assert payload["coherence_report"]["all_annotations_in_pack"] is True
+    assert payload["study_note"]["pain_classification"] == "evaluator_local_only"
+
+
+def test_next_frontier_rl_replay_live_parity_packet_holds_on_new_workload() -> None:
+    example = build_next_frontier_rl_replay_live_parity_packet()
+    payload = build_next_frontier_rl_replay_live_parity_packet_payload()
+    live_manifest = ExportManifest.from_dict(payload["live_export_manifest"])
+    replay_manifest = ExportManifest.from_dict(payload["replay_export_manifest"])
+
+    assert payload["workload_family"] == "dag_codetree_patch"
+    assert payload["live_parity_view"] == payload["replay_parity_view"]
+    assert live_manifest.fidelity_tier == "replay_parity_verified"
+    assert replay_manifest.export_fingerprint == live_manifest.export_fingerprint
+
+
+def test_next_frontier_rl_adapter_friction_synthesis_keeps_rl_frozen() -> None:
+    packet = build_next_frontier_rl_adapter_friction_synthesis()
+    payload = build_next_frontier_rl_adapter_friction_synthesis_payload()
+
+    assert payload["recommended_outcome"] == "keep_rl_frozen"
+    assert payload["repeated_shape_gap_detected"] is False
+    assert len(packet["evidence_sources"]) == 3
+
+
+def test_next_frontier_rl_second_trainer_packet_uses_new_workload_family() -> None:
+    payload = build_next_frontier_rl_second_trainer_facing_export_packet_payload()
+    manifest = ExportManifest.from_dict(payload["export_manifest"])
+    evaluation_pack = EvaluationPackManifest.from_dict(payload["evaluation_pack"])
+
+    assert payload["workload_family"] == "dag_moa_layered"
+    assert manifest.fidelity_tier == "bounded_trainer_ready"
+    assert evaluation_pack.evaluation_pack_id == manifest.evaluation_pack_id
+    assert payload["study_note"]["pain_classification"] == "adapter_and_compaction_local_only"
+
+
+def test_next_frontier_rl_second_evaluator_and_parity_packets_hold_on_new_loop() -> None:
+    verifier_payload = build_next_frontier_rl_second_evaluator_verifier_packet_payload()
+    parity_payload = build_next_frontier_rl_second_replay_live_parity_packet_payload()
+    export_unit = DatasetExportUnit.from_dict(verifier_payload["export_unit"])
+    evaluation_pack = EvaluationPackManifest.from_dict(verifier_payload["evaluation_pack"])
+    live_manifest = ExportManifest.from_dict(parity_payload["live_export_manifest"])
+    replay_manifest = ExportManifest.from_dict(parity_payload["replay_export_manifest"])
+
+    assert verifier_payload["workload_family"] == "dag_codetree_patch"
+    assert export_unit.export_kind == "verifier_example"
+    assert set(evaluation_pack.annotation_ids) == {item.annotation_id for item in export_unit.evaluation_annotations}
+    assert parity_payload["workload_family"] == "dag_moa_layered"
+    assert parity_payload["live_parity_view"] == parity_payload["replay_parity_view"]
+    assert replay_manifest.export_fingerprint == live_manifest.export_fingerprint
+
+
+def test_next_frontier_rl_tranche_synthesis_v2_keeps_rl_frozen() -> None:
+    payload = build_next_frontier_rl_tranche_synthesis_v2_payload()
+
+    assert payload["recommended_outcome"] == "keep_rl_frozen"
+    assert payload["repeated_shape_gap_detected"] is False
+    assert payload["next_frontier_ready"] == "frontier_d_cross_system_composition"
+    assert payload["metadata"]["loop_count"] == 2
+
+
+def test_next_frontier_dag_to_rl_composition_packet_is_well_formed() -> None:
+    packet = build_next_frontier_dag_to_rl_composition_packet()
+    payload = build_next_frontier_dag_to_rl_composition_packet_payload()
+
+    assert payload["handoff_contract"]["provenance_continuity"] is True
+    assert payload["composition_report"]["composed_cleanly"] is True
+    assert packet["composition_report"]["repeated_shape_gap_detected"] is False
+
+
+def test_next_frontier_rl_final_closeout_packet_keeps_rl_frozen() -> None:
+    packet = build_next_frontier_rl_final_closeout_packet()
+    payload = build_next_frontier_rl_final_closeout_packet_payload()
+
+    assert payload["final_decision"] == "keep_rl_frozen"
+    assert payload["repeated_shape_gap_detected"] is False
+    assert payload["reviewed_loops"] == 2
+    assert "trainer-facing export packets" in packet["proven_capabilities"]

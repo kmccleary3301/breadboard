@@ -9559,6 +9559,387 @@ def build_v6_stop_go_synthesis_example_payload() -> Dict[str, object]:
     }
 
 
+def build_next_frontier_optimize_cohort_packet() -> Dict[str, object]:
+    """Build the first bounded optimize cohort packet over the executed DAG tranche."""
+
+    manifest = BenchmarkRunManifest(
+        manifest_id="optimize.next_frontier.cohort.dag_packet_compare.v1",
+        benchmark_kind="dag_packet_comparison",
+        target_id="target.next_frontier.optimize.dag_packet_selection",
+        dataset_id="dataset.next_frontier.dag_packet_compare.v1",
+        dataset_version="2026-04-08.v1",
+        baseline_candidate_id="packet.search.replication_v1.got_sorting",
+        environment_domain="synthetic_replay_audit",
+        evaluator_stack=["structural_fidelity_checker", "bounded_compute_checker", "packet_review_judge"],
+        comparison_protocol="paired_packet_meta_compare.v1",
+        splits=[
+            BenchmarkSplit(
+                split_name="train",
+                sample_ids=["sample.packet_compare.train.got", "sample.packet_compare.train.tot"],
+                visibility="mutation_visible",
+            ),
+            BenchmarkSplit(
+                split_name="validation",
+                sample_ids=["sample.packet_compare.validation.moa"],
+                visibility="comparison_visible",
+            ),
+            BenchmarkSplit(
+                split_name="hold",
+                sample_ids=["sample.packet_compare.hold.codetree"],
+                visibility="hidden_hold",
+            ),
+        ],
+        bucket_tags={
+            "sample.packet_compare.train.got": ["graph_topology", "multi_parent_lineage"],
+            "sample.packet_compare.train.tot": ["frontier_policy", "evaluator_control"],
+            "sample.packet_compare.validation.moa": ["layered_fan_in"],
+            "sample.packet_compare.hold.codetree": ["stage_heterogeneous_tree", "critic_feedback"],
+        },
+        stochasticity_class="deterministic",
+        rerun_policy={"max_trials": 1, "model_policy": "gpt-5.4-mini", "budget_mode": "bounded_packet_compare"},
+        contamination_notes=["cross-paper packet ids remain explicit", "no hidden evaluator stack changes"],
+        promotion_relevance={"kind": "study_selection_only", "public_artifact_additions_required": False},
+        artifact_refs=[
+            ArtifactRef(ref="docs_tmp/DAG/replication_v1/DAG_REPLICATION_TRANCHE_V1_LEDGER.md", media_type="text/markdown"),
+        ],
+        metadata={"phase": "next_frontier_b", "workload_family": "dag_packet_comparison"},
+    )
+    comparison = build_paired_candidate_comparison(
+        manifest,
+        comparison_id="comparison.next_frontier.cohort.dag_packet_compare.v1",
+        parent_candidate_id="packet.search.replication_v1.got_sorting",
+        child_candidate_id="packet.search.replication_v1.tot_game24",
+        outcome="non_inferior",
+        compared_sample_ids=[
+            "sample.packet_compare.train.got",
+            "sample.packet_compare.train.tot",
+            "sample.packet_compare.validation.moa",
+            "sample.packet_compare.hold.codetree",
+        ],
+        held_out_sample_ids=["sample.packet_compare.hold.codetree"],
+        trial_count=1,
+        rationale="Tree-of-Thoughts remains non-inferior on bounded packet-comparison objectives once evaluator control is explicit.",
+        metric_deltas={"structural_fidelity": 0.02, "compute_efficiency": -0.01, "auditability": 0.03},
+        better_candidate_id="packet.search.replication_v1.tot_game24",
+        metadata={"claim_width": "cohort_only", "bounded_budget": True},
+    )
+    evaluation_suite = EvaluationSuiteManifest(
+        suite_id="evalsuite.next_frontier.optimize.cohort.v1",
+        suite_kind="bounded_packet_meta_compare",
+        evaluator_stack=["structural_fidelity_checker", "bounded_compute_checker", "packet_review_judge"],
+        split_visibility={"train": "mutation_visible", "validation": "comparison_visible", "hold": "hidden_hold"},
+        stochasticity_class="deterministic",
+        rerun_policy={"max_trials": 1, "escalation_policy": "disabled"},
+        capture_requirements=["fidelity_scorecard_alignment", "budget_envelope_adherence", "claim_limit_honesty"],
+        signal_channels={
+            "fidelity": {"source_kind": "scorecard"},
+            "compute": {"source_kind": "ledger"},
+            "packet_review": {"source_kind": "judge"},
+        },
+        adjudication_requirements={"requires_hidden_hold_review": True, "budget_mode": "bounded_packet_compare"},
+        comparison_protocol_defaults={"protocol_id": manifest.comparison_protocol, "minimum_trial_count": 1},
+        artifact_requirements=["paired_eval_json", "packet_meta_summary_json"],
+        metadata={"phase": "next_frontier_b"},
+    )
+    objective_suite = ObjectiveSuiteManifest(
+        suite_id="objsuite.next_frontier.optimize.cohort.v1",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_channels={
+            "fidelity": {"direction": "maximize"},
+            "compute_efficiency": {"direction": "maximize"},
+            "auditability": {"direction": "maximize"},
+        },
+        penalties={"confound_risk": {"direction": "minimize"}},
+        aggregation_rules={"fidelity_weight": 0.5, "compute_weight": 0.2, "auditability_weight": 0.3},
+        uncertainty_policy={"requires_explicit_hold_review": True},
+        blocked_channel_annotations={},
+        channel_dependencies={"auditability": ["fidelity"]},
+        frontier_dimensions=["fidelity", "compute_efficiency", "auditability"],
+        promotion_annotations={"relevance": "study_selection_only"},
+        visibility_annotations={"hold": "judge_only"},
+        metadata={"phase": "next_frontier_b"},
+    )
+    objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreak.next_frontier.optimize.cohort.v1",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=manifest.manifest_id,
+        candidate_id=comparison.child_candidate_id,
+        per_sample_components={
+            "sample.packet_compare.train.got": {"fidelity": 0.79, "compute_efficiency": 0.75, "auditability": 0.84},
+            "sample.packet_compare.train.tot": {"fidelity": 0.81, "compute_efficiency": 0.72, "auditability": 0.87},
+            "sample.packet_compare.validation.moa": {"fidelity": 0.7, "compute_efficiency": 0.69, "auditability": 0.78},
+        },
+        per_bucket_components={
+            "structural": {"fidelity": 0.8, "auditability": 0.85},
+            "cost": {"compute_efficiency": 0.72},
+        },
+        aggregate_objectives={"fidelity": 0.77, "compute_efficiency": 0.72, "auditability": 0.83},
+        uncertainty_summary={"hidden_hold_pending": True},
+        blocked_components={},
+        signal_status={"packet_review": {"status": "present"}},
+        slice_status={"cohort_compare": {"status": "complete"}},
+        artifact_refs=[ArtifactRef(ref="artifacts/optimization/next_frontier/cohort_compare_summary.json", media_type="application/json")],
+        metadata={"phase": "next_frontier_b"},
+    )
+    return {
+        "manifest": manifest,
+        "evaluation_suite": evaluation_suite,
+        "objective_suite": objective_suite,
+        "comparison_result": comparison,
+        "objective_breakdown_result": objective_breakdown,
+        "study_note": {
+            "workload": "dag_packet_comparison_workload",
+            "decision_signal": "tot_non_inferior_under_bounded_meta_objective",
+            "pain_classification": "reporting_gap_only",
+        },
+    }
+
+
+def build_next_frontier_optimize_cohort_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_optimize_cohort_packet()
+    return {
+        "manifest": example["manifest"].to_dict(),
+        "evaluation_suite": example["evaluation_suite"].to_dict(),
+        "objective_suite": example["objective_suite"].to_dict(),
+        "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
+        "study_note": dict(example["study_note"]),
+    }
+
+
+def build_next_frontier_optimize_transfer_packet() -> Dict[str, object]:
+    """Build the first bounded optimize transfer packet using DAG tranche lessons."""
+
+    cohort = build_next_frontier_optimize_cohort_packet()
+    manifest = BenchmarkRunManifest(
+        manifest_id="optimize.next_frontier.transfer.dag_packet_follow_on.v1",
+        benchmark_kind="dag_packet_transfer_follow_on",
+        target_id="target.next_frontier.optimize.dag_packet_transfer",
+        dataset_id="dataset.next_frontier.dag_packet_transfer.v1",
+        dataset_version="2026-04-08.v1",
+        baseline_candidate_id="packet.search.replication_v1.moa_layered",
+        environment_domain="synthetic_replay_audit",
+        evaluator_stack=["transfer_claim_checker", "bounded_compute_checker", "packet_review_judge"],
+        comparison_protocol="paired_transfer_follow_on_compare.v1",
+        splits=[
+            BenchmarkSplit(
+                split_name="train",
+                sample_ids=["sample.packet_transfer.train.moa"],
+                visibility="mutation_visible",
+            ),
+            BenchmarkSplit(
+                split_name="validation",
+                sample_ids=["sample.packet_transfer.validation.codetree"],
+                visibility="comparison_visible",
+            ),
+            BenchmarkSplit(
+                split_name="hold",
+                sample_ids=["sample.packet_transfer.hold.cross_domain"],
+                visibility="hidden_hold",
+            ),
+        ],
+        stochasticity_class="deterministic",
+        rerun_policy={"max_trials": 1, "model_policy": "gpt-5.4-mini", "transfer_enabled": True},
+        contamination_notes=["transfer hints stay bounded to packet-level study doctrine"],
+        metadata={"phase": "next_frontier_b", "workload_family": "transfer_follow_on"},
+    )
+    transfer_slice = TransferSliceManifest(
+        slice_id="slice.next_frontier.transfer.packet_family.v1",
+        slice_kind="repo_family",
+        selector={"family": "dag_replication_packet", "source_packets": ["got_sorting", "tot_game24"]},
+        promotion_role="claim_supporting",
+        visibility="comparison_visible",
+        metadata={"phase": "next_frontier_b"},
+    )
+    cohort_manifest = TransferCohortManifest(
+        cohort_id="cohort.next_frontier.optimize.dag_follow_on.v1",
+        cohort_kind="bounded_packet_family_transfer",
+        member_slice_ids=[transfer_slice.slice_id],
+        claim_scope={"source": "got_tot_gate1", "target": "moa_codetree_follow_on", "max_family_count": 1},
+        coverage_policy={"requires_hidden_hold": True, "claim_tiers": ["package_local", "transfer_supported"]},
+        metadata={"phase": "next_frontier_b"},
+    )
+    comparison = build_paired_candidate_comparison(
+        manifest,
+        comparison_id="comparison.next_frontier.transfer.follow_on.v1",
+        parent_candidate_id="packet.search.replication_v1.moa_layered",
+        child_candidate_id="packet.search.replication_v1.codetree_patch",
+        outcome="win",
+        compared_sample_ids=[
+            "sample.packet_transfer.train.moa",
+            "sample.packet_transfer.validation.codetree",
+            "sample.packet_transfer.hold.cross_domain",
+        ],
+        held_out_sample_ids=["sample.packet_transfer.hold.cross_domain"],
+        trial_count=1,
+        rationale="Carrying explicit gate-1 evaluator and lineage lessons forward improves the CodeTree follow-on packet under the bounded transfer objective.",
+        metric_deltas={"transfer_gain": 0.08, "compute_efficiency": -0.02, "claim_honesty": 0.04},
+        better_candidate_id="packet.search.replication_v1.codetree_patch",
+        metadata={"transfer_enabled": True},
+    )
+    objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreak.next_frontier.optimize.transfer.v1",
+        objective_suite_id="objsuite.next_frontier.optimize.transfer.v1",
+        manifest_id=manifest.manifest_id,
+        candidate_id=comparison.child_candidate_id,
+        per_sample_components={
+            "sample.packet_transfer.train.moa": {"transfer_gain": 0.06, "claim_honesty": 0.81},
+            "sample.packet_transfer.validation.codetree": {"transfer_gain": 0.08, "claim_honesty": 0.85},
+        },
+        per_bucket_components={"follow_on": {"transfer_gain": 0.07, "claim_honesty": 0.83}},
+        aggregate_objectives={"transfer_gain": 0.07, "claim_honesty": 0.83},
+        uncertainty_summary={"hidden_hold_pending": True},
+        blocked_components={},
+        signal_status={"transfer_claim": {"status": "supported"}},
+        slice_status={"follow_on": {"status": "complete"}},
+        artifact_refs=[ArtifactRef(ref="artifacts/optimization/next_frontier/transfer_follow_on_summary.json", media_type="application/json")],
+        metadata={"phase": "next_frontier_b"},
+    )
+    evidence_summary = PromotionEvidenceSummary(
+        summary_id="evidence_summary.next_frontier.transfer.v1",
+        candidate_id=comparison.child_candidate_id,
+        comparison_ids=[comparison.comparison_id],
+        manifest_ids=[manifest.manifest_id],
+        held_out_sample_ids=["sample.packet_transfer.hold.cross_domain"],
+        evaluation_suite_ids=[cohort["evaluation_suite"].suite_id],
+        objective_suite_ids=[cohort["objective_suite"].suite_id],
+        objective_breakdown_result_ids=[objective_breakdown.result_id],
+        transfer_slice_ids=[transfer_slice.slice_id],
+        transfer_slices=[transfer_slice],
+        transfer_cohort_ids=[cohort_manifest.cohort_id],
+        transfer_cohorts=[cohort_manifest],
+        transfer_cohort_status={cohort_manifest.cohort_id: {"status": "transfer_supported"}},
+        claim_tier="transfer_supported",
+        transfer_slice_status={transfer_slice.slice_id: {"status": "supported"}},
+        model_tier_audit={"default_model": "gpt-5.4-mini", "mini_escalation_required": False},
+        attribution_summary={"source_packets": ["got_sorting", "tot_game24"], "target_packets": ["moa_layered", "codetree_patch"]},
+        objective_breakdown_status="complete",
+        review_required=False,
+        metadata={"phase": "next_frontier_b"},
+    )
+    return {
+        "source_cohort_packet": cohort,
+        "manifest": manifest,
+        "transfer_slice": transfer_slice,
+        "transfer_cohort": cohort_manifest,
+        "comparison_result": comparison,
+        "objective_breakdown_result": objective_breakdown,
+        "promotion_summary": evidence_summary,
+        "study_note": {
+            "workload": "dag_packet_transfer_follow_on",
+            "decision_signal": "codetree_benefits_from_gate1_lessons",
+            "pain_classification": "helper_level_only",
+        },
+    }
+
+
+def build_next_frontier_optimize_transfer_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_optimize_transfer_packet()
+    return {
+        "manifest": example["manifest"].to_dict(),
+        "transfer_slice": example["transfer_slice"].to_dict(),
+        "transfer_cohort": example["transfer_cohort"].to_dict(),
+        "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
+        "promotion_summary": example["promotion_summary"].to_dict(),
+        "study_note": dict(example["study_note"]),
+    }
+
+
+def build_next_frontier_optimize_live_experiment_cell() -> Dict[str, object]:
+    """Build the first bounded live optimize cell over the new DAG packet tranche."""
+
+    cohort = build_next_frontier_optimize_cohort_packet()
+    transfer = build_next_frontier_optimize_transfer_packet()
+    live_cell = {
+        "cell_id": "optimize.next_frontier.live_cell.dag_packets.v1",
+        "cell_kind": "bounded_live_packet_selection",
+        "status": "complete",
+        "study_objective": "choose the next bounded downstream packet family under explicit budget and evaluator discipline",
+        "budget_envelope": {
+            "max_llm_calls": 24,
+            "max_prompt_tokens": 2400,
+            "max_completion_tokens": 900,
+            "max_evaluator_calls": 6,
+            "decision_budget": 1,
+        },
+        "entry_criteria": [
+            "packet has explicit fidelity scorecard",
+            "packet has explicit compute ledger",
+            "packet has explicit deviation ledger",
+        ],
+        "stop_criteria": [
+            "decision winner becomes stable under the bounded evaluation stack",
+            "budget envelope reached",
+            "confound status becomes unclear and would require new evaluator work",
+        ],
+        "admitted_packets": [
+            "packet.search.replication_v1.got_sorting",
+            "packet.search.replication_v1.tot_game24",
+            "packet.search.replication_v1.moa_layered",
+            "packet.search.replication_v1.codetree_patch",
+        ],
+        "winner": "packet.search.replication_v1.codetree_patch",
+        "next_action": "open Frontier C evaluator/verifier packet using codetree as the first new-workload RL consumer",
+        "pressure_classification": "optimize_surface_still_helper_local",
+        "metadata": {
+            "phase": "next_frontier_b",
+            "cohort_manifest_id": cohort["manifest"].manifest_id,
+            "transfer_manifest_id": transfer["manifest"].manifest_id,
+        },
+    }
+    return {
+        "cohort_packet": cohort,
+        "transfer_packet": transfer,
+        "live_cell": live_cell,
+    }
+
+
+def build_next_frontier_optimize_live_experiment_cell_payload() -> Dict[str, object]:
+    example = build_next_frontier_optimize_live_experiment_cell()
+    return {
+        "cohort_packet": build_next_frontier_optimize_cohort_packet_payload(),
+        "transfer_packet": build_next_frontier_optimize_transfer_packet_payload(),
+        "live_cell": dict(example["live_cell"]),
+    }
+
+
+def build_next_frontier_optimize_pressure_synthesis() -> Dict[str, object]:
+    cohort = build_next_frontier_optimize_cohort_packet()
+    transfer = build_next_frontier_optimize_transfer_packet()
+    live_cell = build_next_frontier_optimize_live_experiment_cell()
+    return {
+        "synthesis_id": "optimize.next_frontier.pressure_synthesis.v1",
+        "evidence_sources": [
+            cohort["manifest"].manifest_id,
+            transfer["manifest"].manifest_id,
+            live_cell["live_cell"]["cell_id"],
+        ],
+        "repeated_shape_gap_detected": False,
+        "recommended_outcome": "keep_optimize_frozen",
+        "next_frontier_ready": "frontier_c_rl_adapter_use",
+        "pain_summary": [
+            "cohort packet stayed reporting-local",
+            "transfer packet stayed helper-local",
+            "live cell stayed operator-local",
+        ],
+        "metadata": {"phase": "next_frontier_b"},
+    }
+
+
+def build_next_frontier_optimize_pressure_synthesis_payload() -> Dict[str, object]:
+    example = build_next_frontier_optimize_pressure_synthesis()
+    return {
+        "synthesis_id": example["synthesis_id"],
+        "evidence_sources": list(example["evidence_sources"]),
+        "repeated_shape_gap_detected": example["repeated_shape_gap_detected"],
+        "recommended_outcome": example["recommended_outcome"],
+        "next_frontier_ready": example["next_frontier_ready"],
+        "pain_summary": list(example["pain_summary"]),
+        "metadata": dict(example["metadata"]),
+    }
+
+
 def build_staged_backend_comparison_example() -> Dict[str, object]:
     """Build a fixed-methodology V2 staged-vs-reflective backend comparison across the three live families."""
 
@@ -9889,4 +10270,497 @@ def build_backend_comparison_example_payload() -> Dict[str, object]:
         "reflective_benchmark_runs": [item.to_dict() for item in example["reflective_benchmark_runs"]],
         "greedy_benchmark_runs": [item.to_dict() for item in example["greedy_benchmark_runs"]],
         "backend_comparison": example["backend_comparison"].to_dict(),
+    }
+
+
+def build_next_frontier_optimize_second_cohort_packet() -> Dict[str, object]:
+    """Build a second bounded optimize cohort packet on downstream-consumer readiness."""
+
+    manifest = BenchmarkRunManifest(
+        manifest_id="optimize.next_frontier.cohort.downstream_consumer_readiness.v1",
+        benchmark_kind="dag_packet_downstream_consumer_readiness",
+        target_id="target.next_frontier.optimize.downstream_consumer_selection",
+        dataset_id="dataset.next_frontier.downstream_consumer_readiness.v1",
+        dataset_version="2026-04-08.v1",
+        baseline_candidate_id="packet.search.replication_v1.moa_layered",
+        environment_domain="synthetic_replay_audit",
+        evaluator_stack=["adapter_readiness_checker", "replay_parity_checker", "bounded_compute_checker"],
+        comparison_protocol="paired_downstream_consumer_compare.v1",
+        splits=[
+            BenchmarkSplit(
+                split_name="train",
+                sample_ids=["sample.consumer.train.moa", "sample.consumer.train.codetree"],
+                visibility="mutation_visible",
+            ),
+            BenchmarkSplit(
+                split_name="validation",
+                sample_ids=["sample.consumer.validation.follow_on"],
+                visibility="comparison_visible",
+            ),
+            BenchmarkSplit(
+                split_name="hold",
+                sample_ids=["sample.consumer.hold.adapter_mix"],
+                visibility="hidden_hold",
+            ),
+        ],
+        bucket_tags={
+            "sample.consumer.train.moa": ["layered_fan_in", "adapter_pack_shape"],
+            "sample.consumer.train.codetree": ["critic_feedback", "verifier_readiness"],
+            "sample.consumer.validation.follow_on": ["downstream_consumer_selection"],
+            "sample.consumer.hold.adapter_mix": ["mixed_consumer_pressure"],
+        },
+        stochasticity_class="deterministic",
+        rerun_policy={"max_trials": 1, "model_policy": "gpt-5.4-mini", "budget_mode": "bounded_consumer_compare"},
+        contamination_notes=["consumer expectations remain bounded and packet-local"],
+        promotion_relevance={"kind": "study_selection_only", "public_artifact_additions_required": False},
+        artifact_refs=[
+            ArtifactRef(
+                ref="docs_tmp/DAG/replication_v1/DAG_FINAL_TRANCHE_SYNTHESIS_V1.md",
+                media_type="text/markdown",
+            )
+        ],
+        metadata={"phase": "next_frontier_b", "workload_family": "downstream_consumer_readiness"},
+    )
+    comparison = build_paired_candidate_comparison(
+        manifest,
+        comparison_id="comparison.next_frontier.cohort.downstream_consumer_readiness.v1",
+        parent_candidate_id="packet.search.replication_v1.moa_layered",
+        child_candidate_id="packet.search.replication_v1.codetree_patch",
+        outcome="win",
+        compared_sample_ids=[
+            "sample.consumer.train.moa",
+            "sample.consumer.train.codetree",
+            "sample.consumer.validation.follow_on",
+            "sample.consumer.hold.adapter_mix",
+        ],
+        held_out_sample_ids=["sample.consumer.hold.adapter_mix"],
+        trial_count=1,
+        rationale="CodeTree is a stronger downstream-consumer source than MoA once verifier and replay readiness are weighted explicitly.",
+        metric_deltas={"adapter_readiness": 0.11, "replay_stability": 0.07, "compute_efficiency": -0.03},
+        better_candidate_id="packet.search.replication_v1.codetree_patch",
+        metadata={"claim_width": "cohort_only", "bounded_budget": True},
+    )
+    evaluation_suite = EvaluationSuiteManifest(
+        suite_id="evalsuite.next_frontier.optimize.second_cohort.v1",
+        suite_kind="bounded_downstream_consumer_compare",
+        evaluator_stack=["adapter_readiness_checker", "replay_parity_checker", "bounded_compute_checker"],
+        split_visibility={"train": "mutation_visible", "validation": "comparison_visible", "hold": "hidden_hold"},
+        stochasticity_class="deterministic",
+        rerun_policy={"max_trials": 1, "escalation_policy": "disabled"},
+        capture_requirements=["consumer_readiness_alignment", "replay_signal_integrity", "budget_envelope_adherence"],
+        signal_channels={
+            "adapter_readiness": {"source_kind": "consumer_probe"},
+            "replay_stability": {"source_kind": "parity_view"},
+            "compute": {"source_kind": "ledger"},
+        },
+        adjudication_requirements={"requires_hidden_hold_review": True, "budget_mode": "bounded_consumer_compare"},
+        comparison_protocol_defaults={"protocol_id": manifest.comparison_protocol, "minimum_trial_count": 1},
+        artifact_requirements=["consumer_compare_json", "parity_summary_json"],
+        metadata={"phase": "next_frontier_b"},
+    )
+    objective_suite = ObjectiveSuiteManifest(
+        suite_id="objsuite.next_frontier.optimize.second_cohort.v1",
+        evaluation_suite_id=evaluation_suite.suite_id,
+        objective_channels={
+            "adapter_readiness": {"direction": "maximize"},
+            "replay_stability": {"direction": "maximize"},
+            "compute_efficiency": {"direction": "maximize"},
+        },
+        penalties={"consumer_confound_risk": {"direction": "minimize"}},
+        aggregation_rules={"adapter_weight": 0.5, "replay_weight": 0.3, "compute_weight": 0.2},
+        uncertainty_policy={"requires_explicit_hold_review": True},
+        blocked_channel_annotations={},
+        channel_dependencies={"replay_stability": ["adapter_readiness"]},
+        frontier_dimensions=["adapter_readiness", "replay_stability", "compute_efficiency"],
+        promotion_annotations={"relevance": "study_selection_only"},
+        visibility_annotations={"hold": "judge_only"},
+        metadata={"phase": "next_frontier_b"},
+    )
+    objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreak.next_frontier.optimize.second_cohort.v1",
+        objective_suite_id=objective_suite.suite_id,
+        manifest_id=manifest.manifest_id,
+        candidate_id=comparison.child_candidate_id,
+        per_sample_components={
+            "sample.consumer.train.moa": {"adapter_readiness": 0.71, "replay_stability": 0.74, "compute_efficiency": 0.76},
+            "sample.consumer.train.codetree": {"adapter_readiness": 0.84, "replay_stability": 0.82, "compute_efficiency": 0.72},
+            "sample.consumer.validation.follow_on": {
+                "adapter_readiness": 0.81,
+                "replay_stability": 0.8,
+                "compute_efficiency": 0.73,
+            },
+        },
+        per_bucket_components={
+            "consumer_shape": {"adapter_readiness": 0.82, "replay_stability": 0.81},
+            "cost": {"compute_efficiency": 0.73},
+        },
+        aggregate_objectives={"adapter_readiness": 0.82, "replay_stability": 0.8, "compute_efficiency": 0.73},
+        uncertainty_summary={"hidden_hold_pending": True},
+        blocked_components={},
+        signal_status={"consumer_probe": {"status": "present"}},
+        slice_status={"consumer_compare": {"status": "complete"}},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/next_frontier/downstream_consumer_compare_summary.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={"phase": "next_frontier_b"},
+    )
+    return {
+        "manifest": manifest,
+        "evaluation_suite": evaluation_suite,
+        "objective_suite": objective_suite,
+        "comparison_result": comparison,
+        "objective_breakdown_result": objective_breakdown,
+        "study_note": {
+            "workload": "downstream_consumer_readiness",
+            "decision_signal": "codetree_preferred_for_downstream_consumer_start",
+            "pain_classification": "evaluator_and_reporting_only",
+        },
+    }
+
+
+def build_next_frontier_optimize_second_cohort_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_optimize_second_cohort_packet()
+    return {
+        "manifest": example["manifest"].to_dict(),
+        "evaluation_suite": example["evaluation_suite"].to_dict(),
+        "objective_suite": example["objective_suite"].to_dict(),
+        "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
+        "study_note": dict(example["study_note"]),
+    }
+
+
+def build_next_frontier_optimize_second_transfer_packet() -> Dict[str, object]:
+    """Build a second bounded optimize transfer packet using a real selection prior."""
+
+    second_cohort = build_next_frontier_optimize_second_cohort_packet()
+    manifest = BenchmarkRunManifest(
+        manifest_id="optimize.next_frontier.transfer.consumer_selection_prior.v1",
+        benchmark_kind="dag_packet_consumer_follow_on",
+        target_id="target.next_frontier.optimize.consumer_follow_on",
+        dataset_id="dataset.next_frontier.consumer_follow_on.v1",
+        dataset_version="2026-04-08.v1",
+        baseline_candidate_id="packet.search.replication_v1.tot_game24",
+        environment_domain="synthetic_replay_audit",
+        evaluator_stack=["selection_prior_checker", "bounded_compute_checker", "consumer_review_judge"],
+        comparison_protocol="paired_consumer_follow_on_compare.v1",
+        splits=[
+            BenchmarkSplit(
+                split_name="train",
+                sample_ids=["sample.consumer_transfer.train.codetree"],
+                visibility="mutation_visible",
+            ),
+            BenchmarkSplit(
+                split_name="validation",
+                sample_ids=["sample.consumer_transfer.validation.follow_on"],
+                visibility="comparison_visible",
+            ),
+            BenchmarkSplit(
+                split_name="hold",
+                sample_ids=["sample.consumer_transfer.hold.cross_consumer"],
+                visibility="hidden_hold",
+            ),
+        ],
+        stochasticity_class="deterministic",
+        rerun_policy={"max_trials": 1, "model_policy": "gpt-5.4-mini", "transfer_enabled": True},
+        contamination_notes=["selection prior remains bounded to downstream-consumer start policy"],
+        metadata={"phase": "next_frontier_b", "workload_family": "consumer_follow_on"},
+    )
+    transfer_slice = TransferSliceManifest(
+        slice_id="slice.next_frontier.transfer.consumer_selection_prior.v1",
+        slice_kind="repo_family",
+        selector={
+            "source_live_cell": "optimize.next_frontier.live_cell.dag_packets.v1",
+            "selection_prior": "prefer_codetree_for_downstream_consumers",
+        },
+        promotion_role="claim_supporting",
+        visibility="comparison_visible",
+        metadata={"phase": "next_frontier_b"},
+    )
+    cohort_manifest = TransferCohortManifest(
+        cohort_id="cohort.next_frontier.optimize.consumer_selection_prior.v1",
+        cohort_kind="bounded_packet_family_transfer",
+        member_slice_ids=[transfer_slice.slice_id],
+        claim_scope={"source": "first_live_cell_winner", "target": "second_loop_consumer_follow_on", "max_family_count": 1},
+        coverage_policy={"requires_hidden_hold": True, "claim_tiers": ["package_local", "transfer_supported"]},
+        metadata={"phase": "next_frontier_b"},
+    )
+    comparison = build_paired_candidate_comparison(
+        manifest,
+        comparison_id="comparison.next_frontier.transfer.consumer_selection_prior.v1",
+        parent_candidate_id="packet.search.replication_v1.tot_game24",
+        child_candidate_id="packet.search.replication_v1.codetree_patch",
+        outcome="win",
+        compared_sample_ids=[
+            "sample.consumer_transfer.train.codetree",
+            "sample.consumer_transfer.validation.follow_on",
+            "sample.consumer_transfer.hold.cross_consumer",
+        ],
+        held_out_sample_ids=["sample.consumer_transfer.hold.cross_consumer"],
+        trial_count=1,
+        rationale="Using the first live-cell winner as a start prior improves the second consumer-focused follow-on packet.",
+        metric_deltas={"selection_prior_gain": 0.09, "claim_honesty": 0.05, "compute_efficiency": -0.01},
+        better_candidate_id="packet.search.replication_v1.codetree_patch",
+        metadata={"transfer_enabled": True, "selection_prior": "codetree_first"},
+    )
+    objective_breakdown = ObjectiveBreakdownResult(
+        result_id="objbreak.next_frontier.optimize.second_transfer.v1",
+        objective_suite_id="objsuite.next_frontier.optimize.second_transfer.v1",
+        manifest_id=manifest.manifest_id,
+        candidate_id=comparison.child_candidate_id,
+        per_sample_components={
+            "sample.consumer_transfer.train.codetree": {"selection_prior_gain": 0.08, "claim_honesty": 0.84},
+            "sample.consumer_transfer.validation.follow_on": {"selection_prior_gain": 0.09, "claim_honesty": 0.86},
+        },
+        per_bucket_components={"consumer_follow_on": {"selection_prior_gain": 0.085, "claim_honesty": 0.85}},
+        aggregate_objectives={"selection_prior_gain": 0.085, "claim_honesty": 0.85},
+        uncertainty_summary={"hidden_hold_pending": True},
+        blocked_components={},
+        signal_status={"selection_prior": {"status": "supported"}},
+        slice_status={"consumer_follow_on": {"status": "complete"}},
+        artifact_refs=[
+            ArtifactRef(
+                ref="artifacts/optimization/next_frontier/consumer_selection_prior_summary.json",
+                media_type="application/json",
+            )
+        ],
+        metadata={"phase": "next_frontier_b"},
+    )
+    evidence_summary = PromotionEvidenceSummary(
+        summary_id="evidence_summary.next_frontier.second_transfer.v1",
+        candidate_id=comparison.child_candidate_id,
+        comparison_ids=[comparison.comparison_id],
+        manifest_ids=[manifest.manifest_id],
+        held_out_sample_ids=["sample.consumer_transfer.hold.cross_consumer"],
+        evaluation_suite_ids=[second_cohort["evaluation_suite"].suite_id],
+        objective_suite_ids=[second_cohort["objective_suite"].suite_id],
+        objective_breakdown_result_ids=[objective_breakdown.result_id],
+        transfer_slice_ids=[transfer_slice.slice_id],
+        transfer_slices=[transfer_slice],
+        transfer_cohort_ids=[cohort_manifest.cohort_id],
+        transfer_cohorts=[cohort_manifest],
+        transfer_cohort_status={cohort_manifest.cohort_id: {"status": "transfer_supported"}},
+        claim_tier="transfer_supported",
+        transfer_slice_status={transfer_slice.slice_id: {"status": "supported"}},
+        model_tier_audit={"default_model": "gpt-5.4-mini", "mini_escalation_required": False},
+        attribution_summary={"source_signal": "first_live_cell_winner", "target_follow_on": "consumer_selection_prior"},
+        objective_breakdown_status="complete",
+        review_required=False,
+        metadata={"phase": "next_frontier_b"},
+    )
+    return {
+        "source_cohort_packet": second_cohort,
+        "manifest": manifest,
+        "transfer_slice": transfer_slice,
+        "transfer_cohort": cohort_manifest,
+        "comparison_result": comparison,
+        "objective_breakdown_result": objective_breakdown,
+        "promotion_summary": evidence_summary,
+        "study_note": {
+            "workload": "consumer_selection_prior_follow_on",
+            "decision_signal": "codetree_prior_helped_second_consumer_loop",
+            "pain_classification": "helper_level_only",
+        },
+    }
+
+
+def build_next_frontier_optimize_second_transfer_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_optimize_second_transfer_packet()
+    return {
+        "manifest": example["manifest"].to_dict(),
+        "transfer_slice": example["transfer_slice"].to_dict(),
+        "transfer_cohort": example["transfer_cohort"].to_dict(),
+        "comparison_result": example["comparison_result"].to_dict(),
+        "objective_breakdown_result": example["objective_breakdown_result"].to_dict(),
+        "promotion_summary": example["promotion_summary"].to_dict(),
+        "study_note": dict(example["study_note"]),
+    }
+
+
+def build_next_frontier_optimize_second_live_experiment_cell() -> Dict[str, object]:
+    """Build a second bounded live optimize cell over downstream-consumer selection."""
+
+    second_cohort = build_next_frontier_optimize_second_cohort_packet()
+    second_transfer = build_next_frontier_optimize_second_transfer_packet()
+    live_cell = {
+        "cell_id": "optimize.next_frontier.live_cell.downstream_consumers.v2",
+        "cell_kind": "bounded_live_consumer_selection",
+        "status": "complete",
+        "study_objective": "choose the best downstream-consumer start packet under consumer-readiness and replay constraints",
+        "budget_envelope": {
+            "max_llm_calls": 18,
+            "max_prompt_tokens": 1800,
+            "max_completion_tokens": 700,
+            "max_evaluator_calls": 5,
+            "decision_budget": 1,
+        },
+        "entry_criteria": [
+            "packet has bounded consumer-readiness evaluation",
+            "packet has explicit replay signal",
+            "packet has explicit baseline identity",
+        ],
+        "stop_criteria": [
+            "winner is stable under the bounded consumer stack",
+            "budget envelope reached",
+            "consumer confound status becomes unclear",
+        ],
+        "admitted_packets": [
+            "packet.search.replication_v1.moa_layered",
+            "packet.search.replication_v1.codetree_patch",
+            "packet.search.replication_v1.tot_game24",
+        ],
+        "winner": "packet.search.replication_v1.codetree_patch",
+        "next_action": "open Frontier D composition using CodeTree as the first cross-system source packet",
+        "pressure_classification": "optimize_surface_still_helper_local",
+        "metadata": {
+            "phase": "next_frontier_b",
+            "second_cohort_manifest_id": second_cohort["manifest"].manifest_id,
+            "second_transfer_manifest_id": second_transfer["manifest"].manifest_id,
+        },
+    }
+    return {
+        "second_cohort_packet": second_cohort,
+        "second_transfer_packet": second_transfer,
+        "live_cell": live_cell,
+    }
+
+
+def build_next_frontier_optimize_second_live_experiment_cell_payload() -> Dict[str, object]:
+    example = build_next_frontier_optimize_second_live_experiment_cell()
+    return {
+        "second_cohort_packet": build_next_frontier_optimize_second_cohort_packet_payload(),
+        "second_transfer_packet": build_next_frontier_optimize_second_transfer_packet_payload(),
+        "live_cell": dict(example["live_cell"]),
+    }
+
+
+def build_next_frontier_optimize_tranche_synthesis_v2() -> Dict[str, object]:
+    first_cohort = build_next_frontier_optimize_cohort_packet()
+    first_transfer = build_next_frontier_optimize_transfer_packet()
+    first_live_cell = build_next_frontier_optimize_live_experiment_cell()
+    second_cohort = build_next_frontier_optimize_second_cohort_packet()
+    second_transfer = build_next_frontier_optimize_second_transfer_packet()
+    second_live_cell = build_next_frontier_optimize_second_live_experiment_cell()
+    return {
+        "synthesis_id": "optimize.next_frontier.tranche_synthesis.v2",
+        "evidence_sources": [
+            first_cohort["manifest"].manifest_id,
+            first_transfer["manifest"].manifest_id,
+            first_live_cell["live_cell"]["cell_id"],
+            second_cohort["manifest"].manifest_id,
+            second_transfer["manifest"].manifest_id,
+            second_live_cell["live_cell"]["cell_id"],
+        ],
+        "repeated_shape_gap_detected": False,
+        "recommended_outcome": "keep_optimize_frozen",
+        "next_frontier_ready": "frontier_d_cross_system_composition",
+        "pain_summary": [
+            first_cohort["study_note"]["pain_classification"],
+            first_transfer["study_note"]["pain_classification"],
+            second_cohort["study_note"]["pain_classification"],
+            second_transfer["study_note"]["pain_classification"],
+        ],
+        "metadata": {"phase": "next_frontier_b", "loop_count": 2},
+    }
+
+
+def build_next_frontier_optimize_tranche_synthesis_v2_payload() -> Dict[str, object]:
+    example = build_next_frontier_optimize_tranche_synthesis_v2()
+    return {
+        "synthesis_id": example["synthesis_id"],
+        "evidence_sources": list(example["evidence_sources"]),
+        "repeated_shape_gap_detected": example["repeated_shape_gap_detected"],
+        "recommended_outcome": example["recommended_outcome"],
+        "next_frontier_ready": example["next_frontier_ready"],
+        "pain_summary": list(example["pain_summary"]),
+        "metadata": dict(example["metadata"]),
+    }
+
+
+def build_next_frontier_dag_to_optimize_composition_packet() -> Dict[str, object]:
+    """Build the first DAG-to-optimize composition packet."""
+
+    second_cohort = build_next_frontier_optimize_second_cohort_packet()
+    return {
+        "composition_id": "composition.next_frontier.dag_to_optimize.v1",
+        "source_packet_id": "packet.search.replication_v1.codetree_patch",
+        "source_tranche_note": "docs_tmp/DAG/replication_v1/DAG_FINAL_TRANCHE_SYNTHESIS_V1.md",
+        "consumer_manifest_id": second_cohort["manifest"].manifest_id,
+        "handoff_contract": {
+            "preserved_fields": [
+                "recipe_manifest_identity",
+                "fidelity_scorecard_identity",
+                "compute_ledger_identity",
+                "baseline_packet_identity",
+            ],
+            "claim_limit_honesty": True,
+            "helper_only_handoff": True,
+        },
+        "composition_report": {
+            "composed_cleanly": True,
+            "awkwardness_classification": "helper_level_only",
+            "repeated_shape_gap_detected": False,
+        },
+        "metadata": {"phase": "next_frontier_d"},
+    }
+
+
+def build_next_frontier_dag_to_optimize_composition_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_dag_to_optimize_composition_packet()
+    return {
+        "composition_id": example["composition_id"],
+        "source_packet_id": example["source_packet_id"],
+        "source_tranche_note": example["source_tranche_note"],
+        "consumer_manifest_id": example["consumer_manifest_id"],
+        "handoff_contract": dict(example["handoff_contract"]),
+        "composition_report": dict(example["composition_report"]),
+        "metadata": dict(example["metadata"]),
+    }
+
+
+def build_next_frontier_optimize_final_closeout_packet() -> Dict[str, object]:
+    """Build the final optimize closeout packet for the next-frontier program."""
+
+    synthesis = build_next_frontier_optimize_tranche_synthesis_v2()
+    return {
+        "closeout_id": "optimize.next_frontier.final_closeout.v1",
+        "source_synthesis_id": synthesis["synthesis_id"],
+        "reviewed_loops": 2,
+        "reviewed_packet_count": 6,
+        "final_decision": "keep_optimize_frozen",
+        "repeated_shape_gap_detected": False,
+        "reopen_criteria": [
+            "the same missing optimize shape repeats across more than one workload family",
+            "the same missing optimize shape repeats across more than one live-cell type",
+            "helper, evaluator, and reporting fixes are no longer sufficient",
+        ],
+        "proven_capabilities": [
+            "bounded cohort comparison",
+            "bounded transfer-style follow-on selection",
+            "bounded live experiment cells",
+        ],
+        "not_proven": [
+            "broad benchmark-scale generalization",
+            "need for a new optimize public ontology",
+        ],
+        "metadata": {"phase": "next_frontier_b", "loop_count": 2},
+    }
+
+
+def build_next_frontier_optimize_final_closeout_packet_payload() -> Dict[str, object]:
+    example = build_next_frontier_optimize_final_closeout_packet()
+    return {
+        "closeout_id": example["closeout_id"],
+        "source_synthesis_id": example["source_synthesis_id"],
+        "reviewed_loops": example["reviewed_loops"],
+        "reviewed_packet_count": example["reviewed_packet_count"],
+        "final_decision": example["final_decision"],
+        "repeated_shape_gap_detected": example["repeated_shape_gap_detected"],
+        "reopen_criteria": list(example["reopen_criteria"]),
+        "proven_capabilities": list(example["proven_capabilities"]),
+        "not_proven": list(example["not_proven"]),
+        "metadata": dict(example["metadata"]),
     }

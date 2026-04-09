@@ -44,6 +44,7 @@ from .schema import (
     SearchAssessment,
     SearchCandidate,
     SearchEvent,
+    SearchFrontier,
     SearchMessage,
     SearchRun,
     SearchWorkspaceSnapshot,
@@ -4406,4 +4407,1092 @@ def build_dag_v3_freeze_decision_gate_packet_payload() -> Dict[str, object]:
         "remaining_pressure": dict(example["remaining_pressure"]),
         "freeze_decision": dict(example["freeze_decision"]),
         "metadata": dict(example["metadata"]),
+    }
+
+
+def _build_got_sorting_seed_candidates(search_id: str, *, instance_class: str) -> List[SearchCandidate]:
+    base_scores = {
+        "mixed_signed_duplicates": (0.38, 0.44, 0.41, 0.36),
+        "heavy_duplicates": (0.42, 0.46, 0.43, 0.39),
+        "near_sorted_perturbation": (0.49, 0.52, 0.5, 0.47),
+    }
+    score_row = base_scores.get(instance_class, base_scores["mixed_signed_duplicates"])
+    return [
+        SearchCandidate(
+            candidate_id=f"{search_id}.cand.got.seed.{index}",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.0",
+            parent_ids=[],
+            round_index=0,
+            depth=0,
+            payload_ref=f"artifacts/search/{search_id}/got_seed_{index}.json",
+            score_vector={
+                "correctness_score": score,
+                "sortedness_score": max(0.0, score - 0.04),
+                "preservation_score": min(1.0, score + 0.08),
+            },
+            usage={"prompt_tokens": 28 + (index * 4), "completion_tokens": 16 + index},
+            status="seeded",
+            reasoning_summary_ref=f"artifacts/search/{search_id}/got_seed_{index}_summary.md",
+            metadata={"instance_class": instance_class, "seed_index": index, "node_kind": "proposal"},
+        )
+        for index, score in enumerate(score_row, start=1)
+    ]
+
+
+def build_dag_replication_v1_got_sorting_packet() -> Dict[str, object]:
+    search_id = "search.replication_v1.got_sorting"
+    seeds = _build_got_sorting_seed_candidates(search_id, instance_class="mixed_signed_duplicates")
+    candidate_a, candidate_b, candidate_c, candidate_d = seeds
+    merge_ab = SearchCandidate(
+        candidate_id=f"{search_id}.cand.merge.ab",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[candidate_a.candidate_id, candidate_b.candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/merge_ab.json",
+        score_vector={"correctness_score": 0.61, "sortedness_score": 0.66, "preservation_score": 0.92},
+        usage={"prompt_tokens": 51, "completion_tokens": 23},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/merge_ab.md",
+        metadata={"node_kind": "merged_sort_segment", "transform_type": "merge", "instance_class": "mixed_signed_duplicates"},
+    )
+    merge_cd = SearchCandidate(
+        candidate_id=f"{search_id}.cand.merge.cd",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[candidate_c.candidate_id, candidate_d.candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/merge_cd.json",
+        score_vector={"correctness_score": 0.59, "sortedness_score": 0.63, "preservation_score": 0.9},
+        usage={"prompt_tokens": 50, "completion_tokens": 22},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/merge_cd.md",
+        metadata={"node_kind": "merged_sort_segment", "transform_type": "merge", "instance_class": "mixed_signed_duplicates"},
+    )
+    final_candidate = SearchCandidate(
+        candidate_id=f"{search_id}.cand.final",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.2",
+        parent_ids=[merge_ab.candidate_id, merge_cd.candidate_id],
+        round_index=2,
+        depth=2,
+        payload_ref=f"artifacts/search/{search_id}/final_candidate.json",
+        score_vector={"correctness_score": 0.88, "sortedness_score": 0.95, "preservation_score": 0.99},
+        usage={"prompt_tokens": 64, "completion_tokens": 29},
+        status="selected",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/final_candidate.md",
+        metadata={"node_kind": "final_candidate", "transform_type": "merge", "instance_class": "mixed_signed_duplicates"},
+    )
+    refine_candidate = SearchCandidate(
+        candidate_id=f"{search_id}.cand.final.refine",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.2",
+        parent_ids=[final_candidate.candidate_id],
+        round_index=2,
+        depth=3,
+        payload_ref=f"artifacts/search/{search_id}/final_candidate_refine.json",
+        score_vector={"correctness_score": 0.91, "sortedness_score": 0.98, "preservation_score": 1.0},
+        usage={"prompt_tokens": 33, "completion_tokens": 14},
+        status="selected",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/final_candidate_refine.md",
+        metadata={"node_kind": "refined_segment", "transform_type": "refine", "instance_class": "mixed_signed_duplicates"},
+    )
+    events = [
+        SearchEvent(
+            event_id=f"{search_id}.event.split",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.0",
+            round_index=0,
+            operator_kind="expand",
+            input_candidate_ids=[item.candidate_id for item in seeds],
+            output_candidate_ids=[item.candidate_id for item in seeds],
+            metadata={"recipe": "got_sorting", "transform_type": "split", "instance_class": "mixed_signed_duplicates"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.merge.1",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="aggregate",
+            input_candidate_ids=[candidate_a.candidate_id, candidate_b.candidate_id, candidate_c.candidate_id, candidate_d.candidate_id],
+            output_candidate_ids=[merge_ab.candidate_id, merge_cd.candidate_id],
+            metadata={"recipe": "got_sorting", "transform_type": "merge_pairwise", "max_fan_in": 2},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.merge.2",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.2",
+            round_index=2,
+            operator_kind="aggregate",
+            input_candidate_ids=[merge_ab.candidate_id, merge_cd.candidate_id],
+            output_candidate_ids=[final_candidate.candidate_id],
+            metadata={"recipe": "got_sorting", "transform_type": "final_merge", "max_fan_in": 2},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.refine",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.2",
+            round_index=2,
+            operator_kind="verify",
+            input_candidate_ids=[final_candidate.candidate_id],
+            output_candidate_ids=[refine_candidate.candidate_id],
+            metadata={"recipe": "got_sorting", "transform_type": "refine", "bounded_refine_pass": 1},
+        ),
+    ]
+    frontiers = [
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.0",
+            search_id=search_id,
+            round_index=0,
+            candidate_ids=[item.candidate_id for item in seeds],
+            status="completed",
+        ),
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.1",
+            search_id=search_id,
+            round_index=1,
+            candidate_ids=[merge_ab.candidate_id, merge_cd.candidate_id],
+            status="completed",
+        ),
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.2",
+            search_id=search_id,
+            round_index=2,
+            candidate_ids=[final_candidate.candidate_id, refine_candidate.candidate_id],
+            status="completed",
+        ),
+    ]
+    run = SearchRun(
+        search_id=search_id,
+        recipe_kind="got_sorting_graph_packet",
+        candidates=[*seeds, merge_ab, merge_cd, final_candidate, refine_candidate],
+        frontiers=frontiers,
+        events=events,
+        messages=[],
+        selected_candidate_id=refine_candidate.candidate_id,
+        metadata={
+            "phase": "next_frontier_frontier_a",
+            "paper_key": "graph_of_thoughts",
+            "packet_id": "got_sorting_v1",
+            "task_class": "sorting",
+            "instance_class": "mixed_signed_duplicates",
+            "max_llm_calls": 16,
+            "target_peak_parallel_width": 4,
+            "target_total_nodes": 20,
+            "target_refine_steps": 1,
+        },
+    )
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_replication_v1.got.profile.v1",
+        paper_key="graph_of_thoughts",
+        paper_title="Graph of Thoughts: Solving Elaborate Problems with Large Language Models",
+        family_kind="graph_structured_reasoning",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="high_structural_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="got.sorting.64_number.slice.v1",
+        control_profile={
+            "task_class": "sorting",
+            "instance_class": "mixed_signed_duplicates",
+            "max_fan_in": 2,
+            "max_refine_steps": 1,
+            "budget_envelope": {"max_llm_calls": 16, "peak_parallel_width": 4, "max_nodes": 20},
+        },
+        baseline_ids=[
+            "direct_answer",
+            "cot",
+            "tot_budget_matched",
+            "got_no_refine",
+            "got_no_multi_parent_fusion",
+            "linear_reducer",
+        ],
+        metadata={"phase": "next_frontier_frontier_a", "packet_id": "got_sorting_v1", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_replication_v1.got.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="high_structural_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="pass",
+        compute_fidelity="bounded",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "sorting-oriented bounded packet only",
+            "replay_audit": "graph topology and lineage are reconstructable in the first synthetic packet",
+            "repeated_shape_watch": ["multi_parent_lineage", "graph_transform_provenance", "refine_loop_provenance"],
+        },
+        metadata={"phase": "next_frontier_frontier_a"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_replication_v1.got.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        entries=[
+            {"entry_id": "got.calls", "kind": "llm_calls", "label": "llm_calls", "quantity": 8, "unit": "calls"},
+            {"entry_id": "got.prompt_tokens", "kind": "prompt_tokens", "label": "prompt_tokens", "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "got.completion_tokens", "kind": "completion_tokens", "label": "completion_tokens", "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "got.peak_parallel_width", "kind": "peak_parallel_width", "label": "peak_parallel_width", "quantity": 4.0, "unit": "branches"},
+            {"entry_id": "got.nodes", "kind": "node_count", "label": "node_count", "quantity": float(len(run.candidates)), "unit": "nodes"},
+            {"entry_id": "got.refine_steps", "kind": "refine_steps", "label": "refine_steps", "quantity": 1.0, "unit": "steps"},
+        ],
+        normalization_rule="bounded_sorting_packet_matched",
+        metadata={"phase": "next_frontier_frontier_a"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_replication_v1.got.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="bounded_sorting_packet_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "next_frontier_frontier_a", "task_class": "sorting"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_replication_v1.got.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {
+                "deviation_id": "got.dev.01",
+                "severity": "medium",
+                "summary": "First packet is a bounded sorting-only slice rather than a broad GoT task-family reproduction.",
+            },
+            {
+                "deviation_id": "got.dev.02",
+                "severity": "low",
+                "summary": "First packet uses a fixed bounded split/merge/refine recipe to isolate topology and lineage pressure.",
+            },
+        ],
+        metadata={"phase": "next_frontier_frontier_a"},
+    )
+    replay_audit = {
+        "topology_reconstructable": True,
+        "merged_parentage_reconstructable": True,
+        "refine_parentage_reconstructable": True,
+        "shadow_state_required": False,
+    }
+    lineage_rows = [
+        {
+            "node_id": item.candidate_id,
+            "node_kind": item.metadata.get("node_kind", "proposal"),
+            "parent_node_ids": list(item.parent_ids),
+            "transform_type": item.metadata.get("transform_type", "seed"),
+            "is_selected": item.candidate_id == run.selected_candidate_id,
+        }
+        for item in run.candidates
+    ]
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "run": run,
+        "replay_audit": replay_audit,
+        "lineage_rows": lineage_rows,
+    }
+
+
+def build_dag_replication_v1_got_sorting_packet_payload() -> Dict[str, object]:
+    example = build_dag_replication_v1_got_sorting_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "run": example["run"].to_dict(),
+        "replay_audit": dict(example["replay_audit"]),
+        "lineage_rows": [dict(item) for item in example["lineage_rows"]],
+    }
+
+
+def build_dag_replication_v1_tot_game24_packet() -> Dict[str, object]:
+    search_id = "search.replication_v1.tot_game24"
+    seeds = [
+        SearchCandidate(
+            candidate_id=f"{search_id}.cand.seed.{index}",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.0",
+            parent_ids=[],
+            round_index=0,
+            depth=0,
+            payload_ref=f"artifacts/search/{search_id}/seed_{index}.json",
+            score_vector={"correctness_score": score, "frontier_rank_score": rank},
+            usage={"prompt_tokens": 24 + index, "completion_tokens": 14 + index},
+            status="seeded",
+            reasoning_summary_ref=f"artifacts/search/{search_id}/seed_{index}_summary.md",
+            metadata={"thought_kind": "initial_state", "game24_instance": "8,8,3,3", "seed_index": index},
+        )
+        for index, (score, rank) in enumerate(((0.31, 0.42), (0.37, 0.48), (0.34, 0.45)), start=1)
+    ]
+    expand_a = SearchCandidate(
+        candidate_id=f"{search_id}.cand.expand.a",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[seeds[1].candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/expand_a.json",
+        score_vector={"correctness_score": 0.56, "frontier_rank_score": 0.68},
+        usage={"prompt_tokens": 37, "completion_tokens": 19},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/expand_a.md",
+        metadata={"thought_kind": "expanded_state", "action": "expand"},
+    )
+    expand_b = SearchCandidate(
+        candidate_id=f"{search_id}.cand.expand.b",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[seeds[2].candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/expand_b.json",
+        score_vector={"correctness_score": 0.52, "frontier_rank_score": 0.61},
+        usage={"prompt_tokens": 36, "completion_tokens": 18},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/expand_b.md",
+        metadata={"thought_kind": "expanded_state", "action": "expand"},
+    )
+    final_candidate = SearchCandidate(
+        candidate_id=f"{search_id}.cand.final",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.2",
+        parent_ids=[expand_a.candidate_id],
+        round_index=2,
+        depth=2,
+        payload_ref=f"artifacts/search/{search_id}/final_candidate.json",
+        score_vector={"correctness_score": 0.87, "frontier_rank_score": 0.83},
+        usage={"prompt_tokens": 42, "completion_tokens": 16},
+        status="selected",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/final_candidate.md",
+        metadata={"thought_kind": "solution_state", "action": "select_final"},
+    )
+    events = [
+        SearchEvent(
+            event_id=f"{search_id}.event.expand",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="expand",
+            input_candidate_ids=[item.candidate_id for item in seeds],
+            output_candidate_ids=[expand_a.candidate_id, expand_b.candidate_id],
+            metadata={"recipe": "tot_game24", "frontier_policy": "expand_rank_prune"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.prune",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="discard",
+            input_candidate_ids=[expand_b.candidate_id],
+            output_candidate_ids=[],
+            metadata={"recipe": "tot_game24", "pruned_candidate_ids": [expand_b.candidate_id], "rationale": "lower frontier rank"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.final",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.2",
+            round_index=2,
+            operator_kind="select",
+            input_candidate_ids=[expand_a.candidate_id],
+            output_candidate_ids=[final_candidate.candidate_id],
+            metadata={"recipe": "tot_game24", "termination": "valid_24_expression"},
+        ),
+    ]
+    frontiers = [
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.0",
+            search_id=search_id,
+            round_index=0,
+            candidate_ids=[item.candidate_id for item in seeds],
+            status="completed",
+        ),
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.1",
+            search_id=search_id,
+            round_index=1,
+            candidate_ids=[expand_a.candidate_id, expand_b.candidate_id],
+            status="completed",
+        ),
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.2",
+            search_id=search_id,
+            round_index=2,
+            candidate_ids=[final_candidate.candidate_id],
+            status="completed",
+        ),
+    ]
+    run = SearchRun(
+        search_id=search_id,
+        recipe_kind="tot_game24_frontier_packet",
+        candidates=[*seeds, expand_a, expand_b, final_candidate],
+        frontiers=frontiers,
+        events=events,
+        messages=[],
+        selected_candidate_id=final_candidate.candidate_id,
+        metadata={
+            "phase": "next_frontier_frontier_a",
+            "paper_key": "tree_of_thoughts",
+            "packet_id": "tot_game24_v1",
+            "task_class": "game_of_24",
+            "frontier_policy": "expand_rank_prune",
+            "max_llm_calls": 12,
+            "target_peak_parallel_width": 3,
+        },
+    )
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_replication_v1.tot.profile.v1",
+        paper_key="tree_of_thoughts",
+        paper_title="Tree of Thoughts: Deliberate Problem Solving with Large Language Models",
+        family_kind="adaptive_frontier_search",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="high_structural_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="tot.game24.slice.v1",
+        control_profile={
+            "task_class": "game_of_24",
+            "frontier_policy": "expand_rank_prune",
+            "reopen_policy": "disabled_in_first_packet",
+            "evaluator_control": "required",
+        },
+        baseline_ids=[
+            "cot",
+            "self_consistency",
+            "reranking",
+            "fixed_width_no_backtracking",
+            "no_self_eval",
+            "discriminator_control",
+        ],
+        metadata={"phase": "next_frontier_frontier_a", "packet_id": "tot_game24_v1", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_replication_v1.tot.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="high_structural_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="controlled",
+        compute_fidelity="bounded",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "game-of-24 packet only",
+            "frontier_replay": "frontier expansion and prune events are reconstructable",
+            "backtrack_scope": "reopen disabled in first packet to isolate frontier provenance before adding backtracking",
+        },
+        metadata={"phase": "next_frontier_frontier_a"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_replication_v1.tot.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        entries=[
+            {"entry_id": "tot.calls", "kind": "llm_calls", "label": "llm_calls", "quantity": 6, "unit": "calls"},
+            {"entry_id": "tot.prompt_tokens", "kind": "prompt_tokens", "label": "prompt_tokens", "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "tot.completion_tokens", "kind": "completion_tokens", "label": "completion_tokens", "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "tot.peak_parallel_width", "kind": "peak_parallel_width", "label": "peak_parallel_width", "quantity": 3.0, "unit": "branches"},
+            {"entry_id": "tot.pruned_nodes", "kind": "pruned_nodes", "label": "pruned_nodes", "quantity": 1.0, "unit": "nodes"},
+        ],
+        normalization_rule="game24_frontier_packet_matched",
+        metadata={"phase": "next_frontier_frontier_a"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_replication_v1.tot.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="game24_frontier_packet_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "next_frontier_frontier_a", "task_class": "game_of_24"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_replication_v1.tot.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {
+                "deviation_id": "tot.dev.01",
+                "severity": "medium",
+                "summary": "First packet narrows ToT to a Game-of-24 slice with explicit evaluator controls instead of attempting broad task-family coverage.",
+            },
+            {
+                "deviation_id": "tot.dev.02",
+                "severity": "low",
+                "summary": "First packet disables explicit reopen behavior to isolate frontier ranking and pruning before adding richer backtracking.",
+            },
+        ],
+        metadata={"phase": "next_frontier_frontier_a"},
+    )
+    frontier_audit = {
+        "frontier_policy_reconstructable": True,
+        "prune_history_reconstructable": True,
+        "reopen_required": False,
+        "evaluator_confound_controlled": True,
+    }
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "run": run,
+        "frontier_audit": frontier_audit,
+    }
+
+
+def build_dag_replication_v1_tot_game24_packet_payload() -> Dict[str, object]:
+    example = build_dag_replication_v1_tot_game24_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "run": example["run"].to_dict(),
+        "frontier_audit": dict(example["frontier_audit"]),
+    }
+
+
+def build_dag_replication_v1_moa_layered_packet() -> Dict[str, object]:
+    search_id = "search.replication_v1.moa_layered"
+    seeds = [
+        SearchCandidate(
+            candidate_id=f"{search_id}.cand.layer0.{index}",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.0",
+            parent_ids=[],
+            round_index=0,
+            depth=0,
+            payload_ref=f"artifacts/search/{search_id}/layer0_{index}.json",
+            score_vector={"correctness_score": score, "judge_rank_score": judge},
+            usage={"prompt_tokens": 34 + index, "completion_tokens": 21 + index},
+            status="seeded",
+            reasoning_summary_ref=f"artifacts/search/{search_id}/layer0_{index}.md",
+            metadata={
+                "layer_index": 0,
+                "roster_role": role,
+                "model_family": model,
+                "task_slice": "bounded_multihop_qa",
+            },
+        )
+        for index, (role, model, score, judge) in enumerate(
+            (
+                ("planner", "gpt_5_4_mini", 0.48, 0.55),
+                ("retriever", "claude_sonnet", 0.52, 0.58),
+                ("synthesizer", "gemini_flash", 0.5, 0.57),
+            ),
+            start=1,
+        )
+    ]
+    layer1_a = SearchCandidate(
+        candidate_id=f"{search_id}.cand.layer1.a",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[item.candidate_id for item in seeds],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/layer1_a.json",
+        score_vector={"correctness_score": 0.66, "judge_rank_score": 0.7},
+        usage={"prompt_tokens": 58, "completion_tokens": 25},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/layer1_a.md",
+        metadata={"layer_index": 1, "aggregation_style": "cross_layer_fan_in", "roster_role": "aggregator_a"},
+    )
+    layer1_b = SearchCandidate(
+        candidate_id=f"{search_id}.cand.layer1.b",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[item.candidate_id for item in seeds],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/layer1_b.json",
+        score_vector={"correctness_score": 0.68, "judge_rank_score": 0.72},
+        usage={"prompt_tokens": 60, "completion_tokens": 24},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/layer1_b.md",
+        metadata={"layer_index": 1, "aggregation_style": "cross_layer_fan_in", "roster_role": "aggregator_b"},
+    )
+    final_candidate = SearchCandidate(
+        candidate_id=f"{search_id}.cand.final",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.2",
+        parent_ids=[layer1_a.candidate_id, layer1_b.candidate_id],
+        round_index=2,
+        depth=2,
+        payload_ref=f"artifacts/search/{search_id}/final.json",
+        score_vector={"correctness_score": 0.81, "judge_rank_score": 0.84},
+        usage={"prompt_tokens": 44, "completion_tokens": 18},
+        status="selected",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/final.md",
+        metadata={"layer_index": 2, "roster_role": "final_synthesizer", "aggregation_style": "judge_synthesis"},
+    )
+    events = [
+        SearchEvent(
+            event_id=f"{search_id}.event.layer1",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="aggregate",
+            input_candidate_ids=[item.candidate_id for item in seeds],
+            output_candidate_ids=[layer1_a.candidate_id, layer1_b.candidate_id],
+            metadata={"recipe": "moa_layered", "fan_in_size": len(seeds), "layer_transition": "0_to_1"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.final",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.2",
+            round_index=2,
+            operator_kind="select",
+            input_candidate_ids=[layer1_a.candidate_id, layer1_b.candidate_id],
+            output_candidate_ids=[final_candidate.candidate_id],
+            metadata={"recipe": "moa_layered", "layer_transition": "1_to_2", "judge_required": True},
+        ),
+    ]
+    frontiers = [
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.0",
+            search_id=search_id,
+            round_index=0,
+            candidate_ids=[item.candidate_id for item in seeds],
+            status="completed",
+        ),
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.1",
+            search_id=search_id,
+            round_index=1,
+            candidate_ids=[layer1_a.candidate_id, layer1_b.candidate_id],
+            status="completed",
+        ),
+        SearchFrontier(
+            frontier_id=f"{search_id}.frontier.2",
+            search_id=search_id,
+            round_index=2,
+            candidate_ids=[final_candidate.candidate_id],
+            status="completed",
+        ),
+    ]
+    run = SearchRun(
+        search_id=search_id,
+        recipe_kind="moa_layered_fan_in_packet",
+        candidates=[*seeds, layer1_a, layer1_b, final_candidate],
+        frontiers=frontiers,
+        events=events,
+        messages=[],
+        selected_candidate_id=final_candidate.candidate_id,
+        metadata={
+            "phase": "next_frontier_frontier_a",
+            "paper_key": "mixture_of_agents",
+            "packet_id": "moa_layered_v1",
+            "task_class": "bounded_multihop_qa",
+            "max_llm_calls": 10,
+            "target_peak_parallel_width": 3,
+            "layer_count": 3,
+        },
+    )
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_replication_v1.moa.profile.v1",
+        paper_key="mixture_of_agents",
+        paper_title="Mixture-of-Agents Enhances Large Language Model Capabilities",
+        family_kind="layered_fan_in_reasoning",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="medium_structural_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="moa.bounded_multihop_qa.slice.v1",
+        control_profile={
+            "task_class": "bounded_multihop_qa",
+            "layer_count": 3,
+            "agents_per_layer": [3, 2, 1],
+            "roster_policy": "heterogeneous",
+        },
+        baseline_ids=[
+            "best_single_model",
+            "ensemble_vote_judge",
+            "one_layer_moa",
+            "homogeneous_roster",
+            "sequential_summarization",
+        ],
+        metadata={"phase": "next_frontier_frontier_a", "packet_id": "moa_layered_v1", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_replication_v1.moa.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="medium_structural_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="bounded",
+        compute_fidelity="bounded",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "bounded layered-fan-in packet only",
+            "fan_in_replay": "cross-layer fan-in and final synthesis lineage are reconstructable",
+            "judge_limit": "benchmark and judge stack are medium-fidelity only in the first packet",
+        },
+        metadata={"phase": "next_frontier_frontier_a"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_replication_v1.moa.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        entries=[
+            {"entry_id": "moa.calls", "kind": "llm_calls", "label": "llm_calls", "quantity": 7, "unit": "calls"},
+            {"entry_id": "moa.prompt_tokens", "kind": "prompt_tokens", "label": "prompt_tokens", "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "moa.completion_tokens", "kind": "completion_tokens", "label": "completion_tokens", "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "moa.peak_parallel_width", "kind": "peak_parallel_width", "label": "peak_parallel_width", "quantity": 3.0, "unit": "branches"},
+            {"entry_id": "moa.layer_count", "kind": "layer_count", "label": "layer_count", "quantity": 3.0, "unit": "layers"},
+        ],
+        normalization_rule="bounded_moa_layered_packet_matched",
+        metadata={"phase": "next_frontier_frontier_a"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_replication_v1.moa.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="bounded_moa_layered_packet_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "next_frontier_frontier_a", "task_class": "bounded_multihop_qa"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_replication_v1.moa.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {
+                "deviation_id": "moa.dev.01",
+                "severity": "medium",
+                "summary": "First packet is a bounded layered-fan-in slice rather than a benchmark-scale judged replication.",
+            },
+            {
+                "deviation_id": "moa.dev.02",
+                "severity": "low",
+                "summary": "The first packet fixes a small heterogeneous roster to isolate layered provenance and fan-in geometry.",
+            },
+        ],
+        metadata={"phase": "next_frontier_frontier_a"},
+    )
+    layer_roster_manifest = {
+        "layer_count": 3,
+        "agents_per_layer": [3, 2, 1],
+        "homogeneous_or_heterogeneous": "heterogeneous",
+        "model_roster": ["gpt_5_4_mini", "claude_sonnet", "gemini_flash"],
+        "final_synthesis_stage": "layer_2_final_synthesizer",
+    }
+    cross_layer_fan_in_packet = {
+        "per_layer_fan_in_size": {"layer_1": 3, "layer_2": 2},
+        "context_budget_assumption": "bounded_summary_only",
+        "contribution_tracking_policy": "candidate_parent_ids_plus_layer_role_metadata",
+        "layer_transition_notes": ["layer_0_to_1 all-to-all fan-in", "layer_1_to_2 judge-backed final synthesis"],
+    }
+    judge_benchmark_note = {
+        "judge_stack": "bounded single-pass judge",
+        "benchmark_scope": "bounded_multihop_qa",
+        "benchmark_limit": "first packet does not claim full benchmark equivalence",
+    }
+    fan_in_audit = {
+        "layered_fan_in_reconstructable": True,
+        "roster_provenance_reconstructable": True,
+        "shared_runtime_gap_detected": False,
+    }
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "run": run,
+        "layer_roster_manifest": layer_roster_manifest,
+        "cross_layer_fan_in_packet": cross_layer_fan_in_packet,
+        "judge_benchmark_note": judge_benchmark_note,
+        "fan_in_audit": fan_in_audit,
+    }
+
+
+def build_dag_replication_v1_moa_layered_packet_payload() -> Dict[str, object]:
+    example = build_dag_replication_v1_moa_layered_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "run": example["run"].to_dict(),
+        "layer_roster_manifest": dict(example["layer_roster_manifest"]),
+        "cross_layer_fan_in_packet": dict(example["cross_layer_fan_in_packet"]),
+        "judge_benchmark_note": dict(example["judge_benchmark_note"]),
+        "fan_in_audit": dict(example["fan_in_audit"]),
+    }
+
+
+def build_dag_replication_v1_codetree_packet() -> Dict[str, object]:
+    search_id = "search.replication_v1.codetree_patch"
+    seed = SearchCandidate(
+        candidate_id=f"{search_id}.cand.strategy",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.0",
+        parent_ids=[],
+        round_index=0,
+        depth=0,
+        payload_ref=f"artifacts/search/{search_id}/strategy.json",
+        score_vector={"correctness_score": 0.42, "repairability_score": 0.56},
+        usage={"prompt_tokens": 31, "completion_tokens": 18},
+        status="seeded",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/strategy.md",
+        metadata={"stage_role": "thinker", "benchmark_slice": "toy_patch_pair"},
+    )
+    solver = SearchCandidate(
+        candidate_id=f"{search_id}.cand.solver",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.1",
+        parent_ids=[seed.candidate_id],
+        round_index=1,
+        depth=1,
+        payload_ref=f"artifacts/search/{search_id}/solver.json",
+        score_vector={"correctness_score": 0.58, "repairability_score": 0.62},
+        usage={"prompt_tokens": 48, "completion_tokens": 26},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/solver.md",
+        metadata={"stage_role": "solver", "tree_action": "expand_patch"},
+    )
+    critic = SearchCandidate(
+        candidate_id=f"{search_id}.cand.critic",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.2",
+        parent_ids=[solver.candidate_id],
+        round_index=2,
+        depth=2,
+        payload_ref=f"artifacts/search/{search_id}/critic.json",
+        score_vector={"correctness_score": 0.49, "repairability_score": 0.71},
+        usage={"prompt_tokens": 29, "completion_tokens": 17},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/critic.md",
+        metadata={"stage_role": "critic", "tree_action": "critique_patch"},
+    )
+    debugger = SearchCandidate(
+        candidate_id=f"{search_id}.cand.debugger",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.3",
+        parent_ids=[solver.candidate_id, critic.candidate_id],
+        round_index=3,
+        depth=3,
+        payload_ref=f"artifacts/search/{search_id}/debugger.json",
+        score_vector={"correctness_score": 0.78, "repairability_score": 0.83},
+        usage={"prompt_tokens": 44, "completion_tokens": 24},
+        status="active",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/debugger.md",
+        metadata={"stage_role": "debugger", "tree_action": "repair_after_feedback"},
+    )
+    final_candidate = SearchCandidate(
+        candidate_id=f"{search_id}.cand.final",
+        search_id=search_id,
+        frontier_id=f"{search_id}.frontier.4",
+        parent_ids=[debugger.candidate_id],
+        round_index=4,
+        depth=4,
+        payload_ref=f"artifacts/search/{search_id}/final.json",
+        score_vector={"correctness_score": 0.86, "repairability_score": 0.9},
+        usage={"prompt_tokens": 21, "completion_tokens": 11},
+        status="selected",
+        reasoning_summary_ref=f"artifacts/search/{search_id}/final.md",
+        metadata={"stage_role": "selector", "tree_action": "accept_patch"},
+    )
+    events = [
+        SearchEvent(
+            event_id=f"{search_id}.event.expand",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.1",
+            round_index=1,
+            operator_kind="expand",
+            input_candidate_ids=[seed.candidate_id],
+            output_candidate_ids=[solver.candidate_id],
+            metadata={"recipe": "codetree_patch", "stage_transition": "thinker_to_solver"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.verify",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.2",
+            round_index=2,
+            operator_kind="verify",
+            input_candidate_ids=[solver.candidate_id],
+            output_candidate_ids=[critic.candidate_id],
+            metadata={"recipe": "codetree_patch", "stage_transition": "solver_to_critic", "feedback_kind": "execution_plus_review"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.repair",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.3",
+            round_index=3,
+            operator_kind="execute",
+            input_candidate_ids=[solver.candidate_id, critic.candidate_id],
+            output_candidate_ids=[debugger.candidate_id],
+            metadata={"recipe": "codetree_patch", "stage_transition": "critic_to_debugger"},
+        ),
+        SearchEvent(
+            event_id=f"{search_id}.event.select",
+            search_id=search_id,
+            frontier_id=f"{search_id}.frontier.4",
+            round_index=4,
+            operator_kind="select",
+            input_candidate_ids=[debugger.candidate_id],
+            output_candidate_ids=[final_candidate.candidate_id],
+            metadata={"recipe": "codetree_patch", "termination": "all_visible_tests_pass"},
+        ),
+    ]
+    frontiers = [
+        SearchFrontier(frontier_id=f"{search_id}.frontier.0", search_id=search_id, round_index=0, candidate_ids=[seed.candidate_id], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.1", search_id=search_id, round_index=1, candidate_ids=[solver.candidate_id], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.2", search_id=search_id, round_index=2, candidate_ids=[critic.candidate_id], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.3", search_id=search_id, round_index=3, candidate_ids=[debugger.candidate_id], status="completed"),
+        SearchFrontier(frontier_id=f"{search_id}.frontier.4", search_id=search_id, round_index=4, candidate_ids=[final_candidate.candidate_id], status="completed"),
+    ]
+    run = SearchRun(
+        search_id=search_id,
+        recipe_kind="codetree_stage_patch_packet",
+        candidates=[seed, solver, critic, debugger, final_candidate],
+        frontiers=frontiers,
+        events=events,
+        messages=[],
+        selected_candidate_id=final_candidate.candidate_id,
+        metadata={
+            "phase": "next_frontier_frontier_a",
+            "paper_key": "codetree",
+            "packet_id": "codetree_patch_v1",
+            "task_class": "bounded_code_patch",
+            "max_llm_calls": 9,
+            "target_peak_parallel_width": 1,
+        },
+    )
+    recipe_manifest = PaperRecipeManifest(
+        manifest_id="dag_replication_v1.codetree.profile.v1",
+        paper_key="codetree",
+        paper_title="CodeTree",
+        family_kind="stage_heterogeneous_code_tree",
+        runtime_recipe_kind=run.recipe_kind,
+        fidelity_target="medium_structural_fidelity",
+        model_policy="gpt_5_4_mini_default",
+        benchmark_packet="codetree.toy_patch_pair.slice.v1",
+        control_profile={
+            "task_class": "bounded_code_patch",
+            "visible_hidden_test_policy": "visible_only_in_first_packet",
+            "execution_feedback": "required",
+            "critic_role": "explicit",
+        },
+        baseline_ids=[
+            "direct_single_shot_code",
+            "cot_code",
+            "iterative_self_debug",
+            "strategy_solver_pair",
+            "execution_only_critic",
+            "no_tree_iterative_refine",
+        ],
+        metadata={"phase": "next_frontier_frontier_a", "packet_id": "codetree_patch_v1", "paper_mode": False},
+    )
+    scorecard = build_default_fidelity_scorecard(
+        scorecard_id="dag_replication_v1.codetree.scorecard.v1",
+        paper_key=recipe_manifest.paper_key,
+        fidelity_label="medium_structural_fidelity",
+        structural_fidelity="pass",
+        evaluator_fidelity="bounded",
+        compute_fidelity="bounded",
+        training_aware_fidelity="inference_only_labeled",
+        notes={
+            "claim_limit": "bounded code-search-tree packet only",
+            "execution_feedback_scope": "visible tests only in first packet",
+            "critic_lineage": "critic and debugger actions are reconstructable from events and parent ids",
+        },
+        metadata={"phase": "next_frontier_frontier_a"},
+    )
+    compute_ledger = ComputeBudgetLedger(
+        ledger_id="dag_replication_v1.codetree.compute.v1",
+        paper_key=recipe_manifest.paper_key,
+        model_tier="gpt_5_4_mini",
+        entries=[
+            {"entry_id": "codetree.calls", "kind": "llm_calls", "label": "llm_calls", "quantity": 5, "unit": "calls"},
+            {"entry_id": "codetree.prompt_tokens", "kind": "prompt_tokens", "label": "prompt_tokens", "quantity": sum(float(item.usage.get("prompt_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "codetree.completion_tokens", "kind": "completion_tokens", "label": "completion_tokens", "quantity": sum(float(item.usage.get("completion_tokens", 0.0)) for item in run.candidates), "unit": "tokens"},
+            {"entry_id": "codetree.execution_rounds", "kind": "execution_rounds", "label": "execution_rounds", "quantity": 2.0, "unit": "rounds"},
+            {"entry_id": "codetree.critic_actions", "kind": "critic_actions", "label": "critic_actions", "quantity": 1.0, "unit": "actions"},
+        ],
+        normalization_rule="bounded_codetree_patch_packet_matched",
+        metadata={"phase": "next_frontier_frontier_a"},
+    )
+    baseline_packet = BaselineComparisonPacket(
+        packet_id="dag_replication_v1.codetree.baselines.v1",
+        paper_key=recipe_manifest.paper_key,
+        normalization_rule="bounded_codetree_patch_packet_matched",
+        baseline_ids=list(recipe_manifest.baseline_ids),
+        metadata={"phase": "next_frontier_frontier_a", "task_class": "bounded_code_patch"},
+    )
+    deviation_ledger = ReplicationDeviationLedger(
+        ledger_id="dag_replication_v1.codetree.deviations.v1",
+        paper_key=recipe_manifest.paper_key,
+        deviations=[
+            {
+                "deviation_id": "codetree.dev.01",
+                "severity": "medium",
+                "summary": "First packet uses a bounded toy patch slice rather than a broad benchmark-scale code tree evaluation.",
+            },
+            {
+                "deviation_id": "codetree.dev.02",
+                "severity": "low",
+                "summary": "Visible-test-only execution feedback is used in the first packet to isolate stage transitions and critic lineage.",
+            },
+        ],
+        metadata={"phase": "next_frontier_frontier_a"},
+    )
+    role_stage_manifest = {
+        "thinker_stage": "strategy_seed",
+        "solver_stage": "initial_patch",
+        "debugger_stage": "repair_after_feedback",
+        "critic_stage": "execution_plus_review",
+        "stage_transition_rules": ["thinker_to_solver", "solver_to_critic", "critic_to_debugger", "debugger_to_selector"],
+    }
+    code_harness_manifest = {
+        "benchmark_slice": "toy_patch_pair",
+        "visible_hidden_test_policy": "visible_only",
+        "execution_environment_assumption": "local_python_harness",
+        "replayability_notes": "execution outcomes recorded as packet metadata rather than hidden environment state",
+    }
+    critic_action_ledger = {
+        "critic_actions": [{"action_id": "critic.1", "kind": "execution_review", "target_candidate_id": solver.candidate_id, "produced_candidate_id": critic.candidate_id}],
+        "repair_actions": [{"action_id": "debugger.1", "kind": "patch_repair", "target_candidate_id": solver.candidate_id, "produced_candidate_id": debugger.candidate_id}],
+    }
+    execution_feedback_packet = {
+        "visible_tests_run": 3,
+        "visible_tests_passed_before_repair": 1,
+        "visible_tests_passed_after_repair": 3,
+        "feedback_artifact_policy": "recorded_in_event_metadata",
+    }
+    task_scope_note = {
+        "claim_limit": "bounded code-search-tree packet only",
+        "scope_note": "first packet isolates stage heterogeneity and critic/execution lineage, not benchmark scale",
+    }
+    codetree_audit = {
+        "critic_action_reconstructable": True,
+        "execution_feedback_reconstructable": True,
+        "stage_transition_reconstructable": True,
+        "shared_runtime_gap_detected": False,
+    }
+    return {
+        "recipe_manifest": recipe_manifest,
+        "scorecard": scorecard,
+        "compute_ledger": compute_ledger,
+        "baseline_packet": baseline_packet,
+        "deviation_ledger": deviation_ledger,
+        "run": run,
+        "role_stage_manifest": role_stage_manifest,
+        "code_harness_manifest": code_harness_manifest,
+        "critic_action_ledger": critic_action_ledger,
+        "execution_feedback_packet": execution_feedback_packet,
+        "task_scope_note": task_scope_note,
+        "codetree_audit": codetree_audit,
+    }
+
+
+def build_dag_replication_v1_codetree_packet_payload() -> Dict[str, object]:
+    example = build_dag_replication_v1_codetree_packet()
+    return {
+        "recipe_manifest": example["recipe_manifest"].to_dict(),
+        "scorecard": example["scorecard"].to_dict(),
+        "compute_ledger": example["compute_ledger"].to_dict(),
+        "baseline_packet": example["baseline_packet"].to_dict(),
+        "deviation_ledger": example["deviation_ledger"].to_dict(),
+        "run": example["run"].to_dict(),
+        "role_stage_manifest": dict(example["role_stage_manifest"]),
+        "code_harness_manifest": dict(example["code_harness_manifest"]),
+        "critic_action_ledger": dict(example["critic_action_ledger"]),
+        "execution_feedback_packet": dict(example["execution_feedback_packet"]),
+        "task_scope_note": dict(example["task_scope_note"]),
+        "codetree_audit": dict(example["codetree_audit"]),
     }
