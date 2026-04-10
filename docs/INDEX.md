@@ -146,6 +146,7 @@ Client-specific internal buildout notes were intentionally offloaded from the pu
 | [concepts/research-systems-walkthroughs.md](concepts/research-systems-walkthroughs.md) | Commands-and-files walkthroughs for ATP, optimization, DAG, RL, C-Trees, DARWIN, and their main composition boundaries |
 | [concepts/atp-and-lean-sandboxing.md](concepts/atp-and-lean-sandboxing.md) | How ATP contracts and sandbox envelopes fit together, why Lean is a key pressure case, and how formal proving loops stay typed and replayable |
 | [concepts/atp-formal-workflows.md](concepts/atp-formal-workflows.md) | Practical ATP workflow guide covering retrieval, decomposition, diagnostics, Hilbert proving slices, and the honest current Lean/sandbox support story |
+| [contracts/atp/README.md](contracts/atp/README.md) | Canonical ATP contract-pack entrypoint, current formal-pack runner, adapter slice, and Hilbert comparison surfaces |
 | [concepts/optimization-system-overview.md](concepts/optimization-system-overview.md) | A readable synthesis of the optimization stack from substrate through transfer cohorts, promotion, and live experiment-cell doctrine |
 | [concepts/optimization-study-playbook.md](concepts/optimization-study-playbook.md) | Practical guide for scoping and running optimization studies cleanly across loci, families, transfer claims, promotion, and live experiment cells |
 | [concepts/dag-runtime-system-overview.md](concepts/dag-runtime-system-overview.md) | A readable synthesis of the DAG runtime from search truth through assessments and paper-fidelity helper layers |
@@ -156,6 +157,7 @@ Client-specific internal buildout notes were intentionally offloaded from the pu
 | [concepts/ctrees-lifecycle-guide.md](concepts/ctrees-lifecycle-guide.md) | Concrete guide to the current C-Trees lifecycle: schema, phase machine, branch receipts, finish closure, helper rehydration, and evaluation-facing bridge layers |
 | [concepts/darwin-system-overview.md](concepts/darwin-system-overview.md) | Narrative overview of DARWIN as BreadBoard's outer-loop campaign, lane, policy, evidence, and claim layer |
 | [concepts/darwin-campaign-workflow-guide.md](concepts/darwin-campaign-workflow-guide.md) | Practical guide for running DARWIN as a campaign/lane/policy/evidence program rather than a loose pile of stage notes |
+| [contracts/darwin/README.md](contracts/darwin/README.md) | Canonical DARWIN contract-pack entrypoint, stage policy docs, and the current Stage-5 plus Stage-6 proving/review script surfaces |
 
 ### Optimization
 
