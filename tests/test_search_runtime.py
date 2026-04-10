@@ -27,10 +27,22 @@ from agentic_coder_prototype.search import (
     SearchBranchState,
     SearchCandidate,
     SearchCarryState,
+    SearchConsumerProofRow,
+    SearchConsumerSeamDiagnostic,
+    SearchDomainBoundaryControlPacket,
+    SearchDomainFrictionSummary,
+    SearchDomainPilotPacket,
     SearchEvent,
     SearchFrontier,
     SearchMessage,
+    SearchOptimizeComparisonKit,
+    SearchOptimizeHandoffKit,
+    SearchOperatorCompareScreen,
+    SearchOperatorScreen,
     SearchRewardSignal,
+    SearchRLHandoffKit,
+    SearchRLReplayParityKit,
+    SearchSelectiveResearchControlPacket,
     TopologyAudit,
     build_default_search_assessment_registry,
     build_branch_execute_verify_reference_recipe,
@@ -43,6 +55,8 @@ from agentic_coder_prototype.search import (
     build_dag_v2_stop_go_synthesis,
     build_dag_v2_stop_go_synthesis_payload,
     build_default_search_compaction_registry,
+    build_default_search_study_kits,
+    build_default_search_study_registry,
     build_exact_verifier_assessment_example,
     build_exact_verifier_assessment_example_payload,
     build_frontier_verify_gate_example,
@@ -163,6 +177,22 @@ from agentic_coder_prototype.search import (
     SearchWorkspaceSnapshot,
     build_rsa_search_runtime_example,
     build_rsa_search_runtime_example_payload,
+    build_search_assessment_chain_view,
+    build_search_consumer_seam_diagnostic,
+    build_search_atp_boundary_control_packet,
+    build_search_atp_domain_pilot,
+    build_search_domain_pilot_friction_summary,
+    build_search_general_agent_control_packet,
+    build_search_lineage_view,
+    build_search_optimize_comparison_kit,
+    build_search_optimize_handoff_kit,
+    build_search_operator_compare_screen,
+    build_search_operator_screen,
+    build_search_replay_export_summary,
+    build_search_repair_loop_domain_pilot,
+    build_search_rl_handoff_kit,
+    build_search_rl_replay_parity_kit,
+    build_search_tool_planning_tree_control_packet,
     build_search_trajectory_export_example,
     build_search_trajectory_export_example_payload,
     build_stateful_branch_search_example,
@@ -170,8 +200,14 @@ from agentic_coder_prototype.search import (
     build_typed_compaction_registry_example,
     build_typed_compaction_registry_example_payload,
     build_verifier_guided_pressure_cell,
+    compare_search_study_runs,
     compute_fidelity_metrics,
+    diff_search_replay_export_summaries,
     export_search_trajectory,
+    inspect_search_study,
+    render_search_operator_compare_screen_text,
+    render_search_operator_screen_text,
+    run_search_study,
 )
 
 
@@ -255,6 +291,379 @@ def test_search_records_round_trip() -> None:
     )
     assert SearchWorkspaceSnapshot.from_dict(snapshot.to_dict()) == snapshot
     assert SearchBranchState.from_dict(branch.to_dict()) == branch
+
+
+def test_default_search_study_registry_lists_canonical_families() -> None:
+    registry = build_default_search_study_registry()
+    entries = registry.list_entries()
+    keys = [entry.study_key for entry in entries]
+    assert keys == sorted(keys)
+    assert "dag_v3_rsa_replication" in keys
+    assert "dag_replication_v1_got_sorting" in keys
+    assert "dag_v4_bavt" in keys
+    assert "dag_v4_team_of_thoughts" in keys
+    assert "dag_v4_final_adjudication" in keys
+    assert "dag_v5_atp_domain_pilot" in keys
+    assert "dag_v5_repair_loop_domain_pilot" in keys
+
+
+def test_run_search_study_spec_mode_has_small_summaries_and_no_payload() -> None:
+    result = run_search_study("dag_replication_v1_got_sorting", mode="spec")
+    assert result.payload is None
+    assert result.summary_json["study_key"] == "dag_replication_v1_got_sorting"
+    assert result.summary_json["mode"] == "spec"
+    assert result.summary_json["artifact_refs"]
+    assert "study_key: dag_replication_v1_got_sorting" in result.summary_txt
+    assert "mode: spec" in result.summary_txt
+
+
+def test_run_search_study_debug_mode_includes_payload_and_inspection() -> None:
+    result = run_search_study("dag_v4_bavt", mode="debug")
+    assert result.payload is not None
+    inspection = result.inspect()
+    assert inspection["payload_available"] is True
+    assert inspection["summary_json"]["study_key"] == "dag_v4_bavt"
+    assert "frontier_policy_audit" in inspection["packet_keys"]
+
+
+def test_inspect_search_study_returns_registry_and_summary_views() -> None:
+    inspection = inspect_search_study("dag_v4_team_of_thoughts", mode="spec")
+    assert inspection["registry_entry"]["study_key"] == "dag_v4_team_of_thoughts"
+    assert inspection["summary_json"]["packet_family"] == "dag_v4_team_of_thoughts"
+    assert inspection["payload_available"] is False
+    assert inspection["lineage_view"]["recipe_kind"] == "team_of_thoughts_layered_packet"
+    assert inspection["assessment_chain_view"]["topology_class"] == "H"
+    assert inspection["replay_export_summary"]["search_id"] == inspection["lineage_view"]["source_id"]
+
+
+def test_compare_search_study_runs_reports_shared_and_distinct_surface() -> None:
+    left = run_search_study("dag_v4_bavt", mode="spec")
+    right = run_search_study("dag_v4_team_of_thoughts", mode="debug")
+    comparison = compare_search_study_runs(left, right)
+    assert comparison["left_study_key"] == "dag_v4_bavt"
+    assert comparison["right_study_key"] == "dag_v4_team_of_thoughts"
+    assert comparison["left_mode"] == "spec"
+    assert comparison["right_mode"] == "debug"
+    assert isinstance(comparison["shared_artifact_refs"], list)
+    assert comparison["left_top_level_metrics"]["topology_class"] == "F"
+    assert comparison["right_top_level_metrics"]["topology_class"] == "H"
+
+
+def test_search_study_open_artifact_returns_known_ref_and_rejects_unknown() -> None:
+    result = run_search_study("dag_replication_v1_got_sorting", mode="spec")
+    artifact_ref = result.open_artifact()
+    assert artifact_ref in result.artifact_refs
+    try:
+        result.open_artifact("artifacts/search/unknown/not_present.json")
+    except KeyError as exc:
+        assert "not present" in str(exc)
+    else:
+        raise AssertionError("expected unknown artifact ref to raise KeyError")
+
+
+def test_build_search_operator_screen_projects_study_surface_for_operator_consumers() -> None:
+    screen = build_search_operator_screen("dag_v4_team_of_thoughts", mode="debug")
+
+    assert isinstance(screen, SearchOperatorScreen)
+    assert screen.study_key == "dag_v4_team_of_thoughts"
+    assert screen.mode == "debug"
+    assert any(panel.panel_id == "overview" for panel in screen.panels)
+    assert any(panel.panel_id == "controls" for panel in screen.panels)
+    assert any(panel.panel_id == "inspection" for panel in screen.panels)
+    assert "dag_v4_team_of_thoughts" in render_search_operator_screen_text(screen)
+
+
+def test_build_search_operator_screen_surfaces_domain_friction_focus_panel() -> None:
+    screen = build_search_operator_screen("dag_v5_atp_domain_pilot", mode="spec")
+
+    focus_panel = next(panel for panel in screen.panels if panel.panel_id == "focus")
+    assert isinstance(screen, SearchOperatorScreen)
+    assert any("domain_friction:" in line for line in focus_panel.lines)
+    assert any(command.startswith("run_search_study(") for command in screen.commands)
+
+
+def test_build_search_operator_compare_screen_projects_compare_and_replay_diff() -> None:
+    screen = build_search_operator_compare_screen(
+        "dag_v4_bavt",
+        "dag_v4_team_of_thoughts",
+        left_mode="spec",
+        right_mode="debug",
+    )
+
+    assert isinstance(screen, SearchOperatorCompareScreen)
+    assert screen.left_study_key == "dag_v4_bavt"
+    assert screen.right_study_key == "dag_v4_team_of_thoughts"
+    assert any(panel.panel_id == "comparison" for panel in screen.panels)
+    assert any(panel.panel_id == "replay_export_diff" for panel in screen.panels)
+    assert "dag_v4_bavt:spec vs dag_v4_team_of_thoughts:debug" in render_search_operator_compare_screen_text(screen)
+
+
+def test_selective_research_control_packets_stay_non_kernel_and_study_runnable() -> None:
+    tool_control = build_search_tool_planning_tree_control_packet()
+    general_control = build_search_general_agent_control_packet()
+
+    tool_packet = tool_control["control_packet"]
+    general_packet = general_control["control_packet"]
+
+    assert isinstance(tool_packet, SearchSelectiveResearchControlPacket)
+    assert isinstance(general_packet, SearchSelectiveResearchControlPacket)
+    assert tool_packet.control_family == "tool_planning_tree"
+    assert general_packet.control_family == "general_agent_control"
+    assert tool_packet.kernel_change_required is False
+    assert general_packet.kernel_change_required is False
+    assert tool_control["decision"] == "bounded_control_family_only"
+    assert general_control["decision"] == "control_lens_only"
+
+    registry = build_default_search_study_registry()
+    keys = [entry.study_key for entry in registry.list_entries()]
+    assert "dag_v5_tool_planning_tree_control" in keys
+    assert "dag_v5_general_agent_control" in keys
+
+    tool_result = run_search_study("dag_v5_tool_planning_tree_control", mode="spec")
+    general_result = run_search_study("dag_v5_general_agent_control", mode="debug")
+    assert tool_result.summary_json["packet_family"] == "dag_v5_tool_planning_tree_control"
+    assert general_result.summary_json["packet_family"] == "dag_v5_general_agent_control"
+    assert general_result.payload is not None
+    assert tool_result.summary_json["top_level_metrics"]["decision"] == "bounded_control_family_only"
+    assert general_result.summary_json["top_level_metrics"]["decision"] == "control_lens_only"
+
+
+def test_build_search_atp_boundary_control_packet_keeps_atp_semantics_out_of_kernel() -> None:
+    packet = build_search_atp_boundary_control_packet()
+
+    assert isinstance(packet, SearchDomainBoundaryControlPacket)
+    assert packet.domain_kind == "atp"
+    assert packet.ontology_blending_forbidden is True
+    assert "dag_replication_v1_tot_game24" in packet.source_study_keys
+    assert "dag_v4_team_of_thoughts" in packet.source_study_keys
+    assert "exact_verifier_ground_truth" in packet.control_requirements
+    assert "proof_state_kernel_truth_in_search" in packet.forbidden_domain_semantics
+    assert "scripts/run_bb_atp_adapter_slice_v1.py" in packet.external_surface_refs
+
+
+def test_build_search_atp_domain_pilot_stays_adapter_local_and_study_runnable() -> None:
+    example = build_search_atp_domain_pilot()
+    pilot = example["pilot_packet"]
+
+    assert isinstance(pilot, SearchDomainPilotPacket)
+    assert pilot.domain_kind == "atp"
+    assert pilot.friction_locus == "adapter_and_harness_local_only"
+    assert pilot.kernel_change_required is False
+    assert pilot.ontology_blending_detected is False
+    assert "artifacts/benchmarks/hilbert_comparison_packs_v1/*/cross_system_manifest.json" in pilot.expected_artifact_refs
+
+    result = run_search_study("dag_v5_atp_domain_pilot", mode="spec")
+    assert result.summary_json["study_key"] == "dag_v5_atp_domain_pilot"
+    assert result.summary_json["packet_family"] == "dag_v5_atp_domain_pilot"
+    assert result.summary_json["artifact_refs"]
+
+
+def test_build_search_repair_loop_domain_pilot_stays_workspace_local_and_bounded() -> None:
+    example = build_search_repair_loop_domain_pilot()
+    pilot = example["pilot_packet"]
+
+    assert isinstance(pilot, SearchDomainPilotPacket)
+    assert pilot.domain_kind == "repair_loop"
+    assert pilot.friction_locus == "patching_and_workspace_local_only"
+    assert pilot.kernel_change_required is False
+    assert pilot.ontology_blending_detected is False
+    assert "agentic_coder_prototype/conductor/patching.py" in pilot.adapter_surface_refs
+    assert "artifacts/search/search.replication_v1.codetree_patch/final.json" in pilot.expected_artifact_refs
+
+    result = run_search_study("dag_v5_repair_loop_domain_pilot", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "dag_v5_repair_loop_domain_pilot"
+
+
+def test_build_search_domain_pilot_friction_summary_keeps_domain_work_out_of_kernel_review() -> None:
+    summary = build_search_domain_pilot_friction_summary()
+
+    assert isinstance(summary, SearchDomainFrictionSummary)
+    assert summary.domain_kinds == ["atp", "repair_loop"]
+    assert summary.friction_loci == ["adapter_and_harness_local_only", "patching_and_workspace_local_only"]
+    assert summary.ontology_blending_detected is False
+    assert summary.repeated_shape_gap_detected is False
+    assert summary.next_decision == "continue_domain_pilots_without_kernel_review"
+
+
+def test_build_search_optimize_handoff_kit_standardizes_existing_consumer_packet() -> None:
+    kit = build_search_optimize_handoff_kit()
+
+    assert isinstance(kit, SearchOptimizeHandoffKit)
+    assert kit.consumer_kind == "optimize"
+    assert kit.composition_id == "composition.next_frontier.dag_to_optimize.v1"
+    assert kit.final_decision == "keep_optimize_frozen"
+    assert len(kit.rows) == 3
+    assert all(isinstance(row, SearchConsumerProofRow) for row in kit.rows)
+    assert {row.topology_class for row in kit.rows} == {"G", "F", "H"}
+    assert all(row.measured_shadow_semantics_required is False for row in kit.rows)
+    assert kit.repeated_shape_gap_detected is False
+
+
+def test_build_search_optimize_comparison_kit_exposes_comparison_and_handoff_contract() -> None:
+    kit = build_search_optimize_comparison_kit()
+
+    assert isinstance(kit, SearchOptimizeComparisonKit)
+    assert kit.comparison_protocol == "paired_downstream_consumer_compare.v1"
+    assert "adapter_readiness" in kit.objective_keys
+    assert "replay_stability" in kit.objective_keys
+    assert "recipe_manifest_identity" in kit.handoff_preserved_fields
+    assert kit.helper_only_handoff is True
+    assert kit.repeated_shape_gap_detected is False
+    assert kit.final_decision == "keep_optimize_frozen"
+
+
+def test_build_search_rl_handoff_kit_standardizes_existing_consumer_packet() -> None:
+    kit = build_search_rl_handoff_kit()
+
+    assert isinstance(kit, SearchRLHandoffKit)
+    assert kit.consumer_kind == "rl"
+    assert kit.composition_id == "composition.next_frontier.dag_to_rl.v1"
+    assert kit.final_decision == "keep_rl_frozen"
+    assert len(kit.rows) == 3
+    assert all(isinstance(row, SearchConsumerProofRow) for row in kit.rows)
+    assert {row.topology_class for row in kit.rows} == {"F", "W", "D"}
+    assert all(row.measured_shadow_semantics_required is False for row in kit.rows)
+    assert kit.repeated_shape_gap_detected is False
+
+
+def test_build_search_rl_replay_parity_kit_confirms_parity_and_closeout() -> None:
+    kit = build_search_rl_replay_parity_kit()
+
+    assert isinstance(kit, SearchRLReplayParityKit)
+    assert kit.workload_family == "dag_codetree_patch"
+    assert kit.live_export_manifest_id == "bb.rl.next_frontier.export_manifest.parity.live.v1"
+    assert kit.replay_export_manifest_id == "bb.rl.next_frontier.export_manifest.parity.replay.v1"
+    assert kit.graph_parity_equal is True
+    assert kit.export_manifest_parity_equal is True
+    assert "evaluation_pack_identity" in kit.handoff_preserved_fields
+    assert kit.repeated_shape_gap_detected is False
+    assert kit.final_decision == "keep_rl_frozen"
+
+
+def test_build_search_consumer_seam_diagnostic_classifies_non_runtime_gaps_cleanly() -> None:
+    diagnostic = build_search_consumer_seam_diagnostic()
+
+    assert isinstance(diagnostic, SearchConsumerSeamDiagnostic)
+    assert "comparison_packet_handoff" in diagnostic.optimize_seam_labels
+    assert "trajectory_projection_handoff" in diagnostic.rl_seam_labels
+    assert diagnostic.optimize_issue_loci == ("consumer_local_only", "helper_level_only")
+    assert diagnostic.rl_issue_loci == ("consumer_local_only", "helper_level_only")
+    assert diagnostic.combined_issue_loci == ("consumer_local_only", "helper_level_only")
+    assert diagnostic.repeated_shape_gap_detected is False
+    assert diagnostic.dag_runtime_missing_truth_detected is False
+    assert diagnostic.final_classification == "consumer_and_helper_only"
+
+
+def test_build_search_lineage_view_supports_run_and_export_sources() -> None:
+    run = build_dag_v4_got_v2_packet()["run"]
+    exported = export_search_trajectory(run)
+
+    run_view = build_search_lineage_view(run)
+    export_view = build_search_lineage_view(exported)
+
+    assert run_view.source_kind == "run"
+    assert export_view.source_kind == "trajectory_export"
+    assert run_view.source_id == export_view.source_id
+    assert run_view.recipe_kind == export_view.recipe_kind
+    assert run_view.event_count == export_view.event_count
+    assert run_view.first_event_id == export_view.first_event_id
+    assert run_view.last_event_id == export_view.last_event_id
+
+
+def test_build_search_assessment_chain_view_summarizes_links_cleanly() -> None:
+    packet = build_dag_v4_dci_packet()["assessment_lineage_packet"]
+    view = build_search_assessment_chain_view(packet)
+
+    assert view.packet_id == packet.packet_id
+    assert view.target_family == "dci_typed_epistemic_acts"
+    assert view.topology_class == "D"
+    assert view.action_link_count >= 1
+    assert "verify" in view.assessment_kinds
+    assert view.mixed_chain_reconstructable is True
+
+
+def test_build_search_replay_export_summary_and_diff_capture_preserved_and_lost_info() -> None:
+    got_packet = build_dag_v4_got_v2_packet()
+    dci_packet = build_dag_v4_dci_packet()
+
+    got_summary = build_search_replay_export_summary(
+        got_packet["run"],
+        integrity_packet=got_packet["replay_export_integrity_packet"],
+    )
+    dci_summary = build_search_replay_export_summary(
+        dci_packet["run"],
+        integrity_packet=dci_packet["replay_export_integrity_packet"],
+    )
+    diff = diff_search_replay_export_summaries(got_summary, dci_summary)
+
+    assert got_summary.source_kind == "replay_export_integrity_packet"
+    assert "trajectory_export" in got_summary.export_modes
+    assert dci_summary.source_kind == "replay_export_integrity_packet"
+    assert dci_summary.target_family == "dci_typed_epistemic_acts"
+    assert "workspace_snapshot_lineage" in dci_summary.preserved_semantics
+    assert "multi_parent_lineage" in diff.left_only_preserved_semantics
+    assert diff.right_only_preserved_semantics
+    assert diff.topology_class_changed is True
+
+
+def test_replay_export_summary_supports_optimize_and_rl_source_families() -> None:
+    optimize_source = build_dag_v4_bavt_packet()
+    rl_source = build_dag_v4_codetree_v2_packet()
+
+    optimize_summary = build_search_replay_export_summary(optimize_source["run"])
+    rl_summary = build_search_replay_export_summary(
+        rl_source["run"],
+        integrity_packet=rl_source["replay_export_integrity_packet"],
+    )
+
+    assert optimize_summary.recipe_kind == "bavt_budget_aware_frontier_packet"
+    assert optimize_summary.step_count >= 1
+    assert rl_summary.recipe_kind == "codetree_stage_patch_packet_v2"
+    assert rl_summary.preserved_semantics
+    assert rl_summary.shadow_assumptions_required is False
+
+
+def test_default_search_study_kits_cover_canonical_families_with_standard_controls() -> None:
+    kits = build_default_search_study_kits()
+    assert len(kits) >= 6
+    by_key = {kit.study_key: kit for kit in kits}
+    assert "dag_replication_v1_tot_game24" in by_key
+    assert "dag_v4_dci" in by_key
+    for kit in kits:
+        assert kit.required_controls == (
+            "compute_normalization",
+            "baseline_discipline",
+            "evaluator_control",
+            "artifact_integrity",
+        )
+        assert kit.artifact_contract.summary_json is True
+        assert kit.artifact_contract.summary_txt is True
+        assert kit.artifact_contract.inspect_supported is True
+        assert kit.artifact_contract.compare_supported is True
+
+
+def test_canonical_study_kit_marks_ready_controls_from_existing_packet_evidence() -> None:
+    kits = {kit.study_key: kit for kit in build_default_search_study_kits()}
+    bavt = kits["dag_v4_bavt"]
+    got = kits["dag_replication_v1_got_sorting"]
+    bavt_controls = {item.control_key: item for item in bavt.control_templates}
+    got_controls = {item.control_key: item for item in got.control_templates}
+    assert bavt_controls["compute_normalization"].status == "ready"
+    assert bavt_controls["baseline_discipline"].status == "ready"
+    assert bavt_controls["evaluator_control"].status == "ready"
+    assert bavt_controls["artifact_integrity"].status == "ready"
+    assert got_controls["compute_normalization"].status == "ready"
+    assert got_controls["baseline_discipline"].status == "ready"
+    assert got_controls["evaluator_control"].status == "standardized_followup"
+    assert got_controls["artifact_integrity"].status == "ready"
+
+
+def test_canonical_study_kit_preserves_top_level_metrics_for_distinct_topologies() -> None:
+    kits = {kit.study_key: kit for kit in build_default_search_study_kits()}
+    assert kits["dag_v4_bavt"].top_level_metrics["topology_class"] == "F"
+    assert kits["dag_v4_team_of_thoughts"].top_level_metrics["topology_class"] == "H"
+    assert kits["dag_v4_dci"].top_level_metrics["topology_class"] == "D"
 
 
 def test_rsa_search_runtime_example_runs_end_to_end() -> None:
