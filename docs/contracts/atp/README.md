@@ -56,7 +56,14 @@ This is the better maintained current proving entrypoint for manifest-driven ATP
 
 ## Hilbert comparison and scoreboard workflow
 
-For tranche-level ATP/Hilbert comparison work, use the current scoreboard and rollup builders instead of the removed specialist-fallback matrix runner:
+For tranche-level ATP/Hilbert comparison work, start from the current pack builder and then use the scoreboard / rollup builders instead of the removed specialist-fallback matrix runner:
+
+```bash
+python scripts/build_hilbert_comparison_packs_v2.py \
+  --out-root artifacts/benchmarks/hilbert_comparison_packs_v2
+```
+
+Then build the downstream comparison surfaces:
 
 ```bash
 python scripts/build_atp_hilbert_scoreboard_v1.py \
@@ -66,7 +73,26 @@ python scripts/build_atp_hilbert_scoreboard_v1.py \
 
 See also:
 
+- `scripts/build_hilbert_comparison_packs_v2.py`
+- `scripts/build_hilbert_bb_comparison_bundle_v1.py`
 - `scripts/build_atp_hilbert_rollup_v1.py`
 - `scripts/build_atp_hilbert_canonical_baselines_v1.py`
+- `scripts/build_atp_hilbert_arm_audit_v1.py`
+- `scripts/build_atp_hilbert_no_repair_slice_v1.py`
 - `scripts/run_bb_atp_adapter_slice_v1.py`
 - `scripts/run_bb_formal_pack_v1.py`
+
+## Current maintained ATP entrypoints
+
+For the current merged ATP surface, the maintained flow is:
+
+1. generate or refresh Hilbert pack inputs:
+   - `scripts/build_hilbert_comparison_packs_v2.py`
+2. run bounded proving or adapter execution:
+   - `scripts/run_bb_formal_pack_v1.py`
+   - `scripts/run_bb_atp_adapter_slice_v1.py`
+3. build tranche-level comparison and audit outputs:
+   - `scripts/build_hilbert_bb_comparison_bundle_v1.py`
+   - `scripts/build_atp_hilbert_scoreboard_v1.py`
+   - `scripts/build_atp_hilbert_rollup_v1.py`
+   - `scripts/build_atp_hilbert_arm_audit_v1.py`
