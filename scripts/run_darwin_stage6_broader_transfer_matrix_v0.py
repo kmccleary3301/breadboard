@@ -195,6 +195,7 @@ def run_stage6_broader_transfer_matrix(
     transfer_cases = build_stage6_transfer_cases(
         activation_rows=activation_rows,
         compounding_cases=compounding_cases,
+        activation_probe_summary=activation_probe_summary,
         transfer_execution_rows=transfer_execution_rows,
         inactive_transfer_rows=inactive_transfer_rows,
     )

@@ -228,6 +228,35 @@ def test_build_stage6_transfer_cases_emits_activation_probe_for_positive_active_
     assert rows[0]["target_lane_id"] == "lane.scheduling"
 
 
+def test_build_stage6_transfer_cases_uses_positive_probe_summary_when_source_case_missing() -> None:
+    rows = build_stage6_transfer_cases(
+        activation_rows=[
+            {
+                "family_id": "family.repo.topology",
+                "lane_id": "lane.repo_swe",
+                "family_kind": "topology",
+                "activation_status": "challenge",
+                "lane_weight": "challenge_lane",
+                "activation_enabled": True,
+                "transfer_targets": ["lane.systems"],
+                "replay_status": "observed",
+            }
+        ],
+        compounding_cases=[],
+        activation_probe_summary={
+            "rows": [
+                {
+                    "lane_id": "lane.repo_swe",
+                    "activation_probe_classification": "positive_activation_probe",
+                }
+            ]
+        },
+    )
+    assert len(rows) == 1
+    assert rows[0]["transfer_status"] == "activation_probe"
+    assert rows[0]["transfer_reason"] == "activation_probe_summary_reports_positive_signal"
+
+
 def test_build_stage6_activation_probe_summary_classifies_positive_lane() -> None:
     payload = build_stage6_activation_probe_summary(
         activation_rows=[

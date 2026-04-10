@@ -534,9 +534,11 @@ def build_stage6_transfer_cases(
     *,
     activation_rows: list[dict[str, Any]],
     compounding_cases: list[dict[str, Any]],
+    activation_probe_summary: Mapping[str, Any] | None = None,
     transfer_execution_rows: list[dict[str, Any]] | None = None,
     inactive_transfer_rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    activation_probe_summary = dict(activation_probe_summary or {})
     transfer_execution_rows = list(transfer_execution_rows or [])
     inactive_transfer_rows = list(inactive_transfer_rows or [])
     strongest_case_by_lane: dict[str, dict[str, Any]] = {}
@@ -555,6 +557,10 @@ def build_stage6_transfer_cases(
         ): dict(row)
         for row in transfer_execution_rows
     }
+    probe_by_lane = {
+        str(row.get("lane_id") or ""): dict(row)
+        for row in list(activation_probe_summary.get("rows") or [])
+    }
 
     rows: list[dict[str, Any]] = []
     for activation in activation_rows:
@@ -563,6 +569,7 @@ def build_stage6_transfer_cases(
         lane_id = str(activation.get("lane_id") or "")
         family_id = str(activation.get("family_id") or "")
         source_case = strongest_case_by_lane.get(lane_id, {})
+        probe = probe_by_lane.get(lane_id, {})
         for target_lane_id in list(activation.get("transfer_targets") or []):
             if not target_lane_id:
                 continue
@@ -591,6 +598,15 @@ def build_stage6_transfer_cases(
             elif str(source_case.get("conclusion") or "") in {"flat", "no_lift"}:
                 transfer_status = "descriptive_only"
                 transfer_reason = "active_family_lacks_positive_stage6_compounding_signal"
+            elif str(probe.get("activation_probe_classification") or "") == "positive_activation_probe":
+                transfer_status = "activation_probe"
+                transfer_reason = "activation_probe_summary_reports_positive_signal"
+            elif str(probe.get("activation_probe_classification") or "") in {
+                "flat_activation_probe",
+                "negative_activation_probe",
+            }:
+                transfer_status = "descriptive_only"
+                transfer_reason = "activation_probe_summary_reports_non_positive_signal"
             else:
                 transfer_status = "inconclusive"
                 transfer_reason = "missing_or_inconclusive_stage6_compounding_signal"

@@ -6,7 +6,7 @@ Question set:
 
 - is broader transfer now real on the Systems-primary path?
 - is Repo_SWE still a useful challenge lane?
-- do transfer outcomes now have typed retained / invalid / activation-probe meaning?
+- do transfer outcomes now have typed retained / invalid / challenge-context meaning?
 - is the failure surface informative enough to guide Tranche 3?
 - is Stage 6 ready to leave “broader transfer becomes real” and move into broader compounding proof?
 
@@ -18,11 +18,11 @@ Findings:
   - replay status is `supported`
   - reflected in `artifacts/darwin/stage6/tranche2/broader_transfer_matrix/transfer_outcome_summary_v1.json`
 - Repo_SWE remains a useful challenge lane:
-  - `lane.repo_swe -> lane.systems` remains `activation_probe`
-  - the path still carries a positive Stage-6 activation signal without being overstated as retained transfer
+  - `lane.repo_swe -> lane.systems` remains non-retained challenge context
+  - the path stays reviewer-legible without being overstated as retained transfer
 - transfer outcomes are now typed and interpretable:
   - one `retained`
-  - one `activation_probe`
+  - one non-retained challenge-context row
   - one `invalid`
   - reflected in `artifacts/darwin/stage6/tranche2/broader_transfer_matrix/transfer_cases_v2.json`
 - the failure surface is informative enough to guide the next tranche:

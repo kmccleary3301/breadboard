@@ -42,7 +42,7 @@ def build_stage6_tranche4_family_registry(
             "primary_center"
             if transfer_status == "retained"
             else "challenge_context_only"
-            if transfer_status == "activation_probe"
+            if transfer_status in {"activation_probe", "inconclusive", "descriptive_only", "degraded_but_valid"}
             else "not_in_scope"
         )
         updated["composition_eligibility"] = (

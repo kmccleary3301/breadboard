@@ -52,7 +52,7 @@ def build_stage6_scorecard(
         replay_row = next((r for r in list(replay.get("rows") or []) if family_id in str(r.get("subject_id") or "")), {})
         linkage_result = str(linkage_row.get("linkage_result") or "")
         if not linkage_result:
-            if transfer_status == "activation_probe":
+            if transfer_status in {"activation_probe", "inconclusive", "descriptive_only", "degraded_but_valid"} and str(row.get("family_state") or "") != "held_back":
                 linkage_result = "challenge_context_only"
             elif transfer_status == "invalid":
                 linkage_result = "held_back_boundary"
@@ -72,7 +72,9 @@ def build_stage6_scorecard(
                     "retained_transfer_backed_positive_compounding"
                     if transfer_status == "retained"
                     else "challenge_context_only"
-                    if transfer_status == "activation_probe"
+                    if transfer_status in {"activation_probe", "inconclusive", "descriptive_only", "degraded_but_valid"}
+                    else "challenge_context_only"
+                    if str(row.get("family_state") or "") != "held_back"
                     else "held_back_boundary"
                 ),
             }

@@ -25,7 +25,7 @@ Current read:
 - the broader-transfer matrix now emits:
   - `3` transfer cases
   - `1` retained transfer
-  - `1` activation-probe transfer
+  - `1` non-retained challenge transfer
   - `1` invalid transfer
 - provider/route segmentation remains canonical on claim-bearing rows:
   - `provider_segmentation_status = claim_rows_segmented`
@@ -40,8 +40,8 @@ Current read:
   - replay status: `supported`
 - the Repo_SWE challenge path remains useful:
   - `lane.repo_swe -> lane.systems`
-  - status: `activation_probe`
-  - source conclusion: `reuse_lift`
+  - status: bounded challenge context
+  - source conclusion: non-retained and reviewer-legible
   - replay status: `observed`
 - the held-back Repo_SWE tool-scope family now produces an explicit invalid transfer row:
   - status: `invalid`

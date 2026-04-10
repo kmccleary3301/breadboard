@@ -31,15 +31,28 @@ def build_stage6_family_registry(
 ) -> dict[str, object]:
     transfer = _load_json(transfer_path)
     compounding = _load_json(compounding_path)
+    transfer_rows = {
+        str(row.get("family_id") or ""): dict(row)
+        for row in list(transfer.get("rows") or [])
+    }
     rows = [
         {
             "family_id": "component_family.stage4.policy.policy.shadow_memory_enable_v1.lane.systems.v0",
             "lane_id": "lane.systems",
             "family_state": "retained_transfer_source",
             "lane_weight": "primary_proving_lane",
-            "transfer_status": "retained",
-            "activation_state": "active",
-            "replay_status": "supported",
+            "transfer_status": str(
+                dict(transfer_rows.get("component_family.stage4.policy.policy.shadow_memory_enable_v1.lane.systems.v0") or {}).get("transfer_status")
+                or "retained"
+            ),
+            "activation_state": str(
+                dict(transfer_rows.get("component_family.stage4.policy.policy.shadow_memory_enable_v1.lane.systems.v0") or {}).get("activation_status")
+                or "active"
+            ),
+            "replay_status": str(
+                dict(transfer_rows.get("component_family.stage4.policy.policy.shadow_memory_enable_v1.lane.systems.v0") or {}).get("replay_status")
+                or "supported"
+            ),
             "composition_eligibility": "gated",
         },
         {
@@ -47,9 +60,18 @@ def build_stage6_family_registry(
             "lane_id": "lane.repo_swe",
             "family_state": "challenge_only",
             "lane_weight": "challenge_lane",
-            "transfer_status": "activation_probe",
-            "activation_state": "challenge",
-            "replay_status": "observed",
+            "transfer_status": str(
+                dict(transfer_rows.get("component_family.stage4.topology.policy.topology.pev_v0.lane.repo_swe.v0") or {}).get("transfer_status")
+                or "activation_probe"
+            ),
+            "activation_state": str(
+                dict(transfer_rows.get("component_family.stage4.topology.policy.topology.pev_v0.lane.repo_swe.v0") or {}).get("activation_status")
+                or "challenge"
+            ),
+            "replay_status": str(
+                dict(transfer_rows.get("component_family.stage4.topology.policy.topology.pev_v0.lane.repo_swe.v0") or {}).get("replay_status")
+                or "observed"
+            ),
             "composition_eligibility": "gated",
         },
         {
@@ -57,9 +79,18 @@ def build_stage6_family_registry(
             "lane_id": "lane.repo_swe",
             "family_state": "held_back",
             "lane_weight": "challenge_lane",
-            "transfer_status": "invalid",
-            "activation_state": "inactive",
-            "replay_status": "not_applicable",
+            "transfer_status": str(
+                dict(transfer_rows.get("component_family.stage4.tool_scope.policy.tool_scope.add_git_diff_v1.lane.repo_swe.v0") or {}).get("transfer_status")
+                or "invalid"
+            ),
+            "activation_state": str(
+                dict(transfer_rows.get("component_family.stage4.tool_scope.policy.tool_scope.add_git_diff_v1.lane.repo_swe.v0") or {}).get("activation_status")
+                or "inactive"
+            ),
+            "replay_status": str(
+                dict(transfer_rows.get("component_family.stage4.tool_scope.policy.tool_scope.add_git_diff_v1.lane.repo_swe.v0") or {}).get("replay_status")
+                or "not_applicable"
+            ),
             "composition_eligibility": "gated",
         },
     ]

@@ -88,7 +88,20 @@ def run_stage6_broader_compounding(
     transfer_summary = _load_json(tranche2_dir / "transfer_outcome_summary_v1.json")
     transfer_rows = list(transfer_summary.get("rows") or [])
     retained = next(row for row in transfer_rows if str(row.get("transfer_status") or "") == "retained")
-    challenge = next(row for row in transfer_rows if str(row.get("transfer_status") or "") == "activation_probe")
+    challenge = next(
+        (
+            row
+            for row in transfer_rows
+            if str(row.get("source_lane_id") or "") == "lane.repo_swe"
+            and str(row.get("transfer_status") or "") in {
+                "activation_probe",
+                "inconclusive",
+                "descriptive_only",
+                "degraded_but_valid",
+            }
+        ),
+        {},
+    )
     broader_transfer_matrix = _load_json(tranche2_dir / "broader_transfer_matrix_v0.json")
     campaigns = _campaign_lookup()
 

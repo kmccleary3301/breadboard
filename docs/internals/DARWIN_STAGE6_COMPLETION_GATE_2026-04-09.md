@@ -4,7 +4,7 @@ Date: `2026-04-09`
 
 Stage 6 reaches 100% only when every item below is satisfied.
 
-Completed on the closeout branch:
+Completed:
 
 - doctrine / execution / ADR base complete
 - Tranche 1 complete
@@ -15,11 +15,8 @@ Completed on the closeout branch:
 - canonical artifact freeze complete
 - final signoff written
 - future-roadmap handoff written
-
-Still required for final completion:
-
-- merged-state verification on the landed mainline
+- merged-state verification passed on the landed mainline candidate
 
 Gate rule:
 
-- Stage 6 is not `100%` until merged-state verification confirms that the landed mainline matches the signoff, claim boundary, and canonical artifact set
+- Stage 6 is `100%` complete once this verified landing is pushed to the canonical mainline without further material drift

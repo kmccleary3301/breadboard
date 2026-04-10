@@ -19,6 +19,8 @@ Final bounded outcomes:
 
 - retained transfer exists and is replay-supported
 - broader compounding exists and is replay-supported on the bounded target
+- merged-state rebuilds preserved the retained Systems-primary result
+- Repo_SWE challenge transfer remained bounded challenge context even when its merged-state rerun downgraded to `inconclusive`
 - composition result is `composition_not_authorized`
 
 Boundaries preserved:
@@ -28,6 +30,7 @@ Boundaries preserved:
 - no composition success was claimed
 - provider economics remain bounded by the current OpenRouter fallback caveat
 
-Completion condition:
+Signoff:
 
-- this signoff becomes final once merged-state verification passes on the landed mainline
+- merged-state verification passed on the landed-mainline candidate
+- Stage 6 is complete once this verified landing is pushed to the canonical mainline
