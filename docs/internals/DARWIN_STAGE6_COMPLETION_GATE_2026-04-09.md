@@ -15,8 +15,8 @@ Completed:
 - canonical artifact freeze complete
 - final signoff written
 - future-roadmap handoff written
-- merged-state verification passed on the landed mainline candidate
+- merged-state verification passed on the landed canonical mainline
 
-Gate rule:
+Gate result:
 
-- Stage 6 is `100%` complete once this verified landing is pushed to the canonical mainline without further material drift
+- Stage 6 is `100%` complete

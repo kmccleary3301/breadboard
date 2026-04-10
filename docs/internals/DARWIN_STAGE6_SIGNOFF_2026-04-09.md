@@ -32,5 +32,5 @@ Boundaries preserved:
 
 Signoff:
 
-- merged-state verification passed on the landed-mainline candidate
-- Stage 6 is complete once this verified landing is pushed to the canonical mainline
+- merged-state verification passed on the landed canonical mainline
+- Stage 6 is complete
