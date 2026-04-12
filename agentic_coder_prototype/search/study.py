@@ -3,6 +3,52 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Sequence
 
+from .deployment_readiness import (
+    build_search_atp_boundary_control_v2_packet,
+    build_search_atp_boundary_control_v2_payload,
+    build_search_atp_deployment_readiness_packet,
+    build_search_atp_deployment_readiness_payload,
+    build_search_atp_operator_triage_packet,
+    build_search_atp_operator_triage_payload,
+    build_search_ctrees_boundary_canary_packet,
+    build_search_ctrees_boundary_canary_payload,
+    build_search_cross_system_deployment_readiness_packet,
+    build_search_cross_system_deployment_readiness_payload,
+    build_search_optimize_consumer_expansion_packet,
+    build_search_optimize_consumer_expansion_payload,
+    build_search_optimize_rl_handoff_regression_packet,
+    build_search_optimize_rl_handoff_regression_payload,
+    build_search_repair_loop_deployment_readiness_packet,
+    build_search_repair_loop_deployment_readiness_payload,
+    build_search_rl_consumer_expansion_packet,
+    build_search_rl_consumer_expansion_payload,
+)
+from .atp_production import (
+    build_search_atp_bundle_publication_packet_wrapper,
+    build_search_atp_bundle_publication_payload,
+    build_search_atp_consumer_handoff_stabilization_packet_wrapper,
+    build_search_atp_consumer_handoff_stabilization_payload,
+    build_search_atp_operator_proof_triage_packet_wrapper,
+    build_search_atp_operator_proof_triage_payload,
+    build_search_atp_production_lane_packet_wrapper,
+    build_search_atp_production_lane_payload,
+    build_search_atp_stage_b_closeout_packet_wrapper,
+    build_search_atp_stage_b_closeout_payload,
+)
+from .consumerization import (
+    build_search_stage_c_closeout_packet_wrapper,
+    build_search_stage_c_closeout_payload,
+    build_search_stage_c_consumer_convergence_packet_wrapper,
+    build_search_stage_c_consumer_convergence_payload,
+    build_search_stage_c_optimize_consumerization_packet_wrapper,
+    build_search_stage_c_optimize_consumerization_payload,
+    build_search_stage_c_repair_loop_consumer_lane_packet_wrapper,
+    build_search_stage_c_repair_loop_consumer_lane_payload,
+    build_search_stage_c_repair_loop_containment_packet_wrapper,
+    build_search_stage_c_repair_loop_containment_payload,
+    build_search_stage_c_rl_consumerization_packet_wrapper,
+    build_search_stage_c_rl_consumerization_payload,
+)
 from .domain_pilots import (
     build_search_atp_domain_pilot,
     build_search_atp_domain_pilot_payload,
@@ -29,6 +75,20 @@ from .inspection import (
     build_search_assessment_chain_view,
     build_search_lineage_view,
     build_search_replay_export_summary,
+)
+from .platform_publication import (
+    build_search_platform_command_bundle_packet,
+    build_search_platform_command_bundle_payload,
+    build_search_platform_contract_publication_packet,
+    build_search_platform_contract_publication_payload,
+    build_search_platform_fixture_publication_packet_payload,
+    build_search_platform_fixture_publication_packet_wrapper,
+    build_search_platform_regression_harness_packet,
+    build_search_platform_regression_harness_payload,
+    build_search_platform_regression_entrypoint_packet,
+    build_search_platform_regression_entrypoint_payload,
+    build_search_platform_validator_packet_payload,
+    build_search_platform_validator_packet_wrapper,
 )
 from .research_controls import (
     build_search_general_agent_control_packet,
@@ -255,6 +315,21 @@ def _extract_top_level_metrics(packet: Mapping[str, Any]) -> Dict[str, object]:
     freeze_decision = packet.get("freeze_decision")
     if freeze_decision is not None:
         metrics["decision"] = freeze_decision
+    final_decision = packet.get("final_decision")
+    if final_decision is not None:
+        metrics["decision"] = final_decision
+    final_classification = packet.get("final_classification")
+    if final_classification is not None:
+        metrics["final_classification"] = final_classification
+    dominant_locus = packet.get("dominant_locus")
+    if dominant_locus is not None:
+        metrics["dominant_locus"] = dominant_locus
+    dominant_friction_locus = packet.get("dominant_friction_locus")
+    if dominant_friction_locus is not None:
+        metrics["dominant_locus"] = dominant_friction_locus
+    stable_contract = packet.get("stable_contract")
+    if stable_contract is not None:
+        metrics["stable_contract"] = stable_contract
     return metrics
 
 
@@ -315,6 +390,159 @@ def compare_search_study_runs(
 def build_default_search_study_registry() -> SearchStudyRegistry:
     return SearchStudyRegistry(
         entries=[
+            SearchStudyRegistryEntry(
+                study_key="search_platform_contract_publication",
+                title="Search platform contract publication bundle",
+                packet_family="search_platform_contract_publication.v1",
+                phase="platform_stage_a",
+                tags=("platform", "publication", "fixtures"),
+                packet_builder=build_search_platform_contract_publication_packet,
+                payload_builder=build_search_platform_contract_publication_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_platform_regression_harness",
+                title="Search platform deployment regression harness",
+                packet_family="search_platform_regression_harness.v1",
+                phase="platform_stage_a",
+                tags=("platform", "regression", "contracts"),
+                packet_builder=build_search_platform_regression_harness_packet,
+                payload_builder=build_search_platform_regression_harness_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_platform_fixture_publication",
+                title="Search platform reference fixture publication packet",
+                packet_family="search_platform_fixture_publication.v1",
+                phase="platform_stage_a",
+                tags=("platform", "fixtures", "publication"),
+                packet_builder=build_search_platform_fixture_publication_packet_wrapper,
+                payload_builder=build_search_platform_fixture_publication_packet_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_platform_regression_entrypoint",
+                title="Search platform regression entrypoint packet",
+                packet_family="search_platform_regression_entrypoint.v1",
+                phase="platform_stage_a",
+                tags=("platform", "regression", "entrypoint"),
+                packet_builder=build_search_platform_regression_entrypoint_packet,
+                payload_builder=build_search_platform_regression_entrypoint_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_platform_command_bundle",
+                title="Search platform command bundle packet",
+                packet_family="search_platform_command_bundle.v1",
+                phase="platform_stage_a",
+                tags=("platform", "commands", "publication"),
+                packet_builder=build_search_platform_command_bundle_packet,
+                payload_builder=build_search_platform_command_bundle_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_platform_validator",
+                title="Search platform validator packet",
+                packet_family="search_platform_validator.v1",
+                phase="platform_stage_a",
+                tags=("platform", "validator", "regression"),
+                packet_builder=build_search_platform_validator_packet_wrapper,
+                payload_builder=build_search_platform_validator_packet_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_atp_bundle_publication",
+                title="Search ATP bundle publication packet",
+                packet_family="search_atp_bundle_publication.v1",
+                phase="platform_stage_b",
+                tags=("stage_b", "atp", "publication"),
+                packet_builder=build_search_atp_bundle_publication_packet_wrapper,
+                payload_builder=build_search_atp_bundle_publication_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_atp_production_lane",
+                title="Search ATP production lane packet",
+                packet_family="search_atp_production_lane.v1",
+                phase="platform_stage_b",
+                tags=("stage_b", "atp", "production_lane"),
+                packet_builder=build_search_atp_production_lane_packet_wrapper,
+                payload_builder=build_search_atp_production_lane_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_atp_operator_proof_triage",
+                title="Search ATP operator proof triage packet",
+                packet_family="search_atp_operator_proof_triage.v1",
+                phase="platform_stage_b",
+                tags=("stage_b", "atp", "operator", "triage"),
+                packet_builder=build_search_atp_operator_proof_triage_packet_wrapper,
+                payload_builder=build_search_atp_operator_proof_triage_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_atp_consumer_handoff_stabilization",
+                title="Search ATP consumer handoff stabilization packet",
+                packet_family="search_atp_consumer_handoff_stabilization.v1",
+                phase="platform_stage_b",
+                tags=("stage_b", "atp", "handoff", "consumer"),
+                packet_builder=build_search_atp_consumer_handoff_stabilization_packet_wrapper,
+                payload_builder=build_search_atp_consumer_handoff_stabilization_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_atp_stage_b_closeout",
+                title="Search ATP Stage B closeout packet",
+                packet_family="search_atp_stage_b_closeout.v1",
+                phase="platform_stage_b",
+                tags=("stage_b", "atp", "closeout"),
+                packet_builder=build_search_atp_stage_b_closeout_packet_wrapper,
+                payload_builder=build_search_atp_stage_b_closeout_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_stage_c_optimize_consumerization",
+                title="Search Stage C optimize consumerization packet",
+                packet_family="search_stage_c_optimize_consumerization.v1",
+                phase="platform_stage_c",
+                tags=("stage_c", "optimize", "consumer"),
+                packet_builder=build_search_stage_c_optimize_consumerization_packet_wrapper,
+                payload_builder=build_search_stage_c_optimize_consumerization_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_stage_c_rl_consumerization",
+                title="Search Stage C RL consumerization packet",
+                packet_family="search_stage_c_rl_consumerization.v1",
+                phase="platform_stage_c",
+                tags=("stage_c", "rl", "consumer"),
+                packet_builder=build_search_stage_c_rl_consumerization_packet_wrapper,
+                payload_builder=build_search_stage_c_rl_consumerization_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_stage_c_repair_loop_consumer_lane",
+                title="Search Stage C repair-loop consumer lane packet",
+                packet_family="search_stage_c_repair_loop_consumer_lane.v1",
+                phase="platform_stage_c",
+                tags=("stage_c", "repair_loop", "consumer"),
+                packet_builder=build_search_stage_c_repair_loop_consumer_lane_packet_wrapper,
+                payload_builder=build_search_stage_c_repair_loop_consumer_lane_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_stage_c_consumer_convergence",
+                title="Search Stage C consumer convergence packet",
+                packet_family="search_stage_c_consumer_convergence.v1",
+                phase="platform_stage_c",
+                tags=("stage_c", "consumer", "convergence"),
+                packet_builder=build_search_stage_c_consumer_convergence_packet_wrapper,
+                payload_builder=build_search_stage_c_consumer_convergence_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_stage_c_repair_loop_containment",
+                title="Search Stage C repair-loop containment packet",
+                packet_family="search_stage_c_repair_loop_containment.v1",
+                phase="platform_stage_c",
+                tags=("stage_c", "repair_loop", "containment"),
+                packet_builder=build_search_stage_c_repair_loop_containment_packet_wrapper,
+                payload_builder=build_search_stage_c_repair_loop_containment_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_stage_c_closeout",
+                title="Search Stage C closeout packet",
+                packet_family="search_stage_c_closeout.v1",
+                phase="platform_stage_c",
+                tags=("stage_c", "closeout", "consumer"),
+                packet_builder=build_search_stage_c_closeout_packet_wrapper,
+                payload_builder=build_search_stage_c_closeout_payload,
+            ),
             SearchStudyRegistryEntry(
                 study_key="dag_v3_rsa_replication",
                 title="DAG V3 RSA replication packet",
@@ -377,6 +605,87 @@ def build_default_search_study_registry() -> SearchStudyRegistry:
                 tags=("closeout", "adjudication", "freeze"),
                 packet_builder=build_dag_v4_final_adjudication_packet,
                 payload_builder=build_dag_v4_final_adjudication_packet_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="dag_v6_cross_system_deployment_readiness",
+                title="DAG V6 cross-system deployment readiness packet",
+                packet_family="dag_v6_cross_system_deployment_readiness",
+                phase="dag_v6",
+                tags=("deployment", "cross_system", "handoff"),
+                packet_builder=build_search_cross_system_deployment_readiness_packet,
+                payload_builder=build_search_cross_system_deployment_readiness_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="dag_v6_atp_boundary_control_v2",
+                title="DAG V6 ATP boundary control v2 packet",
+                packet_family="dag_v6_atp_boundary_control_v2",
+                phase="dag_v6",
+                tags=("deployment", "atp", "boundary_control"),
+                packet_builder=build_search_atp_boundary_control_v2_packet,
+                payload_builder=build_search_atp_boundary_control_v2_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="dag_v6_atp_deployment_readiness",
+                title="DAG V6 ATP deployment readiness packet",
+                packet_family="dag_v6_atp_deployment_readiness",
+                phase="dag_v6",
+                tags=("deployment", "atp", "readiness"),
+                packet_builder=build_search_atp_deployment_readiness_packet,
+                payload_builder=build_search_atp_deployment_readiness_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="dag_v6_atp_operator_triage",
+                title="DAG V6 ATP operator triage packet",
+                packet_family="dag_v6_atp_operator_triage",
+                phase="dag_v6",
+                tags=("deployment", "atp", "operator"),
+                packet_builder=build_search_atp_operator_triage_packet,
+                payload_builder=build_search_atp_operator_triage_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="dag_v6_optimize_rl_handoff_regression",
+                title="DAG V6 optimize/RL handoff regression packet",
+                packet_family="dag_v6_optimize_rl_handoff_regression",
+                phase="dag_v6",
+                tags=("deployment", "consumer", "regression"),
+                packet_builder=build_search_optimize_rl_handoff_regression_packet,
+                payload_builder=build_search_optimize_rl_handoff_regression_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="dag_v6_repair_loop_deployment_readiness",
+                title="DAG V6 repair-loop deployment readiness packet",
+                packet_family="dag_v6_repair_loop_deployment_readiness",
+                phase="dag_v6",
+                tags=("deployment", "repair_loop", "readiness"),
+                packet_builder=build_search_repair_loop_deployment_readiness_packet,
+                payload_builder=build_search_repair_loop_deployment_readiness_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="dag_v6_optimize_consumer_expansion",
+                title="DAG V6 optimize consumer expansion packet",
+                packet_family="dag_v6_optimize_consumer_expansion",
+                phase="dag_v6",
+                tags=("deployment", "optimize", "consumer"),
+                packet_builder=build_search_optimize_consumer_expansion_packet,
+                payload_builder=build_search_optimize_consumer_expansion_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="dag_v6_rl_consumer_expansion",
+                title="DAG V6 RL consumer expansion packet",
+                packet_family="dag_v6_rl_consumer_expansion",
+                phase="dag_v6",
+                tags=("deployment", "rl", "consumer"),
+                packet_builder=build_search_rl_consumer_expansion_packet,
+                payload_builder=build_search_rl_consumer_expansion_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="dag_v6_ctrees_boundary_canary",
+                title="DAG V6 C-Trees boundary canary packet",
+                packet_family="dag_v6_ctrees_boundary_canary",
+                phase="dag_v6",
+                tags=("deployment", "ctrees", "boundary_canary"),
+                packet_builder=build_search_ctrees_boundary_canary_packet,
+                payload_builder=build_search_ctrees_boundary_canary_payload,
             ),
             SearchStudyRegistryEntry(
                 study_key="dag_v5_atp_domain_pilot",
