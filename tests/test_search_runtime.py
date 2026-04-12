@@ -22,11 +22,22 @@ from agentic_coder_prototype.search import (
     RepeatedShapeRegisterEntry,
     ReplayExportIntegrityPacket,
     ReplicationDeviationLedger,
+    SearchATPDeploymentReadinessKit,
+    SearchATPBundlePublicationPacket,
+    SearchATPConsumerHandoffStabilizationPacket,
+    SearchATPProductionLanePacket,
+    SearchATPStageBCloseoutPacket,
+    SearchATPOperatorProofTriagePacket,
+    SearchATPOperatorTriageKit,
+    SearchCTreesBoundaryCanaryPacket,
     SearchOfflineDataset,
     SearchAssessment,
     SearchBranchState,
     SearchCandidate,
     SearchCarryState,
+    SearchCrossSystemArtifactIntegrityPacket,
+    SearchCrossSystemArtifactIntegrityRow,
+    SearchCrossSystemHandoffContract,
     SearchConsumerProofRow,
     SearchConsumerSeamDiagnostic,
     SearchDomainBoundaryControlPacket,
@@ -36,13 +47,34 @@ from agentic_coder_prototype.search import (
     SearchFrontier,
     SearchMessage,
     SearchOptimizeComparisonKit,
+    SearchOptimizeConsumerExpansionPacket,
     SearchOptimizeHandoffKit,
     SearchOperatorCompareScreen,
     SearchOperatorScreen,
+    SearchPlatformContractBundle,
+    SearchPlatformCommandBundle,
+    SearchPlatformCommandSpec,
+    SearchPlatformFixturePublicationPacket,
+    SearchPlatformRegressionEntrypoint,
+    SearchPlatformValidatorPacket,
+    SearchPublishedFixtureRow,
+    SearchReferenceFixtureBundle,
+    SearchDeploymentRegressionCheck,
+    SearchDeploymentRegressionHarness,
+    SearchRepairLoopDeploymentReadinessKit,
+    SearchOptimizeRLHandoffRegression,
     SearchRewardSignal,
     SearchRLHandoffKit,
+    SearchRLConsumerExpansionPacket,
     SearchRLReplayParityKit,
+    SearchStageCCloseoutPacket,
+    SearchStageCConsumerConvergencePacket,
+    SearchStageCOptimizeConsumerizationPacket,
+    SearchStageCRLConsumerizationPacket,
+    SearchStageCRepairLoopConsumerLanePacket,
+    SearchStageCRepairLoopContainmentPacket,
     SearchSelectiveResearchControlPacket,
+    SearchSlicePackagingHygieneNote,
     TopologyAudit,
     build_default_search_assessment_registry,
     build_branch_execute_verify_reference_recipe,
@@ -179,19 +211,50 @@ from agentic_coder_prototype.search import (
     build_rsa_search_runtime_example_payload,
     build_search_assessment_chain_view,
     build_search_consumer_seam_diagnostic,
+    build_search_cross_system_artifact_integrity_packet,
+    build_search_cross_system_deployment_readiness_packet,
+    build_search_cross_system_handoff_contract,
     build_search_atp_boundary_control_packet,
+    build_search_atp_boundary_control_v2,
+    build_search_atp_bundle_publication_packet,
+    build_search_atp_consumer_handoff_stabilization_packet,
     build_search_atp_domain_pilot,
+    build_search_atp_deployment_readiness_kit,
+    build_search_atp_operator_proof_triage_packet,
+    build_search_atp_operator_triage_kit,
+    build_search_atp_production_lane_packet,
+    build_search_atp_stage_b_closeout_packet,
+    build_search_stage_c_optimize_consumerization_packet,
+    build_search_stage_c_repair_loop_consumer_lane_packet,
+    build_search_stage_c_consumer_convergence_packet,
+    build_search_stage_c_closeout_packet,
+    build_search_stage_c_repair_loop_containment_packet,
+    build_search_stage_c_rl_consumerization_packet,
+    build_search_ctrees_boundary_canary,
     build_search_domain_pilot_friction_summary,
     build_search_general_agent_control_packet,
     build_search_lineage_view,
     build_search_optimize_comparison_kit,
+    build_search_optimize_consumer_expansion,
     build_search_optimize_handoff_kit,
+    build_search_optimize_rl_handoff_regression,
     build_search_operator_compare_screen,
     build_search_operator_screen,
     build_search_replay_export_summary,
+    build_search_platform_command_bundle,
+    build_search_platform_contract_bundle,
+    build_search_platform_contract_publication_packet,
+    build_search_platform_fixture_publication_packet,
+    build_search_platform_reference_fixture_bundle,
+    build_search_platform_regression_entrypoint,
+    build_search_platform_regression_harness,
+    build_search_platform_validator_packet,
     build_search_repair_loop_domain_pilot,
+    build_search_repair_loop_deployment_readiness_kit,
     build_search_rl_handoff_kit,
+    build_search_rl_consumer_expansion,
     build_search_rl_replay_parity_kit,
+    build_search_slice_packaging_hygiene_note,
     build_search_tool_planning_tree_control_packet,
     build_search_trajectory_export_example,
     build_search_trajectory_export_example_payload,
@@ -303,6 +366,23 @@ def test_default_search_study_registry_lists_canonical_families() -> None:
     assert "dag_v4_bavt" in keys
     assert "dag_v4_team_of_thoughts" in keys
     assert "dag_v4_final_adjudication" in keys
+    assert "search_platform_contract_publication" in keys
+    assert "search_platform_fixture_publication" in keys
+    assert "search_platform_regression_harness" in keys
+    assert "search_platform_regression_entrypoint" in keys
+    assert "search_platform_command_bundle" in keys
+    assert "search_platform_validator" in keys
+    assert "search_atp_bundle_publication" in keys
+    assert "search_atp_production_lane" in keys
+    assert "search_atp_operator_proof_triage" in keys
+    assert "search_atp_consumer_handoff_stabilization" in keys
+    assert "search_atp_stage_b_closeout" in keys
+    assert "search_stage_c_optimize_consumerization" in keys
+    assert "search_stage_c_rl_consumerization" in keys
+    assert "search_stage_c_repair_loop_consumer_lane" in keys
+    assert "search_stage_c_consumer_convergence" in keys
+    assert "search_stage_c_repair_loop_containment" in keys
+    assert "search_stage_c_closeout" in keys
     assert "dag_v5_atp_domain_pilot" in keys
     assert "dag_v5_repair_loop_domain_pilot" in keys
 
@@ -484,6 +564,576 @@ def test_build_search_domain_pilot_friction_summary_keeps_domain_work_out_of_ker
     assert summary.ontology_blending_detected is False
     assert summary.repeated_shape_gap_detected is False
     assert summary.next_decision == "continue_domain_pilots_without_kernel_review"
+
+
+def test_build_search_cross_system_handoff_contract_unifies_atp_optimize_and_rl_contracts() -> None:
+    contract = build_search_cross_system_handoff_contract()
+
+    assert isinstance(contract, SearchCrossSystemHandoffContract)
+    assert contract.contract_id == "search.platform.cross_system_handoff_contract.v1"
+    assert contract.source_domain == "atp_deployment_adjacent"
+    assert contract.target_consumers == ("optimize", "rl", "atp_operator")
+    assert "assessment_lineage_visibility" in contract.preserved_fields
+    assert "evaluation_pack_identity" in contract.preserved_fields
+    assert "comparison_packet_handoff" in contract.seam_labels
+    assert "trajectory_projection_handoff" in contract.seam_labels
+    assert contract.final_classification == "stable_helper_and_consumer_contract"
+
+
+def test_build_search_cross_system_artifact_integrity_packet_stays_bounded_and_runnable() -> None:
+    packet = build_search_cross_system_artifact_integrity_packet()
+
+    assert isinstance(packet, SearchCrossSystemArtifactIntegrityPacket)
+    assert packet.contract_id == "search.platform.cross_system_handoff_contract.v1"
+    assert len(packet.rows) == 3
+    assert all(isinstance(row, SearchCrossSystemArtifactIntegrityRow) for row in packet.rows)
+    assert packet.stable_lanes == ("atp", "optimize", "rl")
+    assert packet.unstable_lanes == ()
+    assert packet.replay_or_export_corruption_detected is False
+    assert packet.final_classification == "stable_with_bounded_local_friction"
+
+    result = run_search_study("dag_v6_cross_system_deployment_readiness", mode="spec")
+    assert result.summary_json["study_key"] == "dag_v6_cross_system_deployment_readiness"
+    assert result.summary_json["packet_family"] == "dag_v6_cross_system_deployment_readiness"
+    assert result.summary_json["artifact_refs"]
+
+
+def test_build_search_atp_operator_triage_kit_projects_existing_operator_surface() -> None:
+    kit = build_search_atp_operator_triage_kit()
+
+    assert isinstance(kit, SearchATPOperatorTriageKit)
+    assert kit.kit_id == "search.domain.atp.operator_triage_kit.v1"
+    assert kit.study_key == "dag_v5_atp_domain_pilot"
+    assert "run_search_study('dag_v5_atp_domain_pilot'" not in kit.primary_commands
+    assert any(command.startswith("run_search_study(") for command in kit.primary_commands)
+    assert "boundary_control_integrity" in kit.triage_focus
+    assert kit.kernel_change_required is False
+    assert kit.final_classification == "operator_triage_ready_without_kernel_change"
+
+    result = run_search_study("dag_v6_atp_operator_triage", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "dag_v6_atp_operator_triage"
+
+
+def test_build_search_atp_boundary_control_v2_promotes_v2_artifact_contracts_without_ontology_blending() -> None:
+    boundary = build_search_atp_boundary_control_v2()
+
+    assert isinstance(boundary, SearchDomainBoundaryControlPacket)
+    assert boundary.packet_id == "search.domain.atp.boundary_control.v2"
+    assert "dag_v6_cross_system_deployment_readiness" in boundary.source_study_keys
+    assert "artifacts/benchmarks/hilbert_comparison_packs_v2/*/cross_system_manifest.json" in boundary.benchmark_manifest_refs
+    assert "scripts/build_hilbert_comparison_packs_v2.py" in boundary.external_surface_refs
+    assert "cross_system_handoff_contract_visibility" in boundary.preserved_dag_truth
+    assert "proof_bundle_storage_visibility" in boundary.control_requirements
+    assert boundary.ontology_blending_forbidden is True
+
+    result = run_search_study("dag_v6_atp_boundary_control_v2", mode="spec")
+    assert result.summary_json["study_key"] == "dag_v6_atp_boundary_control_v2"
+
+
+def test_build_search_atp_deployment_readiness_kit_keeps_atp_tranche_adapter_local_and_runnable() -> None:
+    kit = build_search_atp_deployment_readiness_kit()
+
+    assert isinstance(kit, SearchATPDeploymentReadinessKit)
+    assert kit.kit_id == "search.domain.atp.deployment_readiness.v2"
+    assert kit.boundary_control_id == "search.domain.atp.boundary_control.v2"
+    assert kit.operator_triage_kit_id == "search.domain.atp.operator_triage_kit.v1"
+    assert "bundle_manifest_identity" in kit.readiness_checks
+    assert "cross_system_validation_visibility" in kit.deferred_checks
+    assert "artifacts/benchmarks/hilbert_comparison_packs_v2" in kit.expected_artifact_roots
+    assert "agentic_coder_prototype/api/cli_bridge/atp_router.py" in kit.adapter_surface_refs
+    assert kit.kernel_change_required is False
+    assert kit.final_decision == "continue_atp_deployment_without_kernel_review"
+
+    result = run_search_study("dag_v6_atp_deployment_readiness", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "dag_v6_atp_deployment_readiness"
+    assert result.summary_json["packet_family"] == "dag_v6_atp_deployment_readiness"
+
+
+def test_build_search_atp_bundle_publication_packet_promotes_bundle_and_baseline_visibility() -> None:
+    packet = build_search_atp_bundle_publication_packet()
+
+    assert isinstance(packet, SearchATPBundlePublicationPacket)
+    assert packet.packet_id == "search.domain.atp.bundle_publication.v1"
+    assert packet.boundary_control_id == "search.domain.atp.boundary_control.v2"
+    assert "artifacts/benchmarks/hilbert_comparison_packs_v2/*/cross_system_manifest.json" in packet.bundle_manifest_refs
+    assert "artifacts/benchmarks/hilbert_comparison_packs_v2/canonical_baseline_index_v1.json" in packet.baseline_refs
+    assert "artifacts/benchmarks/cross_system/bb_atp/proofs" in packet.proof_bundle_refs
+    assert packet.publishable is True
+    assert packet.final_decision == "publish_atp_bundles_and_baselines_as_stage_b_source_family"
+    assert packet.dominant_locus == "adapter_local"
+
+    result = run_search_study("search_atp_bundle_publication", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "search_atp_bundle_publication"
+    assert result.summary_json["packet_family"] == "search_atp_bundle_publication.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
+
+
+def test_build_search_atp_production_lane_packet_closes_visibility_gap_without_kernel_review() -> None:
+    packet = build_search_atp_production_lane_packet()
+
+    assert isinstance(packet, SearchATPProductionLanePacket)
+    assert packet.packet_id == "search.domain.atp.production_lane.v1"
+    assert packet.readiness_kit_id == "search.domain.atp.deployment_readiness.v2"
+    assert packet.bundle_publication_packet_id == "search.domain.atp.bundle_publication.v1"
+    assert packet.handoff_contract_id == "search.platform.cross_system_handoff_contract.v1"
+    assert packet.operator_triage_kit_id == "search.domain.atp.operator_triage_kit.v1"
+    assert packet.handoff_regression_id == "search.consumer.optimize_rl_handoff_regression.v2"
+    assert "cross_system_validation_visibility" in packet.resolved_checks
+    assert packet.remaining_deferred_checks == ()
+    assert packet.stable_consumers == ("atp_operator", "optimize", "rl")
+    assert packet.final_decision == "continue_atp_production_lane_and_treat_atp_as_stage_b_source_family"
+    assert packet.dominant_locus == "adapter_local"
+
+    result = run_search_study("search_atp_production_lane", mode="spec")
+    assert result.summary_json["study_key"] == "search_atp_production_lane"
+    assert result.summary_json["packet_family"] == "search_atp_production_lane.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "adapter_local"
+
+
+def test_build_search_atp_operator_proof_triage_packet_anchors_real_proof_bundles_and_commands() -> None:
+    packet = build_search_atp_operator_proof_triage_packet()
+
+    assert isinstance(packet, SearchATPOperatorProofTriagePacket)
+    assert packet.packet_id == "search.domain.atp.operator_proof_triage.v1"
+    assert packet.production_lane_id == "search.domain.atp.production_lane.v1"
+    assert packet.triage_kit_id == "search.domain.atp.operator_triage_kit.v1"
+    assert "artifacts/benchmarks/cross_system/bb_atp/proofs" in packet.proof_bundle_refs
+    assert "cross_system_handoff_visibility" in packet.triage_focus
+    assert packet.handoff_ready_consumers == ("atp_operator", "optimize", "rl")
+    assert packet.final_decision == "use_operator_triage_on_real_atp_proof_bundles_before_consumer_expansion"
+    assert packet.dominant_locus == "operator_local"
+
+    result = run_search_study("search_atp_operator_proof_triage", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "search_atp_operator_proof_triage"
+    assert result.summary_json["packet_family"] == "search_atp_operator_proof_triage.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "operator_local"
+
+
+def test_build_search_atp_consumer_handoff_stabilization_packet_keeps_stage_b_handoffs_stable() -> None:
+    packet = build_search_atp_consumer_handoff_stabilization_packet()
+
+    assert isinstance(packet, SearchATPConsumerHandoffStabilizationPacket)
+    assert packet.packet_id == "search.domain.atp.consumer_handoff_stabilization.v1"
+    assert packet.production_lane_id == "search.domain.atp.production_lane.v1"
+    assert packet.handoff_contract_id == "search.platform.cross_system_handoff_contract.v1"
+    assert packet.handoff_regression_id == "search.consumer.optimize_rl_handoff_regression.v2"
+    assert "assessment_lineage_visibility" in packet.preserved_field_union
+    assert "trajectory_projection_handoff" in packet.stabilized_handoff_checks
+    assert packet.stable_consumers == ("atp_operator", "optimize", "rl")
+    assert packet.final_decision == "treat_atp_as_stable_upstream_source_for_stage_c_consumers"
+    assert packet.dominant_locus == "consumer_local"
+
+    result = run_search_study("search_atp_consumer_handoff_stabilization", mode="spec")
+    assert result.summary_json["study_key"] == "search_atp_consumer_handoff_stabilization"
+    assert result.summary_json["packet_family"] == "search_atp_consumer_handoff_stabilization.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "consumer_local"
+
+
+def test_build_search_atp_stage_b_closeout_packet_blesses_atp_for_stage_c_consumers() -> None:
+    packet = build_search_atp_stage_b_closeout_packet()
+
+    assert isinstance(packet, SearchATPStageBCloseoutPacket)
+    assert packet.packet_id == "search.domain.atp.stage_b_closeout.v1"
+    assert packet.bundle_publication_packet_id == "search.domain.atp.bundle_publication.v1"
+    assert packet.production_lane_id == "search.domain.atp.production_lane.v1"
+    assert packet.operator_proof_triage_id == "search.domain.atp.operator_proof_triage.v1"
+    assert packet.consumer_handoff_stabilization_id == "search.domain.atp.consumer_handoff_stabilization.v1"
+    assert "artifacts/benchmarks/hilbert_comparison_packs_v2/*/cross_system_manifest.json" in packet.source_family_refs
+    assert packet.stage_c_ready_consumers == ("atp_operator", "optimize", "rl")
+    assert "consumer_handoff_stabilized" in packet.exit_checks
+    assert packet.remaining_deferred_checks == ()
+    assert packet.final_decision == "exit_stage_b_and_use_atp_as_stage_c_upstream_source_family"
+    assert packet.dominant_locus == "adapter_local"
+
+    result = run_search_study("search_atp_stage_b_closeout", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "search_atp_stage_b_closeout"
+    assert result.summary_json["packet_family"] == "search_atp_stage_b_closeout.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "adapter_local"
+
+
+def test_build_search_stage_c_optimize_consumerization_packet_uses_stage_b_source_family() -> None:
+    packet = build_search_stage_c_optimize_consumerization_packet()
+
+    assert isinstance(packet, SearchStageCOptimizeConsumerizationPacket)
+    assert packet.packet_id == "search.platform.stage_c.optimize_consumerization.v1"
+    assert packet.stage_b_closeout_id == "search.domain.atp.stage_b_closeout.v1"
+    assert packet.optimize_handoff_kit_id == "search.consumer.optimize.handoff_kit.v1"
+    assert packet.optimize_comparison_kit_id == "search.consumer.optimize.comparison_kit.v1"
+    assert "artifacts/benchmarks/hilbert_comparison_packs_v2/*/cross_system_manifest.json" in packet.source_family_refs
+    assert "assessment_lineage_visibility" in packet.required_contract_fields
+    assert packet.source_consumers == ("atp_operator", "optimize", "rl")
+    assert packet.final_decision == "continue_optimize_consumerization_over_published_atp_source_family"
+    assert packet.dominant_locus == "consumer_local"
+
+    result = run_search_study("search_stage_c_optimize_consumerization", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "search_stage_c_optimize_consumerization"
+    assert result.summary_json["packet_family"] == "search_stage_c_optimize_consumerization.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "consumer_local"
+
+
+def test_build_search_stage_c_rl_consumerization_packet_uses_stage_b_source_family() -> None:
+    packet = build_search_stage_c_rl_consumerization_packet()
+
+    assert isinstance(packet, SearchStageCRLConsumerizationPacket)
+    assert packet.packet_id == "search.platform.stage_c.rl_consumerization.v1"
+    assert packet.stage_b_closeout_id == "search.domain.atp.stage_b_closeout.v1"
+    assert packet.rl_handoff_kit_id == "search.consumer.rl.handoff_kit.v1"
+    assert packet.rl_replay_parity_kit_id == "search.consumer.rl.replay_parity_kit.v1"
+    assert "artifacts/benchmarks/hilbert_comparison_packs_v2/*/cross_system_manifest.json" in packet.source_family_refs
+    assert "assessment_lineage_visibility" in packet.required_contract_fields
+    assert packet.source_consumers == ("atp_operator", "optimize", "rl")
+    assert packet.final_decision == "continue_rl_consumerization_over_published_atp_source_family"
+    assert packet.dominant_locus == "consumer_local"
+
+    result = run_search_study("search_stage_c_rl_consumerization", mode="spec")
+    assert result.summary_json["study_key"] == "search_stage_c_rl_consumerization"
+    assert result.summary_json["packet_family"] == "search_stage_c_rl_consumerization.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "consumer_local"
+
+
+def test_build_search_stage_c_repair_loop_consumer_lane_packet_keeps_repair_bounded() -> None:
+    packet = build_search_stage_c_repair_loop_consumer_lane_packet()
+
+    assert isinstance(packet, SearchStageCRepairLoopConsumerLanePacket)
+    assert packet.packet_id == "search.platform.stage_c.repair_loop_consumer_lane.v1"
+    assert packet.stage_b_closeout_id == "search.domain.atp.stage_b_closeout.v1"
+    assert packet.repair_readiness_kit_id == "search.domain.repair_loop.deployment_readiness.v1"
+    assert "artifacts/search/search.replication_v1.codetree_patch" in packet.expected_artifact_roots
+    assert "repair_lane_stays_bounded" in packet.bounded_lane_checks
+    assert packet.source_consumers == ("atp_operator", "optimize", "rl")
+    assert packet.final_decision == "continue_bounded_repair_loop_consumer_lane_over_published_atp_source_family"
+    assert packet.dominant_locus == "adapter_local"
+
+    result = run_search_study("search_stage_c_repair_loop_consumer_lane", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "search_stage_c_repair_loop_consumer_lane"
+    assert result.summary_json["packet_family"] == "search_stage_c_repair_loop_consumer_lane.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "adapter_local"
+
+
+def test_build_search_stage_c_consumer_convergence_packet_preserves_cross_consumer_contracts() -> None:
+    packet = build_search_stage_c_consumer_convergence_packet()
+
+    assert isinstance(packet, SearchStageCConsumerConvergencePacket)
+    assert packet.packet_id == "search.platform.stage_c.consumer_convergence.v1"
+    assert packet.optimize_consumerization_id == "search.platform.stage_c.optimize_consumerization.v1"
+    assert packet.rl_consumerization_id == "search.platform.stage_c.rl_consumerization.v1"
+    assert packet.seam_diagnostic_id == "search.consumer.seam_diagnostic.v1"
+    assert "artifacts/benchmarks/hilbert_comparison_packs_v2/*/cross_system_manifest.json" in packet.shared_source_family_refs
+    assert packet.shared_source_consumers == ("atp_operator", "optimize", "rl")
+    assert "assessment_lineage_visibility" in packet.converged_contract_fields
+    assert packet.consumer_loci == ("consumer_local",)
+    assert "cross_consumer_seam_read_preserved" in packet.convergence_checks
+    assert packet.final_decision == "continue_cross_consumer_convergence_over_published_atp_source_family"
+    assert packet.dominant_locus == "consumer_local"
+
+    result = run_search_study("search_stage_c_consumer_convergence", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "search_stage_c_consumer_convergence"
+    assert result.summary_json["packet_family"] == "search_stage_c_consumer_convergence.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "consumer_local"
+
+
+def test_build_search_stage_c_repair_loop_containment_packet_keeps_repair_from_semantic_expansion() -> None:
+    packet = build_search_stage_c_repair_loop_containment_packet()
+
+    assert isinstance(packet, SearchStageCRepairLoopContainmentPacket)
+    assert packet.packet_id == "search.platform.stage_c.repair_loop_containment.v1"
+    assert packet.repair_loop_consumer_lane_id == "search.platform.stage_c.repair_loop_consumer_lane.v1"
+    assert "artifacts/benchmarks/hilbert_comparison_packs_v2/*/cross_system_manifest.json" in packet.source_family_refs
+    assert "repair_lane_stays_bounded" in packet.bounded_lane_checks
+    assert "dag_kernel_patch_semantics_import" in packet.excluded_semantic_imports
+    assert packet.containment_status == "bounded_and_adapter_local_only"
+    assert packet.final_decision == "keep_repair_loop_consumer_lane_bounded_and_out_of_platform_semantic_expansion"
+    assert packet.dominant_locus == "adapter_local"
+
+    result = run_search_study("search_stage_c_repair_loop_containment", mode="spec")
+    assert result.summary_json["study_key"] == "search_stage_c_repair_loop_containment"
+    assert result.summary_json["packet_family"] == "search_stage_c_repair_loop_containment.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "adapter_local"
+
+
+def test_build_search_stage_c_closeout_packet_exits_stage_c_cleanly() -> None:
+    packet = build_search_stage_c_closeout_packet()
+
+    assert isinstance(packet, SearchStageCCloseoutPacket)
+    assert packet.packet_id == "search.platform.stage_c.closeout.v1"
+    assert packet.optimize_consumerization_id == "search.platform.stage_c.optimize_consumerization.v1"
+    assert packet.rl_consumerization_id == "search.platform.stage_c.rl_consumerization.v1"
+    assert packet.repair_loop_consumer_lane_id == "search.platform.stage_c.repair_loop_consumer_lane.v1"
+    assert packet.consumer_convergence_id == "search.platform.stage_c.consumer_convergence.v1"
+    assert packet.repair_loop_containment_id == "search.platform.stage_c.repair_loop_containment.v1"
+    assert "artifacts/benchmarks/hilbert_comparison_packs_v2/*/cross_system_manifest.json" in packet.source_family_refs
+    assert packet.accepted_source_consumers == ("atp_operator", "optimize", "rl")
+    assert "cross_consumer_convergence_explicit" in packet.exit_checks
+    assert packet.remaining_deferred_checks == ()
+    assert packet.final_decision == "exit_stage_c_and_treat_published_atp_backed_consumers_as_stable_platform_surface"
+    assert packet.dominant_locus == "consumer_local"
+
+    result = run_search_study("search_stage_c_closeout", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "search_stage_c_closeout"
+    assert result.summary_json["packet_family"] == "search_stage_c_closeout.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "consumer_local"
+
+
+def test_build_search_repair_loop_deployment_readiness_kit_stays_workspace_local_and_runnable() -> None:
+    kit = build_search_repair_loop_deployment_readiness_kit()
+
+    assert isinstance(kit, SearchRepairLoopDeploymentReadinessKit)
+    assert kit.kit_id == "search.domain.repair_loop.deployment_readiness.v1"
+    assert kit.boundary_control_id == "search.domain.repair_loop.boundary_control.v1"
+    assert "workspace_snapshot_boundary_explicit" in kit.readiness_checks
+    assert "artifacts/search/search.replication_v1.codetree_patch" in kit.expected_artifact_roots
+    assert "agentic_coder_prototype/conductor/patching.py" in kit.adapter_surface_refs
+    assert kit.kernel_change_required is False
+    assert kit.final_decision == "continue_repair_loop_deployment_without_kernel_review"
+
+    result = run_search_study("dag_v6_repair_loop_deployment_readiness", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "dag_v6_repair_loop_deployment_readiness"
+
+
+def test_build_search_optimize_rl_handoff_regression_keeps_atp_adjacency_out_of_kernel_review() -> None:
+    regression = build_search_optimize_rl_handoff_regression()
+
+    assert isinstance(regression, SearchOptimizeRLHandoffRegression)
+    assert regression.packet_id == "search.consumer.optimize_rl_handoff_regression.v2"
+    assert regression.source_domain == "atp"
+    assert regression.target_consumers == ("optimize", "rl")
+    assert "assessment_lineage_visibility" in regression.preserved_field_union
+    assert "evaluation_pack_identity" in regression.preserved_field_union
+    assert regression.stable_contract is True
+    assert regression.repeated_shape_gap_detected is False
+    assert regression.final_classification == "bounded_glue_only"
+
+    result = run_search_study("dag_v6_optimize_rl_handoff_regression", mode="spec")
+    assert result.summary_json["study_key"] == "dag_v6_optimize_rl_handoff_regression"
+
+
+def test_build_search_optimize_consumer_expansion_keeps_phase3_consumer_growth_bounded() -> None:
+    packet = build_search_optimize_consumer_expansion()
+
+    assert isinstance(packet, SearchOptimizeConsumerExpansionPacket)
+    assert packet.packet_id == "search.consumer.optimize.expansion.v1"
+    assert packet.source_domain == "atp_and_repair_loop"
+    assert packet.atp_ready is True
+    assert packet.repair_ready is True
+    assert "assessment_lineage_visibility" in packet.preserved_field_union
+    assert "evaluation_pack_identity" in packet.preserved_field_union
+    assert packet.stable_contract is True
+    assert packet.final_classification == "bounded_consumer_expansion_only"
+
+    result = run_search_study("dag_v6_optimize_consumer_expansion", mode="spec")
+    assert result.summary_json["study_key"] == "dag_v6_optimize_consumer_expansion"
+
+
+def test_build_search_rl_consumer_expansion_keeps_phase3_consumer_growth_bounded() -> None:
+    packet = build_search_rl_consumer_expansion()
+
+    assert isinstance(packet, SearchRLConsumerExpansionPacket)
+    assert packet.packet_id == "search.consumer.rl.expansion.v1"
+    assert packet.source_domain == "atp_and_repair_loop"
+    assert packet.atp_ready is True
+    assert packet.repair_ready is True
+    assert "assessment_lineage_visibility" in packet.preserved_field_union
+    assert "evaluation_pack_identity" in packet.preserved_field_union
+    assert packet.stable_contract is True
+    assert packet.final_classification == "bounded_consumer_expansion_only"
+
+    result = run_search_study("dag_v6_rl_consumer_expansion", mode="spec")
+    assert result.summary_json["study_key"] == "dag_v6_rl_consumer_expansion"
+
+
+def test_build_search_ctrees_boundary_canary_keeps_ctrees_as_boundary_only_and_study_runnable() -> None:
+    canary = build_search_ctrees_boundary_canary()
+
+    assert isinstance(canary, SearchCTreesBoundaryCanaryPacket)
+    assert canary.packet_id == "search.platform.ctrees_boundary_canary.v1"
+    assert canary.source_domain == "atp_repair_optimize_rl_boundary"
+    assert "dag_v6_atp_deployment_readiness" in canary.source_study_keys
+    assert "dag_v6_repair_loop_deployment_readiness" in canary.source_study_keys
+    assert "agentic_coder_prototype/ctrees/branch_receipt_contract.py" in canary.ctree_surface_refs
+    assert "docs/contracts/cli_bridge/schemas/session_event_payload_ctree_snapshot.schema.json" in canary.ctree_contract_refs
+    assert "ctree_finish_closure_semantics_in_dag_kernel" in canary.forbidden_imports
+    assert canary.kernel_change_required is False
+    assert canary.final_classification == "ctrees_boundary_canary_only"
+
+    result = run_search_study("dag_v6_ctrees_boundary_canary", mode="spec")
+    assert result.summary_json["study_key"] == "dag_v6_ctrees_boundary_canary"
+    assert result.summary_json["packet_family"] == "dag_v6_ctrees_boundary_canary"
+    assert result.summary_json["top_level_metrics"]["decision"] == "keep_ctrees_as_boundary_canary"
+
+
+def test_build_search_slice_packaging_hygiene_note_keeps_slice_gaps_out_of_dag_review() -> None:
+    note = build_search_slice_packaging_hygiene_note()
+
+    assert isinstance(note, SearchSlicePackagingHygieneNote)
+    assert note.note_id == "search.platform.slice_packaging_hygiene_note.v1"
+    assert note.classification == "platform_local_packaging_hygiene_only"
+    assert note.dag_kernel_relevance == "none_detected"
+    assert len(note.recommended_actions) == 3
+
+
+def test_build_search_platform_contract_bundle_publishes_stage_a_reference_surface() -> None:
+    bundle = build_search_platform_contract_bundle()
+
+    assert isinstance(bundle, SearchPlatformContractBundle)
+    assert bundle.bundle_id == "search.platform.contract_bundle.v1"
+    assert bundle.bundle_version == "v1"
+    assert "search.platform.cross_system_handoff_contract.v1" in bundle.contract_ids
+    assert "search.domain.atp.deployment_readiness.v2" in bundle.readiness_kit_ids
+    assert "search.platform.ctrees_boundary_canary.v1" in bundle.regression_packet_ids
+    assert "dag_v6_atp_deployment_readiness" in bundle.canonical_study_keys
+    assert "artifacts/platform/contracts/search_platform_contract_bundle_v1.json" in bundle.artifact_roots
+    assert bundle.final_decision == "publish_contract_bundle_and_use_as_stage_a_reference_surface"
+    assert bundle.dominant_locus == "platform_local"
+
+    packet = build_search_platform_contract_publication_packet()
+    assert packet["decision"] == bundle.final_decision
+    assert packet["dominant_locus"] == "platform_local"
+    assert packet["published_artifact_refs"]
+
+    result = run_search_study("search_platform_contract_publication", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "search_platform_contract_publication"
+    assert result.summary_json["packet_family"] == "search_platform_contract_publication.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == bundle.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "platform_local"
+
+
+def test_build_search_platform_reference_fixture_bundle_exposes_stage_a_fixture_families() -> None:
+    bundle = build_search_platform_reference_fixture_bundle()
+
+    assert isinstance(bundle, SearchReferenceFixtureBundle)
+    assert bundle.bundle_id == "search.platform.reference_fixture_bundle.v1"
+    assert "dag_v6_optimize_consumer_expansion" in bundle.source_study_keys
+    assert "artifacts/platform/fixtures/atp_deployment_readiness_fixture_v1.json" in bundle.fixture_refs
+    assert "search.platform.cross_system_handoff_contract.v1" in bundle.contract_ids
+    assert bundle.final_decision == "publish_fixture_bundle_for_stage_b_and_stage_c_consumers"
+    assert bundle.dominant_locus == "platform_local"
+
+
+def test_build_search_platform_fixture_publication_packet_marks_rows_loadable_and_smoke_ready() -> None:
+    packet = build_search_platform_fixture_publication_packet()
+
+    assert isinstance(packet, SearchPlatformFixturePublicationPacket)
+    assert packet.packet_id == "search.platform.fixture_publication_packet.v1"
+    assert packet.bundle_id == "search.platform.reference_fixture_bundle.v1"
+    assert len(packet.rows) == 5
+    assert all(isinstance(row, SearchPublishedFixtureRow) for row in packet.rows)
+    assert packet.published_fixture_count == 5
+    assert packet.loadable_fixture_count == 5
+    assert "optimize" in packet.smoke_ready_consumers
+    assert "rl" in packet.smoke_ready_consumers
+    assert packet.final_decision == "publish_fixture_rows_and_use_them_as_stage_a_loadable_reference_surface"
+    assert packet.dominant_locus == "platform_local"
+
+    result = run_search_study("search_platform_fixture_publication", mode="spec")
+    assert result.summary_json["study_key"] == "search_platform_fixture_publication"
+    assert result.summary_json["packet_family"] == "search_platform_fixture_publication.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "platform_local"
+
+
+def test_build_search_platform_regression_harness_keeps_stage_a_failures_small_and_local() -> None:
+    harness = build_search_platform_regression_harness()
+
+    assert isinstance(harness, SearchDeploymentRegressionHarness)
+    assert harness.harness_id == "search.platform.deployment_regression_harness.v1"
+    assert harness.contract_bundle_id == "search.platform.contract_bundle.v1"
+    assert harness.fixture_bundle_id == "search.platform.reference_fixture_bundle.v1"
+    assert all(isinstance(check, SearchDeploymentRegressionCheck) for check in harness.checks)
+    assert len(harness.checks) == 4
+    assert harness.blocking_check_ids == ()
+    assert harness.final_decision == "stage_a_publication_surface_ready_for_atp_lane_hardening"
+    assert harness.dominant_locus == "platform_local"
+
+    result = run_search_study("search_platform_regression_harness", mode="spec")
+    assert result.summary_json["study_key"] == "search_platform_regression_harness"
+    assert result.summary_json["packet_family"] == "search_platform_regression_harness.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == harness.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "platform_local"
+
+
+def test_build_search_platform_regression_entrypoint_binds_contract_fixture_and_harness_checks() -> None:
+    entrypoint = build_search_platform_regression_entrypoint()
+
+    assert isinstance(entrypoint, SearchPlatformRegressionEntrypoint)
+    assert entrypoint.entrypoint_id == "search.platform.regression_entrypoint.v1"
+    assert entrypoint.contract_publication_study_key == "search_platform_contract_publication"
+    assert entrypoint.fixture_publication_study_key == "search_platform_fixture_publication"
+    assert entrypoint.regression_harness_study_key == "search_platform_regression_harness"
+    assert len(entrypoint.validator_commands) == 3
+    assert "contract_bundle_visible" in entrypoint.smoke_check_ids
+    assert "fixture.atp_deployment_readiness.v1" in entrypoint.smoke_check_ids
+    assert entrypoint.status == "ready"
+    assert entrypoint.final_decision == "use_stage_a_regression_entrypoint_before_starting_stage_b"
+    assert entrypoint.dominant_locus == "platform_local"
+
+    result = run_search_study("search_platform_regression_entrypoint", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "search_platform_regression_entrypoint"
+    assert result.summary_json["packet_family"] == "search_platform_regression_entrypoint.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == entrypoint.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "platform_local"
+
+
+def test_build_search_platform_command_bundle_publishes_stable_stage_a_invocation_contract() -> None:
+    bundle = build_search_platform_command_bundle()
+
+    assert isinstance(bundle, SearchPlatformCommandBundle)
+    assert bundle.bundle_id == "search.platform.command_bundle.v1"
+    assert len(bundle.commands) == 3
+    assert all(isinstance(command, SearchPlatformCommandSpec) for command in bundle.commands)
+    assert bundle.contract_bundle_id == "search.platform.contract_bundle.v1"
+    assert bundle.fixture_bundle_id == "search.platform.reference_fixture_bundle.v1"
+    assert bundle.regression_entrypoint_id == "search.platform.regression_entrypoint.v1"
+    assert bundle.final_decision == "publish_platform_facing_command_contract_for_stage_a_surfaces"
+    assert bundle.dominant_locus == "platform_local"
+
+    result = run_search_study("search_platform_command_bundle", mode="debug")
+    assert result.payload is not None
+    assert result.summary_json["study_key"] == "search_platform_command_bundle"
+    assert result.summary_json["packet_family"] == "search_platform_command_bundle.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == bundle.final_decision
+
+
+def test_build_search_platform_validator_packet_validates_stage_a_command_and_fixture_surface() -> None:
+    packet = build_search_platform_validator_packet()
+
+    assert isinstance(packet, SearchPlatformValidatorPacket)
+    assert packet.packet_id == "search.platform.validator_packet.v1"
+    assert packet.command_bundle_id == "search.platform.command_bundle.v1"
+    assert "platform.contract_publication.debug" in packet.validated_command_ids
+    assert "search_platform_regression_entrypoint" in packet.validated_study_keys
+    assert "artifacts/platform/contracts/search_platform_contract_bundle_v1.json" in packet.validated_artifact_refs
+    assert packet.blocking_validation_ids == ()
+    assert packet.status == "ready"
+    assert packet.final_decision == "stage_a_platform_surface_validated_and_ready_to_exit"
+    assert packet.dominant_locus == "platform_local"
+
+    result = run_search_study("search_platform_validator", mode="spec")
+    assert result.summary_json["study_key"] == "search_platform_validator"
+    assert result.summary_json["packet_family"] == "search_platform_validator.v1"
+    assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
+    assert result.summary_json["top_level_metrics"]["dominant_locus"] == "platform_local"
 
 
 def test_build_search_optimize_handoff_kit_standardizes_existing_consumer_packet() -> None:
