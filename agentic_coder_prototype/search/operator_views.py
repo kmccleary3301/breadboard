@@ -12,6 +12,14 @@ from .study import (
 )
 
 
+def _mapping_view(value: object) -> Mapping[str, object] | None:
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        value = value.to_dict()
+    if isinstance(value, Mapping):
+        return value
+    return None
+
+
 @dataclass(frozen=True)
 class SearchOperatorBadge:
     label: str
@@ -229,9 +237,7 @@ def _inspection_panel(result: SearchStudyRunResult) -> SearchOperatorPanel | Non
 def _packet_focus_panel(packet: Mapping[str, object]) -> SearchOperatorPanel | None:
     lines: List[str] = []
     if "consumer_seam_diagnostic" in packet:
-        diagnostic = packet["consumer_seam_diagnostic"]
-        if hasattr(diagnostic, "to_dict") and callable(diagnostic.to_dict):
-            diagnostic = diagnostic.to_dict()
+        diagnostic = _mapping_view(packet["consumer_seam_diagnostic"])
         if isinstance(diagnostic, Mapping):
             lines.append(
                 "consumer_seam: "
@@ -239,10 +245,36 @@ def _packet_focus_panel(packet: Mapping[str, object]) -> SearchOperatorPanel | N
                 f"helper_only={len(diagnostic.get('helper_only_seam_labels', []))} "
                 f"consumer_local={len(diagnostic.get('consumer_local_seam_labels', []))}"
             )
+    if "handoff_contract" in packet:
+        contract = _mapping_view(packet["handoff_contract"])
+        if isinstance(contract, Mapping):
+            lines.append(
+                "handoff_contract: "
+                f"consumers={len(contract.get('target_consumers', []))} "
+                f"preserved={len(contract.get('preserved_fields', []))} "
+                f"helper_only={len(contract.get('helper_only_fields', []))} "
+                f"classification={contract.get('final_classification')}"
+            )
+    if "artifact_integrity_packet" in packet:
+        integrity = _mapping_view(packet["artifact_integrity_packet"])
+        if isinstance(integrity, Mapping):
+            lines.append(
+                "artifact_integrity: "
+                f"stable={len(integrity.get('stable_lanes', []))} "
+                f"unstable={len(integrity.get('unstable_lanes', []))} "
+                f"corruption={integrity.get('replay_or_export_corruption_detected')} "
+                f"classification={integrity.get('final_classification')}"
+            )
+    if "slice_packaging_hygiene_note" in packet:
+        note = _mapping_view(packet["slice_packaging_hygiene_note"])
+        if isinstance(note, Mapping):
+            lines.append(
+                "slice_packaging: "
+                f"classification={note.get('classification')} "
+                f"kernel_relevance={note.get('dag_kernel_relevance')}"
+            )
     if "domain_friction_summary" in packet:
-        friction = packet["domain_friction_summary"]
-        if hasattr(friction, "to_dict") and callable(friction.to_dict):
-            friction = friction.to_dict()
+        friction = _mapping_view(packet["domain_friction_summary"])
         if isinstance(friction, Mapping):
             lines.append(
                 "domain_friction: "
@@ -250,14 +282,51 @@ def _packet_focus_panel(packet: Mapping[str, object]) -> SearchOperatorPanel | N
                 f"requires_kernel={friction.get('requires_kernel_change')}"
             )
     if "pilot_packet" in packet:
-        pilot = packet["pilot_packet"]
-        if hasattr(pilot, "to_dict") and callable(pilot.to_dict):
-            pilot = pilot.to_dict()
+        pilot = _mapping_view(packet["pilot_packet"])
         if isinstance(pilot, Mapping):
             lines.append(
                 "domain_friction: "
                 f"classification={pilot.get('friction_locus')} "
                 f"requires_kernel={pilot.get('kernel_change_required')}"
+            )
+    if "deployment_readiness_kit" in packet:
+        readiness = _mapping_view(packet["deployment_readiness_kit"])
+        if isinstance(readiness, Mapping):
+            lines.append(
+                "deployment_readiness: "
+                f"passed={len(readiness.get('passed_checks', []))}/"
+                f"{len(readiness.get('readiness_checks', []))} "
+                f"deferred={len(readiness.get('deferred_checks', []))} "
+                f"decision={readiness.get('final_decision')}"
+            )
+    if "operator_triage_kit" in packet:
+        triage = _mapping_view(packet["operator_triage_kit"])
+        if isinstance(triage, Mapping):
+            lines.append(
+                "operator_triage: "
+                f"focus={len(triage.get('triage_focus', []))} "
+                f"signal_steps={triage.get('time_to_first_signal_steps')} "
+                f"diagnosis_steps={triage.get('time_to_first_diagnosis_steps')} "
+                f"classification={triage.get('final_classification')}"
+            )
+    if "handoff_regression" in packet:
+        regression = _mapping_view(packet["handoff_regression"])
+        if isinstance(regression, Mapping):
+            lines.append(
+                "handoff_regression: "
+                f"consumers={len(regression.get('target_consumers', []))} "
+                f"stable_contract={regression.get('stable_contract')} "
+                f"repeated_shape={regression.get('repeated_shape_gap_detected')} "
+                f"classification={regression.get('final_classification')}"
+            )
+    if "consumer_expansion_packet" in packet:
+        expansion = _mapping_view(packet["consumer_expansion_packet"])
+        if isinstance(expansion, Mapping):
+            lines.append(
+                "consumer_expansion: "
+                f"source_pilots={len(expansion.get('source_pilot_ids', []))} "
+                f"stable_contract={expansion.get('stable_contract')} "
+                f"classification={expansion.get('final_classification')}"
             )
     if "decision" in packet:
         lines.append(f"decision: {packet['decision']}")
@@ -352,6 +421,31 @@ def build_search_operator_compare_screen(
                     f"left_only_preserved: {len(preserved_left - preserved_right)}",
                     f"right_only_preserved: {len(preserved_right - preserved_left)}",
                     f"shared_lost: {len(lost_left & lost_right)}",
+                ),
+            )
+        )
+    left_readiness = _mapping_view(left.packet.get("deployment_readiness_kit"))
+    right_readiness = _mapping_view(right.packet.get("deployment_readiness_kit"))
+    left_expansion = _mapping_view(left.packet.get("consumer_expansion_packet"))
+    right_expansion = _mapping_view(right.packet.get("consumer_expansion_packet"))
+    if (isinstance(left_readiness, Mapping) and isinstance(right_readiness, Mapping)) or (
+        isinstance(left_expansion, Mapping) and isinstance(right_expansion, Mapping)
+    ):
+        left_status = left_readiness or left_expansion or {}
+        right_status = right_readiness or right_expansion or {}
+        left_decision = left_status.get("final_decision", left_status.get("final_classification", "unknown"))
+        right_decision = right_status.get("final_decision", right_status.get("final_classification", "unknown"))
+        left_locus = left_status.get("dominant_friction_locus", left_status.get("source_domain", "unknown"))
+        right_locus = right_status.get("dominant_friction_locus", right_status.get("source_domain", "unknown"))
+        panels.append(
+            SearchOperatorPanel(
+                panel_id="deployment_status",
+                title="Deployment Status",
+                lines=(
+                    f"left_status: {left_decision}",
+                    f"right_status: {right_decision}",
+                    f"left_locus: {left_locus}",
+                    f"right_locus: {right_locus}",
                 ),
             )
         )
