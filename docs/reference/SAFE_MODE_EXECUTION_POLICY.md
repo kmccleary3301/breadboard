@@ -8,7 +8,8 @@ This policy is mandatory for engine-side development in the canonical
 1. Do **not** run runtime/task commands directly against canonical repo unless preflight passes.
    - Blocked commands without preflight: `breadboard run`, `python main.py ...`, parity/replay task runs.
 2. Limit canonical-repo work to docs/code edits and non-destructive verification.
-3. If runtime validation is required, use an isolated disposable workspace clone/copy.
+3. If runtime validation is required, prefer an isolated disposable workspace clone/copy when
+   the run is expected to mutate or aggressively reset the workspace.
 4. Run workspace safety preflight before any task run:
 
 ```bash
@@ -29,12 +30,18 @@ See:
 
 ## Required Safe Defaults
 
-- workspace roots must resolve under repo subdirectories (for example `agent_ws/...`)
-  or under temp directories.
-- repo root, repo ancestors, home directory, and temp root are forbidden as workspace roots.
+- dangerous roots are forbidden as workspace roots:
+  - repo root
+  - home directory
+  - temp root
+  - any directory containing `.git`
+- user-selected workspaces may live outside `repo/tmp` and will be preserved in place.
+- only roots under `repo/tmp/...` are treated as disposable and eligible for automatic cleanup.
 
 ## Operational Notes
 
-- `scripts/ops/preflight_workspace_safety.py` returns non-zero on unsafe roots.
-- `agentic_coder_prototype/agent.py` contains matching runtime guards.
+- `scripts/ops/preflight_workspace_safety.py` returns non-zero on unsafe roots and reports whether a
+  workspace is disposable or preserved.
+- `agentic_coder_prototype/agent.py` contains matching runtime guards and only auto-cleans disposable
+  workspaces under `repo/tmp/...`.
 - `scripts/run_parity_replays.py` uses safe-delete rails and workspace validation.
