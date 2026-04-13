@@ -7,6 +7,7 @@ from .domain_pilots import (
     build_search_atp_domain_pilot,
     build_search_repair_loop_domain_pilot,
 )
+from .deployment_readiness import build_search_ctrees_boundary_canary
 from .examples import build_dag_v4_tot_v2_packet
 
 
@@ -211,6 +212,75 @@ def build_search_general_agent_control_packet() -> Dict[str, object]:
 
 def build_search_general_agent_control_packet_payload() -> Dict[str, object]:
     example = build_search_general_agent_control_packet()
+    return {
+        "control_packet": example["control_packet"].to_dict(),
+        "decision": example["decision"],
+        "artifact_refs": list(example["artifact_refs"]),
+        "notes": dict(example["notes"]),
+    }
+
+
+def build_search_ctrees_boundary_attribution_control_packet() -> Dict[str, object]:
+    canary = build_search_ctrees_boundary_canary()
+    packet = SearchSelectiveResearchControlPacket(
+        packet_id="search.research_control.ctrees_boundary_attribution.v1",
+        control_family="ctrees_boundary_attribution",
+        source_study_keys=[
+            "dag_v6_ctrees_boundary_canary",
+            "dag_v6_atp_deployment_readiness",
+            "dag_v6_repair_loop_deployment_readiness",
+        ],
+        source_search_ids=[
+            canary.packet_id,
+            "search.domain.atp.pilot.v1",
+            "search.domain.repair_loop.pilot.v1",
+        ],
+        external_surface_refs=[
+            "agentic_coder_prototype/ctrees/phase_machine.py",
+            "agentic_coder_prototype/ctrees/branch_receipt_contract.py",
+            "agentic_coder_prototype/ctrees/finish_closure_contract.py",
+            "agentic_coder_prototype/ctrees/helper_rehydration.py",
+            "agentic_coder_prototype/ctrees/downstream_task_eval.py",
+        ],
+        preserved_dag_truth=list(canary.preserved_dag_truth),
+        control_question=(
+            "Can C-Trees-facing pressure be attributed cleanly to C-Trees-local contract/closure needs "
+            "rather than misclassified as missing DAG truth?"
+        ),
+        expected_value=(
+            "Adds a bounded attribution lens for DAG→C-Trees composition without importing branch receipts, "
+            "finish closure, or helper rehydration semantics into DAG."
+        ),
+        anti_goals=[
+            "ctrees_branch_receipts_as_dag_truth",
+            "ctrees_finish_closure_nouns_in_dag_kernel",
+            "ctrees_helper_rehydration_contracts_in_dag",
+        ],
+        decision="ctrees_boundary_control_only",
+        kernel_change_required=False,
+        notes={
+            "why_now": "phase_6_bounded_ctrees_canary_following_atp_and_repair_deployment",
+            "canary_packet_id": canary.packet_id,
+            "expected_locus": canary.dominant_locus,
+        },
+        metadata={"phase": "dag_v6_phase5"},
+    )
+    return {
+        "control_packet": packet,
+        "decision": packet.decision,
+        "artifact_refs": [
+            "artifacts/research_controls/ctrees_boundary_attribution/packet_v1.md",
+            "artifacts/research_controls/ctrees_boundary_attribution/control_matrix_v1.json",
+        ],
+        "notes": {
+            "recommended_next_step": "keep_ctrees_as_boundary_canary",
+            "kernel_review_opened": False,
+        },
+    }
+
+
+def build_search_ctrees_boundary_attribution_control_packet_payload() -> Dict[str, object]:
+    example = build_search_ctrees_boundary_attribution_control_packet()
     return {
         "control_packet": example["control_packet"].to_dict(),
         "decision": example["decision"],
