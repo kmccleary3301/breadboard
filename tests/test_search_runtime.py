@@ -30,6 +30,17 @@ from agentic_coder_prototype.search import (
     SearchATPOperatorProofTriagePacket,
     SearchATPOperatorTriageKit,
     SearchCTreesBoundaryCanaryPacket,
+    SearchCrossExecutionCellResult,
+    SearchCrossExecutionHarnessComparisonPacket,
+    SearchCrossExecutionMatrixPacket,
+    SearchCrossExecutionOptimizeExecutionPacket,
+    SearchCrossExecutionOptimizeRegressionLedgerPacket,
+    SearchCrossExecutionRLExecutionPacket,
+    SearchCrossExecutionRLRegressionLedgerPacket,
+    SearchCrossExecutionCloseoutPacket,
+    SearchCrossExecutionDivergenceLedgerPacket,
+    SearchCrossExecutionNextLocusPacket,
+    SearchCrossExecutionRepeatedRunSummaryPacket,
     SearchOfflineDataset,
     SearchAssessment,
     SearchBranchState,
@@ -74,6 +85,7 @@ from agentic_coder_prototype.search import (
     SearchStageCRepairLoopConsumerLanePacket,
     SearchStageCRepairLoopContainmentPacket,
     SearchSelectiveResearchControlPacket,
+    SearchExecutionBudgetCell,
     SearchSlicePackagingHygieneNote,
     TopologyAudit,
     build_default_search_assessment_registry,
@@ -214,6 +226,16 @@ from agentic_coder_prototype.search import (
     build_search_cross_system_artifact_integrity_packet,
     build_search_cross_system_deployment_readiness_packet,
     build_search_cross_system_handoff_contract,
+    build_search_cross_execution_harness_comparison_packet,
+    build_search_cross_execution_matrix_packet,
+    build_search_cross_execution_optimize_execution_packet,
+    build_search_cross_execution_optimize_regression_ledger_packet,
+    build_search_cross_execution_rl_execution_packet,
+    build_search_cross_execution_rl_regression_ledger_packet,
+    build_search_cross_execution_divergence_ledger_packet,
+    build_search_cross_execution_repeated_run_summary_packet,
+    build_search_cross_execution_closeout_packet,
+    build_search_cross_execution_next_locus_packet,
     build_search_atp_boundary_control_packet,
     build_search_atp_boundary_control_v2,
     build_search_atp_bundle_publication_packet,
@@ -383,6 +405,16 @@ def test_default_search_study_registry_lists_canonical_families() -> None:
     assert "search_stage_c_consumer_convergence" in keys
     assert "search_stage_c_repair_loop_containment" in keys
     assert "search_stage_c_closeout" in keys
+    assert "search_cross_execution_matrix" in keys
+    assert "search_cross_execution_harness_comparison" in keys
+    assert "search_cross_execution_optimize_execution" in keys
+    assert "search_cross_execution_optimize_regression_ledger" in keys
+    assert "search_cross_execution_rl_execution" in keys
+    assert "search_cross_execution_rl_regression_ledger" in keys
+    assert "search_cross_execution_divergence_ledger" in keys
+    assert "search_cross_execution_repeated_run_summary" in keys
+    assert "search_cross_execution_closeout" in keys
+    assert "search_cross_execution_next_locus" in keys
     assert "dag_v5_atp_domain_pilot" in keys
     assert "dag_v5_repair_loop_domain_pilot" in keys
 
@@ -892,6 +924,196 @@ def test_build_search_stage_c_closeout_packet_exits_stage_c_cleanly() -> None:
     assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
     assert result.summary_json["top_level_metrics"]["dominant_locus"] == "consumer_local"
 
+
+
+def test_build_search_cross_execution_matrix_packet_locks_first_matched_cells() -> None:
+    packet = build_search_cross_execution_matrix_packet()
+
+    assert isinstance(packet, SearchCrossExecutionMatrixPacket)
+    assert packet.packet_id == "search.platform.phase2.execution_matrix.v1"
+    assert packet.stage_b_closeout_id == "search.domain.atp.stage_b_closeout.v1"
+    assert packet.stage_c_closeout_id == "search.platform.stage_c.closeout.v1"
+    assert packet.optimize_comparison_id == "comparison.next_frontier.cohort.dag_packet_compare.v1"
+    assert packet.optimize_live_cell_id == "optimize.next_frontier.live_cell.dag_packets.v1"
+    assert packet.rl_trainer_export_manifest_id == "bb.rl.next_frontier.export_manifest.trainer.v1"
+    assert packet.rl_parity_live_manifest_id == "bb.rl.next_frontier.export_manifest.parity.live.v1"
+    assert packet.rl_parity_replay_manifest_id == "bb.rl.next_frontier.export_manifest.parity.replay.v1"
+    assert len(packet.budget_cells) == 2
+    assert all(isinstance(cell, SearchExecutionBudgetCell) for cell in packet.budget_cells)
+    assert packet.budget_cells[0].target_consumers == ("optimize", "rl")
+    assert packet.final_decision == "execute_matched_optimize_rl_cells_over_published_atp_source_family"
+
+    result = run_search_study("search_cross_execution_matrix", mode="debug")
+    assert result.summary_json["study_key"] == "search_cross_execution_matrix"
+    assert result.summary_json["packet_family"] == "search_cross_execution_matrix.v1"
+
+
+def test_build_search_cross_execution_harness_comparison_packet_owns_first_divergence_read() -> None:
+    packet = build_search_cross_execution_harness_comparison_packet()
+
+    assert isinstance(packet, SearchCrossExecutionHarnessComparisonPacket)
+    assert packet.packet_id == "search.platform.phase2.harness_comparison.v1"
+    assert packet.execution_matrix_id == "search.platform.phase2.execution_matrix.v1"
+    assert packet.consumer_convergence_id == "search.platform.stage_c.consumer_convergence.v1"
+    assert packet.compared_budget_cells == ("search.cross_execution.cell.audit_small.v1", "search.cross_execution.cell.audit_medium.v1")
+    assert "matched_budget_cells_explicit" in packet.regression_checks
+    assert packet.final_decision == "use_harness_owned_comparison_before_expanding_execution_matrix"
+
+    result = run_search_study("search_cross_execution_harness_comparison", mode="spec")
+    assert result.summary_json["study_key"] == "search_cross_execution_harness_comparison"
+    assert result.summary_json["packet_family"] == "search_cross_execution_harness_comparison.v1"
+
+
+def test_build_search_cross_execution_optimize_execution_packet_reuses_matrix_cells() -> None:
+    packet = build_search_cross_execution_optimize_execution_packet()
+
+    assert isinstance(packet, SearchCrossExecutionOptimizeExecutionPacket)
+    assert packet.packet_id == "search.platform.phase2.optimize_execution.v1"
+    assert packet.execution_matrix_id == "search.platform.phase2.execution_matrix.v1"
+    assert packet.stage_c_optimize_consumerization_id == "search.platform.stage_c.optimize_consumerization.v1"
+    assert packet.harness_comparison_id == "search.platform.phase2.harness_comparison.v1"
+    assert len(packet.executed_cell_results) == 2
+    assert all(isinstance(result, SearchCrossExecutionCellResult) for result in packet.executed_cell_results)
+    assert packet.executed_cell_results[0].cell_id == "search.cross_execution.cell.audit_small.v1"
+    assert packet.executed_cell_results[0].optimize_artifact_id == "comparison.next_frontier.cohort.dag_packet_compare.v1"
+    assert packet.executed_cell_results[1].cell_id == "search.cross_execution.cell.audit_medium.v1"
+    assert packet.executed_cell_results[1].optimize_artifact_id == "optimize.next_frontier.live_cell.dag_packets.v1"
+    assert packet.shared_budget_rule == "reuse_matrix_cells_before_any_budget_growth"
+    assert packet.final_decision == "repeat_optimize_cells_before_expanding_rl_budget_surface"
+
+    result = run_search_study("search_cross_execution_optimize_execution", mode="debug")
+    assert result.summary_json["study_key"] == "search_cross_execution_optimize_execution"
+    assert result.summary_json["packet_family"] == "search_cross_execution_optimize_execution.v1"
+
+
+def test_build_search_cross_execution_optimize_regression_ledger_packet_tracks_first_repeat_rule() -> None:
+    packet = build_search_cross_execution_optimize_regression_ledger_packet()
+
+    assert isinstance(packet, SearchCrossExecutionOptimizeRegressionLedgerPacket)
+    assert packet.packet_id == "search.platform.phase2.optimize_regression_ledger.v1"
+    assert packet.optimize_execution_id == "search.platform.phase2.optimize_execution.v1"
+    assert packet.compared_cell_ids == (
+        "search.cross_execution.cell.audit_small.v1",
+        "search.cross_execution.cell.audit_medium.v1",
+    )
+    assert "no_unclassified_decision_regression" in packet.regression_guards
+    assert packet.repeated_run_rule == "require_same_cell_regression_twice_before_reclassification"
+    assert packet.final_decision == "treat_optimize_regression_as_harness_managed_until_cross_consumer_repeat"
+
+    result = run_search_study("search_cross_execution_optimize_regression_ledger", mode="spec")
+    assert result.summary_json["study_key"] == "search_cross_execution_optimize_regression_ledger"
+    assert result.summary_json["packet_family"] == "search_cross_execution_optimize_regression_ledger.v1"
+
+
+def test_build_search_cross_execution_rl_execution_packet_reuses_matrix_cells() -> None:
+    packet = build_search_cross_execution_rl_execution_packet()
+
+    assert isinstance(packet, SearchCrossExecutionRLExecutionPacket)
+    assert packet.packet_id == "search.platform.phase3.rl_execution.v1"
+    assert packet.execution_matrix_id == "search.platform.phase2.execution_matrix.v1"
+    assert packet.stage_c_rl_consumerization_id == "search.platform.stage_c.rl_consumerization.v1"
+    assert packet.harness_comparison_id == "search.platform.phase2.harness_comparison.v1"
+    assert len(packet.executed_cell_results) == 2
+    assert packet.executed_cell_results[0].cell_id == "search.cross_execution.cell.audit_small.v1"
+    assert packet.executed_cell_results[0].optimize_artifact_id == "bb.rl.next_frontier.export_manifest.trainer.v1"
+    assert packet.executed_cell_results[1].cell_id == "search.cross_execution.cell.audit_medium.v1"
+    assert packet.executed_cell_results[1].optimize_artifact_id == "bb.rl.next_frontier.export_manifest.parity.live.v1"
+    assert packet.shared_budget_rule == "reuse_matrix_cells_before_any_rl_budget_growth"
+    assert packet.final_decision == "repeat_rl_cells_before_expanding_harness_divergence_matrix"
+
+    result = run_search_study("search_cross_execution_rl_execution", mode="debug")
+    assert result.summary_json["study_key"] == "search_cross_execution_rl_execution"
+    assert result.summary_json["packet_family"] == "search_cross_execution_rl_execution.v1"
+
+
+def test_build_search_cross_execution_rl_regression_ledger_packet_tracks_first_repeat_rule() -> None:
+    packet = build_search_cross_execution_rl_regression_ledger_packet()
+
+    assert isinstance(packet, SearchCrossExecutionRLRegressionLedgerPacket)
+    assert packet.packet_id == "search.platform.phase3.rl_regression_ledger.v1"
+    assert packet.rl_execution_id == "search.platform.phase3.rl_execution.v1"
+    assert packet.compared_cell_ids == (
+        "search.cross_execution.cell.audit_small.v1",
+        "search.cross_execution.cell.audit_medium.v1",
+    )
+    assert "no_export_manifest_identity_loss" in packet.regression_guards
+    assert packet.repeated_run_rule == "require_same_cell_rl_regression_twice_before_reclassification"
+    assert packet.final_decision == "treat_rl_regression_as_harness_managed_until_cross_consumer_repeat"
+
+    result = run_search_study("search_cross_execution_rl_regression_ledger", mode="spec")
+    assert result.summary_json["study_key"] == "search_cross_execution_rl_regression_ledger"
+    assert result.summary_json["packet_family"] == "search_cross_execution_rl_regression_ledger.v1"
+
+
+def test_build_search_cross_execution_divergence_ledger_packet_joins_optimize_and_rl_ledgers() -> None:
+    packet = build_search_cross_execution_divergence_ledger_packet()
+
+    assert isinstance(packet, SearchCrossExecutionDivergenceLedgerPacket)
+    assert packet.packet_id == "search.platform.phase4.divergence_ledger.v1"
+    assert packet.harness_comparison_id == "search.platform.phase2.harness_comparison.v1"
+    assert packet.optimize_regression_ledger_id == "search.platform.phase2.optimize_regression_ledger.v1"
+    assert packet.rl_regression_ledger_id == "search.platform.phase3.rl_regression_ledger.v1"
+    assert packet.compared_cell_ids == (
+        "search.cross_execution.cell.audit_small.v1",
+        "search.cross_execution.cell.audit_medium.v1",
+    )
+    assert packet.classification_rule == "require repeated same-cell cross-consumer divergence before locus escalation"
+    assert packet.final_decision == "keep divergence ledger harness_owned_until repeated cross_consumer evidence appears"
+
+    result = run_search_study("search_cross_execution_divergence_ledger", mode="debug")
+    assert result.summary_json["study_key"] == "search_cross_execution_divergence_ledger"
+    assert result.summary_json["packet_family"] == "search_cross_execution_divergence_ledger.v1"
+
+
+def test_build_search_cross_execution_repeated_run_summary_packet_keeps_next_locus_narrow() -> None:
+    packet = build_search_cross_execution_repeated_run_summary_packet()
+
+    assert isinstance(packet, SearchCrossExecutionRepeatedRunSummaryPacket)
+    assert packet.packet_id == "search.platform.phase4.repeated_run_summary.v1"
+    assert packet.divergence_ledger_id == "search.platform.phase4.divergence_ledger.v1"
+    assert packet.optimize_execution_id == "search.platform.phase2.optimize_execution.v1"
+    assert packet.rl_execution_id == "search.platform.phase3.rl_execution.v1"
+    assert packet.next_locus_classification == "harness_local_pending_more_repetition"
+    assert packet.final_decision == "continue_execution_tranche_without_new_architecture_or_planner_round"
+
+    result = run_search_study("search_cross_execution_repeated_run_summary", mode="spec")
+    assert result.summary_json["study_key"] == "search_cross_execution_repeated_run_summary"
+    assert result.summary_json["packet_family"] == "search_cross_execution_repeated_run_summary.v1"
+
+
+def test_build_search_cross_execution_closeout_packet_closes_without_widening_scope() -> None:
+    packet = build_search_cross_execution_closeout_packet()
+
+    assert isinstance(packet, SearchCrossExecutionCloseoutPacket)
+    assert packet.packet_id == "search.platform.phase5.closeout.v1"
+    assert packet.divergence_ledger_id == "search.platform.phase4.divergence_ledger.v1"
+    assert packet.repeated_run_summary_id == "search.platform.phase4.repeated_run_summary.v1"
+    assert packet.compared_cell_ids == (
+        "search.cross_execution.cell.audit_small.v1",
+        "search.cross_execution.cell.audit_medium.v1",
+    )
+    assert "same_budget_cells_preserved" in packet.closeout_checks
+    assert packet.final_decision == "close_cross_system_execution_tranche_and_keep_next_work_platform_local"
+
+    result = run_search_study("search_cross_execution_closeout", mode="debug")
+    assert result.summary_json["study_key"] == "search_cross_execution_closeout"
+    assert result.summary_json["packet_family"] == "search_cross_execution_closeout.v1"
+
+
+def test_build_search_cross_execution_next_locus_packet_keeps_follow_on_non_architectural() -> None:
+    packet = build_search_cross_execution_next_locus_packet()
+
+    assert isinstance(packet, SearchCrossExecutionNextLocusPacket)
+    assert packet.packet_id == "search.platform.phase5.next_locus.v1"
+    assert packet.closeout_id == "search.platform.phase5.closeout.v1"
+    assert packet.next_locus_classification == "platform_or_harness_local_before_any_new_planner_round"
+    assert packet.recommended_next_move == "run_repeated_execution_on_same_cells_before_expanding_source_family"
+    assert "no_new_planner_round_until_repeated_divergence_exists" in packet.deferred_moves
+    assert packet.final_decision == "keep_follow_on_work_execution_local_and_non_architectural"
+
+    result = run_search_study("search_cross_execution_next_locus", mode="spec")
+    assert result.summary_json["study_key"] == "search_cross_execution_next_locus"
+    assert result.summary_json["packet_family"] == "search_cross_execution_next_locus.v1"
 
 def test_build_search_repair_loop_deployment_readiness_kit_stays_workspace_local_and_runnable() -> None:
     kit = build_search_repair_loop_deployment_readiness_kit()
