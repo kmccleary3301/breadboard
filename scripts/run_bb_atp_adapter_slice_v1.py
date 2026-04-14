@@ -156,6 +156,10 @@ def _manifest_system_config_ref(manifest: dict[str, Any], *, system_id: str) -> 
     return ""
 
 
+def _default_workspace_root(*, system_id: str) -> Path:
+    return (REPO_ROOT / "tmp" / "cross_system" / str(system_id).strip() / "workspaces").resolve()
+
+
 def _resolve_artifact_dirs(
     manifest: dict[str, Any],
     *,
@@ -175,11 +179,7 @@ def _resolve_artifact_dirs(
 
     effective_raw = Path(raw_output_dir).resolve() if raw_output_dir else root / "cross_system" / system_id / "raw"
     effective_proof = Path(proof_output_dir).resolve() if proof_output_dir else root / "cross_system" / system_id / "proofs"
-    effective_workspace = (
-        Path(workspace_root).resolve()
-        if workspace_root
-        else root / "cross_system" / system_id / "workspaces"
-    )
+    effective_workspace = Path(workspace_root).resolve() if workspace_root else _default_workspace_root(system_id=system_id)
     return effective_proof, effective_raw, effective_workspace
 
 
@@ -713,6 +713,8 @@ def _run_single_task(
         verifier_payload = {"error": str(exc), "results": []}
         verifier_error = str(exc)
     verification = _interpret_verifier_payload(verifier_payload)
+    if str(execution.session_status).lower() == "failed" and not candidate_present and not verifier_error:
+        verifier_error = "session_failed_without_candidate_proof"
     if not candidate_present and not verifier_error:
         verifier_error = "missing_or_invalid_candidate_proof"
     if candidate_present and not statement_preserved and not verifier_error:

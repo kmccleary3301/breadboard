@@ -334,3 +334,90 @@ def test_run_bb_slice_uses_real_runner_contract_with_injected_fakes(tmp_path: Pa
     assert rows[0]["toolchain_id"] == "lean4.12.0_mathlib.deadbeef"
     assert rows[0]["verification_log_digest"]
     assert (tmp_path / "raw" / "t1.json").exists()
+
+
+def test_resolve_artifact_dirs_defaults_workspace_under_repo_tmp() -> None:
+    module = _load_module("run_bb_atp_adapter_slice_v1_dirs", "scripts/run_bb_atp_adapter_slice_v1.py")
+    proof_dir, raw_dir, workspace_dir = module._resolve_artifact_dirs(
+        _manifest_payload(),
+        system_id="bb_atp",
+        proof_output_dir=None,
+        raw_output_dir=None,
+        workspace_root=None,
+    )
+    assert proof_dir == (module.REPO_ROOT / "artifacts" / "benchmarks" / "hilbert_comparison_packs_v1" / "pack_a" / "cross_system" / "cross_system" / "bb_atp" / "proofs").resolve()
+    assert raw_dir == (module.REPO_ROOT / "artifacts" / "benchmarks" / "hilbert_comparison_packs_v1" / "pack_a" / "cross_system" / "cross_system" / "bb_atp" / "raw").resolve()
+    assert workspace_dir == (module.REPO_ROOT / "tmp" / "cross_system" / "bb_atp" / "workspaces").resolve()
+
+
+def test_run_bb_slice_preserves_session_failure_without_candidate(tmp_path: Path) -> None:
+    module = _load_module("run_bb_atp_adapter_slice_v1_failed_session", "scripts/run_bb_atp_adapter_slice_v1.py")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(_manifest_payload(), indent=2), encoding="utf-8")
+    task_inputs_path = tmp_path / "tasks.json"
+    task_inputs_path.write_text(json.dumps({"schema": "breadboard.aristotle_task_inputs.v1", "tasks": [_tasks_payload()["tasks"][0]]}, indent=2), encoding="utf-8")
+    config_path = tmp_path / "fake_config.yaml"
+    config_path.write_text("version: 2\n", encoding="utf-8")
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def health(self):
+            return {"status": "ok"}
+
+    def fake_runner(*, client, config_path, model, prepared, verifier_url, verifier_timeout_s, permission_mode, timeout_s, poll_interval_s):
+        return module.TaskExecutionResult(
+            session_id="failed-session",
+            session_status="failed",
+            wall_clock_ms=111,
+            logging_dir=None,
+            timed_out=False,
+            completion_summary=None,
+            reward_summary=None,
+            metadata={"model": model},
+        )
+
+    def fake_verifier(*, proof_text, task_id, verifier_url, timeout_s):
+        return {"results": [{"error": None, "response": {"messages": [], "time": 0.1}}]}
+
+    original_client = module.BreadboardClient
+    original_ensure_engine = module._ensure_engine
+    try:
+        module.BreadboardClient = FakeClient
+        module._ensure_engine = lambda **kwargs: None
+        out_path = tmp_path / "rows.jsonl"
+        summary_path = tmp_path / "summary.json"
+        module.run_bb_slice(
+            manifest_path=manifest_path,
+            task_inputs_path=task_inputs_path,
+            out_path=out_path,
+            summary_path=summary_path,
+            system_id="bb_atp",
+            config_path=str(config_path),
+            model="openrouter/openai/gpt-5.4",
+            proof_output_dir=str(tmp_path / "proofs"),
+            raw_output_dir=str(tmp_path / "raw"),
+            workspace_root=str(tmp_path / "workspaces"),
+            base_url="http://127.0.0.1:9099",
+            start_engine=False,
+            engine_host="127.0.0.1",
+            engine_port=9099,
+            engine_log_level="warning",
+            engine_wait_timeout_s=5.0,
+            verifier_url="http://127.0.0.1:18001/verify",
+            verifier_timeout_s=30,
+            permission_mode="bypass",
+            task_timeout_s=60,
+            poll_interval_s=0.1,
+            limit=None,
+            task_runner=fake_runner,
+            verifier=fake_verifier,
+        )
+    finally:
+        module.BreadboardClient = original_client
+        module._ensure_engine = original_ensure_engine
+
+    row = json.loads(out_path.read_text(encoding="utf-8").splitlines()[0])
+    assert row["status"] == "ERROR"
+    assert row["error"] == "session_failed_without_candidate_proof"
