@@ -11,7 +11,18 @@ HILBERT_PACK_ROOT = LIVE_ARTIFACT_ROOT / "hilbert_packs_smoke"
 HILBERT_PACK_MANIFEST = (
     HILBERT_PACK_ROOT / "pack_b_core_noimo_minif2f_v1" / "pack_metadata.json"
 )
-CANONICAL_BASELINE_PREFLIGHT = LIVE_ARTIFACT_ROOT / "canonical_baseline_preflight_v1.json"
+HILBERT_CROSS_SYSTEM_MANIFEST = (
+    HILBERT_PACK_ROOT / "pack_b_core_noimo_minif2f_v1" / "cross_system_manifest.json"
+)
+HILBERT_BUNDLE_SUMMARY = Path(
+    "/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_integration_main_20260326/artifacts/benchmarks/hilbert_comparison_packs_v1/bb_comparison_bundle_summary.json"
+)
+CANONICAL_BOUNDED_ROOT = LIVE_ARTIFACT_ROOT / "canonical_bounded_publish"
+CANONICAL_BOUNDED_INDEX = CANONICAL_BOUNDED_ROOT / "canonical_baseline_index_v1.json"
+CANONICAL_BOUNDED_MARKDOWN = CANONICAL_BOUNDED_ROOT / "canonical_baseline_index_v1.md"
+CANONICAL_BOUNDED_STATUS_DOC = CANONICAL_BOUNDED_ROOT / "pack_b_core_noimo_minif2f_v1_status.md"
+CANONICAL_BOUNDED_REPORT = CANONICAL_BOUNDED_ROOT / "pack_b_core_noimo_minif2f_v1_report.json"
+CANONICAL_BOUNDED_VALIDATION = CANONICAL_BOUNDED_ROOT / "pack_b_core_noimo_minif2f_v1_validation.json"
 
 
 @dataclass(frozen=True)
@@ -143,18 +154,35 @@ def build_search_live_harness_command_matrix_packet() -> SearchLiveHarnessComman
                 dominant_locus="platform_local",
             ),
             SearchLiveCommandSpec(
-                command_id="build_atp_hilbert_canonical_baselines_v1_probe",
+                command_id="build_atp_hilbert_canonical_baselines_v1_bounded_publish",
                 argv=(
                     "python",
                     "scripts/build_atp_hilbert_canonical_baselines_v1.py",
-                    "--preflight-only",
-                    "--preflight-out",
-                    str(CANONICAL_BASELINE_PREFLIGHT),
+                    "--out-json",
+                    str(CANONICAL_BOUNDED_INDEX),
+                    "--out-md",
+                    str(CANONICAL_BOUNDED_MARKDOWN),
+                    "--bounded-live-pack-manifest",
+                    str(HILBERT_PACK_MANIFEST),
+                    "--bounded-live-cross-system-manifest",
+                    str(HILBERT_CROSS_SYSTEM_MANIFEST),
+                    "--bounded-live-bundle-summary",
+                    str(HILBERT_BUNDLE_SUMMARY),
+                    "--bounded-live-status-doc-out",
+                    str(CANONICAL_BOUNDED_STATUS_DOC),
+                    "--bounded-live-report-out",
+                    str(CANONICAL_BOUNDED_REPORT),
+                    "--bounded-live-validation-out",
+                    str(CANONICAL_BOUNDED_VALIDATION),
                 ),
                 expected_outputs=(
-                    str(CANONICAL_BASELINE_PREFLIGHT),
+                    str(CANONICAL_BOUNDED_INDEX),
+                    str(CANONICAL_BOUNDED_MARKDOWN),
+                    str(CANONICAL_BOUNDED_STATUS_DOC),
+                    str(CANONICAL_BOUNDED_REPORT),
+                    str(CANONICAL_BOUNDED_VALIDATION),
                 ),
-                purpose="Probe live baseline publication preflight and classify missing artifact roots without hard failure.",
+                purpose="Publish one bounded canonical baseline slice from the repaired live ATP-backed artifacts.",
                 dominant_locus="platform_local",
             ),
             SearchLiveCommandSpec(
@@ -207,12 +235,12 @@ def build_search_live_harness_smoke_packet() -> SearchLiveHarnessSmokePacket:
                 detail="The bundle builder accepted a published prebuilt v2 pack manifest and returned a compatibility bundle payload.",
             ),
             SearchLiveCommandObservation(
-                command_id="build_atp_hilbert_canonical_baselines_v1_probe",
+                command_id="build_atp_hilbert_canonical_baselines_v1_bounded_publish",
                 status="ok",
                 exit_code=0,
                 observed_locus="platform_local",
-                outcome_class="preflight_classification",
-                detail="Canonical baseline publication preflight completed cleanly and classified missing benchmark artifacts without a hard failure.",
+                outcome_class="publication_green",
+                detail="Canonical baseline publication completed cleanly for one bounded live pack and emitted index, markdown, status, report, and validation artifacts.",
             ),
             SearchLiveCommandObservation(
                 command_id="run_bb_atp_adapter_slice_v1_help_probe",
@@ -226,14 +254,16 @@ def build_search_live_harness_smoke_packet() -> SearchLiveHarnessSmokePacket:
         positive_path_ids=(
             "build_hilbert_comparison_packs_v2_smoke",
             "build_hilbert_bb_comparison_bundle_v1_probe",
-            "build_atp_hilbert_canonical_baselines_v1_probe",
+            "build_atp_hilbert_canonical_baselines_v1_bounded_publish",
             "run_bb_atp_adapter_slice_v1_help_probe",
         ),
         failure_path_ids=(),
         artifact_refs=(
             str(HILBERT_PACK_ROOT / "summary.json"),
             str(LIVE_ARTIFACT_ROOT / "build_hilbert_bb_comparison_bundle_v1.stdout.txt"),
-            str(CANONICAL_BASELINE_PREFLIGHT),
+            str(CANONICAL_BOUNDED_INDEX),
+            str(CANONICAL_BOUNDED_REPORT),
+            str(CANONICAL_BOUNDED_VALIDATION),
             str(LIVE_ARTIFACT_ROOT / "run_bb_atp_adapter_slice_v1.help.txt"),
         ),
         next_action="promote the repaired platform-local live boundary into optimize-live and rl-live widening with the current ATP-backed source family",
@@ -294,8 +324,10 @@ def build_search_live_optimize_execution_packet() -> SearchLiveOptimizeExecution
         source_artifact_refs=(
             str(HILBERT_PACK_ROOT / "summary.json"),
             str(HILBERT_PACK_MANIFEST),
-            str(Path("/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_integration_main_20260326/artifacts/benchmarks/hilbert_comparison_packs_v1/bb_comparison_bundle_summary.json")),
-            str(CANONICAL_BASELINE_PREFLIGHT),
+            str(HILBERT_BUNDLE_SUMMARY),
+            str(CANONICAL_BOUNDED_INDEX),
+            str(CANONICAL_BOUNDED_REPORT),
+            str(CANONICAL_BOUNDED_VALIDATION),
         ),
         optimize_comparison_id="comparison.next_frontier.cohort.dag_packet_compare.v1",
         optimize_live_cell_id="optimize.next_frontier.live_cell.dag_packets.v1",
@@ -304,13 +336,11 @@ def build_search_live_optimize_execution_packet() -> SearchLiveOptimizeExecution
             "pack_summary_available",
             "pack_manifest_available",
             "bundle_summary_available",
-            "canonical_baseline_preflight_available",
+            "canonical_baseline_bounded_publication_available",
             "live_harness_smoke_green",
         ),
-        blocker_rows=(
-            "canonical_baseline_publish_not_yet_green",
-        ),
-        final_decision="execute_bounded_optimize_live_on_repaired_atp_artifacts",
+        blocker_rows=(),
+        final_decision="execute_bounded_optimize_live_on_published_atp_artifacts",
         dominant_locus="consumer_local",
     )
 
@@ -369,8 +399,10 @@ def build_search_live_rl_execution_packet() -> SearchLiveRLExecutionPacket:
         source_artifact_refs=(
             str(HILBERT_PACK_ROOT / "summary.json"),
             str(HILBERT_PACK_MANIFEST),
-            str(Path("/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_integration_main_20260326/artifacts/benchmarks/hilbert_comparison_packs_v1/bb_comparison_bundle_summary.json")),
-            str(CANONICAL_BASELINE_PREFLIGHT),
+            str(HILBERT_BUNDLE_SUMMARY),
+            str(CANONICAL_BOUNDED_INDEX),
+            str(CANONICAL_BOUNDED_REPORT),
+            str(CANONICAL_BOUNDED_VALIDATION),
         ),
         rl_trainer_export_manifest_id="bb.rl.next_frontier.export_manifest.trainer.v1",
         rl_parity_live_manifest_id="bb.rl.next_frontier.export_manifest.parity.live.v1",
@@ -380,14 +412,12 @@ def build_search_live_rl_execution_packet() -> SearchLiveRLExecutionPacket:
             "pack_summary_available",
             "pack_manifest_available",
             "bundle_summary_available",
-            "canonical_baseline_preflight_available",
+            "canonical_baseline_bounded_publication_available",
             "live_harness_smoke_green",
             "rl_manifest_family_known",
         ),
-        blocker_rows=(
-            "canonical_baseline_publish_not_yet_green",
-        ),
-        final_decision="execute_bounded_rl_live_on_repaired_atp_artifacts",
+        blocker_rows=(),
+        final_decision="execute_bounded_rl_live_on_published_atp_artifacts",
         dominant_locus="consumer_local",
     )
 
@@ -470,20 +500,20 @@ def build_search_live_consumer_convergence_packet() -> SearchLiveConsumerConverg
         shared_artifact_refs=(
             str(HILBERT_PACK_ROOT / "summary.json"),
             str(HILBERT_PACK_MANIFEST),
-            str(Path("/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_integration_main_20260326/artifacts/benchmarks/hilbert_comparison_packs_v1/bb_comparison_bundle_summary.json")),
-            str(CANONICAL_BASELINE_PREFLIGHT),
+            str(HILBERT_BUNDLE_SUMMARY),
+            str(CANONICAL_BOUNDED_INDEX),
+            str(CANONICAL_BOUNDED_REPORT),
+            str(CANONICAL_BOUNDED_VALIDATION),
         ),
         convergence_rows=(
             "shared_atp_source_family",
             "shared_budget_anchor",
             "shared_bundle_summary",
-            "shared_preflight_baseline_classification",
+            "shared_bounded_canonical_publication",
             "paired_consumer_readiness_green",
         ),
-        remaining_blocker_rows=(
-            "canonical_baseline_publish_not_yet_green",
-        ),
-        final_decision="close_live_consumer_pair_and_keep_remaining_publication_gap_platform_local",
+        remaining_blocker_rows=(),
+        final_decision="close_live_consumer_pair_with_bounded_publication_green",
         dominant_locus="consumer_local",
     )
 
@@ -516,10 +546,8 @@ def build_search_live_closeout_packet() -> SearchLiveCloseoutPacket:
             "rl_live_green",
             "paired_consumer_convergence_green",
         ),
-        remaining_follow_on_rows=(
-            "canonical_baseline_publish_not_yet_green",
-        ),
-        final_decision="close_live_execution_tranche_and_keep_next_work_platform_local",
+        remaining_follow_on_rows=(),
+        final_decision="close_live_execution_tranche_with_bounded_publication_green",
         dominant_locus="platform_local",
     )
 

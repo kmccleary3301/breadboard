@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import importlib.util
 import sys
 from pathlib import Path
@@ -63,3 +64,51 @@ def test_canonical_baseline_payload_can_skip_missing_entries(tmp_path: Path) -> 
     assert first["pack_id"] not in pack_ids
     assert payload["entry_count"] == len(payload["entries"])
     assert payload["entry_count"] == len(module.CANONICAL_BASELINES) - 1
+
+
+def test_bounded_live_publication_payload_writes_one_pack_slice(tmp_path: Path) -> None:
+    module.REPO_ROOT = tmp_path
+    pack_manifest = tmp_path / "pack_metadata.json"
+    cross_system_manifest = tmp_path / "cross_system_manifest.json"
+    bundle_summary = tmp_path / "bundle_summary.json"
+    status_doc = tmp_path / "published" / "status.md"
+    report_out = tmp_path / "published" / "report.json"
+    validation_out = tmp_path / "published" / "validation.json"
+
+    pack_manifest.write_text(
+        '{"pack_name": "pack_b_core_noimo_minif2f_v1", "included_task_ids": ["t1", "t2"], "excluded_tasks": [{"task_id": "bad"}]}'
+    )
+    cross_system_manifest.write_text(
+        '{"run_id": "bounded-live", "systems": [{"system_id": "bb_hilbert_like"}, {"system_id": "hilbert_roselab"}], "benchmark": {"slice": {"n_tasks": 2}}}'
+    )
+    bundle_summary.write_text(
+        json.dumps(
+            {
+                "generated": [
+                    {
+                        "pack_manifest_path": str(pack_manifest.resolve()),
+                        "bundle_mode": "prebuilt_v2_compat",
+                    }
+                ]
+            }
+        )
+    )
+
+    payload = module.build_bounded_live_publication_payload(
+        pack_manifest_path=pack_manifest,
+        cross_system_manifest_path=cross_system_manifest,
+        bundle_summary_path=bundle_summary,
+        status_doc_out=status_doc,
+        report_out=report_out,
+        validation_out=validation_out,
+    )
+
+    assert payload["schema"] == "breadboard.atp_hilbert_canonical_baselines_bounded_live.v1"
+    assert payload["entry_count"] == 1
+    entry = payload["entries"][0]
+    assert entry["pack_id"] == "pack_b_core_noimo_minif2f_v1"
+    assert entry["task_count"] == 2
+    assert entry["metrics_status"] == "artifact_only_live_publication"
+    assert status_doc.exists()
+    assert report_out.exists()
+    assert validation_out.exists()

@@ -973,7 +973,7 @@ def test_build_search_live_harness_smoke_packet_classifies_repaired_positive_pat
     assert packet.positive_path_ids == (
         "build_hilbert_comparison_packs_v2_smoke",
         "build_hilbert_bb_comparison_bundle_v1_probe",
-        "build_atp_hilbert_canonical_baselines_v1_probe",
+        "build_atp_hilbert_canonical_baselines_v1_bounded_publish",
         "run_bb_atp_adapter_slice_v1_help_probe",
     )
     assert packet.failure_path_ids == ()
@@ -995,9 +995,9 @@ def test_build_search_live_optimize_execution_packet_records_repaired_atp_readin
     assert packet.optimize_comparison_id == "comparison.next_frontier.cohort.dag_packet_compare.v1"
     assert packet.optimize_live_cell_id == "optimize.next_frontier.live_cell.dag_packets.v1"
     assert packet.budget_cell_id == "search.cross_execution.cell.audit_small.v1"
-    assert "canonical_baseline_preflight_available" in packet.readiness_rows
-    assert packet.blocker_rows == ("canonical_baseline_publish_not_yet_green",)
-    assert packet.final_decision == "execute_bounded_optimize_live_on_repaired_atp_artifacts"
+    assert "canonical_baseline_bounded_publication_available" in packet.readiness_rows
+    assert packet.blocker_rows == ()
+    assert packet.final_decision == "execute_bounded_optimize_live_on_published_atp_artifacts"
     assert packet.dominant_locus == "consumer_local"
 
     result = run_search_study("search_live_optimize_execution", mode="spec")
@@ -1017,8 +1017,8 @@ def test_build_search_live_rl_execution_packet_records_repaired_atp_readiness() 
     assert packet.rl_parity_replay_manifest_id == "bb.rl.next_frontier.export_manifest.parity.replay.v1"
     assert packet.budget_cell_id == "search.cross_execution.cell.audit_small.v1"
     assert "rl_manifest_family_known" in packet.readiness_rows
-    assert packet.blocker_rows == ("canonical_baseline_publish_not_yet_green",)
-    assert packet.final_decision == "execute_bounded_rl_live_on_repaired_atp_artifacts"
+    assert packet.blocker_rows == ()
+    assert packet.final_decision == "execute_bounded_rl_live_on_published_atp_artifacts"
     assert packet.dominant_locus == "consumer_local"
 
     result = run_search_study("search_live_rl_execution", mode="spec")
@@ -1036,8 +1036,9 @@ def test_build_search_live_consumer_convergence_packet_closes_paired_live_lanes(
     assert packet.shared_source_family_id == "search.domain.atp.stage_b_closeout.v1"
     assert packet.shared_budget_cell_id == "search.cross_execution.cell.audit_small.v1"
     assert "paired_consumer_readiness_green" in packet.convergence_rows
-    assert packet.remaining_blocker_rows == ("canonical_baseline_publish_not_yet_green",)
-    assert packet.final_decision == "close_live_consumer_pair_and_keep_remaining_publication_gap_platform_local"
+    assert "shared_bounded_canonical_publication" in packet.convergence_rows
+    assert packet.remaining_blocker_rows == ()
+    assert packet.final_decision == "close_live_consumer_pair_with_bounded_publication_green"
     assert packet.dominant_locus == "consumer_local"
 
     result = run_search_study("search_live_consumer_convergence", mode="spec")
@@ -1055,8 +1056,8 @@ def test_build_search_live_closeout_packet_preserves_platform_follow_on_scope() 
     assert packet.rl_execution_id == "search.platform.phase3.live_rl_execution.v1"
     assert packet.consumer_convergence_id == "search.platform.phase3.live_consumer_convergence.v1"
     assert "paired_consumer_convergence_green" in packet.ready_rows
-    assert packet.remaining_follow_on_rows == ("canonical_baseline_publish_not_yet_green",)
-    assert packet.final_decision == "close_live_execution_tranche_and_keep_next_work_platform_local"
+    assert packet.remaining_follow_on_rows == ()
+    assert packet.final_decision == "close_live_execution_tranche_with_bounded_publication_green"
     assert packet.dominant_locus == "platform_local"
 
     result = run_search_study("search_live_closeout", mode="spec")

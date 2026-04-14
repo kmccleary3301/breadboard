@@ -152,6 +152,21 @@ def _load_json(path: Path) -> Dict[str, Any]:
     return payload
 
 
+def _get_spec_for_pack(pack_id: str) -> Dict[str, Any]:
+    for spec in CANONICAL_BASELINES:
+        if spec["pack_id"] == pack_id:
+            return spec
+    raise KeyError(f"unknown canonical baseline pack: {pack_id}")
+
+
+def _display_path(path: Path) -> str:
+    resolved = path.resolve()
+    try:
+        return str(resolved.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(resolved)
+
+
 def _missing_paths(spec: Dict[str, Any]) -> List[str]:
     candidates = [
         (REPO_ROOT / spec["status_doc"]).resolve(),
@@ -222,6 +237,146 @@ def _build_entry(spec: Dict[str, Any]) -> Dict[str, Any]:
         "both_solved": int(paired.get("n11_both_solved") or 0),
         "both_unsolved": int(paired.get("n00_both_unsolved") or 0),
         "candidate_minus_baseline_solve_rate": float(directional.get("candidate_minus_baseline_solve_rate") or 0.0),
+    }
+
+
+def build_bounded_live_publication_payload(
+    *,
+    pack_manifest_path: Path,
+    cross_system_manifest_path: Path,
+    bundle_summary_path: Path,
+    status_doc_out: Path,
+    report_out: Path,
+    validation_out: Path,
+) -> Dict[str, Any]:
+    pack_manifest = _load_json(pack_manifest_path)
+    cross_system_manifest = _load_json(cross_system_manifest_path)
+    bundle_summary = _load_json(bundle_summary_path)
+
+    pack_id = str(pack_manifest.get("pack_name") or "").strip()
+    if not pack_id:
+        raise ValueError(f"missing pack_name in pack manifest: {pack_manifest_path}")
+    spec = _get_spec_for_pack(pack_id)
+
+    systems = cross_system_manifest.get("systems") or []
+    if len(systems) < 2:
+        raise ValueError(f"expected at least two systems in cross-system manifest: {cross_system_manifest_path}")
+    candidate_system = str((systems[0] or {}).get("system_id") or "").strip()
+    baseline_system = str((systems[1] or {}).get("system_id") or "").strip()
+    if not candidate_system or not baseline_system:
+        raise ValueError(f"missing system ids in cross-system manifest: {cross_system_manifest_path}")
+
+    bundle_rows = bundle_summary.get("generated") or []
+    matching_bundle_row = None
+    pack_manifest_abs = str(pack_manifest_path.resolve())
+    for row in bundle_rows:
+        if str((row or {}).get("pack_manifest_path") or "") == pack_manifest_abs:
+            matching_bundle_row = row
+            break
+    if matching_bundle_row is None:
+        raise ValueError(
+            "bundle summary did not contain a row for the bounded pack manifest: "
+            f"{pack_manifest_path}"
+        )
+
+    task_ids = tuple(pack_manifest.get("included_task_ids") or ())
+    task_count = len(task_ids) or int(
+        (((cross_system_manifest.get("benchmark") or {}).get("slice") or {}).get("n_tasks") or 0)
+    )
+    excluded_tasks = tuple(pack_manifest.get("excluded_tasks") or ())
+    bundle_mode = str(matching_bundle_row.get("bundle_mode") or "unknown")
+    run_id = str(cross_system_manifest.get("run_id") or "").strip()
+
+    status_doc_out.parent.mkdir(parents=True, exist_ok=True)
+    status_doc_out.write_text(
+        "\n".join(
+            [
+                f"# {pack_id}",
+                "",
+                "- publication_kind: `bounded_live_pack`",
+                f"- role: `{spec['role']}`",
+                f"- run_id: `{run_id}`",
+                f"- candidate_system: `{candidate_system}`",
+                f"- baseline_system: `{baseline_system}`",
+                f"- task_count: `{task_count}`",
+                f"- excluded_task_count: `{len(excluded_tasks)}`",
+                f"- bundle_mode: `{bundle_mode}`",
+                f"- pack_manifest: `{pack_manifest_path}`",
+                f"- cross_system_manifest: `{cross_system_manifest_path}`",
+                f"- bundle_summary: `{bundle_summary_path}`",
+                f"- note: {spec['note']}",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    report_payload = {
+        "schema": "breadboard.atp_hilbert_canonical_baseline_live_publication_report.v1",
+        "publication_kind": "bounded_live_pack",
+        "pack_id": pack_id,
+        "role": spec["role"],
+        "note": spec["note"],
+        "task_count": task_count,
+        "excluded_task_count": len(excluded_tasks),
+        "candidate_system": candidate_system,
+        "baseline_system": baseline_system,
+        "bundle_mode": bundle_mode,
+        "run_id": run_id,
+        "source_artifacts": {
+            "pack_manifest": str(pack_manifest_path.resolve()),
+            "cross_system_manifest": str(cross_system_manifest_path.resolve()),
+            "bundle_summary": str(bundle_summary_path.resolve()),
+        },
+        "metrics_status": "artifact_only_live_publication",
+    }
+    validation_payload = {
+        "schema": "breadboard.atp_hilbert_canonical_baseline_live_publication_validation.v1",
+        "ok": True,
+        "publication_kind": "bounded_live_pack",
+        "pack_id": pack_id,
+        "checks": [
+            "pack_manifest_present",
+            "cross_system_manifest_present",
+            "bundle_summary_present",
+            "bundle_summary_row_matches_pack_manifest",
+            "canonical_spec_known",
+            "system_ids_present",
+        ],
+    }
+
+    dump_json(report_out, report_payload)
+    dump_json(validation_out, validation_payload)
+
+    entry = {
+        "pack_id": pack_id,
+        "role": spec["role"],
+        "note": spec["note"],
+        "status_doc": _display_path(status_doc_out),
+        "report": _display_path(report_out),
+        "validation": _display_path(validation_out),
+        "task_count": task_count,
+        "candidate_system": candidate_system,
+        "baseline_system": baseline_system,
+        "candidate_solved": 0,
+        "baseline_solved": 0,
+        "candidate_only": 0,
+        "baseline_only": 0,
+        "both_solved": 0,
+        "both_unsolved": task_count,
+        "candidate_minus_baseline_solve_rate": 0.0,
+        "metrics_status": "artifact_only_live_publication",
+        "bundle_mode": bundle_mode,
+    }
+    return {
+        "schema": "breadboard.atp_hilbert_canonical_baselines_bounded_live.v1",
+        "generated_from": "scripts/build_atp_hilbert_canonical_baselines_v1.py",
+        "publication_kind": "bounded_live_pack",
+        "candidate_system": candidate_system,
+        "baseline_system": baseline_system,
+        "entry_count": 1,
+        "entries": [entry],
     }
 
 
@@ -307,7 +462,48 @@ def main() -> int:
         action="store_true",
         help="Build an index from only the entries whose referenced artifacts are present.",
     )
+    parser.add_argument("--bounded-live-pack-manifest", default="")
+    parser.add_argument("--bounded-live-cross-system-manifest", default="")
+    parser.add_argument("--bounded-live-bundle-summary", default="")
+    parser.add_argument("--bounded-live-status-doc-out", default="")
+    parser.add_argument("--bounded-live-report-out", default="")
+    parser.add_argument("--bounded-live-validation-out", default="")
     args = parser.parse_args()
+
+    if args.bounded_live_pack_manifest:
+        if not all(
+            [
+                args.bounded_live_cross_system_manifest,
+                args.bounded_live_bundle_summary,
+                args.bounded_live_status_doc_out,
+                args.bounded_live_report_out,
+                args.bounded_live_validation_out,
+            ]
+        ):
+            raise SystemExit(
+                "--bounded-live-pack-manifest requires "
+                "--bounded-live-cross-system-manifest, --bounded-live-bundle-summary, "
+                "--bounded-live-status-doc-out, --bounded-live-report-out, and "
+                "--bounded-live-validation-out"
+            )
+        payload = build_bounded_live_publication_payload(
+            pack_manifest_path=Path(args.bounded_live_pack_manifest).resolve(),
+            cross_system_manifest_path=Path(args.bounded_live_cross_system_manifest).resolve(),
+            bundle_summary_path=Path(args.bounded_live_bundle_summary).resolve(),
+            status_doc_out=Path(args.bounded_live_status_doc_out).resolve(),
+            report_out=Path(args.bounded_live_report_out).resolve(),
+            validation_out=Path(args.bounded_live_validation_out).resolve(),
+        )
+        out_json = Path(args.out_json).resolve()
+        out_md = Path(args.out_md).resolve()
+        dump_json(out_json, payload)
+        out_md.parent.mkdir(parents=True, exist_ok=True)
+        out_md.write_text(_to_markdown(payload), encoding="utf-8")
+        print(
+            "[atp-hilbert-canonical-baselines-v1:bounded-live] "
+            f"entries={payload['entry_count']} out_json={out_json}"
+        )
+        return 0
 
     if args.preflight_only:
         payload = build_preflight_payload()
