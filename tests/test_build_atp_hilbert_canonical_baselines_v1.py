@@ -38,3 +38,28 @@ def test_canonical_baseline_payload_entries_reference_existing_files(tmp_path: P
         assert (repo_root / entry["validation"]).exists()
         assert entry["candidate_solved"] >= entry["candidate_only"]
         assert entry["baseline_solved"] >= entry["baseline_only"]
+
+
+def test_canonical_baseline_preflight_payload_classifies_missing_paths(tmp_path: Path) -> None:
+    module.REPO_ROOT = tmp_path
+    payload = module.build_preflight_payload()
+
+    assert payload["schema"] == "breadboard.atp_hilbert_canonical_baselines_preflight.v1"
+    assert payload["entry_count"] == len(module.CANONICAL_BASELINES)
+    assert payload["missing_count"] == payload["entry_count"]
+    assert payload["ready_count"] == 0
+    assert all(entry["missing_paths"] for entry in payload["entries"])
+
+
+def test_canonical_baseline_payload_can_skip_missing_entries(tmp_path: Path) -> None:
+    install_canonical_baseline_fixture(module, tmp_path)
+    first = module.CANONICAL_BASELINES[0]
+    missing_report = tmp_path / first["report"]
+    missing_report.unlink()
+
+    payload = module.build_payload(allow_missing=True)
+
+    pack_ids = {entry["pack_id"] for entry in payload["entries"]}
+    assert first["pack_id"] not in pack_ids
+    assert payload["entry_count"] == len(payload["entries"])
+    assert payload["entry_count"] == len(module.CANONICAL_BASELINES) - 1

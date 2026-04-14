@@ -112,3 +112,21 @@ def test_build_bundle_applies_canonical_task_override(tmp_path: Path) -> None:
     build_bundle(pack_manifest_path)
     bb_tasks = json.loads((pack_dir / "bb_task_inputs.json").read_text())
     assert "(m x : ℤ)" in bb_tasks["tasks"][0]["input_text"]
+
+
+def test_build_bundle_accepts_prebuilt_v2_pack_dir(tmp_path: Path) -> None:
+    pack_dir = tmp_path / "pack_v2"
+    pack_dir.mkdir()
+    pack_manifest_path = pack_dir / "pack_metadata.json"
+    pack_manifest_path.write_text(json.dumps({"pack_name": "pack_b_core_noimo_minif2f_v1"}), encoding="utf-8")
+    bb_task_inputs_path = pack_dir / "bb_task_inputs.json"
+    bundle_manifest_path = pack_dir / "cross_system_manifest.json"
+    bb_task_inputs_path.write_text(json.dumps({"tasks": []}), encoding="utf-8")
+    bundle_manifest_path.write_text(json.dumps({"systems": []}), encoding="utf-8")
+
+    payload = build_bundle(pack_manifest_path)
+
+    assert payload["pack_manifest_path"].endswith("pack_metadata.json")
+    assert payload["bb_task_inputs_path"].endswith("bb_task_inputs.json")
+    assert payload["cross_system_manifest_path"].endswith("cross_system_manifest.json")
+    assert payload["bundle_mode"] == "prebuilt_v2_compat"

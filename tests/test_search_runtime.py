@@ -41,6 +41,14 @@ from agentic_coder_prototype.search import (
     SearchCrossExecutionDivergenceLedgerPacket,
     SearchCrossExecutionNextLocusPacket,
     SearchCrossExecutionRepeatedRunSummaryPacket,
+    SearchLiveCommandObservation,
+    SearchLiveCommandSpec,
+    SearchLiveHarnessCommandMatrixPacket,
+    SearchLiveHarnessSmokePacket,
+    SearchLiveOptimizeExecutionPacket,
+    SearchLiveRLExecutionPacket,
+    SearchLiveConsumerConvergencePacket,
+    SearchLiveCloseoutPacket,
     SearchOfflineDataset,
     SearchAssessment,
     SearchBranchState,
@@ -236,6 +244,12 @@ from agentic_coder_prototype.search import (
     build_search_cross_execution_repeated_run_summary_packet,
     build_search_cross_execution_closeout_packet,
     build_search_cross_execution_next_locus_packet,
+    build_search_live_harness_command_matrix_packet,
+    build_search_live_harness_smoke_packet,
+    build_search_live_optimize_execution_packet,
+    build_search_live_rl_execution_packet,
+    build_search_live_consumer_convergence_packet,
+    build_search_live_closeout_packet,
     build_search_atp_boundary_control_packet,
     build_search_atp_boundary_control_v2,
     build_search_atp_bundle_publication_packet,
@@ -415,6 +429,8 @@ def test_default_search_study_registry_lists_canonical_families() -> None:
     assert "search_cross_execution_repeated_run_summary" in keys
     assert "search_cross_execution_closeout" in keys
     assert "search_cross_execution_next_locus" in keys
+    assert "search_live_harness_command_matrix" in keys
+    assert "search_live_harness_smoke" in keys
     assert "dag_v5_atp_domain_pilot" in keys
     assert "dag_v5_repair_loop_domain_pilot" in keys
 
@@ -924,6 +940,128 @@ def test_build_search_stage_c_closeout_packet_exits_stage_c_cleanly() -> None:
     assert result.summary_json["top_level_metrics"]["decision"] == packet.final_decision
     assert result.summary_json["top_level_metrics"]["dominant_locus"] == "consumer_local"
 
+
+
+def test_build_search_live_harness_command_matrix_packet_records_real_invocation_contracts() -> None:
+    packet = build_search_live_harness_command_matrix_packet()
+
+    assert isinstance(packet, SearchLiveHarnessCommandMatrixPacket)
+    assert packet.packet_id == "search.platform.phase3.live_harness_command_matrix.v1"
+    assert packet.source_family_id == "search.domain.atp.stage_b_closeout.v1"
+    assert packet.stage_c_closeout_id == "search.platform.stage_c.closeout.v1"
+    assert len(packet.command_specs) == 4
+    assert all(isinstance(spec, SearchLiveCommandSpec) for spec in packet.command_specs)
+    assert packet.command_specs[0].command_id == "build_hilbert_comparison_packs_v2_smoke"
+    assert packet.command_specs[0].argv[1] == "scripts/build_hilbert_comparison_packs_v2.py"
+    assert packet.command_specs[-1].command_id == "run_bb_atp_adapter_slice_v1_help_probe"
+    assert packet.final_decision == "execute_harness_live_smoke_now"
+
+    result = run_search_study("search_live_harness_command_matrix", mode="debug")
+    assert result.summary_json["study_key"] == "search_live_harness_command_matrix"
+    assert result.summary_json["packet_family"] == "search_live_harness_command_matrix.v1"
+
+
+
+def test_build_search_live_harness_smoke_packet_classifies_repaired_positive_paths() -> None:
+    packet = build_search_live_harness_smoke_packet()
+
+    assert isinstance(packet, SearchLiveHarnessSmokePacket)
+    assert packet.packet_id == "search.platform.phase3.live_harness_smoke.v1"
+    assert packet.command_matrix_id == "search.platform.phase3.live_harness_command_matrix.v1"
+    assert len(packet.observations) == 4
+    assert all(isinstance(obs, SearchLiveCommandObservation) for obs in packet.observations)
+    assert packet.positive_path_ids == (
+        "build_hilbert_comparison_packs_v2_smoke",
+        "build_hilbert_bb_comparison_bundle_v1_probe",
+        "build_atp_hilbert_canonical_baselines_v1_probe",
+        "run_bb_atp_adapter_slice_v1_help_probe",
+    )
+    assert packet.failure_path_ids == ()
+    assert packet.final_decision == "proceed_to_optimize_live_and_rl_live_widening"
+    assert packet.dominant_locus == "harness_local"
+
+    result = run_search_study("search_live_harness_smoke", mode="spec")
+    assert result.summary_json["study_key"] == "search_live_harness_smoke"
+    assert result.summary_json["packet_family"] == "search_live_harness_smoke.v1"
+
+
+def test_build_search_live_optimize_execution_packet_records_repaired_atp_readiness() -> None:
+    packet = build_search_live_optimize_execution_packet()
+
+    assert isinstance(packet, SearchLiveOptimizeExecutionPacket)
+    assert packet.packet_id == "search.platform.phase3.live_optimize_execution.v1"
+    assert packet.smoke_packet_id == "search.platform.phase3.live_harness_smoke.v1"
+    assert packet.source_family_id == "search.domain.atp.stage_b_closeout.v1"
+    assert packet.optimize_comparison_id == "comparison.next_frontier.cohort.dag_packet_compare.v1"
+    assert packet.optimize_live_cell_id == "optimize.next_frontier.live_cell.dag_packets.v1"
+    assert packet.budget_cell_id == "search.cross_execution.cell.audit_small.v1"
+    assert "canonical_baseline_preflight_available" in packet.readiness_rows
+    assert packet.blocker_rows == ("canonical_baseline_publish_not_yet_green",)
+    assert packet.final_decision == "execute_bounded_optimize_live_on_repaired_atp_artifacts"
+    assert packet.dominant_locus == "consumer_local"
+
+    result = run_search_study("search_live_optimize_execution", mode="spec")
+    assert result.summary_json["study_key"] == "search_live_optimize_execution"
+    assert result.summary_json["packet_family"] == "search_live_optimize_execution.v1"
+
+
+def test_build_search_live_rl_execution_packet_records_repaired_atp_readiness() -> None:
+    packet = build_search_live_rl_execution_packet()
+
+    assert isinstance(packet, SearchLiveRLExecutionPacket)
+    assert packet.packet_id == "search.platform.phase3.live_rl_execution.v1"
+    assert packet.smoke_packet_id == "search.platform.phase3.live_harness_smoke.v1"
+    assert packet.source_family_id == "search.domain.atp.stage_b_closeout.v1"
+    assert packet.rl_trainer_export_manifest_id == "bb.rl.next_frontier.export_manifest.trainer.v1"
+    assert packet.rl_parity_live_manifest_id == "bb.rl.next_frontier.export_manifest.parity.live.v1"
+    assert packet.rl_parity_replay_manifest_id == "bb.rl.next_frontier.export_manifest.parity.replay.v1"
+    assert packet.budget_cell_id == "search.cross_execution.cell.audit_small.v1"
+    assert "rl_manifest_family_known" in packet.readiness_rows
+    assert packet.blocker_rows == ("canonical_baseline_publish_not_yet_green",)
+    assert packet.final_decision == "execute_bounded_rl_live_on_repaired_atp_artifacts"
+    assert packet.dominant_locus == "consumer_local"
+
+    result = run_search_study("search_live_rl_execution", mode="spec")
+    assert result.summary_json["study_key"] == "search_live_rl_execution"
+    assert result.summary_json["packet_family"] == "search_live_rl_execution.v1"
+
+
+def test_build_search_live_consumer_convergence_packet_closes_paired_live_lanes() -> None:
+    packet = build_search_live_consumer_convergence_packet()
+
+    assert isinstance(packet, SearchLiveConsumerConvergencePacket)
+    assert packet.packet_id == "search.platform.phase3.live_consumer_convergence.v1"
+    assert packet.optimize_execution_id == "search.platform.phase3.live_optimize_execution.v1"
+    assert packet.rl_execution_id == "search.platform.phase3.live_rl_execution.v1"
+    assert packet.shared_source_family_id == "search.domain.atp.stage_b_closeout.v1"
+    assert packet.shared_budget_cell_id == "search.cross_execution.cell.audit_small.v1"
+    assert "paired_consumer_readiness_green" in packet.convergence_rows
+    assert packet.remaining_blocker_rows == ("canonical_baseline_publish_not_yet_green",)
+    assert packet.final_decision == "close_live_consumer_pair_and_keep_remaining_publication_gap_platform_local"
+    assert packet.dominant_locus == "consumer_local"
+
+    result = run_search_study("search_live_consumer_convergence", mode="spec")
+    assert result.summary_json["study_key"] == "search_live_consumer_convergence"
+    assert result.summary_json["packet_family"] == "search_live_consumer_convergence.v1"
+
+
+def test_build_search_live_closeout_packet_preserves_platform_follow_on_scope() -> None:
+    packet = build_search_live_closeout_packet()
+
+    assert isinstance(packet, SearchLiveCloseoutPacket)
+    assert packet.packet_id == "search.platform.phase3.live_closeout.v1"
+    assert packet.harness_smoke_id == "search.platform.phase3.live_harness_smoke.v1"
+    assert packet.optimize_execution_id == "search.platform.phase3.live_optimize_execution.v1"
+    assert packet.rl_execution_id == "search.platform.phase3.live_rl_execution.v1"
+    assert packet.consumer_convergence_id == "search.platform.phase3.live_consumer_convergence.v1"
+    assert "paired_consumer_convergence_green" in packet.ready_rows
+    assert packet.remaining_follow_on_rows == ("canonical_baseline_publish_not_yet_green",)
+    assert packet.final_decision == "close_live_execution_tranche_and_keep_next_work_platform_local"
+    assert packet.dominant_locus == "platform_local"
+
+    result = run_search_study("search_live_closeout", mode="spec")
+    assert result.summary_json["study_key"] == "search_live_closeout"
+    assert result.summary_json["packet_family"] == "search_live_closeout.v1"
 
 
 def test_build_search_cross_execution_matrix_packet_locks_first_matched_cells() -> None:

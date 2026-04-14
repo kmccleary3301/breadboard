@@ -152,6 +152,41 @@ def _load_json(path: Path) -> Dict[str, Any]:
     return payload
 
 
+def _missing_paths(spec: Dict[str, Any]) -> List[str]:
+    candidates = [
+        (REPO_ROOT / spec["status_doc"]).resolve(),
+        (REPO_ROOT / spec["report"]).resolve(),
+        (REPO_ROOT / spec["validation"]).resolve(),
+    ]
+    return [str(path) for path in candidates if not path.exists()]
+
+
+def build_preflight_payload() -> Dict[str, Any]:
+    entries = []
+    ready_count = 0
+    for spec in CANONICAL_BASELINES:
+        missing = _missing_paths(spec)
+        ready = not missing
+        if ready:
+            ready_count += 1
+        entries.append(
+            {
+                "pack_id": spec["pack_id"],
+                "role": spec["role"],
+                "ready": ready,
+                "missing_paths": missing,
+            }
+        )
+    return {
+        "schema": "breadboard.atp_hilbert_canonical_baselines_preflight.v1",
+        "generated_from": "scripts/build_atp_hilbert_canonical_baselines_v1.py",
+        "entry_count": len(entries),
+        "ready_count": ready_count,
+        "missing_count": len(entries) - ready_count,
+        "entries": entries,
+    }
+
+
 def _build_entry(spec: Dict[str, Any]) -> Dict[str, Any]:
     report_path = (REPO_ROOT / spec["report"]).resolve()
     validation_path = (REPO_ROOT / spec["validation"]).resolve()
@@ -190,8 +225,16 @@ def _build_entry(spec: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_payload() -> Dict[str, Any]:
-    entries = [_build_entry(spec) for spec in CANONICAL_BASELINES]
+def build_payload(*, allow_missing: bool = False) -> Dict[str, Any]:
+    if allow_missing:
+        entries = []
+        for spec in CANONICAL_BASELINES:
+            missing = _missing_paths(spec)
+            if missing:
+                continue
+            entries.append(_build_entry(spec))
+    else:
+        entries = [_build_entry(spec) for spec in CANONICAL_BASELINES]
     role_counts: Dict[str, int] = {}
     for entry in entries:
         role = str(entry["role"])
@@ -249,9 +292,33 @@ def main() -> int:
         "--out-md",
         default=str(DEFAULT_OUT_ROOT / "canonical_baseline_index_v1.md"),
     )
+    parser.add_argument(
+        "--preflight-out",
+        default="",
+        help="Optional JSON path for a missing-artifact preflight report.",
+    )
+    parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Write a missing-artifact preflight report and exit without requiring all artifact roots.",
+    )
+    parser.add_argument(
+        "--allow-missing-artifacts",
+        action="store_true",
+        help="Build an index from only the entries whose referenced artifacts are present.",
+    )
     args = parser.parse_args()
 
-    payload = build_payload()
+    if args.preflight_only:
+        payload = build_preflight_payload()
+        out_json = Path(args.preflight_out or args.out_json).resolve()
+        dump_json(out_json, payload)
+        print(
+            f"[atp-hilbert-canonical-baselines-v1:preflight] ready={payload['ready_count']} missing={payload['missing_count']} out_json={out_json}"
+        )
+        return 0
+
+    payload = build_payload(allow_missing=bool(args.allow_missing_artifacts))
     out_json = Path(args.out_json).resolve()
     out_md = Path(args.out_md).resolve()
     dump_json(out_json, payload)

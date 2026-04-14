@@ -30,9 +30,29 @@ def _source_manifest_for_benchmark(benchmark_slug: str) -> Path:
     return FROZEN_ROOT / benchmark_slug / "cross_system_manifest.json"
 
 
+def _existing_bundle_payload(pack_manifest_path: Path, pack_dir: Path) -> dict[str, str]:
+    bb_task_inputs_path = pack_dir / "bb_task_inputs.json"
+    bundle_manifest_path = pack_dir / "cross_system_manifest.json"
+    if not bb_task_inputs_path.exists() or not bundle_manifest_path.exists():
+        raise FileNotFoundError(
+            "prebuilt v2 pack directory is missing bb_task_inputs.json or cross_system_manifest.json"
+        )
+    return {
+        "pack_manifest_path": str(pack_manifest_path),
+        "bb_task_inputs_path": str(bb_task_inputs_path),
+        "cross_system_manifest_path": str(bundle_manifest_path),
+        "bundle_mode": "prebuilt_v2_compat",
+    }
+
+
 def build_bundle(pack_manifest_path: Path) -> dict[str, str]:
     pack_manifest = _load_json(pack_manifest_path)
     pack_dir = pack_manifest_path.parent
+    if "benchmark_slug" not in pack_manifest:
+        pack_name = str(pack_manifest.get("pack_name") or "").strip()
+        if pack_name:
+            return _existing_bundle_payload(pack_manifest_path, pack_dir)
+        raise ValueError("pack manifest missing `benchmark_slug` and does not look like a prebuilt v2 pack")
     benchmark_slug = str(pack_manifest["benchmark_slug"]).strip()
     source_manifest_path = _source_manifest_for_benchmark(benchmark_slug)
     source_manifest = _load_json(source_manifest_path)
