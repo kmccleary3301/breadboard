@@ -85,6 +85,14 @@ from .live_execution import (
     build_search_live_closeout_packet_wrapper,
     build_search_live_closeout_payload,
 )
+from .live_widening import (
+    build_search_live_widening_matrix_packet_wrapper,
+    build_search_live_widening_matrix_payload,
+    build_search_live_widening_consumer_convergence_packet_wrapper,
+    build_search_live_widening_consumer_convergence_payload,
+    build_search_live_widening_closeout_packet_wrapper,
+    build_search_live_widening_closeout_payload,
+)
 from .domain_pilots import (
     build_search_atp_domain_pilot,
     build_search_atp_domain_pilot_payload,
@@ -569,6 +577,33 @@ def build_default_search_study_registry() -> SearchStudyRegistry:
                 tags=("platform", "live", "closeout"),
                 packet_builder=build_search_live_closeout_packet_wrapper,
                 payload_builder=build_search_live_closeout_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_live_widening_matrix",
+                title="Live widening matrix",
+                packet_family="search_live_widening_matrix.v1",
+                phase="platform_phase4_live_widening",
+                tags=("platform", "live", "widening", "matrix"),
+                packet_builder=build_search_live_widening_matrix_packet_wrapper,
+                payload_builder=build_search_live_widening_matrix_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_live_widening_convergence",
+                title="Live widening convergence",
+                packet_family="search_live_widening_convergence.v1",
+                phase="platform_phase4_live_widening",
+                tags=("platform", "live", "widening", "convergence"),
+                packet_builder=build_search_live_widening_consumer_convergence_packet_wrapper,
+                payload_builder=build_search_live_widening_consumer_convergence_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_live_widening_closeout",
+                title="Live widening closeout",
+                packet_family="search_live_widening_closeout.v1",
+                phase="platform_phase4_live_widening",
+                tags=("platform", "live", "widening", "closeout"),
+                packet_builder=build_search_live_widening_closeout_packet_wrapper,
+                payload_builder=build_search_live_widening_closeout_payload,
             ),
             SearchStudyRegistryEntry(
                 study_key="search_platform_contract_publication",

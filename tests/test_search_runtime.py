@@ -250,6 +250,13 @@ from agentic_coder_prototype.search import (
     build_search_live_rl_execution_packet,
     build_search_live_consumer_convergence_packet,
     build_search_live_closeout_packet,
+    SearchLiveWideningMatrixPacket,
+    SearchLiveWideningConsumerConvergencePacket,
+    SearchLiveWideningCloseoutPacket,
+    SearchLiveWideningPackRow,
+    build_search_live_widening_matrix_packet,
+    build_search_live_widening_consumer_convergence_packet,
+    build_search_live_widening_closeout_packet,
     build_search_atp_boundary_control_packet,
     build_search_atp_boundary_control_v2,
     build_search_atp_bundle_publication_packet,
@@ -431,6 +438,9 @@ def test_default_search_study_registry_lists_canonical_families() -> None:
     assert "search_cross_execution_next_locus" in keys
     assert "search_live_harness_command_matrix" in keys
     assert "search_live_harness_smoke" in keys
+    assert "search_live_widening_matrix" in keys
+    assert "search_live_widening_convergence" in keys
+    assert "search_live_widening_closeout" in keys
     assert "dag_v5_atp_domain_pilot" in keys
     assert "dag_v5_repair_loop_domain_pilot" in keys
 
@@ -3126,3 +3136,55 @@ def test_dag_v4_final_adjudication_packet_keeps_freeze_after_full_v4_program() -
     assert payload["metadata"]["kernel_change_required"] is False
     assert payload["source_packets"]["cross_system_seam_packet"]["repeated_shape_update"]["dag_kernel_change_required"] is False
     assert payload["source_packets"]["helper_exhaustion_counterfactual_packet"]["repeated_shape_update"]["helper_exhaustion_attempted"] is True
+
+
+def test_build_search_live_widening_matrix_packet_locks_two_pack_two_budget_surface() -> None:
+    packet = build_search_live_widening_matrix_packet()
+
+    assert isinstance(packet, SearchLiveWideningMatrixPacket)
+    assert packet.packet_id == "search.platform.phase4.live_widening_matrix.v1"
+    assert packet.source_family_id == "search.domain.atp.stage_b_closeout.v1"
+    assert len(packet.pack_rows) == 2
+    assert all(isinstance(row, SearchLiveWideningPackRow) for row in packet.pack_rows)
+    assert packet.pack_rows[0].pack_id == "pack_b_core_noimo_minif2f_v1"
+    assert packet.pack_rows[1].pack_id == "pack_b_medium_noimo530_minif2f_v1"
+    assert packet.budget_cell_ids == ("search.cross_execution.cell.audit_small.v1", "search.cross_execution.cell.audit_medium.v1")
+    assert packet.final_decision == "execute_two_pack_two_budget_live_matrix"
+
+    result = run_search_study("search_live_widening_matrix", mode="spec")
+    assert result.summary_json["study_key"] == "search_live_widening_matrix"
+    assert result.summary_json["packet_family"] == "search_live_widening_matrix.v1"
+
+
+def test_build_search_live_widening_convergence_packet_closes_two_pack_two_budget_read() -> None:
+    packet = build_search_live_widening_consumer_convergence_packet()
+
+    assert isinstance(packet, SearchLiveWideningConsumerConvergencePacket)
+    assert packet.packet_id == "search.platform.phase4.live_widening_convergence.v1"
+    assert packet.widening_matrix_id == "search.platform.phase4.live_widening_matrix.v1"
+    assert packet.optimize_execution_id == "search.platform.phase3.live_optimize_execution.v1"
+    assert packet.rl_execution_id == "search.platform.phase3.live_rl_execution.v1"
+    assert packet.compared_pack_ids == ("pack_b_core_noimo_minif2f_v1", "pack_b_medium_noimo530_minif2f_v1")
+    assert packet.compared_budget_cell_ids == ("search.cross_execution.cell.audit_small.v1", "search.cross_execution.cell.audit_medium.v1")
+    assert packet.remaining_blocker_rows == ()
+    assert packet.final_decision == "close_two_pack_two_budget_live_convergence"
+
+    result = run_search_study("search_live_widening_convergence", mode="spec")
+    assert result.summary_json["study_key"] == "search_live_widening_convergence"
+    assert result.summary_json["packet_family"] == "search_live_widening_convergence.v1"
+
+
+def test_build_search_live_widening_closeout_packet_preserves_platform_local_follow_on() -> None:
+    packet = build_search_live_widening_closeout_packet()
+
+    assert isinstance(packet, SearchLiveWideningCloseoutPacket)
+    assert packet.packet_id == "search.platform.phase4.live_widening_closeout.v1"
+    assert packet.widening_matrix_id == "search.platform.phase4.live_widening_matrix.v1"
+    assert packet.widening_convergence_id == "search.platform.phase4.live_widening_convergence.v1"
+    assert packet.remaining_follow_on_rows == ()
+    assert packet.final_decision == "close_widened_live_matrix_and_keep_next_work_platform_local"
+    assert packet.dominant_locus == "platform_local"
+
+    result = run_search_study("search_live_widening_closeout", mode="spec")
+    assert result.summary_json["study_key"] == "search_live_widening_closeout"
+    assert result.summary_json["packet_family"] == "search_live_widening_closeout.v1"

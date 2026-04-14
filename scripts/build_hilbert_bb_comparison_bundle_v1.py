@@ -130,6 +130,21 @@ def build_bundle(pack_manifest_path: Path) -> dict[str, str]:
     }
 
 
+def build_summary(manifest_paths: list[Path]) -> dict[str, Any]:
+    summary = {
+        "schema": "breadboard.hilbert_bb_comparison_bundle_summary.v1",
+        "generated": [],
+    }
+    for path in manifest_paths:
+        summary["generated"].append(build_bundle(path))
+    return summary
+
+
+def write_summary(manifest_paths: list[Path], summary_path: Path) -> Path:
+    _dump_json(summary_path, build_summary(manifest_paths))
+    return summary_path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -138,21 +153,18 @@ def main() -> None:
         default=[],
         help="Path to a hilbert comparison pack manifest.json. If omitted, build for all packs.",
     )
+    parser.add_argument(
+        "--out-summary",
+        default=str(ARTIFACT_ROOT / "bb_comparison_bundle_summary.json"),
+        help="Path to the bundle summary json to write.",
+    )
     args = parser.parse_args()
 
     manifest_paths = [Path(item).resolve() for item in args.pack_manifest if str(item).strip()]
     if not manifest_paths:
         manifest_paths = sorted(ARTIFACT_ROOT.glob("*/manifest.json"))
 
-    summary = {
-        "schema": "breadboard.hilbert_bb_comparison_bundle_summary.v1",
-        "generated": [],
-    }
-    for path in manifest_paths:
-        summary["generated"].append(build_bundle(path))
-
-    summary_path = ARTIFACT_ROOT / "bb_comparison_bundle_summary.json"
-    _dump_json(summary_path, summary)
+    summary_path = write_summary(manifest_paths, Path(args.out_summary).resolve())
     print(summary_path)
 
 

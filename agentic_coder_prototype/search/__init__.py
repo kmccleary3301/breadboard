@@ -145,6 +145,21 @@ from .live_execution import (
     build_search_live_rl_execution_packet_wrapper,
     build_search_live_rl_execution_payload,
 )
+from .live_widening import (
+    SearchLiveWideningCloseoutPacket,
+    SearchLiveWideningConsumerConvergencePacket,
+    SearchLiveWideningMatrixPacket,
+    SearchLiveWideningPackRow,
+    build_search_live_widening_closeout_packet,
+    build_search_live_widening_closeout_packet_wrapper,
+    build_search_live_widening_closeout_payload,
+    build_search_live_widening_consumer_convergence_packet,
+    build_search_live_widening_consumer_convergence_packet_wrapper,
+    build_search_live_widening_consumer_convergence_payload,
+    build_search_live_widening_matrix_packet,
+    build_search_live_widening_matrix_packet_wrapper,
+    build_search_live_widening_matrix_payload,
+)
 from .deployment_readiness import (
     SearchATPOperatorTriageKit,
     SearchATPDeploymentReadinessKit,

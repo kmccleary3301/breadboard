@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from scripts.build_hilbert_bb_comparison_bundle_v1 import build_bundle
+from scripts.build_hilbert_bb_comparison_bundle_v1 import build_bundle, write_summary
 
 
 def test_build_bundle_creates_subset_manifest(tmp_path: Path) -> None:
@@ -130,3 +130,22 @@ def test_build_bundle_accepts_prebuilt_v2_pack_dir(tmp_path: Path) -> None:
     assert payload["bb_task_inputs_path"].endswith("bb_task_inputs.json")
     assert payload["cross_system_manifest_path"].endswith("cross_system_manifest.json")
     assert payload["bundle_mode"] == "prebuilt_v2_compat"
+
+
+def test_write_summary_allows_caller_owned_output_path(tmp_path: Path) -> None:
+    pack_a = tmp_path / "a" / "pack_metadata.json"
+    pack_b = tmp_path / "b" / "pack_metadata.json"
+    for p, name in ((pack_a, "pack_b_core_noimo_minif2f_v1"), (pack_b, "pack_b_medium_noimo530_minif2f_v1")):
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"pack_name": name}), encoding="utf-8")
+        (p.parent / "bb_task_inputs.json").write_text(json.dumps({"tasks": []}), encoding="utf-8")
+        (p.parent / "cross_system_manifest.json").write_text(json.dumps({"systems": []}), encoding="utf-8")
+
+    out_summary = tmp_path / "owned" / "summary.json"
+    result = write_summary([pack_a, pack_b], out_summary)
+    payload = json.loads(out_summary.read_text(encoding="utf-8"))
+
+    assert result == out_summary
+    assert payload["schema"] == "breadboard.hilbert_bb_comparison_bundle_summary.v1"
+    assert len(payload["generated"]) == 2
+    assert payload["generated"][0]["bundle_mode"] == "prebuilt_v2_compat"
