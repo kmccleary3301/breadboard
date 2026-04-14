@@ -268,6 +268,17 @@ from agentic_coder_prototype.search import (
     build_search_live_expansion_repeated_run_summary_packet,
     build_search_live_expansion_consumer_convergence_packet,
     build_search_live_expansion_closeout_packet,
+    SearchLiveStressMatrixPacket,
+    SearchLiveStressDivergenceLedgerPacket,
+    SearchLiveStressRepeatedRunSummaryPacket,
+    SearchLiveStressConsumerConvergencePacket,
+    SearchLiveStressCloseoutPacket,
+    SearchLiveStressPackRow,
+    build_search_live_stress_matrix_packet,
+    build_search_live_stress_divergence_ledger_packet,
+    build_search_live_stress_repeated_run_summary_packet,
+    build_search_live_stress_consumer_convergence_packet,
+    build_search_live_stress_closeout_packet,
     build_search_atp_boundary_control_packet,
     build_search_atp_boundary_control_v2,
     build_search_atp_bundle_publication_packet,
@@ -457,6 +468,11 @@ def test_default_search_study_registry_lists_canonical_families() -> None:
     assert "search_live_expansion_repeated_run_summary" in keys
     assert "search_live_expansion_convergence" in keys
     assert "search_live_expansion_closeout" in keys
+    assert "search_live_stress_matrix" in keys
+    assert "search_live_stress_divergence_ledger" in keys
+    assert "search_live_stress_repeated_run_summary" in keys
+    assert "search_live_stress_convergence" in keys
+    assert "search_live_stress_closeout" in keys
     assert "dag_v5_atp_domain_pilot" in keys
     assert "dag_v5_repair_loop_domain_pilot" in keys
 
@@ -3298,3 +3314,88 @@ def test_build_search_live_expansion_closeout_packet_preserves_platform_or_harne
     result = run_search_study("search_live_expansion_closeout", mode="spec")
     assert result.summary_json["study_key"] == "search_live_expansion_closeout"
     assert result.summary_json["packet_family"] == "search_live_expansion_closeout.v1"
+
+
+def test_build_search_live_stress_matrix_packet_locks_four_pack_four_budget_surface() -> None:
+    packet = build_search_live_stress_matrix_packet()
+
+    assert isinstance(packet, SearchLiveStressMatrixPacket)
+    assert packet.packet_id == "search.platform.phase6.live_stress_matrix.v1"
+    assert packet.source_family_id == "search.domain.atp.stage_b_closeout.v1"
+    assert len(packet.pack_rows) == 4
+    assert all(isinstance(row, SearchLiveStressPackRow) for row in packet.pack_rows)
+    assert packet.pack_rows[3].pack_id == "pack_e_algebra_core_minif2f_v1"
+    assert packet.budget_cell_ids == (
+        "search.cross_execution.cell.audit_small.v1",
+        "search.cross_execution.cell.audit_medium.v1",
+        "search.cross_execution.cell.audit_large.v1",
+        "search.cross_execution.cell.audit_xlarge.v1",
+    )
+    assert packet.final_decision == "execute_four_pack_four_budget_live_stress_matrix"
+
+    result = run_search_study("search_live_stress_matrix", mode="spec")
+    assert result.summary_json["study_key"] == "search_live_stress_matrix"
+    assert result.summary_json["packet_family"] == "search_live_stress_matrix.v1"
+
+
+def test_build_search_live_stress_divergence_ledger_packet_keeps_cross_domain_locus_narrow() -> None:
+    packet = build_search_live_stress_divergence_ledger_packet()
+
+    assert isinstance(packet, SearchLiveStressDivergenceLedgerPacket)
+    assert packet.packet_id == "search.platform.phase6.live_stress_divergence_ledger.v1"
+    assert packet.stress_matrix_id == "search.platform.phase6.live_stress_matrix.v1"
+    assert packet.compared_pack_ids[-1] == "pack_e_algebra_core_minif2f_v1"
+    assert packet.remaining_blocker_rows == ()
+    assert packet.final_decision == "keep_four_pack_four_budget_divergence_platform_or_harness_local"
+
+    result = run_search_study("search_live_stress_divergence_ledger", mode="spec")
+    assert result.summary_json["study_key"] == "search_live_stress_divergence_ledger"
+    assert result.summary_json["packet_family"] == "search_live_stress_divergence_ledger.v1"
+
+
+def test_build_search_live_stress_repeated_run_summary_packet_preserves_no_planner_read() -> None:
+    packet = build_search_live_stress_repeated_run_summary_packet()
+
+    assert isinstance(packet, SearchLiveStressRepeatedRunSummaryPacket)
+    assert packet.packet_id == "search.platform.phase6.live_stress_repeated_run_summary.v1"
+    assert packet.divergence_ledger_id == "search.platform.phase6.live_stress_divergence_ledger.v1"
+    assert len(packet.repeated_run_rows) == 3
+    assert packet.final_decision == "classify_four_pack_repeated_run_surface_without_new_planner_round"
+    assert packet.dominant_locus == "platform_local"
+
+    result = run_search_study("search_live_stress_repeated_run_summary", mode="spec")
+    assert result.summary_json["study_key"] == "search_live_stress_repeated_run_summary"
+    assert result.summary_json["packet_family"] == "search_live_stress_repeated_run_summary.v1"
+
+
+def test_build_search_live_stress_convergence_packet_closes_four_pack_four_budget_read() -> None:
+    packet = build_search_live_stress_consumer_convergence_packet()
+
+    assert isinstance(packet, SearchLiveStressConsumerConvergencePacket)
+    assert packet.packet_id == "search.platform.phase6.live_stress_convergence.v1"
+    assert packet.stress_matrix_id == "search.platform.phase6.live_stress_matrix.v1"
+    assert packet.divergence_ledger_id == "search.platform.phase6.live_stress_divergence_ledger.v1"
+    assert packet.compared_budget_cell_ids[-1] == "search.cross_execution.cell.audit_xlarge.v1"
+    assert packet.final_decision == "close_four_pack_four_budget_live_convergence"
+
+    result = run_search_study("search_live_stress_convergence", mode="spec")
+    assert result.summary_json["study_key"] == "search_live_stress_convergence"
+    assert result.summary_json["packet_family"] == "search_live_stress_convergence.v1"
+
+
+def test_build_search_live_stress_closeout_packet_preserves_platform_or_harness_follow_on() -> None:
+    packet = build_search_live_stress_closeout_packet()
+
+    assert isinstance(packet, SearchLiveStressCloseoutPacket)
+    assert packet.packet_id == "search.platform.phase6.live_stress_closeout.v1"
+    assert packet.stress_matrix_id == "search.platform.phase6.live_stress_matrix.v1"
+    assert packet.divergence_ledger_id == "search.platform.phase6.live_stress_divergence_ledger.v1"
+    assert packet.repeated_run_summary_id == "search.platform.phase6.live_stress_repeated_run_summary.v1"
+    assert packet.convergence_id == "search.platform.phase6.live_stress_convergence.v1"
+    assert packet.remaining_follow_on_rows == ()
+    assert packet.final_decision == "close_live_stress_and_keep_next_work_platform_or_harness_local"
+    assert packet.dominant_locus == "platform_local"
+
+    result = run_search_study("search_live_stress_closeout", mode="spec")
+    assert result.summary_json["study_key"] == "search_live_stress_closeout"
+    assert result.summary_json["packet_family"] == "search_live_stress_closeout.v1"
