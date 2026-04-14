@@ -279,6 +279,13 @@ from agentic_coder_prototype.search import (
     build_search_live_stress_repeated_run_summary_packet,
     build_search_live_stress_consumer_convergence_packet,
     build_search_live_stress_closeout_packet,
+    SearchOfflineConvergenceMatrixPacket,
+    SearchOfflineConvergenceDivergenceLedgerPacket,
+    SearchOfflineConvergenceCloseoutPacket,
+    SearchOfflineConvergenceSourceRow,
+    build_search_offline_convergence_matrix_packet,
+    build_search_offline_convergence_divergence_ledger_packet,
+    build_search_offline_convergence_closeout_packet,
     build_search_atp_boundary_control_packet,
     build_search_atp_boundary_control_v2,
     build_search_atp_bundle_publication_packet,
@@ -473,6 +480,9 @@ def test_default_search_study_registry_lists_canonical_families() -> None:
     assert "search_live_stress_repeated_run_summary" in keys
     assert "search_live_stress_convergence" in keys
     assert "search_live_stress_closeout" in keys
+    assert "search_offline_convergence_matrix" in keys
+    assert "search_offline_convergence_divergence_ledger" in keys
+    assert "search_offline_convergence_closeout" in keys
     assert "dag_v5_atp_domain_pilot" in keys
     assert "dag_v5_repair_loop_domain_pilot" in keys
 
@@ -3399,3 +3409,45 @@ def test_build_search_live_stress_closeout_packet_preserves_platform_or_harness_
     result = run_search_study("search_live_stress_closeout", mode="spec")
     assert result.summary_json["study_key"] == "search_live_stress_closeout"
     assert result.summary_json["packet_family"] == "search_live_stress_closeout.v1"
+
+
+def test_build_search_offline_convergence_matrix_packet_reuses_dag_v4_sources_and_stage_c_consumers() -> None:
+    packet = build_search_offline_convergence_matrix_packet()
+
+    assert isinstance(packet, SearchOfflineConvergenceMatrixPacket)
+    assert packet.packet_id == "search.platform.phase8.offline_convergence_matrix.v1"
+    assert packet.compared_consumers == ("optimize", "rl")
+    assert tuple(row.topology_class for row in packet.source_rows) == ("F", "H", "D", "closeout")
+    assert all(isinstance(row, SearchOfflineConvergenceSourceRow) for row in packet.source_rows)
+    assert packet.budget_cells[0].cell_id == "search.offline_convergence.cell.audit_small.v1"
+
+    result = run_search_study("search_offline_convergence_matrix", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_convergence_matrix"
+    assert result.summary_json["packet_family"] == "search_offline_convergence_matrix.v1"
+
+
+def test_build_search_offline_convergence_divergence_ledger_packet_keeps_offline_read_narrow() -> None:
+    packet = build_search_offline_convergence_divergence_ledger_packet()
+
+    assert isinstance(packet, SearchOfflineConvergenceDivergenceLedgerPacket)
+    assert packet.packet_id == "search.platform.phase8.offline_convergence_divergence_ledger.v1"
+    assert packet.compared_topology_classes == ("F", "H", "D", "closeout")
+    assert packet.dominant_locus == "consumer_local"
+    assert packet.repeated_run_rule.startswith("only escalate if")
+
+    result = run_search_study("search_offline_convergence_divergence_ledger", mode="debug")
+    assert result.summary_json["study_key"] == "search_offline_convergence_divergence_ledger"
+    assert result.summary_json["packet_family"] == "search_offline_convergence_divergence_ledger.v1"
+
+
+def test_build_search_offline_convergence_closeout_packet_avoids_reopening_live_or_dag_scope() -> None:
+    packet = build_search_offline_convergence_closeout_packet()
+
+    assert isinstance(packet, SearchOfflineConvergenceCloseoutPacket)
+    assert packet.packet_id == "search.platform.phase8.offline_convergence_closeout.v1"
+    assert packet.remaining_follow_on_rows == ()
+    assert packet.final_decision == "close_first_offline_dag_optimize_rl_convergence_slice_without_new_planner_round"
+
+    result = run_search_study("search_offline_convergence_closeout", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_convergence_closeout"
+    assert result.summary_json["packet_family"] == "search_offline_convergence_closeout.v1"

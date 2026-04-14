@@ -117,6 +117,14 @@ from .live_stress import (
     build_search_live_stress_closeout_packet_wrapper,
     build_search_live_stress_closeout_payload,
 )
+from .offline_convergence import (
+    build_search_offline_convergence_matrix_packet_wrapper,
+    build_search_offline_convergence_matrix_payload,
+    build_search_offline_convergence_divergence_ledger_packet_wrapper,
+    build_search_offline_convergence_divergence_ledger_payload,
+    build_search_offline_convergence_closeout_packet_wrapper,
+    build_search_offline_convergence_closeout_payload,
+)
 from .domain_pilots import (
     build_search_atp_domain_pilot,
     build_search_atp_domain_pilot_payload,
@@ -718,6 +726,33 @@ def build_default_search_study_registry() -> SearchStudyRegistry:
                 tags=("platform", "live", "stress", "closeout"),
                 packet_builder=build_search_live_stress_closeout_packet_wrapper,
                 payload_builder=build_search_live_stress_closeout_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_offline_convergence_matrix",
+                title="Offline DAG optimize RL convergence matrix",
+                packet_family="search_offline_convergence_matrix.v1",
+                phase="platform_phase8_offline_convergence",
+                tags=("platform", "offline", "convergence", "matrix"),
+                packet_builder=build_search_offline_convergence_matrix_packet_wrapper,
+                payload_builder=build_search_offline_convergence_matrix_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_offline_convergence_divergence_ledger",
+                title="Offline DAG optimize RL divergence ledger",
+                packet_family="search_offline_convergence_divergence_ledger.v1",
+                phase="platform_phase8_offline_convergence",
+                tags=("platform", "offline", "convergence", "divergence"),
+                packet_builder=build_search_offline_convergence_divergence_ledger_packet_wrapper,
+                payload_builder=build_search_offline_convergence_divergence_ledger_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_offline_convergence_closeout",
+                title="Offline DAG optimize RL convergence closeout",
+                packet_family="search_offline_convergence_closeout.v1",
+                phase="platform_phase8_offline_convergence",
+                tags=("platform", "offline", "convergence", "closeout"),
+                packet_builder=build_search_offline_convergence_closeout_packet_wrapper,
+                payload_builder=build_search_offline_convergence_closeout_payload,
             ),
             SearchStudyRegistryEntry(
                 study_key="search_platform_contract_publication",
