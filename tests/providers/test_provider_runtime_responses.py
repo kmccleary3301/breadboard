@@ -226,3 +226,86 @@ def test_openrouter_responses_does_not_force_store(monkeypatch):
     except ProviderRuntimeError:
         assert captured_payload == {} or "store" not in captured_payload
 
+
+def test_responses_stream_emits_assistant_delta_events(monkeypatch):
+    runtime = OpenAIResponsesRuntime(
+        types.SimpleNamespace(provider_id="openai", runtime_id="openai_responses")
+    )
+
+    class FakeStream:
+        def __init__(self):
+            output_item = types.SimpleNamespace(
+                type="message",
+                role="assistant",
+                content=[{"type": "output_text", "text": "Hello there"}],
+                finish_reason="stop",
+            )
+            self._final = types.SimpleNamespace(
+                id="resp_stream_1",
+                model="gpt-5.4-mini",
+                output=[output_item],
+                usage={},
+            )
+            self._events = [
+                types.SimpleNamespace(type="response.output_text.delta", item_id="msg_1", delta="Hello"),
+                types.SimpleNamespace(type="response.output_text.delta", item_id="msg_1", delta=" there"),
+                types.SimpleNamespace(type="response.output_text.done", item_id="msg_1", text="Hello there"),
+                types.SimpleNamespace(type="response.completed"),
+            ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def __iter__(self):
+            return iter(self._events)
+
+        def get_final_response(self):
+            return self._final
+
+    class FakeResponses:
+        def stream(self, **kwargs):
+            return FakeStream()
+
+    class FakeClient:
+        def __init__(self):
+            self.responses = FakeResponses()
+
+    emitted = []
+
+    class FakeSessionState:
+        _active_turn_index = 3
+
+        def get_provider_metadata(self, *_args, **_kwargs):
+            return None
+
+        def set_provider_metadata(self, *_args, **_kwargs):
+            return None
+
+        def _emit_event(self, event_type, payload, *, turn=None):
+            emitted.append((event_type, payload, turn))
+
+    context = ProviderRuntimeContext(
+        session_state=FakeSessionState(),
+        agent_config={"provider_tools": {"openai": {}}},
+        stream=True,
+    )
+
+    result = runtime.invoke(
+        client=FakeClient(),
+        model="gpt-5.4-mini",
+        messages=[{"role": "user", "content": "hello"}],
+        tools=None,
+        stream=True,
+        context=context,
+    )
+
+    assert result.messages[0].content == "Hello there"
+    assert emitted == [
+        ("assistant.message.start", {"item_id": "msg_1"}, 3),
+        ("assistant.message.delta", {"item_id": "msg_1", "delta": "Hello"}, 3),
+        ("assistant.message.delta", {"item_id": "msg_1", "delta": " there"}, 3),
+        ("assistant.message.end", {"item_id": "msg_1"}, 3),
+    ]

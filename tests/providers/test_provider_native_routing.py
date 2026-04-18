@@ -7,6 +7,12 @@ def test_compute_tool_prompt_mode_native_enabled():
     assert out == "per_turn_append"
 
 
+def test_compute_tool_prompt_mode_preserves_explicit_none_with_native_tools():
+    cfg = {"provider_tools": {"suppress_prompts": False}}
+    out = compute_tool_prompt_mode("none", True, cfg)
+    assert out == "none"
+
+
 def test_compute_tool_prompt_mode_suppressed():
     cfg = {"provider_tools": {"suppress_prompts": True}}
     out = compute_tool_prompt_mode("system_once", True, cfg)
@@ -17,5 +23,4 @@ def test_compute_tool_prompt_mode_no_native():
     cfg = {}
     out = compute_tool_prompt_mode("system_once", False, cfg)
     assert out == "system_once"
-
 

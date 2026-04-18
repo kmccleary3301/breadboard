@@ -1315,6 +1315,19 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 converted.append(tool)
         return converted
 
+    def _stream_emit_event(
+        self,
+        context: ProviderRuntimeContext,
+        event_type: str,
+        payload: Dict[str, Any],
+        *,
+        turn_index: Optional[int],
+    ) -> None:
+        session_state = getattr(context, "session_state", None)
+        emit = getattr(session_state, "_emit_event", None)
+        if callable(emit):
+            emit(event_type, payload, turn=turn_index)
+
     def _stream_responses(
         self,
         client: Any,
@@ -1337,10 +1350,82 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         except Exception as exc:  # pragma: no cover - wrapped as runtime error
             raise ProviderRuntimeError(str(exc)) from exc
 
+        session_state = getattr(context, "session_state", None)
+        turn_index = getattr(session_state, "_active_turn_index", None)
+        started_item_ids: set[str] = set()
+        ended_item_ids: set[str] = set()
+
+        def start_item(item_id: str) -> None:
+            if not item_id or item_id in started_item_ids:
+                return
+            started_item_ids.add(item_id)
+            self._stream_emit_event(
+                context,
+                "assistant.message.start",
+                {"item_id": item_id},
+                turn_index=turn_index,
+            )
+
+        def emit_delta(item_id: str, delta: str) -> None:
+            if not item_id or not isinstance(delta, str) or not delta:
+                return
+            start_item(item_id)
+            self._stream_emit_event(
+                context,
+                "assistant.message.delta",
+                {"item_id": item_id, "delta": delta},
+                turn_index=turn_index,
+            )
+
+        def end_item(item_id: str) -> None:
+            if not item_id or item_id in ended_item_ids or item_id not in started_item_ids:
+                return
+            ended_item_ids.add(item_id)
+            self._stream_emit_event(
+                context,
+                "assistant.message.end",
+                {"item_id": item_id},
+                turn_index=turn_index,
+            )
+
         try:
             with stream_ctx as stream:
-                for _ in stream:
-                    pass
+                for event in stream:
+                    event_type = getattr(event, "type", None)
+                    if event_type == "response.output_text.delta":
+                        item_id = str(getattr(event, "item_id", "") or "")
+                        delta = getattr(event, "delta", None)
+                        if isinstance(delta, str) and delta:
+                            emit_delta(item_id, delta)
+                    elif event_type == "response.output_text.done":
+                        item_id = str(getattr(event, "item_id", "") or "")
+                        text = getattr(event, "text", None)
+                        if item_id not in started_item_ids and isinstance(text, str) and text:
+                            emit_delta(item_id, text)
+                        end_item(item_id)
+                    elif event_type == "response.reasoning_text.delta":
+                        delta = getattr(event, "delta", None)
+                        item_id = str(getattr(event, "item_id", "") or "")
+                        if isinstance(delta, str) and delta:
+                            self._stream_emit_event(
+                                context,
+                                "assistant.reasoning.delta",
+                                {"item_id": item_id, "delta": delta},
+                                turn_index=turn_index,
+                            )
+                    elif event_type == "response.reasoning_summary_text.delta":
+                        delta = getattr(event, "delta", None)
+                        item_id = str(getattr(event, "item_id", "") or "")
+                        if isinstance(delta, str) and delta:
+                            self._stream_emit_event(
+                                context,
+                                "assistant.thought_summary.delta",
+                                {"item_id": item_id, "delta": delta},
+                                turn_index=turn_index,
+                            )
+                    elif event_type == "response.completed":
+                        for item_id in list(started_item_ids):
+                            end_item(item_id)
                 final_response = stream.get_final_response()
                 if request_id:
                     try:
@@ -2638,6 +2723,12 @@ try:  # pragma: no cover - optional replay runtime
     provider_registry.register_runtime("replay", ReplayRuntime)
 except Exception:
     pass
+try:  # pragma: no cover - optional codex runtime
+    from .runtime_codex import CodexAppServerRuntime
+
+    provider_registry.register_runtime("codex_app_server", CodexAppServerRuntime)
+except Exception:
+    pass
 __all__ = [
     "ProviderRuntime",
     "ProviderRuntimeContext",
@@ -2650,6 +2741,7 @@ __all__ = [
     "OpenAIChatRuntime",
     "OpenAIResponsesRuntime",
     "AnthropicMessagesRuntime",
+    "CodexAppServerRuntime",
     "MockRuntime",
     "ReplayRuntime",
 ]
