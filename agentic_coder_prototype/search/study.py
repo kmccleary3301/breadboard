@@ -122,6 +122,8 @@ from .offline_convergence import (
     build_search_offline_convergence_matrix_payload,
     build_search_offline_convergence_divergence_ledger_packet_wrapper,
     build_search_offline_convergence_divergence_ledger_payload,
+    build_search_offline_convergence_comparison_probe_packet_wrapper,
+    build_search_offline_convergence_comparison_probe_payload,
     build_search_offline_convergence_closeout_packet_wrapper,
     build_search_offline_convergence_closeout_payload,
 )
@@ -744,6 +746,15 @@ def build_default_search_study_registry() -> SearchStudyRegistry:
                 tags=("platform", "offline", "convergence", "divergence"),
                 packet_builder=build_search_offline_convergence_divergence_ledger_packet_wrapper,
                 payload_builder=build_search_offline_convergence_divergence_ledger_payload,
+            ),
+            SearchStudyRegistryEntry(
+                study_key="search_offline_convergence_comparison_probe",
+                title="Offline DAG optimize RL comparison probe",
+                packet_family="search_offline_convergence_comparison_probe.v1",
+                phase="platform_phase9_offline_convergence",
+                tags=("platform", "offline", "convergence", "comparison"),
+                packet_builder=build_search_offline_convergence_comparison_probe_packet_wrapper,
+                payload_builder=build_search_offline_convergence_comparison_probe_payload,
             ),
             SearchStudyRegistryEntry(
                 study_key="search_offline_convergence_closeout",

@@ -281,10 +281,12 @@ from agentic_coder_prototype.search import (
     build_search_live_stress_closeout_packet,
     SearchOfflineConvergenceMatrixPacket,
     SearchOfflineConvergenceDivergenceLedgerPacket,
+    SearchOfflineConvergenceComparisonProbePacket,
     SearchOfflineConvergenceCloseoutPacket,
     SearchOfflineConvergenceSourceRow,
     build_search_offline_convergence_matrix_packet,
     build_search_offline_convergence_divergence_ledger_packet,
+    build_search_offline_convergence_comparison_probe_packet,
     build_search_offline_convergence_closeout_packet,
     build_search_atp_boundary_control_packet,
     build_search_atp_boundary_control_v2,
@@ -482,6 +484,7 @@ def test_default_search_study_registry_lists_canonical_families() -> None:
     assert "search_live_stress_closeout" in keys
     assert "search_offline_convergence_matrix" in keys
     assert "search_offline_convergence_divergence_ledger" in keys
+    assert "search_offline_convergence_comparison_probe" in keys
     assert "search_offline_convergence_closeout" in keys
     assert "dag_v5_atp_domain_pilot" in keys
     assert "dag_v5_repair_loop_domain_pilot" in keys
@@ -3417,9 +3420,16 @@ def test_build_search_offline_convergence_matrix_packet_reuses_dag_v4_sources_an
     assert isinstance(packet, SearchOfflineConvergenceMatrixPacket)
     assert packet.packet_id == "search.platform.phase8.offline_convergence_matrix.v1"
     assert packet.compared_consumers == ("optimize", "rl")
-    assert tuple(row.topology_class for row in packet.source_rows) == ("F", "H", "D", "closeout")
+    topology_classes = tuple(row.topology_class for row in packet.source_rows)
+    assert topology_classes == ("F", "H", "D", "W", "G", "F", "H", "closeout")
+    source_families = tuple(row.source_packet_family for row in packet.source_rows)
+    assert source_families[-4:-1] == ("dag_v4_got_v2.v1", "dag_v4_tot_v2.v1", "dag_v4_moa_v2.v1")
     assert all(isinstance(row, SearchOfflineConvergenceSourceRow) for row in packet.source_rows)
-    assert packet.budget_cells[0].cell_id == "search.offline_convergence.cell.audit_small.v1"
+    assert tuple(cell.cell_id for cell in packet.budget_cells) == (
+        "search.offline_convergence.cell.audit_small.v1",
+        "search.offline_convergence.cell.audit_medium.v1",
+        "search.offline_convergence.cell.audit_compressed.v1",
+    )
 
     result = run_search_study("search_offline_convergence_matrix", mode="spec")
     assert result.summary_json["study_key"] == "search_offline_convergence_matrix"
@@ -3431,7 +3441,9 @@ def test_build_search_offline_convergence_divergence_ledger_packet_keeps_offline
 
     assert isinstance(packet, SearchOfflineConvergenceDivergenceLedgerPacket)
     assert packet.packet_id == "search.platform.phase8.offline_convergence_divergence_ledger.v1"
-    assert packet.compared_topology_classes == ("F", "H", "D", "closeout")
+    assert packet.compared_topology_classes == ("F", "H", "D", "W", "G", "F", "H", "closeout")
+    assert "dag_v4_tot_frontier_reopen_source_reused_without_optimize_rl_contract_drift" in packet.divergence_rows
+    assert "dag_v4_moa_layered_aggregator_source_reused_without_optimize_rl_contract_drift" in packet.divergence_rows
     assert packet.dominant_locus == "consumer_local"
     assert packet.repeated_run_rule.startswith("only escalate if")
 
@@ -3440,12 +3452,41 @@ def test_build_search_offline_convergence_divergence_ledger_packet_keeps_offline
     assert result.summary_json["packet_family"] == "search_offline_convergence_divergence_ledger.v1"
 
 
+def test_build_search_offline_convergence_comparison_probe_packet_sharpens_rules_without_new_budgets() -> None:
+    packet = build_search_offline_convergence_comparison_probe_packet()
+
+    assert isinstance(packet, SearchOfflineConvergenceComparisonProbePacket)
+    assert packet.packet_id == "search.platform.phase9.offline_convergence_comparison_probe.v1"
+    assert packet.sharpened_rule_ids == (
+        "offline.contract_and_ordering_parity.v1",
+        "offline.ranking_stability_under_budget_compression.v1",
+        "offline.replay_export_parity_under_consumer_reshaping.v1",
+    )
+    assert "contract_parity_checked_across_f_h_d_w_g_and_closeout_sources" in packet.comparison_rows
+    assert "frontier_reopen_variant_checked_without_new_budget_cells" in packet.comparison_rows
+    assert "heterogeneous_aggregator_variant_checked_without_new_budget_cells" in packet.comparison_rows
+    assert "budget_compression_cell_checked_without_new_source_families" in packet.comparison_rows
+    assert "ranking_stability_checked_under_existing_small_medium_and_compressed_cells" in packet.comparison_rows
+    assert "no_threshold_satisfying_disagreement_forced_by_sharper_rules" in packet.comparison_rows
+    assert packet.final_decision == "keep_source_set_fixed_and_use_sharper_comparison_rules_before_any_further_widening"
+
+    result = run_search_study("search_offline_convergence_comparison_probe", mode="debug")
+    assert result.summary_json["study_key"] == "search_offline_convergence_comparison_probe"
+    assert result.summary_json["packet_family"] == "search_offline_convergence_comparison_probe.v1"
+
+
 def test_build_search_offline_convergence_closeout_packet_avoids_reopening_live_or_dag_scope() -> None:
     packet = build_search_offline_convergence_closeout_packet()
 
     assert isinstance(packet, SearchOfflineConvergenceCloseoutPacket)
     assert packet.packet_id == "search.platform.phase8.offline_convergence_closeout.v1"
     assert packet.remaining_follow_on_rows == ()
+    assert "w_class_source_reuse_green" in packet.ready_rows
+    assert "g_class_source_reuse_green" in packet.ready_rows
+    assert "tot_frontier_variant_reuse_green" in packet.ready_rows
+    assert "moa_aggregator_variant_reuse_green" in packet.ready_rows
+    assert "comparison_rule_sharpening_green" in packet.ready_rows
+    assert "budget_cell_family_expansion_green" in packet.ready_rows
     assert packet.final_decision == "close_first_offline_dag_optimize_rl_convergence_slice_without_new_planner_round"
 
     result = run_search_study("search_offline_convergence_closeout", mode="spec")

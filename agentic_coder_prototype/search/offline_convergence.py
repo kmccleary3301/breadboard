@@ -12,9 +12,13 @@ from .consumerization import (
 from .cross_execution import SearchExecutionBudgetCell
 from .examples import (
     build_dag_v4_bavt_packet,
+    build_dag_v4_codetree_v2_packet,
     build_dag_v4_dci_packet,
     build_dag_v4_final_adjudication_packet,
+    build_dag_v4_got_v2_packet,
     build_dag_v4_team_of_thoughts_packet,
+    build_dag_v4_tot_v2_packet,
+    build_dag_v4_moa_v2_packet,
 )
 
 
@@ -98,6 +102,30 @@ class SearchOfflineConvergenceDivergenceLedgerPacket:
 
 
 @dataclass(frozen=True)
+class SearchOfflineConvergenceComparisonProbePacket:
+    packet_id: str
+    convergence_matrix_id: str
+    divergence_ledger_id: str
+    compared_source_packet_ids: tuple[str, ...]
+    sharpened_rule_ids: tuple[str, ...]
+    comparison_rows: tuple[str, ...]
+    final_decision: str
+    dominant_locus: str
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            'packet_id': self.packet_id,
+            'convergence_matrix_id': self.convergence_matrix_id,
+            'divergence_ledger_id': self.divergence_ledger_id,
+            'compared_source_packet_ids': list(self.compared_source_packet_ids),
+            'sharpened_rule_ids': list(self.sharpened_rule_ids),
+            'comparison_rows': list(self.comparison_rows),
+            'final_decision': self.final_decision,
+            'dominant_locus': self.dominant_locus,
+        }
+
+
+@dataclass(frozen=True)
 class SearchOfflineConvergenceCloseoutPacket:
     packet_id: str
     convergence_matrix_id: str
@@ -139,6 +167,14 @@ def _build_offline_budget_cells() -> tuple[SearchExecutionBudgetCell, ...]:
             comparison_rule='medium_offline_matrix_requires_contract_and_ordering_parity',
             expected_locus='consumer_local',
         ),
+        SearchExecutionBudgetCell(
+            cell_id='search.offline_convergence.cell.audit_compressed.v1',
+            max_llm_calls=4,
+            max_evaluator_calls=1,
+            target_consumers=('optimize', 'rl'),
+            comparison_rule='compressed_offline_matrix_requires_contract_ordering_and_budget_stability',
+            expected_locus='consumer_local',
+        ),
     )
 
 
@@ -178,6 +214,10 @@ def _build_source_rows() -> tuple[SearchOfflineConvergenceSourceRow, ...]:
         ('dag_v4_bavt.v1', 'F', build_dag_v4_bavt_packet()),
         ('dag_v4_team_of_thoughts.v1', 'H', build_dag_v4_team_of_thoughts_packet()),
         ('dag_v4_dci.v1', 'D', build_dag_v4_dci_packet()),
+        ('dag_v4_codetree_v2.v1', 'W', build_dag_v4_codetree_v2_packet()),
+        ('dag_v4_got_v2.v1', 'G', build_dag_v4_got_v2_packet()),
+        ('dag_v4_tot_v2.v1', 'F', build_dag_v4_tot_v2_packet()),
+        ('dag_v4_moa_v2.v1', 'H', build_dag_v4_moa_v2_packet()),
         ('dag_v4_final_adjudication.v1', 'closeout', build_dag_v4_final_adjudication_packet()),
     )
     return tuple(
@@ -241,6 +281,10 @@ def build_search_offline_convergence_divergence_ledger_packet() -> SearchOffline
             'dag_v4_f_topology_reused_without_optimize_rl_contract_drift',
             'dag_v4_h_topology_reused_without_optimize_rl_contract_drift',
             'dag_v4_d_topology_reused_without_optimize_rl_contract_drift',
+            'dag_v4_w_topology_reused_without_optimize_rl_contract_drift',
+            'dag_v4_g_topology_reused_without_optimize_rl_contract_drift',
+            'dag_v4_tot_frontier_reopen_source_reused_without_optimize_rl_contract_drift',
+            'dag_v4_moa_layered_aggregator_source_reused_without_optimize_rl_contract_drift',
             'no_threshold_satisfying_offline_divergence_detected',
         ),
         repeated_run_rule='only escalate if the same offline consumer mismatch survives two budget cells and two topology classes',
@@ -263,9 +307,51 @@ def build_search_offline_convergence_divergence_ledger_payload() -> Dict[str, ob
     }
 
 
+def build_search_offline_convergence_comparison_probe_packet() -> SearchOfflineConvergenceComparisonProbePacket:
+    matrix = build_search_offline_convergence_matrix_packet()
+    divergence = build_search_offline_convergence_divergence_ledger_packet()
+    return SearchOfflineConvergenceComparisonProbePacket(
+        packet_id='search.platform.phase9.offline_convergence_comparison_probe.v1',
+        convergence_matrix_id=matrix.packet_id,
+        divergence_ledger_id=divergence.packet_id,
+        compared_source_packet_ids=tuple(row.source_packet_id for row in matrix.source_rows),
+        sharpened_rule_ids=(
+            'offline.contract_and_ordering_parity.v1',
+            'offline.ranking_stability_under_budget_compression.v1',
+            'offline.replay_export_parity_under_consumer_reshaping.v1',
+        ),
+        comparison_rows=(
+            'contract_parity_checked_across_f_h_d_w_g_and_closeout_sources',
+            'ordering_parity_checked_without_new_budget_cells',
+            'frontier_reopen_variant_checked_without_new_budget_cells',
+            'heterogeneous_aggregator_variant_checked_without_new_budget_cells',
+            'budget_compression_cell_checked_without_new_source_families',
+            'ranking_stability_checked_under_existing_small_medium_and_compressed_cells',
+            'no_threshold_satisfying_disagreement_forced_by_sharper_rules',
+        ),
+        final_decision='keep_source_set_fixed_and_use_sharper_comparison_rules_before_any_further_widening',
+        dominant_locus='consumer_local',
+    )
+
+
+def build_search_offline_convergence_comparison_probe_packet_wrapper() -> Dict[str, object]:
+    return build_search_offline_convergence_comparison_probe_packet().to_dict()
+
+
+def build_search_offline_convergence_comparison_probe_payload() -> Dict[str, object]:
+    packet = build_search_offline_convergence_comparison_probe_packet()
+    return {
+        'packet': packet.to_dict(),
+        'packet_family': 'search_offline_convergence_comparison_probe.v1',
+        'packet_id': packet.packet_id,
+        'phase': 'platform_phase9_offline_convergence',
+    }
+
+
 def build_search_offline_convergence_closeout_packet() -> SearchOfflineConvergenceCloseoutPacket:
     matrix = build_search_offline_convergence_matrix_packet()
     divergence = build_search_offline_convergence_divergence_ledger_packet()
+    comparison = build_search_offline_convergence_comparison_probe_packet()
     return SearchOfflineConvergenceCloseoutPacket(
         packet_id='search.platform.phase8.offline_convergence_closeout.v1',
         convergence_matrix_id=matrix.packet_id,
@@ -275,6 +361,12 @@ def build_search_offline_convergence_closeout_packet() -> SearchOfflineConvergen
             'offline_dag_source_matrix_green',
             'offline_budget_matrix_green',
             'optimize_rl_contract_reuse_green',
+            'w_class_source_reuse_green',
+            'g_class_source_reuse_green',
+            'tot_frontier_variant_reuse_green',
+            'moa_aggregator_variant_reuse_green',
+            'comparison_rule_sharpening_green',
+            'budget_cell_family_expansion_green',
             'no_live_spend_dependency_present',
         ),
         remaining_follow_on_rows=(),
