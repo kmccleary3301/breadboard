@@ -283,11 +283,32 @@ from agentic_coder_prototype.search import (
     SearchOfflineConvergenceDivergenceLedgerPacket,
     SearchOfflineConvergenceComparisonProbePacket,
     SearchOfflineConvergenceCloseoutPacket,
+    SearchOfflineStochasticityCloseoutPacket,
+    SearchOfflineStochasticityCompactionCloseoutPacket,
+    SearchOfflineStochasticityCompactionLedgerPacket,
+    SearchOfflineStochasticityCompactionMatrixPacket,
+    SearchOfflineStochasticityOrderingMatrixPacket,
+    SearchOfflineStochasticityRepeatedRunLedgerPacket,
+    SearchOfflineStochasticityTieBreakCloseoutPacket,
+    SearchOfflineStochasticityTieBreakLedgerPacket,
+    SearchOfflineStochasticityTieBreakMatrixPacket,
     SearchOfflineConvergenceSourceRow,
     build_search_offline_convergence_matrix_packet,
     build_search_offline_convergence_divergence_ledger_packet,
     build_search_offline_convergence_comparison_probe_packet,
     build_search_offline_convergence_closeout_packet,
+    build_search_offline_stochasticity_closeout_packet,
+    build_search_offline_stochasticity_compaction_closeout_packet,
+    build_search_offline_stochasticity_compaction_ledger_packet,
+    build_search_offline_stochasticity_compaction_matrix_packet,
+    build_search_offline_stochasticity_ordering_matrix_packet,
+    build_search_offline_stochasticity_scoring_jitter_closeout_packet,
+    build_search_offline_stochasticity_scoring_jitter_ledger_packet,
+    build_search_offline_stochasticity_scoring_jitter_matrix_packet,
+    build_search_offline_stochasticity_repeated_run_ledger_packet,
+    build_search_offline_stochasticity_tie_break_closeout_packet,
+    build_search_offline_stochasticity_tie_break_ledger_packet,
+    build_search_offline_stochasticity_tie_break_matrix_packet,
     build_search_atp_boundary_control_packet,
     build_search_atp_boundary_control_v2,
     build_search_atp_bundle_publication_packet,
@@ -486,6 +507,18 @@ def test_default_search_study_registry_lists_canonical_families() -> None:
     assert "search_offline_convergence_divergence_ledger" in keys
     assert "search_offline_convergence_comparison_probe" in keys
     assert "search_offline_convergence_closeout" in keys
+    assert "search_offline_stochasticity_ordering_matrix" in keys
+    assert "search_offline_stochasticity_repeated_run_ledger" in keys
+    assert "search_offline_stochasticity_closeout" in keys
+    assert "search_offline_stochasticity_tie_break_matrix" in keys
+    assert "search_offline_stochasticity_tie_break_ledger" in keys
+    assert "search_offline_stochasticity_tie_break_closeout" in keys
+    assert "search_offline_stochasticity_compaction_matrix" in keys
+    assert "search_offline_stochasticity_compaction_ledger" in keys
+    assert "search_offline_stochasticity_compaction_closeout" in keys
+    assert "search_offline_stochasticity_scoring_jitter_matrix" in keys
+    assert "search_offline_stochasticity_scoring_jitter_ledger" in keys
+    assert "search_offline_stochasticity_scoring_jitter_closeout" in keys
     assert "dag_v5_atp_domain_pilot" in keys
     assert "dag_v5_repair_loop_domain_pilot" in keys
 
@@ -3492,3 +3525,218 @@ def test_build_search_offline_convergence_closeout_packet_avoids_reopening_live_
     result = run_search_study("search_offline_convergence_closeout", mode="spec")
     assert result.summary_json["study_key"] == "search_offline_convergence_closeout"
     assert result.summary_json["packet_family"] == "search_offline_convergence_closeout.v1"
+
+
+def test_build_search_offline_stochasticity_ordering_matrix_packet_freezes_baseline_surface() -> None:
+    packet = build_search_offline_stochasticity_ordering_matrix_packet()
+
+    assert isinstance(packet, SearchOfflineStochasticityOrderingMatrixPacket)
+    assert packet.packet_id == "search.platform.phase10.offline_stochasticity_ordering_matrix.v1"
+    assert packet.perturbation_family == "ordering_perturbation"
+    assert packet.perturbation_labels == (
+        "ordering.source_rows.reverse.v1",
+        "ordering.consumer_inputs.rotate_left.v1",
+        "ordering.replay_export.reverse.v1",
+    )
+    assert packet.inherited_budget_cell_ids == (
+        "search.offline_convergence.cell.audit_small.v1",
+        "search.offline_convergence.cell.audit_medium.v1",
+        "search.offline_convergence.cell.audit_compressed.v1",
+    )
+
+    result = run_search_study("search_offline_stochasticity_ordering_matrix", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_stochasticity_ordering_matrix"
+    assert result.summary_json["packet_family"] == "search_offline_stochasticity_ordering_matrix.v1"
+
+
+def test_build_search_offline_stochasticity_repeated_run_ledger_packet_keeps_ordering_branch_below_planner_threshold() -> None:
+    packet = build_search_offline_stochasticity_repeated_run_ledger_packet()
+
+    assert isinstance(packet, SearchOfflineStochasticityRepeatedRunLedgerPacket)
+    assert packet.packet_id == "search.platform.phase10.offline_stochasticity_repeated_run_ledger.v1"
+    assert packet.perturbation_family == "ordering_perturbation"
+    assert packet.compared_budget_cell_ids == (
+        "search.offline_convergence.cell.audit_small.v1",
+        "search.offline_convergence.cell.audit_medium.v1",
+        "search.offline_convergence.cell.audit_compressed.v1",
+    )
+    assert "no_threshold_satisfying_repeated_run_disagreement_detected_under_ordering_perturbation" in packet.repeated_run_rows
+
+    result = run_search_study("search_offline_stochasticity_repeated_run_ledger", mode="debug")
+    assert result.summary_json["study_key"] == "search_offline_stochasticity_repeated_run_ledger"
+    assert result.summary_json["packet_family"] == "search_offline_stochasticity_repeated_run_ledger.v1"
+
+
+def test_build_search_offline_stochasticity_closeout_packet_defers_tie_break_and_compaction_branches() -> None:
+    packet = build_search_offline_stochasticity_closeout_packet()
+
+    assert isinstance(packet, SearchOfflineStochasticityCloseoutPacket)
+    assert packet.packet_id == "search.platform.phase10.offline_stochasticity_closeout.v1"
+    assert packet.remaining_follow_on_rows == (
+        "tie_break_perturbation_branch_deferred",
+        "compaction_perturbation_branch_deferred",
+    )
+    assert packet.final_decision == "close_phase0_and_phase1_ordering_branch_without_planner_round"
+
+    result = run_search_study("search_offline_stochasticity_closeout", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_stochasticity_closeout"
+    assert result.summary_json["packet_family"] == "search_offline_stochasticity_closeout.v1"
+
+
+def test_build_search_offline_stochasticity_tie_break_matrix_packet_keeps_ordering_branch_frozen() -> None:
+    packet = build_search_offline_stochasticity_tie_break_matrix_packet()
+
+    assert isinstance(packet, SearchOfflineStochasticityTieBreakMatrixPacket)
+    assert packet.packet_id == "search.platform.phase10.offline_stochasticity_tie_break_matrix.v1"
+    assert packet.perturbation_family == "tie_break_perturbation"
+    assert packet.perturbation_labels == (
+        "tie_break.optimize_rank_prefers_earliest_contract_stable.v1",
+        "tie_break.rl_rank_prefers_export_density.v1",
+        "tie_break.shared_rank_prefers_budget_conservative_path.v1",
+    )
+    assert packet.inherited_budget_cell_ids == (
+        "search.offline_convergence.cell.audit_small.v1",
+        "search.offline_convergence.cell.audit_medium.v1",
+        "search.offline_convergence.cell.audit_compressed.v1",
+    )
+
+    result = run_search_study("search_offline_stochasticity_tie_break_matrix", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_stochasticity_tie_break_matrix"
+    assert result.summary_json["packet_family"] == "search_offline_stochasticity_tie_break_matrix.v1"
+
+
+def test_build_search_offline_stochasticity_tie_break_ledger_packet_keeps_phase2_below_planner_threshold() -> None:
+    packet = build_search_offline_stochasticity_tie_break_ledger_packet()
+
+    assert isinstance(packet, SearchOfflineStochasticityTieBreakLedgerPacket)
+    assert packet.packet_id == "search.platform.phase10.offline_stochasticity_tie_break_ledger.v1"
+    assert packet.perturbation_family == "tie_break_perturbation"
+    assert packet.compared_budget_cell_ids == (
+        "search.offline_convergence.cell.audit_small.v1",
+        "search.offline_convergence.cell.audit_medium.v1",
+        "search.offline_convergence.cell.audit_compressed.v1",
+    )
+    assert "no_threshold_satisfying_repeated_run_disagreement_detected_under_tie_break_perturbation" in packet.repeated_run_rows
+
+    result = run_search_study("search_offline_stochasticity_tie_break_ledger", mode="debug")
+    assert result.summary_json["study_key"] == "search_offline_stochasticity_tie_break_ledger"
+    assert result.summary_json["packet_family"] == "search_offline_stochasticity_tie_break_ledger.v1"
+
+
+def test_build_search_offline_stochasticity_tie_break_closeout_packet_defers_compaction_branch() -> None:
+    packet = build_search_offline_stochasticity_tie_break_closeout_packet()
+
+    assert isinstance(packet, SearchOfflineStochasticityTieBreakCloseoutPacket)
+    assert packet.packet_id == "search.platform.phase10.offline_stochasticity_tie_break_closeout.v1"
+    assert packet.remaining_follow_on_rows == (
+        "compaction_perturbation_branch_deferred",
+    )
+    assert packet.final_decision == "close_phase2_tie_break_branch_without_planner_round"
+
+    result = run_search_study("search_offline_stochasticity_tie_break_closeout", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_stochasticity_tie_break_closeout"
+    assert result.summary_json["packet_family"] == "search_offline_stochasticity_tie_break_closeout.v1"
+
+
+def test_build_search_offline_stochasticity_compaction_matrix_packet_keeps_tie_break_branch_frozen() -> None:
+    packet = build_search_offline_stochasticity_compaction_matrix_packet()
+
+    assert isinstance(packet, SearchOfflineStochasticityCompactionMatrixPacket)
+    assert packet.packet_id == "search.platform.phase10.offline_stochasticity_compaction_matrix.v1"
+    assert packet.perturbation_family == "compaction_perturbation"
+    assert packet.perturbation_labels == (
+        "compaction.variant.minimal_contract_preserve.v1",
+        "compaction.variant.replay_first_preserve.v1",
+        "compaction.variant.order_stable_reduce.v1",
+    )
+    assert packet.inherited_budget_cell_ids == (
+        "search.offline_convergence.cell.audit_small.v1",
+        "search.offline_convergence.cell.audit_medium.v1",
+        "search.offline_convergence.cell.audit_compressed.v1",
+    )
+
+    result = run_search_study("search_offline_stochasticity_compaction_matrix", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_stochasticity_compaction_matrix"
+    assert result.summary_json["packet_family"] == "search_offline_stochasticity_compaction_matrix.v1"
+
+
+def test_build_search_offline_stochasticity_compaction_ledger_packet_keeps_phase3_below_planner_threshold() -> None:
+    packet = build_search_offline_stochasticity_compaction_ledger_packet()
+
+    assert isinstance(packet, SearchOfflineStochasticityCompactionLedgerPacket)
+    assert packet.packet_id == "search.platform.phase10.offline_stochasticity_compaction_ledger.v1"
+    assert packet.perturbation_family == "compaction_perturbation"
+    assert packet.compared_budget_cell_ids == (
+        "search.offline_convergence.cell.audit_small.v1",
+        "search.offline_convergence.cell.audit_medium.v1",
+        "search.offline_convergence.cell.audit_compressed.v1",
+    )
+    assert "no_threshold_satisfying_repeated_run_disagreement_detected_under_compaction_perturbation" in packet.repeated_run_rows
+
+    result = run_search_study("search_offline_stochasticity_compaction_ledger", mode="debug")
+    assert result.summary_json["study_key"] == "search_offline_stochasticity_compaction_ledger"
+    assert result.summary_json["packet_family"] == "search_offline_stochasticity_compaction_ledger.v1"
+
+
+def test_build_search_offline_stochasticity_compaction_closeout_packet_defers_scoring_jitter_branch() -> None:
+    packet = build_search_offline_stochasticity_compaction_closeout_packet()
+
+    assert isinstance(packet, SearchOfflineStochasticityCompactionCloseoutPacket)
+    assert packet.packet_id == "search.platform.phase10.offline_stochasticity_compaction_closeout.v1"
+    assert packet.remaining_follow_on_rows == (
+        "local_scoring_jitter_branch_deferred",
+    )
+    assert packet.final_decision == "close_phase3_compaction_branch_without_planner_round"
+
+    result = run_search_study("search_offline_stochasticity_compaction_closeout", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_stochasticity_compaction_closeout"
+    assert result.summary_json["packet_family"] == "search_offline_stochasticity_compaction_closeout.v1"
+
+
+def test_build_search_offline_stochasticity_scoring_jitter_matrix_packet_keeps_compaction_branch_frozen() -> None:
+    packet = build_search_offline_stochasticity_scoring_jitter_matrix_packet()
+
+    assert packet.packet_id == "search.platform.phase10.offline_stochasticity_scoring_jitter_matrix.v1"
+    assert packet.perturbation_family == "local_scoring_jitter_perturbation"
+    assert packet.perturbation_labels == (
+        "scoring_jitter.seed_003_contract_weight_plus.v1",
+        "scoring_jitter.seed_017_export_density_minus.v1",
+        "scoring_jitter.seed_101_budget_margin_mix.v1",
+    )
+    assert "compaction_branch_frozen_before_scoring_jitter_branch" in packet.matrix_checks
+    assert "jitter_local_to_comparison_surface_only" in packet.matrix_checks
+    assert packet.final_decision == "execute_offline_scoring_jitter_perturbation_as_final_phase10_branch"
+    assert packet.dominant_locus == "consumer_local"
+
+    result = run_search_study("search_offline_stochasticity_scoring_jitter_matrix", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_stochasticity_scoring_jitter_matrix"
+    assert result.summary_json["packet_family"] == "search_offline_stochasticity_scoring_jitter_matrix.v1"
+
+
+def test_build_search_offline_stochasticity_scoring_jitter_ledger_packet_keeps_phase4_below_planner_threshold() -> None:
+    packet = build_search_offline_stochasticity_scoring_jitter_ledger_packet()
+
+    assert packet.packet_id == "search.platform.phase10.offline_stochasticity_scoring_jitter_ledger.v1"
+    assert packet.perturbation_family == "local_scoring_jitter_perturbation"
+    assert packet.repeated_run_rows[-1] == "no_threshold_satisfying_repeated_run_disagreement_detected_under_scoring_jitter_perturbation"
+    assert packet.final_decision == "keep_scoring_jitter_perturbation_read_below_planner_threshold"
+    assert packet.dominant_locus == "consumer_local"
+
+    result = run_search_study("search_offline_stochasticity_scoring_jitter_ledger", mode="debug")
+    assert result.summary_json["study_key"] == "search_offline_stochasticity_scoring_jitter_ledger"
+    assert result.summary_json["packet_family"] == "search_offline_stochasticity_scoring_jitter_ledger.v1"
+
+
+def test_build_search_offline_stochasticity_scoring_jitter_closeout_packet_prepares_playbook_closeout() -> None:
+    packet = build_search_offline_stochasticity_scoring_jitter_closeout_packet()
+
+    assert packet.packet_id == "search.platform.phase10.offline_stochasticity_scoring_jitter_closeout.v1"
+    assert "scoring_jitter_perturbation_family_green" in packet.ready_rows
+    assert "no_scoring_jitter_branch_planner_trigger" in packet.ready_rows
+    assert packet.remaining_follow_on_rows == ()
+    assert packet.final_decision == "close_phase4_scoring_jitter_branch_and_prepare_phase10_playbook_closeout_without_planner_round"
+    assert packet.dominant_locus == "platform_local"
+
+    result = run_search_study("search_offline_stochasticity_scoring_jitter_closeout", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_stochasticity_scoring_jitter_closeout"
+    assert result.summary_json["packet_family"] == "search_offline_stochasticity_scoring_jitter_closeout.v1"
