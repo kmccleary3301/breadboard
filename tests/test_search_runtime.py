@@ -305,6 +305,27 @@ from agentic_coder_prototype.search import (
     build_search_offline_stochasticity_scoring_jitter_closeout_packet,
     build_search_offline_stochasticity_scoring_jitter_ledger_packet,
     build_search_offline_stochasticity_scoring_jitter_matrix_packet,
+    SearchOfflineObjectiveRegimeCloseoutPacket,
+    SearchOfflineObjectiveRegimeDivergenceLedgerPacket,
+    SearchOfflineObjectiveRegimeMatrixPacket,
+    build_search_offline_objective_regime_budget_conservative_closeout_packet,
+    build_search_offline_objective_regime_budget_conservative_divergence_ledger_packet,
+    build_search_offline_objective_regime_budget_conservative_matrix_packet,
+    build_search_offline_objective_regime_contract_first_closeout_packet,
+    build_search_offline_objective_regime_export_density_first_closeout_packet,
+    build_search_offline_objective_regime_export_density_first_divergence_ledger_packet,
+    build_search_offline_objective_regime_export_density_first_matrix_packet,
+    build_search_offline_objective_regime_replay_parity_first_closeout_packet,
+    build_search_offline_objective_regime_replay_parity_first_divergence_ledger_packet,
+    build_search_offline_objective_regime_replay_parity_first_matrix_packet,
+    build_search_offline_objective_regime_closeout_decision_first_closeout_packet,
+    build_search_offline_objective_regime_closeout_decision_first_divergence_ledger_packet,
+    build_search_offline_objective_regime_closeout_decision_first_matrix_packet,
+    build_search_offline_objective_regime_forensic_read_packet,
+    build_search_offline_objective_regime_program_closeout_packet,
+    build_search_offline_objective_regime_next_locus_packet,
+    build_search_offline_objective_regime_contract_first_divergence_ledger_packet,
+    build_search_offline_objective_regime_contract_first_matrix_packet,
     build_search_offline_stochasticity_repeated_run_ledger_packet,
     build_search_offline_stochasticity_tie_break_closeout_packet,
     build_search_offline_stochasticity_tie_break_ledger_packet,
@@ -3740,3 +3761,291 @@ def test_build_search_offline_stochasticity_scoring_jitter_closeout_packet_prepa
     result = run_search_study("search_offline_stochasticity_scoring_jitter_closeout", mode="spec")
     assert result.summary_json["study_key"] == "search_offline_stochasticity_scoring_jitter_closeout"
     assert result.summary_json["packet_family"] == "search_offline_stochasticity_scoring_jitter_closeout.v1"
+
+
+def test_build_search_offline_objective_regime_contract_first_matrix_packet_freezes_phase9_and_phase10_baselines() -> None:
+    packet = build_search_offline_objective_regime_contract_first_matrix_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeMatrixPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_contract_first_matrix.v1"
+    assert packet.objective_regime_family == "contract_first"
+    assert packet.objective_regime_labels == (
+        "contract_first.ordering_fidelity_priority.v1",
+        "contract_first.contract_stability_over_export_density.v1",
+        "contract_first.conservative_closeout_preserve.v1",
+    )
+    assert packet.inherited_budget_cell_ids == (
+        "search.offline_convergence.cell.audit_small.v1",
+        "search.offline_convergence.cell.audit_medium.v1",
+        "search.offline_convergence.cell.audit_compressed.v1",
+    )
+    assert "phase9_baseline_surface_frozen_before_regime_change" in packet.matrix_checks
+    assert "phase10_stochasticity_closeout_frozen_before_regime_change" in packet.matrix_checks
+
+    result = run_search_study("search_offline_objective_regime_contract_first_matrix", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_contract_first_matrix"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_contract_first_matrix.v1"
+
+
+def test_build_search_offline_objective_regime_contract_first_divergence_ledger_packet_keeps_phase11_below_planner_threshold() -> None:
+    packet = build_search_offline_objective_regime_contract_first_divergence_ledger_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeDivergenceLedgerPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_contract_first_divergence_ledger.v1"
+    assert packet.objective_regime_family == "contract_first"
+    assert packet.compared_budget_cell_ids == (
+        "search.offline_convergence.cell.audit_small.v1",
+        "search.offline_convergence.cell.audit_medium.v1",
+        "search.offline_convergence.cell.audit_compressed.v1",
+    )
+    assert packet.divergence_rows[-1] == "no_threshold_satisfying_repeated_disagreement_detected_under_contract_first_regime"
+    assert packet.final_decision == "keep_contract_first_regime_below_planner_threshold"
+
+    result = run_search_study("search_offline_objective_regime_contract_first_divergence_ledger", mode="debug")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_contract_first_divergence_ledger"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_contract_first_divergence_ledger.v1"
+
+
+def test_build_search_offline_objective_regime_contract_first_closeout_packet_defers_next_regime_families() -> None:
+    packet = build_search_offline_objective_regime_contract_first_closeout_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeCloseoutPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_contract_first_closeout.v1"
+    assert packet.remaining_follow_on_rows == (
+        "budget_conservative_regime_branch_deferred",
+        "export_density_first_regime_branch_deferred",
+    )
+    assert packet.final_decision == "close_phase0_and_phase1_contract_first_branch_without_planner_round"
+
+    result = run_search_study("search_offline_objective_regime_contract_first_closeout", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_contract_first_closeout"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_contract_first_closeout.v1"
+
+
+def test_build_search_offline_objective_regime_budget_conservative_matrix_packet_freezes_contract_first_branch() -> None:
+    packet = build_search_offline_objective_regime_budget_conservative_matrix_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeMatrixPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_budget_conservative_matrix.v1"
+    assert packet.objective_regime_family == "budget_conservative"
+    assert packet.objective_regime_labels == (
+        "budget_conservative.llm_call_ceiling_priority.v1",
+        "budget_conservative.evaluator_call_sparing.v1",
+        "budget_conservative.closeout_margin_preserve.v1",
+    )
+    assert packet.inherited_budget_cell_ids == (
+        "search.offline_convergence.cell.audit_small.v1",
+        "search.offline_convergence.cell.audit_medium.v1",
+        "search.offline_convergence.cell.audit_compressed.v1",
+    )
+    assert "contract_first_branch_frozen_before_budget_conservative_branch" in packet.matrix_checks
+
+    result = run_search_study("search_offline_objective_regime_budget_conservative_matrix", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_budget_conservative_matrix"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_budget_conservative_matrix.v1"
+
+
+def test_build_search_offline_objective_regime_budget_conservative_divergence_ledger_packet_keeps_phase11_below_planner_threshold() -> None:
+    packet = build_search_offline_objective_regime_budget_conservative_divergence_ledger_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeDivergenceLedgerPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_budget_conservative_divergence_ledger.v1"
+    assert packet.objective_regime_family == "budget_conservative"
+    assert packet.divergence_rows[-1] == "no_threshold_satisfying_repeated_disagreement_detected_under_budget_conservative_regime"
+    assert packet.final_decision == "keep_budget_conservative_regime_below_planner_threshold"
+
+    result = run_search_study("search_offline_objective_regime_budget_conservative_divergence_ledger", mode="debug")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_budget_conservative_divergence_ledger"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_budget_conservative_divergence_ledger.v1"
+
+
+def test_build_search_offline_objective_regime_budget_conservative_closeout_packet_defers_later_regime_families() -> None:
+    packet = build_search_offline_objective_regime_budget_conservative_closeout_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeCloseoutPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_budget_conservative_closeout.v1"
+    assert packet.remaining_follow_on_rows == (
+        "export_density_first_regime_branch_deferred",
+        "replay_parity_first_regime_branch_deferred",
+    )
+    assert packet.final_decision == "close_phase2_budget_conservative_branch_without_planner_round"
+
+    result = run_search_study("search_offline_objective_regime_budget_conservative_closeout", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_budget_conservative_closeout"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_budget_conservative_closeout.v1"
+
+
+def test_build_search_offline_objective_regime_export_density_first_matrix_packet_freezes_budget_conservative_branch() -> None:
+    packet = build_search_offline_objective_regime_export_density_first_matrix_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeMatrixPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_export_density_first_matrix.v1"
+    assert packet.objective_regime_family == "export_density_first"
+    assert packet.objective_regime_labels == (
+        "export_density_first.replay_bundle_richness_priority.v1",
+        "export_density_first.handoff_compaction_tolerant_density.v1",
+        "export_density_first.export_surface_maximize_before_budget_margin.v1",
+    )
+    assert "budget_conservative_branch_frozen_before_export_density_first_branch" in packet.matrix_checks
+
+    result = run_search_study("search_offline_objective_regime_export_density_first_matrix", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_export_density_first_matrix"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_export_density_first_matrix.v1"
+
+
+def test_build_search_offline_objective_regime_export_density_first_divergence_ledger_packet_keeps_phase11_below_planner_threshold() -> None:
+    packet = build_search_offline_objective_regime_export_density_first_divergence_ledger_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeDivergenceLedgerPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_export_density_first_divergence_ledger.v1"
+    assert packet.objective_regime_family == "export_density_first"
+    assert packet.divergence_rows[-1] == "no_threshold_satisfying_repeated_disagreement_detected_under_export_density_first_regime"
+    assert packet.final_decision == "keep_export_density_first_regime_below_planner_threshold"
+
+    result = run_search_study("search_offline_objective_regime_export_density_first_divergence_ledger", mode="debug")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_export_density_first_divergence_ledger"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_export_density_first_divergence_ledger.v1"
+
+
+def test_build_search_offline_objective_regime_export_density_first_closeout_packet_defers_later_regime_families() -> None:
+    packet = build_search_offline_objective_regime_export_density_first_closeout_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeCloseoutPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_export_density_first_closeout.v1"
+    assert packet.remaining_follow_on_rows == (
+        "replay_parity_first_regime_branch_deferred",
+        "closeout_decision_first_regime_branch_deferred",
+    )
+    assert packet.final_decision == "close_phase3_export_density_first_branch_without_planner_round"
+
+    result = run_search_study("search_offline_objective_regime_export_density_first_closeout", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_export_density_first_closeout"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_export_density_first_closeout.v1"
+
+
+def test_build_search_offline_objective_regime_replay_parity_first_matrix_packet_freezes_export_density_branch() -> None:
+    packet = build_search_offline_objective_regime_replay_parity_first_matrix_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeMatrixPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_replay_parity_first_matrix.v1"
+    assert packet.objective_regime_family == "replay_parity_first"
+    assert packet.objective_regime_labels == (
+        "replay_parity_first.export_replay_symmetry_priority.v1",
+        "replay_parity_first.artifact_preservation_before_density.v1",
+        "replay_parity_first.closeout_symmetry_preserve.v1",
+    )
+    assert "export_density_first_branch_frozen_before_replay_parity_first_branch" in packet.matrix_checks
+
+    result = run_search_study("search_offline_objective_regime_replay_parity_first_matrix", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_replay_parity_first_matrix"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_replay_parity_first_matrix.v1"
+
+
+def test_build_search_offline_objective_regime_replay_parity_first_divergence_ledger_packet_keeps_phase11_below_planner_threshold() -> None:
+    packet = build_search_offline_objective_regime_replay_parity_first_divergence_ledger_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeDivergenceLedgerPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_replay_parity_first_divergence_ledger.v1"
+    assert packet.objective_regime_family == "replay_parity_first"
+    assert packet.divergence_rows[-1] == "no_threshold_satisfying_repeated_disagreement_detected_under_replay_parity_first_regime"
+    assert packet.final_decision == "keep_replay_parity_first_regime_below_planner_threshold"
+
+    result = run_search_study("search_offline_objective_regime_replay_parity_first_divergence_ledger", mode="debug")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_replay_parity_first_divergence_ledger"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_replay_parity_first_divergence_ledger.v1"
+
+
+def test_build_search_offline_objective_regime_replay_parity_first_closeout_packet_defers_closeout_decision_family() -> None:
+    packet = build_search_offline_objective_regime_replay_parity_first_closeout_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeCloseoutPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_replay_parity_first_closeout.v1"
+    assert packet.remaining_follow_on_rows == (
+        "closeout_decision_first_regime_branch_deferred",
+    )
+    assert packet.final_decision == "close_phase4_replay_parity_first_branch_without_planner_round"
+
+    result = run_search_study("search_offline_objective_regime_replay_parity_first_closeout", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_replay_parity_first_closeout"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_replay_parity_first_closeout.v1"
+
+
+def test_build_search_offline_objective_regime_closeout_decision_first_matrix_packet_freezes_replay_parity_branch() -> None:
+    packet = build_search_offline_objective_regime_closeout_decision_first_matrix_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeMatrixPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_closeout_decision_first_matrix.v1"
+    assert packet.objective_regime_family == "closeout_decision_first"
+    assert packet.objective_regime_labels == (
+        "closeout_decision_first.final_selection_stability_priority.v1",
+        "closeout_decision_first.intermediate_richness_penalty.v1",
+        "closeout_decision_first.conservative_termination_symmetry.v1",
+    )
+    assert "replay_parity_first_branch_frozen_before_closeout_decision_first_branch" in packet.matrix_checks
+
+    result = run_search_study("search_offline_objective_regime_closeout_decision_first_matrix", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_closeout_decision_first_matrix"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_closeout_decision_first_matrix.v1"
+
+
+def test_build_search_offline_objective_regime_closeout_decision_first_divergence_ledger_packet_keeps_phase11_below_planner_threshold() -> None:
+    packet = build_search_offline_objective_regime_closeout_decision_first_divergence_ledger_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeDivergenceLedgerPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_closeout_decision_first_divergence_ledger.v1"
+    assert packet.objective_regime_family == "closeout_decision_first"
+    assert packet.divergence_rows[-1] == "no_threshold_satisfying_repeated_disagreement_detected_under_closeout_decision_first_regime"
+    assert packet.final_decision == "keep_closeout_decision_first_regime_below_planner_threshold"
+
+    result = run_search_study("search_offline_objective_regime_closeout_decision_first_divergence_ledger", mode="debug")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_closeout_decision_first_divergence_ledger"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_closeout_decision_first_divergence_ledger.v1"
+
+
+def test_build_search_offline_objective_regime_closeout_decision_first_closeout_packet_completes_regime_ladder() -> None:
+    packet = build_search_offline_objective_regime_closeout_decision_first_closeout_packet()
+
+    assert isinstance(packet, SearchOfflineObjectiveRegimeCloseoutPacket)
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_closeout_decision_first_closeout.v1"
+    assert packet.remaining_follow_on_rows == ()
+    assert packet.final_decision == "close_phase5_closeout_decision_first_branch_without_planner_round"
+
+    result = run_search_study("search_offline_objective_regime_closeout_decision_first_closeout", mode="spec")
+    assert result.summary_json["study_key"] == "search_offline_objective_regime_closeout_decision_first_closeout"
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_closeout_decision_first_closeout.v1"
+
+
+def test_build_search_offline_objective_regime_forensic_read_packet_separates_regime_shift_from_format_drift() -> None:
+    packet = build_search_offline_objective_regime_forensic_read_packet()
+
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_forensic_read.v1"
+    assert "baseline_convergence_matrix_id" in packet.protected_fields
+    assert "objective_regime_labels" in packet.allowed_moving_fields
+    assert packet.final_decision == "treat_phase11_regime_movement_as_forensically_separated_from_packet_drift"
+
+    result = run_search_study("search_offline_objective_regime_forensic_read", mode="spec")
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_forensic_read.v1"
+
+
+def test_build_search_offline_objective_regime_program_closeout_packet_closes_phase11_without_planner() -> None:
+    packet = build_search_offline_objective_regime_program_closeout_packet()
+
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_program_closeout.v1"
+    assert packet.remaining_follow_on_rows == ()
+    assert "no_phase11_planner_trigger" in packet.ready_rows
+    assert packet.final_decision == "close_phase11_without_planner_round_and_without_dag_architecture_change"
+
+    result = run_search_study("search_offline_objective_regime_program_closeout", mode="spec")
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_program_closeout.v1"
+
+
+def test_build_search_offline_objective_regime_next_locus_packet_keeps_follow_on_non_dag_local() -> None:
+    packet = build_search_offline_objective_regime_next_locus_packet()
+
+    assert packet.packet_id == "search.platform.phase11.offline_objective_regime_next_locus.v1"
+    assert packet.planner_trigger_state == "not_triggered"
+    assert packet.recommended_loci == ("consumer_local", "platform_local")
+    assert "dag_local" in packet.disfavored_loci
+
+    result = run_search_study("search_offline_objective_regime_next_locus", mode="spec")
+    assert result.summary_json["packet_family"] == "search_offline_objective_regime_next_locus.v1"
