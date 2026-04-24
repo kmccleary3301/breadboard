@@ -50,10 +50,14 @@ from .components import (
     initialize_enhanced_executor,
     write_env_fingerprint,
 )
+from ..utils.safe_delete import is_disposable_workspace_path, validate_workspace_path
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def prepare_workspace(workspace: str) -> Path:
-    """Ensure the workspace directory exists and is empty before use."""
+    """Ensure the workspace directory exists and clean only disposable roots."""
     import shutil
     
     try:
@@ -69,9 +73,13 @@ def prepare_workspace(workspace: str) -> Path:
             path = path.absolute()
         except Exception:
             pass
+    path = validate_workspace_path(path, repo_root=_REPO_ROOT)
+    disposable_workspace = is_disposable_workspace_path(path, repo_root=_REPO_ROOT)
     preserve_seeded = os.environ.get("PRESERVE_SEEDED_WORKSPACE") in {"1", "true", "True"}
+    if not disposable_workspace:
+        preserve_seeded = True
     try:
-        if path.exists() and not preserve_seeded:
+        if path.exists() and disposable_workspace and not preserve_seeded:
             shutil.rmtree(path)
     except Exception:
         # If cleanup fails we still attempt to proceed with a fresh directory

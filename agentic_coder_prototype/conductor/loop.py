@@ -806,7 +806,64 @@ def run_main_loop(
                     else:
                         session_state.completion_summary.setdefault("completed", True)
                     break
+
+            provider_turn_completed = bool(
+                getattr(provider_result, "metadata", {}).get("provider_turn_completed", False)
+            )
+            if provider_turn_completed:
+                guard_ok, guard_reason = self.guardrail_orchestrator.completion_guard_check(session_state)
+                if not guard_ok and guard_reason:
+                    validation_message = f"<VALIDATION_ERROR>\n{guard_reason}\n</VALIDATION_ERROR>"
+                    try:
+                        session_state.add_message({"role": "user", "content": validation_message}, to_provider=True)
+                    except Exception:
+                        pass
+                    try:
+                        markdown_logger.log_user_message(validation_message)
+                    except Exception:
+                        pass
+                    completed = False
+                else:
+                    completed = True
+                    completion_summary = dict(getattr(session_state, "completion_summary", None) or {})
+                    completion_summary.setdefault("completed", True)
+                    completion_summary.setdefault(
+                        "method",
+                        str(
+                            getattr(provider_result, "metadata", {}).get(
+                                "provider_turn_completion_method",
+                                "provider_turn_completed",
+                            )
+                        ),
+                    )
+                    completion_summary.setdefault(
+                        "reason",
+                        str(
+                            getattr(provider_result, "metadata", {}).get(
+                                "provider_turn_completion_reason",
+                                "provider_turn_completed",
+                            )
+                        ),
+                    )
+                    session_state.completion_summary = completion_summary
             self._capture_turn_diagnostics(session_state, provider_result, turn_allowed_tool_names)
+            if not completed:
+                try:
+                    from .execution import _force_post_receipt_final_answer, _implementation_receipts_satisfied
+
+                    if _implementation_receipts_satisfied(self, session_state):
+                        completed = _force_post_receipt_final_answer(
+                            session_state,
+                            reason="loop_post_receipt_terminal_state",
+                        )
+                except Exception as exc:
+                    try:
+                        session_state.record_guardrail_event(
+                            "implementation_post_receipt_terminal_state_error",
+                            {"error": str(exc), "turn": turn_index},
+                        )
+                    except Exception:
+                        pass
             # Delegate loop detection guardrail emission
             try:
                 self.guardrail_orchestrator.handle_loop_detection(
@@ -879,6 +936,10 @@ def run_main_loop(
                         stream_responses=stream_responses,
                     )
                     if abort:
+                        existing_summary = getattr(session_state, "completion_summary", None)
+                        if isinstance(existing_summary, dict) and existing_summary.get("completed"):
+                            completed = True
+                            break
                         session_state.completion_summary = {
                             "completed": False,
                             "reason": "no_tool_activity",

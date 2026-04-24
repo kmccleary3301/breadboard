@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
+from agentic_coder_prototype.agent_llm_openai import OpenAIConductor, build_shell_timeout_diagnostic
 
 
 def _make_conductor(config: dict) -> OpenAIConductor:
     cls = OpenAIConductor.__ray_metadata__.modified_class
     inst = object.__new__(cls)
     inst.config = config
+    inst.workspace = "/tmp"
     inst.sandbox = None
     return inst  # type: ignore[return-value]
 
@@ -32,7 +33,7 @@ def test_exec_raw_shell_command_alias_uses_run_shell_and_timeout_ms() -> None:
     )
 
     assert out["exit"] == 0
-    assert seen["command"] == "cd src && pwd"
+    assert seen["command"] == "cd /tmp/src && pwd"
     assert seen["timeout"] == 3
 
 
@@ -70,3 +71,22 @@ def test_exec_raw_update_plan_returns_success_marker() -> None:
     assert out["ok"] is True
     assert out["__mvi_text_output"] == "Plan updated"
     assert getattr(conductor, "_codex_update_plan_state")["explanation"] == "track work"
+
+
+def test_shell_timeout_diagnostic_for_empty_exit_124() -> None:
+    text = build_shell_timeout_diagnostic("sleep 10", 124, "", "")
+
+    assert "hit a timeout" in text
+
+
+def test_shell_timeout_diagnostic_mentions_daemon_smoke_cleanup() -> None:
+    text = build_shell_timeout_diagnostic("timeout 20s bash smoke_test.sh", 124, "", "")
+
+    assert "daemon-style smoke tests" in text
+    assert "terminate/cleanup the background server" in text
+
+
+def test_shell_timeout_diagnostic_preserves_existing_stderr() -> None:
+    text = build_shell_timeout_diagnostic("timeout 20s bash smoke_test.sh", 124, "", "already useful")
+
+    assert text == "already useful"

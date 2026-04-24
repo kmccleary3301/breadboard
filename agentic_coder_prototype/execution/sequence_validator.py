@@ -163,7 +163,7 @@ class ReadBeforeEditRule(ValidationRule):
             return [file_name] if file_name else []
         
         elif function == "apply_unified_patch":
-            patch_content = args.get("patch", "")
+            patch_content = args.get("patch") or args.get("input") or args.get("patchText") or ""
             return self._extract_files_from_patch(patch_content)
         
         return []

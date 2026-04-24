@@ -8,6 +8,7 @@ from ..state.session_state import SessionState
 from ..todo.store import TODO_OPEN_STATUSES
 from ..turns import TurnContext
 from .coordinator import GuardrailCoordinator
+from ..conductor.components import assistant_claims_workspace_tool_usage, session_requires_workspace_tool_usage
 
 
 class GuardrailOrchestrator:
@@ -457,6 +458,18 @@ class GuardrailOrchestrator:
         total_calls = int(summary.get("total_calls") or 0)
         completion_cfg = (self.config.get("completion", {}) or {})
         allow_zero_tool = bool(completion_cfg.get("allow_zero_tool_completion"))
+        assistant_history = session_state.get_provider_metadata("assistant_text_history", [])
+        latest_assistant = ""
+        if isinstance(assistant_history, list):
+            for entry in reversed(assistant_history):
+                if isinstance(entry, str) and entry.strip():
+                    latest_assistant = entry.strip()
+                    break
+        if total_calls <= 0 and (
+            session_requires_workspace_tool_usage(session_state)
+            or assistant_claims_workspace_tool_usage(latest_assistant)
+        ):
+            return False, "This request requires real workspace interaction. Use read/list/diff/bash tools, then answer from the observed result."
         if total_calls <= 0 and not allow_zero_tool:
             return False, "No tool usage detected yet. Use the available tools (read/diff/bash) to make concrete progress before declaring completion."
 
