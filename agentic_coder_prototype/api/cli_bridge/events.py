@@ -22,6 +22,10 @@ class EventType(str, enum.Enum):
     ASSISTANT_MESSAGE_END = "assistant.message.end"
     ASSISTANT_REASONING_DELTA = "assistant.reasoning.delta"
     ASSISTANT_THOUGHT_SUMMARY_DELTA = "assistant.thought_summary.delta"
+    TOOL_EXEC_START = "tool.exec.start"
+    TOOL_EXEC_STDOUT_DELTA = "tool.exec.stdout.delta"
+    TOOL_EXEC_STDERR_DELTA = "tool.exec.stderr.delta"
+    TOOL_EXEC_END = "tool.exec.end"
     ASSISTANT_MESSAGE = "assistant_message"
     ASSISTANT_DELTA = "assistant_delta"
     TOOL_RESULT_DOT = "tool.result"
@@ -61,10 +65,14 @@ class SessionEvent:
     created_at: int = field(default_factory=_now_ms)
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     seq: Optional[int] = None
+    classification: Optional[str] = None
+    family: Optional[str] = None
+    actor: Optional[str] = None
+    visibility: Optional[str] = None
 
     def asdict(self) -> Dict[str, Any]:
         timestamp_ms = int(self.created_at)
-        return {
+        envelope = {
             "id": self.event_id,
             "seq": self.seq,
             "type": self.type.value,
@@ -75,3 +83,12 @@ class SessionEvent:
             "protocol_version": PROTOCOL_VERSION,
             "payload": self.payload,
         }
+        if self.classification:
+            envelope["classification"] = self.classification
+        if self.family:
+            envelope["family"] = self.family
+        if self.actor:
+            envelope["actor"] = {"kind": self.actor}
+        if self.visibility:
+            envelope["visibility"] = self.visibility
+        return envelope
