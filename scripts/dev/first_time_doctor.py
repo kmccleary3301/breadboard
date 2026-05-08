@@ -51,6 +51,21 @@ def _build_checks(effective_profile: str) -> list[DoctorCheck]:
             (ROOT_DIR / "agentic_coder_prototype" / "api" / "cli_bridge" / "server.py").exists(),
             "agentic_coder_prototype/api/cli_bridge/server.py",
         ),
+        DoctorCheck(
+            "artifact_tasks_package_present",
+            (ROOT_DIR / "agentic_coder_prototype" / "artifact_tasks" / "__init__.py").exists(),
+            "agentic_coder_prototype/artifact_tasks/__init__.py",
+        ),
+        DoctorCheck(
+            "artifact_task_smoke_present",
+            (ROOT_DIR / "scripts" / "dev" / "artifact_task_smoke.py").exists(),
+            "scripts/dev/artifact_task_smoke.py",
+        ),
+        DoctorCheck(
+            "config_explain_present",
+            (ROOT_DIR / "scripts" / "dev" / "config_explain.py").exists(),
+            "scripts/dev/config_explain.py",
+        ),
     ]
 
     if effective_profile in {"full", "tui"}:
