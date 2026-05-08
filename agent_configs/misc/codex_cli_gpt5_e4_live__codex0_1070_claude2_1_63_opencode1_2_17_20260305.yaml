@@ -26,12 +26,12 @@ features:
 prompts:
   packs:
     base:
-      system: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      plan: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      builder: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      compact: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      tools_catalog_full: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      tools_catalog_short: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+      system: ../../../other_harness_refs/codex/codex-rs/core/gpt_5_1_prompt.md
+      plan: ../../../other_harness_refs/codex/codex-rs/core/gpt_5_1_prompt.md
+      builder: ../../../other_harness_refs/codex/codex-rs/core/gpt_5_1_prompt.md
+      compact: ../../../other_harness_refs/codex/codex-rs/core/gpt_5_1_prompt.md
+      tools_catalog_full: ../../../other_harness_refs/codex/codex-rs/core/gpt_5_1_prompt.md
+      tools_catalog_short: ../../../other_harness_refs/codex/codex-rs/core/gpt_5_1_prompt.md
   tool_prompt_synthesis:
     enabled: false
 
