@@ -1,8 +1,20 @@
+import {
+  getVisibleSlashCommandEntries,
+  resolveSlashCommandAvailability,
+  SLASH_COMMAND_REGISTRY,
+  type SlashCommandRegistryEntry,
+} from "./slashCommandRegistry.js"
+
 export interface SlashCommandInfo {
   readonly name: string
   readonly summary: string
   readonly usage?: string
   readonly shortcut?: string
+  readonly category?: SlashCommandRegistryEntry["category"]
+  readonly availability?: SlashCommandRegistryEntry["availability"]
+  readonly disabledReason?: string
+  readonly visibility?: SlashCommandRegistryEntry["visibility"]
+  readonly dispatchKind?: SlashCommandRegistryEntry["dispatchKind"]
 }
 
 export interface SlashSuggestion {
@@ -10,38 +22,27 @@ export interface SlashSuggestion {
   readonly usage?: string
   readonly summary: string
   readonly shortcut?: string
+  readonly availability?: SlashCommandRegistryEntry["availability"]
+  readonly disabledReason?: string
 }
 
-export const SLASH_COMMANDS: ReadonlyArray<SlashCommandInfo> = [
-  { name: "help", summary: "Show available slash commands." },
-  { name: "quit", summary: "Exit the session.", shortcut: "Ctrl+C ×2" },
-  { name: "stop", summary: "Interrupt the current run (if any).", shortcut: "Esc" },
-  { name: "clear", summary: "Clear view (history preserved).", shortcut: "Ctrl+Shift+C" },
-  { name: "status", summary: "Refresh session status." },
-  { name: "ctree", usage: "[status|refresh|stage|previews|source] …", summary: "Refresh or configure the C-Tree view." },
-  { name: "inspect", summary: "Open the inspector panel.", shortcut: "Ctrl+I" },
-  { name: "remote", usage: "on|off", summary: "Toggle remote streaming preference." },
-  { name: "retry", summary: "Restart the current stream." },
-  { name: "plan", summary: "Request plan-focused mode." },
-  { name: "mode", usage: "<plan|build|auto>", summary: "Switch the agent mode." },
-  { name: "model", usage: "<id>", summary: "Switch to a specific model." },
-  { name: "test", usage: "[suite]", summary: "Trigger run_tests command." },
-  { name: "files", usage: "[path]", summary: "List files for the current session." },
-  { name: "models", summary: "Open interactive model picker.", shortcut: "Ctrl+K" },
-  { name: "skills", summary: "Open the skills picker.", shortcut: "Ctrl+G" },
-  { name: "rewind", summary: "Open checkpoint rewind picker." },
-  { name: "todos", summary: "Open the todos panel.", shortcut: "Ctrl+T (Claude keymap)" },
-  { name: "usage", summary: "Open the usage summary panel." },
-  { name: "tasks", summary: "Open the background tasks panel.", shortcut: "Ctrl+B" },
-  { name: "transcript", summary: "Open the transcript viewer.", shortcut: "Ctrl+T (Codex) / Ctrl+O (Claude)" },
-  { name: "todo-scope", usage: "[status|list|next|prev|set <key>]", summary: "Switch which todo scope is displayed.", shortcut: "Ctrl+U" },
-  { name: "thinking", usage: "[summary|raw]", summary: "Show the retained thinking artifact for the active turn." },
-  { name: "runtime", usage: "[telemetry]", summary: "Show runtime telemetry and recent activity transitions." },
-  { name: "view", usage: "<collapse|scroll|markdown|raw|tools|reasoning> …", summary: "Adjust transcript, raw stream, or tool display modes." },
-  { name: "tool-display", usage: "list", summary: "List resolved tool display rules." },
-]
+export { SLASH_COMMAND_REGISTRY }
+
+export const SLASH_COMMANDS: ReadonlyArray<SlashCommandInfo> = getVisibleSlashCommandEntries().map((entry) => ({
+  name: entry.name,
+  summary: entry.summary,
+  usage: entry.usage,
+  shortcut: entry.shortcut,
+  category: entry.category,
+  availability: entry.availability,
+  disabledReason: entry.disabledReason,
+  visibility: entry.visibility,
+  dispatchKind: entry.dispatchKind,
+}))
 
 export const SLASH_COMMAND_HINT = SLASH_COMMANDS.map((entry) => `/${entry.name}${entry.usage ? ` ${entry.usage}` : ""}`).join(", ")
+
+const DEFAULT_SUGGESTION_ORDER = ["resume", "transcript", "attach", "models", "shortcuts"] as const
 
 const scoreFuzzy = (candidate: string, query: string): number | null => {
   const needle = query.trim().toLowerCase()
@@ -69,17 +70,38 @@ const scoreFuzzy = (candidate: string, query: string): number | null => {
   return score
 }
 
-export const buildSuggestions = (input: string, limit = 5): SlashSuggestion[] => {
+export interface BuildSuggestionsOptions {
+  readonly pendingResponse?: boolean
+}
+
+const applyRuntimeAvailability = (
+  entry: SlashCommandInfo,
+  options: BuildSuggestionsOptions,
+): Pick<SlashSuggestion, "availability" | "disabledReason"> => {
+  const registryEntry = SLASH_COMMAND_REGISTRY.find((command) => command.name === entry.name)
+  if (!registryEntry) return { availability: entry.availability, disabledReason: entry.disabledReason }
+  return resolveSlashCommandAvailability(registryEntry, options)
+}
+
+const suggestionFromEntry = (entry: SlashCommandInfo, options: BuildSuggestionsOptions): SlashSuggestion => ({
+  command: `/${entry.name}`,
+  usage: entry.usage,
+  summary: entry.summary,
+  shortcut: entry.shortcut,
+  ...applyRuntimeAvailability(entry, options),
+})
+
+export const buildSuggestions = (input: string, limit = 5, options: BuildSuggestionsOptions = {}): SlashSuggestion[] => {
   if (!input.startsWith("/")) return []
   const [lookup] = input.slice(1).split(/\s+/)
   const needle = lookup.toLowerCase()
+  const exact = SLASH_COMMANDS.some((entry) => entry.name === needle)
+  if (exact && input.trim() === `/${needle}`) return []
   if (!needle) {
-  return SLASH_COMMANDS.slice(0, limit).map((entry) => ({
-    command: `/${entry.name}`,
-    usage: entry.usage,
-    summary: entry.summary,
-    shortcut: entry.shortcut,
-  }))
+    const defaultEntries = DEFAULT_SUGGESTION_ORDER.map((name) => SLASH_COMMANDS.find((entry) => entry.name === name)).filter(
+      (entry): entry is SlashCommandInfo => entry != null,
+    )
+    return defaultEntries.slice(0, limit).map((entry) => suggestionFromEntry(entry, options))
   }
   const scored = SLASH_COMMANDS.map((entry) => {
     const score = scoreFuzzy(entry.name, needle)
@@ -90,10 +112,5 @@ export const buildSuggestions = (input: string, limit = 5): SlashSuggestion[] =>
     if (a.entry.name.length !== b.entry.name.length) return a.entry.name.length - b.entry.name.length
     return a.entry.name.localeCompare(b.entry.name)
   })
-  return scored.slice(0, limit).map(({ entry }) => ({
-    command: `/${entry.name}`,
-    usage: entry.usage,
-    summary: entry.summary,
-    shortcut: entry.shortcut,
-  }))
+  return scored.slice(0, limit).map(({ entry }) => suggestionFromEntry(entry, options))
 }

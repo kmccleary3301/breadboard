@@ -59,6 +59,7 @@ import {
   closeModelMenu,
   closeSkillsMenu,
   dispatchSlashCommand,
+  listRecentSessions,
   listFiles,
   loadModelMenuItems,
   openInspectMenu,
@@ -68,6 +69,7 @@ import {
   refreshInspectMenu,
   runSessionCommand,
   selectModel,
+  attachExistingSession,
   waitFor,
   waitForCompletion,
 } from "./controllerUserMethods.js"
@@ -76,6 +78,7 @@ import * as stateMethods from "./controllerStateMethods.js"
 import * as renderState from "./controllerStateRender.js"
 import * as eventMethods from "./controllerEventMethods.js"
 import * as ctreeMethods from "./controllerEventCtree.js"
+import { getActiveEngineLifecycleSnapshot, type ActiveEngineLifecycleSnapshot } from "../../engine/engineSupervisor.js"
 import {
   bumpTelemetry,
   createActivitySnapshot,
@@ -97,6 +100,15 @@ import type { ActivityTransitionTrace } from "./controllerTransitionTimeline.js"
 import { resolveProviderCapabilities } from "./providerCapabilityResolution.js"
 import type { UIClock, UIClockTimeoutHandle } from "../../repl/clock/UIClock.js"
 import { resolveUIClockFromEnv } from "../../repl/clock/resolveClock.js"
+import type { RecentSessionRow } from "../../repl/components/replView/replViewTypes.js"
+import {
+  copyWorkingTreePatch,
+  exportWorkingTreePatch,
+  readWorkingTreeDiff,
+  type WorkingTreeDiffSummary,
+  type WorkingTreePatchCopyResult,
+  type WorkingTreePatchWriteResult,
+} from "./workingTreeDiff.js"
 
 export interface ReplControllerOptions {
   readonly configPath: string
@@ -122,8 +134,11 @@ export interface CompletionView {
 export interface ReplState {
   readonly configPath?: string | null
   readonly sessionId: string
+  readonly lifecycle?: ActiveEngineLifecycleSnapshot | null
+  readonly lifecycleRestartCount?: number
   readonly status: string
   readonly pendingResponse: boolean
+  readonly mainFollowTail: boolean
   readonly mode?: string | null
   readonly permissionMode?: string | null
   readonly conversation: ConversationEntry[]
@@ -202,6 +217,8 @@ export class ReplSessionController extends EventEmitter {
   private readonly rawEvents: ToolLogEntry[] = []
   private readonly seenEventIds = new Set<string>()
   private readonly seenEventIdQueue: string[] = []
+  private lifecycleSnapshot: ActiveEngineLifecycleSnapshot | null = null
+  private lifecycleRestartCount = 0
   private conversationSequence = 0
   private streamingEntryId: string | null = null
   private viewPrefs: TranscriptPreferences = {
@@ -228,6 +245,8 @@ export class ReplSessionController extends EventEmitter {
   private status = "Starting session…"
   private statusUpdatedAt = 0
   private pendingResponse = false
+  private activePromptOutcomeUnresolved = false
+  private mainFollowTail = true
   private pendingStartedAt: number | null = null
   private modelMenu: ModelMenuState = { status: "hidden" }
   private skillsMenu: SkillsMenuState = { status: "hidden" }
@@ -257,7 +276,9 @@ export class ReplSessionController extends EventEmitter {
   private consecutiveFailures = 0
   private awaitingRestart = false
   private abortRequested = false
+  private shutdownRequested = false
   private streamTask: Promise<void> | null = null
+  private sessionRestarting = false
   private pendingEvents: SessionEvent[] = []
   private eventsScheduled = false
   private eventFlushTimer: NodeJS.Timeout | null = null
@@ -302,6 +323,7 @@ export class ReplSessionController extends EventEmitter {
   private lastEventId: string | null = null
   private eventClock = 0
   private currentEventSeq: number | null = null
+  private streamGeneration = 0
   private hasStreamedOnce = false
   private stopRequestedAt: number | null = null
   private stopTimer: UIClockTimeoutHandle | null = null
@@ -445,11 +467,18 @@ export class ReplSessionController extends EventEmitter {
       this.runtimeTelemetry = bumpTelemetry(this.runtimeTelemetry, "thinkingPreviewExpired")
     }
     this.thinkingPreview = prunedThinkingPreview
+    const activeLifecycleSnapshot = getActiveEngineLifecycleSnapshot()
+    if (activeLifecycleSnapshot) {
+      this.lifecycleSnapshot = activeLifecycleSnapshot
+    }
     return {
       configPath: this.config.configPath,
       sessionId: this.sessionId,
+      lifecycle: activeLifecycleSnapshot ?? this.lifecycleSnapshot,
+      lifecycleRestartCount: this.lifecycleRestartCount,
       status: this.status,
       pendingResponse: this.pendingResponse,
+      mainFollowTail: this.pendingResponse ? this.mainFollowTail : true,
       mode: this.mode,
       permissionMode: this.permissionMode,
       conversation: [...this.conversation],
@@ -529,6 +558,10 @@ export class ReplSessionController extends EventEmitter {
     }
     this.lastEventId = null
     this.hasStreamedOnce = false
+    this.abortController = new AbortController()
+    this.abortRequested = false
+    this.shutdownRequested = false
+    this.streamTask = null
     this.pendingEvents = []
     this.eventsScheduled = false
     if (this.eventFlushTimer) {
@@ -568,6 +601,7 @@ export class ReplSessionController extends EventEmitter {
     this.mode = normalizeModeValue(process.env.BREADBOARD_DEFAULT_MODE) ?? "build"
     const metadata: Record<string, unknown> = {}
     const overrides: Record<string, unknown> = {}
+    metadata.cli_session_kind = "interactive"
     const debugPermissions = process.env.BREADBOARD_DEBUG_PERMISSIONS
     if (debugPermissions && debugPermissions !== "0") {
       metadata.debug_permissions = true
@@ -625,7 +659,6 @@ export class ReplSessionController extends EventEmitter {
     } catch {
       // ignore ctree bootstrap errors
     }
-    this.pushHint(`Session ${this.sessionId} started (remote ${this.stats.remote ? "enabled" : "disabled"}, model ${this.stats.model}).`)
     this.setActivityStatus("Ready", { to: "idle", eventType: "session.ready", source: "runtime" })
     this.completionSeen = false
     this.lastCompletion = null
@@ -637,6 +670,7 @@ export class ReplSessionController extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    this.shutdownRequested = true
     this.abortRequested = true
     this.abortController.abort()
     if (this.streamTask) {
@@ -648,12 +682,102 @@ export class ReplSessionController extends EventEmitter {
       this.ctreeRefreshTimer = null
     }
     this.disposeAllMarkdown()
-    this.setActivityStatus("Ready", { to: "idle", eventType: "session.stop", source: "runtime" })
+    if (!this.disconnected) {
+      this.setActivityStatus("Ready", { to: "idle", eventType: "session.stop", source: "runtime" })
+    }
+  }
+
+  async recoverIdleSessionAfterEngineRestart(options: { preserveLocalTranscript?: boolean } = {}): Promise<boolean> {
+    if (this.pendingResponse) return false
+    const preserveLocalTranscript = options.preserveLocalTranscript === true
+    if (!preserveLocalTranscript && (this.conversation.length > 0 || this.toolEvents.length > 0)) return false
+    const appConfig = this.providers.args.config
+    const requestedModel = this.config.model?.trim()
+    const remotePreference = this.config.remotePreference ?? appConfig.remoteStreamDefault
+    const permissionValue = this.config.permissionMode?.trim()
+    const permissionMode = permissionValue ? permissionValue.toLowerCase() : ""
+    const interactivePermissions = permissionMode === "prompt" || permissionMode === "ask" || permissionMode === "interactive"
+    const metadata: Record<string, unknown> = {
+      cli_session_kind: "interactive",
+      recovered_from_engine_restart: true,
+      ...(preserveLocalTranscript
+        ? {
+            local_transcript_preserved: true,
+            engine_context_reset: true,
+          }
+        : {}),
+    }
+    const overrides: Record<string, unknown> = {}
+    if (permissionValue) {
+      metadata.permission_mode = permissionValue
+      if (interactivePermissions) {
+        overrides["permissions.options.mode"] ??= "prompt"
+        overrides["permissions.options.default_response"] ??= "reject"
+        overrides["permissions.edit.default"] ??= "ask"
+        overrides["permissions.shell.default"] ??= "ask"
+        overrides["permissions.webfetch.default"] ??= "ask"
+      }
+    }
+    if (requestedModel) {
+      metadata.model = requestedModel
+      overrides["providers.default_model"] = requestedModel
+    }
+    if (remotePreference) {
+      metadata.enable_remote_stream = true
+    }
+    try {
+      const session = await this.api().createSession({
+        config_path: this.config.configPath,
+        task: "",
+        workspace: this.config.workspace ?? undefined,
+        permission_mode: permissionValue ?? undefined,
+        metadata,
+        overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
+        stream: true,
+      })
+      this.sessionId = session.session_id
+      this.lastEventId = null
+      this.hasStreamedOnce = false
+      this.consecutiveFailures = 0
+      this.disconnected = false
+      this.pushHint(
+        preserveLocalTranscript
+          ? "Owned engine recovered with a new session; previous transcript is preserved locally, but engine context was reset."
+          : "Owned engine recovered with a new idle session.",
+      )
+      this.setActivityStatus("Recovered (new session)", {
+        to: "idle",
+        eventType: "engine.restart.session.recovered",
+        source: "runtime",
+      })
+      this.emitChange()
+      return true
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.pushHint(`Idle session recovery failed: ${message}`)
+      return false
+    }
   }
 
   async untilStopped(): Promise<void> {
-    if (this.streamTask) {
-      await this.streamTask.catch(() => undefined)
+    for (;;) {
+      const task = this.streamTask
+      if (task) {
+        await task.catch(() => undefined)
+      }
+      if (this.shutdownRequested) break
+      if (this.sessionRestarting) {
+        await new Promise((resolve) => setTimeout(resolve, 25))
+        continue
+      }
+      if (this.disconnected) {
+        const observedTask = this.streamTask
+        while (!this.shutdownRequested && this.disconnected && this.streamTask === observedTask) {
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        continue
+      }
+      break
     }
   }
 
@@ -761,8 +885,17 @@ export class ReplSessionController extends EventEmitter {
     this.completionReached = false
     this.completionSeen = false
     this.lastCompletion = null
+    this.activePromptOutcomeUnresolved = true
+    const nextTurn = this.submissionHistory.length + 1
+    const payloadKey = JSON.stringify(payload)
+    const lastPayload = this.submissionHistory[this.submissionHistory.length - 1]
+    if (!lastPayload || JSON.stringify(lastPayload) !== payloadKey) {
+      this.submissionHistory.push(payload)
+    }
     this.removeLiveSlot("guardrail")
     this.pendingResponse = true
+    this.mainFollowTail = true
+    this.stats.lastTurn = Math.max(this.stats.lastTurn ?? 0, nextTurn)
     this.setActivityStatus(statusLabel, { to: "run", eventType: "input.submit", source: "user" })
     if (this.pendingStartedAt == null) {
       this.pendingStartedAt = this.clock.now()
@@ -770,7 +903,6 @@ export class ReplSessionController extends EventEmitter {
     this.emitChange()
     try {
       await this.api().postInput(this.sessionId, payload)
-      this.submissionHistory.push(payload)
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
         this.pushHint("Backend does not yet support sending interactive input (404).")
@@ -778,7 +910,16 @@ export class ReplSessionController extends EventEmitter {
         this.pushHint(`Failed to send input: ${(error as Error).message}`)
       }
       this.pendingResponse = false
-      this.setActivityStatus("Ready", { to: "idle", eventType: "input.error", source: "system" })
+      if (this.lifecycleSnapshot?.mode === "local-owned") {
+        this.setActivityStatus("Recovery needed (input not sent)", {
+          to: "reconnecting",
+          eventType: "input.error.engine",
+          source: "system",
+        })
+      } else {
+        this.activePromptOutcomeUnresolved = false
+        this.setActivityStatus("Ready", { to: "idle", eventType: "input.error", source: "system" })
+      }
       this.emitChange()
       throw error
     }
@@ -991,8 +1132,28 @@ export class ReplSessionController extends EventEmitter {
     return listFiles.call(this, path)
   }
 
+  async listRecentSessions(): Promise<RecentSessionRow[]> {
+    return listRecentSessions.call(this)
+  }
+
+  async attachExistingSession(sessionId: string): Promise<boolean> {
+    return attachExistingSession.call(this, sessionId)
+  }
+
   async readFile(path: string, options?: ReadSessionFileOptions): Promise<SessionFileContent> {
     return readFile.call(this, path, options)
+  }
+
+  async readWorkingTreeDiff(): Promise<WorkingTreeDiffSummary> {
+    return readWorkingTreeDiff(this.config.workspace ?? process.cwd())
+  }
+
+  async exportWorkingTreeDiffPatch(targetPath?: string | null): Promise<WorkingTreePatchWriteResult> {
+    return exportWorkingTreePatch(this.config.workspace ?? process.cwd(), targetPath)
+  }
+
+  async copyWorkingTreeDiffPatch(): Promise<WorkingTreePatchCopyResult> {
+    return copyWorkingTreePatch(this.config.workspace ?? process.cwd())
   }
 
   async openModelMenu(): Promise<void> {
@@ -1179,6 +1340,13 @@ export class ReplSessionController extends EventEmitter {
     return stateMethods.formatToolExecPreview.call(this, output)
   }
 
+  private mergeToolExecOutputIntoDisplay(
+    display: Record<string, unknown> | null,
+    output: { stdout: string; stderr: string } | null,
+  ): Record<string, unknown> | null {
+    return stateMethods.mergeToolExecOutputIntoDisplay.call(this, display, output)
+  }
+
   private extractDiffSummary(payload: unknown): string | undefined {
     return stateMethods.extractDiffSummary.call(this, payload)
   }
@@ -1340,6 +1508,10 @@ export class ReplSessionController extends EventEmitter {
 
   private normalizeAssistantText(text: string): string {
     return eventMethods.normalizeAssistantText.call(this, text)
+  }
+
+  private normalizeUserEchoText(text: string): string {
+    return eventMethods.normalizeUserEchoText.call(this, text)
   }
 
   private appendAssistantDelta(delta: string): void {

@@ -7,8 +7,13 @@ export const MAX_TOOL_EXEC_OUTPUT = 4000
 export const MAX_RAW_EVENTS = 200
 export const MAX_RAW_EVENT_CHARS = 400
 const rawMaxRetries = Number(process.env.BREADBOARD_STREAM_MAX_RETRIES ?? "5")
+const rawStreamStallTimeoutMs = Number(
+  process.env.BREADBOARD_TUI_STREAM_STALL_TIMEOUT_MS ?? process.env.BREADBOARD_STREAM_STALL_TIMEOUT_MS ?? "0",
+)
 export const MAX_RETRIES =
   Number.isFinite(rawMaxRetries) && rawMaxRetries > 0 ? rawMaxRetries : Number.POSITIVE_INFINITY
+export const STREAM_STALL_TIMEOUT_MS =
+  Number.isFinite(rawStreamStallTimeoutMs) && rawStreamStallTimeoutMs > 0 ? Math.floor(rawStreamStallTimeoutMs) : 0
 export const STOP_SOFT_TIMEOUT_MS = 30_000
 export const DEBUG_EVENTS = process.env.BREADBOARD_DEBUG_EVENTS === "1"
 export const DEBUG_WAIT = process.env.BREADBOARD_DEBUG_WAIT === "1"
@@ -186,7 +191,8 @@ export const tryParseJsonTodos = (value: unknown): TodoItem[] | null => {
 
 export const extractUsageMetrics = (payload: Record<string, unknown>): UsageMetrics | null => {
   const usage = payload.usage
-  const raw = isRecord(usage) ? usage : isRecord(payload) ? payload : null
+  const summary = payload.summary
+  const raw = isRecord(usage) ? usage : isRecord(summary) ? summary : isRecord(payload) ? payload : null
   if (!raw) return null
   const promptTokens = numberOrUndefined(raw.prompt_tokens ?? raw.promptTokens)
   const completionTokens = numberOrUndefined(raw.completion_tokens ?? raw.completionTokens)

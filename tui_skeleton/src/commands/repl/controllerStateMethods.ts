@@ -9,6 +9,8 @@ import {
   normalizeArtifactRef,
   shouldMaterializeToolArtifact,
 } from "./toolArtifactRef.js"
+import { clearSessionReplayState } from "./controllerUserMethods.js"
+import { isLifecycleNoiseHint } from "./hintPolicy.js"
 import type {
   CheckpointSummary,
   ConversationEntry,
@@ -40,13 +42,23 @@ import {
   tryParseJsonTodos,
 } from "./controllerUtils.js"
 import { formatActivityTransitionTimeline } from "./controllerTransitionTimeline.js"
+import { getActiveEngineLifecycleSnapshot, restartOwnedEngine } from "../../engine/engineSupervisor.js"
 
 type SlashHandler = (args: string[]) => Promise<void>
 
 const normalizeTaskStatus = (rawStatus?: string | null, rawKind?: string | null): string | null => {
   const seed = (rawStatus ?? rawKind ?? "").toLowerCase()
   if (!seed) return rawStatus ?? rawKind ?? null
-  if (seed.includes("complete") || seed.includes("done") || seed.includes("success")) return "completed"
+  if (
+    seed.includes("complete") ||
+    seed.includes("done") ||
+    seed.includes("success") ||
+    seed === "end" ||
+    seed === "ended" ||
+    seed === "finished"
+  ) {
+    return "completed"
+  }
   if (seed.includes("error") || seed.includes("fail")) return "failed"
   if (seed.includes("cancel") || seed.includes("stop")) return "stopped"
   if (seed.includes("start") || seed.includes("run") || seed.includes("progress")) return "running"
@@ -65,6 +77,13 @@ const clampChars = (text: string, maxChars: number): string =>
 const formatThinkingPreview = (raw: string, maxLines: number, maxChars: number): string =>
   clampChars(clampLines(raw, maxLines), maxChars)
 
+const resolveTranscriptTimestamp = (ctx: any): number => {
+  const seq = ctx.currentEventSeq
+  if (typeof seq === "number" && Number.isFinite(seq)) return seq
+  ctx.eventClock = typeof ctx.eventClock === "number" && Number.isFinite(ctx.eventClock) ? ctx.eventClock + 1 : 1
+  return ctx.eventClock
+}
+
 export function slashHandlers(this: any): Record<string, SlashHandler> {
   return {
     quit: async () => {
@@ -73,6 +92,25 @@ export function slashHandlers(this: any): Record<string, SlashHandler> {
       await this.stop()
     },
     stop: async () => {
+      if (this.disconnected) {
+        this.pendingResponse = false
+        this.awaitingRestart = false
+        this.sessionRestarting = false
+        this.addTool(
+          "status",
+          "[stop]\nrecovery=stopped\nnext=/retry to resubmit, /resume to inspect sessions, /new to start over, or /engine restart for owned engines",
+          "warning",
+        )
+        this.pushHint("Recovery stopped. The prior submitted prompt remains preserved locally; use /retry to resubmit if needed.")
+        this.setActivityStatus("Recovery stopped (session missing)", {
+          to: "halted",
+          eventType: "recovery.stop",
+          source: "user",
+        })
+        this.status = "Recovery stopped (session missing)"
+        this.emitChange()
+        return
+      }
       const ok = await this.runSessionCommand("stop", undefined, "Interrupt requested.")
       if (ok) {
         this.pendingResponse = false
@@ -86,7 +124,29 @@ export function slashHandlers(this: any): Record<string, SlashHandler> {
     },
     clear: async () => {
       this.viewClearAt = Date.now()
+      this.hints.length = 0
       this.pushHint("Cleared view (history preserved).")
+    },
+    new: async () => {
+      const previousSessionId = this.sessionId
+      this.pushHint("Starting new session…")
+      this.status = "Starting new session…"
+      this.emitChange()
+      this.sessionRestarting = true
+      try {
+        await this.stop()
+        clearSessionReplayState(this)
+        this.sessionId = ""
+        await this.start()
+        this.status = "Ready"
+        this.pushHint(`Started new session ${this.sessionId}.`)
+      } catch (error) {
+        this.status = previousSessionId ? `Still on ${previousSessionId}` : "New session failed"
+        this.pushHint(`Failed to start new session: ${(error as Error).message}`)
+        this.emitChange()
+      } finally {
+        this.sessionRestarting = false
+      }
     },
     status: async () => {
       try {
@@ -268,12 +328,96 @@ export function slashHandlers(this: any): Record<string, SlashHandler> {
       }
       const payload = this.submissionHistory[index]
       this.pushHint(`Resubmitting prompt #${this.submissionHistory.length - index}${offset === 1 ? "" : " (offset)"}…`)
+      const lifecycle = getActiveEngineLifecycleSnapshot() ?? this.lifecycleSnapshot ?? null
+      if (this.disconnected && lifecycle?.mode === "local-owned") {
+        const recovered = await this.recoverIdleSessionAfterEngineRestart?.({ preserveLocalTranscript: true })
+        if (!recovered) {
+          this.pushHint("Retry blocked: could not recover a new owned-engine session.")
+          return
+        }
+        this.streamTask = this.streamLoop()
+      }
       this.addConversation("user", payload.content)
       try {
         await this.dispatchSubmission(payload, "Retrying prior input…")
       } catch {
         // handled in dispatchSubmission
       }
+    },
+    resume: async () => {
+      if (this.pendingResponse) {
+        this.pushHint("Already waiting for a response. Use /resume after the current turn completes or /stop first.")
+        return
+      }
+      const lifecycle = getActiveEngineLifecycleSnapshot() ?? this.lifecycleSnapshot ?? null
+      if (!this.disconnected) {
+        this.addTool("status", `[resume]\nresume=already-active session=${this.sessionId ?? "unknown"}`, "success")
+        this.pushHint("Session is already active. Use /sessions to inspect recent sessions.")
+        return
+      }
+      if (lifecycle?.mode !== "local-owned") {
+        this.addTool(
+          "status",
+          `[resume]\nresume=unavailable mode=${lifecycle?.mode ?? "unknown"}\nnext=restart or reconnect the external engine, then use /sessions`,
+          "error",
+        )
+        this.pushHint("Resume recovery is only automatic in local-owned mode.")
+        return
+      }
+      const recovered = await this.recoverIdleSessionAfterEngineRestart?.({ preserveLocalTranscript: true })
+      if (!recovered) {
+        this.addTool("status", "[resume]\nresume=failed\nnext=/engine restart or /new", "error")
+        this.pushHint("Resume failed; use /engine restart or /new.")
+        return
+      }
+      if (!this.streamTask) {
+        this.streamTask = this.streamLoop()
+      }
+      this.addTool(
+        "status",
+        `[resume]\nresume=recovered-new-session session=${this.sessionId ?? "unknown"}\ncontext=reset localTranscript=preserved`,
+        "success",
+      )
+      this.pushHint("Resume recovered a new owned-engine session; local transcript is preserved, engine context was reset.")
+    },
+    follow: async (args) => {
+      const action = (args[0] ?? "status").toLowerCase()
+      if (!["status", "pause", "off", "resume", "on", "live"].includes(action)) {
+        this.pushHint("Usage: /follow [status|pause|resume].")
+        return
+      }
+      if (action === "status") {
+        if (!this.pendingResponse) {
+          this.pushHint("No active run. Default behavior is live follow for the next run.")
+          return
+        }
+        this.pushHint(`Follow is ${this.mainFollowTail ? "live" : "paused"} for the current run.`)
+        return
+      }
+      if (["resume", "on", "live"].includes(action)) {
+        if (!this.pendingResponse) {
+          this.mainFollowTail = true
+          this.pushHint("No active run. Default behavior remains live follow.")
+          return
+        }
+        if (this.mainFollowTail) {
+          this.pushHint("Follow is already live for the current run.")
+          return
+        }
+        this.mainFollowTail = true
+        this.pushHint("Follow resumed for the current run.")
+        return
+      }
+      if (!this.pendingResponse) {
+        this.pushHint("No active run to pause. Use /follow pause while a response is streaming.")
+        return
+      }
+      if (!this.mainFollowTail) {
+        this.pushHint("Follow is already paused for the current run.")
+        return
+      }
+      this.mainFollowTail = false
+      this.pushHint("Follow paused for the current run. Use /follow resume to catch up.")
     },
     plan: async () => {
       const ok = await this.runSessionCommand("set_mode", { mode: "plan" }, "Requested plan-focused mode.")
@@ -415,11 +559,16 @@ export function slashHandlers(this: any): Record<string, SlashHandler> {
       const maxLines = Math.max(1, Number(this.runtimeFlags?.thinkingMaxLines ?? 6))
       const maxChars = Math.max(32, Number(this.runtimeFlags?.thinkingMaxChars ?? 600))
       const lines: string[] = []
+      const summary = artifact.summary?.trim() ?? ""
+      if (!summary && mode !== "raw") {
+        this.addTool("status", "[thinking] No thinking summary available.", "success")
+        this.pushHint("No thinking summary available.")
+        return
+      }
       lines.push(
         `[thinking] mode=${artifact.mode} finalized=${artifact.finalizedAt ? "yes" : "no"} updates=${artifact.sourceEventTypes?.length ?? 0}`,
       )
-      const summary = artifact.summary?.trim().length > 0 ? artifact.summary : "(empty summary)"
-      lines.push(formatThinkingPreview(summary, maxLines, maxChars))
+      lines.push(formatThinkingPreview(summary || "(empty summary)", maxLines, maxChars))
       if (mode === "raw") {
         const rawAllowed =
           artifact.mode === "full" &&
@@ -465,6 +614,126 @@ export function slashHandlers(this: any): Record<string, SlashHandler> {
       ]
       this.addTool("status", lines.join("\n"), "success")
       this.pushHint("Runtime telemetry shown.")
+    },
+    engine: async (args) => {
+      const action = (args[0] ?? "status").toLowerCase()
+      if (!["status", "health", "logs", "log", "restart"].includes(action)) {
+        this.pushHint("Usage: /engine [status|logs|restart].")
+        return
+      }
+      const lifecycle = getActiveEngineLifecycleSnapshot() ?? this.lifecycleSnapshot ?? null
+      if (action === "logs" || action === "log") {
+        this.addTool("status", `[engine]\nlog=${lifecycle?.logPath ?? "unknown"}`, "success")
+        this.pushHint("Engine log path shown.")
+        return
+      }
+      if (action === "restart") {
+        if (lifecycle?.mode !== "local-owned") {
+          this.addTool("status", `[engine]\nrestart unavailable: lifecycle mode is ${lifecycle?.mode ?? "unknown"}.`, "error")
+          this.pushHint("Engine restart is only available in local-owned mode.")
+          return
+        }
+        if (this.pendingResponse) {
+          this.addTool("status", "[engine]\nrestart unavailable while a response is unresolved. Use Esc/stop first.", "error")
+          this.pushHint("Engine restart blocked while a response is unresolved.")
+          return
+        }
+        this.sessionRestarting = true
+        this.status = "Restarting engine"
+        this.emitChange()
+        try {
+          this.abortRequested = true
+          this.abortController.abort()
+          if (this.streamTask) {
+            await Promise.race([
+              this.streamTask.catch(() => undefined),
+              new Promise((resolve) => setTimeout(resolve, 750)),
+            ])
+          }
+          this.streamTask = null
+          this.abortRequested = false
+          const result = await restartOwnedEngine()
+          this.lifecycleRestartCount = (this.lifecycleRestartCount ?? 0) + 1
+          this.lifecycleSnapshot = getActiveEngineLifecycleSnapshot() ?? this.lifecycleSnapshot
+          const recovered = await this.recoverIdleSessionAfterEngineRestart?.({
+            preserveLocalTranscript: this.conversation.length > 0 || this.toolEvents.length > 0,
+          })
+          if (recovered && !this.streamTask) {
+            this.streamTask = this.streamLoop()
+          }
+          this.addTool(
+            "status",
+            [
+              "[engine]",
+              `restart=ok baseUrl=${result.baseUrl}`,
+              `pid=${result.pid ?? "unknown"} started=${result.started ? "yes" : "no"}`,
+              `sessionRecovered=${recovered ? "yes" : "no"}`,
+            ].join("\n"),
+            "success",
+          )
+          this.pushHint("Owned engine restarted.")
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          this.addTool("status", `[engine]\nrestart=failed ${message}`, "error")
+          this.pushHint(`Engine restart failed: ${message}`)
+        } finally {
+          this.sessionRestarting = false
+          this.emitChange()
+        }
+        return
+      }
+      const lines = [
+        "[engine]",
+        `mode=${lifecycle?.mode ?? "unknown"} source=${lifecycle?.modeSource ?? "unknown"} owned=${lifecycle?.owned === true ? "yes" : lifecycle?.owned === false ? "no" : "unknown"}`,
+        `baseUrl=${lifecycle?.baseUrl ?? "unknown"}`,
+        `pid=${lifecycle?.pid ?? "unknown"} restartPolicy=${lifecycle?.restartPolicy ?? "unknown"} restarts=${this.lifecycleRestartCount ?? 0}`,
+        `log=${lifecycle?.logPath ?? "unknown"}`,
+        `session=${this.sessionId ?? "unknown"} status=${this.status ?? "unknown"} pending=${this.pendingResponse ? "yes" : "no"} disconnected=${this.disconnected ? "yes" : "no"}`,
+      ]
+      try {
+        const health = await this.api().health()
+        lines.push(`health=${health.status ?? "ok"} protocol=${health.protocol_version ?? "unknown"} version=${health.version ?? "unknown"}`)
+        if (health.served_revision?.repo_root) lines.push(`servedRoot=${health.served_revision.repo_root}`)
+        if (health.served_revision?.commit) lines.push(`servedRevision=${health.served_revision.commit}${health.served_revision.dirty ? " dirty" : ""}`)
+      } catch (error) {
+        lines.push(`health=unavailable ${(error as Error).message}`)
+      }
+      this.addTool("status", lines.join("\n"), "success")
+      this.pushHint("Engine status shown.")
+    },
+    doctor: async () => {
+      const lifecycle = getActiveEngineLifecycleSnapshot() ?? this.lifecycleSnapshot ?? null
+      const mode = lifecycle?.mode ?? "unknown"
+      const owned = lifecycle?.owned === true
+      const canRestart = mode === "local-owned" && owned
+      const healthLines: string[] = []
+      try {
+        const health = await this.api().health()
+        healthLines.push(`health=${health.status ?? "ok"} protocol=${health.protocol_version ?? "unknown"} version=${health.version ?? "unknown"}`)
+        if (health.served_revision?.repo_root) healthLines.push(`servedRoot=${health.served_revision.repo_root}`)
+        if (health.served_revision?.commit) healthLines.push(`servedRevision=${health.served_revision.commit}${health.served_revision.dirty ? " dirty" : ""}`)
+      } catch (error) {
+        healthLines.push(`health=unavailable ${(error as Error).message}`)
+      }
+      const recommendation = (() => {
+        if (this.pendingResponse) return "recommendation=wait, /stop, or let recovery finish before manual restart"
+        if (this.disconnected && canRestart) return "recommendation=/engine restart"
+        if (this.disconnected) return "recommendation=restart or reconnect the external engine, then use /sessions or /new"
+        if (canRestart) return "recommendation=engine is owned; /engine restart is available if recovery is needed"
+        return "recommendation=engine is not owned; inspect status/logs and manage the external process separately"
+      })()
+      const lines = [
+        "[doctor]",
+        `engineMode=${mode} source=${lifecycle?.modeSource ?? "unknown"} owned=${owned ? "yes" : lifecycle?.owned === false ? "no" : "unknown"}`,
+        `baseUrl=${lifecycle?.baseUrl ?? "unknown"}`,
+        `pid=${lifecycle?.pid ?? "unknown"} restartPolicy=${lifecycle?.restartPolicy ?? "unknown"} restartAvailable=${canRestart ? "yes" : "no"}`,
+        `session=${this.sessionId ?? "unknown"} status=${this.status ?? "unknown"} pending=${this.pendingResponse ? "yes" : "no"} disconnected=${this.disconnected ? "yes" : "no"}`,
+        `log=${lifecycle?.logPath ?? "unknown"}`,
+        ...healthLines,
+        recommendation,
+      ]
+      this.addTool("status", lines.join("\n"), "success")
+      this.pushHint("Doctor report shown.")
     },
     files: async (args) => {
       const scope = args[0] ?? "."
@@ -684,10 +953,6 @@ export function addConversation(this: any,
   text: string,
   phase: ConversationEntry["phase"] = "final",
 ): void {
-  const resolveEventTimestamp = (ctx: any): number => {
-    const seq = ctx.currentEventSeq
-    return typeof seq === "number" && Number.isFinite(seq) ? seq : Date.now()
-  }
   if (phase === "streaming") {
     this.setStreamingConversation(speaker, text)
     return
@@ -698,16 +963,12 @@ export function addConversation(this: any,
     speaker,
     text,
     phase: "final",
-    createdAt: resolveEventTimestamp(this),
+    createdAt: resolveTranscriptTimestamp(this),
   }
   this.conversation.push(entry)
 }
 
 export function setStreamingConversation(this: any, speaker: ConversationEntry["speaker"], text: string): void {
-  const resolveEventTimestamp = (ctx: any): number => {
-    const seq = ctx.currentEventSeq
-    return typeof seq === "number" && Number.isFinite(seq) ? seq : Date.now()
-  }
   if (this.streamingEntryId) {
     const index = this.conversation.findIndex((entry: ConversationEntry) => entry.id === this.streamingEntryId)
     if (index >= 0) {
@@ -721,7 +982,7 @@ export function setStreamingConversation(this: any, speaker: ConversationEntry["
     speaker,
     text,
     phase: "streaming",
-    createdAt: resolveEventTimestamp(this),
+    createdAt: resolveTranscriptTimestamp(this),
   }
   this.conversation.push(entry)
   this.streamingEntryId = entry.id
@@ -733,8 +994,11 @@ export function finalizeStreamingEntry(this: any): void {
   const index = this.conversation.findIndex((entry: ConversationEntry) => entry.id === this.streamingEntryId)
   if (index >= 0) {
     const existing = this.conversation[index]
-    if (existing.phase !== "final") {
-      this.conversation[index] = { ...existing, phase: "final" }
+    this.conversation[index] = {
+      ...existing,
+      phase: "final",
+      markdownStreaming: false,
+      markdownFinalized: existing.markdownFinalized === true ? true : existing.markdownFinalized,
     }
   }
   this.streamingEntryId = null
@@ -750,6 +1014,11 @@ export function upsertTask(this: any, entry: TaskEntry): void {
   const merged: TaskEntry = {
     ...(existing ?? {}),
     ...entry,
+    outputExcerpt: entry.outputExcerpt ?? existing?.outputExcerpt ?? null,
+    artifactPath: entry.artifactPath ?? existing?.artifactPath ?? null,
+    error: entry.error ?? existing?.error ?? null,
+    ctreeNodeId: entry.ctreeNodeId ?? existing?.ctreeNodeId ?? null,
+    ctreeSnapshot: entry.ctreeSnapshot ?? existing?.ctreeSnapshot ?? null,
     updatedAt: entry.updatedAt || existing?.updatedAt || Date.now(),
   }
   this.taskMap.set(merged.id, merged)
@@ -833,10 +1102,6 @@ export function addTool(this: any,
   status?: LiveSlotStatus,
   options?: { callId?: string | null; insertAfterId?: string | null; display?: ToolDisplayPayload | null },
 ): ToolLogEntry {
-  const resolveEventTimestamp = (ctx: any): number => {
-    const seq = ctx.currentEventSeq
-    return typeof seq === "number" && Number.isFinite(seq) ? seq : Date.now()
-  }
   const insertAfterId = options?.insertAfterId ?? null
   if (!insertAfterId && this.toolEvents.length > 0) {
     const last = this.toolEvents[this.toolEvents.length - 1] as ToolLogEntry
@@ -870,7 +1135,7 @@ export function addTool(this: any,
     status,
     callId: options?.callId ?? null,
     display: options?.display ?? null,
-    createdAt: resolveEventTimestamp(this),
+    createdAt: resolveTranscriptTimestamp(this),
   }
   if (insertAfterId) {
     const index = this.toolEvents.findIndex((item: ToolLogEntry) => item.id === insertAfterId)
@@ -954,6 +1219,60 @@ const normalizePreviewLines = (value: string): string[] => {
 const truncatePreviewLines = (lines: string[], maxLines: number) => {
   if (lines.length <= maxLines) return { lines, hidden: 0 }
   return { lines: lines.slice(0, maxLines), hidden: lines.length - maxLines }
+}
+
+const extractEmbeddedToolExecOutput = (
+  payload: Record<string, unknown>,
+): { stdout: string; stderr: string } | null => {
+  const candidates: unknown[] = [
+    payload.result,
+    payload.out,
+    payload.output,
+    isRecord(payload.message) ? payload.message.content : null,
+  ]
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) continue
+    const stdout = typeof candidate.stdout === "string" ? candidate.stdout : ""
+    const stderr = typeof candidate.stderr === "string" ? candidate.stderr : ""
+    const fallback =
+      !stdout && !stderr && typeof candidate.__mvi_text_output === "string" ? candidate.__mvi_text_output : ""
+    const resolvedStdout = stdout || (!stderr ? fallback : "")
+    if (resolvedStdout || stderr) {
+      return { stdout: resolvedStdout, stderr }
+    }
+  }
+  return null
+}
+
+const normalizeShellDisplayTitle = (title: unknown): string | null => {
+  if (typeof title !== "string") return null
+  const trimmed = title.trim()
+  if (!trimmed) return null
+  const normalized = trimmed.toLowerCase()
+  if (normalized === "run_shell" || normalized === "shell_command" || normalized === "bash" || normalized === "bash.run") {
+    return "Tool"
+  }
+  return trimmed
+}
+
+const summarizeShellDisplayDetail = (detailLines: string[]): string | null => {
+  if (detailLines.length === 0) return null
+  const hasStdoutLabel = detailLines[0] === "stdout:"
+  const stderrIndex = detailLines.indexOf("stderr:")
+  if (hasStdoutLabel && stderrIndex >= 0) {
+    const stdoutLines = detailLines.slice(1, stderrIndex).filter((line) => line.trim().length > 0)
+    const stderrLines = detailLines.slice(stderrIndex + 1).filter((line) => line.trim().length > 0)
+    const parts: string[] = []
+    if (stdoutLines.length > 0) parts.push(`stdout ${stdoutLines.length} ${stdoutLines.length === 1 ? "line" : "lines"}`)
+    if (stderrLines.length > 0) parts.push(`stderr ${stderrLines.length} ${stderrLines.length === 1 ? "line" : "lines"}`)
+    return parts.join(" · ") || null
+  }
+  if (detailLines[0] === "stderr:") {
+    const stderrLines = detailLines.slice(1).filter((line) => line.trim().length > 0)
+    return stderrLines.length > 0 ? `stderr ${stderrLines.length} ${stderrLines.length === 1 ? "line" : "lines"}` : null
+  }
+  const stdoutLines = detailLines.filter((line) => line.trim().length > 0)
+  return stdoutLines.length > 0 ? `stdout ${stdoutLines.length} ${stdoutLines.length === 1 ? "line" : "lines"}` : null
 }
 
 export function resolveToolDisplayPayload(this: any, payload: Record<string, unknown>): Record<string, unknown> | null {
@@ -1060,10 +1379,74 @@ export function resolveToolDisplayPayload(this: any, payload: Record<string, unk
     }
   }
 
-  // Enforce non-ambiguous contract: tool display payload should carry either
-  // large inline detail/diff payloads OR a valid artifact_ref, not both.
+  const isShellLike =
+    normalizedName === "run_shell" ||
+    normalizedName === "shell_command" ||
+    normalizedName === "bash" ||
+    normalizedName === "bash.run"
+
+  if (isShellLike) {
+    const normalizedShellTitle = normalizeShellDisplayTitle(base.title)
+    if (normalizedShellTitle) {
+      base.title = normalizedShellTitle
+    }
+    const existingDetailLines = normalizeDisplayLines(base.detail)
+    if (existingDetailLines.length > 0 && !base.summary) {
+      const derivedSummary = summarizeShellDisplayDetail(existingDetailLines)
+      if (derivedSummary) {
+        base.summary = derivedSummary
+      }
+    }
+    const embeddedOutput = extractEmbeddedToolExecOutput(payload)
+    const hasStructuredDetail =
+      normalizeDisplayLines(base.detail).length > 0 ||
+      (Array.isArray(base.diff_blocks) && base.diff_blocks.length > 0) ||
+      Boolean(normalizeArtifactRef(base.detail_artifact))
+    if (embeddedOutput && !hasStructuredDetail) {
+      const formatted = this.formatToolExecOutput(embeddedOutput)
+      const detailLines = buildToolExecDetailLines(embeddedOutput)
+      const outputSummary = describeToolExecOutput(embeddedOutput)
+      if (formatted && detailLines.length > 0) {
+        base.title = typeof base.title === "string" && base.title.trim() ? base.title : "Tool"
+        if (shouldMaterializeToolArtifact(formatted, "tool_output")) {
+          const artifactRef = materializeToolArtifactRef({
+            kind: "tool_output",
+            mime: "text/plain",
+            content: formatted,
+            previewMaxLines: TOOL_PREVIEW_MAX_LINES,
+            note: "Inline tool output truncated to artifact reference.",
+          })
+          base.detail_artifact = artifactRef
+          const previewLines = Array.isArray(artifactRef.preview?.lines) ? artifactRef.preview?.lines : []
+          const omitted = Math.max(0, Number(artifactRef.preview?.omitted_lines ?? detailLines.length - previewLines.length))
+          base.detail_truncated = {
+            hidden: omitted,
+            mode: "head_tail",
+            tail: previewLines.length,
+            hint: `see ${artifactRef.path}`,
+          }
+        } else {
+          const { lines, hidden } = truncatePreviewLines(detailLines, TOOL_PREVIEW_MAX_LINES)
+          base.detail = lines
+          if (hidden > 0) {
+            base.detail_truncated = {
+              hidden,
+              ...(isRecord(base.detail_truncated) ? base.detail_truncated : {}),
+            }
+          }
+        }
+        if (!base.summary) {
+          const hasArtifact = Boolean(base.detail_artifact)
+          base.summary = `${outputSummary ?? `Output ${detailLines.length} ${detailLines.length === 1 ? "line" : "lines"}`}${hasArtifact ? " (artifact)" : ""}`
+        }
+      }
+    }
+  }
+
+  // Preserve structured detail for transcript/detail inspection even when a
+  // tool row also materializes an artifact reference. Inline renderers decide
+  // whether to project detail or keep the shell compact.
   if (base.detail_artifact) {
-    delete base.detail
     delete base.diff_blocks
   }
 
@@ -1088,7 +1471,8 @@ export function formatToolDisplayText(this: any, payload: Record<string, unknown
   const mode = truncated && typeof truncated.mode === "string" ? truncated.mode : null
   const tailCount = truncated && typeof truncated.tail === "number" ? truncated.tail : null
 
-  const contentLines = detailLines.length > 0 ? detailLines.slice() : summaryLines.slice()
+  const contentLines =
+    summaryLines.length > 0 || detailLines.length > 0 ? [...summaryLines, ...detailLines] : []
   if (detailLines.length > 0 && hiddenCount && hiddenCount > 0) {
     const summaryLine = `${icons.ellipsis} ${hiddenCount} lines hidden${hint ? ` — ${hint}` : ""}`
     if (mode === "head_tail" && tailCount && tailCount > 0 && tailCount < contentLines.length) {
@@ -1160,6 +1544,44 @@ export function formatToolExecOutput(this: any, output: { stdout: string; stderr
   return stderr || null
 }
 
+const countOutputLines = (value: string | null | undefined): number => {
+  if (!value) return 0
+  const trimmed = value.trimEnd()
+  if (!trimmed) return 0
+  return trimmed.split(/\r?\n/).length
+}
+
+const describeToolExecOutput = (output: { stdout: string; stderr: string } | null): string | null => {
+  if (!output) return null
+  const stdout = output.stdout?.trimEnd() || ""
+  const stderr = output.stderr?.trimEnd() || ""
+  const stdoutLines = countOutputLines(stdout)
+  const stderrLines = countOutputLines(stderr)
+  if (stdoutLines === 0 && stderrLines === 0) return null
+  const parts: string[] = []
+  if (stdoutLines > 0) {
+    parts.push(`stdout ${stdoutLines} ${stdoutLines === 1 ? "line" : "lines"}`)
+  }
+  if (stderrLines > 0) {
+    parts.push(`stderr ${stderrLines} ${stderrLines === 1 ? "line" : "lines"}`)
+  }
+  return parts.join(" · ")
+}
+
+const buildToolExecDetailLines = (output: { stdout: string; stderr: string } | null): string[] => {
+  if (!output) return []
+  const stdout = output.stdout?.trimEnd() || ""
+  const stderr = output.stderr?.trimEnd() || ""
+  const stdoutLines = normalizePreviewLines(stdout)
+  const stderrLines = normalizePreviewLines(stderr)
+  if (stdoutLines.length === 0 && stderrLines.length === 0) return []
+  if (stdoutLines.length > 0 && stderrLines.length === 0) return stdoutLines
+  if (stdoutLines.length === 0 && stderrLines.length > 0) {
+    return ["stderr:", ...stderrLines]
+  }
+  return ["stdout:", ...stdoutLines, "", "stderr:", ...stderrLines]
+}
+
 export function formatToolExecPreview(this: any, output: { stdout: string; stderr: string } | null): string | null {
   if (!output) return null
   const stderr = output.stderr?.trimEnd()
@@ -1171,6 +1593,59 @@ export function formatToolExecPreview(this: any, output: { stdout: string; stder
   if (!tail.trim()) return null
   const clipped = tail.length > 80 ? `${tail.slice(-80)}` : tail
   return clipped
+}
+
+export function mergeToolExecOutputIntoDisplay(
+  this: any,
+  display: Record<string, unknown> | null,
+  output: { stdout: string; stderr: string } | null,
+): Record<string, unknown> | null {
+  if (!output) return display
+  const formatted = this.formatToolExecOutput(output)
+  const detailLines = buildToolExecDetailLines(output)
+  const outputSummary = describeToolExecOutput(output)
+  if (!formatted || detailLines.length === 0) return display
+  const base = display ? { ...display } : {}
+  const hasStructuredDetail =
+    normalizeDisplayLines(base.detail).length > 0 ||
+    (Array.isArray(base.diff_blocks) && base.diff_blocks.length > 0) ||
+    Boolean(normalizeArtifactRef(base.detail_artifact))
+  if (hasStructuredDetail) return base
+
+  const rawLines = detailLines
+  if (rawLines.length === 0) return base
+  if (shouldMaterializeToolArtifact(formatted, "tool_output")) {
+    const artifactRef = materializeToolArtifactRef({
+      kind: "tool_output",
+      mime: "text/plain",
+      content: formatted,
+      previewMaxLines: TOOL_PREVIEW_MAX_LINES,
+      note: "Inline tool output truncated to artifact reference.",
+    })
+    base.detail_artifact = artifactRef
+    const previewLines = Array.isArray(artifactRef.preview?.lines) ? artifactRef.preview?.lines : []
+    const omitted = Math.max(0, Number(artifactRef.preview?.omitted_lines ?? rawLines.length - previewLines.length))
+    base.detail_truncated = {
+      hidden: omitted,
+      mode: "head_tail",
+      tail: previewLines.length,
+      hint: `see ${artifactRef.path}`,
+    }
+  } else {
+    const { lines, hidden } = truncatePreviewLines(rawLines, TOOL_PREVIEW_MAX_LINES)
+    base.detail = lines
+    if (hidden > 0) {
+      base.detail_truncated = {
+        hidden,
+        ...(isRecord(base.detail_truncated) ? base.detail_truncated : {}),
+      }
+    }
+  }
+  if (!base.summary) {
+    const hasArtifact = Boolean(base.detail_artifact)
+    base.summary = `${outputSummary ?? `Output ${rawLines.length} ${rawLines.length === 1 ? "line" : "lines"}`}${hasArtifact ? " (artifact)" : ""}`
+  }
+  return Object.keys(base).length > 0 ? base : null
 }
 
 export function extractDiffSummary(this: any, payload: unknown): string | undefined {
@@ -1219,6 +1694,29 @@ export function isToolResultError(this: any, payload: unknown): boolean {
 }
 
 export function pushHint(this: any, msg: string): void {
+  if (isLifecycleNoiseHint(msg)) {
+    return
+  }
+  const startupNoise =
+    (typeof msg === "string" &&
+      (msg === "Skills selection updated." || msg === "Skills catalog updated.")) ||
+    false
+  const startupIdle =
+    !this.pendingResponse &&
+    Array.isArray(this.conversation) &&
+    this.conversation.length === 0 &&
+    Array.isArray(this.toolEvents) &&
+    this.toolEvents.length === 0 &&
+    (this.stats?.lastTurn ?? null) == null
+  if (startupNoise && startupIdle) {
+    return
+  }
+  if (this.hints[this.hints.length - 1] === msg) {
+    return
+  }
+  if (msg === "Log link available." && this.hints.includes(msg)) {
+    return
+  }
   this.hints.push(msg)
   if (this.hints.length > MAX_HINTS) this.hints.shift()
   this.emitChange()

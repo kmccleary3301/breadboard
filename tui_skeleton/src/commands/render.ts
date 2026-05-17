@@ -1,8 +1,12 @@
 import { Command, Args, Options } from "@effect/cli"
-import { Console, Effect } from "effect"
+import { Effect } from "effect"
 import { runResume } from "./resumeLogic.js"
 import type { SessionEvent, SessionSummary } from "../api/types.js"
-import { CliProviders } from "../providers/cliProviders.js"
+import { getCliApi, reportCommandWarning } from "./commandRuntime.js"
+import { normalizeTextJsonOutputMode } from "./commandOutput.js"
+import { renderLabeledLine } from "./commandText.js"
+import { printDetailCommandResult } from "./commandApiPresenter.js"
+import { runCommandWithReportedError } from "./commandOutcome.js"
 
 const sessionArg = Args.text({ name: "session-id" })
 const outputOption = Options.text("output").pipe(Options.withDefault("text"))
@@ -57,58 +61,45 @@ export const buildRenderSections = (events: SessionEvent[]): RenderSections => {
 
 export const renderCommand = Command.make("render", { session: sessionArg, output: outputOption }, ({ session, output }) =>
   Effect.tryPromise(async () => {
-    try {
-      const result = await runResume({ sessionId: session })
-      let summary: SessionSummary | null = null
-      try {
-        summary = await CliProviders.sdk.api().getSession(session)
-      } catch (error) {
-        await Console.error(`Warning: failed to load session summary (${(error as Error).message})`)
-      }
-      const sections = buildRenderSections(result.events)
-      if (output === "json") {
-        await Console.log(
-          JSON.stringify(
-            {
-              sessionId: session,
-              completion: result.completion,
-              events: result.events,
-              summary,
-              sections,
-            },
-            null,
-            2,
-          ),
-        )
-        return
-      }
-      await Console.log(`Session: ${session}`)
-      await Console.log(`Status: ${summary?.status ?? "unknown"}`)
-      await Console.log("\n=== Conversation ===")
-      if (sections.conversation.length === 0) {
-        await Console.log("(no conversation events)")
-      } else {
-        await Console.log(sections.conversation.join("\n"))
-      }
-      if (sections.tools.length > 0) {
-        await Console.log("\n=== Tools & Events ===")
-        await Console.log(sections.tools.join("\n"))
-      }
-      if (summary?.reward_summary) {
-        await Console.log(`\nRewards: ${JSON.stringify(summary.reward_summary)}`)
-      }
-      if (result.completion) {
-        await Console.log(`\nCompletion: ${JSON.stringify(result.completion)}`)
-      } else if (summary?.completion_summary) {
-        await Console.log(`\nCompletion: ${JSON.stringify(summary.completion_summary)}`)
-      }
-      if (summary?.logging_dir) {
-        await Console.log(`\nLogging dir: ${summary.logging_dir}`)
-      }
-      await Console.log(`\nEvents received: ${result.events.length}`)
-    } catch (error) {
-      await Console.error((error as Error).message)
-      throw error
-    }
+    await runCommandWithReportedError({
+      run: async () => {
+        const result = await runResume({ sessionId: session })
+        let summary: SessionSummary | null = null
+        try {
+          summary = await getCliApi().getSession(session)
+        } catch (error) {
+          await reportCommandWarning("failed to load session summary", error)
+        }
+        const sections = buildRenderSections(result.events)
+        const mode = normalizeTextJsonOutputMode(output)
+        await printDetailCommandResult({
+          mode,
+          title: "Session render",
+          jsonValue: {
+            sessionId: session,
+            completion: result.completion,
+            events: result.events,
+            summary,
+            sections,
+          },
+          lines: [renderLabeledLine("Session", session), renderLabeledLine("Status", summary?.status ?? "unknown")],
+          sections: [
+            { title: "Conversation", lines: sections.conversation, emptyText: "(no conversation events)" },
+            ...(sections.tools.length > 0 ? [{ title: "Tools & Events", lines: sections.tools }] : []),
+          ],
+          jsonBlocks: [
+            { label: "Rewards", value: summary?.reward_summary },
+            { label: "Completion", value: result.completion ?? summary?.completion_summary },
+          ],
+          trailingLines: [
+            ...(summary?.logging_dir ? [renderLabeledLine("Logging dir", summary.logging_dir)] : []),
+            renderLabeledLine("Events received", String(result.events.length)),
+          ],
+        })
+      },
+      report: async (error) => {
+        process.stderr.write(`${(error as Error).message}\n`)
+      },
+    })
   }),
 )

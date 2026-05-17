@@ -1,5 +1,6 @@
 import type { SessionEvent } from "../api/types.js"
-import { CliProviders } from "../providers/cliProviders.js"
+import { getCliAppConfig, getCliSdk } from "./commandRuntime.js"
+import { collectSessionStream } from "./sessionStream.js"
 
 export interface AskOptions {
   readonly prompt: string
@@ -21,11 +22,13 @@ export const runAsk = async (
   options: AskOptions,
   onEvent?: (event: SessionEvent) => Promise<void> | void,
 ): Promise<AskResult> => {
-  const appConfig = CliProviders.args.config
-  const sdk = CliProviders.sdk
+  const appConfig = getCliAppConfig()
+  const sdk = getCliSdk()
   const api = sdk.api()
   const overrides = { ...(options.overrides ?? {}) }
   const metadata = { ...(options.metadata ?? {}) }
+  metadata.cli_session_kind ??= "oneshot"
+  metadata.non_interactive_cli_session ??= true
   const useRemoteStream = options.remoteStream ?? appConfig.remoteStreamDefault
   if (useRemoteStream) {
     metadata.enable_remote_stream = true
@@ -41,15 +44,6 @@ export const runAsk = async (
   }
 
   const response = await api.createSession(payload)
-  const events: SessionEvent[] = []
-  let completion: unknown = undefined
-  for await (const event of sdk.stream(response.session_id, { signal: undefined })) {
-    events.push(event)
-    await onEvent?.(event)
-    if (event.type === "completion") {
-      completion = event.payload?.summary ?? event.payload
-      break
-    }
-  }
+  const { events, completion } = await collectSessionStream(sdk.stream(response.session_id, { signal: undefined }), onEvent)
   return { sessionId: response.session_id, completion, events }
 }

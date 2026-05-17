@@ -229,7 +229,7 @@ export const validateTuiConfigInput = (input: unknown, options: ValidationOption
     const variant = readEnum(
       landingRaw,
       "variant",
-      ["auto", "board", "split", "compact"] as const,
+      ["auto", "hero", "board", "split", "compact", "micro", "suppressed"] as const,
       ["landing"],
       issues,
     )

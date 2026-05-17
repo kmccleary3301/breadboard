@@ -20,8 +20,10 @@ export interface AppConfig {
 const DEFAULT_BASE_URL = "http://127.0.0.1:9099"
 const DEFAULT_TIMEOUT_MS = 30_000
 export const DEFAULT_CONFIG_PATH =
-  process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/misc/opencode_openrouter_grok4fast_cli_default.yaml"
-const FALLBACK_MODEL_ID = "openrouter/x-ai/grok-4-fast"
+  process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/codex_0-107-0_e4_3-6-2026.yaml"
+const OPENROUTER_FALLBACK_MODEL_ID = "openrouter/openai/gpt-5.4-mini"
+const OPENAI_FALLBACK_MODEL_ID = "openai/gpt-5.4-mini"
+const FALLBACK_MODEL_ID = process.env.OPENROUTER_API_KEY?.trim() ? OPENROUTER_FALLBACK_MODEL_ID : OPENAI_FALLBACK_MODEL_ID
 
 export const DEFAULT_MODEL_ID = process.env.BREADBOARD_DEFAULT_MODEL?.trim() || FALLBACK_MODEL_ID
 

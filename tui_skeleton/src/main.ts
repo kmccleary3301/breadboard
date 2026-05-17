@@ -18,8 +18,9 @@ import { pluginCommand } from "./commands/plugin.js"
 import { authCommand } from "./commands/auth.js"
 import { configCommand } from "./commands/config.js"
 import { ensureEngine } from "./engine/engineSupervisor.js"
-import { loadAppConfig } from "./config/appConfig.js"
+import { bootstrapProviderEnvironment } from "./config/providerBootstrapEnv.js"
 import { CLI_VERSION } from "./config/version.js"
+import { computeCliBootPlan, loadCliEnginePlan } from "./cli_bootPlan.js"
 
 const root = Command.make("breadboard", {}, () => Effect.succeed(undefined)).pipe(
   Command.withSubcommands([
@@ -43,57 +44,20 @@ const root = Command.make("breadboard", {}, () => Effect.succeed(undefined)).pip
 
 const cli = Command.run(root, { name: "breadboard", version: CLI_VERSION })
 
-const defaultedToRepl = process.argv.length <= 2
-const argv = defaultedToRepl ? [...process.argv.slice(0, 2), "repl"] : process.argv
-if (defaultedToRepl) {
+const bootPlan = computeCliBootPlan(process.argv)
+const argv = bootPlan.argv
+if (bootPlan.defaultedToRepl) {
   console.log("Defaulting to the REPL workspace (use --help for other commands).")
 }
 
-const shouldSkipEngine = (args: string[]): boolean => {
-  const command = args[2]
-  if (!command) return false
-  if (command.startsWith("-")) return true
-  if (command === "connect" || command === "config" || command === "engine" || command === "auth") return true
-  if (args.includes("--help") || args.includes("-h") || args.includes("--version") || args.includes("-v")) {
-    return true
-  }
-  if (command === "repl" || command === "ui") {
-    if (args.includes("--script")) return false
-    const tuiIndex = args.indexOf("--tui")
-    if (tuiIndex >= 0) {
-      const value = (args[tuiIndex + 1] ?? "").trim().toLowerCase()
-      if (value === "classic") return false
-      if (value === "opentui") return true
-    }
-    const envMode = (process.env.BREADBOARD_TUI_MODE ?? "").trim().toLowerCase()
-    if (envMode === "classic") return false
-    return envMode === "opentui"
-  }
-  return false
-}
-
-const isLocalBaseUrl = (value: string): boolean => {
-  try {
-    const url = new URL(value)
-    const host = url.hostname.toLowerCase()
-    return host === "localhost" || host === "127.0.0.1" || host === "::1"
-  } catch {
-    return false
-  }
-}
-
 const runCli = async () => {
-  const command = argv[2]
-  if (!shouldSkipEngine(argv)) {
+  bootstrapProviderEnvironment()
+  if (!bootPlan.shouldSkipEngine) {
     try {
-      const config = loadAppConfig()
-      const wantsIsolation =
-        command === "run" &&
-        process.env.BREADBOARD_ENGINE_ISOLATED !== "0" &&
-        isLocalBaseUrl(config.baseUrl)
-      await ensureEngine({ isolated: wantsIsolation })
+      const enginePlan = loadCliEnginePlan(argv)
+      await ensureEngine({ isolated: enginePlan.isolated, cliMode: enginePlan.engineMode })
     } catch (error) {
-      if (command === "doctor") {
+      if (bootPlan.command === "doctor") {
         console.warn((error as Error).message)
       } else {
         console.error((error as Error).message)

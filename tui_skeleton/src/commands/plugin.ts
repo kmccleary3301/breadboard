@@ -1,5 +1,11 @@
 import { Command, Args, Options } from "@effect/cli"
 import { Console, Effect, Option } from "effect"
+import { normalizeTableJsonOutputMode } from "./commandOutput.js"
+import { renderSimpleTable } from "./commandTable.js"
+import { printCommandPresentation } from "./commandPresentation.js"
+import { validationError } from "./commandValidation.js"
+import { renderActionArrowLine, renderActionFromLine, renderActionToLine } from "./commandListDetail.js"
+import { renderCreatedPathLine } from "./commandLifecycle.js"
 import { promises as fs } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
@@ -119,7 +125,7 @@ const readManifest = async (manifestPath: string): Promise<PluginManifest> => {
   const parsed = JSON.parse(raw) as unknown
   const errors = validatePluginManifestPayload(parsed)
   if (errors.length > 0) {
-    throw new Error(`Invalid plugin manifest: ${errors.join("; ")}`)
+    throw validationError(`Invalid plugin manifest: ${errors.join("; ")}`)
   }
   return parsed as PluginManifest
 }
@@ -172,19 +178,18 @@ const outputArg = Options.text("output").pipe(Options.withDefault("table"))
 const pluginListCommand = Command.make("list", { output: outputArg }, ({ output }) =>
   Effect.tryPromise(async () => {
     const entries = await discoverPlugins()
-    if (output === "json") {
-      await Console.log(JSON.stringify(entries, null, 2))
-      return
-    }
-    if (entries.length === 0) {
-      await Console.log("(no plugins found)")
-      return
-    }
-    const headers = ["Id", "Version", "Name", "Source", "Root"]
-    const rows = entries.map((p) => [p.id, p.version, p.name, p.source, p.root])
-    const widths = headers.map((header, idx) => Math.max(header.length, ...rows.map((row) => row[idx].length)))
-    const formatRow = (row: string[]) => row.map((cell, idx) => cell.padEnd(widths[idx], " ")).join("  ")
-    await Console.log([formatRow(headers), formatRow(widths.map((w) => "".padEnd(w, "-"))), ...rows.map(formatRow)].join("\n"))
+    const mode = normalizeTableJsonOutputMode(output)
+    await printCommandPresentation({
+      mode,
+      jsonValue: entries,
+      text:
+        entries.length === 0
+          ? "(no plugins found)"
+          : renderSimpleTable(
+              ["Id", "Version", "Name", "Source", "Root"],
+              entries.map((entry) => [entry.id, entry.version, entry.name, entry.source, entry.root]),
+            ),
+    })
   }),
 )
 
@@ -214,7 +219,7 @@ const pluginInitCommand = Command.make(
       }
       await fs.mkdir(path.join(target, "skills"), { recursive: true })
       await fs.writeFile(manifestPath, JSON.stringify(payload, null, 2), "utf8")
-      await Console.log(`Created ${manifestPath}`)
+      await Console.log(renderCreatedPathLine(manifestPath))
     }),
 )
 
@@ -242,7 +247,7 @@ const pluginInstallCommand = Command.make(
       const resolved = path.resolve(installPath)
       const stat = await fs.stat(resolved)
       if (!stat.isDirectory()) {
-        throw new Error("Only directory installs are supported for now (provide a plugin folder).")
+        throw validationError("Only directory installs are supported for now (provide a plugin folder).")
       }
       const manifestPath = path.join(resolved, PLUGIN_MANIFEST)
       const manifest = await readManifest(manifestPath)
@@ -253,7 +258,7 @@ const pluginInstallCommand = Command.make(
         const existing = await fs.stat(destDir)
         if (existing.isDirectory()) {
           if (!force) {
-            throw new Error(`Plugin ${manifest.id} already exists at ${destDir} (use --force to overwrite).`)
+            throw validationError(`Plugin ${manifest.id} already exists at ${destDir} (use --force to overwrite).`)
           }
           await fs.rm(destDir, { recursive: true, force: true })
         }
@@ -261,7 +266,7 @@ const pluginInstallCommand = Command.make(
         // ok
       }
       await fs.cp(resolved, destDir, { recursive: true })
-      await Console.log(`Installed ${manifest.id}@${manifest.version} to ${destDir}`)
+      await Console.log(renderActionToLine("Installed", `${manifest.id}@${manifest.version}`, destDir))
     }),
 )
 
@@ -270,7 +275,7 @@ const pluginRemoveCommand = Command.make("remove", { id: removeIdArg, scope: sco
   Effect.tryPromise(async () => {
     const destDir = path.join(resolveScopeRoot(scope), id)
     await fs.rm(destDir, { recursive: true, force: true })
-    await Console.log(`Removed ${id} from ${scope}`)
+    await Console.log(renderActionFromLine("Removed", id, scope))
   }),
 )
 
@@ -285,7 +290,7 @@ const pluginPackCommand = Command.make(
       const resolved = path.resolve(packPath)
       const stat = await fs.stat(resolved)
       if (!stat.isDirectory()) {
-        throw new Error("pack expects a plugin directory")
+        throw validationError("pack expects a plugin directory")
       }
       const manifest = await readManifest(path.join(resolved, PLUGIN_MANIFEST))
       const outValue = Option.getOrNull(out)
@@ -297,9 +302,9 @@ const pluginPackCommand = Command.make(
         throw tar.error
       }
       if (tar.status !== 0) {
-        throw new Error(tar.stderr || "tar failed")
+        throw validationError(tar.stderr || "tar failed")
       }
-      await Console.log(`Packed ${manifest.id}@${manifest.version} -> ${outPath}`)
+      await Console.log(renderActionArrowLine("Packed", `${manifest.id}@${manifest.version}`, outPath))
     }),
 )
 

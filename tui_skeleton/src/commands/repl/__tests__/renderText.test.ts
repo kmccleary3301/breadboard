@@ -7,6 +7,7 @@ const baseState = (): ReplState => ({
   sessionId: "session-123",
   status: "Ready",
   pendingResponse: false,
+  mainFollowTail: true,
   mode: "build",
   permissionMode: "prompt",
   conversation: [
@@ -168,7 +169,7 @@ describe("renderStateToText", () => {
       })),
     }
     const snapshot = renderStateToText(state, { includeHeader: false, includeStatus: false })
-    expect(snapshot).toContain("Compact transcript mode active")
+    expect(snapshot).toContain("Live Shell compact view")
   })
 
   it("renders rich markdown blocks when enabled", () => {

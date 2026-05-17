@@ -1,24 +1,27 @@
 import { Args, Command, Options } from "@effect/cli"
-import { Console, Effect, Option } from "effect"
+import { Effect, Option } from "effect"
 import { getUserConfigPath, loadUserConfigSync, writeUserConfig } from "../config/userConfig.js"
+import { printReportCommandResult } from "./commandApiPresenter.js"
+import { validationError } from "./commandValidation.js"
 
 const tokenOption = Options.text("token").pipe(Options.optional)
 const clearTokenOption = Options.boolean("clear-token").pipe(Options.optional)
+const outputOption = Options.choice("output", ["json", "summary"] as const).pipe(Options.withDefault("summary"))
 
 const normalizeUrl = (value: string): string => {
   const trimmed = value.trim()
   if (!trimmed) {
-    throw new Error("URL is empty.")
+    throw validationError("URL is empty.")
   }
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`
   let parsed: URL
   try {
     parsed = new URL(withScheme)
   } catch {
-    throw new Error(`Invalid URL: ${value}`)
+    throw validationError(`Invalid URL: ${value}`)
   }
   if (!parsed.hostname) {
-    throw new Error(`Invalid URL: ${value}`)
+    throw validationError(`Invalid URL: ${value}`)
   }
   return parsed.toString().replace(/\/$/, "")
 }
@@ -29,8 +32,9 @@ export const connectCommand = Command.make(
     url: Args.text({ name: "url" }),
     token: tokenOption,
     clearToken: clearTokenOption,
+    output: outputOption,
   },
-  ({ url, token, clearToken }) =>
+  ({ url, token, clearToken, output }) =>
     Effect.tryPromise(async () => {
       const normalized = normalizeUrl(url)
       const existing = loadUserConfigSync()
@@ -58,6 +62,15 @@ export const connectCommand = Command.make(
           : existing.authToken
             ? "Token preserved."
             : "No token configured."
-      await Console.log(`Saved engine URL to ${configPath}\nBase URL: ${normalized}\n${tokenNote}`)
+      await printReportCommandResult({
+        mode: output,
+        title: "Engine connection updated",
+        jsonValue: {
+          configPath,
+          baseUrl: normalized,
+          tokenState: tokenValue ? "saved" : clearTokenValue ? "cleared" : existing.authToken ? "preserved" : "not-configured",
+        },
+        lines: [`Saved engine URL to ${configPath}`, `Base URL: ${normalized}`, tokenNote],
+      })
     }),
 )

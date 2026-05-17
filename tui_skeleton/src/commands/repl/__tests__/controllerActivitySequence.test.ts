@@ -282,7 +282,7 @@ describe("ReplSessionController activity sequencing", () => {
     }
     controller.enqueueEvent(event(1, "run.start"))
     controller.enqueueEvent(event(2, "assistant.message.start"))
-    controller.enqueueEvent(event(3, "completion", { completed: true }))
+    controller.enqueueEvent(event(3, "tool_call", { call_id: "c1", tool_name: "Write" }))
     expect(controller.pendingEvents.length).toBe(3)
     controller.flushPendingEvents()
 
@@ -290,7 +290,100 @@ describe("ReplSessionController activity sequencing", () => {
     expect(state.runtimeTelemetry?.eventFlushes).toBe(1)
     expect(state.runtimeTelemetry?.eventCoalesced).toBe(2)
     expect(state.runtimeTelemetry?.eventMaxQueueDepth).toBeGreaterThanOrEqual(3)
+    expect(state.activity?.primary).toBe("tool_call")
+  })
+
+  it("flushes assistant deltas immediately instead of holding them behind generic coalescing", () => {
+    const controller = new ReplSessionController({
+      configPath: "agent_configs/misc/test_simple_native.yaml",
+      workspace: ".",
+    }) as unknown as {
+      enqueueEvent: (evt: any) => void
+      getState: () => any
+      runtimeFlags: Record<string, unknown>
+      pendingEvents: any[]
+    }
+
+    controller.runtimeFlags = {
+      ...controller.runtimeFlags,
+      eventCoalesceMs: 500,
+      eventCoalesceMaxBatch: 128,
+    }
+
+    controller.enqueueEvent(event(1, "run.start"))
+    controller.enqueueEvent(event(2, "assistant.message.start"))
+    expect(controller.pendingEvents.length).toBe(2)
+
+    controller.enqueueEvent(event(3, "assistant.message.delta", { delta: "hello" }))
+    expect(controller.pendingEvents.length).toBe(0)
+
+    const state = controller.getState()
+    const assistantText = state.conversation
+      .filter((entry: any) => entry.speaker === "assistant")
+      .map((entry: any) => entry.text)
+      .join("")
+
+    expect(assistantText).toBe("hello")
+    expect(state.activity?.primary).toBe("responding")
+    expect(state.runtimeTelemetry?.eventFlushes).toBeGreaterThanOrEqual(1)
+  })
+
+  it("settles locally when assistant content contains the completion sentinel", () => {
+    const controller = new ReplSessionController({
+      configPath: "agent_configs/misc/test_simple_native.yaml",
+      workspace: ".",
+    }) as unknown as {
+      applyEvent: (evt: any) => void
+      getState: () => any
+    }
+
+    controller.applyEvent(event(1, "turn_start"))
+    controller.applyEvent(event(2, "assistant.message.start"))
+    controller.applyEvent(event(3, "assistant_message", { text: "final answer\n\n>>>>>> END RESPONSE" }))
+
+    const state = controller.getState()
+    expect(state.pendingResponse).toBe(false)
+    expect(state.completionSeen).toBe(true)
+    expect(state.completionReached).toBe(true)
     expect(state.activity?.primary).toBe("completed")
+    expect(state.conversation.at(-1)?.text).toBe("final answer")
+  })
+
+  it("settles pending status tool rows when a turn completes", () => {
+    const controller = new ReplSessionController({
+      configPath: "agent_configs/misc/test_simple_native.yaml",
+      workspace: ".",
+    }) as unknown as {
+      applyEvent: (evt: any) => void
+      getState: () => any
+    }
+
+    controller.applyEvent(event(1, "run.start"))
+    controller.applyEvent(event(2, "task_event", { status: "update" }))
+    expect(controller.getState().toolEvents.some((entry: any) => entry.status === "pending")).toBe(true)
+
+    controller.applyEvent(event(3, "completion", { completed: true }))
+
+    const state = controller.getState()
+    expect(state.pendingResponse).toBe(false)
+    expect(state.toolEvents.some((entry: any) => entry.status === "pending")).toBe(false)
+  })
+
+  it("marks late task updates as stopped instead of pending after an interrupt", () => {
+    const controller = new ReplSessionController({
+      configPath: "agent_configs/misc/test_simple_native.yaml",
+      workspace: ".",
+    }) as any
+
+    controller.applyEvent(event(1, "run.start"))
+    controller.applyEvent(event(2, "task_event", { status: "update" }))
+    expect(controller.getState().toolEvents.at(-1)?.status).toBe("pending")
+
+    controller.pendingResponse = false
+    controller.stopRequestedAt = Date.now()
+    controller.applyEvent(event(3, "task_event", { status: "update" }))
+
+    expect(controller.getState().toolEvents.at(-1)?.status).toBe("error")
   })
 
   it("keeps inline thinking block disabled by default and avoids transcript leakage", () => {

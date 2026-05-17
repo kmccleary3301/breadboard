@@ -1,18 +1,19 @@
 import { Command, Options } from "@effect/cli"
 import { Console, Effect, Option } from "effect"
-import { ApiError } from "../api/client.js"
 import { forgetSession } from "../cache/sessionCache.js"
 import type { SessionSummary } from "../api/types.js"
 import { listCachedSessions, rememberSession, loadSessionCache } from "../cache/sessionCache.js"
-import { CliProviders } from "../providers/cliProviders.js"
+import { getCliApi, reportApiCommandErrorEffect } from "./commandRuntime.js"
+import { normalizeTableJsonOutputMode } from "./commandOutput.js"
+import { renderSimpleTable } from "./commandTable.js"
+import { reportValidationErrorEffect } from "./commandValidation.js"
+import { printCommandPresentation } from "./commandPresentation.js"
+import { renderStoppedSessionLine } from "./commandLifecycle.js"
 
 const outputFlag = Options.text("output").pipe(Options.withDefault("table"))
 const stopFlag = Options.text("stop").pipe(Options.optional)
 const stopAllFlag = Options.boolean("stop-all").pipe(Options.optional)
 
-type OutputMode = "table" | "json"
-
-const normalizeMode = (mode: string): OutputMode => (mode === "json" ? "json" : "table")
 
 interface SessionRow {
   readonly sessionId: string
@@ -60,21 +61,14 @@ const renderTable = (rows: SessionRow[]): string => {
   if (rows.length === 0) {
     return "No sessions found."
   }
-  const headers = ["Session", "Status", "Last Activity", "Model", "Source"]
-  const data = rows.map((row) => [row.sessionId, row.status, formatTimestamp(row.lastActivityAt), row.model ?? "-", row.source])
-  const widths = headers.map((header, index) =>
-    Math.max(header.length, ...data.map((row) => row[index]?.length ?? 0)),
+  return renderSimpleTable(
+    ["Session", "Status", "Last Activity", "Model", "Source"],
+    rows.map((row) => [row.sessionId, row.status, formatTimestamp(row.lastActivityAt), row.model ?? "-", row.source]),
+    {
+      separatorChar: "─",
+      trimTrailingWhitespace: true,
+    },
   )
-  const formatRow = (cells: string[]) =>
-    cells
-      .map((cell, index) => cell.padEnd(widths[index], " "))
-      .join("  ")
-      .trimEnd()
-  const lines = [formatRow(headers), formatRow(widths.map((w) => "".padEnd(w, "─")))]
-  for (const row of data) {
-    lines.push(formatRow(row))
-  }
-  return lines.join("\n")
 }
 
 const formatTimestamp = (value: string): string => {
@@ -91,12 +85,11 @@ const formatTimestamp = (value: string): string => {
 
 export const sessionsCommand = Command.make("sessions", { output: outputFlag, stop: stopFlag, stopAll: stopAllFlag }, ({ output, stop, stopAll }) =>
   Effect.gen(function* () {
-    const api = CliProviders.sdk.api()
+    const api = getCliApi()
     const stopTarget = Option.getOrNull(stop)
     const stopAllValue = Option.getOrNull(stopAll) ?? false
     if (stopAllValue && stopTarget) {
-      yield* Console.error("Specify either --stop or --stop-all, not both.")
-      return yield* Effect.fail(new Error("invalid options"))
+      return yield* reportValidationErrorEffect("Specify either --stop or --stop-all, not both.")
     }
     if (stopAllValue) {
       const listResult = yield* Effect.either(
@@ -106,7 +99,7 @@ export const sessionsCommand = Command.make("sessions", { output: outputFlag, st
         }),
       )
       if (listResult._tag === "Left") {
-        yield* Console.error((listResult.left as Error).message)
+        yield* reportApiCommandErrorEffect("list sessions", listResult.left)
         return
       }
       const running = listResult.right.filter((session) => session.status === "running")
@@ -122,9 +115,9 @@ export const sessionsCommand = Command.make("sessions", { output: outputFlag, st
           }),
         )
         if (stopResult._tag === "Left") {
-          yield* Console.error(`Failed to stop ${session.session_id}: ${(stopResult.left as Error).message}`)
+          yield* reportApiCommandErrorEffect(`stop ${session.session_id}`, stopResult.left)
         } else {
-          yield* Console.log(`Stopped session ${session.session_id}`)
+          yield* Console.log(renderStoppedSessionLine(session.session_id))
           yield* Effect.tryPromise({
             try: () => forgetSession(session.session_id),
             catch: (error) => error as Error,
@@ -141,17 +134,9 @@ export const sessionsCommand = Command.make("sessions", { output: outputFlag, st
         }),
       )
       if (stopResult._tag === "Left") {
-        const error = stopResult.left
-        if (error instanceof ApiError) {
-          yield* Console.error(`Failed to stop session (status ${error.status})`)
-          if (error.body) {
-            yield* Console.error(JSON.stringify(error.body))
-          }
-        } else {
-          yield* Console.error((error as Error).message)
-        }
+        yield* reportApiCommandErrorEffect("stop session", stopResult.left)
       } else {
-        yield* Console.log(`Stopped session ${stopTarget}`)
+        yield* Console.log(renderStoppedSessionLine(stopTarget))
         yield* Effect.tryPromise({
           try: () => forgetSession(stopTarget),
           catch: (error) => error as Error,
@@ -162,21 +147,10 @@ export const sessionsCommand = Command.make("sessions", { output: outputFlag, st
     try {
       const list = yield* Effect.promise(() => api.listSessions())
       const merged = yield* Effect.promise(() => mergeSessions(list))
-      const mode = normalizeMode(output)
-      if (mode === "json") {
-        yield* Console.log(JSON.stringify(merged, null, 2))
-      } else {
-        yield* Console.log(renderTable(merged))
-      }
+      const mode = normalizeTableJsonOutputMode(output)
+      yield* Effect.promise(() => printCommandPresentation({ mode, jsonValue: merged, text: renderTable(merged) }))
     } catch (error) {
-      if (error instanceof ApiError) {
-        yield* Console.error(`Failed to list sessions (status ${error.status})`)
-        if (error.body) {
-          yield* Console.error(JSON.stringify(error.body))
-        }
-      } else {
-        yield* Console.error((error as Error).message)
-      }
+      yield* reportApiCommandErrorEffect("list sessions", error)
       return yield* Effect.fail(error as Error)
     }
   }),

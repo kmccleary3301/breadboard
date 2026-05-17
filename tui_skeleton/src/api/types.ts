@@ -92,6 +92,15 @@ export interface HealthResponse {
   readonly protocol_version?: string | null
   readonly version?: string | null
   readonly engine_version?: string | null
+  readonly started_at?: string | null
+  readonly started_at_unix?: number | null
+  readonly pid?: number | null
+  readonly served_revision?: {
+    readonly repo_root?: string | null
+    readonly commit?: string | null
+    readonly branch?: string | null
+    readonly dirty?: boolean | null
+  } | null
 }
 
 export interface EngineStatusResponse {
@@ -101,6 +110,14 @@ export interface EngineStatusResponse {
   readonly protocol_version?: string | null
   readonly version?: string | null
   readonly engine_version?: string | null
+  readonly started_at?: string | null
+  readonly started_at_unix?: number | null
+  readonly served_revision?: {
+    readonly repo_root?: string | null
+    readonly commit?: string | null
+    readonly branch?: string | null
+    readonly dirty?: boolean | null
+  } | null
   readonly ray?: {
     readonly available?: boolean | null
     readonly initialized?: boolean | null
