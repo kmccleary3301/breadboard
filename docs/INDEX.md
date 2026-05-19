@@ -28,8 +28,8 @@ If you are new, start at the row that fits your situation and follow it forward.
 **Writing code against the engine (Python or TypeScript SDK):**
 → [contracts/cli_bridge/openapi.json](contracts/cli_bridge/openapi.json) · SDK examples in the repo README
 
-**Adopting BreadBoard as a TypeScript backbone in a host app:**
-→ [contracts/kernel/T3_BACKBONE_ADOPTION_V1.md](contracts/kernel/T3_BACKBONE_ADOPTION_V1.md) · [contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md](contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md) · [contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md](contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md)
+**Working with the TypeScript packages:**
+→ SDK examples in the repo README · [contracts/kernel/PROGRAM_INDEX_V1.md](contracts/kernel/PROGRAM_INDEX_V1.md)
 
 **Inspecting the public E4 dossier configs directly:**
 → [`../agent_configs/`](../agent_configs/) · [conformance/E4_TARGET_PACKAGES.md](conformance/E4_TARGET_PACKAGES.md) · [conformance/E4_DOSSIER_STYLE_GUIDE_V1.md](conformance/E4_DOSSIER_STYLE_GUIDE_V1.md)
@@ -38,7 +38,7 @@ If you are new, start at the row that fits your situation and follow it forward.
 → [quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md](quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md) · [conformance/README.md](conformance/README.md) · [conformance/E4_TARGET_VERSIONING.md](conformance/E4_TARGET_VERSIONING.md)
 
 **Building or integrating a new client surface (TUI, VSCode, webapp):**
-→ [contracts/kernel/PROGRAM_INDEX_V1.md](contracts/kernel/PROGRAM_INDEX_V1.md) · [contracts/kernel/T3_BACKBONE_ADOPTION_V1.md](contracts/kernel/T3_BACKBONE_ADOPTION_V1.md) · [contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md](contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md)
+→ [contracts/kernel/PROGRAM_INDEX_V1.md](contracts/kernel/PROGRAM_INDEX_V1.md) · [contracts/cli_bridge/openapi.json](contracts/cli_bridge/openapi.json)
 
 **Publishing a claim, writing a proposal, or making a contract-breaking change:**
 → [contracts/policies/KERNEL_CONTRACT_PACK_V1.md](contracts/policies/KERNEL_CONTRACT_PACK_V1.md) · [contracts/policies/ATP_CONTRACT_BREAK_CHECKLIST_V1.md](contracts/policies/ATP_CONTRACT_BREAK_CHECKLIST_V1.md) · [conformance/E4_TARGET_VERSIONING.md](conformance/E4_TARGET_VERSIONING.md)
@@ -84,8 +84,7 @@ Tracked `docs/` is now split intentionally:
 | [contracts/policies/KERNEL_CONTRACT_PACK_V1.md](contracts/policies/KERNEL_CONTRACT_PACK_V1.md) | Top-level public contract and change-discipline pack |
 | [contracts/cli_bridge/openapi.json](contracts/cli_bridge/openapi.json) | HTTP + SSE API schema (machine-readable) |
 | [conformance/E4_TARGET_VERSIONING.md](conformance/E4_TARGET_VERSIONING.md) | Versioning and freeze doctrine for parity targets |
-| [contracts/kernel/PROGRAM_INDEX_V1.md](contracts/kernel/PROGRAM_INDEX_V1.md) | Program-level map of kernel, backbone, and execution surfaces |
-| [contracts/kernel/PROGRAM_INDEX_V1.md](contracts/kernel/PROGRAM_INDEX_V1.md) | Kernel, TS backbone, execution-driver, and host-layer program map |
+| [contracts/kernel/PROGRAM_INDEX_V1.md](contracts/kernel/PROGRAM_INDEX_V1.md) | Program-level map of kernel, runtime, and execution surfaces |
 
 ### Conformance and testing
 
@@ -113,14 +112,10 @@ Tracked `docs/` is now split intentionally:
 | [reference/REPOSITORY_ZONE_MODEL.md](reference/REPOSITORY_ZONE_MODEL.md) | Stable meaning of the repo’s top-level roots: product surface, internal runtime substrate, extension space, SDK zones, and support surfaces |
 | [contracts/benchmarks/EVIDENCE_V2_CLAIM_LEDGER_V1.md](contracts/benchmarks/EVIDENCE_V2_CLAIM_LEDGER_V1.md) | Evidence v2 claim ledger |
 
-### TypeScript backbone and host adoption
+### TypeScript packages
 
 | Doc | What it covers |
 |-----|----------------|
-| [contracts/kernel/T3_BACKBONE_ADOPTION_V1.md](contracts/kernel/T3_BACKBONE_ADOPTION_V1.md) | Thin-host / T3-style adoption path |
-| [contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md](contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md) | Hard-host / OpenClaw-style adoption path |
-| [contracts/kernel/THIN_HOST_ADOPTION_V1.md](contracts/kernel/THIN_HOST_ADOPTION_V1.md) | Thin-host migration guidance |
-| [contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md](contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md) | Honest support boundary for Python-free primary TS host slices |
 | [contracts/kernel/semantics/backbone_api_v1.md](contracts/kernel/semantics/backbone_api_v1.md) | Backbone API semantics |
 | [contracts/kernel/semantics/workspace_layer_v1.md](contracts/kernel/semantics/workspace_layer_v1.md) | Workspace layer semantics |
 | [contracts/kernel/semantics/host_kit_v1.md](contracts/kernel/semantics/host_kit_v1.md) | Host Kit semantics |
@@ -128,13 +123,10 @@ Tracked `docs/` is now split intentionally:
 
 ### Client surfaces
 
-Client-specific internal buildout notes were intentionally offloaded from the public docs root. Start from the stable adoption and transport docs instead:
+Client-specific internal buildout notes were intentionally offloaded from the public docs root. Start from stable API and transport docs instead:
 
 | Doc | What it covers |
 |-----|----------------|
-| [contracts/kernel/T3_BACKBONE_ADOPTION_V1.md](contracts/kernel/T3_BACKBONE_ADOPTION_V1.md) | Thin-host adoption path |
-| [contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md](contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md) | Hard-host adoption path |
-| [contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md](contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md) | Current TS-primary claim boundary |
 | [contracts/cli_bridge/openapi.json](contracts/cli_bridge/openapi.json) | Machine-readable HTTP + SSE bridge contract |
 
 ### Research systems and advanced runtime layers

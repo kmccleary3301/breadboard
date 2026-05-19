@@ -39,7 +39,7 @@ The current public `SupportClaim` shape now carries:
 - `recommendedHostMode`
 - `confidence`
 
-That is intentional. The public product surface should expose more than a yes/no support bit if we want serious TS hosts to make good runtime choices.
+That is intentional. Package-level APIs should expose more than a yes/no support bit when runtime choices depend on support boundaries.
 
 Hosts are expected to use `SupportClaim` for:
 - support vs fallback routing

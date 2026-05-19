@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Host Kit is the standard embedding abstraction for serious TS hosts.
+Host Kit is an embedding abstraction for TypeScript host-boundary experiments.
 
-OpenClaw proved the seam. V3 should generalize that seam into a reusable standard rather than continuing with one-off bridges.
+The contract should stay narrow: it describes projection and fallback mechanics without implying that any external host should adopt BreadBoard as its primary runtime.
 
 ## Expected responsibilities
 
@@ -18,14 +18,13 @@ A Host Kit should:
 
 ## Relationship to Backbone
 
-Backbone is the public TS runtime surface.
-Host Kit is the host-specific adaptation layer above Backbone.
+Backbone is a TypeScript runtime-boundary package.
+Host Kit is a host-specific adaptation layer above that package.
 
 ## Current state
 
 The repo now has:
 - a generalized `@breadboard/host-kits` package
-- `createOpenClawHostKit(...)` as the first concrete Host Kit realization
 - reusable support-claim normalization
 - reusable supported/fallback invocation builders
 - a reusable provider-turn session helper for transcript continuity and host-side projection state
@@ -34,7 +33,7 @@ The repo now has:
 - reusable terminal-registry and effective tool-surface projection helpers above Backbone
 - compact effective-tool-surface support summaries for hosts that only need visibility/fallback counts
 
-That means Host Kit is no longer just a design direction. It is now part of the public TS product layer, with OpenClaw serving as the first hard-runtime proving ground.
+This is package infrastructure, not a public target claim.
 
 ## Coordination projection boundary
 

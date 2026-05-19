@@ -1,6 +1,6 @@
 # @breadboard/workspace
 
-`@breadboard/workspace` is the first public workspace-layer package for the V3 backbone program.
+`@breadboard/workspace` is a TypeScript workspace-layer package.
 
 It is intentionally above raw execution drivers and below host-specific integration layers.
 

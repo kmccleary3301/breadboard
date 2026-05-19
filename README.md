@@ -2,7 +2,7 @@
   <img src="docs/media/branding/breadboard_ascii_logo_v1.svg" alt="BreadBoard logo" width="640" />
 </p>
 
-<p align="center"><strong>Agent engine · harness emulator · TypeScript backbone · multi-client coding stack.</strong></p>
+<p align="center"><strong>Agent engine · harness emulator · TypeScript SDKs · multi-client coding stack.</strong></p>
 
 <p align="center">
   <a href="https://github.com/kmccleary3301/breadboard/actions/workflows/ci.yml">
@@ -14,7 +14,7 @@
   <img alt="Version" src="https://img.shields.io/badge/version-launch--v1-7C3AED" />
   <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white" />
   <img alt="Node" src="https://img.shields.io/badge/node-22%2B-5FA04E?logo=node.js&logoColor=white" />
-  <img alt="TS backbone" src="https://img.shields.io/badge/typescript-backbone-3178C6?logo=typescript&logoColor=white" />
+  <img alt="TypeScript SDKs" src="https://img.shields.io/badge/typescript-SDKs-3178C6?logo=typescript&logoColor=white" />
   <img alt="E4 dossiers" src="https://img.shields.io/badge/public%20E4%20dossiers-4%20harnesses-1f6feb" />
   <img alt="CLI bridge" src="https://img.shields.io/badge/engine-client%20split-HTTP%20%2B%20SSE-0A7EA4" />
 </p>
@@ -45,7 +45,7 @@ BreadBoard is simultaneously:
 - Python and TypeScript SDKs over the same bridge
 - a terminal-first coding stack with multiple client surfaces
 - a harness emulator with public E4 dossier configs for Codex, Claude Code, OpenCode, and oh-my-opencode
-- a TypeScript backbone product layer for host apps that do not want to think in raw kernel substrate terms
+- TypeScript packages for SDK, transport, and runtime-boundary experiments
 - a conformance-heavy environment for replay, parity, optimization, long-run agents, and future evaluation work
 - a growing research platform for ATP, formal sandboxes, optimization, DAG search, RL export layers, C-Trees, and DARWIN
 
@@ -66,7 +66,7 @@ This repository is for engineers and researchers who care about:
 | Engine + CLI bridge | Canonical HTTP + SSE runtime surface used by every client | 🟢 |
 | Python SDK | Programmatic access to the engine from Python | 🟢 |
 | TypeScript SDK | CLI-bridge TypeScript client package | 🟢 |
-| TypeScript backbone | Public TS product layer for serious host apps | 🟢 |
+| TypeScript packages | SDK, transport, and runtime-boundary packages | 🟡 |
 | TUI | Main terminal UX in [`tui_skeleton/`](tui_skeleton/) | 🟢 |
 | OpenTUI slab | Fixed-height slab client in [`opentui_slab/`](opentui_slab/) | 🟡 |
 | VSCode sidebar | Early client surface in [`vscode_sidebar/`](vscode_sidebar/) | 🟡 |
@@ -86,7 +86,7 @@ and then you keep going until you also have:
 - explicit kernel contracts
 - replay-proof evidence
 - profile-driven harness emulation
-- TypeScript host-backbone surfaces
+- TypeScript SDK and runtime-boundary packages
 - multiple clients talking to one engine
 
 It is **not** a thin wrapper around one provider SDK, and it is **not** just a terminal app.
@@ -105,7 +105,7 @@ It is **not** a thin wrapper around one provider SDK, and it is **not** just a t
 | inspect the public E4 dossier configs | [`agent_configs/`](agent_configs/) |
 | use the engine from Python or TypeScript | [docs/contracts/cli_bridge/openapi.json](docs/contracts/cli_bridge/openapi.json) and the examples below |
 | evaluate parity / replay / evidence | [docs/conformance/README.md](docs/conformance/README.md) |
-| integrate BreadBoard into a TS host | [`sdk/ts-backbone/`](sdk/ts-backbone/), [`sdk/ts-host-kits/`](sdk/ts-host-kits/), [`sdk/ts-host-t3/`](sdk/ts-host-t3/) |
+| evaluate the TypeScript package surfaces | [`sdk/ts/`](sdk/ts/), [`sdk/ts-kernel-contracts/`](sdk/ts-kernel-contracts/), [`sdk/ts-backbone/`](sdk/ts-backbone/) |
 | understand BreadBoard’s stable contracts and evidence posture | [docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md](docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md) |
 
 ### Research systems entrypoint
@@ -159,11 +159,11 @@ breadboard/
 ├── breadboard_sdk/                Python SDK surface
 ├── sdk/
 │   ├── ts/                        CLI-bridge TS SDK
-│   ├── ts-backbone/               public TS backbone API
+│   ├── ts-backbone/               TypeScript runtime API experiments
 │   ├── ts-workspace/              public workspace / execution-profile layer
 │   ├── ts-host-kits/              reusable host-integration abstractions
-│   ├── ts-host-bridges/           concrete host bridges (for example OpenClaw)
-│   ├── ts-host-t3/                thin-host starter for T3-class apps
+│   ├── ts-host-bridges/           concrete host bridge experiments
+│   ├── ts-host-t3/                small host-boundary starter package
 │   ├── ts-transport-ai-sdk/       AI SDK projection/session transport adapter
 │   ├── ts-kernel-contracts/       TS contract/types/validators for kernel schemas
 │   ├── ts-kernel-core/            TS kernel substrate and constrained runtime slices
@@ -346,9 +346,9 @@ for await (const event of streamSessionEvents(session.session_id, {
 }
 ```
 
-### TypeScript backbone
+### TypeScript runtime packages
 
-For serious TS hosts, the public V3 product surface is the Backbone/Workspace/Host Kit layer rather than the raw kernel substrate:
+The TypeScript package family includes SDK, workspace, transport, and runtime-boundary surfaces. Treat these as package-level APIs, not as a public claim that external hosts should adopt BreadBoard as their primary runtime:
 
 ```ts
 import { createWorkspace } from "@breadboard/workspace"
@@ -368,9 +368,9 @@ const session = backbone.openSession({
 })
 ```
 
-### Thin-host starter
+### Transport and host-boundary packages
 
-For T3/AI-SDK-class hosts:
+The host-boundary packages are useful for local experiments and integration tests:
 
 ```ts
 import { createT3CodeStarter } from "@breadboard/host-t3"
@@ -383,7 +383,6 @@ Relevant package docs:
 - [sdk/ts-backbone/README.md](sdk/ts-backbone/README.md)
 - [sdk/ts-workspace/README.md](sdk/ts-workspace/README.md)
 - [sdk/ts-host-kits/README.md](sdk/ts-host-kits/README.md)
-- [sdk/ts-host-t3/README.md](sdk/ts-host-t3/README.md)
 - [sdk/ts-transport-ai-sdk/README.md](sdk/ts-transport-ai-sdk/README.md)
 
 ---
@@ -461,10 +460,10 @@ The point is not just observability. The point is that the same canonical event 
 | [`sdk/ts-kernel-contracts/`](sdk/ts-kernel-contracts/) | generated types/validators for kernel contracts |
 | [`sdk/ts-kernel-core/`](sdk/ts-kernel-core/) | constrained TS kernel substrate |
 | [`sdk/ts-workspace/`](sdk/ts-workspace/) | execution profiles, capability sets, artifact refs, output shaping |
-| [`sdk/ts-backbone/`](sdk/ts-backbone/) | public TS backbone API |
+| [`sdk/ts-backbone/`](sdk/ts-backbone/) | TypeScript runtime API experiments |
 | [`sdk/ts-host-kits/`](sdk/ts-host-kits/) | reusable host integration abstractions |
 | [`sdk/ts-host-bridges/`](sdk/ts-host-bridges/) | concrete host bridge implementations |
-| [`sdk/ts-host-t3/`](sdk/ts-host-t3/) | thin-host starter and migration kits |
+| [`sdk/ts-host-t3/`](sdk/ts-host-t3/) | small host-boundary starter package |
 | [`sdk/ts-transport-ai-sdk/`](sdk/ts-transport-ai-sdk/) | AI SDK projection/session transport layer |
 | [`sdk/ts-execution-drivers/`](sdk/ts-execution-drivers/) | shared execution-driver contracts and helpers |
 | [`sdk/ts-execution-driver-local/`](sdk/ts-execution-driver-local/) | trusted-local execution path |
@@ -472,7 +471,7 @@ The point is not just observability. The point is that the same canonical event 
 | [`sdk/ts-execution-driver-remote/`](sdk/ts-execution-driver-remote/) | delegated remote execution path |
 | [`sdk/ts-orchestration-temporal/`](sdk/ts-orchestration-temporal/) | Temporal-oriented orchestration adapter work |
 
-If you are evaluating BreadBoard as a TS backbone rather than as a Python engine with clients, this table is the starting point.
+If you are evaluating the TypeScript packages, this table is the starting point.
 
 ---
 
@@ -484,14 +483,7 @@ If you are evaluating BreadBoard as a TS backbone rather than as a Python engine
 | OpenTUI slab | [`opentui_slab/`](opentui_slab/) | fixed-height slab experiments |
 | VSCode sidebar | [`vscode_sidebar/`](vscode_sidebar/) | extension/client surface |
 | Python host scripts | [`breadboard_sdk/`](breadboard_sdk/) | Python API consumption |
-| TS hosts | [`sdk/ts-backbone/`](sdk/ts-backbone/) and related packages | productized TS integration path |
-
-Useful client docs:
-
-- [docs/contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md](docs/contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md)
-- [docs/contracts/kernel/T3_BACKBONE_ADOPTION_V1.md](docs/contracts/kernel/T3_BACKBONE_ADOPTION_V1.md)
-- [docs/contracts/kernel/THIN_HOST_ADOPTION_V1.md](docs/contracts/kernel/THIN_HOST_ADOPTION_V1.md)
-- [docs/contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md](docs/contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md)
+| TS packages | [`sdk/ts/`](sdk/ts/) and related packages | SDK, transport, and runtime-boundary experiments |
 
 ---
 
@@ -512,7 +504,7 @@ The repo docs are large. These are the most useful entrypoints.
 | Doc | Purpose |
 |---|---|
 | [docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md](docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md) | stable public contract pack |
-| [docs/contracts/kernel/PROGRAM_INDEX_V1.md](docs/contracts/kernel/PROGRAM_INDEX_V1.md) | kernel and TS backbone program map |
+| [docs/contracts/kernel/PROGRAM_INDEX_V1.md](docs/contracts/kernel/PROGRAM_INDEX_V1.md) | kernel and runtime contract program map |
 
 ### Conformance and claims
 
@@ -522,19 +514,9 @@ The repo docs are large. These are the most useful entrypoints.
 | [docs/conformance/E4_TARGET_VERSIONING.md](docs/conformance/E4_TARGET_VERSIONING.md) | E4 target freeze/versioning policy |
 | [docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md](docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md) | public-facing contract and change discipline |
 
-### TS backbone and adoption
-
-| Doc | Purpose |
-|---|---|
-| [docs/contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md](docs/contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md) | hard-host adoption path |
-| [docs/contracts/kernel/T3_BACKBONE_ADOPTION_V1.md](docs/contracts/kernel/T3_BACKBONE_ADOPTION_V1.md) | thin-host adoption path |
-| [docs/contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md](docs/contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md) | current TS-primary-path claim boundary |
-
----
-
 ## Claim boundaries
 
-BreadBoard has strong parity and backbone claims, but it does **not** use vague wording casually.
+BreadBoard has strong parity and conformance claims, but it does **not** use vague wording casually.
 
 Two examples of what this README is **not** claiming:
 
@@ -555,7 +537,7 @@ Use these before repeating a claim:
 |---|---|
 | Engine and CLI bridge | 🟢 active |
 | Public E4 dossiers | 🟢 active |
-| TS backbone product layer | 🟢 active |
+| TypeScript SDK and runtime-boundary packages | 🟡 active / evolving |
 | TUI and client surfaces | 🟢 active / evolving |
 | VSCode sidebar | 🟡 active buildout |
 | Long-run / RLM / optimization | 🟡 active research/buildout |
@@ -567,7 +549,7 @@ Use these before repeating a claim:
 
 - The engine-client split is the central design bet, not a detail.
 - The public E4 dossiers are meant to be read, not just loaded.
-- The TypeScript backbone work is now a real product layer, not only substrate experiments.
+- The TypeScript package work is active, but public claims should stay tied to shipped package behavior and conformance evidence.
 - The conformance and evidence story is part of the product, not just internal test infrastructure.
 
 If those things are what you care about, BreadBoard is likely worth your time. If what you want is a minimal wrapper around one provider SDK, it probably is not.
@@ -582,9 +564,8 @@ If those things are what you care about, BreadBoard is likely worth your time. I
    - [docs/INDEX.md](docs/INDEX.md)
 3. Open one of the public E4 dossiers:
    - [codex_0-107-0_e4_3-6-2026.yaml](agent_configs/codex_0-107-0_e4_3-6-2026.yaml)
-4. If you are a TS host author, start here:
-   - [sdk/ts-backbone/README.md](sdk/ts-backbone/README.md)
-   - [sdk/ts-host-t3/README.md](sdk/ts-host-t3/README.md)
-   - [docs/contracts/kernel/T3_BACKBONE_ADOPTION_V1.md](docs/contracts/kernel/T3_BACKBONE_ADOPTION_V1.md)
+4. If you are evaluating TypeScript packages, start here:
+   - [sdk/ts/README.md](sdk/ts/README.md)
+   - [sdk/ts-kernel-contracts/README.md](sdk/ts-kernel-contracts/README.md)
 5. If you care about proof and parity:
    - [docs/conformance/README.md](docs/conformance/README.md)

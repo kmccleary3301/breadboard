@@ -4,7 +4,7 @@
 
 The AI SDK transport adapter is a projection-only layer above the public Backbone API.
 
-Its role is to make BreadBoard easy to integrate into AI SDK-style frontend and thin-host transport stacks without letting AI SDK abstractions become kernel truth.
+Its role is to project BreadBoard results into AI SDK-style frontend transport stacks without letting AI SDK abstractions become kernel truth.
 
 ## Current v1 slice
 
@@ -30,7 +30,7 @@ This adapter does not:
 
 - `@breadboard/backbone` owns the public runtime surface
 - `@breadboard/transport-ai-sdk` owns a projection-only transport surface
-- host apps remain free to ignore this package and consume raw Backbone results directly
+- consumers remain free to ignore this package and consume raw Backbone results directly
 
 ## V3 widening direction
 

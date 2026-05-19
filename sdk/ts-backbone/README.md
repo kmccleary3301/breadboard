@@ -1,6 +1,6 @@
 # @breadboard/backbone
 
-`@breadboard/backbone` is the first public V3 product layer above the kernel.
+`@breadboard/backbone` is a TypeScript runtime-boundary package above the kernel.
 
 It exposes host-shaped objects:
 - `createBackbone(...)`
@@ -21,7 +21,7 @@ Current scope:
 - terminal session lifecycle, registry reduction, session lookup/listing, and cleanup result construction through `BackboneSession.terminals`
 - effective tool-surface construction through `BackboneSession.tools`
 
-Hosts should treat `SupportClaim` as the public truth for:
+Consumers should treat `SupportClaim` as the package-level truth for:
 - whether a slice is supported
 - which execution profile is in play
 - how confident BreadBoard is about the supported path
@@ -29,8 +29,8 @@ Hosts should treat `SupportClaim` as the public truth for:
 
 Hosts should treat:
 - `BackboneSession.terminals`
-  as the public product-layer entrypoint for persistent terminal session lifecycle, registry/listing views, and cleanup result construction
+  as the package-level entrypoint for persistent terminal session lifecycle, registry/listing views, and cleanup result construction
 - `BackboneSession.tools`
-  as the public product-layer entrypoint for effective tool-surface construction
+  as the package-level entrypoint for effective tool-surface construction
 
 It does **not** replace Host Kits or Workspace. It composes them.

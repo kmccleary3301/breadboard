@@ -49,7 +49,7 @@ This is the base BreadBoard layer:
 - session/run/replay truth
 - execution-driver and sandbox envelopes
 - coordination signals, directives, and reviews
-- TypeScript backbone and host-kit surfaces
+- TypeScript SDK and runtime-boundary surfaces
 
 Everything else in this document depends on that layer staying honest.
 

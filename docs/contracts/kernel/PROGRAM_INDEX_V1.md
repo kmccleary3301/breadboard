@@ -53,18 +53,11 @@ This index is the quickest route through the shared-kernel / multi-engine progra
 - `scripts/compare_kernel_conformance_engines.py`
 - `scripts/run_kernel_conformance_gate.py`
 
-## Hybrid / proving-ground readiness
+## Hybrid readiness
 
 - `docs/contracts/kernel/HYBRID_DELEGATION_BOUNDARIES_V1.md`
 - `docs/contracts/kernel/PYTHON_SERVICE_BOUNDARY_MATRIX_V1.md`
 - `docs/contracts/kernel/ORCHESTRATION_BACKEND_DECISION_V1.md`
-- `docs/contracts/kernel/OPENCLAW_PROVING_GROUND_READINESS_V1.md`
-- `docs/contracts/kernel/OPENCLAW_HOST_BRIDGE_V1.md`
-- `docs/contracts/kernel/OPENCLAW_HOST_BRIDGE_ACCEPTANCE_V1.md`
-- `docs/contracts/kernel/OPENCLAW_BACKBONE_ADOPTION_V1.md`
-- `docs/contracts/kernel/THIN_HOST_ADOPTION_V1.md`
-- `docs/contracts/kernel/T3_BACKBONE_ADOPTION_V1.md`
-- `docs/contracts/kernel/TS_PRIMARY_HOST_PATH_READINESS_V1.md`
 
 ## TS package surfaces
 
@@ -95,15 +88,14 @@ Current state is strong on:
 - the V2 execution-capability contract family
 - the execution-driver and orchestration backend family
 - delegated remote execution path
-- the Python-free primary TS host boundary for supported slices
-- the OpenClaw proving-ground seam for the scoped supported slices
+- bounded TypeScript runtime package work tied to explicit contract surfaces
 
 Current state is intentionally bounded on:
 
-- broad host/runtime parity beyond the frozen supported slices
+- broad host/runtime parity claims
 - microVM-backed or stronger delegated execution paths
 - production-grade orchestration deployment and fleet management
-- full Pi/OpenClaw replacement claims
+- replacement claims for external hosts or harnesses
 
 ## Phase 14 frontier
 

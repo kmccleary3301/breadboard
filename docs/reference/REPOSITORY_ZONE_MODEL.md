@@ -60,7 +60,7 @@ These are SDK surfaces, not cleanup leftovers:
 - `breadboard_sdk/` is the Python SDK surface
 - `sdk/` is the TypeScript and host-systems surface
 
-If code is fundamentally SDK or host adoption work, it should not drift into the
+If code is fundamentally SDK or host-boundary work, it should not drift into the
 internal runtime substrate just because that substrate already exists.
 
 ### `tool_calling/`

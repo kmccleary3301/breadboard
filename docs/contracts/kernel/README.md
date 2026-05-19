@@ -40,9 +40,6 @@ Start here:
 - [PYTHON_SERVICE_BOUNDARY_MATRIX_V1.md](PYTHON_SERVICE_BOUNDARY_MATRIX_V1.md)
 - [HYBRID_DELEGATION_BOUNDARIES_V1.md](HYBRID_DELEGATION_BOUNDARIES_V1.md)
 - [ORCHESTRATION_BACKEND_DECISION_V1.md](ORCHESTRATION_BACKEND_DECISION_V1.md)
-- [OPENCLAW_BACKBONE_ADOPTION_V1.md](OPENCLAW_BACKBONE_ADOPTION_V1.md)
-- [THIN_HOST_ADOPTION_V1.md](THIN_HOST_ADOPTION_V1.md)
-- [TS_PRIMARY_HOST_PATH_READINESS_V1.md](TS_PRIMARY_HOST_PATH_READINESS_V1.md)
 - [PROGRAM_INDEX_V1.md](PROGRAM_INDEX_V1.md)
 
 Then read:
@@ -74,9 +71,9 @@ This is where machine-readable contract artifacts should live once they exist. T
 
 This is where cross-engine contract fixtures and related README/docs should live.
 
-### Hybrid / proving-ground docs
+### Hybrid docs
 
-The first hybrid-delegation and proving-ground boundaries live alongside the kernel docs so they are constrained by the same doctrine instead of becoming host-driven design drift.
+Hybrid-delegation boundaries live alongside the kernel docs so they are constrained by the same doctrine instead of becoming host-driven design drift.
 
 ---
 

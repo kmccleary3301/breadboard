@@ -104,7 +104,7 @@ This contract does not define:
 
 - markdown logger formatting
 - TUI renderer output shape
-- OpenClaw event stream projection shape
+- host event stream projection shape
 - CLI bridge SSE chunk format
 - storage engine implementation details
 

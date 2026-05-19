@@ -76,7 +76,7 @@ Projection contracts exist for:
 - VSCode sidebars
 - webapps
 - desktop apps
-- external hosts such as OpenClaw
+- external host integrations
 
 These projections are important, but they are derived.
 
@@ -136,11 +136,11 @@ No claim should be inferred from a successful demo.
 
 ## Doctrine 7: Hosts pressure-test the kernel, but do not define it
 
-External hosts and proving grounds such as OpenClaw are important.
+External host integrations are important pressure tests.
 
 But they must not become the place where kernel semantics are invented ad hoc.
 
-Correct use of a host proving ground:
+Correct use of a host integration:
 
 - test whether the kernel is actually usable
 - test whether projections and runtime seams are sufficient

@@ -4,7 +4,7 @@
 
 This dossier defines the kernel contract for transcript continuation patches returned to host-owned persistence layers.
 
-This is especially important for OpenClaw-class hosts, where BreadBoard should be able to continue a transcript without taking over the host's persistence model.
+This is especially important for host integrations where BreadBoard should be able to continue a transcript without taking over the host's persistence model.
 
 ---
 
@@ -58,5 +58,5 @@ Without this contract, each host bridge risks inventing its own transcript conti
 ## Immediate next steps
 
 1. add schema and example
-2. tie the OpenClaw host bridge to this contract more explicitly
+2. tie host bridge experiments to this contract more explicitly
 3. later, add conformance fixtures that compare transcript continuation patches across engines

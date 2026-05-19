@@ -120,8 +120,6 @@ def test_kernel_program_docs_cover_event_registry_and_hybrid_boundaries() -> Non
         "HYBRID_DELEGATION_BOUNDARIES_V1.md",
         "ORCHESTRATION_BACKEND_DECISION_V1.md",
         "PYTHON_SERVICE_BOUNDARY_MATRIX_V1.md",
-        "OPENCLAW_PROVING_GROUND_READINESS_V1.md",
-        "TS_PRIMARY_HOST_PATH_READINESS_V1.md",
     }
     present = {path.name for path in docs_dir.glob("*.md")}
     missing = sorted(expected - present)

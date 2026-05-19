@@ -1,6 +1,6 @@
 # @breadboard/host-kits
 
-`@breadboard/host-kits` is the first reusable host-integration abstraction package for the V3 backbone program.
+`@breadboard/host-kits` is a reusable host-integration abstraction package for TypeScript runtime-boundary experiments.
 
 It standardizes:
 - request classification
@@ -14,9 +14,9 @@ It standardizes:
 - reusable host-facing result metadata helpers
 - reusable projection-state/result resolution helpers for session-oriented thin hosts
 
-This package does not own host-specific request schemas by itself. It provides the reusable abstraction layer that concrete host kits, such as OpenClaw, should implement.
+This package does not own host-specific request schemas by itself. It provides reusable abstraction helpers for concrete bridge packages.
 
-It now also includes public product-layer helpers for:
+It also includes helpers for:
 - support-claim projection into a stable host-facing view
 - terminal-support projection into a stable host-facing capability summary
 - terminal-registry projection

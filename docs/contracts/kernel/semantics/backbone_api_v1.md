@@ -2,9 +2,9 @@
 
 ## Purpose
 
-The Backbone API is the public adoption surface above the kernel for serious TypeScript hosts.
+The Backbone API is a TypeScript runtime-boundary surface above the kernel.
 
-It exists so host developers do not have to integrate directly against kernel substrate nouns like `RunRequestV1` or `ProviderExchangeV1` unless they want to.
+It exists so package consumers can avoid integrating directly against kernel substrate nouns like `RunRequestV1` or `ProviderExchangeV1` when a narrower runtime-boundary API is sufficient.
 
 ## Key public nouns
 

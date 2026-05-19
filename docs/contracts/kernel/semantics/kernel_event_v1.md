@@ -167,7 +167,7 @@ This contract does not define:
 - the exact UI reducer event shapes
 - TUI task list events
 - CLI bridge SSE convenience envelopes
-- OpenClaw projection events
+- host projection events
 - webapp-specific projection events
 
 Those should be projection adapters derived from kernel events.
