@@ -18,13 +18,13 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
     exitTranscriptViewer,
     guardrailNotice,
     handleLineEdit,
+    inputValueRef,
     keymap,
     modelMenu,
     onGuardrailDismiss,
     onGuardrailToggle,
     onModelMenuCancel,
     onModelMenuOpen,
-    onRewindClose,
     onSkillsMenuCancel,
     onSkillsMenuOpen,
     onSubmit,
@@ -36,6 +36,7 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
     permissionRequest,
     pushCommandResult,
     rewindMenu,
+    searchHistory,
     scrollbackMode,
     setCtrlCPrimedAt,
     setCtreeOpen,
@@ -46,6 +47,7 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
     setTranscriptNudge,
     setVerboseOutput,
     skillsMenu,
+    openSelectedCollapsedDetail,
     toggleSelectedCollapsibleEntry,
     transcriptViewerBodyRows,
     transcriptViewerOpen,
@@ -57,12 +59,21 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
       const profile = normalizeKeyProfile(keymap)
       const isEscapeKey = key.escape || char === "\u001b"
       const isCtrlT = matchesActionBinding(profile, "toggle_todos_panel", char, key)
-      const isCtrlShiftT = matchesActionBinding(profile, "toggle_transcript_viewer", char, key)
+      const isTranscriptToggle = matchesActionBinding(profile, "toggle_transcript_viewer", char, key)
       const isCtrlB = matchesActionBinding(profile, "toggle_tasks_panel", char, key)
       const isCtrlY = matchesActionBinding(profile, "toggle_ctree_panel", char, key) || char === "\u0019"
       const isCtrlG = matchesActionBinding(profile, "toggle_skills_panel", char, key) || char === "\u0007"
       const isCtrlU = (key.ctrl && lowerChar === "u") || char === "\u0015"
-      if (isCtrlShiftT) {
+      const isCtrlR = (key.ctrl && lowerChar === "r") || char === "\u0012"
+      const isCtrlS = (key.ctrl && lowerChar === "s") || char === "\u0013"
+      if (process.env.BREADBOARD_INPUT_DEBUG === "1" && (isCtrlR || isCtrlS)) {
+        console.error(JSON.stringify({
+          globalHistorySearchKey: isCtrlR ? "ctrl+r" : "ctrl+s",
+          input: inputValueRef?.current ?? null,
+          hasSearchHistory: typeof searchHistory === "function",
+        }))
+      }
+      if (isTranscriptToggle) {
         setCtreeOpen(false)
         if (transcriptViewerOpen) {
           exitTranscriptViewer()
@@ -73,13 +84,7 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
       }
       if (isCtrlT) {
         setCtreeOpen(false)
-        if (keymap === "claude") {
-          setTodosOpen((prev: boolean) => !prev)
-        } else if (transcriptViewerOpen) {
-          exitTranscriptViewer()
-        } else {
-          enterTranscriptViewer()
-        }
+        setTodosOpen((prev: boolean) => !prev)
         return true
       }
       if (isCtrlB) {
@@ -102,19 +107,12 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
         return true
       }
       if (isCtrlY) {
+        if (inputValueRef?.current?.length > 0) return false
         if (!ctreeOpen) {
           setTodosOpen(false)
           setTasksOpen(false)
         }
         setCtreeOpen((prev: boolean) => !prev)
-        return true
-      }
-      if (key.ctrl && lowerChar === "r") {
-        if (rewindMenu.status === "hidden") {
-          void onSubmit("/rewind")
-        } else {
-          onRewindClose()
-        }
         return true
       }
       if (matchesActionBinding(profile, "clear_screen", char, key)) {
@@ -211,6 +209,9 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
           if (lowerChar === "e" && toggleSelectedCollapsibleEntry()) {
             return true
           }
+          if (lowerChar === "o" && openSelectedCollapsedDetail()) {
+            return true
+          }
         }
         if (char === "[" && cycleCollapsibleSelection(-1)) {
           return true
@@ -271,6 +272,7 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
       exitTranscriptViewer,
       guardrailNotice,
       handleLineEdit,
+      inputValueRef,
       keymap,
       closePalette,
       modelMenu.status,
@@ -290,8 +292,10 @@ export const useGlobalKeys = (context: GlobalKeyHandlerContext): KeyHandler => {
       permissionRequest,
       pushCommandResult,
       rewindMenu.status,
+      searchHistory,
       scrollbackMode,
       taskboardDefaultView,
+      openSelectedCollapsedDetail,
       transcriptViewerBodyRows,
       transcriptViewerOpen,
       toggleSelectedCollapsibleEntry,

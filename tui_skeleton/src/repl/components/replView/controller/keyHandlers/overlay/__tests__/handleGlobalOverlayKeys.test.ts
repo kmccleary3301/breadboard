@@ -83,6 +83,16 @@ describe("handleGlobalOverlayKeys", () => {
     expect(context.setShortcutsOpen).toHaveBeenCalledWith(false)
   })
 
+  it("closes shortcuts overlay on raw escape byte", () => {
+    const context = baseContext()
+    const handled = handleGlobalOverlayKeys(
+      { ...context, shortcutsOpen: true },
+      makeInfo({ char: "\u001b", key: { escape: false } }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setShortcutsOpen).toHaveBeenCalledWith(false)
+  })
+
   it("closes usage overlay on escape", () => {
     const context = baseContext()
     const handled = handleGlobalOverlayKeys(

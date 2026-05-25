@@ -8,12 +8,15 @@ import { stripAnsiCodes } from "../utils/ansi.js"
 import { createScrollWindow, formatScrollRange } from "../utils/scrollWindow.js"
 import type { SlashCommandInfo } from "../../../slashCommands.js"
 import type { PermissionRuleScope } from "../../../types.js"
+import { buildPickerWindow, resolvePickerLayout, type PickerModel } from "../../../pickerModel.js"
 import { buildConfirmModal, buildShortcutsModal } from "./modalBasics.js"
 import { SheetModal } from "./SheetModal.js"
 import { formatTodoModalRowLabel } from "./todoCheckbox.js"
+import { buildPickerPanelProjection, pickerRowToSelectPanelRow } from "./pickerPanelAdapter.js"
 import {
   countTaskRowsByStatusGroup,
   formatTaskModeBadge,
+  formatTaskInspectorTabsLine,
   formatTaskStepLine,
   normalizeTaskStatusGroup,
   sanitizeTaskPreview,
@@ -123,6 +126,7 @@ export const buildTasksOverlayContract = (input: {
   readonly taskStatusFilter: string
   readonly taskGroupMode: string
   readonly taskLaneFilter: string
+  readonly taskLaneFilterLabel: string
   readonly statusSummary: string
   readonly taskFocusMode: string
 }): TasksOverlayContract => {
@@ -137,7 +141,7 @@ export const buildTasksOverlayContract = (input: {
                 `${input.tasksCount} task${input.tasksCount === 1 ? "" : "s"} • lane ${input.taskFocusLaneLabel ?? input.taskFocusLaneId ?? "unknown"} • selected ${input.selectedSummary} • Enter tail • Tab ${input.taskFocusRawMode ? "snippet" : "raw"} • L load more • P ${input.taskFocusFollowTail ? "pause" : "follow"} • F/Esc return`,
               )
             : uiText(
-                `${input.tasksCount} task${input.tasksCount === 1 ? "" : "s"} • selected ${input.selectedSummary} • ↑/↓ select • PgUp/PgDn page • F ${input.taskFocusMode === "swap" ? "swap lane" : "focus lane"} • Enter tail • Esc close`,
+                `${input.tasksCount} task${input.tasksCount === 1 ? "" : "s"} • selected ${input.selectedSummary} • ↑/↓ select • PgUp/PgDn page • F ${input.taskFocusMode === "swap" ? "swap lane" : "focus lane"} for controls • Enter tail • Esc close`,
               ),
       color: "gray",
     },
@@ -154,7 +158,7 @@ export const buildTasksOverlayContract = (input: {
     {
       text: input.swapActive
         ? uiText("Lane switch: ←/→ or [/] • R refresh tail • Ctrl+U clear search")
-        : uiText(`Group: ${input.taskGroupMode} (G toggle) • Lane: ${input.taskLaneFilter} (L cycle) • C collapse selected group • E expand all`),
+        : uiText(`Group: ${input.taskGroupMode} (G toggle) • Lane: ${input.taskLaneFilterLabel} (L cycle) • C collapse selected group • E expand all`),
       color: "dim",
     },
   ]
@@ -168,6 +172,8 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     claudeChrome,
     isBreadboardProfile,
     columnWidth,
+    rowCount,
+    scrollbackMode,
     PANEL_WIDTH,
     shortcutLines,
     paletteState,
@@ -205,6 +211,18 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     rewindSelectedIndex,
     rewindVisibleLimit,
     todosOpen,
+    recentSessionsOpen,
+    recentSessionsStatus,
+    recentSessionsError,
+    recentSessionsRows,
+    recentSessionsVisible,
+    recentSessionsIndex,
+    recentSessionsScroll,
+    recentSessionsMaxScroll,
+    recentSessionsViewportRows,
+    recentSessionsAttachingId,
+    refreshRecentSessions,
+    attachRecentSession,
     todoScroll,
     todoMaxScroll,
     todoRows,
@@ -215,6 +233,26 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     inspectMenu,
     inspectRawOpen,
     inspectRawScroll,
+    resultDetailOpen,
+    resultDetailScroll,
+    resultDetailMaxScroll,
+    resultDetailViewportRows,
+    resultDetailVisible,
+    resultDetailSelectedTitle,
+    resultDetailArtifactPath,
+    artifactPreviewOpen,
+    artifactPreviewScroll,
+    artifactPreviewMaxScroll,
+    artifactPreviewViewportRows,
+    artifactPreviewVisible,
+    artifactPreviewPath,
+    artifactPreviewNotice,
+    collapsedDetailOpen,
+    collapsedDetailScroll,
+    collapsedDetailMaxScroll,
+    collapsedDetailViewportRows,
+    collapsedDetailVisible,
+    collapsedDetailSelectedId,
     inspectRawMaxScroll,
     inspectRawViewportRows,
     inspectRawLines,
@@ -250,6 +288,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     taskFocusMode,
     taskFocusLaneId,
     taskFocusLaneLabel,
+    taskActionsEnabled,
     taskScroll,
     taskMaxScroll,
     taskRows,
@@ -258,6 +297,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     taskSearchQuery,
     taskStatusFilter,
     taskLaneFilter,
+    taskLaneFilterLabel,
     taskGroupMode,
     taskCollapsedGroupKeys,
     selectedTaskIndex,
@@ -265,6 +305,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
     selectedTask,
     taskGroups,
     taskNotice,
+    taskActionNotice,
     taskTailLines,
     taskTailPath,
     formatCtreeSummary,
@@ -292,6 +333,9 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         .map((line: unknown) => (typeof line === "string" ? line : String(line ?? "")))
         .filter((line: string) => line.length > 0)
     : []
+  const compactTaskFocusOverlay = rowCount <= 26
+  const taskFocusTailVisibleLimit = compactTaskFocusOverlay ? 0 : Math.max(3, Math.min(8, Math.floor(rowCount * 0.2)))
+  const compactTaskboardOverlay = rowCount <= 26
 
   const confirmModal = buildConfirmModal(confirmState, PANEL_WIDTH)
   if (confirmModal) modalStack.push(confirmModal)
@@ -313,29 +357,35 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
       render: () => {
         const sheetMode = isBreadboardProfile
         const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
-        const titleLines: SelectPanelLine[] = [{ text: "Command palette", color: COLORS.info }]
-        const hintLines: SelectPanelLine[] = [
-          {
-            text: `Search: ${paletteState.query.length > 0 ? paletteState.query : CHALK.dim("<type to filter>")}`,
-            color: "dim",
-          },
-        ]
-        const rows: SelectPanelRow[] = []
-        if (paletteItems.length === 0) {
-          rows.push({ kind: "empty", text: "No commands match.", color: "dim" })
-        } else {
-          paletteItems.slice(0, MAX_VISIBLE_MODELS).forEach((item: SlashCommandInfo, idx: number) => {
-            const isActive = idx === Math.min(paletteState.index, paletteItems.length - 1)
-            const label = `/${item.name}${item.usage ? ` ${item.usage}` : ""} — ${item.summary}`
-            rows.push({
-              kind: "item",
-              text: `${isActive ? "›" : " "} ${label}`,
-              isActive,
-              activeColor: COLORS.selectionFg,
-              activeBackground: COLORS.info,
-            })
-          })
+        const pickerModel: PickerModel = {
+          id: "command-palette",
+          title: "Command palette",
+          query: paletteState.query,
+          index: paletteState.index,
+          rows:
+            paletteItems.length === 0
+              ? [{ id: "empty", kind: "empty", label: "No commands match." }]
+              : paletteItems.map((item: SlashCommandInfo) => ({
+                  id: item.name,
+                  label: `/${item.name}${item.usage ? ` ${item.usage}` : ""}`,
+                  description: item.summary,
+                  disabled: item.availability != null && item.availability !== "available",
+                  disabledReason: item.disabledReason,
+                  tags: item.category ? [item.category] : [],
+                })),
         }
+        const pickerLayout = {
+          ...resolvePickerLayout({ width: panelWidth, rows: rowCount }, { detailPane: false }),
+          visibleRows: MAX_VISIBLE_MODELS,
+        }
+        const projection = buildPickerPanelProjection({
+          model: pickerModel,
+          window: buildPickerWindow(pickerModel, pickerLayout),
+          layout: pickerLayout,
+          activeColor: COLORS.selectionFg,
+          activeBackground: COLORS.info,
+          titleColor: COLORS.info,
+        })
         return (
           <SelectPanel
             width={panelWidth}
@@ -344,23 +394,26 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             paddingY={1}
             alignSelf={sheetMode ? "flex-start" : "center"}
             marginTop={sheetMode ? 0 : 2}
-            titleLines={titleLines}
-            hintLines={hintLines}
-            rows={rows}
+            titleLines={projection.titleLines}
+            hintLines={projection.hintLines}
+            rows={projection.rows}
+            footerLines={projection.footerLines}
           />
         )
       },
     })
   }
 
-  if (modelMenu.status !== "hidden") {
+  if (modelMenu.status !== "hidden" && !(scrollbackMode && modelMenu.status === "loading")) {
     modalStack.push({
       id: "model-picker",
       layout: isBreadboardProfile ? "sheet" : undefined,
+      estimatedRows: modelMenuCompact ? 11 : 16,
       render: () => {
         const sheetMode = isBreadboardProfile
-        const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
+        const panelWidth = Math.max(40, Math.min(sheetMode ? columnWidth : PANEL_WIDTH, 60))
         const panelInnerWidth = Math.max(0, panelWidth - 4)
+        const compactModelPanel = modelMenuCompact || panelWidth <= 70
         const titleLines: SelectPanelLine[] = []
         const hintLines: SelectPanelLine[] = []
         const rows: SelectPanelRow[] = []
@@ -371,7 +424,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         } else if (modelMenu.status === "error") {
           rows.push({ kind: "empty", text: modelMenu.message, color: "red" })
         } else if (modelMenu.status === "ready") {
-          if (claudeChrome) {
+          if (claudeChrome && !compactModelPanel) {
             titleLines.push({ text: clearToEnd(" ") })
             titleLines.push({
               text: clearToEnd(formatCell("Select model — Switch between models.", panelInnerWidth, "left")),
@@ -397,50 +450,75 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             })
           } else {
             titleLines.push({
-              text: modelMenuCompact ? "Select a model" : "Select a model (Enter to confirm, Esc to cancel)",
+              text: compactModelPanel ? "Models" : "Select a model (Enter to confirm, Esc to cancel)",
               color: "green",
             })
-            hintLines.push({
-              text: `Search: ${modelSearch.length > 0 ? modelSearch : CHALK.dim("<type to filter>")}`,
-              color: "dim",
-            })
-            hintLines.push({
-              text: `Provider: ${modelProviderLabel}${modelProviderFilter ? " (←/→ change · Backspace clear)" : " (←/→ filter)"}`,
-              color: "dim",
-            })
-            if (!modelMenuCompact) {
+            if (compactModelPanel) {
+              hintLines.push({
+                text: `${modelSearch.length > 0 ? `Search: ${modelSearch}` : "Type to filter"} · ${modelProviderLabel} · Enter select · Esc close`,
+                color: "dim",
+              })
+            } else {
+              hintLines.push({
+                text: `Search: ${modelSearch.length > 0 ? modelSearch : CHALK.dim("<type to filter>")}`,
+                color: "dim",
+              })
+              hintLines.push({
+                text: `Provider: ${modelProviderLabel}${modelProviderFilter ? " (←/→ change · Backspace clear)" : " (←/→ filter)"}`,
+                color: "dim",
+              })
               hintLines.push({ text: `Current: ${CHALK.cyan(stats.model)}`, color: "dim" })
-            }
-            hintLines.push({
-              text: modelMenuCompact
-                ? "Nav: ↑/↓ PgUp/PgDn • Enter confirm • Esc cancel"
-                : "Navigate: ↑/↓ or Tab • Shift+Tab up • PgUp/PgDn page • Legend: ● current · ★ default",
-              color: "dim",
-            })
-            if (modelMenuCompact) {
-              hintLines.push({ text: "Legend: ● current · ★ default", color: "dim" })
+              hintLines.push({
+                text: "Navigate: ↑/↓ or Tab • Shift+Tab up • PgUp/PgDn page • Legend: ● current · ★ default",
+                color: "dim",
+              })
             }
           }
 
           if (filteredModels.length === 0) {
             rows.push({ kind: "empty", text: "No models match.", color: "dim" })
+          } else if (compactModelPanel) {
+            visibleModelRows.forEach((row: any) => {
+              if (row.kind === "header") return
+              const isActive = row.index === modelIndex
+              const rowText = formatModelRowText(row.item)
+              rows.push(
+                pickerRowToSelectPanelRow({
+                  row: { id: row.item.value ?? String(row.index), label: rowText },
+                  active: isActive,
+                  layout: resolvePickerLayout({ width: panelWidth, rows: rowCount }, { detailPane: false }),
+                  activeColor: COLORS.selectionFg,
+                  activeBackground: COLORS.info,
+                }),
+              )
+            })
           } else {
             rows.push({ kind: "header", text: modelMenuHeaderText, color: "gray" })
             visibleModelRows.forEach((row: any, idx: number) => {
               if (row.kind === "header") {
                 const countSuffix = row.count != null ? ` (${row.count})` : ""
-                rows.push({ kind: "header", text: `${row.label}${countSuffix}`, color: "dim" })
+                rows.push(
+                  pickerRowToSelectPanelRow({
+                    row: { id: `provider-${idx}`, kind: "header", label: `${row.label}${countSuffix}` },
+                    active: false,
+                    layout: resolvePickerLayout({ width: panelWidth, rows: rowCount }, { detailPane: false }),
+                    activeColor: COLORS.selectionFg,
+                    activeBackground: COLORS.info,
+                  }),
+                )
                 return
               }
               const isActive = row.index === modelIndex
               const rowText = formatModelRowText(row.item)
-              rows.push({
-                kind: "item",
-                text: `${isActive ? "› " : "  "}${rowText}`,
-                isActive,
-                activeColor: COLORS.selectionFg,
-                activeBackground: COLORS.info,
-              })
+              rows.push(
+                pickerRowToSelectPanelRow({
+                  row: { id: row.item.value ?? String(row.index), label: rowText },
+                  active: isActive,
+                  layout: resolvePickerLayout({ width: panelWidth, rows: rowCount }, { detailPane: false }),
+                  activeColor: COLORS.selectionFg,
+                  activeBackground: COLORS.info,
+                }),
+              )
             })
           }
 
@@ -453,17 +531,19 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         }
 
         return (
-          <SelectPanel
+            <SelectPanel
             width={panelWidth}
             borderColor={COLORS.info}
             paddingX={2}
-            paddingY={1}
-            alignSelf={sheetMode ? "flex-start" : "center"}
-            marginTop={sheetMode ? 0 : 2}
+            paddingY={compactModelPanel ? 0 : 1}
+            alignSelf="flex-start"
+            marginTop={compactModelPanel || sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={rows}
             footerLines={footerLines}
+            rowsMarginTop={compactModelPanel ? 0 : 1}
+            footerMarginTop={compactModelPanel ? 0 : 1}
           />
         )
       },
@@ -636,6 +716,102 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           })
         }
 
+        return (
+          <SelectPanel
+            width={panelWidth}
+            borderColor={COLORS.info}
+            paddingX={2}
+            paddingY={1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={rows}
+            footerLines={footerLines}
+          />
+        )
+      },
+    })
+  }
+
+  if (recentSessionsOpen) {
+    modalStack.push({
+      id: "recent-sessions",
+      layout: isBreadboardProfile ? "sheet" : undefined,
+      render: () => {
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : PANEL_WIDTH
+        const titleLines: SelectPanelLine[] = [{ text: CHALK.bold("Recent sessions"), color: COLORS.info }]
+        const hintLines: SelectPanelLine[] = [
+          {
+            text:
+              recentSessionsRows.length === 0
+                ? "Enter attach • R refresh • Esc close"
+                : `↑/↓ select • PgUp/PgDn page • Enter attach • R refresh • Esc close`,
+            color: "gray",
+          },
+          {
+            text:
+              recentSessionsStatus === "loading"
+                ? "Loading recent sessions..."
+                : recentSessionsError
+                  ? `Error: ${recentSessionsError}`
+                  : `${recentSessionsRows.length} session${recentSessionsRows.length === 1 ? "" : "s"} • lines ${recentSessionsScroll + 1}-${Math.min(recentSessionsScroll + recentSessionsViewportRows, Math.max(recentSessionsRows.length, 1))}`,
+            color: recentSessionsError ? COLORS.error : "dim",
+          },
+        ]
+        const rows: SelectPanelRow[] = []
+        const footerLines: SelectPanelLine[] = []
+        if (recentSessionsStatus === "loading") {
+          rows.push({ kind: "empty", text: "Loading sessions…", color: "cyan" })
+        } else if (recentSessionsError) {
+          rows.push({ kind: "empty", text: recentSessionsError, color: "red" })
+        } else if (recentSessionsRows.length === 0) {
+          rows.push({ kind: "empty", text: "No recent sessions available.", color: "dim" })
+        } else {
+          const pickerRows = recentSessionsVisible.map((row: any) => {
+            const metaParts = [
+              row.status,
+              row.model ? `model ${row.model}` : null,
+              row.lastActivityAt ? formatIsoTimestamp(row.lastActivityAt) : null,
+            ].filter(Boolean)
+            return {
+              id: row.sessionId,
+              label: `${row.sessionId}${row.source === "cache" ? " [cache]" : ""}`,
+              description: metaParts.join(" · ") || row.createdAt,
+              tags: row.source === "cache" ? ["cache"] : [],
+            }
+          })
+          const localIndex = Math.max(0, Math.min(recentSessionsIndex - recentSessionsScroll, Math.max(0, pickerRows.length - 1)))
+          const pickerModel: PickerModel = {
+            id: "recent-sessions",
+            title: "Recent sessions",
+            rows: pickerRows,
+            index: localIndex,
+          }
+          const pickerLayout = {
+            ...resolvePickerLayout({ width: panelWidth, rows: rowCount }, { detailPane: false }),
+            visibleRows: recentSessionsViewportRows,
+          }
+          const projection = buildPickerPanelProjection({
+            model: pickerModel,
+            window: {
+              rows: pickerRows,
+              index: localIndex,
+              offset: recentSessionsScroll,
+              total: recentSessionsRows.length,
+              activeRow: pickerRows[localIndex] ?? null,
+            },
+            layout: pickerLayout,
+            activeColor: COLORS.selectionFg,
+            activeBackground: COLORS.info,
+            titleColor: COLORS.info,
+          })
+          rows.push(...projection.rows)
+        }
+        if (recentSessionsAttachingId) {
+          footerLines.push({ text: `Attaching ${recentSessionsAttachingId}...`, color: "dim" })
+        }
         return (
           <SelectPanel
             width={panelWidth}
@@ -1020,7 +1196,10 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         const sheetMode = isBreadboardProfile
         const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
         const scroll = Math.max(0, Math.min(taskScroll, taskMaxScroll))
-        const visible = taskRows.slice(scroll, scroll + taskViewportRows)
+        const taskboardVisibleLimit = compactTaskboardOverlay
+          ? Math.max(3, Math.min(5, taskViewportRows))
+          : taskViewportRows
+        const visible = taskRows.slice(scroll, scroll + taskboardVisibleLimit)
         const colorForStatus = (status?: string) => {
           switch (normalizeTaskStatusGroup(status)) {
             case "running":
@@ -1047,7 +1226,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
                 ? "No background tasks yet."
                 : swapActive
                   ? `${tasks.length} task${tasks.length === 1 ? "" : "s"} • swap lane: ${taskFocusLaneLabel ?? taskFocusLaneId ?? "unknown"} • ↑/↓ select • ←/→ or [/] lane • Enter tail • Tab ${taskFocusRawMode ? "snippet" : "raw"} • L load more • P ${taskFocusFollowTail ? "pause" : "follow"} • F/Esc return`
-                  : `${tasks.length} task${tasks.length === 1 ? "" : "s"} • ↑/↓ select • PgUp/PgDn page • F ${taskFocusMode === "swap" ? "swap lane" : "focus lane"} • Enter tail • Esc close`,
+                  : `${tasks.length} task${tasks.length === 1 ? "" : "s"} • ↑/↓ select • PgUp/PgDn page • F ${taskFocusMode === "swap" ? "swap lane" : "focus lane"} for controls • Enter tail • Esc close`,
             color: "gray",
           },
           {
@@ -1059,7 +1238,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           {
             text: swapActive
               ? "Experimental swap mode isolates a single lane in-taskboard."
-              : `Group: ${taskGroupMode} (G toggle) • Lane: ${taskLaneFilter} (L cycle) • C collapse selected group • E expand all`,
+              : `Group: ${taskGroupMode} (G toggle) • Lane: ${taskLaneFilterLabel} (L cycle) • C collapse selected group • E expand all`,
             color: "dim",
           },
         ]
@@ -1141,10 +1320,10 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
               activeBackground: COLORS.info,
             })
           })
-          if (taskRows.length > taskViewportRows) {
+          if (taskRows.length > taskboardVisibleLimit) {
             panelRows.push({
               kind: "header",
-              text: `${scroll + 1}-${Math.min(scroll + taskViewportRows, taskRows.length)} of ${taskRows.length}`,
+              text: `${scroll + 1}-${Math.min(scroll + taskboardVisibleLimit, taskRows.length)} of ${taskRows.length}`,
               color: "dim",
             })
           }
@@ -1162,6 +1341,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
               color: "dim",
             })
           }
+          footerLines.push({ text: `Inspector tabs: ${formatTaskInspectorTabsLine(selectedTask)}`, color: "dim" })
           if (Array.isArray(selectedTask.steps) && selectedTask.steps.length > 0) {
             footerLines.push({ text: "Checklist:", color: "dim" })
             const visibleSteps = selectedTask.steps.slice(-12)
@@ -1208,34 +1388,44 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           if (selectedTaskRow?.groupLabel) {
             footerLines.push({ text: `Group: ${selectedTaskRow.groupLabel}`, color: "dim" })
           }
+          footerLines.push({ text: "Task controls live in Task Focus: F then X cancel · Y retry · U pause/resume · M merge", color: "dim" })
+          footerLines.push({
+            text: taskActionsEnabled
+              ? "Mutation: engine-backed task controls enabled."
+              : "Mutation: unavailable until engine task-control endpoints exist.",
+            color: "dim",
+          })
           footerLines.push({ text: "Enter: load output tail.", color: "dim" })
         }
         const ctreeSummary = formatCtreeSummary(selectedTask?.ctreeSnapshot ?? ctreeSnapshot ?? null)
         if (ctreeSummary) {
           footerLines.push({ text: ctreeSummary, color: "dim" })
         }
-        if (taskNotice) {
-          const safeTaskNotice = sanitizeTaskPreview(taskNotice, 240)
-          if (safeTaskNotice) {
-            footerLines.push({ text: safeTaskNotice, color: "dim" })
-          }
-        }
-        if (normalizedTaskTailLines.length > 0) {
-          footerLines.push({ text: taskTailPath ? `Tail: ${taskTailPath}` : "Tail output", color: "dim" })
-          normalizedTaskTailLines.forEach((line: string) => footerLines.push({ text: line, color: "dim" }))
-        }
+        const visiblePanelRows = compactTaskboardOverlay ? panelRows.slice(0, 8) : panelRows
+        const visibleFooterLines = compactTaskboardOverlay
+          ? footerLines.filter((line) =>
+              line.text.startsWith("ID:") ||
+              line.text.startsWith("Artifact:") ||
+              line.text.startsWith("Error:") ||
+              line.text.startsWith("Inspector tabs:") ||
+              line.text.startsWith("Task controls") ||
+              line.text.startsWith("Mutation:"),
+            ).slice(0, 4)
+          : footerLines
         return (
           <SelectPanel
             width={panelWidth}
             borderColor={COLORS.info}
             paddingX={2}
-            paddingY={1}
+            paddingY={compactTaskboardOverlay ? 0 : 1}
             alignSelf={sheetMode ? "flex-start" : "center"}
-            marginTop={sheetMode ? 0 : 2}
+            marginTop={sheetMode || compactTaskboardOverlay ? 0 : 2}
             titleLines={titleLines}
-            hintLines={hintLines}
-            rows={panelRows}
-            footerLines={footerLines}
+            hintLines={compactTaskboardOverlay ? hintLines.slice(0, 2) : hintLines}
+            rows={visiblePanelRows}
+            footerLines={visibleFooterLines}
+            rowsMarginTop={compactTaskboardOverlay ? 0 : 1}
+            footerMarginTop={compactTaskboardOverlay ? 0 : 1}
           />
         )
       },
@@ -1282,7 +1472,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         ]
         const hintLines: SelectPanelLine[] = [
           {
-            text: `${taskRows.length} in lane • ↑/↓ select • ←/→ or [/] lane • Enter tail • Tab ${taskFocusRawMode ? "snippet" : "raw"} • L load more • P ${taskFocusFollowTail ? "pause" : "follow"} • R refresh • F/Esc return`,
+            text: `${taskRows.length} in lane • ↑/↓ select • ←/→ or [/] lane • Enter tail • Tab ${taskFocusRawMode ? "snippet" : "raw"} • L load more • P ${taskFocusFollowTail ? "pause" : "follow"} • R refresh • O export • F/Esc return`,
             color: "gray",
           },
           {
@@ -1339,12 +1529,45 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
               color: "dim",
             })
           }
-          footerLines.push({ text: "Enter: load output tail.", color: "dim" })
+          footerLines.push({ text: `Inspector tabs: ${formatTaskInspectorTabsLine(selectedTask)}`, color: "dim" })
+          if (selectedTask.error) {
+            const safeError = sanitizeTaskPreview(selectedTask.error, 240)
+            if (safeError) {
+              footerLines.push({ text: `Error: ${safeError}`, color: COLORS.error })
+            }
+          }
+          if (normalizedTaskTailLines.length === 0) {
+            footerLines.push({ text: "Enter: load output tail.", color: "dim" })
+          }
+          footerLines.push({ text: "Task controls: X cancel · Y retry · U pause/resume · M merge", color: "dim" })
+          footerLines.push({ text: "Task log: O export selected task log", color: "dim" })
+          footerLines.push({
+            text: taskActionsEnabled
+              ? "Mutation: engine-backed task controls enabled."
+              : "Mutation: unavailable until engine task-control endpoints exist.",
+            color: "dim",
+          })
+        }
+        if (taskActionNotice) {
+          footerLines.push({ text: taskActionNotice, color: COLORS.warning })
+          if (!taskActionsEnabled) {
+            footerLines.push({ text: "Reason: engine task mutation endpoint is not exposed yet.", color: "dim" })
+          }
         }
         if (taskNotice) footerLines.push({ text: taskNotice, color: "dim" })
-        if (normalizedTaskTailLines.length > 0) {
+        if (normalizedTaskTailLines.length > 0 && taskFocusTailVisibleLimit <= 0) {
+          footerLines.push({ text: "Tail loaded; output hidden to fit terminal height.", color: "dim" })
+        } else if (normalizedTaskTailLines.length > 0) {
+          const visibleTailLines = normalizedTaskTailLines.slice(-taskFocusTailVisibleLimit)
+          const hiddenTailLines = normalizedTaskTailLines.length - visibleTailLines.length
           footerLines.push({ text: taskTailPath ? `Tail: ${taskTailPath}` : "Tail output", color: "dim" })
-          normalizedTaskTailLines.forEach((line: string) => footerLines.push({ text: line, color: "dim" }))
+          if (hiddenTailLines > 0) {
+            footerLines.push({
+              text: `…${hiddenTailLines} earlier tail line${hiddenTailLines === 1 ? "" : "s"} hidden`,
+              color: "dim",
+            })
+          }
+          visibleTailLines.forEach((line: string) => footerLines.push({ text: line, color: "dim" }))
         }
 
         return (
@@ -1352,9 +1575,9 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
             width={panelWidth}
             borderColor={COLORS.info}
             paddingX={2}
-            paddingY={1}
+            paddingY={compactTaskFocusOverlay ? 0 : 1}
             alignSelf={sheetMode ? "flex-start" : "center"}
-            marginTop={sheetMode ? 0 : 2}
+            marginTop={sheetMode || compactTaskFocusOverlay ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={panelRows}
@@ -1388,12 +1611,32 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
 
         const scopeLabel = (scope: PermissionRuleScope, label: string) =>
           permissionScope === scope ? CHALK.bold.cyan(label) : CHALK.gray(label)
+        const provenanceValue = (value: unknown, fallback = "not provided") => {
+          const text = typeof value === "string" ? value.trim() : ""
+          return text.length > 0 ? text : CHALK.dim(fallback)
+        }
+        const agentLabel =
+          typeof permissionRequest.agentLabel === "string" && permissionRequest.agentLabel.trim().length > 0
+            ? permissionRequest.agentLabel.trim()
+            : permissionRequest.agentId
+        const taskLabel =
+          typeof permissionRequest.taskLabel === "string" && permissionRequest.taskLabel.trim().length > 0
+            ? permissionRequest.taskLabel.trim()
+            : permissionRequest.taskId
+        const effectiveScope = permissionRequest.effectiveScope ?? permissionRequest.defaultScope
 
         const titleLines: SelectPanelLine[] = [
           { text: `${CHALK.bold("Permission required")} ${CHALK.dim(`(${permissionRequest.tool})`)}`, color: COLORS.warning },
         ]
         const hintLines: SelectPanelLine[] = [
-          { text: `${permissionRequest.kind} • ${rewindableText}${queueText}`, color: "dim" },
+          {
+            text: `${permissionRequest.kind} • scope ${effectiveScope} • ${rewindableText}${queueText}`,
+            color: "dim",
+          },
+          {
+            text: `mode launch ${provenanceValue(permissionRequest.launchPermissionMode, "unknown")} • engine ${provenanceValue(permissionRequest.enginePermissionMode, "not reported")}`,
+            color: "dim",
+          },
           { text: tabLine },
         ]
         const rows: SelectPanelRow[] = []
@@ -1401,6 +1644,12 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
 
         if (permissionTab === "summary") {
           rows.push({ kind: "item", text: permissionRequest.summary, wrap: "wrap" })
+          rows.push({ kind: "header", text: `Tool: ${permissionRequest.tool}`, color: "gray" })
+          rows.push({ kind: "header", text: `Cwd: ${provenanceValue(permissionRequest.cwd)}`, color: "gray" })
+          rows.push({ kind: "header", text: `Scope: ${effectiveScope}`, color: "gray" })
+          rows.push({ kind: "header", text: `Reason: ${provenanceValue(permissionRequest.reason)}`, color: "gray" })
+          rows.push({ kind: "header", text: `Agent: ${provenanceValue(agentLabel, "main session")}`, color: "gray" })
+          rows.push({ kind: "header", text: `Task: ${provenanceValue(taskLabel, "none reported")}`, color: "gray" })
           if (permissionDiffPreview) {
             rows.push({
               kind: "header",
@@ -1446,14 +1695,23 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
           rows.push({ kind: "header", text: `Default scope: ${permissionRequest.defaultScope}`, color: "gray" })
           rows.push({
             kind: "item",
-            text: `Scope: ${scopeLabel("project", "Project")} ${CHALK.dim("(fixed)")}`,
+            text: `Decision scope: ${scopeLabel("project", "Project")} ${CHALK.dim("(sent to engine)")}`,
           })
           rows.push({
             kind: "header",
             text: `Suggested rule: ${permissionRequest.ruleSuggestion ? CHALK.italic(permissionRequest.ruleSuggestion) : CHALK.dim("<none>")}`,
             color: "dim",
           })
-          rows.push({ kind: "header", text: "Press 2 or Shift+Tab to allow always (project scope).", color: "dim" })
+          rows.push({
+            kind: "header",
+            text: "2/Shift+Tab sends allow-always(project).",
+            color: "dim",
+          })
+          rows.push({
+            kind: "header",
+            text: "Stored policy is not claimed unless the engine reports it.",
+            color: "dim",
+          })
         }
 
         if (permissionTab === "note") {
@@ -1467,17 +1725,163 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         }
 
         footerLines.push({
-          text: "Tab switch panel • Enter allow once • Shift+Tab allow always (project) • 1 allow once • 2 allow always (project) • 3 feedback • d deny once • D deny always",
+          text: "Tab tabs • Enter/1 allow • 2 always • 3 note • d/D deny",
           color: "gray",
         })
         footerLines.push({ text: "Esc stop (deny)", color: COLORS.error })
+        const panelWidth = Math.max(40, Math.min(PANEL_WIDTH, columnWidth))
 
         return (
           <SelectPanel
-            width={PANEL_WIDTH}
+            width={panelWidth}
             borderColor={COLORS.accent}
             paddingX={2}
             paddingY={1}
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={rows}
+            footerLines={footerLines}
+          />
+        )
+      },
+    })
+  }
+
+  if (collapsedDetailOpen) {
+    modalStack.push({
+      id: "collapsed-detail",
+      layout: isBreadboardProfile ? "sheet" : undefined,
+      render: () => {
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
+        const titleLines: SelectPanelLine[] = [
+          { text: CHALK.bold("Message detail"), color: COLORS.info },
+          { text: collapsedDetailSelectedId ? `Entry ${collapsedDetailSelectedId}` : "No entry selected", color: "dim" },
+        ]
+        const hintLines: SelectPanelLine[] = [
+          { text: "↑/↓ scroll • PgUp/PgDn page • Home top • End tail • Esc close", color: "gray" },
+          {
+            text:
+              collapsedDetailVisible.length > 0
+                ? `Lines ${collapsedDetailScroll + 1}-${Math.min(collapsedDetailScroll + collapsedDetailViewportRows, collapsedDetailVisible.length + collapsedDetailScroll)}`
+                : "No detail lines available.",
+            color: "dim",
+          },
+        ]
+        const rows: SelectPanelRow[] =
+          collapsedDetailVisible.length > 0
+            ? collapsedDetailVisible.map((line: string) => ({ kind: "item", text: line || " ", wrap: "wrap" }))
+            : [{ kind: "empty", text: "No detail lines available.", color: "dim" }]
+        const footerLines: SelectPanelLine[] = [
+          { text: `Max scroll ${collapsedDetailMaxScroll}`, color: "dim" },
+        ]
+        return (
+          <SelectPanel
+            width={panelWidth}
+            borderColor={COLORS.info}
+            paddingX={2}
+            paddingY={1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={rows}
+            footerLines={footerLines}
+          />
+        )
+      },
+    })
+  }
+
+  if (resultDetailOpen) {
+    modalStack.push({
+      id: "result-detail",
+      layout: isBreadboardProfile ? "sheet" : undefined,
+      render: () => {
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
+        const titleLines: SelectPanelLine[] = [
+          { text: CHALK.bold("Result detail"), color: COLORS.info },
+          { text: resultDetailSelectedTitle ? resultDetailSelectedTitle : "No result selected", color: "dim" },
+        ]
+        const hintLines: SelectPanelLine[] = [
+          {
+            text: resultDetailArtifactPath
+              ? "↑/↓ scroll • PgUp/PgDn page • Home top • End tail • Enter artifact • j source • Esc close"
+              : "↑/↓ scroll • PgUp/PgDn page • Home top • End tail • j source • Esc close",
+            color: "gray",
+          },
+          {
+            text:
+              resultDetailVisible.length > 0
+                ? `Lines ${resultDetailScroll + 1}-${Math.min(resultDetailScroll + resultDetailViewportRows, resultDetailVisible.length + resultDetailScroll)}`
+                : "No detail lines available.",
+            color: "dim",
+          },
+        ]
+        const rows: SelectPanelRow[] =
+          resultDetailVisible.length > 0
+            ? resultDetailVisible.map((line: string) => ({ kind: "item", text: line || " ", wrap: "wrap" }))
+            : [{ kind: "empty", text: "No detail lines available.", color: "dim" }]
+        const footerLines: SelectPanelLine[] = [
+          { text: resultDetailArtifactPath ? `Artifact: ${resultDetailArtifactPath}` : "No artifact preview available.", color: "dim" },
+        ]
+        return (
+          <SelectPanel
+            width={panelWidth}
+            borderColor={COLORS.info}
+            paddingX={2}
+            paddingY={1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
+            titleLines={titleLines}
+            hintLines={hintLines}
+            rows={rows}
+            footerLines={footerLines}
+          />
+        )
+      },
+    })
+  }
+
+  if (artifactPreviewOpen) {
+    modalStack.push({
+      id: "artifact-preview",
+      layout: isBreadboardProfile ? "sheet" : undefined,
+      render: () => {
+        const sheetMode = isBreadboardProfile
+        const panelWidth = sheetMode ? columnWidth : Math.min(PANEL_WIDTH, contentWidth + 2)
+        const titleLines: SelectPanelLine[] = [
+          { text: CHALK.bold("Artifact preview"), color: COLORS.info },
+          { text: artifactPreviewPath ? artifactPreviewPath : "No artifact selected", color: "dim" },
+        ]
+        const hintLines: SelectPanelLine[] = [
+          { text: "↑/↓ scroll • PgUp/PgDn page • Home top • End tail • j source • Esc close", color: "gray" },
+          {
+            text:
+              artifactPreviewVisible.length > 0
+                ? `Lines ${artifactPreviewScroll + 1}-${Math.min(artifactPreviewScroll + artifactPreviewViewportRows, artifactPreviewVisible.length + artifactPreviewScroll)}`
+                : "No artifact preview lines available.",
+            color: "dim",
+          },
+        ]
+        const rows: SelectPanelRow[] =
+          artifactPreviewVisible.length > 0
+            ? artifactPreviewVisible.map((line: string) => ({ kind: "item", text: line || " ", wrap: "wrap" }))
+            : [{ kind: "empty", text: "No artifact preview lines available.", color: "dim" }]
+        const footerLines: SelectPanelLine[] = []
+        if (artifactPreviewNotice) {
+          footerLines.push({ text: artifactPreviewNotice, color: "dim" })
+        }
+        footerLines.push({ text: `Max scroll ${artifactPreviewMaxScroll}`, color: "dim" })
+        return (
+          <SelectPanel
+            width={panelWidth}
+            borderColor={COLORS.info}
+            paddingX={2}
+            paddingY={1}
+            alignSelf={sheetMode ? "flex-start" : "center"}
+            marginTop={sheetMode ? 0 : 2}
             titleLines={titleLines}
             hintLines={hintLines}
             rows={rows}

@@ -31,6 +31,7 @@ describe("overlay contracts", () => {
       taskStatusFilter: "all",
       taskGroupMode: "status",
       taskLaneFilter: "all",
+      taskLaneFilterLabel: "all",
       statusSummary: "Status: run 1 • done 2 • failed 0 • blocked 0 • pending 5",
       taskFocusMode: "focus",
     })
@@ -54,6 +55,7 @@ describe("overlay contracts", () => {
       taskStatusFilter: "running",
       taskGroupMode: "lane",
       taskLaneFilter: "primary",
+      taskLaneFilterLabel: "primary",
       statusSummary: "Status: run 2 • done 1 • failed 0 • blocked 0 • pending 0",
       taskFocusMode: "swap",
     })
@@ -62,4 +64,3 @@ describe("overlay contracts", () => {
     expect(contract.hintLines[2]?.text).toContain("Lane switch")
   })
 })
-

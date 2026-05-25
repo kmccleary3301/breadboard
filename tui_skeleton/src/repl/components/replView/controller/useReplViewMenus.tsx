@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useRef } from "react"
 import path from "node:path"
 import { promises as fs } from "node:fs"
 import { scoreFuzzyMatch } from "../../../fileRanking.js"
+import { writeRenderTimelineDebugRecord } from "./qcDebugLog.js"
 
 type MenusContext = Record<string, any>
 
@@ -52,6 +53,7 @@ export const useReplViewMenus = (context: MenusContext) => {
     setTaskIndex,
     setTaskScroll,
     setTaskNotice,
+    setTaskActionNotice,
     setTaskSearchQuery,
     setTaskStatusFilter,
     setTaskLaneFilter,
@@ -60,6 +62,7 @@ export const useReplViewMenus = (context: MenusContext) => {
     setTaskTailLines,
     setTaskTailPath,
     setTaskFocusLaneId,
+    taskFocusViewOpen,
     setTaskFocusViewOpen,
     setTaskFocusFollowTail,
     setTaskFocusRawMode,
@@ -91,6 +94,9 @@ export const useReplViewMenus = (context: MenusContext) => {
     DOUBLE_CTRL_C_WINDOW_MS,
     stdout,
     transcriptViewerOpen,
+    transcriptViewerScroll,
+    transcriptViewerFollowTail,
+    setTranscriptViewerRawMode,
     setTranscriptViewerOpen,
     setTranscriptViewerFollowTail,
     setTranscriptViewerScroll,
@@ -99,8 +105,14 @@ export const useReplViewMenus = (context: MenusContext) => {
     setTranscriptSearchIndex,
     setTranscriptExportNotice,
     transcriptViewerLines,
+    transcriptViewerExportLines,
     pushCommandResult,
+    liveShellOwnershipMode = "inline-scrollback",
+    liveShellRendererHost = "ink-managed",
   } = context
+  const previousTasksOpenRef = useRef(Boolean(tasksOpen))
+
+  const managedOwnedAltBuffer = liveShellOwnershipMode === "owned-live" && liveShellRendererHost === "escalated-owned"
 
   const safeSetSkillsSearch = useCallback(
     (value: string) => {
@@ -116,6 +128,16 @@ export const useReplViewMenus = (context: MenusContext) => {
     () => (skillsMenu.status === "ready" ? skillsMenu.selection : null),
     [skillsMenu],
   )
+  const lastTranscriptViewerStateRef = useMemo(
+    () => ({ current: null as null | { scroll: number; followTail: boolean } }),
+    [],
+  )
+  const transcriptViewerOpenRef = useRef(false)
+  const transcriptViewerInputQuarantineUntilRef = useRef(0)
+
+  useEffect(() => {
+    transcriptViewerOpenRef.current = Boolean(transcriptViewerOpen)
+  }, [transcriptViewerOpen])
   const skillsSources = useMemo(
     () => (skillsMenu.status === "ready" ? skillsMenu.sources ?? null : null),
     [skillsMenu],
@@ -319,7 +341,15 @@ export const useReplViewMenus = (context: MenusContext) => {
     } else {
       const scored = new Map<string, Array<{ item: any; score: number }>>()
       for (const item of base) {
-        const candidate = `${item.provider} ${item.label} ${item.value}`
+        const candidate = [
+          item.provider,
+          item.label,
+          item.value,
+          item.detail,
+          item.isCurrent ? "current active selected" : "",
+          item.isDefault ? "default" : "",
+          ...(Array.isArray(item.aliases) ? item.aliases : []),
+        ].join(" ")
         const score = scoreFuzzyMatch(candidate, query)
         if (score == null) continue
         const key = normalizeProviderKey(item.provider)
@@ -464,10 +494,15 @@ export const useReplViewMenus = (context: MenusContext) => {
   }, [permissionNote, permissionNoteRef])
 
   useEffect(() => {
+    const wasOpen = previousTasksOpenRef.current
+    previousTasksOpenRef.current = Boolean(tasksOpen)
     if (!tasksOpen) return
+    if (wasOpen) return
+    if (taskFocusViewOpen) return
     setTaskIndex(0)
     setTaskScroll(0)
     setTaskNotice(null)
+    setTaskActionNotice(null)
     setTaskTailLines([])
     setTaskTailPath(null)
     setTaskFocusLaneId(null)
@@ -475,7 +510,7 @@ export const useReplViewMenus = (context: MenusContext) => {
     setTaskFocusFollowTail(true)
     setTaskFocusRawMode(false)
     setTaskFocusTailLines(taskFocusDefaultTailLines)
-  }, [taskFocusDefaultTailLines, tasksOpen, setTaskFocusFollowTail, setTaskFocusLaneId, setTaskFocusRawMode, setTaskFocusTailLines, setTaskFocusViewOpen, setTaskIndex, setTaskNotice, setTaskScroll, setTaskTailLines, setTaskTailPath])
+  }, [taskFocusDefaultTailLines, taskFocusViewOpen, tasksOpen, setTaskFocusFollowTail, setTaskFocusLaneId, setTaskFocusRawMode, setTaskFocusTailLines, setTaskFocusViewOpen, setTaskIndex, setTaskNotice, setTaskActionNotice, setTaskScroll, setTaskTailLines, setTaskTailPath])
 
   useEffect(() => {
     if (tasksOpen) return
@@ -546,37 +581,53 @@ export const useReplViewMenus = (context: MenusContext) => {
       try {
         stdout.write("[?1006l")
         stdout.write("[?1000l")
-        stdout.write("[?1049l")
+        if (!managedOwnedAltBuffer) {
+          stdout.write("[?1049l")
+        }
       } catch {
         // ignore
       }
     }
-  }, [stdout, transcriptViewerOpen])
+  }, [managedOwnedAltBuffer, stdout, transcriptViewerOpen])
 
-  const enterTranscriptViewer = useCallback(() => {
-    if (transcriptViewerOpen) return
+  const enterTranscriptViewer = useCallback((options?: { raw?: boolean }) => {
+    setTranscriptViewerRawMode?.(options?.raw === true)
+    if (transcriptViewerOpenRef.current) return
+    transcriptViewerOpenRef.current = true
+    transcriptViewerInputQuarantineUntilRef.current = Date.now() + 300
     setCtrlCPrimedAt(null)
     setEscPrimedAt(null)
-    setTranscriptViewerFollowTail(true)
-    setTranscriptViewerScroll(0)
+    const remembered = lastTranscriptViewerStateRef.current
+    if (remembered) {
+      setTranscriptViewerFollowTail(remembered.followTail)
+      setTranscriptViewerScroll(remembered.scroll)
+    } else {
+      setTranscriptViewerFollowTail(true)
+      setTranscriptViewerScroll(0)
+    }
     setTranscriptSearchOpen(false)
     setTranscriptSearchQuery("")
     setTranscriptSearchIndex(0)
     if (stdout?.isTTY) {
       try {
-        stdout.write("[?1049h")
-        stdout.write("[H[2J")
+        if (!managedOwnedAltBuffer) {
+          stdout.write("[?1049h")
+          stdout.write("[H[2J")
+        }
         stdout.write("[?1000h")
         stdout.write("[?1006h")
       } catch {
         // ignore
       }
     }
+    writeRenderTimelineDebugRecord({ event: "transcript_viewer_enter", sessionId, managedOwnedAltBuffer, transcriptViewerOpen: true })
     setTranscriptViewerOpen(true)
     setTranscriptExportNotice(null)
   }, [
+    lastTranscriptViewerStateRef,
     setCtrlCPrimedAt,
     setEscPrimedAt,
+    setTranscriptViewerRawMode,
     setTranscriptExportNotice,
     setTranscriptSearchIndex,
     setTranscriptSearchOpen,
@@ -585,29 +636,40 @@ export const useReplViewMenus = (context: MenusContext) => {
     setTranscriptViewerOpen,
     setTranscriptViewerScroll,
     stdout,
-    transcriptViewerOpen,
+    managedOwnedAltBuffer,
+    transcriptViewerOpenRef,
   ])
 
   const exitTranscriptViewer = useCallback(() => {
-    if (!transcriptViewerOpen) return
+    transcriptViewerOpenRef.current = false
+    setTranscriptViewerRawMode?.(false)
+    lastTranscriptViewerStateRef.current = {
+      followTail: transcriptViewerFollowTail,
+      scroll: transcriptViewerScroll,
+    }
     if (stdout?.isTTY) {
       try {
         stdout.write("[?1006l")
         stdout.write("[?1000l")
-        stdout.write("[?1049l")
+        if (!managedOwnedAltBuffer) {
+          stdout.write("[?1049l")
+        }
       } catch {
         // ignore
       }
     }
+    writeRenderTimelineDebugRecord({ event: "transcript_viewer_exit", sessionId, managedOwnedAltBuffer, transcriptViewerOpen: false })
     setTranscriptViewerOpen(false)
-    setTranscriptViewerFollowTail(true)
-    setTranscriptViewerScroll(0)
+    setTranscriptViewerFollowTail(transcriptViewerFollowTail)
+    setTranscriptViewerScroll(transcriptViewerScroll)
     setTranscriptSearchOpen(false)
     setTranscriptSearchQuery("")
     setTranscriptSearchIndex(0)
     setTranscriptExportNotice(null)
     setEscPrimedAt(null)
   }, [
+    lastTranscriptViewerStateRef,
+    setTranscriptViewerRawMode,
     setEscPrimedAt,
     setTranscriptExportNotice,
     setTranscriptSearchIndex,
@@ -617,7 +679,11 @@ export const useReplViewMenus = (context: MenusContext) => {
     setTranscriptViewerOpen,
     setTranscriptViewerScroll,
     stdout,
+    managedOwnedAltBuffer,
+    transcriptViewerOpenRef,
+    transcriptViewerFollowTail,
     transcriptViewerOpen,
+    transcriptViewerScroll,
   ])
 
   const saveTranscriptExport = useCallback(async () => {
@@ -626,14 +692,16 @@ export const useReplViewMenus = (context: MenusContext) => {
       const dirPath = path.join(process.cwd(), "artifacts", "transcripts")
       await fs.mkdir(dirPath, { recursive: true })
       const filePath = path.join(dirPath, `transcript-${timestamp}.txt`)
-      await fs.writeFile(filePath, transcriptViewerLines.join("\n"), "utf8")
+      const lines = Array.isArray(transcriptViewerExportLines) && transcriptViewerExportLines.length > 0
+        ? transcriptViewerExportLines
+        : transcriptViewerLines
+      await fs.writeFile(filePath, lines.join("\n"), "utf8")
       setTranscriptExportNotice(`Saved to ${filePath}`)
-      pushCommandResult("Transcript saved", [filePath])
     } catch (error) {
       const message = (error as Error).message || String(error)
       pushCommandResult("Transcript export failed", [message])
     }
-  }, [pushCommandResult, transcriptViewerLines, setTranscriptExportNotice])
+  }, [pushCommandResult, transcriptViewerExportLines, transcriptViewerLines, setTranscriptExportNotice])
 
   return {
     skillsCatalog,
@@ -654,5 +722,6 @@ export const useReplViewMenus = (context: MenusContext) => {
     enterTranscriptViewer,
     exitTranscriptViewer,
     saveTranscriptExport,
+    transcriptViewerInputQuarantineUntilRef,
   }
 }

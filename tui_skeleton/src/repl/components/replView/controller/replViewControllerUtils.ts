@@ -213,3 +213,73 @@ export const resolveGreetingName = (): string => {
   const token = raw.split(/[._-]/)[0] ?? raw
   return token ? `${token[0]?.toUpperCase() ?? ""}${token.slice(1)}` : "there"
 }
+
+interface TranscriptViewerDetailLabelOptions {
+  readonly followTail: boolean
+  readonly lineCount: number
+  readonly effectiveScroll: number
+  readonly bodyRows: number
+  readonly searchOpen: boolean
+  readonly searchQuery: string
+  readonly searchMatchCount: number
+  readonly searchSafeIndex: number
+  readonly verboseOutput: boolean
+  readonly exportNotice: string | null
+  readonly selectedToolLabel?: string | null
+  readonly selectedToolOrdinal?: string | null
+  readonly selectedToolHasArtifact?: boolean
+  readonly rawMode?: boolean
+}
+
+export const buildTranscriptViewerDetailLabel = ({
+  followTail,
+  lineCount,
+  effectiveScroll,
+  bodyRows,
+  searchOpen,
+  searchQuery,
+  searchMatchCount,
+  searchSafeIndex,
+  verboseOutput,
+  exportNotice,
+  selectedToolLabel,
+  selectedToolOrdinal,
+  selectedToolHasArtifact,
+  rawMode,
+}: TranscriptViewerDetailLabelOptions): string => {
+  const parts: string[] = []
+  if (rawMode) {
+    parts.push(uiText("raw event viewer"))
+  }
+  if (followTail) {
+    parts.push(uiText("follow tail"), uiText("g top"))
+  } else if (lineCount === 0) {
+    parts.push(uiText("inspect empty"), uiText("G tail"))
+  } else {
+    const start = Math.min(lineCount, effectiveScroll + 1)
+    const end = Math.min(lineCount, effectiveScroll + Math.max(1, bodyRows))
+    parts.push(uiText(`inspect ${start}-${end}/${lineCount}`), uiText("G tail"))
+  }
+  if (searchOpen && searchQuery.trim().length > 0) {
+    const trimmedQuery = searchQuery.trim()
+    if (searchMatchCount > 0) {
+      parts.push(uiText(`search /${trimmedQuery} ${searchSafeIndex + 1}/${searchMatchCount}`))
+    } else {
+      parts.push(uiText(`search /${trimmedQuery} 0/0`))
+    }
+  }
+  if (verboseOutput) {
+    parts.push(uiText("detailed transcript"))
+  }
+  if (selectedToolLabel) {
+    const toolPart = selectedToolOrdinal ? `${selectedToolOrdinal} ${selectedToolLabel}` : selectedToolLabel
+    parts.push(uiText(toolPart), uiText("o inspect"))
+    if (selectedToolHasArtifact) {
+      parts.push(uiText("Enter open artifact"))
+    }
+  }
+  if (exportNotice) {
+    parts.push(exportNotice)
+  }
+  return parts.join(DOT_SEPARATOR)
+}

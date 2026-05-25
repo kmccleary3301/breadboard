@@ -1,5 +1,6 @@
 export const ALT_BUFFER_ENTER = "\u001b[?1049h"
 export const ALT_BUFFER_EXIT = "\u001b[?1049l"
+export const ALT_BUFFER_HOME_CLEAR = "\u001b[H\u001b[J"
 
 export type AltBufferWriter = (chunk: string) => void
 
@@ -22,7 +23,7 @@ export const createAltBufferSession = (writer: AltBufferWriter, enabled: boolean
   const setState = (next: boolean): void => {
     if (!enabled) next = false
     if (next === active) return
-    write(next ? ALT_BUFFER_ENTER : ALT_BUFFER_EXIT)
+    write(next ? `${ALT_BUFFER_ENTER}${ALT_BUFFER_HOME_CLEAR}` : ALT_BUFFER_EXIT)
     active = next
   }
   return {
@@ -32,4 +33,3 @@ export const createAltBufferSession = (writer: AltBufferWriter, enabled: boolean
     reset: () => setState(false),
   }
 }
-

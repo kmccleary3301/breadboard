@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs"
 import { useCallback } from "react"
 import type { KeyHandler } from "../../../../hooks/useKeyRouter.js"
 import { handleGlobalOverlayKeys } from "./overlay/handleGlobalOverlayKeys.js"
@@ -6,6 +7,16 @@ import { handleMenuOverlayKeys } from "./overlay/handleMenuOverlayKeys.js"
 import { handlePermissionOverlayKeys } from "./overlay/handlePermissionOverlayKeys.js"
 import { handleTranscriptOverlayKeys } from "./overlay/handleTranscriptOverlayKeys.js"
 import type { OverlayHandlerContext, OverlayKeyInfo } from "./overlay/types.js"
+
+const traceOverlayKey = (event: Record<string, unknown>) => {
+  const target = process.env.BREADBOARD_TUI_KEY_TRACE_FILE
+  if (!target) return
+  try {
+    appendFileSync(target, `${JSON.stringify({ timestamp: Date.now(), ...event })}\n`, "utf8")
+  } catch {
+    // Key tracing is diagnostic only; never let it affect TUI behavior.
+  }
+}
 
 export const useOverlayKeys = (context: OverlayHandlerContext): KeyHandler =>
   useCallback<KeyHandler>(
@@ -68,16 +79,46 @@ export const useOverlayKeys = (context: OverlayHandlerContext): KeyHandler =>
       }
 
       const handlers = [
-        handleGlobalOverlayKeys,
-        handleTranscriptOverlayKeys,
-        handlePermissionOverlayKeys,
-        handleListOverlayKeys,
-      ]
-      for (const handler of handlers) {
+        ["global", handleGlobalOverlayKeys],
+        ["transcript", handleTranscriptOverlayKeys],
+        ["permission", handlePermissionOverlayKeys],
+        ["list", handleListOverlayKeys],
+      ] as const
+      traceOverlayKey({
+        phase: "start",
+        char,
+        key,
+        lowerChar,
+        overlays: {
+          transcriptViewerOpen: context.transcriptViewerOpen,
+          resultDetailOpen: context.resultDetailOpen,
+          artifactPreviewOpen: context.artifactPreviewOpen,
+          modelMenuOpen: context.modelMenu?.status !== "hidden",
+          recentSessionsOpen: context.recentSessionsOpen,
+        },
+        transcript: {
+          toolLines: Array.isArray(context.transcriptToolLines) ? context.transcriptToolLines.length : null,
+          selectedTool: context.selectedTranscriptToolTarget?.title ?? null,
+          activeTool: context.activeTranscriptToolTarget?.title ?? null,
+          inputQuarantineUntil: context.transcriptViewerInputQuarantineUntilRef?.current ?? null,
+        },
+        tasks: {
+          tasksOpen: Boolean(context.tasksOpen),
+          taskFocusViewOpen: Boolean(context.taskFocusViewOpen),
+          selectedTaskId: context.selectedTask?.id ?? null,
+          selectedTaskRowId: context.selectedTaskRow?.id ?? null,
+          hasTaskNoticeSetter: typeof context.setTaskNotice === "function",
+          hasTaskActionNoticeSetter: typeof context.setTaskActionNotice === "function",
+        },
+      })
+      for (const [name, handler] of handlers) {
         const result = handler(context, info)
+        traceOverlayKey({ phase: "handler", handler: name, result, char, key })
         if (result !== undefined) return result
       }
-      return handleMenuOverlayKeys(context, info) ?? false
+      const menuResult = handleMenuOverlayKeys(context, info) ?? false
+      traceOverlayKey({ phase: "handler", handler: "menu", result: menuResult, char, key })
+      return menuResult
     },
     [context],
   )
