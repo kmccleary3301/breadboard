@@ -46,6 +46,8 @@ export const normalizeSessionEvent = (event: SessionEvent): NormalizedEvent | nu
     eventId: event.id,
     type: event.type,
     timestamp: event.timestamp ?? event.timestamp_ms,
+    visibility: event.visibility ?? null,
+    family: typeof (event as any).family === "string" ? (event as any).family : null,
     spanId: typeof event.span_id === "string" ? event.span_id : undefined,
     parentSpanId: typeof event.parent_span_id === "string" ? event.parent_span_id : undefined,
   }

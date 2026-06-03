@@ -5,8 +5,14 @@ import {
   type TranscriptSystemItem,
   type TranscriptToolItem,
   makeTranscriptId,
+  resolveTranscriptCellRole,
+  resolveTranscriptDedupeKey,
 } from "./transcriptModel.js"
 import type { NormalizedEvent } from "./transcript/normalizedEvent.js"
+import {
+  isLogTranscriptArtifactEvent,
+  isLogTranscriptArtifactToolEntry,
+} from "./transcriptArtifactPolicy.js"
 
 type AssistantSegment = { messageId: string; segment: number; text: string; createdAt: number }
 
@@ -71,6 +77,7 @@ const toMessageItem = (entry: ConversationEntry, streaming = false): TranscriptM
   phase: entry.phase,
   richBlocks: entry.richBlocks,
   markdownStreaming: entry.markdownStreaming,
+  markdownFinalized: entry.markdownFinalized,
   markdownError: entry.markdownError,
   createdAt: entry.createdAt,
   source: "conversation",
@@ -86,6 +93,32 @@ const stableMerge = (items: TranscriptItem[]): TranscriptItem[] => {
     })
     .map(({ item }) => item)
 }
+
+export const dedupeTranscriptStatusItems = (items: ReadonlyArray<TranscriptItem>): TranscriptItem[] => {
+  const seen = new Set<string>()
+  const result: TranscriptItem[] = []
+  for (const item of items) {
+    if (resolveTranscriptCellRole(item) !== "status") {
+      result.push(item)
+      continue
+    }
+    const key = resolveTranscriptDedupeKey(item)
+    if (!key) {
+      result.push(item)
+      continue
+    }
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(item)
+  }
+  return result
+}
+
+const isTranscriptVisibility = (event: NormalizedEvent): boolean =>
+  event.visibility == null || event.visibility === "" || event.visibility === "transcript"
+
+const isSystemVisibleInTranscript = (event: NormalizedEvent): boolean =>
+  event.visibility == null || event.visibility === "" || event.visibility === "host" || event.visibility === "tool"
 
 export interface TranscriptInput {
   readonly conversation: ReadonlyArray<ConversationEntry>
@@ -108,6 +141,7 @@ export const buildTranscript = (input: TranscriptInput, options: TranscriptBuild
 
   const handleToolEntries = (entries: ReadonlyArray<ToolLogEntry>, source: "tool" | "raw") => {
     for (const entry of entries) {
+      if (isLogTranscriptArtifactToolEntry(entry)) continue
       const item = classifyToolEntry(entry, source)
       const pending = entry.status === "pending"
       if (pending && pendingInTail) {
@@ -124,8 +158,8 @@ export const buildTranscript = (input: TranscriptInput, options: TranscriptBuild
   }
 
   return {
-    committed: stableMerge(committedItems),
-    tail: stableMerge(tailItems),
+    committed: dedupeTranscriptStatusItems(stableMerge(committedItems)),
+    tail: dedupeTranscriptStatusItems(stableMerge(tailItems)),
   }
 }
 
@@ -209,7 +243,8 @@ export const buildTranscriptFromEvents = (events: ReadonlyArray<NormalizedEvent>
       if (seenEventIds.has(event.eventId)) continue
       seenEventIds.add(event.eventId)
     }
-    const isAssistant = event.actor?.kind === "assistant" && Boolean(event.messageId)
+    if (isLogTranscriptArtifactEvent(event)) continue
+    const isAssistant = event.actor?.kind === "assistant" && Boolean(event.messageId) && isTranscriptVisibility(event)
     const isAssistantDelta =
       isAssistant &&
       (event.type === "assistant.message.delta" ||
@@ -236,23 +271,24 @@ export const buildTranscriptFromEvents = (events: ReadonlyArray<NormalizedEvent>
       if (event.type === "assistant.message.start" && !activeAssistant) {
         startAssistantSegment(event)
       }
-      const delta = event.textDelta ?? ""
-      if (delta) {
-        activeAssistant!.text += delta
-      }
       if (event.type === "assistant_message") {
         const text = event.textDelta ?? ""
         if (!activeAssistant) startAssistantSegment(event)
-        activeAssistant!.text += text
+        activeAssistant!.text = text
         finalizeAssistantSegment()
         closedAssistantMessages.add(messageId)
       } else if (event.type === "assistant.message.end" || event.type.endsWith(".end")) {
         finalizeAssistantSegment()
         closedAssistantMessages.add(messageId)
+      } else {
+        const delta = event.textDelta ?? ""
+        if (delta) {
+          activeAssistant!.text += delta
+        }
       }
       continue
     }
-    if (event.actor?.kind === "user") {
+    if (event.actor?.kind === "user" && isTranscriptVisibility(event)) {
       if (activeAssistant) finalizeAssistantSegment()
       const text = event.textDelta ?? ""
       const id = event.messageId ?? `user-${event.seq}`
@@ -268,7 +304,7 @@ export const buildTranscriptFromEvents = (events: ReadonlyArray<NormalizedEvent>
       committed.push(item)
       continue
     }
-    if (event.toolCallId) {
+    if (event.toolCallId && event.visibility !== "audit" && event.visibility !== "diagnostic") {
       if (activeAssistant) finalizeAssistantSegment()
       if (finalizedTools.has(event.toolCallId)) continue
       const buffer = toolBuffers.get(event.toolCallId) ?? {
@@ -302,7 +338,7 @@ export const buildTranscriptFromEvents = (events: ReadonlyArray<NormalizedEvent>
       continue
     }
     let handledSystem = false
-    if (event.error) {
+    if (event.error && event.visibility !== "audit" && event.visibility !== "diagnostic") {
       if (activeAssistant) finalizeAssistantSegment()
       const item: TranscriptSystemItem = {
         id: makeTranscriptId("sys", event.eventId ?? `err-${event.seq}`),
@@ -316,7 +352,7 @@ export const buildTranscriptFromEvents = (events: ReadonlyArray<NormalizedEvent>
       committed.push(item)
       handledSystem = true
     }
-    if (event.usage) {
+    if (event.usage && isSystemVisibleInTranscript(event)) {
       if (activeAssistant) finalizeAssistantSegment()
       const summary = [
         event.usage.totalTokens ? `tok ${event.usage.totalTokens}` : null,
@@ -336,7 +372,7 @@ export const buildTranscriptFromEvents = (events: ReadonlyArray<NormalizedEvent>
       })
       handledSystem = true
     }
-    if (event.type === "log_link" && event.textDelta) {
+    if (event.type === "log_link" && event.textDelta && isSystemVisibleInTranscript(event) && !isLogTranscriptArtifactEvent(event)) {
       if (activeAssistant) finalizeAssistantSegment()
       committed.push({
         id: makeTranscriptId("sys", event.eventId ?? `log-${event.seq}`),
@@ -349,7 +385,7 @@ export const buildTranscriptFromEvents = (events: ReadonlyArray<NormalizedEvent>
       })
       handledSystem = true
     }
-    if (event.type === "reward_update" && event.textDelta) {
+    if (event.type === "reward_update" && event.textDelta && isSystemVisibleInTranscript(event)) {
       if (activeAssistant) finalizeAssistantSegment()
       committed.push({
         id: makeTranscriptId("sys", event.eventId ?? `reward-${event.seq}`),
@@ -362,7 +398,7 @@ export const buildTranscriptFromEvents = (events: ReadonlyArray<NormalizedEvent>
       })
       handledSystem = true
     }
-    if (event.type.startsWith("permission")) {
+    if (event.type.startsWith("permission") && isSystemVisibleInTranscript(event)) {
       if (activeAssistant) finalizeAssistantSegment()
       const label = event.type.replace(/[_\.]+/g, " ").trim()
       committed.push({
@@ -381,6 +417,7 @@ export const buildTranscriptFromEvents = (events: ReadonlyArray<NormalizedEvent>
       !handledSystem &&
       !suppressSystemLine &&
       event.textDelta &&
+      isSystemVisibleInTranscript(event) &&
       (event.actor?.kind === "system" || systemTypes.has(event.type))
     ) {
       if (activeAssistant) finalizeAssistantSegment()
@@ -424,7 +461,7 @@ export const buildTranscriptFromEvents = (events: ReadonlyArray<NormalizedEvent>
   }
 
   return {
-    committed: stableMerge(committed),
-    tail: stableMerge(tail),
+    committed: dedupeTranscriptStatusItems(stableMerge(committed)),
+    tail: dedupeTranscriptStatusItems(stableMerge(tail)),
   }
 }

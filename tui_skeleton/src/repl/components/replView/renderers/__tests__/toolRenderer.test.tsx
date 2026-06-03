@@ -280,4 +280,26 @@ describe("toolRenderer", () => {
     expect(output).toContain("line-1")
     expect(output).toContain("note: Inline output truncated to artifact reference.")
   })
+
+  it("renders labeled stdout/stderr tool detail sections without losing summary", () => {
+    const entry: ToolLogEntry = {
+      id: "tool-stdio",
+      kind: "result",
+      text: "Bash(ls -la)",
+      status: "success",
+      createdAt: 0,
+      display: {
+        title: "Bash(ls -la)",
+        summary: "stdout 2 lines · stderr 1 line",
+        detail: ["stdout:", "file_a.txt", "file_b.log", "", "stderr:", "warn: hidden file"],
+      } as unknown as ToolLogEntry["display"],
+    }
+    const { lastFrame } = renderWithWidth(<ToolEntryView entry={entry} />, 120)
+    const output = stripAnsiCodes(lastFrame() ?? "")
+    expect(output).toContain("stdout 2 lines · stderr 1 line")
+    expect(output).toContain("stdout:")
+    expect(output).toContain("file_a.txt")
+    expect(output).toContain("stderr:")
+    expect(output).toContain("warn: hidden file")
+  })
 })

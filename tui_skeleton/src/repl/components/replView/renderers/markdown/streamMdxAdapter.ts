@@ -1,6 +1,6 @@
 import type { Block, DiffBlock as StreamDiffBlock, DiffKind, InlineNode, TokenLineV1 } from "@stream-mdx/core/types"
 import { maybeHighlightCode } from "../../../../shikiHighlighter.js"
-import { CHALK, COLORS, ASCII_ONLY } from "../../theme.js"
+import { CHALK, COLORS, ASCII_ONLY, uiText } from "../../theme.js"
 import { stringWidth, stripAnsiCodes, visibleWidth } from "../../utils/ansi.js"
 import type { MarkdownCodeLine, TuiDiffLineKind, TuiTokenLine } from "../../../../types.js"
 import { renderTokenLine, tokenLineFromThemed, tokenLineFromV1 } from "../../../../markdown/tokenRender.js"
@@ -136,7 +136,7 @@ const inlineNodesToSegments = (
         return
       case "code": {
         const codeStyle = (text: string) => CHALK.bgHex(COLORS.panel).hex(COLORS.textBright)(text)
-        segments.push({ text: ` ${node.text} `, style: composeStyles([...stack, codeStyle]) })
+        segments.push({ text: node.text, style: composeStyles([...stack, codeStyle]) })
         return
       }
       case "link": {
@@ -423,16 +423,17 @@ export const renderCodeLines = (raw: string, lang?: string, options?: MarkdownRe
   const content = (code || raw).replace(/\r\n?/g, "\n")
   const isDiff = finalLang ? finalLang.toLowerCase().includes("diff") : false
   const shikiLines = maybeHighlightCode(content, finalLang)
-  if (shikiLines) return shikiLines
+  if (shikiLines) return finalLang && !isDiff ? [CHALK.dim(uiText(`code · ${finalLang}`)), ...shikiLines] : shikiLines
   const diffStyle = options?.diffStyle ?? DEFAULT_DIFF_RENDER_STYLE
   const lines = content.split("\n")
-  return lines.map((line) => {
+  const rendered = lines.map((line) => {
     if (isDiff) return colorDiffLine(line, diffStyle)
     if (line.startsWith("+")) return CHALK.hex(diffStyle.colors.addText)(line)
     if (line.startsWith("-")) return CHALK.hex(diffStyle.colors.deleteText)(line)
     if (line.startsWith("@@")) return CHALK.hex(COLORS.info)(line)
     return CHALK.hex(COLORS.text)(line)
   })
+  return finalLang && !isDiff ? [CHALK.dim(uiText(`code · ${finalLang}`)), ...rendered] : rendered
 }
 
 const renderListLines = (raw: string, items?: ReadonlyArray<InlineNode[]>): string[] => {
@@ -445,7 +446,9 @@ const renderListLines = (raw: string, items?: ReadonlyArray<InlineNode[]>): stri
     const content = items[index]
     if (!content) return line
     index += 1
-    const formatted = renderInlineSegments(inlineNodesToSegments(content))
+    // stream-mdx can temporarily attach following paragraph text to the final list item.
+    // Keep list rendering scoped to the current raw list line; raw fallback renders tail text once.
+    const formatted = renderInlineSegments(inlineNodesToSegments(content)).split(/\r?\n/, 1)[0] ?? ""
     return `${match[1]}${match[2]} ${formatted}`
   })
 }
@@ -487,7 +490,7 @@ const parseInlineMarkdownSegments = (text: string): InlineSegment[] => {
     }
     if (full.startsWith("`")) {
       const content = full.slice(1, -1)
-      segments.push({ text: ` ${content} `, style: (value) => CHALK.bgHex(COLORS.panel).hex(COLORS.textBright)(value) })
+      segments.push({ text: content, style: (value) => CHALK.bgHex(COLORS.panel).hex(COLORS.textBright)(value) })
     } else if (full.startsWith("***") || full.startsWith("___")) {
       const content = full.slice(3, -3)
       segments.push({ text: content, style: composeStyles([CHALK.bold, CHALK.italic]) })
@@ -598,7 +601,7 @@ const renderTableLines = (raw: string, meta: Record<string, unknown>, options?: 
     const headerLabels = normalizedHeader
       ? normalizedHeader.map((cell) => cell.plain.trim())
       : new Array(colCount).fill(0).map((_, idx) => `col ${idx + 1}`)
-    const lines: string[] = []
+    const lines: string[] = [CHALK.dim(uiText(`table · stacked ${colCount} cols`))]
     normalizedRows.forEach((row, rowIndex) => {
       if (rowIndex > 0) lines.push("")
       for (let col = 0; col < colCount; col += 1) {
@@ -689,6 +692,14 @@ const renderInlineMarkdown = (text: string): string => renderInlineSegments(pars
 
 const isListLine = (line: string): boolean => /^(\s*)([*+-]|\d+\.)\s+/.test(line)
 
+const looksLikeLiteralPathLine = (line: string): boolean => {
+  const trimmed = line.trim()
+  if (!trimmed) return false
+  if (/^(\/|\.\/|\.\.\/|~\/|[A-Za-z]:[\\/])/.test(trimmed) && /[\\/]/.test(trimmed)) return true
+  if (/^[A-Za-z0-9._/~:-]+(?:\/[A-Za-z0-9._~:-]+)+$/.test(trimmed)) return true
+  return false
+}
+
 const isTableSeparatorLine = (line: string): boolean => {
   const parts = line.split("|").map((part) => part.trim())
   const trimmed = parts.filter((part) => part.length > 0)
@@ -738,16 +749,14 @@ export const renderMarkdownFallbackLines = (rawText: string, options?: MarkdownR
     }
     if (line.startsWith("#")) {
       const match = /^(#+)\s*(.*)$/.exec(line.trim())
-      const level = match ? Math.min(6, match[1].length) : 1
-      const prefix = "#".repeat(level)
       const content = match ? match[2] : line.replace(/^#+\s*/, "")
-      output.push(CHALK.bold.hex(COLORS.accent)(`${prefix} ${renderInlineMarkdown(content)}`))
+      output.push(CHALK.bold.hex(COLORS.accent)(renderInlineMarkdown(content)))
       index += 1
       continue
     }
     if (line.trim().startsWith(">")) {
       const content = line.replace(/^>\s?/, "")
-      output.push(CHALK.hex(COLORS.muted)(`> ${renderInlineMarkdown(content)}`))
+      output.push(CHALK.hex(COLORS.muted)(renderInlineMarkdown(content)))
       index += 1
       continue
     }
@@ -761,13 +770,13 @@ export const renderMarkdownFallbackLines = (rawText: string, options?: MarkdownR
         if (!isListLine(entry)) return entry
         const match = /^(\s*)([*+-]|\d+\.)\s+(.*)$/.exec(entry)
         if (!match) return entry
-        const rendered = renderInlineMarkdown(match[3])
+        const rendered = looksLikeLiteralPathLine(match[3]) ? match[3] : renderInlineMarkdown(match[3])
         return `${match[1]}${match[2]} ${rendered}`
       })
       output.push(...formatted.map((entry) => CHALK.hex(COLORS.textBright)(entry)))
       continue
     }
-    output.push(renderInlineMarkdown(line))
+    output.push(looksLikeLiteralPathLine(line) ? line : renderInlineMarkdown(line))
     index += 1
   }
   return output
@@ -791,15 +800,12 @@ const blockToLines = (block: Block, options?: MarkdownRenderOptions): string[] =
       return looksLikeDiffBlock(lines) ? lines.map((line) => colorDiffLine(line, diffStyle)) : lines
     }
     case "heading": {
-      const levelRaw = typeof meta.level === "number" ? meta.level : typeof meta.depth === "number" ? meta.depth : 1
-      const level = Math.min(6, Math.max(1, levelRaw || 1))
-      const prefix = "#".repeat(level)
       const text = block.payload.inline ? formatInlineNodes(block.payload.inline) : block.payload.raw ?? ""
-      return [CHALK.bold.hex(COLORS.accent)(`${prefix} ${text}`)]
+      return [CHALK.bold.hex(COLORS.accent)(text)]
     }
     case "blockquote": {
       const content = block.payload.inline ? formatInlineNodes(block.payload.inline) : block.payload.raw ?? ""
-      return content.split(/\r?\n/).map((line) => CHALK.hex(COLORS.muted)(`> ${line}`))
+      return content.split(/\r?\n/).map((line) => CHALK.hex(COLORS.muted)(line))
     }
     case "code": {
       const lang =
@@ -816,7 +822,9 @@ const blockToLines = (block: Block, options?: MarkdownRenderOptions): string[] =
       }
       const codeLines = Array.isArray(meta.codeLines) ? (meta.codeLines as MarkdownCodeLine[]) : null
       if (codeLines && codeLines.length > 0) {
-        return renderDiffFromCodeLines(codeLines, diffStyle)
+        const isDiff = lang ? lang.toLowerCase().includes("diff") : codeLines.some((line) => line.diffKind != null)
+        const rendered = renderDiffFromCodeLines(codeLines, diffStyle)
+        return lang && !isDiff ? [CHALK.dim(uiText(`code · ${lang}`)), ...rendered] : rendered
       }
       const raw = block.payload.raw ?? ""
       return renderCodeLines(raw, lang, options)
@@ -824,6 +832,12 @@ const blockToLines = (block: Block, options?: MarkdownRenderOptions): string[] =
     case "list": {
       const raw = block.payload.raw ?? ""
       const items = Array.isArray(meta.items) ? (meta.items as InlineNode[][]) : undefined
+      return renderListLines(raw, items).map((line) => CHALK.hex(COLORS.textBright)(line))
+    }
+    case "list-item": {
+      const raw = block.payload.raw ?? ""
+      const inline = Array.isArray(block.payload.inline) ? (block.payload.inline as InlineNode[]) : undefined
+      const items = inline ? [inline] : undefined
       return renderListLines(raw, items).map((line) => CHALK.hex(COLORS.textBright)(line))
     }
     case "footnotes":
@@ -873,4 +887,47 @@ export const blocksToLines = (blocks?: ReadonlyArray<Block>, options?: MarkdownR
     lastType = block.type
   }
   return lines
+}
+
+const normalizeRepresentedMarkdownLine = (line: string): string => stripAnsiCodes(line).trim().replace(/\s+/g, " ")
+
+const normalizeComparableMarkdownLine = (line: string): string =>
+  normalizeRepresentedMarkdownLine(line)
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^>\s+/, "")
+
+export const blocksToLinesWithRawFallback = (
+  blocks: ReadonlyArray<Block> | undefined,
+  rawText: string | undefined,
+  options?: MarkdownRenderOptions,
+): string[] => {
+  const rendered = blocksToLines(blocks, options)
+  const text = rawText ?? ""
+  if (!blocks || blocks.length === 0 || text.trim().length === 0) return rendered
+
+  const represented = new Map<string, number>()
+  for (const block of blocks) {
+    const raw = String(block.payload?.raw ?? "")
+    for (const line of raw.split(/\r?\n/)) {
+      const normalized = normalizeComparableMarkdownLine(line)
+      if (!normalized) continue
+      represented.set(normalized, (represented.get(normalized) ?? 0) + 1)
+    }
+  }
+
+  const missingLines: string[] = []
+  for (const line of text.split(/\r?\n/)) {
+    const normalized = normalizeComparableMarkdownLine(line)
+    if (!normalized) continue
+    const count = represented.get(normalized) ?? 0
+    if (count > 0) {
+      represented.set(normalized, count - 1)
+      continue
+    }
+    missingLines.push(line)
+  }
+  if (missingLines.length === 0) return rendered
+  const fallback = renderMarkdownFallbackLines(missingLines.join("\n"), options)
+  if (fallback.length === 0) return rendered
+  return rendered.length > 0 ? [...rendered, "", ...fallback] : fallback
 }
