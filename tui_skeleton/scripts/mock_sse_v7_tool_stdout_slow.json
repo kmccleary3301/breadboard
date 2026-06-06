@@ -1,0 +1,17 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "payload": { "summary": "v7 tool stdout death" }, "turn": 1 } },
+  { "delayMs": 100, "event": { "type": "assistant.message.start", "payload": { "message_id": "m1", "channel": "text", "format": "markdown" } } },
+  { "delayMs": 100, "event": { "type": "assistant.message.delta", "payload": { "message_id": "m1", "channel": "text", "delta": "I will run a deterministic tool now." } } },
+  { "delayMs": 100, "event": { "type": "assistant.message.end", "payload": { "message_id": "m1", "channel": "text", "stop_reason": "tool_call" } } },
+  { "delayMs": 100, "event": { "type": "tool_call", "payload": { "call_id": "v7_call_1", "tool_name": "bash", "display": { "title": "Bash(v7-tool-stdout)" } } } },
+  { "delayMs": 100, "event": { "type": "tool.exec.start", "payload": { "call_id": "v7_call_1", "exec_id": "v7_exec_1", "command": "printf v7", "tool_name": "bash" } } },
+  { "delayMs": 100, "event": { "type": "tool.exec.stdout.delta", "payload": { "call_id": "v7_call_1", "exec_id": "v7_exec_1", "delta": "V7_TOOL_STDOUT_LINE_A\n" } } },
+  { "delayMs": 5000, "event": { "type": "tool.exec.stdout.delta", "payload": { "call_id": "v7_call_1", "exec_id": "v7_exec_1", "delta": "V7_TOOL_STDOUT_LINE_B\n" } } },
+  { "delayMs": 100, "event": { "type": "tool.exec.end", "payload": { "call_id": "v7_call_1", "exec_id": "v7_exec_1", "exit_code": 0 } } },
+  { "delayMs": 100, "event": { "type": "tool.result", "payload": { "call_id": "v7_call_1", "tool_name": "bash", "display": { "title": "Bash(v7-tool-stdout)" } } } },
+  { "delayMs": 100, "event": { "type": "assistant.message.start", "payload": { "message_id": "m2", "channel": "text", "format": "markdown" } } },
+  { "delayMs": 100, "event": { "type": "assistant.message.delta", "payload": { "message_id": "m2", "channel": "text", "delta": "Tool completed after the second stdout line." } } },
+  { "delayMs": 100, "event": { "type": "assistant.message.end", "payload": { "message_id": "m2", "channel": "text", "stop_reason": "end_turn" } } },
+  { "delayMs": 50, "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "v7_tool_stdout_slow" } } } },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 15 } } }
+]

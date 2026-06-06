@@ -1,0 +1,43 @@
+[
+  {
+    "delayMs": 0,
+    "event": { "type": "turn_start", "payload": { "summary": "reasoning projection contract" }, "turn": 1 }
+  },
+  {
+    "delayMs": 80,
+    "event": { "type": "assistant.reasoning.delta", "payload": { "delta": "Internal chain step one." } }
+  },
+  {
+    "delayMs": 80,
+    "event": { "type": "assistant.thought_summary.delta", "payload": { "delta": "Plan the answer in brief." } }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.message.start",
+      "payload": { "message_id": "m1", "channel": "text", "format": "markdown" }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.message.delta",
+      "payload": { "message_id": "m1", "channel": "text", "delta": "Reasoning stays in the preview." }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant.message.end",
+      "payload": { "message_id": "m1", "channel": "text", "stop_reason": "end_turn" }
+    }
+  },
+  {
+    "delayMs": 50,
+    "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "reasoning_projection_contract" } } }
+  },
+  {
+    "delayMs": 0,
+    "event": { "type": "run_finished", "payload": { "eventCount": 8 } }
+  }
+]

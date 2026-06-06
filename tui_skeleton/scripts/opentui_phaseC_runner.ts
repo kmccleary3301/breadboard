@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url"
 import pty from "node-pty"
 import stripAnsi from "strip-ansi"
 
+import { waitForPlainComposerReady } from "./opentuiStartupReady"
+
 type Scenario = "smoke" | "permission_variants" | "palette_commands" | "all"
 
 const THIS_DIR = path.dirname(fileURLToPath(import.meta.url))
@@ -59,6 +61,7 @@ const runPty = async (options: {
   const rawStream = fs.createWriteStream(rawPath)
   let plainBuffer = ""
   let exited = false
+  let streamClosed = false
   let actionsError: string | null = null
 
   const term = pty.spawn("bash", ["-lc", options.command], {
@@ -70,7 +73,7 @@ const runPty = async (options: {
   })
 
   term.onData((chunk) => {
-    rawStream.write(chunk)
+    if (!streamClosed) rawStream.write(chunk)
     plainBuffer += stripAnsi(chunk)
     if (plainBuffer.length > 3_000_000) plainBuffer = plainBuffer.slice(-3_000_000)
   })
@@ -107,7 +110,7 @@ const runPty = async (options: {
       term.kill()
     } catch {}
     rawStream.end()
-    await new Promise((resolve) => rawStream.on("close", resolve))
+    await new Promise((resolve) => rawStream.on("close", () => { streamClosed = true; resolve(undefined) }))
 
     const rawDisk = await fs.promises.readFile(rawPath, "utf8").catch(() => "")
     const plainDisk = stripAnsi(rawDisk)
@@ -158,8 +161,8 @@ const main = async () => {
         BREADBOARD_WORKSPACE: ".",
         BREADBOARD_DEBUG_FAKE_PERMISSION: "1",
       },
-      actions: async ({ term, waitForPlainIncludes }) => {
-        await waitForPlainIncludes("Enter submit", 45_000)
+      actions: async ({ term, waitForPlainIncludes, getPlain }) => {
+        await waitForPlainComposerReady(() => getPlain(), { timeoutMs: 45_000, label: "phaseC smoke" })
 
         // 1) Command palette → save transcript (validates palette + controller command path).
         term.write("\x0b") // Ctrl+K
@@ -179,9 +182,11 @@ const main = async () => {
         term.write("file mention test")
         await sleep(100)
         term.write("\r") // submit
-        await waitForPlainIncludes("[user]", 12_000)
+        await waitForPlainIncludes("[session]", 20_000)
+        await sleep(1200)
+        await waitForPlainComposerReady(() => getPlain(), { timeoutMs: 20_000, label: "phaseC smoke post-session" })
 
-        // 3) Model picker (alt/option+p via ESC prefix) → select first match (requires session).
+        // 3) Model picker (alt/option+p via ESC prefix) → select first match (requires settled session).
         term.write("\x1bp") // Option+P
         await sleep(450)
         term.write("openai")
@@ -237,8 +242,8 @@ const main = async () => {
         BREADBOARD_WORKSPACE: ".",
         BREADBOARD_DEBUG_FAKE_PERMISSION: "1",
       },
-      actions: async ({ term, waitForPlainIncludes }) => {
-        await waitForPlainIncludes("Enter submit", 45_000)
+      actions: async ({ term, waitForPlainIncludes, getPlain }) => {
+        await waitForPlainComposerReady(() => getPlain(), { timeoutMs: 45_000, label: "phaseC permission_variants" })
 
         term.write("\x0b")
         await sleep(350)
@@ -322,8 +327,8 @@ const main = async () => {
         BREADBOARD_WORKSPACE: ".",
         BREADBOARD_DEBUG_FAKE_PERMISSION: "0",
       },
-      actions: async ({ term, waitForPlainIncludes }) => {
-        await waitForPlainIncludes("Enter submit", 45_000)
+      actions: async ({ term, waitForPlainIncludes, getPlain }) => {
+        await waitForPlainComposerReady(() => getPlain(), { timeoutMs: 45_000, label: "phaseC palette_commands" })
 
         // Create a session (so status/stop/retry paths are exercised).
         term.write("hello")

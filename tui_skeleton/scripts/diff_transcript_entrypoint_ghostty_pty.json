@@ -1,0 +1,106 @@
+[
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 45000
+  },
+  {
+    "action": "type",
+    "text": "/diff",
+    "typingDelayMs": 8
+  },
+  {
+    "action": "press",
+    "key": "enter"
+  },
+  {
+    "action": "waitFor",
+    "text": "No diff found in the current transcript.",
+    "timeoutMs": 10000,
+    "mode": "frame"
+  },
+  {
+    "action": "snapshot",
+    "label": "diff-empty",
+    "mode": "frame",
+    "maxLines": 120
+  },
+  {
+    "action": "type",
+    "text": "apply a patch",
+    "typingDelayMs": 8
+  },
+  {
+    "action": "press",
+    "key": "enter"
+  },
+  {
+    "action": "waitFor",
+    "text": "Applied patch to README.md.",
+    "timeoutMs": 15000,
+    "mode": "frame"
+  },
+  {
+    "action": "waitFor",
+    "text": "Patch(README.md)",
+    "timeoutMs": 10000,
+    "mode": "frame"
+  },
+  {
+    "action": "snapshot",
+    "label": "diff-transcript-main",
+    "mode": "frame",
+    "maxLines": 160
+  },
+  {
+    "action": "type",
+    "text": "/diff",
+    "typingDelayMs": 8
+  },
+  {
+    "action": "press",
+    "key": "enter"
+  },
+  {
+    "action": "waitFor",
+    "text": "inspect ",
+    "timeoutMs": 10000,
+    "mode": "frame"
+  },
+  {
+    "action": "waitFor",
+    "text": "Patch(README.md)",
+    "timeoutMs": 10000,
+    "mode": "frame"
+  },
+  {
+    "action": "snapshot",
+    "label": "diff-viewer",
+    "mode": "frame",
+    "maxLines": 160
+  },
+  {
+    "action": "press",
+    "key": "escape"
+  },
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 10000
+  },
+  {
+    "action": "type",
+    "text": "/",
+    "typingDelayMs": 8
+  },
+  {
+    "action": "waitFor",
+    "text": "/resume",
+    "timeoutMs": 10000,
+    "mode": "frame"
+  },
+  {
+    "action": "snapshot",
+    "label": "visible-root-suggestions",
+    "mode": "frame",
+    "maxLines": 120
+  }
+]

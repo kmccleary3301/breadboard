@@ -1,0 +1,252 @@
+{
+  "schemaVersion": 1,
+  "id": "v6_fuzz_tool_61",
+  "title": "V6 fuzz seed 61 (tool)",
+  "family": "fuzz",
+  "campaign": "p14-v6-fuzz-minimization",
+  "claimScope": "fuzz",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "fault",
+      "time",
+      "workspace"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-store",
+      "composer",
+      "scrollback-feed"
+    ]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# v6_fuzz_tool_61\n"
+        }
+      ]
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "fuzz-pre",
+        "text": "BB_V6_FUZZ_PRE_TOOL_61"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 180000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 77,
+      "rows": 25
+    },
+    "resizePolicy": "fuzzed",
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "timeline": [
+    {
+      "kind": "submit",
+      "text": "Run V6 fuzz seed 61 with tool stress."
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "tool",
+      "event": {
+        "kind": "start",
+        "toolId": "v6_fuzz_tool_61_tool_61",
+        "name": "shell_command",
+        "args": {
+          "command": "printf fuzz-61"
+        }
+      }
+    },
+    {
+      "kind": "tool",
+      "event": {
+        "kind": "stdout",
+        "toolId": "v6_fuzz_tool_61_tool_61",
+        "text": "fuzz 61 tool line 1\nfuzz 61 tool line 2\nfuzz 61 tool line 3\nfuzz 61 tool line 4\nfuzz 61 tool line 5\n",
+        "stream": false
+      }
+    },
+    {
+      "kind": "tool",
+      "event": {
+        "kind": "result",
+        "toolId": "v6_fuzz_tool_61_tool_61",
+        "status": "ok",
+        "summary": "fuzz tool 61 completed",
+        "output": "fuzz-61"
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "markdown-fixture",
+        "streamId": "s1",
+        "fixture": "table-rowwise",
+        "chunking": {
+          "mode": "syntax",
+          "seed": 61
+        }
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "s1",
+        "text": "V6 fuzz seed 61 profile tool complete."
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "V6 fuzz seed 61 profile tool complete."
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "kind": "resize",
+      "cols": 60,
+      "rows": 22,
+      "settleMs": 60
+    },
+    {
+      "kind": "resize",
+      "cols": 69,
+      "rows": 24,
+      "settleMs": 40
+    },
+    {
+      "kind": "checkpoint",
+      "id": "fuzz-final"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-DESTRUCTIVE-CLEAR",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-PROMPT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-ASSISTANT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-DUPLICATE-ASSISTANT-TAIL",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-COMPOSER-PROMPT-REPLAY",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-COMPOSER-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RAW-ANSI",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-ACTION-OBSERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-COMPOSER-ALWAYS-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "MD-FINAL-TEXT-COMPLETE",
+      "severity": "blocker"
+    },
+    {
+      "id": "TOOL-START-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "TOOL-RESULT-SINGULAR",
+      "severity": "blocker"
+    }
+  ],
+  "actionRequirements": {
+    "waitTargetsObserved": "required",
+    "resizeObserved": "required"
+  },
+  "performanceBudget": {
+    "maxDurationMs": 180000,
+    "maxRawBytes": 8000000,
+    "maxFrames": 1800,
+    "maxStateDumps": 3000
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once",
+    "toolCardinality": "at-least-once"
+  },
+  "mutationProfile": {
+    "seed": 61,
+    "dimensions": [
+      "tool",
+      "cols:77",
+      "rows:25",
+      "chunk:syntax",
+      "fixture:table-rowwise"
+    ]
+  },
+  "minimization": {
+    "enabled": true,
+    "preserveSteps": [
+      "launch",
+      "checkpoint:fuzz-final",
+      "seed:61"
+    ]
+  },
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report"
+    ]
+  }
+}

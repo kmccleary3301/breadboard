@@ -1,0 +1,38 @@
+{
+  "id": "vscode_v6_provider_warning_live_probe",
+  "terminal": { "initialCols": 132, "initialRows": 40 },
+  "v6": {
+    "expectedFinalMode": "repl",
+    "maxProviderWarningCount": 0,
+    "minScreenshotCount": 4,
+    "requiresStableViewport": true,
+    "forbiddenVisibleText": [
+      "Provider openrouter",
+      "response.keep_alive",
+      "response.created",
+      "Streaming fallback active"
+    ]
+  },
+  "steps": [
+    { "kind": "write", "text": "mkdir -p docs src && printf '# V6 provider warning workspace\\n' > README.md\r" },
+    { "kind": "sleep", "ms": 500 },
+    { "kind": "write", "text": "bb\r" },
+    { "kind": "waitForText", "text": "Type your request", "timeoutMs": 25000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 800, "timeoutMs": 10000 },
+    { "kind": "screenshot", "label": "00-startup" },
+    { "kind": "write", "text": "V6 provider probe. Do not use tools. Reply with exactly this token on its own line and nothing else: V6_PROVIDER_OK.\r" },
+    { "kind": "sleep", "ms": 3000 },
+    { "kind": "screenshot", "label": "01-live-early" },
+    { "kind": "waitForState", "pendingResponse": false, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final", "lastConversationPreviewIncludes": "V6_PROVIDER_OK", "timeoutMs": 120000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 1200, "timeoutMs": 20000 },
+    { "kind": "screenshot", "label": "02-live-final" },
+    { "kind": "write", "text": "/transcript\r" },
+    { "kind": "waitForText", "text": "breadboard transcript viewer", "scope": "viewport", "timeoutMs": 12000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 800, "timeoutMs": 10000 },
+    { "kind": "screenshot", "label": "03-transcript-after-live" },
+    { "kind": "key", "key": "escape" },
+    { "kind": "waitForText", "text": "Type your request", "scope": "viewport", "timeoutMs": 12000 },
+    { "kind": "exportBreadBoardState", "label": "v6-provider-live-state" },
+    { "kind": "terminate" }
+  ]
+}

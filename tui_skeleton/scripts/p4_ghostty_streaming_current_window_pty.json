@@ -1,0 +1,8 @@
+[
+  { "action": "wait", "ms": 12000 },
+  { "action": "snapshot", "label": "startup" },
+  { "action": "wait", "ms": 5000 },
+  { "action": "snapshot", "label": "streaming-mid" },
+  { "action": "wait", "ms": 7000 },
+  { "action": "snapshot", "label": "streaming-final" }
+]

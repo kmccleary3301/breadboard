@@ -1,0 +1,8 @@
+{
+  "id": "v6_invariant_expansion_smoke",
+  "campaign": "p14-v6-invariant-expansion",
+  "scenarios": [
+    "scenarios/v6/smoke/v6_structural_scrollback_smoke.json",
+    "scenarios/v6/modal_focus_structural_smoke.json"
+  ]
+}

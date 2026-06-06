@@ -1,0 +1,12 @@
+{
+  "steps": [
+    { "action": "waitForComposerReady", "timeoutMs": 30000 },
+    { "action": "type", "text": "Show me some markdown." },
+    { "action": "press", "key": "enter", "expectSubmit": true },
+    { "action": "waitFor", "text": "# Markdown Example", "timeoutMs": 30000, "mode": "either" },
+    { "action": "snapshot", "label": "after-tool-output", "mode": "frame", "maxLines": 90 },
+    { "action": "waitFor", "text": "Giving up after 5 attempts", "timeoutMs": 30000, "mode": "either" },
+    { "action": "snapshot", "label": "after-disconnect-frame", "mode": "frame", "maxLines": 120 },
+    { "action": "snapshot", "label": "after-disconnect-history", "mode": "history", "maxLines": 160 }
+  ]
+}

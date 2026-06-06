@@ -1,0 +1,6 @@
+[
+  { "delayMs": 10000, "event": { "id": "v7-real-terminal-hold-assistant-start", "type": "assistant.message.start", "payload": { "message_id": "v7-real-terminal-hold-message", "channel": "text", "format": "markdown" } } },
+  { "delayMs": 100, "event": { "id": "v7-real-terminal-hold-assistant-delta", "type": "assistant.message.delta", "payload": { "message_id": "v7-real-terminal-hold-message", "channel": "text", "delta": "V7_REAL_TERMINAL_HOLD_RESPONSE_SHOULD_NOT_APPEAR_BEFORE_KILL" } } },
+  { "delayMs": 50, "event": { "id": "v7-real-terminal-hold-assistant-end", "type": "assistant.message.end", "payload": { "message_id": "v7-real-terminal-hold-message", "stop_reason": "complete" } } },
+  { "delayMs": 50, "event": { "id": "v7-real-terminal-hold-completion", "type": "completion", "payload": { "summary": { "completed": true, "reason": "v7_real_terminal_hold" } } } }
+]

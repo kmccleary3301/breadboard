@@ -1,0 +1,10 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "/", "typingDelayMs": 8 },
+  { "action": "waitFor", "text": "/resume", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "popup-narrow", "mode": "frame", "maxLines": 100 },
+  { "action": "resize", "cols": 100, "rows": 36, "delayMs": 400 },
+  { "action": "snapshot", "label": "popup-normal", "mode": "frame", "maxLines": 100 },
+  { "action": "resize", "cols": 160, "rows": 36, "delayMs": 400 },
+  { "action": "snapshot", "label": "popup-wide", "mode": "frame", "maxLines": 100 }
+]

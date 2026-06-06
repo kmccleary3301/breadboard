@@ -1,0 +1,24 @@
+[
+  {
+    "delayMs": 0,
+    "event": { "type": "turn_start", "payload": { "summary": "mock markdown projection" }, "turn": 1 }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "### Projection\n\n| Column | Value |\n| --- | --- |\n| Alpha | 1 |\n| Beta | 2 |\n\n```ts\nconst answer = 42\n```\n\nDone.",
+        "message": {
+          "role": "assistant",
+          "content": "### Projection\n\n| Column | Value |\n| --- | --- |\n| Alpha | 1 |\n| Beta | 2 |\n\n```ts\nconst answer = 42\n```\n\nDone."
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "projection" } } }
+  },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 4 } } }
+]

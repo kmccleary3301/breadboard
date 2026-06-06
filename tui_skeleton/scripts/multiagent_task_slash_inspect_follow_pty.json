@@ -1,0 +1,93 @@
+[
+  { "action": "log", "message": "Multiagent task slash inspect/follow PTY harness start" },
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  {
+    "action": "type",
+    "text": "Delegate SMTP work to reviewer, implementer, and tester agents, then inspect with slash commands.",
+    "typingDelayMs": 5
+  },
+  { "action": "press", "key": "enter" },
+  {
+    "action": "waitFor",
+    "text": "Taskboard summary: reviewer done, implementer running, tester blocked.",
+    "timeoutMs": 15000
+  },
+  {
+    "action": "waitForState",
+    "timeoutMs": 15000,
+    "fresh": true,
+    "pendingResponse": false,
+    "conversationCountAtLeast": 2,
+    "lastConversationSpeaker": "assistant",
+    "lastConversationPhase": "final",
+    "lastConversationPreviewIncludes": "Taskboard summary: reviewer done, implementer running, tester blocked."
+  },
+  { "action": "type", "text": "/inspect task", "typingDelayMs": 5 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Task Focus", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "waitFor", "text": "Implement SMTP server core", "timeoutMs": 5000, "mode": "frame" },
+  {
+    "action": "waitFor",
+    "text": "SMTP_FOCUS_TAIL_LINE_11 deterministic tail marker",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  { "action": "snapshot", "label": "slash-inspect-task-open", "mode": "frame", "maxLines": 140 },
+  { "action": "resize", "cols": 92, "rows": 24, "delayMs": 350 },
+  { "action": "waitFor", "text": "Task Focus", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "waitFor", "text": "Implement SMTP server", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "snapshot", "label": "slash-inspect-task-after-resize", "mode": "frame", "maxLines": 140 },
+  { "action": "press", "key": "ctrl+b", "delayMs": 500 },
+  { "action": "waitForComposerReady", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "resize", "cols": 132, "rows": 36, "delayMs": 350 },
+  { "action": "wait", "ms": 350 },
+  { "action": "type", "text": "/follow task pause", "typingDelayMs": 5 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 350 },
+  { "action": "press", "key": "ctrl+b", "delayMs": 500 },
+  {
+    "action": "waitFor",
+    "text": "Task Focus follow paused.",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  { "action": "snapshot", "label": "slash-follow-task-paused", "mode": "frame", "maxLines": 140 },
+  { "action": "waitForComposerReady", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "wait", "ms": 250 },
+  { "action": "type", "text": "/follow task status", "typingDelayMs": 5 },
+  { "action": "press", "key": "enter" },
+  {
+    "action": "waitFor",
+    "text": "Task Focus follow: paused.",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  { "action": "snapshot", "label": "slash-follow-task-status-paused", "mode": "frame", "maxLines": 140 },
+  { "action": "waitForComposerReady", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "wait", "ms": 250 },
+  { "action": "type", "text": "/follow task resume", "typingDelayMs": 5 },
+  { "action": "press", "key": "enter" },
+  {
+    "action": "waitFor",
+    "text": "Task Focus follow resumed.",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  { "action": "waitFor", "text": "Task Focus", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "snapshot", "label": "slash-follow-task-resumed", "mode": "frame", "maxLines": 140 },
+  { "action": "press", "key": "ctrl+b", "delayMs": 500 },
+  { "action": "waitForComposerReady", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "wait", "ms": 350 },
+  { "action": "type", "text": "/follow task status", "typingDelayMs": 5 },
+  { "action": "press", "key": "enter" },
+  {
+    "action": "waitFor",
+    "text": "Task Focus follow: resumed.",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  { "action": "snapshot", "label": "slash-follow-task-status-resumed", "mode": "frame", "maxLines": 140 },
+  { "action": "waitForComposerReady", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "snapshot", "label": "slash-task-commands-closed", "mode": "frame", "maxLines": 120 },
+  { "action": "log", "message": "Multiagent task slash inspect/follow PTY harness complete" }
+]

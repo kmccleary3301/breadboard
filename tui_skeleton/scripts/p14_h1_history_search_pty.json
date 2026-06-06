@@ -1,0 +1,22 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "alpha history search", "typingDelayMs": 8 },
+  { "action": "press", "key": "ctrl+s" },
+  { "action": "wait", "ms": 150 },
+  { "action": "type", "text": "beta history search", "typingDelayMs": 8 },
+  { "action": "press", "key": "ctrl+s" },
+  { "action": "wait", "ms": 150 },
+  { "action": "type", "text": "alpha second search", "typingDelayMs": 8 },
+  { "action": "press", "key": "ctrl+s" },
+  { "action": "wait", "ms": 150 },
+  { "action": "type", "text": "alpha", "typingDelayMs": 8 },
+  { "action": "press", "key": "ctrl+r" },
+  { "action": "wait", "ms": 150 },
+  { "action": "snapshot", "label": "history-search-latest-alpha", "mode": "frame", "maxLines": 80 },
+  { "action": "press", "key": "ctrl+r" },
+  { "action": "wait", "ms": 150 },
+  { "action": "snapshot", "label": "history-search-older-alpha", "mode": "frame", "maxLines": 80 },
+  { "action": "press", "key": "ctrl+s" },
+  { "action": "wait", "ms": 150 },
+  { "action": "snapshot", "label": "history-search-forward-alpha", "mode": "frame", "maxLines": 80 }
+]

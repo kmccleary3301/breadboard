@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "id": "known_bad_landing_overflow",
+  "title": "Known Bad Landing Overflow Calibration",
+  "description": "Expected-red Phase C detector calibration rendered through production ReplView; not a natural live-host reproduction claim.",
+  "expectedOutcome": "fail",
+  "knownBadKind": "landing-overflow",
+  "claimScope": "production-renderer-compositor",
+  "productionEquivalence": {
+    "required": true,
+    "renderer": "ReplView",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "fault",
+      "time",
+      "workspace",
+      "task"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-projection",
+      "composer-footer",
+      "modal-picker",
+      "taskboard-state",
+      "direct-cell-mutation"
+    ]
+  },
+  "surfaces": [
+    "landing",
+    "transcript"
+  ],
+  "sizes": [
+    {
+      "cols": 40,
+      "rows": 18
+    },
+    {
+      "cols": 72,
+      "rows": 22
+    }
+  ],
+  "timeline": [
+    {
+      "kind": "user",
+      "text": "Trigger landing overflow probe."
+    },
+    {
+      "kind": "assistant",
+      "text": "LANDING_PANEL_OVERFLOW_SENTINEL means the landing pane exceeded its safe width contract."
+    }
+  ],
+  "expectedMarkers": [
+    "Trigger landing overflow probe"
+  ],
+  "forbiddenMarkers": [
+    "LANDINGPANELOVERFLOW_SENTINEL"
+  ],
+  "invariants": [
+    "COMPOSITOR-PRODUCTION-RENDERER",
+    "COMPOSITOR-NO-FAKE-RENDERER",
+    "COMPOSITOR-ARTIFACT-PACKET-COMPLETE",
+    "COMPOSITOR-MARKERS-PRESENT",
+    "COMPOSITOR-FORBIDDEN-MARKERS-ABSENT",
+    "COMPOSITOR-WIDTH-SAFE",
+    "COMPOSITOR-COMPOSER-VISIBLE",
+    "COMPOSITOR-PROMPT-EXACTLY-ONCE"
+  ],
+  "artifacts": {
+    "required": [
+      "manifest.json",
+      "command.txt",
+      "git_status.txt",
+      "environment.json",
+      "scenario.json",
+      "raw.ansi",
+      "plain_final.txt",
+      "grid_frames.ndjson",
+      "state_snapshots.ndjson",
+      "input_events.ndjson",
+      "dimension_events.ndjson",
+      "anomalies.json",
+      "invariant_report.json",
+      "screenshots/contact_sheet.png",
+      "visual_qc_notes.md",
+      "claim_delta.json"
+    ]
+  },
+  "claimBoundary": "Phase C production-renderer expected-red calibration only; not real-host proof."
+}

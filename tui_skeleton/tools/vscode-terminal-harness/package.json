@@ -1,0 +1,23 @@
+{
+  "name": "breadboard-vscode-terminal-harness",
+  "displayName": "BreadBoard VSCode Terminal Harness",
+  "version": "0.0.1",
+  "publisher": "breadboard-local",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "main": "./src/extension.cjs",
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:breadboardHarness.runScenario"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "breadboardHarness.runScenario",
+        "title": "BreadBoard Harness: Run Scenario"
+      }
+    ]
+  }
+}

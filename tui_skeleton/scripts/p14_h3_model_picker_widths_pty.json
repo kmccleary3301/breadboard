@@ -1,0 +1,14 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "press", "key": "ctrl+k" },
+  { "action": "waitFor", "text": "Select", "timeoutMs": 15000, "mode": "frame" },
+  { "action": "resize", "cols": 64, "rows": 28, "delayMs": 400 },
+  { "action": "snapshot", "label": "model-picker-64", "mode": "frame", "maxLines": 120 },
+  { "action": "resize", "cols": 80, "rows": 32, "delayMs": 400 },
+  { "action": "snapshot", "label": "model-picker-80", "mode": "frame", "maxLines": 120 },
+  { "action": "resize", "cols": 120, "rows": 36, "delayMs": 400 },
+  { "action": "snapshot", "label": "model-picker-120", "mode": "frame", "maxLines": 120 },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 300 },
+  { "action": "snapshot", "label": "model-picker-closed", "mode": "frame", "maxLines": 100 }
+]

@@ -11,6 +11,16 @@ import {
   runSpectatorHarness,
   writeSnapshotFile,
 } from "./harness/spectator.ts"
+import {
+  EmulatorObserverHarnessError,
+  runWeztermObserverHarness,
+} from "./harness/weztermObserver.ts"
+import {
+  TerminalAdapterHarnessError,
+  runTerminalAdapterHarness,
+  type TerminalAdapterLane,
+  type TerminalAdapterStepEvent,
+} from "./harness/terminalAdapter.ts"
 import { renderGridFromFrames } from "../tools/tty/vtgrid.ts"
 import { runLayoutAssertions, type LayoutAnomaly } from "../tools/assertions/layoutChecks.ts"
 import { computeGridDiff, readGridLines } from "../tools/tty/gridDiff.ts"
@@ -24,6 +34,11 @@ import { startReplayServer } from "../tools/mock/replaySse.ts"
 import { buildClipboardDiffReport } from "../tools/reports/clipboardDiffReport.ts"
 import { buildKeyFuzzReport } from "../tools/reports/keyFuzzReport.ts"
 import { buildManifestHashes } from "../tools/reports/manifestHasher.ts"
+import { shutdownEngine } from "../src/engine/engineSupervisor.ts"
+import { evaluateBatchManifestSchema } from "../tools/assertions/batchManifestSchemaCheck.ts"
+import { evaluateLiveProvenance } from "../tools/assertions/liveProvenanceCheck.ts"
+import { resolveCaseCommandCwd as resolveCaseCommandCwdForHarness } from "./harness/caseCommandCwd.ts"
+import { resolveStressCaseConfigPath } from "./harness/caseConfigPath.ts"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -48,6 +63,36 @@ const resolveTuiPath = (value: string): string => {
   return path.resolve(ROOT_DIR, value)
 }
 
+const resolveCaseCommandCwd = (testCase: StressCase, command: string): string =>
+  resolveCaseCommandCwdForHarness({
+    testCase,
+    command,
+    rootDir: ROOT_DIR,
+    repoRoot: REPO_ROOT,
+    dummyWorkspaceCwd: QC_DUMMY_WORKSPACE_CWD,
+    allowProjectCwd: process.env.BREADBOARD_ALLOW_PROJECT_CWD === "1",
+  })
+
+const writeCaseWorkspaceFiles = async (
+  commandCwd: string,
+  files: ReadonlyArray<{ readonly path: string; readonly contents: string }> | undefined,
+): Promise<void> => {
+  if (!files || files.length === 0) return
+  for (const file of files) {
+    const relativePath = file.path.trim()
+    if (!relativePath || path.isAbsolute(relativePath)) {
+      throw new Error(`Invalid workspace fixture path: ${file.path}`)
+    }
+    const resolved = path.resolve(commandCwd, relativePath)
+    const rel = path.relative(commandCwd, resolved)
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      throw new Error(`Workspace fixture escapes case cwd: ${file.path}`)
+    }
+    await fs.mkdir(path.dirname(resolved), { recursive: true })
+    await fs.writeFile(resolved, file.contents, "utf8")
+  }
+}
+
 const DEFAULT_CONFIG = resolveRepoPath(
   process.env.CONFIG_PATH ?? process.env.STRESS_CONFIG ?? "../agent_configs/misc/opencode_cli_mock_guardrails.yaml",
 )
@@ -56,6 +101,8 @@ const DEFAULT_LIVE_CONFIG = resolveRepoPath(
 )
 const DEFAULT_BASE_URL = process.env.BASE_URL ?? process.env.BREADBOARD_API_URL ?? "http://127.0.0.1:9099"
 const DEFAULT_COMMAND = "node dist/main.js repl"
+const QC_DUMMY_WORKSPACE_CWD = "/tmp/bb_qc_terminal_dummy_workspace"
+const QC_GHOSTTY_TMUX_WORKSPACE_CWD = "/tmp/bb_qc_ghostty_tmux_workspace"
 const REPL_SCRIPT_MAX_DURATION_MS = Number(process.env.STRESS_SCRIPT_MAX_MS ?? 240_000)
 const LARGE_CLIPBOARD_PAYLOAD = "Large clipboard payload chunk ".repeat(40)
 const DEFAULT_LIVE_BOOT_TIMEOUT_MS = 15_000
@@ -75,6 +122,80 @@ const readCommandOutput = async (argv: string[], cwd: string): Promise<string | 
       }
     })
   })
+}
+
+const runPostCheckScript = async (scriptPath: string, caseDir: string): Promise<LayoutAnomaly[]> => {
+  const resolved = resolveTuiPath(scriptPath)
+  return await new Promise((resolve, reject) => {
+    const child = spawn("pnpm", ["exec", "tsx", resolved, "--case-dir", caseDir], {
+      cwd: ROOT_DIR,
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+    let stdout = ""
+    let stderr = ""
+    child.stdout?.on("data", (chunk) => (stdout += String(chunk)))
+    child.stderr?.on("data", (chunk) => (stderr += String(chunk)))
+    child.on("error", reject)
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`post-check exited with code ${code}: ${stderr.trim() || stdout.trim()}`))
+        return
+      }
+      try {
+        const parsed = JSON.parse(stdout || "[]") as LayoutAnomaly[]
+        resolve(Array.isArray(parsed) ? parsed : [])
+      } catch (error) {
+        reject(new Error(`post-check returned invalid JSON: ${(error as Error).message}`))
+      }
+    })
+  })
+}
+
+const splitCommand = (command: string): { executable: string; args: string[] } => {
+  const parts = command.split(" ").filter((part) => part.length > 0)
+  return {
+    executable: parts[0] ?? "",
+    args: parts.slice(1),
+  }
+}
+
+const resolveExecutablePath = async (executable: string, cwd: string): Promise<string | null> => {
+  if (!executable) return null
+  if (executable.includes("/") || executable.startsWith(".")) {
+    const absolute = path.isAbsolute(executable) ? executable : path.resolve(cwd, executable)
+    try {
+      await fs.access(absolute)
+      return absolute
+    } catch {
+      return null
+    }
+  }
+  const pathValue = process.env.PATH ?? ""
+  for (const dir of pathValue.split(path.delimiter)) {
+    if (!dir) continue
+    const candidate = path.join(dir, executable)
+    try {
+      await fs.access(candidate)
+      return candidate
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+const buildCommandProvenance = async (command: string, cwd: string) => {
+  const { executable, args } = splitCommand(command)
+  const resolvedExecutable = await resolveExecutablePath(executable, cwd)
+  const realpath = resolvedExecutable ? await fs.realpath(resolvedExecutable).catch(() => resolvedExecutable) : null
+  return {
+    command,
+    executable,
+    args,
+    cwd,
+    resolvedExecutable,
+    realpath,
+  }
 }
 
 const buildHealthUrl = (baseUrl: string): string => {
@@ -97,6 +218,74 @@ const checkHealth = async (baseUrl: string): Promise<boolean> => {
   } catch {
     return false
   }
+}
+
+const fetchJson = async <T>(url: string, timeoutMs = 5_000): Promise<T | null> => {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, { method: "GET", signal: controller.signal })
+    if (!response.ok) return null
+    return (await response.json().catch(() => null)) as T | null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+const buildStatusUrl = (baseUrl: string): string => {
+  try {
+    const url = new URL(baseUrl)
+    url.pathname = "/status"
+    url.search = ""
+    url.hash = ""
+    return url.toString()
+  } catch {
+    return `${baseUrl.replace(/\/+$/, "")}/status`
+  }
+}
+
+const readLiveBridgeProvenance = async (baseUrl: string): Promise<Record<string, unknown> | null> => {
+  const [health, status] = await Promise.all([
+    fetchJson<Record<string, unknown>>(buildHealthUrl(baseUrl)),
+    fetchJson<Record<string, unknown>>(buildStatusUrl(baseUrl)),
+  ])
+  if (!health && !status) return null
+  return { health, status }
+}
+
+const waitForBridgeExit = async (baseUrl: string, timeoutMs: number): Promise<boolean> => {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    if (!(await checkHealth(baseUrl))) {
+      return true
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  return false
+}
+
+const shutdownLiveBridge = async (baseUrl: string, timeoutMs = 5_000): Promise<boolean> => {
+  const status = await fetchJson<Record<string, unknown>>(buildStatusUrl(baseUrl), 2_000)
+  const pid = typeof status?.pid === "number" ? status.pid : null
+  if (!pid) {
+    return !(await checkHealth(baseUrl))
+  }
+  try {
+    process.kill(pid, "SIGTERM")
+  } catch {
+    return !(await checkHealth(baseUrl))
+  }
+  if (await waitForBridgeExit(baseUrl, timeoutMs)) {
+    return true
+  }
+  try {
+    process.kill(pid, "SIGKILL")
+  } catch {
+    // ignore
+  }
+  return await waitForBridgeExit(baseUrl, 2_000)
 }
 
 const waitForHealth = async (baseUrl: string, timeoutMs: number): Promise<boolean> => {
@@ -163,9 +352,13 @@ const captureTmuxPane = async (
   const safeTarget = target.replace(/[^A-Za-z0-9_.-]+/g, "_")
   const outPath = path.join(batchDir, `tmux_capture_${safeTarget}.png`)
   await new Promise<void>((resolve, reject) => {
+    const argv = [scriptPath, "--target", target, "--out", outPath]
+    if (Math.abs((scale ?? 1) - 1) > 1e-6) {
+      argv.push("--render-profile", "legacy", "--scale", String(scale))
+    }
     const child = spawn(
       "python",
-      [scriptPath, "--target", target, "--out", outPath, "--scale", String(scale ?? 1)],
+      argv,
       { cwd: path.resolve(ROOT_DIR, ".."), stdio: "inherit" },
     )
     child.on("close", (code) => {
@@ -312,6 +505,11 @@ interface BaseCase {
   readonly cwd?: string
   readonly baseUrl?: string
   readonly requiresLive?: boolean
+  readonly postCheckScript?: string
+  readonly workspaceFiles?: ReadonlyArray<{
+    readonly path: string
+    readonly contents: string
+  }>
 }
 
 interface ReplCase extends BaseCase {
@@ -321,6 +519,8 @@ interface ReplCase extends BaseCase {
 
 interface PtyCase extends BaseCase {
   readonly kind: "pty"
+  readonly cols?: number
+  readonly rows?: number
   readonly clipboardText?: string
   readonly clipboardFile?: string
   readonly submitTimeoutMs?: number
@@ -329,7 +529,22 @@ interface PtyCase extends BaseCase {
   readonly expectedAltText?: string
 }
 
-type StressCase = ReplCase | PtyCase
+interface EmulatorCase extends BaseCase {
+  readonly kind: "emulator"
+  readonly cols?: number
+  readonly rows?: number
+  readonly submitTimeoutMs?: number
+}
+
+interface TerminalCase extends BaseCase {
+  readonly kind: "terminal"
+  readonly terminalLane: TerminalAdapterLane
+  readonly cols?: number
+  readonly rows?: number
+  readonly submitTimeoutMs?: number
+}
+
+type StressCase = ReplCase | PtyCase | EmulatorCase | TerminalCase
 
 const STRESS_CASES: StressCase[] = [
   {
@@ -373,6 +588,7 @@ const STRESS_CASES: StressCase[] = [
     env: {
       BREADBOARD_MODEL_CATALOG_PATH: "scripts/mock_model_catalog.json",
     },
+    postCheckScript: "tools/assertions/overlayFootprintCheck.ts",
   },
   {
     id: "narrow_terminal",
@@ -474,7 +690,7 @@ const STRESS_CASES: StressCase[] = [
   {
     id: "network_error",
     kind: "pty",
-    script: "scripts/network_error_pty.json",
+    script: "scripts/p6_wezterm_escalated_network_error_pty.json",
     description: "Network error banner (mock stream ends)",
     mockSseScript: "scripts/mock_sse_network_error.json",
     submitTimeoutMs: 0,
@@ -512,6 +728,312 @@ const STRESS_CASES: StressCase[] = [
     submitTimeoutMs: 0,
   },
   {
+    id: "multiagent_tasks_panel",
+    kind: "pty",
+    script: "scripts/multiagent_tasks_panel_pty.json",
+    description: "Production-path multiagent taskboard with work-graph lanes, strip summary, and resize recovery",
+    mockSseScript: "scripts/mock_sse_multiagent_tasks.json",
+    submitTimeoutMs: 0,
+    cols: 128,
+    rows: 34,
+    env: {
+      BREADBOARD_SUBAGENTS_V2_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_COALESCE_MS: "0",
+      BREADBOARD_TUI_SUBAGENTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_COALESCE_MS: "0",
+    },
+  },
+  {
+    id: "multiagent_task_focus_controls",
+    kind: "pty",
+    script: "scripts/multiagent_task_focus_controls_pty.json",
+    description: "Production-path multiagent taskboard filters, focus view, tail loading, raw/snippet toggle, follow toggle, and resize recovery",
+    mockSseScript: "scripts/mock_sse_multiagent_tasks.json",
+    submitTimeoutMs: 0,
+    cols: 132,
+    rows: 36,
+    workspaceFiles: [
+      {
+        path: "agent_ws/.breadboard/subagents/agent-task-implementer-01.jsonl",
+        contents: [
+          "{\"event\":\"start\",\"message\":\"SMTP focus artifact opened\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_01 create socket\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_02 bind localhost\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_03 listen\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_04 accept client\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_05 parse HELO\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_06 parse MAIL FROM\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_07 parse RCPT TO\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_08 parse DATA\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_09 persist eml\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_10 graceful QUIT\"}",
+          "{\"event\":\"summary\",\"message\":\"SMTP_FOCUS_TAIL_LINE_11 deterministic tail marker\"}",
+          "",
+        ].join("\n"),
+      },
+    ],
+    env: {
+      BREADBOARD_SUBAGENTS_V2_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_COALESCE_MS: "0",
+      BREADBOARD_TUI_SUBAGENTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_COALESCE_MS: "0",
+    },
+    postCheckScript: "tools/assertions/multiagentTaskFocusControlsCheck.ts",
+  },
+  {
+    id: "multiagent_task_slash_inspect_follow",
+    kind: "pty",
+    script: "scripts/multiagent_task_slash_inspect_follow_pty.json",
+    description: "Production-path slash task inspection and task follow controls: /inspect task plus /follow task pause/status/resume stay local and resize-safe",
+    mockSseScript: "scripts/mock_sse_multiagent_tasks.json",
+    submitTimeoutMs: 0,
+    cols: 132,
+    rows: 36,
+    workspaceFiles: [
+      {
+        path: "agent_ws/.breadboard/subagents/agent-task-implementer-01.jsonl",
+        contents: [
+          "{\"event\":\"start\",\"message\":\"SMTP focus artifact opened\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_01 create socket\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_02 bind localhost\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_03 listen\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_04 accept client\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_05 parse HELO\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_06 parse MAIL FROM\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_07 parse RCPT TO\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_08 parse DATA\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_09 persist eml\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_10 graceful QUIT\"}",
+          "{\"event\":\"summary\",\"message\":\"SMTP_FOCUS_TAIL_LINE_11 deterministic tail marker\"}",
+          "",
+        ].join("\n"),
+      },
+    ],
+    env: {
+      BREADBOARD_SUBAGENTS_V2_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_COALESCE_MS: "0",
+      BREADBOARD_TUI_SUBAGENTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_COALESCE_MS: "0",
+    },
+    postCheckScript: "tools/assertions/multiagentTaskSlashInspectFollowCheck.ts",
+  },
+  {
+    id: "multiagent_task_log_export",
+    kind: "pty",
+    script: "scripts/multiagent_task_log_export_pty.json",
+    description: "Production-path Task Focus export writes selected raw task log to a durable artifact without flooding the main transcript",
+    mockSseScript: "scripts/mock_sse_multiagent_tasks.json",
+    submitTimeoutMs: 0,
+    cols: 132,
+    rows: 36,
+    workspaceFiles: [
+      {
+        path: "agent_ws/.breadboard/subagents/agent-task-implementer-01.jsonl",
+        contents: [
+          "{\"event\":\"start\",\"message\":\"SMTP focus artifact opened\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_01 create socket\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_02 bind localhost\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_03 listen\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_04 accept client\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_05 parse HELO\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_06 parse MAIL FROM\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_07 parse RCPT TO\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_08 parse DATA\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_09 persist eml\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_10 graceful QUIT\"}",
+          "{\"event\":\"summary\",\"message\":\"SMTP_FOCUS_TAIL_LINE_11 deterministic tail marker\"}",
+          "",
+        ].join("\n"),
+      },
+    ],
+    env: {
+      BREADBOARD_SUBAGENTS_V2_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_COALESCE_MS: "0",
+      BREADBOARD_TUI_SUBAGENTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_COALESCE_MS: "0",
+    },
+    postCheckScript: "tools/assertions/multiagentTaskLogExportCheck.ts",
+  },
+  {
+    id: "multiagent_failure_retry",
+    kind: "pty",
+    script: "scripts/multiagent_failure_retry_pty.json",
+    description: "Production-path failed multiagent task UX: failed filter, error detail, artifact tail, raw-log separation, resize recovery, and close behavior",
+    mockSseScript: "scripts/mock_sse_multiagent_failure.json",
+    submitTimeoutMs: 0,
+    cols: 132,
+    rows: 36,
+    workspaceFiles: [
+      {
+        path: "agent_ws/.breadboard/subagents/agent-task-tester-fail-01.jsonl",
+        contents: [
+          "{\"event\":\"start\",\"message\":\"Tester started SMTP negative path\"}",
+          "{\"event\":\"tool\",\"name\":\"smtp_smoke_test\",\"message\":\"FAILURE_TAIL_LINE_01 connect localhost\"}",
+          "{\"event\":\"tool\",\"name\":\"smtp_smoke_test\",\"message\":\"FAILURE_TAIL_LINE_02 send HELO\"}",
+          "{\"event\":\"tool\",\"name\":\"smtp_smoke_test\",\"message\":\"FAILURE_TAIL_LINE_03 missing DATA terminator\"}",
+          "{\"event\":\"error\",\"retryable\":true,\"message\":\"FAILURE_TAIL_LINE_04 SMTP_TEST_FAILURE missing DATA terminator\"}",
+          "{\"event\":\"summary\",\"message\":\"FAILURE_TAIL_LINE_05 deterministic failure marker\"}",
+          "",
+        ].join("\n"),
+      },
+    ],
+    env: {
+      BREADBOARD_SUBAGENTS_V2_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_COALESCE_MS: "0",
+      BREADBOARD_TUI_SUBAGENTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_COALESCE_MS: "0",
+    },
+    postCheckScript: "tools/assertions/multiagentFailureRetryCheck.ts",
+  },
+  {
+    id: "multiagent_task_action_guards",
+    kind: "pty",
+    script: "scripts/multiagent_task_action_guards_pty.json",
+    description: "Production-path taskboard action guard UX: per-task mutation controls are visible, keyboard-addressable, and explicitly unavailable until engine endpoints exist",
+    mockSseScript: "scripts/mock_sse_multiagent_tasks.json",
+    submitTimeoutMs: 0,
+    cols: 132,
+    rows: 36,
+    workspaceFiles: [
+      {
+        path: "agent_ws/.breadboard/subagents/agent-task-implementer-01.jsonl",
+        contents: [
+          "{\"event\":\"start\",\"message\":\"SMTP focus artifact opened\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_01 create socket\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_02 bind localhost\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_03 listen\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_04 accept client\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_05 parse HELO\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_06 parse MAIL FROM\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_07 parse RCPT TO\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_08 parse DATA\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_09 persist eml\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_10 graceful QUIT\"}",
+          "{\"event\":\"summary\",\"message\":\"SMTP_FOCUS_TAIL_LINE_11 deterministic tail marker\"}",
+          "",
+        ].join("\n"),
+      },
+    ],
+    env: {
+      BREADBOARD_SUBAGENTS_V2_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_COALESCE_MS: "0",
+      BREADBOARD_TUI_SUBAGENTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_COALESCE_MS: "0",
+    },
+    postCheckScript: "tools/assertions/multiagentTaskActionGuardsCheck.ts",
+  },
+  {
+    id: "multiagent_task_action_command",
+    kind: "pty",
+    script: "scripts/multiagent_task_action_command_pty.json",
+    description: "Production-path Task Focus action dispatch: engine-backed task_action command updates selected task state without polluting the transcript",
+    mockSseScript: "scripts/mock_sse_multiagent_task_action_ack.json",
+    submitTimeoutMs: 0,
+    cols: 132,
+    rows: 36,
+    workspaceFiles: [
+      {
+        path: "agent_ws/.breadboard/subagents/agent-task-implementer-01.jsonl",
+        contents: [
+          "{\"event\":\"start\",\"message\":\"SMTP focus artifact opened\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_01 create socket\"}",
+          "{\"event\":\"summary\",\"message\":\"TASK_ACTION_CANCEL_ACK deterministic marker\"}",
+          "",
+        ].join("\n"),
+      },
+    ],
+    env: {
+      BREADBOARD_SUBAGENTS_V2_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TASK_ACTIONS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_COALESCE_MS: "0",
+      BREADBOARD_TUI_SUBAGENTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TASK_ACTIONS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_COALESCE_MS: "0",
+    },
+    postCheckScript: "tools/assertions/multiagentTaskActionCommandCheck.ts",
+  },
+  {
+    id: "agents_taskboard_entrypoint",
+    kind: "pty",
+    script: "scripts/agents_taskboard_entrypoint_pty.json",
+    description: "Experimental /agents command opens the bounded production-path multiagent task dashboard without pretending create/control endpoints exist",
+    mockSseScript: "scripts/mock_sse_multiagent_tasks.json",
+    submitTimeoutMs: 0,
+    cols: 132,
+    rows: 36,
+    env: {
+      BREADBOARD_SUBAGENTS_V2_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_COALESCE_MS: "0",
+      BREADBOARD_TUI_SUBAGENTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_COALESCE_MS: "0",
+    },
+    postCheckScript: "tools/assertions/agentsTaskboardEntrypointCheck.ts",
+  },
+  {
     id: "ctree_summary",
     kind: "pty",
     script: "scripts/ctree_summary_pty.json",
@@ -538,18 +1060,51 @@ const STRESS_CASES: StressCase[] = [
   {
     id: "streaming_markdown",
     kind: "pty",
-    script: "scripts/streaming_markdown_pty.json",
+    script: "scripts/p6_wezterm_escalated_streaming_smoke_pty.json",
     description: "Streaming markdown render updates",
-    mockSseScript: "scripts/mock_sse_streaming_markdown.json",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
     submitTimeoutMs: 0,
+  },
+  {
+    id: "follow_pause_resume",
+    kind: "pty",
+    script: "scripts/follow_pause_resume_pty.json",
+    description: "Explicit pause-follow and resume over a slow markdown stream",
+    mockSseScript: "scripts/mock_sse_follow_pause_resume.json",
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/followPauseResumeCheck.ts",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+  },
+  {
+    id: "spine_streaming_smoke",
+    kind: "pty",
+    script: "scripts/streaming_markdown_pty.json",
+    description: "Known-good QC spine smoke for remote markdown streaming",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/debugStreamCorrelationCheck.ts",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+  },
+  {
+    id: "spine_mermaid_fallback",
+    kind: "pty",
+    script: "scripts/mermaid_fallback_pty.json",
+    description: "Canonical mermaid fenced-block fallback rendering smoke",
+    mockSseScript: "scripts/mock_sse_mermaid_fallback.json",
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/mermaidFallbackCheck.ts",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
   },
   {
     id: "file_picker",
     kind: "pty",
     script: "scripts/file_picker_pty.json",
-    description: "`@` file picker menu + mention insertion",
+    description: "`@` file picker tree traversal + mention insertion",
     mockSseScript: "scripts/mock_sse_file_picker.json",
     submitTimeoutMs: 0,
+    env: {
+      BREADBOARD_TUI_FILE_PICKER_MODE: "tree",
+    },
   },
   {
     id: "file_picker_fuzzy",
@@ -639,7 +1194,6 @@ const STRESS_CASES: StressCase[] = [
     submitTimeoutMs: 0,
     winchScript: "scripts/shortcuts_overlay_winch.json",
     env: {
-      BREADBOARD_TUI_CHROME: "claude",
       BREADBOARD_SHORTCUTS_STICKY: "1",
     },
   },
@@ -649,7 +1203,8 @@ const STRESS_CASES: StressCase[] = [
     script: "scripts/transcript_viewer_toggle_pty.json",
     description: "Ctrl+T transcript viewer toggle (alt-screen)",
     mockSseScript: "scripts/mock_sse_sample.json",
-    expectedAltText: "TOOLS:",
+    submitTimeoutMs: 0,
+    expectedAltText: "Mock assistant: hello world",
   },
   {
     id: "transcript_viewer_search",
@@ -660,12 +1215,113 @@ const STRESS_CASES: StressCase[] = [
     submitTimeoutMs: 0,
   },
   {
+    id: "transcript_viewer_navigation",
+    kind: "pty",
+    script: "scripts/transcript_viewer_navigation_pty.json",
+    description: "Transcript viewer follow-tail and inspect navigation (g/G)",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/transcriptViewerNavigationCheck.ts",
+  },
+  {
+    id: "recent_sessions_overlay",
+    kind: "pty",
+    script: "scripts/recent_sessions_overlay_pty.json",
+    description: "Recent-session re-entry overlay surface",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/recentSessionsOverlayCheck.ts",
+  },
+  {
+    id: "collapsed_detail_inspection",
+    kind: "pty",
+    script: "scripts/collapsed_detail_inspection_pty.json",
+    description: "Collapsed transcript detail inspection overlay",
+    mockSseScript: "scripts/mock_sse_collapsed_detail.json",
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/collapsedDetailInspectionCheck.ts",
+  },
+  {
+    id: "transcript_result_actionability",
+    kind: "pty",
+    script: "scripts/transcript_result_actionability_pty.json",
+    description: "Transcript-discovered result detail and artifact inspection",
+    mockSseScript: "scripts/mock_sse_p3_result_actionability.json",
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/transcriptResultActionabilityCheck.ts",
+  },
+  {
+    id: "mixed_transcript_projection",
+    kind: "pty",
+    script: "scripts/p14_h5_tool_diff_approval_pty.json",
+    description: "Mixed transcript projection across user, assistant, tool, diff, and approval cells",
+    mockSseScript: "scripts/mock_sse_p14_h5_tool_diff_approval.json",
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/mixedTranscriptProjectionCheck.ts",
+  },
+  {
+    id: "composer_continuation_cues",
+    kind: "pty",
+    script: "scripts/composer_continuation_cues_pty.json",
+    description: "Composer/footer continuation cue deck",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/composerContinuationCuesCheck.ts",
+  },
+  {
+    id: "composer_command_surface",
+    kind: "pty",
+    script: "scripts/composer_command_surface_pty.json",
+    description: "Composer slash-command continuation surface",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/composerCommandSurfaceCheck.ts",
+  },
+  {
+    id: "command_argument_surface",
+    kind: "pty",
+    script: "scripts/command_argument_surface_pty.json",
+    description: "Known slash-command argument validation surface",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/commandArgumentSurfaceCheck.ts",
+  },
+  {
+    id: "deferred_command_truth",
+    kind: "pty",
+    script: "scripts/deferred_command_truth_pty.json",
+    description: "Feature-gated parity commands render truthful disabled results and never submit to the model",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/deferredCommandTruthCheck.ts",
+  },
+  {
+    id: "diff_transcript_entrypoint",
+    kind: "pty",
+    script: "scripts/diff_transcript_entrypoint_pty.json",
+    description: "Exact /diff opens the real transcript diff projection or renders a truthful no-diff result",
+    mockSseScript: "scripts/mock_sse_diff.json",
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/diffTranscriptEntrypointCheck.ts",
+  },
+  {
+    id: "permissions_status_surface",
+    kind: "pty",
+    script: "scripts/permissions_status_surface_pty.json",
+    description: "Read-only permission status command renders launch/approval truth and never submits to the model",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    command: "node dist/main.js repl --permission-mode prompt",
+    postCheckScript: "tools/assertions/permissionsStatusSurfaceCheck.ts",
+  },
+  {
     id: "transcript_save",
     kind: "pty",
     script: "scripts/transcript_save_pty.json",
     description: "Transcript viewer save/export flow",
     mockSseScript: "scripts/mock_sse_sample.json",
     submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/transcriptSaveExportCheck.ts",
   },
   {
     id: "detailed_transcript",
@@ -709,6 +1365,7 @@ const STRESS_CASES: StressCase[] = [
     env: {
       BREADBOARD_MODEL_CATALOG_PATH: "scripts/mock_model_catalog.json",
     },
+    postCheckScript: "tools/assertions/overlayFootprintCheck.ts",
   },
   {
     id: "model_picker_provider_filter",
@@ -720,6 +1377,7 @@ const STRESS_CASES: StressCase[] = [
     env: {
       BREADBOARD_MODEL_CATALOG_PATH: "scripts/mock_model_catalog.json",
     },
+    postCheckScript: "tools/assertions/overlayFootprintCheck.ts",
   },
   {
     id: "model_picker_page",
@@ -731,6 +1389,7 @@ const STRESS_CASES: StressCase[] = [
     env: {
       BREADBOARD_MODEL_CATALOG_PATH: "scripts/mock_model_catalog.json",
     },
+    postCheckScript: "tools/assertions/overlayFootprintCheck.ts",
   },
   {
     id: "model_picker_small",
@@ -743,6 +1402,7 @@ const STRESS_CASES: StressCase[] = [
     env: {
       BREADBOARD_MODEL_CATALOG_PATH: "scripts/mock_model_catalog.json",
     },
+    postCheckScript: "tools/assertions/overlayFootprintCheck.ts",
   },
   {
     id: "live_engine_smoke",
@@ -752,6 +1412,366 @@ const STRESS_CASES: StressCase[] = [
     requiresLive: true,
     submitTimeoutMs: 0,
     configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "live_wrapper_plain_smoke",
+    kind: "pty",
+    script: "scripts/live_wrapper_plain_smoke_pty.json",
+    description: "Installed bb wrapper plain-answer smoke against a fresh live bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/liveWrapperPlainSmokeCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "live_wrapper_emulator_plain_smoke",
+    kind: "emulator",
+    script: "scripts/live_wrapper_plain_smoke_pty.json",
+    description: "Experimental WezTerm observer smoke for installed bb wrapper against a fresh live bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/liveWrapperEmulatorSmokeCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    cols: 120,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "live_wrapper_emulator_resize_smoke",
+    kind: "emulator",
+    script: "scripts/live_wrapper_emulator_resize_pty.json",
+    description: "Experimental WezTerm observer resize smoke for installed bb wrapper against a fresh live bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/liveWrapperEmulatorResizeCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    cols: 120,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "live_wrapper_emulator_startup_smallheight",
+    kind: "emulator",
+    script: "scripts/live_wrapper_startup_smallheight_pty.json",
+    description: "WezTerm observer constrained-height startup smoke for installed bb wrapper against a fresh live bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/liveWrapperEmulatorStartupSmallHeightCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 12,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "maintenance_wrapper_plain_smoke",
+    kind: "pty",
+    script: "scripts/maintenance_wrapper_plain_smoke_pty.json",
+    description: "Installed bb wrapper plain-answer smoke against a fresh local mock bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/maintenanceWrapperPlainSmokeCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "maintenance_wrapper_multiturn_ordering",
+    kind: "pty",
+    script: "scripts/maintenance_wrapper_multiturn_ordering_pty.json",
+    description: "Installed bb wrapper multi-turn ordering smoke against a fresh local mock bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/maintenanceWrapperMultiturnOrderingCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "maintenance_wrapper_tool_smoke",
+    kind: "pty",
+    script: "scripts/maintenance_wrapper_tool_smoke_pty.json",
+    description: "Installed bb wrapper tool smoke against a fresh local mock bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/maintenanceWrapperToolSmokeCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "maintenance_wrapper_resize_spacer_regression",
+    kind: "pty",
+    script: "scripts/maintenance_wrapper_resize_spacer_regression_pty.json",
+    description: "Installed bb wrapper resize spacer regression smoke against a fresh local mock bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/noReactDuplicateKeyWarningCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "maintenance_wrapper_compact_session_header",
+    kind: "pty",
+    script: "scripts/maintenance_wrapper_compact_session_header_pty.json",
+    description: "Installed bb wrapper compact inline session-header regression against a fresh local mock bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/maintenanceWrapperCompactSessionHeaderCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 18,
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "maintenance_wrapper_markdown_projection",
+    kind: "pty",
+    script: "scripts/maintenance_wrapper_markdown_projection_pty.json",
+    description: "Installed bb wrapper rich markdown projection should keep stacked table and fenced code cues visible",
+    mockSseScript: "scripts/mock_sse_markdown_projection.json",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/maintenanceWrapperMarkdownProjectionCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    cols: 48,
+    rows: 24,
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "maintenance_wrapper_emulator_plain_smoke",
+    kind: "emulator",
+    script: "scripts/maintenance_wrapper_plain_smoke_pty.json",
+    description: "WezTerm observer smoke for installed bb wrapper against a fresh local mock bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/liveWrapperEmulatorSmokeCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    cols: 120,
+    rows: 36,
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "maintenance_wrapper_emulator_resize_smoke",
+    kind: "emulator",
+    script: "scripts/maintenance_wrapper_emulator_resize_pty.json",
+    description: "WezTerm observer resize smoke for installed bb wrapper against a fresh local mock bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/maintenanceWrapperEmulatorResizeCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    cols: 120,
+    rows: 36,
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "maintenance_wrapper_emulator_startup_smallheight",
+    kind: "emulator",
+    script: "scripts/live_wrapper_startup_smallheight_pty.json",
+    description: "WezTerm observer constrained-height startup smoke for installed bb wrapper against a fresh local mock bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/liveWrapperEmulatorStartupSmallHeightCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 12,
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+  },
+  {
+    id: "live_wrapper_emulator_long_answer_resize",
+    kind: "emulator",
+    script: "scripts/live_wrapper_long_answer_resize_pty.json",
+    description: "WezTerm observer long-answer resize evidence bundle for installed bb wrapper against a fresh live bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    postCheckScript: "tools/assertions/liveWrapperLongAnswerResizePolicyCheck.ts",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "e4_real_dummy_code_agent",
+    kind: "pty",
+    script: "scripts/e4_real_dummy_code_agent_pty.json",
+    description: "Real E4 config dummy-workspace code-agent parity session against a fresh live bridge.",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/e4RealHarnessParityCheck.ts",
+    command: "bb repl",
+    cwd: "/tmp/bb_tmp_harness_parity_dummy/session_e4_real",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "live_multiagent_repo_scan",
+    kind: "pty",
+    script: "scripts/live_multiagent_repo_scan_pty.json",
+    description: "Live Codex GPT-5.4-mini multiagent repo-scanner taskboard smoke in a P16 isolated dummy workspace.",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/liveMultiagentRepoScanCheck.ts",
+    command: "bb repl",
+    cwd: "/tmp/bb_p16_live_multiagent_repo_scan",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live_multiagent.yaml",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    workspaceFiles: [
+      {
+        path: "README.md",
+        contents: "# P16 Live Multiagent Repo Scan\n\nThis disposable repo is used only for BreadBoard live multiagent TUI validation.\n",
+      },
+      {
+        path: "package.json",
+        contents: "{\n  \"name\": \"bb-p16-live-multiagent-repo-scan\",\n  \"version\": \"0.0.0\",\n  \"private\": true\n}\n",
+      },
+      {
+        path: "AGENTS.md",
+        contents: "# Disposable Workspace\n\nThis directory is the complete workspace. Do not inspect parent directories. Do not edit files for the live multiagent repo-scan gate.\n",
+      },
+    ],
+  },
+  {
+    id: "live_wrapper_emulator_streaming_resize_churn",
+    kind: "emulator",
+    script: "scripts/live_wrapper_emulator_streaming_resize_churn_pty.json",
+    description: "WezTerm observer repeated streaming resize churn evidence bundle for installed bb wrapper against a fresh live bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    postCheckScript: "tools/assertions/liveWrapperEmulatorStreamingResizeChurnCheck.ts",
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "live_wrapper_emulator_streaming_resize_settle_probe",
+    kind: "emulator",
+    script: "scripts/live_wrapper_emulator_streaming_resize_settle_probe_pty.json",
+    description: "WezTerm observer internal settle probe for immediate-vs-delayed post-resize streaming visibility",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "live_wrapper_startup_smallheight",
+    kind: "pty",
+    script: "scripts/live_wrapper_startup_smallheight_pty.json",
+    description: "Installed bb wrapper startup landing should fall back cleanly under constrained height",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 12,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    postCheckScript: "tools/assertions/liveWrapperStartupSmallHeightCheck.ts",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "live_wrapper_multiturn_ordering",
+    kind: "pty",
+    script: "scripts/live_wrapper_multiturn_ordering_pty.json",
+    description: "Installed bb wrapper multi-turn transcript ordering against a fresh live bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    postCheckScript: "tools/assertions/liveWrapperMultiturnOrderingCheck.ts",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "live_wrapper_tool_smoke",
+    kind: "pty",
+    script: "scripts/live_wrapper_tool_pty.json",
+    description: "Installed bb wrapper tool-turn inspection against a fresh live bridge",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    postCheckScript: "tools/assertions/liveWrapperToolSmokeCheck.ts",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "live_wrapper_resize_spacer_regression",
+    kind: "pty",
+    script: "scripts/live_wrapper_resize_spacer_regression_pty.json",
+    description: "Installed bb wrapper resize churn should not emit duplicate spacer-key warnings",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    postCheckScript: "tools/assertions/noReactDuplicateKeyWarningCheck.ts",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "live_wrapper_long_answer_resize",
+    kind: "pty",
+    script: "scripts/live_wrapper_long_answer_resize_pty.json",
+    description: "Installed bb wrapper long streamed answer with resize for managed-region reclaim audit",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    postCheckScript: "tools/assertions/liveWrapperLongAnswerResizePolicyCheck.ts",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
   },
   {
     id: "live_engine_permission",
@@ -908,6 +1928,1190 @@ const STRESS_CASES: StressCase[] = [
     submitTimeoutMs: 0,
   },
   {
+    id: "p4_terminal_adapter_dry_run",
+    kind: "terminal",
+    terminalLane: "dry-run",
+    script: "scripts/composer_command_surface_pty.json",
+    description: "P4 terminal-adapter integration dry-run through the canonical bundle runner",
+    submitTimeoutMs: 0,
+  },
+  {
+    id: "p14_wezterm_command_surface_real_terminal",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/composer_command_surface_pty.json",
+    description: "P14 WezTerm real-terminal slash command/composer command surface support lane.",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    configPath: "../agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 110,
+    rows: 34,
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/composerCommandSurfaceCheck.ts",
+  },
+  {
+    id: "p15_wezterm_core_ux_transcript_navigation",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/transcript_viewer_navigation_pty.json",
+    description: "P15 WezTerm real-terminal transcript viewer navigation/search/return support lane.",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 120,
+    rows: 34,
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/transcriptViewerNavigationCheck.ts",
+  },
+  {
+    id: "p16_wezterm_multiagent_task_focus",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/multiagent_task_focus_controls_wezterm.json",
+    description:
+      "P16 WezTerm representative multiagent host lane: taskboard filters, Task Focus inspector semantics, artifact tail, follow toggle, compact resize, and close recovery.",
+    mockSseScript: "scripts/mock_sse_multiagent_tasks.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    workspaceFiles: [
+      {
+        path: "agent_ws/.breadboard/subagents/agent-task-implementer-01.jsonl",
+        contents: [
+          "{\"event\":\"start\",\"message\":\"SMTP focus artifact opened\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_01 create socket\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_02 bind localhost\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_03 listen\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_04 accept client\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_05 parse HELO\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_06 parse MAIL FROM\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_07 parse RCPT TO\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_08 parse DATA\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_09 persist eml\"}",
+          "{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_10 graceful QUIT\"}",
+          "{\"event\":\"summary\",\"message\":\"SMTP_FOCUS_TAIL_LINE_11 deterministic tail marker\"}",
+          "",
+        ].join("\n"),
+      },
+    ],
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+      BREADBOARD_SUBAGENTS_V2_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_SUBAGENTS_COALESCE_MS: "0",
+      BREADBOARD_TUI_SUBAGENTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_STRIP_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TOASTS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_TASKBOARD_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_FOCUS_ENABLED: "1",
+      BREADBOARD_TUI_SUBAGENTS_COALESCE_MS: "0",
+    },
+    postCheckScript: "tools/assertions/multiagentTaskFocusControlsCheck.ts",
+  },
+  {
+    id: "p15_wezterm_core_ux_model_picker",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p14_model_picker_ghostty_real_terminal_pty.json",
+    description: "P15 WezTerm real-terminal model picker open/filter/resize/close support lane.",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\n\"; exec bb repl \"$@\"' bash",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    env: {
+      BREADBOARD_MODEL_CATALOG_PATH: resolveTuiPath("scripts/mock_model_catalog.json"),
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/overlayFootprintCheck.ts",
+  },
+  {
+    id: "p15_wezterm_core_ux_permissions_status",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/permissions_status_surface_pty.json",
+    description: "P15 WezTerm real-terminal read-only permission status surface support lane.",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    command: "bb repl --permission-mode prompt",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 120,
+    rows: 34,
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/permissionsStatusSurfaceCheck.ts",
+  },
+  {
+    id: "p15_wezterm_core_ux_diff_transcript_entrypoint",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/diff_transcript_entrypoint_pty.json",
+    description: "P15 WezTerm real-terminal /diff transcript entrypoint support lane.",
+    mockSseScript: "scripts/mock_sse_diff.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/diffTranscriptEntrypointCheck.ts",
+  },
+  {
+    id: "p4_wezterm_streaming_smoke",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/streaming_markdown_pty.json",
+    description: "P4 WezTerm programmable-lane streaming smoke against the canonical app with deterministic mock SSE",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+  },
+  {
+    id: "p4_wezterm_multiturn_width_shrink",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p6_wezterm_escalated_multiturn_width_shrink_pty.json",
+    description: "P4 WezTerm programmable-lane multi-turn width-shrink probe against the live bridge mock provider",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "p4_ghostty_launch_stream_probe",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p4_ghostty_visual_probe_pty.json",
+    description: "P4 Ghostty semi-automated launch and streaming visual probe with structured screenshots and logs",
+    submitTimeoutMs: 0,
+    command: String.raw`bash -lc 'printf "ghostty visual probe start\n"; for i in 1 2 3 4; do printf "ghostty stream chunk %s\n" "$i"; sleep 1; done; sleep 20'`,
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+  },
+  {
+    id: "p4_ghostty_streaming_current_window",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p7_ghostty_scene_owned_streaming_current_window_pty.json",
+    description: "P4 Ghostty mirrored startup/streaming current-window probe using a tmux-driven BreadBoard session rendered inside a real Ghostty window",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_QC_WORKSPACE_CWD: QC_GHOSTTY_TMUX_WORKSPACE_CWD,
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p4ghostty_stream:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p4ghostty_stream",
+      P4_GHOSTTY_PROMPT: "Write a markdown answer with a heading, three bullets, a small table, and a ts code block. Keep it medium length.",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "2200",
+    },
+  },
+  {
+    id: "p4_ghostty_multiturn_width_shrink",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p4_ghostty_multiturn_width_shrink_pty.json",
+    description: "P4 Ghostty mirrored multi-turn width-shrink probe using a tmux-driven BreadBoard session rendered inside a real Ghostty window",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_QC_WORKSPACE_CWD: QC_GHOSTTY_TMUX_WORKSPACE_CWD,
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p4ghostty_resize:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p4ghostty_resize",
+      P4_GHOSTTY_PROMPT: "Write a markdown answer with a heading, three bullets, a small table, and a ts code block. Keep it medium length.",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "2200",
+      P4_GHOSTTY_SECOND_DELAY_MS: "7000",
+    },
+  },
+  {
+    id: "p5_wezterm_owned_live_streaming_smoke",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/streaming_markdown_pty.json",
+    description: "P5 owned-live WezTerm streaming smoke against the canonical app with deterministic mock SSE",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+    },
+  },
+  {
+    id: "p5_wezterm_owned_live_transcript_navigation",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/transcript_viewer_navigation_pty.json",
+    description: "P5 owned-live WezTerm transcript escape and return probe",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+    },
+    postCheckScript: "tools/assertions/transcriptViewerNavigationCheck.ts",
+  },
+  {
+    id: "p5_wezterm_owned_live_multiturn_width_shrink",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p4_wezterm_multiturn_width_shrink_pty.json",
+    description: "P5 owned-live WezTerm multi-turn width-shrink probe against the live bridge mock provider",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+    },
+  },
+  {
+    id: "p5_wezterm_owned_live_height_change",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p5_wezterm_owned_live_height_change_pty.json",
+    description: "P5 owned-live WezTerm active height-change probe against the deterministic streaming mock",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow_two_turns.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+    },
+    postCheckScript: "tools/assertions/ownedLiveHeightChangeCheck.ts",
+  },
+  {
+    id: "p5_wezterm_owned_live_network_error",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/network_error_pty.json",
+    description: "P5 owned-live WezTerm network-error surface probe against the deterministic mock",
+    mockSseScript: "scripts/mock_sse_network_error.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+    },
+  },
+  {
+    id: "p6_wezterm_escalated_streaming_smoke",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p6_wezterm_escalated_streaming_smoke_pty.json",
+    description: "P6 escalated-owned WezTerm streaming smoke against the canonical app with deterministic mock SSE",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+    },
+  },
+  {
+    id: "p6_wezterm_escalated_transcript_navigation",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p6_wezterm_escalated_transcript_escape_pty.json",
+    description: "P6 escalated-owned WezTerm transcript escape and return probe",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+    },
+    postCheckScript: "tools/assertions/escalatedTranscriptEscapeCheck.ts",
+  },
+  {
+    id: "p6_wezterm_escalated_multiturn_width_shrink",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p6_wezterm_escalated_multiturn_width_shrink_pty.json",
+    description: "P6 escalated-owned WezTerm multi-turn width-shrink probe against the live bridge mock provider",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+    },
+  },
+  {
+    id: "p6_wezterm_escalated_network_error",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p6_wezterm_escalated_network_error_pty.json",
+    description: "P6 escalated-owned WezTerm network-error surface probe against the deterministic mock",
+    mockSseScript: "scripts/mock_sse_network_error.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+      BREADBOARD_STREAM_MAX_RETRIES: "1",
+      BREADBOARD_STREAM_STALL_TIMEOUT_MS: "3000",
+    },
+    postCheckScript: "tools/assertions/ownedLiveNetworkErrorCheck.ts",
+  },
+  {
+    id: "p7_wezterm_scene_owned_streaming_smoke",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p6_wezterm_escalated_streaming_smoke_pty.json",
+    description: "P7 scene-owned runtime WezTerm streaming smoke against the canonical app with deterministic mock SSE",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+      BREADBOARD_TUI_SCENE_OWNED_STRATEGY: "scene-owned-runtime",
+    },
+    postCheckScript: "tools/assertions/sceneOwnedRuntimeStreamingCheck.ts",
+  },
+  {
+    id: "p7_wezterm_scene_owned_transcript_navigation",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p6_wezterm_escalated_transcript_escape_pty.json",
+    description: "P7 scene-owned runtime WezTerm transcript escape and return probe",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+      BREADBOARD_TUI_SCENE_OWNED_STRATEGY: "scene-owned-runtime",
+    },
+    postCheckScript: "tools/assertions/sceneOwnedRuntimeTranscriptEscapeCheck.ts",
+  },
+  {
+    id: "p7_wezterm_scene_owned_multiturn_width_shrink",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p6_wezterm_escalated_multiturn_width_shrink_pty.json",
+    description: "P7 scene-owned runtime WezTerm multi-turn width-shrink probe against the live bridge mock provider",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+      BREADBOARD_TUI_SCENE_OWNED_STRATEGY: "scene-owned-runtime",
+    },
+    postCheckScript: "tools/assertions/sceneOwnedRuntimeWidthShrinkCheck.ts",
+  },
+  {
+    id: "p7_ghostty_scene_owned_streaming_current_window",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p7_ghostty_scene_owned_streaming_current_window_pty.json",
+    description: "P7 scene-owned runtime Ghostty mirrored startup/streaming current-window probe using the real Ghostty lane",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p7ghostty_stream:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p7ghostty_stream",
+      P4_GHOSTTY_PROMPT: "Write a markdown answer with a heading, three bullets, a small table, and a ts code block. Keep it medium length.",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "2200",
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+      BREADBOARD_TUI_SCENE_OWNED_STRATEGY: "scene-owned-runtime",
+    },
+    postCheckScript: "tools/assertions/sceneOwnedGhosttyStreamingCurrentWindowCheck.ts",
+  },
+  {
+    id: "p7_wezterm_default_flagship_smoke",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p6_wezterm_escalated_streaming_smoke_pty.json",
+    description: "Post-closeout ceremonial WezTerm flagship smoke using the default resolver path without ownership env overrides",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    postCheckScript: "tools/assertions/sceneOwnedRuntimeStreamingCheck.ts",
+  },
+  {
+    id: "p7_ghostty_default_flagship_smoke",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p7_ghostty_scene_owned_streaming_current_window_pty.json",
+    description: "Post-closeout ceremonial Ghostty flagship smoke using the default resolver path without ownership env overrides",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p7ghostty_default_stream:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p7ghostty_default_stream",
+      P4_GHOSTTY_PROMPT: "Write a markdown answer with a heading, three bullets, a small table, and a ts code block. Keep it medium length.",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "2200",
+    },
+    postCheckScript: "tools/assertions/sceneOwnedGhosttyStreamingCurrentWindowCheck.ts",
+  },
+  {
+    id: "p8_wezterm_scrollback_seeded_host_history_guard",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p6_wezterm_escalated_streaming_smoke_pty.json",
+    description: "P8 preserved-scrollback WezTerm seeded-host-history guard using canonical app startup plus pre-app shell lines.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\nPRE_APP_BETA\n\"; exec bb repl \"$@\"' bash",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+    },
+    postCheckScript: "tools/assertions/scrollbackHostHistoryPreservationCheck.ts",
+  },
+  {
+    id: "p8_wezterm_scrollback_multiturn_width_shrink",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p6_wezterm_escalated_multiturn_width_shrink_pty.json",
+    description: "P8 preserved-scrollback WezTerm visible-region width-shrink probe for landing/history precision.",
+    requiresLive: true,
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\n\"; exec bb repl \"$@\"' bash",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+    env: {
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+    },
+    postCheckScript: "tools/assertions/scrollbackVisibleRegionBlastRadiusCheck.ts",
+  },
+  {
+    id: "p10_ghostty_native_scrollback_seeded_host_history_guard",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p10_ghostty_native_scrollback_seeded_host_history_pty.json",
+    description: "P10 Ghostty-native no-tmux seeded-host-history guard using Ghostty write_scrollback_file export.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\n\"; exec bb repl \"$@\"' bash",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+    },
+    postCheckScript: "tools/assertions/scrollbackGhosttyHostHistoryPreservationCheck.ts",
+  },
+  {
+    id: "p10_ghostty_native_scrollback_width_shrink",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p10_ghostty_native_scrollback_width_shrink_pty.json",
+    description: "P10 Ghostty-native no-tmux single-turn visible-region width-shrink probe using Ghostty write_screen_file/write_scrollback_file exports.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\n\"; exec bb repl \"$@\"' bash",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/scrollbackGhosttyVisibleRegionBlastRadiusCheck.ts",
+  },
+  {
+    id: "p10_ghostty_native_scrollback_multiturn_width_shrink",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p10_ghostty_native_scrollback_multiturn_width_shrink_pty.json",
+    description: "P10 Ghostty-native no-tmux two-turn preserved-scrollback width-shrink probe using Ghostty write_screen_file/write_scrollback_file exports.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow_two_turns.json",
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\n\"; exec bb repl \"$@\"' bash",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/scrollbackGhosttyVisibleRegionBlastRadiusCheck.ts",
+  },
+  {
+    id: "p10_ghostty_native_scrollback_height_change",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p10_ghostty_native_scrollback_height_change_pty.json",
+    description: "P10 Ghostty-native no-tmux preserved-scrollback height-shrink probe using native screen/scrollback exports.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\n\"; exec bb repl \"$@\"' bash",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/scrollbackGhosttyVisibleRegionBlastRadiusCheck.ts",
+  },
+  {
+    id: "p10_ghostty_native_scrollback_resize_churn",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p10_ghostty_native_scrollback_resize_churn_pty.json",
+    description: "P10 Ghostty-native no-tmux preserved-scrollback repeated resize-churn probe with final shrink verification.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\n\"; exec bb repl \"$@\"' bash",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/scrollbackGhosttyVisibleRegionBlastRadiusCheck.ts",
+  },
+  {
+    id: "p11_ghostty_native_scrollback_history_guard_v2",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p11_ghostty_native_scrollback_history_guard_v2_pty.json",
+    description: "P11 Ghostty-native rich seeded-host-history guard with P11 clause-complete verdicts.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\nBB_PRE_SHORT_ALPHA\\nBB_PRE_SHORT_BETA\\nBB_PRE_LONG_GAMMA_BEGIN abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz BB_PRE_LONG_GAMMA_END\\nBB_PRE_FINAL_ZETA\\n\"; exec bb repl \"$@\"' bash",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/scrollbackGhosttyHostHistoryPreservationCheck.ts",
+  },
+  {
+    id: "p11_ghostty_native_scrollback_width_equiv_structured_wide",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p11_ghostty_native_scrollback_width_equiv_structured_wide_pty.json",
+    description: "P11 Ghostty-native width-equivalence Path A: wide start then shrink for structured markdown.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\n\"; exec bb repl \"$@\"' bash",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/scrollbackGhosttyVisibleRegionBlastRadiusCheck.ts",
+  },
+  {
+    id: "p11_ghostty_native_scrollback_width_equiv_structured_narrow",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p11_ghostty_native_scrollback_width_equiv_structured_narrow_pty.json",
+    description: "P11 Ghostty-native width-equivalence Path B: resize to final width before structured markdown input.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\n\"; exec bb repl \"$@\"' bash",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/visibleCompositionCheck.ts",
+  },
+  {
+    id: "p11_ghostty_native_scrollback_multiturn_width_shrink",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p11_ghostty_native_scrollback_multiturn_width_shrink_pty.json",
+    description: "P11 Ghostty-native two-turn preserved-scrollack width-shrink case with P11 clause-complete verdicts.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow_two_turns.json",
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\n\"; exec bb repl \"$@\"' bash",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/scrollbackGhosttyVisibleRegionBlastRadiusCheck.ts",
+  },
+  {
+    id: "p11_ghostty_native_scrollback_height_change",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p11_ghostty_native_scrollback_height_change_pty.json",
+    description: "P11 Ghostty-native height-change preserved-scrollback case with P11 clause-complete verdicts.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\n\"; exec bb repl \"$@\"' bash",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/scrollbackGhosttyVisibleRegionBlastRadiusCheck.ts",
+  },
+  {
+    id: "p11_ghostty_native_scrollback_resize_churn",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p11_ghostty_native_scrollback_resize_churn_pty.json",
+    description: "P11 Ghostty-native resize-churn preserved-scrollback case with P11 clause-complete verdicts.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\n\"; exec bb repl \"$@\"' bash",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/scrollbackGhosttyVisibleRegionBlastRadiusCheck.ts",
+  },
+  {
+    id: "p14_ghostty_model_picker_real_terminal",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p14_model_picker_ghostty_real_terminal_pty.json",
+    description: "P14 Ghostty real-terminal model picker open/filter/resize/close support lane.",
+    command: "bash -lc 'printf \"PRE_APP_ALPHA\\nPRE_APP_BETA\\n\"; exec bb repl \"$@\"' bash",
+    configPath: "../agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    cwd: QC_DUMMY_WORKSPACE_CWD,
+    cols: 132,
+    rows: 36,
+    submitTimeoutMs: 0,
+    env: {
+      BREADBOARD_MODEL_CATALOG_PATH: resolveTuiPath("scripts/mock_model_catalog.json"),
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+    },
+    postCheckScript: "tools/assertions/overlayFootprintCheck.ts",
+  },
+  {
+    id: "p15_ghostty_core_ux_transcript_navigation",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/transcript_viewer_navigation_ghostty_pty.json",
+    description: "P15 Ghostty real-terminal transcript viewer navigation/search/return support lane.",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    cols: 120,
+    rows: 34,
+    env: {
+      BREADBOARD_QC_WORKSPACE_CWD: QC_GHOSTTY_TMUX_WORKSPACE_CWD,
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p15ghostty_core_transcript:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p15ghostty_core_transcript",
+      P4_GHOSTTY_PRE_APP_TEXT: "PRE_APP_ALPHA\nPRE_APP_BETA\n",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/transcriptViewerNavigationCheck.ts",
+  },
+  {
+    id: "p15_ghostty_core_ux_permissions_status",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/permissions_status_surface_ghostty_pty.json",
+    description: "P15 Ghostty real-terminal read-only permission status surface support lane.",
+    mockSseScript: "scripts/mock_sse_sample.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    cols: 120,
+    rows: 34,
+    env: {
+      BREADBOARD_QC_WORKSPACE_CWD: QC_GHOSTTY_TMUX_WORKSPACE_CWD,
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p15ghostty_core_permissions:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p15ghostty_core_permissions",
+      P4_GHOSTTY_PRE_APP_TEXT: "PRE_APP_ALPHA\nPRE_APP_BETA\n",
+      P4_GHOSTTY_BOOT_DELAY_MS: "6000",
+      P4_GHOSTTY_PERMISSION_MODE: "prompt",
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/permissionsStatusSurfaceCheck.ts",
+  },
+  {
+    id: "p15_ghostty_core_ux_diff_transcript_entrypoint",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/diff_transcript_entrypoint_ghostty_pty.json",
+    description: "P15 Ghostty real-terminal /diff transcript entrypoint support lane.",
+    mockSseScript: "scripts/mock_sse_diff.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    cols: 132,
+    rows: 36,
+    env: {
+      BREADBOARD_QC_WORKSPACE_CWD: QC_GHOSTTY_TMUX_WORKSPACE_CWD,
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p15ghostty_core_diff:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p15ghostty_core_diff",
+      P4_GHOSTTY_PRE_APP_TEXT: "PRE_APP_ALPHA\nPRE_APP_BETA\n",
+      P4_GHOSTTY_BOOT_DELAY_MS: "6000",
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/diffTranscriptEntrypointCheck.ts",
+  },
+  {
+    id: "p8_ghostty_scrollback_seeded_host_history_guard",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p7_ghostty_scene_owned_streaming_current_window_pty.json",
+    description: "P8 preserved-scrollback Ghostty seeded-host-history guard using canonical app startup plus pre-app shell lines.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_QC_WORKSPACE_CWD: QC_GHOSTTY_TMUX_WORKSPACE_CWD,
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p8ghostty_seed:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p8ghostty_seed",
+      P4_GHOSTTY_PRE_APP_TEXT: "PRE_APP_ALPHA\nPRE_APP_BETA\n",
+      P4_GHOSTTY_PROMPT: "Write a markdown answer with a heading, three bullets, a small table, and a ts code block. Keep it medium length.",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "6500",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+    },
+    postCheckScript: "tools/assertions/scrollbackGhosttyHostHistoryPreservationCheck.ts",
+  },
+  {
+    id: "p8_ghostty_scrollback_multiturn_width_shrink",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p8_ghostty_scrollback_width_shrink_pty.json",
+    description: "P8 preserved-scrollback Ghostty mirrored visible-region width-shrink probe.",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_QC_WORKSPACE_CWD: QC_GHOSTTY_TMUX_WORKSPACE_CWD,
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p8ghostty_resize:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p8ghostty_resize",
+      P4_GHOSTTY_PRE_APP_TEXT: "PRE_APP_ALPHA\nPRE_APP_BETA\n",
+      P4_GHOSTTY_PROMPT: "Write a markdown answer with a heading, three bullets, a small table, and a ts code block. Keep it medium length.",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "12000",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "inline-scrollback",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/scrollbackGhosttyVisibleRegionBlastRadiusCheck.ts",
+  },
+  {
+    id: "p7_ghostty_scene_owned_multiturn_width_shrink",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p4_ghostty_multiturn_width_shrink_pty.json",
+    description: "P7 scene-owned runtime Ghostty mirrored multi-turn width-shrink probe against the live bridge mock provider",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p7ghostty_resize:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p7ghostty_resize",
+      P4_GHOSTTY_PROMPT: "Write a medium markdown answer with a heading, bullets, a small table, and a code block so the current window has visible structured content.",
+      P4_GHOSTTY_SECOND_PROMPT: "Give a short follow-up paragraph and a two-item bullet list.",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "2200",
+      P4_GHOSTTY_SECOND_DELAY_MS: "7000",
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+      BREADBOARD_TUI_SCENE_OWNED_STRATEGY: "scene-owned-runtime",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+    postCheckScript: "tools/assertions/sceneOwnedGhosttyWidthShrinkCheck.ts",
+  },
+  {
+    id: "p7_ghostty_scene_owned_height_change",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p7_ghostty_scene_owned_height_change_pty.json",
+    description: "P7 scene-owned runtime Ghostty mirrored active height-change credibility probe",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p7ghostty_height:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p7ghostty_height",
+      P4_GHOSTTY_PROMPT: "stream markdown",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "2200",
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+      BREADBOARD_TUI_SCENE_OWNED_STRATEGY: "scene-owned-runtime",
+    },
+    postCheckScript: "tools/assertions/sceneOwnedGhosttyHeightChangeCheck.ts",
+  },
+  {
+    id: "p7_ghostty_scene_owned_network_error",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p7_ghostty_scene_owned_network_error_pty.json",
+    description: "P7 scene-owned runtime Ghostty mirrored network-error credibility probe",
+    mockSseScript: "scripts/mock_sse_network_error.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p7ghostty_neterr:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p7ghostty_neterr",
+      P4_GHOSTTY_PROMPT: "trigger network error",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "2200",
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+      BREADBOARD_TUI_SCENE_OWNED_STRATEGY: "scene-owned-runtime",
+      BREADBOARD_STREAM_MAX_RETRIES: "1",
+      BREADBOARD_STREAM_STALL_TIMEOUT_MS: "3000",
+    },
+    postCheckScript: "tools/assertions/sceneOwnedGhosttyNetworkErrorCheck.ts",
+  },
+  {
+    id: "p7_ghostty_scene_owned_streaming_resize_churn",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p7_ghostty_scene_owned_streaming_resize_churn_pty.json",
+    description: "P7 scene-owned runtime Ghostty mirrored repeated streaming resize-churn credibility probe",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p7ghostty_churn:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p7ghostty_churn",
+      P4_GHOSTTY_PROMPT: "Answer with a short markdown response containing a heading, three bullets, a small table, and a ts code block.",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "2200",
+      BREADBOARD_GHOSTTY_NATIVE_SCROLLBACK_EXPORT: "1",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+      BREADBOARD_TUI_SCENE_OWNED_STRATEGY: "scene-owned-runtime",
+    },
+    postCheckScript: "tools/assertions/sceneOwnedGhosttyResizeChurnCheck.ts",
+  },
+  {
+    id: "p7_wezterm_scene_owned_height_change",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p5_wezterm_owned_live_height_change_pty.json",
+    description: "P7 scene-owned runtime WezTerm active height-change probe against the deterministic streaming mock",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+      BREADBOARD_TUI_SCENE_OWNED_STRATEGY: "scene-owned-runtime",
+    },
+    postCheckScript: "tools/assertions/sceneOwnedRuntimeHeightChangeCheck.ts",
+  },
+  {
+    id: "p7_wezterm_scene_owned_network_error",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/p6_wezterm_escalated_network_error_pty.json",
+    description: "P7 scene-owned runtime WezTerm network-error surface probe against the deterministic mock",
+    mockSseScript: "scripts/mock_sse_network_error.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+      BREADBOARD_TUI_SCENE_OWNED_STRATEGY: "scene-owned-runtime",
+      BREADBOARD_STREAM_MAX_RETRIES: "1",
+      BREADBOARD_STREAM_STALL_TIMEOUT_MS: "3000",
+    },
+    postCheckScript: "tools/assertions/sceneOwnedRuntimeNetworkErrorCheck.ts",
+  },
+  {
+    id: "p7_wezterm_scene_owned_streaming_resize_churn",
+    kind: "terminal",
+    terminalLane: "wezterm",
+    script: "scripts/live_wrapper_emulator_streaming_resize_churn_pty.json",
+    description: "P7 scene-owned runtime WezTerm repeated streaming resize churn probe",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bb repl",
+    cwd: "..",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+      BREADBOARD_TUI_SCENE_OWNED_STRATEGY: "scene-owned-runtime",
+    },
+    postCheckScript: "tools/assertions/sceneOwnedRuntimeResizeChurnCheck.ts",
+  },
+  {
+    id: "p5_ghostty_owned_live_streaming_current_window",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p4_ghostty_streaming_current_window_pty.json",
+    description: "P5 owned-live Ghostty mirrored startup/streaming current-window probe using the real Ghostty lane",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p5ghostty_stream:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p5ghostty_stream",
+      P4_GHOSTTY_PROMPT: "Write a markdown answer with a heading, three bullets, a small table, and a ts code block. Keep it medium length.",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "2200",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+    },
+  },
+  {
+    id: "p5_ghostty_owned_live_multiturn_width_shrink",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p4_ghostty_multiturn_width_shrink_pty.json",
+    description: "P5 owned-live Ghostty mirrored multi-turn width-shrink probe against the live bridge mock provider",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p5ghostty_resize:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p5ghostty_resize",
+      P4_GHOSTTY_PROMPT: "Write a medium markdown answer with a heading, bullets, a small table, and a code block so the current window has visible structured content.",
+      P4_GHOSTTY_SECOND_PROMPT: "Give a short follow-up paragraph and a two-item bullet list.",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "2200",
+      P4_GHOSTTY_SECOND_DELAY_MS: "7000",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
+    id: "p6_ghostty_escalated_streaming_current_window",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p4_ghostty_streaming_current_window_pty.json",
+    description: "P6 escalated-owned Ghostty mirrored startup/streaming current-window probe using the real Ghostty lane",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta_slow.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p6ghostty_stream:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p6ghostty_stream",
+      P4_GHOSTTY_PROMPT: "Write a markdown answer with a heading, three bullets, a small table, and a ts code block. Keep it medium length.",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "2200",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+    },
+  },
+  {
+    id: "p6_ghostty_escalated_multiturn_width_shrink",
+    kind: "terminal",
+    terminalLane: "ghostty",
+    script: "scripts/p4_ghostty_multiturn_width_shrink_pty.json",
+    description: "P6 escalated-owned Ghostty mirrored multi-turn width-shrink probe against the live bridge mock provider",
+    mockSseScript: "scripts/mock_sse_streaming_markdown_delta.json",
+    submitTimeoutMs: 0,
+    command: "bash scripts/harness/ghosttyTmuxSession.sh",
+    cols: 132,
+    rows: 36,
+    configPath: "agent_configs/misc/opencode_mock_c_fs.yaml",
+    env: {
+      BREADBOARD_GHOSTTY_TMUX_TARGET: "p6ghostty_resize:0.0",
+      P4_GHOSTTY_TMUX_SESSION: "p6ghostty_resize",
+      P4_GHOSTTY_PROMPT: "Write a medium markdown answer with a heading, bullets, a small table, and a code block so the current window has visible structured content.",
+      P4_GHOSTTY_SECOND_PROMPT: "Give a short follow-up paragraph and a two-item bullet list.",
+      P4_GHOSTTY_BOOT_DELAY_MS: "3200",
+      P4_GHOSTTY_FIRST_DELAY_MS: "2200",
+      P4_GHOSTTY_SECOND_DELAY_MS: "7000",
+      BREADBOARD_TUI_LIVE_SHELL_MODE: "owned-live",
+      BREADBOARD_TUI_LIVE_SHELL_HOST: "escalated-owned",
+      BREADBOARD_PTY_PRESERVE_HOME: "1",
+    },
+  },
+  {
     id: "attachment_submit",
     kind: "pty",
     script: "scripts/attachment_submit.json",
@@ -938,6 +3142,10 @@ interface CliOptions {
   useCaseMockSse: boolean
   includeLive: boolean
   autoStartLive: boolean
+  freshLive: boolean
+  bundleKind: string
+  bundleAuthority: "canonical" | "maintenance" | "observer" | "emulator" | "legacy"
+  allowRevisionMismatch: boolean
   tmuxCaptureTarget: string | null
   tmuxCaptureScale: number
   keyFuzzIterations: number
@@ -979,6 +3187,16 @@ const parseCliArgs = (): CliOptions => {
   let useCaseMockSse = true
   let includeLive = process.env.STRESS_INCLUDE_LIVE === "1" || process.env.BREADBOARD_STRESS_INCLUDE_LIVE === "1"
   let autoStartLive = process.env.BREADBOARD_CLI_AUTO_START === "1"
+  let freshLive = process.env.BREADBOARD_STRESS_FRESH_LIVE === "1"
+  let bundleKind = process.env.BREADBOARD_BUNDLE_KIND ?? "ad-hoc"
+  let bundleAuthority = (process.env.BREADBOARD_BUNDLE_AUTHORITY as
+    | "canonical"
+    | "maintenance"
+    | "observer"
+    | "emulator"
+    | "legacy"
+    | undefined) ?? "canonical"
+  let allowRevisionMismatch = process.env.BREADBOARD_ALLOW_REVISION_MISMATCH === "1"
   let tmuxCaptureTarget: string | null = process.env.BREADBOARD_TMUX_CAPTURE_TARGET ?? null
   let tmuxCaptureScale = Number(process.env.BREADBOARD_TMUX_CAPTURE_SCALE ?? "1")
   let keyFuzzIterations = 0
@@ -1050,6 +3268,25 @@ const parseCliArgs = (): CliOptions => {
       case "--auto-start-live":
         autoStartLive = true
         break
+      case "--fresh-live":
+        freshLive = true
+        break
+      case "--warm-live":
+        freshLive = false
+        break
+      case "--bundle-kind":
+        bundleKind = args[++i]
+        break
+      case "--bundle-authority": {
+        const value = args[++i]
+        if (value === "canonical" || value === "maintenance" || value === "observer" || value === "emulator" || value === "legacy") {
+          bundleAuthority = value
+        }
+        break
+      }
+      case "--allow-revision-mismatch":
+        allowRevisionMismatch = true
+        break
       case "--tmux-capture-target":
         tmuxCaptureTarget = args[++i] ?? null
         break
@@ -1106,6 +3343,10 @@ const parseCliArgs = (): CliOptions => {
     useCaseMockSse,
     includeLive,
     autoStartLive,
+    freshLive,
+    bundleKind,
+    bundleAuthority,
+    allowRevisionMismatch,
     tmuxCaptureTarget,
     tmuxCaptureScale: Number.isFinite(tmuxCaptureScale) ? tmuxCaptureScale : 1,
     keyFuzzIterations,
@@ -1535,6 +3776,36 @@ const validatePtyArtifacts = async (caseDir: string, caseId: string) => {
   )
 }
 
+const validateEmulatorArtifacts = async (caseDir: string, caseId: string) => {
+  await assertPath(path.join(caseDir, "observer_text"), "dir", caseId, "observer_text")
+  await assertPath(path.join(caseDir, "observer_png"), "dir", caseId, "observer_png")
+  await assertPath(path.join(caseDir, "observer_runtime"), "dir", caseId, "observer_runtime")
+  const requiredFiles = [
+    "observer_runtime/wezterm-events.ndjson",
+    "emulator_snapshots.txt",
+    "emulator_plain.txt",
+    "emulator_metadata.json",
+    "emulator_frames.ndjson",
+    "emulator_manifest.json",
+    "input_log.ndjson",
+    "repl_state.ndjson",
+    "sse_events.txt",
+    "events.ndjson",
+    "config.json",
+    "contract_report.json",
+    "metrics.json",
+    "anomalies.json",
+    "timeline.ndjson",
+    "timeline_summary.json",
+    "timeline_flamegraph.txt",
+    "ttydoc.txt",
+    "case_info.json",
+  ]
+  await Promise.all(
+    requiredFiles.map((relative) => assertPath(path.join(caseDir, relative), "file", caseId, relative)),
+  )
+}
+
 const readJsonFile = async <T>(filePath: string): Promise<T | null> => {
   try {
     const contents = await fs.readFile(filePath, "utf8")
@@ -1560,10 +3831,17 @@ const buildMetricsReport = async (
 }
 
 const resolveConfigPath = (testCase: BaseCase, options: CliOptions): string => {
-  if (testCase.requiresLive && options.liveConfigPath) {
-    return resolveRepoPath(options.liveConfigPath)
+  // P4 real-terminal evidence cases need to pin an explicit config even when the
+  // batch is running with fresh-live bridge startup enabled.
+  if (testCase.kind === "terminal" && testCase.configPath) {
+    return resolveRepoPath(testCase.configPath)
   }
-  const raw = testCase.configPath ?? options.configPath
+  const raw = resolveStressCaseConfigPath({
+    caseConfigPath: testCase.configPath,
+    requiresLive: testCase.requiresLive,
+    defaultConfigPath: options.configPath,
+    liveConfigPath: options.liveConfigPath,
+  })
   return resolveRepoPath(raw)
 }
 
@@ -1579,17 +3857,42 @@ const runReplCase = async (
   const scriptHash = await computeScriptHash(copiedScript.source)
   const reproScriptPath = toRepoRootPath(copiedScript.destination)
   const stateDumpPath = path.join(caseDir, "repl_state.ndjson")
-  const stateDumpRel = toRepoRootPath(stateDumpPath)
+  const viewportResetLogPath = path.join(caseDir, "viewport_resets.ndjson")
+  const surfaceModelLogPath = path.join(caseDir, "surface_model.ndjson")
+  const scrollbackFeedLogPath = path.join(caseDir, "scrollback_feed.ndjson")
+  const markdownMetricsLogPath = path.join(caseDir, "markdown_metrics.ndjson")
+  const renderTimelineLogPath = path.join(caseDir, "render_timeline.ndjson")
+  const appStartAnchorPath = path.join(caseDir, "app_start_anchor.txt")
+  const managedRegionBoundsLogPath = path.join(caseDir, "managed_region_bounds.ndjson")
+  const scrollbackClauseVerdictsPath = path.join(caseDir, "scrollback_clause_verdicts.json")
   const caseInfoPath = path.join(caseDir, "case_info.json")
+  await fs.writeFile(stateDumpPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(viewportResetLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(surfaceModelLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(scrollbackFeedLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(markdownMetricsLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(renderTimelineLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(appStartAnchorPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(managedRegionBoundsLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(
+    scrollbackClauseVerdictsPath,
+    `${JSON.stringify(buildInitialScrollbackClauseVerdicts(testCase.env?.BREADBOARD_TUI_LIVE_SHELL_MODE ?? null), null, 2)}\n`,
+    "utf8",
+  ).catch(() => undefined)
   const envOverrides = { ...(testCase.env ?? {}) }
-  if (chaosInfo?.mode === "mock-sse" && !envOverrides.BREADBOARD_ENGINE_MODE) {
-    envOverrides.BREADBOARD_ENGINE_MODE = "off"
-  }
   const reproEnv = {
     BREADBOARD_API_URL: baseUrl,
-    BREADBOARD_STATE_DUMP_PATH: stateDumpRel,
+    BREADBOARD_STATE_DUMP_PATH: stateDumpPath,
     BREADBOARD_STATE_DUMP_MODE: "summary",
     BREADBOARD_STATE_DUMP_RATE_MS: "100",
+    BREADBOARD_TUI_VIEWPORT_RESETS_FILE: viewportResetLogPath,
+    BREADBOARD_TUI_SURFACE_MODEL_FILE: surfaceModelLogPath,
+    BREADBOARD_TUI_SCROLLBACK_FEED_FILE: scrollbackFeedLogPath,
+    BREADBOARD_TUI_MARKDOWN_METRICS_FILE: markdownMetricsLogPath,
+    BREADBOARD_TUI_RENDER_TIMELINE_FILE: renderTimelineLogPath,
+    BREADBOARD_TUI_APP_START_ANCHOR_FILE: appStartAnchorPath,
+    BREADBOARD_TUI_MANAGED_REGION_BOUNDS_FILE: managedRegionBoundsLogPath,
+    BREADBOARD_TUI_SCROLLBACK_CLAUSE_VERDICTS_FILE: scrollbackClauseVerdictsPath,
     ...envOverrides,
   }
   const baseRepro = buildReproInfo(
@@ -1662,7 +3965,7 @@ const runReplCase = async (
         script: testCase.script,
         scriptHash,
         repro: baseRepro,
-        config: options.configPath,
+        config: configPath,
         chaos: chaosInfo,
         env: envOverrides,
         contractOverrides: options.contractOverrides,
@@ -1679,12 +3982,12 @@ const runReplCase = async (
   const configOutPath = path.join(caseDir, "config.json")
   const contractReportPath = path.join(caseDir, "contract_report.json")
   const metricsPath = path.join(caseDir, "metrics.json")
-  const stateDumpEnvPath = stateDumpRel
+  const stateDumpEnvPath = stateDumpPath
   const args = [
     "dist/main.js",
     "repl",
     "--config",
-    options.configPath,
+    configPath,
     "--script",
     testCase.script,
     "--script-output",
@@ -1698,13 +4001,13 @@ const runReplCase = async (
   }
   const env = {
     ...process.env,
-    BREADBOARD_API_URL: options.baseUrl,
+    BREADBOARD_API_URL: baseUrl,
     BREADBOARD_STATE_DUMP_PATH: stateDumpEnvPath,
     BREADBOARD_STATE_DUMP_MODE: "summary",
     BREADBOARD_STATE_DUMP_RATE_MS: "100",
     ...envOverrides,
   }
-  const profile = process.env.BREADBOARD_TUI_PROFILE ?? process.env.BREADBOARD_PROFILE ?? "claude_v1"
+  const profile = process.env.BREADBOARD_TUI_PROFILE ?? process.env.BREADBOARD_PROFILE ?? "codex_v1"
   await fs.writeFile(
     configOutPath,
     JSON.stringify(
@@ -1726,7 +4029,7 @@ const runReplCase = async (
     if (sseHandle) return
     const match = chunk.match(/Script session\s+([0-9a-fA-F-]+)/)
     if (match) {
-      sseHandle = tapSessionEvents(options.baseUrl, match[1], ssePath)
+      sseHandle = tapSessionEvents(baseUrl, match[1], ssePath)
     }
   }
   await spawnLoggedProcess("node", args, { cwd: ROOT_DIR, env }, logPath, {
@@ -1803,6 +4106,14 @@ const runReplCase = async (
       contractReport: contractReportPath,
       metrics: metricsPath,
       replState: stateDumpPath,
+      viewportResets: viewportResetLogPath,
+      surfaceModel: surfaceModelLogPath,
+      scrollbackFeed: scrollbackFeedLogPath,
+      markdownMetrics: markdownMetricsLogPath,
+      renderTimeline: renderTimelineLogPath,
+      appStartAnchor: appStartAnchorPath,
+      managedRegionBounds: managedRegionBoundsLogPath,
+      scrollbackClauseVerdicts: scrollbackClauseVerdictsPath,
       timeline: timelinePaths.timelinePath,
       timelineSummary: timelinePaths.summaryPath,
       timelineFlamegraph: flamegraphPath,
@@ -1811,6 +4122,164 @@ const runReplCase = async (
     },
   }
   return stats
+}
+
+
+type ScrollbackClauseStatus = "pass" | "fail" | "not_applicable"
+
+const buildInitialScrollbackClauseVerdicts = (mode: string | null = null) => ({
+  contractVersion: 1,
+  clauseSetVersion: 1,
+  mode,
+  clausesEvaluated: [],
+  verdicts: [],
+})
+
+const buildFinalScrollbackClauseVerdicts = (args: {
+  readonly mode: string | null
+  readonly caseId: string
+  readonly terminalLane: TerminalAdapterLane
+  readonly anomalies: ReadonlyArray<LayoutAnomaly>
+}) => {
+  const anomalyIds = new Set(args.anomalies.map((entry) => entry.id))
+  const hasAny = (needles: ReadonlyArray<string>): boolean =>
+    [...anomalyIds].some((id) => needles.some((needle) => id.includes(needle)))
+  const verdicts: Array<{
+    id: string
+    status: ScrollbackClauseStatus
+    evidence: string[]
+    blocking: boolean
+  }> = []
+
+  const add = (id: string, status: ScrollbackClauseStatus, evidence: string[], blocking = status === "fail") => {
+    verdicts.push({ id, status, evidence, blocking })
+  }
+  const addP11 = (id: string, failedNeedles: ReadonlyArray<string>) => {
+    const evidence = [...anomalyIds].filter((anomalyId) => failedNeedles.some((needle) => anomalyId.includes(needle)))
+    add(id, evidence.length > 0 ? "fail" : "pass", evidence, true)
+  }
+
+  if (args.caseId.startsWith("p11_")) {
+    addP11("GNS-03", ["clear-screen", "clear-scrollback", "terminal-reset", "alt-buffer"])
+    addP11("GNS-18", ["ui-chrome", "runtime-chrome", "prototype", "scene-owned"])
+    addP11("GNS-20", ["clause-completeness"])
+
+    if (args.caseId.includes("history_guard")) {
+      addP11("GNS-01", ["pre-app-history", "SCR-HIST", "anchor-history-policy", "anchor-mode"])
+      addP11("GNS-04", ["managed-region-bounds-missing", "static-feed", "reclaim"])
+      addP11("GNS-14", ["landing", "anchor"])
+    }
+
+    if (args.caseId.includes("startup")) {
+      addP11("GNS-02", ["startup", "landing", "blank-gap"])
+      addP11("GNS-13", ["composer", "footer", "prompt", "blank-gap"])
+      addP11("GNS-14", ["landing"])
+    }
+
+    if (args.caseId.includes("width_equiv") || args.caseId.includes("width_shrink")) {
+      addP11("GNS-05", ["visible", "collision", "stale", "duplicate", "compact-transcript"])
+      addP11("GNS-06", ["visible-near-blank", "visible-turn-context-missing", "visible-duplicate", "horizontal", "clipped"])
+      addP11("GNS-11", ["table", "markdown", "code", "interrupted"])
+      addP11("GNS-13", ["composer", "footer", "prompt", "blank-gap"])
+      addP11("GNS-19", ["width-equivalence"])
+    }
+
+    if (args.caseId.includes("multiturn")) {
+      addP11("GNS-10", ["turn2-context-missing", "duplicate", "committed"])
+    }
+
+    if (args.caseId.includes("height")) {
+      addP11("GNS-08", ["height", "near-blank", "context-missing", "blank-gap"])
+      addP11("GNS-13", ["composer", "footer", "prompt", "blank-gap"])
+    }
+
+    if (args.caseId.includes("churn")) {
+      addP11("GNS-09", ["churn", "duplicate", "stale", "clipped", "collision"])
+      addP11("GNS-13", ["composer", "footer", "prompt", "blank-gap"])
+    }
+
+    if (args.caseId.includes("paste")) {
+      addP11("GNS-16", ["bracketed-paste"])
+    }
+
+    return {
+      contractVersion: 1,
+      clauseSetVersion: 11,
+      mode: args.mode,
+      terminalLane: args.terminalLane,
+      caseId: args.caseId,
+      clausesEvaluated: verdicts.map((entry) => entry.id),
+      verdicts,
+    }
+  }
+
+  if (args.caseId.includes("seeded_host_history_guard")) {
+    const failed = hasAny(["pre-app-history-missing", "anchor-history-policy-mismatch", "anchor-mode-mismatch"])
+    add("pre_app_host_history_preservation", failed ? "fail" : "pass", [...anomalyIds])
+  }
+
+  if (args.caseId.includes("width_shrink")) {
+    const visibleNeedles = [
+      "visible-near-blank",
+      "visible-turn-context-missing",
+      "visible-duplicate",
+      "compact-transcript-fallback",
+      "turn2-context-missing",
+      "hidden-history-cue",
+    ]
+    const scrollbackNeedles = [
+      "scrollback-duplicate",
+      "scrollback-turn-context-missing",
+    ]
+    const visibleEvidence = [...anomalyIds].filter((id) => visibleNeedles.some((needle) => id.includes(needle)))
+    const scrollbackEvidence = [...anomalyIds].filter((id) => scrollbackNeedles.some((needle) => id.includes(needle)))
+    add("width_shrink_current_visible_region", visibleEvidence.length > 0 ? "fail" : "pass", visibleEvidence)
+    add("width_shrink_scrollback_history_purity", scrollbackEvidence.length > 0 ? "fail" : "pass", scrollbackEvidence)
+  }
+
+  if (args.caseId.includes("height_change")) {
+    const heightNeedles = [
+      "height",
+      "near-blank",
+      "context-missing",
+      "blank-gap",
+      "composer",
+      "footer",
+      "prompt",
+      "startup",
+    ]
+    const evidence = [...anomalyIds].filter((id) => heightNeedles.some((needle) => id.includes(needle)))
+    add("height_change_visible_region_integrity", evidence.length > 0 ? "fail" : "pass", evidence)
+  }
+
+  if (args.caseId.includes("resize_churn")) {
+    const churnNeedles = [
+      "churn",
+      "duplicate",
+      "stale",
+      "clipped",
+      "collision",
+      "near-blank",
+      "context-missing",
+      "blank-gap",
+      "composer",
+      "footer",
+      "prompt",
+      "startup",
+    ]
+    const evidence = [...anomalyIds].filter((id) => churnNeedles.some((needle) => id.includes(needle)))
+    add("resize_churn_visible_region_integrity", evidence.length > 0 ? "fail" : "pass", evidence)
+  }
+
+  return {
+    contractVersion: 1,
+    clauseSetVersion: 2,
+    mode: args.mode,
+    terminalLane: args.terminalLane,
+    caseId: args.caseId,
+    clausesEvaluated: verdicts.map((entry) => entry.id),
+    verdicts,
+  }
 }
 
 const writeFrames = async (frames: ReadonlyArray<{ timestamp: number; chunk: string }>, target: string) => {
@@ -1830,15 +4299,49 @@ const runPtyCase = async (
   const caseInfoPath = path.join(caseDir, "case_info.json")
   const inputLogPath = path.join(caseDir, "input_log.ndjson")
   const stateDumpPath = path.join(caseDir, "repl_state.ndjson")
-  const stateDumpRel = toRepoRootPath(stateDumpPath)
+  const viewportResetLogPath = path.join(caseDir, "viewport_resets.ndjson")
+  const surfaceModelLogPath = path.join(caseDir, "surface_model.ndjson")
+  const scrollbackFeedLogPath = path.join(caseDir, "scrollback_feed.ndjson")
+  const markdownMetricsLogPath = path.join(caseDir, "markdown_metrics.ndjson")
+  const renderTimelineLogPath = path.join(caseDir, "render_timeline.ndjson")
+  const appStartAnchorPath = path.join(caseDir, "app_start_anchor.txt")
+  const managedRegionBoundsLogPath = path.join(caseDir, "managed_region_bounds.ndjson")
+  const scrollbackClauseVerdictsPath = path.join(caseDir, "scrollback_clause_verdicts.json")
   // Some PTY cases may not be BreadBoard's Ink TUI (e.g. external prototypes).
-  // Keep the artifact contract stable by ensuring a state dump file exists.
+  // Keep the artifact contract stable by ensuring debug streams exist.
   await fs.writeFile(stateDumpPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(viewportResetLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(surfaceModelLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(scrollbackFeedLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(markdownMetricsLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(renderTimelineLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(appStartAnchorPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(managedRegionBoundsLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(
+    scrollbackClauseVerdictsPath,
+    `${JSON.stringify(buildInitialScrollbackClauseVerdicts(testCase.env?.BREADBOARD_TUI_LIVE_SHELL_MODE ?? null), null, 2)}\n`,
+    "utf8",
+  ).catch(() => undefined)
   const envOverrides = { ...(testCase.env ?? {}) }
-  if (chaosInfo?.mode === "mock-sse" && !envOverrides.BREADBOARD_ENGINE_MODE) {
-    envOverrides.BREADBOARD_ENGINE_MODE = "off"
+  const qcBatchId = path.basename(path.dirname(caseDir))
+  const harnessEnvOverrides = {
+    BREADBOARD_QC_BATCH_ID: qcBatchId,
+    BREADBOARD_QC_CASE_ID: testCase.id,
+    BREADBOARD_TUI_VIEWPORT_RESETS_FILE: viewportResetLogPath,
+    BREADBOARD_TUI_SURFACE_MODEL_FILE: surfaceModelLogPath,
+    BREADBOARD_TUI_SCROLLBACK_FEED_FILE: scrollbackFeedLogPath,
+    BREADBOARD_TUI_MARKDOWN_METRICS_FILE: markdownMetricsLogPath,
+    BREADBOARD_TUI_RENDER_TIMELINE_FILE: renderTimelineLogPath,
+    BREADBOARD_TUI_APP_START_ANCHOR_FILE: appStartAnchorPath,
+    BREADBOARD_TUI_MANAGED_REGION_BOUNDS_FILE: managedRegionBoundsLogPath,
+    BREADBOARD_TUI_SCROLLBACK_CLAUSE_VERDICTS_FILE: scrollbackClauseVerdictsPath,
+    ...envOverrides,
   }
   const command = testCase.command ?? options.command
+  const commandCwd = resolveCaseCommandCwd(testCase, command)
+  await fs.mkdir(commandCwd, { recursive: true })
+  await writeCaseWorkspaceFiles(commandCwd, testCase.workspaceFiles)
+  const commandProvenance = await buildCommandProvenance(command, commandCwd)
   const configPath = resolveConfigPath(testCase, options)
   const baseUrl = testCase.baseUrl ?? options.baseUrl
   const repro = buildReproInfo(
@@ -1846,10 +4349,10 @@ const runPtyCase = async (
       cwd: REPRO_CWD,
       env: {
         BREADBOARD_API_URL: baseUrl,
-        BREADBOARD_STATE_DUMP_PATH: stateDumpRel,
+        BREADBOARD_STATE_DUMP_PATH: stateDumpPath,
         BREADBOARD_STATE_DUMP_MODE: "summary",
         BREADBOARD_STATE_DUMP_RATE_MS: "100",
-        ...envOverrides,
+        ...harnessEnvOverrides,
       },
       argv: [
         "npx",
@@ -1876,9 +4379,9 @@ const runPtyCase = async (
         "--input-log",
         toRepoRootPath(inputLogPath),
         "--cols",
-        "120",
+        String(testCase.cols ?? 120),
         "--rows",
-        "36",
+        String(testCase.rows ?? 36),
         "--cmd",
         command,
         ...(typeof testCase.submitTimeoutMs === "number" ? ["--submit-timeout-ms", String(testCase.submitTimeoutMs)] : []),
@@ -1938,7 +4441,7 @@ const runPtyCase = async (
         script: testCase.script,
         scriptHash,
         repro,
-        config: options.configPath,
+        config: configPath,
         chaos: chaosInfo,
         env: envOverrides,
         contractOverrides: options.contractOverrides,
@@ -1994,7 +4497,7 @@ const runPtyCase = async (
   const inputLog: string[] = []
   let harnessFailure: Error | null = null
   let harnessResult: Awaited<ReturnType<typeof runSpectatorHarness>>
-  const profile = process.env.BREADBOARD_TUI_PROFILE ?? process.env.BREADBOARD_PROFILE ?? "claude_v1"
+  const profile = process.env.BREADBOARD_TUI_PROFILE ?? process.env.BREADBOARD_PROFILE ?? "codex_v1"
   await fs.writeFile(
     configOutPath,
     JSON.stringify(
@@ -2002,8 +4505,9 @@ const runPtyCase = async (
         configPath,
         baseUrl,
         command,
+        commandProvenance,
         profile,
-        env: envOverrides,
+        env: harnessEnvOverrides,
         contractOverrides: options.contractOverrides,
       },
       null,
@@ -2015,19 +4519,19 @@ const runPtyCase = async (
     harnessResult = await runSpectatorHarness({
       steps,
       command,
-      cwd: testCase.cwd ? path.join(ROOT_DIR, testCase.cwd) : undefined,
+      cwd: commandCwd,
       configPath,
       baseUrl,
-      envOverrides,
-      cols: 120,
-      rows: 36,
+      envOverrides: harnessEnvOverrides,
+      cols: testCase.cols ?? 120,
+      rows: testCase.rows ?? 36,
       echo: false,
       clipboardPayload,
       submitTimeoutMs: testCase.submitTimeoutMs,
       winchEvents,
       attachmentSummaryPath,
       onInput: (entry) => inputLog.push(JSON.stringify(entry)),
-      stateDumpPath: stateDumpRel,
+      stateDumpPath,
       stateDumpMode: "summary",
       stateDumpRateMs: 100,
     })
@@ -2049,13 +4553,9 @@ const runPtyCase = async (
   let timelinePaths: { timelinePath: string; summaryPath: string } | null = null
   const sessionId = await extractSessionIdFromStateDump(stateDumpPath)
   if (sessionId) {
-    const useLiveCapture = chaosInfo?.mode === "mock-sse" || Boolean(options.mockSseConfig)
-    const sseHandle = useLiveCapture
-      ? tapSessionEvents(options.baseUrl, sessionId, ssePath)
-      : tapSessionEvents(options.baseUrl, sessionId, ssePath, { replay: true, limit: 1000 })
-    if (useLiveCapture) {
-      await triggerMockPlayback(options.baseUrl, sessionId)
-    }
+    // Use replay capture for canonical bundle truth so live runs do not miss early events
+    // due to late attachment after the interactive session has already progressed.
+    const sseHandle = tapSessionEvents(baseUrl, sessionId, ssePath, { replay: true, limit: 1000 })
     await Promise.race([
       sseHandle.promise,
       new Promise<void>((resolve) => {
@@ -2068,10 +4568,7 @@ const runPtyCase = async (
     sseHandle.stop()
     await sseHandle.promise.catch(() => undefined)
     if (!sseHandle.hasData()) {
-      await writeFallbackMessage(
-        ssePath,
-        useLiveCapture ? "[sse] Live capture completed with no events." : "[sse] Replay completed with no events.",
-      )
+      await writeFallbackMessage(ssePath, "[sse] Replay completed with no events.")
     }
   } else {
     await writeFallbackMessage(ssePath, "[sse] Session id not found in state dump.")
@@ -2121,6 +4618,10 @@ const runPtyCase = async (
           message: `Expected alternate screen to include "${testCase.expectedAltText}".`,
         })
       }
+    }
+    if (testCase.postCheckScript) {
+      const postCheckAnomalies = await runPostCheckScript(testCase.postCheckScript, caseDir)
+      extraAnomalies.push(...postCheckAnomalies)
     }
     const combinedAnomalies = [...anomalies, ...extraAnomalies]
     await fs.writeFile(anomaliesPath, `${JSON.stringify(combinedAnomalies, null, 2)}\n`, "utf8")
@@ -2182,6 +4683,14 @@ const runPtyCase = async (
           frames: frameLogPath,
           inputLog: inputLogPath,
           replState: stateDumpPath,
+          viewportResets: viewportResetLogPath,
+          surfaceModel: surfaceModelLogPath,
+          scrollbackFeed: scrollbackFeedLogPath,
+          markdownMetrics: markdownMetricsLogPath,
+          renderTimeline: renderTimelineLogPath,
+          appStartAnchor: appStartAnchorPath,
+          managedRegionBounds: managedRegionBoundsLogPath,
+          scrollbackClauseVerdicts: scrollbackClauseVerdictsPath,
           gridActive: gridActivePath,
           gridFinal: gridFinalPath,
           gridNormalFinal: gridNormalFinalPath,
@@ -2238,6 +4747,7 @@ const runPtyCase = async (
     timelineFlamegraphPath: timelinePaths ? flamegraphPath : null,
     ttyDocPath: timelinePaths ? ttyDocPath : null,
     chaosInfo,
+    commandProvenance,
     outputs: {
       snapshots: snapshotsPath,
       raw: rawLogPath,
@@ -2247,6 +4757,14 @@ const runPtyCase = async (
       frames: frameLogPath,
       inputLog: inputLogPath,
       replState: stateDumpPath,
+      viewportResets: viewportResetLogPath,
+      surfaceModel: surfaceModelLogPath,
+      scrollbackFeed: scrollbackFeedLogPath,
+      markdownMetrics: markdownMetricsLogPath,
+      renderTimeline: renderTimelineLogPath,
+      appStartAnchor: appStartAnchorPath,
+      managedRegionBounds: managedRegionBoundsLogPath,
+      scrollbackClauseVerdicts: scrollbackClauseVerdictsPath,
       gridActive: gridActivePath,
       gridFinal: gridFinalPath,
       gridNormalFinal: gridNormalFinalPath,
@@ -2270,6 +4788,764 @@ const runPtyCase = async (
   }
 }
 
+const validateTerminalArtifacts = async (caseDir: string, caseId: string, lane: TerminalAdapterLane) => {
+  await assertPath(path.join(caseDir, "terminal_text"), "dir", caseId, "terminal_text")
+  const requiredFiles = [
+    "terminal_snapshots.txt",
+    "terminal_plain.txt",
+    "terminal_metadata.json",
+    "terminal_events.ndjson",
+    "terminal_frames.ndjson",
+    "input_log.ndjson",
+    "terminal_manifest.json",
+    "config.json",
+    "contract_report.json",
+    "metrics.json",
+    "anomalies.json",
+    "case_info.json",
+    "terminal_text/visible_final.txt",
+    "terminal_text/scrollback_final.txt",
+    "app_start_anchor.txt",
+    "managed_region_bounds.ndjson",
+    "scrollback_clause_verdicts.json",
+  ]
+  if (lane === "wezterm") {
+    requiredFiles.push(
+      "repl_state.ndjson",
+      "sse_events.txt",
+      "events.ndjson",
+      "timeline.ndjson",
+      "timeline_summary.json",
+      "timeline_flamegraph.txt",
+      "ttydoc.txt",
+    )
+    await assertPath(path.join(caseDir, "observer_text"), "dir", caseId, "observer_text")
+    await assertPath(path.join(caseDir, "observer_png"), "dir", caseId, "observer_png")
+    await assertPath(path.join(caseDir, "observer_runtime"), "dir", caseId, "observer_runtime")
+  }
+  if (lane === "ghostty") {
+    await assertPath(path.join(caseDir, "observer_text"), "dir", caseId, "observer_text")
+    await assertPath(path.join(caseDir, "observer_png"), "dir", caseId, "observer_png")
+    await assertPath(path.join(caseDir, "observer_runtime"), "dir", caseId, "observer_runtime")
+  }
+  await Promise.all(requiredFiles.map((relative) => assertPath(path.join(caseDir, relative), "file", caseId, relative)))
+}
+
+const runTerminalCase = async (
+  testCase: TerminalCase,
+  options: CliOptions,
+  caseDir: string,
+  chaosInfo: Record<string, unknown> | null,
+): Promise<Record<string, unknown>> => {
+  const copiedScript = await copyScriptFile(testCase.script, caseDir)
+  const scriptHash = await computeScriptHash(copiedScript.source)
+  const reproScriptPath = toRepoRootPath(copiedScript.destination)
+  const caseInfoPath = path.join(caseDir, "case_info.json")
+  const inputLogPath = path.join(caseDir, "input_log.ndjson")
+  const frameLogPath = path.join(caseDir, "terminal_frames.ndjson")
+  const stateDumpPath = path.join(caseDir, "repl_state.ndjson")
+  const viewportResetLogPath = path.join(caseDir, "viewport_resets.ndjson")
+  const surfaceModelLogPath = path.join(caseDir, "surface_model.ndjson")
+  const scrollbackFeedLogPath = path.join(caseDir, "scrollback_feed.ndjson")
+  const markdownMetricsLogPath = path.join(caseDir, "markdown_metrics.ndjson")
+  const renderTimelineLogPath = path.join(caseDir, "render_timeline.ndjson")
+  const appStartAnchorPath = path.join(caseDir, "app_start_anchor.txt")
+  const managedRegionBoundsLogPath = path.join(caseDir, "managed_region_bounds.ndjson")
+  const scrollbackClauseVerdictsPath = path.join(caseDir, "scrollback_clause_verdicts.json")
+  await fs.writeFile(inputLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(frameLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(stateDumpPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(viewportResetLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(surfaceModelLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(scrollbackFeedLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(markdownMetricsLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(renderTimelineLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(appStartAnchorPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(managedRegionBoundsLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(
+    scrollbackClauseVerdictsPath,
+    `${JSON.stringify(buildInitialScrollbackClauseVerdicts(testCase.env?.BREADBOARD_TUI_LIVE_SHELL_MODE ?? null), null, 2)}\n`,
+    "utf8",
+  ).catch(() => undefined)
+
+  const envOverrides = { ...(testCase.env ?? {}) }
+  const qcBatchId = path.basename(path.dirname(caseDir))
+  const harnessEnvOverrides = {
+    BREADBOARD_QC_BATCH_ID: qcBatchId,
+    BREADBOARD_QC_CASE_ID: testCase.id,
+    BREADBOARD_TUI_VIEWPORT_RESETS_FILE: viewportResetLogPath,
+    BREADBOARD_TUI_SURFACE_MODEL_FILE: surfaceModelLogPath,
+    BREADBOARD_TUI_SCROLLBACK_FEED_FILE: scrollbackFeedLogPath,
+    BREADBOARD_TUI_MARKDOWN_METRICS_FILE: markdownMetricsLogPath,
+    BREADBOARD_TUI_RENDER_TIMELINE_FILE: renderTimelineLogPath,
+    BREADBOARD_TUI_APP_START_ANCHOR_FILE: appStartAnchorPath,
+    BREADBOARD_TUI_MANAGED_REGION_BOUNDS_FILE: managedRegionBoundsLogPath,
+    BREADBOARD_TUI_SCROLLBACK_CLAUSE_VERDICTS_FILE: scrollbackClauseVerdictsPath,
+    ...envOverrides,
+  }
+
+  const configPath = resolveConfigPath(testCase, options)
+  const baseUrl = testCase.baseUrl ?? options.baseUrl
+  const command = testCase.command ?? options.command
+  const commandCwd = resolveCaseCommandCwd(testCase, command)
+  await fs.mkdir(commandCwd, { recursive: true })
+  await writeCaseWorkspaceFiles(commandCwd, testCase.workspaceFiles)
+  const profile = process.env.BREADBOARD_TUI_PROFILE ?? process.env.BREADBOARD_PROFILE ?? "codex_v1"
+  const commandProvenance = await buildCommandProvenance(command, commandCwd)
+  const terminalTextDir = path.join(caseDir, "terminal_text")
+  await fs.mkdir(terminalTextDir, { recursive: true })
+
+  const repro = buildReproInfo(
+    {
+      cwd: REPRO_CWD,
+      env: {
+        BREADBOARD_API_URL: baseUrl,
+        BREADBOARD_STATE_DUMP_PATH: stateDumpPath,
+        BREADBOARD_STATE_DUMP_MODE: "summary",
+        BREADBOARD_STATE_DUMP_RATE_MS: "100",
+        ...harnessEnvOverrides,
+      },
+      argv: [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/run_stress_bundles.ts",
+        "--case",
+        testCase.id,
+        "--out-dir",
+        toRepoRootPath(path.dirname(caseDir)),
+      ],
+    },
+    undefined,
+  )
+
+  await fs.writeFile(
+    caseInfoPath,
+    `${JSON.stringify(
+      {
+        id: testCase.id,
+        kind: testCase.kind,
+        terminalLane: testCase.terminalLane,
+        description: testCase.description,
+        script: testCase.script,
+        scriptHash,
+        repro,
+        config: configPath,
+        baseUrl,
+        command,
+        commandCwd,
+        commandProvenance,
+        env: harnessEnvOverrides,
+        chaos: chaosInfo,
+        contractOverrides: options.contractOverrides,
+        phase: testCase.terminalLane === "wezterm" ? "P4-B" : testCase.terminalLane === "ghostty" ? "P4-C" : "P4-A",
+      },
+      null,
+      2,
+    )}
+`,
+    "utf8",
+  )
+
+  const snapshotsPath = path.join(caseDir, "terminal_snapshots.txt")
+  const plainPath = path.join(caseDir, "terminal_plain.txt")
+  const metadataPath = path.join(caseDir, "terminal_metadata.json")
+  const eventsPath = path.join(caseDir, "terminal_events.ndjson")
+  const manifestPath = path.join(caseDir, "terminal_manifest.json")
+  const configOutPath = path.join(caseDir, "config.json")
+  const anomaliesPath = path.join(caseDir, "anomalies.json")
+  const contractReportPath = path.join(caseDir, "contract_report.json")
+  const metricsPath = path.join(caseDir, "metrics.json")
+  const visibleFinalPath = path.join(terminalTextDir, "visible_final.txt")
+  const scrollbackFinalPath = path.join(terminalTextDir, "scrollback_final.txt")
+  const ssePath = path.join(caseDir, "sse_events.txt")
+  const eventsNdjsonPath = path.join(caseDir, "events.ndjson")
+  const flamegraphPath = path.join(caseDir, "timeline_flamegraph.txt")
+  const ttyDocPath = path.join(caseDir, "ttydoc.txt")
+  const steps = await loadStepsFromFile(testCase.script)
+
+  await fs.writeFile(
+    configOutPath,
+    JSON.stringify(
+      {
+        configPath,
+        baseUrl,
+        command,
+        commandProvenance,
+        profile,
+        env: harnessEnvOverrides,
+        contractOverrides: options.contractOverrides,
+        terminalLane: testCase.terminalLane,
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  )
+
+  let harnessFailure: Error | null = null
+  let harnessResult: Awaited<ReturnType<typeof runTerminalAdapterHarness>>
+  try {
+    harnessResult = await runTerminalAdapterHarness({
+      lane: testCase.terminalLane,
+      steps,
+      command,
+      cwd: commandCwd,
+      configPath,
+      baseUrl,
+      cols: testCase.cols ?? 120,
+      rows: testCase.rows ?? 36,
+      envOverrides: harnessEnvOverrides,
+      runtimeDir: caseDir,
+      captureScreenshots: true,
+      qcBatchId,
+      qcCaseId: testCase.id,
+      stateDumpPath,
+      stateDumpMode: "summary",
+      stateDumpRateMs: 100,
+      maxDurationMs: REPL_SCRIPT_MAX_DURATION_MS,
+    })
+  } catch (error) {
+    if (error instanceof TerminalAdapterHarnessError) {
+      harnessResult = error.result
+      harnessFailure = error
+    } else {
+      throw error
+    }
+  }
+
+  await writeSnapshotFile(harnessResult.snapshots, snapshotsPath)
+  await fs.writeFile(plainPath, harnessResult.plainBuffer, "utf8")
+  await fs.writeFile(metadataPath, JSON.stringify(harnessResult.metadata, null, 2) + "\n", "utf8")
+  const eventLines = harnessResult.stepEvents.map((event: TerminalAdapterStepEvent) => JSON.stringify(event)).join("\n")
+  await fs.writeFile(eventsPath, eventLines.length > 0 ? `${eventLines}\n` : "", "utf8")
+  await fs.writeFile(frameLogPath, harnessResult.frames.map((frame) => JSON.stringify(frame)).join("\n") + (harnessResult.frames.length > 0 ? "\n" : ""), "utf8")
+  await fs.writeFile(inputLogPath, harnessResult.inputLogLines.length > 0 ? `${harnessResult.inputLogLines.join("\n")}\n` : "", "utf8")
+  await fs.writeFile(visibleFinalPath, harnessResult.visibleTextFinal + (harnessResult.visibleTextFinal.endsWith("\n") ? "" : "\n"), "utf8")
+  await fs.writeFile(scrollbackFinalPath, harnessResult.scrollbackTextFinal + (harnessResult.scrollbackTextFinal.endsWith("\n") ? "" : "\n"), "utf8")
+
+  let contractReport: { summary?: Record<string, unknown>; errors?: unknown[]; warnings?: unknown[] }
+  let metricsReport: Record<string, unknown>
+  let timelinePaths: Awaited<ReturnType<typeof buildTimelineArtifacts>> = null
+  const extraAnomalies = testCase.postCheckScript ? await runPostCheckScript(testCase.postCheckScript, caseDir) : []
+  const finalScrollbackClauseVerdicts = buildFinalScrollbackClauseVerdicts({
+    mode: testCase.env?.BREADBOARD_TUI_LIVE_SHELL_MODE ?? null,
+    caseId: testCase.id,
+    terminalLane: testCase.terminalLane,
+    anomalies: extraAnomalies,
+  })
+
+  if (testCase.terminalLane === "wezterm") {
+    const sessionId = await extractSessionIdFromStateDump(stateDumpPath)
+    if (sessionId) {
+      const sseHandle = tapSessionEvents(baseUrl, sessionId, ssePath, { replay: true, limit: 1000 })
+      await Promise.race([
+        sseHandle.promise,
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            sseHandle.stop()
+            resolve()
+          }, SSE_REPLAY_TIMEOUT_MS)
+        }),
+      ])
+      sseHandle.stop()
+      await sseHandle.promise.catch(() => undefined)
+      if (!sseHandle.hasData()) {
+        await writeFallbackMessage(ssePath, "[sse] Replay completed with no events.")
+      }
+    } else {
+      await writeFallbackMessage(ssePath, "[sse] Session id not found in state dump.")
+    }
+    await writeEventsNdjson(ssePath, eventsNdjsonPath)
+    contractReport = await runContractChecks(ssePath, options.contractOverrides ?? undefined)
+    await fs.writeFile(contractReportPath, JSON.stringify(contractReport, null, 2), "utf8")
+    await fs.writeFile(anomaliesPath, `${JSON.stringify(extraAnomalies, null, 2)}\n`, "utf8")
+    await fs.writeFile(scrollbackClauseVerdictsPath, `${JSON.stringify(finalScrollbackClauseVerdicts, null, 2)}\n`, "utf8")
+    timelinePaths = await buildTimelineArtifacts(caseDir, { chaosInfo, ssePath, anomaliesPath })
+    if (!timelinePaths) {
+      throw new Error(`[stress:${testCase.id}] Failed to build timeline artifacts in ${caseDir}`)
+    }
+    await buildFlamegraph(timelinePaths.timelinePath, flamegraphPath)
+    await buildTtyDoc({
+      caseDir,
+      caseId: testCase.id,
+      scriptPath: testCase.script,
+      configPath,
+    })
+    metricsReport = await buildMetricsReport(timelinePaths.summaryPath, contractReport)
+    metricsReport.terminalAdapter = {
+      lane: testCase.terminalLane,
+      targetIds: harnessResult.metadata.targetIds,
+      capabilitySummary: harnessResult.metadata.capabilitySummary,
+      stepCount: steps.length,
+    }
+  } else {
+    contractReport = {
+      summary: {
+        mode: "terminal-adapter-dry-run",
+        terminalLane: testCase.terminalLane,
+        stepCount: steps.length,
+        errorCount: 0,
+        warningCount: 0,
+      },
+      errors: [],
+      warnings: [],
+    }
+    await fs.writeFile(contractReportPath, JSON.stringify(contractReport, null, 2), "utf8")
+    await fs.writeFile(anomaliesPath, `${JSON.stringify(extraAnomalies, null, 2)}\n`, "utf8")
+    await fs.writeFile(scrollbackClauseVerdictsPath, `${JSON.stringify(finalScrollbackClauseVerdicts, null, 2)}\n`, "utf8")
+    metricsReport = {
+      timelineSummary: null,
+      contract: contractReport.summary,
+      contractIssues: { errors: 0, warnings: 0 },
+      terminalAdapter: {
+        lane: testCase.terminalLane,
+        targetIds: harnessResult.metadata.targetIds,
+        capabilitySummary: harnessResult.metadata.capabilitySummary,
+        stepCount: steps.length,
+      },
+    }
+  }
+
+  await fs.writeFile(metricsPath, JSON.stringify(metricsReport, null, 2), "utf8")
+  await fs.writeFile(
+    manifestPath,
+    JSON.stringify(
+      {
+        phase: testCase.terminalLane === "wezterm" ? "P4-B" : testCase.terminalLane === "ghostty" ? "P4-C" : "P4-A",
+        lane: testCase.terminalLane,
+        outputs: {
+          snapshots: snapshotsPath,
+          plain: plainPath,
+          metadata: metadataPath,
+          terminalEvents: eventsPath,
+          frames: frameLogPath,
+          inputLog: inputLogPath,
+          visibleFinal: visibleFinalPath,
+          scrollbackFinal: scrollbackFinalPath,
+          config: configOutPath,
+          replState: stateDumpPath,
+          viewportResets: viewportResetLogPath,
+          surfaceModel: surfaceModelLogPath,
+          scrollbackFeed: scrollbackFeedLogPath,
+          markdownMetrics: markdownMetricsLogPath,
+          renderTimeline: renderTimelineLogPath,
+          appStartAnchor: appStartAnchorPath,
+          managedRegionBounds: managedRegionBoundsLogPath,
+          scrollbackClauseVerdicts: scrollbackClauseVerdictsPath,
+          observerRuntimeDir: harnessResult.artifactDirs?.runtimeDir ?? null,
+          observerTextDir: harnessResult.artifactDirs?.textDir ?? null,
+          observerPngDir: harnessResult.artifactDirs?.pngDir ?? null,
+          sse: testCase.terminalLane === "wezterm" ? ssePath : null,
+          sseEventsNdjson: testCase.terminalLane === "wezterm" ? eventsNdjsonPath : null,
+          anomalies: anomaliesPath,
+          timeline: timelinePaths?.timelinePath ?? null,
+          timelineSummary: timelinePaths?.summaryPath ?? null,
+          timelineFlamegraph: timelinePaths ? flamegraphPath : null,
+          ttydoc: timelinePaths ? ttyDocPath : null,
+          contractReport: contractReportPath,
+          metrics: metricsPath,
+          caseInfo: caseInfoPath,
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  )
+
+  if (harnessFailure) {
+    throw harnessFailure
+  }
+  await validateTerminalArtifacts(caseDir, testCase.id, testCase.terminalLane)
+
+  return {
+    manifestPath,
+    metadataPath,
+    terminalEventsPath: eventsPath,
+    visibleFinalPath,
+    scrollbackFinalPath,
+    configPath: configOutPath,
+    anomaliesPath,
+    contractReportPath,
+    metricsPath,
+    inputLogPath,
+    frameLogPath,
+    stateDumpPath,
+    eventsNdjsonPath: testCase.terminalLane === "wezterm" ? eventsNdjsonPath : null,
+    timelinePath: timelinePaths?.timelinePath ?? null,
+    timelineSummaryPath: timelinePaths?.summaryPath ?? null,
+    timelineFlamegraphPath: timelinePaths ? flamegraphPath : null,
+    ttyDocPath: timelinePaths ? ttyDocPath : null,
+    commandProvenance,
+    chaosInfo,
+    terminalLane: testCase.terminalLane,
+    terminalTargetIds: harnessResult.metadata.targetIds,
+    outputs: {
+      snapshots: snapshotsPath,
+      plain: plainPath,
+      metadata: metadataPath,
+      terminalEvents: eventsPath,
+      frames: frameLogPath,
+      inputLog: inputLogPath,
+      visibleFinal: visibleFinalPath,
+      scrollbackFinal: scrollbackFinalPath,
+      config: configOutPath,
+      replState: stateDumpPath,
+      viewportResets: viewportResetLogPath,
+      surfaceModel: surfaceModelLogPath,
+      scrollbackFeed: scrollbackFeedLogPath,
+          markdownMetrics: markdownMetricsLogPath,
+      renderTimeline: renderTimelineLogPath,
+      observerRuntimeDir: harnessResult.artifactDirs?.runtimeDir ?? null,
+      observerTextDir: harnessResult.artifactDirs?.textDir ?? null,
+      observerPngDir: harnessResult.artifactDirs?.pngDir ?? null,
+      sse: testCase.terminalLane === "wezterm" ? ssePath : null,
+      sseEventsNdjson: testCase.terminalLane === "wezterm" ? eventsNdjsonPath : null,
+      anomalies: anomaliesPath,
+      timeline: timelinePaths?.timelinePath ?? null,
+      timelineSummary: timelinePaths?.summaryPath ?? null,
+      timelineFlamegraph: timelinePaths ? flamegraphPath : null,
+      ttydoc: timelinePaths ? ttyDocPath : null,
+      contractReport: contractReportPath,
+      metrics: metricsPath,
+      caseInfo: caseInfoPath,
+    },
+  }
+}
+
+const runEmulatorCase = async (
+  testCase: EmulatorCase,
+  options: CliOptions,
+  caseDir: string,
+  chaosInfo: Record<string, unknown> | null,
+): Promise<Record<string, unknown>> => {
+  const copiedScript = await copyScriptFile(testCase.script, caseDir)
+  const scriptHash = await computeScriptHash(copiedScript.source)
+  const reproScriptPath = toRepoRootPath(copiedScript.destination)
+  const caseInfoPath = path.join(caseDir, "case_info.json")
+  const inputLogPath = path.join(caseDir, "input_log.ndjson")
+  const stateDumpPath = path.join(caseDir, "repl_state.ndjson")
+  const viewportResetLogPath = path.join(caseDir, "viewport_resets.ndjson")
+  const surfaceModelLogPath = path.join(caseDir, "surface_model.ndjson")
+  const scrollbackFeedLogPath = path.join(caseDir, "scrollback_feed.ndjson")
+  const markdownMetricsLogPath = path.join(caseDir, "markdown_metrics.ndjson")
+  const renderTimelineLogPath = path.join(caseDir, "render_timeline.ndjson")
+  const appStartAnchorPath = path.join(caseDir, "app_start_anchor.txt")
+  const managedRegionBoundsLogPath = path.join(caseDir, "managed_region_bounds.ndjson")
+  const scrollbackClauseVerdictsPath = path.join(caseDir, "scrollback_clause_verdicts.json")
+  await fs.writeFile(stateDumpPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(viewportResetLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(surfaceModelLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(scrollbackFeedLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(markdownMetricsLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(renderTimelineLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(appStartAnchorPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(managedRegionBoundsLogPath, "", "utf8").catch(() => undefined)
+  await fs.writeFile(
+    scrollbackClauseVerdictsPath,
+    `${JSON.stringify(buildInitialScrollbackClauseVerdicts(testCase.env?.BREADBOARD_TUI_LIVE_SHELL_MODE ?? null), null, 2)}\n`,
+    "utf8",
+  ).catch(() => undefined)
+  const envOverrides = { ...(testCase.env ?? {}) }
+  const qcBatchId = path.basename(path.dirname(caseDir))
+  const harnessEnvOverrides = {
+    BREADBOARD_QC_BATCH_ID: qcBatchId,
+    BREADBOARD_QC_CASE_ID: testCase.id,
+    BREADBOARD_TUI_VIEWPORT_RESETS_FILE: viewportResetLogPath,
+    BREADBOARD_TUI_SURFACE_MODEL_FILE: surfaceModelLogPath,
+    BREADBOARD_TUI_SCROLLBACK_FEED_FILE: scrollbackFeedLogPath,
+    BREADBOARD_TUI_MARKDOWN_METRICS_FILE: markdownMetricsLogPath,
+    BREADBOARD_TUI_RENDER_TIMELINE_FILE: renderTimelineLogPath,
+    BREADBOARD_TUI_APP_START_ANCHOR_FILE: appStartAnchorPath,
+    BREADBOARD_TUI_MANAGED_REGION_BOUNDS_FILE: managedRegionBoundsLogPath,
+    BREADBOARD_TUI_SCROLLBACK_CLAUSE_VERDICTS_FILE: scrollbackClauseVerdictsPath,
+    ...envOverrides,
+  }
+  const command = testCase.command ?? options.command
+  const commandCwd = resolveCaseCommandCwd(testCase, command)
+  await fs.mkdir(commandCwd, { recursive: true })
+  const commandProvenance = await buildCommandProvenance(command, commandCwd)
+  const configPath = resolveConfigPath(testCase, options)
+  const baseUrl = testCase.baseUrl ?? options.baseUrl
+  const repro = buildReproInfo(
+    {
+      cwd: REPRO_CWD,
+      env: {
+        BREADBOARD_API_URL: baseUrl,
+        BREADBOARD_STATE_DUMP_PATH: stateDumpPath,
+        BREADBOARD_STATE_DUMP_MODE: "summary",
+        BREADBOARD_STATE_DUMP_RATE_MS: "100",
+        ...harnessEnvOverrides,
+      },
+      argv: [
+        "npx",
+        "tsx",
+        "scripts/harness/weztermObserver.ts",
+        "--script",
+        reproScriptPath,
+        "--config",
+        configPath,
+        "--base-url",
+        baseUrl,
+        "--runtime-dir",
+        toRepoRootPath(caseDir),
+        "--snapshots",
+        toRepoRootPath(path.join(caseDir, "emulator_snapshots.txt")),
+        "--metadata",
+        toRepoRootPath(path.join(caseDir, "emulator_metadata.json")),
+        "--frames",
+        toRepoRootPath(path.join(caseDir, "emulator_frames.ndjson")),
+        "--input-log",
+        toRepoRootPath(inputLogPath),
+        "--state-dump",
+        toRepoRootPath(stateDumpPath),
+        "--cols",
+        String(testCase.cols ?? 120),
+        "--rows",
+        String(testCase.rows ?? 36),
+        "--cmd",
+        command,
+        "--cwd",
+        commandCwd,
+      ],
+    },
+    undefined,
+  )
+  await fs.writeFile(
+    caseInfoPath,
+    `${JSON.stringify(
+      {
+        id: testCase.id,
+        kind: testCase.kind,
+        description: testCase.description,
+        script: testCase.script,
+        scriptHash,
+        repro,
+        config: configPath,
+        chaos: chaosInfo,
+        env: envOverrides,
+        contractOverrides: options.contractOverrides,
+      },
+      null,
+      2,
+    )}
+`,
+    "utf8",
+  )
+
+  const snapshotsPath = path.join(caseDir, "emulator_snapshots.txt")
+  const plainPath = path.join(caseDir, "emulator_plain.txt")
+  const metadataPath = path.join(caseDir, "emulator_metadata.json")
+  const frameLogPath = path.join(caseDir, "emulator_frames.ndjson")
+  const manifestPath = path.join(caseDir, "emulator_manifest.json")
+  const configOutPath = path.join(caseDir, "config.json")
+  const anomaliesPath = path.join(caseDir, "anomalies.json")
+  const ssePath = path.join(caseDir, "sse_events.txt")
+  const eventsNdjsonPath = path.join(caseDir, "events.ndjson")
+  const contractReportPath = path.join(caseDir, "contract_report.json")
+  const metricsPath = path.join(caseDir, "metrics.json")
+  const flamegraphPath = path.join(caseDir, "timeline_flamegraph.txt")
+  const ttyDocPath = path.join(caseDir, "ttydoc.txt")
+  const observerTextDir = path.join(caseDir, "observer_text")
+  const observerPngDir = path.join(caseDir, "observer_png")
+
+  const steps = await loadStepsFromFile(testCase.script)
+  const profile = process.env.BREADBOARD_TUI_PROFILE ?? process.env.BREADBOARD_PROFILE ?? "codex_v1"
+  await fs.writeFile(
+    configOutPath,
+    JSON.stringify(
+      {
+        configPath,
+        baseUrl,
+        command,
+        commandProvenance,
+        profile,
+        env: harnessEnvOverrides,
+        contractOverrides: options.contractOverrides,
+        observer: "wezterm",
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  )
+
+  const inputLog: string[] = []
+  let harnessFailure: Error | null = null
+  let harnessResult: Awaited<ReturnType<typeof runWeztermObserverHarness>>
+  try {
+    harnessResult = await runWeztermObserverHarness({
+      steps,
+      command,
+      cwd: commandCwd,
+      configPath,
+      baseUrl,
+      envOverrides: harnessEnvOverrides,
+      cols: testCase.cols ?? 120,
+      rows: testCase.rows ?? 36,
+      onInput: (entry) => inputLog.push(JSON.stringify(entry)),
+      stateDumpPath,
+      stateDumpMode: "summary",
+      stateDumpRateMs: 100,
+      runtimeDir: caseDir,
+      captureScreenshots: true,
+    })
+  } catch (error) {
+    if (error instanceof EmulatorObserverHarnessError) {
+      harnessResult = error.result
+      harnessFailure = error
+    } else {
+      throw error
+    }
+  }
+
+  await writeSnapshotFile(harnessResult.snapshots, snapshotsPath)
+  await fs.writeFile(plainPath, harnessResult.plainBuffer, "utf8")
+  await fs.writeFile(metadataPath, JSON.stringify(harnessResult.metadata, null, 2) + "\n", "utf8")
+  await fs.writeFile(frameLogPath, harnessResult.frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n", "utf8")
+  await fs.writeFile(inputLogPath, inputLog.length > 0 ? `${inputLog.join("\n")}\n` : "", "utf8")
+
+  const sessionId = await extractSessionIdFromStateDump(stateDumpPath)
+  if (sessionId) {
+    const sseHandle = tapSessionEvents(baseUrl, sessionId, ssePath, { replay: true, limit: 1000 })
+    await Promise.race([
+      sseHandle.promise,
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          sseHandle.stop()
+          resolve()
+        }, SSE_REPLAY_TIMEOUT_MS)
+      }),
+    ])
+    sseHandle.stop()
+    await sseHandle.promise.catch(() => undefined)
+    if (!sseHandle.hasData()) {
+      await writeFallbackMessage(ssePath, "[sse] Replay completed with no events.")
+    }
+  } else {
+    await writeFallbackMessage(ssePath, "[sse] Session id not found in state dump.")
+  }
+  await writeEventsNdjson(ssePath, eventsNdjsonPath)
+  const contractReport = await runContractChecks(ssePath, options.contractOverrides ?? undefined)
+  await fs.writeFile(contractReportPath, JSON.stringify(contractReport, null, 2), "utf8")
+
+  const extraAnomalies = testCase.postCheckScript
+    ? await runPostCheckScript(testCase.postCheckScript, caseDir)
+    : []
+  await fs.writeFile(anomaliesPath, `${JSON.stringify(extraAnomalies, null, 2)}\n`, "utf8")
+
+  const timelinePaths = await buildTimelineArtifacts(caseDir, { chaosInfo, ssePath, anomaliesPath })
+  if (!timelinePaths) {
+    throw new Error(`[stress:${testCase.id}] Failed to build timeline artifacts in ${caseDir}`)
+  }
+  await buildFlamegraph(timelinePaths.timelinePath, flamegraphPath)
+  await buildTtyDoc({
+    caseDir,
+    caseId: testCase.id,
+    scriptPath: testCase.script,
+    configPath: options.configPath,
+  })
+
+  const metricsReport = await buildMetricsReport(timelinePaths.summaryPath, contractReport)
+  await fs.writeFile(metricsPath, JSON.stringify(metricsReport, null, 2), "utf8")
+  await fs.writeFile(
+    manifestPath,
+    JSON.stringify(
+      {
+        script: testCase.script,
+        observer: "wezterm",
+        outputs: {
+          snapshots: snapshotsPath,
+          plain: plainPath,
+          metadata: metadataPath,
+          frames: frameLogPath,
+          config: configOutPath,
+          inputLog: inputLogPath,
+          replState: stateDumpPath,
+          viewportResets: viewportResetLogPath,
+          surfaceModel: surfaceModelLogPath,
+          scrollbackFeed: scrollbackFeedLogPath,
+          markdownMetrics: markdownMetricsLogPath,
+          renderTimeline: renderTimelineLogPath,
+          appStartAnchor: appStartAnchorPath,
+          managedRegionBounds: managedRegionBoundsLogPath,
+          scrollbackClauseVerdicts: scrollbackClauseVerdictsPath,
+          observerTextDir,
+          observerPngDir,
+          anomalies: anomaliesPath,
+          timeline: timelinePaths.timelinePath,
+          timelineSummary: timelinePaths.summaryPath,
+          timelineFlamegraph: flamegraphPath,
+          ttydoc: ttyDocPath,
+          sse: ssePath,
+          sseEventsNdjson: eventsNdjsonPath,
+          metrics: metricsPath,
+          contractReport: contractReportPath,
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  )
+
+  if (harnessFailure) {
+    throw harnessFailure
+  }
+  await validateEmulatorArtifacts(caseDir, testCase.id)
+
+  return {
+    snapshotsPath,
+    plainPath,
+    metadataPath,
+    frameLogPath,
+    inputLogPath,
+    stateDumpPath,
+    manifestPath,
+    metricsPath,
+    contractReportPath,
+    eventsNdjsonPath,
+    configPath: configOutPath,
+    anomaliesPath,
+    timelinePath: timelinePaths.timelinePath,
+    timelineSummaryPath: timelinePaths.summaryPath,
+    timelineFlamegraphPath: flamegraphPath,
+    ttyDocPath,
+    chaosInfo,
+    commandProvenance,
+    outputs: {
+      snapshots: snapshotsPath,
+      plain: plainPath,
+      metadata: metadataPath,
+      frames: frameLogPath,
+      config: configOutPath,
+      inputLog: inputLogPath,
+      replState: stateDumpPath,
+      viewportResets: viewportResetLogPath,
+      surfaceModel: surfaceModelLogPath,
+      scrollbackFeed: scrollbackFeedLogPath,
+          markdownMetrics: markdownMetricsLogPath,
+      renderTimeline: renderTimelineLogPath,
+      appStartAnchor: appStartAnchorPath,
+      managedRegionBounds: managedRegionBoundsLogPath,
+      scrollbackClauseVerdicts: scrollbackClauseVerdictsPath,
+      observerTextDir,
+      observerPngDir,
+      anomalies: anomaliesPath,
+      timeline: timelinePaths.timelinePath,
+      timelineSummary: timelinePaths.summaryPath,
+      timelineFlamegraph: flamegraphPath,
+      ttydoc: ttyDocPath,
+      sse: ssePath,
+      sseEventsNdjson: eventsNdjsonPath,
+      metrics: metricsPath,
+      contractReport: contractReportPath,
+      caseInfo: caseInfoPath,
+    },
+  }
+}
+
 const runCaseForOptions = async (
   testCase: StressCase,
   options: CliOptions,
@@ -2278,6 +5554,12 @@ const runCaseForOptions = async (
 ) => {
   if (testCase.kind === "repl") {
     return runReplCase(testCase, options, caseDir, chaosInfo)
+  }
+  if (testCase.kind === "emulator") {
+    return runEmulatorCase(testCase, options, caseDir, chaosInfo)
+  }
+  if (testCase.kind === "terminal") {
+    return runTerminalCase(testCase, options, caseDir, chaosInfo)
   }
   return runPtyCase(testCase, options, caseDir, chaosInfo)
 }
@@ -2288,13 +5570,18 @@ const runCaseWithOptionalMockSse = async (
   caseDir: string,
 ): Promise<Record<string, unknown>> => {
   const applyMockEnv = (caseInput: StressCase): StressCase => {
-    if (caseInput.env?.BREADBOARD_ENGINE_MODE) return caseInput
+    const nextEnv: Record<string, string> = {
+      ...(caseInput.env ?? {}),
+    }
+    if (!nextEnv.BREADBOARD_ENGINE_MODE) {
+      nextEnv.BREADBOARD_ENGINE_MODE = "external"
+    }
+    if (!nextEnv.MOCK_API_KEY) {
+      nextEnv.MOCK_API_KEY = "breadboard-mock-key"
+    }
     return {
       ...caseInput,
-      env: {
-        ...(caseInput.env ?? {}),
-        BREADBOARD_ENGINE_MODE: "off",
-      },
+      env: nextEnv,
     }
   }
   const baseChaos = mergeChaosInfo(options.bridgeChaos, options.chaosInfo)
@@ -2456,6 +5743,9 @@ const main = async () => {
     const timestamp = formatTimestamp()
     const batchDir = path.join(options.outDir, timestamp)
     await fs.mkdir(batchDir, { recursive: true })
+    console.log(
+      `[stress] starting bundle kind=${options.bundleKind} authority=${options.bundleAuthority} out=${batchDir}`,
+    )
 
     const selectedCases = resolveCaseList(options.cases, options.includeLive)
     const needsDistBuild = selectedCases.some((entry) => {
@@ -2470,6 +5760,10 @@ const main = async () => {
     }
     const needsLive = selectedCases.some((entry) => entry.requiresLive)
     if (needsLive) {
+      if (options.freshLive) {
+        await shutdownEngine({ timeoutMs: 5_000, force: true }).catch(() => undefined)
+        await shutdownLiveBridge(options.baseUrl, 5_000).catch(() => undefined)
+      }
       liveBridgeProcess = await ensureLiveBridge(options.baseUrl, options.autoStartLive)
     }
     if (!options.includeLive && !options.cases) {
@@ -2480,34 +5774,91 @@ const main = async () => {
         )
       }
     }
-  const profile = process.env.BREADBOARD_TUI_PROFILE ?? process.env.BREADBOARD_PROFILE ?? "claude_v1"
-  const aggregateManifest: Record<string, unknown> = {
-    schemaVersion: 1,
-    eventSchemaVersion: "event_envelope_v1",
-    startedAt: Date.now(),
-    config: options.configPath,
-    baseUrl: options.baseUrl,
-    command: options.command,
-    profile,
-    runtime: {
-      node: process.version,
-      platform: process.platform,
-      arch: process.arch,
-    },
-    terminal: {
-      term: process.env.TERM ?? null,
-      cols: process.stdout?.columns ?? null,
-      rows: process.stdout?.rows ?? null,
-    },
-    cases: [] as Array<Record<string, unknown>>,
-  }
+    const profile = process.env.BREADBOARD_TUI_PROFILE ?? process.env.BREADBOARD_PROFILE ?? "codex_v1"
+    const gitInfo = await readGitInfo()
+    const liveBridgeProvenance = needsLive ? await readLiveBridgeProvenance(options.baseUrl) : null
+    const liveMode: "fresh-live" | "warm-live" | "not-live" = needsLive
+      ? options.freshLive
+        ? "fresh-live"
+        : "warm-live"
+      : "not-live"
+    const liveProvenanceReport = evaluateLiveProvenance({
+      liveMode,
+      expected: {
+        repoRoot: REPO_ROOT,
+        commit: gitInfo?.commit ?? null,
+        branch: gitInfo?.branch ?? null,
+        dirty: gitInfo?.dirty ?? null,
+      },
+      observed: (liveBridgeProvenance ?? null) as any,
+      mismatchOverride: options.allowRevisionMismatch,
+    })
+    const aggregateManifest: Record<string, unknown> = {
+      schemaVersion: 3,
+      qcSpineVersion: "p2_v1",
+      eventSchemaVersion: "event_envelope_v1",
+      bundleKind: options.bundleKind,
+      bundleAuthority: options.bundleAuthority,
+      liveMode,
+      startedAt: Date.now(),
+      startedAtIso: new Date().toISOString(),
+      config: options.configPath,
+      baseUrl: options.baseUrl,
+      command: options.command,
+      profile,
+      runtime: {
+        node: process.version,
+        platform: process.platform,
+        arch: process.arch,
+      },
+      terminal: {
+        term: process.env.TERM ?? null,
+        cols: process.stdout?.columns ?? null,
+        rows: process.stdout?.rows ?? null,
+      },
+      provenance: {
+        runner: {
+          rootDir: ROOT_DIR,
+          repoRoot: REPO_ROOT,
+          cwd: process.cwd(),
+          git: gitInfo,
+        },
+        liveEngine: liveBridgeProvenance
+          ? {
+              baseUrl: options.baseUrl,
+              autoStarted: Boolean(liveBridgeProcess),
+              freshLive: options.freshLive,
+              ...liveBridgeProvenance,
+            }
+          : null,
+      },
+      cases: [] as Array<Record<string, unknown>>,
+    }
 
-  const gitInfo = await readGitInfo()
-  if (gitInfo) {
-    aggregateManifest.git = gitInfo
-  }
+    if (gitInfo) {
+      aggregateManifest.git = gitInfo
+    }
+    aggregateManifest.liveProvenance = liveProvenanceReport.summary
+    const liveProvenanceReportPath = path.join(batchDir, "live_provenance_report.json")
+    await fs.writeFile(liveProvenanceReportPath, JSON.stringify(liveProvenanceReport, null, 2), "utf8")
+    aggregateManifest.liveProvenanceReport = path.relative(batchDir, liveProvenanceReportPath)
+    if (liveProvenanceReport.warnings.length > 0) {
+      console.warn(
+        `[stress] live provenance warnings: ${liveProvenanceReport.warnings.map((entry) => entry.id).join(", ")}`,
+      )
+    }
+    if (liveProvenanceReport.errors.length > 0 && !options.allowRevisionMismatch) {
+      throw new Error(
+        `live provenance failed with ${liveProvenanceReport.errors.length} error(s); see ${liveProvenanceReportPath}`,
+      )
+    }
+    if (liveProvenanceReport.errors.length > 0 && options.allowRevisionMismatch) {
+      console.warn(
+        `[stress] live provenance mismatch override active: ${liveProvenanceReport.errors.map((entry) => entry.id).join(", ")}`,
+      )
+    }
 
-  for (const testCase of selectedCases) {
+    for (const testCase of selectedCases) {
       const caseDir = path.join(batchDir, testCase.id)
       await fs.mkdir(caseDir, { recursive: true })
       const summary: Record<string, unknown> = {
@@ -2534,6 +5885,20 @@ const main = async () => {
         if ((stats as Record<string, unknown>).outputs) {
           summary.outputs = (stats as Record<string, unknown>).outputs
         }
+        const anomaliesPath = (stats as Record<string, unknown>).anomaliesPath as string | undefined
+        if (anomaliesPath) {
+          const anomalies = await readJsonFile<unknown[]>(anomaliesPath)
+          if (Array.isArray(anomalies)) {
+            summary.anomalyCount = anomalies.length
+            if (anomalies.length > 0) {
+              summary.anomalyIds = anomalies
+                .map((entry) =>
+                  entry && typeof entry === "object" && "id" in entry ? String((entry as { id?: unknown }).id) : "unknown",
+                )
+                .slice(0, 20)
+            }
+          }
+        }
         ;(aggregateManifest.cases as Array<Record<string, unknown>>).push(summary)
         console.log(`[stress] ${testCase.id} captured.`)
       } catch (error) {
@@ -2542,114 +5907,124 @@ const main = async () => {
       }
     }
 
-  aggregateManifest.finishedAt = Date.now()
-  aggregateManifest.artifactDir = batchDir
-  if (options.bridgeChaos) {
-    aggregateManifest.bridgeChaos = options.bridgeChaos
-  }
-  let keyFuzzSummary: Record<string, unknown> | null = null
-  if (options.keyFuzzIterations > 0) {
-    const fuzzSummary = await runKeyFuzzSuite(batchDir, options)
-    keyFuzzSummary = fuzzSummary
-    aggregateManifest.keyFuzz = {
-      iterations: options.keyFuzzIterations,
-      steps: options.keyFuzzSteps,
-      seed: options.keyFuzzSeed,
-      artifactDir: path.join(batchDir, "key_fuzz"),
-      summary: fuzzSummary,
+    aggregateManifest.finishedAt = Date.now()
+    aggregateManifest.finishedAtIso = new Date().toISOString()
+    aggregateManifest.artifactDir = batchDir
+    if (options.bridgeChaos) {
+      aggregateManifest.bridgeChaos = options.bridgeChaos
     }
-  }
-  const clipboardDiffs = await compareClipboardAgainstPrevious(
-    batchDir,
-    options.outDir,
-    aggregateManifest.cases as Array<Record<string, unknown>>,
-  )
-  if (clipboardDiffs.length > 0) {
-    aggregateManifest.clipboardDiffs = clipboardDiffs
-    console.warn(`[stress] clipboard metadata changed: ${clipboardDiffs.map((entry) => entry.caseId).join(", ")}`)
-  }
-  await buildClipboardDiffReport(batchDir).catch((error) =>
-    console.warn(`[stress] clipboard diff report failed: ${(error as Error).message}`),
-  )
-  if (keyFuzzSummary) {
-    await buildKeyFuzzReport(batchDir, keyFuzzSummary as any).catch((error) =>
-      console.warn(`[stress] key-fuzz report failed: ${(error as Error).message}`),
+    let keyFuzzSummary: Record<string, unknown> | null = null
+    if (options.keyFuzzIterations > 0) {
+      const fuzzSummary = await runKeyFuzzSuite(batchDir, options)
+      keyFuzzSummary = fuzzSummary
+      aggregateManifest.keyFuzz = {
+        iterations: options.keyFuzzIterations,
+        steps: options.keyFuzzSteps,
+        seed: options.keyFuzzSeed,
+        artifactDir: path.join(batchDir, "key_fuzz"),
+        summary: fuzzSummary,
+      }
+    }
+    const clipboardDiffs = await compareClipboardAgainstPrevious(
+      batchDir,
+      options.outDir,
+      aggregateManifest.cases as Array<Record<string, unknown>>,
     )
-  }
-  let guardMetricsResult: { outputPath: string; summaryPath: string } | null = null
-  if (!options.skipGuardMetrics) {
-    try {
-      const metrics = await runGuardrailMetrics(batchDir, options.guardLogs)
-      if (metrics) {
-        guardMetricsResult = metrics
-        aggregateManifest.guardrailMetrics = metrics
-      }
-    } catch (error) {
-      console.error(`[stress] Guardrail metrics failed: ${(error as Error).message}`)
+    if (clipboardDiffs.length > 0) {
+      aggregateManifest.clipboardDiffs = clipboardDiffs
+      console.warn(`[stress] clipboard metadata changed: ${clipboardDiffs.map((entry) => entry.caseId).join(", ")}`)
     }
-  }
-
-  if (guardMetricsResult) {
-    const summaryPath = guardMetricsResult.summaryPath
-    for (const caseSummary of aggregateManifest.cases as Array<Record<string, any>>) {
-      const caseId = caseSummary.id as string
-      const caseDir = path.join(batchDir, caseId)
-      const guardDest = path.join(caseDir, "guardrail_summary.json")
-      await fs.copyFile(summaryPath, guardDest).catch(() => undefined)
-      caseSummary.guardrailSummaryPath = path.relative(batchDir, guardDest)
-      await buildTtyDoc({
-        caseDir,
-        caseId,
-        scriptPath: caseSummary.script as string,
-        configPath: options.configPath,
-        guardSummaryPath: guardDest,
-      })
+    await buildClipboardDiffReport(batchDir).catch((error) =>
+      console.warn(`[stress] clipboard diff report failed: ${(error as Error).message}`),
+    )
+    if (keyFuzzSummary) {
+      await buildKeyFuzzReport(batchDir, keyFuzzSummary as any).catch((error) =>
+        console.warn(`[stress] key-fuzz report failed: ${(error as Error).message}`),
+      )
     }
-  }
-
-  const manifestHashes = await buildManifestHashes(
-    batchDir,
-    aggregateManifest.cases as Array<Record<string, unknown>>,
-  ).catch(() => null)
-  if (manifestHashes) {
-    aggregateManifest.artifactHashes = manifestHashes
-  }
-
-  const manifestPath = path.join(batchDir, "manifest.json")
-  await fs.writeFile(manifestPath, JSON.stringify(aggregateManifest, null, 2), "utf8")
-
-  await buildBatchTtyDoc(batchDir).catch((error) =>
-    console.warn(`[stress] batch ttydoc report failed: ${(error as Error).message}`),
-  )
-
-  if (options.tmuxCaptureTarget) {
-    try {
-      const capture = await captureTmuxPane(options.tmuxCaptureTarget, batchDir, options.tmuxCaptureScale)
-      if (capture) {
-        aggregateManifest.tmuxCapture = {
-          target: options.tmuxCaptureTarget,
-          png: path.relative(batchDir, capture.png),
-          ansi: path.relative(batchDir, capture.ansi),
-          text: path.relative(batchDir, capture.text),
+    let guardMetricsResult: { outputPath: string; summaryPath: string } | null = null
+    if (!options.skipGuardMetrics) {
+      try {
+        const metrics = await runGuardrailMetrics(batchDir, options.guardLogs)
+        if (metrics) {
+          guardMetricsResult = metrics
+          aggregateManifest.guardrailMetrics = metrics
         }
+      } catch (error) {
+        console.error(`[stress] Guardrail metrics failed: ${(error as Error).message}`)
       }
-    } catch (error) {
-      console.warn(`[stress] tmux capture failed: ${(error as Error).message}`)
     }
-  }
 
-  if (options.zip) {
-    const zipName = `${path.basename(batchDir)}.zip`
-    const zipPath = path.join(path.dirname(batchDir), zipName)
-    await zipDirectory(batchDir, zipName)
-    console.log(`[stress] Bundle zipped at ${zipPath}`)
-  } else {
-    console.log(`[stress] Bundle available at ${batchDir}`)
-  }
-  const keepRuns = Number(process.env.STRESS_KEEP_RUNS ?? DEFAULT_KEEP_RUNS)
-  await pruneOldBatches(options.outDir, keepRuns).catch((error) =>
-    console.warn(`[stress] prune failed: ${(error as Error).message}`),
-  )
+    if (guardMetricsResult) {
+      const summaryPath = guardMetricsResult.summaryPath
+      for (const caseSummary of aggregateManifest.cases as Array<Record<string, any>>) {
+        const caseId = caseSummary.id as string
+        const caseDir = path.join(batchDir, caseId)
+        const guardDest = path.join(caseDir, "guardrail_summary.json")
+        await fs.copyFile(summaryPath, guardDest).catch(() => undefined)
+        caseSummary.guardrailSummaryPath = path.relative(batchDir, guardDest)
+        await buildTtyDoc({
+          caseDir,
+          caseId,
+          scriptPath: caseSummary.script as string,
+          configPath: options.configPath,
+          guardSummaryPath: guardDest,
+        })
+      }
+    }
+
+    const manifestHashes = await buildManifestHashes(
+      batchDir,
+      aggregateManifest.cases as Array<Record<string, unknown>>,
+    ).catch(() => null)
+    if (manifestHashes) {
+      aggregateManifest.artifactHashes = manifestHashes
+    }
+
+    await buildBatchTtyDoc(batchDir).catch((error) =>
+      console.warn(`[stress] batch ttydoc report failed: ${(error as Error).message}`),
+    )
+
+    if (options.tmuxCaptureTarget) {
+      try {
+        const capture = await captureTmuxPane(options.tmuxCaptureTarget, batchDir, options.tmuxCaptureScale)
+        if (capture) {
+          aggregateManifest.tmuxCapture = {
+            target: options.tmuxCaptureTarget,
+            png: path.relative(batchDir, capture.png),
+            ansi: path.relative(batchDir, capture.ansi),
+            text: path.relative(batchDir, capture.text),
+          }
+        }
+      } catch (error) {
+        console.warn(`[stress] tmux capture failed: ${(error as Error).message}`)
+      }
+    }
+
+    const manifestPath = path.join(batchDir, "manifest.json")
+    await fs.writeFile(manifestPath, JSON.stringify(aggregateManifest, null, 2), "utf8")
+
+    const batchContractReport = evaluateBatchManifestSchema(aggregateManifest)
+    const batchContractReportPath = path.join(batchDir, "batch_contract_report.json")
+    await fs.writeFile(batchContractReportPath, JSON.stringify(batchContractReport, null, 2), "utf8")
+    if (batchContractReport.errors.length > 0) {
+      throw new Error(`batch manifest contract failed with ${batchContractReport.errors.length} error(s); see ${batchContractReportPath}`)
+    }
+
+    if (options.zip) {
+      const zipName = `${path.basename(batchDir)}.zip`
+      const zipPath = path.join(path.dirname(batchDir), zipName)
+      await zipDirectory(batchDir, zipName)
+      console.log(`[stress] Bundle zipped at ${zipPath}`)
+    } else {
+      console.log(
+        `[stress] bundle complete kind=${options.bundleKind} authority=${options.bundleAuthority} available=${batchDir}`,
+      )
+    }
+    const keepRuns = Number(process.env.STRESS_KEEP_RUNS ?? DEFAULT_KEEP_RUNS)
+    await pruneOldBatches(options.outDir, keepRuns).catch((error) =>
+      console.warn(`[stress] prune failed: ${(error as Error).message}`),
+    )
   } finally {
     if (mockProcess) {
       await mockProcess.stop().catch((error) => console.warn("[stress] mock SSE shutdown failed:", error))
@@ -2664,7 +6039,13 @@ const main = async () => {
   }
 }
 
-main().catch((error) => {
-  console.error("stress:bundle failed:", error)
-  process.exitCode = 1
-})
+main()
+  .then(() => {
+    // This is a CLI harness: once artifacts are written and explicit cleanup has run,
+    // do not let imported terminal/runtime libraries or tsx services pin the event loop.
+    process.exit(0)
+  })
+  .catch((error) => {
+    console.error("stress:bundle failed:", error)
+    process.exit(1)
+  })

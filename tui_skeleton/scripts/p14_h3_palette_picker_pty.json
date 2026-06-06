@@ -1,0 +1,16 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "press", "key": "ctrl+p" },
+  { "action": "waitFor", "text": "Command palette", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "palette-open", "mode": "frame", "maxLines": 100 },
+  { "action": "press", "key": "escape" },
+  { "action": "waitForComposerReady", "timeoutMs": 10000 },
+  { "action": "snapshot", "label": "palette-cancelled", "mode": "frame", "maxLines": 100 },
+  { "action": "press", "key": "ctrl+p" },
+  { "action": "type", "text": "models", "typingDelayMs": 8 },
+  { "action": "waitFor", "text": "/models", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "palette-filtered", "mode": "frame", "maxLines": 100 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "❯ /models", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "palette-confirmed", "mode": "frame", "maxLines": 100 }
+]

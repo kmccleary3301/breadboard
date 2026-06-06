@@ -1,0 +1,42 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 30000 },
+  {
+    "action": "type",
+    "text": "Respond exactly: LIVE_TRANSCRIPT_TURN1_ASSISTANT"
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  {
+    "action": "waitForState",
+    "timeoutMs": 60000,
+    "fresh": true,
+    "pendingResponse": false,
+    "conversationCountAtLeast": 2,
+    "lastConversationSpeaker": "assistant",
+    "lastConversationPhase": "final",
+    "lastConversationPreviewIncludes": "LIVE_TRANSCRIPT_TURN1_ASSISTANT"
+  },
+  { "action": "waitForComposerReady", "timeoutMs": 10000 },
+  {
+    "action": "type",
+    "text": "Respond exactly: LIVE_TRANSCRIPT_TURN2_ASSISTANT"
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  {
+    "action": "waitForState",
+    "timeoutMs": 60000,
+    "fresh": true,
+    "pendingResponse": false,
+    "conversationCountAtLeast": 4,
+    "lastConversationSpeaker": "assistant",
+    "lastConversationPhase": "final",
+    "lastConversationPreviewIncludes": "LIVE_TRANSCRIPT_TURN2_ASSISTANT"
+  },
+  { "action": "press", "key": "ctrl+t" },
+  { "action": "waitFor", "text": "breadboard transcript viewer", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "waitFor", "text": "LIVE_TRANSCRIPT_TURN1_ASSISTANT", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "waitFor", "text": "LIVE_TRANSCRIPT_TURN2_ASSISTANT", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "live-transcript-viewer", "mode": "frame", "maxLines": 140 },
+  { "action": "press", "key": "escape" },
+  { "action": "waitForComposerReady", "timeoutMs": 10000 },
+  { "action": "snapshot", "label": "live-transcript-dismissed", "mode": "history", "maxLines": 260 }
+]

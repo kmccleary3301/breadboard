@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "id": "known_bad_invisible_active_row",
+  "title": "Known Bad Invisible Active Row Calibration",
+  "description": "Expected-red Phase C detector calibration rendered through production ReplView; not a natural live-host reproduction claim.",
+  "expectedOutcome": "fail",
+  "knownBadKind": "invisible-active-row",
+  "claimScope": "production-renderer-compositor",
+  "productionEquivalence": {
+    "required": true,
+    "renderer": "ReplView",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "fault",
+      "time",
+      "workspace",
+      "task"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-projection",
+      "composer-footer",
+      "modal-picker",
+      "taskboard-state",
+      "direct-cell-mutation"
+    ]
+  },
+  "surfaces": [
+    "model-picker"
+  ],
+  "sizes": [
+    {
+      "cols": 40,
+      "rows": 18
+    },
+    {
+      "cols": 72,
+      "rows": 22
+    }
+  ],
+  "timeline": [
+    {
+      "kind": "user",
+      "text": "Open picker with invisible selection."
+    },
+    {
+      "kind": "assistant",
+      "text": "ACTIVE_ROW_INVISIBLE_SENTINEL indicates the selected row has no durable marker."
+    },
+    {
+      "kind": "open-surface",
+      "surface": "model-picker"
+    }
+  ],
+  "expectedMarkers": [
+    "Open picker with invisible selection",
+    "gpt-5.4-mini"
+  ],
+  "forbiddenMarkers": [
+    "ACTIVEROWINVISIBLE_SENTINEL"
+  ],
+  "invariants": [
+    "COMPOSITOR-PRODUCTION-RENDERER",
+    "COMPOSITOR-NO-FAKE-RENDERER",
+    "COMPOSITOR-ARTIFACT-PACKET-COMPLETE",
+    "COMPOSITOR-MARKERS-PRESENT",
+    "COMPOSITOR-FORBIDDEN-MARKERS-ABSENT",
+    "COMPOSITOR-WIDTH-SAFE",
+    "COMPOSITOR-COMPOSER-VISIBLE",
+    "COMPOSITOR-PROMPT-EXACTLY-ONCE",
+    "COMPOSITOR-ACTIVE-ROW-VISIBLE"
+  ],
+  "artifacts": {
+    "required": [
+      "manifest.json",
+      "command.txt",
+      "git_status.txt",
+      "environment.json",
+      "scenario.json",
+      "raw.ansi",
+      "plain_final.txt",
+      "grid_frames.ndjson",
+      "state_snapshots.ndjson",
+      "input_events.ndjson",
+      "dimension_events.ndjson",
+      "anomalies.json",
+      "invariant_report.json",
+      "screenshots/contact_sheet.png",
+      "visual_qc_notes.md",
+      "claim_delta.json"
+    ]
+  },
+  "claimBoundary": "Phase C production-renderer expected-red calibration only; not real-host proof."
+}

@@ -1,0 +1,18 @@
+[
+  { "action": "waitForState", "timeoutMs": 20000, "pendingResponse": false },
+  { "action": "snapshot", "label": "startup" },
+
+  { "action": "type", "text": "hello from wezterm turn one" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitForState", "timeoutMs": 45000, "pendingResponse": false, "conversationCountAtLeast": 2, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final" },
+  { "action": "snapshot", "label": "turn1-settled" },
+
+  { "action": "resize", "cols": 88, "rows": 24, "delayMs": 1500 },
+  { "action": "snapshot", "label": "after-width-shrink" },
+
+  { "action": "type", "text": "hello from wezterm turn two" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitForState", "timeoutMs": 45000, "pendingResponse": false, "conversationCountAtLeast": 4, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final" },
+  { "action": "waitForComposerReady", "timeoutMs": 10000 },
+  { "action": "snapshot", "label": "turn2-settled" }
+]

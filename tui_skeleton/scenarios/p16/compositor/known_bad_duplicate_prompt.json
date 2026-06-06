@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "id": "known_bad_duplicate_prompt",
+  "title": "Known Bad Duplicate Prompt Calibration",
+  "expectedOutcome": "fail",
+  "knownBadKind": "duplicate-prompt",
+  "claimScope": "production-renderer-compositor",
+  "productionEquivalence": {
+    "required": true,
+    "renderer": "ReplView",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "fault",
+      "time",
+      "workspace",
+      "task"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-projection",
+      "composer-footer",
+      "modal-picker",
+      "taskboard-state",
+      "direct-cell-mutation"
+    ]
+  },
+  "surfaces": [
+    "transcript"
+  ],
+  "sizes": [
+    {
+      "cols": 72,
+      "rows": 22
+    }
+  ],
+  "timeline": [
+    {
+      "kind": "user",
+      "text": "Duplicate me once."
+    },
+    {
+      "kind": "user",
+      "text": "Duplicate me once."
+    },
+    {
+      "kind": "assistant",
+      "text": "This should be red because the prompt is duplicated."
+    }
+  ],
+  "expectedMarkers": [
+    "Duplicate me once."
+  ],
+  "invariants": [
+    "COMPOSITOR-PRODUCTION-RENDERER",
+    "COMPOSITOR-NO-FAKE-RENDERER",
+    "COMPOSITOR-ARTIFACT-PACKET-COMPLETE",
+    "COMPOSITOR-MARKERS-PRESENT",
+    "COMPOSITOR-WIDTH-SAFE",
+    "COMPOSITOR-COMPOSER-VISIBLE",
+    "COMPOSITOR-PROMPT-EXACTLY-ONCE"
+  ],
+  "artifacts": {
+    "required": [
+      "manifest.json",
+      "command.txt",
+      "git_status.txt",
+      "environment.json",
+      "scenario.json",
+      "raw.ansi",
+      "plain_final.txt",
+      "grid_frames.ndjson",
+      "state_snapshots.ndjson",
+      "input_events.ndjson",
+      "dimension_events.ndjson",
+      "anomalies.json",
+      "invariant_report.json",
+      "screenshots/contact_sheet.png",
+      "visual_qc_notes.md",
+      "claim_delta.json"
+    ]
+  },
+  "claimBoundary": "Phase C production ReplView/controller compositor evidence only; synthetic external events are allowed, but this is not real-host proof."
+}

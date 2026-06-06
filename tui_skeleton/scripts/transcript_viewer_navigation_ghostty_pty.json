@@ -1,0 +1,168 @@
+[
+  {
+    "action": "log",
+    "message": "Transcript viewer navigation PTY start"
+  },
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 15000
+  },
+  {
+    "action": "type",
+    "text": "Hello transcript",
+    "typingDelayMs": 10
+  },
+  {
+    "action": "press",
+    "key": "enter"
+  },
+  {
+    "action": "waitFor",
+    "text": "Mock assistant: hello world",
+    "timeoutMs": 15000
+  },
+  {
+    "action": "press",
+    "key": "ctrl+t"
+  },
+  {
+    "action": "waitFor",
+    "text": "Press / to search",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "wait",
+    "ms": 750
+  },
+  {
+    "action": "snapshot",
+    "label": "viewer-follow"
+  },
+  {
+    "action": "type",
+    "text": "/"
+  },
+  {
+    "action": "waitFor",
+    "text": "Search:",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "type",
+    "text": "ello"
+  },
+  {
+    "action": "waitFor",
+    "text": "Search: ello",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "viewer-search"
+  },
+  {
+    "action": "press",
+    "key": "escape"
+  },
+  {
+    "action": "waitFor",
+    "text": "Press / to search",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "wait",
+    "ms": 120
+  },
+  {
+    "action": "type",
+    "text": "g"
+  },
+  {
+    "action": "wait",
+    "ms": 150
+  },
+  {
+    "action": "snapshot",
+    "label": "viewer-top"
+  },
+  {
+    "action": "type",
+    "text": "u"
+  },
+  {
+    "action": "wait",
+    "ms": 150
+  },
+  {
+    "action": "snapshot",
+    "label": "viewer-user-anchor"
+  },
+  {
+    "action": "type",
+    "text": "a"
+  },
+  {
+    "action": "wait",
+    "ms": 150
+  },
+  {
+    "action": "snapshot",
+    "label": "viewer-assistant-anchor"
+  },
+  {
+    "action": "type",
+    "text": "G"
+  },
+  {
+    "action": "wait",
+    "ms": 150
+  },
+  {
+    "action": "snapshot",
+    "label": "viewer-tail"
+  },
+  {
+    "action": "type",
+    "text": "g"
+  },
+  {
+    "action": "wait",
+    "ms": 150
+  },
+  {
+    "action": "press",
+    "key": "ctrl+t"
+  },
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 10000
+  },
+  {
+    "action": "snapshot",
+    "label": "back"
+  },
+  {
+    "action": "press",
+    "key": "ctrl+t"
+  },
+  {
+    "action": "wait",
+    "ms": 150
+  },
+  {
+    "action": "snapshot",
+    "label": "viewer-reopen"
+  },
+  {
+    "action": "press",
+    "key": "ctrl+t"
+  },
+  {
+    "action": "wait",
+    "ms": 150
+  },
+  {
+    "action": "log",
+    "message": "Transcript viewer navigation PTY end"
+  }
+]

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "tool_diff_approval_resize",
+  "title": "Tool, diff, approval, and resize surface",
+  "claimScope": "pty",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": ["model", "tool", "time", "workspace"],
+    "forbiddenBypass": ["renderer", "transcript-store", "composer", "scrollback-feed", "approval"]
+  },
+  "environment": {
+    "dummyWorkspace": { "files": [{ "path": "main.c", "content": "int main(void){return 0;}\n" }], "gitInit": true },
+    "prelaunchShellHistory": [{ "id": "tool-pre", "text": "BB_V5_TOOL_PRE_HISTORY_SENTINEL" }]
+  },
+  "launch": { "mode": "classic", "engineMode": "test-owned", "startupWait": { "composerReady": true, "timeoutMs": 20000 }, "timeoutMs": 180000 },
+  "terminal": { "lanes": ["pty"], "initial": { "cols": 118, "rows": 34 }, "resizePolicy": "scripted", "captureGrid": true, "captureScrollback": true },
+  "timeline": [
+    { "kind": "submit", "text": "Run a tool, show a diff, request approval, then summarize." },
+    { "kind": "tool", "event": { "kind": "start", "toolId": "c-tool", "name": "shell_command", "args": { "command": "sed -n 1p main.c" } } },
+    { "kind": "tool", "event": { "kind": "stdout", "toolId": "c-tool", "text": "int main(void){return 0;}\n" } },
+    { "kind": "tool", "event": { "kind": "diff", "toolId": "c-tool", "patch": "*** Begin Patch\n*** Update File: main.c\n@@\n-int main(void){return 0;}\n+int main(void){return 1;}\n*** End Patch\n" } },
+    { "kind": "tool", "event": { "kind": "approval", "toolId": "c-tool", "approvalType": "patch", "payload": { "path": "main.c" } } },
+    { "kind": "tool", "event": { "kind": "result", "toolId": "c-tool", "status": "ok", "summary": "diff preview emitted", "output": "preview only" } },
+    { "kind": "assistant", "event": { "kind": "start", "streamId": "s1" } },
+    { "kind": "assistant", "event": { "kind": "delta", "streamId": "s1", "text": "Tool, diff, and approval surfaces remained singular and readable." } },
+    { "kind": "assistant", "event": { "kind": "complete", "streamId": "s1" } },
+    { "kind": "waitFor", "target": { "text": "approval surfaces remained singular" }, "timeoutMs": 45000 },
+    { "kind": "resize", "cols": 90, "rows": 30, "settleMs": 250 },
+    { "kind": "checkpoint", "id": "tool-diff-final" }
+  ],
+  "invariants": [
+    { "id": "GLOBAL-HOST-HISTORY-PRESERVED", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RAW-ANSI", "severity": "blocker" },
+    { "id": "GLOBAL-NO-DUPLICATE-PROMPT", "severity": "blocker" },
+    { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" },
+    { "id": "RESIZE-ACTION-OBSERVED", "severity": "blocker" },
+    { "id": "RESIZE-NO-DUP-STATUS", "severity": "blocker" }
+  ],
+  "artifacts": { "required": ["manifest", "raw", "grid", "state", "invariant-report"] }
+}

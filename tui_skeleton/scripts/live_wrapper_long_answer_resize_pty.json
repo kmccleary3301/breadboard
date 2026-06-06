@@ -1,0 +1,14 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  { "action": "type", "text": "Answer with exactly 20 short bullet points and no preface. Use one line per bullet. Each bullet must be dash-space plus its label. The labels are item-01 through item-20." },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "waitForState", "timeoutMs": 45000, "fresh": true, "pendingResponse": true, "lastConversationSpeaker": "assistant", "lastConversationPhase": "streaming" },
+  { "action": "snapshot", "label": "streaming-before-resize", "mode": "frame" },
+  { "action": "resize", "cols": 100, "rows": 24, "delayMs": 350 },
+  { "action": "snapshot", "label": "streaming-after-resize-small", "mode": "frame" },
+  { "action": "resize", "cols": 132, "rows": 36, "delayMs": 350 },
+  { "action": "snapshot", "label": "streaming-after-resize-large", "mode": "frame" },
+  { "action": "waitForState", "timeoutMs": 60000, "pendingResponse": false, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final" },
+  { "action": "wait", "ms": 350 },
+  { "action": "snapshot", "label": "settled-history", "mode": "history" }
+]

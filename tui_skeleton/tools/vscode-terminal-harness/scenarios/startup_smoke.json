@@ -1,0 +1,26 @@
+{
+  "id": "vscode_startup_smoke",
+  "terminal": {
+    "initialCols": 100,
+    "initialRows": 30
+  },
+  "steps": [
+    { "kind": "write", "text": "echo BB_VSCODE_PRE_ALPHA\r" },
+    { "kind": "waitForText", "text": "BB_VSCODE_PRE_ALPHA", "timeoutMs": 8000 },
+    { "kind": "write", "text": "echo BB_VSCODE_PRE_BETA\r" },
+    { "kind": "waitForText", "text": "BB_VSCODE_PRE_BETA", "timeoutMs": 8000 },
+    { "kind": "write", "text": "bb --version\r" },
+    { "kind": "waitForRegex", "pattern": "0\\.2\\.0", "timeoutMs": 12000 },
+    { "kind": "snapshot", "label": "after-version" },
+    { "kind": "resize", "cols": 86, "rows": 24 },
+    { "kind": "write", "text": "printf 'BB_VSCODE_DONE\\n'\r" },
+    { "kind": "waitForText", "text": "BB_VSCODE_DONE", "timeoutMs": 8000 },
+    { "kind": "snapshot", "label": "settled" }
+  ],
+  "assertions": [
+    { "kind": "contains", "scope": "raw", "text": "BB_VSCODE_PRE_ALPHA" },
+    { "kind": "contains", "scope": "raw", "text": "BB_VSCODE_PRE_BETA" },
+    { "kind": "contains", "scope": "raw", "text": "0.2.0" },
+    { "kind": "notContains", "scope": "raw", "text": "You are Codex" }
+  ]
+}

@@ -1,0 +1,9 @@
+[
+  { "action": "waitFor", "text": "Type your request", "timeoutMs": 30000 },
+  { "action": "type", "text": "What is 1+1? Answer with only the lowercase English word." },
+  { "action": "press", "key": "enter" },
+  { "action": "snapshot", "label": "after-submit" },
+  { "action": "waitFor", "text": "two", "timeoutMs": 45000, "mode": "frame" },
+  { "action": "waitFor", "text": "Type your request", "timeoutMs": 15000, "mode": "frame", "fresh": true },
+  { "action": "snapshot", "label": "after-answer" }
+]

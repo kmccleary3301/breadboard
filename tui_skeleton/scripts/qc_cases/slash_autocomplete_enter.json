@@ -1,5 +1,5 @@
 [
-  { "action": "waitFor", "text": "Try \"refactor <filepath>\"", "timeoutMs": 20000 },
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 20000 },
   { "action": "type", "text": "/fi", "typingDelayMs": 10 },
   { "action": "waitFor", "text": "/files", "timeoutMs": 5000 },
   { "action": "press", "key": "enter" },

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "id": "markdown_tool_resize_modal",
+  "title": "Markdown stream, tool row, resize, and modal cleanup",
+  "claimScope": "pty",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": ["model", "tool", "workspace", "time"],
+    "forbiddenBypass": ["renderer", "markdown-renderer", "tool-renderer", "composer", "overlay"]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        { "path": "README.md", "content": "# Demo\n" },
+        { "path": "src/main.ts", "content": "export const value = 1\n" }
+      ]
+    },
+    "prelaunchShellHistory": [
+      { "id": "pre-long", "kind": "long-wrap", "text": "BB_V5_MARKDOWN_PRE_LONG_BEGIN abc abc abc abc abc abc BB_V5_MARKDOWN_PRE_LONG_END" }
+    ]
+  },
+  "launch": { "mode": "classic", "engineMode": "test-owned", "startupWait": { "composerReady": true, "timeoutMs": 20000 }, "timeoutMs": 120000 },
+  "terminal": { "lanes": ["pty"], "initial": { "cols": 120, "rows": 36 }, "resizePolicy": "scripted", "captureGrid": true, "captureScrollback": true },
+  "timeline": [
+    { "kind": "submit", "text": "Write markdown and read README." },
+    { "kind": "assistant", "event": { "kind": "start", "streamId": "s1" } },
+    { "kind": "assistant", "event": { "kind": "markdown-fixture", "streamId": "s1", "fixture": "mixed-mdx", "chunking": { "mode": "syntax" } } },
+    { "kind": "tool", "event": { "kind": "start", "toolId": "t1", "name": "read_file", "args": { "path": "README.md" } } },
+    { "kind": "tool", "event": { "kind": "stdout", "toolId": "t1", "text": "# Demo\n" } },
+    { "kind": "resize", "cols": 82, "rows": 24, "settleMs": 100 },
+    { "kind": "open", "surface": "slash" },
+    { "kind": "checkpoint", "id": "slash-open-after-resize" },
+    { "kind": "key", "key": "escape" },
+    { "kind": "tool", "event": { "kind": "result", "toolId": "t1", "status": "ok", "summary": "Read README.md" } },
+    { "kind": "assistant", "event": { "kind": "complete", "streamId": "s1" } },
+    { "kind": "waitFor", "target": { "text": "complete" }, "timeoutMs": 45000 },
+    { "kind": "checkpoint", "id": "settled" }
+  ],
+  "invariants": [
+    { "id": "GLOBAL-HOST-HISTORY-PRESERVED", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RAW-ANSI", "severity": "blocker" },
+    { "id": "GLOBAL-NO-SYSTEM-PROMPT-LEAK", "severity": "blocker" },
+    { "id": "GLOBAL-NO-DUPLICATE-PROMPT", "severity": "blocker" },
+    { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" },
+    { "id": "RESIZE-ACTION-OBSERVED", "severity": "blocker" },
+    { "id": "RESIZE-NO-STALE-BORDER", "severity": "blocker" }
+  ],
+  "artifacts": { "required": ["manifest", "raw", "grid", "state", "invariant-report"] }
+}

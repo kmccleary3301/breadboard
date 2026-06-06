@@ -1,0 +1,10 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "/sessions", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Recent sessions", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "recent-sessions-open", "mode": "frame", "maxLines": 100 },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 300 },
+  { "action": "snapshot", "label": "recent-sessions-close", "mode": "frame", "maxLines": 100 }
+]

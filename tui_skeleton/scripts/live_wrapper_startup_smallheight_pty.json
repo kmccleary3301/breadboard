@@ -1,0 +1,5 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  { "action": "wait", "ms": 600 },
+  { "action": "snapshot", "label": "startup-smallheight", "mode": "frame" }
+]

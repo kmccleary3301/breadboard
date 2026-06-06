@@ -1,0 +1,209 @@
+{
+  "id": "vscode_height_churn",
+  "terminal": {
+    "initialCols": 110,
+    "initialRows": 34
+  },
+  "steps": [
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_ALPHA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_ALPHA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_BETA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_BETA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "bb\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Type your request",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "resize",
+      "cols": 110,
+      "rows": 20
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "Type your request"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "[ready]"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "You are Codex"
+        },
+        {
+          "kind": "notContains",
+          "scope": "buffer",
+          "text": "file://logging/"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "\u001b[200~"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "\u001b[201~"
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "Type your request",
+          "count": 1
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "[ready]",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "kind": "resize",
+      "cols": 110,
+      "rows": 42
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "Type your request"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "[ready]"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "You are Codex"
+        },
+        {
+          "kind": "notContains",
+          "scope": "buffer",
+          "text": "file://logging/"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "\u001b[200~"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "\u001b[201~"
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "Type your request",
+          "count": 1
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "[ready]",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "kind": "screenshot",
+      "label": "height-churn-final"
+    },
+    {
+      "kind": "terminate"
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "Type your request"
+    },
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "[ready]"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "You are Codex"
+    },
+    {
+      "kind": "notContains",
+      "scope": "buffer",
+      "text": "file://logging/"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "\u001b[200~"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "\u001b[201~"
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "Type your request",
+      "count": 1
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "[ready]",
+      "count": 1
+    }
+  ]
+}

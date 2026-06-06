@@ -1,0 +1,8 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "payload": { "summary": "v7 completed turn" }, "turn": 1 } },
+  { "delayMs": 100, "event": { "type": "assistant.message.start", "payload": { "message_id": "m1", "channel": "text", "format": "markdown" } } },
+  { "delayMs": 100, "event": { "type": "assistant.message.delta", "payload": { "message_id": "m1", "channel": "text", "delta": "V7-COMPLETED-RESPONSE-A" } } },
+  { "delayMs": 100, "event": { "type": "assistant.message.end", "payload": { "message_id": "m1", "channel": "text", "stop_reason": "end_turn" } } },
+  { "delayMs": 50, "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "v7_completion_short" } } } },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 6 } } }
+]

@@ -1,0 +1,108 @@
+[
+  {
+    "action": "log",
+    "message": "Multiagent taskboard PTY harness start"
+  },
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 15000
+  },
+  {
+    "action": "type",
+    "text": "Delegate SMTP work to reviewer, implementer, and tester agents.",
+    "typingDelayMs": 10
+  },
+  {
+    "action": "press",
+    "key": "enter",
+    "expectSubmit": true
+  },
+  {
+    "action": "waitFor",
+    "text": "Taskboard summary: reviewer done, implementer running, tester blocked.",
+    "timeoutMs": 15000
+  },
+  {
+    "action": "press",
+    "key": "ctrl+b"
+  },
+  {
+    "action": "waitFor",
+    "text": "Background tasks",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  {
+    "action": "waitFor",
+    "text": "Implement SMTP server core",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  {
+    "action": "waitFor",
+    "text": "Run SMTP smoke tests",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  {
+    "action": "waitFor",
+    "text": "Completed (1)",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  {
+    "action": "waitFor",
+    "text": "Reviewer finished requirements pass",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  {
+    "action": "snapshot",
+    "label": "multiagent-tasks-open",
+    "mode": "frame"
+  },
+  {
+    "action": "resize",
+    "cols": 86,
+    "rows": 24
+  },
+  {
+    "action": "wait",
+    "ms": 350
+  },
+  {
+    "action": "waitFor",
+    "text": "Background tasks",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  {
+    "action": "waitFor",
+    "text": "Implement SMTP server core",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  {
+    "action": "snapshot",
+    "label": "multiagent-tasks-after-resize",
+    "mode": "frame"
+  },
+  {
+    "action": "press",
+    "key": "escape"
+  },
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  {
+    "action": "snapshot",
+    "label": "multiagent-tasks-closed",
+    "mode": "frame"
+  },
+  {
+    "action": "log",
+    "message": "Multiagent taskboard PTY harness complete"
+  }
+]

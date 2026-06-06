@@ -1,0 +1,168 @@
+{
+  "id": "vscode_slash_command_surface",
+  "terminal": {
+    "initialCols": 118,
+    "initialRows": 36
+  },
+  "steps": [
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_ALPHA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_ALPHA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_BETA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_BETA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "bb\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Type your request",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "/help\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Slash commands",
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "write",
+      "text": "/runtime\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Runtime telemetry",
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "write",
+      "text": "/notarealcommand\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Unknown command",
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "/help"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "Slash commands"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "Unknown command"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "Type your request"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "You are Codex"
+        },
+        {
+          "kind": "notContains",
+          "scope": "buffer",
+          "text": "file://logging/"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "harness-resize-probe"
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "Type your request",
+          "count": 1
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "[ready]",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "kind": "terminate"
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "Slash commands"
+    },
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "Unknown command"
+    },
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "Type your request"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "You are Codex"
+    },
+    {
+      "kind": "notContains",
+      "scope": "buffer",
+      "text": "file://logging/"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "harness-resize-probe"
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "Type your request",
+      "count": 1
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "[ready]",
+      "count": 1
+    }
+  ]
+}

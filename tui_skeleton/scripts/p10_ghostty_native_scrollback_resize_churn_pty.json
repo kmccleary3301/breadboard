@@ -1,0 +1,23 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 45000 },
+  { "action": "snapshot", "label": "startup" },
+  {
+    "action": "type",
+    "text": "Write a markdown answer with a heading, three bullets, a small table, and a ts code block. Keep it medium length."
+  },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 12000 },
+  { "action": "snapshot", "label": "streaming-churn-0" },
+  { "action": "resize", "cols": 104, "rows": 28, "delayMs": 2200 },
+  { "action": "snapshot", "label": "streaming-churn-1" },
+  { "action": "resize", "cols": 88, "rows": 22, "delayMs": 2200 },
+  { "action": "snapshot", "label": "streaming-churn-2" },
+  { "action": "resize", "cols": 132, "rows": 36, "delayMs": 2200 },
+  { "action": "snapshot", "label": "streaming-churn-3" },
+  { "action": "resize", "cols": 96, "rows": 24, "delayMs": 2200 },
+  { "action": "snapshot", "label": "streaming-churn-4" },
+  { "action": "wait", "ms": 13000 },
+  { "action": "snapshot", "label": "turn1-settled" },
+  { "action": "resize", "cols": 88, "rows": 22, "delayMs": 2200 },
+  { "action": "snapshot", "label": "after-width-shrink" }
+]

@@ -1,0 +1,3 @@
+[
+  { "delayMs": 60000, "event": { "id": "v7-stream-stall-too-late", "type": "assistant.message.delta", "payload": { "message_id": "v7-stream-stall-message", "channel": "text", "delta": "V7_STREAM_STALL_LATE_EVENT_SHOULD_NOT_APPEAR" } } }
+]

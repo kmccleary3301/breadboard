@@ -1,0 +1,10 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  { "action": "snapshot", "label": "startup", "mode": "history", "maxLines": 180 },
+  { "action": "type", "text": "Create a small dummy SMTP server in C in this workspace. It should listen on localhost, support HELO/EHLO, MAIL FROM, RCPT TO, DATA, QUIT, write received messages to a local spool directory, include a Makefile, and include a README with usage notes. Keep it simple and safe for local testing. Build or at least run the strongest available verification before you finish." },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "after-submit", "mode": "history", "maxLines": 260 },
+  { "action": "waitForState", "timeoutMs": 600000, "fresh": true, "pendingResponse": false, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final" },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "final", "mode": "history", "maxLines": 900 }
+]

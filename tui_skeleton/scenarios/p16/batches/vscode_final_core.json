@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "p16_vscode_final_core",
+  "campaign": "p16-terminal-host-universality",
+  "scenarios": [
+    "tools/vscode-terminal-harness/scenarios/vscode_startup_history_guard.json",
+    "tools/vscode-terminal-harness/scenarios/vscode_composer_footer_visibility.json",
+    "tools/vscode-terminal-harness/scenarios/vscode_slash_command_surface.json",
+    "tools/vscode-terminal-harness/scenarios/vscode_model_picker_resize_close.json",
+    "tools/vscode-terminal-harness/scenarios/vscode_file_picker_attachment_paste.json",
+    "tools/vscode-terminal-harness/scenarios/vscode_tool_diff_approval_dummy.json",
+    "tools/vscode-terminal-harness/scenarios/vscode_transcript_viewer_open_return.json",
+    "tools/vscode-terminal-harness/scenarios/vscode_long_answer_resize.json",
+    "tools/vscode-terminal-harness/scenarios/vscode_resume_lifecycle_hygiene.json"
+  ]
+}

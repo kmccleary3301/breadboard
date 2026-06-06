@@ -1,0 +1,136 @@
+{
+  "fileContents": {
+    ".breadboard/subagents/agent-task-tester-fail-01.jsonl": "{\"event\":\"start\",\"message\":\"Tester started SMTP negative path\"}\n{\"event\":\"tool\",\"name\":\"smtp_smoke_test\",\"message\":\"FAILURE_TAIL_LINE_01 connect localhost\"}\n{\"event\":\"tool\",\"name\":\"smtp_smoke_test\",\"message\":\"FAILURE_TAIL_LINE_02 send HELO\"}\n{\"event\":\"tool\",\"name\":\"smtp_smoke_test\",\"message\":\"FAILURE_TAIL_LINE_03 missing DATA terminator\"}\n{\"event\":\"error\",\"retryable\":true,\"message\":\"FAILURE_TAIL_LINE_04 SMTP_TEST_FAILURE missing DATA terminator\"}\n{\"event\":\"summary\",\"message\":\"FAILURE_TAIL_LINE_05 deterministic failure marker\"}\n"
+  },
+  "steps": [
+    {
+      "delayMs": 0,
+      "event": {
+        "type": "turn_start",
+        "payload": { "summary": "multiagent failure probe" },
+        "turn": 1
+      }
+    },
+    {
+      "delayMs": 100,
+      "event": {
+        "type": "assistant_message",
+        "payload": {
+          "text": "Delegated SMTP validation to tester and reviewer lanes.",
+          "message": {
+            "role": "assistant",
+            "content": "Delegated SMTP validation to tester and reviewer lanes."
+          }
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "agent.spawn",
+        "id": "agent-spawn-tester-fail",
+        "payload": {
+          "task_id": "task-tester-fail-01",
+          "subagent_type": "tester",
+          "lane_label": "tester",
+          "summary": "Run SMTP failure reproduction",
+          "mode": "async",
+          "timestamp": 1735689700100
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "task_event",
+        "id": "task-tester-fail-running",
+        "payload": {
+          "task_id": "task-tester-fail-01",
+          "status": "running",
+          "description": "Run SMTP failure reproduction",
+          "subagent_type": "tester",
+          "lane_label": "tester",
+          "mode": "async",
+          "kind": "test",
+          "tool": "smtp_smoke_test",
+          "call_id": "test-fail-step-1",
+          "detail": "running failure reproduction",
+          "artifact_path": ".breadboard/subagents/agent-task-tester-fail-01.jsonl",
+          "timestamp": 1735689700200
+        }
+      }
+    },
+    {
+      "delayMs": 100,
+      "event": {
+        "type": "task_event",
+        "id": "task-tester-fail-failed",
+        "payload": {
+          "task_id": "task-tester-fail-01",
+          "status": "failed_retryable",
+          "description": "Run SMTP failure reproduction",
+          "subagent_type": "tester",
+          "lane_label": "tester",
+          "mode": "async",
+          "kind": "test",
+          "tool": "smtp_smoke_test",
+          "call_id": "test-fail-step-1",
+          "detail": "missing DATA terminator",
+          "error": "SMTP_TEST_FAILURE missing DATA terminator; retryable=true",
+          "output_excerpt": "Tester found SMTP_TEST_FAILURE and recommends retry after DATA terminator handling is patched.",
+          "artifact_path": ".breadboard/subagents/agent-task-tester-fail-01.jsonl",
+          "timestamp": 1735689700300
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "agent.end",
+        "id": "agent-end-tester-fail",
+        "payload": {
+          "task_id": "task-tester-fail-01",
+          "status": "failed_retryable",
+          "subagent_type": "tester",
+          "lane_label": "tester",
+          "summary": "Tester failed with retryable SMTP_TEST_FAILURE.",
+          "timestamp": 1735689700400
+        }
+      }
+    },
+    {
+      "delayMs": 120,
+      "event": {
+        "type": "assistant_message",
+        "payload": {
+          "text": "Failure summary: tester failed retryable; raw log kept in task artifact.",
+          "message": {
+            "role": "assistant",
+            "content": "Failure summary: tester failed retryable; raw log kept in task artifact."
+          }
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "completion",
+        "payload": {
+          "summary": {
+            "completed": true,
+            "reason": "multiagent failure mock",
+            "total_tokens": 231,
+            "duration_ms": 1200
+          }
+        }
+      }
+    },
+    {
+      "delayMs": 0,
+      "event": {
+        "type": "run_finished",
+        "payload": { "eventCount": 8 }
+      }
+    }
+  ]
+}

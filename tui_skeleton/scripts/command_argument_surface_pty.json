@@ -1,0 +1,15 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "/mode chaos", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Expected: plan|build|auto", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "invalid-mode-result", "mode": "frame", "maxLines": 100 },
+  { "action": "type", "text": "/model", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Missing required argument <id>", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "missing-model-result", "mode": "frame", "maxLines": 100 },
+  { "action": "type", "text": "/help extra", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "/help does not take arguments", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "extra-help-result", "mode": "frame", "maxLines": 100 }
+]

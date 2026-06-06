@@ -1,0 +1,10 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "event log probe", "typingDelayMs": 8 },
+  { "action": "press", "key": "ctrl+s" },
+  { "action": "wait", "ms": 150 },
+  { "action": "type", "text": "event", "typingDelayMs": 8 },
+  { "action": "press", "key": "ctrl+r" },
+  { "action": "wait", "ms": 150 },
+  { "action": "snapshot", "label": "composer-events", "mode": "frame", "maxLines": 80 }
+]

@@ -1,0 +1,18 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "first history", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 2200 },
+  { "action": "type", "text": "second history", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 2200 },
+  { "action": "press", "key": "up" },
+  { "action": "wait", "ms": 150 },
+  { "action": "snapshot", "label": "history-last", "mode": "frame", "maxLines": 80 },
+  { "action": "press", "key": "up" },
+  { "action": "wait", "ms": 150 },
+  { "action": "snapshot", "label": "history-first", "mode": "frame", "maxLines": 80 },
+  { "action": "press", "key": "down" },
+  { "action": "wait", "ms": 150 },
+  { "action": "snapshot", "label": "history-forward", "mode": "frame", "maxLines": 80 }
+]

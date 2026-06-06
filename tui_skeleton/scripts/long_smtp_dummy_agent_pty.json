@@ -1,0 +1,38 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  {
+    "action": "type",
+    "text": "You are in a disposable dummy workspace. Build a small but real SMTP server in C. Requirements: create smtp_server.c, smtp_server.h if useful, Makefile, README.md updates, and a minimal smoke test script if useful. The server should listen on localhost, support HELO/EHLO, MAIL FROM, RCPT TO, DATA, RSET, NOOP, QUIT, write accepted messages to ./maildrop as .eml files, handle basic errors, compile with gcc or cc under C11, and avoid touching files outside this workspace. Use tools as needed. When finished, summarize files changed and how to run it."
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "turn1-after-submit", "mode": "frame" },
+  { "action": "waitForState", "timeoutMs": 300000, "fresh": true, "pendingResponse": true, "lastToolEventStatus": "success" },
+  { "action": "snapshot", "label": "turn1-first-success-tool", "mode": "history", "maxLines": 220 },
+  { "action": "waitForState", "timeoutMs": 600000, "fresh": true, "pendingResponse": false, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final" },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "turn1-final-history", "mode": "history", "maxLines": 520 },
+
+  {
+    "action": "type",
+    "text": "Now verify the project like a normal code agent. Inspect the files you created, compile it, and run a local smoke test if possible. If anything fails, fix it. Keep working until either the SMTP server compiles and a basic SMTP conversation succeeds, or you hit a concrete blocker. Then summarize exactly what passed and what failed."
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "turn2-after-submit", "mode": "history", "maxLines": 620 },
+  { "action": "waitForState", "timeoutMs": 300000, "fresh": true, "pendingResponse": true, "lastToolEventStatus": "success" },
+  { "action": "snapshot", "label": "turn2-first-success-tool", "mode": "history", "maxLines": 720 },
+  { "action": "waitForState", "timeoutMs": 600000, "fresh": true, "pendingResponse": false, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final" },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "turn2-final-history", "mode": "history", "maxLines": 900 },
+
+  {
+    "action": "type",
+    "text": "Do one final maintenance pass. Add or improve comments and README usage only if needed, then run make clean && make and a smoke test again. Do not over-engineer. Final answer should tell me whether this dummy SMTP server is usable and list exact commands."
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "turn3-after-submit", "mode": "history", "maxLines": 960 },
+  { "action": "waitForState", "timeoutMs": 300000, "fresh": true, "pendingResponse": true, "lastToolEventStatus": "success" },
+  { "action": "snapshot", "label": "turn3-first-success-tool", "mode": "history", "maxLines": 1040 },
+  { "action": "waitForState", "timeoutMs": 600000, "fresh": true, "pendingResponse": false, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final" },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "turn3-final-history", "mode": "history", "maxLines": 1200 }
+]

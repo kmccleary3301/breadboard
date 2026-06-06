@@ -1,0 +1,15 @@
+[
+  { "action": "wait", "ms": 14000 },
+  { "action": "snapshot", "label": "startup" },
+  { "action": "resize", "cols": 132, "rows": 36, "delayMs": 800 },
+  { "action": "resize", "cols": 104, "rows": 28, "delayMs": 800 },
+  { "action": "resize", "cols": 88, "rows": 22, "delayMs": 800 },
+  { "action": "resize", "cols": 132, "rows": 36, "delayMs": 800 },
+  { "action": "type", "text": "resize width probe", "typingDelayMs": 10 },
+  { "action": "resize", "cols": 104, "rows": 28, "delayMs": 900 },
+  { "action": "resize", "cols": 88, "rows": 22, "delayMs": 900 },
+  { "action": "resize", "cols": 132, "rows": 36, "delayMs": 900 },
+  { "action": "resize", "cols": 96, "rows": 24, "delayMs": 900 },
+  { "action": "resize", "cols": 88, "rows": 22, "delayMs": 1400 },
+  { "action": "snapshot", "label": "draft-resize-final" }
+]

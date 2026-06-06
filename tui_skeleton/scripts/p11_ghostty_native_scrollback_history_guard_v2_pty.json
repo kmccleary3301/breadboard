@@ -1,0 +1,11 @@
+[
+  { "action": "wait", "ms": 14000 },
+  { "action": "snapshot", "label": "startup" },
+  {
+    "action": "type",
+    "text": "Write a markdown answer with a heading, three bullets, a small table, and a ts code block. Keep it medium length."
+  },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 24000 },
+  { "action": "snapshot", "label": "streaming-final" }
+]

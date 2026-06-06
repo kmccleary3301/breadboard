@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "p16_accessibility_keyboard",
+  "campaign": "p16-long-live-autonomy-performance-accessibility-config",
+  "scenarios": [
+    "scenarios/v6/generated/composer/v6_composer_composer_01.json",
+    "scenarios/v6/generated/composer/v6_composer_composer_02.json",
+    "scenarios/v6/generated/modal/v6_modal_modal_01.json",
+    "scenarios/v6/generated/modal/v6_modal_modal_02.json",
+    "scenarios/modal/picker_resize_focus.json"
+  ]
+}

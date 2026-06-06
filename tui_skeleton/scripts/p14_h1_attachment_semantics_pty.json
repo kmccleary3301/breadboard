@@ -1,0 +1,10 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "upload check ", "typingDelayMs": 8 },
+  { "action": "press", "key": "ctrl+v" },
+  { "action": "waitFor", "text": "Attachments queued", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "attachment-queued", "mode": "frame", "maxLines": 100 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 2500 },
+  { "action": "snapshot", "label": "attachment-after-submit", "mode": "frame", "maxLines": 100 }
+]

@@ -1,0 +1,19 @@
+[
+  { "action": "log", "message": "Composer continuation cues PTY start" },
+  { "action": "resize", "cols": 160, "rows": 28, "delayMs": 200 },
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "Show continuation cues", "typingDelayMs": 10 },
+  { "action": "press", "key": "enter" },
+  {
+    "action": "waitForState",
+    "timeoutMs": 15000,
+    "fresh": true,
+    "pendingResponse": false,
+    "conversationCountAtLeast": 2,
+    "lastConversationSpeaker": "assistant",
+    "lastConversationPhase": "final",
+    "lastConversationPreviewIncludes": "Mock assistant: hello world"
+  },
+  { "action": "snapshot", "label": "idle-continuation" },
+  { "action": "log", "message": "Composer continuation cues PTY end" }
+]

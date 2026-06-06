@@ -1,16 +1,80 @@
 [
-  { "action": "log", "message": "Transcript viewer toggle PTY harness start" },
-  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
-  { "action": "snapshot", "label": "main" },
-  { "action": "type", "text": "Hello viewer", "typingDelayMs": 12 },
-  { "action": "press", "key": "enter" },
-  { "action": "wait", "ms": 600 },
-  { "action": "type", "text": "/transcript" },
-  { "action": "press", "key": "enter" },
-  { "action": "waitFor", "text": "transcript viewer", "timeoutMs": 15000 },
-  { "action": "snapshot", "label": "viewer" },
-  { "action": "wait", "ms": 120 },
-  { "action": "press", "key": "escape" },
-  { "action": "snapshot", "label": "back" },
-  { "action": "log", "message": "Transcript viewer toggle PTY harness complete" }
+  {
+    "action": "log",
+    "message": "Transcript viewer toggle PTY harness start"
+  },
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 15000
+  },
+  {
+    "action": "snapshot",
+    "label": "main"
+  },
+  {
+    "action": "type",
+    "text": "Hello viewer",
+    "typingDelayMs": 12
+  },
+  {
+    "action": "press",
+    "key": "enter",
+    "expectSubmit": true
+  },
+  {
+    "action": "waitForState",
+    "timeoutMs": 15000,
+    "fresh": true,
+    "pendingResponse": false,
+    "conversationCountAtLeast": 2,
+    "lastConversationSpeaker": "assistant",
+    "lastConversationPhase": "final",
+    "lastConversationPreviewIncludes": "Mock assistant: hello world"
+  },
+  {
+    "action": "press",
+    "key": "ctrl+t"
+  },
+  {
+    "action": "waitFor",
+    "text": "breadboard transcript viewer",
+    "timeoutMs": 10000,
+    "mode": "frame"
+  },
+  {
+    "action": "waitFor",
+    "text": "❯ Hello viewer",
+    "timeoutMs": 10000,
+    "mode": "frame"
+  },
+  {
+    "action": "waitFor",
+    "text": "● Mock assistant: hello world",
+    "timeoutMs": 10000,
+    "mode": "frame"
+  },
+  {
+    "action": "snapshot",
+    "label": "viewer",
+    "mode": "frame",
+    "maxLines": 120
+  },
+  {
+    "action": "wait",
+    "ms": 120
+  },
+  {
+    "action": "press",
+    "key": "escape"
+  },
+  {
+    "action": "snapshot",
+    "label": "back",
+    "mode": "history",
+    "maxLines": 120
+  },
+  {
+    "action": "log",
+    "message": "Transcript viewer toggle PTY harness complete"
+  }
 ]

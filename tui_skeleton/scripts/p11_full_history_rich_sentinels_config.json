@@ -1,0 +1,13 @@
+{
+  "expectedSentinels": [
+    "PRE_APP_ALPHA",
+    "PRE_APP_BETA",
+    "BB_PRE_SHORT_ALPHA",
+    "BB_PRE_SHORT_BETA",
+    "BB_PRE_LONG_GAMMA_BEGIN",
+    "BB_PRE_FINAL_ZETA"
+  ],
+  "promptMarkers": [
+    "Write a markdown answer"
+  ]
+}

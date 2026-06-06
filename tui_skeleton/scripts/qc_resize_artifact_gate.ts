@@ -46,12 +46,12 @@ const main = async () => {
   const failures: string[] = []
   for (const section of sections) {
     const counts = {
-      header: countMatches(section.body, /BreadBoard v0\.0\.0a/g),
+      header: countMatches(section.body, /BreadBoard v(?:0\.2\.0|0\.0\.0a)/g),
       tips: countMatches(section.body, /Tips for getting started/g),
       greeting: countMatches(section.body, /Hello again Querylake Manager/g),
       recentActivity: countMatches(section.body, /Recent activity/g),
       config: countMatches(section.body, /Config:/g),
-      promptRule: countMatches(section.body, /Try "refactor <filepath>"/g),
+      footerShortcuts: countMatches(section.body, /\? shortcuts/g),
     }
     if (counts.header > 1) {
       failures.push(`[${section.label}] duplicated header marker (${counts.header})`)
@@ -68,8 +68,8 @@ const main = async () => {
     if (counts.config > 1) {
       failures.push(`[${section.label}] duplicated config marker (${counts.config})`)
     }
-    if (counts.promptRule > 1) {
-      failures.push(`[${section.label}] duplicated prompt rule (${counts.promptRule})`)
+    if (counts.footerShortcuts > 1) {
+      failures.push(`[${section.label}] duplicated footer shortcuts marker (${counts.footerShortcuts})`)
     }
   }
 
@@ -84,4 +84,3 @@ main().catch((error) => {
   console.error(message)
   process.exitCode = 1
 })
-

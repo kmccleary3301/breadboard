@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "mixed_20_markdown_resize",
+  "title": "20 mixed markdown/plain event-ingested turns with resize",
+  "claimScope": "pty",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": ["model", "tool", "time", "workspace"],
+    "forbiddenBypass": ["renderer", "transcript-store", "composer", "scrollback-feed"]
+  },
+  "environment": {
+    "dummyWorkspace": { "files": [{ "path": "src/demo.txt", "content": "alpha\nbeta\n" }], "gitInit": true },
+    "prelaunchShellHistory": [{ "id": "mixed20-pre", "text": "BB_V5_MIXED20_PRE_HISTORY_SENTINEL" }]
+  },
+  "launch": { "mode": "classic", "engineMode": "test-owned", "startupWait": { "composerReady": true, "timeoutMs": 20000 }, "timeoutMs": 180000 },
+  "terminal": { "lanes": ["pty"], "initial": { "cols": 120, "rows": 34 }, "resizePolicy": "scripted", "captureGrid": true, "captureScrollback": true },
+  "fixtures": { "seedTurns": { "count": 20, "throughProductionIngestion": true, "contentMix": ["markdown", "plain"] } },
+  "timeline": [
+    { "kind": "submit", "text": "Confirm the mixed seeded transcript is stable." },
+    { "kind": "assistant", "event": { "kind": "start", "streamId": "s1" } },
+    { "kind": "assistant", "event": { "kind": "delta", "streamId": "s1", "text": "Mixed seeded transcript remained stable after resize." } },
+    { "kind": "assistant", "event": { "kind": "complete", "streamId": "s1" } },
+    { "kind": "waitFor", "target": { "text": "Mixed seeded transcript remained stable" }, "timeoutMs": 45000 },
+    { "kind": "resize", "cols": 88, "rows": 30, "settleMs": 250 },
+    { "kind": "checkpoint", "id": "mixed-20-markdown-final" }
+  ],
+  "invariants": [
+    { "id": "GLOBAL-HOST-HISTORY-PRESERVED", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RAW-ANSI", "severity": "blocker" },
+    { "id": "GLOBAL-NO-DUPLICATE-PROMPT", "severity": "blocker" },
+    { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" },
+    { "id": "RESIZE-ACTION-OBSERVED", "severity": "blocker" },
+    { "id": "RESIZE-NO-DUP-STATUS", "severity": "blocker" }
+  ],
+  "artifacts": { "required": ["manifest", "raw", "grid", "state", "invariant-report"] }
+}

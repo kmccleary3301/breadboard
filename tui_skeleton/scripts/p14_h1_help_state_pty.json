@@ -1,0 +1,9 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "?" },
+  { "action": "wait", "ms": 250 },
+  { "action": "snapshot", "label": "help-open", "mode": "frame", "maxLines": 160 },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 250 },
+  { "action": "snapshot", "label": "help-dismissed", "mode": "frame", "maxLines": 160 }
+]

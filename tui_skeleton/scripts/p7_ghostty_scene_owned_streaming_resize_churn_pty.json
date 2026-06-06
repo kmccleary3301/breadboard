@@ -1,0 +1,16 @@
+[
+  { "action": "wait", "ms": 16000 },
+  { "action": "snapshot", "label": "streaming-churn-0" },
+  { "action": "resize", "cols": 100, "rows": 24, "delayMs": 2200 },
+  { "action": "snapshot", "label": "streaming-churn-1" },
+  { "action": "resize", "cols": 88, "rows": 22, "delayMs": 2200 },
+  { "action": "snapshot", "label": "streaming-churn-2" },
+  { "action": "resize", "cols": 132, "rows": 36, "delayMs": 2200 },
+  { "action": "snapshot", "label": "streaming-churn-3" },
+  { "action": "resize", "cols": 96, "rows": 24, "delayMs": 2200 },
+  { "action": "snapshot", "label": "streaming-churn-4" },
+  { "action": "resize", "cols": 132, "rows": 36, "delayMs": 2200 },
+  { "action": "snapshot", "label": "streaming-churn-5" },
+  { "action": "wait", "ms": 9000 },
+  { "action": "snapshot", "label": "settled-history" }
+]

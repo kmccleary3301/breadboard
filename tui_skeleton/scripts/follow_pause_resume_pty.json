@@ -1,0 +1,32 @@
+[
+  { "action": "log", "message": "Follow pause/resume PTY harness start" },
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "stream markdown" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitForState", "pendingResponse": true, "timeoutMs": 8000, "fresh": true },
+  { "action": "waitFor", "text": "Assistant streaming… - first", "timeoutMs": 8000, "mode": "frame", "fresh": true },
+  { "action": "snapshot", "label": "before-pause", "mode": "frame" },
+  { "action": "type", "text": "/follow pause" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitForState", "pendingResponse": true, "mainFollowTail": false, "timeoutMs": 8000, "fresh": true },
+  { "action": "waitFor", "text": "follow paused", "timeoutMs": 8000, "mode": "frame", "fresh": true },
+  { "action": "snapshot", "label": "paused", "mode": "frame" },
+  { "action": "wait", "ms": 1900 },
+  { "action": "snapshot", "label": "paused-after-tail-advance", "mode": "frame" },
+  { "action": "type", "text": "/follow resume" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitForState", "pendingResponse": true, "mainFollowTail": true, "timeoutMs": 8000, "fresh": true },
+  { "action": "waitFor", "text": "Final.", "timeoutMs": 8000, "mode": "frame", "fresh": true },
+  { "action": "snapshot", "label": "after-resume", "mode": "frame" },
+  {
+    "action": "waitForState",
+    "pendingResponse": false,
+    "lastConversationSpeaker": "assistant",
+    "lastConversationPhase": "final",
+    "lastConversationPreviewIncludes": "Final.",
+    "timeoutMs": 8000,
+    "fresh": true
+  },
+  { "action": "snapshot", "label": "settled", "mode": "history" },
+  { "action": "log", "message": "Follow pause/resume PTY harness complete" }
+]

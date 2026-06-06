@@ -1,0 +1,16 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  { "action": "snapshot", "label": "startup", "mode": "history", "maxLines": 160 },
+  { "action": "type", "text": "P14v3 baseline smoke turn 1. Reply with a short markdown checklist containing exactly three items about terminal UI quality." },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "turn1-after-submit", "mode": "history", "maxLines": 220 },
+  { "action": "waitForState", "timeoutMs": 180000, "fresh": true, "pendingResponse": false, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final" },
+  { "action": "wait", "ms": 1000 },
+  { "action": "snapshot", "label": "turn1-final", "mode": "history", "maxLines": 320 },
+  { "action": "type", "text": "P14v3 baseline smoke turn 2. In one concise paragraph, say whether user prompts should remain visible in a terminal transcript." },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "turn2-after-submit", "mode": "history", "maxLines": 420 },
+  { "action": "waitForState", "timeoutMs": 180000, "fresh": true, "pendingResponse": false, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final" },
+  { "action": "wait", "ms": 1000 },
+  { "action": "snapshot", "label": "turn2-final", "mode": "history", "maxLines": 520 }
+]
