@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,10 @@ def test_workspace_guard_rejects_repo_ancestor(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     ancestor = repo_root.parent
     agent = AgenticCoder(str(cfg), workspace_dir=str(ancestor))
+    if ancestor.resolve() == Path(tempfile.gettempdir()).resolve():
+        with pytest.raises(RuntimeError, match="tmp root"):
+            agent._resolve_workspace_path()
+        return
     resolved = agent._resolve_workspace_path()
     assert resolved == ancestor.resolve()
     assert not is_disposable_workspace_path(resolved, repo_root=repo_root)
