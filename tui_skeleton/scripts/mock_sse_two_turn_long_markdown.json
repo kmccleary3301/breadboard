@@ -1,0 +1,24 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "payload": { "summary": "greeting turn" }, "turn": 1 } },
+  { "delayMs": 120, "event": { "type": "assistant.message.start", "payload": { "message_id": "turn-one", "channel": "text", "format": "markdown" }, "turn": 1 } },
+  { "delayMs": 120, "event": { "type": "assistant.message.delta", "payload": { "message_id": "turn-one", "delta": "Doing well, thanks. What can I help you with today?" }, "turn": 1 } },
+  { "delayMs": 100, "event": { "type": "assistant.message.end", "payload": { "message_id": "turn-one" }, "turn": 1 } },
+  { "delayMs": 80, "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mock-turn-one" } }, "turn": 1 } },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 5 }, "turn": 1 } },
+
+  { "delayMs": 1400, "event": { "type": "turn_start", "payload": { "summary": "markdown wrapper turn" }, "turn": 2 } },
+  { "delayMs": 100, "event": { "type": "assistant.message.start", "payload": { "message_id": "turn-two", "channel": "text", "format": "markdown" }, "turn": 2 } },
+  { "delayMs": 120, "event": { "type": "assistant.message.delta", "payload": { "message_id": "turn-two", "delta": "```markdown\n# Sample Markdown\n\n## Section Heading\n- **Bullet** item one\n- *Italic* item two\n> A blockquote for emphasis.\n\n```python\ndef greet(name):\n    return f\"Hello, {name}!\"\n```\n```\n" }, "turn": 2 } },
+  { "delayMs": 100, "event": { "type": "assistant.message.end", "payload": { "message_id": "turn-two" }, "turn": 2 } },
+  { "delayMs": 80, "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mock-turn-two" } }, "turn": 2 } },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 11 }, "turn": 2 } },
+
+  { "delayMs": 1400, "event": { "type": "turn_start", "payload": { "summary": "long markdown turn" }, "turn": 3 } },
+  { "delayMs": 120, "event": { "type": "assistant.message.start", "payload": { "message_id": "turn-three", "channel": "text", "format": "markdown" }, "turn": 3 } },
+  { "delayMs": 160, "event": { "type": "assistant.message.delta", "payload": { "message_id": "turn-three", "delta": "```markdown\n# Long Markdown Response\n\nThis is a deliberately long response that must remain visible after completion.\n\n## Deep Section One\n- **Deep Bold** item should render without delimiters.\n- *Deep Italic* item should render without delimiters.\n- `deep_inline_code` should render as inline code text.\n\n> Long quote block that should not retain a raw greater-than marker.\n\n" }, "turn": 3 } },
+  { "delayMs": 220, "event": { "type": "assistant.message.delta", "payload": { "message_id": "turn-three", "delta": "## Table Section\n\n| key | value |\n| --- | --- |\n| alpha | one |\n| beta | two |\n\n## Code Section\n\n```python\ndef long_markdown_probe():\n    return \"LONG-MARKDOWN-CODE-SENTINEL\"\n```\n\n" }, "turn": 3 } },
+  { "delayMs": 220, "event": { "type": "assistant.message.delta", "payload": { "message_id": "turn-three", "delta": "## Many Lines\n\n1. First ordered point.\n2. Second ordered point.\n3. Third ordered point.\n4. Fourth ordered point.\n5. Fifth ordered point.\n6. Sixth ordered point.\n7. Seventh ordered point.\n8. Eighth ordered point.\n9. Ninth ordered point.\n10. Tenth ordered point.\n\nEND-LONG-MARKDOWN-SENTINEL\n```\n" }, "turn": 3 } },
+  { "delayMs": 100, "event": { "type": "assistant.message.end", "payload": { "message_id": "turn-three" }, "turn": 3 } },
+  { "delayMs": 80, "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mock-turn-three" } }, "turn": 3 } },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 20 }, "turn": 3 } }
+]

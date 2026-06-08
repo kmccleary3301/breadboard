@@ -231,6 +231,80 @@ describe("streamMdxAdapter", () => {
     expect(lines.join("\n")).not.toContain("**Bullet**")
   })
 
+  it("renders long wrapper-fenced markdown without assistant-visible delimiter artifacts", () => {
+    const lines = renderMarkdownFallbackLines([
+      "```markdown",
+      "# Long Markdown Response",
+      "",
+      "Paragraph with **Deep Bold** and *Deep Italic* plus `deep_inline_code`.",
+      "",
+      "> Long quote block that should not retain a raw greater-than marker.",
+      "",
+      "```python",
+      "def long_markdown_probe():",
+      "    return \"LONG-MARKDOWN-CODE-SENTINEL\"",
+      "```",
+      "",
+      "END-LONG-MARKDOWN-SENTINEL",
+      "```",
+    ].join("\n"), { width: 84 }).map(stripAnsiCodes)
+
+    const joined = lines.join("\n")
+    expect(lines).toContain("Long Markdown Response")
+    expect(joined).toContain("Paragraph with Deep Bold and Deep Italic plus deep_inline_code.")
+    expect(joined).toContain("Long quote block that should not retain a raw greater-than marker.")
+    expect(joined).toContain("LONG-MARKDOWN-CODE-SENTINEL")
+    expect(joined).toContain("END-LONG-MARKDOWN-SENTINEL")
+    expect(joined).not.toContain("code · markdown")
+    expect(joined).not.toContain("```markdown")
+    expect(joined).not.toContain("# Long Markdown Response")
+    expect(joined).not.toContain("**Deep Bold**")
+    expect(joined).not.toContain("*Deep Italic*")
+    expect(joined).not.toContain("> Long quote")
+  })
+
+  it("keeps stream/final equivalence corpus semantically rendered", () => {
+    const source = [
+      "```markdown",
+      "# Equivalence Heading",
+      "",
+      "Paragraph with **Equivalence Bold** and *Equivalence Italic* plus `equiv_inline`.",
+      "",
+      "> Equivalence quote should render without a raw marker.",
+      "",
+      "- **Bold equivalence item**",
+      "- *Italic equivalence item*",
+      "",
+      "```ts",
+      "export const equivalence = 'STREAM-FINAL-CODE-SENTINEL'",
+      "```",
+      "",
+      "```diff",
+      "-old",
+      "+new",
+      "```",
+      "",
+      "END-STREAM-FINAL-EQUIVALENCE",
+      "```",
+    ].join("\n")
+    const lines = renderMarkdownFallbackLines(source, { width: 96 }).map(stripAnsiCodes)
+    const joined = lines.join("\n")
+    expect(joined).toContain("Equivalence Heading")
+    expect(joined).toContain("Paragraph with Equivalence Bold and Equivalence Italic plus equiv_inline.")
+    expect(joined).toContain("Equivalence quote should render without a raw marker.")
+    expect(joined).toContain("- Bold equivalence item")
+    expect(joined).toContain("- Italic equivalence item")
+    expect(joined).toContain("STREAM-FINAL-CODE-SENTINEL")
+    expect(joined).toContain("+new")
+    expect(joined).toContain("END-STREAM-FINAL-EQUIVALENCE")
+    expect(joined).not.toContain("code · markdown")
+    expect(joined).not.toContain("```markdown")
+    expect(joined).not.toContain("# Equivalence Heading")
+    expect(joined).not.toContain("**Equivalence Bold**")
+    expect(joined).not.toContain("*Equivalence Italic*")
+    expect(joined).not.toContain("> Equivalence quote")
+  })
+
   it("falls back to raw diff line when tokens missing", () => {
     const blocks: Block[] = [
       {

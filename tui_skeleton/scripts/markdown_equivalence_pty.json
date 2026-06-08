@@ -1,0 +1,8 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 20000, "mode": "frame" },
+  { "action": "type", "text": "Render the canonical markdown equivalence corpus.", "typingDelayMs": 3 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "END-STREAM-FINAL-EQUIVALENCE", "timeoutMs": 45000, "mode": "either" },
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 45000, "mode": "frame" },
+  { "action": "snapshot", "label": "markdown-equivalence-settled", "mode": "history", "maxLines": 600 }
+]

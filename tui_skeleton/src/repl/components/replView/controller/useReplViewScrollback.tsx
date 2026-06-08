@@ -150,6 +150,12 @@ const isAssistantMarkdownReadyForStaticFeed = (entry: TranscriptItem): boolean =
   if (entry.markdownStreaming) return false
   const hasRichBlocks = Array.isArray(entry.richBlocks) && entry.richBlocks.length > 0
   if (!hasRichBlocks) return true
+  // stream-mdx finalization can settle after the engine has already marked the
+  // turn complete. Once the assistant entry is final and non-streaming, the
+  // feed renderer can safely use rich blocks plus raw-text fallback; waiting for
+  // block finalization metadata leaves large answers trapped in the volatile
+  // active band and can drop middle content from native scrollback.
+  if (String(entry.text ?? "").trim().length > 0) return true
   return entry.markdownFinalized === true || Boolean(entry.markdownError)
 }
 
@@ -1107,17 +1113,16 @@ export const useReplViewScrollback = (context: ScrollbackContext) => {
     (landingRetired || landingShouldRetireNow)
   const transcriptEntriesForFeed = useMemo(() => {
     if (!SCROLLBACK_MODE) return transcriptCommitted
-    const coldIds = new Set(scrollbackSurfaceModel.coldCommitted.map((entry) => entry.id))
     // In preserved scrollback mode, user requests are append-only transcript
     // anchors, completed tool rows are durable transcript facts, and finalized
-    // Markdown-ready assistant messages are promoted only after they leave the
-    // active window. This prevents a feed/active handoff race from hiding the
-    // latest answer in real terminals while still preserving older cold bodies.
+    // Markdown-ready assistant messages move into the append-only feed as soon
+    // as they settle. Keeping large final answers in the live band until they
+    // become cold can make terminal history retain only repeated streaming tails.
     return transcriptCommitted.filter((entry) => {
       if (entry.kind === "message" && entry.speaker === "user") return true
       if (entry.kind === "tool") return true
       if (entry.kind === "message" && entry.speaker === "assistant") {
-        return coldIds.has(entry.id) && isAssistantMarkdownReadyForStaticFeed(entry)
+        return isAssistantMarkdownReadyForStaticFeed(entry)
       }
       return false
     })

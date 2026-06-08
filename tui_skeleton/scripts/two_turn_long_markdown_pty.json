@@ -1,0 +1,23 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 20000, "mode": "frame" },
+  { "action": "type", "text": "Hi! How are you?", "typingDelayMs": 3 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Doing well", "timeoutMs": 30000, "mode": "either" },
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  { "action": "snapshot", "label": "after-turn-one", "mode": "history", "maxLines": 260 },
+
+  { "action": "type", "text": "Show me some markdown.", "typingDelayMs": 3 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Sample Markdown", "timeoutMs": 30000, "mode": "either" },
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  { "action": "snapshot", "label": "after-turn-two", "mode": "history", "maxLines": 420 },
+
+  { "action": "resize", "cols": 84, "rows": 18, "delayMs": 250 },
+  { "action": "type", "text": "Show me a **lot** more markdown.", "typingDelayMs": 3 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "END-LONG-MARKDOWN-SENTINEL", "timeoutMs": 45000, "mode": "either" },
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 45000, "mode": "frame" },
+  { "action": "wait", "ms": 500 },
+  { "action": "snapshot", "label": "after-turn-three-frame", "mode": "frame", "maxLines": 120 },
+  { "action": "snapshot", "label": "after-turn-three-history", "mode": "history", "maxLines": 900 }
+]

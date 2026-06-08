@@ -84,6 +84,7 @@ const AUTOPLAY_ON_CONNECT = parseBoolEnv(process.env.BREADBOARD_MOCK_AUTOPLAY_ON
 const CLOSE_CLIENTS_ON_FINISH = parseBoolEnv(process.env.BREADBOARD_MOCK_CLOSE_ON_FINISH, false)
 const SERVER_CLOSE_TIMEOUT_MS = Number(process.env.BREADBOARD_MOCK_CLOSE_TIMEOUT_MS ?? 2_000)
 const sleep = (ms: number) => (ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve())
+const RECORD_PATH = process.env.BREADBOARD_MOCK_RECORD_PATH?.trim()
 
 export const resolveScriptPath = (scriptPath: string) =>
   path.isAbsolute(scriptPath) ? scriptPath : path.join(process.cwd(), scriptPath)
@@ -220,6 +221,13 @@ const readJsonBody = async (req: http.IncomingMessage): Promise<Record<string, u
   } catch {
     return {}
   }
+}
+
+const appendRecord = async (entry: Record<string, unknown>) => {
+  if (!RECORD_PATH) return
+  const target = path.isAbsolute(RECORD_PATH) ? RECORD_PATH : path.join(process.cwd(), RECORD_PATH)
+  await fs.mkdir(path.dirname(target), { recursive: true })
+  await fs.appendFile(target, `${JSON.stringify({ timestamp: Date.now(), ...entry })}\n`, "utf8")
 }
 
 const enqueueCommand = (state: SessionState, body: Record<string, unknown>) => {
@@ -383,6 +391,7 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
     }
     if (req.method === "POST" && url.pathname === "/sessions") {
       const body = await readJsonBody(req)
+      await appendRecord({ kind: "create_session", path: url.pathname, body })
       const task = typeof body.task === "string" ? body.task.trim() : ""
       const sessionId = randomUUID()
       const sessionState: SessionState = {
@@ -530,6 +539,7 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
     }
     if (suffix === "input" && req.method === "POST") {
       const body = await readJsonBody(req)
+      await appendRecord({ kind: "input", session_id: state.id, path: url.pathname, body })
       const content = typeof body.content === "string" ? body.content : null
       if (content && state.clients.size > 0) {
         const event = finalizeEvent(state, { type: "user_message", payload: { text: content } })

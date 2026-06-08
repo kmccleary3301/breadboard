@@ -37,14 +37,14 @@ const baseEntry: ConversationEntry = {
 }
 
 describe("conversation markdown display policy", () => {
-  it("renders rich streaming markdown instead of replacing it with Assistant streaming preview", () => {
+  it("tail-slices rich streaming markdown instead of replacing it with Assistant streaming preview", () => {
     const lines = resolveConversationEntryDisplayLines(baseEntry, {
       viewPrefs: { richMarkdown: true, collapseMode: "auto", virtualization: "auto" },
       markdownWidth: 80,
       streamingAssistantPreviewLines: 1,
     }).map(stripAnsiCodes)
 
-    expect(lines).toContain("Streaming Heading")
+    expect(lines).toHaveLength(1)
     expect(lines).toContain("Visible body")
     expect(lines.join("\n")).not.toContain("Assistant streaming")
     expect(lines.join("\n")).not.toContain("## Streaming Heading")

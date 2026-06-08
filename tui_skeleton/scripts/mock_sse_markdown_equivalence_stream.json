@@ -1,0 +1,11 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "payload": { "summary": "markdown equivalence streaming" }, "turn": 1 } },
+  { "delayMs": 100, "event": { "type": "assistant.message.start", "payload": { "message_id": "equiv-stream", "channel": "text", "format": "markdown" }, "turn": 1 } },
+  { "delayMs": 120, "event": { "type": "assistant.message.delta", "payload": { "message_id": "equiv-stream", "delta": "```mark" }, "turn": 1 } },
+  { "delayMs": 120, "event": { "type": "assistant.message.delta", "payload": { "message_id": "equiv-stream", "delta": "down\n# Equivalence Heading\n\nParagraph with **Equivalence Bold** and *Equivalence Italic* plus `equiv_inline`.\n\n" }, "turn": 1 } },
+  { "delayMs": 120, "event": { "type": "assistant.message.delta", "payload": { "message_id": "equiv-stream", "delta": "> Equivalence quote should render without a raw marker.\n\n- **Bold equivalence item**\n- *Italic equivalence item*\n\n| key | value |\n| --- | --- |\n| stream | final |\n\n" }, "turn": 1 } },
+  { "delayMs": 120, "event": { "type": "assistant.message.delta", "payload": { "message_id": "equiv-stream", "delta": "```ts\nexport const equivalence = 'STREAM-FINAL-CODE-SENTINEL'\n```\n\n```diff\n-old\n+new\n```\n\nEND-STREAM-FINAL-EQUIVALENCE\n```\n" }, "turn": 1 } },
+  { "delayMs": 80, "event": { "type": "assistant.message.end", "payload": { "message_id": "equiv-stream" }, "turn": 1 } },
+  { "delayMs": 80, "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mock-equivalence-stream" } }, "turn": 1 } },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 8 }, "turn": 1 } }
+]

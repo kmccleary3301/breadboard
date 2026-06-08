@@ -1,0 +1,19 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "payload": { "summary": "markdown equivalence final" }, "turn": 1 } },
+  {
+    "delayMs": 120,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "```markdown\n# Equivalence Heading\n\nParagraph with **Equivalence Bold** and *Equivalence Italic* plus `equiv_inline`.\n\n> Equivalence quote should render without a raw marker.\n\n- **Bold equivalence item**\n- *Italic equivalence item*\n\n| key | value |\n| --- | --- |\n| stream | final |\n\n```ts\nexport const equivalence = 'STREAM-FINAL-CODE-SENTINEL'\n```\n\n```diff\n-old\n+new\n```\n\nEND-STREAM-FINAL-EQUIVALENCE\n```\n",
+        "message": {
+          "role": "assistant",
+          "content": "```markdown\n# Equivalence Heading\n\nParagraph with **Equivalence Bold** and *Equivalence Italic* plus `equiv_inline`.\n\n> Equivalence quote should render without a raw marker.\n\n- **Bold equivalence item**\n- *Italic equivalence item*\n\n| key | value |\n| --- | --- |\n| stream | final |\n\n```ts\nexport const equivalence = 'STREAM-FINAL-CODE-SENTINEL'\n```\n\n```diff\n-old\n+new\n```\n\nEND-STREAM-FINAL-EQUIVALENCE\n```\n"
+        }
+      },
+      "turn": 1
+    }
+  },
+  { "delayMs": 80, "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mock-equivalence-final" } }, "turn": 1 } },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 4 }, "turn": 1 } }
+]

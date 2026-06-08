@@ -99,9 +99,14 @@ export const resolveConversationEntryDisplayLines = (
     ? renderMarkdownFallbackLines(normalizedText, { ...markdownRenderOptions, width: markdownWidth })
     : normalizedText.split(/\r?\n/)
   if (streamingPreview) {
-    return useRich
-      ? trimOuterBlankLines(renderRichMarkdownLines(entry, { ...markdownRenderOptions, width: markdownWidth }))
-      : buildAssistantActivePreviewLines(normalizedText, Math.max(1, streamingAssistantPreviewLines), markdownWidth, "Assistant streaming…")
+    const budget = Math.max(1, streamingAssistantPreviewLines)
+    if (useRich) {
+      return tailRenderLines(renderRichMarkdownLines(entry, { ...markdownRenderOptions, width: markdownWidth }), budget)
+    }
+    const fallbackTail = tailRenderLines(fallback, budget)
+    return fallbackTail.some((line) => stripAnsiCodes(line).trim().length > 0)
+      ? fallbackTail
+      : buildAssistantActivePreviewLines(normalizedText, budget, markdownWidth, "Assistant streaming…")
   }
   if (activePreviewLines) {
     const budget = Math.max(1, entry.activePreviewLines ?? 1)
