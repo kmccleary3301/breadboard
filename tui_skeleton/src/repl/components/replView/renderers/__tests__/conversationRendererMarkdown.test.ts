@@ -63,7 +63,7 @@ describe("conversation markdown display policy", () => {
     expect(lines.join("\n")).not.toContain("Assistant latest")
   })
 
-  it("uses a bounded latest preview when activePreviewLines is explicitly applied", () => {
+  it("tail-slices rendered markdown instead of replacing final content with a latest placeholder", () => {
     const lines = resolveConversationEntryDisplayLines({ ...baseEntry, phase: "final", activePreviewLines: 1 }, {
       viewPrefs: { richMarkdown: true, collapseMode: "auto", virtualization: "auto" },
       markdownWidth: 80,
@@ -71,6 +71,8 @@ describe("conversation markdown display policy", () => {
     }).map(stripAnsiCodes)
 
     expect(lines).toHaveLength(1)
-    expect(lines.join("\n")).toContain("Assistant latest")
+    expect(lines.join("\n")).toContain("Visible body")
+    expect(lines.join("\n")).not.toContain("Assistant latest")
+    expect(lines.join("\n")).not.toContain("**Visible body**")
   })
 })

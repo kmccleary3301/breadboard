@@ -421,7 +421,11 @@ export const renderCodeLines = (raw: string, lang?: string, options?: MarkdownRe
   const { code, langHint } = stripFence(raw)
   const finalLang = lang ?? langHint
   const content = (code || raw).replace(/\r\n?/g, "\n")
-  const isDiff = finalLang ? finalLang.toLowerCase().includes("diff") : false
+  const normalizedLang = finalLang?.trim().toLowerCase()
+  if (normalizedLang === "markdown" || normalizedLang === "md") {
+    return renderMarkdownFallbackLines(content, options)
+  }
+  const isDiff = normalizedLang ? normalizedLang.includes("diff") : false
   const shikiLines = maybeHighlightCode(content, finalLang)
   if (shikiLines) return finalLang && !isDiff ? [CHALK.dim(uiText(`code · ${finalLang}`)), ...shikiLines] : shikiLines
   const diffStyle = options?.diffStyle ?? DEFAULT_DIFF_RENDER_STYLE
@@ -726,13 +730,30 @@ export const renderMarkdownFallbackLines = (rawText: string, options?: MarkdownR
     if (line.trim().startsWith("```")) {
       const fence = line.trim()
       const lang = fence.slice(3).trim() || undefined
+      const normalizedLang = lang?.toLowerCase()
       const codeLines: string[] = []
       index += 1
-      while (index < lines.length && !lines[index].trim().startsWith("```")) {
-        codeLines.push(lines[index])
-        index += 1
+      if (normalizedLang === "markdown" || normalizedLang === "md") {
+        let closingIndex = -1
+        for (let scan = lines.length - 1; scan >= index; scan -= 1) {
+          if (lines[scan].trim().startsWith("```")) {
+            closingIndex = scan
+            break
+          }
+        }
+        const end = closingIndex >= index ? closingIndex : lines.length
+        while (index < end) {
+          codeLines.push(lines[index])
+          index += 1
+        }
+        if (closingIndex >= 0) index = closingIndex + 1
+      } else {
+        while (index < lines.length && !lines[index].trim().startsWith("```")) {
+          codeLines.push(lines[index])
+          index += 1
+        }
+        if (index < lines.length) index += 1
       }
-      if (index < lines.length) index += 1
       const fenced = lang ? `\`\`\`${lang}\n${codeLines.join("\n")}\n\`\`\`` : codeLines.join("\n")
       output.push(...renderCodeLines(fenced, lang, options))
       continue
@@ -816,6 +837,15 @@ const blockToLines = (block: Block, options?: MarkdownRenderOptions): string[] =
             : typeof meta.info === "string"
               ? meta.info
               : undefined
+      const normalizedLang = lang?.trim().toLowerCase()
+      const raw = block.payload.raw ?? ""
+      if ((normalizedLang === "markdown" || normalizedLang === "md") && raw.trim().length > 0) {
+        const markdownSource = typeof meta.code === "string" && meta.code.length > 0 ? meta.code : stripFence(raw).code
+        return renderMarkdownFallbackLines(markdownSource, options)
+      }
+      if ((normalizedLang === "text" || !normalizedLang) && raw.trim() === "```") {
+        return []
+      }
       const diffBlocks = Array.isArray(meta.diffBlocks) ? (meta.diffBlocks as StreamDiffBlock[]) : null
       if (diffBlocks && diffBlocks.length > 0) {
         return renderDiffBlocks(diffBlocks, diffStyle)
@@ -826,7 +856,6 @@ const blockToLines = (block: Block, options?: MarkdownRenderOptions): string[] =
         const rendered = renderDiffFromCodeLines(codeLines, diffStyle)
         return lang && !isDiff ? [CHALK.dim(uiText(`code · ${lang}`)), ...rendered] : rendered
       }
-      const raw = block.payload.raw ?? ""
       return renderCodeLines(raw, lang, options)
     }
     case "list": {

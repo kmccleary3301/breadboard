@@ -67,6 +67,13 @@ const buildAssistantActivePreviewLines = (
   return [CHALK.dim(`${label}${suffix}`)].slice(0, Math.max(1, maxLines))
 }
 
+const tailRenderLines = (lines: readonly string[], maxLines: number): string[] => {
+  const trimmed = trimOuterBlankLines(lines)
+  const budget = Math.max(1, Math.floor(maxLines))
+  if (trimmed.length <= budget) return trimmed
+  return trimmed.slice(-budget)
+}
+
 export const resolveConversationEntryDisplayLines = (
   entry: ConversationEntry,
   options: {
@@ -97,7 +104,11 @@ export const resolveConversationEntryDisplayLines = (
       : buildAssistantActivePreviewLines(normalizedText, Math.max(1, streamingAssistantPreviewLines), markdownWidth, "Assistant streaming…")
   }
   if (activePreviewLines) {
-    return buildAssistantActivePreviewLines(normalizedText, Math.max(1, entry.activePreviewLines ?? 1), markdownWidth, "Assistant latest…")
+    const budget = Math.max(1, entry.activePreviewLines ?? 1)
+    return tailRenderLines(useRich
+      ? renderRichMarkdownLines(entry, { ...markdownRenderOptions, width: markdownWidth })
+      : fallback,
+    budget)
   }
   return trimOuterBlankLines(useRich
     ? renderRichMarkdownLines(entry, { ...markdownRenderOptions, width: markdownWidth })

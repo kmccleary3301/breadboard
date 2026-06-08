@@ -176,6 +176,61 @@ describe("streamMdxAdapter", () => {
     expect(lines).toEqual(["Bold text, italic text, and inline code."])
   })
 
+  it("unwraps markdown-language fences into rendered terminal markdown", () => {
+    const lines = renderMarkdownFallbackLines([
+      "```markdown",
+      "# Sample Markdown",
+      "",
+      "## Section Heading",
+      "- **Bullet** item",
+      "> A blockquote for emphasis.",
+      "",
+      "```python",
+      "def greet(name):",
+      "    return f\"Hello, {name}!\"",
+      "```",
+      "```",
+    ].join("\n"), { width: 80 }).map(stripAnsiCodes)
+
+    expect(lines).toContain("Sample Markdown")
+    expect(lines).toContain("Section Heading")
+    expect(lines).toContain("- Bullet item")
+    expect(lines).toContain("A blockquote for emphasis.")
+    expect(lines).toContain("code · python")
+    expect(lines).toContain("def greet(name):")
+    expect(lines.join("\n")).not.toContain("```markdown")
+    expect(lines.join("\n")).not.toContain("# Sample Markdown")
+    expect(lines.join("\n")).not.toContain("**Bullet**")
+    expect(lines.join("\n")).not.toContain("> A blockquote")
+  })
+
+  it("unwraps markdown code blocks before honoring stream-mdx codeLines", () => {
+    const blocks: Block[] = [
+      {
+        id: "markdown-code-with-token-lines",
+        type: "code",
+        isFinalized: true,
+        payload: {
+          raw: "```markdown\n# Sample Markdown\n- **Bullet** item\n```",
+          meta: {
+            lang: "markdown",
+            code: "# Sample Markdown\n- **Bullet** item",
+            codeLines: [
+              { text: "# Sample Markdown", tokens: null },
+              { text: "- **Bullet** item", tokens: null },
+            ],
+          },
+        },
+      },
+    ]
+    const lines = blocksToLines(blocks, { width: 80 }).map(stripAnsiCodes)
+    expect(lines).toContain("Sample Markdown")
+    expect(lines).toContain("- Bullet item")
+    expect(lines.join("\n")).not.toContain("code · markdown")
+    expect(lines.join("\n")).not.toContain("# Sample Markdown")
+    expect(lines.join("\n")).not.toContain("**Bullet**")
+  })
+
   it("falls back to raw diff line when tokens missing", () => {
     const blocks: Block[] = [
       {
