@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
@@ -20,6 +20,8 @@ const makeRepo = () => {
   return dir
 }
 
+const canonicalPath = (value: string): string => path.normalize(realpathSync.native(value))
+
 describe("readWorkingTreeDiff", () => {
   it("returns clean status for a clean git workspace", async () => {
     const dir = makeRepo()
@@ -37,7 +39,8 @@ describe("readWorkingTreeDiff", () => {
     const result = await readWorkingTreeDiff(dir)
 
     expect(result.kind).toBe("dirty")
-    expect(result.repoRoot).toBe(dir)
+    expect(result.repoRoot).toBeDefined()
+    expect(canonicalPath(result.repoRoot!)).toBe(canonicalPath(dir))
     expect(result.changedFiles.map((file) => file.path)).toContain("main.ts")
     expect(result.changedFiles.map((file) => file.path)).toContain("notes.txt")
     expect(result.untrackedCount).toBe(1)
@@ -61,8 +64,8 @@ describe("readWorkingTreeDiff", () => {
 
     const exported = await exportWorkingTreePatch(dir, ".breadboard/review.patch")
     expect(exported.ok).toBe(true)
-    expect(exported.path).toBe(path.join(dir, ".breadboard", "review.patch"))
     expect(existsSync(exported.path!)).toBe(true)
+    expect(canonicalPath(exported.path!)).toBe(canonicalPath(path.join(dir, ".breadboard", "review.patch")))
     expect(readFileSync(exported.path!, "utf8")).toContain("diff --git a/main.ts b/main.ts")
 
     const outside = await exportWorkingTreePatch(dir, "../outside.patch")

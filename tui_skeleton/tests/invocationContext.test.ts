@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import path from "node:path"
 import { Option } from "effect"
 import {
   ANALYSIS_REQUEST_CONFIG_PATH,
@@ -42,7 +43,7 @@ describe("resolveInvocationContext", () => {
       fallbackModel: null,
     })
 
-    expect(context.resolvedConfigPath.endsWith(ANALYSIS_REQUEST_CONFIG_PATH)).toBe(true)
+    expect(path.normalize(context.resolvedConfigPath).endsWith(path.normalize(ANALYSIS_REQUEST_CONFIG_PATH))).toBe(true)
     expect(context.requestMetadata.mode).toBe("analysis")
     expect(context.requestMetadata.permission_mode).toBe("analysis")
   })

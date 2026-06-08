@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import path from "node:path"
 import { Option } from "effect"
 import { DEFAULT_REPL_CONFIG_PATH, resolveReplLaunchContext } from "../src/commands/repl/launchContext"
 
@@ -21,7 +22,7 @@ describe("resolveReplLaunchContext", () => {
     expect(context.modelValue).toBe("openai/gpt-5.4-mini")
     expect(context.permissionValue).toBe("prompt")
     expect(context.remotePreference).toBe(true)
-    expect(context.resolvedConfigPath).toContain("agent_configs/codex_0-107-0_e4_3-6-2026.yaml")
+    expect(path.normalize(context.resolvedConfigPath)).toContain(path.normalize("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"))
     expect(context.resolvedWorkspace.length).toBeGreaterThan(0)
     expect(context.resolvedTuiConfig.meta.sources.length).toBeGreaterThan(0)
   })

@@ -4,7 +4,7 @@ import { resolveCaseCommandCwd } from "../scripts/harness/caseCommandCwd.ts"
 
 const rootDir = process.cwd()
 const repoRoot = path.resolve(rootDir, "..")
-const dummyWorkspaceCwd = "/tmp/bb_qc_terminal_dummy_workspace"
+const dummyWorkspaceCwd = path.resolve("/tmp/bb_qc_terminal_dummy_workspace")
 
 const resolve = (cwd: string | undefined, command = "bb repl", allowProjectCwd = false) =>
   resolveCaseCommandCwd({
@@ -18,7 +18,7 @@ const resolve = (cwd: string | undefined, command = "bb repl", allowProjectCwd =
 
 describe("resolveCaseCommandCwd", () => {
   it("preserves absolute dummy workspace paths", () => {
-    expect(resolve("/tmp/bb_abs_dummy")).toBe("/tmp/bb_abs_dummy")
+    expect(resolve("/tmp/bb_abs_dummy")).toBe(path.resolve("/tmp/bb_abs_dummy"))
   })
 
   it("resolves relative case paths inside the TUI root", () => {

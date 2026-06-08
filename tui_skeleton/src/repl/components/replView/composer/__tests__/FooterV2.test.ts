@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest"
 import { buildFooterV2Model } from "../FooterV2.js"
 
+const shortcutPrefix = () => (process.env.BREADBOARD_TUI_SHORTCUT_PLATFORM === "darwin" || process.platform === "darwin" ? "cmd" : "ctrl")
+const transcriptShortcut = () => `${shortcutPrefix()}+o transcript`
+const modelShortcut = () => `${shortcutPrefix()}+k model`
+const tasksShortcut = () => `${shortcutPrefix()}+b tasks`
+const todosShortcut = () => `${shortcutPrefix()}+t todos`
+
 describe("buildFooterV2Model", () => {
   it("includes elapsed + interrupt cues while pending", () => {
     const model = buildFooterV2Model({
@@ -29,9 +35,9 @@ describe("buildFooterV2Model", () => {
     expect(model.phaseLine).toContain("thinking")
     expect(model.phaseLine).toContain("elapsed")
     expect(model.phaseLine).toContain("esc interrupt")
-    expect(model.summaryLine).toContain("ctrl+o transcript")
-    expect(model.summaryLine).toContain("ctrl+b tasks")
-    expect(model.summaryLine).toContain("ctrl+t todos")
+    expect(model.summaryLine).toContain(transcriptShortcut())
+    expect(model.summaryLine).toContain(tasksShortcut())
+    expect(model.summaryLine).toContain(todosShortcut())
     expect(model.summaryLine).toContain("mdl gpt-5-codex")
     expect(model.summaryLine).toContain("turn 2")
     expect(model.summaryLine).toContain("net local")
@@ -206,7 +212,7 @@ describe("buildFooterV2Model", () => {
       },
       width: 220,
     })
-    const order = ["/sessions recent", "@ attach", "ctrl+o transcript", "ctrl+k model", "? shortcuts"]
+    const order = ["/sessions recent", "@ attach", transcriptShortcut(), modelShortcut(), "? shortcuts"]
     let cursor = -1
     for (const token of order) {
       const index = model.summaryLine.indexOf(token)
@@ -275,11 +281,11 @@ describe("buildFooterV2Model", () => {
       width: 90,
     })
     expect(model.summaryLine).toContain("/sessions recent")
-    expect(model.summaryLine).toContain("ctrl+o transcript")
+    expect(model.summaryLine).toContain(transcriptShortcut())
     expect(model.summaryLine).toContain("@ attach")
-    expect(model.summaryLine).not.toContain("ctrl+t todos")
-    expect(model.summaryLine).not.toContain("ctrl+b tasks")
-    expect(model.summaryLine).not.toContain("ctrl+k model")
+    expect(model.summaryLine).not.toContain(todosShortcut())
+    expect(model.summaryLine).not.toContain(tasksShortcut())
+    expect(model.summaryLine).not.toContain(modelShortcut())
   })
 
   it("preserves turn continuity when active-session stats are compacted", () => {
@@ -338,8 +344,8 @@ describe("buildFooterV2Model", () => {
 
     expect(model.summaryLine).toContain("resume /sessions")
     expect(model.summaryLine).toContain("@ attach")
-    expect(model.summaryLine).toContain("ctrl+o transcript")
-    expect(model.summaryLine).toContain("ctrl+k model")
+    expect(model.summaryLine).toContain(transcriptShortcut())
+    expect(model.summaryLine).toContain(modelShortcut())
   })
 
   it("surfaces transcript and session continuity in idle mode", () => {
@@ -367,7 +373,7 @@ describe("buildFooterV2Model", () => {
       width: 160,
     })
 
-    expect(model.summaryLine).toContain("ctrl+o transcript")
+    expect(model.summaryLine).toContain(transcriptShortcut())
     expect(model.summaryLine).toContain("turn 4")
     expect(model.summaryLine).toContain("sess abcdef12")
   })

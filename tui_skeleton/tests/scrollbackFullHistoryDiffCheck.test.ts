@@ -32,6 +32,7 @@ const validScrollback = [
 
 const sentinels = ["BB_PRE_SHORT_ALPHA", "BB_PRE_SHORT_BETA", "BB_PRE_LONG_GAMMA_BEGIN", "BB_PRE_FINAL_ZETA"]
 const promptMarkers = ["Write a first prompt", "Write a second prompt"]
+const artifactPaths = (paths: readonly string[]) => paths.map((item) => item.replaceAll(path.sep, "/"))
 
 describe("scrollbackFullHistoryDiffCheck", () => {
   it("passes preserved sentinels, landing, and prompt markers", async () => {
@@ -89,7 +90,7 @@ describe("scrollbackFullHistoryDiffCheck", () => {
     })
     const report = await evaluateScrollbackFullHistoryDiff(dir, { expectedSentinels: sentinels, promptMarkers: ["Write a first prompt"] })
     expect(report.verdict).toBe("pass")
-    expect(report.artifactsConsumed).toContain("observer_text/final.ghostty_scrollback.txt")
+    expect(artifactPaths(report.artifactsConsumed)).toContain("observer_text/final.ghostty_scrollback.txt")
   })
 
   it("combines Ghostty native scrollback and screen exports before judging durable history", async () => {
@@ -107,6 +108,6 @@ describe("scrollbackFullHistoryDiffCheck", () => {
     })
     const report = await evaluateScrollbackFullHistoryDiff(dir, { expectedSentinels: sentinels, promptMarkers: ["Write a first prompt"] })
     expect(report.verdict).toBe("pass")
-    expect(report.artifactsConsumed).toContain("observer_text/final.ghostty_combined_state.txt")
+    expect(artifactPaths(report.artifactsConsumed)).toContain("observer_text/final.ghostty_combined_state.txt")
   })
 })
